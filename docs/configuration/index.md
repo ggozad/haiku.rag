@@ -59,12 +59,14 @@ storage:
   data_dir: ""  # Empty = use default platform location
   vacuum_retention_seconds: 86400
 
-monitor:
-  directories:
-    - /path/to/documents
-    - /another/path
-  ignore_patterns: []  # Gitignore-style patterns to exclude
-  include_patterns: []  # Gitignore-style patterns to include
+ingester:
+  sources:
+    - type: fs
+      id: local-docs
+      root: /path/to/documents
+      ignore_patterns: []  # Gitignore-style patterns to exclude
+      include_patterns: []  # Gitignore-style patterns to include
+      delete_orphans: true
 
 lancedb:
   uri: ""  # Empty for local, or db://, s3://, az://, gs://
@@ -180,6 +182,7 @@ For detailed configuration of specific topics, see:
 
 - **[Providers](providers.md)** - Model settings and provider-specific configuration (embeddings, reranking)
 - **[Search and Question Answering](qa.md)** - Search settings and question answering
-- **[Document Processing](processing.md)** - Document conversion, chunking, and file monitoring
+- **[Document Processing](processing.md)** - Document conversion and chunking
+- **[Ingester](../ingester.md)** - Continuous ingestion from filesystem, HTTP, S3, and WebDAV sources
 - **[Storage](storage.md)** - Database, remote storage, and vector indexing
 - **[Prompts](prompts.md)** - Customize agent prompts for your domain

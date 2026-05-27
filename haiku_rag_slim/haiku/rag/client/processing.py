@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.config import AppConfig
 from haiku.rag.converters import get_converter
 from haiku.rag.store.models.chunk import Chunk
@@ -84,14 +85,27 @@ async def convert(
     """
     converter = get_converter(config)
 
+    async def _convert_file(
+        file_path: Path, effective_uri: str | None
+    ) -> "DoclingDocument":
+        """Dispatch through split-and-merge for large PDFs when configured,
+        otherwise call the converter directly."""
+        if file_path.suffix.lower() == ".pdf" and config.processing.split_pages > 0:
+            from haiku.rag.converters.pdf_split import convert_pdf_with_splitting
+
+            return await convert_pdf_with_splitting(
+                converter, file_path, effective_uri, config.processing.split_pages
+            )
+        return await converter.convert_file(file_path, source_uri=effective_uri)
+
     # Path object - convert file directly
     if isinstance(source, Path):
         if not source.exists():
-            raise ValueError(f"File does not exist: {source}")
+            raise UnsupportedSourceError(f"File does not exist: {source}")
         if source.suffix.lower() not in converter.supported_extensions:
-            raise ValueError(f"Unsupported file extension: {source.suffix}")
+            raise UnsupportedSourceError(f"Unsupported file extension: {source.suffix}")
         effective_uri = source_uri or source.absolute().as_uri()
-        doc = await converter.convert_file(source, source_uri=effective_uri)
+        doc = await _convert_file(source, effective_uri)
         _warn_if_descriptions_missing(config, doc, str(source))
         return doc
 
@@ -110,7 +124,7 @@ async def convert(
             )
 
             if file_extension not in converter.supported_extensions:
-                raise ValueError(
+                raise UnsupportedSourceError(
                     f"Unsupported content type/extension: {content_type}/{file_extension}"
                 )
 
@@ -123,7 +137,7 @@ async def convert(
 
             try:
                 effective_uri = source_uri or source
-                doc = await converter.convert_file(temp_path, source_uri=effective_uri)
+                doc = await _convert_file(temp_path, effective_uri)
                 _warn_if_descriptions_missing(config, doc, source)
                 return doc
             finally:
@@ -133,11 +147,13 @@ async def convert(
         # file:// URI
         file_path = Path(parsed.path)
         if not file_path.exists():
-            raise ValueError(f"File does not exist: {file_path}")
+            raise UnsupportedSourceError(f"File does not exist: {file_path}")
         if file_path.suffix.lower() not in converter.supported_extensions:
-            raise ValueError(f"Unsupported file extension: {file_path.suffix}")
+            raise UnsupportedSourceError(
+                f"Unsupported file extension: {file_path.suffix}"
+            )
         effective_uri = source_uri or file_path.absolute().as_uri()
-        doc = await converter.convert_file(file_path, source_uri=effective_uri)
+        doc = await _convert_file(file_path, effective_uri)
         _warn_if_descriptions_missing(config, doc, str(file_path))
         return doc
 

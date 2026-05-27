@@ -23,7 +23,7 @@ The chat TUI is one way to interact with the database. `haiku-rag ask` and `haik
 
 ## What it does
 
-**Ingest.** PDFs, DOCX, HTML, images, and 40+ formats via Docling. Add files, URLs, or whole directories. Monitor folders and reindex on change.
+**Ingest.** PDFs, DOCX, HTML, images, and 40+ formats via Docling. Add files, URLs, or whole directories with `haiku-rag add-src`, or run the [`haiku-ingester`](ingester.md) service for continuous, queue-backed ingestion from filesystem, HTTP, S3, or WebDAV sources.
 
 **Search.** Hybrid retrieval (vector + full-text with reciprocal rank fusion), optional cross-encoder reranking, structure-aware context expansion. Image-as-query and cross-modal retrieval when configured with a multimodal embedder.
 
@@ -31,7 +31,7 @@ The chat TUI is one way to interact with the database. `haiku-rag ask` and `haik
 
 **Integrate.** Use it from Python, the CLI, the [MCP server](mcp.md), or as composable [skills](skills/index.md) built on haiku.skills. Skills bundle tools, prompts, and state for use inside any Pydantic AI agent.
 
-**Operate.** Embedded LanceDB by default. Also runs on S3, GCS, Azure, or LanceDB Cloud. Time-travel queries via LanceDB versioning. File-monitoring mode for production deployments.
+**Operate.** Embedded LanceDB by default. Also runs on S3, GCS, Azure, or LanceDB Cloud. Time-travel queries via LanceDB versioning. The [`haiku-ingester`](ingester.md) service runs continuously for production deployments.
 
 ## Where to go next
 

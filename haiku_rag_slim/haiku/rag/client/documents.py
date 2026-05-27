@@ -1,23 +1,30 @@
-import hashlib
-import mimetypes
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
-import httpx
-
-from haiku.rag.client.processing import ensure_chunks_embedded
+from haiku.rag.client.exceptions import UnsupportedSourceError
+from haiku.rag.client.processing import (
+    ensure_chunks_embedded,
+    get_extension_from_content_type_or_url,
+)
 from haiku.rag.client.titles import resolve_title
 from haiku.rag.converters import get_converter
+from haiku.rag.ingester.sources import (
+    FetchResult,
+    resolve_adhoc_fetcher,
+    resolve_configured_source,
+)
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import extract_items
+from haiku.rag.telemetry import logfire
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
     from haiku.rag.client import HaikuRAG
+    from haiku.rag.ingester.sources.base import Source
 
 
 async def _store_document_with_chunks(
@@ -30,38 +37,30 @@ async def _store_document_with_chunks(
 
     Handles versioning/rollback on failure.
     """
-    # Ensure all chunks have embeddings before storing
     chunks = await ensure_chunks_embedded(client._config, chunks)
 
-    # Snapshot table versions for versioned rollback (if supported)
     versions = await client.store.current_table_versions()
 
-    # Create the document
     created_doc = await client.document_repository.create(document)
 
     try:
         assert created_doc.id is not None, (
             "Document ID should not be None after creation"
         )
-        # Set document_id and order for all chunks
         for order, chunk in enumerate(chunks):
             chunk.document_id = created_doc.id
             chunk.order = order
 
-        # Batch create all chunks in a single operation
         await client.chunk_repository.create(chunks)
 
-        # Extract and store document items for context expansion
         items = extract_items(created_doc.id, docling_document)
         await client.document_item_repository.create_items(created_doc.id, items)
 
-        # Vacuum old versions in background (non-blocking) if auto_vacuum enabled
         if client._config.storage.auto_vacuum:
             client._schedule_vacuum()
 
         return created_doc
     except Exception:
-        # Roll back to the captured versions and re-raise
         await client.store.restore_table_versions(versions)
         raise
 
@@ -92,7 +91,6 @@ async def _update_document_with_chunks(
 
     versions = await client.store.current_table_versions()
 
-    # Delete existing chunks before writing new ones
     await client.chunk_repository.delete_by_document_id(document.id)
 
     try:
@@ -137,14 +135,11 @@ async def create_document(
     """
     from haiku.rag.embeddings import embed_chunks
 
-    # Convert → Chunk → Embed using primitives
     converter = get_converter(client._config)
     docling_document = await converter.convert_text(content, format=format)
     chunks = await client.chunk(docling_document)
     embedded_chunks = await embed_chunks(chunks, client._config)
 
-    # Store markdown export as content for better display/readability.
-    # The original is preserved in docling_document.
     stored_content = docling_document.export_to_markdown()
 
     if title is None:
@@ -191,6 +186,124 @@ async def import_document(
     return await _store_document_with_chunks(client, document, chunks, docling_document)
 
 
+async def _refresh_doc_metadata(
+    client: "HaikuRAG",
+    doc: Document,
+    *,
+    title: str | None,
+    user_metadata: dict,
+    source_metadata: dict | None,
+) -> Document:
+    """Update a document's title + metadata without re-chunking. Used by the
+    cheap revision and MD5 short-circuits in create_document_from_source."""
+    updated = False
+    if title is not None and title != doc.title:
+        doc.title = title
+        updated = True
+
+    merged = {**(doc.metadata or {}), **user_metadata}
+    if source_metadata:
+        merged.update(source_metadata)
+    if merged != doc.metadata:
+        doc.metadata = merged
+        updated = True
+
+    if updated:
+        return await client.document_repository.update(doc)
+    return doc
+
+
+async def _ingest_fetch_result(
+    client: "HaikuRAG",
+    result: FetchResult,
+    *,
+    title: str | None,
+    user_metadata: dict,
+    stored_uri: str,
+    existing_doc: Document | None,
+) -> Document:
+    """Convert / chunk / embed / store a fetched document. Replaces an
+    existing document if one is supplied."""
+    from haiku.rag.embeddings import embed_chunks
+
+    converter = get_converter(client._config)
+    file_extension = get_extension_from_content_type_or_url(
+        result.uri, result.content_type
+    )
+    if file_extension not in converter.supported_extensions:
+        raise UnsupportedSourceError(
+            f"Unsupported content type/extension: {result.content_type}/{file_extension}"
+        )
+
+    source_metadata: dict = {
+        "content_type": result.content_type,
+        "md5": result.content_hash,
+        **result.extra_metadata,
+    }
+    if result.revision is not None:
+        source_metadata["source_revision"] = result.revision
+
+    if result.disk_path is not None:
+        target_path = result.disk_path
+        cleanup_path: Path | None = None
+    else:
+        with tempfile.NamedTemporaryFile(
+            mode="wb", suffix=file_extension, delete=False
+        ) as temp_file:
+            temp_file.write(result.body)
+            temp_file.flush()
+            target_path = Path(temp_file.name)
+            cleanup_path = target_path
+
+    try:
+        with logfire.span("document.convert", uri=result.uri):
+            docling_document = await client.convert(target_path, source_uri=result.uri)
+        with logfire.span("document.chunk", uri=result.uri) as chunk_span:
+            chunks = await client.chunk(docling_document)
+            chunk_span.set_attribute("chunks_created", len(chunks))
+        with logfire.span("document.embed", uri=result.uri):
+            embedded_chunks = await embed_chunks(chunks, client._config)
+    finally:
+        if cleanup_path is not None:
+            cleanup_path.unlink(missing_ok=True)
+
+    stored_content = docling_document.export_to_markdown()
+    final_metadata = {**user_metadata, **source_metadata}
+
+    if existing_doc:
+        existing_doc.content = stored_content
+        existing_doc.metadata = final_metadata
+        existing_doc.set_docling(docling_document)
+        if title is not None:
+            existing_doc.title = title
+        elif existing_doc.title is None:
+            existing_doc.title = await resolve_title(
+                client._config, docling_document, stored_content
+            )
+        with logfire.span("document.store", uri=result.uri, op="update") as store_span:
+            updated = await _update_document_with_chunks(
+                client, existing_doc, embedded_chunks, docling_document
+            )
+            store_span.set_attribute("document_id", updated.id)
+        return updated
+
+    if title is None:
+        title = await resolve_title(client._config, docling_document, stored_content)
+    document = Document(
+        content=stored_content,
+        uri=stored_uri,
+        title=title,
+        metadata=final_metadata,
+    )
+    document.set_docling(docling_document)
+    with logfire.span("document.store", uri=result.uri, op="create") as store_span:
+        created = await _store_document_with_chunks(
+            client, document, embedded_chunks, docling_document
+        )
+        store_span.set_attribute("document_id", created.id)
+    return created
+
+
 async def create_document_from_source(
     client: "HaikuRAG",
     source: str | Path,
@@ -198,6 +311,8 @@ async def create_document_from_source(
     metadata: dict | None = None,
     uri: str | None = None,
     storage_options: dict[str, str] | None = None,
+    sources: "list[Source] | None" = None,
+    source_id: str | None = None,
 ) -> Document | list[Document]:
     """Create or update document(s) from a file path, directory, or URL.
 
@@ -208,9 +323,8 @@ async def create_document_from_source(
 
     If ``uri`` is provided, it overrides the URI auto-derived from the source
     (which is normally ``file://`` for local files or the URL for remote
-    sources). This is useful when callers want to persist documents under a
-    logical identifier (e.g. an ArXiv ID) rather than the on-disk path. Not
-    supported for directory sources, which produce one document per file.
+    sources). Not supported for directory sources, which produce one document
+    per file.
 
     Returns a single Document for files/URLs, a list for directories.
     """
@@ -218,371 +332,126 @@ async def create_document_from_source(
 
     source_str = str(source)
     parsed_url = urlparse(source_str)
-    if parsed_url.scheme in ("http", "https"):
-        return await _create_or_update_document_from_url(
-            client, source_str, title=title, metadata=metadata, uri=uri
+
+    # Directory case: recurse with the existing FS filter and produce one
+    # document per file. Remote schemes (http/s3) never hit this branch.
+    if parsed_url.scheme in ("", "file"):
+        # file:// URIs URL-encode special characters ([, ], spaces, etc.);
+        # unquote to get the real filesystem path before any stat/rglob.
+        local_path = (
+            Path(unquote(parsed_url.path))
+            if parsed_url.scheme == "file"
+            else (Path(source) if isinstance(source, str) else source)
         )
-    elif parsed_url.scheme == "s3":
-        return await _create_or_update_document_from_s3(
-            client,
-            source_str,
-            storage_options=storage_options,
-            title=title,
-            metadata=metadata,
-            uri=uri,
+        if local_path.is_dir():
+            if uri is not None:
+                raise UnsupportedSourceError(
+                    "uri override is not supported for directory sources; each file "
+                    "produces its own document with its own auto-derived URI."
+                )
+            from haiku.rag.ingester.sources.filter import FileFilter
+
+            # One-shot CLI directory ingest uses the converter's supported
+            # extensions but no include/ignore patterns. For pattern-based
+            # filtering use `haiku-ingester serve` with an FS source.
+            documents: list[Document] = []
+            filter = FileFilter()
+            for child in local_path.rglob("*"):
+                if child.is_file() and filter.include_file(str(child)):
+                    doc = await create_document_from_source(
+                        client, child, title=None, metadata=metadata
+                    )
+                    assert isinstance(doc, Document)
+                    documents.append(doc)
+            return documents
+
+        if not local_path.exists():
+            raise UnsupportedSourceError(f"File does not exist: {local_path}")
+
+        # Match the old _create_document_from_file behaviour: fail fast on
+        # unsupported extension before reading any bytes.
+        converter = get_converter(client._config)
+        if local_path.suffix.lower() not in converter.supported_extensions:
+            raise UnsupportedSourceError(
+                f"Unsupported file extension: {local_path.suffix}"
+            )
+
+    # Worker jobs carry source_id from the poller; strict lookup so a
+    # renamed/removed source surfaces as a DLQ instead of silently dropping
+    # credentials. Ad-hoc CLI calls (no source_id) fall back to scheme-based
+    # adapters when no configured source matches.
+    if source_id is not None:
+        fetcher = resolve_configured_source(source_str, source_id, sources)
+    else:
+        fetcher = resolve_adhoc_fetcher(
+            source_str, sources=sources, storage_options=storage_options
         )
+
+    # The stored URI is what we look up + persist by. For an explicit uri
+    # override, use it as-is. For a file:// input the source string is
+    # already canonical (URL-encoded); round-tripping via Path.as_uri()
+    # would double-encode any escapes like %5B. For bare paths, canonicalize.
+    if uri is not None:
+        stored_uri = uri
     elif parsed_url.scheme == "file":
-        source_path = Path(parsed_url.path)
+        stored_uri = source_str
+    elif parsed_url.scheme == "":
+        stored_uri = Path(source_str).absolute().as_uri()
     else:
-        source_path = Path(source) if isinstance(source, str) else source
-
-    if source_path.is_dir():
-        if uri is not None:
-            raise ValueError(
-                "uri override is not supported for directory sources; each file "
-                "produces its own document with its own auto-derived URI."
-            )
-        from haiku.rag.monitor import FileFilter
-
-        documents = []
-        filter = FileFilter(
-            ignore_patterns=client._config.monitor.ignore_patterns or None,
-            include_patterns=client._config.monitor.include_patterns or None,
-        )
-        for path in source_path.rglob("*"):
-            if path.is_file() and filter.include_file(str(path)):
-                doc = await _create_document_from_file(
-                    client, path, title=None, metadata=metadata
-                )
-                documents.append(doc)
-        return documents
-
-    return await _create_document_from_file(
-        client, source_path, title=title, metadata=metadata, uri=uri
-    )
-
-
-async def _create_document_from_file(
-    client: "HaikuRAG",
-    source_path: Path,
-    title: str | None = None,
-    metadata: dict | None = None,
-    uri: str | None = None,
-) -> Document:
-    """Create or update a document from a single file path.
-
-    ``uri`` overrides the auto-derived ``file://`` URI; it's used as the
-    canonical document identifier for lookup and storage.
-    """
-    from haiku.rag.embeddings import embed_chunks
-
-    metadata = metadata or {}
-
-    converter = get_converter(client._config)
-    if source_path.suffix.lower() not in converter.supported_extensions:
-        raise ValueError(f"Unsupported file extension: {source_path.suffix}")
-
-    if not source_path.exists():
-        raise ValueError(f"File does not exist: {source_path}")
-
-    if uri is None:
-        uri = source_path.absolute().as_uri()
-    md5_hash = hashlib.md5(source_path.read_bytes(), usedforsecurity=False).hexdigest()
-
-    content_type, _ = mimetypes.guess_type(str(source_path))
-    if not content_type:
-        content_type = "application/octet-stream"
-    metadata.update({"contentType": content_type, "md5": md5_hash})
-
-    # Check if document already exists
-    existing_doc = await client.get_document_by_uri(uri)
-    if existing_doc and existing_doc.metadata.get("md5") == md5_hash:
-        # MD5 unchanged; update title/metadata if provided
-        updated = False
-        if title is not None and title != existing_doc.title:
-            existing_doc.title = title
-            updated = True
-
-        merged_metadata = {**(existing_doc.metadata or {}), **metadata}
-        if merged_metadata != existing_doc.metadata:
-            existing_doc.metadata = merged_metadata
-            updated = True
-
-        if updated:
-            return await client.document_repository.update(existing_doc)
-        return existing_doc
-
-    # Convert → Chunk → Embed
-    docling_document = await client.convert(source_path)
-    chunks = await client.chunk(docling_document)
-    embedded_chunks = await embed_chunks(chunks, client._config)
-
-    stored_content = docling_document.export_to_markdown()
-
-    if existing_doc:
-        # Update existing document and rechunk
-        existing_doc.content = stored_content
-        existing_doc.metadata = metadata
-        existing_doc.set_docling(docling_document)
-        if title is not None:
-            existing_doc.title = title
-        elif existing_doc.title is None:
-            existing_doc.title = await resolve_title(
-                client._config, docling_document, stored_content
-            )
-        return await _update_document_with_chunks(
-            client, existing_doc, embedded_chunks, docling_document
-        )
-    else:
-        if title is None:
-            title = await resolve_title(
-                client._config, docling_document, stored_content
-            )
-        document = Document(
-            content=stored_content,
-            uri=uri,
-            title=title,
-            metadata=metadata,
-        )
-        document.set_docling(docling_document)
-        return await _store_document_with_chunks(
-            client, document, embedded_chunks, docling_document
-        )
-
-
-async def _create_or_update_document_from_url(
-    client: "HaikuRAG",
-    url: str,
-    title: str | None = None,
-    metadata: dict | None = None,
-    uri: str | None = None,
-) -> Document:
-    """Create or update a document from a URL by downloading and parsing the content.
-
-    ``uri`` overrides the URL as the stored document identifier.
-    """
-    from haiku.rag.client.processing import get_extension_from_content_type_or_url
-    from haiku.rag.embeddings import embed_chunks
-
-    metadata = metadata or {}
-    stored_uri = uri if uri is not None else url
-
-    converter = get_converter(client._config)
-    supported_extensions = converter.supported_extensions
-
-    async with httpx.AsyncClient() as http:
-        response = await http.get(url)
-        response.raise_for_status()
-
-        md5_hash = hashlib.md5(response.content).hexdigest()
-
-        content_type = response.headers.get("content-type", "").lower()
-
-        # Check if document already exists
-        existing_doc = await client.get_document_by_uri(stored_uri)
-        if existing_doc and existing_doc.metadata.get("md5") == md5_hash:
-            updated = False
-            if title is not None and title != existing_doc.title:
-                existing_doc.title = title
-                updated = True
-
-            metadata.update({"contentType": content_type, "md5": md5_hash})
-            merged_metadata = {**(existing_doc.metadata or {}), **metadata}
-            if merged_metadata != existing_doc.metadata:
-                existing_doc.metadata = merged_metadata
-                updated = True
-
-            if updated:
-                return await client.document_repository.update(existing_doc)
-            return existing_doc
-
-        file_extension = get_extension_from_content_type_or_url(url, content_type)
-
-        if file_extension not in supported_extensions:
-            raise ValueError(
-                f"Unsupported content type/extension: {content_type}/{file_extension}"
-            )
-
-        with tempfile.NamedTemporaryFile(
-            mode="wb", suffix=file_extension, delete=False
-        ) as temp_file:
-            temp_file.write(response.content)
-            temp_file.flush()
-            temp_path = Path(temp_file.name)
-
-        try:
-            docling_document = await client.convert(temp_path, source_uri=url)
-            chunks = await client.chunk(docling_document)
-            embedded_chunks = await embed_chunks(chunks, client._config)
-        finally:
-            temp_path.unlink(missing_ok=True)
-
-        metadata.update({"contentType": content_type, "md5": md5_hash})
-
-        stored_content = docling_document.export_to_markdown()
-
-        if existing_doc:
-            existing_doc.content = stored_content
-            existing_doc.metadata = metadata
-            existing_doc.set_docling(docling_document)
-            if title is not None:
-                existing_doc.title = title
-            elif existing_doc.title is None:
-                existing_doc.title = await resolve_title(
-                    client._config, docling_document, stored_content
-                )
-            return await _update_document_with_chunks(
-                client, existing_doc, embedded_chunks, docling_document
-            )
-        else:
-            if title is None:
-                title = await resolve_title(
-                    client._config, docling_document, stored_content
-                )
-            document = Document(
-                content=stored_content,
-                uri=stored_uri,
-                title=title,
-                metadata=metadata,
-            )
-            document.set_docling(docling_document)
-            return await _store_document_with_chunks(
-                client, document, embedded_chunks, docling_document
-            )
-
-
-async def _create_or_update_document_from_s3(
-    client: "HaikuRAG",
-    url: str,
-    *,
-    storage_options: dict[str, str] | None = None,
-    title: str | None = None,
-    metadata: dict | None = None,
-    uri: str | None = None,
-) -> Document:
-    """Create or update a document from an s3:// URL.
-
-    Two-stage change detection:
-    - HEAD ETag matches stored metadata["etag"] → skip GET and re-chunk.
-    - ETag differs but content MD5 matches → refresh etag only, no re-chunk.
-    - Otherwise download, convert, chunk, embed.
-
-    ``uri`` overrides the s3:// URL as the stored document identifier.
-    """
-    import obstore  # type: ignore[import-not-found]
-
-    from haiku.rag.client.processing import get_extension_from_content_type_or_url
-    from haiku.rag.embeddings import embed_chunks
-    from haiku.rag.s3 import make_s3_store
-
-    metadata = metadata or {}
-    stored_uri = uri if uri is not None else url
-
-    parsed = urlparse(url)
-    bucket = parsed.netloc
-    key = parsed.path.lstrip("/")
-    if not bucket or not key:
-        raise ValueError(f"Invalid S3 URI: {url}")
-
-    converter = get_converter(client._config)
-    supported_extensions = converter.supported_extensions
-
-    store = make_s3_store(bucket, storage_options)
-
-    head = await obstore.head_async(store, key)
-    etag = (head.get("e_tag") or "").strip('"')
+        stored_uri = source_str
 
     existing_doc = await client.get_document_by_uri(stored_uri)
-    if existing_doc and existing_doc.metadata.get("etag") == etag:
-        updated = False
-        if title is not None and title != existing_doc.title:
-            existing_doc.title = title
-            updated = True
 
-        merged_metadata = {**(existing_doc.metadata or {}), **metadata}
-        if merged_metadata != existing_doc.metadata:
-            existing_doc.metadata = merged_metadata
-            updated = True
-
-        if updated:
-            return await client.document_repository.update(existing_doc)
-        return existing_doc
-
-    content_type, _ = mimetypes.guess_type(key)
-    if not content_type:
-        content_type = "application/octet-stream"
-
-    file_extension = get_extension_from_content_type_or_url(url, content_type)
-    if file_extension not in supported_extensions:
-        raise ValueError(
-            f"Unsupported content type/extension: {content_type}/{file_extension}"
-        )
-
-    get_resp = await obstore.get_async(store, key)
-    body = await get_resp.bytes_async()
-
-    md5_hash = hashlib.md5(body, usedforsecurity=False).hexdigest()
-
-    with tempfile.NamedTemporaryFile(
-        mode="wb", suffix=file_extension, delete=False
-    ) as temp_file:
-        temp_file.write(body)
-        temp_file.flush()
-        temp_path = Path(temp_file.name)
-
-    metadata.update({"contentType": content_type, "md5": md5_hash, "etag": etag})
-
-    if existing_doc and existing_doc.metadata.get("md5") == md5_hash:
-        temp_path.unlink(missing_ok=True)
-        merged_metadata = {**(existing_doc.metadata or {}), **metadata}
-        updated = False
-        if merged_metadata != existing_doc.metadata:
-            existing_doc.metadata = merged_metadata
-            updated = True
-        if title is not None and title != existing_doc.title:
-            existing_doc.title = title
-            updated = True
-        if updated:
-            return await client.document_repository.update(existing_doc)
-        return existing_doc
-
-    try:
-        docling_document = await client.convert(temp_path, source_uri=url)
-        chunks = await client.chunk(docling_document)
-        embedded_chunks = await embed_chunks(chunks, client._config)
-    finally:
-        temp_path.unlink(missing_ok=True)
-
-    stored_content = docling_document.export_to_markdown()
-
-    if existing_doc:
-        existing_doc.content = stored_content
-        existing_doc.metadata = metadata
-        existing_doc.set_docling(docling_document)
-        if title is not None:
-            existing_doc.title = title
-        elif existing_doc.title is None:
-            existing_doc.title = await resolve_title(
-                client._config, docling_document, stored_content
+    # Cheap revision-based short-circuit: only worth a HEAD when we have a
+    # stored revision to compare against. All sources persist their native
+    # revision (mtime_ns for FS, ETag for S3, ETag/Last-Modified for HTTP)
+    # under the canonical "source_revision" metadata key.
+    stored_revision = (
+        (existing_doc.metadata or {}).get("source_revision") if existing_doc else None
+    )
+    if existing_doc and stored_revision:
+        current_revision = await fetcher.head(source_str)
+        if current_revision == stored_revision:
+            return await _refresh_doc_metadata(
+                client,
+                existing_doc,
+                title=title,
+                user_metadata=metadata,
+                source_metadata=None,
             )
-        return await _update_document_with_chunks(
-            client, existing_doc, embedded_chunks, docling_document
-        )
-    else:
-        if title is None:
-            title = await resolve_title(
-                client._config, docling_document, stored_content
-            )
-        document = Document(
-            content=stored_content,
-            uri=stored_uri,
+
+    with logfire.span("document.fetch", uri=source_str) as fetch_span:
+        result = await fetcher.fetch(source_str)
+        fetch_span.set_attribute("bytes", len(result.body))
+        fetch_span.set_attribute("content_hash", result.content_hash)
+
+    # MD5 short-circuit: the bytes are unchanged even if the revision wasn't.
+    # Refresh the source-derived metadata (revision may have rolled) but skip
+    # convert/embed/store entirely.
+    if existing_doc and existing_doc.metadata.get("md5") == result.content_hash:
+        source_meta: dict = {
+            "content_type": result.content_type,
+            "md5": result.content_hash,
+            **result.extra_metadata,
+        }
+        if result.revision is not None:
+            source_meta["source_revision"] = result.revision
+        return await _refresh_doc_metadata(
+            client,
+            existing_doc,
             title=title,
-            metadata=metadata,
+            user_metadata=metadata,
+            source_metadata=source_meta,
         )
-        document.set_docling(docling_document)
-        return await _store_document_with_chunks(
-            client, document, embedded_chunks, docling_document
-        )
+
+    return await _ingest_fetch_result(
+        client,
+        result,
+        title=title,
+        user_metadata=metadata,
+        stored_uri=stored_uri,
+        existing_doc=existing_doc,
+    )
 
 
 async def update_document(
@@ -606,7 +475,6 @@ async def update_document(
     """
     from haiku.rag.embeddings import embed_chunks
 
-    # Validate: content and docling_document are mutually exclusive
     if content is not None and docling_document is not None:
         raise ValueError(
             "content and docling_document are mutually exclusive. "
@@ -622,11 +490,9 @@ async def update_document(
     if metadata is not None:
         existing_doc.metadata = metadata
 
-    # Only metadata/title update - no rechunking needed
     if content is None and chunks is None and docling_document is None:
         return await client.document_repository.update(existing_doc)
 
-    # Custom chunks provided - use them as-is
     if chunks is not None:
         if docling_document is not None:
             existing_doc.content = docling_document.export_to_markdown()
@@ -638,7 +504,6 @@ async def update_document(
             client, existing_doc, chunks, docling_document
         )
 
-    # DoclingDocument provided without chunks - chunk and embed
     if docling_document is not None:
         existing_doc.content = docling_document.export_to_markdown()
         existing_doc.set_docling(docling_document)
@@ -649,7 +514,6 @@ async def update_document(
             client, existing_doc, embedded_chunks, docling_document
         )
 
-    # Content provided without chunks - convert, chunk, and embed
     assert content is not None
     existing_doc.content = content
     converter = get_converter(client._config)

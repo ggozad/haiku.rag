@@ -130,3 +130,30 @@ def vcr_config():
         "filter_headers": ["authorization", "x-api-key"],
         "decode_compressed_response": True,
     }
+
+
+@pytest.fixture(scope="session")
+def doclaynet_first_page_pdf(tmp_path_factory) -> Path:
+    """One-page extract of ``tests/data/doclaynet.pdf`` (the full DocLayNet
+    arXiv paper). Most existing tests only need a small PDF with at least
+    one picture; this avoids running docling over all nine pages of the
+    paper just to assert ``pictures != []``. The full paper is used
+    directly by the split-and-merge integration test."""
+    import pypdfium2 as pdfium
+
+    src_path = Path(__file__).parent / "data" / "doclaynet.pdf"
+    out_dir = tmp_path_factory.mktemp("doclaynet")
+    out_path = out_dir / "page0.pdf"
+
+    src = pdfium.PdfDocument(str(src_path))
+    try:
+        dst = pdfium.PdfDocument.new()
+        try:
+            dst.import_pages(src, [0])
+            with open(out_path, "wb") as f:
+                dst.save(f)
+        finally:
+            dst.close()
+    finally:
+        src.close()
+    return out_path

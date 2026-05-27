@@ -1,9 +1,14 @@
 services:
-  docling-serve:
+  # Two docling-serve replicas — the ingester round-robins jobs across them
+  # via the `providers.docling_serve.base_url` list in haiku.rag.yaml. Each
+  # serves the same image with the same env; running more than one is the
+  # supported scaling pattern for docling-serve since the upstream image
+  # processes one task at a time per instance by default.
+  docling-serve-1:
     image: quay.io/docling-project/docling-serve:latest
-    container_name: docling-serve
+    container_name: docling-serve-1
     ports:
-      - "5001:5001"
+      - "5001:5001"  # exposed on the host for ad-hoc debugging (5001)
     environment:
       - DOCLING_SERVE_ENABLE_UI=1
     restart: unless-stopped
@@ -15,24 +20,104 @@ services:
       start_period: 40s
       start_interval: 5s
 
-  haiku-rag:
-    build:
-      context: ../..
-      dockerfile: docker/Dockerfile.slim
-    container_name: haiku-rag
+  docling-serve-2:
+    image: quay.io/docling-project/docling-serve:latest
+    container_name: docling-serve-2
     ports:
-      - "8001:8001"  # MCP server
-    volumes:
-      - ./data:/data  # Persist database
-      - ./docs:/docs  # Mount documents directory for monitoring
-      - ./haiku.rag.yaml:/app/haiku.rag.yaml:ro  # Mount config file
+      - "5002:5001"  # host 5002 → container 5001 (debug only)
     environment:
-      # API keys (set as needed)
+      - DOCLING_SERVE_ENABLE_UI=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+      start_interval: 5s
+
+  # LanceDB allows one writer + N readers per database URI; the ingester is
+  # the writer, MCP runs read-only. The ingester opens LanceDB on startup
+  # (creating it if missing), so its /health endpoint is a valid signal
+  # that the DB exists — MCP waits on it via condition: service_healthy.
+  haiku-ingester:
+    image: ghcr.io/ggozad/haiku.rag-slim:latest
+    container_name: haiku-ingester
+    command:
+      [
+        "haiku-ingester",
+        "--config",
+        "/app/haiku.rag.yaml",
+        "serve",
+      ]
+    ports:
+      - "8765:8765"  # ingester control plane (/health, /jobs, /sources, /dlq)
+    volumes:
+      - ./data:/data
+      - ./docs:/docs  # Documents directory ingested by the FS source
+      - ./haiku.rag.yaml:/app/haiku.rag.yaml:ro
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - VOYAGE_API_KEY=${VOYAGE_API_KEY}
+      - CO_API_KEY=${CO_API_KEY}
+      # Logfire emits spans when this is set; stays silent (no telemetry) when unset.
+      # Set LOGFIRE_TOKEN in examples/docker/.env (gitignored) to enable.
+      - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
+      # Bearer token the control plane requires when host isn't loopback.
+      # Set INGESTER_TOKEN in examples/docker/.env (gitignored).
+      - INGESTER_TOKEN=${INGESTER_TOKEN:-}
+    depends_on:
+      docling-serve-1:
+        condition: service_healthy
+      docling-serve-2:
+        condition: service_healthy
+    # Compose default is 10s — too short for the ingester's own 60s
+    # shutdown_grace_s. Give it 180s so SIGTERM → drain → exit completes
+    # before the SIGKILL fallback fires.
+    stop_grace_period: 180s
+    healthcheck:
+      # No curl in the slim image; use Python's stdlib instead.
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8765/health', timeout=2).status == 200 else 1)",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  haiku-rag:
+    image: ghcr.io/ggozad/haiku.rag-slim:latest
+    container_name: haiku-rag
+    command:
+      [
+        "haiku-rag",
+        "--config",
+        "/app/haiku.rag.yaml",
+        "--read-only",
+        "mcp",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8001",
+      ]
+    ports:
+      - "8001:8001"  # MCP server (read-only against the same LanceDB)
+    volumes:
+      - ./data:/data  # Shared with the ingester (read-only at this process)
+      - ./haiku.rag.yaml:/app/haiku.rag.yaml:ro
+    environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - VOYAGE_API_KEY=${VOYAGE_API_KEY}
       - CO_API_KEY=${CO_API_KEY}
     depends_on:
-      docling-serve:
+      haiku-ingester:
         condition: service_healthy
+    stop_grace_period: 30s
     restart: unless-stopped

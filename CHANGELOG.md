@@ -1,9 +1,24 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- `haiku-ingester` service for continuous document ingestion. Persistent SQLite job queue, async worker pool with retries and dead-letter queue, FS/HTTP/S3/WebDAV source adapters, per-source and pool-wide circuit breakers, and a FastAPI control plane on `127.0.0.1:8765` exposing `/health`, `/sources`, `/jobs`, `/dlq`, `/stats`, and a browser dashboard at `/`. Configured under `ingester:` in `haiku.rag.yaml`; shipped behind the `[ingester]` extra. See [docs/ingester.md](docs/ingester.md).
+- `processing.split_pages` (default `0`): split PDFs into N-page slices, convert each, merge via `DoclingDocument.concatenate()`. `0` disables.
+- Logfire spans for ingestion: `ingester.poller.sweep`, `ingester.poller.watch_event`, `ingester.job`, `document.{fetch,convert,chunk,embed,store}`, `document.convert_slice`.
+
+### Removed
+
+- File monitor (`haiku.rag.monitor`, `MonitorConfig`, `S3MonitorEntry`, `AppConfig.monitor`, `haiku-rag serve --monitor`). Migrate `monitor.directories` to `ingester.sources[type=fs]` and `monitor.s3` to `ingester.sources[type=s3]`.
+
 ### Changed
 
-- Drop `list_documents` and `get_document` from the default RAG skill's tool set; the skill now exposes only `search` and `cite`. Both tools dumped unbounded content into the agent's context (full document lists, full document bodies) and `get_document` returned no chunk_ids so its output was structurally uncitable. The analysis skill already covers these uses programmatically — `await list_documents()` and `Path('/documents/{id}/content.txt').read_text()` inside `execute_code`. The tool branches remain in `create_skill_tools` and the `skill_generator` `AVAILABLE_TOOLS` set so users can still opt in when building custom skills.
+- `haiku-rag serve` renamed to `haiku-rag mcp`. `--mcp-port` renamed to `--port`.
+- `document.metadata` keys renamed: `etag` → `source_revision`, `contentType` → `content_type`. v0.50.0 startup migration rewrites existing documents and compacts the `documents` table at the end (12 GB → 25 GB mid-migration on a 1000-doc PDF corpus, reclaimed back to 12 GB).
+- `providers.docling_serve.base_url` now accepts a list. Jobs round-robin across the entries; each job's submit/poll/result pinned to one instance.
+- `DoclingServeClient.submit_and_poll` and `submit_and_poll_zip` no longer wrap `httpx` errors into `ValueError`. `httpx.ConnectError`, `HTTPStatusError`, `TimeoutException`, etc. propagate with their type intact.
+- Logfire spans report `instrumentation_scope.name = "haiku.rag"` (was the SDK default `logfire`).
+- Default RAG skill exposes only `search` and `cite`. `list_documents` and `get_document` are still available in `create_skill_tools` and `skill_generator`'s `AVAILABLE_TOOLS` for custom skills.
 
 ## [0.48.1] - 2026-05-21
 

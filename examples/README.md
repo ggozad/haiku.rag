@@ -7,7 +7,7 @@ This directory contains example scripts demonstrating various features of haiku.
 **Directory:** `docker/`
 
 Complete Docker setup for running haiku.rag with all services:
-- File monitoring for automatic document indexing
+- Continuous ingestion from a watched directory via `haiku-ingester`
 - MCP server for AI assistant integration
 
 See `docker/README.md` for setup instructions.

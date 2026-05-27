@@ -1,6 +1,8 @@
-# Document Processing & Monitoring
+# Document Processing
 
-This guide covers how haiku.rag converts, chunks, and monitors documents.
+This guide covers how haiku.rag converts and chunks documents. Continuous
+ingestion (watching directories, polling HTTP / S3 / WebDAV sources) lives
+in the [ingester](../ingester.md) service.
 
 ## Document Processing
 
@@ -80,7 +82,82 @@ providers:
     api_key: "your-api-key"  # Optional
 ```
 
+`base_url` also accepts a list — jobs round-robin across the entries, with
+each job's submit / poll / result pinned to one instance (task IDs are
+instance-local):
+
+```yaml
+providers:
+  docling_serve:
+    base_url:
+      - http://gpu-1:5001
+      - http://cpu-1:5001
+      - http://cpu-2:5001
+```
+
+The round-robin counter is per-process — multiple concurrent ingester or
+client processes pick independently, so the distribution evens out over many
+jobs without coordination. For tight load balancing, failover, or health
+checks, run a real load balancer (nginx `least_conn`, etc.) in front and
+configure a single URL here.
+
+**Tuning `ingester.workers.worker_count` for docling-serve users**: convert
+is usually the throughput ceiling — a default docling-serve instance
+processes one task at a time (configurable via `DOCLING_SERVE_ENG_LOC_NUM_WORKERS`
+if you've set it). A reasonable starting point for `worker_count` is **1–2 ×
+the number of `docling_serve.base_url` entries**: enough to overlap fetch /
+embed / store of one job with the convert of another, without piling jobs
+into docling-serve's internal queue beyond what its workers can chew through.
+The ingester logs the worker / source / docling-serve counts on startup so
+you can eyeball the ratio.
+
 Conversion options work identically for both local and remote processing.
+
+### Large PDFs and docling memory
+
+Docling's parser is memory-hungry and has confirmed leaks in current versions
+([docling #2209](https://github.com/docling-project/docling/issues/2209),
+[#1343](https://github.com/docling-project/docling/issues/1343),
+[#2954](https://github.com/docling-project/docling/issues/2954);
+[docling-serve #366](https://github.com/docling-project/docling-serve/issues/366),
+[#474](https://github.com/docling-project/docling-serve/issues/474)).
+Single-pass conversion of 400-page PDFs can OOM a workstation in local mode,
+and long-running docling-serve containers see RSS grow monotonically.
+
+Mitigation in haiku.rag — set `processing.split_pages`:
+
+```yaml
+processing:
+  split_pages: 10                  # 0 disables (default)
+```
+
+When `split_pages > 0`, PDFs are split at the byte level into N-page slices
+(using pypdfium2, already bundled), each slice converted independently, then
+merged back via `DoclingDocument.concatenate` — preserving page numbers and
+re-indexing `self_ref` values across slices. Peak memory per conversion is
+bounded by one slice's working set rather than the whole document; in
+docling-serve mode each slice is also an independent task that lets the
+server release task-local state between requests.
+
+Recommendation: `10` is a sensible starting point for any consistently-large
+PDF workload. Smaller slices reduce peak memory but multiply task overhead
+(per-slice docling startup + HTTP round-trips for docling-serve). Cross-page
+references (named destinations, multi-page link annotations) are dropped at
+the split — accepted loss; haiku.rag doesn't surface them downstream.
+
+**Operational note for long-running ingest**: even with `split_pages`,
+docling's per-process leak rate is non-zero. For deployments running
+continuously:
+
+- *docling-serve mode*: set `mem_limit` on the container in Compose
+  (or `resources.limits.memory` in Kubernetes) plus `restart: unless-stopped`
+  so the kernel OOM-kills and the runtime restarts. Run multiple
+  docling-serve replicas behind the round-robin `base_url` list above so a
+  restart of one doesn't stop ingest.
+- *docling-local mode*: the leak is inside the `haiku-ingester` process
+  itself. Apply the same `mem_limit` + restart policy to the ingester
+  container. Restarts are graceful — in-flight jobs land in the queue's
+  reaper window and resume on next start.
 
 **Note:** When using `chunker: docling-serve`, OCR options (`do_ocr`, `force_ocr`, `ocr_engine`, `ocr_lang`) from `conversion_options` are passed to the chunking API. This is useful when running docling-serve in a read-only container where OCR model downloads fail. Set `do_ocr: false` to disable OCR entirely.
 
@@ -135,7 +212,7 @@ conversion_options:
 
 - **images_scale**: Scale factor for extracted images. Higher values = better quality but larger size. Typical range: 1.0-3.0.
 - **generate_page_images**: When `true` (default), rendered images of each PDF page are included in the document. Required for `visualize_chunk()` to show visual grounding. When `false`, page images are excluded to reduce document size.
-- **fetch_remote_images**: When `true` (default), HTML and Markdown inputs have their external `<img src="https://...">` URLs fetched and stored as picture bytes. Set `false` for air-gapped ingest. Applies only to docling-local. See [Remote processing](../remote-processing.md#html-image-fetching) for the docling-serve limitation.
+- **fetch_remote_images**: When `true` (default), HTML and Markdown inputs have their external `<img src="https://...">` URLs fetched and stored as picture bytes. Set `false` for air-gapped ingest. Applies only to `docling-local`. **docling-serve doesn't fetch external `<img>` URLs** (the `ConvertDocumentsOptions` API exposes no equivalent flag, and HTML falls through to docling's `fetch_images=False` default); HTML ingested via docling-serve produces picture items with `picture_data=NULL`. Use `converter: docling-local` if you need image bytes from HTML/Markdown.
 
 #### External image fetching
 
@@ -291,96 +368,8 @@ Explicit titles passed via `title=` parameter always take precedence and are nev
 
 To generate titles for existing untitled documents, use [`rebuild --title-only`](../cli.md#rebuild-database).
 
-## File Monitoring
+## Continuous ingestion
 
-Set directories to monitor for automatic indexing:
-
-```yaml
-monitor:
-  directories:
-    - /path/to/documents
-    - /another_path/to/documents
-```
-
-### Filtering Monitored Files
-
-Use gitignore-style patterns to control which files are monitored:
-
-```yaml
-monitor:
-  directories:
-    - /path/to/documents
-
-  # Exclude specific files or directories
-  ignore_patterns:
-    - "*draft*"         # Ignore files with "draft" in the name
-    - "temp/"           # Ignore temp directory
-    - "**/archive/**"   # Ignore all archive directories
-    - "*.backup"        # Ignore backup files
-
-  # Only include specific files (whitelist mode)
-  include_patterns:
-    - "*.md"            # Only markdown files
-    - "*.pdf"           # Only PDF files
-    - "**/docs/**"      # Only files in docs directories
-```
-
-**How patterns work:**
-
-1. **Extension filtering** - Only supported file types are considered
-2. **Include patterns** - If specified, only matching files are included (whitelist)
-3. **Ignore patterns** - Matching files are excluded (blacklist)
-4. **Combining both** - Include patterns are applied first, then ignore patterns
-
-**Common patterns:**
-
-```yaml
-# Only monitor markdown documentation, but ignore drafts
-monitor:
-  include_patterns:
-    - "*.md"
-  ignore_patterns:
-    - "*draft*"
-    - "*WIP*"
-
-# Monitor all supported files except in specific directories
-monitor:
-  ignore_patterns:
-    - "node_modules/"
-    - ".git/"
-    - "**/test/**"
-    - "**/temp/**"
-```
-
-Patterns follow [gitignore syntax](https://git-scm.com/docs/gitignore#_pattern_format):
-
-- `*` matches anything except `/`
-- `**` matches zero or more directories
-- `?` matches any single character
-- `[abc]` matches any character in the set
-
-### S3 / Object Storage Sources
-
-In addition to local directories, the watcher can poll S3-compatible buckets (AWS S3, SeaweedFS, MinIO, Cloudflare R2, etc.). Install the `[s3]` extra and configure one or more entries under `monitor.s3`:
-
-```yaml
-monitor:
-  s3:
-    - uri: s3://my-bucket/incoming/
-      poll_interval: 300        # seconds between sweeps; default 300
-      include_patterns: ["*.pdf", "*.md"]
-      ignore_patterns: ["draft*"]
-      delete_orphans: true
-      storage_options:
-        endpoint: http://seaweed:8333
-        aws_access_key_id: ${AWS_KEY}
-        aws_secret_access_key: ${AWS_SECRET}
-        region: us-east-1
-        allow_http: "true"
-```
-
-Each entry is independent: own poll interval, own include/ignore patterns, own `delete_orphans` setting, own credentials. Omit `storage_options` to fall back to the AWS default credential chain (env vars, IAM role, AWS profile).
-
-The dict shape matches `lancedb.storage_options`. The same Rust `object_store` library is used by both, so credentials configured for the LanceDB backend can be copy-pasted here.
-
-See [Server Mode → S3 / Object Storage Monitoring](../server.md#s3-object-storage-monitoring) for behaviour details (ETag-based change detection, orphan-deletion scope, CLI `add-src s3://…`).
+For automatic ingestion of local directories, S3 buckets, or HTTP
+sources (with filtering, retries, and a dead-letter queue), see the
+[Ingester](../ingester.md) page.

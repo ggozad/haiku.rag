@@ -7,18 +7,25 @@ The MCP server exposes `haiku.rag` as MCP tools for compatible MCP clients like 
 The MCP server supports Streamable HTTP and stdio transports:
 
 ```bash
-# Default streamable HTTP transport on port 8001
-haiku-rag serve --mcp
+# Default streamable HTTP transport on 127.0.0.1:8001
+haiku-rag mcp
 
 # Custom port
-haiku-rag serve --mcp --mcp-port 9000
+haiku-rag mcp --port 9000
+
+# Bind to all interfaces (e.g. inside a container)
+haiku-rag mcp --host 0.0.0.0 --port 8001
 
 # stdio transport (for Claude Desktop)
-haiku-rag serve --mcp --stdio
+haiku-rag mcp --stdio
 
 # Read-only mode (excludes write tools)
-haiku-rag --read-only serve --mcp --stdio
+haiku-rag --read-only mcp --stdio
 ```
+
+`--host` defaults to `127.0.0.1` (loopback only). Bind to `0.0.0.0` only
+when you want the MCP server reachable from outside the local machine —
+e.g. inside a Docker container with port mapping, or on a trusted LAN.
 
 **Read-only mode:** When `--read-only` is specified, write tools (`add_document_from_file`, `add_document_from_url`, `add_document_from_text`, `delete_document`) are not registered. Only search and query tools remain available.
 
@@ -31,7 +38,7 @@ Add to your Claude Desktop configuration (`claude_desktop_config.json`):
   "mcpServers": {
     "haiku-rag": {
       "command": "haiku-rag",
-      "args": ["serve", "--mcp", "--stdio"]
+      "args": ["mcp", "--stdio"]
     }
   }
 }
@@ -44,7 +51,7 @@ With a custom database path:
   "mcpServers": {
     "haiku-rag": {
       "command": "haiku-rag",
-      "args": ["serve", "--mcp", "--stdio", "--db", "/path/to/database.lancedb"]
+      "args": ["mcp", "--stdio", "--db", "/path/to/database.lancedb"]
     }
   }
 }
@@ -108,13 +115,8 @@ After restarting Claude Desktop, you can ask Claude to search your documents, ad
   - `document` (optional): Document title/ID to pre-load (can repeat)
   - Best for aggregation, computation, and multi-document analysis
 
-## Running with Other Services
+## Continuous ingestion
 
-Combine MCP with file monitoring:
-
-```bash
-# MCP + file monitoring
-haiku-rag serve --mcp --monitor
-```
-
-See [Server Mode](server.md) for details on file monitoring.
+For continuous document ingestion (filesystem watch, S3 polling, HTTP
+sources, a job queue with retries), run [`haiku-ingester`](ingester.md)
+as a separate process against the same LanceDB.

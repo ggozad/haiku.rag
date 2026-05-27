@@ -49,23 +49,36 @@ docker run -p 8001:8001 \
   haiku-rag
 ```
 
-To enable file monitoring, also mount a documents directory:
+For continuous ingestion of a watched directory, run `haiku-ingester` in a
+separate container against the same data volume:
 
 ```bash
-docker run -p 8001:8001 \
+docker run \
   -v /path/to/haiku.rag.yaml:/app/haiku.rag.yaml \
   -v /path/to/data:/data \
   -v /path/to/docs:/docs \
-  haiku-rag haiku-rag serve --mcp --monitor
+  -p 8765:8765 \
+  haiku-rag haiku-ingester --config /app/haiku.rag.yaml serve
 ```
 
-Your `haiku.rag.yaml` must reference the **container path** for monitoring:
+Configure the watched directory in `haiku.rag.yaml` using the **container
+path**:
 
 ```yaml
-monitor:
-  directories:
-    - /docs  # Container path, not host path
+ingester:
+  queue:
+    path: /data/ingester.db   # persist queue in the data volume
+  sources:
+    - type: fs
+      id: docs
+      root: /docs             # container path, not host path
+      delete_orphans: true
 ```
+
+The MCP server running in the first container must be started with
+`--read-only` when an ingester is writing to the same database — LanceDB
+allows one writer and N readers per URI. See
+`examples/docker/docker-compose.yml` for a working two-service setup.
 
 For API keys (OpenAI, Anthropic, etc.), pass them as environment variables:
 

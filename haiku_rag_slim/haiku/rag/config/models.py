@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -55,23 +55,6 @@ class StorageConfig(BaseModel):
     data_dir: Path = Field(default_factory=get_default_data_dir)
     auto_vacuum: bool = True
     vacuum_retention_seconds: int = 86400
-
-
-class S3MonitorEntry(BaseModel):
-    uri: str
-    storage_options: dict[str, str] = Field(default_factory=dict)
-    poll_interval: int = 300
-    ignore_patterns: list[str] = []
-    include_patterns: list[str] = []
-    delete_orphans: bool = False
-
-
-class MonitorConfig(BaseModel):
-    directories: list[Path] = []
-    ignore_patterns: list[str] = []
-    include_patterns: list[str] = []
-    delete_orphans: bool = False
-    s3: list[S3MonitorEntry] = []
 
 
 class LanceDBConfig(BaseModel):
@@ -174,6 +157,16 @@ class ProcessingConfig(BaseModel):
     chunking_merge_peers: bool = True
     chunking_use_markdown_tables: bool = False
     conversion_options: ConversionOptions = Field(default_factory=ConversionOptions)
+    split_pages: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "If >0, PDFs are split into N-page slices, each converted "
+            "independently, and merged via DoclingDocument.concatenate. 0 "
+            "disables splitting (single-pass conversion). Recommended: 10 "
+            "for memory-bound or large (>100 page) PDFs."
+        ),
+    )
     pictures: PicturesMode = "image"
     """How embedded pictures are handled at ingest.
 
@@ -217,8 +210,21 @@ class OllamaConfig(BaseModel):
 
 
 class DoclingServeConfig(BaseModel):
-    base_url: str = "http://localhost:5001"
+    """docling-serve endpoints. Accepts a single URL or a list — when a list
+    is given, the client round-robins jobs across the URLs. Each job's
+    submit/poll/result trio stays on the same instance (task IDs are
+    instance-local). The round-robin counter is per-process; for true load
+    balancing or failover, put an LB in front."""
+
+    base_url: str | list[str] = "http://localhost:5001"
     api_key: str = ""
+
+    @property
+    def base_urls(self) -> list[str]:
+        """Always-a-list view of base_url. Empty input falls back to localhost."""
+        if isinstance(self.base_url, str):
+            return [self.base_url]
+        return list(self.base_url) or ["http://localhost:5001"]
 
 
 class ProvidersConfig(BaseModel):
@@ -249,10 +255,163 @@ class EvaluationsConfig(BaseModel):
     )
 
 
+class QueueConfig(BaseModel):
+    """SQLite queue for the production ingester."""
+
+    path: Path = Field(
+        default_factory=lambda: get_default_data_dir() / "ingester.db",
+        description="Location of the ingester's SQLite queue file.",
+    )
+
+
+class RetryPolicyConfig(BaseModel):
+    """Per-job retry policy. Per-source override is allowed under
+    SourceConfig.retry so a flaky source doesn't drag the rest of the queue."""
+
+    max_attempts: int = 5
+    base_delay_s: float = 2.0
+    max_delay_s: float = 300.0
+    jitter: float = Field(default=0.25, ge=0.0, le=1.0)
+
+
+class CircuitBreakerConfig(BaseModel):
+    """Per-source breaker over discover() failures. Stops the ingester from
+    hammering a source that's persistently failing."""
+
+    failure_threshold: int = Field(
+        default=5, description="Consecutive failures before the breaker opens."
+    )
+    cooldown_s: float = Field(
+        default=600.0,
+        description="How long the breaker stays open before allowing a probe.",
+    )
+
+
+class WorkerConfig(BaseModel):
+    worker_count: int = Field(
+        default=4,
+        description="Number of async worker tasks pulling from the queue. "
+        "Each worker holds at most one job at a time, so worker_count is "
+        "also the maximum number of concurrent in-flight jobs. Size to the "
+        "slowest shared downstream — typically the docling-serve fleet or "
+        "the embedding endpoint's request budget.",
+    )
+    poll_idle_interval_s: float = Field(
+        default=1.0,
+        description="How long an idle worker waits between empty claim_next "
+        "polls. Lower = lower latency picking up new jobs, higher = less "
+        "queue churn when the queue is usually empty.",
+    )
+    claim_timeout_s: int = Field(
+        default=1800,
+        description="A `claimed` job whose claimed_at is older than this is "
+        "presumed dead and reset to `queued` by the reaper. MUST exceed your "
+        "longest legitimate job duration — set it too short and the reaper "
+        "resurrects jobs still being processed, causing two workers to run "
+        "the same URI. Default (30min) covers typical docling conversions; "
+        "raise it if you ingest very large PDFs through docling-local.",
+    )
+    reaper_interval_s: int = Field(
+        default=60,
+        description="How often the reaper scans for stale claims. Shorter "
+        "lowers the worst-case recovery time after a worker crash.",
+    )
+    retry: RetryPolicyConfig = Field(default_factory=RetryPolicyConfig)
+    shutdown_grace_s: float = Field(
+        default=60.0,
+        description="On SIGINT/SIGTERM, how long to wait for in-flight jobs to "
+        "finish before forcing cancellation. Cancelled jobs stay 'claimed' in "
+        "the queue; the reaper resets them after claim_timeout_s.",
+    )
+
+
+class APIConfig(BaseModel):
+    """HTTP control plane settings for the ingester."""
+
+    enabled: bool = True
+    host: str = "127.0.0.1"
+    port: int = 8765
+    auth_token: str | None = None
+
+
+class _SourceBase(BaseModel):
+    """Fields common to every source. `id` is optional; if omitted the source
+    derives a deterministic id from its target (root path / bucket+prefix /
+    user-supplied tag)."""
+
+    id: str | None = None
+    delete_orphans: bool = True
+    poll_interval_s: float = Field(
+        default=300.0,
+        description="How often discover() runs. FS additionally uses watchfiles "
+        "for push events between sweeps.",
+    )
+    retry: RetryPolicyConfig | None = Field(
+        default=None,
+        description="Override the worker's default retry policy for jobs from "
+        "this source. None = inherit from WorkerConfig.retry.",
+    )
+    circuit_breaker: CircuitBreakerConfig = Field(default_factory=CircuitBreakerConfig)
+
+
+class FSSourceConfig(_SourceBase):
+    type: Literal["fs"]
+    root: Path
+    ignore_patterns: list[str] = []
+    include_patterns: list[str] = []
+
+
+class HTTPSourceConfig(_SourceBase):
+    type: Literal["http"]
+    # HTTP sources have no natural key to derive an id from (a list of urls
+    # has no canonical representation), so require one.
+    id: str
+    urls: list[str] = []
+    headers: dict[str, str] = Field(default_factory=dict)
+
+
+class S3SourceConfig(_SourceBase):
+    type: Literal["s3"]
+    uri: str
+    storage_options: dict[str, str] = Field(default_factory=dict)
+    ignore_patterns: list[str] = []
+    include_patterns: list[str] = []
+
+
+class WebDAVSourceConfig(_SourceBase):
+    """A WebDAV collection (Nextcloud, ownCloud, Apache mod_dav, etc.). Files
+    are discovered via PROPFIND on `base_url`; fetch is plain HTTP GET."""
+
+    type: Literal["webdav"]
+    # base_url can be deep + opaque (long URL paths, credentials embedded);
+    # require an explicit short id for the queue and logs.
+    id: str
+    base_url: str
+    username: str | None = None
+    password: str | None = None
+    headers: dict[str, str] = Field(default_factory=dict)
+    ignore_patterns: list[str] = []
+    include_patterns: list[str] = []
+
+
+SourceConfig = Annotated[
+    FSSourceConfig | HTTPSourceConfig | S3SourceConfig | WebDAVSourceConfig,
+    Field(discriminator="type"),
+]
+
+
+class IngesterConfig(BaseModel):
+    """Production ingester settings."""
+
+    sources: list[SourceConfig] = []
+    queue: QueueConfig = Field(default_factory=QueueConfig)
+    workers: WorkerConfig = Field(default_factory=WorkerConfig)
+    api: APIConfig = Field(default_factory=APIConfig)
+
+
 class AppConfig(BaseModel):
     environment: str = "production"
     storage: StorageConfig = Field(default_factory=StorageConfig)
-    monitor: MonitorConfig = Field(default_factory=MonitorConfig)
     lancedb: LanceDBConfig = Field(default_factory=LanceDBConfig)
     embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
     reranking: RerankingConfig = Field(default_factory=RerankingConfig)
@@ -262,6 +421,7 @@ class AppConfig(BaseModel):
     search: SearchConfig = Field(default_factory=SearchConfig)
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     prompts: PromptsConfig = Field(default_factory=PromptsConfig)
+    ingester: IngesterConfig = Field(default_factory=IngesterConfig)
     evaluations: "EvaluationsConfig" = Field(
         default_factory=lambda: EvaluationsConfig()
     )

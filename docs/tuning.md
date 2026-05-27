@@ -2,6 +2,8 @@
 
 How to adjust haiku.rag's pipeline for better retrieval and answer quality. For individual setting definitions and defaults, see [Configuration](configuration/index.md).
 
+For ingester-side tuning (worker count, claim timeout, retry policy, backpressure, circuit breakers), see [Ingester → Workers and retry](ingester.md#workers-and-retry).
+
 ## Pipeline Overview
 
 Documents flow through: **chunking → embedding → hybrid search (vector + FTS) → reranking → context expansion → LLM generation**. Retrieval tuning (chunking through reranking) is the highest-leverage stage. If the LLM never sees the right chunks, no prompt or model change will help.

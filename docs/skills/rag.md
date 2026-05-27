@@ -144,7 +144,7 @@ See the [Web application](../apps.md) reference implementation for the full Star
 To call the skill from Claude Desktop (or any MCP client), run the MCP server:
 
 ```bash
-haiku-rag serve --mcp --stdio
+haiku-rag mcp --stdio
 ```
 
 The exposed `ask_question` tool runs this skill. See [MCP](../mcp.md) for the configuration block.

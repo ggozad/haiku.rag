@@ -60,7 +60,7 @@ class DoclingServeConverter(DocumentConverter):
         """
         self.config = config
         self.client = DoclingServeClient(
-            base_url=config.providers.docling_serve.base_url,
+            base_urls=config.providers.docling_serve.base_urls,
             api_key=config.providers.docling_serve.api_key,
         )
 

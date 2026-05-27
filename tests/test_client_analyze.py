@@ -89,8 +89,10 @@ class TestClientAnalysisIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
-    async def test_analyze_search_and_extract(self, allow_model_requests, temp_db_path):
-        pdf_path = Path("tests/data/doclaynet.pdf")
+    async def test_analyze_search_and_extract(
+        self, allow_model_requests, temp_db_path, doclaynet_first_page_pdf
+    ):
+        pdf_path = doclaynet_first_page_pdf
         config = AppConfig()
         config.processing.conversion_options.do_ocr = False
 
@@ -122,6 +124,11 @@ class TestClientAnalysisIntegration:
                 for label in expected_labels
                 if label in answer_lower or label.replace("-", " ") in answer_lower
             ]
-            assert len(found_labels) >= 6, (
-                f"Expected at least 6 labels, found {len(found_labels)}: {found_labels}"
+            # Page 0 of the DocLayNet paper (title + abstract) names fewer
+            # element types than the older single-page sample did. The
+            # assertion still checks that analyze() pulled real content out
+            # of the doc; ≥3 of the canonical 11 labels is a reasonable
+            # floor for a single-page extract.
+            assert len(found_labels) >= 3, (
+                f"Expected at least 3 labels, found {len(found_labels)}: {found_labels}"
             )

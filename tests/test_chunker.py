@@ -443,7 +443,7 @@ class TestDoclingServeChunker:
         converter = get_converter(Config)
         doc = await converter.convert_text("# Test", name="test.md")
 
-        with pytest.raises(ValueError, match="Could not connect to docling-serve"):
+        with pytest.raises(httpx.ConnectError):
             await chunker.chunk(doc)
 
     @pytest.mark.asyncio
@@ -459,13 +459,15 @@ class TestDoclingServeChunker:
         converter = get_converter(Config)
         doc = await converter.convert_text("# Test", name="test.md")
 
-        with pytest.raises(ValueError, match="timed out"):
+        with pytest.raises(httpx.TimeoutException):
             await chunker.chunk(doc)
 
     @pytest.mark.asyncio
     @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_auth_error(self, mock_client_class, chunker):
-        """Test handling of authentication errors."""
+        """Auth failures surface as httpx.HTTPStatusError(401) so the
+        ingester's pipeline classifier can route them to PermanentError —
+        retrying a bad token is wasted work."""
         import httpx
 
         mock_request = Mock()
@@ -482,8 +484,9 @@ class TestDoclingServeChunker:
         converter = get_converter(Config)
         doc = await converter.convert_text("# Test", name="test.md")
 
-        with pytest.raises(ValueError, match="Authentication failed"):
+        with pytest.raises(httpx.HTTPStatusError) as exc_info:
             await chunker.chunk(doc)
+        assert exc_info.value.response.status_code == 401
 
     @pytest.mark.asyncio
     @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
@@ -610,22 +613,20 @@ This is content.
 
 @pytest.mark.vcr()
 @pytest.mark.asyncio
-async def test_local_and_serve_chunkers_produce_same_output():
+async def test_local_and_serve_chunkers_produce_same_output(doclaynet_first_page_pdf):
     """Test that local and serve chunkers produce identical output for the same document.
 
     Note: Labels are resolved from the DoclingDocument since docling-serve API
     only returns ref strings, not labels. See:
     https://github.com/docling-project/docling-serve/issues/448
     """
-    from pathlib import Path
-
     from haiku.rag.chunkers.docling_local import DoclingLocalChunker
     from haiku.rag.chunkers.docling_serve import DoclingServeChunker
     from haiku.rag.converters.docling_serve import DoclingServeConverter
 
     # Use docling-serve to convert the PDF (ensures same conversion for both chunkers)
     converter = DoclingServeConverter(Config)
-    pdf_path = Path("tests/data/doclaynet.pdf")
+    pdf_path = doclaynet_first_page_pdf
     doc = await converter.convert_file(pdf_path)
 
     # Create both chunkers with same config
@@ -681,7 +682,7 @@ async def test_local_and_serve_chunkers_produce_same_output():
 
 @pytest.mark.vcr()
 @pytest.mark.asyncio
-async def test_serve_chunker_accepts_picture_laden_docling():
+async def test_serve_chunker_accepts_picture_laden_docling(doclaynet_first_page_pdf):
     """Round-trip a picture-bearing PDF through docling-serve's chunker.
 
     Catches the schema-shape failure we hit in production: when the
@@ -691,8 +692,6 @@ async def test_serve_chunker_accepts_picture_laden_docling():
     the docling-serve container's docling-core and the local one would
     surface as ``Input document document.json is not valid``.
     """
-    from pathlib import Path
-
     from haiku.rag.chunkers.docling_serve import DoclingServeChunker
     from haiku.rag.converters.docling_serve import DoclingServeConverter
 
@@ -702,7 +701,7 @@ async def test_serve_chunker_accepts_picture_laden_docling():
     config.processing.chunker_type = "hybrid"
 
     converter = DoclingServeConverter(config)
-    pdf_path = Path("tests/data/doclaynet.pdf")
+    pdf_path = doclaynet_first_page_pdf
     doc = await converter.convert_file(pdf_path)
 
     # Sanity: at least one picture has bytes inlined as a data URI — that's

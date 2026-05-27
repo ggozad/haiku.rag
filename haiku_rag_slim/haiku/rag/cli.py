@@ -134,18 +134,10 @@ def main(
     # Configure logging for CLI context
     configure_cli_logging()
 
-    # Configure logfire (only sends data if token is present)
-    try:
-        import logfire
+    from haiku.rag.telemetry import configure as configure_telemetry
 
-        is_production = get_config().environment != "development"
-        logfire.configure(
-            send_to_logfire="if-token-present",
-            console=False if is_production else None,
-        )
-        logfire.instrument_pydantic_ai()
-    except Exception:  # pragma: no cover
-        pass
+    is_production = get_config().environment != "development"
+    configure_telemetry(console=False if is_production else None)
 
     if get_config().environment != "development":
         # Suppress warnings in production
@@ -671,59 +663,38 @@ def chat(  # pragma: no cover
 
 
 @_cli.command(
-    "serve",
-    help="Start haiku.rag server. Use --monitor and/or --mcp to enable services.",
+    "mcp",
+    help="Run the MCP server. For continuous ingestion, use haiku-ingester serve.",
 )
-def serve(
+def mcp(
     db: Path | None = typer.Option(
         None,
         "--db",
         help="Path to the LanceDB database file",
     ),
-    monitor: bool = typer.Option(
-        False,
-        "--monitor",
-        help="Enable file monitoring",
-    ),
-    mcp: bool = typer.Option(
-        False,
-        "--mcp",
-        help="Enable MCP server",
-    ),
     stdio: bool = typer.Option(
         False,
         "--stdio",
-        help="Run MCP server on stdio Transport (requires --mcp)",
+        help="Run MCP server on stdio Transport",
     ),
-    mcp_port: int = typer.Option(
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        help="Host to bind MCP server to (use 0.0.0.0 in containers; ignored with --stdio)",
+    ),
+    port: int = typer.Option(
         8001,
-        "--mcp-port",
+        "--port",
         help="Port to bind MCP server to (ignored with --stdio)",
     ),
 ) -> None:
-    """Start the server with selected services."""
-    # Require at least one service flag
-    if not (monitor or mcp):
-        typer.echo(
-            "Error: At least one service flag (--monitor or --mcp) must be specified"
-        )
-        raise typer.Exit(1)
-
-    if stdio and not mcp:
-        typer.echo("Error: --stdio requires --mcp")
-        raise typer.Exit(1)
-
+    """Run the MCP server."""
     app = create_app(db)  # pragma: no cover
 
     transport = "stdio" if stdio else None  # pragma: no cover
 
     asyncio.run(  # pragma: no cover
-        app.serve(
-            enable_monitor=monitor,
-            enable_mcp=mcp,
-            mcp_transport=transport,
-            mcp_port=mcp_port,
-        )
+        app.run_mcp(transport=transport, host=host, port=port)
     )
 
 

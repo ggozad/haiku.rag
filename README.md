@@ -22,7 +22,7 @@ Agentic RAG built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.p
 - **CLI & Python API** — Full functionality from command line or code
 - **MCP server** — Expose as tools for AI assistants (Claude Desktop, etc.)
 - **Visual grounding** — View chunks highlighted on original page images
-- **File monitoring** — Watch directories and auto-index on changes
+- **Production ingester** — Long-lived `haiku-ingester` service with persistent SQLite queue, async worker pool with retries and a dead-letter queue, FS / HTTP / S3 / WebDAV source adapters, FastAPI control plane, and a browser dashboard for operators. See [docs/ingester.md](docs/ingester.md).
 - **Time travel** — Query the database at any historical point with `--before`
 - **Inspector** — TUI for browsing documents, chunks, and search results
 
@@ -60,7 +60,7 @@ haiku-rag add-src paper.pdf
 haiku-rag search "attention mechanism"
 
 # Ask questions with citations
-haiku-rag ask "What datasets were used for evaluation?" --cite
+haiku-rag ask "What datasets were used for evaluation?"
 
 # Analyze — complex analytical tasks via code execution
 haiku-rag analyze "How many documents mention transformers?"
@@ -68,8 +68,8 @@ haiku-rag analyze "How many documents mention transformers?"
 # Interactive chat — multi-turn conversations with memory
 haiku-rag chat
 
-# Watch a directory for changes
-haiku-rag serve --monitor
+# Continuously ingest from configured sources (FS, HTTP, S3, WebDAV)
+haiku-ingester serve
 ```
 
 See [Configuration](https://ggozad.github.io/haiku.rag/configuration/) for customization options.
@@ -103,7 +103,7 @@ For details on the skills the client wraps, see the [Skills docs](https://ggozad
 Use with AI assistants like Claude Desktop:
 
 ```bash
-haiku-rag serve --mcp --stdio
+haiku-rag mcp --stdio
 ```
 
 Add to your Claude Desktop configuration:
@@ -113,7 +113,7 @@ Add to your Claude Desktop configuration:
   "mcpServers": {
     "haiku-rag": {
       "command": "haiku-rag",
-      "args": ["serve", "--mcp", "--stdio"]
+      "args": ["mcp", "--stdio"]
     }
   }
 }
@@ -125,22 +125,24 @@ Provides tools for document management, search, QA, and analysis directly in you
 
 See the [examples directory](examples/) for working examples:
 
-- **[Docker Setup](examples/docker/)** - Complete Docker deployment with file monitoring and MCP server
+- **[Docker Setup](examples/docker/)** - Complete Docker deployment with continuous ingestion (`haiku-ingester`) and MCP server
 - **[Web Application](app/)** - Full-stack conversational RAG with CopilotKit frontend
 
 ## Documentation
 
 Full documentation at: https://ggozad.github.io/haiku.rag/
 
-- [Installation](https://ggozad.github.io/haiku.rag/installation/) - Provider setup
-- [Configuration](https://ggozad.github.io/haiku.rag/configuration/) - YAML configuration
+- [Quickstart](https://ggozad.github.io/haiku.rag/tutorial/) - Provider setup and first ingestion
+- [Installation](https://ggozad.github.io/haiku.rag/installation/) - Packages and extras
+- [Configuration](https://ggozad.github.io/haiku.rag/configuration/) - YAML reference
 - [CLI](https://ggozad.github.io/haiku.rag/cli/) - Command reference
 - [Python API](https://ggozad.github.io/haiku.rag/python/) - Complete API docs
 - [Skills](https://ggozad.github.io/haiku.rag/skills/) - The RAG and analysis skills the client wraps
-- [Analysis skill](https://ggozad.github.io/haiku.rag/skills/analysis/) - Complex analytical tasks via code execution
-- [Applications](https://ggozad.github.io/haiku.rag/apps/) - Chat TUI, web app, and inspector
-- [Server](https://ggozad.github.io/haiku.rag/server/) - File monitoring and MCP
+- [Tuning](https://ggozad.github.io/haiku.rag/tuning/) - Retrieval and answer-quality tuning
+- [Ingester](https://ggozad.github.io/haiku.rag/ingester/) - Production ingester for continuous indexing from FS, HTTP, S3, and WebDAV
 - [MCP](https://ggozad.github.io/haiku.rag/mcp/) - Model Context Protocol integration
+- [Remote processing](https://ggozad.github.io/haiku.rag/remote-processing/) - Offload conversion to docling-serve
+- [Applications](https://ggozad.github.io/haiku.rag/apps/) - Chat TUI, web app, and inspector
 - [Benchmarks](https://ggozad.github.io/haiku.rag/benchmarks/) - Performance benchmarks
 - [Changelog](https://ggozad.github.io/haiku.rag/changelog/) - Version history
 

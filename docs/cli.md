@@ -57,7 +57,7 @@ From directory (recursively adds all supported files):
 haiku-rag add-src /path/to/documents/
 ```
 
-From an S3 bucket (requires the `[s3]` extra, see [Server Mode → S3 / Object Storage Monitoring](server.md#s3-object-storage-monitoring)):
+From an S3 bucket (requires the `[s3]` extra, see the [ingester docs](ingester.md) for continuous S3 polling):
 ```bash
 # AWS S3 with credentials in the default chain (env vars, IAM role, AWS profile)
 haiku-rag add-src s3://my-bucket/path/to/document.pdf
@@ -69,7 +69,7 @@ AWS_ACCESS_KEY_ID=key AWS_SECRET_ACCESS_KEY=secret AWS_REGION=us-east-1 \
 ```
 
 !!! note
-    When adding a directory, the same content filters configured for [file monitoring](configuration/processing.md#filtering-monitored-files) are applied. This means `ignore_patterns` and `include_patterns` from your configuration will be used to filter which files are added.
+    When adding a directory, the converter's supported extensions filter applies. For pattern-based ignore/include filtering (e.g. `**/.git/**`), use the [ingester](ingester.md) with a filesystem source.
 
 !!! note
     As you add documents to `haiku.rag` the database keeps growing. By default, LanceDB supports versioning
@@ -397,30 +397,28 @@ haiku-rag vacuum
 
 **Automatic Cleanup:** Vacuum runs automatically in the background after document operations. By default, it removes versions older than 1 day (configurable via `storage.vacuum_retention_seconds`), preserving recent versions for concurrent connections. Manual vacuum can be useful for cleanup after bulk operations or to free disk space immediately.
 
-## Server
+## MCP Server
 
-Start services (requires at least one flag):
 ```bash
-# MCP server only (HTTP transport)
-haiku-rag serve --mcp
+# HTTP transport on port 8001
+haiku-rag mcp
 
-# MCP server (stdio transport)
-haiku-rag serve --mcp --stdio
+# stdio transport (for Claude Desktop)
+haiku-rag mcp --stdio
 
-# File monitoring only
-haiku-rag serve --monitor
+# Custom port
+haiku-rag mcp --port 9000
 
-# Both services
-haiku-rag serve --monitor --mcp
+# Bind to all interfaces (containers, trusted LAN)
+haiku-rag mcp --host 0.0.0.0
 
-# Custom MCP port
-haiku-rag serve --mcp --mcp-port 9000
-
-# Read-only mode (excludes write MCP tools, disables monitor)
-haiku-rag --read-only serve --mcp
+# Read-only mode (no write tools)
+haiku-rag --read-only mcp
 ```
 
-See [Server Mode](server.md) for details on available services.
+See [MCP](mcp.md) for details. For continuous document ingestion
+(filesystem watch, S3 polling, HTTP / WebDAV sources), use the
+[ingester](ingester.md).
 
 ## Settings
 

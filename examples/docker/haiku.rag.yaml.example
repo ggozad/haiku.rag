@@ -6,23 +6,39 @@ environment: production
 storage:
   data_dir: /data
 
-monitor:
-  directories:
-    - /docs
+ingester:
+  # Queue lives next to the LanceDB so both persist in the data volume.
+  queue:
+    path: /data/ingester.db
+  workers:
+    # Match the docling-serve fleet size below — each instance processes
+    # one task at a time, so more workers would just queue submissions
+    # inside docling-serve.
+    worker_count: 2
+  api:
+    # Bind to all interfaces inside the container so docker port-mapping works.
+    host: 0.0.0.0
+    # Non-loopback bind: set a bearer token. Source from an env var so the
+    # token doesn't sit in this file checked into ops repos.
+    auth_token: ${INGESTER_TOKEN}
+  sources:
+    - type: fs
+      id: docs
+      root: /docs
+      delete_orphans: true
 
 # Remote document processing with docling-serve
 processing:
   converter: docling-serve
   chunker: docling-serve
-  chunk_size: 256
-  chunker_type: hybrid
-  chunking_tokenizer: "Qwen/Qwen3-Embedding-0.6B"
-  chunking_merge_peers: true
-  chunking_use_markdown_tables: false
 
 providers:
   docling_serve:
-    base_url: http://docling-serve:5001
+    # Two replicas; ingester round-robins jobs across them, each call's
+    # submit / poll / result pinned to one instance.
+    base_url:
+      - http://docling-serve-1:5001
+      - http://docling-serve-2:5001
     api_key: ""
   ollama:
     base_url: http://host.docker.internal:11434

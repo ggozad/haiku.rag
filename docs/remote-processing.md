@@ -64,156 +64,62 @@ providers:
     api_key: ""  # Optional API key for authentication
 ```
 
-## Features
+For converter / chunker config options (chunking strategy, tokenizer,
+OCR, table handling, picture description), see
+[Document Processing](configuration/processing.md). The configuration is
+identical between `docling-local` and `docling-serve` modes — this page
+covers only what's specific to running docling-serve as a separate
+service.
 
-### Remote Document Conversion
+## VLM picture description with docling-serve
 
-When `converter: docling-serve` is configured, documents are sent to the docling-serve API for conversion:
+When `processing.pictures = "description"` and `converter: docling-serve`,
+the VLM API calls are made by the docling-serve container, not by
+haiku.rag. Two deployment caveats:
 
-```python
-from haiku.rag.client import HaikuRAG
+### Enable remote services
 
-async with HaikuRAG() as client:
-    # PDF is processed by docling-serve
-    doc = await client.create_document_from_source("complex.pdf")
-```
-
-### Remote Chunking
-
-When `chunker: docling-serve` is configured, chunking is performed remotely:
-
-```yaml
-processing:
-  chunker: docling-serve
-  chunker_type: hybrid              # or hierarchical
-  chunk_size: 256
-  chunking_tokenizer: "Qwen/Qwen3-Embedding-0.6B"
-  chunking_merge_peers: true
-  chunking_use_markdown_tables: false
-```
-
-## Advanced Configuration
-
-### Custom Tokenizers
-
-You can use any HuggingFace tokenizer model:
-
-```yaml
-processing:
-  chunking_tokenizer: "bert-base-uncased"  # Or any HF model
-```
-
-### Chunking Strategies
-
-**Hybrid Chunking** (default):
-
-- Best for most documents
-- Preserves semantic boundaries
-- Structure-aware splitting
-
-**Hierarchical Chunking**:
-
-- Maintains document hierarchy
-- Better for deeply nested documents
-- Preserves parent-child relationships
-
-```yaml
-processing:
-  chunker_type: hierarchical
-```
-
-### Table Handling
-
-Control how tables are represented:
-
-```yaml
-processing:
-  chunking_use_markdown_tables: true  # Preserve table structure
-```
-
-- `false` (default): Tables as narrative text
-- `true`: Tables as markdown format
-
-## HTML Image Fetching
-
-docling-serve does **not** fetch external `<img src="https://...">` URLs in HTML inputs. The `ConvertDocumentsOptions` API exposes no equivalent of docling-local's `HTMLBackendOptions.fetch_images` / `enable_remote_fetch`, and the server-side `DoclingConverterManager` registers `format_options` only for PDF and IMAGE. HTML falls through to docling's defaults (`fetch_images=False`).
-
-Consequence: ingesting HTML with external image references through docling-serve produces picture items with `picture_data=NULL`. The same input through docling-local fetches the bytes (subject to the SSRF / size / timeout guards documented in [Configuration → External image fetching](configuration/processing.md#external-image-fetching)).
-
-To preserve image bytes when ingesting HTML or Markdown that references remote images, use `converter: docling-local`. The `processing.conversion_options.fetch_remote_images` flag has no effect on docling-serve and the `source_uri` kwarg on `HaikuRAG.convert()` is accepted but ignored on this path.
-
-## VLM Picture Description with docling-serve
-
-When using VLM picture description with docling-serve, the VLM API calls are made by the docling-serve container, not by haiku.rag. This requires additional configuration.
-
-### Enable Remote Services
-
-docling-serve blocks external API calls by default. To enable VLM picture description, start docling-serve with:
+docling-serve blocks outbound calls by default. Enable them by setting
+`DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true` on the container:
 
 ```bash
-docker run -p 5001:5001 -e DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true quay.io/docling-project/docling-serve
+docker run -p 5001:5001 \
+  -e DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true \
+  quay.io/docling-project/docling-serve
 ```
 
-### Docker Networking
+### Reach host services from inside the container
 
-When docling-serve runs in Docker and your VLM (e.g., Ollama) runs on the host, `localhost` inside the container refers to the container itself, not your host machine.
+If your VLM (e.g. Ollama) runs on the host while docling-serve runs in
+Docker, set the VLM's `base_url` in
+`processing.conversion_options.picture_description.model` to
+`http://host.docker.internal:11434` rather than `localhost`. See
+[Document Processing → Picture Handling](configuration/processing.md#picture-handling)
+for the full config snippet.
 
-Use `host.docker.internal` to reach host services from within Docker:
+## Operational notes
 
-```yaml
-# haiku.rag.yaml
-processing:
-  converter: docling-serve
-  chunker: docling-serve
-  conversion_options:
-    picture_description:
-      enabled: true
-      model:
-        provider: ollama
-        name: ministral-3
-        base_url: http://host.docker.internal:11434  # NOT localhost!
-```
+Long-running docling-serve containers see CPU memory grow monotonically
+([docling-serve #366](https://github.com/docling-project/docling-serve/issues/366),
+[#474](https://github.com/docling-project/docling-serve/issues/474)). The
+underlying parser leaks are in core docling
+([#2209](https://github.com/docling-project/docling/issues/2209),
+[#1343](https://github.com/docling-project/docling/issues/1343)) and affect
+docling-local too.
 
-### Complete Example
+Recommended deployment shape:
 
-1. Start Ollama with a vision model on your host:
-
-```bash
-ollama pull ministral-3
-ollama serve
-```
-
-2. Start docling-serve with remote services enabled:
-
-```bash
-docker run -p 5001:5001 -e DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true quay.io/docling-project/docling-serve
-```
-
-3. Configure haiku.rag:
-
-```yaml
-# haiku.rag.yaml
-processing:
-  converter: docling-serve
-  chunker: docling-serve
-  conversion_options:
-    picture_description:
-      enabled: true
-      model:
-        provider: ollama
-        name: ministral-3
-        base_url: http://host.docker.internal:11434
-
-providers:
-  docling_serve:
-    base_url: http://localhost:5001
-```
-
-4. Add a document:
-
-```bash
-haiku-rag add-src document.pdf
-```
+- Set `mem_limit` on the docling-serve container (or `resources.limits.memory`
+  in Kubernetes) at a value comfortably above your largest expected job.
+- Combine with `restart: unless-stopped` so the runtime restarts when the
+  kernel OOM-kills.
+- Run multiple docling-serve replicas behind haiku.rag's round-robin
+  `providers.docling_serve.base_url` list (see
+  [Document Processing](configuration/processing.md)). A restart of one
+  replica doesn't stop ingest.
+- In haiku.rag, set `processing.split_pages` for large-PDF workloads so each
+  slice is an independent docling-serve task and the per-task working set
+  stays bounded.
 
 ## Resources
 

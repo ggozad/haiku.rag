@@ -87,7 +87,7 @@ See the [Web application](../apps.md) reference implementation.
 To use a skill from Claude Desktop or another MCP-aware client, run the MCP server:
 
 ```bash
-haiku-rag serve --mcp --stdio
+haiku-rag mcp --stdio
 ```
 
 The server exposes the skill tools (search, ask, analyze) over MCP. See [MCP](../mcp.md).

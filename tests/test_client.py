@@ -209,9 +209,9 @@ async def test_client_create_document_from_source(temp_db_path):
             assert doc.id is not None
             assert doc.content == test_content
             assert doc.uri == temp_path.as_uri()
-            assert "contentType" in doc.metadata
+            assert "content_type" in doc.metadata
             assert "md5" in doc.metadata
-            assert doc.metadata["contentType"] == "text/plain"
+            assert doc.metadata["content_type"] == "text/plain"
 
             # Test create_document_from_source with string path
             doc2 = await client.create_document_from_source(source=str(temp_path))
@@ -220,7 +220,7 @@ async def test_client_create_document_from_source(temp_db_path):
             assert doc2.id is not None
             assert doc2.content == test_content
             assert doc2.uri == temp_path.as_uri()
-            assert "contentType" in doc2.metadata
+            assert "content_type" in doc2.metadata
             assert "md5" in doc2.metadata
 
 
@@ -374,62 +374,13 @@ async def test_client_create_document_from_directory(temp_db_path):
                 assert doc.id is not None
                 assert doc.uri is not None
                 assert "md5" in doc.metadata
-                assert "contentType" in doc.metadata
+                assert "content_type" in doc.metadata
 
             uris = [doc.uri for doc in result if doc.uri]
             assert any("doc1.txt" in uri for uri in uris)
             assert any("doc2.md" in uri for uri in uris)
             assert any("doc3.py" in uri for uri in uris)
             assert not any("unsupported.xyz" in uri for uri in uris)
-
-
-@pytest.mark.vcr()
-async def test_client_create_document_from_directory_with_filters(
-    monkeypatch, temp_db_path
-):
-    """Test creating documents from a directory with ignore and include patterns."""
-    # Mock config to have ignore and include patterns
-    monkeypatch.setattr(
-        "haiku.rag.client.Config.monitor.ignore_patterns", ["**/ignore_me/**", "*.log"]
-    )
-    monkeypatch.setattr(
-        "haiku.rag.client.Config.monitor.include_patterns", ["**/include/**/*.txt"]
-    )
-
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            test_dir = Path(temp_dir) / "test_docs"
-            test_dir.mkdir()
-
-            # Create files in include directory - should be included
-            include_dir = test_dir / "include"
-            include_dir.mkdir()
-            (include_dir / "doc1.txt").write_text("Content of doc1")
-            (include_dir / "doc2.txt").write_text("Content of doc2")
-
-            # Create files outside include directory - should be excluded by include pattern
-            (test_dir / "doc3.txt").write_text("Content of doc3")
-
-            # Create files in ignore directory - should be excluded by ignore pattern
-            ignore_dir = test_dir / "ignore_me"
-            ignore_dir.mkdir()
-            (ignore_dir / "doc4.txt").write_text("Content of doc4")
-
-            # Create log file - should be excluded by ignore pattern
-            (test_dir / "debug.log").write_text("log content")
-
-            result = await client.create_document_from_source(test_dir)
-
-            assert isinstance(result, list)
-            # Should only include doc1.txt and doc2.txt from include directory
-            assert len(result) == 2
-
-            uris = [doc.uri for doc in result if doc.uri]
-            assert any("doc1.txt" in uri for uri in uris)
-            assert any("doc2.txt" in uri for uri in uris)
-            assert not any("doc3.txt" in uri for uri in uris)
-            assert not any("doc4.txt" in uri for uri in uris)
-            assert not any("debug.log" in uri for uri in uris)
 
 
 @pytest.mark.vcr()
@@ -453,9 +404,9 @@ async def test_client_create_document_from_url(temp_db_path):
             assert "test content" in doc.content
             assert doc.uri == "https://example.com/test.html"
             assert doc.metadata["source_type"] == "web"
-            assert "contentType" in doc.metadata
+            assert "content_type" in doc.metadata
             assert "md5" in doc.metadata
-            assert doc.metadata["contentType"] == "text/html"
+            assert doc.metadata["content_type"] == "text/html"
 
 
 @pytest.mark.vcr()
@@ -481,9 +432,9 @@ async def test_client_create_document_from_url_with_different_content_types(
             assert doc.id is not None
             assert "Test JSON" in doc.content
             assert doc.uri == "https://api.example.com/data.json"
-            assert "contentType" in doc.metadata
+            assert "content_type" in doc.metadata
             assert "md5" in doc.metadata
-            assert doc.metadata["contentType"] == "application/json"
+            assert doc.metadata["content_type"] == "application/json"
 
         # Test plain text content
         mock_text_response = AsyncMock()
@@ -500,9 +451,9 @@ async def test_client_create_document_from_url_with_different_content_types(
             assert doc.id is not None
             assert doc.content == "This is plain text content from a URL."
             assert doc.uri == "https://example.com/readme.txt"
-            assert "contentType" in doc.metadata
+            assert "content_type" in doc.metadata
             assert "md5" in doc.metadata
-            assert doc.metadata["contentType"] == "text/plain"
+            assert doc.metadata["content_type"] == "text/plain"
 
 
 @pytest.mark.vcr()
@@ -572,7 +523,7 @@ def test_get_extension_from_content_type_or_url():
 
 @pytest.mark.vcr()
 async def test_client_metadata_content_type_and_md5(temp_db_path):
-    """Test that contentType and md5 metadata are correctly set."""
+    """Test that content_type and md5 metadata are correctly set."""
     import hashlib
 
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -587,7 +538,7 @@ async def test_client_metadata_content_type_and_md5(temp_db_path):
             doc = await client.create_document_from_source(temp_path)
             assert isinstance(doc, Document)
 
-            assert doc.metadata["contentType"] == "text/plain"
+            assert doc.metadata["content_type"] == "text/plain"
             assert doc.metadata["md5"] == expected_md5
 
             mock_response = AsyncMock()
@@ -601,7 +552,7 @@ async def test_client_metadata_content_type_and_md5(temp_db_path):
                 )
                 assert isinstance(url_doc, Document)
 
-                assert url_doc.metadata["contentType"] == "text/plain"
+                assert url_doc.metadata["content_type"] == "text/plain"
                 assert url_doc.metadata["md5"] == expected_md5
 
 
@@ -1176,13 +1127,13 @@ This is paragraph four about topic C.
 
 
 @pytest.mark.vcr()
-async def test_client_visualize_chunk_with_pdf(temp_db_path):
+async def test_client_visualize_chunk_with_pdf(temp_db_path, doclaynet_first_page_pdf):
     """Test visualize_chunk returns images with bounding boxes for PDF documents."""
     from PIL.Image import Image as PILImage
 
     from haiku.rag.config import AppConfig
 
-    pdf_path = Path("tests/data/doclaynet.pdf")
+    pdf_path = doclaynet_first_page_pdf
     config = AppConfig()
     config.processing.conversion_options.do_ocr = False
 
