@@ -73,11 +73,11 @@ async def run_job(
     sources: list["Source"] | None = None,
 ) -> JobResult:
     """Execute the work described by `job`. `sources` is the list of
-    configured Source adapters — `resolve_fetcher` prefers them over
-    URI-scheme adhoc adapters so workers reuse the same authenticated /
-    pre-configured fetch context the pollers used at discovery. Raises
-    PermanentError or TransientError; the worker uses that to decide
-    dead vs retry."""
+    configured Source adapters; the client looks up `job.source_id`
+    against it via `resolve_configured_source` so workers reuse the
+    authenticated/pre-configured fetch context the pollers used at
+    discovery. Raises PermanentError or TransientError; the worker
+    uses that to decide dead vs retry."""
     extra = job.extra or {}
     parent_ctx = extra.get("_otel")
     attach = attach_context(parent_ctx) if parent_ctx else nullcontext()

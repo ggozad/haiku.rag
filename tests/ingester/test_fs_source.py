@@ -115,8 +115,8 @@ async def test_fs_source_discover_changed_yields_upsert(fs_root: Path):
 @pytest.mark.asyncio
 async def test_fs_source_discover_emits_delete_for_missing(fs_root: Path):
     src = FSSource(root=fs_root, supported_extensions=[".md", ".txt"])
-    snapshot = {(fs_root / "ghost.md").as_uri(): "999"}
-    events = [e async for e in src.discover(since=snapshot)]
+    known = {(fs_root / "ghost.md").as_uri()}
+    events = [e async for e in src.discover(known_uris=known)]
     deletes = [e for e in events if e.kind is SourceEventKind.DELETE]
     assert len(deletes) == 1
     assert deletes[0].uri == (fs_root / "ghost.md").as_uri()

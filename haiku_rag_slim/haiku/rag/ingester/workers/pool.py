@@ -22,12 +22,10 @@ _WORKER_BREAKER_COOLDOWN_S = 60.0
 
 
 class WorkerPool:
-    """Asyncio-based pool. N worker tasks share a bounded Semaphore, each
-    pulling jobs from the queue and running them through `run_job`. Reaper
-    task resets claims older than `claim_timeout_s` so a crashed worker
-    doesn't strand its job.
-
-    Lifecycle: build it, await start(), let it run, await stop().
+    """`worker_count` async tasks each pull jobs from the queue and run them
+    through `run_job`. A reaper task resets claims older than
+    `claim_timeout_s` so a crashed worker doesn't strand its job. Lifecycle:
+    build it, await start(), let it run, await stop().
     """
 
     def __init__(

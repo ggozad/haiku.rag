@@ -10,7 +10,11 @@ from haiku.rag.client.processing import (
 )
 from haiku.rag.client.titles import resolve_title
 from haiku.rag.converters import get_converter
-from haiku.rag.ingester.sources import FetchResult, resolve_fetcher
+from haiku.rag.ingester.sources import (
+    FetchResult,
+    resolve_adhoc_fetcher,
+    resolve_configured_source,
+)
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import extract_items
@@ -372,15 +376,16 @@ async def create_document_from_source(
                 f"Unsupported file extension: {local_path.suffix}"
             )
 
-    # Single resource — resolve the right Source adapter for this URI.
-    # `sources` (configured, in-order) wins over scheme-based adhoc adapters
-    # so worker fetches reuse the authenticated source the poller used.
-    fetcher = resolve_fetcher(
-        source_str,
-        sources=sources,
-        source_id=source_id,
-        storage_options=storage_options,
-    )
+    # Worker jobs carry source_id from the poller; strict lookup so a
+    # renamed/removed source surfaces as a DLQ instead of silently dropping
+    # credentials. Ad-hoc CLI calls (no source_id) fall back to scheme-based
+    # adapters when no configured source matches.
+    if source_id is not None:
+        fetcher = resolve_configured_source(source_str, source_id, sources)
+    else:
+        fetcher = resolve_adhoc_fetcher(
+            source_str, sources=sources, storage_options=storage_options
+        )
 
     # The stored URI is what we look up + persist by. For an explicit uri
     # override, use it as-is. For a file:// input the source string is

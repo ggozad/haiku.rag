@@ -166,7 +166,7 @@ async def test_discover_unchanged_against_matching_snapshot(fake_s3_listing):
 async def test_discover_emits_delete_for_missing_keys(fake_s3_listing):
     fake_s3_listing([[_meta("file1.md", "abc")]])
     src = S3Source(uri="s3://bucket/", supported_extensions=[".md"])
-    events = [e async for e in src.discover(since={"s3://bucket/gone.md": "old"})]
+    events = [e async for e in src.discover(known_uris={"s3://bucket/gone.md"})]
     deletes = [e for e in events if e.kind is SourceEventKind.DELETE]
     assert len(deletes) == 1
     assert deletes[0].uri == "s3://bucket/gone.md"

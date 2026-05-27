@@ -108,13 +108,16 @@ class BasePoller:
                 )
                 return False
             try:
-                snapshot = await self._sync.get_snapshot(self.source_id)
+                revisions = await self._sync.get_revision_snapshot(self.source_id)
+                known = await self._sync.list_known_uris(self.source_id)
                 counts = {
                     SourceEventKind.UPSERT: 0,
                     SourceEventKind.DELETE: 0,
                     SourceEventKind.UNCHANGED: 0,
                 }
-                async for event in self.source.discover(since=snapshot):
+                async for event in self.source.discover(
+                    since=revisions, known_uris=known
+                ):
                     counts[event.kind] += 1
                     await self._handle_event(event)
                 self._breaker.record_success()

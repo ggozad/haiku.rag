@@ -290,7 +290,10 @@ async def test_discover_emits_delete_for_removed_url():
         source_id="x", urls=["https://example.com/a.md"], transport=transport
     )
     events = [
-        e async for e in src.discover(since={"https://example.com/gone.md": "old"})
+        e
+        async for e in src.discover(
+            known_uris={"https://example.com/a.md", "https://example.com/gone.md"}
+        )
     ]
     by_uri = {e.uri: e for e in events}
     assert by_uri["https://example.com/a.md"].kind is not SourceEventKind.DELETE
@@ -299,10 +302,10 @@ async def test_discover_emits_delete_for_removed_url():
 
 
 @pytest.mark.asyncio
-async def test_discover_emits_delete_for_removed_url_with_none_revision():
-    """Same as above but the snapshot entry's revision is None — an HTTP
-    response without ETag or Last-Modified produces that state, and these
-    rows must still trigger config-removal DELETE."""
+async def test_discover_emits_delete_for_removed_url_with_no_revision_tracked():
+    """known_uris alone determines config-removal DELETE — a URL the
+    source has seen before but never had a revision for (HTTP without
+    ETag/Last-Modified) still triggers DELETE when dropped from config."""
     transport = _transport(
         {
             ("HEAD", "https://example.com/a.md"): httpx.Response(
@@ -314,7 +317,10 @@ async def test_discover_emits_delete_for_removed_url_with_none_revision():
         source_id="x", urls=["https://example.com/a.md"], transport=transport
     )
     events = [
-        e async for e in src.discover(since={"https://example.com/no-etag.md": None})
+        e
+        async for e in src.discover(
+            known_uris={"https://example.com/a.md", "https://example.com/no-etag.md"}
+        )
     ]
     by_uri = {e.uri: e for e in events}
     assert by_uri["https://example.com/no-etag.md"].kind is SourceEventKind.DELETE

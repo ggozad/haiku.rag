@@ -103,13 +103,17 @@ class S3Source:
         )
 
     async def discover(
-        self, since: RevisionSnapshot | None = None
+        self,
+        since: RevisionSnapshot | None = None,
+        *,
+        known_uris: set[str] | None = None,
     ) -> AsyncIterator[SourceEvent]:
         import obstore  # type: ignore[import-not-found]
 
         from haiku.rag.s3 import make_s3_store
 
-        snapshot: dict[str, str | None] = dict(since) if since else {}
+        snapshot: dict[str, str] = dict(since) if since else {}
+        known = known_uris or set()
         now = datetime.now(UTC)
         seen: set[str] = set()
         store = make_s3_store(self.bucket, self.storage_options)
@@ -136,11 +140,10 @@ class S3Source:
                     discovered_at=now,
                 )
 
-        # URIs in the snapshot that no longer appear under the prefix have
-        # been deleted upstream — emit DELETE so the poller cleans up.
-        for uri in snapshot:
-            if uri in seen:
-                continue
+        # URIs previously known to this source that no longer appear under
+        # the prefix have been deleted upstream — emit DELETE so the poller
+        # cleans up.
+        for uri in known - seen:
             yield SourceEvent(
                 source_id=self.source_id,
                 uri=uri,

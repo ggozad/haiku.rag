@@ -720,48 +720,48 @@ def test_repos_default_to_independent_locks_when_used_alone(conn):
 
 
 @pytest.mark.asyncio
-async def test_sync_state_get_snapshot_empty(sync):
-    assert await sync.get_snapshot("unknown") == {}
+async def test_sync_state_get_revision_snapshot_empty(sync):
+    assert await sync.get_revision_snapshot("unknown") == {}
 
 
 @pytest.mark.asyncio
 async def test_sync_state_upsert_and_get(sync):
     await sync.upsert("s", "u1", revision="abc", content_hash="m1")
     await sync.upsert("s", "u2", revision="def", content_hash="m2")
-    assert await sync.get_snapshot("s") == {"u1": "abc", "u2": "def"}
+    assert await sync.get_revision_snapshot("s") == {"u1": "abc", "u2": "def"}
 
 
 @pytest.mark.asyncio
 async def test_sync_state_upsert_overwrites(sync):
     await sync.upsert("s", "u1", revision="abc", content_hash="m1")
     await sync.upsert("s", "u1", revision="def", content_hash="m2", ingested=True)
-    assert await sync.get_snapshot("s") == {"u1": "def"}
+    assert await sync.get_revision_snapshot("s") == {"u1": "def"}
 
 
 @pytest.mark.asyncio
 async def test_sync_state_delete_removes_entry(sync):
     await sync.upsert("s", "u1", revision="abc", content_hash="m1")
     await sync.delete("s", "u1")
-    assert await sync.get_snapshot("s") == {}
+    assert await sync.get_revision_snapshot("s") == {}
 
 
 @pytest.mark.asyncio
 async def test_sync_state_snapshot_scoped_per_source(sync):
     await sync.upsert("s1", "u", revision="abc", content_hash="m")
     await sync.upsert("s2", "u", revision="def", content_hash="m")
-    assert await sync.get_snapshot("s1") == {"u": "abc"}
-    assert await sync.get_snapshot("s2") == {"u": "def"}
+    assert await sync.get_revision_snapshot("s1") == {"u": "abc"}
+    assert await sync.get_revision_snapshot("s2") == {"u": "def"}
 
 
 @pytest.mark.asyncio
-async def test_sync_state_snapshot_includes_null_revision_rows(sync):
-    """A URI known to a source but never successfully ingested with a
-    revision (HTTP without ETag/Last-Modified, or a worker DLQ'd before
-    completion) is still in the snapshot — with revision=None. Needed so
-    config-removal DELETE detection sees these rows."""
+async def test_sync_state_revision_snapshot_excludes_null_revision_rows(sync):
+    """get_revision_snapshot returns only rows with a stored revision —
+    sources compare against this for UPSERT/UNCHANGED. Rows without a
+    revision (HTTP without ETag, worker DLQ'd before completion) are
+    visible via list_known_uris instead."""
     await sync.upsert("s", "u", revision=None, content_hash=None)
-    snapshot = await sync.get_snapshot("s")
-    assert snapshot == {"u": None}
+    assert await sync.get_revision_snapshot("s") == {}
+    assert await sync.list_known_uris("s") == {"u"}
 
 
 @pytest.mark.asyncio
@@ -773,7 +773,7 @@ async def test_sync_state_upsert_preserves_revision_when_none(sync):
     assert row is not None
     assert row.revision == "v1"
     assert row.content_hash == "hash-v1"
-    assert await sync.get_snapshot("s") == {"u": "v1"}
+    assert await sync.get_revision_snapshot("s") == {"u": "v1"}
 
 
 @pytest.mark.asyncio

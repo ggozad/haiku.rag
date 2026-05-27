@@ -83,19 +83,24 @@ class HTTPSource:
             )
 
     async def discover(
-        self, since: RevisionSnapshot | None = None
+        self,
+        since: RevisionSnapshot | None = None,
+        *,
+        known_uris: set[str] | None = None,
     ) -> AsyncIterator[SourceEvent]:
         # HTTP has no listing concept — discover() only reports on what is
-        # currently configured in self.urls. URLs that were previously in
-        # config but aren't now emit DELETE so the poller can clean up
-        # alongside the in-source 410 signal.
+        # currently configured in self.urls. URLs that were previously
+        # known to this source (sync_state) but aren't in the current
+        # config emit DELETE so the poller can clean up alongside the
+        # in-source 410 signal.
         #
         # 410 Gone is the one real source-side deletion signal: the origin
         # explicitly says "permanently gone". 404 and other failures are
         # ambiguous (transient outage, misconfigured URL, auth blip), so we
         # fall back to UPSERT with no revision and let the worker decide
         # via GET.
-        snapshot: dict[str, str | None] = dict(since) if since else {}
+        snapshot: dict[str, str] = dict(since) if since else {}
+        known = known_uris or set()
         now = datetime.now(UTC)
         configured = set(self.urls)
 
@@ -147,13 +152,11 @@ class HTTPSource:
                     discovered_at=now,
                 )
 
-        # Anything previously ingested by this source that's no longer in
-        # config (URL removed from `urls`) emits DELETE so delete_orphans
-        # can clean up. Without this, removing a URL from config leaves the
-        # document and sync_state indefinitely.
-        for url in snapshot:
-            if url in configured:
-                continue
+        # Anything previously known to this source that's no longer in
+        # config emits DELETE so delete_orphans can clean up. Without this,
+        # removing a URL from config leaves the document and sync_state
+        # indefinitely.
+        for url in known - configured:
             yield SourceEvent(
                 source_id=self.source_id,
                 uri=url,

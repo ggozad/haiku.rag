@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 # uri -> revision. Captures what revisions of which URIs we had last seen
 # for a given source. Passed to discover() so the source can yield only
 # UPSERT / UNCHANGED / DELETE deltas instead of a full re-scan.
-RevisionSnapshot = Mapping[str, str | None]
+RevisionSnapshot = Mapping[str, str]
 
 
 class SourceEventKind(StrEnum):
@@ -64,5 +64,8 @@ class Source(Protocol):
     async def fetch(self, uri: str) -> FetchResult: ...
 
     def discover(
-        self, since: RevisionSnapshot | None = None
+        self,
+        since: RevisionSnapshot | None = None,
+        *,
+        known_uris: set[str] | None = None,
     ) -> AsyncIterator[SourceEvent]: ...

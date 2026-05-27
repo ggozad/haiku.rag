@@ -80,7 +80,7 @@ async def test_drain_marks_job_succeeded_and_writes_sync_state(client, jobs, syn
     assert refreshed is not None
     assert refreshed.status is JobStatus.SUCCEEDED
 
-    snapshot = await sync.get_snapshot("src")
+    snapshot = await sync.get_revision_snapshot("src")
     assert snapshot == {"s3://b/k.md": "e1"}
 
 
@@ -101,7 +101,7 @@ async def test_drain_delete_op_removes_sync_state(client, jobs, sync):
     assert refreshed.status is JobStatus.SUCCEEDED
     client.delete_document.assert_awaited_once_with("doc-1")
 
-    snapshot = await sync.get_snapshot("src")
+    snapshot = await sync.get_revision_snapshot("src")
     assert snapshot == {}
 
 
@@ -119,7 +119,7 @@ async def test_permanent_error_marks_dead_no_reschedule(client, jobs, sync):
     assert refreshed.status is JobStatus.DEAD
     assert refreshed.last_error == "unsupported"
     # sync_state is NOT written on failure
-    assert await sync.get_snapshot("src") == {}
+    assert await sync.get_revision_snapshot("src") == {}
 
 
 @pytest.mark.asyncio
@@ -343,7 +343,7 @@ async def test_worker_loses_claim_to_reaper_does_not_write_sync_state(
     assert refreshed.status is JobStatus.CLAIMED
     assert refreshed.claimed_by == "worker-B"
     # And sync_state must be untouched.
-    assert await sync.get_snapshot("src") == {}
+    assert await sync.get_revision_snapshot("src") == {}
 
 
 @pytest.mark.asyncio

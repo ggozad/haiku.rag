@@ -9,34 +9,41 @@ from haiku.rag.ingester.sources.http import HTTPSource
 from haiku.rag.ingester.sources.s3 import S3Source
 
 
-def resolve_fetcher(
+def resolve_configured_source(
     uri: str,
-    sources: Iterable[Source] | None = None,
+    source_id: str,
+    sources: Iterable[Source] | None,
+) -> Source:
+    """Strict lookup: return the configured source with this id, or raise.
+
+    Worker jobs carry source_id from when they were enqueued. Falling back
+    to an ad-hoc fetcher would silently drop credentials when a source has
+    been renamed or removed from config — better to raise and let the job
+    DLQ so the misconfiguration surfaces.
+    """
+    for src in sources or ():
+        if src.source_id == source_id:
+            if not src.supports(uri):
+                raise UnsupportedSourceError(
+                    f"Source {source_id!r} doesn't support URI {uri!r}"
+                )
+            return src
+    raise UnsupportedSourceError(
+        f"No configured source with id {source_id!r} for URI {uri!r}"
+    )
+
+
+def resolve_adhoc_fetcher(
+    uri: str,
     *,
-    source_id: str | None = None,
+    sources: Iterable[Source] | None = None,
     storage_options: dict[str, str] | None = None,
 ) -> Source:
-    """Pick a Source adapter for ``uri``.
+    """Best-effort lookup for one-shot fetches (e.g. ``add-src <uri>``).
 
-    When ``source_id`` is given (worker path), the source with that id is
-    used so credentials/headers of the configured source are reused rather
-    than picking whichever source happens to match ``supports(uri)`` first.
-    Without ``source_id`` (ad-hoc ``add-src <uri>``), the first configured
-    source whose ``supports(uri)`` returns True wins, then a scheme-based
-    ad-hoc adapter.
+    Configured ``sources`` win when one matches; otherwise a scheme-based
+    adapter is built so any URI can be fetched without configuration.
     """
-    if source_id is not None:
-        for src in sources or ():
-            if src.source_id == source_id:
-                if not src.supports(uri):
-                    raise UnsupportedSourceError(
-                        f"Source {source_id!r} doesn't support URI {uri!r}"
-                    )
-                return src
-        raise UnsupportedSourceError(
-            f"No configured source with id {source_id!r} for URI {uri!r}"
-        )
-
     if sources:
         for src in sources:
             if src.supports(uri):

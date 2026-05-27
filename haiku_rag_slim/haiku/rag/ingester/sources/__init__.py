@@ -8,7 +8,10 @@ from haiku.rag.ingester.sources.base import (
 from haiku.rag.ingester.sources.filter import FileFilter
 from haiku.rag.ingester.sources.fs import FSSource
 from haiku.rag.ingester.sources.http import HTTPSource
-from haiku.rag.ingester.sources.registry import resolve_fetcher
+from haiku.rag.ingester.sources.registry import (
+    resolve_adhoc_fetcher,
+    resolve_configured_source,
+)
 from haiku.rag.ingester.sources.s3 import S3Source
 from haiku.rag.ingester.sources.webdav import WebDAVSource
 
@@ -23,5 +26,6 @@ __all__ = [
     "SourceEvent",
     "SourceEventKind",
     "WebDAVSource",
-    "resolve_fetcher",
+    "resolve_adhoc_fetcher",
+    "resolve_configured_source",
 ]

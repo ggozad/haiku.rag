@@ -69,7 +69,7 @@ class _StubSource:
     async def fetch(self, uri: str) -> FetchResult:  # pragma: no cover
         raise NotImplementedError
 
-    async def discover(self, since=None):
+    async def discover(self, since=None, *, known_uris=None):
         self.discover_calls += 1
         if self.fail_with is not None:
             raise self.fail_with
@@ -130,10 +130,11 @@ async def test_upsert_event_enqueues_job_and_touches_sync_state(fs_config, jobs,
     assert queued[0].revision == "r1"
 
     # Pollers DO NOT write revision to sync_state — the worker does that
-    # after a successful ingest. The URI shows up in the snapshot with
-    # revision=None until then.
-    snapshot = await sync.get_snapshot("src")
-    assert snapshot == {"file:///a.md": None}
+    # after a successful ingest. The URI shows up in list_known_uris from
+    # the moment the poller emits the event, but the revision_snapshot
+    # stays empty until ingestion completes.
+    assert await sync.get_revision_snapshot("src") == {}
+    assert await sync.list_known_uris("src") == {"file:///a.md"}
 
 
 @pytest.mark.asyncio
@@ -145,7 +146,7 @@ async def test_unchanged_event_touches_sync_state_no_job(fs_config, jobs, sync):
     await poller._sweep_once()
 
     assert await jobs.list_jobs(source_id="src") == []
-    assert await sync.get_snapshot("src") == {"file:///a.md": "r1"}
+    assert await sync.get_revision_snapshot("src") == {"file:///a.md": "r1"}
 
 
 @pytest.mark.asyncio
@@ -232,7 +233,7 @@ async def test_dead_job_does_not_clear_sync_state_revision(fs_config, jobs, sync
     assert row.revision == "r1"
 
     await poller._sweep_once()
-    assert await sync.get_snapshot("src") == {"file:///a.md": "r1"}
+    assert await sync.get_revision_snapshot("src") == {"file:///a.md": "r1"}
 
 
 @pytest.mark.asyncio

@@ -230,7 +230,8 @@ class JobRepo:
         return _row_to_job(row)
 
     async def cancel(self, job_id: str) -> bool:
-        """Delete a queued or claimed job. Returns True if a row was removed."""
+        """True iff a queued/claimed row was removed; terminal jobs aren't
+        cancellable (succeeded/dead rows are kept for history)."""
         async with self._lock:
             async with self._conn.execute(
                 "DELETE FROM jobs WHERE id=? AND status IN ('queued', 'claimed') RETURNING id",
@@ -399,19 +400,32 @@ class SyncStateRepo:
         # connection. See JobRepo for the SQLite cursor + commit constraint.
         self._lock = lock or asyncio.Lock()
 
-    async def get_snapshot(self, source_id: str) -> dict[str, str | None]:
-        """uri -> revision map for the source. Revision is None for URIs
-        known to the source but never successfully ingested with a revision
-        (HTTP responses without ETag / Last-Modified, or a worker that DLQ'd
-        before completion). Sources compare with `previous == current`; None
-        compares as not-equal so the URI is treated as changed."""
+    async def get_revision_snapshot(self, source_id: str) -> dict[str, str]:
+        """uri -> revision map for URIs that have a stored revision. Sources
+        compare current revision against this map to decide UPSERT vs
+        UNCHANGED. Rows without a revision (HTTP without ETag, or a worker
+        that didn't complete) are excluded — they have no revision to
+        compare against; the closing-loop DELETE diff uses list_known_uris
+        instead."""
         async with self._lock:
             async with self._conn.execute(
-                "SELECT uri, revision FROM sync_state WHERE source_id=?",
+                "SELECT uri, revision FROM sync_state WHERE source_id=? AND revision IS NOT NULL",
                 (source_id,),
             ) as cursor:
                 rows = await cursor.fetchall()
         return {row["uri"]: row["revision"] for row in rows}
+
+    async def list_known_uris(self, source_id: str) -> set[str]:
+        """Every URI the source has ever produced. Used by the closing-loop
+        diff in discover() so a URI previously seen but no longer visible
+        (FS file deleted, HTTP URL removed from config) emits DELETE."""
+        async with self._lock:
+            async with self._conn.execute(
+                "SELECT uri FROM sync_state WHERE source_id=?",
+                (source_id,),
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return {row["uri"] for row in rows}
 
     async def get_row(self, source_id: str, uri: str) -> SyncStateRow | None:
         async with self._lock:

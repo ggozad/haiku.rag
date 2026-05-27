@@ -251,9 +251,13 @@ class WebDAVSource:
         )
 
     async def discover(
-        self, since: RevisionSnapshot | None = None
+        self,
+        since: RevisionSnapshot | None = None,
+        *,
+        known_uris: set[str] | None = None,
     ) -> AsyncIterator[SourceEvent]:
-        snapshot: dict[str, str | None] = dict(since) if since else {}
+        snapshot: dict[str, str] = dict(since) if since else {}
+        known = known_uris or set()
         now = datetime.now(UTC)
         seen: set[str] = set()
 
@@ -291,9 +295,7 @@ class WebDAVSource:
                 discovered_at=now,
             )
 
-        for uri in snapshot:
-            if uri in seen:
-                continue
+        for uri in known - seen:
             yield SourceEvent(
                 source_id=self.source_id,
                 uri=uri,

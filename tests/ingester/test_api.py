@@ -376,7 +376,7 @@ class _StubSource:
     async def fetch(self, uri) -> FetchResult:  # pragma: no cover
         raise NotImplementedError
 
-    async def discover(self, since=None):
+    async def discover(self, since=None, *, known_uris=None):
         events = self._sweeps.pop(0) if self._sweeps else []
         for event in events:
             yield event

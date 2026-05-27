@@ -229,11 +229,12 @@ async def test_discover_emits_delete_for_files_no_longer_listed():
         base_url="https://nc.example.com/dav/",
         transport=_transport(handler),
     )
-    snapshot = {
-        "https://nc.example.com/dav/a.md": "rev-a",
-        "https://nc.example.com/dav/gone.md": "rev-old",
+    revisions = {"https://nc.example.com/dav/a.md": "rev-a"}
+    known = {
+        "https://nc.example.com/dav/a.md",
+        "https://nc.example.com/dav/gone.md",
     }
-    events = [event async for event in src.discover(since=snapshot)]
+    events = [event async for event in src.discover(since=revisions, known_uris=known)]
     kinds = {e.uri: e.kind for e in events}
     assert kinds == {
         "https://nc.example.com/dav/a.md": SourceEventKind.UNCHANGED,
