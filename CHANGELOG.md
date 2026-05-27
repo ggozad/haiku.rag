@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.50.0] - 2026-05-27
+
 ### Added
 
 - `haiku-ingester` service for continuous document ingestion. Persistent SQLite job queue, async worker pool with retries and dead-letter queue, FS/HTTP/S3/WebDAV source adapters, per-source and pool-wide circuit breakers, and a FastAPI control plane on `127.0.0.1:8765` exposing `/health`, `/sources`, `/jobs`, `/dlq`, `/stats`, and a browser dashboard at `/`. Configured under `ingester:` in `haiku.rag.yaml`; shipped behind the `[ingester]` extra. See [docs/ingester.md](docs/ingester.md).
@@ -1614,7 +1616,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.48.1...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.50.0...HEAD
+[0.50.0]: https://github.com/ggozad/haiku.rag/compare/0.48.1...0.50.0
 [0.48.1]: https://github.com/ggozad/haiku.rag/compare/0.48.0...0.48.1
 [0.48.0]: https://github.com/ggozad/haiku.rag/compare/0.47.0...0.48.0
 [0.47.0]: https://github.com/ggozad/haiku.rag/compare/0.46.0...0.47.0
