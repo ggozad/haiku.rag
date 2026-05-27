@@ -538,6 +538,8 @@ async def test_providers_probes_each_docling_serve_url(state, monkeypatch):
         return ProviderEndpoint(base_url=base_url, reachable=True, status_code=200)
 
     monkeypatch.setattr(providers_mod, "_probe", _fake_probe)
+    state.config.processing.converter = "docling-serve"
+    state.config.processing.chunker = "docling-serve"
     state.config.providers.docling_serve.base_url = [
         "http://docling-serve-up:5001",
         "http://docling-serve-down:5001",
@@ -554,6 +556,49 @@ async def test_providers_probes_each_docling_serve_url(state, monkeypatch):
     assert body["docling_serve"][0]["status_code"] == 200
     assert body["docling_serve"][1]["reachable"] is False
     assert "Name or service not known" in body["docling_serve"][1]["error"]
+
+
+@pytest.mark.asyncio
+async def test_providers_skips_docling_serve_when_not_in_use(state, monkeypatch):
+    """With docling-local for both converter and chunker, /providers
+    returns an empty docling_serve list — and crucially does not probe."""
+    from haiku.rag.ingester.api.routes import providers as providers_mod
+
+    probed: list[str] = []
+
+    async def _spy_probe(client, base_url):  # pragma: no cover - asserted not called
+        probed.append(base_url)
+        raise AssertionError("probe should not run when docling-serve is not in use")
+
+    monkeypatch.setattr(providers_mod, "_probe", _spy_probe)
+    state.config.processing.converter = "docling-local"
+    state.config.processing.chunker = "docling-local"
+    async with _client(state) as client:
+        resp = await client.get("/providers")
+    assert resp.status_code == 200
+    assert resp.json() == {"docling_serve": []}
+    assert probed == []
+
+
+@pytest.mark.asyncio
+async def test_providers_probes_when_only_chunker_uses_docling_serve(
+    state, monkeypatch
+):
+    """A mixed config (local converter + docling-serve chunker, or vice versa)
+    still counts as 'in use' and triggers the probe."""
+    from haiku.rag.ingester.api.routes import providers as providers_mod
+    from haiku.rag.ingester.api.schemas import ProviderEndpoint
+
+    async def _fake_probe(client, base_url):
+        return ProviderEndpoint(base_url=base_url, reachable=True, status_code=200)
+
+    monkeypatch.setattr(providers_mod, "_probe", _fake_probe)
+    state.config.processing.converter = "docling-local"
+    state.config.processing.chunker = "docling-serve"
+    async with _client(state) as client:
+        resp = await client.get("/providers")
+    assert resp.status_code == 200
+    assert len(resp.json()["docling_serve"]) == 1
 
 
 @pytest.mark.asyncio

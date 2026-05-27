@@ -29,9 +29,16 @@ async def _probe(client: httpx.AsyncClient, base_url: str) -> ProviderEndpoint:
 
 @router.get("/providers", response_model=ProvidersResponse)
 async def providers(state: APIState = Depends(get_state)) -> ProvidersResponse:
-    """Probe configured external providers (currently docling-serve) and
-    return their reachability. Dashboard polls this to surface a downstream
-    outage that the ingester itself can only see via worker job failures."""
+    """Probe external providers actually in use by the current converter /
+    chunker and return their reachability. Dashboard polls this to surface a
+    downstream outage that the ingester itself can only see via worker job
+    failures."""
+    processing = state.config.processing
+    uses_docling_serve = (
+        processing.converter == "docling-serve" or processing.chunker == "docling-serve"
+    )
+    if not uses_docling_serve:
+        return ProvidersResponse(docling_serve=[])
     base_urls = state.config.providers.docling_serve.base_urls
     async with httpx.AsyncClient(timeout=_PROBE_TIMEOUT_S) as client:
         results = await asyncio.gather(*(_probe(client, u) for u in base_urls))
