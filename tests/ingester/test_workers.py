@@ -106,6 +106,34 @@ async def test_drain_delete_op_removes_sync_state(client, jobs, sync):
 
 
 @pytest.mark.asyncio
+async def test_successful_delete_prunes_dead_jobs_for_same_uri(client, jobs, sync):
+    """Once a DELETE resolves a URI, any earlier UPSERT failure for the same
+    (source_id, uri) is stale — auto-prune keeps the DLQ free of resolved
+    entries."""
+    # Stage a prior dead UPSERT (file-not-found style).
+    upsert = await jobs.enqueue("src", "file:///gone.md", JobOp.UPSERT)
+    assert upsert is not None
+    claimed = await jobs.claim_next("prev-worker")
+    assert claimed is not None
+    await jobs.mark_dead(claimed.id, "File does not exist", "prev-worker")
+    assert (await jobs.get_job(upsert.id)).status is JobStatus.DEAD
+
+    # Now run a DELETE for the same URI.
+    client.get_document_by_uri.return_value = Document(
+        id="doc-9", content="", uri="file:///gone.md"
+    )
+    delete = await jobs.enqueue("src", "file:///gone.md", JobOp.DELETE)
+    assert delete is not None
+
+    pool = _pool(client, jobs, sync)
+    await pool.drain_once()
+
+    assert (await jobs.get_job(delete.id)).status is JobStatus.SUCCEEDED
+    # The stale dead UPSERT for the same URI is gone.
+    assert await jobs.get_job(upsert.id) is None
+
+
+@pytest.mark.asyncio
 async def test_permanent_error_marks_dead_no_reschedule(client, jobs, sync):
     client.create_document_from_source.side_effect = PermanentError("unsupported")
     job = await jobs.enqueue("src", "https://x/y.bin", JobOp.UPSERT)
