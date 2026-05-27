@@ -20,6 +20,24 @@ class HealthResponse(BaseModel):
     worker_breaker_consecutive_failures: int = 0
 
 
+class ProviderEndpoint(BaseModel):
+    base_url: str
+    reachable: bool
+    # Status code from the probe (200 on success, the HTTP code on a non-2xx
+    # response, or None when the probe failed before getting a response).
+    status_code: int | None = None
+    # Error string when reachable is False and we have one (DNS failure,
+    # connection refused, timeout). None on success or unknown failure.
+    error: str | None = None
+
+
+class ProvidersResponse(BaseModel):
+    """Reachability snapshot of configured external providers. Probed
+    on demand when /providers is hit; not cached."""
+
+    docling_serve: list[ProviderEndpoint]
+
+
 class SourceSummary(BaseModel):
     source_id: str
     type: Literal["fs", "http", "s3", "webdav"]

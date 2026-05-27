@@ -86,6 +86,7 @@
       tr:last-child td { border-bottom: none; }
       tr:hover td { background: rgba(255, 255, 255, 0.02); }
       td.id, td.worker { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+      td.retried { color: var(--warn); font-weight: 600; cursor: help; }
       td.uri {
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         max-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -93,6 +94,10 @@
       }
       td.err {
         color: var(--dead); font-size: 12px; max-width: 0;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      td.ok {
+        color: var(--succeeded); font-size: 12px; max-width: 0;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }
       td.actions { width: 1%; white-space: nowrap; }
@@ -141,8 +146,6 @@
         <span class="meta" id="health-detail"></span>
         <span class="spacer"></span>
         <span class="meta" id="last-refresh">never</span>
-        <button id="pause-btn">Pause</button>
-        <button id="refresh-btn">Refresh now</button>
       </div>
 
       <div class="chips">
@@ -199,6 +202,13 @@
           </div>
         </div>
 
+        <div class="panel full">
+          <h2>Providers <span class="count" id="providers-count"></span></h2>
+          <div id="providers-body">
+            <div class="empty">loading…</div>
+          </div>
+        </div>
+
         <div class="panel">
           <h2>Active jobs <span class="count" id="active-count"></span></h2>
           <div id="active-body">
@@ -207,7 +217,7 @@
         </div>
 
         <div class="panel">
-          <h2>Recent failures <span class="count" id="dead-count"></span></h2>
+          <h2>Dead letter <span class="count" id="dead-count"></span></h2>
           <div id="dead-body">
             <div class="empty">loading…</div>
           </div>
@@ -228,14 +238,12 @@
       const POLL_MS = 3000;
 
       let token = localStorage.getItem(TOKEN_KEY) || "";
-      let paused = false;
-      let timer = null;
       let lastRefreshAt = null;
 
       const $ = (id) => document.getElementById(id);
 
       async function fetchJson(path) {
-        const headers = token ? { Authorization: "Bearer " + token } : {};
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
         const res = await fetch(path, { headers });
         if (res.status === 401) {
           const entered = prompt(
@@ -249,21 +257,21 @@
           }
           throw new Error("unauthorized");
         }
-        if (!res.ok) throw new Error(path + " → " + res.status);
+        if (!res.ok) throw new Error(`${path} → ${res.status}`);
         return res.json();
       }
 
       async function postJson(path) {
-        const headers = token ? { Authorization: "Bearer " + token } : {};
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
         const res = await fetch(path, { method: "POST", headers });
-        if (!res.ok) throw new Error(path + " → " + res.status);
+        if (!res.ok) throw new Error(`${path} → ${res.status}`);
         return res.json();
       }
 
       async function deleteJson(path) {
-        const headers = token ? { Authorization: "Bearer " + token } : {};
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
         const res = await fetch(path, { method: "DELETE", headers });
-        if (!res.ok) throw new Error(path + " → " + res.status);
+        if (!res.ok) throw new Error(`${path} → ${res.status}`);
         return res.json();
       }
 
@@ -271,16 +279,16 @@
         if (!iso) return "—";
         const ms = Date.now() - Date.parse(iso);
         if (ms < 0) return "in the future";
-        return formatDuration(ms / 1000) + " ago";
+        return `${formatDuration(ms / 1000)} ago`;
       }
 
       function formatDuration(s) {
-        if (s == null || isNaN(s)) return "—";
+        if (s == null || Number.isNaN(s)) return "—";
         if (s < 1) return "<1s";
-        if (s < 60) return Math.floor(s) + "s";
-        if (s < 3600) return Math.floor(s / 60) + "m " + Math.floor(s % 60) + "s";
-        if (s < 86400) return Math.floor(s / 3600) + "h " + Math.floor((s % 3600) / 60) + "m";
-        return Math.floor(s / 86400) + "d " + Math.floor((s % 86400) / 3600) + "h";
+        if (s < 60) return `${Math.floor(s)}s`;
+        if (s < 3600) return `${Math.floor(s / 60)}m ${Math.floor(s % 60)}s`;
+        if (s < 86400) return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+        return `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h`;
       }
 
       function shortId(id) {
@@ -310,7 +318,7 @@
         $("stat-30m").textContent = stats.throughput.succeeded_30m;
         $("stat-1h").textContent = stats.throughput.succeeded_1h;
         $("stat-workers").textContent =
-          stats.workers.busy + " / " + stats.workers.total;
+          `${stats.workers.busy} / ${stats.workers.total}`;
         $("stat-oldest").textContent =
           stats.oldest_queued_age_s == null
             ? "—"
@@ -344,7 +352,7 @@
       };
 
       function renderSources(sources) {
-        $("sources-count").textContent = "(" + sources.length + ")";
+        $("sources-count").textContent = `(${sources.length})`;
         if (!sources.length) {
           $("sources-body").innerHTML =
             '<div class="empty">no sources configured</div>';
@@ -395,11 +403,11 @@
         </table>`;
       }
 
-      function truncateMiddle(s, n) {
+      function _truncateMiddle(s, n) {
         if (!s || s.length <= n) return s;
         const head = Math.ceil((n - 1) / 2);
         const tail = Math.floor((n - 1) / 2);
-        return s.slice(0, head) + "…" + s.slice(-tail);
+        return `${s.slice(0, head)}…${s.slice(-tail)}`;
       }
 
       function opBadge(op) {
@@ -408,26 +416,68 @@
         return `<span class="badge ${cls}">${label}</span>`;
       }
 
+      function renderProviders(providers) {
+        const entries = providers.docling_serve || [];
+        $("providers-count").textContent = `(${entries.length})`;
+        if (!entries.length) {
+          $("providers-body").innerHTML =
+            '<div class="empty">no external providers configured</div>';
+          return;
+        }
+        const rows = entries
+          .map((p) => {
+            const badge = p.reachable
+              ? '<span class="badge ok">REACHABLE</span>'
+              : '<span class="badge bad">UNREACHABLE</span>';
+            const detail = p.reachable
+              ? p.status_code != null
+                ? `HTTP ${p.status_code}`
+                : ""
+              : escapeHtml(p.error ?? "no response");
+            const detailClass = p.reachable ? "ok" : "err";
+            return `<tr>
+              <td>docling-serve</td>
+              <td class="uri" title="${escapeHtml(p.base_url)}">${escapeHtml(p.base_url)}</td>
+              <td>${badge}</td>
+              <td class="${detailClass}" title="${detail}">${detail}</td>
+            </tr>`;
+          })
+          .join("");
+        $("providers-body").innerHTML = `<table>
+          <thead><tr>
+            <th>Kind</th><th>URL</th><th>Status</th><th>Detail</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+      }
+
       function renderActive(jobs) {
-        $("active-count").textContent = "(" + jobs.length + ")";
+        $("active-count").textContent = `(${jobs.length})`;
         if (!jobs.length) {
           $("active-body").innerHTML = '<div class="empty">nothing running</div>';
           return;
         }
         const rows = jobs
-          .map(
-            (j) => `<tr>
+          .map((j) => {
+            const tryTitle = j.last_error
+              ? ` title="Previous attempt failed: ${escapeHtml(j.last_error)}"`
+              : "";
+            const tryCell =
+              j.attempts > 1
+                ? `<td class="retried"${tryTitle}>${j.attempts}/${j.max_attempts}</td>`
+                : `<td>${j.attempts}/${j.max_attempts}</td>`;
+            return `<tr>
               <td class="id" title="${escapeHtml(j.id)}">${shortId(j.id)}</td>
               <td>${opBadge(j.op)}</td>
               <td class="uri" title="${escapeHtml(j.uri)}">${escapeHtml(j.uri)}</td>
               <td class="worker">${escapeHtml(j.claimed_by ?? "—")}</td>
-              <td>${j.attempts}/${j.max_attempts}</td>
+              ${tryCell}
               <td>${relTime(j.claimed_at)}</td>
               <td class="actions">
-                <button onclick="cancelJob('${escapeHtml(j.id)}')">Cancel</button>
+                <button type="button" onclick="cancelJob('${escapeHtml(j.id)}')">Cancel</button>
               </td>
-            </tr>`,
-          )
+            </tr>`;
+          })
           .join("");
         $("active-body").innerHTML = `<table>
           <thead><tr>
@@ -438,9 +488,10 @@
       }
 
       function renderDead(jobs) {
-        $("dead-count").textContent = "(" + jobs.length + ")";
+        $("dead-count").textContent = `(${jobs.length})`;
         if (!jobs.length) {
-          $("dead-body").innerHTML = '<div class="empty">no recent failures</div>';
+          $("dead-body").innerHTML =
+            '<div class="empty">no jobs in the dead letter queue</div>';
           return;
         }
         const rows = jobs
@@ -465,7 +516,7 @@
       }
 
       function renderRecent(jobs) {
-        $("recent-count").textContent = "(" + jobs.length + ")";
+        $("recent-count").textContent = `(${jobs.length})`;
         if (!jobs.length) {
           $("recent-body").innerHTML = '<div class="empty">nothing completed yet</div>';
           return;
@@ -496,20 +547,27 @@
 
       async function refresh() {
         try {
-          const [health, sources, stats, active, dead, recent] = await Promise.all([
-            fetchJson("/health"),
-            fetchJson("/sources"),
-            fetchJson("/stats"),
-            fetchJson("/jobs?status=claimed&limit=20"),
-            fetchJson("/jobs?status=dead&limit=10"),
-            fetchJson("/jobs?status=succeeded&limit=10"),
-          ]);
+          const [health, sources, providers, stats, active, dead, recent] =
+            await Promise.all([
+              fetchJson("/health"),
+              fetchJson("/sources"),
+              fetchJson("/providers"),
+              fetchJson("/stats"),
+              fetchJson("/jobs?status=claimed&limit=20"),
+              fetchJson("/jobs?status=dead&limit=10"),
+              fetchJson("/jobs?status=succeeded&limit=10"),
+            ]);
           setHealthDot(false);
-          $("health-detail").textContent =
-            health.worker_count + " workers · " + health.poller_count + " pollers";
+          let detail = `${health.worker_count} workers · ${health.poller_count} pollers`;
+          if (health.worker_breaker_open) {
+            const fails = health.worker_breaker_consecutive_failures;
+            detail += ` · <span class="badge bad" title="${fails} consecutive transient job failures; worker claims paused until cooldown elapses">WORKER BREAKER OPEN</span>`;
+          }
+          $("health-detail").innerHTML = detail;
           renderChips(health.queue_counts);
           renderStats(stats);
           renderSources(sources);
+          renderProviders(providers);
           renderActive(active);
           renderDead(dead);
           renderRecent(recent);
@@ -517,7 +575,7 @@
           updateLastRefresh();
         } catch (e) {
           setHealthDot(true);
-          $("health-detail").textContent = "error: " + e.message;
+          $("health-detail").textContent = `error: ${e.message}`;
         }
       }
 
@@ -527,45 +585,29 @@
           return;
         }
         const ms = Date.now() - lastRefreshAt.getTime();
-        $("last-refresh").textContent = formatDuration(ms / 1000) + " ago";
-      }
-
-      function setPolling(on) {
-        paused = !on;
-        $("pause-btn").textContent = on ? "Pause" : "Resume";
-        if (on) {
-          if (!timer) timer = setInterval(refresh, POLL_MS);
-        } else {
-          if (timer) {
-            clearInterval(timer);
-            timer = null;
-          }
-        }
+        $("last-refresh").textContent = `${formatDuration(ms / 1000)} ago`;
       }
 
       // Action handlers (called from inline onclick — kept on window).
       window.cancelJob = async (id) => {
-        if (!confirm("Cancel job " + id.slice(0, 8) + "…?")) return;
-        try { await deleteJson("/jobs/" + encodeURIComponent(id)); } catch (e) {}
+        if (!confirm(`Cancel job ${id.slice(0, 8)}…?`)) return;
+        try { await deleteJson(`/jobs/${encodeURIComponent(id)}`); } catch (e) {}
         refresh();
       };
       window.retryJob = async (id) => {
-        try { await postJson("/jobs/" + encodeURIComponent(id) + "/retry"); } catch (e) {}
+        try { await postJson(`/jobs/${encodeURIComponent(id)}/retry`); } catch (e) {}
         refresh();
       };
       window.refreshSource = async (sid) => {
         try {
-          await postJson("/sources/" + encodeURIComponent(sid) + "/refresh");
+          await postJson(`/sources/${encodeURIComponent(sid)}/refresh`);
         } catch (e) {}
         refresh();
       };
 
-      $("pause-btn").onclick = () => setPolling(paused);
-      $("refresh-btn").onclick = () => refresh();
       setInterval(updateLastRefresh, 1000);
-
       refresh();
-      setPolling(true);
+      setInterval(refresh, POLL_MS);
     </script>
   </body>
 </html>

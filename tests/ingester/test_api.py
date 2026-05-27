@@ -511,6 +511,51 @@ async def test_stats_requires_auth(state):
     assert resp.status_code == 401
 
 
+# --- providers ---
+
+
+@pytest.mark.asyncio
+async def test_providers_probes_each_docling_serve_url(state, monkeypatch):
+    """Reachable URLs come back with status_code from the probe; unreachable
+    URLs come back with reachable=False and the httpx error message."""
+    from haiku.rag.ingester.api.routes import providers as providers_mod
+    from haiku.rag.ingester.api.schemas import ProviderEndpoint
+
+    async def _fake_probe(client, base_url):
+        if "down" in base_url:
+            return ProviderEndpoint(
+                base_url=base_url,
+                reachable=False,
+                error="Name or service not known",
+            )
+        return ProviderEndpoint(base_url=base_url, reachable=True, status_code=200)
+
+    monkeypatch.setattr(providers_mod, "_probe", _fake_probe)
+    state.config.providers.docling_serve.base_url = [
+        "http://docling-serve-up:5001",
+        "http://docling-serve-down:5001",
+    ]
+    async with _client(state) as client:
+        resp = await client.get("/providers")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert [d["base_url"] for d in body["docling_serve"]] == [
+        "http://docling-serve-up:5001",
+        "http://docling-serve-down:5001",
+    ]
+    assert body["docling_serve"][0]["reachable"] is True
+    assert body["docling_serve"][0]["status_code"] == 200
+    assert body["docling_serve"][1]["reachable"] is False
+    assert "Name or service not known" in body["docling_serve"][1]["error"]
+
+
+@pytest.mark.asyncio
+async def test_providers_requires_auth(state):
+    async with _client(state, auth_token="secret") as client:
+        resp = await client.get("/providers")
+    assert resp.status_code == 401
+
+
 # --- dashboard ---
 
 

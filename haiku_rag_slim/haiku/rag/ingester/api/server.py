@@ -39,6 +39,7 @@ def build_app(
         dlq,
         health,
         jobs,
+        providers,
         sources,
         stats,
     )
@@ -61,5 +62,6 @@ def build_app(
     app.include_router(sources.router, dependencies=auth_dep)
     app.include_router(dlq.router, dependencies=auth_dep)
     app.include_router(stats.router, dependencies=auth_dep)
+    app.include_router(providers.router, dependencies=auth_dep)
 
     return app
