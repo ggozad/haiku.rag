@@ -50,7 +50,6 @@ def _pool(client, jobs, sync, **kwargs) -> WorkerPool:
         job_repo=jobs,
         sync_repo=sync,
         worker_count=kwargs.pop("worker_count", 2),
-        max_concurrent=kwargs.pop("max_concurrent", 2),
         poll_idle_interval_s=kwargs.pop("poll_idle_interval_s", 0.05),
         reaper_interval_s=kwargs.pop("reaper_interval_s", 60),
         claim_timeout_s=kwargs.pop("claim_timeout_s", 60),
@@ -233,7 +232,7 @@ async def test_workers_drain_queue_after_start(client, jobs, sync):
     for i in range(5):
         await jobs.enqueue("src", f"u{i}", JobOp.UPSERT)
 
-    pool = _pool(client, jobs, sync, worker_count=3, max_concurrent=3)
+    pool = _pool(client, jobs, sync, worker_count=3)
     await pool.start()
     try:
         # Wait until everything is succeeded or until a deadline.
@@ -268,7 +267,7 @@ async def test_shutdown_grace_lets_inflight_job_complete(client, jobs, sync):
     client.create_document_from_source.side_effect = _slow_then_finish
     await jobs.enqueue("src", "u", JobOp.UPSERT)
 
-    pool = _pool(client, jobs, sync, worker_count=1, max_concurrent=1)
+    pool = _pool(client, jobs, sync, worker_count=1)
     await pool.start()
     # Yield long enough for the worker to claim and enter _process.
     await asyncio.sleep(0.02)
@@ -298,7 +297,7 @@ async def test_shutdown_grace_timeout_releases_claim(client, jobs, sync):
     job = await jobs.enqueue("src", "u", JobOp.UPSERT)
     assert job is not None
 
-    pool = _pool(client, jobs, sync, worker_count=1, max_concurrent=1)
+    pool = _pool(client, jobs, sync, worker_count=1)
     await pool.start()
     await asyncio.sleep(0.05)
 
@@ -334,7 +333,7 @@ async def test_worker_loses_claim_to_reaper_does_not_write_sync_state(
     await jobs.reap_stale(claim_timeout_seconds=0)
     await jobs.claim_next("worker-B")
 
-    pool = _pool(client, jobs, sync, worker_count=1, max_concurrent=1)
+    pool = _pool(client, jobs, sync, worker_count=1)
     # Drive A's _process directly with A's (now stale) Job snapshot.
     await pool._process(claimed_by_a)
 
@@ -376,7 +375,7 @@ async def test_cancel_cleanup_survives_second_cancel(client, jobs, sync, monkeyp
     job = await jobs.enqueue("src", "u", JobOp.UPSERT)
     assert job is not None
 
-    pool = _pool(client, jobs, sync, worker_count=1, max_concurrent=1)
+    pool = _pool(client, jobs, sync, worker_count=1)
     await pool.start()
     try:
         await asyncio.sleep(0.05)
@@ -425,7 +424,7 @@ async def test_drain_pending_releases_waits_for_orphan_releases(
     job = await jobs.enqueue("src", "u", JobOp.UPSERT)
     assert job is not None
 
-    pool = _pool(client, jobs, sync, worker_count=1, max_concurrent=1)
+    pool = _pool(client, jobs, sync, worker_count=1)
     await pool.start()
     try:
         await asyncio.sleep(0.05)
@@ -454,7 +453,7 @@ async def test_drain_pending_releases_waits_for_orphan_releases(
 async def test_drain_pending_releases_with_no_orphans_is_noop(client, jobs, sync):
     """Common case: nothing to drain — drain returns 0 immediately, no
     asyncio.wait against an empty set."""
-    pool = _pool(client, jobs, sync, worker_count=1, max_concurrent=1)
+    pool = _pool(client, jobs, sync, worker_count=1)
     assert await pool.drain_pending_releases() == 0
 
 
@@ -505,9 +504,7 @@ async def test_breaker_opens_after_n_consecutive_transient_failures(client, jobs
 async def test_breaker_pauses_worker_loop_claims(client, jobs, sync):
     """Worker loop honours the breaker: claim_next is not called while
     is_open, so queued jobs stay queued until the breaker closes."""
-    pool = _pool(
-        client, jobs, sync, worker_count=1, max_concurrent=1, poll_idle_interval_s=0.02
-    )
+    pool = _pool(client, jobs, sync, worker_count=1, poll_idle_interval_s=0.02)
     # Force the breaker open without touching the queue.
     for _ in range(10):
         pool._breaker.record_failure()

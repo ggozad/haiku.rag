@@ -37,7 +37,6 @@ class WorkerPool:
         job_repo: JobRepo,
         sync_repo: SyncStateRepo,
         worker_count: int = 4,
-        max_concurrent: int = 4,
         retry_policy: RetryPolicy | None = None,
         poll_idle_interval_s: float = 1.0,
         claim_timeout_s: int = 1800,
@@ -48,7 +47,6 @@ class WorkerPool:
         self._jobs = job_repo
         self._sync = sync_repo
         self._worker_count = worker_count
-        self._semaphore = asyncio.Semaphore(max_concurrent)
         self._retry = retry_policy or RetryPolicy()
         self._poll_idle_s = poll_idle_interval_s
         self._claim_timeout_s = claim_timeout_s
@@ -132,14 +130,11 @@ class WorkerPool:
             if self._breaker.is_open:
                 await self._sleep_or_stop(self._poll_idle_s)
                 continue
-            # Semaphore wraps claim + process: at most max_concurrent workers
-            # hold a claimed job at any one time.
-            async with self._semaphore:
-                job = await self._jobs.claim_next(worker_id)
-                if job is None:
-                    await self._sleep_or_stop(self._poll_idle_s)
-                    continue
-                await self._process(job)
+            job = await self._jobs.claim_next(worker_id)
+            if job is None:
+                await self._sleep_or_stop(self._poll_idle_s)
+                continue
+            await self._process(job)
 
     async def _reaper_loop(self) -> None:
         while not self._stop.is_set():

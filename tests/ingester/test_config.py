@@ -114,7 +114,6 @@ ingester:
       poll_interval_s: 86400
   workers:
     worker_count: 8
-    max_concurrent: 4
   api:
     enabled: false
 """

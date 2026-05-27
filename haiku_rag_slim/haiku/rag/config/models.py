@@ -291,14 +291,10 @@ class WorkerConfig(BaseModel):
     worker_count: int = Field(
         default=4,
         description="Number of async worker tasks pulling from the queue. "
-        "Each worker holds at most one job at a time. Should be <= "
-        "max_concurrent; extra workers stall in the semaphore queue.",
-    )
-    max_concurrent: int = Field(
-        default=4,
-        description="Upper bound on jobs running concurrently across all "
-        "workers. Sized to the slowest shared downstream — typically the "
-        "docling-serve fleet or the embedding endpoint's request budget.",
+        "Each worker holds at most one job at a time, so worker_count is "
+        "also the maximum number of concurrent in-flight jobs. Size to the "
+        "slowest shared downstream — typically the docling-serve fleet or "
+        "the embedding endpoint's request budget.",
     )
     poll_idle_interval_s: float = Field(
         default=1.0,

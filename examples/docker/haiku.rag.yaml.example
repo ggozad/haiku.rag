@@ -10,6 +10,11 @@ ingester:
   # Queue lives next to the LanceDB so both persist in the data volume.
   queue:
     path: /data/ingester.db
+  workers:
+    # Match the docling-serve fleet size below — each instance processes
+    # one task at a time, so more workers would just queue submissions
+    # inside docling-serve.
+    worker_count: 2
   api:
     # Bind to all interfaces inside the container so docker port-mapping works.
     host: 0.0.0.0

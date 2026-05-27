@@ -148,7 +148,6 @@ Bearer-token auth can replace HTTP Basic via the standard `headers` map:
 ingester:
   workers:
     worker_count: 4
-    max_concurrent: 4
     poll_idle_interval_s: 1.0
     claim_timeout_s: 1800
     reaper_interval_s: 60
@@ -160,8 +159,9 @@ ingester:
       jitter: 0.25                  # ±25%
 ```
 
-The worker pool runs `worker_count` async workers behind a shared
-`max_concurrent` semaphore. Jobs that hit a `TransientError` are
+The worker pool runs `worker_count` async workers, each processing one
+job at a time. `worker_count` is therefore also the maximum number of
+concurrent in-flight jobs. Jobs that hit a `TransientError` are
 rescheduled with exponential backoff plus jitter, up to `max_attempts`,
 then land in the dead-letter queue. `PermanentError` (unsupported
 extension, 4xx HTTP except 408/429, etc.) skips retry entirely.
@@ -185,9 +185,8 @@ once `claim_timeout_s` elapses.
 
 - `claim_timeout_s` must exceed the longest legitimate job duration; a
   shorter value lets the reaper resurrect in-flight jobs.
-- `worker_count <= max_concurrent`; extras stall in the semaphore.
-- `max_concurrent` should match downstream capacity. docling-serve
-  processes one task per instance, so `max_concurrent` above the number
+- `worker_count` should match downstream capacity. docling-serve
+  processes one task per instance, so `worker_count` above the number
   of `providers.docling_serve.base_url` entries over-subscribes the
   fleet — extra submissions queue inside docling-serve and inflate
   `claimed_at` duration toward `claim_timeout_s`.

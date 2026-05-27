@@ -102,7 +102,6 @@ async def test_e2e_initial_sweep_lands_succeeded_jobs(tmp_path, jobs, sync):
         job_repo=jobs,
         sync_repo=sync,
         worker_count=2,
-        max_concurrent=2,
         poll_idle_interval_s=0.05,
     )
 
@@ -171,7 +170,6 @@ async def test_e2e_handles_url_encoded_special_chars_in_path(tmp_path, jobs, syn
         job_repo=jobs,
         sync_repo=sync,
         worker_count=1,
-        max_concurrent=1,
         poll_idle_interval_s=0.05,
     )
 
@@ -268,7 +266,6 @@ async def test_pre_existing_job_resolves_through_configured_source(
         job_repo=jobs,
         sync_repo=sync,
         worker_count=1,
-        max_concurrent=1,
         poll_idle_interval_s=0.05,
         sources=manager.sources,
     )

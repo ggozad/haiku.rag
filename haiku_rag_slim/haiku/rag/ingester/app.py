@@ -77,7 +77,6 @@ class IngesterApp:
                     job_repo=self._jobs,
                     sync_repo=self._sync,
                     worker_count=ingester_cfg.workers.worker_count,
-                    max_concurrent=ingester_cfg.workers.max_concurrent,
                     retry_policy=retry,
                     poll_idle_interval_s=ingester_cfg.workers.poll_idle_interval_s,
                     claim_timeout_s=ingester_cfg.workers.claim_timeout_s,
