@@ -57,3 +57,29 @@ def test_configured_source_falls_through_when_no_match():
     chosen = resolve_fetcher("https://example.com/x", sources=[fs])
     assert isinstance(chosen, HTTPSource)
     assert chosen is not fs
+
+
+def test_source_id_prefers_matching_source_over_first_supports():
+    """Two HTTPSource configs with different auth headers: passing
+    source_id picks the right one. Without source_id, the first one to
+    return True from supports(uri) wins regardless of which config
+    actually owns the job."""
+    arxiv = HTTPSource(source_id="arxiv", headers={"Authorization": "Bearer A"})
+    intranet = HTTPSource(source_id="intranet", headers={"Authorization": "Bearer B"})
+
+    by_id = resolve_fetcher(
+        "https://example.com/x", sources=[arxiv, intranet], source_id="intranet"
+    )
+    assert by_id is intranet
+
+    without_id = resolve_fetcher("https://example.com/x", sources=[arxiv, intranet])
+    assert without_id is arxiv
+
+
+def test_source_id_raises_when_matched_source_rejects_uri():
+    """source_id selects the source by identity, but that source still
+    has to support the URI. Mismatch means a stale enqueue from a
+    reconfigured source — surface it instead of silently picking another."""
+    fs = FSSource(root=Path("/tmp"), source_id="local")
+    with pytest.raises(ValueError, match="doesn't support URI"):
+        resolve_fetcher("https://example.com/x", sources=[fs], source_id="local")

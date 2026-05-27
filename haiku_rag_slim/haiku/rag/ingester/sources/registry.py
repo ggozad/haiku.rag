@@ -13,19 +13,31 @@ def resolve_fetcher(
     uri: str,
     sources: Iterable[Source] | None = None,
     *,
+    source_id: str | None = None,
     storage_options: dict[str, str] | None = None,
 ) -> Source:
     """Pick a Source adapter for ``uri``.
 
-    Configured ``sources`` win — the first whose ``supports(uri)`` returns True
-    is returned. Without a configured match, an ad-hoc adapter is built from
-    the URI scheme so one-shot calls (``add-src <uri>``) work without any
-    configuration.
+    When ``source_id`` is given (worker path), the source with that id is
+    used so credentials/headers of the configured source are reused rather
+    than picking whichever source happens to match ``supports(uri)`` first.
+    Without ``source_id`` (ad-hoc ``add-src <uri>``), the first configured
+    source whose ``supports(uri)`` returns True wins, then a scheme-based
+    ad-hoc adapter.
     """
     if sources:
-        for src in sources:
-            if src.supports(uri):
-                return src
+        if source_id is not None:
+            for src in sources:
+                if src.source_id == source_id:
+                    if not src.supports(uri):
+                        raise UnsupportedSourceError(
+                            f"Source {source_id!r} doesn't support URI {uri!r}"
+                        )
+                    return src
+        else:
+            for src in sources:
+                if src.supports(uri):
+                    return src
 
     scheme = urlparse(uri).scheme
     if scheme in ("", "file"):

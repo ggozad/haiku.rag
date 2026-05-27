@@ -216,6 +216,7 @@ class HaikuRAG:
         uri: str | None = None,
         storage_options: dict[str, str] | None = None,
         sources: "list[Source] | None" = None,
+        source_id: str | None = None,
     ) -> Document | list[Document]:
         from haiku.rag.client.documents import create_document_from_source
 
@@ -227,6 +228,7 @@ class HaikuRAG:
             uri=uri,
             storage_options=storage_options,
             sources=sources,
+            source_id=source_id,
         )
 
     async def update_document(

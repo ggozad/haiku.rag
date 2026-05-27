@@ -308,6 +308,7 @@ async def create_document_from_source(
     uri: str | None = None,
     storage_options: dict[str, str] | None = None,
     sources: "list[Source] | None" = None,
+    source_id: str | None = None,
 ) -> Document | list[Document]:
     """Create or update document(s) from a file path, directory, or URL.
 
@@ -375,7 +376,10 @@ async def create_document_from_source(
     # `sources` (configured, in-order) wins over scheme-based adhoc adapters
     # so worker fetches reuse the authenticated source the poller used.
     fetcher = resolve_fetcher(
-        source_str, sources=sources, storage_options=storage_options
+        source_str,
+        sources=sources,
+        source_id=source_id,
+        storage_options=storage_options,
     )
 
     # The stored URI is what we look up + persist by. For an explicit uri

@@ -103,6 +103,7 @@ async def run_job(
             result = await client.create_document_from_source(
                 job.uri,
                 sources=sources,
+                source_id=job.source_id,
             )
             # Directory ingestion returns list[Document] — workers ingest single
             # resources, so a list here is a programming error in the caller.

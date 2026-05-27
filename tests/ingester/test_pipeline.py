@@ -58,14 +58,14 @@ async def test_upsert_calls_create_document_from_source_and_returns_metadata():
     assert result.content_hash == "abcd"
     assert result.deleted is False
     client.create_document_from_source.assert_awaited_once_with(
-        "https://example.com/a.pdf", sources=None
+        "https://example.com/a.pdf", sources=None, source_id="src"
     )
 
 
 @pytest.mark.asyncio
 async def test_upsert_threads_configured_sources_to_client():
     """The list of configured Source adapters reaches the client so
-    resolve_fetcher can pick the authenticated one over an adhoc adapter."""
+    resolve_fetcher can pick the right one by source_id."""
     from haiku.rag.ingester.sources.http import HTTPSource
 
     client = _mock_client()
@@ -76,7 +76,7 @@ async def test_upsert_threads_configured_sources_to_client():
 
     await run_job(client, _job(), sources=[configured])
     client.create_document_from_source.assert_awaited_once_with(
-        "https://example.com/a.pdf", sources=[configured]
+        "https://example.com/a.pdf", sources=[configured], source_id="src"
     )
 
 
