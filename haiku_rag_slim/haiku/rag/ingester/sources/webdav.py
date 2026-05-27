@@ -253,7 +253,7 @@ class WebDAVSource:
     async def discover(
         self, since: RevisionSnapshot | None = None
     ) -> AsyncIterator[SourceEvent]:
-        snapshot: dict[str, str] = dict(since) if since else {}
+        snapshot: dict[str, str | None] = dict(since) if since else {}
         now = datetime.now(UTC)
         seen: set[str] = set()
 

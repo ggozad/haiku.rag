@@ -109,7 +109,7 @@ class S3Source:
 
         from haiku.rag.s3 import make_s3_store
 
-        snapshot: dict[str, str] = dict(since) if since else {}
+        snapshot: dict[str, str | None] = dict(since) if since else {}
         now = datetime.now(UTC)
         seen: set[str] = set()
         store = make_s3_store(self.bucket, self.storage_options)

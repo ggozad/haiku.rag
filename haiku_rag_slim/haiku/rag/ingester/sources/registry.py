@@ -25,19 +25,22 @@ def resolve_fetcher(
     source whose ``supports(uri)`` returns True wins, then a scheme-based
     ad-hoc adapter.
     """
+    if source_id is not None:
+        for src in sources or ():
+            if src.source_id == source_id:
+                if not src.supports(uri):
+                    raise UnsupportedSourceError(
+                        f"Source {source_id!r} doesn't support URI {uri!r}"
+                    )
+                return src
+        raise UnsupportedSourceError(
+            f"No configured source with id {source_id!r} for URI {uri!r}"
+        )
+
     if sources:
-        if source_id is not None:
-            for src in sources:
-                if src.source_id == source_id:
-                    if not src.supports(uri):
-                        raise UnsupportedSourceError(
-                            f"Source {source_id!r} doesn't support URI {uri!r}"
-                        )
-                    return src
-        else:
-            for src in sources:
-                if src.supports(uri):
-                    return src
+        for src in sources:
+            if src.supports(uri):
+                return src
 
     scheme = urlparse(uri).scheme
     if scheme in ("", "file"):

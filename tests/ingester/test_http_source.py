@@ -296,3 +296,25 @@ async def test_discover_emits_delete_for_removed_url():
     assert by_uri["https://example.com/a.md"].kind is not SourceEventKind.DELETE
     assert by_uri["https://example.com/gone.md"].kind is SourceEventKind.DELETE
     assert by_uri["https://example.com/gone.md"].revision is None
+
+
+@pytest.mark.asyncio
+async def test_discover_emits_delete_for_removed_url_with_none_revision():
+    """Same as above but the snapshot entry's revision is None — an HTTP
+    response without ETag or Last-Modified produces that state, and these
+    rows must still trigger config-removal DELETE."""
+    transport = _transport(
+        {
+            ("HEAD", "https://example.com/a.md"): httpx.Response(
+                200, headers={"etag": '"abc"'}
+            ),
+        }
+    )
+    src = HTTPSource(
+        source_id="x", urls=["https://example.com/a.md"], transport=transport
+    )
+    events = [
+        e async for e in src.discover(since={"https://example.com/no-etag.md": None})
+    ]
+    by_uri = {e.uri: e for e in events}
+    assert by_uri["https://example.com/no-etag.md"].kind is SourceEventKind.DELETE

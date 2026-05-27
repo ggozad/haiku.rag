@@ -95,7 +95,7 @@ class HTTPSource:
         # ambiguous (transient outage, misconfigured URL, auth blip), so we
         # fall back to UPSERT with no revision and let the worker decide
         # via GET.
-        snapshot: dict[str, str] = dict(since) if since else {}
+        snapshot: dict[str, str | None] = dict(since) if since else {}
         now = datetime.now(UTC)
         configured = set(self.urls)
 

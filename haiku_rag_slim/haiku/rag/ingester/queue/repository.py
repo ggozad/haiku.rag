@@ -399,12 +399,15 @@ class SyncStateRepo:
         # connection. See JobRepo for the SQLite cursor + commit constraint.
         self._lock = lock or asyncio.Lock()
 
-    async def get_snapshot(self, source_id: str) -> dict[str, str]:
-        """uri -> revision map for the source. Drops rows where revision is
-        NULL (the poller can't compare against an absent revision)."""
+    async def get_snapshot(self, source_id: str) -> dict[str, str | None]:
+        """uri -> revision map for the source. Revision is None for URIs
+        known to the source but never successfully ingested with a revision
+        (HTTP responses without ETag / Last-Modified, or a worker that DLQ'd
+        before completion). Sources compare with `previous == current`; None
+        compares as not-equal so the URI is treated as changed."""
         async with self._lock:
             async with self._conn.execute(
-                "SELECT uri, revision FROM sync_state WHERE source_id=? AND revision IS NOT NULL",
+                "SELECT uri, revision FROM sync_state WHERE source_id=?",
                 (source_id,),
             ) as cursor:
                 rows = await cursor.fetchall()

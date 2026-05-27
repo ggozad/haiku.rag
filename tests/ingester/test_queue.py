@@ -751,6 +751,17 @@ async def test_sync_state_snapshot_scoped_per_source(sync):
 
 
 @pytest.mark.asyncio
+async def test_sync_state_snapshot_includes_null_revision_rows(sync):
+    """A URI known to a source but never successfully ingested with a
+    revision (HTTP without ETag/Last-Modified, or a worker DLQ'd before
+    completion) is still in the snapshot — with revision=None. Needed so
+    config-removal DELETE detection sees these rows."""
+    await sync.upsert("s", "u", revision=None, content_hash=None)
+    snapshot = await sync.get_snapshot("s")
+    assert snapshot == {"u": None}
+
+
+@pytest.mark.asyncio
 async def test_sync_state_upsert_preserves_revision_when_none(sync):
     """upsert(revision=None) leaves an existing revision in place."""
     await sync.upsert("s", "u", revision="v1", content_hash="hash-v1")

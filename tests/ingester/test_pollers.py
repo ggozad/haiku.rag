@@ -130,9 +130,10 @@ async def test_upsert_event_enqueues_job_and_touches_sync_state(fs_config, jobs,
     assert queued[0].revision == "r1"
 
     # Pollers DO NOT write revision to sync_state — the worker does that
-    # after a successful ingest. But last_seen_at is bumped.
+    # after a successful ingest. The URI shows up in the snapshot with
+    # revision=None until then.
     snapshot = await sync.get_snapshot("src")
-    assert snapshot == {}  # revision left empty by the poller
+    assert snapshot == {"file:///a.md": None}
 
 
 @pytest.mark.asyncio

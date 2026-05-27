@@ -83,3 +83,20 @@ def test_source_id_raises_when_matched_source_rejects_uri():
     fs = FSSource(root=Path("/tmp"), source_id="local")
     with pytest.raises(ValueError, match="doesn't support URI"):
         resolve_fetcher("https://example.com/x", sources=[fs], source_id="local")
+
+
+def test_source_id_raises_when_no_source_matches():
+    """A worker job carries source_id from when it was enqueued. If the
+    operator renamed/removed that source, falling through to an ad-hoc
+    unauthenticated adapter would silently drop credentials. Raise instead
+    so the job DLQs and the misconfiguration is visible."""
+    arxiv = HTTPSource(source_id="arxiv", headers={"Authorization": "Bearer A"})
+    with pytest.raises(ValueError, match="No configured source with id 'gone'"):
+        resolve_fetcher("https://example.com/x", sources=[arxiv], source_id="gone")
+
+
+def test_source_id_with_no_sources_list_still_raises():
+    """Same strict mode when sources is None: source_id is a strong claim
+    that must match a configured source."""
+    with pytest.raises(ValueError, match="No configured source with id"):
+        resolve_fetcher("https://example.com/x", source_id="arxiv")
