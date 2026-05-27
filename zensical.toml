@@ -35,8 +35,8 @@ nav = [
         { Tuning = "tuning.md" },
     ] },
     { Production = [
-        { MCP = "mcp.md" },
         { Ingester = "ingester.md" },
+        { MCP = "mcp.md" },
         { "Remote processing" = "remote-processing.md" },
     ] },
     { Develop = [

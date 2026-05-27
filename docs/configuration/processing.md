@@ -212,7 +212,7 @@ conversion_options:
 
 - **images_scale**: Scale factor for extracted images. Higher values = better quality but larger size. Typical range: 1.0-3.0.
 - **generate_page_images**: When `true` (default), rendered images of each PDF page are included in the document. Required for `visualize_chunk()` to show visual grounding. When `false`, page images are excluded to reduce document size.
-- **fetch_remote_images**: When `true` (default), HTML and Markdown inputs have their external `<img src="https://...">` URLs fetched and stored as picture bytes. Set `false` for air-gapped ingest. Applies only to docling-local. See [Remote processing](../remote-processing.md#html-image-fetching) for the docling-serve limitation.
+- **fetch_remote_images**: When `true` (default), HTML and Markdown inputs have their external `<img src="https://...">` URLs fetched and stored as picture bytes. Set `false` for air-gapped ingest. Applies only to `docling-local`. **docling-serve doesn't fetch external `<img>` URLs** (the `ConvertDocumentsOptions` API exposes no equivalent flag, and HTML falls through to docling's `fetch_images=False` default); HTML ingested via docling-serve produces picture items with `picture_data=NULL`. Use `converter: docling-local` if you need image bytes from HTML/Markdown.
 
 #### External image fetching
 

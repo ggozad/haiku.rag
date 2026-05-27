@@ -14,6 +14,19 @@ Use the ingester when:
 For one-off ingestion, the `haiku-rag add-src` CLI is enough — see
 [CLI → Add Documents](cli.md).
 
+**On this page:**
+
+- [Install](#install)
+- [Configure sources](#configure-sources) (FS, S3, HTTP, WebDAV)
+- [Workers and retry](#workers-and-retry)
+- [Circuit breaker](#circuit-breaker)
+- [Run it](#run-it)
+- [HTTP control plane](#http-control-plane)
+- [Operating](#operating) (smoke test, queue inspection, logs, API)
+
+Single-writer constraint: only one ingester per LanceDB. See
+[Storage → Deployment Pattern](configuration/storage.md#deployment-pattern-one-writer-many-readers).
+
 ## Install
 
 The ingester ships behind an optional extra:
