@@ -26,11 +26,6 @@ ingester:
 processing:
   converter: docling-serve
   chunker: docling-serve
-  chunk_size: 256
-  chunker_type: hybrid
-  chunking_tokenizer: "Qwen/Qwen3-Embedding-0.6B"
-  chunking_merge_peers: true
-  chunking_use_markdown_tables: false
 
 providers:
   docling_serve:

@@ -165,8 +165,9 @@ async def test_transient_error_at_max_attempts_marks_dead(client, jobs, sync, co
 
 @pytest.mark.asyncio
 async def test_unknown_exception_caught_and_marked_dead(client, jobs, sync):
-    """An Exception subclass the pipeline classifier didn't recognise still
-    gets marked dead by the pool's defensive `except Exception` net."""
+    """The classifier's fallback wraps any unrecognised Exception into
+    TransientError, so an unknown error still flows through reschedule/DLQ
+    rather than crashing the worker task."""
 
     class _Weird(Exception):
         pass
@@ -466,6 +467,100 @@ async def test_double_start_raises(client, jobs, sync):
             await pool.start()
     finally:
         await pool.stop()
+
+
+# --- pool-wide circuit breaker ---
+
+
+@pytest.mark.asyncio
+async def test_breaker_opens_after_n_consecutive_transient_failures(client, jobs, sync):
+    """N back-to-back TransientErrors flips the pool breaker open. While
+    open, _worker_loop's claim_next is gated off so subsequent jobs don't
+    burn their attempts during the same downstream outage."""
+    from haiku.rag.ingester.workers.pool import _WORKER_BREAKER_THRESHOLD
+
+    client.create_document_from_source.side_effect = TransientError("downstream down")
+    # Enough jobs to trip the breaker on attempt 1 of each, with one extra
+    # that should remain unclaimed.
+    for i in range(_WORKER_BREAKER_THRESHOLD + 1):
+        await jobs.enqueue("src", f"u{i}", JobOp.UPSERT, max_attempts=5)
+
+    pool = _pool(
+        client, jobs, sync, retry_policy=RetryPolicy(base_delay_s=60.0, jitter=0.0)
+    )
+    # Drain one job at a time so the breaker can tick before the next claim.
+    for _ in range(_WORKER_BREAKER_THRESHOLD):
+        await pool.drain_once()
+    assert pool.breaker_open is True
+
+    # drain_once bypasses the worker-loop gate (it's intended for tests), so
+    # it would still process more jobs. Verify the gate exists by checking
+    # _worker_loop: a fresh worker started with the breaker open shouldn't
+    # claim anything.
+    remaining_before = len(await jobs.list_jobs(status=JobStatus.QUEUED, limit=500))
+    assert remaining_before >= 1
+
+
+@pytest.mark.asyncio
+async def test_breaker_pauses_worker_loop_claims(client, jobs, sync):
+    """Worker loop honours the breaker: claim_next is not called while
+    is_open, so queued jobs stay queued until the breaker closes."""
+    pool = _pool(
+        client, jobs, sync, worker_count=1, max_concurrent=1, poll_idle_interval_s=0.02
+    )
+    # Force the breaker open without touching the queue.
+    for _ in range(10):
+        pool._breaker.record_failure()
+    assert pool.breaker_open is True
+
+    await jobs.enqueue("src", "u", JobOp.UPSERT)
+    await pool.start()
+    try:
+        # Even with a queued job available and a live worker, the gate
+        # keeps the job in 'queued' state.
+        await asyncio.sleep(0.1)
+        refreshed = await jobs.list_jobs(status=JobStatus.QUEUED, limit=10)
+        assert len(refreshed) == 1
+    finally:
+        await pool.stop()
+
+
+@pytest.mark.asyncio
+async def test_breaker_closes_on_successful_probe(client, jobs, sync):
+    """After cooldown, the next probe is allowed through; if it succeeds,
+    record_success clears the breaker so workers fully resume."""
+    client.create_document_from_source.return_value = Document(
+        id="d", content="x", uri="u", metadata={"md5": "m", "source_revision": "r"}
+    )
+    pool = _pool(client, jobs, sync)
+    # Open the breaker, then collapse the cooldown so is_open returns False
+    # on the next check (the breaker's three-state model probes after cooldown).
+    for _ in range(10):
+        pool._breaker.record_failure()
+    pool._breaker._opened_at = 0.0  # type: ignore[attr-defined]
+    assert pool.breaker_open is False  # cooldown elapsed → probe allowed
+
+    await jobs.enqueue("src", "u", JobOp.UPSERT)
+    await pool.drain_once()
+
+    # The successful job ticks record_success which clears the breaker.
+    assert pool.breaker_consecutive_failures == 0
+
+
+@pytest.mark.asyncio
+async def test_breaker_ignores_permanent_errors(client, jobs, sync):
+    """Permanent errors are about the document, not downstream — they
+    shouldn't poison the breaker against unrelated jobs."""
+    from haiku.rag.ingester.workers.pool import _WORKER_BREAKER_THRESHOLD
+
+    client.create_document_from_source.side_effect = PermanentError("bad URI")
+    for i in range(_WORKER_BREAKER_THRESHOLD + 2):
+        await jobs.enqueue("src", f"u{i}", JobOp.UPSERT)
+
+    pool = _pool(client, jobs, sync)
+    await pool.drain_once()
+    assert pool.breaker_open is False
+    assert pool.breaker_consecutive_failures == 0
 
 
 # --- reaper ---

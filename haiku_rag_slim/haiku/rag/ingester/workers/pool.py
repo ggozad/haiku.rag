@@ -3,7 +3,9 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
+from haiku.rag.config import CircuitBreakerConfig
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
+from haiku.rag.ingester.pollers.circuit_breaker import CircuitBreaker
 from haiku.rag.ingester.queue.models import Job, JobOp
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
 from haiku.rag.ingester.workers.pipeline import run_job
@@ -14,6 +16,9 @@ if TYPE_CHECKING:
     from haiku.rag.ingester.sources.base import Source
 
 logger = logging.getLogger(__name__)
+
+_WORKER_BREAKER_THRESHOLD = 5
+_WORKER_BREAKER_COOLDOWN_S = 60.0
 
 
 class WorkerPool:
@@ -52,18 +57,27 @@ class WorkerPool:
         self._stop = asyncio.Event()
         self._workers: list[asyncio.Task] = []
         self._reaper: asyncio.Task | None = None
-        # Tracks release_if_claimed Tasks spawned by the cancel-cleanup path.
-        # The worker task may exit (a second cancel during shutdown_grace
-        # timeout) before its release Task finishes; the lifecycle owner
-        # drains these via drain_pending_releases() so the SQL update lands
-        # before the queue connection closes.
         self._pending_releases: set[asyncio.Task] = set()
+        self._breaker = CircuitBreaker(
+            CircuitBreakerConfig(
+                failure_threshold=_WORKER_BREAKER_THRESHOLD,
+                cooldown_s=_WORKER_BREAKER_COOLDOWN_S,
+            )
+        )
 
     @property
     def live_workers(self) -> int:
         """Worker tasks that are still running. Equal to worker_count under
         normal operation; less when a worker has crashed."""
         return sum(1 for t in self._workers if not t.done())
+
+    @property
+    def breaker_open(self) -> bool:
+        return self._breaker.is_open
+
+    @property
+    def breaker_consecutive_failures(self) -> int:
+        return self._breaker.consecutive_failures
 
     async def start(self) -> None:
         if self._workers:
@@ -108,6 +122,9 @@ class WorkerPool:
 
     async def _worker_loop(self, worker_id: str) -> None:
         while not self._stop.is_set():
+            if self._breaker.is_open:
+                await self._sleep_or_stop(self._poll_idle_s)
+                continue
             job = await self._jobs.claim_next(worker_id)
             if job is None:
                 await self._sleep_or_stop(self._poll_idle_s)
@@ -166,6 +183,15 @@ class WorkerPool:
             logger.info("Job %s dead (permanent): %s", job.id, e)
             return
         except TransientError as e:
+            was_closed = not self._breaker.is_open
+            self._breaker.record_failure()
+            if was_closed and self._breaker.is_open:
+                logger.warning(
+                    "Worker pool breaker opened after %d consecutive transient "
+                    "failures; pausing claims for %.0fs",
+                    _WORKER_BREAKER_THRESHOLD,
+                    _WORKER_BREAKER_COOLDOWN_S,
+                )
             if job.attempts >= job.max_attempts:
                 await self._jobs.mark_dead(job.id, str(e), worker_id)
                 logger.info(
@@ -200,6 +226,10 @@ class WorkerPool:
                 job.id,
             )
             return
+        was_open = self._breaker.is_open
+        self._breaker.record_success()
+        if was_open:
+            logger.info("Worker pool breaker closed after successful probe")
         if job.op is JobOp.DELETE:
             await self._sync.delete(job.source_id, job.uri)
         else:

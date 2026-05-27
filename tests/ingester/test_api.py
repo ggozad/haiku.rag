@@ -109,6 +109,32 @@ async def test_health_degraded_when_worker_died(jobs, sync):
 
 
 @pytest.mark.asyncio
+async def test_health_degraded_when_worker_breaker_open(jobs, sync):
+    """The pool-wide breaker opens after a streak of transient job failures.
+    /health must surface that and flip status='degraded' even when worker
+    and poller task counts are healthy."""
+    from unittest.mock import MagicMock
+
+    from haiku.rag.config import AppConfig
+
+    config = AppConfig()
+    config.ingester.workers.worker_count = 4
+
+    pool = MagicMock()
+    pool.live_workers = 4
+    pool.breaker_open = True
+    pool.breaker_consecutive_failures = 7
+
+    state = APIState(config=config, job_repo=jobs, sync_repo=sync, pool=pool)
+    async with _client(state) as client:
+        resp = await client.get("/health")
+    body = resp.json()
+    assert body["status"] == "degraded"
+    assert body["worker_breaker_open"] is True
+    assert body["worker_breaker_consecutive_failures"] == 7
+
+
+@pytest.mark.asyncio
 async def test_health_skips_auth(state):
     async with _client(state, auth_token="secret") as client:
         resp = await client.get("/health")

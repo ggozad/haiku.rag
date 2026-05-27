@@ -14,6 +14,10 @@ class HealthResponse(BaseModel):
     # uptime monitors can alert without needing to do the math themselves.
     workers_alive: int
     pollers_alive: int
+    # Pool-wide breaker: open when N consecutive transient job failures
+    # have paused worker claims. status="degraded" while open.
+    worker_breaker_open: bool = False
+    worker_breaker_consecutive_failures: int = 0
 
 
 class SourceSummary(BaseModel):

@@ -24,7 +24,13 @@ async def health(state: APIState = Depends(get_state)) -> HealthResponse:
     workers_alive = state.pool.live_workers if state.pool is not None else 0
     poller_count = len(state.pollers.pollers) if state.pollers is not None else 0
     pollers_alive = state.pollers.live_pollers if state.pollers is not None else 0
-    degraded = workers_alive < worker_count or pollers_alive < poller_count
+    breaker_open = state.pool.breaker_open if state.pool is not None else False
+    breaker_failures = (
+        state.pool.breaker_consecutive_failures if state.pool is not None else 0
+    )
+    degraded = (
+        workers_alive < worker_count or pollers_alive < poller_count or breaker_open
+    )
     return HealthResponse(
         status="degraded" if degraded else "ok",
         queue_counts=counts,
@@ -32,4 +38,6 @@ async def health(state: APIState = Depends(get_state)) -> HealthResponse:
         poller_count=poller_count,
         workers_alive=workers_alive,
         pollers_alive=pollers_alive,
+        worker_breaker_open=breaker_open,
+        worker_breaker_consecutive_failures=breaker_failures,
     )
