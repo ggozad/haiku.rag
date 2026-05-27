@@ -136,9 +136,35 @@
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       }
       .breakdown span { margin-right: 12px; }
+
+      /* Floating tooltip for truncated cells. Triggered via data-tip
+         on any element; positioned in JS so it escapes the table cell's
+         overflow:hidden context. */
+      #tooltip {
+        position: fixed;
+        z-index: 1000;
+        max-width: 480px;
+        padding: 6px 10px;
+        background: #0a0d11;
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        font-size: 12px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        line-height: 1.4;
+        word-break: break-all;
+        white-space: pre-wrap;
+        pointer-events: none;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        opacity: 0;
+        transition: opacity 0.08s ease-out;
+      }
+      #tooltip.visible { opacity: 1; }
+      [data-tip] { cursor: help; }
     </style>
   </head>
   <body>
+    <div id="tooltip"></div>
     <div class="container">
       <div class="topbar">
         <span class="dot" id="health-dot"></span>
@@ -377,7 +403,7 @@
               ? SKIP_REASON_LABELS[reason] || reason
               : null;
             const skipBadge = reason
-              ? ` <span class="badge warn" title="Most recent sweep attempt was skipped (${escapeHtml(reason)}).">${escapeHtml(label)}</span>`
+              ? ` <span class="badge warn" data-tip="Most recent sweep attempt was skipped (${escapeHtml(reason)}).">${escapeHtml(label)}</span>`
               : "";
             const polledCell = s.last_polled_at
               ? relTime(s.last_polled_at) + skipBadge
@@ -437,9 +463,9 @@
             const detailClass = p.reachable ? "ok" : "err";
             return `<tr>
               <td>docling-serve</td>
-              <td class="uri" title="${escapeHtml(p.base_url)}">${escapeHtml(p.base_url)}</td>
+              <td class="uri" data-tip="${escapeHtml(p.base_url)}">${escapeHtml(p.base_url)}</td>
               <td>${badge}</td>
-              <td class="${detailClass}" title="${detail}">${detail}</td>
+              <td class="${detailClass}" data-tip="${detail}">${detail}</td>
             </tr>`;
           })
           .join("");
@@ -459,17 +485,17 @@
         }
         const rows = jobs
           .map((j) => {
-            const tryTitle = j.last_error
-              ? ` title="Previous attempt failed: ${escapeHtml(j.last_error)}"`
+            const tryTip = j.last_error
+              ? ` data-tip="Previous attempt failed: ${escapeHtml(j.last_error)}"`
               : "";
             const tryCell =
               j.attempts > 1
-                ? `<td class="retried"${tryTitle}>${j.attempts}/${j.max_attempts}</td>`
+                ? `<td class="retried"${tryTip}>${j.attempts}/${j.max_attempts}</td>`
                 : `<td>${j.attempts}/${j.max_attempts}</td>`;
             return `<tr>
-              <td class="id" title="${escapeHtml(j.id)}">${shortId(j.id)}</td>
+              <td class="id" data-tip="${escapeHtml(j.id)}">${shortId(j.id)}</td>
               <td>${opBadge(j.op)}</td>
-              <td class="uri" title="${escapeHtml(j.uri)}">${escapeHtml(j.uri)}</td>
+              <td class="uri" data-tip="${escapeHtml(j.uri)}">${escapeHtml(j.uri)}</td>
               <td class="worker">${escapeHtml(j.claimed_by ?? "—")}</td>
               ${tryCell}
               <td>${relTime(j.claimed_at)}</td>
@@ -497,9 +523,9 @@
         const rows = jobs
           .map(
             (j) => `<tr>
-              <td class="id" title="${escapeHtml(j.id)}">${shortId(j.id)}</td>
-              <td class="uri" title="${escapeHtml(j.uri)}">${escapeHtml(j.uri)}</td>
-              <td class="err" title="${escapeHtml(j.last_error ?? "")}">${escapeHtml(j.last_error ?? "")}</td>
+              <td class="id" data-tip="${escapeHtml(j.id)}">${shortId(j.id)}</td>
+              <td class="uri" data-tip="${escapeHtml(j.uri)}">${escapeHtml(j.uri)}</td>
+              <td class="err" data-tip="${escapeHtml(j.last_error ?? "")}">${escapeHtml(j.last_error ?? "")}</td>
               <td>${relTime(j.completed_at)}</td>
               <td class="actions">
                 <button onclick="retryJob('${escapeHtml(j.id)}')">Retry</button>
@@ -530,7 +556,7 @@
             }
             return `<tr>
               <td>${opBadge(j.op)}</td>
-              <td class="uri" title="${escapeHtml(j.uri)}">${escapeHtml(j.uri)}</td>
+              <td class="uri" data-tip="${escapeHtml(j.uri)}">${escapeHtml(j.uri)}</td>
               <td>${escapeHtml(j.source_id)}</td>
               <td>${duration}</td>
               <td>${relTime(j.completed_at)}</td>
@@ -561,7 +587,7 @@
           let detail = `${health.worker_count} workers · ${health.poller_count} pollers`;
           if (health.worker_breaker_open) {
             const fails = health.worker_breaker_consecutive_failures;
-            detail += ` · <span class="badge bad" title="${fails} consecutive transient job failures; worker claims paused until cooldown elapses">WORKER BREAKER OPEN</span>`;
+            detail += ` · <span class="badge bad" data-tip="${fails} consecutive transient job failures; worker claims paused until cooldown elapses">WORKER BREAKER OPEN</span>`;
           }
           $("health-detail").innerHTML = detail;
           renderChips(health.queue_counts);
@@ -604,6 +630,43 @@
         } catch (e) {}
         refresh();
       };
+
+      // Floating tooltip: shows the full content of any [data-tip] element
+      // immediately on hover. Uses event delegation so it survives the
+      // table-body innerHTML reset each refresh().
+      (() => {
+        const tip = $("tooltip");
+        let current = null;
+        const place = (e) => {
+          const pad = 12;
+          const w = tip.offsetWidth;
+          const h = tip.offsetHeight;
+          let x = e.clientX + pad;
+          let y = e.clientY + pad;
+          if (x + w > window.innerWidth - 8) x = e.clientX - w - pad;
+          if (y + h > window.innerHeight - 8) y = e.clientY - h - pad;
+          tip.style.left = `${Math.max(8, x)}px`;
+          tip.style.top = `${Math.max(8, y)}px`;
+        };
+        document.addEventListener("mouseover", (e) => {
+          const el = e.target.closest("[data-tip]");
+          if (!el || el === current) return;
+          current = el;
+          tip.textContent = el.getAttribute("data-tip") || "";
+          tip.classList.add("visible");
+          place(e);
+        });
+        document.addEventListener("mousemove", (e) => {
+          if (current) place(e);
+        });
+        document.addEventListener("mouseout", (e) => {
+          if (!current) return;
+          const next = e.relatedTarget && e.relatedTarget.closest?.("[data-tip]");
+          if (next === current) return;
+          tip.classList.remove("visible");
+          current = null;
+        });
+      })();
 
       setInterval(updateLastRefresh, 1000);
       refresh();
