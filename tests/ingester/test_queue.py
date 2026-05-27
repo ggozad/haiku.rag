@@ -519,6 +519,54 @@ async def test_reap_stale_leaves_fresh_claims_alone(jobs):
     assert refreshed.status is JobStatus.CLAIMED
 
 
+# --- prune_dead ---
+
+
+@pytest.mark.asyncio
+async def test_prune_dead_removes_matching_dead_rows(jobs):
+    """A dead UPSERT becomes stale once a sibling DELETE has resolved the URI;
+    prune_dead() removes it so the DLQ stops showing resolved entries."""
+    job = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    assert job is not None
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None
+    await jobs.mark_dead(claimed.id, "boom", "w")
+
+    pruned = await jobs.prune_dead("s", "u")
+    assert pruned == 1
+    assert await jobs.get_job(job.id) is None
+
+
+@pytest.mark.asyncio
+async def test_prune_dead_leaves_non_dead_rows_alone(jobs):
+    """Queued/claimed/succeeded rows for the same (source, uri) are not
+    touched — only `dead` is purged."""
+    queued = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    assert queued is not None
+
+    pruned = await jobs.prune_dead("s", "u")
+    assert pruned == 0
+    refreshed = await jobs.get_job(queued.id)
+    assert refreshed is not None and refreshed.status is JobStatus.QUEUED
+
+
+@pytest.mark.asyncio
+async def test_prune_dead_scoped_to_matching_uri(jobs):
+    """Dead rows for other URIs (and other sources) survive."""
+    j1 = await jobs.enqueue("s", "u1", JobOp.UPSERT)
+    assert j1 is not None
+    await jobs.mark_dead((await jobs.claim_next("w")).id, "err", "w")
+
+    j2 = await jobs.enqueue("s", "u2", JobOp.UPSERT)
+    assert j2 is not None
+    await jobs.mark_dead((await jobs.claim_next("w")).id, "err", "w")
+
+    pruned = await jobs.prune_dead("s", "u1")
+    assert pruned == 1
+    assert await jobs.get_job(j1.id) is None
+    assert await jobs.get_job(j2.id) is not None
+
+
 # --- release_if_claimed ---
 
 

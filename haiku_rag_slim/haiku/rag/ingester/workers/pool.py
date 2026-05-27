@@ -235,6 +235,16 @@ class WorkerPool:
             logger.info("Worker pool breaker closed after successful probe")
         if job.op is JobOp.DELETE:
             await self._sync.delete(job.source_id, job.uri)
+            # A successful DELETE resolves any earlier UPSERT failures for the
+            # same (source_id, uri): the document is gone, the original error
+            # is no longer actionable, the DLQ entry is just visual noise.
+            pruned = await self._jobs.prune_dead(job.source_id, job.uri)
+            if pruned:
+                logger.info(
+                    "Pruned %d dead job(s) for %s after successful DELETE",
+                    pruned,
+                    job.uri,
+                )
         else:
             await self._sync.upsert(
                 job.source_id,

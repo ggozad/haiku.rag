@@ -363,6 +363,21 @@ class JobRepo:
             await self._conn.commit()
         return row is not None
 
+    async def prune_dead(self, source_id: str, uri: str) -> int:
+        """Delete dead jobs for the given (source_id, uri). Called after a
+        successful DELETE to clear stale UPSERT failures for the same URI —
+        the document is gone, so a "couldn't ingest this" entry is no longer
+        actionable. Returns the number of rows removed."""
+        async with self._lock:
+            cursor = await self._conn.execute(
+                "DELETE FROM jobs WHERE source_id=? AND uri=? AND status='dead'",
+                (source_id, uri),
+            )
+            rowcount = cursor.rowcount or 0
+            await cursor.close()
+            await self._conn.commit()
+        return rowcount
+
     async def reap_stale(self, claim_timeout_seconds: int) -> int:
         """Reset claimed jobs whose claimed_at is older than the timeout
         back to `queued`. Decrements `attempts` to undo the increment from
