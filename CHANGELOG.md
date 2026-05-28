@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- PDF `/EmbeddedFiles` attachments are ingested as separate Documents linked to the wrapper through `metadata.parent_uri`. Child URIs use a `#attachment=<percent-encoded-name>` fragment on the parent URI. Re-ingest reconciles the child set (add / update / delete) against the wrapper's current attachments; `delete_document` cascades through `parent_uri`. Nested chains are bounded at 3 levels. Toggle with `processing.extract_pdf_attachments` (default `true`).
+
 ### Changed
 
 - A successful DELETE job auto-prunes dead jobs with the same `(source_id, uri)`. New `JobRepo.prune_dead(source_id, uri)`.

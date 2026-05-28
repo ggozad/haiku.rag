@@ -80,6 +80,8 @@ doc = await client.create_document_from_source(
 )
 ```
 
+PDFs that carry attachments via the `/EmbeddedFiles` table are split into one Document per attachment, linked to the wrapper through `metadata.parent_uri`. See [PDF Embedded Attachments](configuration/processing.md#pdf-embedded-attachments).
+
 ### Retrieving Documents
 
 By ID:
@@ -166,6 +168,8 @@ await client.update_document(document_id=doc.id, chunks=custom_chunks)
 ```python
 await client.delete_document(doc.id)
 ```
+
+Deleting a document also removes any child Documents linked to it via `metadata.parent_uri` (PDF attachment children, primarily). The cascade is transitive.
 
 ## Searching Documents
 

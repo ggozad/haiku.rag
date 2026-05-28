@@ -293,3 +293,122 @@ async def test_cascade_delete_removes_reconciled_children(temp_db_path, monkeypa
 
         await client.delete_document(parent.id)
         assert await client.list_documents() == []
+
+
+async def test_create_document_from_source_extracts_attachments(
+    tmp_path, temp_db_path, monkeypatch
+):
+    """The full create_document_from_source path — the same entry point the
+    ingester worker uses for an UPSERT job — produces parent + child docs
+    when the source is a PDF with embedded files on disk."""
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(
+        build_pdf([("notes.txt", b"plain text"), ("data.txt", b"more data")])
+    )
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent = await client.create_document_from_source(pdf_path)
+
+    async with HaikuRAG(temp_db_path) as client:
+        assert isinstance(parent, Document)
+        children = await client.list_documents(filter=parent_uri_filter(parent.uri))
+        assert len(children) == 2
+        assert {c.metadata["parent_uri"] for c in children} == {parent.uri}
+
+
+async def test_create_document_from_source_reingest_after_attachment_edit(
+    tmp_path, temp_db_path, monkeypatch
+):
+    """Mutate the parent PDF's attachments and re-ingest. The md5 short-circuit
+    must NOT fire (parent bytes changed); reconciliation diffs children to add,
+    update, and delete in one pass while leaving unrelated children untouched."""
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(
+        build_pdf(
+            [
+                ("stable.txt", b"unchanged across runs"),
+                ("changed.txt", b"old contents"),
+                ("removed.txt", b"goes away"),
+            ]
+        )
+    )
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent = await client.create_document_from_source(pdf_path)
+        assert isinstance(parent, Document)
+        before_children = {
+            c.uri: c
+            for c in await client.list_documents(filter=parent_uri_filter(parent.uri))
+        }
+        assert set(before_children) == {
+            f"{parent.uri}#attachment=stable.txt",
+            f"{parent.uri}#attachment=changed.txt",
+            f"{parent.uri}#attachment=removed.txt",
+        }
+        stable_id_before = before_children[f"{parent.uri}#attachment=stable.txt"].id
+        changed_id_before = before_children[f"{parent.uri}#attachment=changed.txt"].id
+
+    pdf_path.write_bytes(
+        build_pdf(
+            [
+                ("stable.txt", b"unchanged across runs"),
+                ("changed.txt", b"new contents"),
+                ("added.txt", b"brand new"),
+            ]
+        )
+    )
+
+    async with HaikuRAG(temp_db_path) as client:
+        await client.create_document_from_source(pdf_path)
+        after_children = {
+            c.uri: c
+            for c in await client.list_documents(filter=parent_uri_filter(parent.uri))
+        }
+
+        assert set(after_children) == {
+            f"{parent.uri}#attachment=stable.txt",
+            f"{parent.uri}#attachment=changed.txt",
+            f"{parent.uri}#attachment=added.txt",
+        }
+        stable = after_children[f"{parent.uri}#attachment=stable.txt"]
+        changed = after_children[f"{parent.uri}#attachment=changed.txt"]
+        assert stable.id == stable_id_before
+        assert changed.id == changed_id_before
+        assert (
+            stable.metadata["md5"]
+            == before_children[f"{parent.uri}#attachment=stable.txt"].metadata["md5"]
+        )
+        assert (
+            changed.metadata["md5"]
+            != before_children[f"{parent.uri}#attachment=changed.txt"].metadata["md5"]
+        )
+
+
+async def test_create_document_from_source_delete_cascades(
+    tmp_path, temp_db_path, monkeypatch
+):
+    """The ingester worker's DELETE path is just client.delete_document(doc.id).
+    A parent ingested via the full pipeline must cascade to its children when
+    that path runs — mirrors what happens when a watched file is removed."""
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(build_pdf([("a.txt", b"A"), ("b.txt", b"B")]))
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent = await client.create_document_from_source(pdf_path)
+        assert isinstance(parent, Document)
+        assert len(await client.list_documents()) == 3
+
+        await client.delete_document(parent.id)
+        assert await client.list_documents() == []
