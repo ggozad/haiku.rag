@@ -1,8 +1,11 @@
+import hashlib
 import json
+import logging
+import mimetypes
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.client.processing import (
@@ -26,6 +29,14 @@ if TYPE_CHECKING:
 
     from haiku.rag.client import HaikuRAG
     from haiku.rag.ingester.sources.base import Source
+
+logger = logging.getLogger(__name__)
+
+# Maximum length of an attachment chain rooted at a top-level ingest. With
+# value 3, a PDF whose attachments contain PDFs which themselves contain
+# PDFs is fully ingested (3 levels); a fourth nested level logs a warning
+# and is skipped.
+MAX_ATTACHMENT_DEPTH = 3
 
 
 def parent_uri_filter(parent_uri: str) -> str:
@@ -232,9 +243,11 @@ async def _ingest_fetch_result(
     user_metadata: dict,
     stored_uri: str,
     existing_doc: Document | None,
+    depth: int = 0,
 ) -> Document:
     """Convert / chunk / embed / store a fetched document. Replaces an
-    existing document if one is supplied."""
+    existing document if one is supplied. ``depth`` tracks position in an
+    attachment chain so the reconciliation step can bound recursion."""
     from haiku.rag.embeddings import embed_chunks
 
     converter = get_converter(client._config)
@@ -296,6 +309,7 @@ async def _ingest_fetch_result(
                 client, existing_doc, embedded_chunks, docling_document
             )
             store_span.set_attribute("document_id", updated.id)
+        await _reconcile_pdf_attachments(client, updated, result.body, depth=depth)
         return updated
 
     if title is None:
@@ -312,7 +326,105 @@ async def _ingest_fetch_result(
             client, document, embedded_chunks, docling_document
         )
         store_span.set_attribute("document_id", created.id)
+    await _reconcile_pdf_attachments(client, created, result.body, depth=depth)
     return created
+
+
+async def _reconcile_pdf_attachments(
+    client: "HaikuRAG",
+    parent_doc: Document,
+    parent_body: bytes,
+    *,
+    depth: int,
+) -> None:
+    """Diff the parent PDF's ``/EmbeddedFiles`` table against any children
+    already linked via ``metadata.parent_uri`` and bring the child set in line:
+    ingest additions, update changed bytes, cascade-delete removed names.
+
+    Re-uses ``_ingest_fetch_result`` for each child so the standard conversion
+    path runs uniformly — child PDFs recurse into this helper one level deeper,
+    bounded by ``MAX_ATTACHMENT_DEPTH``.
+    """
+    if not client._config.processing.extract_pdf_attachments:
+        return
+    if not parent_doc.uri:
+        return
+    if (parent_doc.metadata or {}).get("content_type") != "application/pdf":
+        return
+
+    import pypdfium2 as pdfium
+
+    try:
+        pdf = pdfium.PdfDocument(parent_body)
+    except pdfium.PdfiumError as exc:
+        logger.warning(
+            "Cannot scan %s for embedded attachments: %s", parent_doc.uri, exc
+        )
+        return
+    attachment_count = pdf.count_attachments()
+
+    if depth + 1 >= MAX_ATTACHMENT_DEPTH:
+        if attachment_count > 0:
+            logger.warning(
+                "Attachment depth cap (%d) reached at %s; skipping %d nested "
+                "attachment(s).",
+                MAX_ATTACHMENT_DEPTH,
+                parent_doc.uri,
+                attachment_count,
+            )
+        return
+
+    new_attachments: dict[str, tuple[str, bytes, str, str]] = {}
+    for i in range(attachment_count):
+        att = pdf.get_attachment(i)
+        name = att.get_name()
+        if not name:
+            continue
+        data = bytes(att.get_data())
+        child_uri = f"{parent_doc.uri}#attachment={quote(name, safe='')}"
+        content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
+        content_hash = hashlib.md5(data, usedforsecurity=False).hexdigest()
+        new_attachments[child_uri] = (name, data, content_type, content_hash)
+
+    existing = await client.list_documents(filter=parent_uri_filter(parent_doc.uri))
+    existing_by_uri: dict[str, Document] = {d.uri: d for d in existing if d.uri}
+
+    for child_uri, (name, data, content_type, content_hash) in new_attachments.items():
+        existing_child = existing_by_uri.get(child_uri)
+        if (
+            existing_child
+            and (existing_child.metadata or {}).get("md5") == content_hash
+        ):
+            continue
+
+        child_fr = FetchResult(
+            uri=child_uri,
+            body=data,
+            content_type=content_type,
+            content_hash=content_hash,
+            extra_metadata={"parent_uri": parent_doc.uri},
+        )
+        try:
+            await _ingest_fetch_result(
+                client,
+                child_fr,
+                title=None,
+                user_metadata={},
+                stored_uri=child_uri,
+                existing_doc=existing_child,
+                depth=depth + 1,
+            )
+        except UnsupportedSourceError:
+            logger.warning(
+                "Skipping attachment %r in %s: unsupported content type %r",
+                name,
+                parent_doc.uri,
+                content_type,
+            )
+
+    for child_uri, child in existing_by_uri.items():
+        if child_uri not in new_attachments and child.id:
+            await client.delete_document(child.id)
 
 
 async def create_document_from_source(
