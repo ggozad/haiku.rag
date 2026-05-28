@@ -310,7 +310,18 @@ class HaikuRAG:
         return None
 
     async def delete_document(self, document_id: str) -> bool:
-        """Delete a document by its ID."""
+        """Delete a document by its ID. Cascades to children linked via
+        ``metadata.parent_uri``."""
+        from haiku.rag.client.documents import parent_uri_filter
+
+        doc = await self.get_document_by_id(document_id)
+        if doc is None:
+            return False
+        if doc.uri:
+            children = await self.list_documents(filter=parent_uri_filter(doc.uri))
+            for child in children:
+                if child.id and child.id != document_id:
+                    await self.delete_document(child.id)
         return await self.document_repository.delete(document_id)
 
     async def list_documents(

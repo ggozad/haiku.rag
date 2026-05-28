@@ -1,3 +1,4 @@
+import json
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -25,6 +26,16 @@ if TYPE_CHECKING:
 
     from haiku.rag.client import HaikuRAG
     from haiku.rag.ingester.sources.base import Source
+
+
+def parent_uri_filter(parent_uri: str) -> str:
+    """SQL `WHERE` clause matching documents whose ``metadata.parent_uri``
+    equals ``parent_uri``. ``metadata`` is stored as a JSON string produced by
+    the standard library's ``json.dumps`` (which inserts ``": "`` between key
+    and value), so the match is a substring search over that serialized form —
+    escape JSON-meaningful chars in the URI, then SQL-escape single quotes."""
+    json_fragment = json.dumps(parent_uri)[1:-1].replace("'", "''")
+    return f'metadata LIKE \'%"parent_uri": "{json_fragment}"%\''
 
 
 async def _store_document_with_chunks(

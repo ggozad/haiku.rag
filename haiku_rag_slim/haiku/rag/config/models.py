@@ -182,6 +182,10 @@ class ProcessingConfig(BaseModel):
     - ``"image"``: docling generates picture images and stores them in
       ``document_items.picture_data``; no VLM runs at ingest.
     """
+    extract_pdf_attachments: bool = True
+    """When a PDF carries `/EmbeddedFiles`, ingest each attachment as a separate
+    Document linked back to the wrapper via ``metadata.parent_uri``. Cap depth
+    at 3 to bound nested-attachment recursion."""
     auto_title: bool = False
     title_model: ModelConfig = Field(
         default_factory=lambda: ModelConfig(
