@@ -273,6 +273,62 @@ async def test_parent_without_uri_is_skipped(temp_db_path, monkeypatch):
         assert await client.list_documents() == []
 
 
+async def test_malformed_pdf_logs_warning_and_skips(temp_db_path, monkeypatch, caplog):
+    """A non-PDF body labelled as application/pdf must not crash the helper —
+    pypdfium2's open raises PdfiumError, which we log and return from."""
+    import logging
+
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent_uri = "file:///fixtures/junk.pdf"
+        garbage = b"this is not a pdf at all"
+        parent = await _make_parent(client, parent_uri, garbage)
+        with caplog.at_level(logging.WARNING, logger="haiku.rag.client.documents"):
+            await _reconcile_pdf_attachments(client, parent, garbage, depth=0)
+        assert await client.list_documents(filter=parent_uri_filter(parent_uri)) == []
+
+
+async def test_unsupported_attachment_continues_loop(temp_db_path, monkeypatch):
+    """One attachment whose ingest raises UnsupportedSourceError must not
+    prevent siblings from being ingested. The unsupported attachment is
+    skipped with a warning; the others land."""
+    from haiku.rag.client.exceptions import UnsupportedSourceError
+
+    async def picky_fake(
+        client,
+        result,
+        *,
+        title,
+        user_metadata,
+        stored_uri,
+        existing_doc,
+        depth=0,
+    ):
+        if stored_uri.endswith("unsupported.xyz"):
+            raise UnsupportedSourceError("nope")
+        return await fake_ingest_fetch_result(
+            client,
+            result,
+            title=title,
+            user_metadata=user_metadata,
+            stored_uri=stored_uri,
+            existing_doc=existing_doc,
+            depth=depth,
+        )
+
+    monkeypatch.setattr("haiku.rag.client.documents._ingest_fetch_result", picky_fake)
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent_uri = "file:///fixtures/parent.pdf"
+        pdf_bytes = build_pdf([("ok.txt", b"keep me"), ("unsupported.xyz", b"data")])
+        parent = await _make_parent(client, parent_uri, pdf_bytes)
+        await _reconcile_pdf_attachments(client, parent, pdf_bytes, depth=0)
+        children = await client.list_documents(filter=parent_uri_filter(parent_uri))
+        assert {c.uri for c in children} == {f"{parent_uri}#attachment=ok.txt"}
+
+
 async def test_cascade_delete_removes_reconciled_children(temp_db_path, monkeypatch):
     monkeypatch.setattr(
         "haiku.rag.client.documents._ingest_fetch_result",
