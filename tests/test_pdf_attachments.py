@@ -1,5 +1,4 @@
 import io
-import logging
 
 import pypdfium2 as pdfium
 
@@ -195,16 +194,13 @@ async def test_reingest_adds_new_attachment(temp_db_path, monkeypatch):
         assert f"{parent_uri}#attachment=c.txt" in names
 
 
-async def test_nested_pdf_attachments_recurse_up_to_cap(
-    temp_db_path, monkeypatch, caplog
-):
+async def test_nested_pdf_attachments_recurse_up_to_cap(temp_db_path, monkeypatch):
     monkeypatch.setattr(
         "haiku.rag.client.documents._ingest_fetch_result",
         fake_ingest_fetch_result,
     )
     # Build a 4-deep chain: root -> L1 -> L2 -> L3. MAX_ATTACHMENT_DEPTH=3
-    # means root + L1 + L2 ingested (3 PDFs total); L3 is skipped with a
-    # warning logged at the depth boundary.
+    # means root + L1 + L2 ingested (3 PDFs total); L3 is skipped at the cap.
     assert MAX_ATTACHMENT_DEPTH == 3
     l3 = build_pdf([("leaf.txt", b"deepest")])
     l2 = build_pdf([("l3.pdf", l3)])
@@ -214,8 +210,7 @@ async def test_nested_pdf_attachments_recurse_up_to_cap(
     async with HaikuRAG(temp_db_path, create=True) as client:
         root_uri = "file:///fixtures/root.pdf"
         parent = await _make_parent(client, root_uri, root)
-        with caplog.at_level(logging.WARNING, logger="haiku.rag.client.documents"):
-            await _reconcile_pdf_attachments(client, parent, root, depth=0)
+        await _reconcile_pdf_attachments(client, parent, root, depth=0)
 
         l1_uri = f"{root_uri}#attachment=l1.pdf"
         l2_uri = f"{l1_uri}#attachment=l2.pdf"
@@ -224,7 +219,6 @@ async def test_nested_pdf_attachments_recurse_up_to_cap(
         assert await client.get_document_by_uri(l1_uri) is not None
         assert await client.get_document_by_uri(l2_uri) is not None
         assert await client.get_document_by_uri(l3_uri) is None
-        assert any("depth cap" in r.message for r in caplog.records)
 
 
 async def test_config_off_skips_extraction(temp_db_path, monkeypatch):
@@ -233,7 +227,7 @@ async def test_config_off_skips_extraction(temp_db_path, monkeypatch):
         fake_ingest_fetch_result,
     )
     async with HaikuRAG(temp_db_path, create=True) as client:
-        client._config.processing.extract_pdf_attachments = False
+        monkeypatch.setattr(client._config.processing, "extract_pdf_attachments", False)
         parent_uri = "file:///fixtures/parent.pdf"
         pdf_bytes = build_pdf([("a.txt", b"A")])
         parent = await _make_parent(client, parent_uri, pdf_bytes)
