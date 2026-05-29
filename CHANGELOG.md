@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.51.0] - 2026-05-29
+
 ### Added
 
 - PDF `/EmbeddedFiles` attachments are ingested as separate Documents linked to the wrapper through `metadata.parent_uri`. Child URIs use a `#attachment=<percent-encoded-name>` fragment on the parent URI. Re-ingest reconciles the child set (add / update / delete) against the wrapper's current attachments; `delete_document` cascades through `parent_uri`. Nested chains are bounded at 3 levels. Toggle with `processing.extract_pdf_attachments` (default `true`).
@@ -1627,7 +1629,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.50.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.51.0...HEAD
+[0.51.0]: https://github.com/ggozad/haiku.rag/compare/0.50.0...0.51.0
 [0.50.0]: https://github.com/ggozad/haiku.rag/compare/0.48.1...0.50.0
 [0.48.1]: https://github.com/ggozad/haiku.rag/compare/0.48.0...0.48.1
 [0.48.0]: https://github.com/ggozad/haiku.rag/compare/0.47.0...0.48.0
