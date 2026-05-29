@@ -166,7 +166,7 @@ class IngesterApp:
             for sig in (signal.SIGINT, signal.SIGTERM):
                 try:
                     loop.add_signal_handler(sig, stop_event.set)
-                except NotImplementedError:
+                except NotImplementedError:  # pragma: no cover - Windows only
                     # Windows; signal handlers unavailable in asyncio.
                     pass
 

@@ -1,7 +1,7 @@
-"""IngesterApp.run_batch: one discover sweep across configured sources,
-drain the queue, then exit. The document store (HaikuRAG) is patched out —
-the behavior under test is the sweep -> queue -> worker -> drain
-orchestration and orphan pruning, not embedding."""
+"""IngesterApp lifecycle: run_batch (one sweep -> drain -> exit) and serve
+(pollers + workers + API until shutdown). The document store (HaikuRAG) is
+patched out — the behavior under test is the orchestration and orphan
+pruning, not embedding."""
 
 import asyncio
 from contextlib import asynccontextmanager
@@ -23,6 +23,7 @@ from haiku.rag.config import (
     WorkerConfig,
 )
 from haiku.rag.ingester.app import IngesterApp
+from haiku.rag.ingester.workers.pool import WorkerPool
 from haiku.rag.store.models.document import Document
 
 
@@ -203,3 +204,76 @@ async def test_run_batch_empty_source_returns_immediately(tmp_path, use_client):
     assert report.succeeded == 0
     assert report.dead == 0
     client.create_document_from_source.assert_not_awaited()
+
+
+async def _wait_until(predicate, *, timeout: float = 5.0):
+    deadline = asyncio.get_running_loop().time() + timeout
+    while not predicate():
+        if asyncio.get_running_loop().time() > deadline:
+            raise AssertionError("condition not reached within timeout")
+        await asyncio.sleep(0.02)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("api", [True, False])
+async def test_serve_starts_workers_pollers_and_shuts_down(tmp_path, use_client, api):
+    """serve brings up pollers, workers and (when enabled) the HTTP API, then
+    tears them all down. Shutdown is driven here by cancelling the serve task,
+    which runs the same drain-and-close path as a SIGINT/SIGTERM."""
+    use_client(_mock_client())
+    config = _config(tmp_path)
+    config.ingester.api = APIConfig(enabled=api, host="127.0.0.1", port=0)
+    app = IngesterApp(config=config, db_path=tmp_path / "db.lancedb")
+
+    task = asyncio.create_task(app.serve(api=api))
+    try:
+        await _wait_until(
+            lambda: (
+                app._pool is not None
+                and app._pool.live_workers > 0
+                and app._pollers is not None
+                and app._pollers.live_pollers > 0
+            )
+        )
+    finally:
+        task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=5.0)
+
+    # Workers and pollers are stopped after the shutdown path runs.
+    assert app._pool is not None and app._pollers is not None
+    assert app._pool.live_workers == 0
+    assert app._pollers.live_pollers == 0
+
+
+class _SlowPool(WorkerPool):
+    """A WorkerPool whose stop never finishes within the grace, to exercise
+    _stop_pool's timeout path. The real wiring is bypassed since _stop_pool
+    only calls stop() and drain_pending_releases()."""
+
+    def __init__(self) -> None:
+        self.released = 0
+
+    async def stop(self) -> None:
+        await asyncio.sleep(1.0)
+
+    async def drain_pending_releases(self, timeout: float = 2.0) -> int:
+        self.released += 1
+        return 2
+
+
+@pytest.mark.asyncio
+async def test_stop_pool_warns_when_shutdown_grace_elapses(tmp_path, caplog):
+    """When a worker doesn't stop within the shutdown grace, _stop_pool logs a
+    warning and still drains any pending cancel-cleanup releases."""
+    config = _config(tmp_path, shutdown_grace_s=0.01)
+    app = IngesterApp(config=config, db_path=tmp_path / "db.lancedb")
+    pool = _SlowPool()
+    app._pool = pool
+
+    with caplog.at_level("WARNING", logger="haiku.rag.ingester.app"):
+        await app._stop_pool()
+
+    assert pool.released == 1
+    assert "Shutdown grace" in caplog.text
