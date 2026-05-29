@@ -108,7 +108,9 @@ def create_mcp_server(
             return []
 
     # Image-as-query tool, only registered when the configured embedder
-    # supports image embeddings.
+    # supports image embeddings. Probed at server-build time when no Store is
+    # open, so there is no cached embedder to read; this is the one place
+    # outside Store that builds one.
     from haiku.rag.embeddings import get_embedder
 
     if get_embedder(config).supports_images:

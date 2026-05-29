@@ -55,9 +55,7 @@ async def search(
             chunks = [chunk for chunk, _ in raw_results]
             chunk_results = await reranker.rerank(query, chunks, top_n=limit)
     else:
-        from haiku.rag.embeddings import get_embedder
-
-        embedder = get_embedder(client._config)
+        embedder = client.embedder
         if not embedder.supports_images:
             raise ValueError(
                 "Image queries require a multimodal embedder. Configure "

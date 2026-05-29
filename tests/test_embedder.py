@@ -3,8 +3,18 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from haiku.rag.config import AppConfig, EmbeddingModelConfig, EmbeddingsConfig
-from haiku.rag.embeddings import contextualize, embed_chunks, get_embedder
+from haiku.rag.config import (
+    AppConfig,
+    Config,
+    EmbeddingModelConfig,
+    EmbeddingsConfig,
+)
+from haiku.rag.embeddings import (
+    EmbedderWrapper,
+    contextualize,
+    embed_chunks,
+    get_embedder,
+)
 from haiku.rag.store.models.chunk import Chunk
 
 
@@ -105,6 +115,45 @@ def test_contextualize_empty_list():
     assert texts == []
 
 
+class _StubEmbedder(EmbedderWrapper):
+    def __init__(self):
+        super().__init__(embedder=None, vector_dim=8)
+        self.doc_batches = 0
+
+    async def embed_documents(self, texts):
+        self.doc_batches += 1
+        return [[0.1] * 8 for _ in texts]
+
+
+async def test_embed_chunks_uses_provided_embedder(monkeypatch):
+    """embed_chunks embeds via the embedder it is given and never builds one."""
+    import haiku.rag.embeddings as embeddings_mod
+
+    def fail(*args, **kwargs):
+        raise AssertionError("embed_chunks must not build its own embedder")
+
+    monkeypatch.setattr(embeddings_mod, "get_embedder", fail)
+
+    embedder = _StubEmbedder()
+    chunks = [
+        Chunk(id="a", content="alpha", order=0),
+        Chunk(id="b", content="beta", order=1),
+    ]
+
+    embedded = await embed_chunks(chunks, embedder, AppConfig())
+
+    assert [c.embedding for c in embedded] == [[0.1] * 8, [0.1] * 8]
+    assert embedder.doc_batches == 1
+
+
+async def test_client_embedder_is_store_embedder(temp_db_path):
+    """The client exposes the Store's cached embedder rather than its own."""
+    from haiku.rag.client import HaikuRAG
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        assert client.embedder is client.store.embedder
+
+
 @pytest.mark.vcr()
 async def test_embed_chunks_basic(allow_model_requests):
     """Test that embed_chunks generates embeddings for chunks."""
@@ -125,7 +174,7 @@ async def test_embed_chunks_basic(allow_model_requests):
         ),
     ]
 
-    embedded_chunks = await embed_chunks(chunks)
+    embedded_chunks = await embed_chunks(chunks, get_embedder(Config))
 
     assert len(embedded_chunks) == 2
     # Check that all original fields are preserved
@@ -144,7 +193,7 @@ async def test_embed_chunks_basic(allow_model_requests):
 async def test_embed_chunks_returns_new_objects(allow_model_requests):
     """Test that embed_chunks returns new Chunk objects (immutable pattern)."""
     original = Chunk(id="orig", content="Test content.")
-    embedded = await embed_chunks([original])
+    embedded = await embed_chunks([original], get_embedder(Config))
 
     # Original should be unchanged
     assert original.embedding is None
@@ -156,7 +205,7 @@ async def test_embed_chunks_returns_new_objects(allow_model_requests):
 
 async def test_embed_chunks_empty_list():
     """Test that embed_chunks handles empty list."""
-    result = await embed_chunks([])
+    result = await embed_chunks([], _StubEmbedder())
     assert result == []
 
 
@@ -176,7 +225,7 @@ async def test_embed_chunks_picture_with_text_only_embedder_raises():
     )
 
     with pytest.raises(ValueError, match="multimodal embedder"):
-        await embed_chunks([chunk], config)
+        await embed_chunks([chunk], get_embedder(config), config)
 
 
 async def test_embed_chunks_respects_configured_batch_size(monkeypatch):
@@ -206,7 +255,7 @@ async def test_embed_chunks_respects_configured_batch_size(monkeypatch):
         for i in range(num_chunks)
     ]
 
-    result = await embed_chunks(chunks, config)
+    result = await embed_chunks(chunks, get_embedder(config), config)
 
     assert len(result) == num_chunks
     # 20 chunks / 7 per batch -> 7, 7, 6
@@ -230,7 +279,7 @@ async def test_embed_chunks_preserves_all_fields(allow_model_requests):
         document_meta={"author": "Test"},
     )
 
-    embedded = await embed_chunks([chunk])
+    embedded = await embed_chunks([chunk], get_embedder(Config))
 
     assert embedded[0].id == "test-id"
     assert embedded[0].document_id == "doc-id"

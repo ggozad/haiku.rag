@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
     from PIL import Image as PILImage
 
+    from haiku.rag.embeddings import EmbedderWrapper
     from haiku.rag.ingester.sources.base import Source
     from haiku.rag.reranking.base import RerankerBase
     from haiku.rag.sandbox import AnalysisResult
@@ -89,6 +90,11 @@ class HaikuRAG:
         """Whether the client is in read-only mode."""
         return self.store.is_read_only
 
+    @property
+    def embedder(self) -> "EmbedderWrapper":
+        """The embedder owned by the Store, reused across all operations."""
+        return self.store.embedder
+
     @cached_property
     def reranker(self) -> "RerankerBase | None":
         """The configured reranker, built once and reused across searches.
@@ -128,14 +134,23 @@ class HaikuRAG:
         return False
 
     async def _await_vacuum_tasks(self) -> None:
-        """Wait for all in-flight background vacuum tasks to complete.
+        """Drain background vacuum work before tearing down the connection.
 
         Each create_document / update_document can schedule its own vacuum task;
-        all must be awaited before tearing down the connection, not just the
-        most recently scheduled one.
+        all must be awaited, not just the most recently scheduled one. Vacuum
+        skips when another is already running, so the cleanup for the final
+        writes may have been a no-op. Run one more pass once the in-flight tasks
+        are done to collapse versions created after the last vacuum took the lock.
         """
-        if self._vacuum_tasks:
-            await asyncio.gather(*self._vacuum_tasks, return_exceptions=True)
+        if not self._vacuum_tasks:
+            return
+        await asyncio.gather(*self._vacuum_tasks, return_exceptions=True)
+        # __aexit__ runs during exception unwinding; a raising vacuum here would
+        # mask the original exception, so the drain stays best-effort.
+        try:
+            await self.store.vacuum()
+        except Exception:
+            logger.debug("Final vacuum on close failed", exc_info=True)
 
     def _schedule_vacuum(self) -> None:
         """Schedule a background vacuum and track the task for later awaiting."""
@@ -180,6 +195,7 @@ class HaikuRAG:
         return await chunk(
             self._config,
             docling_document,
+            embedder=self.embedder,
             existing_picture_data=existing_picture_data,
             document_id=document_id,
         )

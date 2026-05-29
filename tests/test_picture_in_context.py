@@ -441,10 +441,6 @@ async def test_chunk_interleaves_picture_in_structural_order(monkeypatch):
             ]
 
     monkeypatch.setattr(
-        "haiku.rag.embeddings.get_embedder",
-        lambda *a, **kw: StubMultimodalEmbedder(),
-    )
-    monkeypatch.setattr(
         "haiku.rag.chunkers.get_chunker", lambda *a, **kw: StubChunker()
     )
 
@@ -459,7 +455,7 @@ async def test_chunk_interleaves_picture_in_structural_order(monkeypatch):
     doc.add_picture(image=ImageRef.from_pil(img, dpi=72))
     doc.add_text(label=DocItemLabel.PARAGRAPH, text="C")
 
-    chunks = await chunk(AppConfig(), doc)
+    chunks = await chunk(AppConfig(), doc, embedder=StubMultimodalEmbedder())
 
     contents = [c.content for c in chunks]
     assert contents == ["before", "", "after"], (
@@ -474,7 +470,7 @@ async def test_chunk_interleaves_picture_in_structural_order(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_embed_chunks_dispatches_text_vs_picture(monkeypatch):
+async def test_embed_chunks_dispatches_text_vs_picture():
     """embed_chunks routes text chunks through embed_documents (batched) and
     picture chunks through embed_image (one at a time), reassembling
     in original order."""
@@ -498,10 +494,6 @@ async def test_embed_chunks_dispatches_text_vs_picture(monkeypatch):
             image_calls.append(image)
             return [0.9, 0.8, 0.7, 0.6]
 
-    monkeypatch.setattr(
-        "haiku.rag.embeddings.get_embedder", lambda *a, **kw: StubEmbedder()
-    )
-
     text_chunk = Chunk(content="hello", order=0)
     pic_chunk = Chunk(
         content="figure 1",
@@ -510,7 +502,9 @@ async def test_embed_chunks_dispatches_text_vs_picture(monkeypatch):
     )
     pic_chunk._picture_data = b"PNGBYTES"
 
-    embedded = await embed_chunks([text_chunk, pic_chunk, text_chunk.model_copy()])
+    embedded = await embed_chunks(
+        [text_chunk, pic_chunk, text_chunk.model_copy()], StubEmbedder()
+    )
 
     assert len(embedded) == 3
     assert embedded[0].embedding == [0.1, 0.2, 0.3, 0.4]
@@ -521,9 +515,7 @@ async def test_embed_chunks_dispatches_text_vs_picture(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_embed_chunks_raises_on_picture_chunks_with_text_only_embedder(
-    monkeypatch,
-):
+async def test_embed_chunks_raises_on_picture_chunks_with_text_only_embedder():
     from haiku.rag.embeddings import EmbedderWrapper, embed_chunks
     from haiku.rag.store.models.chunk import Chunk
 
@@ -534,14 +526,10 @@ async def test_embed_chunks_raises_on_picture_chunks_with_text_only_embedder(
         async def embed_documents(self, texts):
             return [[0.0] * 4 for _ in texts]
 
-    monkeypatch.setattr(
-        "haiku.rag.embeddings.get_embedder", lambda *a, **kw: TextOnlyEmbedder()
-    )
-
     pic_chunk = Chunk(content="x", metadata={"labels": ["picture"]}, order=0)
     pic_chunk._picture_data = b"PNG"
     with pytest.raises(ValueError, match="multimodal embedder"):
-        await embed_chunks([pic_chunk])
+        await embed_chunks([pic_chunk], TextOnlyEmbedder())
 
 
 @pytest.mark.asyncio
@@ -569,7 +557,7 @@ async def test_ingest_emits_picture_chunks_with_multimodal_embedder(
             return [0.9] * 4
 
     monkeypatch.setattr(
-        "haiku.rag.embeddings.get_embedder",
+        "haiku.rag.store.engine.get_embedder",
         lambda *a, **kw: StubMultimodalEmbedder(),
     )
 
@@ -585,7 +573,7 @@ async def test_ingest_emits_picture_chunks_with_multimodal_embedder(
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
         chunks = await rag.chunk(docling_doc)
-        embedded = await embed_chunks(chunks, rag._config)
+        embedded = await embed_chunks(chunks, rag.embedder, rag._config)
 
         document = Document(content="x", uri="test://doc")
         document.set_docling(docling_doc)

@@ -14,7 +14,9 @@ async def create_document_with_docling(
 ):
     """Helper to create a document from a DoclingDocument using import_document."""
     chunks = await client.chunk(docling_doc)
-    embedded_chunks = await ensure_chunks_embedded(client._config, chunks)
+    embedded_chunks = await ensure_chunks_embedded(
+        client._config, chunks, client.embedder
+    )
     return await client.import_document(
         docling_document=docling_doc,
         chunks=embedded_chunks,
