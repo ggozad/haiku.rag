@@ -23,6 +23,9 @@ processing:
   chunking_merge_peers: true                 # Merge undersized successive chunks
   chunking_use_markdown_tables: false        # Use markdown tables vs narrative format
 
+  # PDF /EmbeddedFiles attachments
+  extract_pdf_attachments: true              # Ingest embedded files as separate Documents
+
   # Automatic title generation
   auto_title: false                          # Auto-generate titles on ingestion
   title_model:                               # LLM for title generation (fallback)
@@ -367,6 +370,35 @@ Priority order: HTML `<title>` (furniture layer) â†’ h1/PDF title (body layer) â
 Explicit titles passed via `title=` parameter always take precedence and are never overridden. When updating documents, existing titles are preserved. Auto-generation only applies to untitled documents.
 
 To generate titles for existing untitled documents, use [`rebuild --title-only`](../cli.md#rebuild-database).
+
+### PDF Embedded Attachments
+
+A PDF can carry other files inside it via the `/EmbeddedFiles` table (signed memos, appendices, supporting documents). With `extract_pdf_attachments: true` (the default), each embedded file is ingested as a separate Document linked to the wrapper through `metadata.parent_uri`:
+
+```yaml
+processing:
+  extract_pdf_attachments: true
+```
+
+```python
+# After ingesting a PDF with two attachments:
+parent = await client.create_document_from_source("/path/to/parent.pdf")
+children = await client.list_documents(
+    filter=f"metadata LIKE '%\"parent_uri\": \"{parent.uri}\"%'"
+)
+# children: 2 Documents, each with parent.uri in metadata.parent_uri,
+# URIs like file:///path/to/parent.pdf#attachment=memo.pdf
+```
+
+Behavior:
+
+- Children inherit the standard ingest metadata (`content_type`, `md5`, `source_revision`) plus `parent_uri`.
+- Re-ingesting the wrapper reconciles its current attachment set against existing children: new files are added, changed bytes update in place, and dropped names are deleted.
+- `delete_document(parent_id)` cascades through `parent_uri` and removes all children.
+- Nested attachments (a PDF whose attachment is itself a PDF with attachments) recurse up to 3 levels. Deeper chains log a warning and skip.
+- Attachments whose extension or content type the converter does not support log a warning and are skipped without aborting the rest of the set.
+
+Set `extract_pdf_attachments: false` to ingest only the wrapper.
 
 ## Continuous ingestion
 
