@@ -1,9 +1,6 @@
 from unittest.mock import MagicMock
 
-from evaluations.evaluators.citation import (
-    CitationMAPEvaluator,
-    CitationMRREvaluator,
-)
+from evaluations.evaluators.citation import CitationMAPEvaluator
 
 
 def _ctx(cited: list[str], relevant: list[str]) -> MagicMock:
@@ -11,41 +8,6 @@ def _ctx(cited: list[str], relevant: list[str]) -> MagicMock:
     ctx.metadata = {"relevant_uris": relevant}
     ctx.attributes = {"cited_uris": cited}
     return ctx
-
-
-class TestCitationMRREvaluator:
-    def setup_method(self) -> None:
-        self.evaluator = CitationMRREvaluator()
-
-    def test_first_citation_is_relevant(self) -> None:
-        assert self.evaluator.evaluate(_ctx(["a", "b"], ["a"])) == 1.0
-
-    def test_second_citation_is_relevant(self) -> None:
-        assert self.evaluator.evaluate(_ctx(["a", "b"], ["b"])) == 0.5
-
-    def test_no_citations(self) -> None:
-        assert self.evaluator.evaluate(_ctx([], ["a"])) == 0.0
-
-    def test_no_relevant(self) -> None:
-        assert self.evaluator.evaluate(_ctx(["a"], [])) == 0.0
-
-    def test_no_matches(self) -> None:
-        assert self.evaluator.evaluate(_ctx(["a", "b"], ["c"])) == 0.0
-
-    def test_metadata_none(self) -> None:
-        ctx = MagicMock()
-        ctx.metadata = None
-        ctx.attributes = {"cited_uris": ["a"]}
-        assert self.evaluator.evaluate(ctx) == 0.0
-
-    def test_attribute_missing(self) -> None:
-        ctx = MagicMock()
-        ctx.metadata = {"relevant_uris": ["a"]}
-        ctx.attributes = {}
-        assert self.evaluator.evaluate(ctx) == 0.0
-
-    def test_evaluation_name(self) -> None:
-        assert self.evaluator.get_default_evaluation_name() == "cited_mrr"
 
 
 class TestCitationMAPEvaluator:

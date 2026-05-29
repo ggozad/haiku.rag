@@ -78,20 +78,13 @@ evaluations:
 
 ### Retrieval Metrics
 
-**Mean Reciprocal Rank (MRR)** - Used when each query has exactly one relevant document.
-
-- For each query, find the rank (position) of the first relevant document in top-K results
-- Reciprocal rank = `1/rank` (e.g., rank 3 → 1/3 ≈ 0.333)
-- If not found in top-K, score is 0
-- MRR is the mean across all queries
-- Range: 0 (never found) to 1 (always at rank 1)
-
-**Mean Average Precision (MAP)** - Used when queries have multiple relevant documents.
+**Mean Average Precision (MAP)** scores ranked retrieval results against the gold `expected_uris`.
 
 - For each relevant document at position k, calculate precision@k = (relevant docs in top k) / k
-- Average Precision (AP) = mean of these precision values / total relevant documents
+- Average Precision (AP) = sum of these precision values / total relevant documents
 - MAP is the mean of AP scores across all queries
 - Range: 0 to 1. Rewards ranking relevant documents higher
+- For single-doc queries this collapses to `1/rank` (i.e. reciprocal rank)
 
 ### QA Accuracy
 
@@ -101,7 +94,7 @@ We picked `qwen3.6` over the previously-pinned `gpt-oss` after a 4-cell calibrat
 
 ### Citation Retrieval
 
-Alongside QA accuracy, a second metric scores the URIs the skill registered via the `cite` tool against each dataset's gold `expected_uris`, using the same MRR / MAP math as raw retrieval. The score key is `cited_mrr` for single-doc datasets and `cited_map` for multi-doc. Console output also includes the cite rate (% of cases with at least one citation) and the mean number of citations per case.
+Alongside QA accuracy, a second metric scores the URIs the skill registered via the `cite` tool against each dataset's gold `expected_uris`, using the same MAP math as raw retrieval. The score key is `cited_map`. Console output also includes the cite rate (% of cases with at least one citation) and the mean number of citations per case.
 
 This is computed alongside QA accuracy from the same skill run, no extra invocations. The signal complements raw retrieval: where raw retrieval measures whether the retriever surfaced the gold document at any rank, citation retrieval measures whether the skill grounded its answer on it.
 

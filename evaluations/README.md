@@ -52,9 +52,8 @@ evaluations run wix --target analysis-skill --skill-model ollama:gpt-oss
 
 `--skill-model "provider:name"` overrides the skill model independently from
 the judge (defaults to `qa.model`, or `analysis.model` when set for the
-analysis-skill target). A citation retrieval metric (`cited_mrr` / `cited_map`)
-is computed alongside QA accuracy from the URIs the skill registered via the
-`cite` tool.
+analysis-skill target). A citation retrieval metric (`cited_map`) is computed
+alongside QA accuracy from the URIs the skill registered via the `cite` tool.
 
 ### Pre-built Databases
 
