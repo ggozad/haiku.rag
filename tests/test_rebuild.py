@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import TypedDict
 
 import pytest
-from datasets import Dataset
 
 from haiku.rag.client import HaikuRAG, RebuildMode
 
@@ -19,10 +18,10 @@ class ChunkData(TypedDict):
 
 
 @pytest.mark.vcr()
-async def test_rebuild_full(qa_corpus: Dataset, temp_db_path):
+async def test_rebuild_full(qa_corpus: list[dict[str, str]], temp_db_path):
     """Test full rebuild: converts, chunks, and embeds all documents."""
     async with HaikuRAG(temp_db_path, create=True) as client:
-        doc = await client.create_document(content=qa_corpus["document_extracted"][0])
+        doc = await client.create_document(content=qa_corpus[0]["document_extracted"])
         assert doc.id is not None
         assert doc.docling_document is not None
 
@@ -49,10 +48,10 @@ async def test_rebuild_full(qa_corpus: Dataset, temp_db_path):
 
 
 @pytest.mark.vcr()
-async def test_rebuild_embed_only(qa_corpus: Dataset, temp_db_path):
+async def test_rebuild_embed_only(qa_corpus: list[dict[str, str]], temp_db_path):
     """Test embed-only rebuild: keeps chunks, only regenerates embeddings."""
     async with HaikuRAG(temp_db_path, create=True) as client:
-        doc = await client.create_document(content=qa_corpus["document_extracted"][0])
+        doc = await client.create_document(content=qa_corpus[0]["document_extracted"])
         assert doc.id is not None
         original_docling_json = doc.docling_document
 
@@ -86,7 +85,7 @@ async def test_rebuild_embed_only(qa_corpus: Dataset, temp_db_path):
 
 @pytest.mark.vcr()
 async def test_rebuild_embed_only_multi_doc_streams_via_staging(
-    qa_corpus: Dataset, temp_db_path
+    qa_corpus: list[dict[str, str]], temp_db_path
 ):
     """Embed-only rebuild with multiple documents preserves chunks via staging.
 
@@ -100,8 +99,8 @@ async def test_rebuild_embed_only_multi_doc_streams_via_staging(
     - the rebuild yields every document with chunks.
     """
     async with HaikuRAG(temp_db_path, create=True) as client:
-        doc1 = await client.create_document(content=qa_corpus["document_extracted"][0])
-        doc2 = await client.create_document(content=qa_corpus["document_extracted"][1])
+        doc1 = await client.create_document(content=qa_corpus[0]["document_extracted"])
+        doc2 = await client.create_document(content=qa_corpus[1]["document_extracted"])
         assert doc1.id is not None and doc2.id is not None
 
         chunks_before_1 = await client.chunk_repository.get_by_document_id(doc1.id)
@@ -133,7 +132,9 @@ async def test_rebuild_embed_only_multi_doc_streams_via_staging(
 
 
 @pytest.mark.vcr()
-async def test_rebuild_drops_leftover_staging_table(qa_corpus: Dataset, temp_db_path):
+async def test_rebuild_drops_leftover_staging_table(
+    qa_corpus: list[dict[str, str]], temp_db_path
+):
     """Staging table without marker is treated as partial phase 1 and dropped.
 
     Simulates a phase-1 interruption by creating only the staging table (no
@@ -143,7 +144,7 @@ async def test_rebuild_drops_leftover_staging_table(qa_corpus: Dataset, temp_db_
     from haiku.rag.client.rebuild import _StagingChunkRecord
 
     async with HaikuRAG(temp_db_path, create=True) as client:
-        doc = await client.create_document(content=qa_corpus["document_extracted"][0])
+        doc = await client.create_document(content=qa_corpus[0]["document_extracted"])
         assert doc.id is not None
 
         # Simulate a partial phase 1 (staging exists, marker absent).
@@ -167,7 +168,7 @@ async def test_rebuild_drops_leftover_staging_table(qa_corpus: Dataset, temp_db_
 
 @pytest.mark.vcr()
 async def test_rebuild_resumes_phase2_from_staging_after_crash(
-    qa_corpus: Dataset, temp_db_path
+    qa_corpus: list[dict[str, str]], temp_db_path
 ):
     """Marker + staging present → phase 2 resumes from staging instead of
     redoing phase 1.
@@ -184,7 +185,7 @@ async def test_rebuild_resumes_phase2_from_staging_after_crash(
     )
 
     async with HaikuRAG(temp_db_path, create=True) as client:
-        doc = await client.create_document(content=qa_corpus["document_extracted"][0])
+        doc = await client.create_document(content=qa_corpus[0]["document_extracted"])
         assert doc.id is not None
         original_chunks = await client.chunk_repository.get_by_document_id(doc.id)
         assert original_chunks
@@ -280,7 +281,7 @@ async def test_rebuild_drops_orphan_marker(temp_db_path):
 
 @pytest.mark.vcr()
 async def test_rebuild_non_embed_mode_drops_staging_recovery_state(
-    qa_corpus: Dataset, temp_db_path
+    qa_corpus: list[dict[str, str]], temp_db_path
 ):
     """Staging + marker from a prior embed-only crash → dropped on RECHUNK.
 
@@ -295,7 +296,7 @@ async def test_rebuild_non_embed_mode_drops_staging_recovery_state(
     )
 
     async with HaikuRAG(temp_db_path, create=True) as client:
-        doc = await client.create_document(content=qa_corpus["document_extracted"][0])
+        doc = await client.create_document(content=qa_corpus[0]["document_extracted"])
         assert doc.id is not None
 
         await client.store.db.create_table(
@@ -317,10 +318,12 @@ async def test_rebuild_non_embed_mode_drops_staging_recovery_state(
 
 
 @pytest.mark.vcr()
-async def test_rebuild_embed_only_skips_unchanged(qa_corpus: Dataset, temp_db_path):
+async def test_rebuild_embed_only_skips_unchanged(
+    qa_corpus: list[dict[str, str]], temp_db_path
+):
     """Test embed-only rebuild skips chunks with unchanged embeddings."""
     async with HaikuRAG(temp_db_path, create=True) as client:
-        doc = await client.create_document(content=qa_corpus["document_extracted"][0])
+        doc = await client.create_document(content=qa_corpus[0]["document_extracted"])
         assert doc.id is not None
 
         # Get embeddings before rebuild
@@ -354,7 +357,7 @@ async def test_rebuild_embed_only_skips_unchanged(qa_corpus: Dataset, temp_db_pa
 
 @pytest.mark.vcr()
 async def test_rebuild_embed_only_with_changed_vector_dim(
-    qa_corpus: Dataset, temp_db_path
+    qa_corpus: list[dict[str, str]], temp_db_path
 ):
     """Test embed-only rebuild when vector dimension changes.
 
@@ -373,7 +376,7 @@ async def test_rebuild_embed_only_with_changed_vector_dim(
 
     # Step 1: Create a database with normal 2560-dim embeddings
     async with HaikuRAG(temp_db_path, create=True) as client:
-        doc = await client.create_document(content=qa_corpus["document_extracted"][0])
+        doc = await client.create_document(content=qa_corpus[0]["document_extracted"])
         assert doc.id is not None
 
         chunks_before = await client.chunk_repository.get_by_document_id(doc.id)
@@ -463,10 +466,10 @@ async def test_rebuild_embed_only_with_changed_vector_dim(
 
 
 @pytest.mark.vcr()
-async def test_rebuild_rechunk(qa_corpus: Dataset, temp_db_path):
+async def test_rebuild_rechunk(qa_corpus: list[dict[str, str]], temp_db_path):
     """Test rechunk rebuild: re-chunks from content without accessing source files."""
     async with HaikuRAG(temp_db_path, create=True) as client:
-        doc = await client.create_document(content=qa_corpus["document_extracted"][0])
+        doc = await client.create_document(content=qa_corpus[0]["document_extracted"])
         assert doc.id is not None
         assert doc.docling_document is not None
 

@@ -71,7 +71,6 @@ members = ["haiku_rag_slim", "evaluations"]
 dev = [
     "haiku.rag-evals",
     "haiku.rag-slim[ingester]",
-    "datasets>=4.8.4",
     "zensical",
     "pre-commit>=4.5.1",
     "pydantic-ai-slim[anthropic]",

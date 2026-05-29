@@ -1,5 +1,4 @@
 import pytest
-from datasets import Dataset
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
@@ -7,7 +6,9 @@ from haiku.rag.store.models.chunk import Chunk, ChunkMetadata, SearchResult
 
 
 @pytest.mark.vcr()
-async def test_chunk_repository_operations(qa_corpus: Dataset, temp_db_path):
+async def test_chunk_repository_operations(
+    qa_corpus: list[dict[str, str]], temp_db_path
+):
     """Test ChunkRepository operations."""
     async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
         # Get the first document from the corpus
@@ -46,7 +47,9 @@ async def test_chunk_repository_operations(qa_corpus: Dataset, temp_db_path):
 
 
 @pytest.mark.vcr()
-async def test_chunk_repository_pagination(qa_corpus: Dataset, temp_db_path):
+async def test_chunk_repository_pagination(
+    qa_corpus: list[dict[str, str]], temp_db_path
+):
     """Test ChunkRepository pagination with get_by_document_id and count_by_document_id."""
     async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
         # Get the first document from the corpus (should produce multiple chunks)
@@ -95,7 +98,7 @@ async def test_chunk_repository_pagination(qa_corpus: Dataset, temp_db_path):
 
 
 @pytest.mark.vcr()
-async def test_chunking_pipeline(qa_corpus: Dataset, temp_db_path):
+async def test_chunking_pipeline(qa_corpus: list[dict[str, str]], temp_db_path):
     """Test document chunking using client primitives."""
     from haiku.rag.client import HaikuRAG
     from haiku.rag.embeddings import embed_chunks

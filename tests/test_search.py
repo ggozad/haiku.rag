@@ -1,5 +1,4 @@
 import pytest
-from datasets import Dataset
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
@@ -7,7 +6,7 @@ from haiku.rag.store.models import SearchResult
 
 
 @pytest.mark.vcr()
-async def test_search_qa_corpus(qa_corpus: Dataset, temp_db_path):
+async def test_search_qa_corpus(qa_corpus: list[dict[str, str]], temp_db_path):
     """Test that documents can be found by searching with their associated questions."""
     async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
         # Load unique documents (limited to 10)

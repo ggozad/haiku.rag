@@ -2,7 +2,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from datasets import Dataset
 from transformers import AutoTokenizer
 
 from haiku.rag.chunkers import get_chunker
@@ -18,7 +17,7 @@ def vcr_cassette_dir():
 
 
 @pytest.mark.asyncio
-async def test_local_chunker(qa_corpus: Dataset):
+async def test_local_chunker(qa_corpus: list[dict[str, str]]):
     """Test DoclingLocalChunker with real document."""
     chunker = DoclingLocalChunker()
     doc_text = qa_corpus[0]["document_extracted"]
@@ -106,7 +105,7 @@ def test_tokenizer_cached_across_chunker_instances():
 
 
 @pytest.mark.asyncio
-async def test_local_chunker_hierarchical(qa_corpus: Dataset):
+async def test_local_chunker_hierarchical(qa_corpus: list[dict[str, str]]):
     """Test DoclingLocalChunker with hierarchical chunking."""
     config = AppConfig()
     config.processing.chunker_type = "hierarchical"
