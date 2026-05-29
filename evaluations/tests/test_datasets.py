@@ -1,11 +1,5 @@
 from pathlib import Path
 
-from evaluations.datasets.hotpotqa import (
-    build_hotpotqa_case,
-    extract_unique_documents,
-    map_hotpotqa_document,
-    map_hotpotqa_retrieval,
-)
 from evaluations.datasets.open_rag_bench import (
     build_orb_case,
     download_pdf,
@@ -13,60 +7,11 @@ from evaluations.datasets.open_rag_bench import (
     map_orb_document,
     map_orb_retrieval,
 )
-from evaluations.datasets.repliqa import (
-    build_repliqa_case,
-    map_repliqa_document,
-    map_repliqa_retrieval,
-)
 from evaluations.datasets.wix import (
     build_wix_case,
     map_wix_document,
     map_wix_retrieval,
 )
-
-
-class TestRepliqa:
-    def test_map_document(self) -> None:
-        doc = {"document_id": "doc-42", "document_extracted": "Some content here."}
-        payload = map_repliqa_document(doc)
-        assert payload.uri == "doc-42"
-        assert payload.content == "Some content here."
-
-    def test_map_retrieval(self) -> None:
-        doc = {
-            "question": "What happened?",
-            "answer": "Something happened.",
-            "document_id": "doc-42",
-        }
-        sample = map_repliqa_retrieval(doc)
-        assert sample is not None
-        assert sample.question == "What happened?"
-        assert sample.expected_uris == ("doc-42",)
-
-    def test_map_retrieval_skips_unanswerable(self) -> None:
-        doc = {
-            "question": "What?",
-            "answer": "The answer is not found in the document.",
-            "document_id": "doc-1",
-        }
-        assert map_repliqa_retrieval(doc) is None
-
-    def test_build_case(self) -> None:
-        doc = {
-            "document_id": "doc-7",
-            "question": "Why?",
-            "answer": "Because.",
-        }
-        case = build_repliqa_case(3, doc)
-        assert case.name == "3_doc-7"
-        assert case.inputs == "Why?"
-        assert case.expected_output == "Because."
-        assert case.metadata == {"document_id": "doc-7", "case_index": "3"}
-
-    def test_build_case_none_document_id(self) -> None:
-        doc = {"document_id": None, "question": "Q?", "answer": "A."}
-        case = build_repliqa_case(1, doc)
-        assert case.name == "case_1"
 
 
 class TestWix:
@@ -134,78 +79,6 @@ class TestWix:
         doc = {"question": "Q?", "answer": "A.", "article_ids": None}
         case = build_wix_case(1, doc)
         assert case.name == "case_1"
-
-
-class TestHotpotQA:
-    def test_map_document(self) -> None:
-        doc = {"title": "Albert Einstein", "content": "Was a physicist."}
-        payload = map_hotpotqa_document(doc)
-        assert payload.uri == "Albert Einstein"
-        assert payload.content == "Was a physicist."
-        assert payload.title == "Albert Einstein"
-
-    def test_map_retrieval(self) -> None:
-        doc = {
-            "question": "Who was Einstein?",
-            "supporting_facts": {"title": ["Albert Einstein", "Physics"]},
-        }
-        sample = map_hotpotqa_retrieval(doc)
-        assert sample is not None
-        assert sample.expected_uris == ("Albert Einstein", "Physics")
-
-    def test_map_retrieval_deduplicates_titles(self) -> None:
-        doc = {
-            "question": "Q?",
-            "supporting_facts": {"title": ["A", "B", "A"]},
-        }
-        sample = map_hotpotqa_retrieval(doc)
-        assert sample is not None
-        assert sample.expected_uris == ("A", "B")
-
-    def test_map_retrieval_no_titles(self) -> None:
-        doc = {"question": "Q?", "supporting_facts": {"title": []}}
-        assert map_hotpotqa_retrieval(doc) is None
-
-    def test_build_case(self) -> None:
-        doc = {
-            "id": "abc123",
-            "question": "What is X?",
-            "answer": "X is Y.",
-            "type": "comparison",
-            "level": "hard",
-        }
-        case = build_hotpotqa_case(5, doc)
-        assert case.name == "5_abc123"
-        assert case.inputs == "What is X?"
-        assert case.expected_output == "X is Y."
-        assert case.metadata == {
-            "question_id": "abc123",
-            "type": "comparison",
-            "level": "hard",
-            "case_index": "5",
-        }
-
-    def test_extract_unique_documents(self) -> None:
-        # Simulate a minimal dataset with context
-        dataset = [
-            {
-                "context": {
-                    "title": ["Doc A", "Doc B"],
-                    "sentences": [["Sentence 1."], ["Sentence 2.", " More."]],
-                }
-            },
-            {
-                "context": {
-                    "title": ["Doc A", "Doc C"],
-                    "sentences": [["Dupe."], ["Sentence 3."]],
-                }
-            },
-        ]
-        docs = extract_unique_documents(dataset)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        assert len(docs) == 3
-        titles = [d["title"] for d in docs]
-        assert titles == ["Doc A", "Doc B", "Doc C"]
-        assert docs[1]["content"] == "Sentence 2.  More."
 
 
 class TestOpenRAGBench:

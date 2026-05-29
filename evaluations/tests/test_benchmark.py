@@ -74,19 +74,19 @@ class TestBuildExperimentMetadata:
 
 class TestResolveDataset:
     def test_valid_dataset(self) -> None:
-        spec = _resolve_dataset("repliqa")
-        assert spec.key == "repliqa"
+        spec = _resolve_dataset("wix")
+        assert spec.key == "wix"
 
     def test_case_insensitive(self) -> None:
-        spec = _resolve_dataset("REPLIQA")
-        assert spec.key == "repliqa"
+        spec = _resolve_dataset("WIX")
+        assert spec.key == "wix"
 
     def test_unknown_dataset_raises(self) -> None:
         with pytest.raises(typer.BadParameter, match="Unknown dataset 'nonexistent'"):
             _resolve_dataset("nonexistent")
 
     def test_error_lists_valid_datasets(self) -> None:
-        with pytest.raises(typer.BadParameter, match="repliqa"):
+        with pytest.raises(typer.BadParameter, match="wix"):
             _resolve_dataset("nonexistent")
 
 

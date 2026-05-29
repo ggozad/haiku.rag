@@ -36,13 +36,6 @@ Active datasets:
 | `orb_text` — OpenRAG Bench, text embedder (`qwen3-embedding:4b`) with VLM picture descriptions baked into chunk content | ~18 GB |
 | `orb_multimodal` — OpenRAG Bench, multimodal embedder (`qwen3-vl-embedding-8b`); picture vectors live in the same space as text for cross-modal retrieval | ~16 GB |
 
-Inactive (kept downloadable, not currently maintained):
-
-| Dataset | Size |
-|---------|------|
-| `repliqa` | ~30MB |
-| `hotpotqa` | ~331MB |
-
 After downloading, run benchmarks with `--skip-db` to use the pre-built database:
 
 ```bash
@@ -116,18 +109,6 @@ This is computed alongside QA accuracy from the same skill run, no extra invocat
 
 Numbers measured under the current pinned judge (`ollama:qwen3.6`) on a recent `haiku.rag` version.
 
-### Wix
-
-[WixQA](https://huggingface.co/datasets/Wix/WixQA) is real customer support questions paired with curated answers. 200 cases.
-
-`evaluations run wix --target rag-skill` runs the RAG skill end-to-end and produces both QA accuracy and a citation retrieval metric (`cited_map`) computed from the URIs the skill registered via the `cite` tool against the gold `expected_uris`.
-
-| Skill model                  | Reranker               | QA accuracy | Mean `cited_map` |
-|------------------------------|------------------------|-------------|------------------|
-| `vllm:Gemma-4-26B-A4B-NVFP4` | `mxbai-rerank-base-v2` | 0.87        | 0.38             |
-
-*Measured on haiku.rag v0.48.0 with `qwen3-embedding:4b` (vLLM, dim 2560), `chunk_size=256`, `search.limit=5`. Judged by `vllm:Qwen3.6-35B-A3B-NVFP4` (qwen3.6 family, NVFP4 quant served via vLLM rather than the default Ollama). 172 / 198 completed cases (2 errored).*
-
 ### OpenRAG Bench (ORB)
 
 [OpenRAG Bench](https://huggingface.co/datasets/vectara/open_ragbench) contains ArXiv research papers with multimodal question-answering pairs. Queries include both text-based and image-based questions, testing retrieval and reasoning over visual content like figures, charts, and diagrams. Each query maps to one relevant document.
@@ -173,76 +154,14 @@ Two approaches are benchmarked separately:
 
 *qwen3 measured on haiku.rag v0.48.0 over all 3045 cases; nemotron on v0.50.0 over 2836 / 3045 cases (run stopped early; numbers stable from ~12% onward). Both with `mxbai-rerank-base-v2`, judged by `vllm:Qwen3.6-35B-A3B-NVFP4`.*
 
-## Inactive datasets
+### Wix
 
-The benchmarks below are not currently maintained. Numbers were measured against earlier `haiku.rag` versions and an older pinned judge (`ollama:gpt-oss`), before the skill workflow became the only path. Retrieval tables don't depend on the judge, but the QA tables aren't reproducible against the current skill-only setup. We may revive them.
+[WixQA](https://huggingface.co/datasets/Wix/WixQA) is real customer support questions paired with curated answers. 200 cases.
 
-### RepliQA
+`evaluations run wix --target rag-skill` runs the RAG skill end-to-end and produces both QA accuracy and a citation retrieval metric (`cited_map`) computed from the URIs the skill registered via the `cite` tool against the gold `expected_uris`.
 
-[RepliQA](https://huggingface.co/datasets/ServiceNow/repliqa) contains synthetic news stories with question-answer pairs. We use `News Stories` from `repliqa_3` (1035 documents). Each question has exactly one relevant document, so we use MRR for retrieval evaluation.
+| Skill model                  | Reranker               | QA accuracy | Mean `cited_map` |
+|------------------------------|------------------------|-------------|------------------|
+| `vllm:Gemma-4-26B-A4B-NVFP4` | `mxbai-rerank-base-v2` | 0.87        | 0.38             |
 
-#### Retrieval (MRR)
-
-| Embedding Model               | MRR  | Reranker |
-|-------------------------------|------|----------|
-| Ollama / `qwen3-embedding:8b` | 0.91 | -        |
-
-*Measured on haiku.rag v0.19.6.*
-
-#### QA Accuracy
-
-| Embedding Model              | QA Model                         | Accuracy | Reranker               |
-|------------------------------|----------------------------------|----------|------------------------|
-| Ollama / `qwen3-embedding:4b`   | Ollama / `gpt-oss` - no thinking | 0.82     | None                   |
-| Ollama / `qwen3-embedding:8b`   | Ollama / `gpt-oss` - thinking    | 0.89     | None                   |
-| Ollama / `mxbai-embed-large`    | Ollama / `qwen3` - thinking      | 0.85     | None                   |
-| Ollama / `mxbai-embed-large`    | Ollama / `qwen3` - thinking      | 0.87     | `mxbai-rerank-base-v2` |
-| Ollama / `mxbai-embed-large`    | Ollama / `qwen3:0.6b`            | 0.28     | None                   |
-
-*Measured on haiku.rag v0.19.6, judged by `ollama:gpt-oss`.*
-
-Note the significant degradation when very small models are used such as `qwen3:0.6b`.
-
-### HotpotQA
-
-[HotpotQA](https://huggingface.co/datasets/hotpotqa/hotpot_qa) is a multi-hop question answering dataset requiring reasoning over multiple Wikipedia paragraphs. Each question requires evidence from 2+ documents, making it ideal for testing retrieval and reasoning capabilities. We use MAP for retrieval evaluation since queries have multiple relevant documents.
-
-#### Retrieval (MAP)
-
-| Embedding Model      | MAP  | Reranker |
-|----------------------|------|----------|
-| `qwen3-embedding:4b` | 0.69 | none     |
-
-*Measured on haiku.rag v0.20.2.*
-
-#### QA Accuracy
-
-| Embedding Model      | QA Model                 | Accuracy |
-|----------------------|--------------------------|----------|
-| `qwen3-embedding:4b` | `gpt-oss:20b` - thinking | 0.86     |
-
-*Measured on haiku.rag v0.20.2, judged by `ollama:gpt-oss`.*
-
-### Wix (historical, plain text and HTML)
-
-Earlier Wix runs measured under different chunk settings and reranker combinations, against the older `gpt-oss` judge.
-
-#### Retrieval (MAP)
-
-| Embedding Model        | Chunk size | MAP  | Reranker               | Notes                        |
-|------------------------|------------|------|------------------------|------------------------------|
-| `qwen3-embedding:4b`   | 256        | 0.34 | None                   | html, `chunk-radius=2`       |
-| `qwen3-embedding:4b`   | 256        | 0.39 | `mxbai-rerank-base-v2` | html, `chunk-radius=2`       |
-| `qwen3-embedding:4b`   | 256        | 0.43 | None                   | plain text, `chunk-radius=0` |
-| `qwen3-embedding:4b`   | 512        | 0.45 | None                   | plain text, `chunk-radius=0` |
-
-*Measured on haiku.rag v0.27.2.*
-
-#### QA Accuracy
-
-| Embedding Model      | Chunk size | QA Model                    | Accuracy | Notes                        |
-|----------------------|------------|-----------------------------|----------|------------------------------|
-| `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - no thinking | 0.80     | html, `chunk-radius=2`       |
-| `qwen3-embedding:4b` | 256        | `gpt-oss:20b` - no thinking | 0.83     | html, `chunk-radius=2`, `jinaai/jina-reranker-v3` |
-
-*Measured on haiku.rag v0.27.2, judged by `ollama:gpt-oss`.*
+*Measured on haiku.rag v0.48.0 with `qwen3-embedding:4b` (vLLM, dim 2560), `chunk_size=256`, `search.limit=5`. Judged by `vllm:Qwen3.6-35B-A3B-NVFP4` (qwen3.6 family, NVFP4 quant served via vLLM rather than the default Ollama). 172 / 198 completed cases (2 errored).*
