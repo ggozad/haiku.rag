@@ -307,19 +307,23 @@ ingester:
 
 ## Operating
 
-### Smoke-test a single URI
+### One-shot batch build
 
-`run-once` bypasses the queue and runs a single Job through the
-pipeline. Useful for sanity-checking a source before starting the
-service.
+`run-batch` runs a single discover sweep across every configured source,
+drains the queue, then exits. New and changed resources are ingested,
+resources that vanished from a source are deleted. The periodic poller
+loops never start, so the run is deterministic and finishes as soon as the
+queue is empty. This is the mode for building a database in CI or on a
+schedule rather than running the service continuously.
 
 ```bash
-haiku-ingester run-once /path/to/test.pdf
-haiku-ingester run-once https://example.com/spec.pdf
-haiku-ingester run-once s3://my-bucket/key.pdf
+haiku-ingester run-batch
+haiku-ingester run-batch --db rag.lancedb
 ```
 
-Exit codes: `0` success, `1` transient error, `2` permanent error.
+Orphan deletion compares each source against `sync_state` in the queue DB,
+so persist `ingester.db` between runs for deletions to be detected. It
+exits non-zero if any job dead-letters.
 
 ### The queue
 

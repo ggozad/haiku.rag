@@ -294,6 +294,20 @@ class JobRepo:
                 rows = await cursor.fetchall()
         return {row["status"]: row["n"] for row in rows}
 
+    async def counts_by_status_since(self, since: datetime) -> dict[str, int]:
+        """status -> count of jobs that reached a terminal state at or after
+        `since` (by completed_at). Only succeeded/dead set completed_at, so
+        those are the only keys returned. Lets a one-shot batch report the
+        work it finished, independent of terminal rows from earlier runs."""
+        async with self._lock:
+            async with self._conn.execute(
+                "SELECT status, COUNT(*) AS n FROM jobs "
+                "WHERE completed_at >= ? GROUP BY status",
+                (since.isoformat(),),
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return {row["status"]: row["n"] for row in rows}
+
     async def count_succeeded_since(self, seconds: int) -> int:
         """How many jobs reached `succeeded` in the last `seconds` seconds.
         Drives the dashboard's rolling-throughput chips."""

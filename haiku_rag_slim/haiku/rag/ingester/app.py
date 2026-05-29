@@ -1,8 +1,12 @@
 import asyncio
 import logging
 import signal
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from pydantic import BaseModel
 
 from haiku.rag.config import AppConfig
 from haiku.rag.ingester.pollers.manager import PollerManager
@@ -15,6 +19,14 @@ if TYPE_CHECKING:
     import aiosqlite
 
 logger = logging.getLogger(__name__)
+
+
+class BatchReport(BaseModel):
+    """Outcome of a one-shot batch run: terminal job counts after the queue
+    drained."""
+
+    succeeded: int = 0
+    dead: int = 0
 
 
 class IngesterApp:
@@ -32,11 +44,13 @@ class IngesterApp:
         self._sync: SyncStateRepo | None = None
         self._pool: WorkerPool | None = None
         self._pollers: PollerManager | None = None
-        self._client = None
 
-    async def serve(self, *, api: bool = True) -> None:
-        """Run pollers + workers (and the HTTP API when enabled) until a
-        SIGINT/SIGTERM is received. Drains in-flight work on shutdown."""
+    @asynccontextmanager
+    async def _resources(self):
+        """Open the queue connection and construct the repos, client, pollers
+        and worker pool. Yields with everything built but nothing started —
+        callers own the start/stop lifecycle. Closes the client and queue
+        connection on exit."""
         from haiku.rag.client import HaikuRAG
         from haiku.rag.converters import get_converter
 
@@ -58,13 +72,12 @@ class IngesterApp:
                 jitter=ingester_cfg.workers.retry.jitter,
             )
 
-            # The ingester is the sole writer for its LanceDB target;
-            # create on first start so docker-compose / fresh deployments
-            # don't require a manual `haiku-rag init`.
+            # The ingester is the sole writer for its LanceDB target; create on
+            # first start so docker-compose / fresh deployments don't require a
+            # manual `haiku-rag init`.
             async with HaikuRAG(
                 self._db_path, config=self._config, create=True
             ) as client:
-                self._client = client
                 self._pollers = PollerManager(
                     configs=ingester_cfg.sources,
                     job_repo=self._jobs,
@@ -86,73 +99,7 @@ class IngesterApp:
                     # HTTP / WebDAV / S3 fetches reuse credentials.
                     sources=self._pollers.sources,
                 )
-
-                stop_event = asyncio.Event()
-                loop = asyncio.get_running_loop()
-                for sig in (signal.SIGINT, signal.SIGTERM):
-                    try:
-                        loop.add_signal_handler(sig, stop_event.set)
-                    except NotImplementedError:
-                        # Windows; signal handlers unavailable in asyncio.
-                        pass
-
-                await self._pollers.start()
-                await self._pool.start()
-                # Log the docling-serve fleet size when relevant so the
-                # operator can eyeball the worker/instance ratio. The convert
-                # phase is usually the throughput ceiling.
-                proc = self._config.processing
-                uses_docling_serve = (
-                    proc.converter == "docling-serve" or proc.chunker == "docling-serve"
-                )
-                if uses_docling_serve:
-                    logger.info(
-                        "Ingester running: %d worker(s), %d source(s), "
-                        "%d docling-serve instance(s)",
-                        ingester_cfg.workers.worker_count,
-                        len(ingester_cfg.sources),
-                        len(self._config.providers.docling_serve.base_urls),
-                    )
-                else:
-                    logger.info(
-                        "Ingester running: %d worker(s), %d source(s)",
-                        ingester_cfg.workers.worker_count,
-                        len(ingester_cfg.sources),
-                    )
-
-                api_task, api_server = await self._maybe_start_api(api)
-
-                try:
-                    await stop_event.wait()
-                finally:
-                    logger.info("Shutting down ingester")
-                    if api_server is not None:
-                        api_server.should_exit = True
-                    if api_task is not None:
-                        await asyncio.gather(api_task, return_exceptions=True)
-                    await self._pollers.stop()
-                    grace_s = ingester_cfg.workers.shutdown_grace_s
-                    try:
-                        await asyncio.wait_for(self._pool.stop(), timeout=grace_s)
-                    except TimeoutError:
-                        # In-flight jobs stay 'claimed'; the reaper resets
-                        # them after claim_timeout_s on the next start.
-                        logger.warning(
-                            "Shutdown grace of %.1fs elapsed with jobs still "
-                            "in flight; cancelling — they'll be reclaimed after "
-                            "claim_timeout_s on next start",
-                            grace_s,
-                        )
-                    # Drain any cancel-cleanup release Tasks the worker pool
-                    # spawned but didn't get to await (timeout path). They
-                    # need the queue connection that the outer finally is
-                    # about to close.
-                    landed = await self._pool.drain_pending_releases(timeout=2.0)
-                    if landed:
-                        logger.info(
-                            "Drained %d cancel-cleanup release(s) before close",
-                            landed,
-                        )
+                yield
         finally:
             # Close the queue connection unconditionally. aiosqlite runs the
             # underlying sqlite3 in a background thread; leaving it open holds
@@ -161,6 +108,109 @@ class IngesterApp:
             if self._queue_conn is not None:
                 await self._queue_conn.close()
                 self._queue_conn = None
+
+    async def _stop_pool(self) -> None:
+        """Stop the worker pool, honouring the shutdown grace, then drain any
+        cancel-cleanup release tasks before the queue connection closes."""
+        assert self._pool is not None
+        grace_s = self._config.ingester.workers.shutdown_grace_s
+        try:
+            await asyncio.wait_for(self._pool.stop(), timeout=grace_s)
+        except TimeoutError:
+            # In-flight jobs stay 'claimed'; the reaper resets them after
+            # claim_timeout_s on the next start.
+            logger.warning(
+                "Shutdown grace of %.1fs elapsed with jobs still in flight; "
+                "cancelling — they'll be reclaimed after claim_timeout_s on "
+                "next start",
+                grace_s,
+            )
+        landed = await self._pool.drain_pending_releases(timeout=2.0)
+        if landed:
+            logger.info("Drained %d cancel-cleanup release(s) before close", landed)
+
+    async def serve(self, *, api: bool = True) -> None:
+        """Run pollers + workers (and the HTTP API when enabled) until a
+        SIGINT/SIGTERM is received. Drains in-flight work on shutdown."""
+        ingester_cfg = self._config.ingester
+        async with self._resources():
+            assert self._pollers is not None and self._pool is not None
+            await self._pollers.start()
+            await self._pool.start()
+            # Log the docling-serve fleet size when relevant so the operator
+            # can eyeball the worker/instance ratio. The convert phase is
+            # usually the throughput ceiling.
+            proc = self._config.processing
+            uses_docling_serve = (
+                proc.converter == "docling-serve" or proc.chunker == "docling-serve"
+            )
+            if uses_docling_serve:
+                logger.info(
+                    "Ingester running: %d worker(s), %d source(s), "
+                    "%d docling-serve instance(s)",
+                    ingester_cfg.workers.worker_count,
+                    len(ingester_cfg.sources),
+                    len(self._config.providers.docling_serve.base_urls),
+                )
+            else:
+                logger.info(
+                    "Ingester running: %d worker(s), %d source(s)",
+                    ingester_cfg.workers.worker_count,
+                    len(ingester_cfg.sources),
+                )
+
+            api_task, api_server = await self._maybe_start_api(api)
+
+            stop_event = asyncio.Event()
+            loop = asyncio.get_running_loop()
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                try:
+                    loop.add_signal_handler(sig, stop_event.set)
+                except NotImplementedError:
+                    # Windows; signal handlers unavailable in asyncio.
+                    pass
+
+            try:
+                await stop_event.wait()
+            finally:
+                logger.info("Shutting down ingester")
+                if api_server is not None:
+                    api_server.should_exit = True
+                if api_task is not None:
+                    await asyncio.gather(api_task, return_exceptions=True)
+                await self._pollers.stop()
+                await self._stop_pool()
+
+    async def run_batch(self) -> BatchReport:
+        """Run one discover() sweep across every configured source, drain the
+        queue to completion, then stop. Unlike `serve`, the periodic poller
+        loops never start — discovery is driven explicitly, so the run is
+        deterministic and exits as soon as the queue is empty."""
+        async with self._resources():
+            assert (
+                self._pollers is not None
+                and self._pool is not None
+                and self._jobs is not None
+            )
+            # A persisted queue carries terminal rows from previous runs, and
+            # a recovered URI's dead row gets pruned mid-run, so the report
+            # counts only jobs that completed at or after this start instant.
+            started_at = datetime.now(UTC)
+            await self._pool.start()
+            try:
+                await self._pollers.sweep_all()
+                while True:
+                    counts = await self._jobs.counts_by_status()
+                    if not counts.get("queued") and not counts.get("claimed"):
+                        break
+                    await asyncio.sleep(0.1)
+                completed = await self._jobs.counts_by_status_since(started_at)
+                return BatchReport(
+                    succeeded=completed.get("succeeded", 0),
+                    dead=completed.get("dead", 0),
+                )
+            finally:
+                await self._stop_pool()
 
     async def _maybe_start_api(self, api: bool):
         """Spin up the FastAPI control plane on an asyncio task. Returns

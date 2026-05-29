@@ -1,7 +1,5 @@
 import asyncio
 import sys
-import uuid
-from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
@@ -9,7 +7,6 @@ from dotenv import find_dotenv, load_dotenv
 
 load_dotenv(find_dotenv(usecwd=True))
 
-from haiku.rag.client import HaikuRAG  # noqa: E402
 from haiku.rag.config import (  # noqa: E402
     AppConfig,
     find_config_file,
@@ -18,10 +15,7 @@ from haiku.rag.config import (  # noqa: E402
     set_config,
 )
 from haiku.rag.ingester.app import IngesterApp  # noqa: E402
-from haiku.rag.ingester.exceptions import PermanentError, TransientError  # noqa: E402
 from haiku.rag.ingester.queue.migrations import open_queue  # noqa: E402
-from haiku.rag.ingester.queue.models import Job, JobOp, JobStatus  # noqa: E402
-from haiku.rag.ingester.workers.pipeline import run_job  # noqa: E402
 from haiku.rag.logging import configure_cli_logging  # noqa: E402
 from haiku.rag.store.exceptions import (  # noqa: E402
     MigrationRequiredError,
@@ -163,59 +157,24 @@ def serve(
     asyncio.run(app.serve(api=not no_api))
 
 
-@_cli.command("run-once")
-def run_once(
-    uri: str = typer.Argument(..., help="URI to ingest (file://, http(s)://, s3://)."),
+@_cli.command("run-batch")
+def run_batch(
     db: Path | None = typer.Option(
         None,
         "--db",
         help="LanceDB path (overrides config.storage.data_dir).",
     ),
-    delete: bool = typer.Option(
-        False, "--delete", help="Run a delete op instead of upsert."
-    ),
 ) -> None:
-    """Build an ad-hoc Job and run it through the worker pipeline once.
-
-    Bypasses the queue — does NOT enqueue. Useful for smoke-testing the
-    Source adapter + pipeline path without spinning up the full pool.
-    """
-    asyncio.run(_run_once(get_config(), uri, db, delete))
+    """Run one discover sweep across every configured source, drain the queue,
+    then exit. New and changed resources are ingested, resources that vanished
+    from a source are deleted. Exits non-zero if any job dead-letters."""
+    asyncio.run(_run_batch(get_config(), db))
 
 
-async def _run_once(
-    app_config: AppConfig, uri: str, db_path: Path | None, delete: bool
-) -> None:
+async def _run_batch(app_config: AppConfig, db_path: Path | None) -> None:
     db = _resolve_db_path(app_config, db_path)
-    now = datetime.now(UTC)
-    job = Job(
-        id=f"adhoc-{uuid.uuid4()}",
-        source_id="adhoc",
-        uri=uri,
-        op=JobOp.DELETE if delete else JobOp.UPSERT,
-        status=JobStatus.CLAIMED,
-        attempts=1,
-        max_attempts=1,
-        enqueued_at=now,
-        scheduled_at=now,
-        claimed_at=now,
-        claimed_by="run-once",
-    )
-
-    async with HaikuRAG(db, config=app_config) as client:
-        try:
-            result = await run_job(client, job)
-        except PermanentError as e:
-            typer.echo(f"PERMANENT: {e}", err=True)
-            raise typer.Exit(2) from e
-        except TransientError as e:
-            typer.echo(f"TRANSIENT: {e}", err=True)
-            raise typer.Exit(1) from e
-
-    if result.deleted:
-        typer.echo(f"Deleted document at {uri}")
-    else:
-        typer.echo(
-            f"Ingested {uri}: document_id={result.document_id} "
-            f"revision={result.revision} md5={result.content_hash}"
-        )
+    app = IngesterApp(config=app_config, db_path=db)
+    report = await app.run_batch()
+    typer.echo(f"Batch complete: {report.succeeded} succeeded, {report.dead} dead")
+    if report.dead:
+        raise typer.Exit(1)

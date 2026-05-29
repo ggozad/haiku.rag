@@ -77,6 +77,13 @@ class PollerManager:
             poller._stop.clear()
             self._tasks.append(asyncio.create_task(poller.run()))
 
+    async def sweep_all(self) -> None:
+        """Run one discover() sweep on every poller, sequentially. Used by
+        one-shot batch runs that drive discovery explicitly rather than
+        through the periodic loop."""
+        for poller in self._pollers:
+            await poller._sweep_once()
+
     async def stop(self) -> None:
         for poller in self._pollers:
             await poller.stop()
