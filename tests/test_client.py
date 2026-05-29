@@ -1580,7 +1580,7 @@ async def test_sql_injection_is_blocked_with_escaping(temp_db_path):
 
 
 def _patch_embed_chunks(monkeypatch):
-    async def fake_embed_chunks(chunks, config):
+    async def fake_embed_chunks(chunks, embedder, config):
         for chunk in chunks:
             chunk.embedding = [0.0] * 2560
         return chunks

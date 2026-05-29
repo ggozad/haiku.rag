@@ -320,3 +320,27 @@ async def test_auto_vacuum_enabled_triggers_vacuum(temp_db_path, monkeypatch):
         assert final_versions <= 2, (
             f"With auto-vacuum enabled, should have minimal versions, got {final_versions}"
         )
+
+
+async def test_close_suppresses_failing_drain_vacuum(temp_db_path, monkeypatch):
+    """A failing final vacuum on close must not raise out of __aexit__,
+    where it would mask an in-flight exception from the context body."""
+    client = HaikuRAG(db_path=temp_db_path, create=True)
+    await client.__aenter__()
+
+    calls: list[int] = []
+
+    async def boom(*args, **kwargs):
+        calls.append(1)
+        raise RuntimeError("vacuum boom")
+
+    # A finished task in the set forces the drain branch to run.
+    task = asyncio.create_task(asyncio.sleep(0))
+    await task
+    client._vacuum_tasks.add(task)
+    monkeypatch.setattr(client.store, "vacuum", boom)
+
+    # Must not raise despite the drain vacuum erroring.
+    await client.__aexit__(None, None, None)
+
+    assert calls, "drain vacuum should have been attempted"

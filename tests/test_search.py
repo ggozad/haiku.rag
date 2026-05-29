@@ -354,7 +354,7 @@ async def test_search_with_bytes_query_uses_multimodal_embedder(
             return [0.5, 0.5, 0.5, 0.5]
 
     monkeypatch.setattr(
-        "haiku.rag.embeddings.get_embedder",
+        "haiku.rag.store.engine.get_embedder",
         lambda *a, **kw: StubMultimodal(),
     )
 
@@ -446,7 +446,7 @@ async def test_search_with_pil_image_works_like_bytes(temp_db_path, monkeypatch)
             return [0.1] * 4
 
     monkeypatch.setattr(
-        "haiku.rag.embeddings.get_embedder",
+        "haiku.rag.store.engine.get_embedder",
         lambda *a, **kw: StubMultimodal(),
     )
 

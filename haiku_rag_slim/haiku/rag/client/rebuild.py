@@ -503,11 +503,11 @@ async def _rebuild_rechunk(
     client: "HaikuRAG", documents: list[Document]
 ) -> AsyncGenerator[str, None]:
     """Re-chunk and re-embed each document from its stored docling blob."""
-    from haiku.rag.embeddings import embed_chunks, get_embedder
+    from haiku.rag.embeddings import embed_chunks
 
     pending_chunks: list[Chunk] = []
     pending_docs: list[Document] = []
-    embedder = get_embedder(client._config)
+    embedder = client.embedder
 
     async for doc in _hydrate(client, documents):
         assert doc.id is not None
@@ -530,7 +530,7 @@ async def _rebuild_rechunk(
             existing_picture_data=existing_picture_data,
             document_id=doc.id,
         )
-        embedded_chunks = await embed_chunks(chunks, client._config)
+        embedded_chunks = await embed_chunks(chunks, embedder, client._config)
 
         # Prepare chunks with document_id and order
         for order, chunk in enumerate(embedded_chunks):
@@ -638,7 +638,7 @@ async def _rebuild_descriptions(
     cost remains. Idempotent: pictures whose ``meta.description.text`` is
     already populated are not re-described.
     """
-    from haiku.rag.embeddings import embed_chunks, get_embedder
+    from haiku.rag.embeddings import embed_chunks
 
     if client._config.processing.pictures != "description":
         raise ValueError(
@@ -648,7 +648,7 @@ async def _rebuild_descriptions(
 
     pending_chunks: list[Chunk] = []
     pending_docs: list[Document] = []
-    embedder = get_embedder(client._config)
+    embedder = client.embedder
 
     described_total = 0
     async for doc in _hydrate(client, documents):
@@ -676,7 +676,7 @@ async def _rebuild_descriptions(
             existing_picture_data=existing_picture_data,
             document_id=doc.id,
         )
-        embedded_chunks = await embed_chunks(chunks, client._config)
+        embedded_chunks = await embed_chunks(chunks, embedder, client._config)
 
         for order, chunk in enumerate(embedded_chunks):
             chunk.document_id = doc.id
@@ -710,6 +710,7 @@ async def _rebuild_full(
     pending_chunks: list[Chunk] = []
     pending_docs: list[Document] = []
     converter = get_converter(client._config)
+    embedder = client.embedder
 
     for light_doc in documents:
         assert light_doc.id is not None
@@ -751,7 +752,7 @@ async def _rebuild_full(
 
         docling_document = await converter.convert_text(doc.content, format="md")
         chunks = await client.chunk(docling_document)
-        embedded_chunks = await embed_chunks(chunks, client._config)
+        embedded_chunks = await embed_chunks(chunks, embedder, client._config)
 
         doc.set_docling(docling_document)
 

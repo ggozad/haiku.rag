@@ -83,7 +83,7 @@ def contextualize(chunks: list["Chunk"]) -> list[str]:
 
 
 async def embed_chunks(
-    chunks: list["Chunk"], config: AppConfig = Config
+    chunks: list["Chunk"], embedder: "EmbedderWrapper", config: AppConfig = Config
 ) -> list["Chunk"]:
     """Generate embeddings for chunks, dispatching text vs picture variants.
 
@@ -96,8 +96,6 @@ async def embed_chunks(
         return []
 
     from haiku.rag.store.models.chunk import Chunk
-
-    embedder = get_embedder(config)
 
     text_chunks: list[Chunk] = []
     picture_chunks: list[Chunk] = []

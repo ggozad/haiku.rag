@@ -59,7 +59,7 @@ async def _store_document_with_chunks(
 
     Handles versioning/rollback on failure.
     """
-    chunks = await ensure_chunks_embedded(client._config, chunks)
+    chunks = await ensure_chunks_embedded(client._config, chunks, client.embedder)
 
     versions = await client.store.current_table_versions()
 
@@ -109,7 +109,7 @@ async def _update_document_with_chunks(
             await client.document_item_repository.get_all_picture_data(document.id)
         )
 
-    chunks = await ensure_chunks_embedded(client._config, chunks)
+    chunks = await ensure_chunks_embedded(client._config, chunks, client.embedder)
 
     versions = await client.store.current_table_versions()
 
@@ -160,7 +160,7 @@ async def create_document(
     converter = get_converter(client._config)
     docling_document = await converter.convert_text(content, format=format)
     chunks = await client.chunk(docling_document)
-    embedded_chunks = await embed_chunks(chunks, client._config)
+    embedded_chunks = await embed_chunks(chunks, client.embedder, client._config)
 
     stored_content = docling_document.export_to_markdown()
 
@@ -286,7 +286,9 @@ async def _ingest_fetch_result(
             chunks = await client.chunk(docling_document)
             chunk_span.set_attribute("chunks_created", len(chunks))
         with logfire.span("document.embed", uri=result.uri):
-            embedded_chunks = await embed_chunks(chunks, client._config)
+            embedded_chunks = await embed_chunks(
+                chunks, client.embedder, client._config
+            )
     finally:
         if cleanup_path is not None:
             cleanup_path.unlink(missing_ok=True)
@@ -635,7 +637,9 @@ async def update_document(
         existing_doc.set_docling(docling_document)
 
         new_chunks = await client.chunk(docling_document)
-        embedded_chunks = await embed_chunks(new_chunks, client._config)
+        embedded_chunks = await embed_chunks(
+            new_chunks, client.embedder, client._config
+        )
         return await _update_document_with_chunks(
             client, existing_doc, embedded_chunks, docling_document
         )
@@ -647,7 +651,7 @@ async def update_document(
     existing_doc.set_docling(converted_docling)
 
     new_chunks = await client.chunk(converted_docling)
-    embedded_chunks = await embed_chunks(new_chunks, client._config)
+    embedded_chunks = await embed_chunks(new_chunks, client.embedder, client._config)
     return await _update_document_with_chunks(
         client, existing_doc, embedded_chunks, converted_docling
     )

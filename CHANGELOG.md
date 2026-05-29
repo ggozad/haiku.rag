@@ -9,6 +9,8 @@
 
 - A successful DELETE job auto-prunes dead jobs with the same `(source_id, uri)`. New `JobRepo.prune_dead(source_id, uri)`.
 - Reranker built once per `HaikuRAG` client instead of per `search()` call.
+- Embedder built once per `HaikuRAG` client instead of rebuilt per ingest/search operation. `embed_chunks` now takes it explicitly: `embed_chunks(chunks, embedder, config)` (was `embed_chunks(chunks, config)`). New `HaikuRAG.embedder` property exposes it.
+- `HaikuRAG` close runs a final vacuum after draining in-flight background vacuums when `storage.auto_vacuum` is enabled.
 
 ## [0.50.0] - 2026-05-27
 

@@ -108,7 +108,7 @@ async def test_chunking_pipeline(qa_corpus: Dataset, temp_db_path):
         # Use client primitives: convert → chunk → embed
         docling_document = await client.convert(document_text)
         chunks = await client.chunk(docling_document)
-        embedded_chunks = await embed_chunks(chunks)
+        embedded_chunks = await embed_chunks(chunks, client.embedder)
 
         # Verify chunks were created with embeddings
         assert len(chunks) > 0

@@ -15,6 +15,8 @@ from haiku.rag.store.models.document_item import _picture_description_text
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
+    from haiku.rag.embeddings import EmbedderWrapper
+
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +171,7 @@ async def chunk(
     config: AppConfig,
     docling_document: "DoclingDocument",
     *,
+    embedder: "EmbedderWrapper",
     existing_picture_data: dict[str, bytes] | None = None,
     document_id: str | None = None,
 ) -> list[Chunk]:
@@ -184,12 +187,11 @@ async def chunk(
     path where the docling is loaded from the stored blob.
     """
     from haiku.rag.chunkers import get_chunker
-    from haiku.rag.embeddings import get_embedder
 
     chunker = get_chunker(config)
     text_chunks = await chunker.chunk(docling_document)
 
-    if not get_embedder(config).supports_images:
+    if not embedder.supports_images:
         for i, c in enumerate(text_chunks):
             c.order = i
         return text_chunks
@@ -277,7 +279,9 @@ def build_picture_chunks(
     return chunks
 
 
-async def ensure_chunks_embedded(config: AppConfig, chunks: list[Chunk]) -> list[Chunk]:
+async def ensure_chunks_embedded(
+    config: AppConfig, chunks: list[Chunk], embedder: "EmbedderWrapper"
+) -> list[Chunk]:
     """Ensure all chunks have embeddings, embedding any that don't.
 
     Chunks that already have embeddings are passed through unchanged; missing
@@ -290,7 +294,7 @@ async def ensure_chunks_embedded(config: AppConfig, chunks: list[Chunk]) -> list
     if not chunks_to_embed:
         return chunks
 
-    embedded = await embed_chunks(chunks_to_embed, config)
+    embedded = await embed_chunks(chunks_to_embed, embedder, config)
 
     # Build result maintaining original order
     embedded_map = {(c.content, c.order): c for c in embedded}

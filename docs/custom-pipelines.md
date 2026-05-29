@@ -26,7 +26,7 @@ The client exposes four primitives that can be composed into custom workflows:
 |-----------|-------|--------|---------|
 | `convert()` | file, URL, or text | `DoclingDocument` | Convert source to structured document |
 | `chunk()` | `DoclingDocument` | `list[Chunk]` | Split document into chunks |
-| `embed_chunks()` | `list[Chunk]` | `list[Chunk]` | Generate embeddings for chunks (includes contextualization) |
+| `embed_chunks()` | `list[Chunk]`, embedder | `list[Chunk]` | Generate embeddings for chunks (includes contextualization) |
 | `contextualize()` | `list[Chunk]` | `list[str]` | Get embedding-ready text (for custom embedders only) |
 
 ## Basic Pipeline
@@ -45,7 +45,7 @@ async with HaikuRAG("database.lancedb", create=True) as client:
     chunks = await client.chunk(docling_doc)
 
     # 3. Generate embeddings
-    embedded_chunks = await embed_chunks(chunks)
+    embedded_chunks = await embed_chunks(chunks, client.embedder)
 
     # 4. Store the document with chunks
     doc = await client.import_document(
@@ -117,13 +117,13 @@ Chunks are returned with:
 
 ## Embed
 
-`embed_chunks()` generates embeddings for chunks. It automatically contextualizes chunks (prepends section headings) before embedding for better semantic search, without modifying the stored content:
+`embed_chunks()` generates embeddings for chunks using the client's embedder. It automatically contextualizes chunks (prepends section headings) before embedding for better semantic search, without modifying the stored content:
 
 ```python
 from haiku.rag.embeddings import embed_chunks
 
 # Generate embeddings (returns new Chunk objects)
-embedded_chunks = await embed_chunks(chunks)
+embedded_chunks = await embed_chunks(chunks, client.embedder)
 
 # Original chunks unchanged
 assert chunks[0].embedding is None
@@ -175,7 +175,7 @@ async with HaikuRAG("database.lancedb", create=True) as client:
 
     # Continue with standard pipeline
     chunks = await client.chunk(processed_doc)
-    embedded_chunks = await embed_chunks(chunks)
+    embedded_chunks = await embed_chunks(chunks, client.embedder)
 
     await client.import_document(
         chunks=embedded_chunks,
@@ -203,7 +203,7 @@ async with HaikuRAG("database.lancedb", create=True) as client:
     for i, chunk in enumerate(filtered):
         chunk.order = i
 
-    embedded_chunks = await embed_chunks(filtered)
+    embedded_chunks = await embed_chunks(filtered, client.embedder)
 
     await client.import_document(
         docling_document=docling_doc,
