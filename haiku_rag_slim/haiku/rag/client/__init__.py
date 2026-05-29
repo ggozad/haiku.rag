@@ -7,6 +7,7 @@ import tempfile
 from collections.abc import AsyncGenerator
 from datetime import datetime
 from enum import Enum
+from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, overload
 from urllib.parse import urlparse
@@ -31,6 +32,7 @@ if TYPE_CHECKING:
     from PIL import Image as PILImage
 
     from haiku.rag.ingester.sources.base import Source
+    from haiku.rag.reranking.base import RerankerBase
     from haiku.rag.sandbox import AnalysisResult
     from haiku.rag.store.models.citation import Citation
 
@@ -86,6 +88,15 @@ class HaikuRAG:
     def is_read_only(self) -> bool:
         """Whether the client is in read-only mode."""
         return self.store.is_read_only
+
+    @cached_property
+    def reranker(self) -> "RerankerBase | None":
+        """The configured reranker, built once and reused across searches.
+
+        None when reranking is disabled. Local rerankers load model weights on
+        construction, so building per search would reload them on every query.
+        """
+        return get_reranker(config=self._config)
 
     async def __aenter__(self):
         """Async context manager entry — initializes store and repositories."""

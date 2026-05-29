@@ -396,6 +396,37 @@ async def test_search_with_bytes_query_uses_multimodal_embedder(
 
 
 @pytest.mark.asyncio
+async def test_reranker_built_once_across_searches(temp_db_path, monkeypatch):
+    """The reranker is constructed once per client and reused across searches,
+    rather than rebuilt (reloading model weights) on every query."""
+    from haiku.rag.store.models.chunk import Chunk
+
+    build_count = 0
+
+    class StubReranker:
+        async def rerank(self, query, chunks, top_n):
+            return [(chunk, 1.0) for chunk in chunks][:top_n]
+
+    def fake_get_reranker(config):
+        nonlocal build_count
+        build_count += 1
+        return StubReranker()
+
+    monkeypatch.setattr("haiku.rag.client.get_reranker", fake_get_reranker)
+
+    async def fake_chunk_search(query, limit, search_type, filter):
+        return [(Chunk(content="x", metadata={}), 0.5)]
+
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        rag.chunk_repository.search = fake_chunk_search  # type: ignore[method-assign]
+        await rag.search("first", include_images=False)
+        await rag.search("second", include_images=False)
+        await rag.search("third", include_images=False)
+
+    assert build_count == 1
+
+
+@pytest.mark.asyncio
 async def test_search_with_pil_image_works_like_bytes(temp_db_path, monkeypatch):
     from PIL import Image as PILImageModule
 

@@ -1,7 +1,6 @@
 import base64
 from typing import TYPE_CHECKING
 
-from haiku.rag.reranking import get_reranker
 from haiku.rag.store.models.chunk import Chunk, SearchResult, SearchType
 from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX
 
@@ -42,7 +41,7 @@ async def search(
         if search_type is None:
             search_type = "hybrid"
 
-        reranker = get_reranker(config=client._config)
+        reranker = client.reranker
 
         if reranker is None:
             chunk_results = await client.chunk_repository.search(
