@@ -141,43 +141,37 @@ Two approaches are benchmarked separately:
 
 ##### Retrieval (MAP)
 
-| Embedding Model              | Source bucket      | Cases | MAP    |
-|------------------------------|--------------------|------:|-------:|
-| `Qwen/Qwen3-VL-Embedding-8B` | text only          |  1914 | 0.9801 |
-| `Qwen/Qwen3-VL-Embedding-8B` | text + image       |   763 | 0.9720 |
-| `Qwen/Qwen3-VL-Embedding-8B` | text + table       |   148 | 0.9786 |
-| `Qwen/Qwen3-VL-Embedding-8B` | text + table+image |   220 | 0.9720 |
-| `Qwen/Qwen3-VL-Embedding-8B` | **all**            |  3045 | **0.9774** |
+| Embedding Model                          | Cases | MAP    |
+|------------------------------------------|------:|-------:|
+| `Qwen/Qwen3-VL-Embedding-8B`             |  3045 | 0.9774 |
+| `nvidia/llama-nemotron-embed-vl-1b-v2`   |  3045 | 0.9709 |
 
 ##### QA Accuracy
 
-| Embedding Model              | Skill model                       | Reranker               | Source bucket | Cases | Accuracy |
-|------------------------------|-----------------------------------|------------------------|---------------|------:|---------:|
-| `Qwen/Qwen3-VL-Embedding-8B` | `ollama:qwen3.6` (vision)         | none                   | text only        |   682 |   96.9 % |
-| `Qwen/Qwen3-VL-Embedding-8B` | `ollama:qwen3.6` (vision)         | none                   | with image       |   299 |   91.3 % |
-| `Qwen/Qwen3-VL-Embedding-8B` | `vllm:Gemma-4-26B-A4B-NVFP4`      | `mxbai-rerank-base-v2` | text             |   894 |   88.5 % |
-| `Qwen/Qwen3-VL-Embedding-8B` | `vllm:Gemma-4-26B-A4B-NVFP4`      | `mxbai-rerank-base-v2` | text+image       |   341 |   88.0 % |
-| `Qwen/Qwen3-VL-Embedding-8B` | `vllm:Gemma-4-26B-A4B-NVFP4`      | `mxbai-rerank-base-v2` | text+table       |    72 |   88.9 % |
-| `Qwen/Qwen3-VL-Embedding-8B` | `vllm:Gemma-4-26B-A4B-NVFP4`      | `mxbai-rerank-base-v2` | text+table+image |   102 |   93.1 % |
-| `Qwen/Qwen3-VL-Embedding-8B` | `vllm:Gemma-4-26B-A4B-NVFP4`      | `mxbai-rerank-base-v2` | **all**          |  1409 | **88.7 %** |
+| Embedding Model              | Skill model                  | Reranker               | Cases | Accuracy |
+|------------------------------|------------------------------|------------------------|------:|---------:|
+| `Qwen/Qwen3-VL-Embedding-8B` | `vllm:Gemma-4-26B-A4B-NVFP4` | `mxbai-rerank-base-v2` |  1409 |   88.7 % |
 
 #### Text embedder + VLM picture descriptions
 
 ##### Retrieval (MAP)
 
-| Embedding Model      | VLM                  | Source bucket | Cases | MAP        |
-|----------------------|----------------------|---------------|------:|-----------:|
-| `qwen3-embedding:4b` | Ollama / ministral-3 | **all**       |  3045 | **0.9722** |
+| Embedding Model                          | VLM                  | Reranker               | Cases | MAP    |
+|------------------------------------------|----------------------|------------------------|------:|-------:|
+| `qwen3-embedding:4b`                     | Ollama / ministral-3 | none                   |  3045 | 0.9722 |
+| `qwen3-embedding:4b`                     | Ollama / ministral-3 | `mxbai-rerank-base-v2` |  3045 | 0.9834 |
+| `nvidia/llama-nemotron-embed-vl-1b-v2`   | Ollama / ministral-3 | `mxbai-rerank-base-v2` |  3045 | 0.9863 |
 
-*Measured on haiku.rag v0.45.0.*
+*qwen3 no-reranker measured on haiku.rag v0.45.0; qwen3 + reranker and nemotron on v0.50.0.*
 
 ##### QA accuracy + citation retrieval
 
-| Embedding Model        | VLM                  | Skill model                  | QA accuracy | Mean `cited_map` |
-|------------------------|----------------------|------------------------------|-------------|------------------|
-| `qwen3-embedding:4b`   | Ollama / ministral-3 | `vllm:Gemma-4-26B-A4B-NVFP4` | 0.88        | 0.89             |
+| Embedding Model                          | VLM                  | Skill model                  | Cases | QA accuracy | Mean `cited_map` |
+|------------------------------------------|----------------------|------------------------------|------:|-------------|------------------|
+| `qwen3-embedding:4b`                     | Ollama / ministral-3 | `vllm:Gemma-4-26B-A4B-NVFP4` |  3045 | 0.88        | 0.89             |
+| `nvidia/llama-nemotron-embed-vl-1b-v2`   | Ollama / ministral-3 | `vllm:Gemma-4-26B-A4B-NVFP4` |  2836 | 0.96        | 0.81             |
 
-*Measured on haiku.rag v0.48.0, with `mxbai-rerank-base-v2`, on all 3045 cases. Judged by `vllm:Qwen3.6-35B-A3B-NVFP4`.*
+*qwen3 measured on haiku.rag v0.48.0 over all 3045 cases; nemotron on v0.50.0 over 2836 / 3045 cases (run stopped early; numbers stable from ~12% onward). Both with `mxbai-rerank-base-v2`, judged by `vllm:Qwen3.6-35B-A3B-NVFP4`.*
 
 ## Inactive datasets
 
