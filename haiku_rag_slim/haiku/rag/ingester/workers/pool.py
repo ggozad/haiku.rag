@@ -114,7 +114,7 @@ class WorkerPool:
 
     async def drain_once(self, worker_id: str = "drain") -> int:
         """Drain every currently-claimable job to completion on the calling
-        coroutine. Used by run-once and by tests; not by `start()`."""
+        coroutine. Used by tests; not by `start()`."""
         processed = 0
         while True:
             job = await self._jobs.claim_next(worker_id)

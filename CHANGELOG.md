@@ -1,6 +1,14 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- `haiku-ingester run-batch`: one discover sweep across every configured source, drains the queue, then exits. Orphan deletion requires a persisted `ingester.db`.
+
+### Removed
+
+- `haiku-ingester run-once`. Use `run-batch` to ingest configured sources, or `serve` for continuous operation.
+
 ## [0.51.0] - 2026-05-29
 
 ### Added
