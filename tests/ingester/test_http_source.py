@@ -324,3 +324,21 @@ async def test_discover_emits_delete_for_removed_url_with_no_revision_tracked():
     ]
     by_uri = {e.uri: e for e in events}
     assert by_uri["https://example.com/no-etag.md"].kind is SourceEventKind.DELETE
+
+
+@pytest.mark.asyncio
+async def test_discover_propagates_non_transport_errors():
+    """Programming errors (TypeError, etc.) should propagate instead of
+    being silently swallowed as UPSERT events."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise TypeError("unexpected bug")
+
+    src = HTTPSource(
+        source_id="x",
+        urls=["https://example.com/a.md"],
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(TypeError, match="unexpected bug"):
+        async for _ in src.discover():
+            pass
