@@ -23,6 +23,7 @@ from haiku.rag.config import (
     WorkerConfig,
 )
 from haiku.rag.ingester.app import IngesterApp
+from haiku.rag.ingester.pollers.manager import PollerManager
 from haiku.rag.ingester.workers.pool import WorkerPool
 from haiku.rag.store.models.document import Document
 
@@ -305,3 +306,60 @@ async def test_stop_pool_warns_when_shutdown_grace_elapses(tmp_path, caplog):
 
     assert pool.released == 1
     assert "Shutdown grace" in caplog.text
+
+
+def _record_close_order(monkeypatch) -> list[str]:
+    """Record the order of _stop_pool and PollerManager.close_sources.
+
+    Workers share the pollers' Source instances for fetch(), so the source
+    clients must be closed only after the pool has stopped — otherwise an
+    in-flight fetch during the shutdown grace hits a closed client.
+    """
+    order: list[str] = []
+    orig_stop_pool = IngesterApp._stop_pool
+    orig_close = PollerManager.close_sources
+
+    async def rec_stop(self):
+        order.append("stop_pool")
+        await orig_stop_pool(self)
+
+    async def rec_close(self):
+        order.append("close_sources")
+        await orig_close(self)
+
+    monkeypatch.setattr(IngesterApp, "_stop_pool", rec_stop)
+    monkeypatch.setattr(PollerManager, "close_sources", rec_close)
+    return order
+
+
+@pytest.mark.asyncio
+async def test_run_batch_closes_sources_after_pool_stops(
+    tmp_path, use_client, monkeypatch
+):
+    (tmp_path / "a.md").write_text("hello")
+    use_client(_mock_client())
+    app = IngesterApp(config=_config(tmp_path), db_path=tmp_path / "db.lancedb")
+    order = _record_close_order(monkeypatch)
+
+    await app.run_batch()
+
+    assert order == ["stop_pool", "close_sources"]
+
+
+@pytest.mark.asyncio
+async def test_serve_closes_sources_after_pool_stops(tmp_path, use_client, monkeypatch):
+    use_client(_mock_client())
+    config = _config(tmp_path)
+    config.ingester.api = APIConfig(enabled=False)
+    app = IngesterApp(config=config, db_path=tmp_path / "db.lancedb")
+    order = _record_close_order(monkeypatch)
+
+    task = asyncio.create_task(app.serve(api=False))
+    try:
+        await _wait_until(lambda: app._pool is not None and app._pool.live_workers > 0)
+    finally:
+        task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=5.0)
+
+    assert order == ["stop_pool", "close_sources"]

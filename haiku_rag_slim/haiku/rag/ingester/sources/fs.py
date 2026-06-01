@@ -75,6 +75,9 @@ class FSSource:
             return False
         return self._resolve_within_root(uri) is not None
 
+    async def aclose(self) -> None:  # pragma: no cover - no resources to release
+        pass
+
     async def head(self, uri: str) -> str | None:
         path = self._resolve_within_root(uri)
         if path is None or not path.exists():

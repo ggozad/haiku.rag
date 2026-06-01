@@ -59,6 +59,9 @@ def test_source_protocol_runtime_checkable():
         def supports(self, uri: str) -> bool:
             return True
 
+        async def aclose(self) -> None:
+            pass
+
         async def head(self, uri: str):
             return None
 

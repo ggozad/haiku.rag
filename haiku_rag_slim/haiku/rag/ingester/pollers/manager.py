@@ -97,6 +97,13 @@ class PollerManager:
         self._tasks.clear()
         self._started = False
 
+    async def close_sources(self) -> None:
+        """Close all source adapters (e.g. HTTP connection pools). Must be
+        called after the worker pool has fully stopped so in-flight fetches
+        don't hit a closed client."""
+        for source in self.sources:
+            await source.aclose()
+
     @property
     def pollers(self) -> list[BasePoller]:
         return list(self._pollers)

@@ -181,6 +181,7 @@ class IngesterApp:
                     await asyncio.gather(api_task, return_exceptions=True)
                 await self._pollers.stop()
                 await self._stop_pool()
+                await self._pollers.close_sources()
 
     async def run_batch(self) -> BatchReport:
         """Run one discover() sweep across every configured source, drain the
@@ -213,6 +214,7 @@ class IngesterApp:
                 )
             finally:
                 await self._stop_pool()
+                await self._pollers.close_sources()
 
     async def _maybe_start_api(self, api: bool):
         """Spin up the FastAPI control plane on an asyncio task. Returns

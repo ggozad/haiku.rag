@@ -189,41 +189,39 @@ class WebDAVSource:
             supported_extensions=self.supported_extensions,
         )
         # transport is for testing — production callers leave it None.
-        self._transport = transport
-
-    def supports(self, uri: str) -> bool:
-        return uri.startswith(self.base_url)
-
-    def _client(self) -> httpx.AsyncClient:
         auth = (
             (self.username, self.password)
             if self.username is not None and self.password is not None
             else None
         )
-        return httpx.AsyncClient(
-            auth=auth, headers=self.headers, transport=self._transport
+        self._http = httpx.AsyncClient(
+            auth=auth, headers=self.headers, transport=transport
         )
 
+    def supports(self, uri: str) -> bool:
+        return uri.startswith(self.base_url)
+
+    async def aclose(self) -> None:
+        await self._http.aclose()
+
     async def head(self, uri: str) -> str | None:
-        async with self._client() as http:
-            response = await http.request(
-                "PROPFIND",
-                uri,
-                headers={"Depth": "0", "Content-Type": "application/xml"},
-                content=_PROPFIND_BODY,
-            )
-            if response.is_error:
-                return None
-            entries = _parse_multistatus(response.content)
+        response = await self._http.request(
+            "PROPFIND",
+            uri,
+            headers={"Depth": "0", "Content-Type": "application/xml"},
+            content=_PROPFIND_BODY,
+        )
+        if response.is_error:
+            return None
+        entries = _parse_multistatus(response.content)
         if not entries:
             return None
         return entries[0].revision
 
     async def fetch(self, uri: str) -> FetchResult:
-        async with self._client() as http:
-            response = await http.get(uri)
-            response.raise_for_status()
-            body = response.content
+        response = await self._http.get(uri)
+        response.raise_for_status()
+        body = response.content
         content_type = (
             response.headers.get("content-type", "application/octet-stream")
             .split(";")[0]
@@ -261,15 +259,14 @@ class WebDAVSource:
         now = datetime.now(UTC)
         seen: set[str] = set()
 
-        async with self._client() as http:
-            response = await http.request(
-                "PROPFIND",
-                self.base_url,
-                headers={"Depth": "infinity", "Content-Type": "application/xml"},
-                content=_PROPFIND_BODY,
-            )
-            response.raise_for_status()
-            entries = _parse_multistatus(response.content)
+        response = await self._http.request(
+            "PROPFIND",
+            self.base_url,
+            headers={"Depth": "infinity", "Content-Type": "application/xml"},
+            content=_PROPFIND_BODY,
+        )
+        response.raise_for_status()
+        entries = _parse_multistatus(response.content)
 
         for entry in entries:
             if entry.is_collection:
