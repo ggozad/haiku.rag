@@ -282,6 +282,8 @@ class WebDAVSource:
             revision = entry.revision
             if revision is not None and snapshot.get(uri) == revision:
                 kind = SourceEventKind.UNCHANGED
+            elif revision is None and uri in known:
+                kind = SourceEventKind.UNCHANGED
             else:
                 kind = SourceEventKind.UPSERT
             yield SourceEvent(

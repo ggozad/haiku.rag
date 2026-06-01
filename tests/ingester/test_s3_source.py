@@ -213,3 +213,28 @@ async def test_discover_respects_ignore_patterns(fake_s3_listing):
     )
     events = [e async for e in src.discover()]
     assert {e.uri for e in events} == {"s3://bucket/a.md"}
+
+
+@pytest.mark.asyncio
+async def test_discover_emits_unchanged_for_known_key_without_etag(fake_s3_listing):
+    """An S3 object with no ETag should not cause re-ingestion every sweep
+    once the key has been ingested."""
+    fake_s3_listing([[{"path": "file.md", "size": 0, "last_modified": None}]])
+    src = S3Source(uri="s3://bucket/", supported_extensions=[".md"])
+    events = [
+        e
+        async for e in src.discover(known_uris={"s3://bucket/file.md"})
+    ]
+    non_delete = [e for e in events if e.kind is not SourceEventKind.DELETE]
+    assert len(non_delete) == 1
+    assert non_delete[0].kind is SourceEventKind.UNCHANGED
+
+
+@pytest.mark.asyncio
+async def test_discover_emits_upsert_for_unknown_key_without_etag(fake_s3_listing):
+    """A brand-new S3 key with no ETag should UPSERT on first sight."""
+    fake_s3_listing([[{"path": "new.md", "size": 0, "last_modified": None}]])
+    src = S3Source(uri="s3://bucket/", supported_extensions=[".md"])
+    events = [e async for e in src.discover()]
+    assert len(events) == 1
+    assert events[0].kind is SourceEventKind.UPSERT
