@@ -130,7 +130,14 @@ class WorkerPool:
                 continue
             job = await self._jobs.claim_next(worker_id)
             if job is None:
-                await self._sleep_or_stop(self._poll_idle_s)
+                try:
+                    async with self._jobs.job_available:
+                        await asyncio.wait_for(
+                            self._jobs.job_available.wait(),
+                            timeout=self._poll_idle_s,
+                        )
+                except TimeoutError:
+                    pass
                 continue
             await self._process(job)
 
