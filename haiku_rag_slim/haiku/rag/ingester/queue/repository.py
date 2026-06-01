@@ -66,6 +66,9 @@ class JobRepo:
         # JobRepo and SyncStateRepo share the same connection, callers must
         # pass the same lock instance so cross-repo calls also serialize.
         self._lock = lock or asyncio.Lock()
+        # Notified after a successful enqueue so workers can wake
+        # immediately instead of polling on a fixed sleep interval.
+        self.job_available = asyncio.Condition()
 
     async def enqueue(
         self,
@@ -110,6 +113,9 @@ class JobRepo:
             ) as cursor:
                 row = await cursor.fetchone()
             await self._conn.commit()
+        if row is not None:
+            async with self.job_available:
+                self.job_available.notify_all()
         return _row_to_job(row) if row else None
 
     async def claim_next(self, worker_id: str) -> Job | None:
