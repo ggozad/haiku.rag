@@ -484,6 +484,22 @@ async def test_watch_deleted_then_added_enqueues_upsert(tmp_path, jobs, sync):
     assert queued[0].op is JobOp.UPSERT
 
 
+@pytest.mark.asyncio
+async def test_watch_added_file_deleted_before_stat_does_not_crash(tmp_path, jobs, sync):
+    """If a file is deleted between the watchfiles event and the stat()
+    call, the handler should return silently instead of raising
+    FileNotFoundError and killing the watch loop."""
+    from watchfiles import Change
+
+    poller = _fs_poller(tmp_path, jobs, sync)
+    missing = tmp_path / "vanished.md"
+    # File doesn't exist — simulate Change.added arriving after deletion.
+    await poller._handle_watch_change(Change.added, missing)
+
+    # No job should be enqueued, and no exception should have propagated.
+    assert await jobs.list_jobs(source_id="local") == []
+
+
 # --- FSPoller end-to-end smoke ---
 
 
