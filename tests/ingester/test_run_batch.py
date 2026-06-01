@@ -235,6 +235,39 @@ async def test_run_batch_empty_source_returns_immediately(tmp_path, use_client):
     client.create_document_from_source.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_run_batch_aborts_when_all_workers_die(
+    tmp_path, use_client, monkeypatch, caplog
+):
+    """If all workers crash with outstanding jobs, run_batch should break
+    out of the drain loop instead of spinning forever."""
+    (tmp_path / "a.md").write_text("hello")
+
+    client = _mock_client()
+    use_client(client)
+    config = _config(tmp_path)
+
+    config.ingester.workers.worker_count = 1
+
+    # Patch _process to raise an unhandled exception, simulating a hard
+    # worker crash.  _process only catches CancelledError, PermanentError,
+    # and TransientError — anything else propagates and kills the task.
+    monkeypatch.setattr(
+        WorkerPool,
+        "_process",
+        AsyncMock(side_effect=Exception("worker crash")),
+    )
+
+    with caplog.at_level("ERROR", logger="haiku.rag.ingester.app"):
+        report = await asyncio.wait_for(
+            IngesterApp(config=config, db_path=tmp_path / "db.lancedb").run_batch(),
+            timeout=10.0,
+        )
+
+    assert report is not None
+    assert "All workers have died" in caplog.text
+
+
 async def _wait_until(predicate, *, timeout: float = 5.0):
     deadline = asyncio.get_running_loop().time() + timeout
     while not predicate():
