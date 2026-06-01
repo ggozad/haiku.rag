@@ -234,6 +234,48 @@ async def test_run_batch_empty_source_returns_immediately(tmp_path, use_client):
     client.create_document_from_source.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_run_batch_aborts_when_all_workers_die(tmp_path, use_client, monkeypatch):
+    """If all workers crash with claimed jobs still outstanding, run_batch
+    should break out of the drain loop instead of spinning forever."""
+    (tmp_path / "a.md").write_text("hello")
+
+    client = _mock_client()
+    # Block the worker forever so the job stays claimed until we kill it.
+    stall = asyncio.Event()
+    client.create_document_from_source.side_effect = lambda *a, **k: stall.wait()
+
+    use_client(client)
+    config = _config(tmp_path)
+    app = IngesterApp(config=config, db_path=tmp_path / "db.lancedb")
+
+    async def _kill_workers_after_claim():
+        """Wait until at least one job is claimed, then kill all workers."""
+        pool = app._pool
+        assert pool is not None
+        for _ in range(200):
+            counts = await app._jobs.counts_by_status()
+            if counts.get("claimed"):
+                break
+            await asyncio.sleep(0.05)
+        for task in pool._workers:
+            task.cancel()
+        await asyncio.gather(*pool._workers, return_exceptions=True)
+
+    # Run the killer concurrently with run_batch.
+    batch_task = asyncio.create_task(app.run_batch())
+    # Give run_batch a moment to start, then schedule the killer.
+    await asyncio.sleep(0.1)
+    killer_task = asyncio.create_task(_kill_workers_after_claim())
+
+    report = await asyncio.wait_for(batch_task, timeout=10.0)
+    # Killer may still be running against a closed DB — suppress errors.
+    killer_task.cancel()
+    await asyncio.gather(killer_task, return_exceptions=True)
+    # The batch should have exited without hanging.
+    assert report is not None
+
+
 async def _wait_until(predicate, *, timeout: float = 5.0):
     deadline = asyncio.get_running_loop().time() + timeout
     while not predicate():
