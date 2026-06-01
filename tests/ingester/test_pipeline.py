@@ -270,3 +270,12 @@ async def test_file_not_found_classified_as_permanent():
     client.create_document_from_source.side_effect = FileNotFoundError("gone")
     with pytest.raises(PermanentError, match="file not found"):
         await run_job(client, _job())
+
+
+@pytest.mark.asyncio
+async def test_permission_error_classified_as_permanent():
+    """An unreadable file should go straight to the DLQ, not retry."""
+    client = _mock_client()
+    client.create_document_from_source.side_effect = PermissionError("no access")
+    with pytest.raises(PermanentError, match="permission denied"):
+        await run_job(client, _job())

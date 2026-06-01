@@ -60,6 +60,9 @@ def _classify(exc: BaseException) -> Exception:
     if isinstance(exc, FileNotFoundError):
         return PermanentError(f"file not found: {exc}")
 
+    if isinstance(exc, PermissionError):
+        return PermanentError(f"permission denied: {exc}")
+
     if isinstance(exc, asyncio.TimeoutError | TimeoutError | OSError):
         return TransientError(f"timeout/io: {exc}")
 
