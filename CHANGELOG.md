@@ -1,13 +1,32 @@
 # Changelog
 ## [Unreleased]
 
+## [0.52.0] - 2026-06-01
+
 ### Added
 
 - `haiku-ingester run-batch`: one discover sweep across every configured source, drains the queue, then exits. Orphan deletion requires a persisted `ingester.db`.
+- `max_file_size` (bytes) on every source type rejects oversized files before they are read into memory; they dead-letter as a permanent `FileTooLargeError`. FS and S3 check the size from metadata before fetching; HTTP and WebDAV rely on a `Content-Length` response header, so a server that omits it is not enforced.
+
+### Changed
+
+- Idle workers wake on enqueue via an `asyncio.Condition` instead of polling on `poll_idle_interval_s`.
+- `sync_state` writes are batched into one transaction per sweep (`SyncStateRepo.batch_upsert`) instead of one commit per file.
+- HTTP and WebDAV sources reuse a single `httpx.AsyncClient` across `head`/`fetch`/`discover` instead of opening one per request.
+- Periodic poll sweeps start after a random jitter of 0–25% of `poll_interval_s`.
+- New partial index `idx_jobs_succeeded_completed` backs the dashboard rolling-throughput query.
 
 ### Removed
 
 - `haiku-ingester run-once`. Use `run-batch` to ingest configured sources, or `serve` for continuous operation.
+
+### Fixed
+
+- Revision-less HTTP/S3/WebDAV resources (no ETag or Last-Modified) emit `UNCHANGED` once known instead of re-ingesting on every sweep.
+- Deleted, unreadable, and directory paths (`FileNotFoundError`, `PermissionError`, `IsADirectoryError`, `NotADirectoryError`) classify as permanent failures instead of exhausting retries first.
+- FS `discover()` and the watch loop no longer crash when a file is removed between listing and `stat()`.
+- HTTP `discover()` catches only `httpx.TransportError`; other exceptions propagate instead of being emitted as UPSERT.
+- A `sync_state` write that fails after a job is marked succeeded is logged instead of crashing the worker.
 
 ## [0.51.0] - 2026-05-29
 
@@ -1637,7 +1656,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.51.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.52.0...HEAD
+[0.52.0]: https://github.com/ggozad/haiku.rag/compare/0.51.0...0.52.0
 [0.51.0]: https://github.com/ggozad/haiku.rag/compare/0.50.0...0.51.0
 [0.50.0]: https://github.com/ggozad/haiku.rag/compare/0.48.1...0.50.0
 [0.48.1]: https://github.com/ggozad/haiku.rag/compare/0.48.0...0.48.1
