@@ -63,6 +63,9 @@ def _classify(exc: BaseException) -> Exception:
     if isinstance(exc, PermissionError):
         return PermanentError(f"permission denied: {exc}")
 
+    if isinstance(exc, IsADirectoryError | NotADirectoryError):
+        return PermanentError(f"path error: {exc}")
+
     if isinstance(exc, asyncio.TimeoutError | TimeoutError | OSError):
         return TransientError(f"timeout/io: {exc}")
 
