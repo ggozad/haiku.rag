@@ -9,3 +9,11 @@ embeddings:
 processing:
   conversion_options:
     do_ocr: false
+
+ingester:
+  queue:
+    path: ingester.db
+  sources:
+    - type: fs
+      id: docs
+      root: docs
