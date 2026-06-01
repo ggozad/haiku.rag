@@ -121,16 +121,16 @@ def test_load_config_with_explicit_path(tmp_path):
     config_file.write_text("embeddings:\n  model:\n    provider: ollama\n")
 
     config = _load_config_with_override(config_file)
-    assert config is not None
+    assert config.embeddings.model.provider == "ollama"
 
 
 def test_load_config_falls_back_to_default(monkeypatch):
-    from haiku.rag.ingester.cli import _load_config_with_override
+    from haiku.rag.ingester.cli import _load_config_with_override, get_config
 
     monkeypatch.setattr("haiku.rag.ingester.cli.find_config_file", lambda _: None)
 
     config = _load_config_with_override(None)
-    assert config is not None
+    assert config == get_config()
 
 
 # --- cli() entry point ---
