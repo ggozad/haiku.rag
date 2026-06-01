@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 from typing import TYPE_CHECKING
 
 from haiku.rag.ingester.pollers.base import BasePoller
@@ -38,10 +39,19 @@ class PeriodicPoller(BasePoller):
         # immediately instead of waiting one full interval. The sweep
         # behaviour itself is exercised via `_sweep_once()` unit tests.
         await self._sweep_once()
+        # Stagger the first sleep so pollers that share the same interval
+        # don't all wake up and sweep at exactly the same moment.
+        interval = self.config.poll_interval_s
+        jitter = random.uniform(0, interval * 0.25)
+        try:
+            await asyncio.wait_for(self._stop.wait(), timeout=jitter)
+            return
+        except TimeoutError:
+            pass
         while not self._stop.is_set():
             try:
                 await asyncio.wait_for(
-                    self._stop.wait(), timeout=self.config.poll_interval_s
+                    self._stop.wait(), timeout=interval
                 )
                 return
             except TimeoutError:
