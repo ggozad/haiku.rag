@@ -3,54 +3,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from evaluations.evaluators.map import MAPEvaluator
-from evaluations.evaluators.mrr import MRREvaluator
-
-
-class TestMRREvaluator:
-    def setup_method(self) -> None:
-        self.evaluator = MRREvaluator()
-
-    def _make_ctx(
-        self, relevant_uris: list[str], retrieved_uris: list[str]
-    ) -> MagicMock:
-        ctx = MagicMock()
-        ctx.metadata = {"relevant_uris": relevant_uris}
-        ctx.output = retrieved_uris
-        return ctx
-
-    def test_first_result_relevant(self) -> None:
-        ctx = self._make_ctx(["doc1"], ["doc1", "doc2", "doc3"])
-        assert self.evaluator.evaluate(ctx) == 1.0
-
-    def test_second_result_relevant(self) -> None:
-        ctx = self._make_ctx(["doc2"], ["doc1", "doc2", "doc3"])
-        assert self.evaluator.evaluate(ctx) == 0.5
-
-    def test_third_result_relevant(self) -> None:
-        ctx = self._make_ctx(["doc3"], ["doc1", "doc2", "doc3"])
-        assert self.evaluator.evaluate(ctx) == pytest.approx(1 / 3)
-
-    def test_no_relevant_found(self) -> None:
-        ctx = self._make_ctx(["doc_x"], ["doc1", "doc2", "doc3"])
-        assert self.evaluator.evaluate(ctx) == 0.0
-
-    def test_empty_retrieved(self) -> None:
-        ctx = self._make_ctx(["doc1"], [])
-        assert self.evaluator.evaluate(ctx) == 0.0
-
-    def test_multiple_relevant_returns_first_match(self) -> None:
-        ctx = self._make_ctx(["doc2", "doc3"], ["doc1", "doc2", "doc3"])
-        assert self.evaluator.evaluate(ctx) == 0.5
-
-    def test_none_metadata(self) -> None:
-        ctx = MagicMock()
-        ctx.metadata = None
-        ctx.output = ["doc1"]
-        assert self.evaluator.evaluate(ctx) == 0.0
-
-    def test_empty_relevant_uris(self) -> None:
-        ctx = self._make_ctx([], ["doc1", "doc2"])
-        assert self.evaluator.evaluate(ctx) == 0.0
 
 
 class TestMAPEvaluator:

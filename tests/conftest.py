@@ -1,8 +1,9 @@
+import json
 import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 # Prevent tests from loading user's local haiku.rag.yaml by setting env var
 # to a test config file BEFORE any haiku.rag imports.
@@ -17,14 +18,12 @@ embeddings:
     vector_dim: 2560
 """)
 os.environ["HAIKU_RAG_CONFIG_PATH"] = str(_test_config_path)
-os.environ["HF_HUB_OFFLINE"] = "1"
 
 import pydantic_ai.models  # noqa: E402
 import pytest  # noqa: E402
 import yaml  # noqa: E402
 
 if TYPE_CHECKING:
-    from datasets import Dataset
     from vcr import VCR
 
 setattr(pydantic_ai.models, "ALLOW_MODEL_REQUESTS", False)
@@ -32,18 +31,10 @@ logging.getLogger("vcr.cassette").setLevel(logging.WARNING)
 
 
 @pytest.fixture(scope="session")
-def qa_corpus() -> "Dataset":
-    from datasets import Dataset, load_dataset, load_from_disk
-
-    ds_path = Path(__file__).parent / "data" / "dataset"
-    ds_path.mkdir(parents=True, exist_ok=True)
-    try:
-        return cast(Dataset, load_from_disk(ds_path))
-    except FileNotFoundError:
-        ds: Dataset = load_dataset("ServiceNow/repliqa")["repliqa_3"]
-        corpus = ds.filter(lambda doc: doc["document_topic"] == "News Stories")
-        corpus.save_to_disk(ds_path)
-        return corpus
+def qa_corpus() -> list[dict[str, str]]:
+    corpus_path = Path(__file__).parent / "data" / "qa_corpus.json"
+    with open(corpus_path) as f:
+        return json.load(f)
 
 
 @pytest.fixture

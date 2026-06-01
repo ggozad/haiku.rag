@@ -14,34 +14,12 @@ def _relevant_uris(ctx: EvaluatorContext) -> set[str]:
 
 
 @dataclass
-class CitationMRREvaluator(Evaluator):
-    """Reciprocal rank over the URIs the skill cited via the `cite` tool.
-
-    Reads ``cited_uris`` from ``ctx.attributes`` (recorded during the task run
-    via :func:`pydantic_evals.set_eval_attribute`) and ``relevant_uris`` from
-    ``ctx.metadata``. Returns ``1.0/rank`` of the first cited URI that is in
-    the relevant set, or ``0.0`` if none match.
-
-    Use for single-document datasets, mirroring :class:`MRREvaluator`.
-    """
-
-    def get_default_evaluation_name(self) -> str:
-        return "cited_mrr"
-
-    def evaluate(self, ctx: EvaluatorContext) -> float:
-        relevant = _relevant_uris(ctx)
-        for rank, uri in enumerate(_cited_uris(ctx), start=1):
-            if uri in relevant:
-                return 1.0 / rank
-        return 0.0
-
-
-@dataclass
 class CitationMAPEvaluator(Evaluator):
     """Average precision over the URIs the skill cited via the `cite` tool.
 
-    Same input shape as :class:`CitationMRREvaluator`; use for multi-document
-    datasets, mirroring :class:`MAPEvaluator`.
+    Reads ``cited_uris`` from ``ctx.attributes`` (recorded during the task run
+    via :func:`pydantic_evals.set_eval_attribute`) and ``relevant_uris`` from
+    ``ctx.metadata``.
     """
 
     def get_default_evaluation_name(self) -> str:

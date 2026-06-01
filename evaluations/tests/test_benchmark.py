@@ -74,19 +74,19 @@ class TestBuildExperimentMetadata:
 
 class TestResolveDataset:
     def test_valid_dataset(self) -> None:
-        spec = _resolve_dataset("repliqa")
-        assert spec.key == "repliqa"
+        spec = _resolve_dataset("wix")
+        assert spec.key == "wix"
 
     def test_case_insensitive(self) -> None:
-        spec = _resolve_dataset("REPLIQA")
-        assert spec.key == "repliqa"
+        spec = _resolve_dataset("WIX")
+        assert spec.key == "wix"
 
     def test_unknown_dataset_raises(self) -> None:
         with pytest.raises(typer.BadParameter, match="Unknown dataset 'nonexistent'"):
             _resolve_dataset("nonexistent")
 
     def test_error_lists_valid_datasets(self) -> None:
-        with pytest.raises(typer.BadParameter, match="repliqa"):
+        with pytest.raises(typer.BadParameter, match="wix"):
             _resolve_dataset("nonexistent")
 
 
@@ -325,13 +325,6 @@ class TestRunQaBenchmarkSkillTarget:
 
 
 class TestCitationEvaluatorWiring:
-    def test_returns_mrr_twin_for_mrr_evaluator(self) -> None:
-        from evaluations.benchmark import _citation_evaluator_for
-        from evaluations.evaluators import CitationMRREvaluator, MRREvaluator
-
-        result = _citation_evaluator_for(MRREvaluator())
-        assert isinstance(result, CitationMRREvaluator)
-
     def test_returns_map_twin_for_map_evaluator(self) -> None:
         from evaluations.benchmark import _citation_evaluator_for
         from evaluations.evaluators import CitationMAPEvaluator, MAPEvaluator
@@ -351,7 +344,7 @@ class TestAttachRelevantUris:
 
         from evaluations.benchmark import _attach_relevant_uris
         from evaluations.config import RetrievalSample
-        from evaluations.evaluators import MRREvaluator
+        from evaluations.evaluators import MAPEvaluator
 
         cases: list[Case[str, str, dict]] = [
             Case(name="c1", inputs="What is X?", expected_output="X is a thing"),
@@ -382,7 +375,7 @@ class TestAttachRelevantUris:
             retrieval_mapper=lambda d: RetrievalSample(
                 question=d["q"], expected_uris=d["uris"]
             ),
-            retrieval_evaluator=MRREvaluator(),
+            retrieval_evaluator=MAPEvaluator(),
         )
 
         _attach_relevant_uris(cases, spec, limit=None)

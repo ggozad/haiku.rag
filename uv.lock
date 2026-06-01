@@ -1479,7 +1479,6 @@ tui = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "datasets" },
     { name = "haiku-rag-evals" },
     { name = "haiku-rag-slim", extra = ["ingester"] },
     { name = "pre-commit" },
@@ -1506,7 +1505,6 @@ provides-extras = ["tui", "s3", "cross-encoder", "ingester"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "datasets", specifier = ">=4.8.4" },
     { name = "haiku-rag-evals", editable = "evaluations" },
     { name = "haiku-rag-slim", extras = ["ingester"], editable = "haiku_rag_slim" },
     { name = "pre-commit", specifier = ">=4.5.1" },

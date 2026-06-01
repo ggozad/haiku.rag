@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from datasets import Dataset
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
@@ -20,7 +19,7 @@ def vcr_cassette_dir():
 
 
 @pytest.mark.vcr()
-async def test_client_document_crud(qa_corpus: Dataset, temp_db_path):
+async def test_client_document_crud(qa_corpus: list[dict[str, str]], temp_db_path):
     """Test HaikuRAG CRUD operations for documents."""
     async with HaikuRAG(temp_db_path, create=True) as client:
         # Get test data
@@ -123,7 +122,7 @@ async def test_client_resolve_document(temp_db_path):
 
 
 @pytest.mark.vcr()
-async def test_client_update_document(qa_corpus: Dataset, temp_db_path):
+async def test_client_update_document(qa_corpus: list[dict[str, str]], temp_db_path):
     """Test updating document with individual parameters."""
     async with HaikuRAG(temp_db_path, create=True) as client:
         # Get test data

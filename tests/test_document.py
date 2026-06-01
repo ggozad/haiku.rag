@@ -1,5 +1,4 @@
 import pytest
-from datasets import Dataset
 
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.document import Document
@@ -8,7 +7,7 @@ from haiku.rag.store.repositories.document import DocumentRepository
 
 @pytest.mark.asyncio
 async def test_document_list_excludes_content_by_default(
-    qa_corpus: Dataset, temp_db_path
+    qa_corpus: list[dict[str, str]], temp_db_path
 ):
     """list_all excludes content and docling_document by default."""
     async with Store(temp_db_path, create=True) as store:
@@ -34,7 +33,7 @@ async def test_document_list_excludes_content_by_default(
 
 @pytest.mark.asyncio
 async def test_document_list_includes_content_when_requested(
-    qa_corpus: Dataset, temp_db_path
+    qa_corpus: list[dict[str, str]], temp_db_path
 ):
     """list_all returns content when include_content=True."""
     async with Store(temp_db_path, create=True) as store:
@@ -51,7 +50,7 @@ async def test_document_list_includes_content_when_requested(
 
 
 @pytest.mark.asyncio
-async def test_document_list_with_filter(qa_corpus: Dataset, temp_db_path):
+async def test_document_list_with_filter(qa_corpus: list[dict[str, str]], temp_db_path):
     """Test listing documents with filter clause."""
     async with Store(temp_db_path, create=True) as store:
         doc_repo = DocumentRepository(store)
@@ -229,7 +228,7 @@ def test_get_page_images():
 
 @pytest.mark.asyncio
 async def test_get_docling_data_loads_only_docling_columns(
-    qa_corpus: Dataset, temp_db_path
+    qa_corpus: list[dict[str, str]], temp_db_path
 ):
     """get_docling_data returns docling blob without loading content."""
     import json
@@ -276,7 +275,9 @@ async def test_get_docling_data_loads_only_docling_columns(
 
 
 @pytest.mark.asyncio
-async def test_get_pages_data_loads_only_pages_column(qa_corpus: Dataset, temp_db_path):
+async def test_get_pages_data_loads_only_pages_column(
+    qa_corpus: list[dict[str, str]], temp_db_path
+):
     """get_pages_data returns only page image data for a document."""
     import json
 
@@ -309,7 +310,7 @@ async def test_get_pages_data_loads_only_pages_column(qa_corpus: Dataset, temp_d
 
 @pytest.mark.asyncio
 async def test_get_pages_data_none_for_markdown_document(
-    qa_corpus: Dataset, temp_db_path
+    qa_corpus: list[dict[str, str]], temp_db_path
 ):
     """Markdown documents have no page images — get_pages_data returns None pages."""
     async with Store(temp_db_path, create=True) as store:
@@ -330,7 +331,7 @@ async def test_get_pages_data_none_for_markdown_document(
 
 @pytest.mark.asyncio
 async def test_document_get_by_uri_with_special_characters(
-    qa_corpus: Dataset, temp_db_path
+    qa_corpus: list[dict[str, str]], temp_db_path
 ):
     """Test get_by_uri handles URIs with special characters like single quotes."""
     async with Store(temp_db_path, create=True) as store:

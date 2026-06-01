@@ -19,9 +19,7 @@ from evaluations.datasets import DATASETS
 from evaluations.evaluators import (
     ANSWER_EQUIVALENCE_RUBRIC,
     CitationMAPEvaluator,
-    CitationMRREvaluator,
     MAPEvaluator,
-    MRREvaluator,
 )
 from evaluations.skill_runner import SkillFactory, run_skill_question
 from haiku.rag.client import HaikuRAG
@@ -29,11 +27,6 @@ from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.logging import configure_cli_logging
 from haiku.rag.utils import get_model, parse_model_option
-
-_CITATION_EVALUATORS: dict[type[Evaluator], type[Evaluator]] = {
-    MRREvaluator: CitationMRREvaluator,
-    MAPEvaluator: CitationMAPEvaluator,
-}
 
 Target = Literal["rag-skill", "analysis-skill"]
 TARGETS: tuple[Target, ...] = ("rag-skill", "analysis-skill")
@@ -306,10 +299,9 @@ def _skill_factory_for_target(target: Target) -> SkillFactory:
 
 def _citation_evaluator_for(retrieval_evaluator: Evaluator | None) -> Evaluator | None:
     """Return the citation-scoring twin of the dataset's retrieval evaluator."""
-    if retrieval_evaluator is None:
-        return None
-    twin = _CITATION_EVALUATORS.get(type(retrieval_evaluator))
-    return twin() if twin is not None else None
+    if isinstance(retrieval_evaluator, MAPEvaluator):
+        return CitationMAPEvaluator()
+    return None
 
 
 def _attach_relevant_uris(
