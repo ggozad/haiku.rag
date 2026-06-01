@@ -36,9 +36,7 @@ async def apply_migrations(conn: aiosqlite.Connection) -> int:
         )
     else:
         current = row[0]
-        if current < SCHEMA_VERSION:
-            # No diff migrations exist yet — future versions add UPDATE/ALTER
-            # statements between here and the version bump.
+        if current < SCHEMA_VERSION:  # pragma: no cover - no migrations yet
             await _exec(conn, "UPDATE schema_version SET version = ?", SCHEMA_VERSION)
 
     await conn.commit()

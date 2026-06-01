@@ -44,6 +44,11 @@ def test_adhoc_resolves_s3_forwards_storage_options():
     assert src.storage_options["endpoint"] == "http://seaweed:8333"
 
 
+def test_adhoc_s3_without_bucket_raises():
+    with pytest.raises(ValueError, match="Invalid S3 URI"):
+        resolve_adhoc_fetcher("s3:///key-only")
+
+
 def test_adhoc_unknown_scheme_raises():
     with pytest.raises(ValueError, match="No source adapter"):
         resolve_adhoc_fetcher("ftp://example.com/x")
