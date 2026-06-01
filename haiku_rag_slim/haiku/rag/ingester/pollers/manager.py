@@ -96,6 +96,9 @@ class PollerManager:
             await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks.clear()
         self._started = False
+        for source in self.sources:
+            if hasattr(source, "aclose"):
+                await source.aclose()
 
     @property
     def pollers(self) -> list[BasePoller]:
