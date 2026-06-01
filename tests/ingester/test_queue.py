@@ -834,3 +834,54 @@ async def test_sync_state_upsert_replaces_revision_when_provided(sync):
     assert row.revision == "v2"
     assert row.content_hash == "hash-v2"
     assert row.last_ingested_at is not None
+
+
+@pytest.mark.asyncio
+async def test_sync_state_batch_upsert_inserts_multiple_rows(sync):
+    """batch_upsert writes many rows in a single transaction."""
+    await sync.batch_upsert([
+        ("s", "u1", "rev1", "hash1", False),
+        ("s", "u2", "rev2", "hash2", False),
+        ("s", "u3", "rev3", None, True),
+    ])
+    assert await sync.get_revision_snapshot("s") == {
+        "u1": "rev1",
+        "u2": "rev2",
+        "u3": "rev3",
+    }
+    row = await sync.get_row("s", "u3")
+    assert row is not None
+    assert row.last_ingested_at is not None
+
+
+@pytest.mark.asyncio
+async def test_sync_state_batch_upsert_updates_existing(sync):
+    """batch_upsert applies ON CONFLICT update semantics like upsert()."""
+    await sync.upsert("s", "u1", revision="old", content_hash="old-hash")
+    await sync.batch_upsert([
+        ("s", "u1", "new", "new-hash", False),
+    ])
+    row = await sync.get_row("s", "u1")
+    assert row is not None
+    assert row.revision == "new"
+    assert row.content_hash == "new-hash"
+
+
+@pytest.mark.asyncio
+async def test_sync_state_batch_upsert_preserves_revision_when_none(sync):
+    """batch_upsert with revision=None leaves existing revision in place."""
+    await sync.upsert("s", "u1", revision="keep", content_hash="keep-hash")
+    await sync.batch_upsert([
+        ("s", "u1", None, None, False),
+    ])
+    row = await sync.get_row("s", "u1")
+    assert row is not None
+    assert row.revision == "keep"
+    assert row.content_hash == "keep-hash"
+
+
+@pytest.mark.asyncio
+async def test_sync_state_batch_upsert_empty_is_noop(sync):
+    """batch_upsert with an empty list does nothing."""
+    await sync.batch_upsert([])
+    assert await sync.get_revision_snapshot("s") == {}

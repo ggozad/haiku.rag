@@ -129,11 +129,13 @@ class BasePoller:
                     SourceEventKind.DELETE: 0,
                     SourceEventKind.UNCHANGED: 0,
                 }
+                sync_batch: list[tuple[str, str, str | None, str | None, bool]] = []
                 async for event in self.source.discover(
                     since=revisions, known_uris=known
                 ):
                     counts[event.kind] += 1
-                    await self._handle_event(event)
+                    await self._handle_event(event, sync_batch)
+                await self._sync.batch_upsert(sync_batch)
                 self._breaker.record_success()
                 self._last_polled_at = datetime.now(UTC)
                 self._last_skip_reason = None
@@ -163,7 +165,11 @@ class BasePoller:
                 )
                 return False
 
-    async def _handle_event(self, event: SourceEvent) -> None:
+    async def _handle_event(
+        self,
+        event: SourceEvent,
+        sync_batch: list[tuple[str, str, str | None, str | None, bool]],
+    ) -> None:
         if event.kind is SourceEventKind.UPSERT:
             await self._jobs.enqueue(
                 event.source_id,
@@ -176,19 +182,11 @@ class BasePoller:
             # Don't write revision to sync_state here — the worker writes it
             # after a successful ingestion. last_seen_at gets bumped to keep
             # orphan detection accurate.
-            await self._sync.upsert(
-                event.source_id,
-                event.uri,
-                revision=None,
-                content_hash=None,
-            )
+            sync_batch.append((event.source_id, event.uri, None, None, False))
         elif event.kind is SourceEventKind.UNCHANGED:
             # Touch last_seen_at without changing the stored revision.
-            await self._sync.upsert(
-                event.source_id,
-                event.uri,
-                revision=event.revision,
-                content_hash=None,
+            sync_batch.append(
+                (event.source_id, event.uri, event.revision, None, False)
             )
         elif event.kind is SourceEventKind.DELETE:
             if not self.config.delete_orphans:

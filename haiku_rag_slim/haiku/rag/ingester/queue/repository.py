@@ -504,6 +504,37 @@ class SyncStateRepo:
                 pass
             await self._conn.commit()
 
+    async def batch_upsert(
+        self,
+        rows: list[tuple[str, str, str | None, str | None, bool]],
+    ) -> None:
+        """Batch insert-or-update sync_state rows in a single transaction.
+        Each tuple is (source_id, uri, revision, content_hash, ingested)."""
+        if not rows:
+            return
+        now = _utcnow_iso()
+        async with self._lock:
+            for source_id, uri, revision, content_hash, ingested in rows:
+                ingested_at = now if ingested else None
+                await self._conn.execute(
+                    """
+                    INSERT INTO sync_state (
+                        source_id, uri, revision, content_hash,
+                        last_seen_at, last_ingested_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(source_id, uri) DO UPDATE SET
+                        revision = COALESCE(excluded.revision, revision),
+                        content_hash = COALESCE(excluded.content_hash, content_hash),
+                        last_seen_at = excluded.last_seen_at,
+                        last_ingested_at = COALESCE(
+                            excluded.last_ingested_at, last_ingested_at
+                        )
+                    """,
+                    (source_id, uri, revision, content_hash, now, ingested_at),
+                )
+            await self._conn.commit()
+
     async def delete(self, source_id: str, uri: str) -> None:
         async with self._lock:
             async with self._conn.execute(
