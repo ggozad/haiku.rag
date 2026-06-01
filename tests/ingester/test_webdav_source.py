@@ -384,3 +384,53 @@ async def test_discover_url_decodes_href_path():
     assert [e.uri for e in events] == [
         "https://nc.example.com/dav/my docs/Hello World.md"
     ]
+
+
+@pytest.mark.asyncio
+async def test_discover_emits_unchanged_for_known_uri_without_revision():
+    """A WebDAV entry with no ETag or Last-Modified should not cause
+    re-ingestion every sweep once the URI has been ingested."""
+    multistatus = _multistatus(
+        {"href": "/dav/", "collection": True},
+        {"href": "/dav/norev.md", "content_type": "text/markdown"},
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(207, content=multistatus)
+
+    src = WebDAVSource(
+        source_id="nc",
+        base_url="https://nc.example.com/dav/",
+        transport=_transport(handler),
+    )
+    events = [
+        e
+        async for e in src.discover(
+            known_uris={"https://nc.example.com/dav/norev.md"}
+        )
+    ]
+    non_delete = [e for e in events if e.kind is not SourceEventKind.DELETE]
+    assert len(non_delete) == 1
+    assert non_delete[0].kind is SourceEventKind.UNCHANGED
+
+
+@pytest.mark.asyncio
+async def test_discover_emits_upsert_for_unknown_uri_without_revision():
+    """A brand-new WebDAV entry with no revision should UPSERT on first sight."""
+    multistatus = _multistatus(
+        {"href": "/dav/", "collection": True},
+        {"href": "/dav/new.md", "content_type": "text/markdown"},
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(207, content=multistatus)
+
+    src = WebDAVSource(
+        source_id="nc",
+        base_url="https://nc.example.com/dav/",
+        transport=_transport(handler),
+    )
+    events = [e async for e in src.discover()]
+    non_delete = [e for e in events if e.kind is not SourceEventKind.DELETE]
+    assert len(non_delete) == 1
+    assert non_delete[0].kind is SourceEventKind.UPSERT

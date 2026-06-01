@@ -144,6 +144,13 @@ class HTTPSource:
             revision, _ = _extract_revision(head.headers)
             if revision is not None and snapshot.get(url) == revision:
                 kind = SourceEventKind.UNCHANGED
+            elif revision is None and url in known:
+                # Server provides no revision header (no ETag, no
+                # Last-Modified). We can't detect changes, but the URL was
+                # already ingested — skip rather than re-fetch every sweep. A
+                # real change is only picked up if the server starts returning
+                # revision headers or the operator forces a re-ingest.
+                kind = SourceEventKind.UNCHANGED
             else:
                 kind = SourceEventKind.UPSERT
 

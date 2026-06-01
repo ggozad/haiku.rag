@@ -342,3 +342,38 @@ async def test_discover_propagates_non_transport_errors():
     with pytest.raises(TypeError, match="unexpected bug"):
         async for _ in src.discover():
             pass
+
+
+@pytest.mark.asyncio
+async def test_discover_emits_unchanged_for_known_url_without_revision():
+    """A server that returns no ETag or Last-Modified should not cause
+    re-ingestion every sweep once the URL has been ingested."""
+    transport = _transport(
+        {("HEAD", "https://example.com/a.md"): httpx.Response(200)}
+    )
+    src = HTTPSource(
+        source_id="x", urls=["https://example.com/a.md"], transport=transport
+    )
+    events = [
+        e
+        async for e in src.discover(
+            known_uris={"https://example.com/a.md"}
+        )
+    ]
+    assert len(events) == 1
+    assert events[0].kind is SourceEventKind.UNCHANGED
+    assert events[0].revision is None
+
+
+@pytest.mark.asyncio
+async def test_discover_emits_upsert_for_unknown_url_without_revision():
+    """A brand-new URL with no revision should still UPSERT on first sight."""
+    transport = _transport(
+        {("HEAD", "https://example.com/new.md"): httpx.Response(200)}
+    )
+    src = HTTPSource(
+        source_id="x", urls=["https://example.com/new.md"], transport=transport
+    )
+    events = [e async for e in src.discover()]
+    assert len(events) == 1
+    assert events[0].kind is SourceEventKind.UPSERT
