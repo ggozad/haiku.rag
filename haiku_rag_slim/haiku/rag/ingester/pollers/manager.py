@@ -77,12 +77,17 @@ class PollerManager:
             poller._stop.clear()
             self._tasks.append(asyncio.create_task(poller.run()))
 
-    async def sweep_all(self) -> None:
+    async def sweep_all(self) -> list[str]:
         """Run one discover() sweep on every poller, sequentially. Used by
         one-shot batch runs that drive discovery explicitly rather than
-        through the periodic loop."""
+        through the periodic loop. Returns the source ids whose sweep did not
+        complete (discovery failed, circuit open, or pending work already
+        queued) so callers can treat a one-shot run as failed."""
+        failed: list[str] = []
         for poller in self._pollers:
-            await poller._sweep_once()
+            if not await poller._sweep_once():
+                failed.append(poller.source_id)
+        return failed
 
     async def stop(self) -> None:
         for poller in self._pollers:

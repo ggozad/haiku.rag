@@ -23,10 +23,11 @@ logger = logging.getLogger(__name__)
 
 class BatchReport(BaseModel):
     """Outcome of a one-shot batch run: terminal job counts after the queue
-    drained."""
+    drained, plus any sources whose discovery sweep did not complete."""
 
     succeeded: int = 0
     dead: int = 0
+    failed_sweeps: list[str] = []
 
 
 class IngesterApp:
@@ -198,7 +199,7 @@ class IngesterApp:
             started_at = datetime.now(UTC)
             await self._pool.start()
             try:
-                await self._pollers.sweep_all()
+                failed_sweeps = await self._pollers.sweep_all()
                 while True:
                     counts = await self._jobs.counts_by_status()
                     if not counts.get("queued") and not counts.get("claimed"):
@@ -208,6 +209,7 @@ class IngesterApp:
                 return BatchReport(
                     succeeded=completed.get("succeeded", 0),
                     dead=completed.get("dead", 0),
+                    failed_sweeps=failed_sweeps,
                 )
             finally:
                 await self._stop_pool()

@@ -190,6 +190,34 @@ async def test_run_batch_recovered_doc_is_not_counted_as_dead(tmp_path, use_clie
 
 
 @pytest.mark.asyncio
+async def test_run_batch_reports_failed_sweep(
+    tmp_path, use_client, monkeypatch, caplog
+):
+    """A source whose discover() raises is reported in failed_sweeps so the
+    run can be treated as failed rather than a silent empty success."""
+    (tmp_path / "a.md").write_text("hello")
+    use_client(_mock_client())
+
+    async def _failing_discover(self, **kwargs):
+        raise RuntimeError("discover blew up")
+        yield  # unreachable; makes this an async generator
+
+    monkeypatch.setattr(
+        "haiku.rag.ingester.sources.fs.FSSource.discover", _failing_discover
+    )
+
+    with caplog.at_level("ERROR", logger="haiku.rag.ingester.pollers.base"):
+        report = await IngesterApp(
+            config=_config(tmp_path), db_path=tmp_path / "db.lancedb"
+        ).run_batch()
+
+    assert report.failed_sweeps == ["local"]
+    assert report.succeeded == 0
+    assert report.dead == 0
+    assert "discover() failed" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_run_batch_empty_source_returns_immediately(tmp_path, use_client):
     client = _mock_client()
     use_client(client)

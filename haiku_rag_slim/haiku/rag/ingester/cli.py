@@ -167,7 +167,8 @@ def run_batch(
 ) -> None:
     """Run one discover sweep across every configured source, drain the queue,
     then exit. New and changed resources are ingested, resources that vanished
-    from a source are deleted. Exits non-zero if any job dead-letters."""
+    from a source are deleted. Exits non-zero if any job dead-letters or a
+    source's sweep does not complete."""
     asyncio.run(_run_batch(get_config(), db))
 
 
@@ -176,5 +177,10 @@ async def _run_batch(app_config: AppConfig, db_path: Path | None) -> None:
     app = IngesterApp(config=app_config, db_path=db)
     report = await app.run_batch()
     typer.echo(f"Batch complete: {report.succeeded} succeeded, {report.dead} dead")
-    if report.dead:
+    if report.failed_sweeps:
+        typer.echo(
+            f"Sources that failed to sweep: {', '.join(report.failed_sweeps)}",
+            err=True,
+        )
+    if report.dead or report.failed_sweeps:
         raise typer.Exit(1)

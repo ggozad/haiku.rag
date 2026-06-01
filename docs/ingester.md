@@ -322,8 +322,9 @@ haiku-ingester run-batch --db rag.lancedb
 ```
 
 Orphan deletion compares each source against `sync_state` in the queue DB,
-so persist `ingester.db` between runs for deletions to be detected. It
-exits non-zero if any job dead-letters.
+so persist `ingester.db` between runs for deletions to be detected. It exits
+non-zero if any job dead-letters or a source's discovery sweep does not
+complete.
 
 ### The queue
 

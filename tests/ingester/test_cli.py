@@ -35,3 +35,12 @@ def test_run_batch_exits_nonzero_when_dead(monkeypatch):
 
     assert result.exit_code == 1
     assert "2 dead" in result.output
+
+
+def test_run_batch_exits_nonzero_when_sweep_fails(monkeypatch):
+    _fake_app(BatchReport(succeeded=2, dead=0, failed_sweeps=["docs"]), monkeypatch)
+
+    result = runner.invoke(cli, ["run-batch", "--db", "x.lancedb"])
+
+    assert result.exit_code == 1
+    assert "failed to sweep: docs" in result.output
