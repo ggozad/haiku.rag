@@ -244,25 +244,37 @@ class WorkerPool:
         self._breaker.record_success()
         if was_open:
             logger.info("Worker pool breaker closed after successful probe")
-        if job.op is JobOp.DELETE:
-            await self._sync.delete(job.source_id, job.uri)
-            # A successful DELETE resolves any earlier UPSERT failures for the
-            # same (source_id, uri): the document is gone, the original error
-            # is no longer actionable, the DLQ entry is just visual noise.
-            pruned = await self._jobs.prune_dead(job.source_id, job.uri)
-            if pruned:
-                logger.info(
-                    "Pruned %d dead job(s) for %s after successful DELETE",
-                    pruned,
+        try:
+            if job.op is JobOp.DELETE:
+                await self._sync.delete(job.source_id, job.uri)
+                # A successful DELETE resolves any earlier UPSERT failures for
+                # the same (source_id, uri): the document is gone, the original
+                # error is no longer actionable, the DLQ entry is visual noise.
+                pruned = await self._jobs.prune_dead(job.source_id, job.uri)
+                if pruned:
+                    logger.info(
+                        "Pruned %d dead job(s) for %s after successful DELETE",
+                        pruned,
+                        job.uri,
+                    )
+            else:
+                await self._sync.upsert(
+                    job.source_id,
                     job.uri,
+                    revision=result.revision,
+                    content_hash=result.content_hash,
+                    ingested=True,
                 )
-        else:
-            await self._sync.upsert(
-                job.source_id,
+        except Exception:
+            # The job is already marked succeeded — the document was ingested
+            # correctly. A sync_state write failure means the next sweep may
+            # redundantly re-ingest this URI, but that's better than crashing
+            # the worker and blocking the rest of the queue.
+            logger.exception(
+                "Job %s succeeded but sync_state write failed for %s; "
+                "next sweep may re-ingest",
+                job.id,
                 job.uri,
-                revision=result.revision,
-                content_hash=result.content_hash,
-                ingested=True,
             )
         logger.info(
             "Job %s succeeded in %.2fs: %s", job.id, time.monotonic() - started, job.uri
