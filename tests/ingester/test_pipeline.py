@@ -279,3 +279,13 @@ async def test_permission_error_classified_as_permanent():
     client.create_document_from_source.side_effect = PermissionError("no access")
     with pytest.raises(PermanentError, match="permission denied"):
         await run_job(client, _job())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("exc_class", [IsADirectoryError, NotADirectoryError])
+async def test_directory_errors_classified_as_permanent(exc_class):
+    """Pointing at a directory instead of a file should DLQ immediately."""
+    client = _mock_client()
+    client.create_document_from_source.side_effect = exc_class("not a file")
+    with pytest.raises(PermanentError, match="path error"):
+        await run_job(client, _job())
