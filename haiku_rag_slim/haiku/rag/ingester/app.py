@@ -204,12 +204,13 @@ class IngesterApp:
                     counts = await self._jobs.counts_by_status()
                     if not counts.get("queued") and not counts.get("claimed"):
                         break
-                    if counts.get("claimed") and self._pool.live_workers == 0:
+                    if self._pool.live_workers == 0:
+                        outstanding = counts.get("queued", 0) + counts.get("claimed", 0)
                         logger.error(
-                            "All workers have died with %d claimed job(s) — "
-                            "aborting batch; stranded jobs will be reaped on "
-                            "next start",
-                            counts["claimed"],
+                            "All workers have died with %d outstanding job(s) "
+                            "— aborting batch; stranded jobs will be reaped "
+                            "on next start",
+                            outstanding,
                         )
                         break
                     await asyncio.sleep(0.1)

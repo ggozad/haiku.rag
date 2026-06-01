@@ -235,45 +235,36 @@ async def test_run_batch_empty_source_returns_immediately(tmp_path, use_client):
 
 
 @pytest.mark.asyncio
-async def test_run_batch_aborts_when_all_workers_die(tmp_path, use_client, monkeypatch):
-    """If all workers crash with claimed jobs still outstanding, run_batch
-    should break out of the drain loop instead of spinning forever."""
+async def test_run_batch_aborts_when_all_workers_die(
+    tmp_path, use_client, monkeypatch, caplog
+):
+    """If all workers crash with outstanding jobs, run_batch should break
+    out of the drain loop instead of spinning forever."""
     (tmp_path / "a.md").write_text("hello")
 
     client = _mock_client()
-    # Block the worker forever so the job stays claimed until we kill it.
-    stall = asyncio.Event()
-    client.create_document_from_source.side_effect = lambda *a, **k: stall.wait()
-
     use_client(client)
     config = _config(tmp_path)
-    app = IngesterApp(config=config, db_path=tmp_path / "db.lancedb")
 
-    async def _kill_workers_after_claim():
-        """Wait until at least one job is claimed, then kill all workers."""
-        pool = app._pool
-        assert pool is not None
-        for _ in range(200):
-            counts = await app._jobs.counts_by_status()
-            if counts.get("claimed"):
-                break
-            await asyncio.sleep(0.05)
-        for task in pool._workers:
-            task.cancel()
-        await asyncio.gather(*pool._workers, return_exceptions=True)
+    config.ingester.workers.worker_count = 1
 
-    # Run the killer concurrently with run_batch.
-    batch_task = asyncio.create_task(app.run_batch())
-    # Give run_batch a moment to start, then schedule the killer.
-    await asyncio.sleep(0.1)
-    killer_task = asyncio.create_task(_kill_workers_after_claim())
+    # Patch _process to raise an unhandled exception, simulating a hard
+    # worker crash.  _process only catches CancelledError, PermanentError,
+    # and TransientError — anything else propagates and kills the task.
+    monkeypatch.setattr(
+        WorkerPool,
+        "_process",
+        AsyncMock(side_effect=Exception("worker crash")),
+    )
 
-    report = await asyncio.wait_for(batch_task, timeout=10.0)
-    # Killer may still be running against a closed DB — suppress errors.
-    killer_task.cancel()
-    await asyncio.gather(killer_task, return_exceptions=True)
-    # The batch should have exited without hanging.
+    with caplog.at_level("ERROR", logger="haiku.rag.ingester.app"):
+        report = await asyncio.wait_for(
+            IngesterApp(config=config, db_path=tmp_path / "db.lancedb").run_batch(),
+            timeout=10.0,
+        )
+
     assert report is not None
+    assert "All workers have died" in caplog.text
 
 
 async def _wait_until(predicate, *, timeout: float = 5.0):
