@@ -13,6 +13,10 @@ processing:
 ingester:
   queue:
     path: ingester.db
+  workers:
+    # One worker: the runner's single CPU-bound Ollama serialises embeds, so
+    # concurrent workers thrash rather than parallelise.
+    worker_count: 1
   sources:
     - type: fs
       id: docs
