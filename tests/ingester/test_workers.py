@@ -604,6 +604,42 @@ async def test_breaker_ignores_permanent_errors(client, jobs, sync):
     assert pool.breaker_consecutive_failures == 0
 
 
+# --- sync_state write resilience ---
+
+
+@pytest.mark.asyncio
+async def test_sync_state_write_failure_does_not_crash_worker(
+    client, jobs, sync, monkeypatch
+):
+    """If the sync_state write fails after mark_succeeded, the worker should
+    log the error and continue rather than crashing. The job is already
+    marked succeeded — a stale sync_state just means a redundant re-ingest
+    on the next sweep."""
+    client.create_document_from_source.return_value = Document(
+        id="d", content="x", uri="u", metadata={"md5": "m", "source_revision": "r"}
+    )
+    await jobs.enqueue("src", "u", JobOp.UPSERT)
+
+    original_upsert = sync.upsert
+
+    async def _failing_upsert(*args, **kwargs):
+        # Only fail for ingested=True (the post-success write)
+        if kwargs.get("ingested"):
+            raise OSError("disk full")
+        return await original_upsert(*args, **kwargs)
+
+    monkeypatch.setattr(sync, "upsert", _failing_upsert)
+
+    pool = _pool(client, jobs, sync)
+    # drain_once should complete without raising
+    processed = await pool.drain_once()
+    assert processed == 1
+
+    # Job should still be marked succeeded
+    listed = await jobs.list_jobs(status=JobStatus.SUCCEEDED)
+    assert len(listed) == 1
+
+
 # --- reaper ---
 
 
