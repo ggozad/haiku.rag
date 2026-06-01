@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
 from haiku.rag.ingester.queue.models import Job, JobOp
+from haiku.rag.ingester.sources.base import FileTooLargeError
 from haiku.rag.telemetry import attach_context, logfire
 
 if TYPE_CHECKING:
@@ -34,7 +35,7 @@ def _classify(exc: BaseException) -> Exception:
     # UnsupportedSourceError is the typed signal from client/* that the
     # source will never ingest successfully on a retry (bad URI scheme,
     # missing file, unsupported extension, etc.).
-    if isinstance(exc, UnsupportedSourceError):
+    if isinstance(exc, UnsupportedSourceError | FileTooLargeError):
         return PermanentError(str(exc))
 
     if isinstance(exc, ValueError):

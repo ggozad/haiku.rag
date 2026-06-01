@@ -155,6 +155,24 @@ Bearer-token auth can replace HTTP Basic via the standard `headers` map:
         Authorization: Bearer ${KDRIVE_TOKEN}
 ```
 
+### File size limits
+
+Any source can set `max_file_size` (bytes) to reject oversized files
+before they are read into memory. Files exceeding the limit go
+straight to the DLQ without retrying.
+
+```yaml
+    - type: fs
+      root: /data/docs
+      max_file_size: 104857600        # 100 MB
+```
+
+FS and S3 sources know the size before downloading (`stat`, object
+metadata), so the limit is always enforced. For HTTP and WebDAV the check
+relies on a `Content-Length` response header; a server that omits it (for
+example a chunked response) is fetched in full and the limit does not
+apply.
+
 ## Workers and retry
 
 ```yaml

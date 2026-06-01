@@ -356,6 +356,11 @@ class _SourceBase(BaseModel):
         "this source. None = inherit from WorkerConfig.retry.",
     )
     circuit_breaker: CircuitBreakerConfig = Field(default_factory=CircuitBreakerConfig)
+    max_file_size: int | None = Field(
+        default=None,
+        description="Maximum file size in bytes to fetch. Files larger than "
+        "this are rejected with a PermanentError. None = no limit.",
+    )
 
 
 class FSSourceConfig(_SourceBase):

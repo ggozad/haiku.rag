@@ -3,7 +3,7 @@ import hashlib
 import httpx
 import pytest
 
-from haiku.rag.ingester.sources.base import SourceEventKind
+from haiku.rag.ingester.sources.base import FileTooLargeError, SourceEventKind
 from haiku.rag.ingester.sources.http import HTTPSource
 
 
@@ -348,18 +348,11 @@ async def test_discover_propagates_non_transport_errors():
 async def test_discover_emits_unchanged_for_known_url_without_revision():
     """A server that returns no ETag or Last-Modified should not cause
     re-ingestion every sweep once the URL has been ingested."""
-    transport = _transport(
-        {("HEAD", "https://example.com/a.md"): httpx.Response(200)}
-    )
+    transport = _transport({("HEAD", "https://example.com/a.md"): httpx.Response(200)})
     src = HTTPSource(
         source_id="x", urls=["https://example.com/a.md"], transport=transport
     )
-    events = [
-        e
-        async for e in src.discover(
-            known_uris={"https://example.com/a.md"}
-        )
-    ]
+    events = [e async for e in src.discover(known_uris={"https://example.com/a.md"})]
     assert len(events) == 1
     assert events[0].kind is SourceEventKind.UNCHANGED
     assert events[0].revision is None
@@ -377,3 +370,55 @@ async def test_discover_emits_upsert_for_unknown_url_without_revision():
     events = [e async for e in src.discover()]
     assert len(events) == 1
     assert events[0].kind is SourceEventKind.UPSERT
+
+
+@pytest.mark.asyncio
+async def test_fetch_rejects_file_exceeding_max_size():
+    transport = _transport(
+        {
+            ("HEAD", "https://example.com/big.bin"): httpx.Response(
+                200, headers={"content-length": "5000"}
+            ),
+        }
+    )
+    src = HTTPSource(source_id="default", transport=transport, max_file_size=1000)
+    with pytest.raises(FileTooLargeError):
+        await src.fetch("https://example.com/big.bin")
+
+
+@pytest.mark.asyncio
+async def test_fetch_allows_file_within_max_size():
+    body = b"small"
+    transport = _transport(
+        {
+            ("HEAD", "https://example.com/a.md"): httpx.Response(
+                200, headers={"content-length": str(len(body))}
+            ),
+            ("GET", "https://example.com/a.md"): httpx.Response(
+                200, content=body, headers={"content-type": "text/markdown"}
+            ),
+        }
+    )
+    src = HTTPSource(source_id="default", transport=transport, max_file_size=1000)
+    result = await src.fetch("https://example.com/a.md")
+    assert result.body == body
+
+
+@pytest.mark.asyncio
+async def test_fetch_skips_head_when_no_max_size():
+    """When max_file_size is None, no HEAD request is made."""
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.method)
+        if request.method == "GET":
+            return httpx.Response(200, content=b"ok")
+        return httpx.Response(200)
+
+    src = HTTPSource(
+        source_id="default",
+        transport=httpx.MockTransport(handler),
+        max_file_size=None,
+    )
+    await src.fetch("https://example.com/a.md")
+    assert calls == ["GET"]

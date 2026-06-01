@@ -93,9 +93,7 @@ async def test_stop_completes_with_idle_workers(client, jobs, sync):
     try:
         await asyncio.wait_for(pool.stop(), timeout=2.0)
     except TimeoutError:
-        pytest.fail(
-            "stop() did not complete within 2s — idle workers were not woken"
-        )
+        pytest.fail("stop() did not complete within 2s — idle workers were not woken")
     assert pool.live_workers == 0
 
 

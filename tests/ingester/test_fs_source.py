@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from haiku.rag.client.exceptions import UnsupportedSourceError
-from haiku.rag.ingester.sources.base import SourceEventKind
+from haiku.rag.ingester.sources.base import FileTooLargeError, SourceEventKind
 from haiku.rag.ingester.sources.fs import FSSource
 
 
@@ -279,3 +279,24 @@ async def test_fs_source_discover_skips_symlinked_directories(
     uris = {e.uri async for e in src.discover(since=None)}
     # No URI under /escape/* should appear.
     assert not any("escape" in u for u in uris)
+
+
+@pytest.mark.asyncio
+async def test_fs_source_fetch_rejects_file_exceeding_max_size(fs_root: Path):
+    src = FSSource(root=fs_root, max_file_size=3)
+    with pytest.raises(FileTooLargeError):
+        await src.fetch((fs_root / "a.md").as_uri())  # "alpha" = 5 bytes
+
+
+@pytest.mark.asyncio
+async def test_fs_source_fetch_allows_file_within_max_size(fs_root: Path):
+    src = FSSource(root=fs_root, max_file_size=100)
+    result = await src.fetch((fs_root / "a.md").as_uri())
+    assert result.body == b"alpha"
+
+
+@pytest.mark.asyncio
+async def test_fs_source_fetch_no_limit_when_max_size_is_none(fs_root: Path):
+    src = FSSource(root=fs_root, max_file_size=None)
+    result = await src.fetch((fs_root / "a.md").as_uri())
+    assert result.body == b"alpha"

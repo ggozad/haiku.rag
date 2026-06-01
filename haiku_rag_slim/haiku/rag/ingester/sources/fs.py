@@ -12,6 +12,7 @@ from haiku.rag.ingester.sources.base import (
     RevisionSnapshot,
     SourceEvent,
     SourceEventKind,
+    check_file_size,
 )
 from haiku.rag.ingester.sources.filter import (
     FileFilter,
@@ -36,6 +37,7 @@ class FSSource:
         include_patterns: list[str] | None = None,
         supported_extensions: list[str] | None = None,
         source_id: str | None = None,
+        max_file_size: int | None = None,
     ) -> None:
         # Resolve so symlinks and relative paths collapse to one canonical
         # root. The queue uses source_id as a foreign key — two paths for
@@ -52,6 +54,7 @@ class FSSource:
             include_patterns=include_patterns,
             supported_extensions=self.supported_extensions,
         )
+        self._max_file_size = max_file_size
 
     def _resolve_within_root(self, uri: str) -> Path | None:
         """Resolve a URI to a real path guaranteed to live under ``self.root``.
@@ -88,6 +91,7 @@ class FSSource:
         path = self._resolve_within_root(uri)
         if path is None:
             raise UnsupportedSourceError(f"Path escapes FS root ({self.root}): {uri}")
+        check_file_size(path.stat().st_size, self._max_file_size, uri)
         body = path.read_bytes()
         content_type, _ = mimetypes.guess_type(path.name)
         if content_type is None:

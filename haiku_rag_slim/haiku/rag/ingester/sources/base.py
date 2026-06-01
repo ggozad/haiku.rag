@@ -47,6 +47,18 @@ class FetchResult(BaseModel):
     disk_path: Path | None = None
 
 
+class FileTooLargeError(Exception):
+    """Raised when a file exceeds the configured max_file_size."""
+
+
+def check_file_size(size: int, max_file_size: int | None, uri: str) -> None:
+    """Raise FileTooLargeError if size exceeds the limit."""
+    if max_file_size is not None and size > max_file_size:
+        raise FileTooLargeError(
+            f"{uri}: file size {size} bytes exceeds limit of {max_file_size} bytes"
+        )
+
+
 @runtime_checkable
 class Source(Protocol):
     source_id: str
