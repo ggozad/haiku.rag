@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 from haiku.rag.config import SourceConfig
 from haiku.rag.ingester.pollers.circuit_breaker import CircuitBreaker
-from haiku.rag.ingester.queue.models import JobOp
+from haiku.rag.ingester.queue.models import JobOp, SyncRow
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
 from haiku.rag.ingester.sources.base import (
     Source,
@@ -129,7 +129,7 @@ class BasePoller:
                     SourceEventKind.DELETE: 0,
                     SourceEventKind.UNCHANGED: 0,
                 }
-                sync_batch: list[tuple[str, str, str | None, str | None, bool]] = []
+                sync_batch: list[SyncRow] = []
                 async for event in self.source.discover(
                     since=revisions, known_uris=known
                 ):
@@ -168,7 +168,7 @@ class BasePoller:
     async def _handle_event(
         self,
         event: SourceEvent,
-        sync_batch: list[tuple[str, str, str | None, str | None, bool]],
+        sync_batch: list[SyncRow],
     ) -> None:
         if event.kind is SourceEventKind.UPSERT:
             await self._jobs.enqueue(
@@ -182,11 +182,11 @@ class BasePoller:
             # Don't write revision to sync_state here — the worker writes it
             # after a successful ingestion. last_seen_at gets bumped to keep
             # orphan detection accurate.
-            sync_batch.append((event.source_id, event.uri, None, None, False))
+            sync_batch.append(SyncRow(event.source_id, event.uri, None, None, False))
         elif event.kind is SourceEventKind.UNCHANGED:
             # Touch last_seen_at without changing the stored revision.
             sync_batch.append(
-                (event.source_id, event.uri, event.revision, None, False)
+                SyncRow(event.source_id, event.uri, event.revision, None, False)
             )
         elif event.kind is SourceEventKind.DELETE:
             if not self.config.delete_orphans:

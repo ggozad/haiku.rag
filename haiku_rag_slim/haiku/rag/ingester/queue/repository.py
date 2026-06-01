@@ -5,7 +5,13 @@ from datetime import UTC, datetime, timedelta
 
 import aiosqlite
 
-from haiku.rag.ingester.queue.models import Job, JobOp, JobStatus, SyncStateRow
+from haiku.rag.ingester.queue.models import (
+    Job,
+    JobOp,
+    JobStatus,
+    SyncRow,
+    SyncStateRow,
+)
 
 
 def _utcnow_iso() -> str:
@@ -504,12 +510,8 @@ class SyncStateRepo:
                 pass
             await self._conn.commit()
 
-    async def batch_upsert(
-        self,
-        rows: list[tuple[str, str, str | None, str | None, bool]],
-    ) -> None:
-        """Batch insert-or-update sync_state rows in a single transaction.
-        Each tuple is (source_id, uri, revision, content_hash, ingested)."""
+    async def batch_upsert(self, rows: list[SyncRow]) -> None:
+        """Batch insert-or-update sync_state rows in a single transaction."""
         if not rows:
             return
         now = _utcnow_iso()

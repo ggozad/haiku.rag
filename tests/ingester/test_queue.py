@@ -5,7 +5,7 @@ import aiosqlite
 import pytest
 
 from haiku.rag.ingester.queue.migrations import apply_migrations, open_queue
-from haiku.rag.ingester.queue.models import JobOp, JobStatus
+from haiku.rag.ingester.queue.models import JobOp, JobStatus, SyncRow
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
 
 
@@ -839,11 +839,13 @@ async def test_sync_state_upsert_replaces_revision_when_provided(sync):
 @pytest.mark.asyncio
 async def test_sync_state_batch_upsert_inserts_multiple_rows(sync):
     """batch_upsert writes many rows in a single transaction."""
-    await sync.batch_upsert([
-        ("s", "u1", "rev1", "hash1", False),
-        ("s", "u2", "rev2", "hash2", False),
-        ("s", "u3", "rev3", None, True),
-    ])
+    await sync.batch_upsert(
+        [
+            SyncRow("s", "u1", "rev1", "hash1", False),
+            SyncRow("s", "u2", "rev2", "hash2", False),
+            SyncRow("s", "u3", "rev3", None, True),
+        ]
+    )
     assert await sync.get_revision_snapshot("s") == {
         "u1": "rev1",
         "u2": "rev2",
@@ -858,9 +860,11 @@ async def test_sync_state_batch_upsert_inserts_multiple_rows(sync):
 async def test_sync_state_batch_upsert_updates_existing(sync):
     """batch_upsert applies ON CONFLICT update semantics like upsert()."""
     await sync.upsert("s", "u1", revision="old", content_hash="old-hash")
-    await sync.batch_upsert([
-        ("s", "u1", "new", "new-hash", False),
-    ])
+    await sync.batch_upsert(
+        [
+            SyncRow("s", "u1", "new", "new-hash", False),
+        ]
+    )
     row = await sync.get_row("s", "u1")
     assert row is not None
     assert row.revision == "new"
@@ -871,9 +875,11 @@ async def test_sync_state_batch_upsert_updates_existing(sync):
 async def test_sync_state_batch_upsert_preserves_revision_when_none(sync):
     """batch_upsert with revision=None leaves existing revision in place."""
     await sync.upsert("s", "u1", revision="keep", content_hash="keep-hash")
-    await sync.batch_upsert([
-        ("s", "u1", None, None, False),
-    ])
+    await sync.batch_upsert(
+        [
+            SyncRow("s", "u1", None, None, False),
+        ]
+    )
     row = await sync.get_row("s", "u1")
     assert row is not None
     assert row.revision == "keep"
