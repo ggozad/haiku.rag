@@ -1,4 +1,5 @@
 import hashlib
+import logging
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from urllib.parse import urlparse
@@ -11,6 +12,8 @@ from haiku.rag.ingester.sources.base import (
     SourceEvent,
     SourceEventKind,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_revision(headers: httpx.Headers) -> tuple[str | None, dict[str, str]]:
@@ -103,7 +106,12 @@ class HTTPSource:
         for url in self.urls:
             try:
                 head = await self._http.head(url)
-            except Exception:
+            except httpx.TransportError as exc:
+                logger.debug(
+                    "HEAD %s failed (%s); emitting UPSERT with no revision",
+                    url,
+                    exc,
+                )
                 yield SourceEvent(
                     source_id=self.source_id,
                     uri=url,
