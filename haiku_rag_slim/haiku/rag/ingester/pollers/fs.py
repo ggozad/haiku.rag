@@ -131,7 +131,12 @@ class FSPoller(BasePoller):
                 return
 
             if change in (Change.added, Change.modified):
-                revision = str(path.stat().st_mtime_ns) if path.exists() else None
+                try:
+                    revision = str(path.stat().st_mtime_ns)
+                except FileNotFoundError:
+                    # File was deleted between the watchfiles event and our
+                    # stat() call.  Skip — the deletion event will handle it.
+                    return
                 await self._jobs.enqueue(
                     self.source_id,
                     uri,
