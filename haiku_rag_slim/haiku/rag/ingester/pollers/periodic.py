@@ -1,13 +1,10 @@
 import asyncio
-import logging
 from typing import TYPE_CHECKING
 
 from haiku.rag.ingester.pollers.base import BasePoller
 
 if TYPE_CHECKING:
     from haiku.rag.ingester.pollers.circuit_breaker import CircuitBreaker
-
-logger = logging.getLogger(__name__)
 
 
 class PeriodicPoller(BasePoller):
@@ -38,6 +35,8 @@ class PeriodicPoller(BasePoller):
         # immediately instead of waiting one full interval. The sweep
         # behaviour itself is exercised via `_sweep_once()` unit tests.
         await self._sweep_once()
+        if await self._stagger_start():
+            return
         while not self._stop.is_set():
             try:
                 await asyncio.wait_for(

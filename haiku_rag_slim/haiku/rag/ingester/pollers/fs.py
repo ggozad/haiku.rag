@@ -64,6 +64,8 @@ class FSPoller(BasePoller):
         """Periodic full sweep. Catches files modified while the watcher
         wasn't running (gaps between starts, races, FS events the OS dropped).
         Sweep behaviour is unit-tested via `_sweep_once()` directly."""
+        if await self._stagger_start():
+            return
         while not self._stop.is_set():
             try:
                 await asyncio.wait_for(

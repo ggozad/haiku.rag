@@ -114,6 +114,32 @@ def _periodic(source, config, jobs, sync, **kwargs):
     )
 
 
+# --- _stagger_start ---
+
+
+@pytest.mark.asyncio
+async def test_stagger_start_sleeps_fraction_of_interval(jobs, sync, fs_config, monkeypatch):
+    """_stagger_start should sleep for a random fraction of poll_interval_s
+    and return False (not stopped)."""
+    monkeypatch.setattr("random.uniform", lambda a, b: b)  # max jitter
+    source = _StubSource("src", [])
+    poller = _periodic(source, fs_config, jobs, sync)
+    # poll_interval_s=0.05, so max jitter = 0.05 * 0.25 = 0.0125s
+    stopped = await poller._stagger_start()
+    assert stopped is False
+
+
+@pytest.mark.asyncio
+async def test_stagger_start_returns_true_when_stopped(jobs, sync, fs_config, monkeypatch):
+    """If _stop is set before the jitter elapses, _stagger_start returns True."""
+    monkeypatch.setattr("random.uniform", lambda a, b: 10.0)  # long jitter
+    source = _StubSource("src", [])
+    poller = _periodic(source, fs_config, jobs, sync)
+    poller._stop.set()
+    stopped = await poller._stagger_start()
+    assert stopped is True
+
+
 # --- _sweep_once / event handling on the base class via PeriodicPoller ---
 
 
