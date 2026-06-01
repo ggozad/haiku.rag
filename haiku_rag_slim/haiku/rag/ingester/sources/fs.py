@@ -139,7 +139,12 @@ class FSSource:
             if not self.filter.include_file(str(path)):
                 continue
             uri = path.as_uri()
-            revision = str(path.stat().st_mtime_ns)
+            try:
+                revision = str(path.stat().st_mtime_ns)
+            except FileNotFoundError:
+                # File was deleted between the os.walk() and stat() call.
+                # Skip it — the next sweep (or watchfiles) will emit DELETE.
+                continue
             seen.add(uri)
             previous = snapshot.get(uri)
             kind = (

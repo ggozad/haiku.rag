@@ -132,6 +132,25 @@ async def test_fs_source_discover_respects_extension_filter(fs_root: Path):
 
 
 @pytest.mark.asyncio
+async def test_fs_source_discover_skips_file_deleted_during_stat(fs_root: Path):
+    """A file deleted between os.walk() and stat() should be silently
+    skipped instead of crashing the entire discover() sweep."""
+    src = FSSource(root=fs_root, supported_extensions=[".md", ".txt"])
+    events = []
+    async for event in src.discover(since=None):
+        events.append(event)
+        # Delete a file mid-iteration so the next stat() hits a missing file.
+        victim = fs_root / "b.txt"
+        if victim.exists():
+            victim.unlink()
+    uris = {e.uri for e in events}
+    # a.md and sub/c.md should still appear; b.txt may or may not depending
+    # on iteration order, but the key assertion is no exception was raised.
+    assert (fs_root / "a.md").as_uri() in uris
+    assert (fs_root / "sub" / "c.md").as_uri() in uris
+
+
+@pytest.mark.asyncio
 async def test_fs_source_discover_respects_ignore_patterns(fs_root: Path):
     src = FSSource(
         root=fs_root,
