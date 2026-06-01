@@ -92,6 +92,10 @@ class WorkerPool:
 
     async def stop(self) -> None:
         self._stop.set()
+        # Wake workers parked on job_available.wait() so they notice _stop
+        # immediately instead of sleeping out the full poll_idle interval.
+        async with self._jobs.job_available:
+            self._jobs.job_available.notify_all()
         tasks = list(self._workers)
         if self._reaper is not None:
             tasks.append(self._reaper)

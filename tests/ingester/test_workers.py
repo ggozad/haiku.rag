@@ -58,6 +58,47 @@ def _pool(client, jobs, sync, **kwargs) -> WorkerPool:
     )
 
 
+# --- event-driven wakeup ---
+
+
+@pytest.mark.asyncio
+async def test_idle_worker_picks_up_job_quickly(client, jobs, sync):
+    """An idle worker should wake up well under poll_idle_s when a job is
+    enqueued, thanks to the job_available condition notification."""
+    client.create_document_from_source.return_value = Document(
+        id="d", content="x", uri="u", metadata={"md5": "m", "source_revision": "r"}
+    )
+    pool = _pool(client, jobs, sync, worker_count=1, poll_idle_interval_s=5.0)
+    await pool.start()
+    try:
+        await jobs.enqueue("src", "u", JobOp.UPSERT)
+        for _ in range(50):
+            listed = await jobs.list_jobs(status=JobStatus.SUCCEEDED)
+            if listed:
+                break
+            await asyncio.sleep(0.05)
+        assert len(listed) == 1, "job was not picked up within 2.5s"
+    finally:
+        await pool.stop()
+
+
+@pytest.mark.asyncio
+async def test_stop_completes_with_idle_workers(client, jobs, sync):
+    """stop() must notify workers parked on job_available.wait() so they
+    exit promptly. Without the notify, workers sleep for the full
+    poll_idle_interval_s before noticing _stop."""
+    pool = _pool(client, jobs, sync, worker_count=2, poll_idle_interval_s=10.0)
+    await pool.start()
+    await asyncio.sleep(0.1)
+    try:
+        await asyncio.wait_for(pool.stop(), timeout=2.0)
+    except TimeoutError:
+        pytest.fail(
+            "stop() did not complete within 2s — idle workers were not woken"
+        )
+    assert pool.live_workers == 0
+
+
 # --- drain_once: covers _process logic deterministically ---
 
 
