@@ -261,3 +261,12 @@ async def test_existing_permanent_error_passes_through_unchanged():
     with pytest.raises(PermanentError) as excinfo:
         await run_job(client, _job())
     assert excinfo.value is sentinel
+
+
+@pytest.mark.asyncio
+async def test_file_not_found_classified_as_permanent():
+    """A deleted file should go straight to the DLQ, not retry."""
+    client = _mock_client()
+    client.create_document_from_source.side_effect = FileNotFoundError("gone")
+    with pytest.raises(PermanentError, match="file not found"):
+        await run_job(client, _job())
