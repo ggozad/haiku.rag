@@ -132,22 +132,34 @@ async def test_fs_source_discover_respects_extension_filter(fs_root: Path):
 
 
 @pytest.mark.asyncio
-async def test_fs_source_discover_skips_file_deleted_during_stat(fs_root: Path):
-    """A file deleted between os.walk() and stat() should be silently
+async def test_fs_source_discover_skips_file_deleted_during_stat(
+    fs_root: Path, monkeypatch
+):
+    """A file deleted between is_file() and stat() should be silently
     skipped instead of crashing the entire discover() sweep."""
+    victim = fs_root / "b.txt"
+    original_stat = Path.stat
+    victim_calls = 0
+
+    def _stat_that_fails_on_second_call(self, *args, **kwargs):
+        nonlocal victim_calls
+        if self == victim:
+            victim_calls += 1
+            # First calls are from is_symlink/is_file; the later call
+            # is the explicit stat().st_mtime_ns we want to fail.
+            if victim_calls > 2:
+                raise FileNotFoundError(f"[Errno 2] No such file: '{self}'")
+        return original_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", _stat_that_fails_on_second_call)
+
     src = FSSource(root=fs_root, supported_extensions=[".md", ".txt"])
-    events = []
-    async for event in src.discover(since=None):
-        events.append(event)
-        # Delete a file mid-iteration so the next stat() hits a missing file.
-        victim = fs_root / "b.txt"
-        if victim.exists():
-            victim.unlink()
+    events = [e async for e in src.discover(since=None)]
     uris = {e.uri for e in events}
-    # a.md and sub/c.md should still appear; b.txt may or may not depending
-    # on iteration order, but the key assertion is no exception was raised.
+    # b.txt was skipped due to the simulated race; a.md and sub/c.md are fine.
     assert (fs_root / "a.md").as_uri() in uris
     assert (fs_root / "sub" / "c.md").as_uri() in uris
+    assert victim.as_uri() not in uris
 
 
 @pytest.mark.asyncio
