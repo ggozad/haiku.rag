@@ -40,6 +40,18 @@ ON jobs(scheduled_at)
 WHERE status = 'queued'
 """
 
+JOBS_PENDING_BY_SOURCE_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_jobs_pending_by_source
+ON jobs(source_id)
+WHERE status IN ('queued', 'claimed')
+"""
+
+JOBS_SUCCEEDED_COMPLETED_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_jobs_succeeded_completed
+ON jobs(completed_at)
+WHERE status = 'succeeded'
+"""
+
 SYNC_STATE_DDL = """
 CREATE TABLE IF NOT EXISTS sync_state (
     source_id        TEXT NOT NULL,
@@ -67,6 +79,8 @@ ALL_DDL: tuple[str, ...] = (
     JOBS_DDL,
     JOBS_LIVE_INDEX,
     JOBS_CLAIMABLE_INDEX,
+    JOBS_PENDING_BY_SOURCE_INDEX,
+    JOBS_SUCCEEDED_COMPLETED_INDEX,
     SYNC_STATE_DDL,
     SCHEMA_VERSION_DDL,
     DLQ_VIEW,
