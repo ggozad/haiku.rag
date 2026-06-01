@@ -57,6 +57,9 @@ def _classify(exc: BaseException) -> Exception:
         # ProxyError — every transport-layer failure that's worth retrying.
         return TransientError(f"network: {exc}")
 
+    if isinstance(exc, FileNotFoundError):
+        return PermanentError(f"file not found: {exc}")
+
     if isinstance(exc, asyncio.TimeoutError | TimeoutError | OSError):
         return TransientError(f"timeout/io: {exc}")
 
