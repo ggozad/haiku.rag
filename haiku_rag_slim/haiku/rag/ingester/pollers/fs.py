@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import random
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -65,19 +64,12 @@ class FSPoller(BasePoller):
         """Periodic full sweep. Catches files modified while the watcher
         wasn't running (gaps between starts, races, FS events the OS dropped).
         Sweep behaviour is unit-tested via `_sweep_once()` directly."""
-        # Stagger the first sleep so multiple FS pollers don't all sweep
-        # at exactly the same moment after startup.
-        interval = self.config.poll_interval_s
-        jitter = random.uniform(0, interval * 0.25)
-        try:
-            await asyncio.wait_for(self._stop.wait(), timeout=jitter)
+        if await self._stagger_start():
             return
-        except TimeoutError:
-            pass
         while not self._stop.is_set():
             try:
                 await asyncio.wait_for(
-                    self._stop.wait(), timeout=interval
+                    self._stop.wait(), timeout=self.config.poll_interval_s
                 )
                 return
             except TimeoutError:

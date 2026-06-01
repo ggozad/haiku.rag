@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 from datetime import UTC, datetime
 
 from haiku.rag.config import SourceConfig
@@ -14,6 +15,8 @@ from haiku.rag.ingester.sources.base import (
 from haiku.rag.telemetry import get_context, logfire
 
 logger = logging.getLogger(__name__)
+
+_STAGGER_FRACTION = 0.25
 
 
 def _enqueue_extra() -> dict | None:
@@ -83,6 +86,17 @@ class BasePoller:
         if self._task is not None:
             await asyncio.gather(self._task, return_exceptions=True)
             self._task = None
+
+    async def _stagger_start(self) -> bool:
+        """Sleep a random fraction of the interval so pollers sharing an
+        interval don't sweep in lockstep. Returns True if stop was
+        signalled during the wait."""
+        jitter = random.uniform(0, self.config.poll_interval_s * _STAGGER_FRACTION)
+        try:
+            await asyncio.wait_for(self._stop.wait(), timeout=jitter)
+            return True
+        except TimeoutError:
+            return False
 
     async def _sweep_once(self) -> bool:
         """One discover() sweep. Returns True on success, False if the
