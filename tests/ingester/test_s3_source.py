@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from haiku.rag.ingester.sources.base import SourceEventKind
+from haiku.rag.ingester.sources.base import FileTooLargeError, SourceEventKind
 from haiku.rag.ingester.sources.s3 import S3Source
 
 
@@ -221,10 +221,7 @@ async def test_discover_emits_unchanged_for_known_key_without_etag(fake_s3_listi
     once the key has been ingested."""
     fake_s3_listing([[{"path": "file.md", "size": 0, "last_modified": None}]])
     src = S3Source(uri="s3://bucket/", supported_extensions=[".md"])
-    events = [
-        e
-        async for e in src.discover(known_uris={"s3://bucket/file.md"})
-    ]
+    events = [e async for e in src.discover(known_uris={"s3://bucket/file.md"})]
     non_delete = [e for e in events if e.kind is not SourceEventKind.DELETE]
     assert len(non_delete) == 1
     assert non_delete[0].kind is SourceEventKind.UNCHANGED
@@ -238,3 +235,38 @@ async def test_discover_emits_upsert_for_unknown_key_without_etag(fake_s3_listin
     events = [e async for e in src.discover()]
     assert len(events) == 1
     assert events[0].kind is SourceEventKind.UPSERT
+
+
+@pytest.mark.asyncio
+async def test_fetch_rejects_file_exceeding_max_size(fake_obstore_io):
+    head_async, get_async = fake_obstore_io
+    head_async.return_value = {"e_tag": '"abc"', "size": 5000}
+
+    src = S3Source(uri="s3://bucket/", max_file_size=1000)
+    with pytest.raises(FileTooLargeError):
+        await src.fetch("s3://bucket/file.txt")
+    get_async.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_fetch_allows_file_within_max_size(fake_obstore_io):
+    head_async, get_async = fake_obstore_io
+    body = b"small"
+    head_async.return_value = {"e_tag": '"abc"', "size": len(body)}
+    get_async.return_value = _get_result(body)
+
+    src = S3Source(uri="s3://bucket/", max_file_size=1000)
+    result = await src.fetch("s3://bucket/file.txt")
+    assert result.body == body
+
+
+@pytest.mark.asyncio
+async def test_fetch_no_limit_when_max_size_is_none(fake_obstore_io):
+    head_async, get_async = fake_obstore_io
+    body = b"any size"
+    head_async.return_value = {"e_tag": '"abc"'}
+    get_async.return_value = _get_result(body)
+
+    src = S3Source(uri="s3://bucket/", max_file_size=None)
+    result = await src.fetch("s3://bucket/file.txt")
+    assert result.body == body

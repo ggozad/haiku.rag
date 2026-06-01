@@ -3,7 +3,7 @@ import hashlib
 import httpx
 import pytest
 
-from haiku.rag.ingester.sources.base import SourceEventKind
+from haiku.rag.ingester.sources.base import FileTooLargeError, SourceEventKind
 from haiku.rag.ingester.sources.webdav import WebDAVSource, _strip_etag
 
 
@@ -405,9 +405,7 @@ async def test_discover_emits_unchanged_for_known_uri_without_revision():
     )
     events = [
         e
-        async for e in src.discover(
-            known_uris={"https://nc.example.com/dav/norev.md"}
-        )
+        async for e in src.discover(known_uris={"https://nc.example.com/dav/norev.md"})
     ]
     non_delete = [e for e in events if e.kind is not SourceEventKind.DELETE]
     assert len(non_delete) == 1
@@ -434,3 +432,58 @@ async def test_discover_emits_upsert_for_unknown_uri_without_revision():
     non_delete = [e for e in events if e.kind is not SourceEventKind.DELETE]
     assert len(non_delete) == 1
     assert non_delete[0].kind is SourceEventKind.UPSERT
+
+
+@pytest.mark.asyncio
+async def test_fetch_rejects_file_exceeding_max_size():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "HEAD":
+            return httpx.Response(200, headers={"content-length": "5000"})
+        return httpx.Response(200, content=b"big")
+
+    src = WebDAVSource(
+        source_id="nc",
+        base_url="https://nc.example.com/dav/",
+        transport=_transport(handler),
+        max_file_size=1000,
+    )
+    with pytest.raises(FileTooLargeError):
+        await src.fetch("https://nc.example.com/dav/big.bin")
+
+
+@pytest.mark.asyncio
+async def test_fetch_allows_file_within_max_size():
+    body = b"small"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "HEAD":
+            return httpx.Response(200, headers={"content-length": str(len(body))})
+        return httpx.Response(200, content=body, headers={"content-type": "text/plain"})
+
+    src = WebDAVSource(
+        source_id="nc",
+        base_url="https://nc.example.com/dav/",
+        transport=_transport(handler),
+        max_file_size=1000,
+    )
+    result = await src.fetch("https://nc.example.com/dav/a.txt")
+    assert result.body == body
+
+
+@pytest.mark.asyncio
+async def test_fetch_skips_head_when_no_max_size():
+    """When max_file_size is None, no HEAD request is made."""
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.method)
+        return httpx.Response(200, content=b"ok")
+
+    src = WebDAVSource(
+        source_id="nc",
+        base_url="https://nc.example.com/dav/",
+        transport=_transport(handler),
+        max_file_size=None,
+    )
+    await src.fetch("https://nc.example.com/dav/a.txt")
+    assert calls == ["GET"]

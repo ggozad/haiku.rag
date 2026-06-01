@@ -10,6 +10,7 @@ from haiku.rag.ingester.sources.base import (
     RevisionSnapshot,
     SourceEvent,
     SourceEventKind,
+    check_file_size,
 )
 from haiku.rag.ingester.sources.filter import (
     FileFilter,
@@ -42,6 +43,7 @@ class S3Source:
         include_patterns: list[str] | None = None,
         supported_extensions: list[str] | None = None,
         source_id: str | None = None,
+        max_file_size: int | None = None,
     ) -> None:
         self.bucket, self.prefix = _parse_s3_uri(uri)
         # uri_prefix is the canonical "everything I own" — used by supports()
@@ -59,6 +61,7 @@ class S3Source:
             include_patterns=include_patterns,
             supported_extensions=self.supported_extensions,
         )
+        self._max_file_size = max_file_size
 
     def supports(self, uri: str) -> bool:
         return uri.startswith(self.uri_prefix)
@@ -86,6 +89,9 @@ class S3Source:
 
         head = await obstore.head_async(store, key)
         etag = (head.get("e_tag") or "").strip('"').strip() or None
+        size = head.get("size") or head.get("content_length")
+        if size is not None:
+            check_file_size(int(size), self._max_file_size, uri)
 
         resp = await obstore.get_async(store, key)
         body = await resp.bytes_async()

@@ -12,6 +12,7 @@ from haiku.rag.ingester.sources.base import (
     RevisionSnapshot,
     SourceEvent,
     SourceEventKind,
+    check_file_size,
 )
 from haiku.rag.ingester.sources.filter import (
     FileFilter,
@@ -170,6 +171,7 @@ class WebDAVSource:
         include_patterns: list[str] | None = None,
         supported_extensions: list[str] | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
+        max_file_size: int | None = None,
     ) -> None:
         self.source_id = source_id
         # Trailing slash matters: urljoin treats path-without-slash as a sibling
@@ -189,6 +191,7 @@ class WebDAVSource:
             supported_extensions=self.supported_extensions,
         )
         # transport is for testing — production callers leave it None.
+        self._max_file_size = max_file_size
         auth = (
             (self.username, self.password)
             if self.username is not None and self.password is not None
@@ -219,6 +222,11 @@ class WebDAVSource:
         return entries[0].revision
 
     async def fetch(self, uri: str) -> FetchResult:
+        if self._max_file_size is not None:
+            head = await self._http.head(uri)
+            content_length = head.headers.get("content-length")
+            if content_length is not None:
+                check_file_size(int(content_length), self._max_file_size, uri)
         response = await self._http.get(uri)
         response.raise_for_status()
         body = response.content

@@ -7,6 +7,7 @@ import pytest
 from haiku.rag.client import HaikuRAG
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
 from haiku.rag.ingester.queue.models import Job, JobOp, JobStatus
+from haiku.rag.ingester.sources.base import FileTooLargeError
 from haiku.rag.ingester.workers.pipeline import run_job
 from haiku.rag.store.models.document import Document
 
@@ -288,4 +289,12 @@ async def test_directory_errors_classified_as_permanent(exc_class):
     client = _mock_client()
     client.create_document_from_source.side_effect = exc_class("not a file")
     with pytest.raises(PermanentError, match="path error"):
+        await run_job(client, _job())
+
+
+@pytest.mark.asyncio
+async def test_file_too_large_classified_as_permanent():
+    client = _mock_client()
+    client.create_document_from_source.side_effect = FileTooLargeError("too big")
+    with pytest.raises(PermanentError, match="too big"):
         await run_job(client, _job())

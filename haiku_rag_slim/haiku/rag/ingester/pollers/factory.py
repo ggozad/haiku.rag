@@ -32,9 +32,15 @@ def build_source(
             include_patterns=cfg.include_patterns or None,
             supported_extensions=supported_extensions,
             source_id=cfg.id,
+            max_file_size=cfg.max_file_size,
         )
     if isinstance(cfg, HTTPSourceConfig):
-        return HTTPSource(source_id=cfg.id, urls=cfg.urls, headers=cfg.headers)
+        return HTTPSource(
+            source_id=cfg.id,
+            urls=cfg.urls,
+            headers=cfg.headers,
+            max_file_size=cfg.max_file_size,
+        )
     if isinstance(cfg, S3SourceConfig):
         return S3Source(
             uri=cfg.uri,
@@ -43,6 +49,7 @@ def build_source(
             include_patterns=cfg.include_patterns or None,
             supported_extensions=supported_extensions,
             source_id=cfg.id,
+            max_file_size=cfg.max_file_size,
         )
     if isinstance(cfg, WebDAVSourceConfig):
         return WebDAVSource(
@@ -54,6 +61,7 @@ def build_source(
             ignore_patterns=cfg.ignore_patterns or None,
             include_patterns=cfg.include_patterns or None,
             supported_extensions=supported_extensions,
+            max_file_size=cfg.max_file_size,
         )
     raise TypeError(  # pragma: no cover - discriminator union exhausts all cases
         f"Unsupported source config: {type(cfg).__name__}"

@@ -11,6 +11,7 @@ from haiku.rag.ingester.sources.base import (
     RevisionSnapshot,
     SourceEvent,
     SourceEventKind,
+    check_file_size,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,11 +39,13 @@ class HTTPSource:
         urls: list[str] | None = None,
         headers: dict[str, str] | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
+        max_file_size: int | None = None,
     ) -> None:
         self.source_id = source_id
         self.urls = list(urls or [])
         self.headers = dict(headers or {})
         self._http = httpx.AsyncClient(headers=self.headers, transport=transport)
+        self._max_file_size = max_file_size
 
     def supports(self, uri: str) -> bool:
         return urlparse(uri).scheme in ("http", "https")
@@ -62,6 +65,11 @@ class HTTPSource:
         return revision
 
     async def fetch(self, uri: str) -> FetchResult:
+        if self._max_file_size is not None:
+            head = await self._http.head(uri)
+            content_length = head.headers.get("content-length")
+            if content_length is not None:
+                check_file_size(int(content_length), self._max_file_size, uri)
         response = await self._http.get(uri)
         response.raise_for_status()
         body = response.content

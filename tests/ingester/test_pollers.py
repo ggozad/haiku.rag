@@ -118,7 +118,9 @@ def _periodic(source, config, jobs, sync, **kwargs):
 
 
 @pytest.mark.asyncio
-async def test_stagger_start_sleeps_fraction_of_interval(jobs, sync, fs_config, monkeypatch):
+async def test_stagger_start_sleeps_fraction_of_interval(
+    jobs, sync, fs_config, monkeypatch
+):
     """_stagger_start should sleep for a random fraction of poll_interval_s
     and return False (not stopped)."""
     monkeypatch.setattr("random.uniform", lambda a, b: b)  # max jitter
@@ -130,7 +132,9 @@ async def test_stagger_start_sleeps_fraction_of_interval(jobs, sync, fs_config, 
 
 
 @pytest.mark.asyncio
-async def test_stagger_start_returns_true_when_stopped(jobs, sync, fs_config, monkeypatch):
+async def test_stagger_start_returns_true_when_stopped(
+    jobs, sync, fs_config, monkeypatch
+):
     """If _stop is set before the jitter elapses, _stagger_start returns True."""
     monkeypatch.setattr("random.uniform", lambda a, b: 10.0)  # long jitter
     source = _StubSource("src", [])
@@ -511,7 +515,9 @@ async def test_watch_deleted_then_added_enqueues_upsert(tmp_path, jobs, sync):
 
 
 @pytest.mark.asyncio
-async def test_watch_added_file_deleted_before_stat_does_not_crash(tmp_path, jobs, sync):
+async def test_watch_added_file_deleted_before_stat_does_not_crash(
+    tmp_path, jobs, sync
+):
     """If a file is deleted between the watchfiles event and the stat()
     call, the handler should return silently instead of raising
     FileNotFoundError and killing the watch loop."""
