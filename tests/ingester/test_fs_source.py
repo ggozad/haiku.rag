@@ -132,6 +132,37 @@ async def test_fs_source_discover_respects_extension_filter(fs_root: Path):
 
 
 @pytest.mark.asyncio
+async def test_fs_source_discover_skips_file_deleted_during_stat(
+    fs_root: Path, monkeypatch
+):
+    """A file deleted between is_file() and stat() should be silently
+    skipped instead of crashing the entire discover() sweep."""
+    victim = fs_root / "b.txt"
+    original_stat = Path.stat
+    victim_calls = 0
+
+    def _stat_that_fails_on_second_call(self, *args, **kwargs):
+        nonlocal victim_calls
+        if self == victim:
+            victim_calls += 1
+            # First calls are from is_symlink/is_file; the later call
+            # is the explicit stat().st_mtime_ns we want to fail.
+            if victim_calls > 2:
+                raise FileNotFoundError(f"[Errno 2] No such file: '{self}'")
+        return original_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", _stat_that_fails_on_second_call)
+
+    src = FSSource(root=fs_root, supported_extensions=[".md", ".txt"])
+    events = [e async for e in src.discover(since=None)]
+    uris = {e.uri for e in events}
+    # b.txt was skipped due to the simulated race; a.md and sub/c.md are fine.
+    assert (fs_root / "a.md").as_uri() in uris
+    assert (fs_root / "sub" / "c.md").as_uri() in uris
+    assert victim.as_uri() not in uris
+
+
+@pytest.mark.asyncio
 async def test_fs_source_discover_respects_ignore_patterns(fs_root: Path):
     src = FSSource(
         root=fs_root,
