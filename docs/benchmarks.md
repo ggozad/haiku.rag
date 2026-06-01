@@ -120,11 +120,15 @@ Two approaches are benchmarked separately:
 | `Qwen/Qwen3-VL-Embedding-8B`             |  3045 | 0.9774 |
 | `nvidia/llama-nemotron-embed-vl-1b-v2`   |  3045 | 0.9709 |
 
-##### QA Accuracy
+##### QA accuracy + citation retrieval
 
-| Embedding Model              | Skill model                  | Reranker               | Cases | Accuracy |
-|------------------------------|------------------------------|------------------------|------:|---------:|
-| `Qwen/Qwen3-VL-Embedding-8B` | `vllm:Gemma-4-26B-A4B-NVFP4` | `mxbai-rerank-base-v2` |  1409 |   88.7 % |
+| Embedding Model                          | Target          | Skill model                  | Cases | QA accuracy | Mean `cited_map` |
+|------------------------------------------|-----------------|------------------------------|------:|-------------|------------------|
+| `Qwen/Qwen3-VL-Embedding-8B`             | `rag-skill`     | `vllm:Gemma-4-26B-A4B-NVFP4` |  1409 | 0.89        | —                |
+| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `rag-skill`     | `vllm:Gemma-4-26B-A4B-NVFP4` |  3045 | 0.92        | 0.93             |
+| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `analysis-skill`| `vllm:Gemma-4-26B-A4B-NVFP4` |  3045 | 0.94        | 0.35             |
+
+*Measured on haiku.rag v0.50.0, no reranker (no multimodal reranker available), judged by `vllm:Qwen3.6-35B-A3B-NVFP4`. Qwen3-VL covered 1409 / 3045 cases and predates the `cited_map` evaluator. The analysis skill answers via Python sandbox over the document VFS and only cites in ~35 % of cases, which depresses `cited_map`.*
 
 #### Text embedder + VLM picture descriptions
 
@@ -132,20 +136,19 @@ Two approaches are benchmarked separately:
 
 | Embedding Model                          | VLM                  | Reranker               | Cases | MAP    |
 |------------------------------------------|----------------------|------------------------|------:|-------:|
-| `qwen3-embedding:4b`                     | Ollama / ministral-3 | none                   |  3045 | 0.9722 |
 | `qwen3-embedding:4b`                     | Ollama / ministral-3 | `mxbai-rerank-base-v2` |  3045 | 0.9834 |
 | `nvidia/llama-nemotron-embed-vl-1b-v2`   | Ollama / ministral-3 | `mxbai-rerank-base-v2` |  3045 | 0.9863 |
 
-*qwen3 no-reranker measured on haiku.rag v0.45.0; qwen3 + reranker and nemotron on v0.50.0.*
+*Measured on haiku.rag v0.50.0.*
 
 ##### QA accuracy + citation retrieval
 
 | Embedding Model                          | VLM                  | Skill model                  | Cases | QA accuracy | Mean `cited_map` |
 |------------------------------------------|----------------------|------------------------------|------:|-------------|------------------|
-| `qwen3-embedding:4b`                     | Ollama / ministral-3 | `vllm:Gemma-4-26B-A4B-NVFP4` |  3045 | 0.88        | 0.89             |
+| `qwen3-embedding:4b`                     | Ollama / ministral-3 | `vllm:Gemma-4-26B-A4B-NVFP4` |  3045 | 0.92        | 0.80             |
 | `nvidia/llama-nemotron-embed-vl-1b-v2`   | Ollama / ministral-3 | `vllm:Gemma-4-26B-A4B-NVFP4` |  2836 | 0.96        | 0.81             |
 
-*qwen3 measured on haiku.rag v0.48.0 over all 3045 cases; nemotron on v0.50.0 over 2836 / 3045 cases (run stopped early; numbers stable from ~12% onward). Both with `mxbai-rerank-base-v2`, judged by `vllm:Qwen3.6-35B-A3B-NVFP4`.*
+*Measured on haiku.rag v0.50.0 with `mxbai-rerank-base-v2`, judged by `vllm:Qwen3.6-35B-A3B-NVFP4`. Nemotron ran 2836 / 3045 cases (run stopped early; numbers stable from ~12% onward).*
 
 ### Wix
 
