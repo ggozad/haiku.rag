@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
+from typing import NamedTuple
 
 from pydantic import BaseModel
 
@@ -44,3 +45,14 @@ class SyncStateRow(BaseModel):
     content_hash: str | None = None
     last_seen_at: datetime
     last_ingested_at: datetime | None = None
+
+
+class SyncRow(NamedTuple):
+    """A pending sync_state write collected during a sweep and flushed in one
+    transaction by SyncStateRepo.batch_upsert()."""
+
+    source_id: str
+    uri: str
+    revision: str | None
+    content_hash: str | None
+    ingested: bool

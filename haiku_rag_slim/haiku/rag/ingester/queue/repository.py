@@ -5,7 +5,13 @@ from datetime import UTC, datetime, timedelta
 
 import aiosqlite
 
-from haiku.rag.ingester.queue.models import Job, JobOp, JobStatus, SyncStateRow
+from haiku.rag.ingester.queue.models import (
+    Job,
+    JobOp,
+    JobStatus,
+    SyncRow,
+    SyncStateRow,
+)
 
 
 def _utcnow_iso() -> str:
@@ -502,6 +508,33 @@ class SyncStateRepo:
                 (source_id, uri, revision, content_hash, now, ingested_at),
             ):
                 pass
+            await self._conn.commit()
+
+    async def batch_upsert(self, rows: list[SyncRow]) -> None:
+        """Batch insert-or-update sync_state rows in a single transaction."""
+        if not rows:
+            return
+        now = _utcnow_iso()
+        async with self._lock:
+            for source_id, uri, revision, content_hash, ingested in rows:
+                ingested_at = now if ingested else None
+                await self._conn.execute(
+                    """
+                    INSERT INTO sync_state (
+                        source_id, uri, revision, content_hash,
+                        last_seen_at, last_ingested_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(source_id, uri) DO UPDATE SET
+                        revision = COALESCE(excluded.revision, revision),
+                        content_hash = COALESCE(excluded.content_hash, content_hash),
+                        last_seen_at = excluded.last_seen_at,
+                        last_ingested_at = COALESCE(
+                            excluded.last_ingested_at, last_ingested_at
+                        )
+                    """,
+                    (source_id, uri, revision, content_hash, now, ingested_at),
+                )
             await self._conn.commit()
 
     async def delete(self, source_id: str, uri: str) -> None:
