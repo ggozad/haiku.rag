@@ -61,6 +61,11 @@ class Source(Protocol):
         """
         ...
 
+    async def aclose(self) -> None:
+        """Release any resources held by the source (e.g. HTTP connection
+        pools). Called once during shutdown, after all workers have stopped."""
+        ...
+
     async def fetch(self, uri: str) -> FetchResult: ...
 
     def discover(

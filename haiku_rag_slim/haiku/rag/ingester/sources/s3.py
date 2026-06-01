@@ -63,6 +63,9 @@ class S3Source:
     def supports(self, uri: str) -> bool:
         return uri.startswith(self.uri_prefix)
 
+    async def aclose(self) -> None:  # pragma: no cover - no resources to release
+        pass
+
     async def head(self, uri: str) -> str | None:
         import obstore  # type: ignore[import-not-found]
 
