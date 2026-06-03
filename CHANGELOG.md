@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.53.0] - 2026-06-03
+
 ### Added
 
 - `ingester.queue.retention_days` (default 30): the reaper deletes succeeded/dead jobs whose `completed_at` is older than the window. `null` disables pruning.
@@ -1665,7 +1667,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.52.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.53.0...HEAD
+[0.53.0]: https://github.com/ggozad/haiku.rag/compare/0.52.0...0.53.0
 [0.52.0]: https://github.com/ggozad/haiku.rag/compare/0.51.0...0.52.0
 [0.51.0]: https://github.com/ggozad/haiku.rag/compare/0.50.0...0.51.0
 [0.50.0]: https://github.com/ggozad/haiku.rag/compare/0.48.1...0.50.0
