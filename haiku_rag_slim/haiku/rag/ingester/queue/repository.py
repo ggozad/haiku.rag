@@ -404,6 +404,22 @@ class JobRepo:
             await self._conn.commit()
         return rowcount
 
+    async def prune_terminal(self, max_age_seconds: int) -> int:
+        """Delete terminal jobs (succeeded/dead) whose completed_at is older
+        than max_age_seconds. General housekeeping so the table doesn't grow
+        without bound. Returns the number of rows removed."""
+        threshold = (datetime.now(UTC) - timedelta(seconds=max_age_seconds)).isoformat()
+        async with self._lock:
+            cursor = await self._conn.execute(
+                "DELETE FROM jobs WHERE status IN ('succeeded','dead') "
+                "AND completed_at < ?",
+                (threshold,),
+            )
+            rowcount = cursor.rowcount or 0
+            await cursor.close()
+            await self._conn.commit()
+        return rowcount
+
     async def reap_stale(self, claim_timeout_seconds: int) -> int:
         """Reset claimed jobs whose claimed_at is older than the timeout
         back to `queued`. Decrements `attempts` to undo the increment from

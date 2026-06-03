@@ -266,6 +266,12 @@ class QueueConfig(BaseModel):
         default_factory=lambda: get_default_data_dir() / "ingester.db",
         description="Location of the ingester's SQLite queue file.",
     )
+    retention_days: int | None = Field(
+        default=30,
+        description="Delete succeeded/dead jobs whose completed_at is older "
+        "than this many days. The reaper enforces it on reaper_interval_s. "
+        "None disables pruning (keep all terminal rows).",
+    )
 
 
 class RetryPolicyConfig(BaseModel):
