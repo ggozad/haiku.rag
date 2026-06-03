@@ -2,7 +2,6 @@ import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
-import aiosqlite
 import pytest
 
 from haiku.rag.config import (
@@ -15,39 +14,12 @@ from haiku.rag.config import (
 from haiku.rag.ingester.pollers.circuit_breaker import CircuitBreaker
 from haiku.rag.ingester.pollers.manager import PollerManager
 from haiku.rag.ingester.pollers.periodic import PeriodicPoller
-from haiku.rag.ingester.queue.migrations import apply_migrations
 from haiku.rag.ingester.queue.models import JobOp, JobStatus
-from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
 from haiku.rag.ingester.sources.base import (
     FetchResult,
     SourceEvent,
     SourceEventKind,
 )
-
-
-@pytest.fixture
-async def conn(tmp_path):
-    path = tmp_path / "queue.db"
-    connection = await aiosqlite.connect(str(path))
-    connection.row_factory = aiosqlite.Row
-    await apply_migrations(connection)
-    yield connection
-    await connection.close()
-
-
-@pytest.fixture
-def queue_lock():
-    return asyncio.Lock()
-
-
-@pytest.fixture
-def jobs(conn, queue_lock):
-    return JobRepo(conn, lock=queue_lock)
-
-
-@pytest.fixture
-def sync(conn, queue_lock):
-    return SyncStateRepo(conn, lock=queue_lock)
 
 
 class _StubSource:

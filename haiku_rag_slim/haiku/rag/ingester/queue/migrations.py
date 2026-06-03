@@ -1,56 +1,60 @@
-from pathlib import Path
+import sqlalchemy as sa
+from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-import aiosqlite
+from haiku.rag.config.models import QueueConfig
+from haiku.rag.ingester.queue.db import (
+    SCHEMA_VERSION,
+    install_sqlite_pragmas,
+    metadata,
+    schema_version,
+)
 
-from haiku.rag.ingester.queue.schema import ALL_DDL, SCHEMA_VERSION
-
-__all__ = ["SCHEMA_VERSION", "apply_migrations", "open_queue"]
-
-
-async def _exec(conn: aiosqlite.Connection, sql: str, *params) -> None:
-    """Execute a statement and finalize the cursor. aiosqlite cursors stay
-    attached until closed, blocking subsequent commits with 'SQL statements
-    in progress'."""
-    async with conn.execute(sql, params):
-        pass
+__all__ = ["SCHEMA_VERSION", "apply_migrations", "make_engine", "open_queue"]
 
 
-async def apply_migrations(conn: aiosqlite.Connection) -> int:
-    """Idempotently create tables/indexes/views and pin schema_version.
-
-    Returns the schema version after the call. Safe to call on a fresh DB
-    or on one already at the latest version.
-    """
-    await _exec(conn, "PRAGMA journal_mode=WAL")
-    await _exec(conn, "PRAGMA synchronous=NORMAL")
-    await _exec(conn, "PRAGMA foreign_keys=ON")
-
-    for stmt in ALL_DDL:
-        await _exec(conn, stmt)
-
-    async with conn.execute("SELECT version FROM schema_version LIMIT 1") as cursor:
-        row = await cursor.fetchone()
-    if row is None:
-        await _exec(
-            conn, "INSERT INTO schema_version (version) VALUES (?)", SCHEMA_VERSION
-        )
+def make_engine(config: QueueConfig) -> AsyncEngine:
+    """Build the queue's AsyncEngine from config. Uses `dburi` when set,
+    otherwise a `sqlite+aiosqlite` URL pointing at the resolved `path`
+    (creating the parent directory). SQLite is capped to a single pooled
+    connection so the two-statement claim stays atomic without row locks."""
+    if config.dburi:
+        url = make_url(config.dburi)
     else:
-        current = row[0]
-        if current < SCHEMA_VERSION:  # pragma: no cover - no migrations yet
-            # No diff migrations exist yet — future versions add UPDATE/ALTER
-            # statements between here and the version bump.
-            await _exec(conn, "UPDATE schema_version SET version = ?", SCHEMA_VERSION)
+        path = config.path.expanduser().resolve()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        url = make_url(f"sqlite+aiosqlite:///{path}")
 
-    await conn.commit()
+    if url.get_backend_name() == "sqlite":
+        engine = create_async_engine(url, pool_size=1, max_overflow=0)
+    else:
+        engine = create_async_engine(url)
+    install_sqlite_pragmas(engine)
+    return engine
+
+
+async def apply_migrations(engine: AsyncEngine) -> int:
+    """Idempotently create tables/indexes and pin schema_version.
+
+    Returns the schema version after the call. Safe on a fresh DB or one
+    already at the latest version.
+    """
+    async with engine.begin() as conn:
+        await conn.run_sync(metadata.create_all)
+        current = (
+            await conn.execute(sa.select(schema_version.c.version).limit(1))
+        ).scalar_one_or_none()
+        if current is None:
+            await conn.execute(sa.insert(schema_version).values(version=SCHEMA_VERSION))
+        elif current < SCHEMA_VERSION:  # pragma: no cover - no migrations yet
+            # No diff migrations exist yet — future versions add ALTER/UPDATE
+            # statements between create_all and the version bump.
+            await conn.execute(sa.update(schema_version).values(version=SCHEMA_VERSION))
     return SCHEMA_VERSION
 
 
-async def open_queue(path: str | Path) -> aiosqlite.Connection:
-    """Open the queue database at `path`, creating it (and the parent dir)
-    if needed, and ensuring the schema is up-to-date."""
-    db_path = Path(path).expanduser().resolve()
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = await aiosqlite.connect(str(db_path))
-    conn.row_factory = aiosqlite.Row
-    await apply_migrations(conn)
-    return conn
+async def open_queue(config: QueueConfig) -> AsyncEngine:
+    """Build the queue engine and ensure its schema is up to date."""
+    engine = make_engine(config)
+    await apply_migrations(engine)
+    return engine

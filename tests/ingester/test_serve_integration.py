@@ -3,43 +3,15 @@
 import asyncio
 from unittest.mock import AsyncMock
 
-import aiosqlite
 import pytest
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import FSSourceConfig, HTTPSourceConfig
 from haiku.rag.ingester.pollers.manager import PollerManager
-from haiku.rag.ingester.queue.migrations import apply_migrations
 from haiku.rag.ingester.queue.models import JobOp
-from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
 from haiku.rag.ingester.sources.http import HTTPSource
 from haiku.rag.ingester.workers.pool import WorkerPool
 from haiku.rag.store.models.document import Document
-
-
-@pytest.fixture
-async def conn(tmp_path):
-    path = tmp_path / "queue.db"
-    connection = await aiosqlite.connect(str(path))
-    connection.row_factory = aiosqlite.Row
-    await apply_migrations(connection)
-    yield connection
-    await connection.close()
-
-
-@pytest.fixture
-def queue_lock():
-    return asyncio.Lock()
-
-
-@pytest.fixture
-def jobs(conn, queue_lock):
-    return JobRepo(conn, lock=queue_lock)
-
-
-@pytest.fixture
-def sync(conn, queue_lock):
-    return SyncStateRepo(conn, lock=queue_lock)
 
 
 async def _wait_for(predicate, *, timeout: float = 5.0, interval: float = 0.05):
