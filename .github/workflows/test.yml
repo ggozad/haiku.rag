@@ -48,6 +48,8 @@ jobs:
   test:
     needs: [lint, lint-frontend]
     runs-on: ubuntu-latest
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
