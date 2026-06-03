@@ -53,6 +53,7 @@ def _pool(client, jobs, sync, **kwargs) -> WorkerPool:
         poll_idle_interval_s=kwargs.pop("poll_idle_interval_s", 0.05),
         reaper_interval_s=kwargs.pop("reaper_interval_s", 60),
         claim_timeout_s=kwargs.pop("claim_timeout_s", 60),
+        retention_s=kwargs.pop("retention_s", None),
         retry_policy=kwargs.pop("retry_policy", RetryPolicy()),
         sources=kwargs.pop("sources", None),
     )
@@ -743,3 +744,71 @@ async def test_reaper_resets_stale_claims(client, jobs, sync, conn):
     refreshed = await jobs.get_job(job.id)
     assert refreshed is not None
     assert refreshed.status is JobStatus.QUEUED
+
+
+@pytest.mark.asyncio
+async def test_reaper_prunes_old_terminal_jobs(client, jobs, sync, conn):
+    from datetime import UTC, datetime, timedelta
+
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    await jobs.claim_next("w")
+    await jobs.mark_succeeded(job.id, "w")
+
+    # Backdate completed_at so prune_terminal picks it up.
+    long_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    await conn.execute(
+        "UPDATE jobs SET completed_at = ? WHERE id = ?", (long_ago, job.id)
+    )
+    await conn.commit()
+
+    pool = _pool(
+        client,
+        jobs,
+        sync,
+        worker_count=0,
+        reaper_interval_s=0.05,
+        retention_s=1,
+    )
+    await pool.start()
+    try:
+        for _ in range(30):
+            if await jobs.get_job(job.id) is None:
+                break
+            await asyncio.sleep(0.05)
+    finally:
+        await pool.stop()
+
+    assert await jobs.get_job(job.id) is None
+
+
+@pytest.mark.asyncio
+async def test_reaper_skips_prune_when_retention_none(client, jobs, sync, conn):
+    from datetime import UTC, datetime, timedelta
+
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    await jobs.claim_next("w")
+    await jobs.mark_succeeded(job.id, "w")
+
+    long_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    await conn.execute(
+        "UPDATE jobs SET completed_at = ? WHERE id = ?", (long_ago, job.id)
+    )
+    await conn.commit()
+
+    pool = _pool(
+        client,
+        jobs,
+        sync,
+        worker_count=0,
+        reaper_interval_s=0.05,
+        retention_s=None,
+    )
+    await pool.start()
+    try:
+        await asyncio.sleep(0.3)
+    finally:
+        await pool.stop()
+
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.SUCCEEDED

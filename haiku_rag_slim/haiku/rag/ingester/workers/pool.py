@@ -39,6 +39,7 @@ class WorkerPool:
         poll_idle_interval_s: float = 1.0,
         claim_timeout_s: int = 1800,
         reaper_interval_s: int = 60,
+        retention_s: int | None = None,
         sources: "list[Source] | None" = None,
     ):
         self._client = client
@@ -49,6 +50,7 @@ class WorkerPool:
         self._poll_idle_s = poll_idle_interval_s
         self._claim_timeout_s = claim_timeout_s
         self._reaper_interval_s = reaper_interval_s
+        self._retention_s = retention_s
         self._sources: list[Source] = list(sources) if sources else []
         self._stop = asyncio.Event()
         self._workers: list[asyncio.Task] = []
@@ -153,6 +155,10 @@ class WorkerPool:
             reset = await self._jobs.reap_stale(self._claim_timeout_s)
             if reset:
                 logger.info("Reaper reset %d stale claim(s)", reset)
+            if self._retention_s is not None:
+                pruned = await self._jobs.prune_terminal(self._retention_s)
+                if pruned:
+                    logger.info("Reaper pruned %d terminal job(s)", pruned)
 
     async def _sleep_or_stop(self, seconds: float) -> None:
         try:

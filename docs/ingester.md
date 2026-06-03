@@ -358,6 +358,20 @@ haiku-ingester queue init             # create the DB and schema
 haiku-ingester queue migrate          # apply pending schema changes
 ```
 
+Terminal job rows (`succeeded` and `dead`) are kept for history and pruned by
+the reaper once they age past `retention_days`:
+
+```yaml
+ingester:
+  queue:
+    path: /var/lib/haiku-rag/ingester.db
+    retention_days: 30                # null disables pruning
+```
+
+The reaper deletes terminal rows whose `completed_at` is older than the window
+on its `reaper_interval_s` cadence. Set `retention_days: null` to keep all
+terminal rows.
+
 ### Logs
 
 The service logs via Python `logging` to stderr through a Rich handler.

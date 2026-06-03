@@ -567,6 +567,62 @@ async def test_prune_dead_scoped_to_matching_uri(jobs):
     assert await jobs.get_job(j2.id) is not None
 
 
+# --- prune_terminal ---
+
+
+@pytest.mark.asyncio
+async def test_prune_terminal_deletes_old_terminal_rows(jobs, conn):
+    """Succeeded and dead rows whose completed_at is older than the window
+    are deleted so the table doesn't grow without bound."""
+    ok = await jobs.enqueue("s", "u1", JobOp.UPSERT)
+    await jobs.claim_next("w")
+    await jobs.mark_succeeded(ok.id, "w")
+
+    bad = await jobs.enqueue("s", "u2", JobOp.UPSERT)
+    await jobs.claim_next("w")
+    await jobs.mark_dead(bad.id, "boom", "w")
+
+    long_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    await conn.execute(
+        "UPDATE jobs SET completed_at = ? WHERE id IN (?, ?)",
+        (long_ago, ok.id, bad.id),
+    )
+    await conn.commit()
+
+    pruned = await jobs.prune_terminal(max_age_seconds=60)
+    assert pruned == 2
+    assert await jobs.get_job(ok.id) is None
+    assert await jobs.get_job(bad.id) is None
+
+
+@pytest.mark.asyncio
+async def test_prune_terminal_keeps_recent_terminal_rows(jobs):
+    """A freshly-completed succeeded row survives — only rows past the
+    retention window are removed."""
+    job = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    await jobs.claim_next("w")
+    await jobs.mark_succeeded(job.id, "w")
+
+    pruned = await jobs.prune_terminal(max_age_seconds=3600)
+    assert pruned == 0
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None and refreshed.status is JobStatus.SUCCEEDED
+
+
+@pytest.mark.asyncio
+async def test_prune_terminal_ignores_non_terminal_rows(jobs):
+    """Queued/claimed rows have no completed_at and are never pruned,
+    regardless of the window."""
+    queued = await jobs.enqueue("s", "u1", JobOp.UPSERT)
+    claimed = await jobs.enqueue("s", "u2", JobOp.UPSERT)
+    await jobs.claim_next("w")
+
+    pruned = await jobs.prune_terminal(max_age_seconds=0)
+    assert pruned == 0
+    assert (await jobs.get_job(queued.id)) is not None
+    assert (await jobs.get_job(claimed.id)) is not None
+
+
 # --- release_if_claimed ---
 
 

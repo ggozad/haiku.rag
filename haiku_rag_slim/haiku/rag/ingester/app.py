@@ -95,6 +95,11 @@ class IngesterApp:
                     poll_idle_interval_s=ingester_cfg.workers.poll_idle_interval_s,
                     claim_timeout_s=ingester_cfg.workers.claim_timeout_s,
                     reaper_interval_s=ingester_cfg.workers.reaper_interval_s,
+                    retention_s=(
+                        ingester_cfg.queue.retention_days * 86400
+                        if ingester_cfg.queue.retention_days is not None
+                        else None
+                    ),
                     # Same Source instances the pollers discover with —
                     # workers resolve URIs through them so authenticated
                     # HTTP / WebDAV / S3 fetches reuse credentials.
