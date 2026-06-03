@@ -149,6 +149,49 @@ before bringing the stack up:
 echo "INGESTER_TOKEN=$(openssl rand -hex 32)" >> .env
 ```
 
+### Using a database server for the queue
+
+By default the queue is a SQLite file on the `./data` volume. To run it on
+Postgres instead, point `ingester.queue.dburi` at the server in
+`haiku.rag.yaml`:
+
+```yaml
+ingester:
+  queue:
+    dburi: postgresql+asyncpg://haiku:secret@postgres:5432/haiku_rag
+```
+
+Add a Postgres service and wire the ingester to it with a
+`docker-compose.override.yml` (auto-loaded by Compose):
+
+```yaml
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=haiku
+      - POSTGRES_PASSWORD=secret
+      - POSTGRES_DB=haiku_rag
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "haiku", "-d", "haiku_rag"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  haiku-ingester:
+    depends_on:
+      postgres:
+        condition: service_healthy
+```
+
+Workers claim jobs with `FOR UPDATE SKIP LOCKED`, so the ingester can run as
+several replicas against one Postgres queue to scale ingestion out. The
+LanceDB single-writer rule still holds, so multiple writers need LanceDB Cloud
+or another shared store rather than the local file volume.
+
 ## Documentation
 
 - [Remote Processing](https://ggozad.github.io/haiku.rag/remote-processing/)
