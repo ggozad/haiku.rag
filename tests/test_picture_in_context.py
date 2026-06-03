@@ -203,6 +203,70 @@ async def test_rechunk_preserves_picture_data(temp_db_path):
 
 
 @pytest.mark.asyncio
+async def test_embed_only_preserves_picture_vectors(temp_db_path, monkeypatch):
+    """``rebuild --embed-only`` must re-embed picture chunks through the image
+    path. With a multimodal embedder, picture vectors must survive the rebuild
+    instead of being overwritten by a text embedding of the caption."""
+    from haiku.rag.client import RebuildMode
+    from haiku.rag.client.documents import _store_document_with_chunks
+    from haiku.rag.config import EmbeddingModelConfig, EmbeddingsConfig
+    from haiku.rag.embeddings import EmbedderWrapper, embed_chunks
+    from haiku.rag.store.models.document import Document
+    from tests.store.test_document_items import _docling_doc_with_picture
+
+    TEXT_VEC = [0.1, 0.1, 0.1, 0.1]
+    IMAGE_VEC = [0.9, 0.9, 0.9, 0.9]
+
+    class StubMultimodalEmbedder(EmbedderWrapper):
+        supports_images = True
+
+        def __init__(self):
+            super().__init__(embedder=None, vector_dim=4)
+
+        async def embed_documents(self, texts):
+            return [list(TEXT_VEC) for _ in texts]
+
+        async def embed_image(self, image):
+            return list(IMAGE_VEC)
+
+    monkeypatch.setattr(
+        "haiku.rag.store.engine.get_embedder",
+        lambda *a, **kw: StubMultimodalEmbedder(),
+    )
+
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(provider="ollama", name="stub", vector_dim=4)
+        )
+    )
+
+    docling_doc = _docling_doc_with_picture()
+
+    async def _picture_chunk_row(rag):
+        rows = await rag.chunk_repository.store.chunks_table.query().to_list()
+        picture_rows = [r for r in rows if "#/pictures/0" in (r.get("metadata") or "")]
+        assert len(picture_rows) == 1
+        return picture_rows[0]
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
+        chunks = await rag.chunk(docling_doc)
+        embedded = await embed_chunks(chunks, rag.embedder, rag._config)
+        document = Document(content="x", uri="test://doc")
+        document.set_docling(docling_doc)
+        await _store_document_with_chunks(rag, document, embedded, docling_doc)
+
+        before = await _picture_chunk_row(rag)
+        assert list(before["vector"]) == pytest.approx(IMAGE_VEC)
+
+        async for _ in rag.rebuild_database(mode=RebuildMode.EMBED_ONLY):
+            pass
+
+        after = await _picture_chunk_row(rag)
+        assert list(after["vector"]) == pytest.approx(IMAGE_VEC)
+        assert after["id"] == before["id"]
+
+
+@pytest.mark.asyncio
 async def test_expand_context_does_not_attach_expansion_added_pictures(temp_db_path):
     """expand_context preserves picture bytes from the pre-expansion result and
     does NOT re-fetch bytes for picture self_refs swept in by section

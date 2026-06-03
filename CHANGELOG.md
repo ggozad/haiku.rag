@@ -5,6 +5,10 @@
 
 - `ingester.queue.retention_days` (default 30): the reaper deletes succeeded/dead jobs whose `completed_at` is older than the window. `null` disables pruning.
 
+### Fixed
+
+- `rebuild --embed-only` re-embeds picture chunks through the image path instead of overwriting their vectors with a text embedding of the caption.
+
 ## [0.52.0] - 2026-06-01
 
 ### Added
