@@ -7,7 +7,7 @@ import pytest
 from haiku.rag.client import HaikuRAG
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
 from haiku.rag.ingester.queue.models import Job, JobOp, JobStatus
-from haiku.rag.ingester.sources.base import FileTooLargeError
+from haiku.rag.ingester.sources.base import FetchResult, FileTooLargeError, Source
 from haiku.rag.ingester.workers.pipeline import run_job
 from haiku.rag.store.models.document import Document
 
@@ -102,6 +102,91 @@ async def test_delete_is_noop_when_document_missing():
 
     assert result.deleted is True
     client.delete_document.assert_not_awaited()
+
+
+class _StubSource:
+    """Source double whose head() returns a scripted revision or raises."""
+
+    def __init__(
+        self,
+        source_id: str,
+        revision: str | None,
+        *,
+        head_error: Exception | None = None,
+    ):
+        self.source_id = source_id
+        self._revision = revision
+        self._head_error = head_error
+
+    def supports(self, uri: str) -> bool:
+        return True
+
+    async def head(self, uri: str) -> str | None:
+        if self._head_error is not None:
+            raise self._head_error
+        return self._revision
+
+    async def aclose(self) -> None: ...
+
+    async def fetch(self, uri: str) -> FetchResult:  # pragma: no cover - unused
+        raise NotImplementedError
+
+    async def discover(self, since=None, *, known_uris=None):  # pragma: no cover
+        raise NotImplementedError
+        yield
+
+
+@pytest.mark.asyncio
+async def test_delete_skipped_when_resource_restored_on_source():
+    """The file is back on disk by the time the DELETE runs, so head()
+    returns a revision and the delete is skipped — otherwise a live document
+    gets blackholed until the next sweep."""
+    client = _mock_client()
+    client.get_document_by_uri.return_value = Document(id="doc-9", content="", uri="u")
+    sources: list[Source] = [_StubSource("src", "12345")]
+
+    result = await run_job(client, _job(op=JobOp.DELETE), sources=sources)
+
+    assert result.deleted is False
+    client.delete_document.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_proceeds_when_resource_absent_on_source():
+    client = _mock_client()
+    client.get_document_by_uri.return_value = Document(id="doc-9", content="", uri="u")
+    sources: list[Source] = [_StubSource("src", None)]
+
+    result = await run_job(client, _job(op=JobOp.DELETE), sources=sources)
+
+    assert result.deleted is True
+    client.delete_document.assert_awaited_once_with("doc-9")
+
+
+@pytest.mark.asyncio
+async def test_delete_proceeds_when_source_unresolvable():
+    """No configured source for the job: the probe can't run, so the delete
+    proceeds exactly as before."""
+    client = _mock_client()
+    client.get_document_by_uri.return_value = Document(id="doc-9", content="", uri="u")
+
+    result = await run_job(client, _job(op=JobOp.DELETE), sources=[])
+
+    assert result.deleted is True
+    client.delete_document.assert_awaited_once_with("doc-9")
+
+
+@pytest.mark.asyncio
+async def test_delete_proceeds_when_head_probe_raises():
+    """A failing head() probe must not block the delete."""
+    client = _mock_client()
+    client.get_document_by_uri.return_value = Document(id="doc-9", content="", uri="u")
+    sources: list[Source] = [_StubSource("src", None, head_error=OSError("boom"))]
+
+    result = await run_job(client, _job(op=JobOp.DELETE), sources=sources)
+
+    assert result.deleted is True
+    client.delete_document.assert_awaited_once_with("doc-9")
 
 
 @pytest.mark.asyncio
