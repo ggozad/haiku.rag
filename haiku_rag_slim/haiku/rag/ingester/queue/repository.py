@@ -127,34 +127,34 @@ class JobRepo:
 
     async def claim_next(self, worker_id: str) -> Job | None:
         """Atomically claim the oldest queued job whose scheduled_at <= now.
-        A `SELECT ... FOR UPDATE SKIP LOCKED` picks the row (multi-process safe
-        on Postgres; the clause is omitted on SQLite, where pool_size=1 keeps
-        the select-then-update atomic), then a guarded UPDATE claims it."""
+        A single `UPDATE ... WHERE id = (SELECT ... LIMIT 1) RETURNING` keeps
+        the claim atomic across connections: on Postgres the subquery adds
+        `FOR UPDATE SKIP LOCKED`; on SQLite the whole statement runs under one
+        write lock, so a racing connection re-evaluates the subquery against
+        the committed state and finds the row already claimed."""
         now = _utcnow_iso()
-        select_candidate = (
+        candidate = (
             sa.select(jobs.c.id)
             .where(jobs.c.status == "queued", jobs.c.scheduled_at <= now)
-            .order_by(jobs.c.scheduled_at)
+            .order_by(jobs.c.scheduled_at, jobs.c.id)
             .limit(1)
             .with_for_update(skip_locked=True)
+            .scalar_subquery()
+        )
+        claim = (
+            sa.update(jobs)
+            .where(jobs.c.id == candidate)
+            .values(
+                status="claimed",
+                claimed_at=now,
+                claimed_by=worker_id,
+                attempts=jobs.c.attempts + 1,
+            )
+            .returning(*jobs.c)
         )
         async with self._engine.begin() as conn:
-            job_id = (await conn.execute(select_candidate)).scalar_one_or_none()
-            if job_id is None:
-                return None
-            claim = (
-                sa.update(jobs)
-                .where(jobs.c.id == job_id)
-                .values(
-                    status="claimed",
-                    claimed_at=now,
-                    claimed_by=worker_id,
-                    attempts=jobs.c.attempts + 1,
-                )
-                .returning(*jobs.c)
-            )
-            row = (await conn.execute(claim)).mappings().one()
-        return _row_to_job(row)
+            row = (await conn.execute(claim)).mappings().one_or_none()
+        return _row_to_job(row) if row else None
 
     async def get_job(self, job_id: str) -> Job | None:
         async with self._engine.connect() as conn:

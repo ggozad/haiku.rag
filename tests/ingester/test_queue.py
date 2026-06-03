@@ -7,6 +7,7 @@ import sqlalchemy as sa
 from haiku.rag.config import QueueConfig
 from haiku.rag.ingester.queue.migrations import apply_migrations, open_queue
 from haiku.rag.ingester.queue.models import JobOp, JobStatus, SyncRow
+from haiku.rag.ingester.queue.repository import JobRepo
 
 # --- migrations / schema ---
 
@@ -227,6 +228,43 @@ async def test_claim_next_atomic_under_concurrency(jobs):
     assert len(claimed) == 5
     assert len({c.id for c in claimed}) == 5
     assert {c.id for c in claimed} == {j.id for j in enqueued}
+
+
+@pytest.mark.asyncio
+async def test_claim_next_atomic_across_independent_engines(tmp_path):
+    """Two engines on one SQLite file stand in for two ingester processes.
+    The claim is a single UPDATE...WHERE id=(subquery), so it stays atomic
+    across connections — pool_size=1 only serializes within one engine."""
+    cfg = QueueConfig(path=tmp_path / "shared-queue.db")
+    engine_a = await open_queue(cfg)
+    engine_b = await open_queue(cfg)
+    try:
+        repo_a = JobRepo(engine_a)
+        repo_b = JobRepo(engine_b)
+
+        enqueued = []
+        for i in range(10):
+            job = await repo_a.enqueue("s", f"u{i}", JobOp.UPSERT)
+            assert job is not None
+            enqueued.append(job)
+
+        # Claims alternate across the two engines, contending on the same file.
+        results = await asyncio.gather(
+            *((repo_a if i % 2 == 0 else repo_b).claim_next(f"w{i}") for i in range(20))
+        )
+        claimed = [r for r in results if r is not None]
+
+        assert len(claimed) == 10
+        assert len({c.id for c in claimed}) == 10
+        assert {c.id for c in claimed} == {j.id for j in enqueued}
+        for job in enqueued:
+            refreshed = await repo_a.get_job(job.id)
+            assert refreshed is not None
+            assert refreshed.status is JobStatus.CLAIMED
+            assert refreshed.attempts == 1
+    finally:
+        await engine_a.dispose()
+        await engine_b.dispose()
 
 
 # --- terminal transitions ---
