@@ -271,13 +271,55 @@ class TestMMLongBenchDoc:
             },
         ]
 
+        import evaluations.datasets.mmlongbench as m
+
+        m._qa_records = None
         with patch(
             "evaluations.datasets.mmlongbench._load_hf_qa_split",
             return_value=raw_rows,
         ):
             records = load_qa_records()
+        m._qa_records = None
 
         assert records[0]["evidence_pages"] == [3, 5]
         assert records[0]["evidence_sources"] == ["Table", "Pure-text"]
         assert records[1]["evidence_pages"] == []
         assert records[1]["evidence_sources"] == []
+
+    def test_load_qa_records_drops_excluded_docs(self) -> None:
+        from unittest.mock import patch
+
+        import evaluations.datasets.mmlongbench as m
+
+        raw_rows = [
+            {
+                "doc_id": "mi_phone.pdf",
+                "doc_type": "Guidebook",
+                "question": "Q?",
+                "answer": "A",
+                "evidence_pages": "[1]",
+                "evidence_sources": "['Pure-text']",
+                "answer_format": "Str",
+            },
+            {
+                "doc_id": "keep.pdf",
+                "doc_type": "Brochure",
+                "question": "Q2?",
+                "answer": "A2",
+                "evidence_pages": "[2]",
+                "evidence_sources": "['Table']",
+                "answer_format": "Str",
+            },
+        ]
+
+        m._qa_records = None
+        with patch(
+            "evaluations.datasets.mmlongbench._load_hf_qa_split",
+            return_value=raw_rows,
+        ):
+            records = load_qa_records()
+        m._qa_records = None
+
+        doc_ids = {r["doc_id"] for r in records}
+        assert "mi_phone.pdf" not in doc_ids
+        assert "keep.pdf" in doc_ids

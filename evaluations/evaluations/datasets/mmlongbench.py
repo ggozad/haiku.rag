@@ -17,6 +17,13 @@ REPO_ID = "yubo2333/MMLongBench-Doc"
 PDF_SUBDIR = "documents"
 _LIST_FIELDS = ("evidence_pages", "evidence_sources")
 
+# The HF repo serves a blob for these files whose content does not match the
+# document the questions were written against (the LFS pointer and the served
+# bytes diverge, and the bytes are an unrelated PDF). They are unrecoverable
+# upstream, so the document and all its questions are dropped to keep the
+# benchmark answerable and reproducible.
+_EXCLUDED_DOCS = frozenset({"mi_phone.pdf"})
+
 
 def get_cache_dir() -> Path:
     cache_dir = Path.home() / ".cache" / "haiku.rag" / "evaluations" / "mmlongbench"
@@ -30,6 +37,7 @@ def ensure_pdfs_downloaded() -> Path:
         repo_id=REPO_ID,
         repo_type="dataset",
         allow_patterns=f"{PDF_SUBDIR}/*.pdf",
+        ignore_patterns=[f"{PDF_SUBDIR}/{name}" for name in _EXCLUDED_DOCS],
         local_dir=cache_dir,
     )
     return cache_dir / PDF_SUBDIR
@@ -55,7 +63,7 @@ def load_qa_records() -> list[dict[str, Any]]:
     global _qa_records
     if _qa_records is not None:
         return _qa_records
-    rows = _load_hf_qa_split()
+    rows = [r for r in _load_hf_qa_split() if r.get("doc_id") not in _EXCLUDED_DOCS]
     for row in rows:
         for field in _LIST_FIELDS:
             row[field] = _parse_list_field(row.get(field))
