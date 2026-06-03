@@ -357,10 +357,10 @@ async def _rebuild_embed_only(
     treats it as a partial phase 1, which is harmless because phase 2 has
     already finished writing the new chunks table.
     """
-    from haiku.rag.embeddings import contextualize
+    from haiku.rag.embeddings import contextualize, embed_chunks
 
     db = client.store.db
-    batch_size = client._config.embeddings.batch_size
+    embedder = client.chunk_repository.embedder
 
     if not resume_from_staging:
         # Phase 1: copy chunks into staging, then mark it complete. After the
@@ -384,17 +384,37 @@ async def _rebuild_embed_only(
         if not chunks:
             continue
 
-        texts = contextualize(chunks)
-        embeddings: list[list[float]] = []
-        for i in range(0, len(texts), batch_size):
-            batch_embeddings = await client.chunk_repository.embedder.embed_documents(
-                texts[i : i + batch_size]
+        # Re-attach picture bytes stripped by the staging copy so picture
+        # chunks route through embed_image rather than being text-embedded.
+        # Bytes live in document_items (embed-only never touches that table).
+        if embedder.supports_images:
+            picture_data = await client.document_item_repository.get_all_picture_data(
+                doc.id
             )
-            embeddings.extend(batch_embeddings)
+            for chunk in chunks:
+                if "picture" not in (chunk.metadata.get("labels") or []):
+                    continue
+                refs = chunk.metadata.get("doc_item_refs") or []
+                data = next((picture_data[r] for r in refs if r in picture_data), None)
+                if data is not None:
+                    chunk._picture_data = data
+                else:
+                    logger.warning(
+                        "Document %s picture chunk %s has no recoverable bytes; "
+                        "embedding its caption as text.",
+                        doc.id,
+                        chunk.id,
+                    )
 
-        for chunk, content_fts, embedding in zip(chunks, texts, embeddings):
+        content_fts_list = contextualize(chunks)
+        embedded_chunks = await embed_chunks(chunks, embedder, client._config)
+
+        for chunk, content_fts, embedded in zip(
+            chunks, content_fts_list, embedded_chunks
+        ):
             assert chunk.id is not None
             assert chunk.document_id is not None
+            assert embedded.embedding is not None
             pending_records.append(
                 client.store.ChunkRecord(
                     id=chunk.id,
@@ -403,7 +423,7 @@ async def _rebuild_embed_only(
                     content_fts=content_fts,
                     metadata=json.dumps(chunk.metadata),
                     order=chunk.order,
-                    vector=embedding,
+                    vector=embedded.embedding,
                 )
             )
 
