@@ -8,6 +8,7 @@
 ### Fixed
 
 - `rebuild --embed-only` re-embeds picture chunks through the image path instead of overwriting their vectors with a text embedding of the caption.
+- DELETE jobs re-check the source with `head()` before deleting and skip when the resource is back, so an atomic-rename save (vim, `git checkout`) no longer blackholes a live document.
 
 ## [0.52.0] - 2026-06-01
 

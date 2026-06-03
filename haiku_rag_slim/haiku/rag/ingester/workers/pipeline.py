@@ -9,6 +9,7 @@ from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
 from haiku.rag.ingester.queue.models import Job, JobOp
 from haiku.rag.ingester.sources.base import FileTooLargeError
+from haiku.rag.ingester.sources.registry import resolve_configured_source
 from haiku.rag.telemetry import attach_context, logfire
 
 if TYPE_CHECKING:
@@ -105,6 +106,17 @@ async def run_job(
     ):
         try:
             if job.op is JobOp.DELETE:
+                # An atomic-rename save can let a spurious DELETE win the
+                # enqueue race while the file is mid-rewrite. If the resource
+                # is already back, skip the delete (it would blackhole a live
+                # document) and let the next sweep re-ingest it.
+                try:
+                    source = resolve_configured_source(job.uri, job.source_id, sources)
+                    restored = await source.head(job.uri) is not None
+                except Exception:
+                    restored = False
+                if restored:
+                    return JobResult(deleted=False)
                 doc = await client.get_document_by_uri(job.uri)
                 if doc is not None and doc.id is not None:
                     await client.delete_document(doc.id)
