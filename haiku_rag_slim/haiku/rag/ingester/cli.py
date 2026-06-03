@@ -4,6 +4,7 @@ from pathlib import Path
 
 import typer
 from dotenv import find_dotenv, load_dotenv
+from sqlalchemy import make_url
 
 load_dotenv(find_dotenv(usecwd=True))
 
@@ -90,7 +91,11 @@ def _resolve_queue_config(config: AppConfig, override: Path | None) -> QueueConf
 
 
 def _queue_target(queue: QueueConfig) -> str:
-    return queue.dburi or str(queue.path)
+    """A display string for the queue location, with any dburi password
+    masked so it isn't echoed to the terminal or logs."""
+    if queue.dburi:
+        return make_url(queue.dburi).render_as_string(hide_password=True)
+    return str(queue.path)
 
 
 async def _ensure_schema(queue: QueueConfig) -> None:
