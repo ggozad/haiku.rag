@@ -28,6 +28,7 @@ class SkillRunResult:
     cited_chunk_ids: list[str] = field(default_factory=list)
     searched_uris: list[str] = field(default_factory=list)
     n_searches: int = 0
+    n_executions: int = 0
 
 
 async def run_skill_question(
@@ -83,10 +84,14 @@ async def run_skill_question(
                 seen_searched.add(uri)
                 searched_uris.append(uri)
 
+    executions = getattr(state, "executions", None)
+    n_executions = len(executions) if executions is not None else 0
+
     return SkillRunResult(
         answer=answer,
         cited_uris=cited_uris,
         cited_chunk_ids=cited_chunk_ids,
         searched_uris=searched_uris,
         n_searches=len(typed.searches),
+        n_executions=n_executions,
     )
