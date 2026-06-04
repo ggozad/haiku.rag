@@ -383,6 +383,77 @@ class TestSandboxVFS:
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
+    async def test_open_read(self, temp_db_path):
+        """open() and a with-block read document files through the VFS."""
+        config = AppConfig()
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.create_document(
+                content="Content about foxes and dogs.",
+                uri="test://doc",
+                title="Fox Document",
+            )
+
+            context = AnalysisContext()
+            sb = Sandbox(db_path=temp_db_path, config=config, context=context)
+            result = await sb.execute(
+                f"with open('/documents/{doc.id}/content.txt') as f:\n"
+                "    data = f.read()\n"
+                "print('foxes' in data.lower())"
+            )
+            assert result.success
+            assert "True" in result.stdout
+
+    @pytest.mark.asyncio
+    @pytest.mark.vcr()
+    async def test_open_readlines(self, temp_db_path):
+        """readlines() splits a newline-delimited VFS file into lines."""
+        config = AppConfig()
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.create_document(
+                content="The quick brown fox jumps over the lazy dog.",
+                uri="test://animals",
+                title="Animals",
+            )
+
+            context = AnalysisContext()
+            sb = Sandbox(db_path=temp_db_path, config=config, context=context)
+            result = await sb.execute(
+                f"lines = open('/documents/{doc.id}/items.jsonl').readlines()\n"
+                "print(len(lines) > 0)\n"
+                "import json\n"
+                "print('self_ref' in json.loads(lines[0]))"
+            )
+            assert result.success
+            assert result.stdout.count("True") == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.vcr()
+    async def test_open_write_denied(self, temp_db_path):
+        """Opening a document file for writing raises PermissionError."""
+        config = AppConfig()
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.create_document(
+                content="Content about foxes and dogs.",
+                uri="test://doc",
+                title="Fox Document",
+            )
+
+            context = AnalysisContext()
+            sb = Sandbox(db_path=temp_db_path, config=config, context=context)
+            result = await sb.execute(
+                "try:\n"
+                f"    with open('/documents/{doc.id}/content.txt', 'w') as f:\n"
+                "        f.write('nope')\n"
+                "    print('WROTE')\n"
+                "except PermissionError:\n"
+                "    print('DENIED')"
+            )
+            assert result.success
+            assert "DENIED" in result.stdout
+            assert "WROTE" not in result.stdout
+
+    @pytest.mark.asyncio
+    @pytest.mark.vcr()
     async def test_context_filter_limits_vfs(self, temp_db_path):
         """Context filter restricts which documents appear in VFS."""
         config = AppConfig()
