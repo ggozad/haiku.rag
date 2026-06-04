@@ -2,7 +2,7 @@
 
 name = "haiku.rag"
 description = "Opinionated agentic RAG powered by LanceDB, Pydantic AI, and Docling"
-version = "0.53.0"
+version = "0.54.0"
 authors = [{ name = "Yiorgis Gozadinos", email = "ggozadinos@gmail.com" }]
 license = { text = "MIT" }
 readme = { file = "README.md", content-type = "text/markdown" }
@@ -30,7 +30,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "haiku.rag-slim[docling,voyageai,mxbai,cohere,zeroentropy,tui,cross-encoder]==0.53.0",
+    "haiku.rag-slim[docling,voyageai,mxbai,cohere,zeroentropy,tui,cross-encoder]==0.54.0",
 ]
 
 [project.scripts]
@@ -38,9 +38,9 @@ haiku-rag = "haiku.rag.cli:cli"
 
 [project.optional-dependencies]
 tui = ["textual>=8.2.4"]
-s3 = ["haiku.rag-slim[s3]==0.53.0"]
-cross-encoder = ["haiku.rag-slim[cross-encoder]==0.53.0"]
-ingester = ["haiku.rag-slim[ingester]==0.53.0"]
+s3 = ["haiku.rag-slim[s3]==0.54.0"]
+cross-encoder = ["haiku.rag-slim[cross-encoder]==0.54.0"]
+ingester = ["haiku.rag-slim[ingester]==0.54.0"]
 
 [build-system]
 requires = ["hatchling"]

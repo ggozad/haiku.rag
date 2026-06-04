@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.54.0] - 2026-06-04
+
 ### Added
 
 - `ingester.queue.dburi`: a SQLAlchemy async URL (e.g. `postgresql+asyncpg://user:pw@host/db`) points the ingester queue at a database server. SQLite remains the default when unset. The Postgres path claims jobs with `FOR UPDATE SKIP LOCKED`, so multiple ingester processes can share one queue.
@@ -1671,7 +1673,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.53.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.54.0...HEAD
+[0.54.0]: https://github.com/ggozad/haiku.rag/compare/0.53.0...0.54.0
 [0.53.0]: https://github.com/ggozad/haiku.rag/compare/0.52.0...0.53.0
 [0.52.0]: https://github.com/ggozad/haiku.rag/compare/0.51.0...0.52.0
 [0.51.0]: https://github.com/ggozad/haiku.rag/compare/0.50.0...0.51.0
