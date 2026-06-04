@@ -47,6 +47,10 @@ def extract_numbers(text: str) -> list[float]:
         value = _to_float(token)
         if value is not None:
             numbers.append(value)
+            if "%" in token:
+                # Gold answers store ratios as either a percent (24.69) or a
+                # decimal (0.935); offer both readings of a percent figure.
+                numbers.append(value / 100)
     for number, scale in _SCALED_RE.findall(text):
         value = _to_float(number)
         if value is not None:

@@ -8,8 +8,8 @@ class TestExtractNumbers:
     def test_currency_and_thousands(self) -> None:
         assert extract_numbers("$1,234.5") == [1234.5]
 
-    def test_percent_stripped(self) -> None:
-        assert extract_numbers("margin was 50.3%") == [50.3]
+    def test_percent_yields_both_readings(self) -> None:
+        assert extract_numbers("margin was 50.3%") == [50.3, 0.503]
 
     def test_parenthesised_negative(self) -> None:
         assert extract_numbers("loss of (123)") == [-123.0]

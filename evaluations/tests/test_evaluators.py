@@ -82,6 +82,14 @@ class TestNumberMatchEvaluator:
         ctx = self._make_ctx("50.3", "In 2008 it grew from 27.0 to 50.3 percent")
         assert self.evaluator.evaluate(ctx) == 1.0
 
+    def test_percent_answer_matches_decimal_gold(self) -> None:
+        ctx = self._make_ctx("0.935", "the cumulative total return was 93.5%")
+        assert self.evaluator.evaluate(ctx) == 1.0
+
+    def test_percent_answer_matches_percent_gold(self) -> None:
+        ctx = self._make_ctx("24.691358024691358", "approximately 24.69% of production")
+        assert self.evaluator.evaluate(ctx) == 1.0
+
     def test_non_numeric_prediction(self) -> None:
         ctx = self._make_ctx("127.4", "I cannot determine the value")
         assert self.evaluator.evaluate(ctx) == 0.0
