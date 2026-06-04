@@ -7,6 +7,13 @@ from evaluations.datasets.open_rag_bench import (
     map_orb_document,
     map_orb_retrieval,
 )
+from evaluations.datasets.t2_ragbench import (
+    build_t2_case,
+    download_t2_pdf,
+    load_t2_corpus,
+    map_t2_document,
+    map_t2_retrieval,
+)
 from evaluations.datasets.wix import (
     build_wix_case,
     map_wix_document,
@@ -158,3 +165,122 @@ class TestOpenRAGBench:
         assert is_multimodal_query("image") is True
         assert is_multimodal_query("image_table") is True
         assert is_multimodal_query("text") is False
+
+
+class TestT2RAGBench:
+    def _row(self, **overrides: object) -> dict[str, object]:
+        row: dict[str, object] = {
+            "id": "finqa_dev_0",
+            "context_id": "finqa_dev_ctx_138",
+            "subset": "FinQA",
+            "split": "dev",
+            "file_name": "pdf/V/2008/page_17.pdf",
+            "question": "What was the average payment volume per transaction?",
+            "program_answer": "127.4",
+            "company_name": "Visa Inc.",
+            "company_symbol": "V",
+            "report_year": 2008,
+            "company_sector": "Financials",
+        }
+        row.update(overrides)
+        return row
+
+    def test_map_document(self, tmp_path: Path) -> None:
+        pdf_path = tmp_path / "page_17.pdf"
+        pdf_path.write_bytes(b"%PDF-fake")
+        from unittest.mock import patch
+
+        with patch(
+            "evaluations.datasets.t2_ragbench.download_t2_pdf",
+            return_value=pdf_path,
+        ) as download:
+            payload = map_t2_document(self._row())
+
+        download.assert_called_once_with("FinQA", "dev", "pdf/V/2008/page_17.pdf")
+        assert payload is not None
+        assert payload.uri == "finqa_dev_ctx_138"
+        assert payload.source_path == pdf_path
+        assert payload.content is None
+        assert payload.title == "Visa Inc. 2008"
+        assert payload.metadata == {
+            "file_name": "pdf/V/2008/page_17.pdf",
+            "company_name": "Visa Inc.",
+            "company_symbol": "V",
+            "report_year": 2008,
+            "company_sector": "Financials",
+        }
+
+    def test_map_document_title_falls_back_to_context_id(self, tmp_path: Path) -> None:
+        pdf_path = tmp_path / "page.pdf"
+        pdf_path.write_bytes(b"%PDF-fake")
+        from unittest.mock import patch
+
+        row = self._row(company_name=None, report_year=None)
+        with patch(
+            "evaluations.datasets.t2_ragbench.download_t2_pdf",
+            return_value=pdf_path,
+        ):
+            payload = map_t2_document(row)
+
+        assert payload is not None
+        assert payload.title == "finqa_dev_ctx_138"
+        assert payload.metadata is not None
+        assert "company_name" not in payload.metadata
+        assert "report_year" not in payload.metadata
+
+    def test_map_retrieval(self) -> None:
+        sample = map_t2_retrieval(self._row())
+        assert sample is not None
+        assert sample.question == self._row()["question"]
+        assert sample.expected_uris == ("finqa_dev_ctx_138",)
+
+    def test_build_case(self) -> None:
+        case = build_t2_case(3, self._row())
+        assert case.name == "3_finqa_dev_0"
+        assert case.inputs == self._row()["question"]
+        assert case.expected_output == "127.4"
+        assert case.metadata is not None
+        assert case.metadata["case_index"] == "3"
+        assert case.metadata["context_id"] == "finqa_dev_ctx_138"
+
+    def test_build_case_casts_numeric_answer(self) -> None:
+        case = build_t2_case(0, self._row(program_answer=127.4))
+        assert case.expected_output == "127.4"
+
+    def test_download_pdf_materializes_pdf_suffix(self, tmp_path: Path) -> None:
+        # hf_hub_download can return a suffix-less blob path; the cached copy
+        # must carry the .pdf extension the converter dispatches on.
+        blob = tmp_path / "blobs" / "6aa49306deadbeef"
+        blob.parent.mkdir()
+        blob.write_bytes(b"%PDF-fake")
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        from unittest.mock import patch
+
+        with (
+            patch("evaluations.datasets.t2_ragbench.get_cache_dir", return_value=cache),
+            patch(
+                "evaluations.datasets.t2_ragbench.hf_hub_download",
+                return_value=str(blob),
+            ),
+        ):
+            out = download_t2_pdf("FinQA", "dev", "pdf/V/2008/page_17.pdf")
+
+        assert out.suffix == ".pdf"
+        assert out.exists()
+        assert out.read_bytes() == b"%PDF-fake"
+        assert out.name == "FinQA_dev_pdf_V_2008_page_17.pdf"
+
+    def test_load_corpus_dedupes_by_context_id(self) -> None:
+        from unittest.mock import patch
+
+        rows = [
+            self._row(id="finqa_dev_0", context_id="ctx_a"),
+            self._row(id="finqa_dev_1", context_id="ctx_a"),
+            self._row(id="finqa_dev_2", context_id="ctx_b"),
+        ]
+        with patch("evaluations.datasets.t2_ragbench._load_rows", return_value=rows):
+            corpus = load_t2_corpus("FinQA")
+
+        assert len(corpus) == 2
+        assert {r["context_id"] for r in corpus} == {"ctx_a", "ctx_b"}

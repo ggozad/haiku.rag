@@ -1,6 +1,7 @@
 from evaluations.config import DatasetSpec
 
 from .open_rag_bench import ORB_MULTIMODAL_SPEC, ORB_TEXT_SPEC
+from .t2_ragbench import T2_FINQA_SPEC
 from .wix import WIX_SPEC
 
 DATASETS: dict[str, DatasetSpec] = {
@@ -9,6 +10,7 @@ DATASETS: dict[str, DatasetSpec] = {
         WIX_SPEC,
         ORB_TEXT_SPEC,
         ORB_MULTIMODAL_SPEC,
+        T2_FINQA_SPEC,
     )
 }
 

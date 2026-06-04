@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- `t2_finqa` evaluation dataset (T²-RAGBench FinQA subset, `G4KMU/t2-ragbench`): 2,789 single-page PDFs / 8,281 numeric QA, ingested via docling with `uri = context_id` and gold retrieval keyed on `context_id`.
+
 ### Fixed
 
 - Skill tools (`search`/`cite`/`list_documents`/`get_document`) and the analysis sandbox serialize access to the shared LanceDB connection through one lock, so a turn's concurrently executed tool calls no longer trigger `RuntimeError: Already borrowed`.
