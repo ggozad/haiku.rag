@@ -16,7 +16,7 @@ from haiku.rag.ingester.workers.pool import WorkerPool
 from haiku.rag.ingester.workers.retry import RetryPolicy
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncEngine
 
 logger = logging.getLogger(__name__)
 
@@ -33,14 +33,14 @@ class BatchReport(BaseModel):
 class IngesterApp:
     """Top-level lifecycle for the production ingester.
 
-    Owns: SQLite queue connection, JobRepo/SyncStateRepo, PollerManager,
+    Owns: queue engine, JobRepo/SyncStateRepo, PollerManager,
     WorkerPool, and a HaikuRAG client for the worker pool to ingest through.
     """
 
     def __init__(self, *, config: AppConfig, db_path: Path):
         self._config = config
         self._db_path = db_path
-        self._queue_conn: aiosqlite.Connection | None = None
+        self._engine: AsyncEngine | None = None
         self._jobs: JobRepo | None = None
         self._sync: SyncStateRepo | None = None
         self._pool: WorkerPool | None = None
@@ -48,22 +48,18 @@ class IngesterApp:
 
     @asynccontextmanager
     async def _resources(self):
-        """Open the queue connection and construct the repos, client, pollers
+        """Open the queue engine and construct the repos, client, pollers
         and worker pool. Yields with everything built but nothing started —
         callers own the start/stop lifecycle. Closes the client and queue
-        connection on exit."""
+        engine on exit."""
         from haiku.rag.client import HaikuRAG
         from haiku.rag.converters import get_converter
 
         ingester_cfg = self._config.ingester
-        self._queue_conn = await open_queue(ingester_cfg.queue.path)
+        self._engine = await open_queue(ingester_cfg.queue)
         try:
-            # Single lock shared by both repos so cross-repo calls on the
-            # same connection (e.g. worker's mark_succeeded then sync.upsert)
-            # serialize at the cursor/commit boundary.
-            queue_lock = asyncio.Lock()
-            self._jobs = JobRepo(self._queue_conn, lock=queue_lock)
-            self._sync = SyncStateRepo(self._queue_conn, lock=queue_lock)
+            self._jobs = JobRepo(self._engine)
+            self._sync = SyncStateRepo(self._engine)
 
             supported_extensions = get_converter(self._config).supported_extensions
             retry = RetryPolicy(
@@ -107,13 +103,13 @@ class IngesterApp:
                 )
                 yield
         finally:
-            # Close the queue connection unconditionally. aiosqlite runs the
-            # underlying sqlite3 in a background thread; leaving it open holds
-            # the event loop alive and blocks process exit on early failures
-            # (e.g. HaikuRAG raising MigrationRequiredError).
-            if self._queue_conn is not None:
-                await self._queue_conn.close()
-                self._queue_conn = None
+            # Dispose the engine unconditionally. aiosqlite runs the underlying
+            # sqlite3 in a background thread; leaving the pool open holds the
+            # event loop alive and blocks process exit on early failures (e.g.
+            # HaikuRAG raising MigrationRequiredError).
+            if self._engine is not None:
+                await self._engine.dispose()
+                self._engine = None
 
     async def _stop_pool(self) -> None:
         """Stop the worker pool, honouring the shutdown grace, then drain any

@@ -111,6 +111,18 @@ def test_queue_migrate(tmp_path, monkeypatch):
     assert "up to date" in result.output
 
 
+def test_queue_target_masks_dburi_password():
+    from haiku.rag.config import QueueConfig
+    from haiku.rag.ingester.cli import _queue_target
+
+    target = _queue_target(
+        QueueConfig(dburi="postgresql+asyncpg://user:secret@host:5432/db")
+    )
+    assert "secret" not in target
+    assert "***" in target
+    assert "user" in target and "host:5432/db" in target
+
+
 # --- config loading ---
 
 

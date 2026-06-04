@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- `ingester.queue.dburi`: a SQLAlchemy async URL (e.g. `postgresql+asyncpg://user:pw@host/db`) points the ingester queue at a database server. SQLite remains the default when unset. The Postgres path claims jobs with `FOR UPDATE SKIP LOCKED`, so multiple ingester processes can share one queue.
+
 ## [0.53.0] - 2026-06-03
 
 ### Added

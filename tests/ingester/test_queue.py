@@ -1,38 +1,18 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 
-import aiosqlite
 import pytest
+import sqlalchemy as sa
 
-from haiku.rag.ingester.queue.migrations import apply_migrations, open_queue
+from haiku.rag.config import QueueConfig
+from haiku.rag.ingester.queue.db import jobs as jobs_table
+from haiku.rag.ingester.queue.migrations import (
+    apply_migrations,
+    make_engine,
+    open_queue,
+)
 from haiku.rag.ingester.queue.models import JobOp, JobStatus, SyncRow
-from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
-
-
-@pytest.fixture
-async def conn(tmp_path):
-    path = tmp_path / "queue.db"
-    connection = await aiosqlite.connect(str(path))
-    connection.row_factory = aiosqlite.Row
-    await apply_migrations(connection)
-    yield connection
-    await connection.close()
-
-
-@pytest.fixture
-def queue_lock():
-    return asyncio.Lock()
-
-
-@pytest.fixture
-def jobs(conn, queue_lock):
-    return JobRepo(conn, lock=queue_lock)
-
-
-@pytest.fixture
-def sync(conn, queue_lock):
-    return SyncStateRepo(conn, lock=queue_lock)
-
+from haiku.rag.ingester.queue.repository import JobRepo, _insert
 
 # --- migrations / schema ---
 
@@ -46,9 +26,9 @@ async def test_apply_migrations_sets_schema_version(conn):
 
 
 @pytest.mark.asyncio
-async def test_apply_migrations_is_idempotent(conn):
-    await apply_migrations(conn)
-    await apply_migrations(conn)
+async def test_apply_migrations_is_idempotent(engine, conn):
+    await apply_migrations(engine)
+    await apply_migrations(engine)
     cursor = await conn.execute("SELECT COUNT(*) AS n FROM schema_version")
     row = await cursor.fetchone()
     assert row["n"] == 1
@@ -57,26 +37,49 @@ async def test_apply_migrations_is_idempotent(conn):
 @pytest.mark.asyncio
 async def test_open_queue_creates_file_and_schema(tmp_path):
     path = tmp_path / "subdir" / "queue.db"
-    connection = await open_queue(path)
+    eng = await open_queue(QueueConfig(path=path))
     try:
         assert path.exists()
-        cursor = await connection.execute("SELECT version FROM schema_version")
-        row = await cursor.fetchone()
-        assert row is not None
+        async with eng.connect() as conn:
+            version = (
+                await conn.execute(sa.text("SELECT version FROM schema_version"))
+            ).scalar()
+        assert version is not None
     finally:
-        await connection.close()
+        await eng.dispose()
 
 
 @pytest.mark.asyncio
-async def test_dlq_view_exposes_dead_jobs(conn, jobs):
-    job = await jobs.enqueue("s", "u", JobOp.UPSERT)
-    claimed = await jobs.claim_next("w")
-    assert claimed is not None
-    await jobs.mark_dead(job.id, "permanent", "w")
+async def test_make_engine_postgres_is_pre_ping():
+    """The Postgres branch builds a pre-ping engine without connecting."""
+    engine = make_engine(QueueConfig(dburi="postgresql+asyncpg://u:p@localhost/db"))
+    try:
+        assert engine.dialect.name == "postgresql"
+        assert engine.pool._pre_ping is True
+    finally:
+        await engine.dispose()
 
-    cursor = await conn.execute("SELECT id FROM dlq")
-    rows = await cursor.fetchall()
-    assert [r["id"] for r in rows] == [job.id]
+
+def test_insert_uses_dialect_specific_construct():
+    """_insert dispatches to the dialect's INSERT (which exposes on_conflict_*)."""
+    from sqlalchemy.dialects.postgresql import Insert as PostgresInsert
+    from sqlalchemy.dialects.sqlite import Insert as SqliteInsert
+
+    assert isinstance(_insert(jobs_table, "postgresql"), PostgresInsert)
+    assert isinstance(_insert(jobs_table, "sqlite"), SqliteInsert)
+
+
+@pytest.mark.asyncio
+async def test_open_queue_handles_path_with_url_chars(tmp_path):
+    """A `?` (or `#`) is a valid POSIX filename char but has URL meaning.
+    The queue must open the literal file, not a truncated one."""
+    path = tmp_path / "queue?weird.db"
+    eng = await open_queue(QueueConfig(path=path))
+    try:
+        assert path.exists()
+        assert not (tmp_path / "queue").exists()
+    finally:
+        await eng.dispose()
 
 
 # --- enqueue ---
@@ -263,6 +266,43 @@ async def test_claim_next_atomic_under_concurrency(jobs):
     assert len(claimed) == 5
     assert len({c.id for c in claimed}) == 5
     assert {c.id for c in claimed} == {j.id for j in enqueued}
+
+
+@pytest.mark.asyncio
+async def test_claim_next_atomic_across_independent_engines(tmp_path):
+    """Two engines on one SQLite file stand in for two ingester processes.
+    The claim is a single UPDATE...WHERE id=(subquery), so it stays atomic
+    across connections — pool_size=1 only serializes within one engine."""
+    cfg = QueueConfig(path=tmp_path / "shared-queue.db")
+    engine_a = await open_queue(cfg)
+    engine_b = await open_queue(cfg)
+    try:
+        repo_a = JobRepo(engine_a)
+        repo_b = JobRepo(engine_b)
+
+        enqueued = []
+        for i in range(10):
+            job = await repo_a.enqueue("s", f"u{i}", JobOp.UPSERT)
+            assert job is not None
+            enqueued.append(job)
+
+        # Claims alternate across the two engines, contending on the same file.
+        results = await asyncio.gather(
+            *((repo_a if i % 2 == 0 else repo_b).claim_next(f"w{i}") for i in range(20))
+        )
+        claimed = [r for r in results if r is not None]
+
+        assert len(claimed) == 10
+        assert len({c.id for c in claimed}) == 10
+        assert {c.id for c in claimed} == {j.id for j in enqueued}
+        for job in enqueued:
+            refreshed = await repo_a.get_job(job.id)
+            assert refreshed is not None
+            assert refreshed.status is JobStatus.CLAIMED
+            assert refreshed.attempts == 1
+    finally:
+        await engine_a.dispose()
+        await engine_b.dispose()
 
 
 # --- terminal transitions ---
@@ -795,29 +835,6 @@ async def test_counts_by_source_groups_correctly(jobs):
 async def test_counts_by_source_no_statuses_returns_empty(jobs):
     await jobs.enqueue("s", "u", JobOp.UPSERT)
     assert await jobs.counts_by_source() == {}
-
-
-# --- cross-repo lock sharing ---
-
-
-def test_repos_share_lock_when_constructed_with_one(conn):
-    """JobRepo and SyncStateRepo wrap one shared aiosqlite.Connection in
-    production. They must accept and share a single asyncio.Lock so cross-
-    repo calls serialize at the cursor/commit boundary — otherwise a
-    SyncStateRepo.upsert cursor open while JobRepo.mark_succeeded tries
-    to commit would trip SQLite's 'SQL statements in progress' error."""
-    shared = asyncio.Lock()
-    j = JobRepo(conn, lock=shared)
-    s = SyncStateRepo(conn, lock=shared)
-    assert j._lock is s._lock is shared
-
-
-def test_repos_default_to_independent_locks_when_used_alone(conn):
-    """Backward-compat: a single-repo caller can still construct without
-    passing a lock and each repo creates its own."""
-    j = JobRepo(conn)
-    s = SyncStateRepo(conn)
-    assert j._lock is not s._lock
 
 
 # --- sync state ---

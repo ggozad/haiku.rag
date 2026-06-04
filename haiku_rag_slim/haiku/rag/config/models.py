@@ -260,11 +260,17 @@ class EvaluationsConfig(BaseModel):
 
 
 class QueueConfig(BaseModel):
-    """SQLite queue for the production ingester."""
+    """Job queue for the production ingester. Defaults to a filesystem SQLite
+    file; set `dburi` to point it at a database server instead."""
 
     path: Path = Field(
         default_factory=lambda: get_default_data_dir() / "ingester.db",
-        description="Location of the ingester's SQLite queue file.",
+        description="SQLite queue file. Used when dburi is unset.",
+    )
+    dburi: str | None = Field(
+        default=None,
+        description="SQLAlchemy async URL for the queue, e.g. "
+        "postgresql+asyncpg://user:pw@host/db. Overrides path when set.",
     )
     retention_days: int | None = Field(
         default=30,

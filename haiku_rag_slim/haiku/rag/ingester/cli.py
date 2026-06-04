@@ -4,11 +4,13 @@ from pathlib import Path
 
 import typer
 from dotenv import find_dotenv, load_dotenv
+from sqlalchemy import make_url
 
 load_dotenv(find_dotenv(usecwd=True))
 
 from haiku.rag.config import (  # noqa: E402
     AppConfig,
+    QueueConfig,
     find_config_file,
     get_config,
     load_yaml_config,
@@ -60,7 +62,7 @@ def cli() -> None:
 queue_cli = typer.Typer(
     name="queue",
     no_args_is_help=True,
-    help="Operate the ingester's SQLite job queue.",
+    help="Operate the ingester's job queue.",
 )
 _cli.add_typer(queue_cli)
 
@@ -79,13 +81,26 @@ def _load_config_with_override(config_path: Path | None) -> AppConfig:
     return get_config()
 
 
-def _resolve_queue_path(config: AppConfig, override: Path | None) -> Path:
-    return Path(override).expanduser() if override else config.ingester.queue.path
+def _resolve_queue_config(config: AppConfig, override: Path | None) -> QueueConfig:
+    """The configured queue, with `--queue` applied as a path override. The
+    override is ignored when a dburi is set — the queue lives in a server."""
+    queue = config.ingester.queue
+    if override is not None and queue.dburi is None:
+        return queue.model_copy(update={"path": Path(override).expanduser()})
+    return queue
 
 
-async def _ensure_schema(path: Path) -> None:
-    conn = await open_queue(path)
-    await conn.close()
+def _queue_target(queue: QueueConfig) -> str:
+    """A display string for the queue location, with any dburi password
+    masked so it isn't echoed to the terminal or logs."""
+    if queue.dburi:
+        return make_url(queue.dburi).render_as_string(hide_password=True)
+    return str(queue.path)
+
+
+async def _ensure_schema(queue: QueueConfig) -> None:
+    engine = await open_queue(queue)
+    await engine.dispose()
 
 
 @queue_cli.command("init")
@@ -98,9 +113,9 @@ def queue_init(
     ),
 ) -> None:
     """Create the queue DB and apply the current schema. Idempotent."""
-    path = _resolve_queue_path(get_config(), queue)
-    asyncio.run(_ensure_schema(path))
-    typer.echo(f"Queue initialized at {path}")
+    queue_config = _resolve_queue_config(get_config(), queue)
+    asyncio.run(_ensure_schema(queue_config))
+    typer.echo(f"Queue initialized at {_queue_target(queue_config)}")
 
 
 @queue_cli.command("migrate")
@@ -113,9 +128,9 @@ def queue_migrate(
     ),
 ) -> None:
     """Apply any pending schema migrations to an existing queue DB. Idempotent."""
-    path = _resolve_queue_path(get_config(), queue)
-    asyncio.run(_ensure_schema(path))
-    typer.echo(f"Queue at {path} is up to date")
+    queue_config = _resolve_queue_config(get_config(), queue)
+    asyncio.run(_ensure_schema(queue_config))
+    typer.echo(f"Queue at {_queue_target(queue_config)} is up to date")
 
 
 def _resolve_db_path(config: AppConfig, override: Path | None) -> Path:

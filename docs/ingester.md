@@ -2,8 +2,9 @@
 
 The ingester is a long-running service that watches sources for
 changes and feeds documents into haiku.rag's LanceDB. It runs as a
-separate process (`haiku-ingester serve`), owns its own SQLite job
-queue, and exposes a small HTTP control plane for operations.
+separate process (`haiku-ingester serve`), owns its own job queue
+(SQLite by default, or a database server), and exposes a small HTTP
+control plane for operations.
 
 Use the ingester when:
 
@@ -37,8 +38,8 @@ pip install 'haiku.rag-slim[ingester]'
 pip install 'haiku.rag[ingester]'
 ```
 
-That pulls `fastapi`, `uvicorn`, `aiosqlite`, and the `[s3]` extra.
-The production binary is `haiku-ingester`.
+That pulls `fastapi`, `uvicorn`, `sqlalchemy`, `aiosqlite`, `asyncpg`, and
+the `[s3]` extra. The production binary is `haiku-ingester`.
 
 ## Configure sources
 
@@ -371,6 +372,33 @@ ingester:
 The reaper deletes terminal rows whose `completed_at` is older than the window
 on its `reaper_interval_s` cadence. Set `retention_days: null` to keep all
 terminal rows.
+
+#### Using a database server
+
+If you already run a database server, point the queue at it with
+`ingester.queue.dburi`, a SQLAlchemy async URL. SQLite is used when `dburi` is
+unset.
+
+```yaml
+ingester:
+  queue:
+    dburi: postgresql+asyncpg://haiku:secret@db:5432/haiku_rag
+```
+
+Postgres (`postgresql+asyncpg://`) is supported alongside the default SQLite.
+The `asyncpg` driver ships with the `[ingester]` extra. `dburi` overrides
+`path`, and the `--queue` CLI flag is ignored while it is set. Create the schema
+the same way as for SQLite:
+
+```bash
+haiku-ingester queue init
+```
+
+Workers claim jobs with `FOR UPDATE SKIP LOCKED`, so several `haiku-ingester
+serve` processes can share one Postgres queue and scale out horizontally. One
+caveat: idle workers wake on new work instantly only within their own process.
+Workers in other processes pick up enqueued jobs on their next
+`poll_idle_interval_s` tick rather than immediately.
 
 ### Logs
 

@@ -23,6 +23,8 @@ import pydantic_ai.models  # noqa: E402
 import pytest  # noqa: E402
 import yaml  # noqa: E402
 
+from .services import reachable  # noqa: E402
+
 if TYPE_CHECKING:
     from vcr import VCR
 
@@ -148,3 +150,42 @@ def doclaynet_first_page_pdf(tmp_path_factory) -> Path:
     finally:
         src.close()
     return out_path
+
+
+# --- external services for integration tests ---
+#
+# Integration tests (marked `integration`, excluded in CI via `-m "not
+# integration"`) need external services. Bring them up with
+#   docker compose -f tests/docker/docker-compose.yml up -d
+# These fixtures hand the test a connection URL when the service is reachable
+# (or when the matching env var points at an external instance), and skip the
+# test otherwise.
+
+_COMPOSE_HINT = (
+    "start it with `docker compose -f tests/docker/docker-compose.yml up -d`"
+)
+
+
+@pytest.fixture(scope="session")
+def postgres_dburi() -> str:
+    """A reachable Postgres queue URL. Uses HAIKU_RAG_TEST_PG_DBURI when set,
+    otherwise the docker-compose `postgres` service. Skips when neither is up."""
+    override = os.environ.get("HAIKU_RAG_TEST_PG_DBURI")
+    if override:
+        return override
+    if not reachable("localhost", 55432):
+        pytest.skip(f"Postgres not reachable on localhost:55432 — {_COMPOSE_HINT}")
+    return "postgresql+asyncpg://haiku:secret@localhost:55432/haiku_rag_test"
+
+
+@pytest.fixture(scope="session")
+def docling_serve_url() -> str:
+    """A reachable docling-serve base URL. Uses HAIKU_RAG_TEST_DOCLING_SERVE_URL
+    when set, otherwise the docker-compose `docling-serve` service. Skips when
+    neither is up."""
+    override = os.environ.get("HAIKU_RAG_TEST_DOCLING_SERVE_URL")
+    if override:
+        return override
+    if not reachable("localhost", 5001):
+        pytest.skip(f"docling-serve not reachable on localhost:5001 — {_COMPOSE_HINT}")
+    return "http://localhost:5001"
