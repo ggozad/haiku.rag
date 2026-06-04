@@ -365,18 +365,23 @@ async def run_qa_benchmark(
     _attach_relevant_uris(cases, spec, limit)
     citation_evaluator = _citation_evaluator_for(spec.retrieval_evaluator)
 
-    evaluators: list[Evaluator] = [
-        LLMJudge(
-            rubric=ANSWER_EQUIVALENCE_RUBRIC,
-            include_input=True,
-            include_expected_output=True,
-            model=get_model(judge_config, config),
-            assertion={
-                "evaluation_name": "answer_equivalent",
-                "include_reason": True,
-            },
-        ),
-    ]
+    qa_evaluator = spec.qa_evaluator
+    evaluators: list[Evaluator]
+    if qa_evaluator is not None:
+        evaluators = [qa_evaluator]
+    else:
+        evaluators = [
+            LLMJudge(
+                rubric=ANSWER_EQUIVALENCE_RUBRIC,
+                include_input=True,
+                include_expected_output=True,
+                model=get_model(judge_config, config),
+                assertion={
+                    "evaluation_name": "answer_equivalent",
+                    "include_reason": True,
+                },
+            ),
+        ]
     if citation_evaluator is not None:
         evaluators.append(citation_evaluator)
 
@@ -419,17 +424,28 @@ async def run_qa_benchmark(
 
     report = await _evaluate(answer_question)
 
-    passing_cases = sum(
-        1
-        for case in report.cases
-        if case.assertions.get("answer_equivalent")
-        and case.assertions["answer_equivalent"].value
-    )
     total_processed = len(report.cases)
     failures = report.failures
+    if qa_evaluator is not None:
+        score_key = qa_evaluator.get_default_evaluation_name()
+        passing_cases = sum(
+            1
+            for case in report.cases
+            if score_key in case.scores and case.scores[score_key].value >= 1.0
+        )
+        scoring = score_key
+    else:
+        passing_cases = sum(
+            1
+            for case in report.cases
+            if case.assertions.get("answer_equivalent")
+            and case.assertions["answer_equivalent"].value
+        )
+        scoring = "answer_equivalent"
     accuracy = passing_cases / total_processed if total_processed > 0 else 0
 
     console.print("\n=== QA Benchmark Results ===", style="bold cyan")
+    console.print(f"Scoring: {scoring}")
     console.print(f"Total questions: {total_processed}")
     console.print(f"Correct answers: {passing_cases}")
     console.print(f"QA Accuracy: {accuracy:.4f} ({accuracy * 100:.2f}%)")

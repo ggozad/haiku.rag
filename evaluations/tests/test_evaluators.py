@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from evaluations.evaluators.map import MAPEvaluator
+from evaluations.evaluators.number_match import NumberMatchEvaluator
 
 
 class TestMAPEvaluator:
@@ -54,3 +55,41 @@ class TestMAPEvaluator:
     def test_empty_relevant_uris(self) -> None:
         ctx = self._make_ctx([], ["doc1", "doc2"])
         assert self.evaluator.evaluate(ctx) == 0.0
+
+
+class TestNumberMatchEvaluator:
+    def setup_method(self) -> None:
+        self.evaluator = NumberMatchEvaluator()
+
+    def _make_ctx(self, expected: str, output: str) -> MagicMock:
+        ctx = MagicMock()
+        ctx.expected_output = expected
+        ctx.output = output
+        return ctx
+
+    def test_exact(self) -> None:
+        assert self.evaluator.evaluate(self._make_ctx("127.4", "127.4")) == 1.0
+
+    def test_within_tolerance(self) -> None:
+        ctx = self._make_ctx("127.4", "about $127.40 per transaction")
+        assert self.evaluator.evaluate(ctx) == 1.0
+
+    def test_outside_tolerance(self) -> None:
+        ctx = self._make_ctx("127.4", "the answer is 150")
+        assert self.evaluator.evaluate(ctx) == 0.0
+
+    def test_picks_matching_candidate_among_many(self) -> None:
+        ctx = self._make_ctx("50.3", "In 2008 it grew from 27.0 to 50.3 percent")
+        assert self.evaluator.evaluate(ctx) == 1.0
+
+    def test_non_numeric_prediction(self) -> None:
+        ctx = self._make_ctx("127.4", "I cannot determine the value")
+        assert self.evaluator.evaluate(ctx) == 0.0
+
+    def test_non_numeric_gold(self) -> None:
+        ctx = self._make_ctx("not a number", "127.4")
+        assert self.evaluator.evaluate(ctx) == 0.0
+
+    def test_negative_match(self) -> None:
+        ctx = self._make_ctx("-12.3", "the change was (12.3)")
+        assert self.evaluator.evaluate(ctx) == 1.0

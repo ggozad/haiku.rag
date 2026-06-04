@@ -10,7 +10,7 @@ from huggingface_hub import hf_hub_download
 from pydantic_evals import Case
 
 from evaluations.config import DatasetSpec, DocumentPayload, RetrievalSample
-from evaluations.evaluators import MAPEvaluator
+from evaluations.evaluators import MAPEvaluator, NumberMatchEvaluator
 
 REPO_ID = "G4KMU/t2-ragbench"
 SPLITS = ("dev", "test", "train")
@@ -134,6 +134,7 @@ def _t2_spec(subset: str, key: str, db_filename: str) -> DatasetSpec:
         retrieval_loader=partial(load_t2_qa, subset),
         retrieval_mapper=map_t2_retrieval,
         retrieval_evaluator=MAPEvaluator(),
+        qa_evaluator=NumberMatchEvaluator(),
     )
 
 

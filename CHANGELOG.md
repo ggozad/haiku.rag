@@ -3,7 +3,7 @@
 
 ### Added
 
-- `t2_finqa` evaluation dataset (T²-RAGBench FinQA subset, `G4KMU/t2-ragbench`): 2,789 single-page PDFs / 8,281 numeric QA, ingested via docling with `uri = context_id` and gold retrieval keyed on `context_id`.
+- `t2_finqa` evaluation dataset (T²-RAGBench FinQA subset, `G4KMU/t2-ragbench`): 2,789 single-page PDFs / 8,281 numeric QA, ingested via docling with `uri = context_id` and gold retrieval keyed on `context_id`. QA is scored with a deterministic `NumberMatchEvaluator` (relative tolerance 0.01) via the new `DatasetSpec.qa_evaluator`, bypassing the LLM judge.
 
 ### Fixed
 
