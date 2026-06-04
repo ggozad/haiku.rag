@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- Analysis sandbox supports `open()` and `with` blocks for reading document files, including `.read()`, `.readline()`, and `.readlines()`.
+
 ### Changed
 
 - `pydantic-monty` bumped to `>=0.0.18`.
