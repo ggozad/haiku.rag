@@ -101,3 +101,36 @@ class TestNumberMatchEvaluator:
     def test_negative_match(self) -> None:
         ctx = self._make_ctx("-12.3", "the change was (12.3)")
         assert self.evaluator.evaluate(ctx) == 1.0
+
+    def test_sign_insensitive_against_inconsistent_gold(self) -> None:
+        # gold stores this decrease as +0.2; model declares the signed -0.2
+        ctx = self._make_ctx("0.1999999999999993", "declined 0.2 pp\nANSWER: -0.2")
+        assert self.evaluator.evaluate(ctx) == 1.0
+
+    def test_bare_percent_matches_decimal_gold(self) -> None:
+        # model declares the percentage without a % sign; gold is the decimal
+        ctx = self._make_ctx("0.3781", "growth was 37.81%\nANSWER: 37.81")
+        assert self.evaluator.evaluate(ctx) == 1.0
+
+    def test_scale_mismatch_does_not_flip_genuine_error(self) -> None:
+        ctx = self._make_ctx("30.443", "ANSWER: 2330.8%")
+        assert self.evaluator.evaluate(ctx) == 0.0
+
+    def test_answer_line_ignores_reasoning_distractors(self) -> None:
+        # gold matches a distractor in the body, but the declared answer is wrong
+        ctx = self._make_ctx(
+            "0.728",
+            "Finished goods were 72.8% of inventory.\nANSWER: 82.8%",
+        )
+        assert self.evaluator.evaluate(ctx) == 0.0
+
+    def test_answer_line_used_when_correct(self) -> None:
+        ctx = self._make_ctx(
+            "0.935",
+            "The graph shows growth to 193.5.\n\nANSWER: 93.5%",
+        )
+        assert self.evaluator.evaluate(ctx) == 1.0
+
+    def test_falls_back_to_full_text_without_answer_line(self) -> None:
+        ctx = self._make_ctx("127.4", "The average works out to $127.40 each.")
+        assert self.evaluator.evaluate(ctx) == 1.0
