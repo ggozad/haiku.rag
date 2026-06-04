@@ -11,6 +11,8 @@ services:
       - "5001:5001"  # exposed on the host for ad-hoc debugging (5001)
     environment:
       - DOCLING_SERVE_ENABLE_UI=1
+      # Allow remote VLM calls (picture descriptions via an external model API).
+      - DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
@@ -27,6 +29,8 @@ services:
       - "5002:5001"  # host 5002 → container 5001 (debug only)
     environment:
       - DOCLING_SERVE_ENABLE_UI=1
+      # Allow remote VLM calls (picture descriptions via an external model API).
+      - DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5001/health"]

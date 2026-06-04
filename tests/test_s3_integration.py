@@ -1,9 +1,8 @@
-# Start SeaweedFS before running:
-#   docker compose -f tests/docker/docker-compose.s3.yml up -d
+# Start the services before running:
+#   docker compose -f tests/docker/docker-compose.yml up -d
 # Stop after:
-#   docker compose -f tests/docker/docker-compose.s3.yml down -v
+#   docker compose -f tests/docker/docker-compose.yml down -v
 
-import socket
 from uuid import uuid4
 
 import pytest
@@ -12,6 +11,7 @@ from haiku.rag.app import HaikuRAGApp
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig, LanceDBConfig
 from haiku.rag.store.engine import Store
+from tests.services import reachable
 
 S3_ENDPOINT = "http://localhost:8333"
 S3_BUCKET = "test-bucket"
@@ -24,19 +24,11 @@ S3_STORAGE_OPTIONS = {
 }
 
 
-def _s3_available() -> bool:
-    try:
-        s = socket.create_connection(("localhost", 8333), timeout=1)
-        s.close()
-        return True
-    except OSError:
-        return False
-
-
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(
-        not _s3_available(), reason="SeaweedFS not running on localhost:8333"
+        not reachable("localhost", 8333),
+        reason="SeaweedFS not running on localhost:8333",
     ),
 ]
 

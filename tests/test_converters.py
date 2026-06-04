@@ -1339,6 +1339,21 @@ class TestDoclingServeConverterPictureDescription:
             assert "picture_description_api" not in data
 
 
+async def _skip_without_ollama_model(model: str) -> None:
+    """Skip when the host Ollama isn't serving `model`. docling-serve calls it
+    for VLM picture descriptions, so without it the test would fail with an
+    opaque error from inside the container rather than skip."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get("http://localhost:11434/api/tags")
+            response.raise_for_status()
+            names = [m["name"] for m in response.json().get("models", [])]
+    except Exception as exc:  # noqa: BLE001
+        pytest.skip(f"Ollama not reachable on localhost:11434 ({exc})")
+    if not any(name == model or name.startswith(f"{model}:") for name in names):
+        pytest.skip(f"Ollama model '{model}' not pulled (run `ollama pull {model}`)")
+
+
 class TestDoclingServeConverterIntegration:
     """Integration tests with real docling-serve recorded via VCR."""
 
@@ -1379,12 +1394,14 @@ class TestDoclingServeConverterIntegration:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_picture_description_end_to_end(
-        self, config, doclaynet_first_page_pdf
+        self, config, docling_serve_url, doclaynet_first_page_pdf
     ):
         """End-to-end test: convert PDF with VLM picture descriptions via docling-serve.
 
         Note: Not using VCR because this test involves polling with changing task IDs.
         """
+        await _skip_without_ollama_model("ministral-3")
+        config.providers.docling_serve.base_url = docling_serve_url
         pdf_path = doclaynet_first_page_pdf
         config.processing.pictures = "description"
         config.processing.conversion_options.picture_description.model.provider = (
