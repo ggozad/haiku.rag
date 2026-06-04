@@ -13,7 +13,23 @@ from evaluations.config import DatasetSpec, DocumentPayload, RetrievalSample
 from evaluations.evaluators import MAPEvaluator, NumberMatchEvaluator
 
 REPO_ID = "G4KMU/t2-ragbench"
-SPLITS = ("dev", "test", "train")
+
+# Per-subset layout: which metadata files hold the rows, and the repo prefix the
+# PDF lives under ({split} is filled from the row).
+_SUBSETS: dict[str, dict[str, Any]] = {
+    "FinQA": {
+        "metadata": tuple(
+            f"data/FinQA/{s}/metadata.jsonl" for s in ("dev", "test", "train")
+        ),
+        "pdf_prefix": "data/FinQA/{split}/",
+    },
+    "TAT-DQA": {
+        "metadata": tuple(
+            f"data/TAT-DQA/{s}/metadata.jsonl" for s in ("dev", "test", "train")
+        ),
+        "pdf_prefix": "data/TAT-DQA/{split}/",
+    },
+}
 
 
 def get_cache_dir() -> Path:
@@ -31,12 +47,8 @@ def _load_rows(subset: str) -> list[dict[str, Any]]:
         return cached
 
     rows: list[dict[str, Any]] = []
-    for split in SPLITS:
-        path = hf_hub_download(
-            REPO_ID,
-            f"data/{subset}/{split}/metadata.jsonl",
-            repo_type="dataset",
-        )
+    for metadata_file in _SUBSETS[subset]["metadata"]:
+        path = hf_hub_download(REPO_ID, metadata_file, repo_type="dataset")
         with open(path) as f:
             for line in f:
                 if not line.strip():
@@ -54,11 +66,8 @@ def download_t2_pdf(subset: str, split: str, file_name: str) -> Path:
     if dest.exists():
         return dest
 
-    src = hf_hub_download(
-        REPO_ID,
-        f"data/{subset}/{split}/{file_name}",
-        repo_type="dataset",
-    )
+    repo_path = _SUBSETS[subset]["pdf_prefix"].format(split=split) + file_name
+    src = hf_hub_download(REPO_ID, repo_path, repo_type="dataset")
     shutil.copyfile(src, dest)
     return dest
 
@@ -142,4 +151,10 @@ T2_FINQA_SPEC = _t2_spec(
     subset="FinQA",
     key="t2_finqa",
     db_filename="t2_ragbench_finqa.lancedb",
+)
+
+T2_TATDQA_SPEC = _t2_spec(
+    subset="TAT-DQA",
+    key="t2_tatdqa",
+    db_filename="t2_ragbench_tatdqa.lancedb",
 )

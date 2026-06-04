@@ -271,6 +271,36 @@ class TestT2RAGBench:
         assert out.read_bytes() == b"%PDF-fake"
         assert out.name == "FinQA_dev_pdf_V_2008_page_17.pdf"
 
+    def test_pdf_repo_path_per_subset(self, tmp_path: Path) -> None:
+        from unittest.mock import patch
+
+        blob = tmp_path / "blob"
+        blob.write_bytes(b"%PDF-fake")
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        cases = [
+            (
+                "FinQA",
+                "dev",
+                "pdf/V/2008/page_17.pdf",
+                "data/FinQA/dev/pdf/V/2008/page_17.pdf",
+            ),
+            ("TAT-DQA", "dev", "raw/abc123.pdf", "data/TAT-DQA/dev/raw/abc123.pdf"),
+        ]
+        for subset, split, file_name, expected_repo_path in cases:
+            with (
+                patch(
+                    "evaluations.datasets.t2_ragbench.get_cache_dir",
+                    return_value=cache,
+                ),
+                patch(
+                    "evaluations.datasets.t2_ragbench.hf_hub_download",
+                    return_value=str(blob),
+                ) as dl,
+            ):
+                download_t2_pdf(subset, split, file_name)
+            assert dl.call_args.args[1] == expected_repo_path
+
     def test_load_corpus_dedupes_by_context_id(self) -> None:
         from unittest.mock import patch
 
