@@ -42,6 +42,7 @@ def extract_numbers(text: str) -> list[float]:
     parenthesised negatives. Numbers qualified by a scale word ("1.2 million")
     contribute both the raw and the scaled value, so either phrasing can match.
     """
+    text = text.replace("−", "-")  # normalize the typographic minus sign
     numbers: list[float] = []
     for token in _NUMBER_RE.findall(text):
         value = _to_float(token)

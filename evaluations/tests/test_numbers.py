@@ -14,6 +14,9 @@ class TestExtractNumbers:
     def test_parenthesised_negative(self) -> None:
         assert extract_numbers("loss of (123)") == [-123.0]
 
+    def test_unicode_minus(self) -> None:
+        assert extract_numbers("a change of −1.9 million") == [-1.9, -1.9e6]
+
     def test_scale_word_adds_scaled_and_raw(self) -> None:
         numbers = extract_numbers("revenue of 1.2 billion")
         assert 1.2 in numbers
