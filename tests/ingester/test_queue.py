@@ -5,9 +5,14 @@ import pytest
 import sqlalchemy as sa
 
 from haiku.rag.config import QueueConfig
-from haiku.rag.ingester.queue.migrations import apply_migrations, open_queue
+from haiku.rag.ingester.queue.db import jobs as jobs_table
+from haiku.rag.ingester.queue.migrations import (
+    apply_migrations,
+    make_engine,
+    open_queue,
+)
 from haiku.rag.ingester.queue.models import JobOp, JobStatus, SyncRow
-from haiku.rag.ingester.queue.repository import JobRepo
+from haiku.rag.ingester.queue.repository import JobRepo, _insert
 
 # --- migrations / schema ---
 
@@ -42,6 +47,26 @@ async def test_open_queue_creates_file_and_schema(tmp_path):
         assert version is not None
     finally:
         await eng.dispose()
+
+
+@pytest.mark.asyncio
+async def test_make_engine_postgres_is_pre_ping():
+    """The Postgres branch builds a pre-ping engine without connecting."""
+    engine = make_engine(QueueConfig(dburi="postgresql+asyncpg://u:p@localhost/db"))
+    try:
+        assert engine.dialect.name == "postgresql"
+        assert engine.pool._pre_ping is True
+    finally:
+        await engine.dispose()
+
+
+def test_insert_uses_dialect_specific_construct():
+    """_insert dispatches to the dialect's INSERT (which exposes on_conflict_*)."""
+    from sqlalchemy.dialects.postgresql import Insert as PostgresInsert
+    from sqlalchemy.dialects.sqlite import Insert as SqliteInsert
+
+    assert isinstance(_insert(jobs_table, "postgresql"), PostgresInsert)
+    assert isinstance(_insert(jobs_table, "sqlite"), SqliteInsert)
 
 
 @pytest.mark.asyncio

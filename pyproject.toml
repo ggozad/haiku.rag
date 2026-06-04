@@ -135,6 +135,10 @@ filterwarnings = ["error", "ignore::UserWarning", "ignore::DeprecationWarning"]
 
 [tool.coverage.run]
 source = ["haiku_rag_slim"]
+# aiosqlite runs sqlite (and the queue's PRAGMA connect listener) off the main
+# flow via a greenlet + worker thread; track both so that code isn't reported
+# as uncovered.
+concurrency = ["greenlet", "thread"]
 omit = [
     "haiku_rag_slim/haiku/rag/chat/*",
     "haiku_rag_slim/haiku/rag/inspector/*",
