@@ -17,7 +17,9 @@ def make_engine(config: QueueConfig) -> AsyncEngine:
     """Build the queue's AsyncEngine from config. Uses `dburi` when set,
     otherwise a `sqlite+aiosqlite` URL pointing at the resolved `path`
     (creating the parent directory). SQLite is capped to a single pooled
-    connection so the two-statement claim stays atomic without row locks."""
+    connection so the claim stays atomic without row locks; Postgres uses
+    pool_pre_ping so a long-running ingester survives a DB restart or idle
+    connection drop."""
     if config.dburi:
         url = make_url(config.dburi)
     else:
@@ -28,7 +30,7 @@ def make_engine(config: QueueConfig) -> AsyncEngine:
     if url.get_backend_name() == "sqlite":
         engine = create_async_engine(url, pool_size=1, max_overflow=0)
     else:
-        engine = create_async_engine(url)
+        engine = create_async_engine(url, pool_pre_ping=True)
     install_sqlite_pragmas(engine)
     return engine
 
