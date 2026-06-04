@@ -44,6 +44,19 @@ async def test_open_queue_creates_file_and_schema(tmp_path):
         await eng.dispose()
 
 
+@pytest.mark.asyncio
+async def test_open_queue_handles_path_with_url_chars(tmp_path):
+    """A `?` (or `#`) is a valid POSIX filename char but has URL meaning.
+    The queue must open the literal file, not a truncated one."""
+    path = tmp_path / "queue?weird.db"
+    eng = await open_queue(QueueConfig(path=path))
+    try:
+        assert path.exists()
+        assert not (tmp_path / "queue").exists()
+    finally:
+        await eng.dispose()
+
+
 # --- enqueue ---
 
 

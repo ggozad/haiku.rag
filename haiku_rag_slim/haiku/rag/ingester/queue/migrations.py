@@ -1,5 +1,5 @@
 import sqlalchemy as sa
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from haiku.rag.config.models import QueueConfig
@@ -25,7 +25,9 @@ def make_engine(config: QueueConfig) -> AsyncEngine:
     else:
         path = config.path.expanduser().resolve()
         path.parent.mkdir(parents=True, exist_ok=True)
-        url = make_url(f"sqlite+aiosqlite:///{path}")
+        # URL.create keeps the path literal — building a string and reparsing
+        # would treat `?`/`#` in the filename as query/fragment.
+        url = URL.create("sqlite+aiosqlite", database=str(path))
 
     if url.get_backend_name() == "sqlite":
         engine = create_async_engine(url, pool_size=1, max_overflow=0)
