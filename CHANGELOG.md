@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- `pydantic-monty` bumped to `>=0.0.18`.
+
 ## [0.54.0] - 2026-06-04
 
 ### Added
