@@ -33,13 +33,14 @@ class NumberMatchEvaluator(Evaluator):
         gold = extract_numbers(str(ctx.expected_output))
         if not gold:
             return 0.0
-        # Gold mixes conventions: signs for changes are inconsistent (+0.2 vs
-        # -1.9) and ratios appear as either a percent (37.81) or a decimal
-        # (0.3781). Compare the declared answer by magnitude, at a ×100 scale
-        # either way. Safe because we score only the single ANSWER-line number.
+        # Gold mixes conventions: change signs are inconsistent (+0.2 vs -1.9),
+        # ratios appear as a percent or a decimal (37.81 vs 0.3781), and figures
+        # appear in units or thousands (4575515 vs 4575515000). Compare the
+        # declared answer by magnitude at ×100 and ×1000 scales either way. Safe
+        # because we score only the single ANSWER-line number.
         target = abs(gold[0])
         candidates = [abs(c) for c in extract_numbers(_answer_segment(str(ctx.output)))]
-        scales = (1.0, 0.01, 100.0)
+        scales = (1.0, 0.01, 100.0, 0.001, 1000.0)
         matched = any(
             numbers_close(c * s, target, self.eps) for c in candidates for s in scales
         )

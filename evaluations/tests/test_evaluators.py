@@ -116,6 +116,17 @@ class TestNumberMatchEvaluator:
         ctx = self._make_ctx("30.443", "ANSWER: 2330.8%")
         assert self.evaluator.evaluate(ctx) == 0.0
 
+    def test_thousands_convention(self) -> None:
+        # gold is in thousands; model gives the full-dollar figure
+        ctx = self._make_ctx("4575515.0", "...\nANSWER: 4575515000")
+        assert self.evaluator.evaluate(ctx) == 1.0
+
+    def test_thousands_convention_reversed(self) -> None:
+        ctx = self._make_ctx(
+            "46.30434782608695", "fair value per share\nANSWER: 46304.35"
+        )
+        assert self.evaluator.evaluate(ctx) == 1.0
+
     def test_answer_line_ignores_reasoning_distractors(self) -> None:
         # gold matches a distractor in the body, but the declared answer is wrong
         ctx = self._make_ctx(
