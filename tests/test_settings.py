@@ -216,3 +216,25 @@ class TestValidateConfigCompatibility:
 
             assert "vector dimension" in str(exc_info.value)
             assert "9999" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_vector_dim_mismatch_raises_error_read_only(self, temp_db_path):
+        """vector_dim mismatch raises even read-only — search cannot work."""
+        from haiku.rag.store.engine import Store
+        from haiku.rag.store.repositories.settings import SettingsRepository
+
+        async with Store(temp_db_path, create=True):
+            pass
+
+        new_config = AppConfig()
+        new_config.embeddings.model.vector_dim = 9999
+
+        async with Store(
+            temp_db_path, config=new_config, skip_validation=True, read_only=True
+        ) as store2:
+            settings_repo = SettingsRepository(store2)
+
+            with pytest.raises(ConfigMismatchError) as exc_info:
+                await settings_repo.validate_config_compatibility()
+
+            assert "9999" in str(exc_info.value)
