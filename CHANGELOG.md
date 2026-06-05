@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.55.0] - 2026-06-05
+
 ### Added
 
 - `haiku-rag rebuild --set-embedder`: adopt the current embedder identity (provider/name) without re-embedding, when the vector dimension is unchanged.
@@ -1683,7 +1685,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.54.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.55.0...HEAD
+[0.55.0]: https://github.com/ggozad/haiku.rag/compare/0.54.0...0.55.0
 [0.54.0]: https://github.com/ggozad/haiku.rag/compare/0.53.0...0.54.0
 [0.53.0]: https://github.com/ggozad/haiku.rag/compare/0.52.0...0.53.0
 [0.52.0]: https://github.com/ggozad/haiku.rag/compare/0.51.0...0.52.0
