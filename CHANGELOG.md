@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- Analysis-skill `execute_code` document VFS reads (`content.txt`, `items.jsonl`, `toc.json`) run on the calling event loop through the skill's connection, instead of a separate connection on a background loop.
+
 ## [0.55.0] - 2026-06-05
 
 ### Added

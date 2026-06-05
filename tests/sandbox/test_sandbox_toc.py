@@ -7,6 +7,7 @@ list of siblings; HTML/markdown corpora with real heading hierarchy get a
 nested tree. Items with no section_header at all produce `tree: []`.
 """
 
+import asyncio
 import json
 from pathlib import PurePosixPath
 
@@ -56,15 +57,21 @@ def _header(
     )
 
 
-async def _read_toc(sandbox: Sandbox, doc_id: str) -> dict:
+async def _read_vfs_text(sandbox: Sandbox, path: str) -> str:
+    """Read a VFS file the way execute() does: the synchronous reader runs on a
+    worker thread and bridges DB access back to the (free) calling loop."""
     vfs = await sandbox._build_vfs()
-    raw = vfs.path_read_text(PurePosixPath(f"/documents/{doc_id}/toc.json"))
+    sandbox._loop = asyncio.get_running_loop()
+    return await asyncio.to_thread(vfs.path_read_text, PurePosixPath(path))
+
+
+async def _read_toc(sandbox: Sandbox, doc_id: str) -> dict:
+    raw = await _read_vfs_text(sandbox, f"/documents/{doc_id}/toc.json")
     return json.loads(raw)
 
 
 async def _read_items_jsonl(sandbox: Sandbox, doc_id: str) -> list[dict]:
-    vfs = await sandbox._build_vfs()
-    raw = vfs.path_read_text(PurePosixPath(f"/documents/{doc_id}/items.jsonl"))
+    raw = await _read_vfs_text(sandbox, f"/documents/{doc_id}/items.jsonl")
     return [json.loads(line) for line in raw.strip().splitlines()] if raw else []
 
 
