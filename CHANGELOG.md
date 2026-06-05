@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- Bump `haiku.skills>=0.17.2`: skill runs use a retry budget of 3 for tool calls and output validation (was 1).
+
 ### Added
 
 - `analysis.max_executions` (default 15): caps `execute_code` calls per analysis question. Past the cap the tool returns a notice telling the skill to answer from what it has, instead of spiralling into `request_limit` and returning nothing. The analysis skill sets `request_limit` to 30 as a backstop.
