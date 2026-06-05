@@ -37,6 +37,7 @@ The interpreter is [pydantic-monty](https://github.com/pydantic/monty), isolated
 - **Limited imports.** Only `json`, `re`, `math`, `pathlib`.
 - **Execution timeout** (default 60s, configurable via `analysis.code_timeout`).
 - **Output truncation** (default 50000 chars, configurable via `analysis.max_output_chars`).
+- **Execution budget** (default 15 calls, configurable via `analysis.max_executions`). Past the budget, `execute_code` returns a notice telling the skill to answer from what it has instead of running more code.
 
 Variables persist between `execute_code` calls within one invocation, so the agent can build state step by step. A fresh sandbox is built per `client.analyze` call.
 
@@ -190,6 +191,7 @@ analysis:
     name: claude-sonnet-4-20250514
   code_timeout: 60.0      # Max seconds per code execution
   max_output_chars: 50000 # Truncate output after this many chars
+  max_executions: 15      # Max execute_code calls per question
 ```
 
 When `analysis.model` is unset, the skill falls back to `qa.model`.

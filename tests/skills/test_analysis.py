@@ -55,6 +55,14 @@ class TestAnalysisSkillCreation:
         assert skill.metadata.description
         assert skill.instructions
 
+    def test_create_skill_sets_request_limit_backstop(
+        self, test_app_config, temp_db_path
+    ):
+        from haiku.rag.skills.analysis import create_skill
+
+        skill = create_skill(config=test_app_config, db_path=temp_db_path)
+        assert skill.request_limit == 30
+
     def test_create_skill_has_expected_tools(self, test_app_config, temp_db_path):
         from haiku.rag.skills.analysis import create_skill
 
@@ -147,6 +155,23 @@ class TestExecuteCodeTool:
         assert "Error" in result
         assert "ZeroDivisionError" in result
         assert state.executions[0].success is False
+
+    async def test_execute_code_rate_limited(self, rag_db, sandbox_factory):
+        from haiku.rag.skills.analysis import create_skill
+
+        config = AppConfig()
+        config.analysis.max_executions = 2
+        skill = create_skill(db_path=rag_db, config=config)
+        execute_code = _get_tool(skill, "execute_code")
+        state = AnalysisState()
+        ctx = _make_ctx(state, sandbox=sandbox_factory())
+
+        await execute_code(ctx, code="print('first')")
+        await execute_code(ctx, code="print('second')")
+        result = await execute_code(ctx, code="print('third')")
+        assert "limit reached" in result.lower()
+        assert ctx.deps.execute_count == 3
+        assert len(state.executions) == 2
 
     async def test_execute_code_applies_document_filter(self, rag_db, sandbox_factory):
         from haiku.rag.skills.analysis import create_skill
@@ -295,6 +320,7 @@ class TestAnalysisLifespan:
             assert deps.rag is not None
             assert deps.rag.is_read_only
             assert deps.search_count == 0
+            assert deps.execute_count == 0
             assert isinstance(deps.sandbox, Sandbox)
             docs = await deps.rag.list_documents()
             assert len(docs) == 2
@@ -310,6 +336,16 @@ class TestAnalysisLifespan:
         async with lifespan(deps):
             assert deps.sandbox is not None
             assert deps.sandbox._context.filter == "title = 'AI Overview'"
+
+    async def test_lifespan_resets_counts_per_invocation(self, rag_db):
+        from haiku.rag.skills._deps import AnalysisRunDeps, make_analysis_lifespan
+
+        config = AppConfig()
+        lifespan = make_analysis_lifespan(rag_db, config)
+        deps = AnalysisRunDeps(search_count=7, execute_count=42)
+        async with lifespan(deps):
+            assert deps.search_count == 0
+            assert deps.execute_count == 0
 
     async def test_skill_has_lifespan_and_deps_type(
         self, test_app_config, temp_db_path

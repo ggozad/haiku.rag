@@ -52,10 +52,12 @@ analysis:
     temperature: 0.0        # Default: 0.0 (deterministic for code generation)
   code_timeout: 60.0      # Max seconds for code execution
   max_output_chars: 50000 # Truncate output after this many chars
+  max_executions: 15      # Max execute_code calls per question
 ```
 
 - **model**: LLM configuration (see [Providers](providers.md#model-settings)). When unset, falls back to `qa.model`.
 - **code_timeout**: Maximum seconds for each code execution (default: 60)
 - **max_output_chars**: Truncate code output after this many characters (default: 50000)
+- **max_executions**: Maximum `execute_code` calls per question before the skill is told to answer from what it has (default: 15)
 
 See [Analysis skill](../skills/analysis.md) for usage details.
