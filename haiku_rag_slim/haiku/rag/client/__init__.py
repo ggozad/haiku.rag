@@ -49,6 +49,8 @@ class RebuildMode(Enum):
     TITLE_ONLY = "title_only"  # Only generate titles for untitled documents
     DESCRIPTIONS = "descriptions"  # Run the VLM over already-stored picture
     # bytes, patch descriptions into the docling blob, then re-chunk + re-embed.
+    SET_EMBEDDER = "set_embedder"  # Adopt the current embedder identity without
+    # re-embedding, when the vector dimension is unchanged.
 
 
 class HaikuRAG:

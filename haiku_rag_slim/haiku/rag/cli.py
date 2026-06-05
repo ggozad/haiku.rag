@@ -476,14 +476,23 @@ def rebuild(
             "parse entirely. Requires processing.pictures='description'."
         ),
     ),
+    set_embedder: bool = typer.Option(
+        False,
+        "--set-embedder",
+        help=(
+            "Adopt the current embedder identity without re-embedding, when the "
+            "vector dimension is unchanged. Use after swapping the serving stack "
+            "for the same model (e.g. Ollama to vLLM)."
+        ),
+    ),
 ):
     from haiku.rag.client import RebuildMode
 
-    exclusive = sum([embed_only, rechunk, title_only, descriptions])
+    exclusive = sum([embed_only, rechunk, title_only, descriptions, set_embedder])
     if exclusive > 1:
         typer.echo(
-            "Error: --embed-only, --rechunk, --title-only, and --descriptions "
-            "are mutually exclusive"
+            "Error: --embed-only, --rechunk, --title-only, --descriptions, and "
+            "--set-embedder are mutually exclusive"
         )
         raise typer.Exit(1)
 
@@ -495,6 +504,8 @@ def rebuild(
         mode = RebuildMode.TITLE_ONLY
     elif descriptions:  # pragma: no cover
         mode = RebuildMode.DESCRIPTIONS
+    elif set_embedder:  # pragma: no cover
+        mode = RebuildMode.SET_EMBEDDER
     else:  # pragma: no cover
         mode = RebuildMode.FULL
 

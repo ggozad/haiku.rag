@@ -1,9 +1,13 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- `haiku-rag rebuild --set-embedder`: adopt the current embedder identity (provider/name) without re-embedding, when the vector dimension is unchanged.
+
 ### Fixed
 
-- Opening a database no longer writes to it: reads no longer rewrite the stored embedding settings or change the stored version, and the version is never downgraded.
+- Opening a database no longer writes to it: reads no longer rewrite the stored embedding settings or change the stored version, and the version is never downgraded. Embedding provider/name drift (matching `vector_dim`) warns on read-only opens and raises `ConfigMismatchError` on writable opens; reconcile with `rebuild --set-embedder`.
 
 ## [0.54.0] - 2026-06-04
 

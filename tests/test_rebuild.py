@@ -960,3 +960,84 @@ async def test_rebuild_descriptions_raises_when_blob_is_missing(
         with pytest.raises(ValueError, match="rebuild --descriptions requires"):
             async for _ in rag.rebuild_database(mode=RebuildMode.DESCRIPTIONS):
                 pass
+
+
+async def _add_chunk(client: HaikuRAG, vector: list[float]) -> str:
+    """Insert a chunk row directly, bypassing the embedder."""
+    record = client.store.ChunkRecord(
+        id="chunk-1",
+        document_id="doc-1",
+        content="hello",
+        content_fts="hello",
+        metadata="{}",
+        order=0,
+        vector=vector,
+    )
+    await client.store.chunks_table.add([record])
+    return record.id
+
+
+async def _stored_embedding_name(client: HaikuRAG) -> str:
+    from haiku.rag.store.repositories.settings import SettingsRepository
+
+    settings = await SettingsRepository(client.store).get_current_settings()
+    return settings["embeddings"]["model"]["name"]
+
+
+async def test_rebuild_set_embedder_adopts_identity_without_reembedding(temp_db_path):
+    """SET_EMBEDDER updates stored embedder identity and leaves vectors untouched."""
+    from haiku.rag.config import AppConfig
+
+    dim = AppConfig().embeddings.model.vector_dim
+    sentinel = [0.5] * dim
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await _add_chunk(client, sentinel)
+
+    drift = AppConfig()
+    drift.embeddings.model.name = "different-model"
+
+    async with HaikuRAG(temp_db_path, config=drift, skip_validation=True) as client:
+        async for _ in client.rebuild_database(mode=RebuildMode.SET_EMBEDDER):
+            pass
+
+        assert await _stored_embedding_name(client) == "different-model"
+
+        rows = (await client.store.chunks_table.query().to_arrow()).to_pylist()
+        assert len(rows) == 1
+        assert rows[0]["vector"] == pytest.approx(sentinel)
+
+
+async def test_rebuild_set_embedder_works_on_empty_database(temp_db_path):
+    """SET_EMBEDDER reconciles even with no documents (preflight must be bypassed)."""
+    from haiku.rag.app import HaikuRAGApp
+    from haiku.rag.config import AppConfig
+
+    async with HaikuRAG(temp_db_path, create=True):
+        pass
+
+    drift = AppConfig()
+    drift.embeddings.model.name = "different-model"
+
+    app = HaikuRAGApp(db_path=temp_db_path, config=drift)
+    await app.rebuild(mode=RebuildMode.SET_EMBEDDER)
+
+    async with HaikuRAG(temp_db_path, config=drift, skip_validation=True) as client:
+        assert await _stored_embedding_name(client) == "different-model"
+
+
+async def test_rebuild_set_embedder_raises_on_vector_dim_mismatch(temp_db_path):
+    """SET_EMBEDDER refuses when the vector dimension changed — a full rebuild is needed."""
+    from haiku.rag.config import AppConfig
+    from haiku.rag.store.repositories.settings import ConfigMismatchError
+
+    async with HaikuRAG(temp_db_path, create=True):
+        pass
+
+    drift = AppConfig()
+    drift.embeddings.model.vector_dim = 9999
+
+    async with HaikuRAG(temp_db_path, config=drift, skip_validation=True) as client:
+        with pytest.raises(ConfigMismatchError):
+            async for _ in client.rebuild_database(mode=RebuildMode.SET_EMBEDDER):
+                pass

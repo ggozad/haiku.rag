@@ -72,6 +72,10 @@ async def rebuild_database(
     if mode is None:
         mode = RebuildMode.FULL
 
+    if mode == RebuildMode.SET_EMBEDDER:
+        await _set_embedder(client)
+        return
+
     # Resolve any leftover staging/marker tables from a previously
     # interrupted rebuild. Returns True only when phase 1 was already
     # complete and the current mode is EMBED_ONLY, in which case we resume
@@ -129,6 +133,29 @@ async def rebuild_database(
             await client.store.vacuum()
         except Exception:
             logger.warning("Post-rebuild vacuum failed", exc_info=True)
+
+
+async def _set_embedder(client: "HaikuRAG") -> None:
+    """Adopt the current embedder identity without re-embedding.
+
+    Only valid when the vector dimension is unchanged — the stored vectors stay
+    usable, so just the recorded provider/name are updated. A changed dimension
+    requires regenerating every embedding via a full rebuild.
+    """
+    from haiku.rag.store.repositories.settings import ConfigMismatchError
+
+    settings_repo = SettingsRepository(client.store)
+    stored = await settings_repo.get_current_settings()
+    stored_dim = stored.get("embeddings", {}).get("model", {}).get("vector_dim")
+    current_dim = client._config.embeddings.model.vector_dim
+
+    if stored_dim is not None and current_dim != stored_dim:
+        raise ConfigMismatchError(
+            f"Stored vector dimension {stored_dim} differs from current "
+            f"{current_dim}; embeddings must be regenerated. Run 'haiku-rag rebuild'."
+        )
+
+    await settings_repo.save_current_settings()
 
 
 async def _hydrate(

@@ -506,6 +506,14 @@ class HaikuRAGApp:  # pragma: no cover
             read_only=self.read_only,
             before=self.before,
         ) as client:
+            if mode == RebuildMode.SET_EMBEDDER:
+                async for _ in client.rebuild_database(mode=mode):
+                    pass
+                self.console.print(
+                    "[bold green]Stored embedder settings updated.[/bold green]"
+                )
+                return
+
             documents = await client.list_documents()
             total_docs = len(documents)
 
