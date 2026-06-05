@@ -1,4 +1,5 @@
-import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -85,11 +86,21 @@ def _require_rag(ctx: RunContext[RAGRunDeps]) -> HaikuRAG:
     return ctx.deps.rag
 
 
-def _require_lock(ctx: RunContext[RAGRunDeps]) -> asyncio.Lock:
-    assert ctx.deps is not None and ctx.deps.rag_lock is not None, (
-        "RAGRunDeps.rag_lock is not set — skill lifespan must run before tools."
-    )
-    return ctx.deps.rag_lock
+@asynccontextmanager
+async def _serialized(ctx: RunContext[RAGRunDeps]) -> AsyncIterator[None]:
+    """Serialize access to the shared connection through the run's lock.
+
+    pydantic-ai runs a turn's tool calls concurrently and LanceDB's
+    per-connection state cannot take two in-flight operations at once. When no
+    lock is present (tools invoked directly, without a skill lifespan) there is
+    no concurrency to guard, so this is a no-op.
+    """
+    lock = ctx.deps.rag_lock if ctx.deps is not None else None
+    if lock is None:
+        yield
+    else:
+        async with lock:
+            yield
 
 
 def _register_citations(state: Any, citations: "list[Citation]") -> None:
@@ -203,7 +214,7 @@ def create_skill_tools(
                 )
 
             state = _get_state(ctx, state_type)
-            async with _require_lock(ctx):
+            async with _serialized(ctx):
                 formatted, results = await skill_search(
                     _require_rag(ctx),
                     query,
@@ -230,7 +241,7 @@ def create_skill_tools(
         ) -> list[dict[str, Any]]:
             """List all documents in the knowledge base."""
             state = _get_state(ctx, state_type)
-            async with _require_lock(ctx):
+            async with _serialized(ctx):
                 return await skill_list_documents(
                     _require_rag(ctx),
                     filter=state.document_filter if state else None,
@@ -248,7 +259,7 @@ def create_skill_tools(
             Args:
                 query: Document ID, title, or URI to look up.
             """
-            async with _require_lock(ctx):
+            async with _serialized(ctx):
                 return await skill_get_document(_require_rag(ctx), query)
 
         tools["get_document"] = get_document
@@ -336,7 +347,7 @@ def create_skill_tools(
             ]
 
             if missing:
-                async with _require_lock(ctx):
+                async with _serialized(ctx):
                     rag = _require_rag(ctx)
                     synthetic: list[SearchResult] = []
                     doc_cache: dict[str, Any] = {}
