@@ -102,20 +102,21 @@ class SettingsRepository:
             await self.store.settings_table.add([settings_record])
 
     async def validate_config_compatibility(self) -> None:
-        """Validate that the current configuration is compatible with stored settings.
+        """Validate the current configuration against stored settings without writing.
 
-        ``vector_dim`` mismatches raise — corpus and query vectors must live in
-        the same dimensional space. ``provider`` and ``name`` mismatches are
-        treated as soft drift: legitimate when the same model is served by a
-        different stack (Ollama vs vLLM-via-openai, etc.). Surface the change
-        once via a warning and overwrite stored settings so the warning does
-        not fire on every subsequent open.
+        Opening a database never modifies it. ``vector_dim`` mismatches raise —
+        corpus and query vectors must live in the same dimensional space.
+        ``provider`` and ``name`` drift (with matching ``vector_dim``) is soft:
+        legitimate when the same model is served by a different stack (Ollama vs
+        vLLM-via-openai, etc.). Drift is surfaced via a warning; a writable open
+        then raises so a write cannot mix embedding identities in the corpus,
+        while a read-only open continues. Stored settings are reconciled
+        explicitly via ``haiku-rag rebuild --set-embedder``, never on open.
         """
         stored_settings = await self.get_current_settings()
 
-        # If no stored settings, this is a new database - save current config and return
+        # Nothing stored to validate against — never write on open.
         if not stored_settings:
-            await self.save_current_settings()
             return
 
         current_config = self.store._config.model_dump(mode="json")
@@ -155,9 +156,15 @@ class SettingsRepository:
 
         if soft_changes:
             logger.warning(
-                "Embedding identity changed (vector_dim matches, stored settings "
-                "will be updated to match current config): %s. If this is not "
-                "intentional, revert your config to match the stored settings.",
+                "Embedding identity changed (vector_dim matches): %s. If this is "
+                "intentional, run 'haiku-rag rebuild --set-embedder' to update the "
+                "stored settings; otherwise revert your config to match the database.",
                 "; ".join(soft_changes),
             )
-            await self.save_current_settings()
+            if not self.store.is_read_only:
+                raise ConfigMismatchError(
+                    "Database embedding identity differs from current config "
+                    f"(vector_dim matches): {'; '.join(soft_changes)}. "
+                    "Run 'haiku-rag rebuild --set-embedder' to adopt the current "
+                    "embedder, or revert your config to match the database."
+                )
