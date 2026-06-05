@@ -97,4 +97,5 @@ def create_skill(
         state_namespace=STATE_NAMESPACE,
         deps_type=AnalysisRunDeps,
         lifespan=make_analysis_lifespan(db_path, config),
+        request_limit=30,
     )

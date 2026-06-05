@@ -113,6 +113,7 @@ class AnalysisConfig(BaseModel):
     model: ModelConfig | None = None
     code_timeout: float = 60.0
     max_output_chars: int = 50_000
+    max_executions: int = 15
 
 
 class PictureDescriptionConfig(BaseModel):
