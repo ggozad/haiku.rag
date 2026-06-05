@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- Opening a database no longer writes to it: reads no longer rewrite the stored embedding settings or change the stored version, and the version is never downgraded.
+
 ## [0.54.0] - 2026-06-04
 
 ### Added

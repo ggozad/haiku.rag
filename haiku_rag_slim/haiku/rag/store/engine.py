@@ -12,6 +12,7 @@ import lancedb
 import pyarrow as pa
 from lancedb.index import FTS, BTree, IvfPq
 from lancedb.pydantic import LanceModel, Vector
+from packaging.version import parse
 from pydantic import Field
 
 from haiku.rag.config import AppConfig, Config
@@ -509,7 +510,7 @@ class Store:
         await self.set_haiku_version(metadata.version("haiku.rag-slim"))
 
     async def _check_migrations(self) -> None:
-        """Check if migrations are pending and error or update version accordingly.
+        """Raise if migrations are pending. Opening never writes the version.
 
         Raises:
             MigrationRequiredError: If migrations are pending.
@@ -529,10 +530,6 @@ class Store:
                 "Run 'haiku-rag migrate' to upgrade."
             )
 
-        # No pending migrations - update version silently if needed (writable only)
-        if not self._read_only and db_version != current_version:
-            await self.set_haiku_version(current_version)
-
     async def migrate(self) -> list[str]:
         """Run pending database migrations.
 
@@ -551,8 +548,9 @@ class Store:
 
         applied = await run_pending_upgrades(self, db_version)
 
-        # Update version after successful migration
-        if applied or db_version != current_version:
+        # Advance the schema marker only forward — never downgrade a database
+        # opened with an older build than last stamped it.
+        if parse(current_version) > parse(db_version):
             await self.set_haiku_version(current_version)
 
         return applied

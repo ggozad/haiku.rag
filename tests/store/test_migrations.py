@@ -38,21 +38,19 @@ class TestMigrationCheck:
             pass
 
     @pytest.mark.asyncio
-    async def test_version_bump_without_pending_migrations_updates_silently(
-        self, temp_db_path
-    ):
-        """When version is outdated but no migrations pending, update version silently."""
+    async def test_open_does_not_change_version(self, temp_db_path):
+        """Opening a database never writes the version, even when it differs.
+
+        A version newer than all upgrade steps has no pending migrations, so the
+        open succeeds; the stored version must be left untouched (no downgrade,
+        no bump) because opening is a pure read.
+        """
         async with Store(temp_db_path, create=True) as store:
-            # Set an older version that has no pending migrations
-            # (newer than all current upgrade steps)
             await store.set_haiku_version("100.0.0")
 
-        # Re-open - should update version silently, no error
+        # Re-open writable - no error, version unchanged
         async with Store(temp_db_path) as store:
-            # Version should now be current
-            version = await store.get_haiku_version()
-            expected = metadata.version("haiku.rag-slim")
-            assert version == expected
+            assert await store.get_haiku_version() == "100.0.0"
 
     @pytest.mark.asyncio
     async def test_pending_migrations_raises_error(self, temp_db_path):
@@ -159,6 +157,21 @@ class TestMigrateMethod:
         async with Store(temp_db_path, skip_migration_check=True) as store:
             applied = await store.migrate()
             assert applied == []
+
+    @pytest.mark.asyncio
+    async def test_migrate_does_not_downgrade_future_version(self, temp_db_path):
+        """migrate() must not move the version backwards.
+
+        Running an older build's migrate against a DB stamped with a newer
+        version (no pending upgrades) leaves the stored version untouched.
+        """
+        async with Store(temp_db_path, create=True) as store:
+            await store.set_haiku_version("100.0.0")
+
+        async with Store(temp_db_path, skip_migration_check=True) as store:
+            applied = await store.migrate()
+            assert applied == []
+            assert await store.get_haiku_version() == "100.0.0"
 
     @pytest.mark.asyncio
     async def test_migrate_raises_read_only_error(self, temp_db_path):
