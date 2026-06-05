@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from haiku.rag.config.models import AppConfig
@@ -168,6 +170,38 @@ class TestSearchTool:
         result = await search(ctx, query="artificial intelligence")
         assert isinstance(result, str)
         assert len(result) > 0
+
+    async def test_concurrent_searches_serialize_on_lock(
+        self, rag_db, rag_client, monkeypatch
+    ):
+        """Tool calls in a turn run concurrently; the shared lock keeps only one
+        connection operation in flight (pydantic-ai borrow guard)."""
+        from haiku.rag.skills import _tools
+        from haiku.rag.skills.rag import create_skill
+
+        original = _tools.skill_search
+        inflight = {"now": 0, "max": 0}
+
+        async def tracking_search(*args, **kwargs):
+            inflight["now"] += 1
+            inflight["max"] = max(inflight["max"], inflight["now"])
+            try:
+                await asyncio.sleep(0.05)  # widen the window an overlap would use
+                return await original(*args, **kwargs)
+            finally:
+                inflight["now"] -= 1
+
+        monkeypatch.setattr(_tools, "skill_search", tracking_search)
+
+        skill = create_skill(db_path=rag_db)
+        search = _get_tool(skill, "search")
+        ctx = _make_ctx(rag=rag_client)  # one ctx -> one shared lock, as in a turn
+        results = await asyncio.gather(
+            search(ctx, query="artificial intelligence"),
+            search(ctx, query="machine learning"),
+        )
+        assert all(isinstance(r, str) and r for r in results)
+        assert inflight["max"] == 1
 
     async def test_search_updates_state(self, rag_db, rag_client):
         from haiku.rag.skills.rag import RAGState, create_skill

@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -82,6 +83,13 @@ def _require_rag(ctx: RunContext[RAGRunDeps]) -> HaikuRAG:
         "RAGRunDeps.rag is not set — skill lifespan must run before tools."
     )
     return ctx.deps.rag
+
+
+def _require_lock(ctx: RunContext[RAGRunDeps]) -> asyncio.Lock:
+    assert ctx.deps is not None and ctx.deps.rag_lock is not None, (
+        "RAGRunDeps.rag_lock is not set — skill lifespan must run before tools."
+    )
+    return ctx.deps.rag_lock
 
 
 def _register_citations(state: Any, citations: "list[Citation]") -> None:
@@ -195,12 +203,13 @@ def create_skill_tools(
                 )
 
             state = _get_state(ctx, state_type)
-            formatted, results = await skill_search(
-                _require_rag(ctx),
-                query,
-                limit=limit,
-                document_filter=state.document_filter if state else None,
-            )
+            async with _require_lock(ctx):
+                formatted, results = await skill_search(
+                    _require_rag(ctx),
+                    query,
+                    limit=limit,
+                    document_filter=state.document_filter if state else None,
+                )
             if state:
                 state.searches[query] = results
 
@@ -221,10 +230,11 @@ def create_skill_tools(
         ) -> list[dict[str, Any]]:
             """List all documents in the knowledge base."""
             state = _get_state(ctx, state_type)
-            return await skill_list_documents(
-                _require_rag(ctx),
-                filter=state.document_filter if state else None,
-            )
+            async with _require_lock(ctx):
+                return await skill_list_documents(
+                    _require_rag(ctx),
+                    filter=state.document_filter if state else None,
+                )
 
         tools["list_documents"] = list_documents
 
@@ -238,7 +248,8 @@ def create_skill_tools(
             Args:
                 query: Document ID, title, or URI to look up.
             """
-            return await skill_get_document(_require_rag(ctx), query)
+            async with _require_lock(ctx):
+                return await skill_get_document(_require_rag(ctx), query)
 
         tools["get_document"] = get_document
 
@@ -325,24 +336,25 @@ def create_skill_tools(
             ]
 
             if missing:
-                rag = _require_rag(ctx)
-                synthetic: list[SearchResult] = []
-                doc_cache: dict[str, Any] = {}
-                for cid in missing:
-                    chunk = await rag.get_chunk_by_id(cid)
-                    if chunk is None or not chunk.document_id:
-                        continue
-                    did = chunk.document_id
-                    if did in doc_cache:
-                        doc = doc_cache[did]
-                    else:
-                        doc = await rag.get_document_by_id(did)
-                        doc_cache[did] = doc
-                    chunk.document_uri = doc.uri if doc else None
-                    chunk.document_title = doc.title if doc else None
-                    synthetic.append(SearchResult.from_chunk(chunk, score=1.0))
-                if synthetic:
-                    citations.extend(resolve_citations(missing, synthetic))
+                async with _require_lock(ctx):
+                    rag = _require_rag(ctx)
+                    synthetic: list[SearchResult] = []
+                    doc_cache: dict[str, Any] = {}
+                    for cid in missing:
+                        chunk = await rag.get_chunk_by_id(cid)
+                        if chunk is None or not chunk.document_id:
+                            continue
+                        did = chunk.document_id
+                        if did in doc_cache:
+                            doc = doc_cache[did]
+                        else:
+                            doc = await rag.get_document_by_id(did)
+                            doc_cache[did] = doc
+                        chunk.document_uri = doc.uri if doc else None
+                        chunk.document_title = doc.title if doc else None
+                        synthetic.append(SearchResult.from_chunk(chunk, score=1.0))
+                    if synthetic:
+                        citations.extend(resolve_citations(missing, synthetic))
 
             if citations:
                 _register_citations(state, citations)

@@ -492,8 +492,8 @@ class TestSandboxHeldConnection:
     async def test_vfs_read_concurrent_with_connection_read(self, temp_db_path):
         """A VFS read and a direct read on the shared connection run together.
 
-        Both go through one connection on one loop, so the concurrency that
-        used to cross two event loops no longer borrows the same LanceDB state.
+        Both serialize through the shared lock, so concurrent tasks never have
+        two operations in flight on the one connection at once.
         """
         config = AppConfig()
         async with HaikuRAG(temp_db_path, create=True) as client:
@@ -505,19 +505,26 @@ class TestSandboxHeldConnection:
         assert doc.id
 
         async with HaikuRAG(temp_db_path, config=config, read_only=True) as rag:
+            lock = asyncio.Lock()
             sb = Sandbox(
                 db_path=temp_db_path,
                 config=config,
                 context=AnalysisContext(),
                 rag=rag,
+                lock=lock,
             )
             read_code = (
                 "from pathlib import Path\n"
                 f"print(Path('/documents/{doc.id}/content.txt').read_text())"
             )
+
+            async def direct_read() -> str | None:
+                async with lock:
+                    return await rag.document_repository.get_content(doc.id)
+
             exec_result, content = await asyncio.gather(
                 sb.execute(read_code),
-                rag.document_repository.get_content(doc.id),
+                direct_read(),
             )
             assert exec_result.success, exec_result.stderr
             assert "Foxes" in exec_result.stdout

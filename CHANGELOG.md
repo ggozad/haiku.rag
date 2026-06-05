@@ -3,7 +3,7 @@
 
 ### Fixed
 
-- Analysis-skill `execute_code` document VFS reads (`content.txt`, `items.jsonl`, `toc.json`) run on the calling event loop through the skill's connection, instead of a separate connection on a background loop.
+- Skill tools (`search`/`cite`/`list_documents`/`get_document`) and the analysis sandbox serialize access to the shared LanceDB connection through one lock, so a turn's concurrently executed tool calls no longer trigger `RuntimeError: Already borrowed`.
 
 ## [0.55.0] - 2026-06-05
 

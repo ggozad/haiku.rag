@@ -133,6 +133,7 @@ class Sandbox:
     _config: AppConfig
     _context: AnalysisContext
     _rag: "HaikuRAG | None"
+    _lock: "asyncio.Lock | None"
     _search_results: "list[SearchResult]"
     _doc_items: dict[str, list["DocumentItem"]]
     _doc_chunk_index: dict[str, dict[str, list[str]]]
@@ -148,11 +149,13 @@ class Sandbox:
         config: AppConfig,
         context: AnalysisContext,
         rag: "HaikuRAG | None" = None,
+        lock: "asyncio.Lock | None" = None,
     ):
         self._db_path = db_path
         self._config = config
         self._context = context
         self._rag = rag
+        self._lock = lock
         self._search_results = []
         self._doc_items = {}
         self._doc_chunk_index = {}
@@ -164,9 +167,15 @@ class Sandbox:
 
     @asynccontextmanager
     async def _connection(self) -> "AsyncIterator[HaikuRAG]":
-        """Yield the supplied connection, or an ephemeral read-only one."""
+        """Yield the shared connection (serialized by the lock), or an ephemeral
+        read-only one. The lock guards the whole block so a read's awaits cannot
+        interleave with another task's operation on the same connection."""
         if self._rag is not None:
-            yield self._rag
+            if self._lock is not None:
+                async with self._lock:
+                    yield self._rag
+            else:
+                yield self._rag
             return
         from haiku.rag.client import HaikuRAG
 
