@@ -276,7 +276,7 @@ class HaikuRAGApp:  # pragma: no cover
         async with HaikuRAG(
             db_path=self.db_path,
             config=self.config,
-            read_only=self.read_only,
+            read_only=True,
             before=self.before,
         ) as self.client:
             documents = await self.client.list_documents(filter=filter)
@@ -328,7 +328,7 @@ class HaikuRAGApp:  # pragma: no cover
         async with HaikuRAG(
             db_path=self.db_path,
             config=self.config,
-            read_only=self.read_only,
+            read_only=True,
             before=self.before,
         ) as self.client:
             doc = await self.client.get_document_by_id(doc_id)
@@ -385,7 +385,7 @@ class HaikuRAGApp:  # pragma: no cover
         async with HaikuRAG(
             db_path=self.db_path,
             config=self.config,
-            read_only=self.read_only,
+            read_only=True,
             before=self.before,
         ) as self.client:
             results = await self.client.search(
@@ -407,7 +407,7 @@ class HaikuRAGApp:  # pragma: no cover
         async with HaikuRAG(
             db_path=self.db_path,
             config=self.config,
-            read_only=self.read_only,
+            read_only=True,
             before=self.before,
         ) as self.client:
             chunk = await self.client.get_chunk_by_id(chunk_id)
@@ -451,7 +451,7 @@ class HaikuRAGApp:  # pragma: no cover
         async with HaikuRAG(
             db_path=self.db_path,
             config=self.config,
-            read_only=self.read_only,
+            read_only=True,
             before=self.before,
         ) as self.client:
             answer, citations = await self.client.ask(question, filter=filter)
@@ -479,7 +479,7 @@ class HaikuRAGApp:  # pragma: no cover
         async with HaikuRAG(
             db_path=self.db_path,
             config=self.config,
-            read_only=self.read_only,
+            read_only=True,
             before=self.before,
         ) as self.client:
             self.console.print(f"[bold blue]Question:[/bold blue] {question}")
@@ -566,6 +566,7 @@ class HaikuRAGApp:  # pragma: no cover
             config=self.config,
             skip_validation=True,
             skip_migration_check=True,
+            read_only=self.read_only,
         ) as store:
             return await store.migrate()
 

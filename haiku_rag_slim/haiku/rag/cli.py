@@ -406,7 +406,7 @@ def analyze(  # pragma: no cover
 @_cli.command("settings", help="Display current configuration settings")
 def settings():  # pragma: no cover
     config = get_config()
-    app = HaikuRAGApp(db_path=Path(), config=config)
+    app = HaikuRAGApp(db_path=Path(), config=config, read_only=True)
     app.show_settings()
 
 
@@ -612,7 +612,7 @@ def history(  # pragma: no cover
 
 @_cli.command("download-models", help="Download Docling and Ollama models per config")
 def download_models_cmd():  # pragma: no cover
-    app = HaikuRAGApp(db_path=Path(), config=get_config())
+    app = HaikuRAGApp(db_path=Path(), config=get_config(), read_only=True)
     try:
         asyncio.run(app.download_models())
     except Exception as e:
@@ -636,7 +636,7 @@ def inspect(  # pragma: no cover
         raise typer.Exit(1) from e
 
     db_path = db if db else get_config().storage.data_dir / "haiku.rag.lancedb"
-    run_inspector(db_path, read_only=_read_only, before=_before)
+    run_inspector(db_path, read_only=True, before=_before)
 
 
 @_cli.command("chat", help="Launch interactive chat TUI for conversational RAG")
@@ -666,7 +666,7 @@ def chat(  # pragma: no cover
 
     run_chat(
         db_path,
-        read_only=_read_only,
+        read_only=True,
         before=_before,
         model=model,
         skills=skills,

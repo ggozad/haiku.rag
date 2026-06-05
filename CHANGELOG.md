@@ -8,6 +8,7 @@
 ### Fixed
 
 - Opening a database no longer writes to it: reads no longer rewrite the stored embedding settings or change the stored version, and the version is never downgraded. Embedding provider/name drift (matching `vector_dim`) warns on read-only opens and raises `ConfigMismatchError` on writable opens; reconcile with `rebuild --set-embedder`.
+- Read CLI verbs (`list`, `get`, `search`, `visualize`, `ask`, `analyze`, `inspect`, `chat`, `info`, `history`) open the database read-only.
 
 ## [0.54.0] - 2026-06-04
 
