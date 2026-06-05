@@ -412,3 +412,136 @@ class TestSandboxVFS:
             assert "1" in result.stdout
             assert "Public Doc" in result.stdout
             assert "Private Doc" not in result.stdout
+
+
+class TestSandboxHeldConnection:
+    """VFS reads must work while another connection to the same DB stays open.
+
+    Mirrors the analysis-skill lifespan, which keeps a read-only connection open
+    for the whole turn while sandboxed code reads the document VFS.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.vcr()
+    async def test_vfs_reads_while_connection_held(self, temp_db_path):
+        """All three VFS readers work while another connection to the DB is open."""
+        config = AppConfig()
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.create_document(
+                content="Foxes and dogs roam the quiet hills.",
+                uri="test://doc",
+                title="Doc",
+            )
+        assert doc.id
+
+        async with HaikuRAG(temp_db_path, config=config, read_only=True):
+            context = AnalysisContext()
+            sb = Sandbox(db_path=temp_db_path, config=config, context=context)
+            try:
+                result = await sb.execute(
+                    "from pathlib import Path\n"
+                    f"d = Path('/documents/{doc.id}')\n"
+                    "print('foxes' in (d / 'content.txt').read_text().lower())\n"
+                    "print(len((d / 'items.jsonl').read_text().strip().split('\\n')))\n"
+                    "print('tree' in (d / 'toc.json').read_text())"
+                )
+                assert result.success, result.stderr
+                lines = result.stdout.strip().split("\n")
+                assert lines[0] == "True"
+                assert int(lines[1]) > 0
+                assert lines[2] == "True"
+            finally:
+                sb.close()
+
+    @pytest.mark.asyncio
+    @pytest.mark.vcr()
+    async def test_vfs_loop_and_connection_are_reused(self, temp_db_path):
+        """The background loop + read-only connection are created once and reused."""
+        config = AppConfig()
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.create_document(
+                content="Foxes and dogs.",
+                uri="test://doc",
+                title="Doc",
+            )
+        assert doc.id
+
+        context = AnalysisContext()
+        sb = Sandbox(db_path=temp_db_path, config=config, context=context)
+        try:
+            assert sb._loop is None and sb._vfs_rag is None
+            read = (
+                "from pathlib import Path\n"
+                f"print(Path('/documents/{doc.id}/content.txt').read_text())"
+            )
+            assert (await sb.execute(read)).success
+            loop, rag = sb._loop, sb._vfs_rag
+            assert loop is not None and rag is not None
+            assert (await sb.execute(read)).success
+            assert sb._loop is loop
+            assert sb._vfs_rag is rag
+        finally:
+            sb.close()
+
+    @pytest.mark.asyncio
+    @pytest.mark.vcr()
+    async def test_variables_persist_across_executes_after_vfs_read(self, temp_db_path):
+        """REPL state persists across execute() calls, including after a VFS read."""
+        config = AppConfig()
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.create_document(
+                content="Foxes and dogs.",
+                uri="test://doc",
+                title="Doc",
+            )
+        assert doc.id
+
+        context = AnalysisContext()
+        sb = Sandbox(db_path=temp_db_path, config=config, context=context)
+        try:
+            first = await sb.execute(
+                "from pathlib import Path\n"
+                f"x = len(Path('/documents/{doc.id}/content.txt').read_text())"
+            )
+            assert first.success, first.stderr
+            second = await sb.execute("print(x)")
+            assert second.success, second.stderr
+            assert int(second.stdout.strip()) > 0
+        finally:
+            sb.close()
+
+    @pytest.mark.asyncio
+    async def test_close_is_safe_without_vfs_read(self, temp_db_path):
+        """close() is a no-op (and safe to call twice) when no VFS read happened."""
+        async with HaikuRAG(temp_db_path, create=True):
+            config = AppConfig()
+            sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+            assert sb._loop is None
+            sb.close()
+            sb.close()
+
+    @pytest.mark.asyncio
+    @pytest.mark.vcr()
+    async def test_close_stops_loop_thread(self, temp_db_path):
+        """close() tears down the background loop thread and is idempotent."""
+        config = AppConfig()
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.create_document(
+                content="Foxes and dogs.",
+                uri="test://doc",
+                title="Doc",
+            )
+        assert doc.id
+
+        context = AnalysisContext()
+        sb = Sandbox(db_path=temp_db_path, config=config, context=context)
+        result = await sb.execute(
+            "from pathlib import Path\n"
+            f"print(Path('/documents/{doc.id}/content.txt').read_text())"
+        )
+        assert result.success
+        thread = sb._loop_thread
+        assert thread is not None and thread.is_alive()
+        sb.close()
+        assert not thread.is_alive()
+        sb.close()

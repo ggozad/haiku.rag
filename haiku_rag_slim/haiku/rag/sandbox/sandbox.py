@@ -1,9 +1,9 @@
 import asyncio
-import atexit
-import concurrent.futures
 import json
 import os
-from collections.abc import Callable
+import threading
+import weakref
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -19,6 +19,8 @@ from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX, DocumentIte
 if TYPE_CHECKING:
     from pathlib import PurePosixPath
 
+    from haiku.rag.client import HaikuRAG
+
 
 @dataclass
 class SandboxResult:
@@ -29,13 +31,13 @@ class SandboxResult:
     success: bool
 
 
-_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-atexit.register(_executor.shutdown, wait=False)
-
-
-def _run_async(coro: Any) -> Any:
-    """Run an async coroutine from a sync context (CallbackFile read)."""
-    return _executor.submit(asyncio.run, coro).result()
+def _stop_loop(loop: asyncio.AbstractEventLoop, thread: threading.Thread) -> None:
+    """Stop a background loop and join its thread. Safe if already stopped."""
+    if loop.is_closed():
+        return
+    loop.call_soon_threadsafe(loop.stop)
+    thread.join()
+    loop.close()
 
 
 def _build_toc(
@@ -127,6 +129,13 @@ class Sandbox:
         sandbox = Sandbox(db_path, config, context)
         result = await sandbox.execute("x = await search('query')")
         result = await sandbox.execute("print(x[0]['content'])")  # x persists
+
+    The virtual filesystem reads run on a dedicated background event loop with a
+    single read-only connection held for the sandbox's lifetime. Monty's file
+    callbacks are synchronous and cannot ``await``, so they bridge to that loop
+    via ``run_coroutine_threadsafe``. Call ``close()`` to release the loop and
+    connection; if it is not called they are released when the instance is
+    garbage collected.
     """
 
     _db_path: Path
@@ -139,6 +148,10 @@ class Sandbox:
     _toc_json_cache: dict[str, str]
     _repl: MontyRepl | None
     _vfs: OSAccess | None
+    _loop: asyncio.AbstractEventLoop | None
+    _loop_thread: threading.Thread | None
+    _vfs_rag: "HaikuRAG | None"
+    _finalizer: weakref.finalize | None
 
     def __init__(
         self,
@@ -156,6 +169,60 @@ class Sandbox:
         self._toc_json_cache = {}
         self._repl = None
         self._vfs = None
+        self._loop = None
+        self._loop_thread = None
+        self._vfs_rag = None
+        self._finalizer = None
+
+    def _ensure_vfs_loop(self) -> None:
+        """Start the background loop and open the read-only connection once."""
+        if self._loop is not None:
+            return
+        from haiku.rag.client import HaikuRAG
+
+        loop = asyncio.new_event_loop()
+        thread = threading.Thread(
+            target=loop.run_forever, daemon=True, name="sandbox-vfs"
+        )
+        thread.start()
+        self._loop = loop
+        self._loop_thread = thread
+
+        async def _open() -> "HaikuRAG":
+            rag = HaikuRAG(self._db_path, config=self._config, read_only=True)
+            await rag.__aenter__()
+            return rag
+
+        self._vfs_rag = self._run_on_loop(_open())
+        # GC backstop: capture only the loop + thread, never ``self`` (which
+        # would pin the instance and prevent collection).
+        self._finalizer = weakref.finalize(self, _stop_loop, loop, thread)
+
+    def _run_on_loop(self, coro: Coroutine[Any, Any, Any]) -> Any:
+        """Run a coroutine on the background loop from a synchronous caller."""
+        self._ensure_vfs_loop()
+        assert self._loop is not None
+        return asyncio.run_coroutine_threadsafe(coro, self._loop).result()
+
+    def close(self) -> None:
+        """Release the background loop and read-only connection.
+
+        Idempotent and safe to call when no VFS read ever started the loop.
+        """
+        loop, thread, rag = self._loop, self._loop_thread, self._vfs_rag
+        if loop is None or thread is None:
+            return
+        self._loop = None
+        self._loop_thread = None
+        self._vfs_rag = None
+        if self._finalizer is not None:
+            self._finalizer.detach()
+            self._finalizer = None
+        if rag is not None and not loop.is_closed():
+            asyncio.run_coroutine_threadsafe(
+                rag.__aexit__(None, None, None), loop
+            ).result()
+        _stop_loop(loop, thread)
 
     def _build_external_functions(self) -> dict[str, Any]:
         """Build async external functions for the Monty interpreter."""
@@ -249,12 +316,12 @@ class Sandbox:
                 return cached
 
             async def _fetch() -> list[DocumentItem]:
-                from haiku.rag.client import HaikuRAG
+                assert sandbox._vfs_rag is not None
+                return await sandbox._vfs_rag.document_item_repository.get_all_items(
+                    did
+                )
 
-                async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-                    return await rag.document_item_repository.get_all_items(did)
-
-            items = _run_async(_fetch())
+            items = sandbox._run_on_loop(_fetch())
             sandbox._doc_items[did] = items
             return items
 
@@ -265,17 +332,13 @@ class Sandbox:
                 return cached
 
             async def _fetch() -> dict[str, list[str]]:
-                from haiku.rag.client import HaikuRAG
-
-                async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-                    index = (
-                        await rag.chunk_repository.get_chunk_ids_by_self_ref_grouped(
-                            [did]
-                        )
-                    )
+                assert sandbox._vfs_rag is not None
+                index = await sandbox._vfs_rag.chunk_repository.get_chunk_ids_by_self_ref_grouped(
+                    [did]
+                )
                 return index.get(did, {})
 
-            chunk_index = _run_async(_fetch())
+            chunk_index = sandbox._run_on_loop(_fetch())
             sandbox._doc_chunk_index[did] = chunk_index
             return chunk_index
 
@@ -351,15 +414,13 @@ class Sandbox:
             ) -> Callable[["PurePosixPath"], str]:
                 def read_content(_path: "PurePosixPath") -> str:
                     async def _fetch() -> str:
-                        from haiku.rag.client import HaikuRAG
+                        assert sandbox._vfs_rag is not None
+                        content = (
+                            await sandbox._vfs_rag.document_repository.get_content(did)
+                        )
+                        return content or ""
 
-                        async with HaikuRAG(
-                            db_path, config=config, read_only=True
-                        ) as rag:
-                            content = await rag.document_repository.get_content(did)
-                            return content or ""
-
-                    return _run_async(_fetch())
+                    return sandbox._run_on_loop(_fetch())
 
                 return read_content
 
