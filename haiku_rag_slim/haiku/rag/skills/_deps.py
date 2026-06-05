@@ -67,12 +67,16 @@ def make_analysis_lifespan(db_path: Path, config: AppConfig):
         async with HaikuRAG(db_path, config=config, read_only=True) as rag:
             deps.rag = rag
             deps.search_count = 0
-            deps.sandbox = Sandbox(
+            sandbox = Sandbox(
                 db_path=db_path,
                 config=config,
                 context=AnalysisContext(filter=doc_filter),
             )
+            deps.sandbox = sandbox
             _reset_invocation_state(deps.state)
-            yield
+            try:
+                yield
+            finally:
+                sandbox.close()
 
     return lifespan
