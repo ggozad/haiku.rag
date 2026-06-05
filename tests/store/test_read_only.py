@@ -298,3 +298,61 @@ class TestClientReadOnly:
         async with HaikuRAG(temp_db_path, read_only=True) as client:
             docs = await client.list_documents()
             assert len(docs) == 1
+
+
+class TestAppReadVerbsDoNotWrite:
+    @pytest.mark.asyncio
+    async def test_read_verb_leaves_settings_and_version_unchanged_on_drift(
+        self, temp_db_path
+    ):
+        """A read CLI verb opens read-only: drift warns but never writes."""
+        from haiku.rag.app import HaikuRAGApp
+        from haiku.rag.config import AppConfig
+
+        async with Store(temp_db_path, create=True) as store:
+            stored_name_before = (
+                await SettingsRepository(store).get_current_settings()
+            )["embeddings"]["model"]["name"]
+            version_before = await store.get_haiku_version()
+
+        drift = AppConfig()
+        drift.embeddings.model.name = "different-model"
+
+        # list is a read verb — must open read-only and not raise on drift
+        app = HaikuRAGApp(db_path=temp_db_path, config=drift)
+        await app.list_documents()
+
+        async with Store(temp_db_path, skip_validation=True, read_only=True) as store:
+            stored_name_after = (
+                await SettingsRepository(store).get_current_settings()
+            )["embeddings"]["model"]["name"]
+            version_after = await store.get_haiku_version()
+
+        assert stored_name_after == stored_name_before
+        assert version_after == version_before
+
+    @pytest.mark.asyncio
+    async def test_write_verb_raises_on_drift_without_writing(self, temp_db_path):
+        """A write CLI verb opens writable: drift raises before any write."""
+        from haiku.rag.app import HaikuRAGApp
+        from haiku.rag.config import AppConfig
+        from haiku.rag.store.repositories.settings import ConfigMismatchError
+
+        async with Store(temp_db_path, create=True) as store:
+            stored_name_before = (
+                await SettingsRepository(store).get_current_settings()
+            )["embeddings"]["model"]["name"]
+
+        drift = AppConfig()
+        drift.embeddings.model.name = "different-model"
+
+        app = HaikuRAGApp(db_path=temp_db_path, config=drift)
+        with pytest.raises(ConfigMismatchError):
+            await app.add_document_from_text("hello")
+
+        async with Store(temp_db_path, skip_validation=True, read_only=True) as store:
+            stored_name_after = (
+                await SettingsRepository(store).get_current_settings()
+            )["embeddings"]["model"]["name"]
+
+        assert stored_name_after == stored_name_before

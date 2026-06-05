@@ -373,6 +373,9 @@ haiku-rag rebuild --title-only
 # Run the VLM over already-stored picture bytes and patch descriptions
 # into the docling blob. Skips the docling parse entirely.
 haiku-rag rebuild --descriptions
+
+# Adopt the current embedder identity without re-embedding (same vector dimension)
+haiku-rag rebuild --set-embedder
 ```
 
 **Rebuild modes:**
@@ -384,6 +387,9 @@ haiku-rag rebuild --descriptions
 | Embed only | `--embed-only` | Changed embedding model or vector dimensions |
 | Title only | `--title-only` | Generate titles for documents without one |
 | Descriptions | `--descriptions` | Add VLM picture descriptions to an existing database |
+| Set embedder | `--set-embedder` | Same model, different serving stack (e.g. Ollama to vLLM); vector dimension unchanged |
+
+**`--set-embedder` mode** updates the stored embedding provider/name to match the current config without re-embedding, valid only when the vector dimension is unchanged. Use it when the same model is served by a different stack so the recorded identity stops drifting from the config. A changed vector dimension is rejected; regenerate embeddings with `--embed-only` or a full rebuild instead.
 
 **`--descriptions` mode** runs the configured VLM (`processing.conversion_options.picture_description.model`) over the picture bytes already stored in `document_items.picture_data`, patches each description into the stored docling blob's `pictures[i].meta.description.text`, and re-chunks + re-embeds so chunk text reflects the new descriptions. Requires `processing.pictures: description` in the config. Idempotent: pictures that already carry a description are skipped, so the operation is safe to re-run after a partial failure. The docling parse is skipped entirely. Only the VLM time is paid.
 
