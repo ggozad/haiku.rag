@@ -5,7 +5,7 @@ Configuration is done through YAML configuration files.
 !!! note
     haiku.rag enforces one hard rule on existing databases: the embedding `vector_dim` in your config must match the value stored in the db. A mismatch exits with `ConfigMismatchError` and you must **rebuild** to apply the change (see [Rebuild Database](../cli.md#rebuild-database)).
 
-    Changing only `provider` or `name` (e.g. switching from Ollama to vLLM serving the same model) is treated as soft drift: haiku.rag logs a one-time warning and updates the stored settings to match your config. Subsequent opens are silent. If the change was unintentional, revert your config to match the previously stored settings before running anything that depends on retrieval quality.
+    Opening a database never writes to it, so the stored embedding identity is left untouched. Changing only `provider` or `name` (e.g. switching from Ollama to vLLM serving the same model) is treated as soft drift: read-only opens log a warning and continue, while writable opens exit with `ConfigMismatchError`. Reconcile the stored identity with your config by running `haiku-rag rebuild --set-embedder` (see [Rebuild Database](../cli.md#rebuild-database)). If the change was unintentional, revert your config instead.
 
 ## Getting Started
 
