@@ -71,6 +71,7 @@ def make_analysis_lifespan(db_path: Path, config: AppConfig):
                 db_path=db_path,
                 config=config,
                 context=AnalysisContext(filter=doc_filter),
+                rag=rag,
             )
             deps.sandbox = sandbox
             _reset_invocation_state(deps.state)
