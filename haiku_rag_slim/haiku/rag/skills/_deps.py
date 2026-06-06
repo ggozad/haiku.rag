@@ -1,6 +1,7 @@
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -15,6 +16,11 @@ if TYPE_CHECKING:
 @dataclass
 class RAGRunDeps(SkillRunDeps):
     rag: "HaikuRAG | None" = None
+    # pydantic-ai runs a turn's tool calls concurrently; LanceDB's per-connection
+    # state cannot take two in-flight operations at once, so every use of ``rag``
+    # (skill tools and the analysis sandbox) serializes through this lock. Always
+    # present so serialization is never accidentally skipped.
+    rag_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     search_count: int = 0
 
 
@@ -71,6 +77,8 @@ def make_analysis_lifespan(db_path: Path, config: AppConfig):
                 db_path=db_path,
                 config=config,
                 context=AnalysisContext(filter=doc_filter),
+                rag=rag,
+                lock=deps.rag_lock,
             )
             deps.sandbox = sandbox
             _reset_invocation_state(deps.state)

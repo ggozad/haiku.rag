@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- Skill tools (`search`/`cite`/`list_documents`/`get_document`) and the analysis sandbox serialize access to the shared LanceDB connection through one lock, so a turn's concurrently executed tool calls no longer trigger `RuntimeError: Already borrowed`.
+
 ## [0.55.0] - 2026-06-05
 
 ### Added
