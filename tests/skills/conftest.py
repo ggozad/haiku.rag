@@ -1,4 +1,3 @@
-import asyncio
 import random
 from unittest.mock import MagicMock
 
@@ -18,11 +17,10 @@ def _make_ctx(state=None, rag=None, sandbox=None):
     from haiku.rag.skills.analysis import AnalysisState
 
     ctx = MagicMock(spec=RunContext)
-    lock = asyncio.Lock()
     if isinstance(state, AnalysisState) or sandbox is not None:
-        ctx.deps = AnalysisRunDeps(state=state, rag=rag, sandbox=sandbox, rag_lock=lock)
+        ctx.deps = AnalysisRunDeps(state=state, rag=rag, sandbox=sandbox)
     else:
-        ctx.deps = RAGRunDeps(state=state, rag=rag, rag_lock=lock)
+        ctx.deps = RAGRunDeps(state=state, rag=rag)
     return ctx
 
 
