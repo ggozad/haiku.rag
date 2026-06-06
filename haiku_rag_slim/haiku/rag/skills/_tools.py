@@ -91,9 +91,9 @@ async def _serialized(ctx: RunContext[RAGRunDeps]) -> AsyncIterator[None]:
     """Serialize access to the shared connection through the run's lock.
 
     pydantic-ai runs a turn's tool calls concurrently and LanceDB's
-    per-connection state cannot take two in-flight operations at once. When no
-    lock is present (tools invoked directly, without a skill lifespan) there is
-    no concurrency to guard, so this is a no-op.
+    per-connection state cannot take two in-flight operations at once. The lock
+    is always present (``RAGRunDeps`` creates one by default); the no-op branch
+    is a guard for a missing deps/lock.
     """
     lock = ctx.deps.rag_lock if ctx.deps is not None else None
     if lock is None:
