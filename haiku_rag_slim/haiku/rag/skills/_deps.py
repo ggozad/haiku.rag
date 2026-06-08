@@ -27,6 +27,7 @@ class RAGRunDeps(SkillRunDeps):
 @dataclass
 class AnalysisRunDeps(RAGRunDeps):
     sandbox: "Sandbox | None" = None
+    execute_count: int = 0
 
 
 def _reset_invocation_state(state: Any) -> None:
@@ -73,6 +74,7 @@ def make_analysis_lifespan(db_path: Path, config: AppConfig):
         async with HaikuRAG(db_path, config=config, read_only=True) as rag:
             deps.rag = rag
             deps.search_count = 0
+            deps.execute_count = 0
             sandbox = Sandbox(
                 db_path=db_path,
                 config=config,

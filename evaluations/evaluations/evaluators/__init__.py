@@ -5,6 +5,7 @@ from evaluations.evaluators.judge import (
     LLMJudgeResponseSchema,
 )
 from evaluations.evaluators.map import MAPEvaluator
+from evaluations.evaluators.number_match import NumberMatchEvaluator
 
 __all__ = [
     "ANSWER_EQUIVALENCE_RUBRIC",
@@ -12,4 +13,5 @@ __all__ = [
     "LLMJudge",
     "LLMJudgeResponseSchema",
     "MAPEvaluator",
+    "NumberMatchEvaluator",
 ]

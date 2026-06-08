@@ -40,7 +40,11 @@ load_dotenv(find_dotenv(usecwd=True))
 
 HF_REPO_ID = "ggozad/haiku-rag-eval-dbs"
 
-logfire.configure(send_to_logfire="if-token-present", service_name="evals")
+# Scrubbing off: eval outputs are financial answers with words like "authorized"
+# that trip Logfire's secret scrubber and redact the model's answer text.
+logfire.configure(
+    send_to_logfire="if-token-present", service_name="evals", scrubbing=False
+)
 logfire.instrument_pydantic_ai()
 configure_cli_logging()
 console = Console()
@@ -334,6 +338,16 @@ def _attach_relevant_uris(
         case.metadata = metadata
 
 
+def _filter_qa_corpus(corpus, case_ids: set[str] | None):
+    """Keep only rows whose ``id`` is in ``case_ids`` (failure-subset reruns).
+
+    Returns the corpus unchanged when ``case_ids`` is None.
+    """
+    if case_ids is None:
+        return corpus
+    return corpus.filter(lambda row: row.get("id") in case_ids)
+
+
 async def run_qa_benchmark(
     spec: DatasetSpec,
     config: AppConfig,
@@ -343,8 +357,10 @@ async def run_qa_benchmark(
     judge_model: ModelConfig | None = None,
     target: Target = "rag-skill",
     skill_model: ModelConfig | None = None,
+    case_ids: set[str] | None = None,
 ) -> ReportCaseFailure[str, str, dict[str, str]] | None:
     corpus = spec.qa_loader()
+    corpus = _filter_qa_corpus(corpus, case_ids)
     if limit is not None:
         corpus = corpus.select(range(min(limit, len(corpus))))
 
@@ -365,18 +381,23 @@ async def run_qa_benchmark(
     _attach_relevant_uris(cases, spec, limit)
     citation_evaluator = _citation_evaluator_for(spec.retrieval_evaluator)
 
-    evaluators: list[Evaluator] = [
-        LLMJudge(
-            rubric=ANSWER_EQUIVALENCE_RUBRIC,
-            include_input=True,
-            include_expected_output=True,
-            model=get_model(judge_config, config),
-            assertion={
-                "evaluation_name": "answer_equivalent",
-                "include_reason": True,
-            },
-        ),
-    ]
+    qa_evaluator = spec.qa_evaluator
+    evaluators: list[Evaluator]
+    if qa_evaluator is not None:
+        evaluators = [qa_evaluator]
+    else:
+        evaluators = [
+            LLMJudge(
+                rubric=ANSWER_EQUIVALENCE_RUBRIC,
+                include_input=True,
+                include_expected_output=True,
+                model=get_model(judge_config, config),
+                assertion={
+                    "evaluation_name": "answer_equivalent",
+                    "include_reason": True,
+                },
+            ),
+        ]
     if citation_evaluator is not None:
         evaluators.append(citation_evaluator)
 
@@ -419,17 +440,28 @@ async def run_qa_benchmark(
 
     report = await _evaluate(answer_question)
 
-    passing_cases = sum(
-        1
-        for case in report.cases
-        if case.assertions.get("answer_equivalent")
-        and case.assertions["answer_equivalent"].value
-    )
     total_processed = len(report.cases)
     failures = report.failures
+    if qa_evaluator is not None:
+        score_key = qa_evaluator.get_default_evaluation_name()
+        passing_cases = sum(
+            1
+            for case in report.cases
+            if score_key in case.scores and case.scores[score_key].value >= 1.0
+        )
+        scoring = score_key
+    else:
+        passing_cases = sum(
+            1
+            for case in report.cases
+            if case.assertions.get("answer_equivalent")
+            and case.assertions["answer_equivalent"].value
+        )
+        scoring = "answer_equivalent"
     accuracy = passing_cases / total_processed if total_processed > 0 else 0
 
     console.print("\n=== QA Benchmark Results ===", style="bold cyan")
+    console.print(f"Scoring: {scoring}")
     console.print(f"Total questions: {total_processed}")
     console.print(f"Correct answers: {passing_cases}")
     console.print(f"QA Accuracy: {accuracy:.4f} ({accuracy * 100:.2f}%)")
@@ -483,6 +515,7 @@ async def evaluate_dataset(
     judge_model: ModelConfig | None = None,
     target: Target = "rag-skill",
     skill_model: ModelConfig | None = None,
+    case_ids: set[str] | None = None,
 ) -> None:
     if not skip_db:
         console.print(f"Using dataset: {spec.key}", style="bold magenta")
@@ -514,6 +547,7 @@ async def evaluate_dataset(
             judge_model=judge_model,
             target=target,
             skill_model=skill_model,
+            case_ids=case_ids,
         )
 
 
@@ -537,6 +571,13 @@ def _load_config(config_path: Path | None) -> AppConfig:
 
     console.print("No config file found, using defaults", style="dim")
     return AppConfig()
+
+
+def _load_case_ids(path: Path | None) -> set[str] | None:
+    """Read a newline-delimited case-id file into a set (None when no path)."""
+    if path is None:
+        return None
+    return {line.strip() for line in path.read_text().splitlines() if line.strip()}
 
 
 def _resolve_dataset(dataset: str) -> DatasetSpec:
@@ -596,6 +637,14 @@ def run(
             "analysis.model when --target is analysis-skill) from the config."
         ),
     ),
+    filter_ids: Path | None = typer.Option(
+        None,
+        "--filter-ids",
+        help=(
+            "Path to a newline-delimited file of QA case ids to run "
+            "(failure-subset rerun). Filters QA only; retrieval is unaffected."
+        ),
+    ),
 ) -> None:
     spec = _resolve_dataset(dataset)
     app_config = _load_config(config)
@@ -622,6 +671,7 @@ def run(
             judge_model=judge_model_config,
             target=target_value,
             skill_model=skill_model_config,
+            case_ids=_load_case_ids(filter_ids),
         )
     )
 

@@ -1,6 +1,6 @@
 # Benchmarks
 
-We evaluate `haiku.rag` on a small set of datasets that exercise different parts of the pipeline. Wix and OpenRAG Bench (ORB) are the two we currently track. Retrieval, QA accuracy, and citation retrieval are scored end-to-end through the rag and rag-analysis skills.
+We evaluate `haiku.rag` on a small set of datasets that exercise different parts of the pipeline. OpenRAG Bench (ORB), T²-RAGBench, and Wix are the datasets we currently track. Retrieval, QA accuracy, and citation retrieval are scored end-to-end through the rag and rag-analysis skills.
 
 ## Running Evaluations
 
@@ -150,6 +150,18 @@ Two approaches are benchmarked separately:
 | `nvidia/llama-nemotron-embed-vl-1b-v2`   | Ollama / ministral-3 | `vllm:Gemma-4-26B-A4B-NVFP4` |  2836 | 0.96        | 0.81             |
 
 *Measured on haiku.rag v0.50.0 with `mxbai-rerank-base-v2`, judged by `vllm:Qwen3.6-35B-A3B-NVFP4`. Nemotron covered 2836 / 3045 cases.*
+
+### T²-RAGBench (FinQA)
+
+[T²-RAGBench](https://huggingface.co/datasets/G4KMU/t2-ragbench) reformulates financial-report QA into context-independent questions with short numeric answers and a 1:1 gold document mapping. The FinQA subset is 2,789 single-page PDFs / 8,281 questions, ingested via docling. Unlike the other datasets, QA is scored deterministically with `NumberMatchEvaluator` (relative tolerance 0.01) instead of an LLM judge, so QA accuracy here is exact numeric match rather than a judged fraction.
+
+##### QA accuracy + citation retrieval
+
+| Embedding Model      | Reranker               | Target           | Skill model                  | Cases | QA accuracy | Mean `cited_map` |
+|----------------------|------------------------|------------------|------------------------------|------:|-------------|------------------|
+| `qwen3-embedding:4b` | `mxbai-rerank-base-v2` | `analysis-skill` | `vllm:Qwen3.6-35B-A3B-NVFP4` |  7939 | 0.77        | 0.78             |
+
+*Measured on haiku.rag v0.55.0, deterministic Number-Match scoring (ε=0.01), 2560-dim `qwen3-embedding:4b` (vLLM) with `mxbai-rerank-base-v2`. 341 / 8281 cases excluded as nulls (analysis spirals from the request limit and in-generation loops). Accuracy and `cited_map` are over the 7939 scored cases. Mean 16.0s/case.*
 
 ### Wix
 

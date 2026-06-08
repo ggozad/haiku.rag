@@ -265,6 +265,7 @@ def create_skill_tools(
         tools["get_document"] = get_document
 
     if "execute_code" in tool_names:
+        max_executions = config.analysis.max_executions
 
         async def execute_code(ctx: RunContext[AnalysisRunDeps], code: str) -> str:
             """Execute Python code in a sandboxed interpreter.
@@ -280,6 +281,13 @@ def create_skill_tools(
             Args:
                 code: Python code to execute.
             """
+            ctx.deps.execute_count += 1
+            if ctx.deps.execute_count > max_executions:
+                return (
+                    "Code-execution limit reached. Give your final answer now "
+                    "from what you already have; do not call execute_code again."
+                )
+
             assert ctx.deps is not None and ctx.deps.sandbox is not None, (
                 "AnalysisRunDeps.sandbox is not set — skill lifespan must run before execute_code."
             )

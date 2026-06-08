@@ -1,6 +1,18 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- Bump `haiku.skills>=0.17.2`: skill runs use a retry budget of 3 for tool calls and output validation (was 1).
+- Evaluations disable Logfire scrubbing (`scrubbing=False`) so financial answers containing words like "authorized" aren't redacted from logged outputs.
+
+### Added
+
+- `analysis.max_executions` (default 15): caps `execute_code` calls per analysis question. Past the cap the tool returns a notice telling the skill to answer from what it has, instead of spiralling into `request_limit` and returning nothing. The analysis skill sets `request_limit` to 30 as a backstop.
+- `t2_finqa` and `t2_tatdqa` evaluation datasets (T²-RAGBench subsets, `G4KMU/t2-ragbench`): financial-report PDFs ingested via docling with `uri = context_id` and gold retrieval keyed on `context_id`. QA is scored with a deterministic `NumberMatchEvaluator` (relative tolerance 0.01) via the new `DatasetSpec.qa_evaluator`, bypassing the LLM judge.
+- `evaluations run --filter-ids <file>`: run QA on just the case ids listed in a file (failure-subset rerun); retrieval is unaffected.
+- `evaluations/scripts/build_t2_submission.py` + `evaluations.submission`: build a T²-RAGBench leaderboard submission JSONL (`{id, subset, context_id, prediction}`) by joining QA predictions with retrieval rankings by question.
+
 ### Fixed
 
 - Skill tools (`search`/`cite`/`list_documents`/`get_document`) and the analysis sandbox serialize access to the shared LanceDB connection through one lock, so a turn's concurrently executed tool calls no longer trigger `RuntimeError: Already borrowed`.
