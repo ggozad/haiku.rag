@@ -406,3 +406,71 @@ class TestAttachRelevantUris:
         )
         _attach_relevant_uris(cases, spec, limit=None)
         assert cases[0].metadata is None
+
+
+class TestFilterQaCorpus:
+    def test_keeps_only_matching_ids(self) -> None:
+        from datasets import Dataset
+
+        from evaluations.benchmark import _filter_qa_corpus
+
+        corpus = Dataset.from_list(
+            [{"id": "a", "q": 1}, {"id": "b", "q": 2}, {"id": "c", "q": 3}]
+        )
+        out = _filter_qa_corpus(corpus, {"a", "c"})
+        assert [r["id"] for r in out] == ["a", "c"]
+
+    def test_none_returns_corpus_unchanged(self) -> None:
+        from datasets import Dataset
+
+        from evaluations.benchmark import _filter_qa_corpus
+
+        corpus = Dataset.from_list([{"id": "a"}])
+        assert _filter_qa_corpus(corpus, None) is corpus
+
+
+class TestLoadCaseIds:
+    def test_reads_strips_and_drops_blanks(self, tmp_path: Path) -> None:
+        from evaluations.benchmark import _load_case_ids
+
+        f = tmp_path / "ids.txt"
+        f.write_text("finqa_dev_16\n  finqa_dev_66 \n\n\nfinqa_dev_113\n")
+        assert _load_case_ids(f) == {"finqa_dev_16", "finqa_dev_66", "finqa_dev_113"}
+
+    def test_none_path_returns_none(self) -> None:
+        from evaluations.benchmark import _load_case_ids
+
+        assert _load_case_ids(None) is None
+
+
+class TestEvaluateDatasetCaseIds:
+    def _spec(self) -> DatasetSpec:
+        return DatasetSpec(
+            key="test",
+            db_filename="test.lancedb",
+            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            document_mapper=lambda doc: None,
+            qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        )
+
+    @pytest.mark.asyncio
+    async def test_threads_case_ids_to_qa_benchmark(self) -> None:
+        from evaluations.benchmark import evaluate_dataset
+
+        with patch(
+            "evaluations.benchmark.run_qa_benchmark", new_callable=AsyncMock
+        ) as mock_qa:
+            await evaluate_dataset(
+                spec=self._spec(),
+                config=AppConfig(),
+                skip_db=True,
+                skip_retrieval=True,
+                skip_qa=False,
+                limit=None,
+                name=None,
+                db_path=None,
+                case_ids={"finqa_dev_16", "finqa_dev_66"},
+            )
+        mock_qa.assert_called_once()
+        assert mock_qa.call_args[1]["case_ids"] == {"finqa_dev_16", "finqa_dev_66"}
