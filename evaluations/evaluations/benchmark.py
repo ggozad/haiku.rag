@@ -40,7 +40,11 @@ load_dotenv(find_dotenv(usecwd=True))
 
 HF_REPO_ID = "ggozad/haiku-rag-eval-dbs"
 
-logfire.configure(send_to_logfire="if-token-present", service_name="evals")
+# Scrubbing off: eval outputs are financial answers with words like "authorized"
+# that trip Logfire's secret scrubber and redact the model's answer text.
+logfire.configure(
+    send_to_logfire="if-token-present", service_name="evals", scrubbing=False
+)
 logfire.instrument_pydantic_ai()
 configure_cli_logging()
 console = Console()

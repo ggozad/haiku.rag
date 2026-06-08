@@ -4,6 +4,7 @@
 ### Changed
 
 - Bump `haiku.skills>=0.17.2`: skill runs use a retry budget of 3 for tool calls and output validation (was 1).
+- Evaluations disable Logfire scrubbing (`scrubbing=False`) so financial answers containing words like "authorized" aren't redacted from logged outputs.
 
 ### Added
 
