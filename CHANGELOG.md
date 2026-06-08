@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.55.1] - 2026-06-08
+
 ### Changed
 
 - Bump `haiku.skills>=0.17.2`: skill runs use a retry budget of 3 for tool calls and output validation (was 1).
@@ -1701,7 +1703,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.55.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.55.1...HEAD
+[0.55.1]: https://github.com/ggozad/haiku.rag/compare/0.55.0...0.55.1
 [0.55.0]: https://github.com/ggozad/haiku.rag/compare/0.54.0...0.55.0
 [0.54.0]: https://github.com/ggozad/haiku.rag/compare/0.53.0...0.54.0
 [0.53.0]: https://github.com/ggozad/haiku.rag/compare/0.52.0...0.53.0
