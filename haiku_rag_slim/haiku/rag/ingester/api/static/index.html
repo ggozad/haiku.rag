@@ -161,6 +161,33 @@
       }
       #tooltip.visible { opacity: 1; }
       [data-tip] { cursor: help; }
+
+      details.panel { padding: 0; }
+      details.panel > summary {
+        list-style: none; cursor: pointer; user-select: none;
+        display: flex; align-items: center; gap: 8px; padding: 16px;
+        font-size: 13px; font-weight: 600; letter-spacing: 0.04em;
+        text-transform: uppercase; color: var(--muted);
+      }
+      details.panel > summary::-webkit-details-marker { display: none; }
+      details.panel > summary::before { content: "▸"; color: var(--muted); }
+      details.panel[open] > summary::before { content: "▾"; }
+      details.panel > summary .spacer { flex: 1; }
+      details.panel > summary button {
+        background: var(--bg); color: var(--text); border: 1px solid var(--border);
+        padding: 4px 10px; border-radius: 4px; font: inherit; font-size: 11px;
+        text-transform: none; letter-spacing: 0; cursor: pointer;
+      }
+      details.panel > summary button:hover { background: var(--border); }
+      details.panel > .body { padding: 0 16px 16px; }
+
+      pre.config {
+        margin: 0; max-height: 600px; overflow: auto;
+        background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+        padding: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px; line-height: 1.5; color: var(--text);
+        white-space: pre; word-break: normal;
+      }
     </style>
   </head>
   <body>
@@ -255,6 +282,26 @@
             <div class="empty">loading…</div>
           </div>
         </div>
+
+        <details class="panel full" id="db-panel">
+          <summary>
+            <span>Database</span>
+            <span class="spacer"></span>
+            <button type="button" id="db-refresh">Refresh</button>
+          </summary>
+          <div class="body" id="db-body">
+            <div class="empty">expand to load…</div>
+          </div>
+        </details>
+
+        <details class="panel full" id="config-panel">
+          <summary>
+            <span>Configuration</span>
+          </summary>
+          <div class="body" id="config-body">
+            <div class="empty">expand to load…</div>
+          </div>
+        </details>
       </div>
     </div>
 
@@ -319,6 +366,18 @@
 
       function shortId(id) {
         return id ? id.slice(0, 8) : "—";
+      }
+
+      function formatBytes(n) {
+        if (n == null) return "—";
+        const units = ["B", "KB", "MB", "GB", "TB"];
+        let i = 0;
+        let v = n;
+        while (v >= 1024 && i < units.length - 1) {
+          v /= 1024;
+          i++;
+        }
+        return `${i === 0 ? v : v.toFixed(1)} ${units[i]}`;
       }
 
       function escapeHtml(s) {
@@ -667,6 +726,113 @@
           current = null;
         });
       })();
+
+      // Database and Configuration panels are on-demand, not part of the
+      // POLL_MS loop: their data is database state, not live queue telemetry,
+      // and gathering it re-reads table manifests. Loaded lazily on first
+      // expand; the Database panel can be re-fetched with its Refresh button.
+
+      function renderDatabase(info) {
+        if (!info.exists) {
+          $("db-body").innerHTML =
+            '<div class="empty">database empty or not initialized</div>';
+          return;
+        }
+        const emb = info.embeddings || {};
+        const vi = info.vector_index || {};
+        const pkgs = info.packages || {};
+        const stat = (label, value) =>
+          `<div class="stat"><div class="label">${label}</div><div class="value">${value}</div></div>`;
+        const stats = [
+          stat("Stored version", escapeHtml(info.stored_version)),
+          stat("Vector dim", emb.vector_dim ?? "—"),
+          stat(
+            "Vector index",
+            vi.exists ? `✓ ${vi.indexed_rows}` : "✗ none",
+          ),
+          stat("haiku.rag", escapeHtml(pkgs.haiku_rag ?? "—")),
+          stat("lancedb", escapeHtml(pkgs.lancedb ?? "—")),
+        ].join("");
+
+        const tableRows = (info.tables || [])
+          .map((t) => {
+            if (!t.exists) {
+              return `<tr><td>${escapeHtml(t.name)}</td><td colspan="3"><span class="badge warn">absent</span></td></tr>`;
+            }
+            return `<tr>
+              <td>${escapeHtml(t.name)}</td>
+              <td>${t.num_rows}</td>
+              <td>${formatBytes(t.total_bytes)}</td>
+              <td>${t.num_versions}</td>
+            </tr>`;
+          })
+          .join("");
+
+        let migration = '<span class="badge ok">up to date</span>';
+        const pending = info.pending_migrations || [];
+        if (pending.length) {
+          const items = pending
+            .map(
+              (m) =>
+                `<span data-tip="${escapeHtml(m.description)}">${escapeHtml(m.version)}</span>`,
+            )
+            .join(" ");
+          migration = `<span class="badge warn" data-tip="run: haiku-rag migrate">${pending.length} pending</span> ${items}`;
+        }
+        let unindexed = "";
+        if (vi.exists && vi.unindexed_rows > 0) {
+          unindexed = ` <span class="badge warn" data-tip="run: haiku-rag create-index">${vi.unindexed_rows} unindexed</span>`;
+        }
+
+        $("db-body").innerHTML = `
+          <div class="stats-grid">${stats}</div>
+          <div class="breakdown">
+            <span>embeddings: ${escapeHtml(emb.provider ?? "?")}/${escapeHtml(emb.name ?? "?")}</span>
+            <span>path: ${escapeHtml(info.path)}</span>
+          </div>
+          <table>
+            <thead><tr><th>Table</th><th>Rows</th><th>Size</th><th>Versions</th></tr></thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+          <div class="breakdown">Migrations: ${migration}${unindexed}</div>`;
+      }
+
+      let dbLoaded = false;
+      async function loadDatabase() {
+        $("db-body").innerHTML = '<div class="empty">loading…</div>';
+        try {
+          renderDatabase(await fetchJson("/database"));
+          dbLoaded = true;
+        } catch (e) {
+          $("db-body").innerHTML = `<div class="empty">error: ${escapeHtml(e.message)}</div>`;
+        }
+      }
+
+      let configLoaded = false;
+      async function loadConfig() {
+        $("config-body").innerHTML = '<div class="empty">loading…</div>';
+        try {
+          const data = await fetchJson("/config");
+          $("config-body").innerHTML = '<pre class="config"></pre>';
+          $("config-body").querySelector("pre").textContent = data.yaml;
+          configLoaded = true;
+        } catch (e) {
+          $("config-body").innerHTML = `<div class="empty">error: ${escapeHtml(e.message)}</div>`;
+        }
+      }
+
+      $("db-panel").addEventListener("toggle", (e) => {
+        if (e.target.open && !dbLoaded) loadDatabase();
+      });
+      $("db-refresh").addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        $("db-panel").open = true;
+        loadDatabase();
+      });
+      $("config-panel").addEventListener("toggle", (e) => {
+        if (e.target.open && !configLoaded) loadConfig();
+      });
 
       setInterval(updateLastRefresh, 1000);
       refresh();

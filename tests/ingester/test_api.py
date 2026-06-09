@@ -635,6 +635,21 @@ async def test_dashboard_served_unauthenticated(state):
     assert "opBadge" in body
 
 
+@pytest.mark.asyncio
+async def test_dashboard_wires_database_and_config_panels(state):
+    """The on-demand Database and Configuration panels are present and call
+    their endpoints lazily (not in the POLL_MS loop)."""
+    async with _client(state) as client:
+        resp = await client.get("/")
+    body = resp.text
+    assert 'id="db-panel"' in body
+    assert 'id="config-panel"' in body
+    assert "/database" in body
+    assert "/config" in body
+    assert "loadDatabase" in body
+    assert "loadConfig" in body
+
+
 # --- config ---
 
 
