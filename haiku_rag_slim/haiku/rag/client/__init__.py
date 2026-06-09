@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from haiku.rag.client.documents import DocumentImport
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.converters import get_converter
 from haiku.rag.reranking import get_reranker
@@ -236,6 +237,14 @@ class HaikuRAG:
         return await import_document(
             self, docling_document, chunks, uri, title, metadata
         )
+
+    async def import_documents(
+        self,
+        imports: "list[DocumentImport]",
+    ) -> list[Document]:
+        from haiku.rag.client.documents import import_documents
+
+        return await import_documents(self, imports)
 
     async def create_document_from_source(
         self,

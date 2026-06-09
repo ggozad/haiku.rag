@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.client.documents import DocumentImport
 from haiku.rag.config import Config
 from haiku.rag.store.compression import decompress_json
 from haiku.rag.store.models.chunk import Chunk
@@ -774,6 +775,90 @@ async def test_client_import_document_with_custom_chunks(temp_db_path):
             assert (
                 chunk.metadata["custom"] == f"metadata{i + 1}"
             )  # Original metadata preserved
+
+
+def _docling_doc(name: str, text: str):
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
+    doc = DoclingDocument(name=name)
+    doc.add_text(label=DocItemLabel.TEXT, text=text)
+    return doc
+
+
+def _import(name: str, text: str, **overrides) -> "DocumentImport":
+    """Build a DocumentImport with one pre-embedded chunk (no embedder call)."""
+    dim = Config.embeddings.model.vector_dim
+    chunk = Chunk(content=text, embedding=[0.1] * dim, order=0)
+    return DocumentImport(
+        docling_document=_docling_doc(name, text),
+        chunks=[chunk],
+        **overrides,
+    )
+
+
+async def test_client_import_documents_single_version_per_table(temp_db_path):
+    """import_documents writes documents/chunks/document_items once for the
+    whole batch (issue #287)."""
+    config = Config.model_copy(deep=True)
+    config.storage.auto_vacuum = False
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        imports = [
+            _import("a", "Alpha document body", uri="mem://a", title="Alpha"),
+            _import("b", "Beta document body", uri="mem://b", title="Beta"),
+            _import("c", "Gamma document body", uri="mem://c", title="Gamma"),
+        ]
+
+        before = await client.store.current_table_versions()
+        docs = await client.import_documents(imports)
+        after = await client.store.current_table_versions()
+
+        assert [d.title for d in docs] == ["Alpha", "Beta", "Gamma"]
+        assert all(d.id is not None for d in docs)
+        assert len({d.id for d in docs}) == 3
+
+        for table in ("documents", "chunks", "document_items"):
+            assert after[table] - before[table] == 1, table
+
+        for doc, expected in zip(docs, ("Alpha", "Beta", "Gamma")):
+            assert doc.id is not None
+            stored = await client.get_document_by_id(doc.id)
+            assert stored is not None and stored.title == expected
+            chunks = await client.chunk_repository.get_by_document_id(doc.id)
+            assert len(chunks) == 1 and chunks[0].document_id == doc.id
+            items = await client.document_item_repository.get_all_items(doc.id)
+            assert len(items) >= 1
+            assert all(i.document_id == doc.id for i in items)
+
+
+async def test_client_import_documents_rolls_back_on_failure(temp_db_path):
+    """A failure mid-batch restores all tables: nothing is persisted."""
+    dim = Config.embeddings.model.vector_dim
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        good = _import("good", "Good document body", uri="mem://good")
+        bad = DocumentImport(
+            docling_document=_docling_doc("bad", "Bad document body"),
+            chunks=[Chunk(content="bad", embedding=[0.1] * (dim + 1), order=0)],
+            uri="mem://bad",
+        )
+
+        with pytest.raises(Exception):
+            await client.import_documents([good, bad])
+
+        assert await client.count_documents() == 0
+
+
+async def test_client_import_documents_empty(temp_db_path):
+    """import_documents([]) returns [] and bumps no versions."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        before = await client.store.current_table_versions()
+        result = await client.import_documents([])
+        after = await client.store.current_table_versions()
+
+        assert result == []
+        assert after == before
 
 
 @pytest.mark.vcr()

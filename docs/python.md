@@ -394,6 +394,31 @@ doc = await client.import_document(
 
 The `docling_document` provides rich metadata for visual grounding, page numbers, and section headings. Content is automatically extracted from the DoclingDocument.
 
+### Batch Import
+
+Each `create_document*` / `import_document` call writes new versions of the `documents`, `chunks`, and `document_items` tables. Ingesting many documents in a loop therefore creates a table version per document. Use `import_documents()` to write the whole batch in a single version per table:
+
+```python
+from haiku.rag.client import DocumentImport
+
+imports = []
+for path in paths:  # paths: list[Path]
+    docling_doc = await client.convert(path)
+    chunks = await client.chunk(docling_doc)
+    imports.append(
+        DocumentImport(
+            docling_document=docling_doc,
+            chunks=chunks,
+            uri=path.absolute().as_uri(),
+            metadata={"source": "external-pipeline"},
+        )
+    )
+
+docs = await client.import_documents(imports)
+```
+
+Chunks without embeddings are embedded automatically. The import is all-or-nothing: if any document fails, all tables are restored to their pre-batch state.
+
 See [Custom Processing Pipelines](custom-pipelines.md) for building pipelines with `convert()`, `chunk()`, and `embed_chunks()`.
 
 ## Maintenance
