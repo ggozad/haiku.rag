@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.56.0] - 2026-06-09
+
 ### Added
 
 - Ingester control plane gains `GET /database` (LanceDB snapshot: stored version, embeddings, per-table counts/sizes, vector index, pending migrations, package versions — the data `haiku-rag info` prints) and `GET /config` (full effective config as YAML, secrets redacted). The dashboard surfaces both as on-demand collapsible Database and Configuration panels.
@@ -1716,7 +1718,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.55.1...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.56.0...HEAD
+[0.56.0]: https://github.com/ggozad/haiku.rag/compare/0.55.1...0.56.0
 [0.55.1]: https://github.com/ggozad/haiku.rag/compare/0.55.0...0.55.1
 [0.55.0]: https://github.com/ggozad/haiku.rag/compare/0.54.0...0.55.0
 [0.54.0]: https://github.com/ggozad/haiku.rag/compare/0.53.0...0.54.0
