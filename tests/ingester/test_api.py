@@ -635,6 +635,24 @@ async def test_dashboard_served_unauthenticated(state):
     assert "opBadge" in body
 
 
+def test_api_access_log_gated_on_debug():
+    """uvicorn per-request access logging is off at the ingester's normal INFO
+    level (the dashboard polls every few seconds) and on at DEBUG."""
+    import logging
+
+    from haiku.rag.ingester.app import _api_access_log_enabled
+
+    haiku_logger = logging.getLogger("haiku.rag")
+    original = haiku_logger.level
+    try:
+        haiku_logger.setLevel(logging.INFO)
+        assert _api_access_log_enabled() is False
+        haiku_logger.setLevel(logging.DEBUG)
+        assert _api_access_log_enabled() is True
+    finally:
+        haiku_logger.setLevel(original)
+
+
 @pytest.mark.asyncio
 async def test_dashboard_wires_database_and_config_panels(state):
     """The on-demand Database and Configuration panels are present and call
