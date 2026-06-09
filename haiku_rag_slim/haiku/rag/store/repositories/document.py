@@ -1,5 +1,6 @@
 import json
 from datetime import datetime
+from typing import overload
 from uuid import uuid4
 
 from lancedb.index import BTree
@@ -61,17 +62,8 @@ class DocumentRepository:
             else datetime.now(),
         )
 
-    async def create(self, entity: Document) -> Document:
-        """Create a document in the database."""
-        self.store._assert_writable()
-        # Generate new UUID
-        doc_id = str(uuid4())
-
-        # Create timestamp
-        now = datetime.now().isoformat()
-
-        # Create document record
-        doc_record = DocumentRecord(
+    def _to_record(self, entity: Document, doc_id: str, now: str) -> DocumentRecord:
+        return DocumentRecord(
             id=doc_id,
             content=entity.content,
             uri=entity.uri,
@@ -84,13 +76,46 @@ class DocumentRepository:
             updated_at=now,
         )
 
-        # Add to table
-        await self.store.documents_table.add([doc_record])
+    @overload
+    async def create(self, entity: Document) -> Document: ...
 
-        entity.id = doc_id
-        entity.created_at = datetime.fromisoformat(now)
-        entity.updated_at = datetime.fromisoformat(now)
-        return entity
+    @overload
+    async def create(self, entity: list[Document]) -> list[Document]: ...
+
+    async def create(
+        self, entity: Document | list[Document]
+    ) -> Document | list[Document]:
+        """Create one or more documents in the database.
+
+        A list is written in a single table version regardless of length.
+        """
+        self.store._assert_writable()
+
+        if isinstance(entity, Document):
+            doc_id = str(uuid4())
+            now = datetime.now().isoformat()
+            await self.store.documents_table.add([self._to_record(entity, doc_id, now)])
+            entity.id = doc_id
+            entity.created_at = datetime.fromisoformat(now)
+            entity.updated_at = datetime.fromisoformat(now)
+            return entity
+
+        documents = entity
+        if not documents:
+            return []
+
+        now = datetime.now().isoformat()
+        created_at = datetime.fromisoformat(now)
+        records = []
+        for document in documents:
+            doc_id = str(uuid4())
+            records.append(self._to_record(document, doc_id, now))
+            document.id = doc_id
+            document.created_at = created_at
+            document.updated_at = created_at
+
+        await self.store.documents_table.add(records)
+        return documents
 
     async def get_by_id(self, entity_id: str) -> Document | None:
         """Get a document by its ID."""
