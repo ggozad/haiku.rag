@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- Ingester worker circuit breaker is now per-source: a streak of transient failures pauses claims only for the affected source's jobs while healthy sources keep flowing, instead of pausing the whole worker pool. Paused sources are excluded at the claim query.
+
 ## [0.55.1] - 2026-06-08
 
 ### Changed

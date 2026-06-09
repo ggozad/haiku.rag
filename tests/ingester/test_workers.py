@@ -524,14 +524,14 @@ async def test_double_start_raises(client, jobs, sync):
         await pool.stop()
 
 
-# --- pool-wide circuit breaker ---
+# --- per-source circuit breaker ---
 
 
 @pytest.mark.asyncio
 async def test_breaker_opens_after_n_consecutive_transient_failures(client, jobs, sync):
-    """N back-to-back TransientErrors flips the pool breaker open. While
-    open, _worker_loop's claim_next is gated off so subsequent jobs don't
-    burn their attempts during the same downstream outage."""
+    """N back-to-back TransientErrors from one source flips that source's
+    breaker open. While open, _worker_loop excludes the source from
+    claim_next so its other jobs don't burn attempts during the same outage."""
     from haiku.rag.ingester.workers.pool import _WORKER_BREAKER_THRESHOLD
 
     client.create_document_from_source.side_effect = TransientError("downstream down")
@@ -548,28 +548,28 @@ async def test_breaker_opens_after_n_consecutive_transient_failures(client, jobs
         await pool.drain_once()
     assert pool.breaker_open is True
 
-    # drain_once bypasses the worker-loop gate (it's intended for tests), so
-    # it would still process more jobs. Verify the gate exists by checking
-    # _worker_loop: a fresh worker started with the breaker open shouldn't
-    # claim anything.
+    # drain_once claims without the breaker exclusion (it's intended for
+    # tests), so it would still process more jobs. The exclusion lives in
+    # _worker_loop: a fresh worker with this source's breaker open won't
+    # claim its jobs.
     remaining_before = len(await jobs.list_jobs(status=JobStatus.QUEUED, limit=500))
     assert remaining_before >= 1
 
 
 @pytest.mark.asyncio
 async def test_breaker_pauses_worker_loop_claims(client, jobs, sync):
-    """Worker loop honours the breaker: claim_next is not called while
-    is_open, so queued jobs stay queued until the breaker closes."""
+    """Worker loop honours the breaker: an open source is excluded from
+    claim_next, so its queued jobs stay queued until the breaker closes."""
     pool = _pool(client, jobs, sync, worker_count=1, poll_idle_interval_s=0.02)
-    # Force the breaker open without touching the queue.
+    # Force the source's breaker open without touching the queue.
     for _ in range(10):
-        pool._breaker.record_failure()
+        pool._breaker_for("src").record_failure()
     assert pool.breaker_open is True
 
     await jobs.enqueue("src", "u", JobOp.UPSERT)
     await pool.start()
     try:
-        # Even with a queued job available and a live worker, the gate
+        # Even with a queued job available and a live worker, the exclusion
         # keeps the job in 'queued' state.
         await asyncio.sleep(0.1)
         refreshed = await jobs.list_jobs(status=JobStatus.QUEUED, limit=10)
@@ -586,11 +586,13 @@ async def test_breaker_closes_on_successful_probe(client, jobs, sync):
         id="d", content="x", uri="u", metadata={"md5": "m", "source_revision": "r"}
     )
     pool = _pool(client, jobs, sync)
-    # Open the breaker, then collapse the cooldown so is_open returns False
-    # on the next check (the breaker's three-state model probes after cooldown).
+    # Open the source's breaker, then collapse the cooldown so is_open returns
+    # False on the next check (the breaker's three-state model probes after
+    # cooldown).
+    breaker = pool._breaker_for("src")
     for _ in range(10):
-        pool._breaker.record_failure()
-    pool._breaker._opened_at = 0.0  # type: ignore[attr-defined]
+        breaker.record_failure()
+    breaker._opened_at = 0.0  # type: ignore[attr-defined]
     assert pool.breaker_open is False  # cooldown elapsed → probe allowed
 
     await jobs.enqueue("src", "u", JobOp.UPSERT)
@@ -598,6 +600,41 @@ async def test_breaker_closes_on_successful_probe(client, jobs, sync):
 
     # The successful job ticks record_success which clears the breaker.
     assert pool.breaker_consecutive_failures == 0
+
+
+@pytest.mark.asyncio
+async def test_breaker_isolates_sources(client, jobs, sync):
+    """An open breaker pauses only the failing source. Workers keep draining
+    a healthy source's jobs while the failing source's jobs stay queued."""
+
+    def _route(uri, *, sources=None, source_id=None):
+        if source_id == "bad":
+            raise TransientError("downstream down")
+        return Document(
+            id="d", content="x", uri=uri, metadata={"md5": "m", "source_revision": "r"}
+        )
+
+    client.create_document_from_source.side_effect = _route
+
+    for i in range(3):
+        await jobs.enqueue("bad", f"b{i}", JobOp.UPSERT)
+        await jobs.enqueue("good", f"g{i}", JobOp.UPSERT)
+
+    pool = _pool(client, jobs, sync, worker_count=2, poll_idle_interval_s=0.02)
+    # Open the bad source's breaker without touching the queue.
+    for _ in range(10):
+        pool._breaker_for("bad").record_failure()
+
+    await pool.start()
+    try:
+        await asyncio.sleep(0.2)
+        succeeded = await jobs.list_jobs(status=JobStatus.SUCCEEDED, limit=50)
+        queued = await jobs.list_jobs(status=JobStatus.QUEUED, limit=50)
+    finally:
+        await pool.stop()
+
+    assert {j.uri for j in succeeded} == {"g0", "g1", "g2"}
+    assert {j.uri for j in queued} == {"b0", "b1", "b2"}
 
 
 @pytest.mark.asyncio
