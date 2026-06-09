@@ -3,7 +3,12 @@
 
 ### Added
 
+- Ingester control plane gains `GET /database` (LanceDB snapshot: stored version, embeddings, per-table counts/sizes, vector index, pending migrations, package versions — the data `haiku-rag info` prints) and `GET /config` (full effective config as YAML, secrets redacted). The dashboard surfaces both as on-demand collapsible Database and Configuration panels.
 - `HaikuRAG.import_documents(imports)` batch-imports prepared documents (`DocumentImport`), writing the `documents`, `chunks`, and `document_items` tables once each regardless of batch size. `DocumentRepository.create` accepts `Document | list[Document]`.
+
+### Changed
+
+- Ingester control-plane per-request access logs are emitted only when the `haiku.rag` logger is at DEBUG.
 
 ### Fixed
 

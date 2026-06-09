@@ -13,7 +13,7 @@ import pyarrow as pa
 from lancedb.index import FTS, BTree, IvfPq
 from lancedb.pydantic import LanceModel, Vector
 from packaging.version import parse
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.embeddings import get_embedder
@@ -213,6 +213,116 @@ async def get_database_stats(db: lancedb.AsyncConnection) -> dict:
                 stats["chunks"]["num_unindexed_rows"] = index_stats.num_unindexed_rows
 
     return stats
+
+
+class EmbeddingsInfo(BaseModel):
+    provider: str = "unknown"
+    name: str = "unknown"
+    vector_dim: int | None = None
+
+
+class TableInfo(BaseModel):
+    name: str
+    exists: bool
+    num_rows: int = 0
+    total_bytes: int = 0
+    num_versions: int = 0
+
+
+class VectorIndexInfo(BaseModel):
+    exists: bool = False
+    indexed_rows: int = 0
+    unindexed_rows: int = 0
+
+
+class PendingMigration(BaseModel):
+    version: str
+    description: str = ""
+
+
+class DatabaseInfo(BaseModel):
+    """Structured snapshot of a haiku.rag database, shared by the `info` CLI
+    command and the ingester control plane. Read-only; gathered without
+    opening a Store."""
+
+    path: str
+    exists: bool
+    stored_version: str = "unknown"
+    embeddings: EmbeddingsInfo = Field(default_factory=EmbeddingsInfo)
+    tables: list[TableInfo] = Field(default_factory=list)
+    vector_index: VectorIndexInfo = Field(default_factory=VectorIndexInfo)
+    pending_migrations: list[PendingMigration] = Field(default_factory=list)
+    packages: dict[str, str] = Field(default_factory=dict)
+
+
+async def gather_database_info(config: AppConfig, db_path: Path) -> DatabaseInfo:
+    """Collect read-only database state without going through Store, so a
+    database missing tables (e.g. pre-migration) still reports what it can."""
+    from haiku.rag.store.upgrades import get_pending_upgrades
+    from haiku.rag.utils import get_package_versions
+
+    display_path = config.lancedb.uri or str(db_path)
+
+    db = await connect_lancedb(config, db_path)
+    stats = await get_database_stats(db)
+
+    if not any(entry["exists"] for entry in stats.values()):
+        return DatabaseInfo(path=display_path, exists=False)
+
+    stored_version = "unknown"
+    embeddings = EmbeddingsInfo()
+    if stats["settings"]["exists"]:
+        settings_tbl = await db.open_table("settings")
+        rows = (
+            await settings_tbl.query().where("id = 'settings'").limit(1).to_arrow()
+        ).to_pylist()
+        if rows:
+            raw = rows[0].get("settings") or "{}"
+            data = json.loads(raw) if isinstance(raw, str) else (raw or {})
+            stored_version = str(data.get("version", "unknown"))
+            model = data.get("embeddings", {}).get("model", {})
+            embeddings = EmbeddingsInfo(
+                provider=model.get("provider", "unknown"),
+                name=model.get("name", "unknown"),
+                vector_dim=model.get("vector_dim"),
+            )
+
+    tables = [
+        TableInfo(
+            name=name,
+            exists=stats[name]["exists"],
+            num_rows=stats[name].get("num_rows", 0),
+            total_bytes=stats[name].get("total_bytes", 0),
+            num_versions=stats[name].get("num_versions", 0),
+        )
+        for name in ("documents", "chunks", "document_items")
+    ]
+
+    vector_index = VectorIndexInfo()
+    if stats["chunks"]["exists"] and stats["chunks"].get("has_vector_index"):
+        vector_index = VectorIndexInfo(
+            exists=True,
+            indexed_rows=stats["chunks"].get("num_indexed_rows", 0),
+            unindexed_rows=stats["chunks"].get("num_unindexed_rows", 0),
+        )
+
+    pending = (
+        get_pending_upgrades(stored_version) if stored_version != "unknown" else []
+    )
+
+    return DatabaseInfo(
+        path=display_path,
+        exists=True,
+        stored_version=stored_version,
+        embeddings=embeddings,
+        tables=tables,
+        vector_index=vector_index,
+        pending_migrations=[
+            PendingMigration(version=step.version, description=step.description or "")
+            for step in pending
+        ],
+        packages=get_package_versions(),
+    )
 
 
 class Store:

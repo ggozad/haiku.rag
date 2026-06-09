@@ -1,6 +1,7 @@
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -56,3 +57,32 @@ def generate_default_config() -> dict:
 
     default_config = AppConfig()
     return default_config.model_dump(mode="json", exclude_none=False)
+
+
+_SECRET_KEY_HINTS = ("key", "password", "token", "secret")
+
+
+def _is_secret_key(key: str) -> bool:
+    lowered = key.lower()
+    return any(hint in lowered for hint in _SECRET_KEY_HINTS)
+
+
+def redact_secrets(data: Any) -> Any:
+    """Recursively mask secret-bearing values in a config dump. Any scalar
+    whose key contains key/password/token/secret becomes "***" when set or
+    None when unset; everything else is preserved."""
+    if isinstance(data, dict):
+        result = {}
+        for key, value in data.items():
+            if (
+                isinstance(key, str)
+                and _is_secret_key(key)
+                and not isinstance(value, (dict, list))
+            ):
+                result[key] = "***" if value else None
+            else:
+                result[key] = redact_secrets(value)
+        return result
+    if isinstance(data, list):
+        return [redact_secrets(item) for item in data]
+    return data

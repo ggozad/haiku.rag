@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import Depends, FastAPI, Request
@@ -22,6 +23,7 @@ class APIState:
     sync_repo: "SyncStateRepo"
     pool: "WorkerPool | None" = None
     pollers: "PollerManager | None" = None
+    db_path: Path | None = None
 
 
 def get_state(request: Request) -> APIState:
@@ -35,7 +37,11 @@ def build_app(
 ) -> FastAPI:
     """Construct the ingester's FastAPI control plane."""
     from haiku.rag.ingester.api.routes import (
+        config as config_route,
+    )
+    from haiku.rag.ingester.api.routes import (
         dashboard,
+        database,
         dlq,
         health,
         jobs,
@@ -63,5 +69,7 @@ def build_app(
     app.include_router(dlq.router, dependencies=auth_dep)
     app.include_router(stats.router, dependencies=auth_dep)
     app.include_router(providers.router, dependencies=auth_dep)
+    app.include_router(database.router, dependencies=auth_dep)
+    app.include_router(config_route.router, dependencies=auth_dep)
 
     return app

@@ -21,6 +21,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _api_access_log_enabled() -> bool:
+    """Per-request access logging only when the haiku.rag logger is at DEBUG.
+    The dashboard polls the control plane every few seconds, so at the normal
+    INFO level the access log is pure noise."""
+    return logging.getLogger("haiku.rag").isEnabledFor(logging.DEBUG)
+
+
 class BatchReport(BaseModel):
     """Outcome of a one-shot batch run: terminal job counts after the queue
     drained, plus any sources whose discovery sweep did not complete."""
@@ -244,6 +251,7 @@ class IngesterApp:
             sync_repo=self._sync,
             pool=self._pool,
             pollers=self._pollers,
+            db_path=self._db_path,
         )
         if ingester_cfg.api.auth_token is None:
             logger.warning("API auth_token is unset — control plane is unauthenticated")
@@ -253,6 +261,7 @@ class IngesterApp:
             host=ingester_cfg.api.host,
             port=ingester_cfg.api.port,
             log_level="info",
+            access_log=_api_access_log_enabled(),
             lifespan="off",
         )
         server = uvicorn.Server(config)

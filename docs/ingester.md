@@ -305,13 +305,17 @@ token; without one the API stays open and the service logs a warning.
 | `GET` | `/dlq` | dead jobs |
 | `POST` | `/dlq/{id}/retry` | resurrect from DLQ |
 | `GET` | `/stats` | rolling throughput (5m / 30m / 1h succeeded), worker occupancy, oldest queued age, per-source DLQ + backlog |
+| `GET` | `/database` | LanceDB snapshot — stored version, embeddings, per-table row counts/sizes, vector index status, pending migrations, package versions (same data as `haiku-rag info`) |
+| `GET` | `/config` | full effective configuration (defaults filled in) as YAML, with secrets redacted |
 
 OpenAPI docs at `http://localhost:8765/docs`. The dashboard at `/` polls
 the JSON endpoints above every few seconds and surfaces the same data
 visually — queue depth chips, per-source health with a `queue busy` badge
 when sweeps are skipped, throughput counters, active jobs with a Cancel
 button, recent failures with a Retry button, and the last-completed
-feed.
+feed. The Database and Configuration panels are collapsed and load on
+demand (the Database panel has a Refresh button) rather than on the poll
+loop.
 
 ![Ingester dashboard mid-ingest: queue depth, per-source health, active and recent jobs](img/ingester-dashboard.png)
 

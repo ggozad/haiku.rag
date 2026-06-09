@@ -70,6 +70,13 @@ class WorkerStats(BaseModel):
     total: int
 
 
+class ConfigResponse(BaseModel):
+    """The full effective config (defaults filled in) as YAML, with secrets
+    redacted."""
+
+    yaml: str
+
+
 class StatsResponse(BaseModel):
     """Aggregated counters and per-source breakdowns that drive the dashboard.
     Cheap to compute (all SQL aggregations against the queue file)."""
