@@ -125,17 +125,25 @@ class JobRepo:
                 self.job_available.notify_all()
         return _row_to_job(row) if row else None
 
-    async def claim_next(self, worker_id: str) -> Job | None:
+    async def claim_next(
+        self, worker_id: str, *, exclude_source_ids: set[str] | None = None
+    ) -> Job | None:
         """Atomically claim the oldest queued job whose scheduled_at <= now.
         A single `UPDATE ... WHERE id = (SELECT ... LIMIT 1) RETURNING` keeps
         the claim atomic across connections: on Postgres the subquery adds
         `FOR UPDATE SKIP LOCKED`; on SQLite the whole statement runs under one
         write lock, so a racing connection re-evaluates the subquery against
-        the committed state and finds the row already claimed."""
+        the committed state and finds the row already claimed.
+
+        `exclude_source_ids` skips jobs from those sources (a paused breaker).
+        Empty or None adds no clause, leaving the query unchanged."""
         now = _utcnow_iso()
+        conditions = [jobs.c.status == "queued", jobs.c.scheduled_at <= now]
+        if exclude_source_ids:
+            conditions.append(jobs.c.source_id.notin_(sorted(exclude_source_ids)))
         candidate = (
             sa.select(jobs.c.id)
-            .where(jobs.c.status == "queued", jobs.c.scheduled_at <= now)
+            .where(*conditions)
             .order_by(jobs.c.scheduled_at, jobs.c.id)
             .limit(1)
             .with_for_update(skip_locked=True)

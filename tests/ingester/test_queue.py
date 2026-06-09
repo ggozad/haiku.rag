@@ -242,6 +242,28 @@ async def test_claim_next_returns_oldest_first(jobs):
 
 
 @pytest.mark.asyncio
+async def test_claim_next_excludes_source_ids(jobs):
+    a = await jobs.enqueue("a", "u", JobOp.UPSERT)
+    b = await jobs.enqueue("b", "u", JobOp.UPSERT)
+    assert a is not None
+    assert b is not None
+    first = await jobs.claim_next("w", exclude_source_ids={"a"})
+    assert first is not None
+    assert first.id == b.id
+    # The "a" job is excluded, so nothing more is claimable.
+    assert await jobs.claim_next("w", exclude_source_ids={"a"}) is None
+
+
+@pytest.mark.asyncio
+async def test_claim_next_empty_exclude_is_noop(jobs):
+    job = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    assert job is not None
+    claimed = await jobs.claim_next("w", exclude_source_ids=set())
+    assert claimed is not None
+    assert claimed.id == job.id
+
+
+@pytest.mark.asyncio
 async def test_claim_next_skips_future_scheduled(conn, jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     # Push scheduled_at into the future.

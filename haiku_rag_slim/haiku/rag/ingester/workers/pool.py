@@ -56,12 +56,7 @@ class WorkerPool:
         self._workers: list[asyncio.Task] = []
         self._reaper: asyncio.Task | None = None
         self._pending_releases: set[asyncio.Task] = set()
-        self._breaker = CircuitBreaker(
-            CircuitBreakerConfig(
-                failure_threshold=_WORKER_BREAKER_THRESHOLD,
-                cooldown_s=_WORKER_BREAKER_COOLDOWN_S,
-            )
-        )
+        self._breakers: dict[str, CircuitBreaker] = {}
 
     @property
     def live_workers(self) -> int:
@@ -71,11 +66,26 @@ class WorkerPool:
 
     @property
     def breaker_open(self) -> bool:
-        return self._breaker.is_open
+        return any(b.is_open for b in self._breakers.values())
 
     @property
     def breaker_consecutive_failures(self) -> int:
-        return self._breaker.consecutive_failures
+        return max((b.consecutive_failures for b in self._breakers.values()), default=0)
+
+    def _breaker_for(self, source_id: str) -> CircuitBreaker:
+        breaker = self._breakers.get(source_id)
+        if breaker is None:
+            breaker = CircuitBreaker(
+                CircuitBreakerConfig(
+                    failure_threshold=_WORKER_BREAKER_THRESHOLD,
+                    cooldown_s=_WORKER_BREAKER_COOLDOWN_S,
+                )
+            )
+            self._breakers[source_id] = breaker
+        return breaker
+
+    def _paused_source_ids(self) -> set[str]:
+        return {sid for sid, b in self._breakers.items() if b.is_open}
 
     async def start(self) -> None:
         if self._workers:
@@ -131,10 +141,9 @@ class WorkerPool:
 
     async def _worker_loop(self, worker_id: str) -> None:
         while not self._stop.is_set():
-            if self._breaker.is_open:
-                await self._sleep_or_stop(self._poll_idle_s)
-                continue
-            job = await self._jobs.claim_next(worker_id)
+            job = await self._jobs.claim_next(
+                worker_id, exclude_source_ids=self._paused_source_ids()
+            )
             if job is None:
                 try:
                     async with self._jobs.job_available:
@@ -201,12 +210,14 @@ class WorkerPool:
             logger.info("Job %s dead (permanent): %s", job.id, e)
             return
         except TransientError as e:
-            was_closed = not self._breaker.is_open
-            self._breaker.record_failure()
-            if was_closed and self._breaker.is_open:
+            breaker = self._breaker_for(job.source_id)
+            was_closed = not breaker.is_open
+            breaker.record_failure()
+            if was_closed and breaker.is_open:
                 logger.warning(
-                    "Worker pool breaker opened after %d consecutive transient "
-                    "failures; pausing claims for %.0fs",
+                    "Worker breaker opened for source %s after %d consecutive "
+                    "transient failures; pausing its claims for %.0fs",
+                    job.source_id,
                     _WORKER_BREAKER_THRESHOLD,
                     _WORKER_BREAKER_COOLDOWN_S,
                 )
@@ -246,10 +257,14 @@ class WorkerPool:
                 job.id,
             )
             return
-        was_open = self._breaker.is_open
-        self._breaker.record_success()
+        breaker = self._breaker_for(job.source_id)
+        was_open = breaker.is_open
+        breaker.record_success()
         if was_open:
-            logger.info("Worker pool breaker closed after successful probe")
+            logger.info(
+                "Worker breaker closed for source %s after successful probe",
+                job.source_id,
+            )
         try:
             if job.op is JobOp.DELETE:
                 await self._sync.delete(job.source_id, job.uri)
