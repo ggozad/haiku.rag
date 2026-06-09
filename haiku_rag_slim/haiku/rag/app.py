@@ -1,4 +1,3 @@
-import json
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -24,7 +23,7 @@ from haiku.rag.store.models.document import Document
 
 if TYPE_CHECKING:
     from haiku.rag.store.models import SearchResult
-from haiku.rag.utils import format_bytes, format_citations_rich, get_package_versions
+from haiku.rag.utils import format_bytes, format_citations_rich
 
 logger = logging.getLogger(__name__)
 
@@ -66,8 +65,7 @@ class HaikuRAGApp:  # pragma: no cover
     async def info(self):
         """Display read-only information about the database without modifying it."""
 
-        from haiku.rag.store.engine import connect_lancedb, get_database_stats
-        from haiku.rag.store.upgrades import get_pending_upgrades
+        from haiku.rag.store.engine import gather_database_info
 
         if self.before is not None:
             self.console.print(
@@ -84,55 +82,37 @@ class HaikuRAGApp:  # pragma: no cover
             self.console.print("[red]Database path does not exist.[/red]")
             return
 
-        # Connect directly. Don't go through Store so a database that is
-        # missing tables (e.g. pre-migration) still reports what it can.
-        db = await connect_lancedb(self.config, self.db_path)
-        stats = await get_database_stats(db)
+        info = await gather_database_info(self.config, self.db_path)
 
-        if not any(entry["exists"] for entry in stats.values()):
+        if not info.exists:
             self.console.print(
                 "[red]Database is empty. Use 'haiku-rag init' to initialize.[/red]"
             )
             return
 
-        versions = get_package_versions()
-
-        stored_version = "unknown"
-        embed_provider = "unknown"
-        embed_model = "unknown"
-        vector_dim = None
-        if stats["settings"]["exists"]:
-            settings_tbl = await db.open_table("settings")
-            rows = (
-                await settings_tbl.query().where("id = 'settings'").limit(1).to_arrow()
-            ).to_pylist()
-            if rows:
-                raw = rows[0].get("settings") or "{}"
-                data = json.loads(raw) if isinstance(raw, str) else (raw or {})
-                stored_version = str(data.get("version", "unknown"))
-                embeddings = data.get("embeddings", {})
-                embed_model_obj = embeddings.get("model", {})
-                embed_provider = embed_model_obj.get("provider", "unknown")
-                embed_model = embed_model_obj.get("name", "unknown")
-                vector_dim = embed_model_obj.get("vector_dim")
-
         self.console.print(
-            f"  [repr.attrib_name]haiku.rag version (db)[/repr.attrib_name]: {stored_version}"
+            f"  [repr.attrib_name]haiku.rag version (db)[/repr.attrib_name]: {info.stored_version}"
         )
-        dim_part = f"{vector_dim}" if vector_dim is not None else "unknown"
+        dim_part = (
+            f"{info.embeddings.vector_dim}"
+            if info.embeddings.vector_dim is not None
+            else "unknown"
+        )
         self.console.print(
             "  [repr.attrib_name]embeddings[/repr.attrib_name]: "
-            f"{embed_provider}/{embed_model} (dim: {dim_part})"
+            f"{info.embeddings.provider}/{info.embeddings.name} (dim: {dim_part})"
         )
+
+        tables = {t.name: t for t in info.tables}
 
         # Per-table row counts and sizes. Missing required tables are
         # reported as "absent" rather than raising.
         for name in ("documents", "chunks", "document_items"):
-            entry = stats[name]
-            if entry["exists"]:
+            entry = tables[name]
+            if entry.exists:
                 self.console.print(
-                    f"  [repr.attrib_name]{name}[/repr.attrib_name]: {entry['num_rows']} "
-                    f"({format_bytes(entry['total_bytes'])})"
+                    f"  [repr.attrib_name]{name}[/repr.attrib_name]: {entry.num_rows} "
+                    f"({format_bytes(entry.total_bytes)})"
                 )
             else:
                 self.console.print(
@@ -140,25 +120,23 @@ class HaikuRAGApp:  # pragma: no cover
                 )
 
         # Vector index information
-        if stats["chunks"]["exists"]:
-            num_chunks = stats["chunks"]["num_rows"]
-            if stats["chunks"].get("has_vector_index"):
-                num_indexed_rows = stats["chunks"].get("num_indexed_rows", 0)
-                num_unindexed_rows = stats["chunks"].get("num_unindexed_rows", 0)
+        if tables["chunks"].exists:
+            num_chunks = tables["chunks"].num_rows
+            if info.vector_index.exists:
                 self.console.print(
                     "  [repr.attrib_name]vector index[/repr.attrib_name]: ✓ exists"
                 )
                 self.console.print(
-                    f"  [repr.attrib_name]indexed chunks[/repr.attrib_name]: {num_indexed_rows}"
+                    f"  [repr.attrib_name]indexed chunks[/repr.attrib_name]: {info.vector_index.indexed_rows}"
                 )
-                if num_unindexed_rows > 0:
+                if info.vector_index.unindexed_rows > 0:
                     self.console.print(
-                        f"  [repr.attrib_name]unindexed chunks[/repr.attrib_name]: [yellow]{num_unindexed_rows}[/yellow] "
+                        f"  [repr.attrib_name]unindexed chunks[/repr.attrib_name]: [yellow]{info.vector_index.unindexed_rows}[/yellow] "
                         "(consider running: haiku-rag create-index)"
                     )
                 else:
                     self.console.print(
-                        f"  [repr.attrib_name]unindexed chunks[/repr.attrib_name]: {num_unindexed_rows}"
+                        f"  [repr.attrib_name]unindexed chunks[/repr.attrib_name]: {info.vector_index.unindexed_rows}"
                     )
             else:
                 if num_chunks >= 256:
@@ -172,49 +150,47 @@ class HaikuRAGApp:  # pragma: no cover
                         f"(need {256 - num_chunks} more chunks)"
                     )
 
-        if stats["documents"]["exists"]:
+        if tables["documents"].exists:
             self.console.print(
                 f"  [repr.attrib_name]versions (documents)[/repr.attrib_name]: "
-                f"{stats['documents']['num_versions']}"
+                f"{tables['documents'].num_versions}"
             )
-        if stats["chunks"]["exists"]:
+        if tables["chunks"].exists:
             self.console.print(
                 f"  [repr.attrib_name]versions (chunks)[/repr.attrib_name]: "
-                f"{stats['chunks']['num_versions']}"
+                f"{tables['chunks'].num_versions}"
             )
 
         # Migration status
-        pending = (
-            get_pending_upgrades(stored_version) if stored_version != "unknown" else []
-        )
         self.console.rule()
-        if pending:
+        if info.pending_migrations:
             self.console.print(
-                f"[bold yellow]{len(pending)} migration(s) pending.[/bold yellow] "
+                f"[bold yellow]{len(info.pending_migrations)} migration(s) pending.[/bold yellow] "
                 "Run [cyan]haiku-rag migrate[/cyan] to upgrade."
             )
-            for step in pending:
-                desc = step.description or ""
-                self.console.print(f"  [yellow]→[/yellow] {step.version}: {desc}")
+            for step in info.pending_migrations:
+                self.console.print(
+                    f"  [yellow]→[/yellow] {step.version}: {step.description}"
+                )
         else:
             self.console.print("[green]Database is up to date.[/green]")
 
         self.console.rule()
         self.console.print("[bold]Versions[/bold]")
         self.console.print(
-            f"  [repr.attrib_name]haiku.rag[/repr.attrib_name]: {versions['haiku_rag']}"
+            f"  [repr.attrib_name]haiku.rag[/repr.attrib_name]: {info.packages['haiku_rag']}"
         )
         self.console.print(
-            f"  [repr.attrib_name]lancedb[/repr.attrib_name]: {versions['lancedb']}"
+            f"  [repr.attrib_name]lancedb[/repr.attrib_name]: {info.packages['lancedb']}"
         )
         self.console.print(
-            f"  [repr.attrib_name]docling[/repr.attrib_name]: {versions['docling']}"
+            f"  [repr.attrib_name]docling[/repr.attrib_name]: {info.packages['docling']}"
         )
         self.console.print(
-            f"  [repr.attrib_name]pydantic-ai[/repr.attrib_name]: {versions['pydantic_ai']}"
+            f"  [repr.attrib_name]pydantic-ai[/repr.attrib_name]: {info.packages['pydantic_ai']}"
         )
         self.console.print(
-            f"  [repr.attrib_name]docling-document schema[/repr.attrib_name]: {versions['docling_document_schema']}"
+            f"  [repr.attrib_name]docling-document schema[/repr.attrib_name]: {info.packages['docling_document_schema']}"
         )
 
     async def history(self, table: str | None = None, limit: int | None = None):
