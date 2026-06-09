@@ -12,6 +12,7 @@ from lancedb.rerankers import RRFReranker
 
 from haiku.rag.store.engine import Store, query_to_pydantic
 from haiku.rag.store.models.chunk import Chunk, SearchType
+from haiku.rag.utils import escape_sql_string
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,21 @@ class ChunkRepository:
             return "\n".join(meta.headings) + "\n" + chunk.content
         return chunk.content
 
+    def _to_record(self, chunk: Chunk, chunk_id: str):
+        assert chunk.document_id is not None
+        assert chunk.embedding is not None
+        return self.store.ChunkRecord(
+            id=chunk_id,
+            document_id=chunk.document_id,
+            content=chunk.content,
+            content_fts=self._contextualize_content(chunk),
+            metadata=json.dumps(
+                {k: v for k, v in chunk.metadata.items() if k != "order"}
+            ),
+            order=int(chunk.order),
+            vector=chunk.embedding,
+        )
+
     async def create(self, entity: Chunk | list[Chunk]) -> Chunk | list[Chunk]:
         """Create one or more chunks in the database.
 
@@ -55,18 +71,7 @@ class ChunkRepository:
             assert entity.embedding is not None, "Chunk must have an embedding"
 
             chunk_id = str(uuid4())
-
-            chunk_record = self.store.ChunkRecord(
-                id=chunk_id,
-                document_id=entity.document_id,
-                content=entity.content,
-                content_fts=self._contextualize_content(entity),
-                metadata=json.dumps(
-                    {k: v for k, v in entity.metadata.items() if k != "order"}
-                ),
-                order=int(entity.order),
-                vector=entity.embedding,
-            )
+            chunk_record = self._to_record(entity, chunk_id)
 
             await self.store.chunks_table.add([chunk_record])
 
@@ -88,25 +93,45 @@ class ChunkRepository:
         for chunk in chunks:
             chunk_id = str(uuid4())
 
-            assert chunk.document_id is not None
-            assert chunk.embedding is not None
-            chunk_record = self.store.ChunkRecord(
-                id=chunk_id,
-                document_id=chunk.document_id,
-                content=chunk.content,
-                content_fts=self._contextualize_content(chunk),
-                metadata=json.dumps(
-                    {k: v for k, v in chunk.metadata.items() if k != "order"}
-                ),
-                order=int(chunk.order),
-                vector=chunk.embedding,
-            )
+            chunk_record = self._to_record(chunk, chunk_id)
             chunk_records.append(chunk_record)
             chunk.id = chunk_id
 
         # Single batch insert for all chunks
         await self.store.chunks_table.add(chunk_records)
 
+        return chunks
+
+    async def replace_for_document(
+        self, document_id: str, chunks: list[Chunk]
+    ) -> list[Chunk]:
+        """Replace all chunks for a document with one scoped merge operation."""
+        self.store._assert_writable()
+
+        if not chunks:
+            await self.delete_by_document_id(document_id)
+            return []
+
+        for chunk in chunks:
+            assert chunk.document_id == document_id, (
+                "All chunks must belong to the replaced document"
+            )
+            assert chunk.embedding is not None, "All chunks must have embeddings"
+
+        records = []
+        for chunk in chunks:
+            chunk_id = str(uuid4())
+            records.append(self._to_record(chunk, chunk_id))
+            chunk.id = chunk_id
+
+        safe_id = escape_sql_string(document_id)
+        await (
+            self.store.chunks_table.merge_insert(["document_id", "order"])
+            .when_matched_update_all()
+            .when_not_matched_insert_all()
+            .when_not_matched_by_source_delete(f"document_id = '{safe_id}'")
+            .execute(records)
+        )
         return chunks
 
     async def get_by_id(self, entity_id: str) -> Chunk | None:

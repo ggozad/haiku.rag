@@ -345,6 +345,7 @@ class Store:
         self._skip_validation = skip_validation
         self._skip_migration_check = skip_migration_check
         self._vacuum_lock = asyncio.Lock()
+        self._write_lock = asyncio.Lock()
         self._is_new_db = False
 
         # Check if database exists (for local filesystem only)

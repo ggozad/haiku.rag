@@ -861,6 +861,52 @@ async def test_client_import_documents_empty(temp_db_path):
         assert after == before
 
 
+async def test_client_update_document_replaces_rows_with_bounded_versions(
+    temp_db_path,
+):
+    """Updating one document should replace stale rows with bounded versions."""
+    dim = Config.embeddings.model.vector_dim
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        created = await client.import_document(
+            _docling_doc("original", "Original body"),
+            [Chunk(content="Original body", embedding=[0.1] * dim, order=0)],
+            uri="mem://replace",
+            title="Replace",
+        )
+        assert created.id is not None
+
+        updated_docling = _docling_doc("updated", "Updated body")
+        updated_chunks = [
+            Chunk(content="Updated body A", embedding=[0.2] * dim, order=0),
+            Chunk(content="Updated body B", embedding=[0.3] * dim, order=1),
+        ]
+
+        before = await client.store.current_table_versions()
+        updated = await client.update_document(
+            created.id,
+            docling_document=updated_docling,
+            chunks=updated_chunks,
+        )
+        after = await client.store.current_table_versions()
+
+        assert updated.id == created.id
+        assert after["documents"] - before["documents"] == 1
+        # Indexed LanceDB tables record one additional physical version for
+        # merge replacement in 0.30.x.
+        assert after["chunks"] - before["chunks"] <= 2
+        assert after["document_items"] - before["document_items"] <= 2
+
+        stored_chunks = await client.chunk_repository.get_by_document_id(created.id)
+        assert [chunk.content for chunk in stored_chunks] == [
+            "Updated body A",
+            "Updated body B",
+        ]
+        stored_items = await client.document_item_repository.get_all_items(created.id)
+        assert len(stored_items) == 1
+        assert stored_items[0].text == "Updated body"
+
+
 @pytest.mark.vcr()
 async def test_client_ask(allow_model_requests, temp_db_path):
     """Test asking questions returns answer and citations (VCR recorded)."""

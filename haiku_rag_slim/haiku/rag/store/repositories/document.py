@@ -62,7 +62,13 @@ class DocumentRepository:
             else datetime.now(),
         )
 
-    def _to_record(self, entity: Document, doc_id: str, now: str) -> DocumentRecord:
+    def _to_record(
+        self,
+        entity: Document,
+        doc_id: str,
+        created_at: str,
+        updated_at: str,
+    ) -> DocumentRecord:
         return DocumentRecord(
             id=doc_id,
             content=entity.content,
@@ -72,8 +78,8 @@ class DocumentRepository:
             docling_document=entity.docling_document,
             docling_pages=entity.docling_pages,
             docling_version=entity.docling_version,
-            created_at=now,
-            updated_at=now,
+            created_at=created_at,
+            updated_at=updated_at,
         )
 
     @overload
@@ -94,7 +100,9 @@ class DocumentRepository:
         if isinstance(entity, Document):
             doc_id = str(uuid4())
             now = datetime.now().isoformat()
-            await self.store.documents_table.add([self._to_record(entity, doc_id, now)])
+            await self.store.documents_table.add(
+                [self._to_record(entity, doc_id, now, now)]
+            )
             entity.id = doc_id
             entity.created_at = datetime.fromisoformat(now)
             entity.updated_at = datetime.fromisoformat(now)
@@ -109,7 +117,7 @@ class DocumentRepository:
         records = []
         for document in documents:
             doc_id = str(uuid4())
-            records.append(self._to_record(document, doc_id, now))
+            records.append(self._to_record(document, doc_id, now, now))
             document.id = doc_id
             document.created_at = created_at
             document.updated_at = created_at
@@ -199,20 +207,16 @@ class DocumentRepository:
         now = datetime.now().isoformat()
         entity.updated_at = datetime.fromisoformat(now)
 
-        # Update the record
-        safe_id = escape_sql_string(entity.id)
-        await self.store.documents_table.update(
-            {
-                "content": entity.content,
-                "uri": entity.uri,
-                "title": entity.title,
-                "metadata": json.dumps(entity.metadata),
-                "docling_document": entity.docling_document,
-                "docling_pages": entity.docling_pages,
-                "docling_version": entity.docling_version,
-                "updated_at": now,
-            },
-            where=f"id = '{safe_id}'",
+        record = self._to_record(
+            entity,
+            entity.id,
+            entity.created_at.isoformat() if entity.created_at else now,
+            now,
+        )
+        await (
+            self.store.documents_table.merge_insert("id")
+            .when_matched_update_all()
+            .execute([record])
         )
 
         return entity

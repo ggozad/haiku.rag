@@ -38,14 +38,14 @@ async def test_version_rollback_on_update_failure(temp_db_path):
         base_content = "Base content"
         created = await client.create_document(content=base_content)
 
-        # Patch chunk_repository.create to succeed then fail during update
-        orig_create = client.chunk_repository.create
+        # Patch chunk replacement to succeed then fail during update
+        orig_replace = client.chunk_repository.replace_for_document
 
-        async def succeed_then_fail(chunks):
-            await orig_create(chunks)
+        async def succeed_then_fail(document_id, chunks):
+            await orig_replace(document_id, chunks)
             raise RuntimeError("update fail")
 
-        client.chunk_repository.create = succeed_then_fail
+        client.chunk_repository.replace_for_document = succeed_then_fail
 
         # Attempt update
         with pytest.raises(RuntimeError):
