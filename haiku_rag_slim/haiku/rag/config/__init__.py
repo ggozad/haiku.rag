@@ -2,6 +2,7 @@ from haiku.rag.config.loader import (
     find_config_file,
     generate_default_config,
     load_yaml_config,
+    redact_secrets,
 )
 from haiku.rag.config.models import (
     APIConfig,
@@ -60,6 +61,7 @@ __all__ = [
     "generate_default_config",
     "get_config",
     "load_yaml_config",
+    "redact_secrets",
     "set_config",
 ]
 

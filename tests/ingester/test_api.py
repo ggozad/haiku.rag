@@ -633,3 +633,119 @@ async def test_dashboard_served_unauthenticated(state):
     assert "/jobs?status=claimed" in body
     # Op badge helper is present so DELETE rows render distinctly.
     assert "opBadge" in body
+
+
+# --- config ---
+
+
+@pytest.mark.asyncio
+async def test_config_returns_full_yaml_with_redacted_secrets(jobs, sync):
+    from haiku.rag.config import APIConfig, IngesterConfig
+
+    config = AppConfig(ingester=IngesterConfig(api=APIConfig(auth_token="supersecret")))
+    state = APIState(config=config, job_repo=jobs, sync_repo=sync)
+    async with _client(state) as client:
+        resp = await client.get("/config")
+    assert resp.status_code == 200
+    text = resp.json()["yaml"]
+    # Full effective config: a default section the user never wrote is present.
+    assert "embeddings:" in text
+    assert "processing:" in text
+    # Secret is masked, not echoed.
+    assert "supersecret" not in text
+    assert "auth_token: '***'" in text
+
+
+@pytest.mark.asyncio
+async def test_config_requires_auth(state):
+    async with _client(state, auth_token="secret") as client:
+        resp = await client.get("/config")
+    assert resp.status_code == 401
+
+
+# --- database ---
+
+
+async def _seed_lancedb(path):
+    """Create a minimal LanceDB with settings/documents/chunks tables so
+    gather_database_info has something real to report."""
+    import json
+
+    import lancedb
+    from lancedb.pydantic import LanceModel, Vector
+    from pydantic import Field
+
+    class SettingsRecord(LanceModel):
+        id: str = Field(default="settings")
+        settings: str = Field(default="{}")
+
+    class DocumentRecord(LanceModel):
+        id: str
+        content: str
+
+    class ChunkRecord(LanceModel):
+        id: str
+        document_id: str
+        content: str
+        vector: Vector(3)  # type: ignore
+
+    db = await lancedb.connect_async(str(path))
+    settings_tbl = await db.create_table("settings", schema=SettingsRecord)
+    docs_tbl = await db.create_table("documents", schema=DocumentRecord)
+    chunks_tbl = await db.create_table("chunks", schema=ChunkRecord)
+    await settings_tbl.add(
+        [
+            SettingsRecord(
+                settings=json.dumps(
+                    {
+                        "version": "1.2.3",
+                        "embeddings": {
+                            "model": {
+                                "provider": "openai",
+                                "name": "text-embedding-3-small",
+                                "vector_dim": 3,
+                            }
+                        },
+                    }
+                )
+            )
+        ]
+    )
+    await docs_tbl.add([DocumentRecord(id="doc-1", content="hello")])
+    await chunks_tbl.add(
+        [ChunkRecord(id="c1", document_id="doc-1", content="c", vector=[0.1, 0.2, 0.3])]
+    )
+
+
+@pytest.mark.asyncio
+async def test_database_reports_info(tmp_path, jobs, sync):
+    db_path = tmp_path / "docs.lancedb"
+    await _seed_lancedb(db_path)
+    state = APIState(config=AppConfig(), job_repo=jobs, sync_repo=sync, db_path=db_path)
+    async with _client(state) as client:
+        resp = await client.get("/database")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["exists"] is True
+    assert body["stored_version"] == "1.2.3"
+    assert body["embeddings"]["provider"] == "openai"
+    assert body["embeddings"]["vector_dim"] == 3
+    tables = {t["name"]: t for t in body["tables"]}
+    assert tables["documents"]["num_rows"] == 1
+    assert tables["chunks"]["num_rows"] == 1
+    assert tables["document_items"]["exists"] is False
+    assert body["vector_index"]["exists"] is False
+
+
+@pytest.mark.asyncio
+async def test_database_503_when_db_path_unset(state):
+    async with _client(state) as client:
+        resp = await client.get("/database")
+    assert resp.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_database_requires_auth(state):
+    async with _client(state, auth_token="secret") as client:
+        resp = await client.get("/database")
+    assert resp.status_code == 401

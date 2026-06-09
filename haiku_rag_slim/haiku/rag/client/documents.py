@@ -15,11 +15,6 @@ from haiku.rag.client.processing import (
 )
 from haiku.rag.client.titles import resolve_title
 from haiku.rag.converters import get_converter
-from haiku.rag.ingester.sources import (
-    FetchResult,
-    resolve_adhoc_fetcher,
-    resolve_configured_source,
-)
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import extract_items
@@ -29,7 +24,7 @@ if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
     from haiku.rag.client import HaikuRAG
-    from haiku.rag.ingester.sources.base import Source
+    from haiku.rag.ingester.sources.base import FetchResult, Source
 
 logger = logging.getLogger(__name__)
 
@@ -330,7 +325,7 @@ async def _refresh_doc_metadata(
 
 async def _ingest_fetch_result(
     client: "HaikuRAG",
-    result: FetchResult,
+    result: "FetchResult",
     *,
     title: str | None,
     user_metadata: dict,
@@ -495,6 +490,8 @@ async def _reconcile_pdf_attachments(
         ):
             continue
 
+        from haiku.rag.ingester.sources.base import FetchResult
+
         child_fr = FetchResult(
             uri=child_uri,
             body=data,
@@ -601,6 +598,11 @@ async def create_document_from_source(
     # renamed/removed source surfaces as a DLQ instead of silently dropping
     # credentials. Ad-hoc CLI calls (no source_id) fall back to scheme-based
     # adapters when no configured source matches.
+    from haiku.rag.ingester.sources import (
+        resolve_adhoc_fetcher,
+        resolve_configured_source,
+    )
+
     if source_id is not None:
         fetcher = resolve_configured_source(source_str, source_id, sources)
     else:

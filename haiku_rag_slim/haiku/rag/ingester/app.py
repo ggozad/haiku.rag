@@ -244,6 +244,7 @@ class IngesterApp:
             sync_repo=self._sync,
             pool=self._pool,
             pollers=self._pollers,
+            db_path=self._db_path,
         )
         if ingester_cfg.api.auth_token is None:
             logger.warning("API auth_token is unset — control plane is unauthenticated")

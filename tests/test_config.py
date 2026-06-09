@@ -350,3 +350,27 @@ analysis:
     assert cfg.analysis.model.name == "analysis-model"
     resolved = cfg.analysis.model or cfg.qa.model
     assert resolved.name == "analysis-model"
+
+
+def test_redact_secrets_masks_nested_secret_keys():
+    from haiku.rag.config.loader import redact_secrets
+
+    data = {
+        "api_key": "sk-123",
+        "name": "ollama",
+        "ingester": {"api": {"auth_token": "secret", "host": "0.0.0.0"}},
+        "missing_token": None,
+        "sources": [{"password": "pw", "url": "http://x"}],
+        "storage_options": {"aws_secret_access_key": "abc"},
+    }
+
+    redacted = redact_secrets(data)
+
+    assert redacted["api_key"] == "***"
+    assert redacted["name"] == "ollama"
+    assert redacted["ingester"]["api"]["auth_token"] == "***"
+    assert redacted["ingester"]["api"]["host"] == "0.0.0.0"
+    assert redacted["missing_token"] is None
+    assert redacted["sources"][0]["password"] == "***"
+    assert redacted["sources"][0]["url"] == "http://x"
+    assert redacted["storage_options"]["aws_secret_access_key"] == "***"
