@@ -3,6 +3,7 @@ import json
 import logging
 import mimetypes
 import tempfile
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import quote, unquote, urlparse
@@ -31,6 +32,23 @@ if TYPE_CHECKING:
     from haiku.rag.ingester.sources.base import Source
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class DocumentImport:
+    """A prepared document for batch import via ``import_documents``.
+
+    Carries the same inputs as ``import_document``: a converted
+    ``DoclingDocument``, its chunks (embeddings filled in if missing), and
+    optional uri/title/metadata.
+    """
+
+    docling_document: "DoclingDocument"
+    chunks: list[Chunk]
+    uri: str | None = None
+    title: str | None = None
+    metadata: dict | None = field(default=None)
+
 
 # Maximum length of an attachment chain rooted at a top-level ingest. With
 # value 3, a PDF whose attachments contain PDFs which themselves contain
@@ -206,6 +224,81 @@ async def import_document(
     document.set_docling(docling_document)
 
     return await _store_document_with_chunks(client, document, chunks, docling_document)
+
+
+async def _store_documents_with_chunks(
+    client: "HaikuRAG",
+    prepared: list[tuple[Document, list[Chunk], "DoclingDocument"]],
+) -> list[Document]:
+    """Store many documents with their chunks in a single table version each.
+
+    Embeds any chunks that lack embeddings, then writes the documents, chunks,
+    and document_items tables once apiece. Restores all tables on any failure.
+    """
+    embedded: list[list[Chunk]] = [
+        await ensure_chunks_embedded(client._config, chunks, client.embedder)
+        for _, chunks, _ in prepared
+    ]
+
+    versions = await client.store.current_table_versions()
+
+    created = await client.document_repository.create([doc for doc, _, _ in prepared])
+
+    try:
+        all_chunks: list[Chunk] = []
+        all_items = []
+        for doc, doc_chunks, docling_document in zip(
+            created, embedded, (d for _, _, d in prepared)
+        ):
+            assert doc.id is not None
+            for order, chunk in enumerate(doc_chunks):
+                chunk.document_id = doc.id
+                chunk.order = order
+            all_chunks.extend(doc_chunks)
+            all_items.extend(extract_items(doc.id, docling_document))
+
+        await client.chunk_repository.create(all_chunks)
+        await client.document_item_repository.create_all(all_items)
+
+        if client._config.storage.auto_vacuum:
+            client._schedule_vacuum()
+
+        return created
+    except Exception:
+        await client.store.restore_table_versions(versions)
+        raise
+
+
+async def import_documents(
+    client: "HaikuRAG",
+    imports: list[DocumentImport],
+) -> list[Document]:
+    """Batch-import pre-processed documents with their chunks.
+
+    The batch analog of ``import_document``: writes the documents, chunks, and
+    document_items tables once each regardless of how many documents are
+    imported. Chunks without embeddings are embedded automatically.
+    """
+    if not imports:
+        return []
+
+    prepared: list[tuple[Document, list[Chunk], DoclingDocument]] = []
+    for item in imports:
+        content = item.docling_document.export_to_markdown()
+        title = item.title
+        if title is None:
+            title = await resolve_title(client._config, item.docling_document, content)
+
+        document = Document(
+            content=content,
+            uri=item.uri,
+            title=title,
+            metadata=item.metadata or {},
+        )
+        document.set_docling(item.docling_document)
+        prepared.append((document, item.chunks, item.docling_document))
+
+    return await _store_documents_with_chunks(client, prepared)
 
 
 async def _refresh_doc_metadata(

@@ -37,26 +37,36 @@ class DocumentItemRepository:
             tree_depth=row.get("tree_depth", 0) or 0,
         )
 
+    def _to_record(self, document_id: str, item: DocumentItem) -> DocumentItemRecord:
+        return DocumentItemRecord(
+            document_id=document_id,
+            position=item.position,
+            self_ref=item.self_ref,
+            label=item.label,
+            text=item.text,
+            page_numbers=json.dumps(item.page_numbers),
+            picture_data=item.picture_data,
+            heading_level=item.heading_level,
+            tree_depth=item.tree_depth,
+        )
+
     async def create_items(self, document_id: str, items: list[DocumentItem]) -> None:
         """Bulk insert items for a document."""
         if not items:
             return
 
         self.store._assert_writable()
-        records = [
-            DocumentItemRecord(
-                document_id=document_id,
-                position=item.position,
-                self_ref=item.self_ref,
-                label=item.label,
-                text=item.text,
-                page_numbers=json.dumps(item.page_numbers),
-                picture_data=item.picture_data,
-                heading_level=item.heading_level,
-                tree_depth=item.tree_depth,
-            )
-            for item in items
-        ]
+        records = [self._to_record(document_id, item) for item in items]
+        await self.store.document_items_table.add(records)
+
+    async def create_all(self, items: list[DocumentItem]) -> None:
+        """Bulk insert items spanning any number of documents in a single
+        table version, keyed by each item's own ``document_id``."""
+        if not items:
+            return
+
+        self.store._assert_writable()
+        records = [self._to_record(item.document_id, item) for item in items]
         await self.store.document_items_table.add(records)
 
     async def get_all_items(self, document_id: str) -> list[DocumentItem]:

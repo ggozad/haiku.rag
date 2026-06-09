@@ -2,7 +2,9 @@ import pytest
 
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.document import Document
+from haiku.rag.store.models.document_item import DocumentItem
 from haiku.rag.store.repositories.document import DocumentRepository
+from haiku.rag.store.repositories.document_item import DocumentItemRepository
 
 
 @pytest.mark.asyncio
@@ -91,6 +93,90 @@ async def test_document_list_with_filter(qa_corpus: list[dict[str, str]], temp_d
             created_doc1.id,
             created_doc3.id,
         }
+
+
+@pytest.mark.asyncio
+async def test_document_create_batch(qa_corpus: list[dict[str, str]], temp_db_path):
+    """create accepts a list of documents and writes them in a single version."""
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+
+        content = qa_corpus[0]["document_extracted"]
+        doc_a = Document(content=content, uri="https://example.com/a.txt", title="A")
+        doc_b = Document(content=content, uri="https://example.com/b.txt", title="B")
+
+        before = await store.documents_table.version()
+        created = await doc_repo.create([doc_a, doc_b])
+        after = await store.documents_table.version()
+
+        assert isinstance(created, list)
+        assert len(created) == 2
+        assert created[0].id is not None
+        assert created[1].id is not None
+        assert created[0].id != created[1].id
+        assert after - before == 1
+
+        round_a = await doc_repo.get_by_id(created[0].id)
+        round_b = await doc_repo.get_by_id(created[1].id)
+        assert round_a is not None and round_a.title == "A"
+        assert round_b is not None and round_b.title == "B"
+
+
+@pytest.mark.asyncio
+async def test_document_create_empty_batch(temp_db_path):
+    """create([]) is a no-op returning an empty list with no version bump."""
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+
+        before = await store.documents_table.version()
+        created = await doc_repo.create([])
+        after = await store.documents_table.version()
+
+        assert created == []
+        assert after == before
+
+
+@pytest.mark.asyncio
+async def test_document_item_create_all(temp_db_path):
+    """create_all writes items spanning multiple documents in a single version."""
+    async with Store(temp_db_path, create=True) as store:
+        item_repo = DocumentItemRepository(store)
+
+        items = [
+            DocumentItem(
+                document_id="doc-1", position=0, self_ref="#/texts/0", text="a"
+            ),
+            DocumentItem(
+                document_id="doc-1", position=1, self_ref="#/texts/1", text="b"
+            ),
+            DocumentItem(
+                document_id="doc-2", position=0, self_ref="#/texts/0", text="c"
+            ),
+        ]
+
+        before = await store.document_items_table.version()
+        await item_repo.create_all(items)
+        after = await store.document_items_table.version()
+
+        assert after - before == 1
+
+        doc1_items = await item_repo.get_all_items("doc-1")
+        doc2_items = await item_repo.get_all_items("doc-2")
+        assert [i.text for i in doc1_items] == ["a", "b"]
+        assert [i.text for i in doc2_items] == ["c"]
+
+
+@pytest.mark.asyncio
+async def test_document_item_create_all_empty(temp_db_path):
+    """create_all([]) is a no-op with no version bump."""
+    async with Store(temp_db_path, create=True) as store:
+        item_repo = DocumentItemRepository(store)
+
+        before = await store.document_items_table.version()
+        await item_repo.create_all([])
+        after = await store.document_items_table.version()
+
+        assert after == before
 
 
 def test_document_get_docling_document():
