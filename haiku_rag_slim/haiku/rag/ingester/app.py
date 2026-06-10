@@ -255,17 +255,25 @@ class IngesterApp:
         )
         if ingester_cfg.api.auth_token is None:
             logger.warning("API auth_token is unset — control plane is unauthenticated")
-        app = build_app(state, auth_token=ingester_cfg.api.auth_token)
+        app = build_app(
+            state,
+            auth_token=ingester_cfg.api.auth_token,
+            root_path=ingester_cfg.api.root_path,
+        )
         config = uvicorn.Config(
             app,
             host=ingester_cfg.api.host,
             port=ingester_cfg.api.port,
+            root_path=ingester_cfg.api.root_path,
             log_level="info",
             access_log=_api_access_log_enabled(),
             lifespan="off",
         )
         server = uvicorn.Server(config)
         logger.info(
-            "API listening on %s:%d", ingester_cfg.api.host, ingester_cfg.api.port
+            "API listening on %s:%d%s",
+            ingester_cfg.api.host,
+            ingester_cfg.api.port,
+            ingester_cfg.api.root_path,
         )
         return asyncio.create_task(server.serve()), server

@@ -23,8 +23,10 @@ def state(jobs, sync):
     )
 
 
-def _client(state, *, auth_token: str | None = None) -> httpx.AsyncClient:
-    app = build_app(state, auth_token=auth_token)
+def _client(
+    state, *, auth_token: str | None = None, root_path: str = ""
+) -> httpx.AsyncClient:
+    app = build_app(state, auth_token=auth_token, root_path=root_path)
     return httpx.AsyncClient(
         transport=ASGITransport(app=app), base_url="http://testserver"
     )
@@ -627,10 +629,11 @@ async def test_dashboard_served_unauthenticated(state):
     assert "text/html" in resp.headers["content-type"]
     body = resp.text
     assert "haiku-ingester · status" in body
-    # The JS calls the JSON endpoints; sanity-check it's wired up.
-    assert "/stats" in body
-    assert "/sources" in body
-    assert "/jobs?status=claimed" in body
+    # The JS calls the JSON endpoints with base-href-relative paths (no leading
+    # slash) so the page works behind a sub-path; sanity-check it's wired up.
+    assert 'fetchJson("stats")' in body
+    assert 'fetchJson("sources")' in body
+    assert 'fetchJson("jobs?status=claimed&limit=20")' in body
     # Op badge helper is present so DELETE rows render distinctly.
     assert "opBadge" in body
 
@@ -662,10 +665,42 @@ async def test_dashboard_wires_database_and_config_panels(state):
     body = resp.text
     assert 'id="db-panel"' in body
     assert 'id="config-panel"' in body
-    assert "/database" in body
-    assert "/config" in body
+    assert 'fetchJson("database")' in body
+    assert 'fetchJson("config")' in body
     assert "loadDatabase" in body
     assert "loadConfig" in body
+
+
+@pytest.mark.asyncio
+async def test_dashboard_base_href_defaults_to_root(state):
+    """With no root_path the dashboard's <base href> is the origin root, so its
+    relative fetches resolve at the top level exactly as before."""
+    async with _client(state) as client:
+        resp = await client.get("/")
+
+    assert resp.status_code == 200
+    assert '<base href="/" />' in resp.text
+
+
+@pytest.mark.asyncio
+async def test_dashboard_base_href_reflects_root_path(state):
+    """When served under a root_path (reverse-proxied sub-path), the injected
+    <base href> carries the prefix so the relative fetches hit /ingester/..."""
+    async with _client(state, root_path="/ingester") as client:
+        resp = await client.get("/")
+
+    assert resp.status_code == 200
+    assert '<base href="/ingester/" />' in resp.text
+
+
+@pytest.mark.asyncio
+async def test_api_routes_unchanged_under_root_path(state):
+    """root_path only affects URL generation/base-href; the routes themselves
+    still answer at their declared paths (the proxy strips the prefix)."""
+    async with _client(state, root_path="/ingester") as client:
+        resp = await client.get("/health")
+
+    assert resp.status_code == 200
 
 
 # --- config ---

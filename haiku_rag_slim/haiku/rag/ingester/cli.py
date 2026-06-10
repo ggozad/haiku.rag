@@ -154,6 +154,13 @@ def serve(
         "--port",
         help="Bind the HTTP control plane to PORT (overrides ingester.api.port).",
     ),
+    root_path: str | None = typer.Option(
+        None,
+        "--root-path",
+        help="Serve the control plane under a base path so it can be reverse-"
+        "proxied behind a sub-path, e.g. /ingester (overrides "
+        "ingester.api.root_path).",
+    ),
     no_api: bool = typer.Option(
         False,
         "--no-api",
@@ -167,6 +174,8 @@ def serve(
         app_config.ingester.api.host = host
     if port is not None:
         app_config.ingester.api.port = port
+    if root_path is not None:
+        app_config.ingester.api.root_path = root_path
     db_path = _resolve_db_path(app_config, db)
     app = IngesterApp(config=app_config, db_path=db_path)
     asyncio.run(app.serve(api=not no_api))
