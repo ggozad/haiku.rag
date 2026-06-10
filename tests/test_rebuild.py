@@ -6,6 +6,7 @@ from typing import TypedDict
 import pytest
 
 from haiku.rag.client import HaikuRAG, RebuildMode
+from haiku.rag.config import Config
 
 
 class ChunkData(TypedDict):
@@ -184,7 +185,14 @@ async def test_rebuild_resumes_phase2_from_staging_after_crash(
         _StagingMarkerRecord,
     )
 
-    async with HaikuRAG(temp_db_path, create=True) as client:
+    # auto_vacuum off: this test drops the chunks table by hand to simulate a
+    # crash, where no background vacuum would be in flight. Leaving it on lets
+    # create_document's scheduled optimize race the raw drop_table ("Directory
+    # not empty").
+    config = Config.model_copy(deep=True)
+    config.storage.auto_vacuum = False
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         doc = await client.create_document(content=qa_corpus[0]["document_extracted"])
         assert doc.id is not None
         original_chunks = await client.chunk_repository.get_by_document_id(doc.id)

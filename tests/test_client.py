@@ -907,6 +907,52 @@ async def test_client_update_document_replaces_rows_with_bounded_versions(
         assert stored_items[0].text == "Updated body"
 
 
+async def test_metadata_only_update_does_not_advance_documents_table(temp_db_path):
+    """Metadata/title-only updates must not rewrite the heavy documents row.
+
+    This is the blob-bloat fix: source_revision rolling on every ingester sweep
+    used to rewrite the multi-MB docling row each time. Mutable attributes now
+    live in document_meta, so the documents table version must stay frozen while
+    only metadata/title change — and reads must still hydrate the full Document.
+    """
+    dim = Config.embeddings.model.vector_dim
+    config = Config.model_copy(deep=True)
+    config.storage.auto_vacuum = False
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        created = await client.import_document(
+            _docling_doc("doc", "Body text"),
+            [Chunk(content="Body text", embedding=[0.1] * dim, order=0)],
+            uri="mem://meta-bloat",
+            title="Original",
+            metadata={"source_revision": "rev-0"},
+        )
+        assert created.id is not None
+
+        docs_v0 = await client.store.documents_table.version()
+        meta_v0 = await client.store.document_meta_table.version()
+
+        for i in range(1, 6):
+            await client.update_document(
+                created.id,
+                metadata={"source_revision": f"rev-{i}"},
+                title=f"Title {i}",
+            )
+
+        # The heavy documents table must not advance on metadata-only updates.
+        assert await client.store.documents_table.version() == docs_v0
+        # The light document_meta table absorbs the updates.
+        assert await client.store.document_meta_table.version() > meta_v0
+
+        # Reads still hydrate the full document (content + blobs + metadata).
+        fetched = await client.get_document_by_id(created.id)
+        assert fetched is not None
+        assert fetched.metadata["source_revision"] == "rev-5"
+        assert fetched.title == "Title 5"
+        assert fetched.content == "Body text"
+        assert fetched.get_docling_document() is not None
+
+
 @pytest.mark.vcr()
 async def test_client_ask(allow_model_requests, temp_db_path):
     """Test asking questions returns answer and citations (VCR recorded)."""

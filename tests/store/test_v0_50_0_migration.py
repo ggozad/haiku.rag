@@ -2,19 +2,30 @@ import json
 
 import pytest
 
-from haiku.rag.store.engine import DocumentRecord, Store
+from haiku.rag.store.engine import Store
+from haiku.rag.store.upgrades.v0_50_0 import _apply_canonical_metadata_keys
+from tests.store.legacy_documents import (
+    LegacyDocumentRecord,
+    seed_legacy_documents,
+)
 
 
 @pytest.mark.asyncio
 class TestV0_50_0Migration:
-    """v0.50.0 normalises document.metadata to source-agnostic keys."""
+    """v0.50.0 normalises document.metadata to source-agnostic keys.
+
+    Applied in isolation against the pre-0.57 documents schema (metadata still
+    inline), so the assertions read documents.metadata directly. The full chain
+    (where v0.57.0 later relocates metadata to document_meta) is covered by the
+    v0.57.0 migration test.
+    """
 
     async def test_renames_etag_and_content_type(self, temp_db_path):
         async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
-            await store.set_haiku_version("0.48.1")
-            await store.documents_table.add(
+            await seed_legacy_documents(
+                store,
                 [
-                    DocumentRecord(
+                    LegacyDocumentRecord(
                         id="doc-s3",
                         content="x",
                         uri="s3://b/k",
@@ -26,7 +37,7 @@ class TestV0_50_0Migration:
                             }
                         ),
                     ),
-                    DocumentRecord(
+                    LegacyDocumentRecord(
                         id="doc-fs",
                         content="y",
                         uri="file:///tmp/x.md",
@@ -37,12 +48,10 @@ class TestV0_50_0Migration:
                             }
                         ),
                     ),
-                ]
+                ],
             )
 
-        async with Store(temp_db_path, skip_migration_check=True) as store:
-            applied = await store.migrate()
-            assert any("0.50.0" in d for d in applied)
+            await _apply_canonical_metadata_keys(store)
 
             rows = await store.documents_table.query().to_list()
             by_id = {r["id"]: json.loads(r["metadata"]) for r in rows}
@@ -59,10 +68,10 @@ class TestV0_50_0Migration:
 
     async def test_idempotent_on_already_migrated(self, temp_db_path):
         async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
-            await store.set_haiku_version("0.48.1")
-            await store.documents_table.add(
+            await seed_legacy_documents(
+                store,
                 [
-                    DocumentRecord(
+                    LegacyDocumentRecord(
                         id="d",
                         content="x",
                         uri="s3://b/k",
@@ -74,11 +83,10 @@ class TestV0_50_0Migration:
                             }
                         ),
                     )
-                ]
+                ],
             )
 
-        async with Store(temp_db_path, skip_migration_check=True) as store:
-            await store.migrate()
+            await _apply_canonical_metadata_keys(store)
             rows = await store.documents_table.query().to_list()
             assert json.loads(rows[0]["metadata"]) == {
                 "source_revision": "abc",
@@ -91,14 +99,11 @@ class TestV0_50_0Migration:
         quoted-key form. Values that happen to contain the substring `etag` and
         composite key names like `my_etag_key` must not get rewritten."""
         async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
-            await store.set_haiku_version("0.48.1")
-            await store.documents_table.add(
+            await seed_legacy_documents(
+                store,
                 [
-                    # `etag` only appears as a VALUE — no `etag` key. Either
-                    # the LIKE excludes it (no work), or it pulls it in and
-                    # _normalize_metadata leaves it alone. Either way the row
-                    # must end up unchanged.
-                    DocumentRecord(
+                    # `etag` only appears as a VALUE — no `etag` key.
+                    LegacyDocumentRecord(
                         id="value-only",
                         content="x",
                         uri="u1",
@@ -110,8 +115,7 @@ class TestV0_50_0Migration:
                         ),
                     ),
                     # A composite key containing `etag` but not equal to it.
-                    # Must not be rewritten.
-                    DocumentRecord(
+                    LegacyDocumentRecord(
                         id="composite-key",
                         content="x",
                         uri="u2",
@@ -122,11 +126,10 @@ class TestV0_50_0Migration:
                             }
                         ),
                     ),
-                ]
+                ],
             )
 
-        async with Store(temp_db_path, skip_migration_check=True) as store:
-            await store.migrate()
+            await _apply_canonical_metadata_keys(store)
             rows = await store.documents_table.query().to_list()
             by_id = {r["id"]: json.loads(r["metadata"]) for r in rows}
 
@@ -144,30 +147,28 @@ class TestV0_50_0Migration:
         migration: it's logged and skipped, and well-formed rows alongside it
         still get rewritten. The bad row's metadata is left exactly as-is."""
         async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
-            await store.set_haiku_version("0.48.1")
-            await store.documents_table.add(
+            await seed_legacy_documents(
+                store,
                 [
-                    # Contains the substring `"etag"` so the WHERE LIKE pulls
-                    # it in, but it's not valid JSON — json.loads fails.
-                    DocumentRecord(
+                    # Contains the substring `"etag"` so the WHERE LIKE pulls it
+                    # in, but it's not valid JSON — json.loads fails.
+                    LegacyDocumentRecord(
                         id="bad",
                         content="x",
                         uri="u1",
                         metadata='{"etag": broken',
                     ),
-                    DocumentRecord(
+                    LegacyDocumentRecord(
                         id="good",
                         content="x",
                         uri="u2",
                         metadata=json.dumps({"etag": "abc"}),
                     ),
-                ]
+                ],
             )
 
-        async with Store(temp_db_path, skip_migration_check=True) as store:
             # Must not raise.
-            applied = await store.migrate()
-            assert any("0.50.0" in d for d in applied)
+            await _apply_canonical_metadata_keys(store)
 
             rows = await store.documents_table.query().to_list()
             by_id = {r["id"]: r["metadata"] for r in rows}
@@ -179,10 +180,10 @@ class TestV0_50_0Migration:
         """If both legacy and canonical keys are present, the canonical wins
         and the legacy is dropped — defends against partial-migration states."""
         async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
-            await store.set_haiku_version("0.48.1")
-            await store.documents_table.add(
+            await seed_legacy_documents(
+                store,
                 [
-                    DocumentRecord(
+                    LegacyDocumentRecord(
                         id="d",
                         content="x",
                         uri="s3://b/k",
@@ -195,11 +196,10 @@ class TestV0_50_0Migration:
                             }
                         ),
                     )
-                ]
+                ],
             )
 
-        async with Store(temp_db_path, skip_migration_check=True) as store:
-            await store.migrate()
+            await _apply_canonical_metadata_keys(store)
             rows = await store.documents_table.query().to_list()
             meta = json.loads(rows[0]["metadata"])
             assert meta == {

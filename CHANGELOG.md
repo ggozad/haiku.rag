@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- Mutable document attributes (`uri`, `title`, `metadata`, `created_at`, `updated_at`) moved from the `documents` table into a new `document_meta` table (1:1 on `document_id`); metadata/title/`source_revision` updates no longer rewrite the docling blobs. Migration `v0_58_0` relocates existing data and runs a one-time `vacuum` to reclaim prior bloat.
+
 ### Fixed
 
 - Embedded PDF attachment extension is derived from the attachment filename, not the parent's synthetic `...#attachment=<name>` URI; non-PDF attachments (e.g. `.joboptions`) are no longer misrouted to docling's PDF backend, and unsupported extensions are skipped.

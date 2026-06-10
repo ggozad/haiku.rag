@@ -323,7 +323,7 @@ async def _refresh_doc_metadata(
         updated = True
 
     if updated:
-        return await client.document_repository.update(doc)
+        return await client.document_repository.update_meta(doc)
     return doc
 
 
@@ -730,7 +730,7 @@ async def update_document(
         existing_doc.metadata = metadata
 
     if content is None and chunks is None and docling_document is None:
-        return await client.document_repository.update(existing_doc)
+        return await client.document_repository.update_meta(existing_doc)
 
     if chunks is not None:
         if docling_document is not None:
