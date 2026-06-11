@@ -4,6 +4,7 @@
 ### Added
 
 - `ingester.api.root_path` (and `haiku-ingester serve --root-path`) serves the control plane under a sub-path for reverse-proxying; forwarded to FastAPI/uvicorn `root_path` and reflected in the dashboard's `<base href>`.
+- YAML config string values support `${VAR}` / `${VAR:-default}` environment-variable interpolation, expanded at load time. `${VAR}` referencing an unset variable raises `MissingEnvVarError`; `$$` is a literal `$`.
 
 ## [0.56.0] - 2026-06-09
 

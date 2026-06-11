@@ -28,6 +28,22 @@ This creates a `haiku.rag.yaml` file in your current directory with all availabl
     - **macOS**: `~/Library/Application Support/haiku.rag/haiku.rag.yaml`
     - **Windows**: `C:/Users/<USER>/AppData/Roaming/haiku.rag/haiku.rag.yaml`
 
+## Environment Variables
+
+Any string value can reference an environment variable, so secrets stay out of the file and one config can serve multiple deployments:
+
+```yaml
+ingester:
+  queue:
+    dburi: postgresql+asyncpg://haiku:${POSTGRES_PASSWORD}@db:5432/haiku_rag
+```
+
+- `${VAR}` is replaced with the value of `VAR`. If `VAR` is unset, loading fails with an error naming the variable.
+- `${VAR:-default}` uses `default` when `VAR` is unset or empty.
+- `$$` produces a literal `$`.
+
+Substitution happens after the YAML is parsed, so a value containing `:`, `@`, or `#` fills the string verbatim and never changes the document structure.
+
 ## Minimal Configuration
 
 A minimal configuration file with defaults:
