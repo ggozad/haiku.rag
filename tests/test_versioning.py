@@ -334,10 +334,8 @@ async def test_close_suppresses_failing_drain_vacuum(temp_db_path, monkeypatch):
         calls.append(1)
         raise RuntimeError("vacuum boom")
 
-    # A finished task in the set forces the drain branch to run.
-    task = asyncio.create_task(asyncio.sleep(0))
-    await task
-    client._vacuum_tasks.add(task)
+    # Writes happened, so close owes a final vacuum — force that drain branch.
+    client._vacuum_dirty = True
     monkeypatch.setattr(client.store, "vacuum", boom)
 
     # Must not raise despite the drain vacuum erroring.

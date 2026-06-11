@@ -4,6 +4,7 @@
 ### Changed
 
 - Mutable document attributes (`uri`, `title`, `metadata`, `created_at`, `updated_at`) moved from the `documents` table into a new `document_meta` table (1:1 on `document_id`); metadata/title/`source_revision` updates no longer rewrite the docling blobs. Migration `v0_58_0` relocates existing data and runs a one-time `vacuum` to reclaim prior bloat.
+- Background auto-vacuum is throttled to at most once per 5 minutes; a final vacuum on close collapses any throttled writes. Sustained ingestion no longer triggers back-to-back compaction of the `documents` table.
 
 ### Fixed
 
