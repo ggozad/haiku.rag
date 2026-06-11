@@ -373,18 +373,49 @@ class HaikuRAG:
 
     async def delete_document(self, document_id: str) -> bool:
         """Delete a document by its ID. Cascades to children linked via
-        ``metadata.parent_uri``."""
+        ``metadata.parent_uri``.
+
+        The whole subtree (root + transitive children) is deleted under a single
+        write lock and a single version snapshot, so the cascade is atomic: any
+        failure restores every table to the pre-delete state, and no other write
+        can interleave between deleting a child and its parent.
+        """
         from haiku.rag.client.documents import parent_uri_filter
 
-        doc = await self.get_document_by_id(document_id)
-        if doc is None:
-            return False
-        if doc.uri:
-            children = await self.list_documents(filter=parent_uri_filter(doc.uri))
-            for child in children:
-                if child.id and child.id != document_id:
-                    await self.delete_document(child.id)
-        return await self.document_repository.delete(document_id)
+        async with self.store._write_lock:
+            # Resolve existence and collect the subtree under the lock so two
+            # concurrent deletes of the same id can't both proceed, and children
+            # can't appear or move between collection and deletion. parent_uri
+            # links a child to its parent's uri; walk transitively, guarding
+            # against cycles.
+            ids_to_delete: list[str] = []
+            seen: set[str] = set()
+            queue = [await self.get_document_by_id(document_id)]
+            while queue:
+                doc = queue.pop()
+                if doc is None or doc.id is None or doc.id in seen:
+                    continue
+                seen.add(doc.id)
+                ids_to_delete.append(doc.id)
+                if doc.uri:
+                    queue.extend(
+                        await self.list_documents(filter=parent_uri_filter(doc.uri))
+                    )
+
+            if not ids_to_delete:
+                return False
+
+            versions = await self.store.current_table_versions()
+            try:
+                for doc_id in ids_to_delete:
+                    await self.document_repository.delete(doc_id)
+            except Exception:
+                await self.store.restore_table_versions(versions)
+                raise
+
+        if self._config.storage.auto_vacuum:
+            self._schedule_vacuum()
+        return True
 
     async def list_documents(
         self,

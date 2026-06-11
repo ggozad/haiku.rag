@@ -60,7 +60,7 @@ class TestV0_48_0Migration:
 
         async with Store(temp_db_path, skip_migration_check=True) as store:
             # Apply the migration in isolation: store.migrate() would run the
-            # whole chain (incl. v0.50.0/v0.57.0 which touch documents.metadata,
+            # whole chain (incl. v0.50.0/v0.58.0 which touch documents.metadata,
             # absent from this docling-only fixture).
             await _apply_backfill_heading_hierarchy(store)
 

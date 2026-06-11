@@ -953,6 +953,110 @@ async def test_metadata_only_update_does_not_advance_documents_table(temp_db_pat
         assert fetched.get_docling_document() is not None
 
 
+async def test_delete_marks_vacuum_dirty(temp_db_path):
+    """A delete adds tombstone/table versions, so it must enter the auto-vacuum
+    lifecycle — otherwise a delete-only run closes without a final vacuum."""
+    dim = Config.embeddings.model.vector_dim
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(
+            _docling_doc("d", "body"),
+            [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+            uri="mem://del",
+        )
+        assert doc.id is not None
+        client._vacuum_dirty = False  # isolate the delete
+
+        assert await client.delete_document(doc.id) is True
+        assert client._vacuum_dirty is True
+
+
+async def test_delete_rolls_back_on_partial_failure(temp_db_path, monkeypatch):
+    """A multi-table delete is atomic: if a later table delete fails, the write
+    lock + version restore bring every table back, leaving no orphaned rows."""
+    dim = Config.embeddings.model.vector_dim
+    config = Config.model_copy(deep=True)
+    config.storage.auto_vacuum = False
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        doc = await client.import_document(
+            _docling_doc("d", "body"),
+            [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+            uri="mem://del",
+            title="T",
+            metadata={"k": "v"},
+        )
+        assert doc.id is not None
+
+        async def boom(*_a, **_k):
+            raise RuntimeError("meta delete failed")
+
+        # Fail the final step (document_meta) after chunks/items/documents deleted.
+        monkeypatch.setattr(client.store.document_meta_table, "delete", boom)
+        with pytest.raises(RuntimeError, match="meta delete failed"):
+            await client.delete_document(doc.id)
+        monkeypatch.undo()
+
+        # Rollback restored every table — the document is fully intact.
+        restored = await client.get_document_by_id(doc.id)
+        assert restored is not None
+        assert restored.title == "T"
+        assert restored.metadata["k"] == "v"
+        assert restored.content == "body"
+        chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        assert len(chunks) == 1
+
+
+async def test_cascade_delete_is_atomic(temp_db_path, monkeypatch):
+    """Deleting a parent cascades to children under one lock + snapshot. If any
+    delete in the subtree fails, the whole subtree is restored — a child isn't
+    left deleted while its parent survives."""
+    dim = Config.embeddings.model.vector_dim
+    config = Config.model_copy(deep=True)
+    config.storage.auto_vacuum = False
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        parent = await client.import_document(
+            _docling_doc("p", "parent"),
+            [Chunk(content="parent", embedding=[0.1] * dim, order=0)],
+            uri="mem://parent",
+        )
+        child = await client.import_document(
+            _docling_doc("c", "child"),
+            [Chunk(content="child", embedding=[0.2] * dim, order=0)],
+            uri="mem://child",
+            metadata={"parent_uri": "mem://parent"},
+        )
+        assert parent.id is not None and child.id is not None
+
+        orig_delete = client.document_repository.delete
+
+        async def delete_failing_on_child(doc_id):
+            if doc_id == child.id:
+                raise RuntimeError("child delete failed")
+            return await orig_delete(doc_id)
+
+        monkeypatch.setattr(
+            client.document_repository, "delete", delete_failing_on_child
+        )
+        with pytest.raises(RuntimeError, match="child delete failed"):
+            await client.delete_document(parent.id)
+        monkeypatch.undo()
+
+        # Atomic: the parent delete was rolled back too — both survive.
+        assert await client.get_document_by_id(parent.id) is not None
+        assert await client.get_document_by_id(child.id) is not None
+        assert await client.count_documents() == 2
+
+
+async def test_delete_missing_id_returns_false_without_vacuum(temp_db_path):
+    """Deleting an id that doesn't exist returns False and owes no vacuum (the
+    existence check is inside the lock, so a no-op delete stays a no-op)."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._vacuum_dirty = False
+        assert await client.delete_document("does-not-exist") is False
+        assert client._vacuum_dirty is False
+
+
 @pytest.mark.vcr()
 async def test_client_ask(allow_model_requests, temp_db_path):
     """Test asking questions returns answer and citations (VCR recorded)."""

@@ -14,10 +14,10 @@ from tests.store.legacy_documents import (
 class TestV0_50_0Migration:
     """v0.50.0 normalises document.metadata to source-agnostic keys.
 
-    Applied in isolation against the pre-0.57 documents schema (metadata still
+    Applied in isolation against the pre-0.58 documents schema (metadata still
     inline), so the assertions read documents.metadata directly. The full chain
-    (where v0.57.0 later relocates metadata to document_meta) is covered by the
-    v0.57.0 migration test.
+    (where v0.58.0 later relocates metadata to document_meta) is covered by the
+    v0.58.0 migration test.
     """
 
     async def test_renames_etag_and_content_type(self, temp_db_path):

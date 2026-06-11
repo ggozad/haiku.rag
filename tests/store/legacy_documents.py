@@ -1,9 +1,9 @@
-"""Helpers to seed a `documents` table in its pre-0.57 shape.
+"""Helpers to seed a `documents` table in its pre-0.58 shape.
 
-Before the document_meta split (v0.57.0), the `documents` table carried
+Before the document_meta split (v0.58.0), the `documents` table carried
 `uri/title/metadata/created_at/updated_at` alongside the content+blobs. The
 migration-chain tests need to reproduce that legacy layout so the older
-migrations (which read `documents.metadata`, etc.) and v0.57.0 itself have the
+migrations (which read `documents.metadata`, etc.) and v0.58.0 itself have the
 columns they operate on.
 """
 
@@ -17,7 +17,7 @@ from haiku.rag.store.engine import Store
 
 
 class LegacyDocumentRecord(LanceModel):
-    """The pre-0.57 `documents` record (mutable attributes still inline)."""
+    """The pre-0.58 `documents` record (mutable attributes still inline)."""
 
     id: str = Field(default_factory=lambda: str(uuid4()))
     content: str
@@ -45,7 +45,7 @@ def legacy_documents_schema() -> pa.Schema:
 async def seed_legacy_documents(
     store: Store, records: list[LegacyDocumentRecord]
 ) -> None:
-    """Recreate the `documents` table with the pre-0.57 schema and add records,
+    """Recreate the `documents` table with the pre-0.58 schema and add records,
     simulating a database created before the document_meta split."""
     if "documents" in (await store.db.list_tables()).tables:
         await store.db.drop_table("documents")

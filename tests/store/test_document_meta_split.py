@@ -61,7 +61,7 @@ async def test_update_missing_id_does_not_create_ghost(temp_db_path):
 
 @pytest.mark.asyncio
 async def test_opening_legacy_db_raises_migration_without_mutating(temp_db_path):
-    """Opening a pre-0.57 DB (no document_meta) must raise MigrationRequiredError
+    """Opening a pre-0.58 DB (no document_meta) must raise MigrationRequiredError
     up front — in both writable and read-only mode — and must not mutate the DB
     by creating the new table on open."""
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
@@ -69,7 +69,7 @@ async def test_opening_legacy_db_raises_migration_without_mutating(temp_db_path)
             store,
             [LegacyDocumentRecord(id="d", content="x", uri="u", metadata="{}")],
         )
-        # A real pre-0.57 DB has no document_meta table.
+        # A real pre-0.58 DB has no document_meta table.
         await store.db.drop_table("document_meta")
         await store.set_haiku_version("0.56.0")
 
