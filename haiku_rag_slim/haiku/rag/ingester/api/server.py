@@ -34,8 +34,15 @@ def build_app(
     state: APIState,
     *,
     auth_token: str | None = None,
+    root_path: str = "",
 ) -> FastAPI:
-    """Construct the ingester's FastAPI control plane."""
+    """Construct the ingester's FastAPI control plane.
+
+    ``root_path`` serves the control plane under a base path when it is
+    reverse-proxied behind a sub-path (e.g. ``/ingester``). It is forwarded to
+    FastAPI so generated URLs (OpenAPI/docs) and the dashboard's ``<base href>``
+    are prefix-aware; empty serves at the root.
+    """
     from haiku.rag.ingester.api.routes import (
         config as config_route,
     )
@@ -54,6 +61,7 @@ def build_app(
         title="haiku-ingester",
         description="Control plane for the haiku.rag production ingester.",
         version="1",
+        root_path=root_path,
     )
     app.state.api_state = state
     app.state.auth_token = auth_token

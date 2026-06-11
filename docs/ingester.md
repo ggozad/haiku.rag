@@ -326,6 +326,32 @@ ingester:
     host: 127.0.0.1
     port: 8765
     auth_token: secret                        # null → unauthenticated
+    root_path: ""                             # e.g. /ingester behind a proxy
+```
+
+### Behind a reverse proxy
+
+To serve the control plane under a sub-path (so a reverse proxy can front
+it alongside other services on one origin, e.g. `https://host/ingester/`),
+set `ingester.api.root_path` (or `serve --root-path /ingester`). It is
+forwarded to FastAPI/uvicorn as `root_path` — OpenAPI/`/docs` links become
+prefix-aware — and the dashboard is served with a matching `<base href>` so
+its JSON fetches resolve under the prefix. The value is normalized to a
+single leading slash with no trailing slash (`ingester`, `/ingester/` and
+`/` become `/ingester`, `/ingester` and `""`). Strip the prefix at the proxy
+before forwarding; for example, with nginx:
+
+```nginx
+# Redirect the bare prefix to the trailing-slash form so the dashboard's
+# <base href> resolves correctly.
+location = /ingester {
+    return 308 /ingester/;
+}
+
+location /ingester/ {
+    rewrite ^/ingester/?(.*)$ /$1 break;
+    proxy_pass http://127.0.0.1:8765;
+}
 ```
 
 ## Operating

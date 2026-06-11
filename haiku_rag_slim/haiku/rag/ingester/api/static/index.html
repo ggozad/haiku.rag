@@ -634,13 +634,13 @@
         try {
           const [health, sources, providers, stats, active, dead, recent] =
             await Promise.all([
-              fetchJson("/health"),
-              fetchJson("/sources"),
-              fetchJson("/providers"),
-              fetchJson("/stats"),
-              fetchJson("/jobs?status=claimed&limit=20"),
-              fetchJson("/jobs?status=dead&limit=10"),
-              fetchJson("/jobs?status=succeeded&limit=10"),
+              fetchJson("health"),
+              fetchJson("sources"),
+              fetchJson("providers"),
+              fetchJson("stats"),
+              fetchJson("jobs?status=claimed&limit=20"),
+              fetchJson("jobs?status=dead&limit=10"),
+              fetchJson("jobs?status=succeeded&limit=10"),
             ]);
           setHealthDot(false);
           let detail = `${health.worker_count} workers · ${health.poller_count} pollers`;
@@ -676,16 +676,16 @@
       // Action handlers (called from inline onclick — kept on window).
       window.cancelJob = async (id) => {
         if (!confirm(`Cancel job ${id.slice(0, 8)}…?`)) return;
-        try { await deleteJson(`/jobs/${encodeURIComponent(id)}`); } catch (e) {}
+        try { await deleteJson(`jobs/${encodeURIComponent(id)}`); } catch (e) {}
         refresh();
       };
       window.retryJob = async (id) => {
-        try { await postJson(`/jobs/${encodeURIComponent(id)}/retry`); } catch (e) {}
+        try { await postJson(`jobs/${encodeURIComponent(id)}/retry`); } catch (e) {}
         refresh();
       };
       window.refreshSource = async (sid) => {
         try {
-          await postJson(`/sources/${encodeURIComponent(sid)}/refresh`);
+          await postJson(`sources/${encodeURIComponent(sid)}/refresh`);
         } catch (e) {}
         refresh();
       };
@@ -801,7 +801,7 @@
       async function loadDatabase() {
         $("db-body").innerHTML = '<div class="empty">loading…</div>';
         try {
-          renderDatabase(await fetchJson("/database"));
+          renderDatabase(await fetchJson("database"));
           dbLoaded = true;
         } catch (e) {
           $("db-body").innerHTML = `<div class="empty">error: ${escapeHtml(e.message)}</div>`;
@@ -812,7 +812,7 @@
       async function loadConfig() {
         $("config-body").innerHTML = '<div class="empty">loading…</div>';
         try {
-          const data = await fetchJson("/config");
+          const data = await fetchJson("config");
           $("config-body").innerHTML = '<pre class="config"></pre>';
           $("config-body").querySelector("pre").textContent = data.yaml;
           configLoaded = true;

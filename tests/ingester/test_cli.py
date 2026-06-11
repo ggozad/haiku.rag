@@ -82,6 +82,25 @@ def test_serve_passes_host_and_port(monkeypatch):
     assert captured["config"].ingester.api.port == 9999
 
 
+def test_serve_passes_root_path(monkeypatch):
+    fake = AsyncMock()
+    captured = {}
+
+    def _capture(**kwargs):
+        captured.update(kwargs)
+        return fake
+
+    monkeypatch.setattr("haiku.rag.ingester.cli.IngesterApp", _capture)
+
+    result = runner.invoke(
+        cli, ["serve", "--db", "x.lancedb", "--root-path", "/ingester/"]
+    )
+
+    assert result.exit_code == 0
+    # Assignment is normalized (trailing slash stripped) via validate_assignment.
+    assert captured["config"].ingester.api.root_path == "/ingester"
+
+
 # --- queue init / migrate ---
 
 

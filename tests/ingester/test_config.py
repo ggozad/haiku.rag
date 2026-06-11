@@ -5,6 +5,7 @@ import yaml
 from pydantic import ValidationError
 
 from haiku.rag.config import (
+    APIConfig,
     AppConfig,
     FSSourceConfig,
     HTTPSourceConfig,
@@ -21,6 +22,34 @@ def test_default_ingester_config_has_sane_values():
     assert cfg.workers.retry.max_attempts == 5
     assert cfg.api.enabled is True
     assert cfg.api.port == 8765
+    assert cfg.api.root_path == ""
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("", ""),
+        ("/", ""),
+        ("ingester", "/ingester"),
+        ("/ingester", "/ingester"),
+        ("/ingester/", "/ingester"),
+        ("  /ingester/  ", "/ingester"),
+    ],
+)
+def test_api_root_path_normalized(raw, expected):
+    cfg = APIConfig(root_path=raw)
+
+    assert cfg.root_path == expected
+
+
+def test_api_root_path_normalized_on_assignment():
+    """validate_assignment ensures CLI overrides (--root-path) get the same
+    normalization as values parsed from the config file."""
+    cfg = APIConfig()
+
+    cfg.root_path = "ingester/"
+
+    assert cfg.root_path == "/ingester"
 
 
 def test_discriminator_picks_fs_source():

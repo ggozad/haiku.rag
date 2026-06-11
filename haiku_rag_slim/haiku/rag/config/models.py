@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from haiku.rag.utils import get_default_data_dir
 
@@ -345,10 +345,34 @@ class WorkerConfig(BaseModel):
 class APIConfig(BaseModel):
     """HTTP control plane settings for the ingester."""
 
+    # Validate on assignment so CLI overrides (e.g. --root-path) run the same
+    # normalization as values parsed from the config file.
+    model_config = ConfigDict(validate_assignment=True)
+
     enabled: bool = True
     host: str = "127.0.0.1"
     port: int = 8765
     auth_token: str | None = None
+    root_path: str = Field(
+        default="",
+        description=(
+            "Base path the control plane is served under when reverse-proxied "
+            "behind a sub-path (e.g. '/ingester'). Empty serves at the root. "
+            "Forwarded to FastAPI/uvicorn as root_path and used to set the "
+            "dashboard's <base href> so its fetches are prefix-aware."
+        ),
+    )
+
+    @field_validator("root_path")
+    @classmethod
+    def _normalize_root_path(cls, value: str) -> str:
+        """Normalize to '' (root) or a single leading-slash, no-trailing-slash
+        prefix, so 'ingester', '/ingester/' and '/' become '/ingester',
+        '/ingester' and ''."""
+        trimmed = value.strip().rstrip("/")
+        if trimmed and not trimmed.startswith("/"):
+            trimmed = "/" + trimmed
+        return trimmed
 
 
 class _SourceBase(BaseModel):
