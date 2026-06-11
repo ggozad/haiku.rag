@@ -374,3 +374,135 @@ def test_redact_secrets_masks_nested_secret_keys():
     assert redacted["sources"][0]["password"] == "***"
     assert redacted["sources"][0]["url"] == "http://x"
     assert redacted["storage_options"]["aws_secret_access_key"] == "***"
+
+
+def test_expand_env_var_set(tmp_path, monkeypatch):
+    """A ${VAR} referencing a set variable is substituted."""
+    monkeypatch.setenv("HAIKU_TEST_MODEL", "my-model")
+    config_file = tmp_path / "test.yaml"
+    config_file.write_text("""
+embeddings:
+  model:
+    name: ${HAIKU_TEST_MODEL}
+""")
+
+    config = load_yaml_config(config_file)
+    assert config["embeddings"]["model"]["name"] == "my-model"
+
+
+def test_expand_env_var_dburi_preserves_special_chars(tmp_path, monkeypatch):
+    """A password containing : and @ fills the string without breaking the URL."""
+    monkeypatch.setenv("HAIKU_TEST_PGPW", "p@ss:word")
+    config_file = tmp_path / "test.yaml"
+    config_file.write_text("""
+ingester:
+  queue:
+    dburi: "postgresql+asyncpg://user:${HAIKU_TEST_PGPW}@host/db"
+""")
+
+    config = load_yaml_config(config_file)
+    assert (
+        config["ingester"]["queue"]["dburi"]
+        == "postgresql+asyncpg://user:p@ss:word@host/db"
+    )
+
+
+def test_expand_env_var_unset_raises(tmp_path, monkeypatch):
+    """An unset ${VAR} without a default raises, naming the variable."""
+    from haiku.rag.config.loader import MissingEnvVarError
+
+    monkeypatch.delenv("HAIKU_TEST_MISSING", raising=False)
+    config_file = tmp_path / "test.yaml"
+    config_file.write_text("environment: ${HAIKU_TEST_MISSING}")
+
+    with pytest.raises(MissingEnvVarError, match="HAIKU_TEST_MISSING"):
+        load_yaml_config(config_file)
+
+
+def test_expand_env_var_default_when_unset(tmp_path, monkeypatch):
+    """${VAR:-default} falls back to the default when VAR is unset."""
+    monkeypatch.delenv("HAIKU_TEST_MISSING", raising=False)
+    config_file = tmp_path / "test.yaml"
+    config_file.write_text("environment: ${HAIKU_TEST_MISSING:-production}")
+
+    config = load_yaml_config(config_file)
+    assert config["environment"] == "production"
+
+
+def test_expand_env_var_default_when_empty(tmp_path, monkeypatch):
+    """${VAR:-default} falls back to the default when VAR is set but empty."""
+    monkeypatch.setenv("HAIKU_TEST_EMPTY", "")
+    config_file = tmp_path / "test.yaml"
+    config_file.write_text("environment: ${HAIKU_TEST_EMPTY:-production}")
+
+    config = load_yaml_config(config_file)
+    assert config["environment"] == "production"
+
+
+def test_expand_env_var_default_overridden_when_set(tmp_path, monkeypatch):
+    """${VAR:-default} uses the variable when it is set and non-empty."""
+    monkeypatch.setenv("HAIKU_TEST_ENV", "staging")
+    config_file = tmp_path / "test.yaml"
+    config_file.write_text("environment: ${HAIKU_TEST_ENV:-production}")
+
+    config = load_yaml_config(config_file)
+    assert config["environment"] == "staging"
+
+
+def test_expand_env_var_dollar_escape(tmp_path):
+    """$$ collapses to a literal $, leaving ${...} text intact."""
+    config_file = tmp_path / "test.yaml"
+    config_file.write_text("environment: $${NOT_A_VAR}")
+
+    config = load_yaml_config(config_file)
+    assert config["environment"] == "${NOT_A_VAR}"
+
+
+def test_expand_env_var_nested_in_list_and_dict(tmp_path, monkeypatch):
+    """Expansion recurses through lists and nested dicts."""
+    monkeypatch.setenv("HAIKU_TEST_TOKEN", "abc123")
+    monkeypatch.setenv("HAIKU_TEST_KEY", "AKIA")
+    config_file = tmp_path / "test.yaml"
+    config_file.write_text("""
+ingester:
+  sources:
+    - type: http
+      id: arxiv
+      urls:
+        - https://example.com/${HAIKU_TEST_TOKEN}.pdf
+      storage_options:
+        aws_access_key_id: ${HAIKU_TEST_KEY}
+""")
+
+    config = load_yaml_config(config_file)
+    source = config["ingester"]["sources"][0]
+    assert source["urls"][0] == "https://example.com/abc123.pdf"
+    assert source["storage_options"]["aws_access_key_id"] == "AKIA"
+
+
+def test_expand_env_var_leaves_non_strings_untouched(tmp_path):
+    """Non-string scalars pass through unchanged."""
+    config_file = tmp_path / "test.yaml"
+    config_file.write_text("""
+embeddings:
+  model:
+    vector_dim: 1024
+ingester:
+  sources:
+    - type: s3
+      storage_options:
+        allow_http: true
+""")
+
+    config = load_yaml_config(config_file)
+    assert config["embeddings"]["model"]["vector_dim"] == 1024
+    assert config["ingester"]["sources"][0]["storage_options"]["allow_http"] is True
+
+
+def test_expand_env_var_plain_string_unchanged(tmp_path):
+    """A string with no ${...} reference is returned as-is."""
+    config_file = tmp_path / "test.yaml"
+    config_file.write_text("environment: production")
+
+    config = load_yaml_config(config_file)
+    assert config["environment"] == "production"

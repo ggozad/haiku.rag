@@ -1,11 +1,47 @@
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 logger = logging.getLogger(__name__)
+
+_ENV_VAR_PATTERN = re.compile(r"\$\$|\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
+
+
+class MissingEnvVarError(ValueError):
+    """A ${VAR} in the config references an unset environment variable."""
+
+
+def _expand_str(value: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        if match.group(0) == "$$":
+            return "$"
+        name, default = match.group(1), match.group(2)
+        if name in os.environ and (default is None or os.environ[name] != ""):
+            return os.environ[name]
+        if default is not None:
+            return default
+        raise MissingEnvVarError(
+            f"Config references unset environment variable ${{{name}}}. "
+            f"Set it, or use ${{{name}:-default}} to provide a fallback."
+        )
+
+    return _ENV_VAR_PATTERN.sub(replace, value)
+
+
+def expand_env_vars(data: Any) -> Any:
+    """Recursively expand ${VAR} / ${VAR:-default} references in string values.
+    Keys and non-string scalars are left untouched; $$ collapses to a literal $."""
+    if isinstance(data, dict):
+        return {key: expand_env_vars(value) for key, value in data.items()}
+    if isinstance(data, list):
+        return [expand_env_vars(item) for item in data]
+    if isinstance(data, str):
+        return _expand_str(data)
+    return data
 
 
 def find_config_file(cli_path: Path | None = None) -> Path | None:
@@ -45,10 +81,10 @@ def find_config_file(cli_path: Path | None = None) -> Path | None:
 
 
 def load_yaml_config(path: Path) -> dict:
-    """Load and parse a YAML config file."""
+    """Load and parse a YAML config file, expanding ${VAR} references."""
     with open(path) as f:
         data = yaml.safe_load(f)
-    return data or {}
+    return expand_env_vars(data or {})
 
 
 def generate_default_config() -> dict:

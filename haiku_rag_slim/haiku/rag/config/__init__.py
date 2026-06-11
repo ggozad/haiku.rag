@@ -1,4 +1,6 @@
 from haiku.rag.config.loader import (
+    MissingEnvVarError,
+    expand_env_vars,
     find_config_file,
     generate_default_config,
     load_yaml_config,
@@ -57,6 +59,8 @@ __all__ = [
     "StorageConfig",
     "WebDAVSourceConfig",
     "WorkerConfig",
+    "MissingEnvVarError",
+    "expand_env_vars",
     "find_config_file",
     "generate_default_config",
     "get_config",
