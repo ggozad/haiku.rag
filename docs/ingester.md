@@ -342,6 +342,12 @@ single leading slash with no trailing slash (`ingester`, `/ingester/` and
 before forwarding; for example, with nginx:
 
 ```nginx
+# Redirect the bare prefix to the trailing-slash form so the dashboard's
+# <base href> resolves correctly.
+location = /ingester {
+    return 308 /ingester/;
+}
+
 location /ingester/ {
     rewrite ^/ingester/?(.*)$ /$1 break;
     proxy_pass http://127.0.0.1:8765;

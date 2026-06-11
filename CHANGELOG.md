@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- `ingester.api.root_path` (and `haiku-ingester serve --root-path`) serves the control plane under a sub-path for reverse-proxying; forwarded to FastAPI/uvicorn `root_path` and reflected in the dashboard's `<base href>`.
+
 ## [0.56.0] - 2026-06-09
 
 ### Added
