@@ -106,3 +106,56 @@ async def test_migrate_creates_and_populates_document_meta(temp_db_path):
         repo = DocumentRepository(store)
         doc = await repo.get_by_id("d")
         assert doc is not None and doc.uri == "u"
+
+
+@pytest.mark.asyncio
+async def test_repository_empty_and_missing_id_paths(temp_db_path):
+    """Cover the repository's early-return branches for empty input and
+    missing ids, plus get_content."""
+    async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
+        repo = DocumentRepository(store)
+
+        assert await repo.create([]) == []
+        assert await repo.get_content("nope") is None
+        assert await repo.get_docling_data("nope") is None
+        assert await repo.get_pages_data("nope") is None
+        assert await repo.delete("nope") is False
+
+        doc = await repo.create(Document(content="hello body", uri="u1"))
+        assert doc.id is not None
+        assert await repo.get_content(doc.id) == "hello body"
+
+
+@pytest.mark.asyncio
+async def test_batch_create_rolls_back_meta_on_failure(temp_db_path, monkeypatch):
+    """The list create path also rolls back its document_meta rows if the
+    documents write fails."""
+    async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
+        repo = DocumentRepository(store)
+
+        async def boom(*_a, **_k):
+            raise RuntimeError("documents add failed")
+
+        monkeypatch.setattr(store.documents_table, "add", boom)
+        with pytest.raises(RuntimeError, match="documents add failed"):
+            await repo.create(
+                [Document(content="x", uri="u1"), Document(content="y", uri="u2")]
+            )
+        monkeypatch.undo()
+
+        assert await store.documents_table.count_rows() == 0
+        assert await store.document_meta_table.count_rows() == 0
+
+
+@pytest.mark.asyncio
+async def test_get_by_uri_with_orphan_meta_returns_none(temp_db_path):
+    """Defensive: a document_meta row whose documents row is missing (an
+    invariant violation) resolves to None, not a half-hydrated document."""
+    from haiku.rag.store.engine import DocumentMetaRecord
+
+    async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
+        repo = DocumentRepository(store)
+        await store.document_meta_table.add(
+            [DocumentMetaRecord(document_id="ghost", uri="u-ghost", metadata="{}")]
+        )
+        assert await repo.get_by_uri("u-ghost") is None

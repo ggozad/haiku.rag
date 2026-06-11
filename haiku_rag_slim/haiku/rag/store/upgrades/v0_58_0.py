@@ -74,7 +74,9 @@ async def _apply_split_document_meta(store: Store) -> None:
         # lancedb's .stats() stub claims TableStatistics but returns a plain dict.
         stats: dict = await store.documents_table.stats()  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         live_bytes = int(stats.get("total_bytes", 0))
-    except Exception:
+    except (
+        Exception
+    ):  # pragma: no cover - defensive; stats() failure shouldn't block the split
         live_bytes = 0
     free_bytes = shutil.disk_usage(store.db_path).free
     if live_bytes and free_bytes < live_bytes:

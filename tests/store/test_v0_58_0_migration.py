@@ -96,3 +96,101 @@ class TestV0_58_0Migration:
             meta_rows = await store.document_meta_table.query().to_list()
             assert len(meta_rows) == 1
             assert meta_rows[0]["document_id"] == "doc-1"
+
+
+@pytest.mark.asyncio
+class TestV0_58_0MigrationEdgeCases:
+    async def test_resume_skips_already_migrated_rows(self, temp_db_path):
+        """A half-finished prior run leaves some document_meta rows; re-running
+        migrates only the rest and never duplicates."""
+        from haiku.rag.store.engine import DocumentMetaRecord
+
+        async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
+            await seed_legacy_documents(
+                store,
+                [
+                    LegacyDocumentRecord(id="a", content="x", uri="u-a", metadata="{}"),
+                    LegacyDocumentRecord(id="b", content="y", uri="u-b", metadata="{}"),
+                ],
+            )
+            # Pretend a prior run already moved doc "a".
+            await store.document_meta_table.add(
+                [DocumentMetaRecord(document_id="a", uri="u-a", metadata="{}")]
+            )
+            await store.set_haiku_version("0.57.0")
+
+        async with Store(temp_db_path, skip_migration_check=True) as store:
+            await store.migrate()
+            rows = await store.document_meta_table.query().to_list()
+            by_id = {r["document_id"]: r for r in rows}
+            assert set(by_id) == {"a", "b"}  # exactly one row each, no duplicates
+            assert len(rows) == 2
+
+    async def test_skips_vacuum_when_disk_is_tight(self, temp_db_path, monkeypatch):
+        """When free disk can't cover one compacted copy, the split still
+        completes but the reclaim vacuum is skipped."""
+        from types import SimpleNamespace
+
+        from haiku.rag.store.upgrades import v0_58_0
+
+        async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
+            await seed_legacy_documents(
+                store,
+                [LegacyDocumentRecord(id="a", content="x", uri="u", metadata="{}")],
+            )
+            await store.set_haiku_version("0.57.0")
+
+        # Pretend almost no free disk so the reclaim vacuum is skipped.
+        monkeypatch.setattr(
+            v0_58_0.shutil,
+            "disk_usage",
+            lambda _p: SimpleNamespace(total=1, used=1, free=1),
+        )
+
+        vacuum_calls: list[int] = []
+
+        async with Store(temp_db_path, skip_migration_check=True) as store:
+            # Force a known nonzero live size so the free<live check is
+            # deterministic (real stats().total_bytes can be 0 for a tiny table).
+            async def fake_stats():
+                return {"total_bytes": 10_000_000}
+
+            monkeypatch.setattr(store.documents_table, "stats", fake_stats)
+
+            orig_vacuum = store.vacuum
+
+            async def tracking_vacuum(*args, **kwargs):
+                vacuum_calls.append(1)
+                return await orig_vacuum(*args, **kwargs)
+
+            monkeypatch.setattr(store, "vacuum", tracking_vacuum)
+
+            await store.migrate()
+            # Split still happened despite the skipped vacuum.
+            names = {f.name for f in await store.documents_table.schema()}
+            assert _LEGACY_COLUMNS.isdisjoint(names)
+            repo = DocumentRepository(store)
+            migrated = await repo.get_by_id("a")
+            assert migrated is not None and migrated.uri == "u"
+
+        assert vacuum_calls == []  # reclaim vacuum was skipped
+
+
+@pytest.mark.asyncio
+async def test_delete_all_clears_document_meta(temp_db_path):
+    """delete_all drops and recreates both documents and document_meta."""
+    from haiku.rag.store.models.document import Document
+
+    async with Store(temp_db_path, create=True) as store:
+        repo = DocumentRepository(store)
+        await repo.create(Document(content="x", uri="u1"))
+        await repo.create(Document(content="y", uri="u2"))
+        assert await store.document_meta_table.count_rows() == 2
+
+        await repo.delete_all()
+
+        assert await store.documents_table.count_rows() == 0
+        assert await store.document_meta_table.count_rows() == 0
+        # Tables are usable again after recreation.
+        await repo.create(Document(content="z", uri="u3"))
+        assert await store.document_meta_table.count_rows() == 1
