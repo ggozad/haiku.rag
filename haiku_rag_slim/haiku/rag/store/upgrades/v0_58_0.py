@@ -92,7 +92,7 @@ async def _apply_split_document_meta(store: Store) -> None:
 
 
 upgrade_split_document_meta = Upgrade(
-    version="0.57.0",
+    version="0.58.0",
     apply=_apply_split_document_meta,
     description="Move mutable document attributes into the document_meta table",
 )
