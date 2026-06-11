@@ -4,6 +4,18 @@ import pytest
 
 import haiku.rag.client as client_mod
 from haiku.rag.client import HaikuRAG
+from haiku.rag.client.documents import _refresh_doc_metadata
+from haiku.rag.config import Config
+from haiku.rag.store.models.chunk import Chunk
+
+
+def _docling_doc(name: str, text: str):
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
+    doc = DoclingDocument(name=name)
+    doc.add_text(label=DocItemLabel.TEXT, text=text)
+    return doc
 
 
 @pytest.mark.asyncio
@@ -54,3 +66,29 @@ async def test_debounced_writes_still_collapse_on_close(temp_db_path, monkeypatc
         # one scheduled background pass + one final collapse on drain
         assert len(calls) == 2
         assert client._vacuum_dirty is False
+
+
+@pytest.mark.asyncio
+async def test_metadata_refresh_sweep_schedules_vacuum(temp_db_path):
+    """A source re-sweep that only rolls source_revision (MD5/revision
+    short-circuit) writes document_meta and must still schedule the (debounced)
+    vacuum, so that tiny churn gets reclaimed instead of accumulating."""
+    dim = Config.embeddings.model.vector_dim
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(
+            _docling_doc("d", "body"),
+            [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+            uri="mem://sweep",
+            metadata={"source_revision": "r1"},
+        )
+        # Isolate the refresh: the import already scheduled a vacuum.
+        client._vacuum_dirty = False
+
+        await _refresh_doc_metadata(
+            client,
+            doc,
+            title=None,
+            user_metadata={},
+            source_metadata={"source_revision": "r2", "md5": "same"},
+        )
+        assert client._vacuum_dirty is True

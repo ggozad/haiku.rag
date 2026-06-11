@@ -323,7 +323,12 @@ async def _refresh_doc_metadata(
         updated = True
 
     if updated:
-        return await client.document_repository.update_meta(doc)
+        result = await client.document_repository.update_meta(doc)
+        # Reclaim the document_meta churn from rolling source_revision sweeps.
+        # The vacuum is debounced, and document_meta is tiny, so this is cheap.
+        if client._config.storage.auto_vacuum:
+            client._schedule_vacuum()
+        return result
     return doc
 
 
@@ -730,7 +735,10 @@ async def update_document(
         existing_doc.metadata = metadata
 
     if content is None and chunks is None and docling_document is None:
-        return await client.document_repository.update_meta(existing_doc)
+        updated = await client.document_repository.update_meta(existing_doc)
+        if client._config.storage.auto_vacuum:
+            client._schedule_vacuum()
+        return updated
 
     if chunks is not None:
         if docling_document is not None:
