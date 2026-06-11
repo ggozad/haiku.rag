@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.57.0] - 2026-06-11
+
 ### Added
 
 - `ingester.api.root_path` (and `haiku-ingester serve --root-path`) serves the control plane under a sub-path for reverse-proxying; forwarded to FastAPI/uvicorn `root_path` and reflected in the dashboard's `<base href>`.
@@ -1723,7 +1725,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.56.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.57.0...HEAD
+[0.57.0]: https://github.com/ggozad/haiku.rag/compare/0.56.0...0.57.0
 [0.56.0]: https://github.com/ggozad/haiku.rag/compare/0.55.1...0.56.0
 [0.55.1]: https://github.com/ggozad/haiku.rag/compare/0.55.0...0.55.1
 [0.55.0]: https://github.com/ggozad/haiku.rag/compare/0.54.0...0.55.0
