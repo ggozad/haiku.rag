@@ -107,7 +107,7 @@ class HaikuRAGApp:  # pragma: no cover
 
         # Per-table row counts and sizes. Missing required tables are
         # reported as "absent" rather than raising.
-        for name in ("documents", "chunks", "document_items"):
+        for name in ("documents", "document_meta", "chunks", "document_items"):
             entry = tables[name]
             if entry.exists:
                 self.console.print(
@@ -154,6 +154,11 @@ class HaikuRAGApp:  # pragma: no cover
             self.console.print(
                 f"  [repr.attrib_name]versions (documents)[/repr.attrib_name]: "
                 f"{tables['documents'].num_versions}"
+            )
+        if tables["document_meta"].exists:
+            self.console.print(
+                f"  [repr.attrib_name]versions (document_meta)[/repr.attrib_name]: "
+                f"{tables['document_meta'].num_versions}"
             )
         if tables["chunks"].exists:
             self.console.print(
@@ -215,7 +220,13 @@ class HaikuRAGApp:  # pragma: no cover
             skip_migration_check=True,
             before=self.before,
         ) as store:
-            tables = ["documents", "chunks", "settings"]
+            tables = [
+                "documents",
+                "document_meta",
+                "chunks",
+                "document_items",
+                "settings",
+            ]
             if table:
                 if table not in tables:
                     self.console.print(

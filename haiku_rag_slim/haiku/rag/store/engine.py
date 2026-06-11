@@ -309,7 +309,7 @@ async def gather_database_info(config: AppConfig, db_path: Path) -> DatabaseInfo
             total_bytes=stats[name].get("total_bytes", 0),
             num_versions=stats[name].get("num_versions", 0),
         )
-        for name in ("documents", "chunks", "document_items")
+        for name in ("documents", "document_meta", "chunks", "document_items")
     ]
 
     vector_index = VectorIndexInfo()
@@ -878,7 +878,8 @@ class Store:
         """List version history for a table.
 
         Args:
-            table_name: Name of the table ("documents", "chunks", or "settings")
+            table_name: Name of the table ("documents", "document_meta",
+                "chunks", "document_items", or "settings")
 
         Returns:
             List of version info dicts with "version" and "timestamp" keys

@@ -597,7 +597,7 @@ def history(  # pragma: no cover
         None,
         "--table",
         "-t",
-        help="Specific table to show history for (documents, chunks, settings)",
+        help="Specific table to show history for (documents, document_meta, chunks, document_items, settings)",
     ),
     limit: int | None = typer.Option(
         None,

@@ -119,6 +119,10 @@ class InfoModal(ModalScreen):
         num_docs = stats["documents"].get("num_rows", 0)
         doc_bytes = stats["documents"].get("total_bytes", 0)
 
+        num_meta = stats["document_meta"].get("num_rows", 0)
+        meta_bytes = stats["document_meta"].get("total_bytes", 0)
+        meta_versions = stats["document_meta"].get("num_versions", 0)
+
         num_chunks = stats["chunks"].get("num_rows", 0)
         chunk_bytes = stats["chunks"].get("total_bytes", 0)
 
@@ -147,6 +151,9 @@ class InfoModal(ModalScreen):
 
         lines.append(
             f"[bold $accent]documents[/bold $accent]: {num_docs} ({format_bytes(doc_bytes)})"
+        )
+        lines.append(
+            f"[bold $accent]document_meta[/bold $accent]: {num_meta} ({format_bytes(meta_bytes)})"
         )
         lines.append(
             f"[bold $accent]chunks[/bold $accent]: {num_chunks} ({format_bytes(chunk_bytes)})"
@@ -179,6 +186,9 @@ class InfoModal(ModalScreen):
 
         lines.append(
             f"[bold $accent]versions (documents)[/bold $accent]: {doc_versions}"
+        )
+        lines.append(
+            f"[bold $accent]versions (document_meta)[/bold $accent]: {meta_versions}"
         )
         lines.append(
             f"[bold $accent]versions (chunks)[/bold $accent]: {chunk_versions}"
