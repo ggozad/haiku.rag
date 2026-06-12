@@ -332,16 +332,25 @@ async def _ingest_fetch_result(
     stored_uri: str,
     existing_doc: Document | None,
     depth: int = 0,
+    filename: str | None = None,
 ) -> Document:
     """Convert / chunk / embed / store a fetched document. Replaces an
     existing document if one is supplied. ``depth`` tracks position in an
-    attachment chain so the reconciliation step can bound recursion."""
+    attachment chain so the reconciliation step can bound recursion.
+
+    ``filename``, when given, makes its suffix authoritative for the file
+    extension (and thus the docling format), overriding the URI/content-type
+    fallback. Callers pass it when ``result.uri`` cannot yield the right
+    extension, e.g. embedded attachments whose name lives in a URI fragment."""
     from haiku.rag.embeddings import embed_chunks
 
     converter = get_converter(client._config)
-    file_extension = get_extension_from_content_type_or_url(
-        result.uri, result.content_type
-    )
+    if filename is not None:
+        file_extension = Path(filename).suffix.lower()
+    else:
+        file_extension = get_extension_from_content_type_or_url(
+            result.uri, result.content_type
+        )
     if file_extension not in converter.supported_extensions:
         raise UnsupportedSourceError(
             f"Unsupported content type/extension: {result.content_type}/{file_extension}"
@@ -508,12 +517,15 @@ async def _reconcile_pdf_attachments(
                 stored_uri=child_uri,
                 existing_doc=existing_child,
                 depth=depth + 1,
+                filename=name,
             )
         except UnsupportedSourceError:
             logger.warning(
-                "Skipping attachment %r in %s: unsupported content type %r",
+                "Skipping attachment %r in %s: unsupported extension %r "
+                "(content type %r)",
                 name,
                 parent_doc.uri,
+                Path(name).suffix.lower(),
                 content_type,
             )
 
