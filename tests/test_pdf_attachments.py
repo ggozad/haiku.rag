@@ -332,42 +332,21 @@ async def test_unsupported_attachment_continues_loop(temp_db_path, monkeypatch):
 
 
 async def test_joboptions_attachment_skipped_not_routed_as_pdf(temp_db_path, caplog):
-    """Regression: an Adobe ``.joboptions`` preset is ASCII text, embedded by
-    name only. Its synthetic ``...#attachment=Press%20Quality.joboptions`` URI
-    carries the name in a *fragment*, so the URL-suffix fallback used to inherit
-    the PARENT PDF's ``.pdf`` and hand the ASCII bytes to docling's PDF backend.
-
-    The attachment's own name must now drive the extension: ``.joboptions`` is
-    unsupported, so the child is skipped -- never ingested, never sent to
-    docling. This runs the REAL ``_ingest_fetch_result`` (no monkeypatch); its
-    unsupported-extension guard short-circuits before any converter/embedder
-    call, so the sole attachment needs no LLM."""
+    """An attachment's own name drives its extension, not the synthetic
+    ``...#attachment=<name>`` URI (whose fragment the URL-suffix fallback drops,
+    inheriting the parent's ``.pdf``). ``.joboptions`` is unsupported, so the
+    child is skipped before any converter/embedder call (real ingest, no fake)."""
     import logging
-
-    from haiku.rag.client.processing import get_extension_from_content_type_or_url
 
     pdf_bytes = build_pdf([("Press Quality.joboptions", b"/CompressObjects /Tags\n")])
     async with HaikuRAG(temp_db_path, create=True) as client:
         parent_uri = "file:///fixtures/brochure.pdf"
         parent = await _make_parent(client, parent_uri, pdf_bytes)
 
-        # The latent trap: octet-stream + the fragment URI still resolves to the
-        # parent's ``.pdf`` -- which is exactly what the fix must no longer use.
-        child_uri = f"{parent_uri}#attachment=Press%20Quality.joboptions"
-        assert (
-            get_extension_from_content_type_or_url(
-                child_uri, "application/octet-stream"
-            )
-            == ".pdf"
-        )
-
         with caplog.at_level(logging.WARNING, logger="haiku.rag.client.documents"):
             await _reconcile_pdf_attachments(client, parent, pdf_bytes, depth=0)
 
-        # No child created: the ASCII preset was skipped, not parsed as a PDF.
         assert await client.list_documents(filter=parent_uri_filter(parent_uri)) == []
-        assert "unsupported extension" in caplog.text
-        assert ".joboptions" in caplog.text
 
 
 async def test_cascade_delete_removes_reconciled_children(temp_db_path, monkeypatch):

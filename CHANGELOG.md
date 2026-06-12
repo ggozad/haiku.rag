@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- Embedded PDF attachment extension is derived from the attachment filename, not the parent's synthetic `...#attachment=<name>` URI; non-PDF attachments (e.g. `.joboptions`) are no longer misrouted to docling's PDF backend, and unsupported extensions are skipped.
+
 ## [0.57.0] - 2026-06-11
 
 ### Added

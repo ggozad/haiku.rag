@@ -338,15 +338,10 @@ async def _ingest_fetch_result(
     existing document if one is supplied. ``depth`` tracks position in an
     attachment chain so the reconciliation step can bound recursion.
 
-    ``filename`` makes that name's suffix the authoritative source of the
-    file extension (hence the docling format). Callers pass it when the
-    result's ``uri`` cannot yield the right extension -- notably embedded
-    PDF attachments, whose synthetic ``...#attachment=<name>`` URI carries
-    the attachment name in the fragment, so the URL-suffix fallback would
-    otherwise inherit the *parent* PDF's ``.pdf`` and feed ASCII payloads
-    (e.g. ``Press Quality.joboptions``) to docling's PDF backend. An empty
-    or unsupported suffix then fails the guard below and is rejected,
-    instead of being silently misrouted."""
+    ``filename``, when given, makes its suffix authoritative for the file
+    extension (and thus the docling format), overriding the URI/content-type
+    fallback. Callers pass it when ``result.uri`` cannot yield the right
+    extension, e.g. embedded attachments whose name lives in a URI fragment."""
     from haiku.rag.embeddings import embed_chunks
 
     converter = get_converter(client._config)
