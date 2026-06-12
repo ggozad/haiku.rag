@@ -9,6 +9,7 @@ from datetime import datetime
 from enum import Enum
 from functools import cached_property
 from pathlib import Path
+from time import monotonic
 from typing import TYPE_CHECKING, overload
 from urllib.parse import urlparse
 
@@ -39,6 +40,12 @@ if TYPE_CHECKING:
     from haiku.rag.store.models.citation import Citation
 
 logger = logging.getLogger(__name__)
+
+# Throttle for the background auto-vacuum: under sustained ingestion, scheduling
+# a compaction on every write degenerates into back-to-back optimize() passes
+# that churn the blob-bearing documents table. Fire at most one per interval; a
+# final vacuum on close collapses anything throttled here.
+_VACUUM_MIN_INTERVAL_S = 300.0
 
 
 class RebuildMode(Enum):
@@ -87,6 +94,8 @@ class HaikuRAG:
         self._read_only = read_only
         self._before = before
         self._vacuum_tasks: set[asyncio.Task] = set()
+        self._last_vacuum_at: float | None = None
+        self._vacuum_dirty = False
 
     @property
     def is_read_only(self) -> bool:
@@ -137,17 +146,20 @@ class HaikuRAG:
         return False
 
     async def _await_vacuum_tasks(self) -> None:
-        """Drain background vacuum work before tearing down the connection.
+        """Drain background vacuum work and run a final collapse before teardown.
 
-        Each create_document / update_document can schedule its own vacuum task;
-        all must be awaited, not just the most recently scheduled one. Vacuum
-        skips when another is already running, so the cleanup for the final
-        writes may have been a no-op. Run one more pass once the in-flight tasks
-        are done to collapse versions created after the last vacuum took the lock.
+        Writes schedule a throttled background vacuum; many are debounced or skip
+        because another vacuum holds the lock. The final pass collapses the
+        versions those left behind. It runs whenever writes happened
+        (``_vacuum_dirty``) — not gated on in-flight tasks remaining, since a
+        debounced run may have scheduled none — but never when nothing was
+        written (so opening + closing a store still never writes).
         """
-        if not self._vacuum_tasks:
+        if self._vacuum_tasks:
+            await asyncio.gather(*self._vacuum_tasks, return_exceptions=True)
+        if not self._vacuum_dirty:
             return
-        await asyncio.gather(*self._vacuum_tasks, return_exceptions=True)
+        self._vacuum_dirty = False
         # __aexit__ runs during exception unwinding; a raising vacuum here would
         # mask the original exception, so the drain stays best-effort.
         try:
@@ -156,7 +168,19 @@ class HaikuRAG:
             logger.debug("Final vacuum on close failed", exc_info=True)
 
     def _schedule_vacuum(self) -> None:
-        """Schedule a background vacuum and track the task for later awaiting."""
+        """Schedule a background vacuum, throttled to at most one per
+        ``_VACUUM_MIN_INTERVAL_S``. Sustained writes would otherwise trigger
+        back-to-back compaction of the blob-bearing documents table. The throttle
+        only skips the background task — ``_vacuum_dirty`` still marks that a
+        final vacuum on close is owed."""
+        self._vacuum_dirty = True
+        now = monotonic()
+        if (
+            self._last_vacuum_at is not None
+            and now - self._last_vacuum_at < _VACUUM_MIN_INTERVAL_S
+        ):
+            return
+        self._last_vacuum_at = now
         task = asyncio.create_task(self.store.vacuum())
         self._vacuum_tasks.add(task)
         task.add_done_callback(self._vacuum_tasks.discard)
@@ -349,18 +373,49 @@ class HaikuRAG:
 
     async def delete_document(self, document_id: str) -> bool:
         """Delete a document by its ID. Cascades to children linked via
-        ``metadata.parent_uri``."""
+        ``metadata.parent_uri``.
+
+        The whole subtree (root + transitive children) is deleted under a single
+        write lock and a single version snapshot, so the cascade is atomic: any
+        failure restores every table to the pre-delete state, and no other write
+        can interleave between deleting a child and its parent.
+        """
         from haiku.rag.client.documents import parent_uri_filter
 
-        doc = await self.get_document_by_id(document_id)
-        if doc is None:
-            return False
-        if doc.uri:
-            children = await self.list_documents(filter=parent_uri_filter(doc.uri))
-            for child in children:
-                if child.id and child.id != document_id:
-                    await self.delete_document(child.id)
-        return await self.document_repository.delete(document_id)
+        async with self.store._write_lock:
+            # Resolve existence and collect the subtree under the lock so two
+            # concurrent deletes of the same id can't both proceed, and children
+            # can't appear or move between collection and deletion. parent_uri
+            # links a child to its parent's uri; walk transitively, guarding
+            # against cycles.
+            ids_to_delete: list[str] = []
+            seen: set[str] = set()
+            queue = [await self.get_document_by_id(document_id)]
+            while queue:
+                doc = queue.pop()
+                if doc is None or doc.id is None or doc.id in seen:
+                    continue
+                seen.add(doc.id)
+                ids_to_delete.append(doc.id)
+                if doc.uri:
+                    queue.extend(
+                        await self.list_documents(filter=parent_uri_filter(doc.uri))
+                    )
+
+            if not ids_to_delete:
+                return False
+
+            versions = await self.store.current_table_versions()
+            try:
+                for doc_id in ids_to_delete:
+                    await self.document_repository.delete(doc_id)
+            except Exception:
+                await self.store.restore_table_versions(versions)
+                raise
+
+        if self._config.storage.auto_vacuum:
+            self._schedule_vacuum()
+        return True
 
     async def list_documents(
         self,

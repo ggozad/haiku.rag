@@ -267,7 +267,7 @@ class TestInitFailureCleanup:
         async def fake_connect(*args, **kwargs):
             return mock_conn
 
-        async def failing_init_tables(self):
+        async def failing_init_tables(self, is_new_db):
             raise RuntimeError("simulated table init failure")
 
         monkeypatch.setattr("haiku.rag.store.engine.connect_lancedb", fake_connect)

@@ -192,7 +192,7 @@ async def _rebuild_title_only(
             continue
         if title is not None:
             doc.title = title
-            await client.document_repository.update(doc)
+            await client.document_repository.update_meta(doc)
             assert doc.id is not None
             yield doc.id
 
@@ -490,27 +490,35 @@ async def _flush_rebuild_batch(
     document. Used by RECHUNK and FULL modes after the chunks table has been
     cleared.
     """
-    from haiku.rag.store.engine import DocumentRecord
+    from haiku.rag.store.engine import DocumentMetaRecord, DocumentRecord
 
     if not documents:
         return
 
     now = datetime.now().isoformat()
 
-    # Batch update documents using merge_insert (single LanceDB version)
+    # Batch update documents and document_meta using merge_insert (one LanceDB
+    # version per table). Content+blobs go to documents; mutable attributes go
+    # to document_meta.
     doc_records = []
+    meta_records = []
     for doc in documents:
         assert doc.id is not None
         doc_records.append(
             DocumentRecord(
                 id=doc.id,
                 content=doc.content,
-                uri=doc.uri,
-                title=doc.title,
-                metadata=json.dumps(doc.metadata),
                 docling_document=doc.docling_document,
                 docling_pages=doc.docling_pages,
                 docling_version=doc.docling_version,
+            )
+        )
+        meta_records.append(
+            DocumentMetaRecord(
+                document_id=doc.id,
+                uri=doc.uri,
+                title=doc.title,
+                metadata=json.dumps(doc.metadata),
                 created_at=doc.created_at.isoformat() if doc.created_at else now,
                 updated_at=now,
             )
@@ -520,6 +528,12 @@ async def _flush_rebuild_batch(
         client.store.documents_table.merge_insert("id")
         .when_matched_update_all()
         .execute(doc_records)
+    )
+    await (
+        client.store.document_meta_table.merge_insert("document_id")
+        .when_matched_update_all()
+        .when_not_matched_insert_all()
+        .execute(meta_records)
     )
 
     # Batch create all chunks (single LanceDB version)

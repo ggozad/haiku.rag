@@ -74,30 +74,31 @@ async def _store_document_with_chunks(
     """
     chunks = await ensure_chunks_embedded(client._config, chunks, client.embedder)
 
-    versions = await client.store.current_table_versions()
+    async with client.store._write_lock:
+        versions = await client.store.current_table_versions()
 
-    created_doc = await client.document_repository.create(document)
+        created_doc = await client.document_repository.create(document)
 
-    try:
-        assert created_doc.id is not None, (
-            "Document ID should not be None after creation"
-        )
-        for order, chunk in enumerate(chunks):
-            chunk.document_id = created_doc.id
-            chunk.order = order
+        try:
+            assert created_doc.id is not None, (
+                "Document ID should not be None after creation"
+            )
+            for order, chunk in enumerate(chunks):
+                chunk.document_id = created_doc.id
+                chunk.order = order
 
-        await client.chunk_repository.create(chunks)
+            await client.chunk_repository.create(chunks)
 
-        items = extract_items(created_doc.id, docling_document)
-        await client.document_item_repository.create_items(created_doc.id, items)
+            items = extract_items(created_doc.id, docling_document)
+            await client.document_item_repository.create_items(created_doc.id, items)
 
-        if client._config.storage.auto_vacuum:
-            client._schedule_vacuum()
+            if client._config.storage.auto_vacuum:
+                client._schedule_vacuum()
 
-        return created_doc
-    except Exception:
-        await client.store.restore_table_versions(versions)
-        raise
+            return created_doc
+        except Exception:
+            await client.store.restore_table_versions(versions)
+            raise
 
 
 async def _update_document_with_chunks(
@@ -124,36 +125,36 @@ async def _update_document_with_chunks(
 
     chunks = await ensure_chunks_embedded(client._config, chunks, client.embedder)
 
-    versions = await client.store.current_table_versions()
+    async with client.store._write_lock:
+        versions = await client.store.current_table_versions()
 
-    await client.chunk_repository.delete_by_document_id(document.id)
+        try:
+            updated_doc = await client.document_repository.update(document)
 
-    try:
-        updated_doc = await client.document_repository.update(document)
+            assert updated_doc.id is not None
+            for order, chunk in enumerate(chunks):
+                chunk.document_id = updated_doc.id
+                chunk.order = order
 
-        assert updated_doc.id is not None
-        for order, chunk in enumerate(chunks):
-            chunk.document_id = updated_doc.id
-            chunk.order = order
+            await client.chunk_repository.replace_for_document(updated_doc.id, chunks)
 
-        await client.chunk_repository.create(chunks)
+            if docling_document is not None:
+                items = extract_items(
+                    updated_doc.id,
+                    docling_document,
+                    existing_picture_data=existing_picture_data,
+                )
+                await client.document_item_repository.replace_for_document(
+                    updated_doc.id, items
+                )
 
-        if docling_document is not None:
-            await client.document_item_repository.delete_by_document_id(updated_doc.id)
-            items = extract_items(
-                updated_doc.id,
-                docling_document,
-                existing_picture_data=existing_picture_data,
-            )
-            await client.document_item_repository.create_items(updated_doc.id, items)
+            if client._config.storage.auto_vacuum:
+                client._schedule_vacuum()
 
-        if client._config.storage.auto_vacuum:
-            client._schedule_vacuum()
-
-        return updated_doc
-    except Exception:
-        await client.store.restore_table_versions(versions)
-        raise
+            return updated_doc
+        except Exception:
+            await client.store.restore_table_versions(versions)
+            raise
 
 
 async def create_document(
@@ -235,33 +236,36 @@ async def _store_documents_with_chunks(
         for _, chunks, _ in prepared
     ]
 
-    versions = await client.store.current_table_versions()
+    async with client.store._write_lock:
+        versions = await client.store.current_table_versions()
 
-    created = await client.document_repository.create([doc for doc, _, _ in prepared])
+        created = await client.document_repository.create(
+            [doc for doc, _, _ in prepared]
+        )
 
-    try:
-        all_chunks: list[Chunk] = []
-        all_items = []
-        for doc, doc_chunks, docling_document in zip(
-            created, embedded, (d for _, _, d in prepared)
-        ):
-            assert doc.id is not None
-            for order, chunk in enumerate(doc_chunks):
-                chunk.document_id = doc.id
-                chunk.order = order
-            all_chunks.extend(doc_chunks)
-            all_items.extend(extract_items(doc.id, docling_document))
+        try:
+            all_chunks: list[Chunk] = []
+            all_items = []
+            for doc, doc_chunks, docling_document in zip(
+                created, embedded, (d for _, _, d in prepared)
+            ):
+                assert doc.id is not None
+                for order, chunk in enumerate(doc_chunks):
+                    chunk.document_id = doc.id
+                    chunk.order = order
+                all_chunks.extend(doc_chunks)
+                all_items.extend(extract_items(doc.id, docling_document))
 
-        await client.chunk_repository.create(all_chunks)
-        await client.document_item_repository.create_all(all_items)
+            await client.chunk_repository.create(all_chunks)
+            await client.document_item_repository.create_all(all_items)
 
-        if client._config.storage.auto_vacuum:
-            client._schedule_vacuum()
+            if client._config.storage.auto_vacuum:
+                client._schedule_vacuum()
 
-        return created
-    except Exception:
-        await client.store.restore_table_versions(versions)
-        raise
+            return created
+        except Exception:
+            await client.store.restore_table_versions(versions)
+            raise
 
 
 async def import_documents(
@@ -319,7 +323,12 @@ async def _refresh_doc_metadata(
         updated = True
 
     if updated:
-        return await client.document_repository.update(doc)
+        result = await client.document_repository.update_meta(doc)
+        # Reclaim the document_meta churn from rolling source_revision sweeps.
+        # The vacuum is debounced, and document_meta is tiny, so this is cheap.
+        if client._config.storage.auto_vacuum:
+            client._schedule_vacuum()
+        return result
     return doc
 
 
@@ -726,7 +735,10 @@ async def update_document(
         existing_doc.metadata = metadata
 
     if content is None and chunks is None and docling_document is None:
-        return await client.document_repository.update(existing_doc)
+        updated = await client.document_repository.update_meta(existing_doc)
+        if client._config.storage.auto_vacuum:
+            client._schedule_vacuum()
+        return updated
 
     if chunks is not None:
         if docling_document is not None:

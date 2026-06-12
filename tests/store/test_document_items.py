@@ -394,6 +394,7 @@ class TestDocumentItemMigration:
         """Test that the v0.40.0 migration populates items for pre-existing documents."""
         from haiku.rag.store.compression import compress_docling_split
         from haiku.rag.store.engine import DocumentRecord
+        from haiku.rag.store.upgrades.v0_40_0 import _apply_populate_document_items
 
         docling_doc = _make_docling_doc()
         json_str = docling_doc.model_dump_json()
@@ -405,7 +406,6 @@ class TestDocumentItemMigration:
             doc_record = DocumentRecord(
                 id="test-doc-1",
                 content="test content",
-                uri="test://doc",
                 docling_document=structure,
                 docling_pages=pages,
                 docling_version=docling_doc.version,
@@ -415,12 +415,11 @@ class TestDocumentItemMigration:
             # Verify no items exist yet
             assert await store.document_items_table.count_rows() == 0
 
-        # Re-open with skip_migration_check and run migration
+        # Re-open and apply the v0.40.0 migration in isolation (the full chain
+        # would also run later migrations that touch documents.metadata, absent
+        # from this docling-only fixture).
         async with Store(temp_db_path, skip_migration_check=True) as store:
-            applied = await store.migrate()
-
-            # Should have applied the v0.40.0 migration
-            assert any("document_items" in desc for desc in applied)
+            await _apply_populate_document_items(store)
 
             # Items should now exist
             item_count = await store.document_items_table.count_rows(
@@ -442,6 +441,7 @@ class TestDocumentItemMigration:
     async def test_migration_skips_documents_without_docling(self, temp_db_path):
         """Test that migration handles documents without docling data."""
         from haiku.rag.store.engine import DocumentRecord
+        from haiku.rag.store.upgrades.v0_40_0 import _apply_populate_document_items
 
         async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
             await store.set_haiku_version("0.39.0")
@@ -452,7 +452,7 @@ class TestDocumentItemMigration:
             await store.documents_table.add([doc_record])
 
         async with Store(temp_db_path, skip_migration_check=True) as store:
-            await store.migrate()
+            await _apply_populate_document_items(store)
 
             # No items should have been created
             assert await store.document_items_table.count_rows() == 0
@@ -705,6 +705,7 @@ class TestPictureDataMigrationBackfill:
 
         from haiku.rag.store.compression import compress_json, decompress_json
         from haiku.rag.store.engine import DocumentItemRecord, DocumentRecord
+        from haiku.rag.store.upgrades.v0_45_0 import _apply_extract_picture_bytes
 
         fake_png = b"\x89PNG\r\n\x1a\nlegacy-picture-bytes-for-test"
         data_uri = "data:image/png;base64," + base64.b64encode(fake_png).decode("ascii")
@@ -756,8 +757,9 @@ class TestPictureDataMigrationBackfill:
             assert "picture_data" not in {f.name for f in schema_before}
 
         async with Store(temp_db_path, skip_migration_check=True) as store:
-            applied = await store.migrate()
-            assert any("picture" in d.lower() for d in applied)
+            # Apply the v0.45.0 migration in isolation (the full chain would also
+            # run later migrations that touch documents.metadata, absent here).
+            await _apply_extract_picture_bytes(store)
 
             # Column was added by the migration
             schema_after = await store.document_items_table.schema()

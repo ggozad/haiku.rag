@@ -4,6 +4,7 @@ import pytest
 
 from haiku.rag.store.compression import compress_docling_split
 from haiku.rag.store.engine import DocumentItemRecord, DocumentRecord, Store
+from haiku.rag.store.upgrades.v0_48_0 import _apply_backfill_heading_hierarchy
 
 
 def _docling_with_levels():
@@ -58,8 +59,10 @@ class TestV0_48_0Migration:
             )
 
         async with Store(temp_db_path, skip_migration_check=True) as store:
-            applied = await store.migrate()
-            assert any("0.48.0" in d for d in applied)
+            # Apply the migration in isolation: store.migrate() would run the
+            # whole chain (incl. v0.50.0/v0.58.0 which touch documents.metadata,
+            # absent from this docling-only fixture).
+            await _apply_backfill_heading_hierarchy(store)
 
             rows = await (
                 store.document_items_table.query()
@@ -107,12 +110,8 @@ class TestV0_48_0Migration:
             )
 
         async with Store(temp_db_path, skip_migration_check=True) as store:
-            await store.migrate()
-
-            from haiku.rag.store.upgrades.v0_48_0 import (
-                _apply_backfill_heading_hierarchy,
-            )
-
+            # Apply twice to prove idempotency (in isolation from the chain).
+            await _apply_backfill_heading_hierarchy(store)
             await _apply_backfill_heading_hierarchy(store)
 
             rows = await (
@@ -144,7 +143,7 @@ class TestV0_48_0Migration:
             )
 
         async with Store(temp_db_path, skip_migration_check=True) as store:
-            await store.migrate()
+            await _apply_backfill_heading_hierarchy(store)
             rows = await (
                 store.document_items_table.query()
                 .where("document_id = 'plain'")

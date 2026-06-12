@@ -396,7 +396,7 @@ The `docling_document` provides rich metadata for visual grounding, page numbers
 
 ### Batch Import
 
-Each `create_document*` / `import_document` call writes new versions of the `documents`, `chunks`, and `document_items` tables. Ingesting many documents in a loop therefore creates a table version per document. Use `import_documents()` to write the whole batch in a single version per table:
+Each `create_document*` / `import_document` call writes new versions of the `documents`, `document_meta`, `chunks`, and `document_items` tables. Ingesting many documents in a loop therefore creates a table version per document. Use `import_documents()` to write the whole batch in a single version per table:
 
 ```python
 from haiku.rag.client import DocumentImport
@@ -487,8 +487,8 @@ See [Automatic Title Generation](configuration/processing.md#automatic-title-gen
 
 ### Atomic Writes and Rollback
 
-Document create and update operations take a snapshot of table versions before any write and automatically roll back to that snapshot if something fails (for example, during chunking or embedding). This restores both the `documents` and `chunks` tables to their pre‑operation state using LanceDB’s table versioning.
+Document create, update, and delete operations take a snapshot of table versions before any write and automatically roll back to that snapshot if something fails (for example, during chunking or embedding). This restores the `documents`, `document_meta`, `chunks`, and `document_items` tables to their pre‑operation state using LanceDB’s table versioning. These writes are serialized under a single lock, so the rollback is safe under concurrent ingester workers.
 
-- Applies to: `create_document(...)`, `create_document_from_source(...)`, `update_document(...)`, and internal rebuild/update flows.
-- Scope: Both document rows and all associated chunks are rolled back together.
+- Applies to: `create_document(...)`, `create_document_from_source(...)`, `update_document(...)`, `delete_document(...)` (including the `parent_uri` cascade), and internal rebuild/update flows.
+- Scope: Document rows, their mutable attributes, and all associated chunks and items are rolled back together.
 - Vacuum: Running `vacuum()` later prunes old versions for disk efficiency. Rollbacks occur immediately during the failing operation and are not impacted.

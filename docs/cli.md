@@ -275,9 +275,9 @@ Shows:
 - path to the database
 - stored haiku.rag version (from settings)
 - embeddings provider/model and vector dimension
-- number of documents and chunks (with storage sizes)
+- per-table row counts and storage sizes (documents, document_meta, chunks, document_items)
 - vector index status (exists/not created, indexed/unindexed chunks)
-- table versions per table (documents, chunks)
+- table versions per table (documents, document_meta, chunks)
 
 At the end, a separate "Versions" section lists runtime package versions:
 - haiku.rag
@@ -401,7 +401,7 @@ Reduce disk usage by optimizing and pruning old table versions across all tables
 haiku-rag vacuum
 ```
 
-**Automatic Cleanup:** Vacuum runs automatically in the background after document operations. By default, it removes versions older than 1 day (configurable via `storage.vacuum_retention_seconds`), preserving recent versions for concurrent connections. Manual vacuum can be useful for cleanup after bulk operations or to free disk space immediately.
+**Automatic Cleanup:** Vacuum runs automatically in the background after document operations, throttled to at most once every 5 minutes so sustained ingestion does not trigger continuous compaction (a final vacuum runs when the client closes). By default, it removes versions older than 1 day (configurable via `storage.vacuum_retention_seconds`), preserving recent versions for concurrent connections. Manual vacuum can be useful for cleanup after bulk operations or to free disk space immediately.
 
 ## MCP Server
 

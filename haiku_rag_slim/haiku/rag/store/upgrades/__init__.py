@@ -93,6 +93,9 @@ from haiku.rag.store.upgrades.v0_48_0 import (
 from haiku.rag.store.upgrades.v0_50_0 import (
     upgrade_canonical_metadata_keys as upgrade_0_50_0_canonical_metadata_keys,
 )
+from haiku.rag.store.upgrades.v0_58_0 import (
+    upgrade_split_document_meta as upgrade_0_58_0_split_document_meta,
+)
 
 upgrades.append(upgrade_0_20_0_docling)
 upgrades.append(upgrade_0_23_1_contextualize)
@@ -102,3 +105,4 @@ upgrades.append(upgrade_0_40_0_document_items)
 upgrades.append(upgrade_0_45_0_extract_picture_bytes)
 upgrades.append(upgrade_0_48_0_heading_hierarchy)
 upgrades.append(upgrade_0_50_0_canonical_metadata_keys)
+upgrades.append(upgrade_0_58_0_split_document_meta)

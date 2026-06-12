@@ -77,12 +77,20 @@ async def connect_lancedb(
 class DocumentRecord(LanceModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     content: str
-    uri: str | None = None
-    title: str | None = None
-    metadata: str = Field(default="{}")
     docling_document: bytes | None = None
     docling_pages: bytes | None = None
     docling_version: str | None = None
+
+
+class DocumentMetaRecord(LanceModel):
+    """Mutable, lightweight document attributes, kept separate from the
+    write-once content/blobs in `documents`. Updating these (metadata, title,
+    source_revision) must not rewrite the multi-MB docling row."""
+
+    document_id: str
+    uri: str | None = None
+    title: str | None = None
+    metadata: str = Field(default="{}")
     created_at: str = Field(default_factory=lambda: "")
     updated_at: str = Field(default_factory=lambda: "")
 
@@ -171,7 +179,13 @@ class SettingsRecord(LanceModel):
     settings: str = Field(default="{}")
 
 
-REQUIRED_TABLES: tuple[str, ...] = ("documents", "chunks", "document_items", "settings")
+REQUIRED_TABLES: tuple[str, ...] = (
+    "documents",
+    "document_meta",
+    "chunks",
+    "document_items",
+    "settings",
+)
 
 
 async def get_database_stats(db: lancedb.AsyncConnection) -> dict:
@@ -295,7 +309,7 @@ async def gather_database_info(config: AppConfig, db_path: Path) -> DatabaseInfo
             total_bytes=stats[name].get("total_bytes", 0),
             num_versions=stats[name].get("num_versions", 0),
         )
-        for name in ("documents", "chunks", "document_items")
+        for name in ("documents", "document_meta", "chunks", "document_items")
     ]
 
     vector_index = VectorIndexInfo()
@@ -345,6 +359,7 @@ class Store:
         self._skip_validation = skip_validation
         self._skip_migration_check = skip_migration_check
         self._vacuum_lock = asyncio.Lock()
+        self._write_lock = asyncio.Lock()
         self._is_new_db = False
 
         # Check if database exists (for local filesystem only)
@@ -389,19 +404,18 @@ class Store:
         chunk_vector_dim = stored_vector_dim or self.embedder._vector_dim
         self.ChunkRecord: type[ChunkRecordBase] = create_chunk_model(chunk_vector_dim)
 
-        # Initialize tables (creates them if they don't exist)
-        await self._init_tables()
+        # Initialize tables (creates them if they don't exist). For an existing
+        # DB this raises MigrationRequiredError up front when migrations are
+        # pending, before creating any newly-introduced table.
+        await self._init_tables(is_new_db)
 
         # Checkout tables to historical state if before is specified
         if self._before is not None:
             await self._checkout_tables_before(self._before)
 
-        # Set version for new databases, check migrations for existing ones
-        if is_new_db:
-            if not self._read_only:
-                await self._set_initial_version()
-        elif not self._skip_migration_check:
-            await self._check_migrations()
+        # Set version for new databases.
+        if is_new_db and not self._read_only:
+            await self._set_initial_version()
 
         # Validate config compatibility after connection is established
         if not self._skip_validation:
@@ -492,6 +506,7 @@ class Store:
                 retention = timedelta(seconds=retention_seconds)
                 for table in [
                     self.documents_table,
+                    self.document_meta_table,
                     self.chunks_table,
                     self.document_items_table,
                     self.settings_table,
@@ -552,9 +567,23 @@ class Store:
         settings_repo = SettingsRepository(self)
         await settings_repo.validate_config_compatibility()
 
-    async def _init_tables(self):
+    async def _init_tables(self, is_new_db: bool):
         """Initialize database tables (create if they don't exist)."""
         existing_tables = (await self.db.list_tables()).tables
+
+        # Surface pending migrations BEFORE creating any newly-introduced table.
+        # Otherwise opening a legacy DB would either mutate it (creating an empty
+        # document_meta on open) or raise the wrong ReadOnlyError instead of
+        # telling the user to run `haiku-rag migrate`. The settings table exists
+        # on any non-new DB, which is all _check_migrations needs.
+        if (
+            not is_new_db
+            and not self._skip_migration_check
+            and "settings" in existing_tables
+        ):
+            self.settings_table = await self.db.open_table("settings")
+            await self._check_migrations()
+
         missing_tables = set(REQUIRED_TABLES) - set(existing_tables)
 
         if missing_tables and self._read_only:
@@ -569,6 +598,22 @@ class Store:
         else:
             self.documents_table = await self.db.create_table(
                 "documents", schema=get_documents_arrow_schema()
+            )
+
+        # Create or open document_meta table (mutable attributes kept out of the
+        # blob-bearing documents row). Indexed by document_id and uri — both are
+        # hot look-up keys (get_by_id, get_by_uri).
+        if "document_meta" in existing_tables:
+            self.document_meta_table = await self.db.open_table("document_meta")
+        else:
+            self.document_meta_table = await self.db.create_table(
+                "document_meta", schema=DocumentMetaRecord
+            )
+            await self.document_meta_table.create_index(
+                "document_id", config=BTree(), replace=True
+            )
+            await self.document_meta_table.create_index(
+                "uri", config=BTree(), replace=True
             )
 
         # Create or open chunks table
@@ -747,6 +792,7 @@ class Store:
         """Capture current versions of key tables for rollback using LanceDB's API."""
         return {
             "documents": await self.documents_table.version(),
+            "document_meta": await self.document_meta_table.version(),
             "chunks": await self.chunks_table.version(),
             "document_items": await self.document_items_table.version(),
             "settings": await self.settings_table.version(),
@@ -760,6 +806,7 @@ class Store:
         """
         self._assert_writable()
         await self.documents_table.restore(int(versions["documents"]))
+        await self.document_meta_table.restore(int(versions["document_meta"]))
         await self.chunks_table.restore(int(versions["chunks"]))
         await self.document_items_table.restore(int(versions["document_items"]))
         await self.settings_table.restore(int(versions["settings"]))
@@ -785,6 +832,7 @@ class Store:
 
         tables = [
             ("documents", self.documents_table),
+            ("document_meta", self.document_meta_table),
             ("chunks", self.chunks_table),
             ("document_items", self.document_items_table),
             ("settings", self.settings_table),
@@ -830,13 +878,15 @@ class Store:
         """List version history for a table.
 
         Args:
-            table_name: Name of the table ("documents", "chunks", or "settings")
+            table_name: Name of the table ("documents", "document_meta",
+                "chunks", "document_items", or "settings")
 
         Returns:
             List of version info dicts with "version" and "timestamp" keys
         """
         table_map = {
             "documents": self.documents_table,
+            "document_meta": self.document_meta_table,
             "chunks": self.chunks_table,
             "document_items": self.document_items_table,
             "settings": self.settings_table,

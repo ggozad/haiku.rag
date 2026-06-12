@@ -69,6 +69,31 @@ class DocumentItemRepository:
         records = [self._to_record(item.document_id, item) for item in items]
         await self.store.document_items_table.add(records)
 
+    async def replace_for_document(
+        self, document_id: str, items: list[DocumentItem]
+    ) -> None:
+        """Replace all items for a document with one scoped merge operation."""
+        self.store._assert_writable()
+
+        if not items:
+            await self.delete_by_document_id(document_id)
+            return
+
+        for item in items:
+            assert item.document_id == document_id, (
+                "All items must belong to the replaced document"
+            )
+
+        safe_id = escape_sql_string(document_id)
+        records = [self._to_record(document_id, item) for item in items]
+        await (
+            self.store.document_items_table.merge_insert(["document_id", "self_ref"])
+            .when_matched_update_all()
+            .when_not_matched_insert_all()
+            .when_not_matched_by_source_delete(f"document_id = '{safe_id}'")
+            .execute(records)
+        )
+
     async def get_all_items(self, document_id: str) -> list[DocumentItem]:
         """Get all items for a document, sorted by position."""
         safe_id = escape_sql_string(document_id)
