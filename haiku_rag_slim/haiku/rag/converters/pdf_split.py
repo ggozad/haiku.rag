@@ -12,14 +12,15 @@ from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.telemetry import logfire
 
 # pypdfium2 wraps libpdfium, which has global C state and is not thread-safe.
-# Multiple workers calling iter_pdf_slices concurrently race on that state
-# and corrupt it — first error surfaces as e.g. "Failed to import pages",
-# and after that every subsequent PDF load fails with "Failed to load
-# document" until the process restarts. Hold this lock around every pdfium
-# call so only one worker's slicing runs at a time. Crucially we release it
-# between slices so other workers' slicing can interleave; the heavy work
-# (docling convert) happens between yields with the lock free.
-_PDFIUM_LOCK = threading.Lock()
+# Two workers calling into pdfium concurrently race on that state and corrupt
+# it — the first error surfaces as e.g. "Failed to import pages", and after
+# that every subsequent PDF load fails with "Data format error" until the
+# process restarts. This is the single process-wide lock around *all* in-process
+# pdfium access (page slicing here and embedded-attachment scanning in
+# client.documents); every pdfium call must hold it so only one runs at a time.
+# Slicing releases it between slices so other callers can interleave; the heavy
+# work (docling convert) happens between yields with the lock free.
+PDFIUM_LOCK = threading.Lock()
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
@@ -44,7 +45,7 @@ def iter_pdf_slices(
     """
     if slice_size <= 0:
         raise ValueError(f"slice_size must be >= 1, got {slice_size}")
-    with _PDFIUM_LOCK:
+    with PDFIUM_LOCK:
         try:
             src = pdfium.PdfDocument(str(path))
         except pdfium.PdfiumError as exc:
@@ -55,7 +56,7 @@ def iter_pdf_slices(
     try:
         for start in range(0, total, slice_size):
             end = min(start + slice_size, total)
-            with _PDFIUM_LOCK:
+            with PDFIUM_LOCK:
                 dst = pdfium.PdfDocument.new()
                 try:
                     dst.import_pages(src, list(range(start, end)))
@@ -66,7 +67,7 @@ def iter_pdf_slices(
                     dst.close()
             yield (start + 1, end, slice_bytes)
     finally:
-        with _PDFIUM_LOCK:
+        with PDFIUM_LOCK:
             src.close()
 
 

@@ -438,6 +438,62 @@ async def _ingest_fetch_result(
     return created
 
 
+def _extract_pdf_attachments(
+    parent_body: bytes, parent_uri: str, *, depth: int
+) -> dict[str, tuple[str, bytes, str, str]] | None:
+    """Open the parent PDF and return its embedded attachments keyed by child
+    URI. Returns ``None`` when the PDF can't be opened or the recursion depth
+    cap is reached — in both cases the caller skips reconciliation entirely.
+
+    Every pdfium call is held under ``PDFIUM_LOCK`` (shared with page slicing)
+    because libpdfium's global C state is not thread-safe; concurrent access
+    from another worker corrupts it and then fails valid PDFs with "Data format
+    error" until the process restarts.
+    """
+    import pypdfium2 as pdfium
+
+    from haiku.rag.converters.pdf_split import PDFIUM_LOCK
+
+    with PDFIUM_LOCK:
+        try:
+            pdf = pdfium.PdfDocument(parent_body)
+        except pdfium.PdfiumError as exc:
+            logger.warning(
+                "Cannot scan %s for embedded attachments: %s", parent_uri, exc
+            )
+            return None
+        try:
+            attachment_count = pdf.count_attachments()
+
+            if depth + 1 >= MAX_ATTACHMENT_DEPTH:
+                if attachment_count > 0:
+                    logger.warning(
+                        "Attachment depth cap (%d) reached at %s; skipping %d nested "
+                        "attachment(s).",
+                        MAX_ATTACHMENT_DEPTH,
+                        parent_uri,
+                        attachment_count,
+                    )
+                return None
+
+            new_attachments: dict[str, tuple[str, bytes, str, str]] = {}
+            for i in range(attachment_count):
+                att = pdf.get_attachment(i)
+                name = att.get_name()
+                if not name:
+                    continue
+                data = bytes(att.get_data())
+                child_uri = f"{parent_uri}#attachment={quote(name, safe='')}"
+                content_type = (
+                    mimetypes.guess_type(name)[0] or "application/octet-stream"
+                )
+                content_hash = hashlib.md5(data, usedforsecurity=False).hexdigest()
+                new_attachments[child_uri] = (name, data, content_type, content_hash)
+            return new_attachments
+        finally:
+            pdf.close()
+
+
 async def _reconcile_pdf_attachments(
     client: "HaikuRAG",
     parent_doc: Document,
@@ -460,42 +516,9 @@ async def _reconcile_pdf_attachments(
     if (parent_doc.metadata or {}).get("content_type") != "application/pdf":
         return
 
-    import pypdfium2 as pdfium
-
-    try:
-        pdf = pdfium.PdfDocument(parent_body)
-    except pdfium.PdfiumError as exc:
-        logger.warning(
-            "Cannot scan %s for embedded attachments: %s", parent_doc.uri, exc
-        )
+    new_attachments = _extract_pdf_attachments(parent_body, parent_doc.uri, depth=depth)
+    if new_attachments is None:
         return
-    try:
-        attachment_count = pdf.count_attachments()
-
-        if depth + 1 >= MAX_ATTACHMENT_DEPTH:
-            if attachment_count > 0:
-                logger.warning(
-                    "Attachment depth cap (%d) reached at %s; skipping %d nested "
-                    "attachment(s).",
-                    MAX_ATTACHMENT_DEPTH,
-                    parent_doc.uri,
-                    attachment_count,
-                )
-            return
-
-        new_attachments: dict[str, tuple[str, bytes, str, str]] = {}
-        for i in range(attachment_count):
-            att = pdf.get_attachment(i)
-            name = att.get_name()
-            if not name:
-                continue
-            data = bytes(att.get_data())
-            child_uri = f"{parent_doc.uri}#attachment={quote(name, safe='')}"
-            content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
-            content_hash = hashlib.md5(data, usedforsecurity=False).hexdigest()
-            new_attachments[child_uri] = (name, data, content_type, content_hash)
-    finally:
-        pdf.close()
 
     existing = await client.list_documents(filter=parent_uri_filter(parent_doc.uri))
     existing_by_uri: dict[str, Document] = {d.uri: d for d in existing if d.uri}
