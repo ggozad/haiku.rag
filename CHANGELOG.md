@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- All in-process pdfium access (page slicing and embedded-attachment scanning) is serialized under a single shared lock. Concurrent ingester workers no longer corrupt libpdfium's global state, which previously failed valid PDFs with "Data format error".
 - Embedded PDF attachment extension is derived from the attachment filename, not the parent's synthetic `...#attachment=<name>` URI; non-PDF attachments (e.g. `.joboptions`) are no longer misrouted to docling's PDF backend, and unsupported extensions are skipped.
 
 ## [0.57.0] - 2026-06-11
