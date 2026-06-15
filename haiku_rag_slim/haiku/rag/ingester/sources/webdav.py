@@ -34,6 +34,8 @@ _TAG_GETLASTMODIFIED = f"{{{_DAV_NS}}}getlastmodified"
 _TAG_GETCONTENTTYPE = f"{{{_DAV_NS}}}getcontenttype"
 
 
+_MAX_PROPFIND_REDIRECTS = 5
+
 _PROPFIND_BODY = b"""<?xml version="1.0" encoding="utf-8"?>
 <propfind xmlns="DAV:">
   <prop>
@@ -197,8 +199,18 @@ class WebDAVSource:
             if self.username is not None and self.password is not None
             else None
         )
+        # Follow redirects: Plone and other front-ended WebDAV servers 30x on
+        # trailing-slash normalisation and virtual-host rewrites; httpx defaults
+        # follow_redirects to False, which would surface those as errors. GET
+        # and HEAD (fetch) follow at the client level. PROPFIND (head/discover)
+        # is followed by hand in `_propfind` because httpx downgrades PROPFIND to
+        # GET on 302/303, which the final endpoint would reject or answer with a
+        # non-multistatus body.
         self._http = httpx.AsyncClient(
-            auth=auth, headers=self.headers, transport=transport
+            auth=auth,
+            headers=self.headers,
+            transport=transport,
+            follow_redirects=True,
         )
 
     def supports(self, uri: str) -> bool:
@@ -207,13 +219,43 @@ class WebDAVSource:
     async def aclose(self) -> None:
         await self._http.aclose()
 
-    async def head(self, uri: str) -> str | None:
-        response = await self._http.request(
-            "PROPFIND",
-            uri,
-            headers={"Depth": "0", "Content-Type": "application/xml"},
-            content=_PROPFIND_BODY,
+    async def _propfind(self, url: str, *, depth: str) -> tuple[httpx.Response, str]:
+        """Issue a PROPFIND, following redirects by hand so the method and body
+        are preserved (httpx turns a redirected PROPFIND into a GET on 302/303).
+        Returns the final response and the URL it was served from.
+
+        Each hop re-issues through the client, which re-applies `auth`, so a
+        cross-host redirect is refused *before* the request is sent — otherwise
+        we would leak Basic credentials to the redirect target (httpx only
+        strips auth cross-host for its own auto-followed redirects)."""
+        host = urlparse(url).netloc
+        current = url
+        for _ in range(_MAX_PROPFIND_REDIRECTS):
+            response = await self._http.request(
+                "PROPFIND",
+                current,
+                headers={"Depth": depth, "Content-Type": "application/xml"},
+                content=_PROPFIND_BODY,
+                follow_redirects=False,
+            )
+            location = response.headers.get("location")
+            if response.is_redirect and location:
+                current = urljoin(current, location)
+                if urlparse(current).netloc != host:
+                    raise ValueError(
+                        f"WebDAV PROPFIND {url!r} redirected to a different host "
+                        f"{current!r}; refusing to send credentials. Update "
+                        f"base_url to the new host."
+                    )
+                continue
+            return response, current
+        raise httpx.TooManyRedirects(
+            f"Exceeded {_MAX_PROPFIND_REDIRECTS} redirects for PROPFIND {url}",
+            request=response.request,
         )
+
+    async def head(self, uri: str) -> str | None:
+        response, _ = await self._propfind(uri, depth="0")
         if response.is_error:
             return None
         entries = _parse_multistatus(response.content)
@@ -267,13 +309,22 @@ class WebDAVSource:
         now = datetime.now(UTC)
         seen: set[str] = set()
 
-        response = await self._http.request(
-            "PROPFIND",
-            self.base_url,
-            headers={"Depth": "infinity", "Content-Type": "application/xml"},
-            content=_PROPFIND_BODY,
-        )
+        response, final_url = await self._propfind(self.base_url, depth="infinity")
         response.raise_for_status()
+        # hrefs are resolved and filtered against base_url, and the worker
+        # resolves URIs back to this source by base_url too. A redirect that
+        # moves the collection to a different path would make every href fall
+        # outside base_url — silently emitting DELETEs for all known docs. Fail
+        # loudly instead so the operator points base_url at the new location.
+        # (_propfind already rejects cross-host redirects, so only the path can
+        # differ here; a same-path scheme upgrade stays transparent.)
+        if urlparse(final_url).path.rstrip("/") != urlparse(self.base_url).path.rstrip(
+            "/"
+        ):
+            raise ValueError(
+                f"WebDAV collection {self.base_url!r} redirected to a different "
+                f"path {final_url!r}; update base_url to the new location."
+            )
         entries = _parse_multistatus(response.content)
 
         for entry in entries:
