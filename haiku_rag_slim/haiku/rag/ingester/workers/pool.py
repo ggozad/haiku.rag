@@ -12,7 +12,10 @@ from haiku.rag.ingester.workers.pipeline import run_job
 from haiku.rag.ingester.workers.retry import RetryPolicy, compute_backoff
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from haiku.rag.client import HaikuRAG
+    from haiku.rag.ingester.metadata import MetadataProvider
     from haiku.rag.ingester.sources.base import Source
 
 logger = logging.getLogger(__name__)
@@ -41,6 +44,7 @@ class WorkerPool:
         reaper_interval_s: int = 60,
         retention_s: int | None = None,
         sources: "list[Source] | None" = None,
+        metadata_providers: "Mapping[str, MetadataProvider] | None" = None,
     ):
         self._client = client
         self._jobs = job_repo
@@ -52,6 +56,9 @@ class WorkerPool:
         self._reaper_interval_s = reaper_interval_s
         self._retention_s = retention_s
         self._sources: list[Source] = list(sources) if sources else []
+        self._metadata_providers: dict[str, MetadataProvider] = (
+            dict(metadata_providers) if metadata_providers else {}
+        )
         self._stop = asyncio.Event()
         self._workers: list[asyncio.Task] = []
         self._reaper: asyncio.Task | None = None
@@ -181,7 +188,12 @@ class WorkerPool:
         started = time.monotonic()
         logger.info("Processing %s %s (job %s)", job.op.value, job.uri, job.id)
         try:
-            result = await run_job(self._client, job, sources=self._sources)
+            result = await run_job(
+                self._client,
+                job,
+                sources=self._sources,
+                metadata_providers=self._metadata_providers,
+            )
         except asyncio.CancelledError:
             # Graceful shutdown cancelled us mid-flight. Spawn the release
             # as an independent Task tracked in _pending_releases — that

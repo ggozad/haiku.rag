@@ -174,6 +174,51 @@ relies on a `Content-Length` response header; a server that omits it (for
 example a chunked response) is fetched in full and the limit does not
 apply.
 
+### Metadata providers
+
+A source can attach custom metadata to every document it ingests by
+naming a `metadata_provider`. The provider is a callable that an external
+package registers under the `haiku.rag.metadata_providers` entry-point
+group; the ingester calls it per document with `(source_id, uri)` and
+merges the returned dict into the document's metadata.
+
+```yaml
+    - type: webdav
+      id: handbook
+      base_url: https://dav.example.com/remote.php/dav/files/svc
+      metadata_provider: example-provider
+```
+
+The provider is a zero-argument callable returning the provider instance,
+so a class is its own factory:
+
+```python
+# example_pkg/__init__.py
+from urllib.parse import urlparse
+
+
+class Provider:
+    async def __call__(self, source_id: str, uri: str) -> dict:
+        path = urlparse(uri).path
+        return {
+            "collection": source_id,
+            "folder": path.rsplit("/", 1)[0] or "/",
+        }
+```
+
+```toml
+# in the provider package's pyproject.toml
+[project.entry-points."haiku.rag.metadata_providers"]
+example-provider = "example_pkg:Provider"
+```
+
+The provider is built once at startup, so it can hold a client or cache
+across calls. The source-derived keys (`md5`, `source_revision`,
+`content_type`) are stripped from provider output, so a provider cannot
+override them. A `metadata_provider` name with no installed entry point
+fails at startup. A provider exception is classified like any other
+ingestion error (network and timeout errors retry; others go to the DLQ).
+
 ## Workers and retry
 
 ```yaml
