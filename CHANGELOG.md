@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.58.0] - 2026-06-15
+
 ### Added
 
 - Ingester metadata providers: a source config's `metadata_provider` names a callable registered under the `haiku.rag.metadata_providers` entry-point group; the ingester calls it per document with `(source_id, uri)` and attaches the returned dict as document metadata. System-derived keys (`md5`, `source_revision`, `content_type`) take precedence on collision.
@@ -1740,7 +1742,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.57.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.58.0...HEAD
+[0.58.0]: https://github.com/ggozad/haiku.rag/compare/0.57.0...0.58.0
 [0.57.0]: https://github.com/ggozad/haiku.rag/compare/0.56.0...0.57.0
 [0.56.0]: https://github.com/ggozad/haiku.rag/compare/0.55.1...0.56.0
 [0.55.1]: https://github.com/ggozad/haiku.rag/compare/0.55.0...0.55.1
