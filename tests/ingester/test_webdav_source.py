@@ -435,6 +435,147 @@ async def test_discover_emits_upsert_for_unknown_uri_without_revision():
 
 
 @pytest.mark.asyncio
+async def test_fetch_follows_redirect():
+    """Plone commonly 301s (trailing-slash normalisation, VHM rewrites); the
+    client must follow to fetch the real bytes instead of returning the 3xx."""
+    body = b"redirected body"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/dav/a.md":
+            return httpx.Response(
+                301, headers={"location": "https://nc.example.com/dav/final.md"}
+            )
+        assert request.url.path == "/dav/final.md"
+        return httpx.Response(
+            200,
+            content=body,
+            headers={"content-type": "text/markdown", "etag": '"rev-1"'},
+        )
+
+    src = WebDAVSource(
+        source_id="nc",
+        base_url="https://nc.example.com/dav/",
+        transport=_transport(handler),
+    )
+    result = await src.fetch("https://nc.example.com/dav/a.md")
+    assert result.body == body
+    assert result.revision == "rev-1"
+
+
+@pytest.mark.asyncio
+async def test_discover_follows_redirect_preserving_propfind():
+    """A 302 on PROPFIND is followed with the method preserved (httpx would
+    downgrade it to GET). A same-path scheme upgrade is transparent, and hrefs
+    stay anchored to base_url so stored URIs remain stable for the worker."""
+    methods: list[str] = []
+    multistatus = _multistatus(
+        {"href": "/dav/a.md", "etag": '"rev-a"', "content_type": "text/markdown"},
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        methods.append(request.method)
+        if request.url.scheme == "http":
+            return httpx.Response(
+                302, headers={"location": "https://nc.example.com/dav/"}
+            )
+        return httpx.Response(207, content=multistatus)
+
+    src = WebDAVSource(
+        source_id="nc",
+        base_url="http://nc.example.com/dav/",
+        transport=_transport(handler),
+    )
+    events = [event async for event in src.discover()]
+    assert methods == ["PROPFIND", "PROPFIND"]
+    assert [e.uri for e in events] == ["http://nc.example.com/dav/a.md"]
+
+
+@pytest.mark.asyncio
+async def test_discover_raises_when_collection_relocates():
+    """If the collection root redirects to a different path, the multistatus
+    hrefs fall outside base_url. Resolving them against base_url would skip
+    every file and DELETE all known docs — fail loudly instead."""
+    multistatus = _multistatus(
+        {"href": "/dav2/a.md", "etag": '"rev-a"', "content_type": "text/markdown"},
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/dav/":
+            return httpx.Response(
+                301, headers={"location": "https://nc.example.com/dav2/"}
+            )
+        return httpx.Response(207, content=multistatus)
+
+    src = WebDAVSource(
+        source_id="nc",
+        base_url="https://nc.example.com/dav/",
+        transport=_transport(handler),
+    )
+    with pytest.raises(ValueError, match="redirected to a different path"):
+        [event async for event in src.discover()]
+
+
+@pytest.mark.asyncio
+async def test_discover_refuses_cross_host_redirect_without_sending_credentials():
+    """A PROPFIND redirected to another host must not have the configured
+    credentials replayed to that host (httpx only strips auth cross-host for
+    its own auto-followed redirects, not our manual loop)."""
+    seen_hosts: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_hosts.append(request.url.host)
+        return httpx.Response(
+            302, headers={"location": "https://evil.example.com/dav/"}
+        )
+
+    src = WebDAVSource(
+        source_id="nc",
+        base_url="https://nc.example.com/dav/",
+        username="alice",
+        password="hunter2",
+        transport=_transport(handler),
+    )
+    with pytest.raises(ValueError, match="different host"):
+        [event async for event in src.discover()]
+    assert "evil.example.com" not in seen_hosts
+
+
+@pytest.mark.asyncio
+async def test_head_follows_redirect_preserving_propfind():
+    methods: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        methods.append(request.method)
+        if request.url.path == "/dav/a.md":
+            return httpx.Response(
+                302, headers={"location": "https://nc.example.com/dav/final.md"}
+            )
+        return httpx.Response(207, content=_multistatus({"href": "/x", "etag": '"r"'}))
+
+    src = WebDAVSource(
+        source_id="nc",
+        base_url="https://nc.example.com/dav/",
+        transport=_transport(handler),
+    )
+    assert await src.head("https://nc.example.com/dav/a.md") == "r"
+    assert methods == ["PROPFIND", "PROPFIND"]
+
+
+@pytest.mark.asyncio
+async def test_propfind_redirect_loop_is_bounded():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(302, headers={"location": "https://nc.example.com/loop/"})
+
+    src = WebDAVSource(
+        source_id="nc",
+        base_url="https://nc.example.com/dav/",
+        transport=_transport(handler),
+    )
+    with pytest.raises(httpx.TooManyRedirects):
+        [event async for event in src.discover()]
+
+
+@pytest.mark.asyncio
 async def test_fetch_rejects_file_exceeding_max_size():
     def handler(request: httpx.Request) -> httpx.Response:
         if request.method == "HEAD":

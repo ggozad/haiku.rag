@@ -146,6 +146,15 @@ collection are emitted as DELETE.
 
 Fetches are plain HTTP GETs — any WebDAV server already supports them.
 
+Redirects are followed for both `PROPFIND` and `GET`, so front-ended
+servers that 30x on trailing-slash normalisation or scheme upgrades (e.g.
+Plone) work without extra configuration. Discovered URIs stay anchored to
+`base_url` (the `GET` fetch follows redirects to the bytes). A same-host
+scheme upgrade (`http`→`https`) is transparent; a redirect that moves the
+collection to a different path or host makes discovery raise so you can
+point `base_url` at the new location rather than silently dropping every
+file. Credentials are never replayed to a different host on a redirect.
+
 Bearer-token auth can replace HTTP Basic via the standard `headers` map:
 
 ```yaml
