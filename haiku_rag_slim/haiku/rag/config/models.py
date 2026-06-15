@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -447,8 +447,27 @@ class WebDAVSourceConfig(_SourceBase):
     include_patterns: list[str] = []
 
 
+class PluginSourceConfig(_SourceBase):
+    """A source provided by an external package registered under the
+    `haiku.rag.sources` entry-point group. `plugin` names the entry point;
+    `options` is passed through to the plugin's factory, which validates it."""
+
+    type: Literal["plugin"]
+    # No natural key to derive an id from; require an explicit one.
+    id: str
+    plugin: str = Field(
+        description="Name of a source factory registered under the "
+        "'haiku.rag.sources' entry-point group."
+    )
+    options: dict[str, Any] = Field(default_factory=dict)
+
+
 SourceConfig = Annotated[
-    FSSourceConfig | HTTPSourceConfig | S3SourceConfig | WebDAVSourceConfig,
+    FSSourceConfig
+    | HTTPSourceConfig
+    | S3SourceConfig
+    | WebDAVSourceConfig
+    | PluginSourceConfig,
     Field(discriminator="type"),
 ]
 

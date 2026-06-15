@@ -228,6 +228,96 @@ override them. A `metadata_provider` name with no installed entry point
 fails at startup. A provider exception is classified like any other
 ingestion error (network and timeout errors retry; others go to the DLQ).
 
+### Custom sources
+
+The four built-in source types (`fs`, `http`, `s3`, `webdav`) cover the
+common cases. To ingest from something else (a git host, a ticketing
+system, a bespoke API), an external package registers a source factory
+under the `haiku.rag.sources` entry-point group and a config references it
+with `type: plugin`.
+
+```yaml
+    - type: plugin
+      id: api-docs
+      plugin: git
+      options:
+        owner: acme
+        repo: api
+        branch: main
+        token: ${SCM_TOKEN}
+```
+
+`plugin` is the entry-point name. `options` is an opaque mapping passed
+straight to the factory, which validates it however it likes (for example
+with its own Pydantic model). The base fields on every source
+(`id`, `poll_interval_s`, `delete_orphans`, `max_file_size`, `retry`,
+`circuit_breaker`, `metadata_provider`) are handled by the ingester and
+are not part of `options`.
+
+The factory is called with the source id, the validated `options`, and the
+ambient extension and size limits, and returns a `Source`:
+
+```python
+def __call__(
+    self,
+    *,
+    source_id: str,
+    options: dict,
+    supported_extensions: list[str] | None,
+    max_file_size: int | None,
+) -> Source: ...
+```
+
+A `Source` implements this protocol:
+
+```python
+class Source(Protocol):
+    source_id: str
+
+    def supports(self, uri: str) -> bool: ...
+
+    # Current revision for `uri`, cheaply, or None if there is no cheap
+    # lookup. Lets the pipeline skip re-ingest when the revision is unchanged.
+    async def head(self, uri: str) -> str | None: ...
+
+    # Release resources (connection pools, etc.). Called once at shutdown.
+    async def aclose(self) -> None: ...
+
+    async def fetch(self, uri: str) -> FetchResult: ...
+
+    # Yield UPSERT / UNCHANGED / DELETE events. `since` is the uri -> revision
+    # snapshot from the previous sweep so the source can emit only deltas.
+    def discover(
+        self,
+        since: RevisionSnapshot | None = None,
+        *,
+        known_uris: set[str] | None = None,
+    ) -> AsyncIterator[SourceEvent]: ...
+```
+
+`FetchResult`, `SourceEvent`, `SourceEventKind`, and `RevisionSnapshot`
+live in `haiku.rag.ingester.sources`.
+
+```toml
+# in the source package's pyproject.toml
+[project.entry-points."haiku.rag.sources"]
+git = "example_pkg:build_git_source"
+```
+
+Only the plugin a source references is imported, so an unused plugin with a
+missing optional dependency does not break startup. A `plugin` name with no
+installed entry point fails at startup, as does a factory that returns
+something that is not a `Source`.
+
+Two limits to know:
+
+- Custom sources are reached through configured discovery and the job
+  queue, not through one-shot `haiku-rag add-src <uri>`, which only knows
+  the built-in URI schemes.
+- Change detection is per `(source, uri)`. A source that needs a single
+  per-source cursor (for example a git last-commit SHA) tracks it itself,
+  by encoding it in each URI's revision or stashing it under a sentinel URI.
+
 ## Workers and retry
 
 ```yaml
