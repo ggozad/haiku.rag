@@ -13,8 +13,18 @@ from haiku.rag.ingester.sources.registry import resolve_configured_source
 from haiku.rag.telemetry import attach_context, logfire
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from haiku.rag.client import HaikuRAG
+    from haiku.rag.ingester.metadata import MetadataProvider
     from haiku.rag.ingester.sources.base import Source
+
+
+# Keys the source pipeline owns (content_type/md5/source_revision and the
+# source_revision/md5 that drive sync_state). A provider must not set them, or
+# the metadata-only refresh path would let provider values overwrite the real
+# source-derived ones. Stripped before provider metadata reaches the client.
+_RESERVED_METADATA_KEYS = frozenset({"content_type", "md5", "source_revision"})
 
 
 class JobResult(BaseModel):
@@ -82,13 +92,15 @@ async def run_job(
     job: Job,
     *,
     sources: list["Source"] | None = None,
+    metadata_providers: "Mapping[str, MetadataProvider] | None" = None,
 ) -> JobResult:
     """Execute the work described by `job`. `sources` is the list of
     configured Source adapters; the client looks up `job.source_id`
     against it via `resolve_configured_source` so workers reuse the
     authenticated/pre-configured fetch context the pollers used at
-    discovery. Raises PermanentError or TransientError; the worker
-    uses that to decide dead vs retry."""
+    discovery. `metadata_providers` maps source_id to a provider whose
+    output is attached as document metadata on UPSERT. Raises PermanentError
+    or TransientError; the worker uses that to decide dead vs retry."""
     extra = job.extra or {}
     parent_ctx = extra.get("_otel")
     attach = attach_context(parent_ctx) if parent_ctx else nullcontext()
@@ -122,10 +134,19 @@ async def run_job(
                     await client.delete_document(doc.id)
                 return JobResult(deleted=True)
 
+            provider = (metadata_providers or {}).get(job.source_id)
+            extra_metadata: dict | None = None
+            if provider is not None:
+                extra_metadata = {
+                    k: v
+                    for k, v in (await provider(job.source_id, job.uri)).items()
+                    if k not in _RESERVED_METADATA_KEYS
+                }
             result = await client.create_document_from_source(
                 job.uri,
                 sources=sources,
                 source_id=job.source_id,
+                metadata=extra_metadata,
             )
             # Directory ingestion returns list[Document] — workers ingest single
             # resources, so a list here is a programming error in the caller.

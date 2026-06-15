@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 from haiku.rag.config import AppConfig
+from haiku.rag.ingester.metadata import build_providers, load_metadata_providers
 from haiku.rag.ingester.pollers.manager import PollerManager
 from haiku.rag.ingester.queue.migrations import open_queue
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
@@ -89,6 +90,15 @@ class IngesterApp:
                     supported_extensions=supported_extensions,
                     default_max_attempts=ingester_cfg.workers.retry.max_attempts,
                 )
+                metadata_providers = build_providers(
+                    [
+                        (source.source_id, cfg.metadata_provider)
+                        for cfg, source in zip(
+                            ingester_cfg.sources, self._pollers.sources
+                        )
+                    ],
+                    load_metadata_providers(),
+                )
                 self._pool = WorkerPool(
                     client=client,
                     job_repo=self._jobs,
@@ -107,6 +117,7 @@ class IngesterApp:
                     # workers resolve URIs through them so authenticated
                     # HTTP / WebDAV / S3 fetches reuse credentials.
                     sources=self._pollers.sources,
+                    metadata_providers=metadata_providers,
                 )
                 yield
         finally:

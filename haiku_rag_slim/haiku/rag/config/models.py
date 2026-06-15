@@ -398,6 +398,13 @@ class _SourceBase(BaseModel):
         description="Maximum file size in bytes to fetch. Files larger than "
         "this are rejected with a PermanentError. None = no limit.",
     )
+    metadata_provider: str | None = Field(
+        default=None,
+        description="Name of a metadata provider registered under the "
+        "'haiku.rag.metadata_providers' entry-point group. When set, the "
+        "provider is called per document with (source_id, uri) and its result "
+        "is attached as document metadata. None = no provider.",
+    )
 
 
 class FSSourceConfig(_SourceBase):

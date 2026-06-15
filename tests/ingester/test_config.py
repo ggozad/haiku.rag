@@ -59,6 +59,18 @@ def test_discriminator_picks_fs_source():
     assert isinstance(cfg.sources[0], FSSourceConfig)
     assert cfg.sources[0].root == Path("/tmp/docs")
     assert cfg.sources[0].delete_orphans is True
+    assert cfg.sources[0].metadata_provider is None
+
+
+def test_source_carries_metadata_provider_name():
+    cfg = IngesterConfig.model_validate(
+        {
+            "sources": [
+                {"type": "fs", "root": "/tmp/docs", "metadata_provider": "example"}
+            ]
+        }
+    )
+    assert cfg.sources[0].metadata_provider == "example"
 
 
 def test_discriminator_picks_http_source():

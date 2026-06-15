@@ -59,7 +59,7 @@ async def test_upsert_calls_create_document_from_source_and_returns_metadata():
     assert result.content_hash == "abcd"
     assert result.deleted is False
     client.create_document_from_source.assert_awaited_once_with(
-        "https://example.com/a.pdf", sources=None, source_id="src"
+        "https://example.com/a.pdf", sources=None, source_id="src", metadata=None
     )
 
 
@@ -77,8 +77,112 @@ async def test_upsert_threads_configured_sources_to_client():
 
     await run_job(client, _job(), sources=[configured])
     client.create_document_from_source.assert_awaited_once_with(
-        "https://example.com/a.pdf", sources=[configured], source_id="src"
+        "https://example.com/a.pdf",
+        sources=[configured],
+        source_id="src",
+        metadata=None,
     )
+
+
+class _MetadataProvider:
+    """Provider double returning scripted metadata, or raising."""
+
+    def __init__(self, metadata: dict | None = None, *, error: Exception | None = None):
+        self._metadata = metadata or {}
+        self._error = error
+
+    async def __call__(self, source_id: str, uri: str) -> dict:
+        if self._error is not None:
+            raise self._error
+        return {**self._metadata, "source": source_id}
+
+
+@pytest.mark.asyncio
+async def test_provider_metadata_passed_to_client():
+    client = _mock_client()
+    client.create_document_from_source.return_value = Document(
+        id="d", content="x", uri="u", metadata={}
+    )
+    providers = {"src": _MetadataProvider({"classification": "secret"})}
+
+    await run_job(client, _job(), metadata_providers=providers)
+
+    client.create_document_from_source.assert_awaited_once_with(
+        "https://example.com/a.pdf",
+        sources=None,
+        source_id="src",
+        metadata={"classification": "secret", "source": "src"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_provider_cannot_override_system_keys():
+    """Reserved source-derived keys are stripped from provider output so the
+    metadata-only refresh path can't let a provider overwrite md5 /
+    source_revision / content_type (which would corrupt sync_state)."""
+    client = _mock_client()
+    client.create_document_from_source.return_value = Document(
+        id="d", content="x", uri="u", metadata={}
+    )
+    providers = {
+        "src": _MetadataProvider(
+            {
+                "md5": "spoof",
+                "source_revision": "spoof",
+                "content_type": "text/spoof",
+                "classification": "secret",
+            }
+        )
+    }
+
+    await run_job(client, _job(), metadata_providers=providers)
+
+    client.create_document_from_source.assert_awaited_once_with(
+        "https://example.com/a.pdf",
+        sources=None,
+        source_id="src",
+        metadata={"classification": "secret", "source": "src"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_no_provider_for_source_passes_no_metadata():
+    """A provider registered for a different source must not apply here."""
+    client = _mock_client()
+    client.create_document_from_source.return_value = Document(
+        id="d", content="x", uri="u", metadata={}
+    )
+    providers = {"other": _MetadataProvider({"classification": "secret"})}
+
+    await run_job(client, _job(), metadata_providers=providers)
+
+    client.create_document_from_source.assert_awaited_once_with(
+        "https://example.com/a.pdf", sources=None, source_id="src", metadata=None
+    )
+
+
+@pytest.mark.asyncio
+async def test_provider_error_is_classified_and_blocks_ingest():
+    client = _mock_client()
+    providers = {"src": _MetadataProvider(error=httpx.ConnectError("provider down"))}
+
+    with pytest.raises(TransientError):
+        await run_job(client, _job(), metadata_providers=providers)
+
+    client.create_document_from_source.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_provider_not_called_for_delete():
+    client = _mock_client()
+    client.get_document_by_uri.return_value = Document(id="doc-9", content="", uri="u")
+    provider = _MetadataProvider(error=AssertionError("must not run on DELETE"))
+
+    result = await run_job(
+        client, _job(op=JobOp.DELETE), metadata_providers={"src": provider}
+    )
+
+    assert result.deleted is True
 
 
 @pytest.mark.asyncio
