@@ -32,3 +32,6 @@ DEVNOTES.md
 
 # zensical site directory when doing local docs builds
 site/
+
+# Claude Code personal notes
+.claude.local.md
