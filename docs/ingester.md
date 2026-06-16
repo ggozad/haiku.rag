@@ -188,8 +188,9 @@ apply.
 A source can attach custom metadata to every document it ingests by
 naming a `metadata_provider`. The provider is a callable that an external
 package registers under the `haiku.rag.metadata_providers` entry-point
-group; the ingester calls it per document with `(source_id, uri)` and
-merges the returned dict into the document's metadata.
+group; when the document is fetched for ingestion, the ingester calls it
+with `(source_id, uri, result)`, where `result` is the source's
+`FetchResult`, and merges the returned dict into the document's metadata.
 
 ```yaml
     - type: webdav
@@ -205,13 +206,18 @@ so a class is its own factory:
 # example_pkg/__init__.py
 from urllib.parse import urlparse
 
+from haiku.rag.ingester.sources import FetchResult
+
 
 class Provider:
-    async def __call__(self, source_id: str, uri: str) -> dict:
+    async def __call__(
+        self, source_id: str, uri: str, result: FetchResult
+    ) -> dict:
         path = urlparse(uri).path
         return {
             "collection": source_id,
             "folder": path.rsplit("/", 1)[0] or "/",
+            "bytes": str(len(result.body)),
         }
 ```
 
@@ -222,11 +228,15 @@ example-provider = "example_pkg:Provider"
 ```
 
 The provider is built once at startup, so it can hold a client or cache
-across calls. The source-derived keys (`md5`, `source_revision`,
-`content_type`) are stripped from provider output, so a provider cannot
-override them. A `metadata_provider` name with no installed entry point
-fails at startup. A provider exception is classified like any other
-ingestion error (network and timeout errors retry; others go to the DLQ).
+across calls. When a document's source revision is unchanged, the
+ingester keeps the existing cheap HEAD short-circuit and preserves the
+stored provider metadata; the provider runs again when the document is
+fetched for a new or changed revision. The source-derived keys (`md5`,
+`source_revision`, `content_type`) are stripped from provider output, so
+a provider cannot override them. A `metadata_provider` name with no
+installed entry point fails at startup. A provider exception is
+classified like any other ingestion error (network and timeout errors
+retry; others go to the DLQ).
 
 ### Custom sources
 

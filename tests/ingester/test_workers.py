@@ -685,7 +685,7 @@ async def test_breaker_isolates_sources(client, jobs, sync):
     """An open breaker pauses only the failing source. Workers keep draining
     a healthy source's jobs while the failing source's jobs stay queued."""
 
-    def _route(uri, *, sources=None, source_id=None, metadata=None):
+    def _route(uri, *, sources=None, source_id=None, metadata_provider=None):
         if source_id == "bad":
             raise TransientError("downstream down")
         return Document(

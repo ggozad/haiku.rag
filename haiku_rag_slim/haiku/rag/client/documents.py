@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
     from haiku.rag.client import HaikuRAG
+    from haiku.rag.ingester.metadata import MetadataProvider
     from haiku.rag.ingester.sources.base import FetchResult, Source
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,12 @@ class DocumentImport:
 # PDFs is fully ingested (3 levels); a fourth nested level logs a warning
 # and is skipped.
 MAX_ATTACHMENT_DEPTH = 3
+
+# Keys the source pipeline owns (content_type/md5/source_revision, which drive
+# sync_state). A provider must not set them, or the metadata-only refresh path
+# would let provider values overwrite the real source-derived ones. Stripped
+# before provider metadata is merged into the document.
+_RESERVED_METADATA_KEYS = frozenset({"content_type", "md5", "source_revision"})
 
 
 def parent_uri_filter(parent_uri: str) -> str:
@@ -332,6 +339,26 @@ async def _refresh_doc_metadata(
     return doc
 
 
+async def _provider_metadata(
+    provider: "MetadataProvider | None",
+    source_id: str,
+    uri: str,
+    result: "FetchResult",
+) -> dict:
+    if provider is None:
+        return {}
+    # Hand the provider an isolated copy: mutating the live FetchResult
+    # (e.g. result.content_hash or result.extra_metadata) would feed the
+    # MD5 short-circuit and source_meta, bypassing the reserved-key filter
+    # that only guards the returned dict.
+    provider_result = result.model_copy(deep=True)
+    return {
+        k: v
+        for k, v in (await provider(source_id, uri, provider_result)).items()
+        if k not in _RESERVED_METADATA_KEYS
+    }
+
+
 async def _ingest_fetch_result(
     client: "HaikuRAG",
     result: "FetchResult",
@@ -575,6 +602,7 @@ async def create_document_from_source(
     storage_options: dict[str, str] | None = None,
     sources: "list[Source] | None" = None,
     source_id: str | None = None,
+    metadata_provider: "MetadataProvider | None" = None,
 ) -> Document | list[Document]:
     """Create or update document(s) from a file path, directory, or URL.
 
@@ -621,7 +649,13 @@ async def create_document_from_source(
             for child in local_path.rglob("*"):
                 if child.is_file() and filter.include_file(str(child)):
                     doc = await create_document_from_source(
-                        client, child, title=None, metadata=metadata
+                        client,
+                        child,
+                        title=None,
+                        metadata=metadata,
+                        sources=sources,
+                        source_id=source_id,
+                        metadata_provider=metadata_provider,
                     )
                     assert isinstance(doc, Document)
                     documents.append(doc)
@@ -692,6 +726,11 @@ async def create_document_from_source(
         fetch_span.set_attribute("bytes", len(result.body))
         fetch_span.set_attribute("content_hash", result.content_hash)
 
+    provider_metadata = await _provider_metadata(
+        metadata_provider, source_id or fetcher.source_id, source_str, result
+    )
+    user_metadata = {**metadata, **provider_metadata}
+
     # MD5 short-circuit: the bytes are unchanged even if the revision wasn't.
     # Refresh the source-derived metadata (revision may have rolled) but skip
     # convert/embed/store entirely.
@@ -707,7 +746,7 @@ async def create_document_from_source(
             client,
             existing_doc,
             title=title,
-            user_metadata=metadata,
+            user_metadata=user_metadata,
             source_metadata=source_meta,
         )
 
@@ -715,7 +754,7 @@ async def create_document_from_source(
         client,
         result,
         title=title,
-        user_metadata=metadata,
+        user_metadata=user_metadata,
         stored_uri=stored_uri,
         existing_doc=existing_doc,
     )

@@ -1,6 +1,9 @@
 from collections.abc import Callable, Iterable, Mapping
 from importlib.metadata import entry_points
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from haiku.rag.ingester.sources.base import FetchResult
 
 ENTRY_POINT_GROUP = "haiku.rag.metadata_providers"
 
@@ -10,9 +13,11 @@ class MetadataProvider(Protocol):
     """Computes per-document metadata for the ingester. A package registers a
     zero-arg factory under the ``haiku.rag.metadata_providers`` entry-point
     group; the factory returns an instance whose ``__call__`` the ingester
-    invokes per job with the document's source id and uri."""
+    invokes per job with the document's source id, uri, and fetched content."""
 
-    async def __call__(self, source_id: str, uri: str) -> dict: ...
+    async def __call__(
+        self, source_id: str, uri: str, result: "FetchResult"
+    ) -> dict: ...
 
 
 MetadataProviderFactory = Callable[[], MetadataProvider]

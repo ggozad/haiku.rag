@@ -9,6 +9,7 @@
 
 - Bump `docling>=2.102.2,<3.0.0` and `docling-core>=2.82.0,<3.0.0`; the `<3.0.0` cap holds the DoclingDocument schema at 1.10.0.
 - Relax `opencv-python-headless` to `>=4.6.0.66,<5.0.0.0` (was `>=4.13.0.92`) to match `docling-ibm-models`' declared range.
+- `haiku.rag.metadata_providers` callables take a third argument, the fetched `FetchResult`: `__call__(source_id, uri, result)`. The provider runs after fetch instead of before; on revision-unchanged sweeps it is skipped and existing provider metadata is preserved.
 
 ### Fixed
 
