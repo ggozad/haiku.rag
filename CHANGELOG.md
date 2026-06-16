@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- SQLite ingester queue runs with a multi-connection pool (`pool_size=5, max_overflow=5`) instead of a single connection. API reads (`/stats`, `/jobs`) no longer time out with `QueuePool limit of size 1 reached` while workers hold the connection.
+
 ## [0.58.0] - 2026-06-15
 
 ### Added

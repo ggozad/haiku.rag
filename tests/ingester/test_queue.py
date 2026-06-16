@@ -60,6 +60,33 @@ async def test_make_engine_postgres_is_pre_ping():
         await engine.dispose()
 
 
+@pytest.mark.asyncio
+async def test_sqlite_engine_serves_concurrent_connections(tmp_path):
+    """The SQLite queue pool hands out more than one connection at a time so an
+    API read does not starve while a worker holds a connection. WAL mode makes
+    concurrent readers safe; the claim stays atomic via its single UPDATE."""
+    engine = make_engine(QueueConfig(path=tmp_path / "queue.db"))
+    await apply_migrations(engine)
+    held: list = []
+    try:
+
+        async def acquire() -> None:
+            conn = await engine.connect()
+            held.append(conn)
+            await conn.execute(sa.text("SELECT 1"))
+
+        # All three checkouts are held at once; a single-connection pool blocks
+        # the second and third until the checkout timeout.
+        await asyncio.wait_for(
+            asyncio.gather(*(acquire() for _ in range(3))), timeout=3
+        )
+        assert len(held) == 3
+    finally:
+        for conn in held:
+            await conn.close()
+        await engine.dispose()
+
+
 def test_insert_uses_dialect_specific_construct():
     """_insert dispatches to the dialect's INSERT (which exposes on_conflict_*)."""
     from sqlalchemy.dialects.postgresql import Insert as PostgresInsert
