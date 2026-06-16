@@ -218,8 +218,37 @@ class WorkerPool:
                 logger.info("Job %s released back to queue on cancel", job.id)
             raise
         except PermanentError as e:
-            await self._jobs.mark_dead(job.id, str(e), worker_id)
+            if not await self._jobs.mark_dead(job.id, str(e), worker_id):
+                logger.warning(
+                    "Job %s lost claim before mark_dead (likely reaper race); "
+                    "letting the re-claiming worker drive",
+                    job.id,
+                )
+                return
             logger.info("Job %s dead (permanent): %s", job.id, e)
+            # Record the failed revision so discovery treats the unchanged file as
+            # accounted-for and stops re-enqueuing it every sweep. sync_state.revision
+            # means "last accounted-for revision" — ingested OR permanently failed.
+            # Revision-less sources (no ETag) can't be suppressed this way.
+            if job.revision is not None:
+                try:
+                    await self._sync.upsert(
+                        job.source_id,
+                        job.uri,
+                        revision=job.revision,
+                        content_hash=job.content_hash,
+                        ingested=False,
+                    )
+                except Exception:
+                    # The job is already dead. A failed marker write only means
+                    # the next sweep may re-enqueue this URI — not worth crashing
+                    # the worker and shrinking the pool over.
+                    logger.exception(
+                        "Job %s dead but failure marker write failed for %s; "
+                        "next sweep may re-enqueue",
+                        job.id,
+                        job.uri,
+                    )
             return
         except TransientError as e:
             breaker = self._breaker_for(job.source_id)

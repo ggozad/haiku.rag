@@ -185,6 +185,10 @@ async def test_run_batch_recovered_doc_is_not_counted_as_dead(tmp_path, use_clie
 
     healthy = _mock_client()
     use_client(healthy)
+    # Bump the file's revision so discovery re-attempts it. A permanent failure
+    # records the revision in sync_state, so a plain re-run no longer retries an
+    # unchanged file — recovery needs the content (mtime) to change.
+    (tmp_path / "a.md").write_text("hello again")
     second = await IngesterApp(config=config, db_path=db_path).run_batch()
     assert second.dead == 0
     assert second.succeeded == 1

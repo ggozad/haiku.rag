@@ -8,6 +8,7 @@
 ### Fixed
 
 - SQLite ingester queue runs with a multi-connection pool (`pool_size=5, max_overflow=5`) instead of a single connection. API reads (`/stats`, `/jobs`) no longer time out with `QueuePool limit of size 1 reached` while workers hold the connection.
+- Permanently-failed ingester documents (revisioned sources) record their revision in `sync_state`, so discovery no longer re-enqueues them every sweep; re-attempted only when the file's revision changes or via explicit retry/rebuild.
 
 ## [0.58.0] - 2026-06-15
 
