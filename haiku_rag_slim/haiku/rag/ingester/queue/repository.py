@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects import sqlite as sqlite_dialect
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from haiku.rag.ingester.queue.db import jobs, sync_state
@@ -242,7 +243,12 @@ class JobRepo:
         error cleared, scheduled for immediate re-claim. Refuses `claimed`
         rows (would race with the worker still processing) and `succeeded`
         rows (re-ingest via UPSERT instead). Raises KeyError when the row
-        is missing or in a non-retryable state."""
+        is missing or in a non-retryable state.
+
+        Idempotent against a live sibling: if a live (queued/claimed) job
+        already exists for the same (source_id, uri), reviving the dead row
+        would violate `uq_jobs_live`; instead the existing live job is returned
+        and the dead row is left dead."""
         now = _utcnow_iso()
         stmt = (
             sa.update(jobs)
@@ -258,11 +264,38 @@ class JobRepo:
             )
             .returning(*jobs.c)
         )
-        async with self._engine.begin() as conn:
-            row = (await conn.execute(stmt)).mappings().one_or_none()
-        if not row:
-            raise KeyError(f"Job {job_id!r} not found or not retryable")
-        return _row_to_job(row)
+        collided = False
+        try:
+            async with self._engine.begin() as conn:
+                row = (await conn.execute(stmt)).mappings().one_or_none()
+        except IntegrityError:
+            collided = True
+            row = None
+        if row is not None:
+            return _row_to_job(row)
+        if collided:
+            target = await self.get_job(job_id)
+            if target is not None:
+                live = await self._live_sibling(target.source_id, target.uri)
+                if live is not None:
+                    return live
+        raise KeyError(f"Job {job_id!r} not found or not retryable")
+
+    async def _live_sibling(self, source_id: str, uri: str) -> Job | None:
+        """The live (queued/claimed) job for a (source_id, uri), if any.
+        `uq_jobs_live` guarantees at most one."""
+        query = (
+            sa.select(jobs)
+            .where(
+                jobs.c.source_id == source_id,
+                jobs.c.uri == uri,
+                jobs.c.status.in_(["queued", "claimed"]),
+            )
+            .limit(1)
+        )
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(query)).mappings().one_or_none()
+        return _row_to_job(row) if row else None
 
     async def cancel(self, job_id: str) -> bool:
         """True iff a queued/claimed row was removed; terminal jobs aren't
