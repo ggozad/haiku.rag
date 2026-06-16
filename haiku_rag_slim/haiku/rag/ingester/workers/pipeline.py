@@ -20,13 +20,6 @@ if TYPE_CHECKING:
     from haiku.rag.ingester.sources.base import Source
 
 
-# Keys the source pipeline owns (content_type/md5/source_revision and the
-# source_revision/md5 that drive sync_state). A provider must not set them, or
-# the metadata-only refresh path would let provider values overwrite the real
-# source-derived ones. Stripped before provider metadata reaches the client.
-_RESERVED_METADATA_KEYS = frozenset({"content_type", "md5", "source_revision"})
-
-
 class JobResult(BaseModel):
     """What the worker needs after a successful job: enough metadata to
     update sync_state. document_id is None for DELETE ops."""
@@ -134,19 +127,11 @@ async def run_job(
                     await client.delete_document(doc.id)
                 return JobResult(deleted=True)
 
-            provider = (metadata_providers or {}).get(job.source_id)
-            extra_metadata: dict | None = None
-            if provider is not None:
-                extra_metadata = {
-                    k: v
-                    for k, v in (await provider(job.source_id, job.uri)).items()
-                    if k not in _RESERVED_METADATA_KEYS
-                }
             result = await client.create_document_from_source(
                 job.uri,
                 sources=sources,
                 source_id=job.source_id,
-                metadata=extra_metadata,
+                metadata_provider=(metadata_providers or {}).get(job.source_id),
             )
             # Directory ingestion returns list[Document] — workers ingest single
             # resources, so a list here is a programming error in the caller.

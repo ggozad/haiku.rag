@@ -7,10 +7,11 @@ from haiku.rag.ingester.metadata import (
     build_providers,
     load_metadata_providers,
 )
+from haiku.rag.ingester.sources.base import FetchResult
 
 
 class _Provider:
-    async def __call__(self, source_id: str, uri: str) -> dict:
+    async def __call__(self, source_id: str, uri: str, result: FetchResult) -> dict:
         return {"source": source_id}
 
 
@@ -50,12 +51,18 @@ def test_load_is_empty_when_none_registered(monkeypatch):
 @pytest.mark.asyncio
 async def test_callable_object_satisfies_protocol():
     class Provider:
-        async def __call__(self, source_id: str, uri: str) -> dict:
+        async def __call__(self, source_id: str, uri: str, result: FetchResult) -> dict:
             return {"classification": "secret"}
 
     provider = Provider()
+    result = FetchResult(
+        uri="u",
+        body=b"x",
+        content_type="text/plain",
+        content_hash="9dd4e461268c8034f5c8564e155c67a6",
+    )
     assert isinstance(provider, MetadataProvider)
-    assert await provider("src", "u") == {"classification": "secret"}
+    assert await provider("src", "u", result) == {"classification": "secret"}
 
 
 def test_build_providers_instantiates_named_factories():

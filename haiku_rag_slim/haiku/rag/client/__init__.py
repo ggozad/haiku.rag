@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from PIL import Image as PILImage
 
     from haiku.rag.embeddings import EmbedderWrapper
+    from haiku.rag.ingester.metadata import MetadataProvider
     from haiku.rag.ingester.sources.base import Source
     from haiku.rag.reranking.base import RerankerBase
     from haiku.rag.sandbox import AnalysisResult
@@ -279,6 +280,7 @@ class HaikuRAG:
         storage_options: dict[str, str] | None = None,
         sources: "list[Source] | None" = None,
         source_id: str | None = None,
+        metadata_provider: "MetadataProvider | None" = None,
     ) -> Document | list[Document]:
         from haiku.rag.client.documents import create_document_from_source
 
@@ -291,6 +293,7 @@ class HaikuRAG:
             storage_options=storage_options,
             sources=sources,
             source_id=source_id,
+            metadata_provider=metadata_provider,
         )
 
     async def update_document(
