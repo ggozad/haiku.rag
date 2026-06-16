@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from haiku.rag.config import FSSourceConfig, SourceConfig
@@ -24,7 +25,7 @@ class PollerManager:
     def __init__(
         self,
         *,
-        configs: list[SourceConfig],
+        configs: Sequence[SourceConfig],
         job_repo: "JobRepo",
         sync_repo: "SyncStateRepo",
         supported_extensions: list[str] | None = None,

@@ -1,6 +1,7 @@
 from haiku.rag.config import (
     FSSourceConfig,
     HTTPSourceConfig,
+    PluginSourceConfig,
     S3SourceConfig,
     SourceConfig,
     WebDAVSourceConfig,
@@ -11,6 +12,10 @@ from haiku.rag.ingester.sources import (
     S3Source,
     Source,
     WebDAVSource,
+)
+from haiku.rag.ingester.sources.plugins import (
+    ENTRY_POINT_GROUP,
+    load_source_factories,
 )
 
 
@@ -63,6 +68,29 @@ def build_source(
             supported_extensions=supported_extensions,
             max_file_size=cfg.max_file_size,
         )
+    if isinstance(cfg, PluginSourceConfig):
+        factories = load_source_factories()
+        try:
+            entry_point = factories[cfg.plugin]
+        except KeyError:
+            raise ValueError(
+                f"Source {cfg.id!r} references unknown source plugin "
+                f"{cfg.plugin!r}; no entry point registered under "
+                f"{ENTRY_POINT_GROUP!r}."
+            ) from None
+        source = entry_point.load()(
+            source_id=cfg.id,
+            options=cfg.options,
+            supported_extensions=supported_extensions,
+            max_file_size=cfg.max_file_size,
+        )
+        if not isinstance(source, Source):
+            raise TypeError(
+                f"Source plugin {cfg.plugin!r} returned "
+                f"{type(source).__name__}, which does not satisfy the "
+                f"Source protocol."
+            )
+        return source
     raise TypeError(  # pragma: no cover - discriminator union exhausts all cases
         f"Unsupported source config: {type(cfg).__name__}"
     )

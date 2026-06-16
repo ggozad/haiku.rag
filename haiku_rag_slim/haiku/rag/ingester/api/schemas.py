@@ -40,7 +40,7 @@ class ProvidersResponse(BaseModel):
 
 class SourceSummary(BaseModel):
     source_id: str
-    type: Literal["fs", "http", "s3", "webdav"]
+    type: Literal["fs", "http", "s3", "webdav", "plugin"]
     last_polled_at: datetime | None
     circuit_breaker_open: bool
     # Reason the most recent sweep attempt was skipped (e.g. "pending_work"),

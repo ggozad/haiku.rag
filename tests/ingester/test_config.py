@@ -110,6 +110,26 @@ def test_discriminator_picks_webdav_source():
     assert cfg.sources[0].username == "alice"
 
 
+def test_discriminator_picks_plugin_source():
+    cfg = IngesterConfig.model_validate(
+        {
+            "sources": [
+                {
+                    "type": "plugin",
+                    "id": "git-docs",
+                    "plugin": "git",
+                    "options": {"owner": "acme", "repo": "api"},
+                }
+            ]
+        }
+    )
+    from haiku.rag.config import PluginSourceConfig
+
+    assert isinstance(cfg.sources[0], PluginSourceConfig)
+    assert cfg.sources[0].plugin == "git"
+    assert cfg.sources[0].options == {"owner": "acme", "repo": "api"}
+
+
 def test_discriminator_rejects_unknown_type():
     with pytest.raises(ValidationError):
         IngesterConfig.model_validate({"sources": [{"type": "ftp", "uri": "x"}]})

@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- Custom ingester sources: a source config with `type: plugin` names a source factory registered under the `haiku.rag.sources` entry-point group via its `plugin` field, with an opaque `options` mapping the plugin validates itself. Only the referenced plugin is imported.
+
 ### Fixed
 
 - SQLite ingester queue runs with a multi-connection pool (`pool_size=5, max_overflow=5`) instead of a single connection. API reads (`/stats`, `/jobs`) no longer time out with `QueuePool limit of size 1 reached` while workers hold the connection.
