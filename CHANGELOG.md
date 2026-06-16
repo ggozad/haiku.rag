@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.59.0] - 2026-06-16
+
 ### Added
 
 - Custom ingester sources: a source config with `type: plugin` names a source factory registered under the `haiku.rag.sources` entry-point group via its `plugin` field, with an opaque `options` mapping the plugin validates itself. Only the referenced plugin is imported.
@@ -1758,7 +1760,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.58.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.59.0...HEAD
+[0.59.0]: https://github.com/ggozad/haiku.rag/compare/0.58.0...0.59.0
 [0.58.0]: https://github.com/ggozad/haiku.rag/compare/0.57.0...0.58.0
 [0.57.0]: https://github.com/ggozad/haiku.rag/compare/0.56.0...0.57.0
 [0.56.0]: https://github.com/ggozad/haiku.rag/compare/0.55.1...0.56.0
