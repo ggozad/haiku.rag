@@ -146,7 +146,10 @@ async def test_successful_delete_prunes_dead_jobs_for_same_uri(client, jobs, syn
 
 
 @pytest.mark.asyncio
-async def test_permanent_error_marks_dead_no_reschedule(client, jobs, sync):
+async def test_permanent_error_without_revision_writes_no_marker(client, jobs, sync):
+    """A permanent failure on a revision-less job (e.g. HTTP without ETag) writes
+    no suppression marker — get_revision_snapshot omits revision-less rows, so it
+    would re-enqueue on the next sweep. Documents the revision-less caveat."""
     client.create_document_from_source.side_effect = PermanentError("unsupported")
     job = await jobs.enqueue("src", "https://x/y.bin", JobOp.UPSERT)
     assert job is not None
@@ -158,7 +161,52 @@ async def test_permanent_error_marks_dead_no_reschedule(client, jobs, sync):
     assert refreshed is not None
     assert refreshed.status is JobStatus.DEAD
     assert refreshed.last_error == "unsupported"
-    # sync_state is NOT written on failure
+    assert await sync.get_revision_snapshot("src") == {}
+
+
+@pytest.mark.asyncio
+async def test_permanent_error_with_revision_records_marker(client, jobs, sync):
+    """A permanent failure on a revisioned job records the failed revision in
+    sync_state (ingested=False) so discovery sees it as UNCHANGED and stops
+    re-enqueuing it every sweep, until the file's revision changes."""
+    client.create_document_from_source.side_effect = PermanentError("encrypted")
+    job = await jobs.enqueue("src", "file:///x/y.pdf", JobOp.UPSERT, revision="r0")
+    assert job is not None
+
+    pool = _pool(client, jobs, sync)
+    await pool.drain_once()
+
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.DEAD
+
+    # Failed revision is recorded, so discovery treats the unchanged file as known.
+    assert await sync.get_revision_snapshot("src") == {"file:///x/y.pdf": "r0"}
+    # Recorded as a failure, not an ingestion.
+    row = await sync.get_row("src", "file:///x/y.pdf")
+    assert row is not None
+    assert row.revision == "r0"
+    assert row.last_ingested_at is None
+
+
+@pytest.mark.asyncio
+async def test_transient_exhausted_writes_no_marker(client, jobs, sync):
+    """A transient failure that exhausts max_attempts goes dead but records no
+    suppression marker, so it stays re-attemptable on the next sweep (transient =
+    keep retrying once the service recovers)."""
+    client.create_document_from_source.side_effect = TransientError("blip")
+    job = await jobs.enqueue(
+        "src", "file:///x/y.pdf", JobOp.UPSERT, revision="r0", max_attempts=1
+    )
+    assert job is not None
+
+    pool = _pool(client, jobs, sync)
+    await pool.drain_once()
+
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.DEAD
+    # No marker despite a revision being present — only PermanentError suppresses.
     assert await sync.get_revision_snapshot("src") == {}
 
 
@@ -383,6 +431,36 @@ async def test_worker_loses_claim_to_reaper_does_not_write_sync_state(
     assert refreshed.status is JobStatus.CLAIMED
     assert refreshed.claimed_by == "worker-B"
     # And sync_state must be untouched.
+    assert await sync.get_revision_snapshot("src") == {}
+
+
+@pytest.mark.asyncio
+async def test_permanent_error_loses_claim_to_reaper_writes_no_marker(
+    client, jobs, sync
+):
+    """If the reaper resets the claim and another worker re-claims before a
+    permanent failure is recorded, the original worker's mark_dead is a no-op
+    and it writes no failure marker — the re-claiming worker drives the
+    outcome, so the stale worker must not stamp sync_state."""
+    client.create_document_from_source.side_effect = PermanentError("encrypted")
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT, revision="r0")
+    assert job is not None
+    claimed_by_a = await jobs.claim_next("worker-A")
+    assert claimed_by_a is not None
+    # Reaper resets A's claim, worker-B re-claims.
+    await jobs.reap_stale(claim_timeout_seconds=0)
+    await jobs.claim_next("worker-B")
+
+    pool = _pool(client, jobs, sync, worker_count=1)
+    # Drive A's _process with A's (now stale) Job snapshot.
+    await pool._process(claimed_by_a)
+
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    # B still owns the claim — A's mark_dead was a no-op.
+    assert refreshed.status is JobStatus.CLAIMED
+    assert refreshed.claimed_by == "worker-B"
+    # No failure marker written despite a revision being present.
     assert await sync.get_revision_snapshot("src") == {}
 
 
@@ -686,6 +764,31 @@ async def test_sync_state_write_failure_does_not_crash_worker(
 
     # Job should still be marked succeeded
     listed = await jobs.list_jobs(status=JobStatus.SUCCEEDED)
+    assert len(listed) == 1
+
+
+@pytest.mark.asyncio
+async def test_permanent_failure_marker_write_failure_does_not_crash_worker(
+    client, jobs, sync, monkeypatch
+):
+    """If the permanent-failure sync_state marker write fails after mark_dead,
+    the worker logs and continues rather than crashing. The job is already dead;
+    a missing marker just means the file may re-enqueue on the next sweep."""
+    client.create_document_from_source.side_effect = PermanentError("encrypted")
+    await jobs.enqueue("src", "file:///x/y.pdf", JobOp.UPSERT, revision="r0")
+
+    async def _failing_upsert(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(sync, "upsert", _failing_upsert)
+
+    pool = _pool(client, jobs, sync)
+    # drain_once should complete without raising despite the marker write failing.
+    processed = await pool.drain_once()
+    assert processed == 1
+
+    # Job is still dead — the marker write failure must not undo that.
+    listed = await jobs.list_jobs(status=JobStatus.DEAD)
     assert len(listed) == 1
 
 

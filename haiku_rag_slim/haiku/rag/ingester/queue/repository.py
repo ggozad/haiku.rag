@@ -461,10 +461,12 @@ class SyncStateRepo:
     async def get_revision_snapshot(self, source_id: str) -> dict[str, str]:
         """uri -> revision map for URIs that have a stored revision. Sources
         compare current revision against this map to decide UPSERT vs
-        UNCHANGED. Rows without a revision (HTTP without ETag, or a worker
-        that didn't complete) are excluded — they have no revision to
-        compare against; the closing-loop DELETE diff uses list_known_uris
-        instead."""
+        UNCHANGED. A stored revision means the file was accounted for at that
+        revision — successfully ingested OR permanently failed; both suppress
+        re-enqueue until the revision changes. Rows without a revision (HTTP
+        without ETag, or a worker that didn't complete) are excluded — they
+        have no revision to compare against; the closing-loop DELETE diff uses
+        list_known_uris instead."""
         query = sa.select(sync_state.c.uri, sync_state.c.revision).where(
             sync_state.c.source_id == source_id,
             sync_state.c.revision.is_not(None),
