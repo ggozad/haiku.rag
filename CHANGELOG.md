@@ -5,6 +5,11 @@
 
 - Custom ingester sources: a source config with `type: plugin` names a source factory registered under the `haiku.rag.sources` entry-point group via its `plugin` field, with an opaque `options` mapping the plugin validates itself. Only the referenced plugin is imported.
 
+### Changed
+
+- Bump `docling>=2.102.2,<3.0.0` and `docling-core>=2.82.0,<3.0.0`; the `<3.0.0` cap holds the DoclingDocument schema at 1.10.0.
+- Relax `opencv-python-headless` to `>=4.6.0.66,<5.0.0.0` (was `>=4.13.0.92`) to match `docling-ibm-models`' declared range.
+
 ### Fixed
 
 - SQLite ingester queue runs with a multi-connection pool (`pool_size=5, max_overflow=5`) instead of a single connection. API reads (`/stats`, `/jobs`) no longer time out with `QueuePool limit of size 1 reached` while workers hold the connection.
