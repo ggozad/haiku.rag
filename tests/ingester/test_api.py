@@ -139,7 +139,7 @@ async def test_protected_endpoint_accepts_correct_token(state):
 
 
 @pytest.mark.asyncio
-async def test_no_auth_token_allows_everything(state, jobs):
+async def test_no_auth_token_allows_everything(state):
     async with _client(state, auth_token=None) as client:
         assert (await client.get("/jobs")).status_code == 200
         assert (await client.get("/health")).status_code == 200
@@ -332,6 +332,24 @@ async def test_dlq_retry_404_on_missing_job(state):
     assert resp.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_dlq_retry_with_live_sibling_returns_200(state, jobs):
+    """Retrying a dead job when a live job already exists for the same
+    (source_id, uri) returns 200 with the live job, not a 500."""
+    first = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert first is not None
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None
+    await jobs.mark_dead(first.id, "err", "w")
+    live = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert live is not None
+
+    async with _client(state) as client:
+        resp = await client.post(f"/dlq/{first.id}/retry")
+    assert resp.status_code == 200
+    assert resp.json()["id"] == live.id
+
+
 # --- /sources ---
 
 
@@ -340,16 +358,17 @@ class _StubSource:
         self.source_id = source_id
         self._sweeps = list(sweeps)
 
-    def supports(self, uri):  # pragma: no cover
+    def supports(self, _uri):  # pragma: no cover
         return True
 
-    async def head(self, uri):  # pragma: no cover
+    async def head(self, _uri):  # pragma: no cover
         return None
 
-    async def fetch(self, uri) -> FetchResult:  # pragma: no cover
+    async def fetch(self, _uri) -> FetchResult:  # pragma: no cover
         raise NotImplementedError
 
     async def discover(self, since=None, *, known_uris=None):
+        del since, known_uris  # interface-required, unused by this stub
         events = self._sweeps.pop(0) if self._sweeps else []
         for event in events:
             yield event
@@ -501,7 +520,7 @@ async def test_providers_probes_each_docling_serve_url(state, monkeypatch):
     from haiku.rag.ingester.api.routes import providers as providers_mod
     from haiku.rag.ingester.api.schemas import ProviderEndpoint
 
-    async def _fake_probe(client, base_url):
+    async def _fake_probe(_client, base_url):
         if "down" in base_url:
             return ProviderEndpoint(
                 base_url=base_url,
@@ -539,7 +558,7 @@ async def test_providers_skips_docling_serve_when_not_in_use(state, monkeypatch)
 
     probed: list[str] = []
 
-    async def _spy_probe(client, base_url):  # pragma: no cover - asserted not called
+    async def _spy_probe(_client, base_url):  # pragma: no cover - asserted not called
         probed.append(base_url)
         raise AssertionError("probe should not run when docling-serve is not in use")
 
@@ -562,7 +581,7 @@ async def test_providers_probes_when_only_chunker_uses_docling_serve(
     from haiku.rag.ingester.api.routes import providers as providers_mod
     from haiku.rag.ingester.api.schemas import ProviderEndpoint
 
-    async def _fake_probe(client, base_url):
+    async def _fake_probe(_client, base_url):
         return ProviderEndpoint(base_url=base_url, reachable=True, status_code=200)
 
     monkeypatch.setattr(providers_mod, "_probe", _fake_probe)

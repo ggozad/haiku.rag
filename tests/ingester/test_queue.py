@@ -531,6 +531,31 @@ async def test_retry_refuses_claimed_job(jobs):
 
 
 @pytest.mark.asyncio
+async def test_retry_returns_live_sibling_instead_of_colliding(jobs):
+    """Retrying a dead job when a live job already exists for the same
+    (source_id, uri) is idempotent: it returns the live sibling rather than
+    violating uq_jobs_live (which previously surfaced as a 500)."""
+    first = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    assert first is not None
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None
+    await jobs.mark_dead(claimed.id, "boom", "w")
+
+    # A fresh live job for the same (source, uri) — e.g. re-discovered by a sweep.
+    live = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    assert live is not None
+    assert live.id != first.id
+
+    result = await jobs.retry(first.id)
+    assert result.id == live.id
+    assert result.status is JobStatus.QUEUED
+    # The originally-dead row stays dead — not duplicated into a second live job.
+    refreshed = await jobs.get_job(first.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.DEAD
+
+
+@pytest.mark.asyncio
 async def test_retry_refuses_succeeded_job(jobs):
     """Succeeded rows should be re-ingested through the UPSERT path, not
     re-run from the queue."""
