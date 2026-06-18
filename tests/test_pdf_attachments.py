@@ -1,10 +1,12 @@
 import io
+import threading
 
 import pypdfium2 as pdfium
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.documents import (
     MAX_ATTACHMENT_DEPTH,
+    _extract_pdf_attachments,
     _reconcile_pdf_attachments,
     parent_uri_filter,
 )
@@ -482,3 +484,37 @@ async def test_create_document_from_source_delete_cascades(
 
         await client.delete_document(parent.id)
         assert await client.list_documents() == []
+
+
+async def test_extract_pdf_attachments_called_off_event_loop_thread(
+    temp_db_path, monkeypatch
+):
+    """_extract_pdf_attachments must run in a thread-pool thread, not on the
+    event-loop thread. A synchronous call would freeze the event loop for the
+    duration of pdfium I/O, stalling every other concurrent worker.
+
+    We verify this by capturing the thread identity inside a spy wrapper: if
+    asyncio.to_thread is used correctly the spy runs on a non-main thread."""
+    called_from: list[threading.Thread] = []
+
+    def spy(body, uri, *, depth):
+        called_from.append(threading.current_thread())
+        return _extract_pdf_attachments(body, uri, depth=depth)
+
+    monkeypatch.setattr("haiku.rag.client.documents._extract_pdf_attachments", spy)
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+
+    pdf_bytes = build_pdf([("a.txt", b"payload")])
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent_uri = "file:///fixtures/parent.pdf"
+        parent = await _make_parent(client, parent_uri, pdf_bytes)
+        await _reconcile_pdf_attachments(client, parent, pdf_bytes, depth=0)
+
+    assert called_from, "_extract_pdf_attachments was never called"
+    assert called_from[0] is not threading.main_thread(), (
+        "_extract_pdf_attachments ran on the event-loop thread; "
+        "it must be dispatched via asyncio.to_thread to avoid blocking the loop"
+    )
