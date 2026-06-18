@@ -609,6 +609,44 @@ This is content.
         assert meta1.headings == ["Chapter 1", "Section 1.1"]
         assert meta1.page_numbers == [1, 2]
 
+    @pytest.mark.asyncio
+    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
+    async def test_chunk_serializes_document_off_event_loop_thread(
+        self, mock_client_class, chunker
+    ):
+        """model_dump_json over a document carrying inlined base64 page/picture
+        images is CPU-heavy and proportional to document size; it must run off
+        the event-loop thread or it stalls every other worker's coroutine.
+
+        A minimal fake document records the thread its model_dump_json runs on;
+        the API response carries no doc_items so the document is touched only
+        for serialization."""
+        import threading
+
+        result_data = {"chunks": [{"text": "Chunk 1", "chunk_index": 0}]}
+        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(result_data)
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=submit_resp)
+        mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+
+        called_from: list[threading.Thread] = []
+
+        class FakeDoc:
+            def model_dump_json(self):
+                called_from.append(threading.current_thread())
+                return "{}"
+
+        chunks = await chunker.chunk(FakeDoc())
+
+        assert len(chunks) == 1
+        assert called_from, "model_dump_json was never called"
+        assert called_from[0] is not threading.main_thread(), (
+            "DoclingDocument.model_dump_json ran on the event-loop thread; it "
+            "must be dispatched via asyncio.to_thread"
+        )
+
 
 @pytest.mark.vcr()
 @pytest.mark.asyncio

@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import mimetypes
 import os
@@ -87,23 +88,33 @@ class FSSource:
             return None
         return str(path.stat().st_mtime_ns)
 
+    def _read_body(self, path: Path, uri: str) -> tuple[bytes, str, str]:
+        """Size-check, read, and hash the file. Runs in a worker thread (see
+        ``fetch``) because the read and the md5 are both proportional to file
+        size and would otherwise block the event loop for the whole read."""
+        check_file_size(path.stat().st_size, self._max_file_size, uri)
+        body = path.read_bytes()
+        content_hash = hashlib.md5(body, usedforsecurity=False).hexdigest()
+        # mtime_ns rather than st_mtime: nanosecond integer avoids float
+        # precision collisions on rapid edits.
+        revision = str(path.stat().st_mtime_ns)
+        return body, content_hash, revision
+
     async def fetch(self, uri: str) -> FetchResult:
         path = self._resolve_within_root(uri)
         if path is None:
             raise UnsupportedSourceError(f"Path escapes FS root ({self.root}): {uri}")
-        check_file_size(path.stat().st_size, self._max_file_size, uri)
-        body = path.read_bytes()
+        body, content_hash, revision = await asyncio.to_thread(
+            self._read_body, path, uri
+        )
         content_type, _ = mimetypes.guess_type(path.name)
         if content_type is None:
             content_type = "application/octet-stream"
-        # mtime_ns rather than st_mtime: nanosecond integer avoids float
-        # precision collisions on rapid edits.
-        revision = str(path.stat().st_mtime_ns)
         return FetchResult(
             uri=path.as_uri(),
             body=body,
             content_type=content_type,
-            content_hash=hashlib.md5(body, usedforsecurity=False).hexdigest(),
+            content_hash=content_hash,
             revision=revision,
             disk_path=path,
         )

@@ -157,6 +157,48 @@ async def test_convert_aborts_and_cleans_up_on_mid_stream_slice_failure(
     assert len(calls) == 2
 
 
+@pytest.mark.asyncio
+async def test_concatenate_runs_off_event_loop_thread(tmp_path, monkeypatch):
+    """DoclingDocument.concatenate merges slice documents that carry inlined
+    base64 page/picture images — CPU-heavy and proportional to total document
+    size. It must run off the event-loop thread so it doesn't stall other
+    workers' coroutines. Capture the thread it runs on and assert it is not the
+    main thread."""
+    import threading
+
+    from docling_core.types.doc.document import DoclingDocument
+
+    src = _make_pdf(4, tmp_path)
+
+    class _Converter:
+        async def convert_file(self, path: Path, *, source_uri):
+            return DoclingDocument(name="slice")
+
+    called_from: list[threading.Thread] = []
+
+    def spy(docs):
+        called_from.append(threading.current_thread())
+        # Return a slice doc rather than exercising the real concatenate —
+        # this test only asserts the dispatch thread, not merge correctness
+        # (covered by test_concatenate_shifts_page_nos_and_unique_self_refs).
+        return docs[0]
+
+    monkeypatch.setattr(DoclingDocument, "concatenate", staticmethod(spy))
+
+    await convert_pdf_with_splitting(
+        _Converter(),  # ty: ignore[invalid-argument-type]
+        src,
+        source_uri=None,
+        slice_size=2,
+    )
+
+    assert called_from, "concatenate was never called"
+    assert called_from[0] is not threading.main_thread(), (
+        "DoclingDocument.concatenate ran on the event-loop thread; it must be "
+        "dispatched via asyncio.to_thread"
+    )
+
+
 def test_concatenate_shifts_page_nos_and_unique_self_refs():
     """Pins the docling-core contract we rely on: when two docs (each with
     items on page 1) are concatenated, the second doc's items move to page 2

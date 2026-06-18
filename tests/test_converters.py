@@ -94,6 +94,40 @@ def create_async_workflow_zip_mocks(
     return submit_response, poll_response, result_response
 
 
+@pytest.mark.asyncio
+async def test_parse_zip_runs_off_event_loop_thread():
+    """_parse_zip_to_docling does zip decompress, per-image base64 re-encoding,
+    and DoclingDocument.model_validate — all synchronous and CPU-heavy (full-
+    resolution page rasters when generate_page_images is on). It must run off
+    the event-loop thread, or it stalls every other worker's coroutine. Capture
+    the thread it runs on and assert it is not the main thread."""
+    import threading
+
+    config = AppConfig()
+    config.processing.converter = "docling-serve"
+    converter = get_converter(config)
+    assert isinstance(converter, DoclingServeConverter)
+
+    converter.client.submit_and_poll_zip = AsyncMock(return_value=b"zip-bytes")
+
+    called_from: list[threading.Thread] = []
+
+    def spy(zip_bytes, name):
+        called_from.append(threading.current_thread())
+        return Mock()
+
+    converter._parse_zip_to_docling = spy  # type: ignore[method-assign]
+
+    files = {"files": ("doc.pdf", b"pdf", "application/octet-stream")}
+    await converter._make_request(files, "doc.pdf")
+
+    assert called_from, "_parse_zip_to_docling was never called"
+    assert called_from[0] is not threading.main_thread(), (
+        "_parse_zip_to_docling ran on the event-loop thread; it must be "
+        "dispatched via asyncio.to_thread"
+    )
+
+
 class TestTextFileHandler:
     """Tests for TextFileHandler utility class."""
 
