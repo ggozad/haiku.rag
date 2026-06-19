@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- Embedded-PDF attachment scanning runs in a worker thread instead of on the event loop; ingesting PDFs with embedded attachments no longer stalls concurrent workers.
+
 ## [0.59.0] - 2026-06-16
 
 ### Added
