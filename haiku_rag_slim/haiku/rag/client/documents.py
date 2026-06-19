@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import logging
@@ -543,7 +544,9 @@ async def _reconcile_pdf_attachments(
     if (parent_doc.metadata or {}).get("content_type") != "application/pdf":
         return
 
-    new_attachments = _extract_pdf_attachments(parent_body, parent_doc.uri, depth=depth)
+    new_attachments = await asyncio.to_thread(
+        _extract_pdf_attachments, parent_body, parent_doc.uri, depth=depth
+    )
     if new_attachments is None:
         return
 
