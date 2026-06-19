@@ -1,10 +1,20 @@
 # Changelog
 ## [Unreleased]
 
+## [0.48.2] - 2026-06-19
+
+### Added
+
+- `analysis.max_executions` (default 15): caps `execute_code` calls per analysis question. Past the cap the tool returns a notice telling the skill to answer from what it has, instead of spiralling into `request_limit`. The analysis skill sets `request_limit` to 30 as a backstop.
+
 ### Changed
 
 - `textual-image` moved to base dependencies; `ask`/`analyze`/`visualize` render image citations without the `tui` extra.
-- Drop `list_documents` and `get_document` from the default RAG skill's tool set; the skill now exposes only `search` and `cite`. Both tools dumped unbounded content into the agent's context (full document lists, full document bodies) and `get_document` returned no chunk_ids so its output was structurally uncitable. The analysis skill already covers these uses programmatically — `await list_documents()` and `Path('/documents/{id}/content.txt').read_text()` inside `execute_code`. The tool branches remain in `create_skill_tools` and the `skill_generator` `AVAILABLE_TOOLS` set so users can still opt in when building custom skills.
+- Drop `list_documents` and `get_document` from the default RAG skill's tool set; the skill now exposes only `search` and `cite`. The tool branches remain in `create_skill_tools` and the `skill_generator` `AVAILABLE_TOOLS` set so users can still opt in when building custom skills.
+
+### Fixed
+
+- Analysis-skill `execute_code` no longer crashes with LanceDB `Already borrowed` when sandboxed code reads the document VFS (`content.txt`, `items.jsonl`, `toc.json`); VFS reads run on one background event loop with a single read-only connection for the sandbox's lifetime.
 
 ## [0.48.1] - 2026-05-21
 
@@ -1600,7 +1610,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.48.1...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.48.2...HEAD
+[0.48.2]: https://github.com/ggozad/haiku.rag/compare/0.48.1...0.48.2
 [0.48.1]: https://github.com/ggozad/haiku.rag/compare/0.48.0...0.48.1
 [0.48.0]: https://github.com/ggozad/haiku.rag/compare/0.47.0...0.48.0
 [0.47.0]: https://github.com/ggozad/haiku.rag/compare/0.46.0...0.47.0
