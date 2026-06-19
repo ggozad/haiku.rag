@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- `textual-image` moved to base dependencies; `ask`/`analyze`/`visualize` render image citations without the `tui` extra.
+
 ### Fixed
 
 - Embedded-PDF attachment scanning runs in a worker thread instead of on the event loop; ingesting PDFs with embedded attachments no longer stalls concurrent workers.
