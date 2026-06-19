@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.59.1] - 2026-06-19
+
 ### Changed
 
 - `textual-image` moved to base dependencies; `ask`/`analyze`/`visualize` render image citations without the `tui` extra.
@@ -1768,7 +1770,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.59.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.59.1...HEAD
+[0.59.1]: https://github.com/ggozad/haiku.rag/compare/0.59.0...0.59.1
 [0.59.0]: https://github.com/ggozad/haiku.rag/compare/0.58.0...0.59.0
 [0.58.0]: https://github.com/ggozad/haiku.rag/compare/0.57.0...0.58.0
 [0.57.0]: https://github.com/ggozad/haiku.rag/compare/0.56.0...0.57.0
