@@ -1675,6 +1675,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "pyyaml" },
     { name = "rich" },
+    { name = "textual-image" },
     { name = "typer" },
     { name = "watchfiles" },
     { name = "zstandard", marker = "python_full_version < '3.14'" },
@@ -1727,7 +1728,6 @@ s3 = [
 ]
 tui = [
     { name = "textual" },
-    { name = "textual-image" },
     { name = "tree-sitter" },
     { name = "tree-sitter-json" },
 ]
@@ -1776,7 +1776,7 @@ requires-dist = [
     { name = "sentence-transformers", marker = "extra == 'cross-encoder'", specifier = ">=3.0.0" },
     { name = "sqlalchemy", extras = ["asyncio"], marker = "extra == 'ingester'", specifier = ">=2.0" },
     { name = "textual", marker = "extra == 'tui'", specifier = ">=8.2.4" },
-    { name = "textual-image", marker = "extra == 'tui'", specifier = ">=0.8.5" },
+    { name = "textual-image", specifier = ">=0.8.5" },
     { name = "torch", marker = "extra == 'jina'", specifier = ">=2.0.0" },
     { name = "transformers", marker = "extra == 'jina'", specifier = ">=4.40.0" },
     { name = "transformers", marker = "extra == 'mxbai'", specifier = ">=4.49.0,<5.0.0" },

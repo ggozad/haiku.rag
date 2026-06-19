@@ -36,6 +36,7 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "pyyaml>=6.0.3",
     "rich>=14.3.3",
+    "textual-image>=0.8.5",
     "typer>=0.21.0,<0.22.0",
     "watchfiles>=1.1.1",
     "zstandard>=0.23.0; python_version<'3.14'",
@@ -66,7 +67,6 @@ ingester = [
 # TUI (chat and inspect commands)
 tui = [
     "textual>=8.2.4",
-    "textual-image>=0.8.5",
     "tree-sitter>=0.25.2",
     "tree-sitter-json>=0.24.8",
 ]
