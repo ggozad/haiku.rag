@@ -1,3 +1,4 @@
+import asyncio
 from functools import cache
 from typing import TYPE_CHECKING, cast
 
@@ -105,24 +106,12 @@ class DoclingLocalChunker(DocumentChunker):
                 "Must be 'hybrid' or 'hierarchical'."
             )
 
-    async def chunk(self, document: "DoclingDocument") -> list[Chunk]:
-        """Split the document into chunks with metadata.
+    def _chunk_sync(self, document: "DoclingDocument") -> list[Chunk]:
+        """Synchronous chunking helper (CPU-bound, no I/O).
 
-        Extracts structured metadata from each DocChunk including:
-        - doc_item_refs: JSON pointer references to DocItems (e.g., "#/texts/5")
-        - headings: Section heading hierarchy
-        - labels: Semantic labels for each doc_item (e.g., "paragraph", "table")
-        - page_numbers: Page numbers where content appears
-
-        Args:
-            document: The DoclingDocument to be split into chunks.
-
-        Returns:
-            List of Chunk containing content and structured metadata.
+        Runs the underlying HybridChunker/HierarchicalChunker and extracts
+        structured metadata from each DocChunk.
         """
-        if document is None:
-            return []
-
         raw_chunks = list(self.chunker.chunk(document))
         result: list[Chunk] = []
 
@@ -172,3 +161,23 @@ class DoclingLocalChunker(DocumentChunker):
             )
 
         return result
+
+    async def chunk(self, document: "DoclingDocument") -> list[Chunk]:
+        """Split the document into chunks with metadata.
+
+        Extracts structured metadata from each DocChunk including:
+        - doc_item_refs: JSON pointer references to DocItems (e.g., "#/texts/5")
+        - headings: Section heading hierarchy
+        - labels: Semantic labels for each doc_item (e.g., "paragraph", "table")
+        - page_numbers: Page numbers where content appears
+
+        Args:
+            document: The DoclingDocument to be split into chunks.
+
+        Returns:
+            List of Chunk containing content and structured metadata.
+        """
+        if document is None:
+            return []
+
+        return await asyncio.to_thread(self._chunk_sync, document)
