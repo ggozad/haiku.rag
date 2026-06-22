@@ -524,6 +524,31 @@ haiku-ingester run-batch
 haiku-ingester run-batch --db rag.lancedb
 ```
 
+To review a batch before it mutates the document store, use `--dry-run`.
+Dry-run performs the same discovery checks but writes no queue jobs and does
+not update `sync_state`. It writes a YAML manifest named
+`manifest-<datestamp>.yaml` by default:
+
+```bash
+haiku-ingester run-batch --dry-run
+haiku-ingester run-batch --dry-run --output manifest-20260622.yaml
+```
+
+The manifest records the `upsert` and `delete` changes discovered for each
+source. Replay it later to ingest exactly that changeset, without another
+discovery sweep:
+
+```bash
+haiku-ingester run-batch --manifest manifest-20260622.yaml
+```
+
+Manifest replay rejects sources with queued or claimed work, preserving the
+one-active-changeset-per-source pattern. Revisioned upserts are checked
+against the current upstream revision before fetch; if the resource changed
+after dry-run, that job dead-letters and the newer version waits for the next
+dry-run. Sources that provide no revision can freeze URI discovery but cannot
+prove byte identity at replay time.
+
 Orphan deletion compares each source against `sync_state` in the queue DB,
 so persist `ingester.db` between runs for deletions to be detected. It exits
 non-zero if any job dead-letters or a source's discovery sweep does not
