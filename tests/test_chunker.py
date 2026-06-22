@@ -56,6 +56,13 @@ async def test_local_chunker(qa_corpus: list[dict[str, str]]):
 
 
 @pytest.mark.asyncio
+async def test_local_chunker_none_document():
+    """Test DoclingLocalChunker returns empty list for None document."""
+    chunker = DoclingLocalChunker()
+    assert await chunker.chunk(None) == []
+
+
+@pytest.mark.asyncio
 async def test_local_chunker_runs_off_event_loop_thread():
     """Chunking is CPU-bound; verify it runs in a worker thread."""
     import threading

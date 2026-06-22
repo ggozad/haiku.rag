@@ -129,7 +129,7 @@ class DoclingServeChunker(DocumentChunker):
 
         return result.get("chunks", [])
 
-    async def chunk(self, document: "DoclingDocument") -> list[Chunk]:
+    async def chunk(self, document: "DoclingDocument | None") -> list[Chunk]:
         """Split the document into chunks with metadata via docling-serve.
 
         Extracts structured metadata from the API response including:

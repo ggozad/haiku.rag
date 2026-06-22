@@ -162,7 +162,7 @@ class DoclingLocalChunker(DocumentChunker):
 
         return result
 
-    async def chunk(self, document: "DoclingDocument") -> list[Chunk]:
+    async def chunk(self, document: "DoclingDocument | None") -> list[Chunk]:
         """Split the document into chunks with metadata.
 
         Extracts structured metadata from each DocChunk including:
