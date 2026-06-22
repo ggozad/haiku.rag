@@ -118,6 +118,7 @@ async def _store_document_with_chunks(
     Handles versioning/rollback on failure.
     """
     chunks = await ensure_chunks_embedded(client._config, chunks, client.embedder)
+    items = await asyncio.to_thread(extract_items, "", docling_document)
 
     async with client.store._write_lock:
         versions = await client.store.current_table_versions()
@@ -134,7 +135,8 @@ async def _store_document_with_chunks(
 
             await client.chunk_repository.create(chunks)
 
-            items = extract_items(created_doc.id, docling_document)
+            for item in items:
+                item.document_id = created_doc.id
             await client.document_item_repository.create_items(created_doc.id, items)
 
             if client._config.storage.auto_vacuum:
@@ -170,6 +172,12 @@ async def _update_document_with_chunks(
 
     chunks = await ensure_chunks_embedded(client._config, chunks, client.embedder)
 
+    items: list | None = None
+    if docling_document is not None:
+        items = await asyncio.to_thread(
+            extract_items, document.id, docling_document, existing_picture_data
+        )
+
     async with client.store._write_lock:
         versions = await client.store.current_table_versions()
 
@@ -183,12 +191,7 @@ async def _update_document_with_chunks(
 
             await client.chunk_repository.replace_for_document(updated_doc.id, chunks)
 
-            if docling_document is not None:
-                items = extract_items(
-                    updated_doc.id,
-                    docling_document,
-                    existing_picture_data=existing_picture_data,
-                )
+            if items is not None:
                 await client.document_item_repository.replace_for_document(
                     updated_doc.id, items
                 )
@@ -279,6 +282,11 @@ async def _store_documents_with_chunks(
         for _, chunks, _ in prepared
     ]
 
+    def _extract_all_items():
+        return [extract_items("", d) for _, _, d in prepared]
+
+    all_item_lists = await asyncio.to_thread(_extract_all_items)
+
     async with client.store._write_lock:
         versions = await client.store.current_table_versions()
 
@@ -289,15 +297,17 @@ async def _store_documents_with_chunks(
         try:
             all_chunks: list[Chunk] = []
             all_items = []
-            for doc, doc_chunks, docling_document in zip(
-                created, embedded, (d for _, _, d in prepared)
+            for doc, doc_chunks, item_list in zip(
+                created, embedded, all_item_lists
             ):
                 assert doc.id is not None
                 for order, chunk in enumerate(doc_chunks):
                     chunk.document_id = doc.id
                     chunk.order = order
                 all_chunks.extend(doc_chunks)
-                all_items.extend(extract_items(doc.id, docling_document))
+                for item in item_list:
+                    item.document_id = doc.id
+                all_items.extend(item_list)
 
             await client.chunk_repository.create(all_chunks)
             await client.document_item_repository.create_all(all_items)
