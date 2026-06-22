@@ -59,6 +59,7 @@ async def test_local_chunker(qa_corpus: list[dict[str, str]]):
 async def test_local_chunker_runs_off_event_loop_thread():
     """Chunking is CPU-bound; verify it runs in a worker thread."""
     import threading
+    from unittest.mock import patch
 
     chunker = DoclingLocalChunker()
     event_loop_thread = threading.current_thread()
@@ -66,15 +67,15 @@ async def test_local_chunker_runs_off_event_loop_thread():
 
     original = chunker._chunk_sync
 
-    def recording_chunk_sync(document):
+    def recording_chunk_sync(self, document):
         called_from.append(threading.current_thread())
         return original(document)
 
-    chunker._chunk_sync = recording_chunk_sync
-
     converter = get_converter(Config)
     doc = await converter.convert_text("# Hello\n\nWorld", name="test.md")
-    await chunker.chunk(doc)
+
+    with patch.object(DoclingLocalChunker, "_chunk_sync", recording_chunk_sync):
+        await chunker.chunk(doc)
 
     assert called_from, "_chunk_sync was never called"
     assert called_from[0] is not event_loop_thread, (
