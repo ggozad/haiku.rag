@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- CPU-bound ingest steps now run off the event loop: Docling document serialization, docling-serve zip parsing, split-PDF concatenation, fetched-body temp writes, and filesystem read/hash work no longer stall concurrent ingester workers on large image-bearing documents.
+
 ## [0.59.1] - 2026-06-19
 
 ### Changed
