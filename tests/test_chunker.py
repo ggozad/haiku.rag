@@ -631,6 +631,7 @@ This is content.
         mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
         mock_client_class.return_value.__aenter__.return_value = mock_client
 
+        event_loop_thread = threading.current_thread()
         called_from: list[threading.Thread] = []
 
         class FakeDoc:
@@ -642,7 +643,7 @@ This is content.
 
         assert len(chunks) == 1
         assert called_from, "model_dump_json was never called"
-        assert called_from[0] is not threading.main_thread(), (
+        assert called_from[0] is not event_loop_thread, (
             "DoclingDocument.model_dump_json ran on the event-loop thread; it "
             "must be dispatched via asyncio.to_thread"
         )

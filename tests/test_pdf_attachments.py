@@ -494,7 +494,8 @@ async def test_extract_pdf_attachments_called_off_event_loop_thread(
     duration of pdfium I/O, stalling every other concurrent worker.
 
     We verify this by capturing the thread identity inside a spy wrapper: if
-    asyncio.to_thread is used correctly the spy runs on a non-main thread."""
+    asyncio.to_thread is used correctly the spy runs off the event-loop thread."""
+    event_loop_thread = threading.current_thread()
     called_from: list[threading.Thread] = []
 
     def spy(body, uri, *, depth):
@@ -514,7 +515,7 @@ async def test_extract_pdf_attachments_called_off_event_loop_thread(
         await _reconcile_pdf_attachments(client, parent, pdf_bytes, depth=0)
 
     assert called_from, "_extract_pdf_attachments was never called"
-    assert called_from[0] is not threading.main_thread(), (
+    assert called_from[0] is not event_loop_thread, (
         "_extract_pdf_attachments ran on the event-loop thread; "
         "it must be dispatched via asyncio.to_thread to avoid blocking the loop"
     )

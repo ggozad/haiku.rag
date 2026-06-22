@@ -174,6 +174,7 @@ async def test_concatenate_runs_off_event_loop_thread(tmp_path, monkeypatch):
         async def convert_file(self, path: Path, *, source_uri):
             return DoclingDocument(name="slice")
 
+    event_loop_thread = threading.current_thread()
     called_from: list[threading.Thread] = []
 
     def spy(docs):
@@ -193,7 +194,7 @@ async def test_concatenate_runs_off_event_loop_thread(tmp_path, monkeypatch):
     )
 
     assert called_from, "concatenate was never called"
-    assert called_from[0] is not threading.main_thread(), (
+    assert called_from[0] is not event_loop_thread, (
         "DoclingDocument.concatenate ran on the event-loop thread; it must be "
         "dispatched via asyncio.to_thread"
     )

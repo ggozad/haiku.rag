@@ -108,21 +108,24 @@ async def test_parse_zip_runs_off_event_loop_thread():
     converter = get_converter(config)
     assert isinstance(converter, DoclingServeConverter)
 
-    converter.client.submit_and_poll_zip = AsyncMock(return_value=b"zip-bytes")
+    converter.client.submit_and_poll_zip = AsyncMock(  # ty: ignore[invalid-assignment]
+        return_value=b"zip-bytes"
+    )
 
+    event_loop_thread = threading.current_thread()
     called_from: list[threading.Thread] = []
 
     def spy(zip_bytes, name):
         called_from.append(threading.current_thread())
         return Mock()
 
-    converter._parse_zip_to_docling = spy  # type: ignore[method-assign]
+    converter._parse_zip_to_docling = spy  # type: ignore[method-assign]  # ty: ignore[invalid-assignment]
 
     files = {"files": ("doc.pdf", b"pdf", "application/octet-stream")}
     await converter._make_request(files, "doc.pdf")
 
     assert called_from, "_parse_zip_to_docling was never called"
-    assert called_from[0] is not threading.main_thread(), (
+    assert called_from[0] is not event_loop_thread, (
         "_parse_zip_to_docling ran on the event-loop thread; it must be "
         "dispatched via asyncio.to_thread"
     )
