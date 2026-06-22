@@ -4,6 +4,7 @@
 ### Added
 
 - `haiku-ingester run-batch --dry-run` writes a YAML manifest of planned upserts/deletes without mutating queue jobs or `sync_state`; `run-batch --manifest <path>` replays that frozen changeset without another discovery sweep.
+- `haiku-ingester run-batch` and `run-batch --manifest` show an interactive progress bar with ETA while draining queued jobs.
 
 ### Fixed
 

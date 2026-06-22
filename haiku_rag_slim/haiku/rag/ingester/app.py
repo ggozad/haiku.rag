@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import signal
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -40,6 +41,20 @@ class BatchReport(BaseModel):
     succeeded: int = 0
     dead: int = 0
     failed_sweeps: list[str] = []
+
+
+class BatchProgress(BaseModel):
+    """Snapshot emitted while a one-shot batch drains queued work."""
+
+    total: int = 0
+    completed: int = 0
+    succeeded: int = 0
+    dead: int = 0
+    queued: int = 0
+    claimed: int = 0
+
+
+BatchProgressCallback = Callable[[BatchProgress], None]
 
 
 def _manifest_change_key(change: BatchChange) -> tuple[str, str, str, str | None]:
@@ -190,14 +205,37 @@ class IngesterApp:
         if landed:
             logger.info("Drained %d cancel-cleanup release(s) before close", landed)
 
-    async def _drain_batch(self, started_at: datetime) -> BatchReport:
+    async def _drain_batch(
+        self,
+        started_at: datetime,
+        *,
+        progress_callback: BatchProgressCallback | None = None,
+    ) -> BatchReport:
         assert self._pool is not None and self._jobs is not None
+        total = 0
         while True:
-            counts = await self._jobs.counts_by_status()
-            if not counts.get("queued") and not counts.get("claimed"):
+            counts = await self._jobs.batch_progress_counts_since(started_at)
+            queued = counts.get("queued", 0)
+            claimed = counts.get("claimed", 0)
+            outstanding = queued + claimed
+            succeeded = counts.get("succeeded", 0)
+            dead = counts.get("dead", 0)
+            completed_count = succeeded + dead
+            total = max(total, outstanding + completed_count)
+            if progress_callback is not None:
+                progress_callback(
+                    BatchProgress(
+                        total=total,
+                        completed=min(completed_count, total),
+                        succeeded=succeeded,
+                        dead=dead,
+                        queued=queued,
+                        claimed=claimed,
+                    )
+                )
+            if not outstanding:
                 break
             if self._pool.live_workers == 0:
-                outstanding = counts.get("queued", 0) + counts.get("claimed", 0)
                 logger.error(
                     "All workers have died with %d outstanding job(s) "
                     "— aborting batch; stranded jobs will be reaped "
@@ -265,7 +303,9 @@ class IngesterApp:
                 await self._stop_pool()
                 await self._pollers.close_sources()
 
-    async def run_batch(self) -> BatchReport:
+    async def run_batch(
+        self, *, progress_callback: BatchProgressCallback | None = None
+    ) -> BatchReport:
         """Run one discover() sweep across every configured source, drain the
         queue to completion, then stop. Unlike `serve`, the periodic poller
         loops never start — discovery is driven explicitly, so the run is
@@ -283,7 +323,9 @@ class IngesterApp:
             await self._pool.start()
             try:
                 failed_sweeps = await self._pollers.sweep_all()
-                report = await self._drain_batch(started_at)
+                report = await self._drain_batch(
+                    started_at, progress_callback=progress_callback
+                )
                 report.failed_sweeps = failed_sweeps
                 return report
             finally:
@@ -298,7 +340,12 @@ class IngesterApp:
             manifest, failed_sweeps = await self._pollers.dry_run_manifest()
             return BatchDryRunReport(manifest=manifest, failed_sweeps=failed_sweeps)
 
-    async def run_batch_from_manifest(self, manifest: BatchManifest) -> BatchReport:
+    async def run_batch_from_manifest(
+        self,
+        manifest: BatchManifest,
+        *,
+        progress_callback: BatchProgressCallback | None = None,
+    ) -> BatchReport:
         """Enqueue and drain a dry-run manifest without running a fresh
         discovery sweep."""
         if manifest.version != 1:
@@ -396,7 +443,9 @@ class IngesterApp:
             started_at = datetime.now(UTC)
             await self._pool.start()
             try:
-                return await self._drain_batch(started_at)
+                return await self._drain_batch(
+                    started_at, progress_callback=progress_callback
+                )
             finally:
                 await self._stop_pool()
                 await self._pollers.close_sources()

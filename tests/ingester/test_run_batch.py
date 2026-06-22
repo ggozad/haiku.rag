@@ -133,6 +133,30 @@ async def test_run_batch_drains_upserts(tmp_path, use_client):
 
 
 @pytest.mark.asyncio
+async def test_run_batch_reports_progress(tmp_path, use_client):
+    (tmp_path / "a.md").write_text("hello")
+    (tmp_path / "b.md").write_text("world")
+
+    client = _mock_client()
+    use_client(client)
+    progress = []
+
+    report = await IngesterApp(
+        config=_config(tmp_path), db_path=tmp_path / "db.lancedb"
+    ).run_batch(progress_callback=progress.append)
+
+    assert report.succeeded == 2
+    assert report.dead == 0
+    assert progress
+    assert progress[-1].total == 2
+    assert progress[-1].completed == 2
+    assert progress[-1].succeeded == 2
+    assert progress[-1].dead == 0
+    assert progress[-1].queued == 0
+    assert progress[-1].claimed == 0
+
+
+@pytest.mark.asyncio
 async def test_run_batch_prunes_orphans(tmp_path, use_client):
     (tmp_path / "a.md").write_text("hello")
     (tmp_path / "b.md").write_text("world")

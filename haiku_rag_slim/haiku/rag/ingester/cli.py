@@ -1,11 +1,21 @@
 import asyncio
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
 import yaml
 from dotenv import find_dotenv, load_dotenv
+from rich.console import Console
+from rich.progress import (
+    BarColumn,
+    Progress,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
 from sqlalchemy import make_url
 
 load_dotenv(find_dotenv(usecwd=True))
@@ -18,7 +28,11 @@ from haiku.rag.config import (  # noqa: E402
     load_yaml_config,
     set_config,
 )
-from haiku.rag.ingester.app import IngesterApp  # noqa: E402
+from haiku.rag.ingester.app import (  # noqa: E402
+    BatchProgress,
+    BatchProgressCallback,
+    IngesterApp,
+)
 from haiku.rag.ingester.batch import BatchManifest  # noqa: E402
 from haiku.rag.ingester.queue.migrations import open_queue  # noqa: E402
 from haiku.rag.logging import configure_cli_logging  # noqa: E402
@@ -150,6 +164,47 @@ def _write_manifest(manifest: BatchManifest, path: Path) -> None:
     path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 
 
+@contextmanager
+def _batch_progress(description: str) -> Iterator[BatchProgressCallback | None]:
+    console = Console(file=sys.stdout)
+    if not console.is_terminal:
+        yield None
+        return
+
+    progress = Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+        TimeRemainingColumn(),
+        TimeElapsedColumn(),
+        console=console,
+        transient=True,
+    )
+    task_id = None
+
+    def _update(snapshot: BatchProgress) -> None:
+        nonlocal task_id
+        task_description = (
+            f"{description} ({snapshot.succeeded} ok, {snapshot.dead} dead)"
+        )
+        if task_id is None:
+            task_id = progress.add_task(
+                task_description,
+                total=snapshot.total,
+                completed=snapshot.completed,
+            )
+            return
+        progress.update(
+            task_id,
+            description=task_description,
+            total=snapshot.total,
+            completed=snapshot.completed,
+        )
+
+    with progress:
+        yield _update
+
+
 def _load_manifest(path: Path) -> BatchManifest:
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     return BatchManifest.model_validate(data)
@@ -276,7 +331,13 @@ async def _run_batch(
     if manifest_path is not None:
         try:
             manifest = _load_manifest(manifest_path)
-            report = await app.run_batch_from_manifest(manifest)
+            with _batch_progress("Replaying manifest") as progress_callback:
+                if progress_callback is None:
+                    report = await app.run_batch_from_manifest(manifest)
+                else:
+                    report = await app.run_batch_from_manifest(
+                        manifest, progress_callback=progress_callback
+                    )
         except ValueError as exc:
             typer.echo(f"Error: {exc}")
             raise typer.Exit(1) from exc
@@ -287,7 +348,11 @@ async def _run_batch(
             raise typer.Exit(1)
         return
 
-    report = await app.run_batch()
+    with _batch_progress("Running batch") as progress_callback:
+        if progress_callback is None:
+            report = await app.run_batch()
+        else:
+            report = await app.run_batch(progress_callback=progress_callback)
     typer.echo(f"Batch complete: {report.succeeded} succeeded, {report.dead} dead")
     if report.failed_sweeps:
         typer.echo(

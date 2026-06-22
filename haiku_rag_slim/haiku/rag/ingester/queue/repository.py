@@ -371,6 +371,27 @@ class JobRepo:
             rows = (await conn.execute(query)).all()
         return {status: n for status, n in rows}
 
+    async def batch_progress_counts_since(self, since: datetime) -> dict[str, int]:
+        """Counts for a one-shot batch progress snapshot.
+
+        Live rows are counted regardless of enqueue time because run-batch
+        drains the whole pending queue. Terminal rows are counted only when
+        this run completed them, matching BatchReport semantics.
+        """
+        query = (
+            sa.select(jobs.c.status, sa.func.count().label("n"))
+            .where(
+                sa.or_(
+                    jobs.c.status.in_(["queued", "claimed"]),
+                    jobs.c.completed_at >= since.isoformat(),
+                )
+            )
+            .group_by(jobs.c.status)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(query)).all()
+        return {status: n for status, n in rows}
+
     async def count_succeeded_since(self, seconds: int) -> int:
         """How many jobs reached `succeeded` in the last `seconds` seconds.
         Drives the dashboard's rolling-throughput chips."""
