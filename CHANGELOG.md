@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.60.0] - 2026-06-22
+
 ### Added
 
 - `haiku-ingester run-batch --dry-run` writes a YAML manifest of planned upserts/deletes without mutating queue jobs or `sync_state`; `run-batch --manifest <path>` replays that frozen changeset without another discovery sweep.
@@ -1779,7 +1781,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.59.1...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.60.0...HEAD
+[0.60.0]: https://github.com/ggozad/haiku.rag/compare/0.59.1...0.60.0
 [0.59.1]: https://github.com/ggozad/haiku.rag/compare/0.59.0...0.59.1
 [0.59.0]: https://github.com/ggozad/haiku.rag/compare/0.58.0...0.59.0
 [0.58.0]: https://github.com/ggozad/haiku.rag/compare/0.57.0...0.58.0
