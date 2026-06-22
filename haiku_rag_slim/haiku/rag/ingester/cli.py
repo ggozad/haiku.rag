@@ -1,8 +1,10 @@
 import asyncio
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
+import yaml
 from dotenv import find_dotenv, load_dotenv
 from sqlalchemy import make_url
 
@@ -17,6 +19,7 @@ from haiku.rag.config import (  # noqa: E402
     set_config,
 )
 from haiku.rag.ingester.app import IngesterApp  # noqa: E402
+from haiku.rag.ingester.batch import BatchManifest  # noqa: E402
 from haiku.rag.ingester.queue.migrations import open_queue  # noqa: E402
 from haiku.rag.logging import configure_cli_logging  # noqa: E402
 from haiku.rag.store.exceptions import (  # noqa: E402
@@ -137,6 +140,16 @@ def _resolve_db_path(config: AppConfig, override: Path | None) -> Path:
     return override or (config.storage.data_dir / "haiku.rag.lancedb")
 
 
+def _default_manifest_path() -> Path:
+    datestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%SZ")
+    return Path(f"manifest-{datestamp}.yaml")
+
+
+def _write_manifest(manifest: BatchManifest, path: Path) -> None:
+    data = manifest.model_dump(mode="json")
+    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+
 @_cli.command("serve")
 def serve(
     db: Path | None = typer.Option(
@@ -188,17 +201,53 @@ def run_batch(
         "--db",
         help="LanceDB path (overrides config.storage.data_dir).",
     ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Discover planned changes and write a YAML manifest without ingesting.",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Dry-run manifest path (defaults to manifest-<datestamp>.yaml).",
+    ),
 ) -> None:
     """Run one discover sweep across every configured source, drain the queue,
     then exit. New and changed resources are ingested, resources that vanished
     from a source are deleted. Exits non-zero if any job dead-letters or a
     source's sweep does not complete."""
-    asyncio.run(_run_batch(get_config(), db))
+    asyncio.run(_run_batch(get_config(), db, dry_run=dry_run, output=output))
 
 
-async def _run_batch(app_config: AppConfig, db_path: Path | None) -> None:
+async def _run_batch(
+    app_config: AppConfig,
+    db_path: Path | None,
+    *,
+    dry_run: bool = False,
+    output: Path | None = None,
+) -> None:
     db = _resolve_db_path(app_config, db_path)
     app = IngesterApp(config=app_config, db_path=db)
+    if dry_run:
+        report = await app.run_batch_dry_run()
+        if report.failed_sweeps:
+            typer.echo(
+                f"Sources that failed to sweep: {', '.join(report.failed_sweeps)}"
+            )
+            raise typer.Exit(1)
+        manifest_path = output or _default_manifest_path()
+        _write_manifest(report.manifest, manifest_path)
+        upserts = sum(source.upsert_count for source in report.manifest.sources)
+        deletes = sum(source.delete_count for source in report.manifest.sources)
+        unchanged = sum(source.unchanged_count for source in report.manifest.sources)
+        typer.echo(
+            "Dry run complete: "
+            f"{upserts} upsert, {deletes} delete, {unchanged} unchanged "
+            f"-> {manifest_path}"
+        )
+        return
+
     report = await app.run_batch()
     typer.echo(f"Batch complete: {report.succeeded} succeeded, {report.dead} dead")
     if report.failed_sweeps:
