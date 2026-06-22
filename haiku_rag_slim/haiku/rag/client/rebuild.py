@@ -630,6 +630,7 @@ def _apply_descriptions_sync(docling_doc, doc, descriptions):
     least one undescribed picture.
     """
     from docling_core.types.doc.document import DescriptionMetaField, PictureMeta
+
     from haiku.rag.store.compression import compress_docling_split
 
     for pic in docling_doc.pictures:
