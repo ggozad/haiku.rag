@@ -136,4 +136,7 @@ async def convert_pdf_with_splitting(
         # Off the event loop because the close path acquires the lock.
         await asyncio.to_thread(it.close)
 
-    return DoclingDocument.concatenate(converted)
+    # Merge off the event loop: concatenating slice documents that carry
+    # inlined base64 page/picture images is CPU-heavy and proportional to the
+    # total document size, so running it inline would block other coroutines.
+    return await asyncio.to_thread(DoclingDocument.concatenate, converted)

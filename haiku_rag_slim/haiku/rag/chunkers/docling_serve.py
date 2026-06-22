@@ -1,3 +1,4 @@
+import asyncio
 import re
 from io import BytesIO
 from typing import TYPE_CHECKING
@@ -99,9 +100,13 @@ class DoclingServeChunker(DocumentChunker):
         else:
             endpoint = "/v1/chunk/hybrid/file/async"
 
-        # Export document to JSON
-        doc_json = document.model_dump_json()
-        doc_bytes = doc_json.encode("utf-8")
+        # Export document to JSON off the event loop. model_dump_json over a
+        # document carrying inlined base64 page/picture images is CPU-heavy and
+        # proportional to document size; running it inline would block every
+        # other worker's coroutine for the duration of the serialization.
+        doc_bytes = await asyncio.to_thread(
+            lambda: document.model_dump_json().encode("utf-8")
+        )
 
         # Prepare multipart request with DoclingDocument JSON
         files = {"files": ("document.json", BytesIO(doc_bytes), "application/json")}

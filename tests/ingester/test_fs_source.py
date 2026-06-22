@@ -300,3 +300,33 @@ async def test_fs_source_fetch_no_limit_when_max_size_is_none(fs_root: Path):
     src = FSSource(root=fs_root, max_file_size=None)
     result = await src.fetch((fs_root / "a.md").as_uri())
     assert result.body == b"alpha"
+
+
+@pytest.mark.asyncio
+async def test_fs_source_fetch_reads_off_event_loop_thread(fs_root: Path):
+    """The file read and md5 are both proportional to file size and must run
+    off the event-loop thread, or a large file would freeze every other
+    worker's coroutine for the duration of the read. Capture the thread the
+    read+hash runs on and assert it is not the event-loop thread."""
+    import threading
+
+    src = FSSource(root=fs_root)
+    target = fs_root / "a.md"
+
+    event_loop_thread = threading.current_thread()
+    called_from: list[threading.Thread] = []
+    original = src._read_body
+
+    def spy(path, uri):
+        called_from.append(threading.current_thread())
+        return original(path, uri)
+
+    src._read_body = spy  # type: ignore[method-assign]  # ty: ignore[invalid-assignment]
+
+    result = await src.fetch(target.as_uri())
+    assert result.body == b"alpha"
+    assert called_from, "_read_body was never called"
+    assert called_from[0] is not event_loop_thread, (
+        "FSSource._read_body ran on the event-loop thread; the read+hash must "
+        "be dispatched via asyncio.to_thread"
+    )

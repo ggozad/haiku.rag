@@ -225,7 +225,11 @@ class DoclingServeConverter(DocumentConverter):
             data=data,
             name=name,
         )
-        return self._parse_zip_to_docling(zip_bytes, name)
+        # Parse off the event loop: the zip decompress, per-image base64
+        # re-encoding, and DoclingDocument.model_validate are all synchronous
+        # and CPU-heavy (full-resolution page rasters when generate_page_images
+        # is on), so running inline would stall every other worker's coroutine.
+        return await asyncio.to_thread(self._parse_zip_to_docling, zip_bytes, name)
 
     async def convert_file(
         self, path: Path, source_uri: str | None = None
