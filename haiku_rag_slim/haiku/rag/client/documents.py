@@ -60,6 +60,30 @@ MAX_ATTACHMENT_DEPTH = 3
 _RESERVED_METADATA_KEYS = frozenset({"content_type", "md5", "source_revision"})
 
 
+def _prepare_document_from_docling_sync(
+    document: Document, docling_document: "DoclingDocument"
+) -> str:
+    """Populate content/docling blobs from a DoclingDocument.
+
+    This performs size-proportional serialization, JSON splitting, and
+    compression via ``Document.set_docling``. Async ingestion paths should call
+    it through ``_prepare_document_from_docling`` so large image-bearing
+    documents do not block the event loop.
+    """
+    content = docling_document.export_to_markdown()
+    document.content = content
+    document.set_docling(docling_document)
+    return content
+
+
+async def _prepare_document_from_docling(
+    document: Document, docling_document: "DoclingDocument"
+) -> str:
+    return await asyncio.to_thread(
+        _prepare_document_from_docling_sync, document, docling_document
+    )
+
+
 def parent_uri_filter(parent_uri: str) -> str:
     """SQL `WHERE` clause matching documents whose ``metadata.parent_uri``
     equals ``parent_uri``. ``metadata`` is stored as a JSON string produced by
@@ -184,18 +208,18 @@ async def create_document(
     chunks = await client.chunk(docling_document)
     embedded_chunks = await embed_chunks(chunks, client.embedder, client._config)
 
-    stored_content = docling_document.export_to_markdown()
-
-    if title is None:
-        title = await resolve_title(client._config, docling_document, stored_content)
-
     document = Document(
-        content=stored_content,
+        content="",
         uri=uri,
         title=title,
         metadata=metadata or {},
     )
-    document.set_docling(docling_document)
+    stored_content = await _prepare_document_from_docling(document, docling_document)
+
+    if title is None:
+        document.title = await resolve_title(
+            client._config, docling_document, stored_content
+        )
 
     return await _store_document_with_chunks(
         client, document, embedded_chunks, docling_document
@@ -215,17 +239,15 @@ async def import_document(
     Use this when conversion, chunking, and embedding were done externally.
     Chunks without embeddings will be automatically embedded.
     """
-    content = docling_document.export_to_markdown()
-    if title is None:
-        title = await resolve_title(client._config, docling_document, content)
-
     document = Document(
-        content=content,
+        content="",
         uri=uri,
         title=title,
         metadata=metadata or {},
     )
-    document.set_docling(docling_document)
+    content = await _prepare_document_from_docling(document, docling_document)
+    if title is None:
+        document.title = await resolve_title(client._config, docling_document, content)
 
     return await _store_document_with_chunks(client, document, chunks, docling_document)
 
@@ -291,18 +313,17 @@ async def import_documents(
 
     prepared: list[tuple[Document, list[Chunk], DoclingDocument]] = []
     for item in imports:
-        content = item.docling_document.export_to_markdown()
-        title = item.title
-        if title is None:
-            title = await resolve_title(client._config, item.docling_document, content)
-
         document = Document(
-            content=content,
+            content="",
             uri=item.uri,
-            title=title,
+            title=item.title,
             metadata=item.metadata or {},
         )
-        document.set_docling(item.docling_document)
+        content = await _prepare_document_from_docling(document, item.docling_document)
+        if document.title is None:
+            document.title = await resolve_title(
+                client._config, item.docling_document, content
+            )
         prepared.append((document, item.chunks, item.docling_document))
 
     return await _store_documents_with_chunks(client, prepared)
@@ -427,13 +448,13 @@ async def _ingest_fetch_result(
         if cleanup_path is not None:
             cleanup_path.unlink(missing_ok=True)
 
-    stored_content = docling_document.export_to_markdown()
     final_metadata = {**user_metadata, **source_metadata}
 
     if existing_doc:
-        existing_doc.content = stored_content
         existing_doc.metadata = final_metadata
-        existing_doc.set_docling(docling_document)
+        stored_content = await _prepare_document_from_docling(
+            existing_doc, docling_document
+        )
         if title is not None:
             existing_doc.title = title
         elif existing_doc.title is None:
@@ -448,15 +469,17 @@ async def _ingest_fetch_result(
         await _reconcile_pdf_attachments(client, updated, result.body, depth=depth)
         return updated
 
-    if title is None:
-        title = await resolve_title(client._config, docling_document, stored_content)
     document = Document(
-        content=stored_content,
+        content="",
         uri=stored_uri,
         title=title,
         metadata=final_metadata,
     )
-    document.set_docling(docling_document)
+    stored_content = await _prepare_document_from_docling(document, docling_document)
+    if document.title is None:
+        document.title = await resolve_title(
+            client._config, docling_document, stored_content
+        )
     with logfire.span("document.store", uri=result.uri, op="create") as store_span:
         created = await _store_document_with_chunks(
             client, document, embedded_chunks, docling_document
@@ -807,8 +830,7 @@ async def update_document(
 
     if chunks is not None:
         if docling_document is not None:
-            existing_doc.content = docling_document.export_to_markdown()
-            existing_doc.set_docling(docling_document)
+            await _prepare_document_from_docling(existing_doc, docling_document)
         elif content is not None:
             existing_doc.content = content
 
@@ -817,8 +839,7 @@ async def update_document(
         )
 
     if docling_document is not None:
-        existing_doc.content = docling_document.export_to_markdown()
-        existing_doc.set_docling(docling_document)
+        await _prepare_document_from_docling(existing_doc, docling_document)
 
         new_chunks = await client.chunk(docling_document)
         embedded_chunks = await embed_chunks(
@@ -832,7 +853,7 @@ async def update_document(
     existing_doc.content = content
     converter = get_converter(client._config)
     converted_docling = await converter.convert_text(existing_doc.content, format="md")
-    existing_doc.set_docling(converted_docling)
+    await _prepare_document_from_docling(existing_doc, converted_docling)
 
     new_chunks = await client.chunk(converted_docling)
     embedded_chunks = await embed_chunks(new_chunks, client.embedder, client._config)
