@@ -307,16 +307,13 @@ class IngesterApp:
                     "Manifest references unconfigured source(s): " + ", ".join(missing)
                 )
 
-            pending = [
-                source_id
-                for source_id in sorted(manifest_sources)
-                if await self._jobs.has_pending(source_id)
-            ]
+            counts = await self._jobs.counts_by_status()
+            pending = counts.get("queued", 0) + counts.get("claimed", 0)
             if pending:
                 await self._pollers.close_sources()
                 raise ValueError(
-                    "Cannot replay manifest while source(s) have pending work: "
-                    + ", ".join(pending)
+                    "Cannot replay manifest while the queue has pending work: "
+                    f"{pending} queued/claimed job(s)"
                 )
 
             seen: set[tuple[str, str]] = set()

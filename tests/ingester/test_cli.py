@@ -237,6 +237,16 @@ def test_run_batch_manifest_conflicts_with_output(tmp_path):
     assert "--output is only valid with --dry-run" in result.output
 
 
+def test_run_batch_output_requires_dry_run(tmp_path):
+    result = runner.invoke(
+        cli,
+        ["run-batch", "--output", str(tmp_path / "out.yaml")],
+    )
+
+    assert result.exit_code != 0
+    assert "--output is only valid with --dry-run" in result.output
+
+
 # --- serve ---
 
 

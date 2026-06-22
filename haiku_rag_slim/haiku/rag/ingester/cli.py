@@ -229,7 +229,7 @@ def run_batch(
     source's sweep does not complete."""
     if manifest is not None and dry_run:
         raise typer.BadParameter("--manifest cannot be combined with --dry-run")
-    if manifest is not None and output is not None:
+    if output is not None and not dry_run:
         raise typer.BadParameter("--output is only valid with --dry-run")
     asyncio.run(
         _run_batch(

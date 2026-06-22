@@ -398,6 +398,36 @@ async def test_run_batch_from_manifest_rejects_pending_work(tmp_path, use_client
 
 
 @pytest.mark.asyncio
+async def test_run_batch_from_manifest_rejects_unrelated_pending_work(
+    tmp_path, use_client
+):
+    (tmp_path / "a.md").write_text("hello")
+    config = _config(tmp_path)
+    client = _mock_client()
+    use_client(client)
+    engine = await open_queue(config.ingester.queue)
+    try:
+        jobs = JobRepo(engine)
+        await jobs.enqueue("other", "file:///outside.md", op=JobOp.UPSERT)
+    finally:
+        await engine.dispose()
+
+    with pytest.raises(ValueError, match="queue has pending work"):
+        await IngesterApp(
+            config=config, db_path=tmp_path / "db.lancedb"
+        ).run_batch_from_manifest(
+            _manifest(
+                BatchChange(
+                    op=JobOp.UPSERT,
+                    source_id="local",
+                    uri=(tmp_path / "a.md").as_uri(),
+                    discovered_at=datetime.now(UTC),
+                )
+            )
+        )
+
+
+@pytest.mark.asyncio
 async def test_run_batch_from_manifest_rejects_duplicate_changes(tmp_path, use_client):
     path = tmp_path / "a.md"
     path.write_text("hello")
