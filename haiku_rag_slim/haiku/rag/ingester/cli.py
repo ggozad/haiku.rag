@@ -150,6 +150,11 @@ def _write_manifest(manifest: BatchManifest, path: Path) -> None:
     path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 
 
+def _load_manifest(path: Path) -> BatchManifest:
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return BatchManifest.model_validate(data)
+
+
 @_cli.command("serve")
 def serve(
     db: Path | None = typer.Option(
@@ -212,12 +217,29 @@ def run_batch(
         "-o",
         help="Dry-run manifest path (defaults to manifest-<datestamp>.yaml).",
     ),
+    manifest: Path | None = typer.Option(
+        None,
+        "--manifest",
+        help="Replay a dry-run manifest instead of running discovery.",
+    ),
 ) -> None:
     """Run one discover sweep across every configured source, drain the queue,
     then exit. New and changed resources are ingested, resources that vanished
     from a source are deleted. Exits non-zero if any job dead-letters or a
     source's sweep does not complete."""
-    asyncio.run(_run_batch(get_config(), db, dry_run=dry_run, output=output))
+    if manifest is not None and dry_run:
+        raise typer.BadParameter("--manifest cannot be combined with --dry-run")
+    if manifest is not None and output is not None:
+        raise typer.BadParameter("--output is only valid with --dry-run")
+    asyncio.run(
+        _run_batch(
+            get_config(),
+            db,
+            dry_run=dry_run,
+            output=output,
+            manifest_path=manifest,
+        )
+    )
 
 
 async def _run_batch(
@@ -226,6 +248,7 @@ async def _run_batch(
     *,
     dry_run: bool = False,
     output: Path | None = None,
+    manifest_path: Path | None = None,
 ) -> None:
     db = _resolve_db_path(app_config, db_path)
     app = IngesterApp(config=app_config, db_path=db)
@@ -246,6 +269,20 @@ async def _run_batch(
             f"{upserts} upsert, {deletes} delete, {unchanged} unchanged "
             f"-> {manifest_path}"
         )
+        return
+
+    if manifest_path is not None:
+        try:
+            manifest = _load_manifest(manifest_path)
+            report = await app.run_batch_from_manifest(manifest)
+        except ValueError as exc:
+            typer.echo(f"Error: {exc}")
+            raise typer.Exit(1) from exc
+        typer.echo(
+            f"Manifest batch complete: {report.succeeded} succeeded, {report.dead} dead"
+        )
+        if report.dead:
+            raise typer.Exit(1)
         return
 
     report = await app.run_batch()

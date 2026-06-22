@@ -5,6 +5,7 @@ pruning, not embedding."""
 
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock
 from urllib.parse import unquote, urlparse
@@ -23,6 +24,7 @@ from haiku.rag.config import (
     WorkerConfig,
 )
 from haiku.rag.ingester.app import IngesterApp
+from haiku.rag.ingester.batch import BatchChange, BatchManifest
 from haiku.rag.ingester.pollers.manager import PollerManager
 from haiku.rag.ingester.queue.migrations import open_queue
 from haiku.rag.ingester.queue.models import JobOp
@@ -84,6 +86,10 @@ def _mock_client() -> AsyncMock:
     client.create_document_from_source.side_effect = _create
     client.get_document_by_uri.side_effect = _get_by_uri
     return client
+
+
+def _manifest(*changes: BatchChange) -> BatchManifest:
+    return BatchManifest(generated_at=datetime.now(UTC), changes=list(changes))
 
 
 @pytest.fixture
@@ -276,6 +282,138 @@ async def test_run_batch_dry_run_reports_manifest_without_mutating_queue(tmp_pat
         assert await sync.list_known_uris("local") == {(tmp_path / "gone.md").as_uri()}
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_run_batch_from_manifest_drains_changes_without_sweeping(
+    tmp_path, use_client, monkeypatch
+):
+    (tmp_path / "a.md").write_text("hello")
+    revision = str((tmp_path / "a.md").stat().st_mtime_ns)
+    client = _mock_client()
+    use_client(client)
+    sweep_all = AsyncMock(side_effect=AssertionError("manifest replay must not sweep"))
+    monkeypatch.setattr(PollerManager, "sweep_all", sweep_all)
+
+    report = await IngesterApp(
+        config=_config(tmp_path), db_path=tmp_path / "db.lancedb"
+    ).run_batch_from_manifest(
+        _manifest(
+            BatchChange(
+                op=JobOp.UPSERT,
+                source_id="local",
+                uri=(tmp_path / "a.md").as_uri(),
+                revision=revision,
+                discovered_at=datetime.now(UTC),
+            )
+        )
+    )
+
+    assert report.succeeded == 1
+    assert report.dead == 0
+    client.create_document_from_source.assert_awaited_once()
+    sweep_all.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_run_batch_from_manifest_rejects_stale_upsert_revision(
+    tmp_path, use_client
+):
+    (tmp_path / "a.md").write_text("hello")
+    client = _mock_client()
+    use_client(client)
+
+    report = await IngesterApp(
+        config=_config(tmp_path), db_path=tmp_path / "db.lancedb"
+    ).run_batch_from_manifest(
+        _manifest(
+            BatchChange(
+                op=JobOp.UPSERT,
+                source_id="local",
+                uri=(tmp_path / "a.md").as_uri(),
+                revision="stale",
+                discovered_at=datetime.now(UTC),
+            )
+        )
+    )
+
+    assert report.succeeded == 0
+    assert report.dead == 1
+    client.create_document_from_source.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_run_batch_from_manifest_delete_uses_manifest_even_if_file_reappears(
+    tmp_path, use_client
+):
+    path = tmp_path / "gone.md"
+    path.write_text("back")
+    client = _mock_client()
+    use_client(client)
+
+    report = await IngesterApp(
+        config=_config(tmp_path), db_path=tmp_path / "db.lancedb"
+    ).run_batch_from_manifest(
+        _manifest(
+            BatchChange(
+                op=JobOp.DELETE,
+                source_id="local",
+                uri=path.as_uri(),
+                discovered_at=datetime.now(UTC),
+            )
+        )
+    )
+
+    assert report.succeeded == 1
+    assert report.dead == 0
+    client.delete_document.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_run_batch_from_manifest_rejects_pending_work(tmp_path, use_client):
+    (tmp_path / "a.md").write_text("hello")
+    config = _config(tmp_path)
+    client = _mock_client()
+    use_client(client)
+    engine = await open_queue(config.ingester.queue)
+    try:
+        jobs = JobRepo(engine)
+        await jobs.enqueue("local", (tmp_path / "a.md").as_uri(), op=JobOp.UPSERT)
+    finally:
+        await engine.dispose()
+
+    with pytest.raises(ValueError, match="pending work"):
+        await IngesterApp(
+            config=config, db_path=tmp_path / "db.lancedb"
+        ).run_batch_from_manifest(
+            _manifest(
+                BatchChange(
+                    op=JobOp.UPSERT,
+                    source_id="local",
+                    uri=(tmp_path / "a.md").as_uri(),
+                    discovered_at=datetime.now(UTC),
+                )
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_run_batch_from_manifest_rejects_duplicate_changes(tmp_path, use_client):
+    path = tmp_path / "a.md"
+    path.write_text("hello")
+    client = _mock_client()
+    use_client(client)
+    change = BatchChange(
+        op=JobOp.UPSERT,
+        source_id="local",
+        uri=path.as_uri(),
+        discovered_at=datetime.now(UTC),
+    )
+
+    with pytest.raises(ValueError, match="duplicate change"):
+        await IngesterApp(
+            config=_config(tmp_path), db_path=tmp_path / "db.lancedb"
+        ).run_batch_from_manifest(_manifest(change, change))
 
 
 @pytest.mark.asyncio

@@ -110,22 +110,37 @@ async def run_job(
         ),
     ):
         try:
+            manifest_context = extra.get("_manifest")
             if job.op is JobOp.DELETE:
                 # An atomic-rename save can let a spurious DELETE win the
                 # enqueue race while the file is mid-rewrite. If the resource
                 # is already back, skip the delete (it would blackhole a live
-                # document) and let the next sweep re-ingest it.
-                try:
-                    source = resolve_configured_source(job.uri, job.source_id, sources)
-                    restored = await source.head(job.uri) is not None
-                except Exception:
-                    restored = False
-                if restored:
-                    return JobResult(deleted=False)
+                # document) and let the next sweep re-ingest it. Manifest
+                # replay intentionally follows the frozen dry-run changeset.
+                if manifest_context is None:
+                    try:
+                        source = resolve_configured_source(
+                            job.uri, job.source_id, sources
+                        )
+                        restored = await source.head(job.uri) is not None
+                    except Exception:
+                        restored = False
+                    if restored:
+                        return JobResult(deleted=False)
                 doc = await client.get_document_by_uri(job.uri)
                 if doc is not None and doc.id is not None:
                     await client.delete_document(doc.id)
                 return JobResult(deleted=True)
+
+            if manifest_context is not None and job.revision is not None:
+                source = resolve_configured_source(job.uri, job.source_id, sources)
+                current_revision = await source.head(job.uri)
+                if current_revision != job.revision:
+                    raise PermanentError(
+                        "manifest revision is stale for "
+                        f"{job.uri}: expected {job.revision!r}, "
+                        f"current {current_revision!r}"
+                    )
 
             result = await client.create_document_from_source(
                 job.uri,

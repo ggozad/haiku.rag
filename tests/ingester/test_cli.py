@@ -68,6 +68,17 @@ def _fake_dry_run_app(report: BatchDryRunReport, monkeypatch) -> AsyncMock:
     return fake
 
 
+def _fake_manifest_app(report: BatchReport, monkeypatch) -> AsyncMock:
+    fake = AsyncMock()
+    fake.run_batch_from_manifest.return_value = report
+    monkeypatch.setattr("haiku.rag.ingester.cli.IngesterApp", lambda **_: fake)
+    return fake
+
+
+def _write_manifest(path) -> None:
+    path.write_text(yaml.safe_dump(_manifest().model_dump(mode="json")))
+
+
 def test_run_batch_reports_and_exits_zero(monkeypatch):
     fake = _fake_app(BatchReport(succeeded=3, dead=0), monkeypatch)
 
@@ -150,6 +161,80 @@ def test_run_batch_dry_run_exits_nonzero_when_sweep_fails(monkeypatch, tmp_path)
     assert result.exit_code == 1
     assert "failed to sweep: docs" in result.output
     assert not output.exists()
+
+
+def test_run_batch_manifest_replays_manifest(monkeypatch, tmp_path):
+    manifest_path = tmp_path / "manifest.yaml"
+    _write_manifest(manifest_path)
+    fake = _fake_manifest_app(BatchReport(succeeded=2, dead=0), monkeypatch)
+
+    result = runner.invoke(
+        cli, ["run-batch", "--manifest", str(manifest_path), "--db", "x.lancedb"]
+    )
+
+    assert result.exit_code == 0
+    assert "Manifest batch complete: 2 succeeded, 0 dead" in result.output
+    fake.run_batch_from_manifest.assert_awaited_once()
+    loaded = fake.run_batch_from_manifest.await_args.args[0]
+    assert isinstance(loaded, BatchManifest)
+    assert loaded.changes[0].uri == "file:///a.md"
+    fake.run_batch.assert_not_awaited()
+    fake.run_batch_dry_run.assert_not_awaited()
+
+
+def test_run_batch_manifest_exits_nonzero_when_dead(monkeypatch, tmp_path):
+    manifest_path = tmp_path / "manifest.yaml"
+    _write_manifest(manifest_path)
+    _fake_manifest_app(BatchReport(succeeded=1, dead=1), monkeypatch)
+
+    result = runner.invoke(cli, ["run-batch", "--manifest", str(manifest_path)])
+
+    assert result.exit_code == 1
+    assert "1 dead" in result.output
+
+
+def test_run_batch_manifest_reports_validation_error(monkeypatch, tmp_path):
+    manifest_path = tmp_path / "manifest.yaml"
+    _write_manifest(manifest_path)
+    fake = AsyncMock()
+    fake.run_batch_from_manifest.side_effect = ValueError("bad manifest")
+    monkeypatch.setattr("haiku.rag.ingester.cli.IngesterApp", lambda **_: fake)
+
+    result = runner.invoke(cli, ["run-batch", "--manifest", str(manifest_path)])
+
+    assert result.exit_code == 1
+    assert "Error: bad manifest" in result.output
+
+
+def test_run_batch_manifest_conflicts_with_dry_run(tmp_path):
+    manifest_path = tmp_path / "manifest.yaml"
+    _write_manifest(manifest_path)
+
+    result = runner.invoke(
+        cli, ["run-batch", "--manifest", str(manifest_path), "--dry-run"]
+    )
+
+    assert result.exit_code != 0
+    assert "--manifest cannot be combined with --dry-run" in result.output
+
+
+def test_run_batch_manifest_conflicts_with_output(tmp_path):
+    manifest_path = tmp_path / "manifest.yaml"
+    _write_manifest(manifest_path)
+
+    result = runner.invoke(
+        cli,
+        [
+            "run-batch",
+            "--manifest",
+            str(manifest_path),
+            "--output",
+            str(tmp_path / "out.yaml"),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "--output is only valid with --dry-run" in result.output
 
 
 # --- serve ---

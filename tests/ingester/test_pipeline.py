@@ -16,6 +16,7 @@ def _job(
     *,
     op: JobOp = JobOp.UPSERT,
     uri: str = "https://example.com/a.pdf",
+    revision: str | None = None,
     extra: dict | None = None,
     attempts: int = 0,
 ) -> Job:
@@ -25,6 +26,7 @@ def _job(
         source_id="src",
         uri=uri,
         op=op,
+        revision=revision,
         status=JobStatus.CLAIMED,
         attempts=attempts,
         max_attempts=5,
@@ -256,6 +258,22 @@ async def test_delete_skipped_when_resource_restored_on_source():
 
 
 @pytest.mark.asyncio
+async def test_manifest_delete_proceeds_when_resource_restored_on_source():
+    client = _mock_client()
+    client.get_document_by_uri.return_value = Document(id="doc-9", content="", uri="u")
+    sources: list[Source] = [_StubSource("src", "12345")]
+
+    result = await run_job(
+        client,
+        _job(op=JobOp.DELETE, extra={"_manifest": {"version": 1}}),
+        sources=sources,
+    )
+
+    assert result.deleted is True
+    client.delete_document.assert_awaited_once_with("doc-9")
+
+
+@pytest.mark.asyncio
 async def test_delete_proceeds_when_resource_absent_on_source():
     client = _mock_client()
     client.get_document_by_uri.return_value = Document(id="doc-9", content="", uri="u")
@@ -265,6 +283,42 @@ async def test_delete_proceeds_when_resource_absent_on_source():
 
     assert result.deleted is True
     client.delete_document.assert_awaited_once_with("doc-9")
+
+
+@pytest.mark.asyncio
+async def test_manifest_upsert_rejects_stale_revision_before_fetch():
+    client = _mock_client()
+    sources: list[Source] = [_StubSource("src", "r2")]
+
+    with pytest.raises(PermanentError, match="manifest revision is stale"):
+        await run_job(
+            client,
+            _job(revision="r1", extra={"_manifest": {"version": 1}}),
+            sources=sources,
+        )
+
+    client.create_document_from_source.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_manifest_upsert_ingests_when_revision_matches():
+    client = _mock_client()
+    client.create_document_from_source.return_value = Document(
+        id="doc-42",
+        content="x",
+        uri="https://example.com/a.pdf",
+        metadata={"md5": "abcd", "source_revision": "r1"},
+    )
+    sources: list[Source] = [_StubSource("src", "r1")]
+
+    result = await run_job(
+        client,
+        _job(revision="r1", extra={"_manifest": {"version": 1}}),
+        sources=sources,
+    )
+
+    assert result.document_id == "doc-42"
+    client.create_document_from_source.assert_awaited_once()
 
 
 @pytest.mark.asyncio
