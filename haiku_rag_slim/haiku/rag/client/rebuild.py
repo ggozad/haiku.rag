@@ -5,6 +5,7 @@ from collections.abc import AsyncGenerator
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from docling_core.types.doc.document import DescriptionMetaField, PictureMeta
 from lancedb.pydantic import LanceModel
 
 from haiku.rag.client.documents import check_source_accessible
@@ -12,6 +13,7 @@ from haiku.rag.converters import get_converter
 from haiku.rag.store.engine import ChunkRecordBase
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
+from haiku.rag.store.compression import compress_docling_split
 from haiku.rag.store.models.document_item import extract_items
 from haiku.rag.store.repositories.settings import SettingsRepository
 
@@ -629,10 +631,6 @@ def _apply_descriptions_sync(docling_doc, doc, descriptions):
     That would silently destroy page rasters for every doc with at
     least one undescribed picture.
     """
-    from docling_core.types.doc.document import DescriptionMetaField, PictureMeta
-
-    from haiku.rag.store.compression import compress_docling_split
-
     for pic in docling_doc.pictures:
         text = descriptions.get(pic.self_ref)
         if not text:
