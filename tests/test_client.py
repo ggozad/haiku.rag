@@ -1,13 +1,20 @@
 import json
 import tempfile
+import threading
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+from docling_core.types.doc.document import DoclingDocument
+from docling_core.types.doc.labels import DocItemLabel
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.client.documents import DocumentImport
+from haiku.rag.client.documents import (
+    DocumentImport,
+    _prepare_document_from_docling,
+    _write_fetch_body,
+)
 from haiku.rag.config import Config
 from haiku.rag.store.compression import decompress_json
 from haiku.rag.store.models.chunk import Chunk
@@ -17,6 +24,63 @@ from haiku.rag.store.models.document import Document
 @pytest.fixture(scope="module")
 def vcr_cassette_dir():
     return str(Path(__file__).parent / "cassettes" / "test_client")
+
+
+@pytest.mark.asyncio
+async def test_prepare_document_from_docling_runs_off_event_loop_thread(monkeypatch):
+    import haiku.rag.client.documents as documents
+
+    event_loop_thread = threading.current_thread()
+    called_from: list[threading.Thread] = []
+
+    docling_doc = DoclingDocument(name="thread-check")
+    docling_doc.add_text(label=DocItemLabel.TEXT, text="Threaded content")
+    document = Document(content="")
+    original = documents._prepare_document_from_docling_sync
+
+    def spy(doc, docling):
+        called_from.append(threading.current_thread())
+        return original(doc, docling)
+
+    monkeypatch.setattr(documents, "_prepare_document_from_docling_sync", spy)
+
+    content = await _prepare_document_from_docling(document, docling_doc)
+
+    assert content == "Threaded content"
+    assert document.content == "Threaded content"
+    assert document.docling_document is not None
+    assert called_from, "Document.set_docling was never called"
+    assert called_from[0] is not event_loop_thread, (
+        "Document.set_docling ran on the event-loop thread; document prep must "
+        "be dispatched via asyncio.to_thread"
+    )
+
+
+@pytest.mark.asyncio
+async def test_write_fetch_body_runs_off_event_loop_thread(monkeypatch):
+    import haiku.rag.client.documents as documents
+
+    event_loop_thread = threading.current_thread()
+    called_from: list[threading.Thread] = []
+    original = documents._write_fetch_body_sync
+
+    def spy(body, suffix):
+        called_from.append(threading.current_thread())
+        return original(body, suffix)
+
+    monkeypatch.setattr(documents, "_write_fetch_body_sync", spy)
+
+    path = await _write_fetch_body(b"payload", ".bin")
+    try:
+        assert path.read_bytes() == b"payload"
+    finally:
+        path.unlink(missing_ok=True)
+
+    assert called_from, "_write_fetch_body_sync was never called"
+    assert called_from[0] is not event_loop_thread, (
+        "_write_fetch_body_sync ran on the event-loop thread; fetched body "
+        "writes must be dispatched via asyncio.to_thread"
+    )
 
 
 @pytest.mark.vcr()

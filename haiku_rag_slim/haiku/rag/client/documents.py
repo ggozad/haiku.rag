@@ -84,6 +84,19 @@ async def _prepare_document_from_docling(
     )
 
 
+def _write_fetch_body_sync(body: bytes, suffix: str) -> Path:
+    with tempfile.NamedTemporaryFile(
+        mode="wb", suffix=suffix, delete=False
+    ) as temp_file:
+        temp_file.write(body)
+        temp_file.flush()
+        return Path(temp_file.name)
+
+
+async def _write_fetch_body(body: bytes, suffix: str) -> Path:
+    return await asyncio.to_thread(_write_fetch_body_sync, body, suffix)
+
+
 def parent_uri_filter(parent_uri: str) -> str:
     """SQL `WHERE` clause matching documents whose ``metadata.parent_uri``
     equals ``parent_uri``. ``metadata`` is stored as a JSON string produced by
@@ -426,13 +439,8 @@ async def _ingest_fetch_result(
         target_path = result.disk_path
         cleanup_path: Path | None = None
     else:
-        with tempfile.NamedTemporaryFile(
-            mode="wb", suffix=file_extension, delete=False
-        ) as temp_file:
-            temp_file.write(result.body)
-            temp_file.flush()
-            target_path = Path(temp_file.name)
-            cleanup_path = target_path
+        target_path = await _write_fetch_body(result.body, file_extension)
+        cleanup_path = target_path
 
     try:
         with logfire.span("document.convert", uri=result.uri):
