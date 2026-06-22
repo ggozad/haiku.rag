@@ -1,6 +1,7 @@
 """haiku-ingester CLI: exercises every subcommand via CliRunner with
 IngesterApp / open_queue patched out so no real ingestion runs."""
 
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
@@ -8,7 +9,8 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from haiku.rag.ingester.app import BatchReport
+from haiku.rag.config import QueueConfig
+from haiku.rag.ingester.app import BatchProgress, BatchReport
 from haiku.rag.ingester.batch import (
     BatchChange,
     BatchDryRunReport,
@@ -16,12 +18,24 @@ from haiku.rag.ingester.batch import (
     BatchSourceSummary,
 )
 from haiku.rag.ingester.cli import _cli as cli
+from haiku.rag.ingester.cli import _resolve_queue_config
 from haiku.rag.ingester.queue.models import JobOp
 
 runner = CliRunner()
 
 
 # --- helpers ---
+
+
+@contextmanager
+def _progress_context(callback):
+    yield callback
+
+
+def _config_with_queue(queue: QueueConfig):
+    config = MagicMock()
+    config.ingester.queue = queue
+    return config
 
 
 def _fake_app(report: BatchReport, monkeypatch) -> AsyncMock:
@@ -87,6 +101,27 @@ def test_run_batch_reports_and_exits_zero(monkeypatch):
     assert result.exit_code == 0
     assert "3 succeeded, 0 dead" in result.output
     fake.run_batch.assert_awaited_once()
+
+
+def test_run_batch_passes_progress_callback_when_enabled(monkeypatch):
+    fake = AsyncMock()
+
+    async def _run_batch(*, progress_callback):
+        progress_callback(BatchProgress(total=1, completed=1, succeeded=1))
+        return BatchReport(succeeded=1, dead=0)
+
+    fake.run_batch.side_effect = _run_batch
+    monkeypatch.setattr("haiku.rag.ingester.cli.IngesterApp", lambda **_: fake)
+    monkeypatch.setattr(
+        "haiku.rag.ingester.cli._batch_progress",
+        lambda _: _progress_context(lambda snapshot: None),
+    )
+
+    result = runner.invoke(cli, ["run-batch", "--db", "x.lancedb"])
+
+    assert result.exit_code == 0
+    fake.run_batch.assert_awaited_once()
+    assert "1 succeeded, 0 dead" in result.output
 
 
 def test_run_batch_exits_nonzero_when_dead(monkeypatch):
@@ -182,6 +217,29 @@ def test_run_batch_manifest_replays_manifest(monkeypatch, tmp_path):
     fake.run_batch_dry_run.assert_not_awaited()
 
 
+def test_run_batch_manifest_passes_progress_callback(monkeypatch, tmp_path):
+    manifest_path = tmp_path / "manifest.yaml"
+    _write_manifest(manifest_path)
+    fake = AsyncMock()
+
+    async def _run_manifest(_manifest, *, progress_callback):
+        progress_callback(BatchProgress(total=1, completed=1, succeeded=1))
+        return BatchReport(succeeded=1, dead=0)
+
+    fake.run_batch_from_manifest.side_effect = _run_manifest
+    monkeypatch.setattr("haiku.rag.ingester.cli.IngesterApp", lambda **_: fake)
+    monkeypatch.setattr(
+        "haiku.rag.ingester.cli._batch_progress",
+        lambda _: _progress_context(lambda snapshot: None),
+    )
+
+    result = runner.invoke(cli, ["run-batch", "--manifest", str(manifest_path)])
+
+    assert result.exit_code == 0
+    fake.run_batch_from_manifest.assert_awaited_once()
+    assert "1 succeeded, 0 dead" in result.output
+
+
 def test_run_batch_manifest_exits_nonzero_when_dead(monkeypatch, tmp_path):
     manifest_path = tmp_path / "manifest.yaml"
     _write_manifest(manifest_path)
@@ -245,6 +303,18 @@ def test_run_batch_output_requires_dry_run(tmp_path):
 
     assert result.exit_code != 0
     assert "--output is only valid with --dry-run" in result.output
+
+
+def test_resolve_queue_config_keeps_dburi_when_path_override_present(tmp_path):
+    queue = QueueConfig(
+        dburi="postgresql+asyncpg://user:pass@example.test/db",
+        path=tmp_path / "configured.db",
+    )
+    config = _config_with_queue(queue)
+
+    resolved = _resolve_queue_config(config, tmp_path / "override.db")
+
+    assert resolved is queue
 
 
 # --- serve ---

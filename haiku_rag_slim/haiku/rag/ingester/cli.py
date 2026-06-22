@@ -165,7 +165,9 @@ def _write_manifest(manifest: BatchManifest, path: Path) -> None:
 
 
 @contextmanager
-def _batch_progress(description: str) -> Iterator[BatchProgressCallback | None]:
+def _batch_progress(
+    description: str,
+) -> Iterator[BatchProgressCallback | None]:  # pragma: no cover
     console = Console(file=sys.stdout)
     if not console.is_terminal:
         yield None

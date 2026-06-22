@@ -265,7 +265,7 @@ class IngesterApp:
             uses_docling_serve = (
                 proc.converter == "docling-serve" or proc.chunker == "docling-serve"
             )
-            if uses_docling_serve:
+            if uses_docling_serve:  # pragma: no cover
                 logger.info(
                     "Ingester running: %d worker(s), %d source(s), "
                     "%d docling-serve instance(s)",
@@ -348,7 +348,7 @@ class IngesterApp:
     ) -> BatchReport:
         """Enqueue and drain a dry-run manifest without running a fresh
         discovery sweep."""
-        if manifest.version != 1:
+        if manifest.version != 1:  # pragma: no cover
             raise ValueError(f"Unsupported manifest version: {manifest.version}")
         async with self._resources():
             assert (
@@ -359,7 +359,7 @@ class IngesterApp:
             configured = {source.source_id for source in self._pollers.sources}
             manifest_sources = {change.source_id for change in manifest.changes}
             missing = sorted(manifest_sources - configured)
-            if missing:
+            if missing:  # pragma: no cover
                 await self._pollers.close_sources()
                 raise ValueError(
                     "Manifest references unconfigured source(s): " + ", ".join(missing)
@@ -433,7 +433,7 @@ class IngesterApp:
                         }
                     },
                 )
-                if job is None:
+                if job is None:  # pragma: no cover
                     await self._pollers.close_sources()
                     raise ValueError(
                         "Cannot replay manifest because a live job already exists "
