@@ -56,13 +56,6 @@ async def test_local_chunker(qa_corpus: list[dict[str, str]]):
 
 
 @pytest.mark.asyncio
-async def test_local_chunker_none_document():
-    """Test DoclingLocalChunker returns empty list for None document."""
-    chunker = DoclingLocalChunker()
-    assert await chunker.chunk(None) == []
-
-
-@pytest.mark.asyncio
 async def test_local_chunker_custom_config():
     """Test DoclingLocalChunker with custom configuration."""
     config = AppConfig()

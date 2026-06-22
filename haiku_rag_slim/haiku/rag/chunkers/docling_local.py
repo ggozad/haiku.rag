@@ -177,7 +177,4 @@ class DoclingLocalChunker(DocumentChunker):
         Returns:
             List of Chunk containing content and structured metadata.
         """
-        if document is None:
-            return []
-
         return await asyncio.to_thread(self._chunk_sync, document)
