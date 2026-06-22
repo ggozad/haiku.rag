@@ -370,7 +370,53 @@ async def test_run_batch_from_manifest_delete_uses_manifest_even_if_file_reappea
 
 
 @pytest.mark.asyncio
-async def test_run_batch_from_manifest_rejects_pending_work(tmp_path, use_client):
+async def test_run_batch_from_manifest_resumes_same_manifest_work(tmp_path, use_client):
+    (tmp_path / "a.md").write_text("hello")
+    revision = str((tmp_path / "a.md").stat().st_mtime_ns)
+    config = _config(tmp_path)
+    client = _mock_client()
+    use_client(client)
+    manifest = _manifest(
+        BatchChange(
+            op=JobOp.UPSERT,
+            source_id="local",
+            uri=(tmp_path / "a.md").as_uri(),
+            revision=revision,
+            discovered_at=datetime.now(UTC),
+        )
+    )
+    engine = await open_queue(config.ingester.queue)
+    try:
+        jobs = JobRepo(engine)
+        await jobs.enqueue(
+            "local",
+            (tmp_path / "a.md").as_uri(),
+            op=JobOp.UPSERT,
+            revision=revision,
+            extra={
+                "_manifest": {
+                    "version": manifest.version,
+                    "generated_at": manifest.generated_at.isoformat(),
+                    "discovered_at": manifest.changes[0].discovered_at.isoformat(),
+                }
+            },
+        )
+    finally:
+        await engine.dispose()
+
+    report = await IngesterApp(
+        config=config, db_path=tmp_path / "db.lancedb"
+    ).run_batch_from_manifest(manifest)
+
+    assert report.succeeded == 1
+    assert report.dead == 0
+    client.create_document_from_source.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_run_batch_from_manifest_rejects_non_manifest_pending_work(
+    tmp_path, use_client
+):
     (tmp_path / "a.md").write_text("hello")
     config = _config(tmp_path)
     client = _mock_client()
@@ -382,7 +428,7 @@ async def test_run_batch_from_manifest_rejects_pending_work(tmp_path, use_client
     finally:
         await engine.dispose()
 
-    with pytest.raises(ValueError, match="pending work"):
+    with pytest.raises(ValueError, match="non-manifest pending work"):
         await IngesterApp(
             config=config, db_path=tmp_path / "db.lancedb"
         ).run_batch_from_manifest(
@@ -395,6 +441,46 @@ async def test_run_batch_from_manifest_rejects_pending_work(tmp_path, use_client
                 )
             )
         )
+
+
+@pytest.mark.asyncio
+async def test_run_batch_from_manifest_rejects_different_manifest_pending_work(
+    tmp_path, use_client
+):
+    (tmp_path / "a.md").write_text("hello")
+    config = _config(tmp_path)
+    client = _mock_client()
+    use_client(client)
+    manifest = _manifest(
+        BatchChange(
+            op=JobOp.UPSERT,
+            source_id="local",
+            uri=(tmp_path / "a.md").as_uri(),
+            discovered_at=datetime.now(UTC),
+        )
+    )
+    engine = await open_queue(config.ingester.queue)
+    try:
+        jobs = JobRepo(engine)
+        await jobs.enqueue(
+            "local",
+            (tmp_path / "a.md").as_uri(),
+            op=JobOp.UPSERT,
+            extra={
+                "_manifest": {
+                    "version": 1,
+                    "generated_at": "2026-01-01T00:00:00+00:00",
+                    "discovered_at": manifest.changes[0].discovered_at.isoformat(),
+                }
+            },
+        )
+    finally:
+        await engine.dispose()
+
+    with pytest.raises(ValueError, match="non-manifest pending work"):
+        await IngesterApp(
+            config=config, db_path=tmp_path / "db.lancedb"
+        ).run_batch_from_manifest(manifest)
 
 
 @pytest.mark.asyncio
@@ -412,7 +498,7 @@ async def test_run_batch_from_manifest_rejects_unrelated_pending_work(
     finally:
         await engine.dispose()
 
-    with pytest.raises(ValueError, match="queue has pending work"):
+    with pytest.raises(ValueError, match="non-manifest pending work"):
         await IngesterApp(
             config=config, db_path=tmp_path / "db.lancedb"
         ).run_batch_from_manifest(

@@ -9,10 +9,11 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 from haiku.rag.config import AppConfig
-from haiku.rag.ingester.batch import BatchDryRunReport, BatchManifest
+from haiku.rag.ingester.batch import BatchChange, BatchDryRunReport, BatchManifest
 from haiku.rag.ingester.metadata import build_providers, load_metadata_providers
 from haiku.rag.ingester.pollers.manager import PollerManager
 from haiku.rag.ingester.queue.migrations import open_queue
+from haiku.rag.ingester.queue.models import Job, JobStatus
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
 from haiku.rag.ingester.workers.pool import WorkerPool
 from haiku.rag.ingester.workers.retry import RetryPolicy
@@ -21,6 +22,8 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
 
 logger = logging.getLogger(__name__)
+
+_MANIFEST_EXTRA_KEY = "_manifest"
 
 
 def _api_access_log_enabled() -> bool:
@@ -37,6 +40,14 @@ class BatchReport(BaseModel):
     succeeded: int = 0
     dead: int = 0
     failed_sweeps: list[str] = []
+
+
+def _manifest_change_key(change: BatchChange) -> tuple[str, str, str, str | None]:
+    return (change.source_id, change.uri, change.op.value, change.revision)
+
+
+def _manifest_job_key(job: Job) -> tuple[str, str, str, str | None]:
+    return (job.source_id, job.uri, job.op.value, job.revision)
 
 
 class IngesterApp:
@@ -307,15 +318,6 @@ class IngesterApp:
                     "Manifest references unconfigured source(s): " + ", ".join(missing)
                 )
 
-            counts = await self._jobs.counts_by_status()
-            pending = counts.get("queued", 0) + counts.get("claimed", 0)
-            if pending:
-                await self._pollers.close_sources()
-                raise ValueError(
-                    "Cannot replay manifest while the queue has pending work: "
-                    f"{pending} queued/claimed job(s)"
-                )
-
             seen: set[tuple[str, str]] = set()
             duplicates: set[tuple[str, str]] = set()
             for change in manifest.changes:
@@ -330,6 +332,34 @@ class IngesterApp:
                 )
                 raise ValueError(f"Manifest contains duplicate change(s): {rendered}")
 
+            manifest_key = manifest.generated_at.isoformat()
+            manifest_change_keys = {
+                _manifest_change_key(change) for change in manifest.changes
+            }
+            live_jobs = [
+                *await self._jobs.list_jobs(status=JobStatus.QUEUED, limit=10_000),
+                *await self._jobs.list_jobs(status=JobStatus.CLAIMED, limit=10_000),
+            ]
+            stale_jobs: list[Job] = []
+            live_manifest_keys: set[tuple[str, str, str, str | None]] = set()
+            for job in live_jobs:
+                extra = job.extra or {}
+                job_manifest = extra.get(_MANIFEST_EXTRA_KEY) or {}
+                key = _manifest_job_key(job)
+                if (
+                    job_manifest.get("generated_at") != manifest_key
+                    or key not in manifest_change_keys
+                ):
+                    stale_jobs.append(job)
+                    continue
+                live_manifest_keys.add(key)
+            if stale_jobs:
+                await self._pollers.close_sources()
+                raise ValueError(
+                    "Cannot replay manifest while the queue has non-manifest "
+                    f"pending work: {len(stale_jobs)} queued/claimed job(s)"
+                )
+
             default_max_attempts = self._config.ingester.workers.retry.max_attempts
             max_attempts_by_source = {
                 poller.source_id: (
@@ -340,6 +370,8 @@ class IngesterApp:
                 for poller in self._pollers.pollers
             }
             for change in manifest.changes:
+                if _manifest_change_key(change) in live_manifest_keys:
+                    continue
                 job = await self._jobs.enqueue(
                     change.source_id,
                     change.uri,
@@ -347,9 +379,9 @@ class IngesterApp:
                     revision=change.revision,
                     max_attempts=max_attempts_by_source[change.source_id],
                     extra={
-                        "_manifest": {
+                        _MANIFEST_EXTRA_KEY: {
                             "version": manifest.version,
-                            "generated_at": manifest.generated_at.isoformat(),
+                            "generated_at": manifest_key,
                             "discovered_at": change.discovered_at.isoformat(),
                         }
                     },
