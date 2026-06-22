@@ -1,9 +1,11 @@
 import asyncio
 import logging
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from haiku.rag.config import FSSourceConfig, SourceConfig
+from haiku.rag.ingester.batch import BatchManifest
 from haiku.rag.ingester.pollers.base import BasePoller
 from haiku.rag.ingester.pollers.circuit_breaker import CircuitBreaker
 from haiku.rag.ingester.pollers.factory import build_source
@@ -89,6 +91,27 @@ class PollerManager:
             if not await poller._sweep_once():
                 failed.append(poller.source_id)
         return failed
+
+    async def dry_run_manifest(self) -> tuple[BatchManifest, list[str]]:
+        """Collect what one sweep across every source would enqueue without
+        mutating queue jobs or sync_state."""
+        failed: list[str] = []
+        summaries = []
+        changes = []
+        for poller in self._pollers:
+            ok, summary, source_changes = await poller._dry_run_once()
+            summaries.append(summary)
+            changes.extend(source_changes)
+            if not ok:
+                failed.append(poller.source_id)
+        return (
+            BatchManifest(
+                generated_at=datetime.now(UTC),
+                sources=summaries,
+                changes=changes,
+            ),
+            failed,
+        )
 
     async def stop(self) -> None:
         for poller in self._pollers:

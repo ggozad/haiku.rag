@@ -1,9 +1,21 @@
 import asyncio
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
+import yaml
 from dotenv import find_dotenv, load_dotenv
+from rich.console import Console
+from rich.progress import (
+    BarColumn,
+    Progress,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
 from sqlalchemy import make_url
 
 load_dotenv(find_dotenv(usecwd=True))
@@ -16,7 +28,12 @@ from haiku.rag.config import (  # noqa: E402
     load_yaml_config,
     set_config,
 )
-from haiku.rag.ingester.app import IngesterApp  # noqa: E402
+from haiku.rag.ingester.app import (  # noqa: E402
+    BatchProgress,
+    BatchProgressCallback,
+    IngesterApp,
+)
+from haiku.rag.ingester.batch import BatchManifest  # noqa: E402
 from haiku.rag.ingester.queue.migrations import open_queue  # noqa: E402
 from haiku.rag.logging import configure_cli_logging  # noqa: E402
 from haiku.rag.store.exceptions import (  # noqa: E402
@@ -137,6 +154,64 @@ def _resolve_db_path(config: AppConfig, override: Path | None) -> Path:
     return override or (config.storage.data_dir / "haiku.rag.lancedb")
 
 
+def _default_manifest_path() -> Path:
+    datestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%SZ")
+    return Path(f"manifest-{datestamp}.yaml")
+
+
+def _write_manifest(manifest: BatchManifest, path: Path) -> None:
+    data = manifest.model_dump(mode="json")
+    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+
+@contextmanager
+def _batch_progress(
+    description: str,
+) -> Iterator[BatchProgressCallback | None]:  # pragma: no cover
+    console = Console(file=sys.stdout)
+    if not console.is_terminal:
+        yield None
+        return
+
+    progress = Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+        TimeRemainingColumn(),
+        TimeElapsedColumn(),
+        console=console,
+        transient=True,
+    )
+    task_id = None
+
+    def _update(snapshot: BatchProgress) -> None:
+        nonlocal task_id
+        task_description = (
+            f"{description} ({snapshot.succeeded} ok, {snapshot.dead} dead)"
+        )
+        if task_id is None:
+            task_id = progress.add_task(
+                task_description,
+                total=snapshot.total,
+                completed=snapshot.completed,
+            )
+            return
+        progress.update(
+            task_id,
+            description=task_description,
+            total=snapshot.total,
+            completed=snapshot.completed,
+        )
+
+    with progress:
+        yield _update
+
+
+def _load_manifest(path: Path) -> BatchManifest:
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return BatchManifest.model_validate(data)
+
+
 @_cli.command("serve")
 def serve(
     db: Path | None = typer.Option(
@@ -188,18 +263,98 @@ def run_batch(
         "--db",
         help="LanceDB path (overrides config.storage.data_dir).",
     ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Discover planned changes and write a YAML manifest without ingesting.",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Dry-run manifest path (defaults to manifest-<datestamp>.yaml).",
+    ),
+    manifest: Path | None = typer.Option(
+        None,
+        "--manifest",
+        help="Replay a dry-run manifest instead of running discovery.",
+    ),
 ) -> None:
     """Run one discover sweep across every configured source, drain the queue,
     then exit. New and changed resources are ingested, resources that vanished
     from a source are deleted. Exits non-zero if any job dead-letters or a
     source's sweep does not complete."""
-    asyncio.run(_run_batch(get_config(), db))
+    if manifest is not None and dry_run:
+        typer.echo("Error: --manifest cannot be combined with --dry-run")
+        raise typer.Exit(2)
+    if output is not None and not dry_run:
+        typer.echo("Error: --output is only valid with --dry-run")
+        raise typer.Exit(2)
+    asyncio.run(
+        _run_batch(
+            get_config(),
+            db,
+            dry_run=dry_run,
+            output=output,
+            manifest_path=manifest,
+        )
+    )
 
 
-async def _run_batch(app_config: AppConfig, db_path: Path | None) -> None:
+async def _run_batch(
+    app_config: AppConfig,
+    db_path: Path | None,
+    *,
+    dry_run: bool = False,
+    output: Path | None = None,
+    manifest_path: Path | None = None,
+) -> None:
     db = _resolve_db_path(app_config, db_path)
     app = IngesterApp(config=app_config, db_path=db)
-    report = await app.run_batch()
+    if dry_run:
+        report = await app.run_batch_dry_run()
+        if report.failed_sweeps:
+            typer.echo(
+                f"Sources that failed to sweep: {', '.join(report.failed_sweeps)}"
+            )
+            raise typer.Exit(1)
+        manifest_path = output or _default_manifest_path()
+        _write_manifest(report.manifest, manifest_path)
+        upserts = sum(source.upsert_count for source in report.manifest.sources)
+        deletes = sum(source.delete_count for source in report.manifest.sources)
+        unchanged = sum(source.unchanged_count for source in report.manifest.sources)
+        typer.echo(
+            "Dry run complete: "
+            f"{upserts} upsert, {deletes} delete, {unchanged} unchanged "
+            f"-> {manifest_path}"
+        )
+        return
+
+    if manifest_path is not None:
+        try:
+            manifest = _load_manifest(manifest_path)
+            with _batch_progress("Replaying manifest") as progress_callback:
+                if progress_callback is None:
+                    report = await app.run_batch_from_manifest(manifest)
+                else:
+                    report = await app.run_batch_from_manifest(
+                        manifest, progress_callback=progress_callback
+                    )
+        except ValueError as exc:
+            typer.echo(f"Error: {exc}")
+            raise typer.Exit(1) from exc
+        typer.echo(
+            f"Manifest batch complete: {report.succeeded} succeeded, {report.dead} dead"
+        )
+        if report.dead:
+            raise typer.Exit(1)
+        return
+
+    with _batch_progress("Running batch") as progress_callback:
+        if progress_callback is None:
+            report = await app.run_batch()
+        else:
+            report = await app.run_batch(progress_callback=progress_callback)
     typer.echo(f"Batch complete: {report.succeeded} succeeded, {report.dead} dead")
     if report.failed_sweeps:
         typer.echo(

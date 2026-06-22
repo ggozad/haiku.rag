@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import signal
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -9,9 +10,11 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 from haiku.rag.config import AppConfig
+from haiku.rag.ingester.batch import BatchChange, BatchDryRunReport, BatchManifest
 from haiku.rag.ingester.metadata import build_providers, load_metadata_providers
 from haiku.rag.ingester.pollers.manager import PollerManager
 from haiku.rag.ingester.queue.migrations import open_queue
+from haiku.rag.ingester.queue.models import Job, JobStatus
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
 from haiku.rag.ingester.workers.pool import WorkerPool
 from haiku.rag.ingester.workers.retry import RetryPolicy
@@ -20,6 +23,8 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
 
 logger = logging.getLogger(__name__)
+
+_MANIFEST_EXTRA_KEY = "_manifest"
 
 
 def _api_access_log_enabled() -> bool:
@@ -36,6 +41,28 @@ class BatchReport(BaseModel):
     succeeded: int = 0
     dead: int = 0
     failed_sweeps: list[str] = []
+
+
+class BatchProgress(BaseModel):
+    """Snapshot emitted while a one-shot batch drains queued work."""
+
+    total: int = 0
+    completed: int = 0
+    succeeded: int = 0
+    dead: int = 0
+    queued: int = 0
+    claimed: int = 0
+
+
+BatchProgressCallback = Callable[[BatchProgress], None]
+
+
+def _manifest_change_key(change: BatchChange) -> tuple[str, str, str, str | None]:
+    return (change.source_id, change.uri, change.op.value, change.revision)
+
+
+def _manifest_job_key(job: Job) -> tuple[str, str, str, str | None]:
+    return (job.source_id, job.uri, job.op.value, job.revision)
 
 
 class IngesterApp:
@@ -129,6 +156,35 @@ class IngesterApp:
                 await self._engine.dispose()
                 self._engine = None
 
+    @asynccontextmanager
+    async def _discovery_resources(self):
+        """Open only the queue and source pollers needed for discovery.
+        Dry-runs must not create/open the LanceDB document store or worker
+        pool because they are upstream checks only."""
+        from haiku.rag.converters import get_converter
+
+        ingester_cfg = self._config.ingester
+        self._engine = await open_queue(ingester_cfg.queue)
+        try:
+            self._jobs = JobRepo(self._engine)
+            self._sync = SyncStateRepo(self._engine)
+            supported_extensions = get_converter(self._config).supported_extensions
+            self._pollers = PollerManager(
+                configs=ingester_cfg.sources,
+                job_repo=self._jobs,
+                sync_repo=self._sync,
+                supported_extensions=supported_extensions,
+                default_max_attempts=ingester_cfg.workers.retry.max_attempts,
+            )
+            yield
+        finally:
+            if self._pollers is not None:
+                await self._pollers.close_sources()
+                self._pollers = None
+            if self._engine is not None:
+                await self._engine.dispose()
+                self._engine = None
+
     async def _stop_pool(self) -> None:
         """Stop the worker pool, honouring the shutdown grace, then drain any
         cancel-cleanup release tasks before the queue connection closes."""
@@ -149,6 +205,51 @@ class IngesterApp:
         if landed:
             logger.info("Drained %d cancel-cleanup release(s) before close", landed)
 
+    async def _drain_batch(
+        self,
+        started_at: datetime,
+        *,
+        progress_callback: BatchProgressCallback | None = None,
+    ) -> BatchReport:
+        assert self._pool is not None and self._jobs is not None
+        total = 0
+        while True:
+            counts = await self._jobs.batch_progress_counts_since(started_at)
+            queued = counts.get("queued", 0)
+            claimed = counts.get("claimed", 0)
+            outstanding = queued + claimed
+            succeeded = counts.get("succeeded", 0)
+            dead = counts.get("dead", 0)
+            completed_count = succeeded + dead
+            total = max(total, outstanding + completed_count)
+            if progress_callback is not None:
+                progress_callback(
+                    BatchProgress(
+                        total=total,
+                        completed=min(completed_count, total),
+                        succeeded=succeeded,
+                        dead=dead,
+                        queued=queued,
+                        claimed=claimed,
+                    )
+                )
+            if not outstanding:
+                break
+            if self._pool.live_workers == 0:
+                logger.error(
+                    "All workers have died with %d outstanding job(s) "
+                    "— aborting batch; stranded jobs will be reaped "
+                    "on next start",
+                    outstanding,
+                )
+                break
+            await asyncio.sleep(0.1)
+        completed = await self._jobs.counts_by_status_since(started_at)
+        return BatchReport(
+            succeeded=completed.get("succeeded", 0),
+            dead=completed.get("dead", 0),
+        )
+
     async def serve(self, *, api: bool = True) -> None:
         """Run pollers + workers (and the HTTP API when enabled) until a
         SIGINT/SIGTERM is received. Drains in-flight work on shutdown."""
@@ -164,7 +265,7 @@ class IngesterApp:
             uses_docling_serve = (
                 proc.converter == "docling-serve" or proc.chunker == "docling-serve"
             )
-            if uses_docling_serve:
+            if uses_docling_serve:  # pragma: no cover
                 logger.info(
                     "Ingester running: %d worker(s), %d source(s), "
                     "%d docling-serve instance(s)",
@@ -202,7 +303,9 @@ class IngesterApp:
                 await self._stop_pool()
                 await self._pollers.close_sources()
 
-    async def run_batch(self) -> BatchReport:
+    async def run_batch(
+        self, *, progress_callback: BatchProgressCallback | None = None
+    ) -> BatchReport:
         """Run one discover() sweep across every configured source, drain the
         queue to completion, then stop. Unlike `serve`, the periodic poller
         loops never start — discovery is driven explicitly, so the run is
@@ -220,25 +323,128 @@ class IngesterApp:
             await self._pool.start()
             try:
                 failed_sweeps = await self._pollers.sweep_all()
-                while True:
-                    counts = await self._jobs.counts_by_status()
-                    if not counts.get("queued") and not counts.get("claimed"):
-                        break
-                    if self._pool.live_workers == 0:
-                        outstanding = counts.get("queued", 0) + counts.get("claimed", 0)
-                        logger.error(
-                            "All workers have died with %d outstanding job(s) "
-                            "— aborting batch; stranded jobs will be reaped "
-                            "on next start",
-                            outstanding,
-                        )
-                        break
-                    await asyncio.sleep(0.1)
-                completed = await self._jobs.counts_by_status_since(started_at)
-                return BatchReport(
-                    succeeded=completed.get("succeeded", 0),
-                    dead=completed.get("dead", 0),
-                    failed_sweeps=failed_sweeps,
+                report = await self._drain_batch(
+                    started_at, progress_callback=progress_callback
+                )
+                report.failed_sweeps = failed_sweeps
+                return report
+            finally:
+                await self._stop_pool()
+                await self._pollers.close_sources()
+
+    async def run_batch_dry_run(self) -> BatchDryRunReport:
+        """Run one discover() sweep across every configured source and return
+        the jobs that would be enqueued, without mutating jobs or sync_state."""
+        async with self._discovery_resources():
+            assert self._pollers is not None
+            manifest, failed_sweeps = await self._pollers.dry_run_manifest()
+            return BatchDryRunReport(manifest=manifest, failed_sweeps=failed_sweeps)
+
+    async def run_batch_from_manifest(
+        self,
+        manifest: BatchManifest,
+        *,
+        progress_callback: BatchProgressCallback | None = None,
+    ) -> BatchReport:
+        """Enqueue and drain a dry-run manifest without running a fresh
+        discovery sweep."""
+        if manifest.version != 1:  # pragma: no cover
+            raise ValueError(f"Unsupported manifest version: {manifest.version}")
+        async with self._resources():
+            assert (
+                self._pollers is not None
+                and self._pool is not None
+                and self._jobs is not None
+            )
+            configured = {source.source_id for source in self._pollers.sources}
+            manifest_sources = {change.source_id for change in manifest.changes}
+            missing = sorted(manifest_sources - configured)
+            if missing:  # pragma: no cover
+                await self._pollers.close_sources()
+                raise ValueError(
+                    "Manifest references unconfigured source(s): " + ", ".join(missing)
+                )
+
+            seen: set[tuple[str, str]] = set()
+            duplicates: set[tuple[str, str]] = set()
+            for change in manifest.changes:
+                key = (change.source_id, change.uri)
+                if key in seen:
+                    duplicates.add(key)
+                seen.add(key)
+            if duplicates:
+                await self._pollers.close_sources()
+                rendered = ", ".join(
+                    f"{source_id}:{uri}" for source_id, uri in duplicates
+                )
+                raise ValueError(f"Manifest contains duplicate change(s): {rendered}")
+
+            manifest_key = manifest.generated_at.isoformat()
+            manifest_change_keys = {
+                _manifest_change_key(change) for change in manifest.changes
+            }
+            live_jobs = [
+                *await self._jobs.list_jobs(status=JobStatus.QUEUED, limit=10_000),
+                *await self._jobs.list_jobs(status=JobStatus.CLAIMED, limit=10_000),
+            ]
+            stale_jobs: list[Job] = []
+            live_manifest_keys: set[tuple[str, str, str, str | None]] = set()
+            for job in live_jobs:
+                extra = job.extra or {}
+                job_manifest = extra.get(_MANIFEST_EXTRA_KEY) or {}
+                key = _manifest_job_key(job)
+                if (
+                    job_manifest.get("generated_at") != manifest_key
+                    or key not in manifest_change_keys
+                ):
+                    stale_jobs.append(job)
+                    continue
+                live_manifest_keys.add(key)
+            if stale_jobs:
+                await self._pollers.close_sources()
+                raise ValueError(
+                    "Cannot replay manifest while the queue has non-manifest "
+                    f"pending work: {len(stale_jobs)} queued/claimed job(s)"
+                )
+
+            default_max_attempts = self._config.ingester.workers.retry.max_attempts
+            max_attempts_by_source = {
+                poller.source_id: (
+                    poller.config.retry.max_attempts
+                    if poller.config.retry is not None
+                    else default_max_attempts
+                )
+                for poller in self._pollers.pollers
+            }
+            for change in manifest.changes:
+                if _manifest_change_key(change) in live_manifest_keys:
+                    continue
+                job = await self._jobs.enqueue(
+                    change.source_id,
+                    change.uri,
+                    op=change.op,
+                    revision=change.revision,
+                    max_attempts=max_attempts_by_source[change.source_id],
+                    extra={
+                        _MANIFEST_EXTRA_KEY: {
+                            "version": manifest.version,
+                            "generated_at": manifest_key,
+                            "discovered_at": change.discovered_at.isoformat(),
+                        }
+                    },
+                )
+                if job is None:  # pragma: no cover
+                    await self._pollers.close_sources()
+                    raise ValueError(
+                        "Cannot replay manifest because a live job already exists "
+                        f"for {change.source_id}:{change.uri}"
+                    )
+
+            started_at = datetime.now(UTC)
+            await self._pool.start()
+            try:
+                return await self._drain_batch(
+                    started_at, progress_callback=progress_callback
                 )
             finally:
                 await self._stop_pool()

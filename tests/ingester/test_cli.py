@@ -1,13 +1,25 @@
 """haiku-ingester CLI: exercises every subcommand via CliRunner with
 IngesterApp / open_queue patched out so no real ingestion runs."""
 
+from contextlib import contextmanager
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
-from haiku.rag.ingester.app import BatchReport
+from haiku.rag.config import QueueConfig
+from haiku.rag.ingester.app import BatchProgress, BatchReport
+from haiku.rag.ingester.batch import (
+    BatchChange,
+    BatchDryRunReport,
+    BatchManifest,
+    BatchSourceSummary,
+)
 from haiku.rag.ingester.cli import _cli as cli
+from haiku.rag.ingester.cli import _resolve_queue_config
+from haiku.rag.ingester.queue.models import JobOp
 
 runner = CliRunner()
 
@@ -15,11 +27,70 @@ runner = CliRunner()
 # --- helpers ---
 
 
+@contextmanager
+def _progress_context(callback):
+    yield callback
+
+
+def _config_with_queue(queue: QueueConfig):
+    config = MagicMock()
+    config.ingester.queue = queue
+    return config
+
+
 def _fake_app(report: BatchReport, monkeypatch) -> AsyncMock:
     fake = AsyncMock()
     fake.run_batch.return_value = report
     monkeypatch.setattr("haiku.rag.ingester.cli.IngesterApp", lambda **_: fake)
     return fake
+
+
+def _manifest() -> BatchManifest:
+    now = datetime(2026, 6, 22, 10, 30, tzinfo=UTC)
+    return BatchManifest(
+        generated_at=now,
+        sources=[
+            BatchSourceSummary(
+                source_id="docs",
+                upsert_count=1,
+                delete_count=1,
+                unchanged_count=2,
+            )
+        ],
+        changes=[
+            BatchChange(
+                op=JobOp.UPSERT,
+                source_id="docs",
+                uri="file:///a.md",
+                revision="r1",
+                discovered_at=now,
+            ),
+            BatchChange(
+                op=JobOp.DELETE,
+                source_id="docs",
+                uri="file:///gone.md",
+                discovered_at=now,
+            ),
+        ],
+    )
+
+
+def _fake_dry_run_app(report: BatchDryRunReport, monkeypatch) -> AsyncMock:
+    fake = AsyncMock()
+    fake.run_batch_dry_run.return_value = report
+    monkeypatch.setattr("haiku.rag.ingester.cli.IngesterApp", lambda **_: fake)
+    return fake
+
+
+def _fake_manifest_app(report: BatchReport, monkeypatch) -> AsyncMock:
+    fake = AsyncMock()
+    fake.run_batch_from_manifest.return_value = report
+    monkeypatch.setattr("haiku.rag.ingester.cli.IngesterApp", lambda **_: fake)
+    return fake
+
+
+def _write_manifest(path) -> None:
+    path.write_text(yaml.safe_dump(_manifest().model_dump(mode="json")))
 
 
 def test_run_batch_reports_and_exits_zero(monkeypatch):
@@ -30,6 +101,27 @@ def test_run_batch_reports_and_exits_zero(monkeypatch):
     assert result.exit_code == 0
     assert "3 succeeded, 0 dead" in result.output
     fake.run_batch.assert_awaited_once()
+
+
+def test_run_batch_passes_progress_callback_when_enabled(monkeypatch):
+    fake = AsyncMock()
+
+    async def _run_batch(*, progress_callback):
+        progress_callback(BatchProgress(total=1, completed=1, succeeded=1))
+        return BatchReport(succeeded=1, dead=0)
+
+    fake.run_batch.side_effect = _run_batch
+    monkeypatch.setattr("haiku.rag.ingester.cli.IngesterApp", lambda **_: fake)
+    monkeypatch.setattr(
+        "haiku.rag.ingester.cli._batch_progress",
+        lambda _: _progress_context(lambda snapshot: None),
+    )
+
+    result = runner.invoke(cli, ["run-batch", "--db", "x.lancedb"])
+
+    assert result.exit_code == 0
+    fake.run_batch.assert_awaited_once()
+    assert "1 succeeded, 0 dead" in result.output
 
 
 def test_run_batch_exits_nonzero_when_dead(monkeypatch):
@@ -48,6 +140,181 @@ def test_run_batch_exits_nonzero_when_sweep_fails(monkeypatch):
 
     assert result.exit_code == 1
     assert "failed to sweep: docs" in result.output
+
+
+def test_run_batch_dry_run_writes_default_manifest(monkeypatch, tmp_path):
+    fake = _fake_dry_run_app(
+        BatchDryRunReport(manifest=_manifest()),
+        monkeypatch,
+    )
+
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(cli, ["run-batch", "--dry-run", "--db", "x.lancedb"])
+
+        assert result.exit_code == 0
+        assert "Dry run complete: 1 upsert, 1 delete, 2 unchanged -> manifest-" in (
+            result.output
+        )
+        written = list(tmp_path.glob("*/manifest-*.yaml"))
+        assert len(written) == 1
+        data = yaml.safe_load(written[0].read_text())
+
+    assert data["version"] == 1
+    assert data["sources"][0]["source_id"] == "docs"
+    assert [change["op"] for change in data["changes"]] == ["upsert", "delete"]
+    fake.run_batch_dry_run.assert_awaited_once()
+    fake.run_batch.assert_not_awaited()
+
+
+def test_run_batch_dry_run_writes_explicit_output(monkeypatch, tmp_path):
+    output = tmp_path / "custom.yaml"
+    _fake_dry_run_app(BatchDryRunReport(manifest=_manifest()), monkeypatch)
+
+    result = runner.invoke(
+        cli,
+        ["run-batch", "--dry-run", "--output", str(output), "--db", "x.lancedb"],
+    )
+
+    assert result.exit_code == 0
+    assert f"-> {output}" in result.output
+    data = yaml.safe_load(output.read_text())
+    assert data["changes"][0]["uri"] == "file:///a.md"
+
+
+def test_run_batch_dry_run_exits_nonzero_when_sweep_fails(monkeypatch, tmp_path):
+    output = tmp_path / "failed.yaml"
+    _fake_dry_run_app(
+        BatchDryRunReport(manifest=_manifest(), failed_sweeps=["docs"]),
+        monkeypatch,
+    )
+
+    result = runner.invoke(
+        cli,
+        ["run-batch", "--dry-run", "--output", str(output), "--db", "x.lancedb"],
+    )
+
+    assert result.exit_code == 1
+    assert "failed to sweep: docs" in result.output
+    assert not output.exists()
+
+
+def test_run_batch_manifest_replays_manifest(monkeypatch, tmp_path):
+    manifest_path = tmp_path / "manifest.yaml"
+    _write_manifest(manifest_path)
+    fake = _fake_manifest_app(BatchReport(succeeded=2, dead=0), monkeypatch)
+
+    result = runner.invoke(
+        cli, ["run-batch", "--manifest", str(manifest_path), "--db", "x.lancedb"]
+    )
+
+    assert result.exit_code == 0
+    assert "Manifest batch complete: 2 succeeded, 0 dead" in result.output
+    fake.run_batch_from_manifest.assert_awaited_once()
+    loaded = fake.run_batch_from_manifest.await_args.args[0]
+    assert isinstance(loaded, BatchManifest)
+    assert loaded.changes[0].uri == "file:///a.md"
+    fake.run_batch.assert_not_awaited()
+    fake.run_batch_dry_run.assert_not_awaited()
+
+
+def test_run_batch_manifest_passes_progress_callback(monkeypatch, tmp_path):
+    manifest_path = tmp_path / "manifest.yaml"
+    _write_manifest(manifest_path)
+    fake = AsyncMock()
+
+    async def _run_manifest(_manifest, *, progress_callback):
+        progress_callback(BatchProgress(total=1, completed=1, succeeded=1))
+        return BatchReport(succeeded=1, dead=0)
+
+    fake.run_batch_from_manifest.side_effect = _run_manifest
+    monkeypatch.setattr("haiku.rag.ingester.cli.IngesterApp", lambda **_: fake)
+    monkeypatch.setattr(
+        "haiku.rag.ingester.cli._batch_progress",
+        lambda _: _progress_context(lambda snapshot: None),
+    )
+
+    result = runner.invoke(cli, ["run-batch", "--manifest", str(manifest_path)])
+
+    assert result.exit_code == 0
+    fake.run_batch_from_manifest.assert_awaited_once()
+    assert "1 succeeded, 0 dead" in result.output
+
+
+def test_run_batch_manifest_exits_nonzero_when_dead(monkeypatch, tmp_path):
+    manifest_path = tmp_path / "manifest.yaml"
+    _write_manifest(manifest_path)
+    _fake_manifest_app(BatchReport(succeeded=1, dead=1), monkeypatch)
+
+    result = runner.invoke(cli, ["run-batch", "--manifest", str(manifest_path)])
+
+    assert result.exit_code == 1
+    assert "1 dead" in result.output
+
+
+def test_run_batch_manifest_reports_validation_error(monkeypatch, tmp_path):
+    manifest_path = tmp_path / "manifest.yaml"
+    _write_manifest(manifest_path)
+    fake = AsyncMock()
+    fake.run_batch_from_manifest.side_effect = ValueError("bad manifest")
+    monkeypatch.setattr("haiku.rag.ingester.cli.IngesterApp", lambda **_: fake)
+
+    result = runner.invoke(cli, ["run-batch", "--manifest", str(manifest_path)])
+
+    assert result.exit_code == 1
+    assert "Error: bad manifest" in result.output
+
+
+def test_run_batch_manifest_conflicts_with_dry_run(tmp_path):
+    manifest_path = tmp_path / "manifest.yaml"
+    _write_manifest(manifest_path)
+
+    result = runner.invoke(
+        cli, ["run-batch", "--manifest", str(manifest_path), "--dry-run"]
+    )
+
+    assert result.exit_code != 0
+    assert "--manifest cannot be combined with --dry-run" in result.output
+
+
+def test_run_batch_manifest_conflicts_with_output(tmp_path):
+    manifest_path = tmp_path / "manifest.yaml"
+    _write_manifest(manifest_path)
+
+    result = runner.invoke(
+        cli,
+        [
+            "run-batch",
+            "--manifest",
+            str(manifest_path),
+            "--output",
+            str(tmp_path / "out.yaml"),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "--output is only valid with --dry-run" in result.output
+
+
+def test_run_batch_output_requires_dry_run(tmp_path):
+    result = runner.invoke(
+        cli,
+        ["run-batch", "--output", str(tmp_path / "out.yaml")],
+    )
+
+    assert result.exit_code != 0
+    assert "--output is only valid with --dry-run" in result.output
+
+
+def test_resolve_queue_config_keeps_dburi_when_path_override_present(tmp_path):
+    queue = QueueConfig(
+        dburi="postgresql+asyncpg://user:pass@example.test/db",
+        path=tmp_path / "configured.db",
+    )
+    config = _config_with_queue(queue)
+
+    resolved = _resolve_queue_config(config, tmp_path / "override.db")
+
+    assert resolved is queue
 
 
 # --- serve ---
