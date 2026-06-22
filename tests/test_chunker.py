@@ -56,6 +56,34 @@ async def test_local_chunker(qa_corpus: list[dict[str, str]]):
 
 
 @pytest.mark.asyncio
+async def test_local_chunker_runs_off_event_loop_thread():
+    """Chunking is CPU-bound; verify it runs in a worker thread."""
+    import threading
+
+    chunker = DoclingLocalChunker()
+    event_loop_thread = threading.current_thread()
+    called_from: list[threading.Thread] = []
+
+    original = chunker._chunk_sync
+
+    def recording_chunk_sync(document):
+        called_from.append(threading.current_thread())
+        return original(document)
+
+    chunker._chunk_sync = recording_chunk_sync
+
+    converter = get_converter(Config)
+    doc = await converter.convert_text("# Hello\n\nWorld", name="test.md")
+    await chunker.chunk(doc)
+
+    assert called_from, "_chunk_sync was never called"
+    assert called_from[0] is not event_loop_thread, (
+        "_chunk_sync ran on the event-loop thread; "
+        "it must be dispatched via asyncio.to_thread"
+    )
+
+
+@pytest.mark.asyncio
 async def test_local_chunker_custom_config():
     """Test DoclingLocalChunker with custom configuration."""
     config = AppConfig()
