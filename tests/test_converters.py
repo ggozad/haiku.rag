@@ -100,7 +100,7 @@ async def test_parse_zip_runs_off_event_loop_thread():
     and DoclingDocument.model_validate — all synchronous and CPU-heavy (full-
     resolution page rasters when generate_page_images is on). It must run off
     the event-loop thread, or it stalls every other worker's coroutine. Capture
-    the thread it runs on and assert it is not the main thread."""
+    the thread it runs on and assert it is not the event-loop thread."""
     import threading
 
     config = AppConfig()

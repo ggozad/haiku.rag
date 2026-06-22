@@ -163,7 +163,7 @@ async def test_concatenate_runs_off_event_loop_thread(tmp_path, monkeypatch):
     base64 page/picture images — CPU-heavy and proportional to total document
     size. It must run off the event-loop thread so it doesn't stall other
     workers' coroutines. Capture the thread it runs on and assert it is not the
-    main thread."""
+    event-loop thread."""
     import threading
 
     from docling_core.types.doc.document import DoclingDocument
