@@ -228,9 +228,11 @@ def run_batch(
     from a source are deleted. Exits non-zero if any job dead-letters or a
     source's sweep does not complete."""
     if manifest is not None and dry_run:
-        raise typer.BadParameter("--manifest cannot be combined with --dry-run")
+        typer.echo("Error: --manifest cannot be combined with --dry-run")
+        raise typer.Exit(2)
     if output is not None and not dry_run:
-        raise typer.BadParameter("--output is only valid with --dry-run")
+        typer.echo("Error: --output is only valid with --dry-run")
+        raise typer.Exit(2)
     asyncio.run(
         _run_batch(
             get_config(),
