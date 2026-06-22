@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 from haiku.rag.config import AppConfig
+from haiku.rag.ingester.batch import BatchDryRunReport
 from haiku.rag.ingester.metadata import build_providers, load_metadata_providers
 from haiku.rag.ingester.pollers.manager import PollerManager
 from haiku.rag.ingester.queue.migrations import open_queue
@@ -129,6 +130,35 @@ class IngesterApp:
                 await self._engine.dispose()
                 self._engine = None
 
+    @asynccontextmanager
+    async def _discovery_resources(self):
+        """Open only the queue and source pollers needed for discovery.
+        Dry-runs must not create/open the LanceDB document store or worker
+        pool because they are upstream checks only."""
+        from haiku.rag.converters import get_converter
+
+        ingester_cfg = self._config.ingester
+        self._engine = await open_queue(ingester_cfg.queue)
+        try:
+            self._jobs = JobRepo(self._engine)
+            self._sync = SyncStateRepo(self._engine)
+            supported_extensions = get_converter(self._config).supported_extensions
+            self._pollers = PollerManager(
+                configs=ingester_cfg.sources,
+                job_repo=self._jobs,
+                sync_repo=self._sync,
+                supported_extensions=supported_extensions,
+                default_max_attempts=ingester_cfg.workers.retry.max_attempts,
+            )
+            yield
+        finally:
+            if self._pollers is not None:
+                await self._pollers.close_sources()
+                self._pollers = None
+            if self._engine is not None:
+                await self._engine.dispose()
+                self._engine = None
+
     async def _stop_pool(self) -> None:
         """Stop the worker pool, honouring the shutdown grace, then drain any
         cancel-cleanup release tasks before the queue connection closes."""
@@ -243,6 +273,14 @@ class IngesterApp:
             finally:
                 await self._stop_pool()
                 await self._pollers.close_sources()
+
+    async def run_batch_dry_run(self) -> BatchDryRunReport:
+        """Run one discover() sweep across every configured source and return
+        the jobs that would be enqueued, without mutating jobs or sync_state."""
+        async with self._discovery_resources():
+            assert self._pollers is not None
+            manifest, failed_sweeps = await self._pollers.dry_run_manifest()
+            return BatchDryRunReport(manifest=manifest, failed_sweeps=failed_sweeps)
 
     async def _maybe_start_api(self, api: bool):
         """Spin up the FastAPI control plane on an asyncio task. Returns

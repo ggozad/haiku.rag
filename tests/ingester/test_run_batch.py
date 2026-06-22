@@ -24,6 +24,9 @@ from haiku.rag.config import (
 )
 from haiku.rag.ingester.app import IngesterApp
 from haiku.rag.ingester.pollers.manager import PollerManager
+from haiku.rag.ingester.queue.migrations import open_queue
+from haiku.rag.ingester.queue.models import JobOp
+from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
 from haiku.rag.ingester.workers.pool import WorkerPool
 from haiku.rag.store.models.document import Document
 
@@ -237,6 +240,42 @@ async def test_run_batch_empty_source_returns_immediately(tmp_path, use_client):
     assert report.succeeded == 0
     assert report.dead == 0
     client.create_document_from_source.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_run_batch_dry_run_reports_manifest_without_mutating_queue(tmp_path):
+    (tmp_path / "a.md").write_text("hello")
+    config = _config(tmp_path)
+    db_path = tmp_path / "db.lancedb"
+
+    engine = await open_queue(config.ingester.queue)
+    try:
+        sync = SyncStateRepo(engine)
+        await sync.upsert("local", (tmp_path / "gone.md").as_uri(), revision="old")
+    finally:
+        await engine.dispose()
+
+    report = await IngesterApp(config=config, db_path=db_path).run_batch_dry_run()
+
+    assert report.failed_sweeps == []
+    assert report.manifest.version == 1
+    assert [(change.op, change.uri) for change in report.manifest.changes] == [
+        (JobOp.UPSERT, (tmp_path / "a.md").as_uri()),
+        (JobOp.DELETE, (tmp_path / "gone.md").as_uri()),
+    ]
+    source_summary = report.manifest.sources[0]
+    assert source_summary.source_id == "local"
+    assert source_summary.upsert_count == 1
+    assert source_summary.delete_count == 1
+
+    engine = await open_queue(config.ingester.queue)
+    try:
+        jobs = JobRepo(engine)
+        sync = SyncStateRepo(engine)
+        assert await jobs.list_jobs(source_id="local") == []
+        assert await sync.list_known_uris("local") == {(tmp_path / "gone.md").as_uri()}
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio

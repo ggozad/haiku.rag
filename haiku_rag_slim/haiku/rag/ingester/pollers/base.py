@@ -4,6 +4,7 @@ import random
 from datetime import UTC, datetime
 
 from haiku.rag.config import SourceConfig
+from haiku.rag.ingester.batch import BatchChange, BatchSourceSummary
 from haiku.rag.ingester.pollers.circuit_breaker import CircuitBreaker
 from haiku.rag.ingester.queue.models import JobOp, SyncRow
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
@@ -164,6 +165,82 @@ class BasePoller:
                     exc,
                 )
                 return False
+
+    async def _dry_run_once(self) -> tuple[bool, BatchSourceSummary, list[BatchChange]]:
+        """Collect what one discover() sweep would enqueue without writing
+        jobs or sync_state."""
+        summary = BatchSourceSummary(source_id=self.source_id)
+        changes: list[BatchChange] = []
+        if self._breaker.is_open:
+            self._last_skip_reason = "circuit_open"
+            logger.debug(
+                "Skipping dry-run discover() — circuit breaker open for %s",
+                self.source_id,
+            )
+            return False, summary, changes
+        with logfire.span("ingester.poller.dry_run", source_id=self.source_id) as span:
+            if await self._jobs.has_pending(self.source_id):
+                self._last_skip_reason = "pending_work"
+                span.set_attribute("skipped", True)
+                span.set_attribute("skip_reason", "pending_work")
+                logger.debug(
+                    "Skipping dry-run discover() — %s has pending work in the queue",
+                    self.source_id,
+                )
+                return False, summary, changes
+            try:
+                revisions = await self._sync.get_revision_snapshot(self.source_id)
+                known = await self._sync.list_known_uris(self.source_id)
+                async for event in self.source.discover(
+                    since=revisions, known_uris=known
+                ):
+                    if event.kind is SourceEventKind.UPSERT:
+                        summary.upsert_count += 1
+                        changes.append(
+                            BatchChange(
+                                op=JobOp.UPSERT,
+                                source_id=event.source_id,
+                                uri=event.uri,
+                                revision=event.revision,
+                                discovered_at=event.discovered_at,
+                            )
+                        )
+                    elif event.kind is SourceEventKind.UNCHANGED:
+                        summary.unchanged_count += 1
+                    elif event.kind is SourceEventKind.DELETE:
+                        if self.config.delete_orphans:
+                            summary.delete_count += 1
+                            changes.append(
+                                BatchChange(
+                                    op=JobOp.DELETE,
+                                    source_id=event.source_id,
+                                    uri=event.uri,
+                                    revision=None,
+                                    discovered_at=event.discovered_at,
+                                )
+                            )
+                        else:
+                            summary.ignored_delete_count += 1
+                self._breaker.record_success()
+                self._last_polled_at = datetime.now(UTC)
+                self._last_skip_reason = None
+                span.set_attribute("upsert", summary.upsert_count)
+                span.set_attribute("delete", summary.delete_count)
+                span.set_attribute("unchanged", summary.unchanged_count)
+                return True, summary, changes
+            except Exception as exc:
+                self._breaker.record_failure()
+                span.set_attribute(
+                    "consecutive_failures", self._breaker.consecutive_failures
+                )
+                span.record_exception(exc)
+                logger.exception(
+                    "dry-run discover() failed for %s (consecutive=%d): %s",
+                    self.source_id,
+                    self._breaker.consecutive_failures,
+                    exc,
+                )
+                return False, summary, changes
 
     async def _handle_event(
         self,

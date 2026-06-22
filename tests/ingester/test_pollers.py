@@ -309,6 +309,78 @@ async def test_per_source_retry_policy_overrides_default(jobs, sync, tmp_path):
     assert queued[0].max_attempts == 9
 
 
+# --- dry-run collection ---
+
+
+@pytest.mark.asyncio
+async def test_dry_run_reports_changes_without_mutating_queue_or_sync(
+    fs_config, jobs, sync
+):
+    source = _StubSource(
+        "src",
+        [
+            [
+                _event("file:///a.md", revision="r1"),
+                _event(
+                    "file:///b.md",
+                    kind=SourceEventKind.UNCHANGED,
+                    revision="r2",
+                ),
+                _event("file:///gone.md", kind=SourceEventKind.DELETE),
+            ]
+        ],
+    )
+    poller = _periodic(source, fs_config, jobs, sync)
+
+    ok, summary, changes = await poller._dry_run_once()
+
+    assert ok is True
+    assert summary.upsert_count == 1
+    assert summary.delete_count == 1
+    assert summary.unchanged_count == 1
+    assert summary.ignored_delete_count == 0
+    assert [(c.op, c.uri, c.revision) for c in changes] == [
+        (JobOp.UPSERT, "file:///a.md", "r1"),
+        (JobOp.DELETE, "file:///gone.md", None),
+    ]
+    assert await jobs.list_jobs(source_id="src") == []
+    assert await sync.list_known_uris("src") == set()
+
+
+@pytest.mark.asyncio
+async def test_dry_run_counts_ignored_deletes_when_orphan_delete_disabled(
+    fs_config, jobs, sync
+):
+    cfg = fs_config.model_copy(update={"delete_orphans": False})
+    source = _StubSource(
+        "src", [[_event("file:///gone.md", kind=SourceEventKind.DELETE)]]
+    )
+    poller = _periodic(source, cfg, jobs, sync)
+
+    ok, summary, changes = await poller._dry_run_once()
+
+    assert ok is True
+    assert summary.delete_count == 0
+    assert summary.ignored_delete_count == 1
+    assert changes == []
+    assert await jobs.list_jobs(source_id="src") == []
+
+
+@pytest.mark.asyncio
+async def test_dry_run_skips_when_queue_has_pending_work(fs_config, jobs, sync):
+    await jobs.enqueue("src", "file:///already.md", op=JobOp.UPSERT)
+    source = _StubSource("src", [[_event("file:///a.md")]])
+    poller = _periodic(source, fs_config, jobs, sync)
+
+    ok, summary, changes = await poller._dry_run_once()
+
+    assert ok is False
+    assert summary.source_id == "src"
+    assert changes == []
+    assert source.discover_calls == 0
+    assert poller.last_skip_reason == "pending_work"
+
+
 # --- PollerManager lifecycle ---
 
 
