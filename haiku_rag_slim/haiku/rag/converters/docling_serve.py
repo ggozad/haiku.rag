@@ -113,6 +113,7 @@ class DoclingServeConverter(DocumentConverter):
             "images_scale": str(opts.images_scale),
             "image_export_mode": "referenced",
             "include_images": str(pictures != "none").lower(),
+            "include_page_images": str(opts.generate_page_images).lower(),
             "do_picture_description": str(runs_vlm).lower(),
             "target_type": "zip",
         }
@@ -187,10 +188,9 @@ class DoclingServeConverter(DocumentConverter):
             for picture in doc_json.get("pictures") or []:
                 _inline(picture.get("image"))
 
-            # Docling-serve always bundles page rasters when
-            # image_export_mode="referenced". Honor the local
-            # ``generate_page_images`` flag by stripping them when the user
-            # didn't ask for whole-page images.
+            # Page rasters are bundled only when ``include_page_images`` is set
+            # on the request, which mirrors ``generate_page_images``. Strip any
+            # that slip through when the user didn't ask for whole-page images.
             keep_page_images = (
                 self.config.processing.conversion_options.generate_page_images
             )

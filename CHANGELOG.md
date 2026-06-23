@@ -12,6 +12,10 @@
 
 - `provider: vllm` is text-only unless `embeddings.model.multimodal: true` is set. Existing multimodal vLLM configs must add the flag; `multimodal` is not part of the stored embedding identity, so changing it raises no drift error — re-ingest or `rebuild` to add or drop picture chunks.
 
+### Fixed
+
+- `docling-serve` converter requests `include_page_images`, so `generate_page_images` produces page rasters on docling-serve versions that gate them behind that flag.
+
 ## [0.60.0] - 2026-06-22
 
 ### Added
