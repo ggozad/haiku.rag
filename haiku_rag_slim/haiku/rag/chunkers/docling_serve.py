@@ -77,6 +77,7 @@ class DoclingServeChunker(DocumentChunker):
             "chunking_use_markdown_tables": str(
                 self.config.processing.chunking_use_markdown_tables
             ).lower(),
+            "chunking_include_raw_text": "true",
         }
         if opts.ocr_lang:
             data["convert_ocr_lang"] = opts.ocr_lang
@@ -154,7 +155,10 @@ class DoclingServeChunker(DocumentChunker):
         result: list[Chunk] = []
 
         for chunk in raw_chunks:
-            text = chunk.get("text", "")
+            # ``text`` is the embedding-targeted serialization (headings and
+            # captions prepended); ``raw_text`` is the bare body. Store the
+            # body and let the embedding/FTS layer contextualize from headings.
+            text = chunk.get("raw_text") or chunk.get("text", "")
 
             # doc_items from docling-serve is a list of ref strings like ["#/texts/1", "#/tables/0"]
             doc_items = chunk.get("doc_items", [])

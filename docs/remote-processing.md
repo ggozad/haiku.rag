@@ -30,6 +30,8 @@ docling-serve is a REST API service that provides:
 
 ## Setup
 
+haiku.rag is tested against docling-serve 1.25.0.
+
 ### Docker Compose (Recommended)
 
 The slim Docker image with docker-compose is the recommended setup. See `examples/docker/docker-compose.yml` for a complete configuration that includes both services.
