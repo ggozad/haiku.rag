@@ -35,7 +35,20 @@ def decompress_json(data: bytes) -> str:
 
 
 def compress_docling_split(json_str: str) -> tuple[bytes, bytes | None]:
-    """Split a DoclingDocument JSON into structure and pages, compress both with zstd.
+    """Parse a DoclingDocument JSON string and compress it.
+
+    Thin wrapper over :func:`compress_docling_data` for callers that only hold
+    the serialized string — store migrations and rebuild-from-blob, neither of
+    which is speed-sensitive. The ingestion hot path should call
+    ``compress_docling_data`` with ``DoclingDocument.model_dump(mode="json")``
+    instead, to avoid serializing the document to a full JSON string only to
+    parse it straight back into a dict.
+    """
+    return compress_docling_data(json.loads(json_str))
+
+
+def compress_docling_data(data: dict) -> tuple[bytes, bytes | None]:
+    """Split a DoclingDocument dict into structure and pages, compress both with zstd.
 
     Picture image URIs are stripped from the structure blob — they are stored on
     the corresponding ``document_items.picture_data`` rows and don't need to be
@@ -43,11 +56,14 @@ def compress_docling_split(json_str: str) -> tuple[bytes, bytes | None]:
     field is present, so each picture's ``image`` is set to ``None`` rather than
     partially mutated to keep the JSON re-validating cleanly.
 
+    Mutates ``data`` in place (pops ``pages``, nulls picture images); callers
+    pass a freshly built dict (``model_dump`` / ``json.loads`` output), so this
+    never touches a live DoclingDocument.
+
     Returns:
         Tuple of (structure_bytes, pages_bytes). pages_bytes is None if the
         document has no page images.
     """
-    data = json.loads(json_str)
     pages = data.pop("pages", None)
 
     for picture in data.get("pictures") or []:
