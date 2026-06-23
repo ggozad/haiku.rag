@@ -20,8 +20,9 @@ ImageInput = "bytes | PILImage.Image"
 class EmbedderWrapper:
     """Wrapper around pydantic-ai Embedder with explicit query/document methods.
 
-    Subclasses pass ``supports_images=True`` and override the image methods when
-    the underlying model can encode pictures into the same vector space.
+    Subclasses that can encode pictures into the same vector space as text either
+    set the ``supports_images`` class attribute or pass ``supports_images=True``,
+    and override the image methods.
     """
 
     supports_images: bool = False
@@ -30,11 +31,12 @@ class EmbedderWrapper:
         self,
         embedder: Embedder | None,
         vector_dim: int,
-        supports_images: bool = False,
+        supports_images: bool | None = None,
     ):
         self._embedder = embedder
         self._vector_dim = vector_dim
-        self.supports_images = supports_images
+        if supports_images is not None:
+            self.supports_images = supports_images
 
     @property
     def vector_dim(self) -> int:
@@ -62,8 +64,8 @@ class EmbedderWrapper:
         ``messages`` superset. Callers loop when they need many.
         """
         raise NotImplementedError(
-            f"{type(self).__name__} does not support image embedding. "
-            "Configure a multimodal provider (e.g. provider='vllm')."
+            f"{type(self).__name__} does not support image embedding. Set "
+            "embeddings.model.multimodal: true on a vllm, voyageai, or cohere model."
         )
 
 
@@ -124,8 +126,9 @@ async def embed_chunks(
     if picture_chunks:
         if not embedder.supports_images:
             raise ValueError(
-                "Picture chunks require a multimodal embedder. Configure "
-                "provider='vllm', or omit picture chunks."
+                "Picture chunks require a multimodal embedder. Set "
+                "embeddings.model.multimodal: true on a vllm, voyageai, or cohere "
+                "model, or omit picture chunks."
             )
         for chunk in picture_chunks:
             picture_embeddings.append(await embedder.embed_image(chunk._picture_data))
@@ -238,4 +241,12 @@ def _get_multimodal_embedder(
             model_name, vector_dim, base_url=base_url, supports_images=True
         )
 
-    raise ValueError(f"Provider '{provider}' does not support multimodal embedding.")
+    if provider == "voyageai":
+        from haiku.rag.embeddings.voyageai import VoyageMultimodalEmbedder
+
+        return VoyageMultimodalEmbedder(model_name, vector_dim)
+
+    raise ValueError(
+        f"Provider '{provider}' does not support multimodal embedding. Set "
+        "embeddings.model.multimodal: true on a vllm, voyageai, or cohere model."
+    )

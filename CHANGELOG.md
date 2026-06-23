@@ -5,6 +5,7 @@
 
 - `haiku-rag doctor` checks a database for consistency (orphaned chunks/items, chunk-less documents classified by content and embedder modality, dangling `doc_item_refs`, vector-dimension mismatch, unembedded chunks, missing picture data, settings/embedding drift, pending migrations, vector-index coverage, provider API keys) and probes configured provider endpoints (Ollama `/api/tags` with model presence, docling-serve `/health`, OpenAI-compatible/vLLM `/models`); exits 1 when any check fails.
 - `embeddings.model.multimodal` (bool, default false) gates image embedding; `supports_images` derives from it instead of the provider name.
+- VoyageAI multimodal embedder (`provider: voyageai`, `multimodal: true`, e.g. `voyage-multimodal-3`) embedding text and pictures into a shared vector space.
 
 ### Changed
 

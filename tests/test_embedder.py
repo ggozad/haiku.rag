@@ -308,7 +308,7 @@ def _ollama_text_only_config():
 async def test_text_only_embedder_does_not_support_images():
     embedder = get_embedder(_ollama_text_only_config())
     assert embedder.supports_images is False
-    with pytest.raises(NotImplementedError, match="multimodal provider"):
+    with pytest.raises(NotImplementedError, match="multimodal"):
         await embedder.embed_image(b"\x89PNG\r\n\x1a\n")
 
 
@@ -415,6 +415,20 @@ async def test_vllm_supports_images_flag():
         model_name="x", vector_dim=2, base_url="http://localhost:8000/v1"
     )
     assert embedder.supports_images is True
+
+
+async def test_vllm_text_only_embed_image_raises():
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="x",
+        vector_dim=2,
+        base_url="http://localhost:8000/v1",
+        supports_images=False,
+    )
+    assert embedder.supports_images is False
+    with pytest.raises(NotImplementedError, match="text-only"):
+        await embedder.embed_image(b"\x89PNG\r\n\x1a\n")
 
 
 async def test_vllm_connect_error_surfaces_helpful_message(monkeypatch):
@@ -706,4 +720,137 @@ async def test_vllm_embed_text_and_image_end_to_end():
     image = Image.new("RGB", (64, 64), color=(255, 0, 0))
     image_vec = await embedder.embed_image(image)
     assert len(image_vec) == 4096
+    assert any(abs(x) > 1e-6 for x in image_vec), "image embedding is all zeros"
+
+
+class _FakeVoyageResult:
+    def __init__(self, embeddings):
+        self.embeddings = embeddings
+
+
+def _fake_voyage_client(captured, embeddings):
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            captured["init"] = kwargs
+
+        async def multimodal_embed(self, **kwargs):
+            captured.update(kwargs)
+            return _FakeVoyageResult(embeddings)
+
+    return FakeAsyncClient
+
+
+async def test_voyage_embed_documents_request_shape(monkeypatch):
+    from haiku.rag.embeddings.voyageai import VoyageMultimodalEmbedder
+
+    captured: dict = {}
+    monkeypatch.setattr(
+        "voyageai.AsyncClient",
+        _fake_voyage_client(captured, [[0.1, 0.2], [0.3, 0.4]]),
+    )
+
+    embedder = VoyageMultimodalEmbedder("voyage-multimodal-3", vector_dim=2)
+    vecs = await embedder.embed_documents(["a cat", "a dog"])
+
+    assert vecs == [[0.1, 0.2], [0.3, 0.4]]
+    assert captured["model"] == "voyage-multimodal-3"
+    assert captured["input_type"] == "document"
+    assert captured["inputs"] == [["a cat"], ["a dog"]]
+    assert captured["output_dimension"] == 2
+
+
+async def test_voyage_embed_query_request_shape(monkeypatch):
+    from haiku.rag.embeddings.voyageai import VoyageMultimodalEmbedder
+
+    captured: dict = {}
+    monkeypatch.setattr(
+        "voyageai.AsyncClient", _fake_voyage_client(captured, [[0.5, 0.6]])
+    )
+
+    embedder = VoyageMultimodalEmbedder("voyage-multimodal-3", vector_dim=2)
+    vec = await embedder.embed_query("find the cat")
+
+    assert vec == [0.5, 0.6]
+    assert captured["model"] == "voyage-multimodal-3"
+    assert captured["input_type"] == "query"
+    assert captured["inputs"] == [["find the cat"]]
+
+
+async def test_voyage_embed_image_passes_pil(monkeypatch):
+    from PIL import Image
+
+    from haiku.rag.embeddings.voyageai import VoyageMultimodalEmbedder
+
+    captured: dict = {}
+    monkeypatch.setattr(
+        "voyageai.AsyncClient", _fake_voyage_client(captured, [[0.7, 0.8]])
+    )
+
+    embedder = VoyageMultimodalEmbedder("voyage-multimodal-3", vector_dim=2)
+    import io
+
+    buf = io.BytesIO()
+    Image.new("RGB", (4, 4), "red").save(buf, format="PNG")
+    vec = await embedder.embed_image(buf.getvalue())
+
+    assert vec == [0.7, 0.8]
+    assert captured["model"] == "voyage-multimodal-3"
+    inputs = captured["inputs"]
+    assert len(inputs) == 1 and len(inputs[0]) == 1
+    assert isinstance(inputs[0][0], Image.Image)
+    assert captured["input_type"] == "document"
+
+
+async def test_voyage_embed_documents_empty_list_skips_request(monkeypatch):
+    from haiku.rag.embeddings.voyageai import VoyageMultimodalEmbedder
+
+    captured: dict = {}
+    monkeypatch.setattr("voyageai.AsyncClient", _fake_voyage_client(captured, []))
+
+    embedder = VoyageMultimodalEmbedder("voyage-multimodal-3", vector_dim=2)
+    assert await embedder.embed_documents([]) == []
+    assert "inputs" not in captured
+
+
+async def test_voyage_get_embedder_routes_to_multimodal(monkeypatch):
+    monkeypatch.setattr("voyageai.AsyncClient", _fake_voyage_client({}, []))
+    from haiku.rag.embeddings.voyageai import VoyageMultimodalEmbedder
+
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="voyageai",
+                name="voyage-multimodal-3",
+                vector_dim=1024,
+                multimodal=True,
+            )
+        )
+    )
+    embedder = get_embedder(config)
+    assert isinstance(embedder, VoyageMultimodalEmbedder)
+    assert embedder.supports_images is True
+
+
+@pytest.mark.vcr()
+async def test_voyage_embed_text_and_image_end_to_end():
+    """End-to-end against the real VoyageAI ``multimodal_embed`` API: text and
+    image inputs return embeddings of the configured dimension in a shared
+    vector space. To re-record, set ``VOYAGE_API_KEY`` and run with
+    ``--record-mode=rewrite``."""
+    from PIL import Image
+
+    from haiku.rag.embeddings.voyageai import VoyageMultimodalEmbedder
+
+    embedder = VoyageMultimodalEmbedder("voyage-multimodal-3", vector_dim=1024)
+
+    text_vec = await embedder.embed_query("a photo of a red square")
+    assert len(text_vec) == 1024
+    assert any(abs(x) > 1e-6 for x in text_vec), "text embedding is all zeros"
+
+    text_batch = await embedder.embed_documents(["hello world", "another doc"])
+    assert len(text_batch) == 2
+    assert all(len(v) == 1024 for v in text_batch)
+
+    image_vec = await embedder.embed_image(Image.new("RGB", (64, 64), (255, 0, 0)))
+    assert len(image_vec) == 1024
     assert any(abs(x) > 1e-6 for x in image_vec), "image embedding is all zeros"

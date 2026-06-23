@@ -100,6 +100,11 @@ class VLLMMultimodalEmbedder(EmbedderWrapper):
         )
 
     async def embed_image(self, image: "bytes | PILImage.Image") -> list[float]:
+        if not self.supports_images:
+            raise NotImplementedError(
+                "This vLLM embedder is text-only. Set "
+                "embeddings.model.multimodal: true to embed images."
+            )
         rows = await self._post(
             {
                 "model": self._model_name,

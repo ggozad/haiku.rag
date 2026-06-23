@@ -58,8 +58,9 @@ async def search(
         embedder = client.embedder
         if not embedder.supports_images:
             raise ValueError(
-                "Image queries require a multimodal embedder. Configure "
-                "provider='vllm' (or another image-capable provider)."
+                "Image queries require a multimodal embedder. Set "
+                "embeddings.model.multimodal: true on a vllm, voyageai, or cohere "
+                "model."
             )
         query_vector = await embedder.embed_image(query)
         chunk_results = await client.chunk_repository.search(
