@@ -169,11 +169,11 @@ async def convert(
 
 
 def _merge_picture_chunks(
-    docling_document,
-    text_chunks: list,
+    docling_document: "DoclingDocument",
+    text_chunks: list[Chunk],
     document_id: str | None,
-    existing_picture_data: dict | None,
-) -> list:
+    existing_picture_data: dict[str, bytes] | None,
+) -> list[Chunk]:
     picture_chunks = build_picture_chunks(
         docling_document,
         document_id=document_id,
@@ -190,7 +190,7 @@ def _merge_picture_chunks(
         for pos, (item, _level) in enumerate(docling_document.iterate_items())
     }
 
-    def first_pos(c):
+    def first_pos(c: Chunk) -> int:
         refs = (c.metadata or {}).get("doc_item_refs") or []
         return positions.get(refs[0], len(positions)) if refs else len(positions)
 
