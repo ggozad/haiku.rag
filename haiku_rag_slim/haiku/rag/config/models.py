@@ -39,16 +39,20 @@ class EmbeddingModelConfig(BaseModel):
     """Configuration for an embedding model.
 
     Attributes:
-        provider: Model provider (ollama, openai, voyageai, cohere, sentence-transformers)
+        provider: Model provider (ollama, openai, voyageai, cohere, sentence-transformers, vllm)
         name: Model name/identifier
         vector_dim: Vector dimensions produced by the model
         base_url: Optional base URL for OpenAI-compatible servers (vLLM, LM Studio, etc.)
+        multimodal: Whether the model embeds images into the same vector space as
+            text. Supported on the vllm, voyageai, and cohere providers; other
+            providers raise when this is set.
     """
 
     provider: str = "ollama"
     name: str = "qwen3-embedding:4b"
     vector_dim: int = 2560
     base_url: str | None = None
+    multimodal: bool = False
 
 
 class StorageConfig(BaseModel):

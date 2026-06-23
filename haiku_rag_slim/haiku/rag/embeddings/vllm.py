@@ -24,8 +24,6 @@ if TYPE_CHECKING:
 
 
 class VLLMMultimodalEmbedder(EmbedderWrapper):
-    supports_images = True
-
     def __init__(
         self,
         model_name: str,
@@ -33,8 +31,11 @@ class VLLMMultimodalEmbedder(EmbedderWrapper):
         base_url: str,
         api_key: str | None = None,
         timeout: float = 60.0,
+        supports_images: bool = True,
     ):
-        super().__init__(embedder=None, vector_dim=vector_dim)
+        super().__init__(
+            embedder=None, vector_dim=vector_dim, supports_images=supports_images
+        )
         self._model_name = model_name
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key

@@ -630,12 +630,47 @@ async def test_vllm_get_embedder_routes_to_multimodal():
                 name="Qwen/Qwen3-VL-Embedding-2B",
                 vector_dim=2048,
                 base_url="http://my-vllm:8000/v1",
+                multimodal=True,
             )
         )
     )
     embedder = get_embedder(config)
     assert embedder.supports_images is True
     assert embedder._base_url == "http://my-vllm:8000/v1"  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+
+
+def test_multimodal_defaults_to_false():
+    model = EmbeddingModelConfig(provider="vllm", name="x", vector_dim=2)
+    assert model.multimodal is False
+    assert "multimodal" in model.model_dump()
+
+
+async def test_vllm_text_only_when_multimodal_unset():
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="vllm",
+                name="qwen3-embedding:4b",
+                vector_dim=2560,
+                base_url="http://my-vllm:8000/v1",
+            )
+        )
+    )
+    embedder = get_embedder(config)
+    assert embedder.supports_images is False
+
+
+@pytest.mark.parametrize("provider", ["ollama", "openai", "sentence-transformers"])
+async def test_multimodal_unsupported_provider_raises(provider):
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider=provider, name="x", vector_dim=2, multimodal=True
+            )
+        )
+    )
+    with pytest.raises(ValueError, match="does not support multimodal"):
+        get_embedder(config)
 
 
 @pytest.mark.vcr()

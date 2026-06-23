@@ -209,7 +209,10 @@ def _classify_unchunked(
                     f"{len(picture_docs)} image-only document(s) have no chunks; "
                     "a text-only embedder cannot index images."
                 ),
-                remediation="Configure a multimodal embedder and rebuild to index images.",
+                remediation=(
+                    "Set embeddings.model.multimodal: true on a vllm, voyageai, or "
+                    "cohere model and rebuild to index images."
+                ),
                 details=_sample(sorted(picture_docs)),
             )
         )
