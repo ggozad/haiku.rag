@@ -1,0 +1,425 @@
+import json
+from importlib import metadata
+from unittest.mock import AsyncMock, MagicMock
+
+import lancedb
+import pytest
+from typer.testing import CliRunner
+
+from haiku.rag.cli import _cli as cli
+from haiku.rag.config.models import AppConfig, EmbeddingModelConfig, EmbeddingsConfig
+from haiku.rag.doctor import (
+    CheckResult,
+    DoctorReport,
+    Severity,
+    _check_embedding_drift,
+    _check_vector_index,
+    _sample,
+    run_doctor,
+)
+from haiku.rag.store.engine import (
+    DocumentItemRecord,
+    DocumentMetaRecord,
+    DocumentRecord,
+    SettingsRecord,
+    create_chunk_model,
+)
+
+runner = CliRunner()
+
+CURRENT_VERSION = metadata.version("haiku.rag-slim")
+VECTOR_DIM = 4
+ChunkRecord = create_chunk_model(VECTOR_DIM)
+
+
+def _config(provider: str = "ollama", name: str = "test", vector_dim: int = VECTOR_DIM):
+    return AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider=provider, name=name, vector_dim=vector_dim
+            )
+        )
+    )
+
+
+async def _build_db(
+    path,
+    *,
+    version: str = CURRENT_VERSION,
+    provider: str = "ollama",
+    name: str = "test",
+    vector_dim: int = VECTOR_DIM,
+    stored_vector_dim: int | None = None,
+):
+    """Create a consistent single-document database without touching an embedder.
+
+    ``stored_vector_dim`` records a different dimension in settings than the
+    chunks table actually uses, to exercise the vector-dimension check.
+    """
+    db = await lancedb.connect_async(path)
+    settings_tbl = await db.create_table("settings", schema=SettingsRecord)
+    docs_tbl = await db.create_table("documents", schema=DocumentRecord)
+    meta_tbl = await db.create_table("document_meta", schema=DocumentMetaRecord)
+    chunks_tbl = await db.create_table("chunks", schema=create_chunk_model(vector_dim))
+    items_tbl = await db.create_table("document_items", schema=DocumentItemRecord)
+
+    await settings_tbl.add(
+        [
+            SettingsRecord(
+                id="settings",
+                settings=json.dumps(
+                    {
+                        "version": version,
+                        "embeddings": {
+                            "model": {
+                                "provider": provider,
+                                "name": name,
+                                "vector_dim": stored_vector_dim or vector_dim,
+                            }
+                        },
+                    }
+                ),
+            )
+        ]
+    )
+    await docs_tbl.add([DocumentRecord(id="d1", content="hello")])
+    await meta_tbl.add([DocumentMetaRecord(document_id="d1", uri="test://d1")])
+    await items_tbl.add(
+        [
+            DocumentItemRecord(
+                document_id="d1", position=0, self_ref="#/texts/0", text="x"
+            )
+        ]
+    )
+    chunk_model = create_chunk_model(vector_dim)
+    await chunks_tbl.add(
+        [
+            chunk_model(
+                id="c1",
+                document_id="d1",
+                content="hello",
+                metadata=json.dumps({"doc_item_refs": ["#/texts/0"]}),
+                vector=[0.1] * vector_dim,
+            )
+        ]
+    )
+    return db
+
+
+def _result(report: DoctorReport, name: str) -> CheckResult:
+    return next(r for r in report.results if r.name == name)
+
+
+@pytest.mark.asyncio
+async def test_healthy_db_all_ok(temp_db_path):
+    await _build_db(temp_db_path)
+    report = await run_doctor(_config(), temp_db_path, {})
+    assert not report.failed
+    assert report.count(Severity.WARN) == 0
+    assert all(r.severity is Severity.OK for r in report.results)
+
+
+@pytest.mark.asyncio
+async def test_empty_db_fails(temp_db_path):
+    report = await run_doctor(_config(), temp_db_path, {})
+    assert report.failed
+    assert _result(report, "tables_present").message == "Database is empty."
+
+
+@pytest.mark.asyncio
+async def test_missing_table_fails_without_opening_store(temp_db_path):
+    db = await lancedb.connect_async(temp_db_path)
+    await db.create_table("settings", schema=SettingsRecord)
+    report = await run_doctor(_config(), temp_db_path, {})
+    assert report.failed
+    tables = _result(report, "tables_present")
+    assert tables.severity is Severity.FAIL
+    assert "documents" in tables.details
+
+
+@pytest.mark.asyncio
+async def test_orphaned_chunk_fails(temp_db_path):
+    db = await _build_db(temp_db_path)
+    chunks_tbl = await db.open_table("chunks")
+    await chunks_tbl.add(
+        [
+            ChunkRecord(
+                id="orphan",
+                document_id="ghost",
+                content="x",
+                vector=[0.2] * VECTOR_DIM,
+            )
+        ]
+    )
+    report = await run_doctor(_config(), temp_db_path, {})
+    result = _result(report, "orphaned_chunks")
+    assert result.severity is Severity.FAIL
+    assert "ghost" in result.details
+    assert report.failed
+
+
+@pytest.mark.asyncio
+async def test_orphaned_document_item_fails(temp_db_path):
+    db = await _build_db(temp_db_path)
+    items_tbl = await db.open_table("document_items")
+    await items_tbl.add(
+        [DocumentItemRecord(document_id="ghost", position=0, self_ref="#/texts/0")]
+    )
+    report = await run_doctor(_config(), temp_db_path, {})
+    assert _result(report, "orphaned_document_items").severity is Severity.FAIL
+
+
+@pytest.mark.asyncio
+async def test_document_without_chunks_warns(temp_db_path):
+    db = await _build_db(temp_db_path)
+    docs_tbl = await db.open_table("documents")
+    meta_tbl = await db.open_table("document_meta")
+    await docs_tbl.add([DocumentRecord(id="d2", content="no chunks")])
+    await meta_tbl.add([DocumentMetaRecord(document_id="d2", uri="test://d2")])
+    report = await run_doctor(_config(), temp_db_path, {})
+    assert _result(report, "documents_without_chunks").severity is Severity.WARN
+    assert _result(report, "documents_without_items").severity is Severity.WARN
+    assert not report.failed
+
+
+@pytest.mark.asyncio
+async def test_document_meta_parity_fails(temp_db_path):
+    db = await _build_db(temp_db_path)
+    docs_tbl = await db.open_table("documents")
+    await docs_tbl.add([DocumentRecord(id="d2", content="no meta")])
+    report = await run_doctor(_config(), temp_db_path, {})
+    result = _result(report, "document_meta_parity")
+    assert result.severity is Severity.FAIL
+    assert any("d2" in d for d in result.details)
+
+
+@pytest.mark.asyncio
+async def test_dangling_doc_item_ref_fails(temp_db_path):
+    db = await _build_db(temp_db_path)
+    chunks_tbl = await db.open_table("chunks")
+    await chunks_tbl.add(
+        [
+            ChunkRecord(
+                id="c2",
+                document_id="d1",
+                content="x",
+                metadata=json.dumps({"doc_item_refs": ["#/texts/999"]}),
+                vector=[0.3] * VECTOR_DIM,
+            )
+        ]
+    )
+    report = await run_doctor(_config(), temp_db_path, {})
+    result = _result(report, "dangling_doc_item_refs")
+    assert result.severity is Severity.FAIL
+    assert "c2" in result.details
+
+
+@pytest.mark.asyncio
+async def test_unembedded_chunk_warns(temp_db_path):
+    db = await _build_db(temp_db_path)
+    chunks_tbl = await db.open_table("chunks")
+    await chunks_tbl.add(
+        [
+            ChunkRecord(
+                id="zero",
+                document_id="d1",
+                content="x",
+                metadata=json.dumps({"doc_item_refs": ["#/texts/0"]}),
+                vector=[0.0] * VECTOR_DIM,
+            )
+        ]
+    )
+    report = await run_doctor(_config(), temp_db_path, {})
+    result = _result(report, "unembedded_chunks")
+    assert result.severity is Severity.WARN
+    assert "zero" in result.details
+    assert not report.failed
+
+
+@pytest.mark.asyncio
+async def test_missing_picture_data_warns(temp_db_path):
+    db = await _build_db(temp_db_path)
+    items_tbl = await db.open_table("document_items")
+    await items_tbl.add(
+        [
+            DocumentItemRecord(
+                document_id="d1",
+                position=1,
+                self_ref="#/pictures/0",
+                label="picture",
+                picture_data=None,
+            )
+        ]
+    )
+    report = await run_doctor(_config(), temp_db_path, {})
+    assert _result(report, "picture_data").severity is Severity.WARN
+    assert not report.failed
+
+
+@pytest.mark.asyncio
+async def test_picture_with_data_ok(temp_db_path):
+    db = await _build_db(temp_db_path)
+    items_tbl = await db.open_table("document_items")
+    await items_tbl.add(
+        [
+            DocumentItemRecord(
+                document_id="d1",
+                position=1,
+                self_ref="#/pictures/0",
+                label="picture",
+                picture_data=b"\x89PNG",
+            )
+        ]
+    )
+    report = await run_doctor(_config(), temp_db_path, {})
+    assert _result(report, "picture_data").severity is Severity.OK
+
+
+@pytest.mark.asyncio
+async def test_embedding_name_drift_warns(temp_db_path):
+    await _build_db(temp_db_path, name="test")
+    report = await run_doctor(_config(name="different"), temp_db_path, {})
+    result = _result(report, "embedding_drift")
+    assert result.severity is Severity.WARN
+    assert not report.failed
+
+
+@pytest.mark.asyncio
+async def test_embedding_dim_drift_fails(temp_db_path):
+    await _build_db(temp_db_path, vector_dim=VECTOR_DIM)
+    report = await run_doctor(_config(vector_dim=VECTOR_DIM + 1), temp_db_path, {})
+    assert _result(report, "embedding_drift").severity is Severity.FAIL
+    assert report.failed
+
+
+@pytest.mark.asyncio
+async def test_embedding_provider_drift_warns(temp_db_path):
+    await _build_db(temp_db_path, provider="ollama")
+    report = await run_doctor(_config(provider="vllm"), temp_db_path, {})
+    result = _result(report, "embedding_drift")
+    assert result.severity is Severity.WARN
+    assert any("provider" in d for d in result.details)
+
+
+@pytest.mark.asyncio
+async def test_vector_dimension_mismatch_fails(temp_db_path):
+    await _build_db(
+        temp_db_path, vector_dim=VECTOR_DIM, stored_vector_dim=VECTOR_DIM + 1
+    )
+    report = await run_doctor(_config(vector_dim=VECTOR_DIM + 1), temp_db_path, {})
+    result = _result(report, "vector_dimension")
+    assert result.severity is Severity.FAIL
+    assert report.failed
+
+
+@pytest.mark.asyncio
+async def test_pending_migration_warns(temp_db_path):
+    await _build_db(temp_db_path, version="0.40.0")
+    report = await run_doctor(_config(), temp_db_path, {})
+    assert _result(report, "pending_migrations").severity is Severity.WARN
+    assert not report.failed
+
+
+@pytest.mark.asyncio
+async def test_missing_api_key_fails(temp_db_path):
+    await _build_db(temp_db_path, provider="openai", name="text-embedding-3-small")
+    config = _config(provider="openai", name="text-embedding-3-small")
+    report = await run_doctor(config, temp_db_path, environ={})
+    result = _result(report, "api_keys")
+    assert result.severity is Severity.FAIL
+    assert any("OPENAI_API_KEY" in d for d in result.details)
+
+
+@pytest.mark.asyncio
+async def test_present_api_key_ok(temp_db_path):
+    await _build_db(temp_db_path, provider="openai", name="text-embedding-3-small")
+    config = _config(provider="openai", name="text-embedding-3-small")
+    report = await run_doctor(config, temp_db_path, environ={"OPENAI_API_KEY": "sk-x"})
+    assert _result(report, "api_keys").severity is Severity.OK
+
+
+@pytest.mark.asyncio
+async def test_settings_row_missing_fails(temp_db_path):
+    db = await _build_db(temp_db_path)
+    settings_tbl = await db.open_table("settings")
+    await settings_tbl.delete("id = 'settings'")
+    report = await run_doctor(_config(), temp_db_path, {})
+    assert _result(report, "settings_row").severity is Severity.FAIL
+    assert report.failed
+
+
+@pytest.mark.asyncio
+async def test_many_orphans_are_sampled(temp_db_path):
+    db = await _build_db(temp_db_path)
+    chunks_tbl = await db.open_table("chunks")
+    await chunks_tbl.add(
+        [
+            ChunkRecord(
+                id=f"o{i}",
+                document_id=f"ghost{i}",
+                content="x",
+                vector=[0.2] * VECTOR_DIM,
+            )
+            for i in range(8)
+        ]
+    )
+    report = await run_doctor(_config(), temp_db_path, {})
+    details = _result(report, "orphaned_chunks").details
+    assert len(details) == 6
+    assert details[-1] == "... (+3 more)"
+
+
+def test_sample_returns_all_within_limit():
+    assert _sample(["a", "b"]) == ["a", "b"]
+
+
+def test_embedding_drift_ok_without_stored_identity():
+    assert _check_embedding_drift({}, _config()).severity is Severity.OK
+
+
+def test_vector_index_ok_below_threshold():
+    stats = {"chunks": {"num_rows": 10, "has_vector_index": False}}
+    assert _check_vector_index(stats).severity is Severity.OK
+
+
+def test_vector_index_warns_when_missing_above_threshold():
+    stats = {"chunks": {"num_rows": 300, "has_vector_index": False}}
+    result = _check_vector_index(stats)
+    assert result.severity is Severity.WARN
+    assert result.remediation == "haiku-rag create-index"
+
+
+def test_vector_index_warns_on_unindexed_backlog():
+    stats = {
+        "chunks": {"num_rows": 300, "has_vector_index": True, "num_unindexed_rows": 5}
+    }
+    assert _check_vector_index(stats).severity is Severity.WARN
+
+
+def test_vector_index_ok_when_fully_indexed():
+    stats = {
+        "chunks": {"num_rows": 300, "has_vector_index": True, "num_unindexed_rows": 0}
+    }
+    assert _check_vector_index(stats).severity is Severity.OK
+
+
+def test_cli_doctor_nonexistent_db_exits_1(tmp_path):
+    result = runner.invoke(cli, ["doctor", "--db", str(tmp_path / "nope.lancedb")])
+    assert result.exit_code == 1
+    assert "does not exist" in result.output
+
+
+def test_cli_doctor_exits_0_when_healthy(monkeypatch):
+    app = MagicMock()
+    app.doctor = AsyncMock(return_value=False)
+    monkeypatch.setattr("haiku.rag.cli.create_app", lambda *_a, **_k: app)
+    result = runner.invoke(cli, ["doctor", "--db", "/tmp/whatever.lancedb"])
+    assert result.exit_code == 0
+
+
+def test_cli_doctor_exits_1_on_failure(monkeypatch):
+    app = MagicMock()
+    app.doctor = AsyncMock(return_value=True)
+    monkeypatch.setattr("haiku.rag.cli.create_app", lambda *_a, **_k: app)
+    result = runner.invoke(cli, ["doctor", "--db", "/tmp/whatever.lancedb"])
+    assert result.exit_code == 1

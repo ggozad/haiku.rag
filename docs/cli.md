@@ -284,6 +284,32 @@ At the end, a separate "Versions" section lists runtime package versions:
 - lancedb
 - docling
 
+### Doctor
+
+Check the database for consistency problems and print a pass/warn/fail report:
+
+```bash
+haiku-rag doctor [--db /path/to/your.lancedb]
+```
+
+Checks include:
+
+- required tables are present
+- `documents` and `document_meta` are in 1:1 correspondence
+- chunks and document items reference documents that exist
+- every document produced chunks and document items
+- chunk `doc_item_refs` resolve to existing document items
+- chunk vector size matches the stored embedding dimension
+- chunks are embedded (no all-zero vectors)
+- picture items carry their image data
+- exactly one settings row is present
+- the configured embedding identity matches the stored settings
+- no database migrations are pending
+- the vector index covers all chunks
+- API keys are set for configured providers
+
+Each failure prints the command that fixes it (`rebuild`, `create-index`, `migrate`, `rebuild --set-embedder`). `doctor` makes no changes. It exits with status 1 when any check fails, so it can gate CI or monitoring.
+
 ### Migrate Database
 
 Apply pending database migrations:

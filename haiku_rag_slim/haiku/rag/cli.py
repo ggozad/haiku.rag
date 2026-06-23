@@ -586,6 +586,19 @@ def info(  # pragma: no cover
     asyncio.run(app.info())
 
 
+@_cli.command("doctor", help="Check database and provider health")
+def doctor(  # pragma: no cover
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    if asyncio.run(app.doctor()):
+        raise typer.Exit(code=1)
+
+
 @_cli.command("history", help="Show version history for database tables")
 def history(  # pragma: no cover
     db: Path | None = typer.Option(

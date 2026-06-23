@@ -198,6 +198,44 @@ class HaikuRAGApp:  # pragma: no cover
             f"  [repr.attrib_name]docling-document schema[/repr.attrib_name]: {info.packages['docling_document_schema']}"
         )
 
+    async def doctor(self) -> bool:
+        """Run health checks and print a report. Returns True if any check failed."""
+        import os
+
+        from haiku.rag.doctor import Severity, run_doctor
+
+        self.console.print("[bold]haiku.rag doctor[/bold]")
+        self.console.print(
+            f"  [repr.attrib_name]path[/repr.attrib_name]: {self._display_path}"
+        )
+
+        if self._is_local and not self.db_path.exists():
+            self.console.print("[red]Database path does not exist.[/red]")
+            return True
+
+        report = await run_doctor(self.config, self.db_path, dict(os.environ))
+
+        glyphs = {
+            Severity.OK: "[green]✓[/green]",
+            Severity.WARN: "[yellow]![/yellow]",
+            Severity.FAIL: "[red]✗[/red]",
+        }
+        self.console.rule()
+        for result in report.results:
+            self.console.print(f"{glyphs[result.severity]} {result.message}")
+            for detail in result.details:
+                self.console.print(f"    [dim]{detail}[/dim]")
+            if result.remediation:
+                self.console.print(f"    [dim]→ {result.remediation}[/dim]")
+
+        self.console.rule()
+        self.console.print(
+            f"[green]{report.count(Severity.OK)} ok[/green], "
+            f"[yellow]{report.count(Severity.WARN)} warning(s)[/yellow], "
+            f"[red]{report.count(Severity.FAIL)} failure(s)[/red]"
+        )
+        return report.failed
+
     async def history(self, table: str | None = None, limit: int | None = None):
         """Display version history for database tables.
 
