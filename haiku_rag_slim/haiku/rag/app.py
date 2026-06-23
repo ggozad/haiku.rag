@@ -220,13 +220,24 @@ class HaikuRAGApp:  # pragma: no cover
             Severity.WARN: "[yellow]![/yellow]",
             Severity.FAIL: "[red]✗[/red]",
         }
-        self.console.rule()
-        for result in report.results:
+
+        def render(result):
             self.console.print(f"{glyphs[result.severity]} {result.message}")
             for detail in result.details:
                 self.console.print(f"    [dim]{detail}[/dim]")
             if result.remediation:
                 self.console.print(f"    [dim]→ {result.remediation}[/dim]")
+
+        database = [r for r in report.results if not r.name.startswith("provider:")]
+        providers = [r for r in report.results if r.name.startswith("provider:")]
+
+        self.console.rule("[bold]Database[/bold]")
+        for result in database:
+            render(result)
+        if providers:
+            self.console.rule("[bold]Providers[/bold]")
+            for result in providers:
+                render(result)
 
         self.console.rule()
         self.console.print(

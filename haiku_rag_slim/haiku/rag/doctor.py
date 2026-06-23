@@ -1,7 +1,9 @@
+import asyncio
 import json
 from enum import StrEnum
 from pathlib import Path
 
+import httpx
 import numpy as np
 from pydantic import BaseModel, Field
 
@@ -27,6 +29,12 @@ _PROVIDER_ENV_VARS: dict[str, str] = {
     "jina": "JINA_API_KEY",
     "zeroentropy": "ZEROENTROPY_API_KEY",
 }
+
+# Providers backed by in-process local models — no endpoint to probe.
+_LOCAL_PROVIDERS = {"sentence-transformers", "mxbai", "cross-encoder", "jina-local"}
+
+# Operators care whether an endpoint answers now, not eventually.
+_PROBE_TIMEOUT_S = 2.0
 
 
 class Severity(StrEnum):
@@ -448,6 +456,161 @@ def _check_vector_index(stats: dict) -> CheckResult:
     )
 
 
+def _resolve_endpoint(
+    provider: str, base_url: str | None, ollama_base: str
+) -> tuple[str, str, str] | str | None:
+    """Map a model's provider to a probe target.
+
+    Returns ``(probe_url, kind, display)``, the literal ``"local"`` for an
+    in-process model, or ``None`` for a SaaS provider covered by the API-key
+    check.
+    """
+    if provider == "ollama":
+        base = (base_url or ollama_base).rstrip("/")
+        if base.endswith("/v1"):
+            base = base[:-3].rstrip("/")
+        return f"{base}/api/tags", "ollama", base
+    if provider == "vllm":
+        base = (base_url or "http://localhost:8000/v1").rstrip("/")
+        if not base.endswith("/v1"):
+            base = f"{base}/v1"
+        return f"{base}/models", "openai", base
+    if provider == "openai" and base_url:
+        base = base_url.rstrip("/")
+        return f"{base}/models", "openai", base
+    if provider in _LOCAL_PROVIDERS:
+        return "local"
+    return None
+
+
+def _provider_targets(
+    config: AppConfig,
+) -> tuple[dict[str, dict], set[str]]:
+    """Collect probe targets (keyed by probe URL) and local-only providers."""
+    targets: dict[str, dict] = {}
+    local: set[str] = set()
+    ollama_base = config.providers.ollama.base_url
+
+    def add_model(provider: str, name: str, base_url: str | None) -> None:
+        resolved = _resolve_endpoint(provider, base_url, ollama_base)
+        if resolved is None:
+            return
+        if resolved == "local":
+            local.add(provider)
+            return
+        probe_url, kind, display = resolved
+        entry = targets.setdefault(
+            probe_url, {"kind": kind, "display": display, "models": set()}
+        )
+        if name:
+            entry["models"].add(name)
+
+    proc = config.processing
+    if proc.converter == "docling-serve" or proc.chunker == "docling-serve":
+        for url in config.providers.docling_serve.base_urls:
+            base = url.rstrip("/")
+            targets.setdefault(
+                f"{base}/health",
+                {"kind": "docling-serve", "display": base, "models": set()},
+            )
+
+    add_model(
+        config.embeddings.model.provider,
+        config.embeddings.model.name,
+        config.embeddings.model.base_url,
+    )
+    for model in (config.reranking.model, config.qa.model, config.analysis.model):
+        if model is not None:
+            add_model(model.provider, model.name, model.base_url)
+
+    return targets, local
+
+
+def _model_present(expected: str, available: set[str]) -> bool:
+    if expected in available:
+        return True
+    if ":" not in expected:
+        return any(a.split(":", 1)[0] == expected for a in available)
+    return False
+
+
+async def _probe_endpoint(
+    client: httpx.AsyncClient, url: str
+) -> tuple[bool, str | None, dict | None]:
+    try:
+        response = await client.get(url)
+    except httpx.HTTPError as exc:
+        return False, str(exc), None
+    if not response.is_success:
+        return False, f"HTTP {response.status_code}", None
+    try:
+        return True, None, response.json()
+    except ValueError:
+        return True, None, None
+
+
+def _endpoint_result(
+    url: str, entry: dict, reachable: bool, error: str | None, payload: dict | None
+) -> CheckResult:
+    kind = entry["kind"]
+    display = entry["display"]
+    name = f"provider:{display}"
+    if not reachable:
+        return CheckResult(
+            name=name,
+            severity=Severity.FAIL,
+            message=f"{kind} at {display} is unreachable.",
+            remediation="Start the service or fix the configured base_url.",
+            details=[error] if error else [],
+        )
+    if kind == "ollama":
+        available = {m.get("name", "") for m in (payload or {}).get("models", [])}
+        missing = [
+            model
+            for model in sorted(entry["models"])
+            if not _model_present(model, available)
+        ]
+        if missing:
+            return CheckResult(
+                name=name,
+                severity=Severity.WARN,
+                message=f"ollama at {display} is reachable but missing model(s).",
+                remediation="ollama pull <model>",
+                details=missing,
+            )
+    return CheckResult(
+        name=name,
+        severity=Severity.OK,
+        message=f"{kind} at {display} is reachable.",
+    )
+
+
+async def run_provider_checks(config: AppConfig) -> list[CheckResult]:
+    """Probe the external endpoints the current config actually uses."""
+    targets, local = _provider_targets(config)
+
+    results: list[CheckResult] = []
+    if targets:
+        async with httpx.AsyncClient(timeout=_PROBE_TIMEOUT_S) as client:
+            probes = await asyncio.gather(
+                *(_probe_endpoint(client, url) for url in targets)
+            )
+        for url, (reachable, error, payload) in zip(targets, probes):
+            results.append(
+                _endpoint_result(url, targets[url], reachable, error, payload)
+            )
+
+    for provider in sorted(local):
+        results.append(
+            CheckResult(
+                name=f"provider:{provider}",
+                severity=Severity.OK,
+                message=f"{provider}: local model, nothing to probe.",
+            )
+        )
+    return results
+
+
 async def run_doctor(
     config: AppConfig, db_path: Path, environ: dict[str, str]
 ) -> DoctorReport:
@@ -459,29 +622,29 @@ async def run_doctor(
     db = await connect_lancedb(config, db_path)
     stats = await get_database_stats(db)
 
+    results: list[CheckResult] = []
     if not any(entry["exists"] for entry in stats.values()):
-        return DoctorReport(
-            results=[
-                CheckResult(
-                    name="tables_present",
-                    severity=Severity.FAIL,
-                    message="Database is empty.",
-                    remediation="haiku-rag init",
-                )
-            ]
+        results.append(
+            CheckResult(
+                name="tables_present",
+                severity=Severity.FAIL,
+                message="Database is empty.",
+                remediation="haiku-rag init",
+            )
         )
-
-    results = [_check_tables_present(stats)]
-    missing = [name for name in REQUIRED_TABLES if not stats[name]["exists"]]
-    if not missing:
-        async with Store(
-            db_path,
-            config=config,
-            skip_validation=True,
-            read_only=True,
-            skip_migration_check=True,
-        ) as store:
-            results += await run_db_checks(store, config, stats)
+    else:
+        results.append(_check_tables_present(stats))
+        missing = [name for name in REQUIRED_TABLES if not stats[name]["exists"]]
+        if not missing:
+            async with Store(
+                db_path,
+                config=config,
+                skip_validation=True,
+                read_only=True,
+                skip_migration_check=True,
+            ) as store:
+                results += await run_db_checks(store, config, stats)
 
     results.append(_check_api_keys(config, environ))
+    results += await run_provider_checks(config)
     return DoctorReport(results=results)

@@ -7,15 +7,27 @@ import pytest
 from typer.testing import CliRunner
 
 from haiku.rag.cli import _cli as cli
-from haiku.rag.config.models import AppConfig, EmbeddingModelConfig, EmbeddingsConfig
+from haiku.rag.config.models import (
+    AppConfig,
+    DoclingServeConfig,
+    EmbeddingModelConfig,
+    EmbeddingsConfig,
+    ProcessingConfig,
+    ProvidersConfig,
+)
 from haiku.rag.doctor import (
     CheckResult,
     DoctorReport,
     Severity,
     _check_embedding_drift,
     _check_vector_index,
+    _model_present,
+    _probe_endpoint,
+    _provider_targets,
+    _resolve_endpoint,
     _sample,
     run_doctor,
+    run_provider_checks,
 )
 from haiku.rag.store.engine import (
     DocumentItemRecord,
@@ -108,6 +120,28 @@ async def _build_db(
 
 def _result(report: DoctorReport, name: str) -> CheckResult:
     return next(r for r in report.results if r.name == name)
+
+
+@pytest.fixture(autouse=True)
+def _stub_provider_probe(monkeypatch):
+    """Default every provider probe to reachable with the test models present,
+    so database-integrity tests don't depend on a live Ollama. Provider tests
+    re-patch this with their own behavior."""
+
+    async def probe(_client, _url):
+        return (
+            True,
+            None,
+            {
+                "models": [
+                    {"name": "test"},
+                    {"name": "gpt-oss:latest"},
+                    {"name": "qwen3-embedding:4b"},
+                ]
+            },
+        )
+
+    monkeypatch.setattr("haiku.rag.doctor._probe_endpoint", probe)
 
 
 @pytest.mark.asyncio
@@ -423,3 +457,229 @@ def test_cli_doctor_exits_1_on_failure(monkeypatch):
     monkeypatch.setattr("haiku.rag.cli.create_app", lambda *_a, **_k: app)
     result = runner.invoke(cli, ["doctor", "--db", "/tmp/whatever.lancedb"])
     assert result.exit_code == 1
+
+
+# --- Provider connectivity ---
+
+
+def test_resolve_endpoint_ollama_strips_v1():
+    assert _resolve_endpoint("ollama", "http://h:1/v1", "http://fallback") == (
+        "http://h:1/api/tags",
+        "ollama",
+        "http://h:1",
+    )
+
+
+def test_resolve_endpoint_ollama_uses_provider_fallback():
+    assert _resolve_endpoint("ollama", None, "http://fallback:11434") == (
+        "http://fallback:11434/api/tags",
+        "ollama",
+        "http://fallback:11434",
+    )
+
+
+def test_resolve_endpoint_vllm_default_and_models_path():
+    assert _resolve_endpoint("vllm", None, "http://o") == (
+        "http://localhost:8000/v1/models",
+        "openai",
+        "http://localhost:8000/v1",
+    )
+
+
+def test_resolve_endpoint_vllm_appends_v1():
+    assert _resolve_endpoint("vllm", "http://vllm:8000", "http://o") == (
+        "http://vllm:8000/v1/models",
+        "openai",
+        "http://vllm:8000/v1",
+    )
+
+
+def test_resolve_endpoint_openai_saas_is_skipped():
+    assert _resolve_endpoint("openai", None, "http://o") is None
+
+
+def test_resolve_endpoint_openai_with_base_url():
+    assert _resolve_endpoint("openai", "http://lmstudio:1234/v1", "http://o") == (
+        "http://lmstudio:1234/v1/models",
+        "openai",
+        "http://lmstudio:1234/v1",
+    )
+
+
+def test_resolve_endpoint_local_provider():
+    assert _resolve_endpoint("sentence-transformers", None, "http://o") == "local"
+
+
+def test_model_present_tag_insensitive():
+    assert _model_present("gpt-oss", {"gpt-oss:latest"})
+    assert _model_present("qwen:4b", {"qwen:4b"})
+    assert not _model_present("qwen:4b", {"qwen:8b"})
+
+
+def test_provider_targets_default_groups_ollama_models():
+    targets, local = _provider_targets(AppConfig())
+    assert not local
+    assert len(targets) == 1
+    entry = next(iter(targets.values()))
+    assert entry["kind"] == "ollama"
+    assert {"qwen3-embedding:4b", "gpt-oss"} <= entry["models"]
+
+
+def test_provider_targets_includes_docling_serve():
+    config = AppConfig(
+        processing=ProcessingConfig(converter="docling-serve"),
+        providers=ProvidersConfig(
+            docling_serve=DoclingServeConfig(base_url="http://docling:5001")
+        ),
+    )
+    targets, _ = _provider_targets(config)
+    assert "http://docling:5001/health" in targets
+    assert targets["http://docling:5001/health"]["kind"] == "docling-serve"
+
+
+def test_provider_targets_collects_local_providers():
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="sentence-transformers", name="x", vector_dim=4
+            )
+        )
+    )
+    _, local = _provider_targets(config)
+    assert "sentence-transformers" in local
+
+
+def _fake_probe(result):
+    async def probe(_client, _url):
+        return result
+
+    return probe
+
+
+@pytest.mark.asyncio
+async def test_provider_check_ok_when_models_present(monkeypatch):
+    monkeypatch.setattr(
+        "haiku.rag.doctor._probe_endpoint",
+        _fake_probe(
+            (
+                True,
+                None,
+                {
+                    "models": [
+                        {"name": "qwen3-embedding:4b"},
+                        {"name": "gpt-oss:latest"},
+                    ]
+                },
+            )
+        ),
+    )
+    results = await run_provider_checks(AppConfig())
+    assert all(r.severity is Severity.OK for r in results)
+
+
+@pytest.mark.asyncio
+async def test_provider_check_warns_on_missing_model(monkeypatch):
+    monkeypatch.setattr(
+        "haiku.rag.doctor._probe_endpoint",
+        _fake_probe((True, None, {"models": [{"name": "something-else"}]})),
+    )
+    results = await run_provider_checks(AppConfig())
+    result = next(r for r in results if r.name.startswith("provider:"))
+    assert result.severity is Severity.WARN
+    assert result.details
+
+
+@pytest.mark.asyncio
+async def test_provider_check_fails_when_unreachable(monkeypatch):
+    monkeypatch.setattr(
+        "haiku.rag.doctor._probe_endpoint",
+        _fake_probe((False, "Connection refused", None)),
+    )
+    results = await run_provider_checks(AppConfig())
+    result = next(r for r in results if r.name.startswith("provider:"))
+    assert result.severity is Severity.FAIL
+    assert "Connection refused" in result.details
+
+
+@pytest.mark.asyncio
+async def test_provider_check_reports_local_provider(monkeypatch):
+    monkeypatch.setattr(
+        "haiku.rag.doctor._probe_endpoint",
+        _fake_probe((True, None, {"models": [{"name": "gpt-oss:latest"}]})),
+    )
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="sentence-transformers", name="x", vector_dim=4
+            )
+        )
+    )
+    results = await run_provider_checks(config)
+    local = next(r for r in results if r.name == "provider:sentence-transformers")
+    assert local.severity is Severity.OK
+    assert "local" in local.message
+
+
+@pytest.mark.asyncio
+async def test_run_doctor_includes_provider_results(temp_db_path, monkeypatch):
+    await _build_db(temp_db_path)
+    monkeypatch.setattr(
+        "haiku.rag.doctor._probe_endpoint",
+        _fake_probe(
+            (True, None, {"models": [{"name": "test"}, {"name": "gpt-oss:latest"}]})
+        ),
+    )
+    report = await run_doctor(_config(), temp_db_path, {})
+    assert any(r.name.startswith("provider:") for r in report.results)
+    assert not report.failed
+
+
+async def _probe_with_handler(handler):
+    import httpx
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        return await _probe_endpoint(client, "http://x")
+
+
+@pytest.mark.asyncio
+async def test_probe_endpoint_success_with_json():
+    import httpx
+
+    reachable, error, payload = await _probe_with_handler(
+        lambda _request: httpx.Response(200, json={"models": []})
+    )
+    assert reachable and error is None and payload == {"models": []}
+
+
+@pytest.mark.asyncio
+async def test_probe_endpoint_success_non_json():
+    import httpx
+
+    reachable, _, payload = await _probe_with_handler(
+        lambda _request: httpx.Response(200, content=b"not json")
+    )
+    assert reachable and payload is None
+
+
+@pytest.mark.asyncio
+async def test_probe_endpoint_http_error_status():
+    import httpx
+
+    reachable, error, _ = await _probe_with_handler(
+        lambda _request: httpx.Response(503)
+    )
+    assert not reachable
+    assert error is not None and "503" in error
+
+
+@pytest.mark.asyncio
+async def test_probe_endpoint_connection_error():
+    import httpx
+
+    def handler(_request):
+        raise httpx.ConnectError("refused")
+
+    reachable, error, _ = await _probe_with_handler(handler)
+    assert not reachable
+    assert error is not None and "refused" in error

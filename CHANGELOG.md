@@ -3,7 +3,7 @@
 
 ### Added
 
-- `haiku-rag doctor` checks a database for consistency (orphaned chunks/items, documents without chunks, dangling `doc_item_refs`, vector-dimension mismatch, unembedded chunks, missing picture data, settings/embedding drift, pending migrations, vector-index coverage, provider API keys) and exits 1 when any check fails.
+- `haiku-rag doctor` checks a database for consistency (orphaned chunks/items, documents without chunks, dangling `doc_item_refs`, vector-dimension mismatch, unembedded chunks, missing picture data, settings/embedding drift, pending migrations, vector-index coverage, provider API keys) and probes configured provider endpoints (Ollama `/api/tags` with model presence, docling-serve `/health`, OpenAI-compatible/vLLM `/models`); exits 1 when any check fails.
 
 ## [0.60.0] - 2026-06-22
 
