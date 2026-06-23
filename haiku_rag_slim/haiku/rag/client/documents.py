@@ -18,7 +18,7 @@ from haiku.rag.client.titles import resolve_title
 from haiku.rag.converters import get_converter
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
-from haiku.rag.store.models.document_item import extract_items
+from haiku.rag.store.models.document_item import DocumentItem, extract_items
 from haiku.rag.telemetry import logfire
 
 if TYPE_CHECKING:
@@ -172,7 +172,7 @@ async def _update_document_with_chunks(
 
     chunks = await ensure_chunks_embedded(client._config, chunks, client.embedder)
 
-    items: list | None = None
+    items: list[DocumentItem] | None = None
     if docling_document is not None:
         items = await asyncio.to_thread(
             extract_items, document.id, docling_document, existing_picture_data
@@ -297,9 +297,7 @@ async def _store_documents_with_chunks(
         try:
             all_chunks: list[Chunk] = []
             all_items = []
-            for doc, doc_chunks, item_list in zip(
-                created, embedded, all_item_lists
-            ):
+            for doc, doc_chunks, item_list in zip(created, embedded, all_item_lists):
                 assert doc.id is not None
                 for order, chunk in enumerate(doc_chunks):
                     chunk.document_id = doc.id
