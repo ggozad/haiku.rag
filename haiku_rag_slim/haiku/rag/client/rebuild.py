@@ -18,6 +18,8 @@ from haiku.rag.store.models.document_item import extract_items
 from haiku.rag.store.repositories.settings import SettingsRepository
 
 if TYPE_CHECKING:
+    from docling_core.types.doc.document import DoclingDocument
+
     from haiku.rag.client import HaikuRAG, RebuildMode
 
 logger = logging.getLogger(__name__)
@@ -621,7 +623,9 @@ async def _rebuild_rechunk(
         await _flush_rebuild_batch(client, pending_docs, pending_chunks)
 
 
-def _apply_descriptions_sync(docling_doc, doc, descriptions):
+def _apply_descriptions_sync(
+    docling_doc: "DoclingDocument", doc: Document, descriptions: dict[str, str]
+) -> int:
     """Patch picture descriptions into the docling document and re-compress.
 
     Updates only docling_document — set_docling would also overwrite

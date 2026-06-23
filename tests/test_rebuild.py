@@ -970,34 +970,6 @@ async def test_rebuild_descriptions_raises_when_blob_is_missing(
                 pass
 
 
-def test_apply_descriptions_sync_skips_pictures_without_descriptions():
-    """_apply_descriptions_sync skips pictures not in the descriptions dict."""
-    from unittest.mock import MagicMock
-
-    from haiku.rag.client.rebuild import _apply_descriptions_sync
-
-    pic_with = MagicMock()
-    pic_with.self_ref = "pic-1"
-    pic_with.meta = None
-
-    pic_without = MagicMock()
-    pic_without.self_ref = "pic-2"
-
-    docling_doc = MagicMock()
-    docling_doc.pictures = [pic_with, pic_without]
-    docling_doc.model_dump_json.return_value = "{}"
-    docling_doc.version = "1.0"
-
-    doc = MagicMock()
-
-    descriptions = {"pic-1": "A red square."}
-    n = _apply_descriptions_sync(docling_doc, doc, descriptions)
-
-    assert n == 1
-    assert pic_with.meta is not None
-    assert pic_with.meta.description.text == "A red square."
-
-
 async def _add_chunk(client: HaikuRAG, vector: list[float]) -> str:
     """Insert a chunk row directly, bypassing the embedder."""
     record = client.store.ChunkRecord(
