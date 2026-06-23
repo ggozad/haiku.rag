@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import tempfile
 from pathlib import Path
@@ -167,6 +168,38 @@ async def convert(
         return doc
 
 
+def _merge_picture_chunks(
+    docling_document: "DoclingDocument",
+    text_chunks: list[Chunk],
+    document_id: str | None,
+    existing_picture_data: dict[str, bytes] | None,
+) -> list[Chunk]:
+    picture_chunks = build_picture_chunks(
+        docling_document,
+        document_id=document_id,
+        existing_picture_data=existing_picture_data,
+    )
+
+    if not picture_chunks:
+        for i, c in enumerate(text_chunks):
+            c.order = i
+        return text_chunks
+
+    positions = {
+        item.self_ref: pos
+        for pos, (item, _level) in enumerate(docling_document.iterate_items())
+    }
+
+    def first_pos(c: Chunk) -> int:
+        refs = (c.metadata or {}).get("doc_item_refs") or []
+        return positions.get(refs[0], len(positions)) if refs else len(positions)
+
+    merged = sorted(text_chunks + picture_chunks, key=first_pos)
+    for i, c in enumerate(merged):
+        c.order = i
+    return merged
+
+
 async def chunk(
     config: AppConfig,
     docling_document: "DoclingDocument",
@@ -196,30 +229,13 @@ async def chunk(
             c.order = i
         return text_chunks
 
-    picture_chunks = build_picture_chunks(
+    return await asyncio.to_thread(
+        _merge_picture_chunks,
         docling_document,
-        document_id=document_id,
-        existing_picture_data=existing_picture_data,
+        text_chunks,
+        document_id,
+        existing_picture_data,
     )
-
-    if not picture_chunks:
-        for i, c in enumerate(text_chunks):
-            c.order = i
-        return text_chunks
-
-    positions = {
-        item.self_ref: pos
-        for pos, (item, _level) in enumerate(docling_document.iterate_items())
-    }
-
-    def first_pos(c: Chunk) -> int:
-        refs = (c.metadata or {}).get("doc_item_refs") or []
-        return positions.get(refs[0], len(positions)) if refs else len(positions)
-
-    merged = sorted(text_chunks + picture_chunks, key=first_pos)
-    for i, c in enumerate(merged):
-        c.order = i
-    return merged
 
 
 def build_picture_chunks(

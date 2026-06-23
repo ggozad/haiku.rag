@@ -207,3 +207,18 @@ async def test_convert_text_path_also_warns(monkeypatch, caplog_warnings):
     await convert(config, "<html><img src='...'/></html>")
 
     assert any("0 described" in r.getMessage() for r in caplog_warnings)
+
+
+def test_merge_picture_chunks_no_pictures_returns_text_chunks():
+    """When there are no picture chunks, _merge_picture_chunks returns
+    text chunks with order set."""
+    from haiku.rag.client.processing import _merge_picture_chunks
+    from haiku.rag.store.models.chunk import Chunk
+
+    doc = _doc_without_pictures()
+    text_chunks = [Chunk(content="a"), Chunk(content="b")]
+
+    result = _merge_picture_chunks(doc, text_chunks, None, None)
+
+    assert result is text_chunks
+    assert [c.order for c in result] == [0, 1]
