@@ -281,6 +281,42 @@ def test_set_docling_with_page_images():
     assert "1" in pages
 
 
+def test_extract_item_text_picture_modes(monkeypatch):
+    """fast_picture_text (default) returns the caption via caption_text and
+    never builds a Markdown serializer; fast_picture_text=False matches the
+    placeholder export."""
+    from docling_core.types.doc.base import ImageRefMode
+    from docling_core.types.doc.document import (
+        DoclingDocument,
+        ImageRef,
+        PictureItem,
+    )
+    from docling_core.types.doc.labels import DocItemLabel
+    from PIL import Image as PILImageModule
+
+    from haiku.rag.store.models.document_item import extract_item_text
+
+    img = PILImageModule.new("RGB", (8, 8), "blue")
+    doc = DoclingDocument(name="caption_test")
+    caption = doc.add_text(label=DocItemLabel.CAPTION, text="A figure caption")
+    doc.add_picture(image=ImageRef.from_pil(img, dpi=72), caption=caption)
+    picture = doc.pictures[0]
+
+    # Slow path equals the placeholder markdown export.
+    expected_slow = picture.export_to_markdown(
+        doc, image_mode=ImageRefMode.PLACEHOLDER, image_placeholder=""
+    )
+    assert extract_item_text(picture, doc, fast_picture_text=False) == expected_slow
+
+    # Fast path returns the caption and must not construct a serializer.
+    def _boom(*args, **kwargs):
+        raise AssertionError("export_to_markdown should not run on the fast path")
+
+    monkeypatch.setattr(PictureItem, "export_to_markdown", _boom)
+    assert extract_item_text(picture, doc) == "A figure caption"
+    assert extract_item_text(picture, doc, fast_picture_text=True) == "A figure caption"
+
+
 def test_get_page_images():
     """get_page_images returns requested pages from docling_pages blob."""
     import json

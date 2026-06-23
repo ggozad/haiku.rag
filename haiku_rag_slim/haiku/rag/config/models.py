@@ -191,6 +191,14 @@ class ProcessingConfig(BaseModel):
     """When a PDF carries `/EmbeddedFiles`, ingest each attachment as a separate
     Document linked back to the wrapper via ``metadata.parent_uri``. Cap depth
     at 3 to bound nested-attachment recursion."""
+    fast_picture_text: bool = True
+    """Picture chunk/item text uses the cheap caption accessor
+    (``FloatingItem.caption_text``) instead of rendering each picture through a
+    full-document Markdown serializer. The serializer re-validates the entire
+    DoclingDocument per picture (bbox clamping over every table cell), which is
+    O(pictures x document) at ingest. Set False to restore exact
+    ``export_to_markdown`` text. Only governs ingestion; rebuild and store
+    migrations always use the fast path."""
     auto_title: bool = False
     title_model: ModelConfig = Field(
         default_factory=lambda: ModelConfig(

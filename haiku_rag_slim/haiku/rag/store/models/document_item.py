@@ -53,7 +53,12 @@ def _decode_picture_bytes(item: "PictureItem") -> bytes | None:
     return base64.b64decode(encoded, validate=False)
 
 
-def extract_item_text(item: "NodeItem", docling_doc: "DoclingDocument") -> str | None:
+def extract_item_text(
+    item: "NodeItem",
+    docling_doc: "DoclingDocument",
+    *,
+    fast_picture_text: bool = True,
+) -> str | None:
     """Extract text content from a DocItem.
 
     Handles different item types:
@@ -62,9 +67,15 @@ def extract_item_text(item: "NodeItem", docling_doc: "DoclingDocument") -> str |
     - PictureItem: Prefer the VLM description (when picture_description is on)
       so pictures carry meaningful prose into chunk text and survive
       ``expand_with_items``' ``if item.text:`` filter; otherwise fall back to
-      a placeholder markdown export (no base64).
+      the picture's caption.
+
+    With ``fast_picture_text`` (the default), a description-less picture's text
+    comes from ``caption_text`` — O(captions). When False, it is rendered via
+    ``export_to_markdown`` with an empty image placeholder, which builds a
+    full-document serializer (re-validating the whole DoclingDocument) per
+    picture; the resulting text is still just the caption for an
+    annotation-less picture.
     """
-    from docling_core.types.doc.base import ImageRefMode
     from docling_core.types.doc.document import PictureItem, TableItem
 
     if text := getattr(item, "text", None):
@@ -73,6 +84,10 @@ def extract_item_text(item: "NodeItem", docling_doc: "DoclingDocument") -> str |
     if isinstance(item, PictureItem):
         if description := _picture_description_text(item):
             return description
+        if fast_picture_text:
+            return item.caption_text(docling_doc)
+        from docling_core.types.doc.base import ImageRefMode
+
         return item.export_to_markdown(
             docling_doc,
             image_mode=ImageRefMode.PLACEHOLDER,
@@ -96,6 +111,8 @@ def extract_items(
     document_id: str,
     docling_doc: "DoclingDocument",
     existing_picture_data: dict[str, bytes] | None = None,
+    *,
+    fast_picture_text: bool = True,
 ) -> list[DocumentItem]:
     """Extract document items from a DoclingDocument for the items table.
 
@@ -120,7 +137,10 @@ def extract_items(
         label = getattr(item, "label", None)
         label_str = str(label.value) if hasattr(label, "value") else str(label or "")
 
-        text = extract_item_text(item, docling_doc) or ""
+        text = (
+            extract_item_text(item, docling_doc, fast_picture_text=fast_picture_text)
+            or ""
+        )
 
         page_numbers: list[int] = []
         if prov := getattr(item, "prov", None):

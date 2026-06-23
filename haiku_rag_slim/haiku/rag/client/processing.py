@@ -173,11 +173,13 @@ def _merge_picture_chunks(
     text_chunks: list[Chunk],
     document_id: str | None,
     existing_picture_data: dict[str, bytes] | None,
+    fast_picture_text: bool,
 ) -> list[Chunk]:
     picture_chunks = build_picture_chunks(
         docling_document,
         document_id=document_id,
         existing_picture_data=existing_picture_data,
+        fast_picture_text=fast_picture_text,
     )
 
     if not picture_chunks:
@@ -235,6 +237,7 @@ async def chunk(
         text_chunks,
         document_id,
         existing_picture_data,
+        config.processing.fast_picture_text,
     )
 
 
@@ -243,6 +246,7 @@ def build_picture_chunks(
     *,
     document_id: str | None = None,
     existing_picture_data: dict[str, bytes] | None = None,
+    fast_picture_text: bool = True,
 ) -> list[Chunk]:
     """Emit one synthetic ``Chunk`` per ``PictureItem`` with available bytes.
 
@@ -271,7 +275,12 @@ def build_picture_chunks(
         if picture_data is None:
             continue
 
-        text = extract_item_text(picture, docling_document) or ""
+        text = (
+            extract_item_text(
+                picture, docling_document, fast_picture_text=fast_picture_text
+            )
+            or ""
+        )
 
         page_numbers: list[int] = []
         for p in picture.prov:

@@ -35,7 +35,7 @@ logging.getLogger("vcr.cassette").setLevel(logging.WARNING)
 @pytest.fixture(scope="session")
 def qa_corpus() -> list[dict[str, str]]:
     corpus_path = Path(__file__).parent / "data" / "qa_corpus.json"
-    with open(corpus_path) as f:
+    with open(corpus_path, encoding="utf-8") as f:
         return json.load(f)
 
 

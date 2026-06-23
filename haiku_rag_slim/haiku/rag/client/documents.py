@@ -118,7 +118,12 @@ async def _store_document_with_chunks(
     Handles versioning/rollback on failure.
     """
     chunks = await ensure_chunks_embedded(client._config, chunks, client.embedder)
-    items = await asyncio.to_thread(extract_items, "", docling_document)
+    items = await asyncio.to_thread(
+        extract_items,
+        "",
+        docling_document,
+        fast_picture_text=client._config.processing.fast_picture_text,
+    )
 
     async with client.store._write_lock:
         versions = await client.store.current_table_versions()
@@ -175,7 +180,11 @@ async def _update_document_with_chunks(
     items: list[DocumentItem] | None = None
     if docling_document is not None:
         items = await asyncio.to_thread(
-            extract_items, document.id, docling_document, existing_picture_data
+            extract_items,
+            document.id,
+            docling_document,
+            existing_picture_data,
+            fast_picture_text=client._config.processing.fast_picture_text,
         )
 
     async with client.store._write_lock:
@@ -282,8 +291,13 @@ async def _store_documents_with_chunks(
         for _, chunks, _ in prepared
     ]
 
+    fast_picture_text = client._config.processing.fast_picture_text
+
     def _extract_all_items():
-        return [extract_items("", d) for _, _, d in prepared]
+        return [
+            extract_items("", d, fast_picture_text=fast_picture_text)
+            for _, _, d in prepared
+        ]
 
     all_item_lists = await asyncio.to_thread(_extract_all_items)
 
