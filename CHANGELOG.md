@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.61.0] - 2026-06-23
+
 ### Added
 
 - `haiku-rag doctor` checks a database for consistency (orphaned chunks/items, chunk-less documents classified by content and embedder modality, dangling `doc_item_refs`, vector-dimension mismatch, unembedded chunks, missing picture data, settings/embedding drift, pending migrations, vector-index coverage, provider API keys) and probes configured provider endpoints (Ollama `/api/tags` with model presence, docling-serve `/health`, OpenAI-compatible/vLLM `/models`); exits 1 when any check fails.
@@ -14,6 +16,7 @@
 
 ### Fixed
 
+- More CPU-bound steps run off the event loop: docling item extraction, local chunking, rebuild picture-description patching, and picture-chunk merging no longer stall concurrent workers on large documents.
 - `docling-serve` converter requests `include_page_images`, so `generate_page_images` produces page rasters on docling-serve versions that gate them behind that flag.
 - `docling-serve` chunker stores chunk bodies via `raw_text`, so section headings aren't duplicated into chunk content on docling-serve versions where the chunk `text` field is heading-contextualized.
 
@@ -1797,7 +1800,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.60.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.61.0...HEAD
+[0.61.0]: https://github.com/ggozad/haiku.rag/compare/0.60.0...0.61.0
 [0.60.0]: https://github.com/ggozad/haiku.rag/compare/0.59.1...0.60.0
 [0.59.1]: https://github.com/ggozad/haiku.rag/compare/0.59.0...0.59.1
 [0.59.0]: https://github.com/ggozad/haiku.rag/compare/0.58.0...0.59.0
