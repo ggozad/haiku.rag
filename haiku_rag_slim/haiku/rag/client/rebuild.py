@@ -1,13 +1,16 @@
+import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from docling_core.types.doc.document import DescriptionMetaField, PictureMeta
 from lancedb.pydantic import LanceModel
 
 from haiku.rag.client.documents import check_source_accessible
 from haiku.rag.converters import get_converter
+from haiku.rag.store.compression import compress_docling_split
 from haiku.rag.store.engine import ChunkRecordBase
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
@@ -15,6 +18,8 @@ from haiku.rag.store.models.document_item import extract_items
 from haiku.rag.store.repositories.settings import SettingsRepository
 
 if TYPE_CHECKING:
+    from docling_core.types.doc.document import DoclingDocument
+
     from haiku.rag.client import HaikuRAG, RebuildMode
 
 logger = logging.getLogger(__name__)
@@ -618,6 +623,32 @@ async def _rebuild_rechunk(
         await _flush_rebuild_batch(client, pending_docs, pending_chunks)
 
 
+def _apply_descriptions_sync(
+    docling_doc: "DoclingDocument", doc: Document, descriptions: dict[str, str]
+) -> int:
+    """Patch picture descriptions into the docling document and re-compress.
+
+    Updates only docling_document — set_docling would also overwrite
+    docling_pages by routing through compress_docling_split, which
+    extracts pages from the in-memory JSON and finds none (the pages
+    blob is stored separately and is not loaded by get_docling_document).
+    That would silently destroy page rasters for every doc with at
+    least one undescribed picture.
+    """
+    for pic in docling_doc.pictures:
+        text = descriptions.get(pic.self_ref)
+        if not text:
+            continue
+        if pic.meta is None:
+            pic.meta = PictureMeta()
+        pic.meta.description = DescriptionMetaField(text=text)
+
+    structure_bytes, _ = compress_docling_split(docling_doc.model_dump_json())
+    doc.docling_document = structure_bytes
+    doc.docling_version = docling_doc.version
+    return len(descriptions)
+
+
 async def _patch_picture_descriptions(client: "HaikuRAG", doc: Document) -> int:
     """Run the VLM against pictures lacking a description, patch the docling
     blob in-place. Returns the number of newly described pictures.
@@ -660,33 +691,9 @@ async def _patch_picture_descriptions(client: "HaikuRAG", doc: Document) -> int:
     if not descriptions:
         return 0
 
-    # Patch the docling document in-place. PictureMeta + DescriptionMetaField
-    # are pydantic models; build them and assign.
-    from docling_core.types.doc.document import (
-        DescriptionMetaField,
-        PictureMeta,
+    return await asyncio.to_thread(
+        _apply_descriptions_sync, docling_doc, doc, descriptions
     )
-
-    for pic in docling_doc.pictures:
-        text = descriptions.get(pic.self_ref)
-        if not text:
-            continue
-        if pic.meta is None:
-            pic.meta = PictureMeta()
-        pic.meta.description = DescriptionMetaField(text=text)
-
-    # Update only docling_document — set_docling would also overwrite
-    # docling_pages by routing through compress_docling_split, which
-    # extracts pages from the in-memory JSON and finds none (the pages
-    # blob is stored separately and is not loaded by get_docling_document).
-    # That would silently destroy page rasters for every doc with at
-    # least one undescribed picture.
-    from haiku.rag.store.compression import compress_docling_split
-
-    structure_bytes, _ = compress_docling_split(docling_doc.model_dump_json())
-    doc.docling_document = structure_bytes
-    doc.docling_version = docling_doc.version
-    return len(descriptions)
 
 
 async def _rebuild_descriptions(
