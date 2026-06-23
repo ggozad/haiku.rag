@@ -83,25 +83,48 @@ def _sample(ids: list[str]) -> list[str]:
     return [*ids[:_SAMPLE_LIMIT], f"... (+{extra} more)"]
 
 
-def _configured_providers(config: AppConfig) -> set[str]:
-    """Providers referenced by the current config across every model role."""
-    providers = {config.embeddings.model.provider}
-    for model in (
-        config.reranking.model,
-        config.qa.model,
-        config.analysis.model,
-    ):
+def _active_models(config: AppConfig) -> list[tuple[str, str, str | None]]:
+    """(provider, name, base_url) for every model role the config activates.
+
+    Picture-description and title models are only included when their feature
+    is enabled (``processing.pictures == "description"`` / ``auto_title``), so
+    doctor checks exactly the providers the next ingest will use.
+    """
+    models = [
+        (
+            config.embeddings.model.provider,
+            config.embeddings.model.name,
+            config.embeddings.model.base_url,
+        )
+    ]
+    for model in (config.reranking.model, config.qa.model, config.analysis.model):
         if model is not None:
-            providers.add(model.provider)
-    return providers
+            models.append((model.provider, model.name, model.base_url))
+
+    proc = config.processing
+    if proc.pictures == "description":
+        pd = proc.conversion_options.picture_description.model
+        models.append((pd.provider, pd.name, pd.base_url))
+    if proc.auto_title:
+        tm = proc.title_model
+        models.append((tm.provider, tm.name, tm.base_url))
+    return models
 
 
 def _check_api_keys(config: AppConfig, environ: dict[str, str]) -> CheckResult:
-    missing: list[str] = []
-    for provider in sorted(_configured_providers(config)):
-        env_var = _PROVIDER_ENV_VARS.get(provider)
-        if env_var and not environ.get(env_var):
-            missing.append(f"{provider} ({env_var})")
+    # A custom base_url points at a self-hosted OpenAI-compatible endpoint that
+    # uses a placeholder key, so the SaaS key is only required when a provider
+    # is used without one. Reachability of custom endpoints is the probe's job.
+    need_key = {
+        provider
+        for provider, _name, base_url in _active_models(config)
+        if not base_url and provider in _PROVIDER_ENV_VARS
+    }
+    missing = [
+        f"{provider} ({_PROVIDER_ENV_VARS[provider]})"
+        for provider in sorted(need_key)
+        if not environ.get(_PROVIDER_ENV_VARS[provider])
+    ]
     if missing:
         return CheckResult(
             name="api_keys",
@@ -607,14 +630,8 @@ def _provider_targets(
                 {"kind": "docling-serve", "display": base, "models": set()},
             )
 
-    add_model(
-        config.embeddings.model.provider,
-        config.embeddings.model.name,
-        config.embeddings.model.base_url,
-    )
-    for model in (config.reranking.model, config.qa.model, config.analysis.model):
-        if model is not None:
-            add_model(model.provider, model.name, model.base_url)
+    for provider, name, base_url in _active_models(config):
+        add_model(provider, name, base_url)
 
     return targets, local
 

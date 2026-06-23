@@ -9,9 +9,12 @@ from typer.testing import CliRunner
 from haiku.rag.cli import _cli as cli
 from haiku.rag.config.models import (
     AppConfig,
+    ConversionOptions,
     DoclingServeConfig,
     EmbeddingModelConfig,
     EmbeddingsConfig,
+    ModelConfig,
+    PictureDescriptionConfig,
     ProcessingConfig,
     ProvidersConfig,
 )
@@ -19,6 +22,8 @@ from haiku.rag.doctor import (
     CheckResult,
     DoctorReport,
     Severity,
+    _active_models,
+    _check_api_keys,
     _check_embedding_drift,
     _check_vector_index,
     _model_present,
@@ -626,6 +631,67 @@ def test_cli_doctor_exits_1_on_failure(monkeypatch):
     monkeypatch.setattr("haiku.rag.cli.create_app", lambda *_a, **_k: app)
     result = runner.invoke(cli, ["doctor", "--db", "/tmp/whatever.lancedb"])
     assert result.exit_code == 1
+
+
+# --- Active models / API keys ---
+
+
+def test_api_key_not_required_for_custom_openai_base_url():
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="openai",
+                name="x",
+                vector_dim=4,
+                base_url="http://localhost:1234/v1",
+            )
+        )
+    )
+    assert _check_api_keys(config, {}).severity is Severity.OK
+
+
+def test_api_key_required_for_openai_without_base_url():
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(provider="openai", name="x", vector_dim=4)
+        )
+    )
+    result = _check_api_keys(config, {})
+    assert result.severity is Severity.FAIL
+    assert any("OPENAI_API_KEY" in d for d in result.details)
+
+
+def test_active_models_includes_picture_description_when_enabled():
+    config = AppConfig(processing=ProcessingConfig(pictures="description"))
+    names = [name for _p, name, _b in _active_models(config)]
+    assert "ministral-3" in names
+
+
+def test_active_models_excludes_picture_description_by_default():
+    names = [name for _p, name, _b in _active_models(AppConfig())]
+    assert "ministral-3" not in names
+
+
+def test_active_models_includes_title_model_when_auto_title():
+    base = _active_models(AppConfig())
+    with_title = _active_models(AppConfig(processing=ProcessingConfig(auto_title=True)))
+    assert len(with_title) == len(base) + 1
+
+
+def test_picture_description_model_checked_for_api_key():
+    config = AppConfig(
+        processing=ProcessingConfig(
+            pictures="description",
+            conversion_options=ConversionOptions(
+                picture_description=PictureDescriptionConfig(
+                    model=ModelConfig(provider="openai", name="gpt-4o")
+                )
+            ),
+        )
+    )
+    result = _check_api_keys(config, {})
+    assert result.severity is Severity.FAIL
+    assert any("OPENAI_API_KEY" in d for d in result.details)
 
 
 # --- Provider connectivity ---
