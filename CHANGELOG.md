@@ -4,6 +4,13 @@
 ### Added
 
 - `haiku-rag doctor` checks a database for consistency (orphaned chunks/items, chunk-less documents classified by content and embedder modality, dangling `doc_item_refs`, vector-dimension mismatch, unembedded chunks, missing picture data, settings/embedding drift, pending migrations, vector-index coverage, provider API keys) and probes configured provider endpoints (Ollama `/api/tags` with model presence, docling-serve `/health`, OpenAI-compatible/vLLM `/models`); exits 1 when any check fails.
+- `embeddings.model.multimodal` (bool, default false) gates image embedding; `supports_images` derives from it instead of the provider name.
+- VoyageAI multimodal embedder (`provider: voyageai`, `multimodal: true`, e.g. `voyage-multimodal-3`) embedding text and pictures into a shared vector space.
+- Cohere multimodal embedder (`provider: cohere`, `multimodal: true`, e.g. `embed-v4.0`) embedding text and pictures into a shared vector space.
+
+### Changed
+
+- `provider: vllm` is text-only unless `embeddings.model.multimodal: true` is set. Existing multimodal vLLM configs must add the flag; `multimodal` is not part of the stored embedding identity, so changing it raises no drift error — re-ingest or `rebuild` to add or drop picture chunks.
 
 ## [0.60.0] - 2026-06-22
 

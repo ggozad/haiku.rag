@@ -49,11 +49,19 @@ VECTOR_DIM = 4
 ChunkRecord = create_chunk_model(VECTOR_DIM)
 
 
-def _config(provider: str = "ollama", name: str = "test", vector_dim: int = VECTOR_DIM):
+def _config(
+    provider: str = "ollama",
+    name: str = "test",
+    vector_dim: int = VECTOR_DIM,
+    multimodal: bool = False,
+):
     return AppConfig(
         embeddings=EmbeddingsConfig(
             model=EmbeddingModelConfig(
-                provider=provider, name=name, vector_dim=vector_dim
+                provider=provider,
+                name=name,
+                vector_dim=vector_dim,
+                multimodal=multimodal,
             )
         )
     )
@@ -312,7 +320,7 @@ async def test_image_only_document_multimodal_embedder_warns(temp_db_path):
         ],
     )
     report = await run_doctor(
-        _config(provider="vllm", name="qwen-vl"), temp_db_path, {}
+        _config(provider="vllm", name="qwen-vl", multimodal=True), temp_db_path, {}
     )
     result = _result(report, "documents_pictures_no_chunks")
     assert result.severity is Severity.WARN

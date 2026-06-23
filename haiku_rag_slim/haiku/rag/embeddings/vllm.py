@@ -11,21 +11,17 @@ Models like ``Qwen/Qwen3-VL-Embedding-8B`` and ``jinaai/jina-embeddings-v4``
 ship with chat templates that map both shapes into a shared vector space.
 """
 
-import base64
-import io
 from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from haiku.rag.embeddings import EmbedderWrapper
+from haiku.rag.embeddings import EmbedderWrapper, _to_data_uri
 
 if TYPE_CHECKING:
     from PIL import Image as PILImage
 
 
 class VLLMMultimodalEmbedder(EmbedderWrapper):
-    supports_images = True
-
     def __init__(
         self,
         model_name: str,
@@ -33,8 +29,11 @@ class VLLMMultimodalEmbedder(EmbedderWrapper):
         base_url: str,
         api_key: str | None = None,
         timeout: float = 60.0,
+        supports_images: bool = True,
     ):
-        super().__init__(embedder=None, vector_dim=vector_dim)
+        super().__init__(
+            embedder=None, vector_dim=vector_dim, supports_images=supports_images
+        )
         self._model_name = model_name
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
@@ -99,6 +98,11 @@ class VLLMMultimodalEmbedder(EmbedderWrapper):
         )
 
     async def embed_image(self, image: "bytes | PILImage.Image") -> list[float]:
+        if not self.supports_images:
+            raise NotImplementedError(
+                "This vLLM embedder is text-only. Set "
+                "embeddings.model.multimodal: true to embed images."
+            )
         rows = await self._post(
             {
                 "model": self._model_name,
@@ -117,20 +121,3 @@ class VLLMMultimodalEmbedder(EmbedderWrapper):
             }
         )
         return rows[0]
-
-
-def _to_data_uri(image: "bytes | PILImage.Image") -> str:
-    """Render an image as a ``data:image/png;base64,...`` URI."""
-    if isinstance(image, bytes):
-        return f"data:image/png;base64,{base64.b64encode(image).decode('ascii')}"
-
-    from PIL import Image as PILImageModule
-
-    if isinstance(image, PILImageModule.Image):
-        buf = io.BytesIO()
-        image.save(buf, format="PNG")
-        return (
-            f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"
-        )
-
-    raise TypeError(f"Unsupported image type: {type(image)!r}")

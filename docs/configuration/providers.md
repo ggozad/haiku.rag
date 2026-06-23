@@ -228,11 +228,15 @@ embeddings:
     base_url: http://localhost:1234/v1
 ```
 
-**Note:** The `base_url` must include the `/v1` path for OpenAI-compatible endpoints.
+**Note:** The `base_url` must include the `/v1` path for OpenAI-compatible endpoints. This path is text-only. For a vision-language model served by vLLM, use `provider: vllm` with `multimodal: true` (below), not `provider: openai`.
 
-### vLLM (multimodal)
+### Multimodal embedders
 
-For cross-modal retrieval (text and pictures share a single vector space), use the dedicated `vllm` provider against a vLLM server hosting a multimodal embedding model:
+For cross-modal retrieval (text and pictures share a single vector space), set `embeddings.model.multimodal: true`. Capability is decided by this flag, not the provider name: each provider passes images in its own wire format, so multimodal is supported only on `vllm`, `voyageai`, and `cohere`. Setting it on any other provider raises at startup.
+
+A model produces picture chunks at ingest only when its embedder is multimodal. Without the flag, an image-only document produces zero chunks and is not retrievable. Switching `multimodal` on or off does not change the stored embedding identity, so it raises no drift error; re-ingest or `rebuild` to add or drop picture chunks.
+
+**vLLM** — a vLLM server hosting a multimodal embedding model. Text inputs use the standard OpenAI `input` field; image inputs use vLLM's `messages`-with-`image_url` superset. Tested with `Qwen/Qwen3-VL-Embedding-8B` (4096-dim) and `jinaai/jina-embeddings-v4` (2048-dim). Run vLLM separately; haiku.rag adds no Python ML dependencies for this path.
 
 ```yaml
 embeddings:
@@ -241,11 +245,34 @@ embeddings:
     name: Qwen/Qwen3-VL-Embedding-8B
     vector_dim: 4096
     base_url: http://localhost:8000/v1
+    multimodal: true
 ```
 
-Tested with `Qwen/Qwen3-VL-Embedding-8B` (4096-dim) and `jinaai/jina-embeddings-v4` (2048-dim). Run vLLM separately. haiku.rag adds no Python ML dependencies for this path. Text inputs use the standard OpenAI `input` field. Image inputs use vLLM's `messages`-with-`image_url` superset, transparently to the caller.
+**VoyageAI** — `voyage-multimodal-3` (1024-dim) via the `voyageai` extra. Reads `VOYAGE_API_KEY` from the environment.
 
-Picture chunks for retrieval are emitted at ingest under any embedder reporting `supports_images=True`. See [Picture Handling](processing.md#picture-handling).
+```yaml
+embeddings:
+  model:
+    provider: voyageai
+    name: voyage-multimodal-3
+    vector_dim: 1024
+    multimodal: true
+```
+
+**Cohere** — `embed-v4.0` (configurable `vector_dim`, e.g. 1536) via the `cohere` extra. Reads `CO_API_KEY` from the environment.
+
+```yaml
+embeddings:
+  model:
+    provider: cohere
+    name: embed-v4.0
+    vector_dim: 1536
+    multimodal: true
+```
+
+A text-only model served by vLLM uses `provider: vllm` without the flag (or `provider: openai` with a `base_url`).
+
+Picture chunks for retrieval are emitted at ingest under any multimodal embedder. See [Picture Handling](processing.md#picture-handling).
 
 ## Question Answering Providers
 
