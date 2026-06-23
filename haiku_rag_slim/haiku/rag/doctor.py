@@ -548,17 +548,20 @@ def _check_vector_index(stats: dict) -> CheckResult:
     chunks = stats["chunks"]
     num_chunks = chunks.get("num_rows", 0)
     if not chunks.get("has_vector_index"):
-        if num_chunks >= 256:
+        if num_chunks >= 100_000:
             return CheckResult(
                 name="vector_index",
                 severity=Severity.WARN,
-                message="No vector index; similarity search falls back to a scan.",
+                message=(
+                    "No vector index on a large collection; "
+                    "similarity search scans every chunk and may be slow."
+                ),
                 remediation="haiku-rag create-index",
             )
         return CheckResult(
             name="vector_index",
             severity=Severity.OK,
-            message=f"No vector index yet (need {256 - num_chunks} more chunks).",
+            message="No vector index; similarity search is exact (brute-force).",
         )
     unindexed = chunks.get("num_unindexed_rows", 0)
     if unindexed > 0:
@@ -663,7 +666,7 @@ async def _probe_endpoint(
 
 
 def _endpoint_result(
-    url: str, entry: dict, reachable: bool, error: str | None, payload: dict | None
+    entry: dict, reachable: bool, error: str | None, payload: dict | None
 ) -> CheckResult:
     kind = entry["kind"]
     display = entry["display"]
@@ -709,9 +712,7 @@ async def run_provider_checks(config: AppConfig) -> list[CheckResult]:
                 *(_probe_endpoint(client, url) for url in targets)
             )
         for url, (reachable, error, payload) in zip(targets, probes):
-            results.append(
-                _endpoint_result(url, targets[url], reachable, error, payload)
-            )
+            results.append(_endpoint_result(targets[url], reachable, error, payload))
 
     for provider in sorted(local):
         results.append(

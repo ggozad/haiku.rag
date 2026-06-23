@@ -593,13 +593,20 @@ def test_embedding_drift_ok_without_stored_identity():
     assert _check_embedding_drift({}, _config()).severity is Severity.OK
 
 
-def test_vector_index_ok_below_threshold():
+def test_vector_index_ok_without_index_on_small_collection():
     stats = {"chunks": {"num_rows": 10, "has_vector_index": False}}
     assert _check_vector_index(stats).severity is Severity.OK
 
 
-def test_vector_index_warns_when_missing_above_threshold():
+def test_vector_index_ok_without_index_on_moderate_collection():
     stats = {"chunks": {"num_rows": 300, "has_vector_index": False}}
+    result = _check_vector_index(stats)
+    assert result.severity is Severity.OK
+    assert result.remediation is None
+
+
+def test_vector_index_warns_for_large_collection_without_index():
+    stats = {"chunks": {"num_rows": 100_000, "has_vector_index": False}}
     result = _check_vector_index(stats)
     assert result.severity is Severity.WARN
     assert result.remediation == "haiku-rag create-index"
