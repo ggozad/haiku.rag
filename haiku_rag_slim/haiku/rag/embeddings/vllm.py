@@ -11,13 +11,11 @@ Models like ``Qwen/Qwen3-VL-Embedding-8B`` and ``jinaai/jina-embeddings-v4``
 ship with chat templates that map both shapes into a shared vector space.
 """
 
-import base64
-import io
 from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from haiku.rag.embeddings import EmbedderWrapper
+from haiku.rag.embeddings import EmbedderWrapper, _to_data_uri
 
 if TYPE_CHECKING:
     from PIL import Image as PILImage
@@ -123,20 +121,3 @@ class VLLMMultimodalEmbedder(EmbedderWrapper):
             }
         )
         return rows[0]
-
-
-def _to_data_uri(image: "bytes | PILImage.Image") -> str:
-    """Render an image as a ``data:image/png;base64,...`` URI."""
-    if isinstance(image, bytes):
-        return f"data:image/png;base64,{base64.b64encode(image).decode('ascii')}"
-
-    from PIL import Image as PILImageModule
-
-    if isinstance(image, PILImageModule.Image):
-        buf = io.BytesIO()
-        image.save(buf, format="PNG")
-        return (
-            f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"
-        )
-
-    raise TypeError(f"Unsupported image type: {type(image)!r}")

@@ -1,3 +1,5 @@
+import base64
+import io
 from typing import TYPE_CHECKING, Any
 
 from pydantic_ai.embeddings import Embedder
@@ -67,6 +69,23 @@ class EmbedderWrapper:
             f"{type(self).__name__} does not support image embedding. Set "
             "embeddings.model.multimodal: true on a vllm, voyageai, or cohere model."
         )
+
+
+def _to_data_uri(image: "bytes | PILImage.Image") -> str:
+    """Render an image as a ``data:image/png;base64,...`` URI."""
+    if isinstance(image, bytes):
+        return f"data:image/png;base64,{base64.b64encode(image).decode('ascii')}"
+
+    from PIL import Image as PILImageModule
+
+    if isinstance(image, PILImageModule.Image):
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        return (
+            f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"
+        )
+
+    raise TypeError(f"Unsupported image type: {type(image)!r}")
 
 
 def contextualize(chunks: list["Chunk"]) -> list[str]:
@@ -245,6 +264,11 @@ def _get_multimodal_embedder(
         from haiku.rag.embeddings.voyageai import VoyageMultimodalEmbedder
 
         return VoyageMultimodalEmbedder(model_name, vector_dim)
+
+    if provider == "cohere":
+        from haiku.rag.embeddings.cohere import CohereMultimodalEmbedder
+
+        return CohereMultimodalEmbedder(model_name, vector_dim)
 
     raise ValueError(
         f"Provider '{provider}' does not support multimodal embedding. Set "

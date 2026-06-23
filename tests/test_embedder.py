@@ -854,3 +854,135 @@ async def test_voyage_embed_text_and_image_end_to_end():
     image_vec = await embedder.embed_image(Image.new("RGB", (64, 64), (255, 0, 0)))
     assert len(image_vec) == 1024
     assert any(abs(x) > 1e-6 for x in image_vec), "image embedding is all zeros"
+
+
+class _FakeCohereEmbeddings:
+    def __init__(self, float_):
+        self.float_ = float_
+
+
+class _FakeCohereResult:
+    def __init__(self, float_):
+        self.embeddings = _FakeCohereEmbeddings(float_)
+
+
+def _fake_cohere_client(captured, float_):
+    class FakeAsyncClientV2:
+        def __init__(self, *args, **kwargs):
+            captured["init"] = kwargs
+
+        async def embed(self, **kwargs):
+            captured.update(kwargs)
+            return _FakeCohereResult(float_)
+
+    return FakeAsyncClientV2
+
+
+async def test_cohere_embed_documents_request_shape(monkeypatch):
+    from haiku.rag.embeddings.cohere import CohereMultimodalEmbedder
+
+    captured: dict = {}
+    monkeypatch.setattr(
+        "cohere.AsyncClientV2", _fake_cohere_client(captured, [[0.1, 0.2], [0.3, 0.4]])
+    )
+
+    embedder = CohereMultimodalEmbedder("embed-v4.0", vector_dim=2)
+    vecs = await embedder.embed_documents(["a cat", "a dog"])
+
+    assert vecs == [[0.1, 0.2], [0.3, 0.4]]
+    assert captured["model"] == "embed-v4.0"
+    assert captured["input_type"] == "search_document"
+    assert captured["texts"] == ["a cat", "a dog"]
+    assert captured["output_dimension"] == 2
+    assert captured["embedding_types"] == ["float"]
+
+
+async def test_cohere_embed_query_request_shape(monkeypatch):
+    from haiku.rag.embeddings.cohere import CohereMultimodalEmbedder
+
+    captured: dict = {}
+    monkeypatch.setattr(
+        "cohere.AsyncClientV2", _fake_cohere_client(captured, [[0.5, 0.6]])
+    )
+
+    embedder = CohereMultimodalEmbedder("embed-v4.0", vector_dim=2)
+    vec = await embedder.embed_query("find the cat")
+
+    assert vec == [0.5, 0.6]
+    assert captured["model"] == "embed-v4.0"
+    assert captured["input_type"] == "search_query"
+    assert captured["texts"] == ["find the cat"]
+
+
+async def test_cohere_embed_image_uses_image_input_type(monkeypatch):
+    from haiku.rag.embeddings.cohere import CohereMultimodalEmbedder
+
+    captured: dict = {}
+    monkeypatch.setattr(
+        "cohere.AsyncClientV2", _fake_cohere_client(captured, [[0.7, 0.8]])
+    )
+
+    embedder = CohereMultimodalEmbedder("embed-v4.0", vector_dim=2)
+    vec = await embedder.embed_image(b"\x89PNG\r\n\x1a\nfake")
+
+    assert vec == [0.7, 0.8]
+    assert captured["model"] == "embed-v4.0"
+    assert captured["input_type"] == "image"
+    images = captured["images"]
+    assert len(images) == 1
+    assert images[0].startswith("data:image/png;base64,")
+
+
+async def test_cohere_embed_documents_empty_list_skips_request(monkeypatch):
+    from haiku.rag.embeddings.cohere import CohereMultimodalEmbedder
+
+    captured: dict = {}
+    monkeypatch.setattr("cohere.AsyncClientV2", _fake_cohere_client(captured, []))
+
+    embedder = CohereMultimodalEmbedder("embed-v4.0", vector_dim=2)
+    assert await embedder.embed_documents([]) == []
+    assert "texts" not in captured
+
+
+async def test_cohere_get_embedder_routes_to_multimodal(monkeypatch):
+    monkeypatch.setattr("cohere.AsyncClientV2", _fake_cohere_client({}, []))
+    from haiku.rag.embeddings.cohere import CohereMultimodalEmbedder
+
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="cohere",
+                name="embed-v4.0",
+                vector_dim=1536,
+                multimodal=True,
+            )
+        )
+    )
+    embedder = get_embedder(config)
+    assert isinstance(embedder, CohereMultimodalEmbedder)
+    assert embedder.supports_images is True
+
+
+@pytest.mark.vcr()
+async def test_cohere_embed_text_and_image_end_to_end():
+    """End-to-end against the real Cohere ``embed`` API (``embed-v4.0``): text
+    and image inputs return embeddings of the configured dimension in a shared
+    vector space. To re-record, set ``CO_API_KEY`` and run with
+    ``--record-mode=rewrite``."""
+    from PIL import Image
+
+    from haiku.rag.embeddings.cohere import CohereMultimodalEmbedder
+
+    embedder = CohereMultimodalEmbedder("embed-v4.0", vector_dim=1536)
+
+    text_vec = await embedder.embed_query("a photo of a red square")
+    assert len(text_vec) == 1536
+    assert any(abs(x) > 1e-6 for x in text_vec), "text embedding is all zeros"
+
+    text_batch = await embedder.embed_documents(["hello world", "another doc"])
+    assert len(text_batch) == 2
+    assert all(len(v) == 1536 for v in text_batch)
+
+    image_vec = await embedder.embed_image(Image.new("RGB", (64, 64), (255, 0, 0)))
+    assert len(image_vec) == 1536
+    assert any(abs(x) > 1e-6 for x in image_vec), "image embedding is all zeros"
