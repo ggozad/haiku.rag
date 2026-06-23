@@ -15,6 +15,7 @@
 ### Fixed
 
 - `docling-serve` converter requests `include_page_images`, so `generate_page_images` produces page rasters on docling-serve versions that gate them behind that flag.
+- `docling-serve` chunker stores chunk bodies via `raw_text`, so section headings aren't duplicated into chunk content on docling-serve versions where the chunk `text` field is heading-contextualized.
 
 ## [0.60.0] - 2026-06-22
 
