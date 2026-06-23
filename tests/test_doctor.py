@@ -203,17 +203,115 @@ async def test_orphaned_document_item_fails(temp_db_path):
     assert _result(report, "orphaned_document_items").severity is Severity.FAIL
 
 
-@pytest.mark.asyncio
-async def test_document_without_chunks_warns(temp_db_path):
-    db = await _build_db(temp_db_path)
+async def _add_doc(db, doc_id, *, items, metadata=None, chunks=None):
     docs_tbl = await db.open_table("documents")
     meta_tbl = await db.open_table("document_meta")
-    await docs_tbl.add([DocumentRecord(id="d2", content="no chunks")])
-    await meta_tbl.add([DocumentMetaRecord(document_id="d2", uri="test://d2")])
+    await docs_tbl.add([DocumentRecord(id=doc_id, content="x")])
+    await meta_tbl.add(
+        [
+            DocumentMetaRecord(
+                document_id=doc_id,
+                uri=f"test://{doc_id}",
+                metadata=json.dumps(metadata or {}),
+            )
+        ]
+    )
+    if items:
+        items_tbl = await db.open_table("document_items")
+        await items_tbl.add(items)
+    if chunks:
+        chunks_tbl = await db.open_table("chunks")
+        await chunks_tbl.add(chunks)
+
+
+@pytest.mark.asyncio
+async def test_document_with_text_but_no_chunks_warns(temp_db_path):
+    db = await _build_db(temp_db_path)
+    await _add_doc(
+        db,
+        "d2",
+        items=[
+            DocumentItemRecord(
+                document_id="d2",
+                position=0,
+                self_ref="#/texts/0",
+                label="text",
+                text="real content",
+            )
+        ],
+    )
     report = await run_doctor(_config(), temp_db_path, {})
-    assert _result(report, "documents_without_chunks").severity is Severity.WARN
-    assert _result(report, "documents_without_items").severity is Severity.WARN
-    assert not report.failed
+    result = _result(report, "documents_text_no_chunks")
+    assert result.severity is Severity.WARN
+    assert "d2" in result.details
+    assert report.count(Severity.FAIL) == 0
+
+
+@pytest.mark.asyncio
+async def test_empty_document_no_chunks_is_ok(temp_db_path):
+    db = await _build_db(temp_db_path)
+    await _add_doc(db, "d2", items=[])
+    report = await run_doctor(_config(), temp_db_path, {})
+    assert _result(report, "documents_without_chunks").severity is Severity.OK
+
+
+@pytest.mark.asyncio
+async def test_heading_only_document_no_chunks_is_ok(temp_db_path):
+    db = await _build_db(temp_db_path)
+    await _add_doc(
+        db,
+        "d2",
+        items=[
+            DocumentItemRecord(
+                document_id="d2",
+                position=0,
+                self_ref="#/texts/0",
+                label="section_header",
+                text="title: haiku.rag",
+            )
+        ],
+    )
+    report = await run_doctor(_config(), temp_db_path, {})
+    assert _result(report, "documents_without_chunks").severity is Severity.OK
+    assert all(r.name != "documents_text_no_chunks" for r in report.results)
+
+
+@pytest.mark.asyncio
+async def test_image_only_document_text_embedder_warns(temp_db_path):
+    db = await _build_db(temp_db_path)
+    await _add_doc(
+        db,
+        "d2",
+        items=[
+            DocumentItemRecord(
+                document_id="d2", position=0, self_ref="#/pictures/0", label="picture"
+            )
+        ],
+    )
+    report = await run_doctor(_config(), temp_db_path, {})
+    result = _result(report, "documents_images_unsearchable")
+    assert result.severity is Severity.WARN
+    assert "d2" in result.details
+
+
+@pytest.mark.asyncio
+async def test_image_only_document_multimodal_embedder_warns(temp_db_path):
+    db = await _build_db(temp_db_path, provider="vllm", name="qwen-vl")
+    await _add_doc(
+        db,
+        "d2",
+        items=[
+            DocumentItemRecord(
+                document_id="d2", position=0, self_ref="#/pictures/0", label="picture"
+            )
+        ],
+    )
+    report = await run_doctor(
+        _config(provider="vllm", name="qwen-vl"), temp_db_path, {}
+    )
+    result = _result(report, "documents_pictures_no_chunks")
+    assert result.severity is Severity.WARN
+    assert "d2" in result.details
 
 
 @pytest.mark.asyncio
@@ -268,6 +366,77 @@ async def test_unembedded_chunk_warns(temp_db_path):
     assert result.severity is Severity.WARN
     assert "zero" in result.details
     assert not report.failed
+
+
+@pytest.mark.asyncio
+async def test_chunked_document_without_items_warns(temp_db_path):
+    db = await _build_db(temp_db_path)
+    await _add_doc(
+        db,
+        "d2",
+        items=[],
+        chunks=[
+            ChunkRecord(
+                id="c2", document_id="d2", content="x", vector=[0.1] * VECTOR_DIM
+            )
+        ],
+    )
+    report = await run_doctor(_config(), temp_db_path, {})
+    result = _result(report, "documents_without_items")
+    assert result.severity is Severity.WARN
+    assert "d2" in result.details
+
+
+@pytest.mark.asyncio
+async def test_empty_document_without_items_is_ok(temp_db_path):
+    db = await _build_db(temp_db_path)
+    await _add_doc(db, "d2", items=[])
+    report = await run_doctor(_config(), temp_db_path, {})
+    assert _result(report, "documents_without_items").severity is Severity.OK
+
+
+@pytest.mark.asyncio
+async def test_missing_picture_data_in_text_document_is_ok(temp_db_path):
+    db = await _build_db(temp_db_path)
+    await _add_doc(
+        db,
+        "d2",
+        metadata={"content_type": "text/markdown"},
+        items=[
+            DocumentItemRecord(
+                document_id="d2",
+                position=0,
+                self_ref="#/pictures/0",
+                label="picture",
+                picture_data=None,
+            )
+        ],
+    )
+    report = await run_doctor(_config(), temp_db_path, {})
+    assert _result(report, "picture_data").severity is Severity.OK
+
+
+@pytest.mark.asyncio
+async def test_missing_picture_data_in_pdf_document_warns(temp_db_path):
+    db = await _build_db(temp_db_path)
+    await _add_doc(
+        db,
+        "d2",
+        metadata={"content_type": "application/pdf"},
+        items=[
+            DocumentItemRecord(
+                document_id="d2",
+                position=0,
+                self_ref="#/pictures/0",
+                label="picture",
+                picture_data=None,
+            )
+        ],
+    )
+    report = await run_doctor(_config(), temp_db_path, {})
+    result = _result(report, "picture_data")
+    assert result.severity is Severity.WARN
+    assert "d2" in result.details
 
 
 @pytest.mark.asyncio

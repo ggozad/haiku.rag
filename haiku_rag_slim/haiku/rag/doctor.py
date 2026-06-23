@@ -33,6 +33,19 @@ _PROVIDER_ENV_VARS: dict[str, str] = {
 # Providers backed by in-process local models — no endpoint to probe.
 _LOCAL_PROVIDERS = {"sentence-transformers", "mxbai", "cross-encoder", "jina-local"}
 
+# Item labels that never yield a standalone chunk: pictures (handled via the
+# image path), headings (folded into chunk context, not embedded alone), and
+# page furniture. A document whose only items carry these labels is expected to
+# have no chunks.
+_NON_BODY_LABELS = {
+    "picture",
+    "section_header",
+    "title",
+    "page_header",
+    "page_footer",
+    "caption",
+}
+
 # Operators care whether an endpoint answers now, not eventually.
 _PROBE_TIMEOUT_S = 2.0
 
@@ -121,6 +134,73 @@ def _check_tables_present(stats: dict) -> CheckResult:
     )
 
 
+def _classify_unchunked(
+    no_chunk_ids: set[str],
+    labels_by_doc: dict[str, set[str]],
+    supports_images: bool,
+) -> list[CheckResult]:
+    """Classify chunk-less documents by what they hold.
+
+    A document with body-text items but no chunks is always a problem. A
+    picture-only document is a problem under a multimodal embedder (its picture
+    chunks are missing) and an indexing gap under a text-only embedder (which
+    cannot embed images). A document carrying only headings/furniture (or no
+    items at all) is expected to have no chunks.
+    """
+    text_docs: list[str] = []
+    picture_docs: list[str] = []
+    for doc_id in no_chunk_ids:
+        labels = labels_by_doc.get(doc_id, set())
+        if any(label not in _NON_BODY_LABELS for label in labels):
+            text_docs.append(doc_id)
+        elif "picture" in labels:
+            picture_docs.append(doc_id)
+
+    results: list[CheckResult] = []
+    if text_docs:
+        results.append(
+            CheckResult(
+                name="documents_text_no_chunks",
+                severity=Severity.WARN,
+                message=f"{len(text_docs)} document(s) have text content but no chunks.",
+                remediation="haiku-rag rebuild",
+                details=_sample(sorted(text_docs)),
+            )
+        )
+    if picture_docs and supports_images:
+        results.append(
+            CheckResult(
+                name="documents_pictures_no_chunks",
+                severity=Severity.WARN,
+                message=f"{len(picture_docs)} document(s) with pictures have no chunks.",
+                remediation="haiku-rag rebuild",
+                details=_sample(sorted(picture_docs)),
+            )
+        )
+    elif picture_docs:
+        results.append(
+            CheckResult(
+                name="documents_images_unsearchable",
+                severity=Severity.WARN,
+                message=(
+                    f"{len(picture_docs)} image-only document(s) have no chunks; "
+                    "a text-only embedder cannot index images."
+                ),
+                remediation="Configure a multimodal embedder and rebuild to index images.",
+                details=_sample(sorted(picture_docs)),
+            )
+        )
+    if not results:
+        results.append(
+            CheckResult(
+                name="documents_without_chunks",
+                severity=Severity.OK,
+                message="Every document with content has chunks.",
+            )
+        )
+    return results
+
+
 async def _column_values(table, column: str) -> list:
     rows = await table.query().select([column]).to_list()
     return [row[column] for row in rows]
@@ -136,7 +216,18 @@ async def run_db_checks(
     results: list[CheckResult] = []
 
     doc_ids = set(await _column_values(store.documents_table, "id"))
-    meta_doc_ids = set(await _column_values(store.document_meta_table, "document_id"))
+    meta_rows = (
+        await store.document_meta_table.query()
+        .select(["document_id", "metadata"])
+        .to_list()
+    )
+    meta_doc_ids = {row["document_id"] for row in meta_rows}
+    content_type_by_doc = {
+        row["document_id"]: json.loads(row.get("metadata") or "{}").get(
+            "content_type", ""
+        )
+        for row in meta_rows
+    }
 
     chunk_rows = (
         await store.chunks_table.query()
@@ -147,13 +238,15 @@ async def run_db_checks(
 
     item_rows = (
         await store.document_items_table.query()
-        .select(["document_id", "self_ref"])
+        .select(["document_id", "self_ref", "label"])
         .to_list()
     )
     item_doc_ids = {row["document_id"] for row in item_rows}
     self_refs_by_doc: dict[str, set[str]] = {}
+    labels_by_doc: dict[str, set[str]] = {}
     for row in item_rows:
         self_refs_by_doc.setdefault(row["document_id"], set()).add(row["self_ref"])
+        labels_by_doc.setdefault(row["document_id"], set()).add(row["label"])
 
     # documents <-> document_meta must be 1:1.
     orphan_docs = doc_ids - meta_doc_ids
@@ -210,34 +303,26 @@ async def run_db_checks(
         )
     )
 
-    # Documents that never produced chunks / items.
-    docs_without_chunks = doc_ids - chunk_doc_ids
-    results.append(
-        CheckResult(
-            name="documents_without_chunks",
-            severity=Severity.WARN if docs_without_chunks else Severity.OK,
-            message=(
-                f"{len(docs_without_chunks)} document(s) have no chunks."
-                if docs_without_chunks
-                else "Every document has chunks."
-            ),
-            remediation="haiku-rag rebuild" if docs_without_chunks else None,
-            details=_sample(sorted(docs_without_chunks)),
-        )
+    # Documents with no chunks, classified by what they contain and whether the
+    # embedder can index images.
+    results += _classify_unchunked(
+        doc_ids - chunk_doc_ids, labels_by_doc, store.embedder.supports_images
     )
 
-    docs_without_items = doc_ids - item_doc_ids
+    # A chunked document must have items; one without them is corrupt. Empty
+    # documents legitimately have neither, so only flag the chunked ones.
+    docs_missing_items = (doc_ids & chunk_doc_ids) - item_doc_ids
     results.append(
         CheckResult(
             name="documents_without_items",
-            severity=Severity.WARN if docs_without_items else Severity.OK,
+            severity=Severity.WARN if docs_missing_items else Severity.OK,
             message=(
-                f"{len(docs_without_items)} document(s) have no document items."
-                if docs_without_items
-                else "Every document has document items."
+                f"{len(docs_missing_items)} chunked document(s) have no document items."
+                if docs_missing_items
+                else "Every chunked document has document items."
             ),
-            remediation="haiku-rag rebuild" if docs_without_items else None,
-            details=_sample(sorted(docs_without_items)),
+            remediation="haiku-rag rebuild" if docs_missing_items else None,
+            details=_sample(sorted(docs_missing_items)),
         )
     )
 
@@ -308,25 +393,33 @@ async def run_db_checks(
         )
     )
 
-    # Pictures should carry their raster bytes after extraction.
-    total_pictures = await store.document_items_table.count_rows("label = 'picture'")
-    missing_pictures = len(
-        await store.document_items_table.query()
-        .select(["self_ref"])
+    # Pictures from image/PDF sources should carry raster bytes. Pictures that
+    # are external image references in a text document (markdown, HTML) have no
+    # embedded bytes by nature, so a missing raster there is expected.
+    missing_picture_docs = [
+        row["document_id"]
+        for row in await store.document_items_table.query()
+        .select(["document_id"])
         .where("label = 'picture' AND picture_data IS NULL")
         .to_list()
-    )
+    ]
+    real_missing = [
+        doc_id
+        for doc_id in missing_picture_docs
+        if not content_type_by_doc.get(doc_id, "").startswith("text/")
+    ]
     results.append(
         CheckResult(
             name="picture_data",
-            severity=Severity.WARN if missing_pictures else Severity.OK,
+            severity=Severity.WARN if real_missing else Severity.OK,
             message=(
-                f"{missing_pictures} of {total_pictures} picture item(s) "
+                f"{len(real_missing)} picture item(s) in image/PDF documents "
                 "have no image data."
-                if missing_pictures
-                else f"All {total_pictures} picture item(s) have image data."
+                if real_missing
+                else "Pictures that should carry image data have it."
             ),
-            remediation="haiku-rag rebuild" if missing_pictures else None,
+            remediation="haiku-rag rebuild" if real_missing else None,
+            details=_sample(sorted(set(real_missing))),
         )
     )
 

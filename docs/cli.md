@@ -297,11 +297,12 @@ Checks include:
 - required tables are present
 - `documents` and `document_meta` are in 1:1 correspondence
 - chunks and document items reference documents that exist
-- every document produced chunks and document items
+- documents with text content produced chunks (empty and heading/furniture-only documents are not flagged; image-only documents are flagged according to whether the embedder can index images)
+- chunked documents have document items (empty documents are not flagged)
 - chunk `doc_item_refs` resolve to existing document items
 - chunk vector size matches the stored embedding dimension
 - chunks are embedded (no all-zero vectors)
-- picture items carry their image data
+- pictures in image/PDF documents carry their image data (external image references in text documents are not flagged)
 - exactly one settings row is present
 - the configured embedding identity matches the stored settings
 - no database migrations are pending
