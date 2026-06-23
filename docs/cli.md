@@ -284,6 +284,41 @@ At the end, a separate "Versions" section lists runtime package versions:
 - lancedb
 - docling
 
+### Doctor
+
+Check the database for consistency problems and print a pass/warn/fail report:
+
+```bash
+haiku-rag doctor [--db /path/to/your.lancedb]
+```
+
+Checks include:
+
+- required tables are present
+- `documents` and `document_meta` are in 1:1 correspondence
+- chunks and document items reference documents that exist
+- documents with text content produced chunks (empty and heading/furniture-only documents are not flagged; image-only documents are flagged according to whether the embedder can index images)
+- chunked documents have document items (empty documents are not flagged)
+- chunk `doc_item_refs` resolve to existing document items
+- chunk vector size matches the stored embedding dimension
+- chunks are embedded (no all-zero vectors)
+- pictures in image/PDF documents carry their image data (external image references in text documents are not flagged)
+- exactly one settings row is present
+- the configured embedding identity matches the stored settings
+- no database migrations are pending
+- the vector index covers all chunks
+- API keys are set for configured providers
+
+It also probes the external endpoints the config uses and reports them under a Providers section:
+
+- Ollama is reachable and the configured models are installed (`{base_url}/api/tags`)
+- docling-serve is reachable when used as the converter or chunker (`{base_url}/health`)
+- custom OpenAI-compatible and vLLM endpoints respond (`{base_url}/models`)
+
+SaaS providers (OpenAI, Anthropic, Cohere, Jina, ZeroEntropy, Voyage) are covered by the API-key check rather than a network probe. In-process local models (sentence-transformers, cross-encoder, mxbai, jina-local) have no endpoint and are reported as such.
+
+Each failure prints the command that fixes it (`rebuild`, `create-index`, `migrate`, `rebuild --set-embedder`). `doctor` makes no changes. It exits with status 1 when any check fails, so it can gate CI or monitoring.
+
 ### Migrate Database
 
 Apply pending database migrations:
