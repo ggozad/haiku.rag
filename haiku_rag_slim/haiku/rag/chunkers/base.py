@@ -15,7 +15,7 @@ class DocumentChunker(ABC):
     """
 
     @abstractmethod
-    async def chunk(self, document: "DoclingDocument") -> list["Chunk"]:
+    async def chunk(self, document: "DoclingDocument | None") -> list["Chunk"]:
         """Split a document into chunks with metadata.
 
         Args:
