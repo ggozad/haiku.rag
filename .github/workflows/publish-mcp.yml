@@ -14,9 +14,9 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: Generate server.json from template
@@ -26,9 +26,11 @@ jobs:
           mv server.json.tmp server.json
           echo "Generated server.json with version: $VERSION"
       - name: Install MCP Publisher
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          LATEST_RELEASE=$(curl -s https://api.github.com/repos/modelcontextprotocol/registry/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-          curl -L https://github.com/modelcontextprotocol/registry/releases/download/${LATEST_RELEASE}/mcp-publisher_linux_amd64.tar.gz -o mcp-publisher.tar.gz
+          gh release download --repo modelcontextprotocol/registry \
+            --pattern 'mcp-publisher_linux_amd64.tar.gz' -O mcp-publisher.tar.gz
           tar -xzf mcp-publisher.tar.gz
           chmod +x mcp-publisher
           sudo mv mcp-publisher /usr/local/bin/
