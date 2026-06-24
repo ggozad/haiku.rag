@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.61.1] - 2026-06-24
+
 ### Fixed
 
 - zstd compression uses a fresh `zstandard` compressor/decompressor per call instead of shared module-level singletons, fixing process segfaults when ingester workers compress documents concurrently (Python < 3.14).
@@ -1806,7 +1808,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.61.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.61.1...HEAD
+[0.61.1]: https://github.com/ggozad/haiku.rag/compare/0.61.0...0.61.1
 [0.61.0]: https://github.com/ggozad/haiku.rag/compare/0.60.0...0.61.0
 [0.60.0]: https://github.com/ggozad/haiku.rag/compare/0.59.1...0.60.0
 [0.59.1]: https://github.com/ggozad/haiku.rag/compare/0.59.0...0.59.1
