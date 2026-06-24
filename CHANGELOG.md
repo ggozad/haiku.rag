@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- zstd compression uses a fresh `zstandard` compressor/decompressor per call instead of shared module-level singletons, fixing process segfaults when ingester workers compress documents concurrently (Python < 3.14).
+
 ## [0.61.0] - 2026-06-23
 
 ### Added

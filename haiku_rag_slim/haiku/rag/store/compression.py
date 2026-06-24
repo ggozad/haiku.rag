@@ -10,15 +10,18 @@ try:  # pragma: no cover
 except ImportError:
     from zstandard import ZstdCompressor, ZstdDecompressor, get_frame_parameters
 
-    _zstd_compressor = ZstdCompressor()
-    _zstd_decompressor = ZstdDecompressor()
-
+    # ZstdCompressor/ZstdDecompressor are not thread-safe: each wraps a single
+    # reused ZSTD_CCtx/ZSTD_DCtx, and concurrent .compress()/.decompress() calls
+    # corrupt that context and segfault in the C backend. Ingestion drives this
+    # path from multiple worker threads (asyncio.to_thread in
+    # _prepare_document_from_docling), so construct a fresh instance per call
+    # rather than sharing a module-level singleton.
     def _zstd_compress(data: bytes) -> bytes:
-        return _zstd_compressor.compress(data)
+        return ZstdCompressor().compress(data)
 
     def _zstd_decompress(data: bytes) -> bytes:
         content_size = get_frame_parameters(data).content_size
-        return _zstd_decompressor.decompress(data, max_output_size=content_size)
+        return ZstdDecompressor().decompress(data, max_output_size=content_size)
 
 
 def compress_json(json_str: str) -> bytes:

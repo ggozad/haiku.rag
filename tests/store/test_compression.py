@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 
 from haiku.rag.store.compression import (
     compress_docling_split,
@@ -23,6 +24,27 @@ class TestJsonCompression:
     def test_compress_json_produces_zstd(self):
         compressed = compress_json('{"test": true}')
         assert compressed[:4] == b"\x28\xb5\x2f\xfd"
+
+    def test_concurrent_compress_decompress_is_safe(self):
+        """Compression must be safe under concurrent threads.
+
+        Ingestion offloads compression to worker threads via
+        asyncio.to_thread; sharing a single zstandard compressor/decompressor
+        across threads corrupts its internal C context and segfaults the
+        process. Hammer both paths from many threads to guard against a
+        regression to module-level singletons.
+        """
+        payloads = [
+            json.dumps({"i": i, "text": f"document body {i} " * 200}) for i in range(64)
+        ]
+
+        def roundtrip(json_str: str) -> str:
+            return decompress_json(compress_json(json_str))
+
+        with ThreadPoolExecutor(max_workers=16) as pool:
+            results = list(pool.map(roundtrip, payloads * 8))
+
+        assert results == (payloads * 8)
 
 
 class TestDoclingCompressionSplit:
