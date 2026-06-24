@@ -5,6 +5,7 @@
 
 - zstd compression uses a fresh `zstandard` compressor/decompressor per call instead of shared module-level singletons, fixing process segfaults when ingester workers compress documents concurrently (Python < 3.14).
 - Ingestion compresses the DoclingDocument structure directly from the in-memory dict, removing one full-size serialized copy from per-document peak memory.
+- Document item extraction builds one `MarkdownDocSerializer` per document (reused across tables) and derives description-less picture text from captions, instead of constructing a serializer per picture and table.
 
 ## [0.61.0] - 2026-06-23
 

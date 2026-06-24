@@ -140,6 +140,112 @@ class TestExtractItemText:
         assert items == []
 
 
+def _doc_with_captioned_picture(*captions: str):
+    from docling_core.types.doc.document import DoclingDocument, ImageRef
+    from docling_core.types.doc.labels import DocItemLabel
+    from PIL import Image
+
+    doc = DoclingDocument(name="pics")
+    caption_items = [doc.add_text(label=DocItemLabel.CAPTION, text=c) for c in captions]
+    img = ImageRef.from_pil(Image.new("RGB", (8, 8), "red"), dpi=72)
+    doc.add_picture(image=img, caption=caption_items[0] if caption_items else None)
+    pic = doc.pictures[0]
+    for extra in caption_items[1:]:
+        pic.captions.append(extra.get_ref())
+    return doc, pic
+
+
+def _doc_with_tables(n: int):
+    from docling_core.types.doc.document import DoclingDocument, TableCell, TableData
+
+    doc = DoclingDocument(name="tables")
+    for _ in range(n):
+        cells = [
+            TableCell(
+                text=f"r{r}c{c}",
+                row_span=1,
+                col_span=1,
+                start_row_offset_idx=r,
+                end_row_offset_idx=r + 1,
+                start_col_offset_idx=c,
+                end_col_offset_idx=c + 1,
+            )
+            for r in range(2)
+            for c in range(2)
+        ]
+        doc.add_table(data=TableData(num_rows=2, num_cols=2, table_cells=cells))
+    return doc
+
+
+class TestExtractItemTextPictures:
+    """Description-less pictures derive text from captions, without a serializer."""
+
+    def test_multiple_captions_space_joined(self):
+        doc, pic = _doc_with_captioned_picture("First", "Second")
+        assert extract_item_text(pic, doc) == "First Second"
+
+    def test_description_wins_over_captions(self):
+        from docling_core.types.doc.document import DescriptionMetaField, PictureMeta
+
+        doc, pic = _doc_with_captioned_picture("A caption")
+        pic.meta = PictureMeta(description=DescriptionMetaField(text="A red square."))
+        assert extract_item_text(pic, doc) == "A red square."
+
+    def test_picture_path_does_not_export_markdown(self, monkeypatch):
+        from docling_core.types.doc.document import PictureItem
+
+        doc, pic = _doc_with_captioned_picture("Only caption")
+
+        def _boom(*args, **kwargs):
+            raise AssertionError("picture path must not build a serializer")
+
+        monkeypatch.setattr(PictureItem, "export_to_markdown", _boom)
+        assert extract_item_text(pic, doc) == "Only caption"
+
+    def test_picture_path_never_requests_serializer(self):
+        doc, pic = _doc_with_captioned_picture("Only caption")
+
+        def _explode():
+            raise AssertionError("picture path must not request a serializer")
+
+        assert extract_item_text(pic, doc, get_serializer=_explode) == "Only caption"
+
+
+class TestExtractItemsTableSerializer:
+    """Table text is unchanged; one serializer is reused across the whole pass."""
+
+    def test_table_text_matches_export_to_markdown(self):
+        doc = _doc_with_tables(1)
+        expected = doc.tables[0].export_to_markdown(doc)
+        items = extract_items("doc-1", doc)
+        table_items = [i for i in items if i.label == "table"]
+        assert len(table_items) == 1
+        assert table_items[0].text == expected
+
+    def test_one_serializer_built_for_multiple_tables(self, monkeypatch):
+        import docling_core.transforms.serializer.markdown as md
+
+        count = {"n": 0}
+        base = md.MarkdownDocSerializer
+
+        class Counting(base):
+            def __init__(self, *args, **kwargs):
+                count["n"] += 1
+                super().__init__(*args, **kwargs)
+
+        doc = _doc_with_tables(3)
+        monkeypatch.setattr(md, "MarkdownDocSerializer", Counting)
+
+        items = extract_items("doc-1", doc)
+        assert sum(1 for i in items if i.label == "table") == 3
+        assert count["n"] == 1
+
+    def test_direct_table_call_builds_one_off_serializer(self):
+        doc = _doc_with_tables(1)
+        expected = doc.tables[0].export_to_markdown(doc)
+        assert extract_item_text(doc.tables[0], doc) == expected
+
+
 @pytest.mark.asyncio
 class TestDocumentItemRepository:
     async def test_create_and_get_range(self, temp_db_path):
