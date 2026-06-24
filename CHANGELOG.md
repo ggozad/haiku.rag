@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- `fastmcp` is now a direct dependency instead of being pulled via the `pydantic-ai-slim[fastmcp]` extra, which `pydantic-ai-slim` 2.0 dropped. Clean installs resolving that release got only `fastmcp-slim` (client), so `haiku-rag mcp` failed with `ImportError: FastMCP server support is not installed`.
+
 ## [0.61.1] - 2026-06-24
 
 ### Fixed
