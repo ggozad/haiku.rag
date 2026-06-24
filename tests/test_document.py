@@ -281,6 +281,36 @@ def test_set_docling_with_page_images():
     assert "1" in pages
 
 
+def test_compress_docling_split_dict_sources_match():
+    """Both ways of building the compression input dict must yield identical
+    stored bytes: ``model_dump(mode="json")`` (used at ingest) and
+    ``json.loads(model_dump_json())`` (used when migrating a stored string).
+    In particular int-keyed ``pages`` must serialize to string keys either way.
+    """
+    import json
+
+    from docling_core.types.doc.base import Size
+    from docling_core.types.doc.document import DoclingDocument, PageItem
+    from docling_core.types.doc.labels import DocItemLabel
+
+    from haiku.rag.store.compression import compress_docling_split
+
+    docling_doc = DoclingDocument(name="equivalence_test")
+    docling_doc.add_text(label=DocItemLabel.PARAGRAPH, text="Hello world")
+    docling_doc.pages[1] = PageItem(size=Size(width=612, height=792), page_no=1)
+
+    struct_dump, pages_dump = compress_docling_split(
+        docling_doc.model_dump(mode="json")
+    )
+    struct_str, pages_str = compress_docling_split(
+        json.loads(docling_doc.model_dump_json())
+    )
+
+    assert struct_dump == struct_str
+    assert pages_dump is not None and pages_str is not None
+    assert pages_dump == pages_str
+
+
 def test_get_page_images():
     """get_page_images returns requested pages from docling_pages blob."""
     import json

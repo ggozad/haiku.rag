@@ -58,7 +58,7 @@ async def _apply_split_pages_zstd(store: Store) -> None:  # pragma: no cover
                 json_str = docling_blob.decode("utf-8")
 
             # Split structure and pages, re-compress with zstd
-            structure_bytes, pages_bytes = compress_docling_split(json_str)
+            structure_bytes, pages_bytes = compress_docling_split(json.loads(json_str))
 
         metadata_raw = row.get("metadata")
         metadata_str = (

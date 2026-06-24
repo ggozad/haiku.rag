@@ -26,7 +26,7 @@ class TestV0_48_0Migration:
 
     async def test_backfill_populates_levels(self, temp_db_path):
         docling_doc = _docling_with_levels()
-        structure, pages = compress_docling_split(docling_doc.model_dump_json())
+        structure, pages = compress_docling_split(docling_doc.model_dump(mode="json"))
 
         async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
             await store.set_haiku_version("0.45.0")
@@ -79,7 +79,7 @@ class TestV0_48_0Migration:
 
     async def test_backfill_idempotent(self, temp_db_path):
         docling_doc = _docling_with_levels()
-        structure, pages = compress_docling_split(docling_doc.model_dump_json())
+        structure, pages = compress_docling_split(docling_doc.model_dump(mode="json"))
 
         async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
             await store.set_haiku_version("0.45.0")
