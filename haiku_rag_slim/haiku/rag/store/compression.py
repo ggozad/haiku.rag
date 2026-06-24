@@ -17,7 +17,7 @@ except ImportError:
     # _prepare_document_from_docling), so construct a fresh instance per call
     # rather than sharing a module-level singleton.
     def _zstd_compress(data: bytes) -> bytes:
-        return ZstdCompressor(threads=-1).compress(data)
+        return ZstdCompressor().compress(data)
 
     def _zstd_decompress(data: bytes) -> bytes:
         content_size = get_frame_parameters(data).content_size
