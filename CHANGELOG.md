@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.61.2] - 2026-06-24
+
 ### Fixed
 
 - `fastmcp` is now a direct dependency instead of being pulled via the `pydantic-ai-slim[fastmcp]` extra, which `pydantic-ai-slim` 2.0 dropped. Clean installs resolving that release got only `fastmcp-slim` (client), so `haiku-rag mcp` failed with `ImportError: FastMCP server support is not installed`.
@@ -1812,7 +1814,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.61.1...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.61.2...HEAD
+[0.61.2]: https://github.com/ggozad/haiku.rag/compare/0.61.1...0.61.2
 [0.61.1]: https://github.com/ggozad/haiku.rag/compare/0.61.0...0.61.1
 [0.61.0]: https://github.com/ggozad/haiku.rag/compare/0.60.0...0.61.0
 [0.60.0]: https://github.com/ggozad/haiku.rag/compare/0.59.1...0.60.0
