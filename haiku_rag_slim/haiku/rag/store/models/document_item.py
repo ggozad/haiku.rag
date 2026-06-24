@@ -1,5 +1,6 @@
 import base64
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
@@ -53,18 +54,33 @@ def _decode_picture_bytes(item: "PictureItem") -> bytes | None:
     return base64.b64decode(encoded, validate=False)
 
 
-def extract_item_text(item: "NodeItem", docling_doc: "DoclingDocument") -> str | None:
+def _picture_caption_text(item: "PictureItem", docling_doc: "DoclingDocument") -> str:
+    """Join a picture's caption texts with spaces, preserving word boundaries."""
+    return " ".join(
+        text
+        for caption in item.captions
+        if (text := caption.resolve(docling_doc).text.strip())
+    )
+
+
+def extract_item_text(
+    item: "NodeItem",
+    docling_doc: "DoclingDocument",
+    *,
+    get_serializer: Callable[[], Any] | None = None,
+) -> str | None:
     """Extract text content from a DocItem.
 
     Handles different item types:
     - TextItem, SectionHeaderItem, etc.: Use .text attribute
-    - TableItem: Use export_to_markdown() for table content
+    - TableItem: serialize to markdown. ``get_serializer`` supplies a reused
+      ``MarkdownDocSerializer`` (see ``extract_items``); when absent a one-off
+      serializer is built so direct calls keep working.
     - PictureItem: Prefer the VLM description (when picture_description is on)
       so pictures carry meaningful prose into chunk text and survive
       ``expand_with_items``' ``if item.text:`` filter; otherwise fall back to
-      a placeholder markdown export (no base64).
+      the picture's caption text.
     """
-    from docling_core.types.doc.base import ImageRefMode
     from docling_core.types.doc.document import PictureItem, TableItem
 
     if text := getattr(item, "text", None):
@@ -73,15 +89,19 @@ def extract_item_text(item: "NodeItem", docling_doc: "DoclingDocument") -> str |
     if isinstance(item, PictureItem):
         if description := _picture_description_text(item):
             return description
-        return item.export_to_markdown(
-            docling_doc,
-            image_mode=ImageRefMode.PLACEHOLDER,
-            image_placeholder="",
-        )
+        return _picture_caption_text(item, docling_doc)
 
     if isinstance(item, TableItem):
         try:
-            return item.export_to_markdown(docling_doc)
+            if get_serializer is None:
+                from docling_core.transforms.serializer.markdown import (
+                    MarkdownDocSerializer,
+                )
+
+                serializer = MarkdownDocSerializer(doc=docling_doc)
+            else:
+                serializer = get_serializer()
+            return serializer.serialize(item=item).text
         except Exception:
             pass
 
@@ -116,11 +136,23 @@ def extract_items(
     existing = existing_picture_data or {}
     items: list[DocumentItem] = []
 
+    serializer: Any = None
+
+    def get_serializer() -> Any:
+        nonlocal serializer
+        if serializer is None:
+            from docling_core.transforms.serializer.markdown import (
+                MarkdownDocSerializer,
+            )
+
+            serializer = MarkdownDocSerializer(doc=docling_doc)
+        return serializer
+
     for position, (item, level) in enumerate(docling_doc.iterate_items()):
         label = getattr(item, "label", None)
         label_str = str(label.value) if hasattr(label, "value") else str(label or "")
 
-        text = extract_item_text(item, docling_doc) or ""
+        text = extract_item_text(item, docling_doc, get_serializer=get_serializer) or ""
 
         page_numbers: list[int] = []
         if prov := getattr(item, "prov", None):
