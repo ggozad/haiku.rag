@@ -54,8 +54,7 @@ class TestDoclingCompressionSplit:
             "texts": [{"text": "hello"}],
             "pages": {"1": {"image": "base64data"}, "2": {"image": "more"}},
         }
-        json_str = json.dumps(data)
-        structure_bytes, pages_bytes = compress_docling_split(json_str)
+        structure_bytes, pages_bytes = compress_docling_split(data)
 
         assert structure_bytes is not None
         assert pages_bytes is not None
@@ -73,8 +72,7 @@ class TestDoclingCompressionSplit:
 
     def test_split_without_pages(self):
         data = {"name": "test_doc", "texts": []}
-        json_str = json.dumps(data)
-        structure_bytes, pages_bytes = compress_docling_split(json_str)
+        structure_bytes, pages_bytes = compress_docling_split(data)
 
         assert structure_bytes is not None
         assert pages_bytes is None
@@ -84,8 +82,7 @@ class TestDoclingCompressionSplit:
 
     def test_split_with_empty_pages(self):
         data = {"name": "test_doc", "texts": [], "pages": {}}
-        json_str = json.dumps(data)
-        structure_bytes, pages_bytes = compress_docling_split(json_str)
+        structure_bytes, pages_bytes = compress_docling_split(data)
 
         assert structure_bytes is not None
         assert pages_bytes is None

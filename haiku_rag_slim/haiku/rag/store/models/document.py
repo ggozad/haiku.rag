@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
-from haiku.rag.store.compression import compress_docling_data, decompress_json
+from haiku.rag.store.compression import compress_docling_split, decompress_json
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument, PageItem
@@ -32,7 +32,7 @@ class Document(BaseModel):
         Sets docling_document (zstd-compressed structure without pages),
         docling_pages (zstd-compressed page images), and docling_version.
         """
-        structure, pages = compress_docling_data(docling_doc.model_dump(mode="json"))
+        structure, pages = compress_docling_split(docling_doc.model_dump(mode="json"))
         self.docling_document = structure
         self.docling_pages = pages
         self.docling_version = docling_doc.version

@@ -643,7 +643,7 @@ def _apply_descriptions_sync(
             pic.meta = PictureMeta()
         pic.meta.description = DescriptionMetaField(text=text)
 
-    structure_bytes, _ = compress_docling_split(docling_doc.model_dump_json())
+    structure_bytes, _ = compress_docling_split(docling_doc.model_dump(mode="json"))
     doc.docling_document = structure_bytes
     doc.docling_version = docling_doc.version
     return len(descriptions)

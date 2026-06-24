@@ -35,7 +35,7 @@ async def test_populate_handles_extra_columns_on_items_table(temp_db_path):
     accepted even though it only writes the original 6 columns.
     """
     docling_doc = _simple_docling_doc()
-    structure, pages = compress_docling_split(docling_doc.model_dump_json())
+    structure, pages = compress_docling_split(docling_doc.model_dump(mode="json"))
 
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
         # _init_tables already created document_items with the latest schema.

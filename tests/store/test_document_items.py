@@ -397,8 +397,7 @@ class TestDocumentItemMigration:
         from haiku.rag.store.upgrades.v0_40_0 import _apply_populate_document_items
 
         docling_doc = _make_docling_doc()
-        json_str = docling_doc.model_dump_json()
-        structure, pages = compress_docling_split(json_str)
+        structure, pages = compress_docling_split(docling_doc.model_dump(mode="json"))
 
         # Create a database at a pre-migration version with a document
         async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
@@ -687,7 +686,7 @@ class TestCompressDoclingSplitStripsPictureUris:
             "pages": {},
         }
 
-        structure_bytes, pages_bytes = compress_docling_split(json.dumps(doc_json))
+        structure_bytes, pages_bytes = compress_docling_split(doc_json)
         decoded = json.loads(decompress_json(structure_bytes))
 
         for pic in decoded["pictures"]:

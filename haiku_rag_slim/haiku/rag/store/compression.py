@@ -34,20 +34,7 @@ def decompress_json(data: bytes) -> str:
     return _zstd_decompress(data).decode("utf-8")
 
 
-def compress_docling_split(json_str: str) -> tuple[bytes, bytes | None]:
-    """Parse a DoclingDocument JSON string and compress it.
-
-    Thin wrapper over :func:`compress_docling_data` for callers that only hold
-    the serialized string — store migrations and rebuild-from-blob, neither of
-    which is speed-sensitive. The ingestion hot path should call
-    ``compress_docling_data`` with ``DoclingDocument.model_dump(mode="json")``
-    instead, to avoid serializing the document to a full JSON string only to
-    parse it straight back into a dict.
-    """
-    return compress_docling_data(json.loads(json_str))
-
-
-def compress_docling_data(data: dict) -> tuple[bytes, bytes | None]:
+def compress_docling_split(data: dict) -> tuple[bytes, bytes | None]:
     """Split a DoclingDocument dict into structure and pages, compress both with zstd.
 
     Picture image URIs are stripped from the structure blob — they are stored on
@@ -70,10 +57,7 @@ def compress_docling_data(data: dict) -> tuple[bytes, bytes | None]:
         if isinstance(picture, dict):
             picture["image"] = None
 
-    structure_bytes = _zstd_compress(json.dumps(data).encode("utf-8"))
-
-    pages_bytes = None
-    if pages:
-        pages_bytes = _zstd_compress(json.dumps(pages).encode("utf-8"))
+    structure_bytes = compress_json(json.dumps(data))
+    pages_bytes = compress_json(json.dumps(pages)) if pages else None
 
     return structure_bytes, pages_bytes
