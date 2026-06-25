@@ -237,6 +237,91 @@ async def test_4xx_is_not_retried():
 
 
 @pytest.mark.asyncio
+async def test_retry_429_fails_over():
+    """A 429 (transient overload) is retried elsewhere — exercises the
+    status-set membership branch of retryability, distinct from 5xx."""
+    seen: list[str] = []
+    ok = _success_routes("t", {"ok": True})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.host)
+        if request.url.host == "busy-g":
+            return httpx.Response(429)
+        return ok.get(request.url.path, httpx.Response(404))
+
+    client = DoclingServeClient(
+        base_urls=["http://busy-g:5001", "http://free-g:5001"],
+        transport=httpx.MockTransport(handler),
+        retry_base_delay=0.0,
+    )
+
+    result = await client.submit_and_poll(
+        endpoint="/v1/convert/file/async",
+        files={"file": ("x.md", b"x", "text/markdown")},
+        data={},
+    )
+    assert result == {"ok": True}
+    assert seen[0] == "busy-g"
+    assert "free-g" in seen
+
+
+@pytest.mark.asyncio
+async def test_task_failure_is_not_retried():
+    """A docling-serve task 'failure' status raises ValueError and is NOT
+    retried on another instance — it's a document problem, not an instance one,
+    so it propagates after a single attempt."""
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.host)
+        if request.url.path == "/v1/convert/file/async":
+            return httpx.Response(200, json={"task_id": "t"})
+        if request.url.path == "/v1/status/poll/t":
+            return httpx.Response(200, json={"task_status": "failure", "detail": "x"})
+        return httpx.Response(404)
+
+    client = DoclingServeClient(
+        base_urls=["http://h:5001", "http://i:5001"],
+        transport=httpx.MockTransport(handler),
+        retry_base_delay=0.0,
+    )
+
+    with pytest.raises(ValueError, match="task failed"):
+        await client.submit_and_poll(
+            endpoint="/v1/convert/file/async",
+            files={"file": ("x.md", b"x", "text/markdown")},
+            data={},
+        )
+
+    # Only the first instance was attempted (submit + poll) — no failover.
+    assert set(seen) == {"h"}
+
+
+def test_pick_url_skips_a_single_excluded_instance():
+    """On retry, _pick_url prefers an instance not in the exclude set."""
+    urls = ["http://p1:5001", "http://p2:5001", "http://p3:5001"]
+    client = DoclingServeClient(base_urls=urls)
+    # Cursor starts at p1; excluding it advances to p2.
+    assert client._pick_url(exclude=frozenset({"http://p1:5001"})) == "http://p2:5001"
+
+
+def test_pick_url_skips_multiple_excluded_instances():
+    """_pick_url keeps advancing past every excluded instance."""
+    urls = ["http://q1:5001", "http://q2:5001", "http://q3:5001"]
+    client = DoclingServeClient(base_urls=urls)
+    excluded = frozenset({"http://q1:5001", "http://q2:5001"})
+    assert client._pick_url(exclude=excluded) == "http://q3:5001"
+
+
+def test_pick_url_all_excluded_falls_back():
+    """When every instance is excluded (e.g. a single-instance fleet that just
+    failed), _pick_url returns one anyway so the retry still probes it."""
+    client = DoclingServeClient(base_urls=["http://solo:5001"])
+    picked = client._pick_url(exclude=frozenset({"http://solo:5001"}))
+    assert picked == "http://solo:5001"
+
+
+@pytest.mark.asyncio
 async def test_zip_endpoint_uses_round_robin_too():
     transport, seen = _scripted_transport(
         {

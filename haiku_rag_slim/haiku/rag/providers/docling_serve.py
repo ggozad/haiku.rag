@@ -153,8 +153,11 @@ class DoclingServeClient:
                     remaining,
                 )
                 await asyncio.sleep(self._retry_delay(attempt_no))
-        # Unreachable: the final iteration either returns or re-raises.
-        raise last_exc or RuntimeError("retry loop exited without a result")
+        # Unreachable: max_attempts >= 1, and the final iteration either returns
+        # on success or re-raises on failure (remaining <= 0).
+        raise last_exc or RuntimeError(  # pragma: no cover
+            "retry loop exited without a result"
+        )
 
     async def _submit_and_wait(
         self,
