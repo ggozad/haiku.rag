@@ -110,6 +110,129 @@ def test_round_robin_shared_across_fresh_clients():
     assert picks == [urls[0], urls[1], urls[2], urls[0]]
 
 
+def _health_transport(
+    down: set[str], task_id: str, result: dict
+) -> tuple[httpx.MockTransport, list[str]]:
+    """MockTransport where requests to a host in the mutable ``down`` set raise
+    ConnectError (a crashed instance); other hosts serve a normal trio. The
+    caller can mutate ``down`` mid-test to flip an instance's health. Records
+    every host attempted."""
+    seen: list[str] = []
+    routes = _success_routes(task_id, result)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.host)
+        if request.url.host in down:
+            raise httpx.ConnectError("connection refused", request=request)
+        return routes.get(request.url.path, httpx.Response(404))
+
+    return httpx.MockTransport(handler), seen
+
+
+async def _poll(client: DoclingServeClient) -> None:
+    """Issue one submit_and_poll, swallowing the transport error raised when the
+    picked instance is down (this baseline has no in-request failover yet)."""
+    try:
+        await client.submit_and_poll(
+            endpoint="/v1/convert/file/async",
+            files={"file": ("x.md", b"x", "text/markdown")},
+            data={},
+        )
+    except httpx.TransportError:
+        pass
+
+
+@pytest.mark.asyncio
+async def test_open_breaker_skips_crashed_instance():
+    """Once an instance has failed enough to open its breaker, _pick_url skips
+    it — later requests route straight to a healthy instance without even
+    attempting the dead one."""
+    down = {"crash-x"}
+    transport, seen = _health_transport(down, "t", {"ok": True})
+    client = DoclingServeClient(
+        base_urls=["http://crash-x:5001", "http://live-x:5001"],
+        transport=transport,
+        breaker_failure_threshold=2,
+    )
+
+    await _poll(client)  # picks crash-x → fail (failures=1)
+    await _poll(client)  # picks live-x → ok
+    await _poll(client)  # picks crash-x → fail (failures=2 → breaker opens)
+
+    assert client._breaker_for("http://crash-x:5001").is_open
+
+    seen.clear()
+    await _poll(client)
+    await _poll(client)
+    assert "crash-x" not in seen
+    assert set(seen) == {"live-x"}
+
+
+@pytest.mark.asyncio
+async def test_breaker_recovers_after_cooldown():
+    """An open breaker auto-probes after its cooldown; once the instance is
+    healthy again a successful request closes the breaker."""
+    clock = [1000.0]
+    down = {"flip-y"}
+    transport, seen = _health_transport(down, "t", {"ok": True})
+    flip = "http://flip-y:5001"
+    client = DoclingServeClient(
+        base_urls=[flip, "http://spare-y:5001"],
+        transport=transport,
+        breaker_failure_threshold=2,
+        breaker_cooldown_s=30.0,
+        now_fn=lambda: clock[0],
+    )
+
+    await _poll(client)  # flip-y → fail (1)
+    await _poll(client)  # spare-y → ok
+    await _poll(client)  # flip-y → fail (2 → open)
+    assert client._breaker_for(flip).is_open
+
+    # Instance recovers, but within the cooldown it's still treated as open.
+    down.clear()
+    assert client._breaker_for(flip).is_open
+
+    # After the cooldown the breaker allows a probe again.
+    clock[0] += 31.0
+    assert not client._breaker_for(flip).is_open
+
+    # Traffic can return to flip-y and success closes the breaker for good.
+    seen.clear()
+    for _ in range(2):
+        await _poll(client)
+    assert "flip-y" in seen
+    assert not client._breaker_for(flip).is_open
+
+
+@pytest.mark.asyncio
+async def test_4xx_does_not_trip_breaker():
+    """A 4xx is the caller's fault — it must not count against instance health,
+    even with a 1-failure threshold."""
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.host)
+        return httpx.Response(400, json={"detail": "bad request"})
+
+    bad = "http://bad-z:5001"
+    client = DoclingServeClient(
+        base_urls=[bad],
+        transport=httpx.MockTransport(handler),
+        breaker_failure_threshold=1,
+    )
+
+    for _ in range(3):
+        with pytest.raises(httpx.HTTPStatusError):
+            await client.submit_and_poll(
+                endpoint="/v1/convert/file/async",
+                files={"file": ("x.md", b"x", "text/markdown")},
+                data={},
+            )
+
+    assert not client._breaker_for(bad).is_open
+
+
 @pytest.mark.asyncio
 async def test_zip_endpoint_uses_round_robin_too():
     transport, seen = _scripted_transport(
