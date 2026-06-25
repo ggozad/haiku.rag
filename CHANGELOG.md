@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- A bare `${VAR}` in YAML config now raises `MissingEnvVarError` when the variable is set but empty, matching the unset case. Use `${VAR:-default}` to allow an empty/absent value.
+
 ## [0.61.2] - 2026-06-24
 
 ### Fixed
