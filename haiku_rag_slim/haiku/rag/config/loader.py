@@ -12,7 +12,7 @@ _ENV_VAR_PATTERN = re.compile(r"\$\$|\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\
 
 
 class MissingEnvVarError(ValueError):
-    """A ${VAR} in the config references an unset environment variable."""
+    """A ${VAR} in the config references an unset or empty environment variable."""
 
 
 def _expand_str(value: str) -> str:
@@ -20,12 +20,12 @@ def _expand_str(value: str) -> str:
         if match.group(0) == "$$":
             return "$"
         name, default = match.group(1), match.group(2)
-        if name in os.environ and (default is None or os.environ[name] != ""):
+        if os.environ.get(name, "") != "":
             return os.environ[name]
         if default is not None:
             return default
         raise MissingEnvVarError(
-            f"Config references unset environment variable ${{{name}}}. "
+            f"Config references unset or empty environment variable ${{{name}}}. "
             f"Set it, or use ${{{name}:-default}} to provide a fallback."
         )
 

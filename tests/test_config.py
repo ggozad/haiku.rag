@@ -419,6 +419,18 @@ def test_expand_env_var_unset_raises(tmp_path, monkeypatch):
         load_yaml_config(config_file)
 
 
+def test_expand_env_var_empty_raises(tmp_path, monkeypatch):
+    """A bare ${VAR} set to an empty string is treated as unset and raises."""
+    from haiku.rag.config.loader import MissingEnvVarError
+
+    monkeypatch.setenv("HAIKU_TEST_EMPTY", "")
+    config_file = tmp_path / "test.yaml"
+    config_file.write_text("api_key: ${HAIKU_TEST_EMPTY}")
+
+    with pytest.raises(MissingEnvVarError, match="HAIKU_TEST_EMPTY"):
+        load_yaml_config(config_file)
+
+
 def test_expand_env_var_default_when_unset(tmp_path, monkeypatch):
     """${VAR:-default} falls back to the default when VAR is unset."""
     monkeypatch.delenv("HAIKU_TEST_MISSING", raising=False)

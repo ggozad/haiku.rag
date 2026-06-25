@@ -33,8 +33,7 @@ class ChunkRepository:
                 replace=True,
             )
         except Exception as e:
-            # Log the error but don't fail - FTS might already exist
-            logger.debug(f"FTS index creation skipped: {e}")
+            logger.warning(f"FTS index build failed; full-text search degraded: {e}")
 
     def _contextualize_content(self, chunk: Chunk) -> str:
         """Generate contextualized content for FTS by prepending headings."""
