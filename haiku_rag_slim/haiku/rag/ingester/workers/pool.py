@@ -108,11 +108,11 @@ class WorkerPool:
         if self._workers:
             raise RuntimeError("WorkerPool already started")
         self._stop.clear()
-        # Any rows in `claimed` at start time are owned by workers from a
-        # previous process that didn't get to release them (SIGKILL, OOM,
-        # host reboot). Reset them so fresh workers can claim immediately
-        # instead of waiting on the reaper's claim_timeout_s.
-        reset = await self._jobs.reap_stale(claim_timeout_seconds=0)
+        # Sweep claims left behind by a previous process (SIGKILL, OOM, host
+        # reboot) so fresh workers can take them over. Scoped by the lease TTL,
+        # not 0: a peer process sharing the queue may hold live claims, and
+        # those must not be wiped out from under it on our startup.
+        reset = await self._jobs.reap_stale(lease_ttl_seconds=self._claim_timeout_s)
         if reset:
             logger.info("Boot-reaped %d stale claim(s) from previous process", reset)
         for i in range(self._worker_count):

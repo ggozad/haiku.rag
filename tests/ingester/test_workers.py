@@ -51,7 +51,7 @@ async def test_worker_ids_are_unique_across_pools(client, jobs, sync):
     claimed = await jobs.claim_next(worker_a)
     assert claimed is not None
     # Reaper resets the claim; pool B re-claims and finishes first.
-    await jobs.reap_stale(claim_timeout_seconds=0)
+    await jobs.reap_stale(lease_ttl_seconds=0)
     reclaimed = await jobs.claim_next(worker_b)
     assert reclaimed is not None and reclaimed.id == job.id
     assert await jobs.mark_succeeded(reclaimed.id, worker_b) is True
@@ -448,7 +448,7 @@ async def test_worker_loses_claim_to_reaper_does_not_write_sync_state(
     claimed_by_a = await jobs.claim_next("worker-A")
     assert claimed_by_a is not None
     # Reaper resets A's claim, worker-B re-claims.
-    await jobs.reap_stale(claim_timeout_seconds=0)
+    await jobs.reap_stale(lease_ttl_seconds=0)
     await jobs.claim_next("worker-B")
 
     pool = _pool(client, jobs, sync, worker_count=1)
@@ -478,7 +478,7 @@ async def test_permanent_error_loses_claim_to_reaper_writes_no_marker(
     claimed_by_a = await jobs.claim_next("worker-A")
     assert claimed_by_a is not None
     # Reaper resets A's claim, worker-B re-claims.
-    await jobs.reap_stale(claim_timeout_seconds=0)
+    await jobs.reap_stale(lease_ttl_seconds=0)
     await jobs.claim_next("worker-B")
 
     pool = _pool(client, jobs, sync, worker_count=1)
@@ -826,15 +826,24 @@ async def test_permanent_failure_marker_write_failure_does_not_crash_worker(
 
 
 @pytest.mark.asyncio
-async def test_boot_reap_resets_pre_existing_claims(client, jobs, sync):
-    """A SIGKILL'd previous process leaves rows in `claimed` state. The new
-    WorkerPool.start() must reset them immediately so fresh workers can
-    claim them, instead of waiting on the periodic reaper's claim_timeout_s
-    window (default 1800s)."""
+async def test_boot_reap_resets_stale_pre_existing_claims(client, jobs, sync, conn):
+    """A SIGKILL'd previous process leaves a stale claim (its lease stopped
+    being renewed). WorkerPool.start() sweeps it so fresh workers can take it
+    over."""
+    from datetime import UTC, datetime, timedelta
+
     await jobs.enqueue("src", "u", JobOp.UPSERT)
     pre_claimed = await jobs.claim_next("ghost-worker")
     assert pre_claimed is not None
     assert pre_claimed.status is JobStatus.CLAIMED
+
+    # The ghost stopped renewing an hour ago.
+    long_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    await conn.execute(
+        "UPDATE jobs SET claimed_at = ?, last_heartbeat_at = ? WHERE id = ?",
+        (long_ago, long_ago, pre_claimed.id),
+    )
+    await conn.commit()
 
     pool = _pool(client, jobs, sync, worker_count=0)
     await pool.start()
@@ -851,6 +860,25 @@ async def test_boot_reap_resets_pre_existing_claims(client, jobs, sync):
 
 
 @pytest.mark.asyncio
+async def test_boot_reap_leaves_a_peer_process_fresh_claim_alone(client, jobs, sync):
+    """A peer process sharing the queue holds a freshly-claimed job. Our
+    startup boot-reap must not wipe its live claim."""
+    await jobs.enqueue("src", "u", JobOp.UPSERT)
+    peer_claim = await jobs.claim_next("peer-worker")
+    assert peer_claim is not None
+
+    pool = _pool(client, jobs, sync, worker_count=0)
+    await pool.start()
+    try:
+        refreshed = await jobs.get_job(peer_claim.id)
+        assert refreshed is not None
+        assert refreshed.status is JobStatus.CLAIMED
+        assert refreshed.claimed_by == "peer-worker"
+    finally:
+        await pool.stop()
+
+
+@pytest.mark.asyncio
 async def test_reaper_resets_stale_claims(client, jobs, sync, conn):
     from datetime import UTC, datetime, timedelta
 
@@ -858,10 +886,11 @@ async def test_reaper_resets_stale_claims(client, jobs, sync, conn):
     claimed = await jobs.claim_next("worker-old")
     assert claimed is not None
 
-    # Push claimed_at back so reap_stale picks it up.
+    # Push the lease back so reap_stale picks it up.
     long_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
     await conn.execute(
-        "UPDATE jobs SET claimed_at = ? WHERE id = ?", (long_ago, job.id)
+        "UPDATE jobs SET claimed_at = ?, last_heartbeat_at = ? WHERE id = ?",
+        (long_ago, long_ago, job.id),
     )
     await conn.commit()
 

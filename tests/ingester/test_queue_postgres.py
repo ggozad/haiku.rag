@@ -106,12 +106,35 @@ async def test_reap_stale_clamps_attempts(postgres_dburi):
         assert job is not None
         claimed = await jobs.claim_next("w")
         assert claimed is not None and claimed.attempts == 1
-        reset = await jobs.reap_stale(claim_timeout_seconds=0)
+        reset = await jobs.reap_stale(lease_ttl_seconds=0)
         assert reset == 1
         refreshed = await jobs.get_job(job.id)
         assert refreshed is not None
         assert refreshed.status is JobStatus.QUEUED
         assert refreshed.attempts == 0
+
+
+@pytest.mark.asyncio
+async def test_renew_claims_survives_reap_on_postgres(postgres_dburi):
+    """The COALESCE lease threshold and the OR-of-(id, claimed_by) renewal
+    predicate render and run on Postgres: a renewed claim outlives a reap even
+    though its claimed_at is old."""
+    async with queue_engine(postgres_dburi) as engine:
+        jobs = JobRepo(engine)
+        job = await jobs.enqueue("s", "u", JobOp.UPSERT)
+        assert job is not None
+        claimed = await jobs.claim_next("w")
+        assert claimed is not None
+
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("UPDATE jobs SET claimed_at = :ts WHERE id = :id"),
+                {"ts": "2000-01-01T00:00:00+00:00", "id": job.id},
+            )
+        assert await jobs.renew_claims({job.id: "w"}) == 1
+        assert await jobs.reap_stale(lease_ttl_seconds=60) == 0
+        refreshed = await jobs.get_job(job.id)
+        assert refreshed is not None and refreshed.status is JobStatus.CLAIMED
 
 
 @pytest.mark.asyncio

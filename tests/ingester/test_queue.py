@@ -3,8 +3,11 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 import sqlalchemy as sa
+from sqlalchemy.engine import URL
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from haiku.rag.config import QueueConfig
+from haiku.rag.ingester.queue.db import SCHEMA_VERSION
 from haiku.rag.ingester.queue.db import jobs as jobs_table
 from haiku.rag.ingester.queue.migrations import (
     apply_migrations,
@@ -32,6 +35,81 @@ async def test_apply_migrations_is_idempotent(engine, conn):
     cursor = await conn.execute("SELECT COUNT(*) AS n FROM schema_version")
     row = await cursor.fetchone()
     assert row["n"] == 1
+
+
+_V1_JOBS_DDL = """
+CREATE TABLE jobs (
+    id TEXT PRIMARY KEY,
+    source_id TEXT NOT NULL,
+    uri TEXT NOT NULL,
+    op TEXT NOT NULL,
+    content_hash TEXT,
+    revision TEXT,
+    status TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    max_attempts INTEGER NOT NULL DEFAULT 5,
+    last_error TEXT,
+    extra TEXT,
+    enqueued_at TEXT NOT NULL,
+    scheduled_at TEXT NOT NULL,
+    claimed_at TEXT,
+    claimed_by TEXT,
+    completed_at TEXT
+)
+"""
+
+
+@pytest.mark.asyncio
+async def test_migration_v1_to_v2_adds_and_backfills_heartbeat(tmp_path):
+    """A real v1 DB (no last_heartbeat_at, schema_version=1) gains the column
+    and has it backfilled from claimed_at for in-flight rows only."""
+    db = tmp_path / "v1.db"
+    engine = create_async_engine(URL.create("sqlite+aiosqlite", database=str(db)))
+    try:
+        when = "2026-01-01T00:00:00+00:00"
+        claimed_when = "2026-01-01T00:05:00+00:00"
+        async with engine.begin() as conn:
+            await conn.execute(sa.text(_V1_JOBS_DDL))
+            await conn.execute(
+                sa.text("CREATE TABLE schema_version (version INTEGER PRIMARY KEY)")
+            )
+            await conn.execute(sa.text("INSERT INTO schema_version VALUES (1)"))
+            await conn.execute(
+                sa.text(
+                    "INSERT INTO jobs (id, source_id, uri, op, status, attempts, "
+                    "max_attempts, enqueued_at, scheduled_at, claimed_at, claimed_by) "
+                    "VALUES ('claimed-1', 's', 'u1', 'upsert', 'claimed', 1, 5, "
+                    f"'{when}', '{when}', '{claimed_when}', 'w')"
+                )
+            )
+            await conn.execute(
+                sa.text(
+                    "INSERT INTO jobs (id, source_id, uri, op, status, attempts, "
+                    "max_attempts, enqueued_at, scheduled_at) "
+                    "VALUES ('queued-1', 's', 'u2', 'upsert', 'queued', 0, 5, "
+                    f"'{when}', '{when}')"
+                )
+            )
+
+        version = await apply_migrations(engine)
+        assert version == SCHEMA_VERSION
+
+        async with engine.connect() as conn:
+            cols = (await conn.execute(sa.text("PRAGMA table_info(jobs)"))).fetchall()
+            assert "last_heartbeat_at" in {c[1] for c in cols}
+            rows = {
+                row[0]: row[1]
+                for row in (
+                    await conn.execute(
+                        sa.text("SELECT id, last_heartbeat_at FROM jobs")
+                    )
+                ).fetchall()
+            }
+        # Backfilled from claimed_at for the in-flight row, left NULL otherwise.
+        assert rows["claimed-1"] == claimed_when
+        assert rows["queued-1"] is None
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio
@@ -389,7 +467,7 @@ async def test_mark_succeeded_with_claimed_by_guard_skips_when_resurrected(jobs)
     a = await jobs.claim_next("worker-A")
     assert a is not None
     # Reaper resets A's stale claim.
-    await jobs.reap_stale(claim_timeout_seconds=0)
+    await jobs.reap_stale(lease_ttl_seconds=0)
     # B picks the job up.
     b = await jobs.claim_next("worker-B")
     assert b is not None and b.id == job.id and b.claimed_by == "worker-B"
@@ -409,7 +487,7 @@ async def test_mark_dead_with_claimed_by_guard_skips_when_resurrected(jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     a = await jobs.claim_next("worker-A")
     assert a is not None
-    await jobs.reap_stale(claim_timeout_seconds=0)
+    await jobs.reap_stale(lease_ttl_seconds=0)
     b = await jobs.claim_next("worker-B")
     assert b is not None and b.claimed_by == "worker-B"
     assert await jobs.mark_dead(job.id, "boom", "worker-A") is False
@@ -427,7 +505,7 @@ async def test_reschedule_with_claimed_by_guard_skips_when_resurrected(jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     a = await jobs.claim_next("worker-A")
     assert a is not None
-    await jobs.reap_stale(claim_timeout_seconds=0)
+    await jobs.reap_stale(lease_ttl_seconds=0)
     b = await jobs.claim_next("worker-B")
     assert b is not None and b.claimed_by == "worker-B"
     assert await jobs.reschedule(job.id, 30.0, "transient", "worker-A") is False
@@ -445,7 +523,7 @@ async def test_release_if_claimed_with_claimed_by_guard_skips_when_resurrected(j
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     a = await jobs.claim_next("worker-A")
     assert a is not None
-    await jobs.reap_stale(claim_timeout_seconds=0)
+    await jobs.reap_stale(lease_ttl_seconds=0)
     b = await jobs.claim_next("worker-B")
     assert b is not None and b.claimed_by == "worker-B"
     assert await jobs.release_if_claimed(job.id, "worker-A") is False
@@ -601,23 +679,48 @@ async def test_reap_stale_resets_old_claims(conn, jobs):
     assert claimed is not None
     assert claimed.attempts == 1
 
-    # Backdate claimed_at to simulate a crashed worker.
+    # Backdate the lease to simulate a worker that stopped renewing (crash).
     long_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
     await conn.execute(
-        "UPDATE jobs SET claimed_at = ? WHERE id = ?", (long_ago, job.id)
+        "UPDATE jobs SET claimed_at = ?, last_heartbeat_at = ? WHERE id = ?",
+        (long_ago, long_ago, job.id),
     )
     await conn.commit()
 
-    reset = await jobs.reap_stale(claim_timeout_seconds=60)
+    reset = await jobs.reap_stale(lease_ttl_seconds=60)
     assert reset == 1
     refreshed = await jobs.get_job(job.id)
     assert refreshed is not None
     assert refreshed.status is JobStatus.QUEUED
     assert refreshed.claimed_at is None
     assert refreshed.claimed_by is None
-    # claim_next incremented to 1; reap undoes that since a crashed worker
+    assert refreshed.last_heartbeat_at is None
+    # claim_next incremented to 1; reap undoes that since a reaped worker
     # isn't a consumed attempt — matches release_if_claimed semantics.
     assert refreshed.attempts == 0
+
+
+@pytest.mark.asyncio
+async def test_reap_stale_falls_back_to_claimed_at_when_no_heartbeat(conn, jobs):
+    """A claim made by a process that doesn't write the lease (an older version
+    sharing the queue) has last_heartbeat_at IS NULL. Reaping must fall back to
+    claimed_at instead of stranding it forever (NULL comparisons are falsy)."""
+    job = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None
+
+    long_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    await conn.execute(
+        "UPDATE jobs SET claimed_at = ?, last_heartbeat_at = NULL WHERE id = ?",
+        (long_ago, job.id),
+    )
+    await conn.commit()
+
+    reset = await jobs.reap_stale(lease_ttl_seconds=60)
+    assert reset == 1
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.QUEUED
 
 
 @pytest.mark.asyncio
@@ -626,11 +729,85 @@ async def test_reap_stale_leaves_fresh_claims_alone(jobs):
     claimed = await jobs.claim_next("w")
     assert claimed is not None
 
-    reset = await jobs.reap_stale(claim_timeout_seconds=3600)
+    reset = await jobs.reap_stale(lease_ttl_seconds=3600)
     assert reset == 0
     refreshed = await jobs.get_job(job.id)
     assert refreshed is not None
     assert refreshed.status is JobStatus.CLAIMED
+
+
+@pytest.mark.asyncio
+async def test_claim_next_sets_both_timestamps(jobs):
+    await jobs.enqueue("s", "u", JobOp.UPSERT)
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None
+    assert claimed.claimed_at is not None
+    assert claimed.last_heartbeat_at is not None
+
+
+@pytest.mark.asyncio
+async def test_renew_claims_keeps_a_stale_claim_alive(conn, jobs):
+    """A claim whose claimed_at is old but whose lease was just renewed must
+    not be reaped — this is the slow-but-alive worker the reaper used to kill."""
+    job = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None
+
+    # Job started long ago, but the worker is alive and renewing.
+    long_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    await conn.execute(
+        "UPDATE jobs SET claimed_at = ? WHERE id = ?", (long_ago, job.id)
+    )
+    await conn.commit()
+    renewed = await jobs.renew_claims({job.id: "w"})
+    assert renewed == 1
+
+    reset = await jobs.reap_stale(lease_ttl_seconds=60)
+    assert reset == 0
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.CLAIMED
+
+
+@pytest.mark.asyncio
+async def test_renew_claims_invariant_only_touches_heartbeat(conn, jobs):
+    job = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None and claimed.claimed_at is not None
+
+    # Backdate the heartbeat so renewal demonstrably advances it.
+    old = (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
+    await conn.execute(
+        "UPDATE jobs SET last_heartbeat_at = ? WHERE id = ?", (old, job.id)
+    )
+    await conn.commit()
+    before = await jobs.get_job(job.id)
+    assert before is not None and before.last_heartbeat_at is not None
+
+    assert await jobs.renew_claims({job.id: "w"}) == 1
+    after = await jobs.get_job(job.id)
+    assert after is not None and after.last_heartbeat_at is not None
+    assert after.claimed_at == before.claimed_at
+    assert after.last_heartbeat_at > before.last_heartbeat_at
+
+
+@pytest.mark.asyncio
+async def test_renew_claims_skips_reclaimed_job(jobs):
+    """Renewal is guarded on claimed_by: a job reaped and re-claimed by another
+    worker must not be renewed by the original (lost) claimant."""
+    job = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    a = await jobs.claim_next("worker-A")
+    assert a is not None
+    await jobs.reap_stale(lease_ttl_seconds=0)
+    b = await jobs.claim_next("worker-B")
+    assert b is not None and b.claimed_by == "worker-B"
+
+    assert await jobs.renew_claims({job.id: "worker-A"}) == 0
+
+
+@pytest.mark.asyncio
+async def test_renew_claims_empty_is_noop(jobs):
+    assert await jobs.renew_claims({}) == 0
 
 
 # --- prune_dead ---

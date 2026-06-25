@@ -35,6 +35,7 @@ class Job(BaseModel):
     scheduled_at: datetime
     claimed_at: datetime | None = None
     claimed_by: str | None = None
+    last_heartbeat_at: datetime | None = None
     completed_at: datetime | None = None
 
 

@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- Ingester queue schema v2 adds a `last_heartbeat_at` lease column on `jobs`; existing queue databases migrate in place on open.
+
 ### Fixed
 
 - A failed FTS index build is logged at `WARNING` instead of `DEBUG`, so silent full-text search degradation is visible.

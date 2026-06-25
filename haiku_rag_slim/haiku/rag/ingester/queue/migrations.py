@@ -51,9 +51,19 @@ async def apply_migrations(engine: AsyncEngine) -> int:
         ).scalar_one_or_none()
         if current is None:
             await conn.execute(sa.insert(schema_version).values(version=SCHEMA_VERSION))
-        elif current < SCHEMA_VERSION:  # pragma: no cover - no migrations yet
-            # No diff migrations exist yet — future versions add ALTER/UPDATE
-            # statements between create_all and the version bump.
+        elif current < SCHEMA_VERSION:
+            # create_all only creates missing tables/indexes, never adds columns
+            # to an existing table, so column additions need explicit ALTERs.
+            if current < 2:
+                await conn.execute(
+                    sa.text("ALTER TABLE jobs ADD COLUMN last_heartbeat_at TEXT")
+                )
+                await conn.execute(
+                    sa.text(
+                        "UPDATE jobs SET last_heartbeat_at = claimed_at "
+                        "WHERE status = 'claimed'"
+                    )
+                )
             await conn.execute(sa.update(schema_version).values(version=SCHEMA_VERSION))
     return SCHEMA_VERSION
 
