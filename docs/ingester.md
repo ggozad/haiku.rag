@@ -335,7 +335,8 @@ ingester:
   workers:
     worker_count: 4
     poll_idle_interval_s: 1.0
-    claim_timeout_s: 1800
+    lease_ttl_s: 120
+    heartbeat_interval_s: 30
     reaper_interval_s: 60
     shutdown_grace_s: 60            # SIGTERM drains in-flight up to this long
     retry:
@@ -352,8 +353,11 @@ rescheduled with exponential backoff plus jitter, up to `max_attempts`,
 then land in the dead-letter queue. `PermanentError` (unsupported
 extension, 4xx HTTP except 408/429, etc.) skips retry entirely.
 
-A reaper task resets jobs whose `claimed_at` is older than
-`claim_timeout_s` so a crashed worker doesn't strand its job.
+While a worker processes a job it renews the job's lease every
+`heartbeat_interval_s`. A reaper task resets any claim whose lease has not
+been renewed within `lease_ttl_s` so a crashed worker doesn't strand its
+job. Because a live worker keeps renewing, `lease_ttl_s` need not exceed
+job duration — a slow job is not reaped while it is still running.
 
 **Backpressure.** Each poller skips its periodic sweep when its source
 already has queued or claimed jobs in the queue. The unique-index dedup
@@ -363,22 +367,25 @@ still flow during a skipped sweep, so new files aren't lost.
 
 **Graceful shutdown.** On `SIGINT` / `SIGTERM`, pollers stop immediately
 and workers are given `shutdown_grace_s` to finish in-flight jobs. Jobs
-still running after the grace window are cancelled — they stay
-`claimed` in the queue and are reset by the reaper on the next start
-once `claim_timeout_s` elapses.
+still running after the grace window are cancelled and released back to
+`queued` for immediate re-claim; any release that doesn't land has its
+lease lapse and is reclaimed by the reaper after `lease_ttl_s`.
 
 **Tuning.**
 
-- `claim_timeout_s` must exceed the longest legitimate job duration; a
-  shorter value lets the reaper resurrect in-flight jobs.
+- `lease_ttl_s` bounds how long a crashed worker's job stays stuck before
+  another worker takes it over. It no longer needs to exceed job duration,
+  so it can be short; keep it well above `heartbeat_interval_s`.
+- `heartbeat_interval_s` must be at most `lease_ttl_s / 3` so scheduler
+  jitter or a slow DB round-trip can't let a live job's lease lapse.
 - `worker_count` should match downstream capacity. docling-serve
   processes one task per instance, so `worker_count` above the number
   of `providers.docling_serve.base_url` entries over-subscribes the
-  fleet — extra submissions queue inside docling-serve and inflate
-  `claimed_at` duration toward `claim_timeout_s`.
+  fleet — extra submissions queue inside docling-serve. They are not
+  reaped while queued because the worker keeps renewing the lease.
 - `poll_idle_interval_s`: lower = faster pickup, more SQLite churn.
 - `reaper_interval_s`: worst-case post-crash reclaim is
-  `claim_timeout_s + reaper_interval_s`.
+  `lease_ttl_s + reaper_interval_s`.
 
 **Per-source override.** A source can opt out of the global retry
 policy:
@@ -431,7 +438,10 @@ server, then pollers, then in-flight workers.
 
 LanceDB supports exactly one writer + N readers per database URI. Run
 exactly one `haiku-ingester serve` against a given LanceDB. Multiple
-MCP servers or read-only consumers against the same DB are fine.
+MCP servers or read-only consumers against the same DB are fine. Sharing
+the Postgres queue across processes is safe (the claim/lease lifecycle is
+cross-process-correct) but does not relax this constraint — it governs the
+queue, not the LanceDB.
 
 ## HTTP control plane
 
@@ -603,10 +613,18 @@ the same way as for SQLite:
 haiku-ingester queue init
 ```
 
-Workers claim jobs with `FOR UPDATE SKIP LOCKED`, so several `haiku-ingester
-serve` processes can share one Postgres queue and scale out horizontally. One
-caveat: idle workers wake on new work instantly only within their own process.
-Workers in other processes pick up enqueued jobs on their next
+Workers claim jobs with `FOR UPDATE SKIP LOCKED`, and the claim/lease lifecycle
+is cross-process-safe — claims are renewed and reaped correctly no matter which
+process owns them — so several `haiku-ingester serve` processes can share one
+Postgres queue without double-claiming or reaping each other's live jobs.
+
+This does not lift the LanceDB
+[single-writer constraint](#single-writer-constraint): each `serve` still owns
+its own LanceDB. A shared queue therefore spans processes writing distinct
+LanceDB URIs; it does not let several processes write one database.
+
+One caveat: idle workers wake on new work instantly only within their own
+process. Workers in other processes pick up enqueued jobs on their next
 `poll_idle_interval_s` tick rather than immediately.
 
 ### Logs
