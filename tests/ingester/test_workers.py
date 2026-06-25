@@ -31,6 +31,36 @@ def _pool(client, jobs, sync, **kwargs) -> WorkerPool:
     )
 
 
+# --- worker identity ---
+
+
+@pytest.mark.asyncio
+async def test_worker_ids_are_unique_across_pools(client, jobs, sync):
+    """Two pools built with default construction must not share worker ids;
+    otherwise a stale worker from one pool can satisfy the claimed_by guard of
+    a job re-claimed by another pool and clobber its result."""
+    pool_a = _pool(client, jobs, sync)
+    pool_b = _pool(client, jobs, sync)
+    worker_a = pool_a._worker_id(0)
+    worker_b = pool_b._worker_id(0)
+    assert worker_a != worker_b
+
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+
+    claimed = await jobs.claim_next(worker_a)
+    assert claimed is not None
+    # Reaper resets the claim; pool B re-claims and finishes first.
+    await jobs.reap_stale(claim_timeout_seconds=0)
+    reclaimed = await jobs.claim_next(worker_b)
+    assert reclaimed is not None and reclaimed.id == job.id
+    assert await jobs.mark_succeeded(reclaimed.id, worker_b) is True
+
+    # Pool A's slow worker finishes later: with unique ids this is a no-op, so
+    # pool B's success is not clobbered.
+    assert await jobs.mark_succeeded(job.id, worker_a) is False
+
+
 # --- event-driven wakeup ---
 
 

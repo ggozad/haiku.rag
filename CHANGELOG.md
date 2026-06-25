@@ -4,6 +4,7 @@
 ### Fixed
 
 - A failed FTS index build is logged at `WARNING` instead of `DEBUG`, so silent full-text search degradation is visible.
+- Ingester worker ids are now globally unique (`{pid}-{uuid}-{n}`) instead of `worker-{n}`, so the `claimed_by` guards on job completion/reschedule/release distinguish workers across processes sharing one Postgres queue.
 
 ### Changed
 

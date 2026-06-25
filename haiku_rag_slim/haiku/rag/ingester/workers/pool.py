@@ -1,7 +1,9 @@
 import asyncio
 import logging
+import os
 import time
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from haiku.rag.config import CircuitBreakerConfig
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
@@ -59,11 +61,19 @@ class WorkerPool:
         self._metadata_providers: dict[str, MetadataProvider] = (
             dict(metadata_providers) if metadata_providers else {}
         )
+        # Globally-unique so claimed_by distinguishes this pool's workers from
+        # those of any other process sharing the queue; the claimed_by guards on
+        # mark_succeeded/reschedule/release rely on it. The uuid guarantees
+        # uniqueness; the pid just makes claimed_by readable in logs/dashboard.
+        self._instance = f"{os.getpid()}-{uuid4().hex[:8]}"
         self._stop = asyncio.Event()
         self._workers: list[asyncio.Task] = []
         self._reaper: asyncio.Task | None = None
         self._pending_releases: set[asyncio.Task] = set()
         self._breakers: dict[str, CircuitBreaker] = {}
+
+    def _worker_id(self, i: int) -> str:
+        return f"{self._instance}-{i}"
 
     @property
     def live_workers(self) -> int:
@@ -106,7 +116,9 @@ class WorkerPool:
         if reset:
             logger.info("Boot-reaped %d stale claim(s) from previous process", reset)
         for i in range(self._worker_count):
-            self._workers.append(asyncio.create_task(self._worker_loop(f"worker-{i}")))
+            self._workers.append(
+                asyncio.create_task(self._worker_loop(self._worker_id(i)))
+            )
         self._reaper = asyncio.create_task(self._reaper_loop())
 
     async def stop(self) -> None:
