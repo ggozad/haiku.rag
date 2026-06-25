@@ -158,15 +158,17 @@ async def test_convert_aborts_and_cleans_up_on_mid_stream_slice_failure(
 
 
 @pytest.mark.asyncio
-async def test_concatenate_runs_off_event_loop_thread(tmp_path, monkeypatch):
-    """DoclingDocument.concatenate merges slice documents that carry inlined
-    base64 page/picture images — CPU-heavy and proportional to total document
-    size. It must run off the event-loop thread so it doesn't stall other
-    workers' coroutines. Capture the thread it runs on and assert it is not the
-    event-loop thread."""
+async def test_slice_merge_runs_off_event_loop_thread(tmp_path, monkeypatch):
+    """Folding each converted slice into the merge buffer deep-copies items
+    carrying inlined base64 page/picture images — CPU-heavy and proportional to
+    document size. It must run off the event-loop thread so it doesn't stall
+    other workers' coroutines. Capture the thread each fold runs on and assert
+    none is the event-loop thread."""
     import threading
 
     from docling_core.types.doc.document import DoclingDocument
+
+    from haiku.rag.converters import pdf_split
 
     src = _make_pdf(4, tmp_path)
 
@@ -177,14 +179,13 @@ async def test_concatenate_runs_off_event_loop_thread(tmp_path, monkeypatch):
     event_loop_thread = threading.current_thread()
     called_from: list[threading.Thread] = []
 
-    def spy(docs):
-        called_from.append(threading.current_thread())
-        # Return a slice doc rather than exercising the real concatenate —
-        # this test only asserts the dispatch thread, not merge correctness
-        # (covered by test_concatenate_shifts_page_nos_and_unique_self_refs).
-        return docs[0]
+    real_add = pdf_split._SliceMerger.add
 
-    monkeypatch.setattr(DoclingDocument, "concatenate", staticmethod(spy))
+    def spy_add(self, slice_doc):
+        called_from.append(threading.current_thread())
+        return real_add(self, slice_doc)
+
+    monkeypatch.setattr(pdf_split._SliceMerger, "add", spy_add)
 
     await convert_pdf_with_splitting(
         _Converter(),  # ty: ignore[invalid-argument-type]
@@ -193,11 +194,89 @@ async def test_concatenate_runs_off_event_loop_thread(tmp_path, monkeypatch):
         slice_size=2,
     )
 
-    assert called_from, "concatenate was never called"
-    assert called_from[0] is not event_loop_thread, (
-        "DoclingDocument.concatenate ran on the event-loop thread; it must be "
-        "dispatched via asyncio.to_thread"
+    assert called_from, "slice merge was never invoked"
+    assert all(t is not event_loop_thread for t in called_from), (
+        "slice merge ran on the event-loop thread; it must be dispatched via "
+        "asyncio.to_thread"
     )
+
+
+def _one_page_slice(name: str, text: str):
+    """A single-page DoclingDocument with one provenanced text item, mimicking
+    a converted PDF slice (docling numbers each slice's pages from 1)."""
+    from docling_core.types.doc.base import BoundingBox, CoordOrigin
+    from docling_core.types.doc.document import (
+        DoclingDocument,
+        PageItem,
+        ProvenanceItem,
+        Size,
+    )
+    from docling_core.types.doc.labels import DocItemLabel
+
+    d = DoclingDocument(name=name)
+    d.pages[1] = PageItem(page_no=1, size=Size(width=595.0, height=842.0))
+    d.add_text(
+        label=DocItemLabel.TEXT,
+        text=text,
+        prov=ProvenanceItem(
+            page_no=1,
+            bbox=BoundingBox(
+                l=0.0, t=0.0, r=100.0, b=20.0, coord_origin=CoordOrigin.TOPLEFT
+            ),
+            charspan=(0, len(text)),
+        ),
+    )
+    return d
+
+
+def test_incremental_merge_matches_concatenate():
+    """The incremental _SliceMerger must produce a byte-identical document to
+    the public DoclingDocument.concatenate over the same slices — it issues the
+    same _DocIndex.index() sequence, just interleaved with conversion. Also the
+    canary for docling-core internals drift: if the incremental path silently
+    disappears, the _incremental assertion fails loudly."""
+    pytest.importorskip("docling_core")
+    from docling_core.types.doc.document import DoclingDocument
+
+    from haiku.rag.converters.pdf_split import _SliceMerger
+
+    slices = [("s1", "alpha"), ("s2", "beta"), ("s3", "gamma")]
+
+    batch = DoclingDocument.concatenate([_one_page_slice(n, t) for n, t in slices])
+
+    merger = _SliceMerger()
+    assert merger._incremental, "expected the incremental path on this docling-core"
+    for n, t in slices:
+        merger.add(_one_page_slice(n, t))
+    incremental = merger.result()
+
+    assert incremental.model_dump_json() == batch.model_dump_json()
+
+
+def test_slice_merger_falls_back_to_concatenate(monkeypatch):
+    """When the docling-core merge internals are unavailable, the merger falls
+    back to the public concatenate and still merges correctly."""
+    pytest.importorskip("docling_core")
+    from docling_core.types.doc.document import DoclingDocument
+
+    from haiku.rag.converters import pdf_split
+
+    # Simulate version drift without breaking concatenate itself (which uses
+    # _DocIndex internally): force the capability probe to report unavailable.
+    monkeypatch.setattr(pdf_split, "_incremental_merge_available", lambda: False)
+
+    slices = [("s1", "alpha"), ("s2", "beta")]
+    expected = DoclingDocument.concatenate(
+        [_one_page_slice(n, t) for n, t in slices]
+    )
+
+    merger = pdf_split._SliceMerger()
+    assert not merger._incremental
+    for n, t in slices:
+        merger.add(_one_page_slice(n, t))
+    merged = merger.result()
+
+    assert merged.model_dump_json() == expected.model_dump_json()
 
 
 def test_concatenate_shifts_page_nos_and_unique_self_refs():
