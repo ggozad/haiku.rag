@@ -12,6 +12,7 @@ from haiku.rag.config import (
     IngesterConfig,
     RetryPolicyConfig,
     S3SourceConfig,
+    WorkerConfig,
 )
 
 
@@ -20,9 +21,35 @@ def test_default_ingester_config_has_sane_values():
     assert cfg.sources == []
     assert cfg.workers.worker_count == 4
     assert cfg.workers.retry.max_attempts == 5
+    assert cfg.workers.lease_ttl_s == 120
+    assert cfg.workers.heartbeat_interval_s == 30
     assert cfg.api.enabled is True
     assert cfg.api.port == 8765
     assert cfg.api.root_path == ""
+
+
+def test_worker_config_rejects_heartbeat_too_close_to_lease():
+    with pytest.raises(ValidationError, match="heartbeat_interval_s"):
+        WorkerConfig(lease_ttl_s=60, heartbeat_interval_s=30)
+
+
+def test_worker_config_accepts_heartbeat_within_a_third_of_lease():
+    cfg = WorkerConfig(lease_ttl_s=60, heartbeat_interval_s=20)
+    assert cfg.heartbeat_interval_s == 20
+
+
+def test_worker_config_rejects_non_positive_timings():
+    with pytest.raises(ValidationError):
+        WorkerConfig(lease_ttl_s=0)
+    with pytest.raises(ValidationError):
+        WorkerConfig(heartbeat_interval_s=0)
+
+
+def test_worker_config_rejects_unknown_field():
+    """The former claim_timeout_s (and any typo) must fail loudly rather than
+    being silently ignored."""
+    with pytest.raises(ValidationError, match="claim_timeout_s"):
+        WorkerConfig(claim_timeout_s=1800)  # ty: ignore[unknown-argument]
 
 
 @pytest.mark.parametrize(

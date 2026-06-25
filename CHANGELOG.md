@@ -1,18 +1,16 @@
 # Changelog
 ## [Unreleased]
 
-### Added
+### Changed
 
-- Ingester queue schema v2 adds a `last_heartbeat_at` lease column on `jobs`; existing queue databases migrate in place on open.
+- Ingester reaping is lease-based: a worker renews `last_heartbeat_at` on its in-flight jobs every `heartbeat_interval_s`, and the reaper reclaims a claim only once its lease is older than `lease_ttl_s`. A job slower than the timeout is no longer reaped and reprocessed while still running. Adds queue schema v2 (`last_heartbeat_at` on `jobs`); existing queue databases migrate in place on open.
+- **Breaking:** `ingester.workers.claim_timeout_s` removed; set `lease_ttl_s` (default 120) and `heartbeat_interval_s` (default 30) instead. `WorkerConfig` rejects unknown keys.
+- A bare `${VAR}` in YAML config now raises `MissingEnvVarError` when the variable is set but empty, matching the unset case. Use `${VAR:-default}` to allow an empty/absent value.
 
 ### Fixed
 
 - A failed FTS index build is logged at `WARNING` instead of `DEBUG`, so silent full-text search degradation is visible.
-- Ingester worker ids are now globally unique (`{pid}-{uuid}-{n}`) instead of `worker-{n}`, so the `claimed_by` guards on job completion/reschedule/release distinguish workers across processes sharing one Postgres queue.
-
-### Changed
-
-- A bare `${VAR}` in YAML config now raises `MissingEnvVarError` when the variable is set but empty, matching the unset case. Use `${VAR:-default}` to allow an empty/absent value.
+- Ingester worker ids are now globally unique (`{pid}-{uuid}-{n}`); the `claimed_by` guards on job completion/reschedule/release distinguish workers across processes sharing one Postgres queue.
 
 ## [0.61.2] - 2026-06-24
 

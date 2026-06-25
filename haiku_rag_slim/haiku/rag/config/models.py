@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from haiku.rag.utils import get_default_data_dir
 
@@ -309,6 +309,10 @@ class CircuitBreakerConfig(BaseModel):
 
 
 class WorkerConfig(BaseModel):
+    # Reject unknown keys so a renamed/removed setting (e.g. the former
+    # claim_timeout_s) fails loudly instead of being silently ignored.
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
     worker_count: int = Field(
         default=4,
         description="Number of async worker tasks pulling from the queue. "
@@ -323,14 +327,22 @@ class WorkerConfig(BaseModel):
         "polls. Lower = lower latency picking up new jobs, higher = less "
         "queue churn when the queue is usually empty.",
     )
-    claim_timeout_s: int = Field(
-        default=1800,
-        description="A `claimed` job whose claimed_at is older than this is "
-        "presumed dead and reset to `queued` by the reaper. MUST exceed your "
-        "longest legitimate job duration — set it too short and the reaper "
-        "resurrects jobs still being processed, causing two workers to run "
-        "the same URI. Default (30min) covers typical docling conversions; "
-        "raise it if you ingest very large PDFs through docling-local.",
+    lease_ttl_s: int = Field(
+        default=120,
+        gt=0,
+        description="A `claimed` job whose lease has not been renewed within "
+        "this window is presumed dead and reset to `queued` by the reaper. A "
+        "live worker renews its lease every heartbeat_interval_s while "
+        "processing, so this need not exceed job duration — it only bounds how "
+        "long a crashed worker's job stays stuck before another worker takes "
+        "it over.",
+    )
+    heartbeat_interval_s: int = Field(
+        default=30,
+        gt=0,
+        description="How often a worker renews the lease on its in-flight "
+        "jobs. Must be comfortably shorter than lease_ttl_s so scheduler "
+        "jitter or a slow DB round-trip can't let a live job's lease lapse.",
     )
     reaper_interval_s: int = Field(
         default=60,
@@ -341,9 +353,18 @@ class WorkerConfig(BaseModel):
     shutdown_grace_s: float = Field(
         default=60.0,
         description="On SIGINT/SIGTERM, how long to wait for in-flight jobs to "
-        "finish before forcing cancellation. Cancelled jobs stay 'claimed' in "
-        "the queue; the reaper resets them after claim_timeout_s.",
+        "finish before forcing cancellation. Cancelled jobs are released back "
+        "to `queued` for immediate re-claim.",
     )
+
+    @model_validator(mode="after")
+    def _check_heartbeat_cadence(self) -> "WorkerConfig":
+        if self.heartbeat_interval_s > self.lease_ttl_s / 3:
+            raise ValueError(
+                "heartbeat_interval_s must be <= lease_ttl_s / 3 so a live "
+                "worker renews its lease several times before it could expire"
+            )
+        return self
 
 
 class APIConfig(BaseModel):
