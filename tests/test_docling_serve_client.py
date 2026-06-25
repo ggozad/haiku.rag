@@ -234,6 +234,49 @@ async def test_4xx_does_not_trip_breaker():
 
 
 @pytest.mark.asyncio
+async def test_pick_url_falls_back_when_all_breakers_open():
+    """When every instance's breaker is open (here a single-instance fleet that
+    just failed), _pick_url still returns one so the request can probe it rather
+    than failing with nothing to pick."""
+    lone = "http://lone-w:5001"
+    transport, _ = _health_transport({"lone-w"}, "t", {"ok": True})
+    client = DoclingServeClient(
+        base_urls=[lone],
+        transport=transport,
+        breaker_failure_threshold=1,
+    )
+
+    await _poll(client)  # fails → breaker opens (threshold=1)
+    assert client._breaker_for(lone).is_open
+
+    # The only instance's breaker is open; _pick_url falls back to it.
+    assert client._pick_url() == lone
+
+
+@pytest.mark.asyncio
+async def test_zip_records_instance_failure():
+    """submit_and_poll_zip records a crashed instance against its breaker, the
+    same as submit_and_poll — covers the zip method's failure path."""
+    z = "http://zdown-v:5001"
+    transport, _ = _health_transport({"zdown-v"}, "t", {})
+    client = DoclingServeClient(
+        base_urls=[z],
+        transport=transport,
+        breaker_failure_threshold=1,
+    )
+
+    with pytest.raises(httpx.ConnectError):
+        await client.submit_and_poll_zip(
+            endpoint="/v1/convert/file/async",
+            files={"file": ("x.md", b"x", "text/markdown")},
+            data={},
+        )
+
+    # The failure tripped the (threshold=1) breaker via _record_outcome.
+    assert client._breaker_for(z).is_open
+
+
+@pytest.mark.asyncio
 async def test_zip_endpoint_uses_round_robin_too():
     transport, seen = _scripted_transport(
         {
