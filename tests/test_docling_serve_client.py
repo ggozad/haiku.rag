@@ -110,6 +110,132 @@ def test_round_robin_shared_across_fresh_clients():
     assert picks == [urls[0], urls[1], urls[2], urls[0]]
 
 
+def _failover_transport(
+    down_hosts: set[str], task_id: str, result: dict
+) -> tuple[httpx.MockTransport, list[str]]:
+    """MockTransport where any request to a host in ``down_hosts`` raises a
+    ConnectError (simulating a crashed instance); other hosts serve a normal
+    submit/poll/result trio. Records every host attempted."""
+    seen_hosts: list[str] = []
+    routes = _success_routes(task_id, result)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_hosts.append(request.url.host)
+        if request.url.host in down_hosts:
+            raise httpx.ConnectError("connection refused", request=request)
+        return routes.get(request.url.path, httpx.Response(404))
+
+    return httpx.MockTransport(handler), seen_hosts
+
+
+@pytest.mark.asyncio
+async def test_retry_fails_over_to_healthy_instance():
+    """A crashed instance (connection error) is retried on the next instance,
+    and the call succeeds without surfacing the failure."""
+    transport, seen = _failover_transport(
+        down_hosts={"down-a"}, task_id="t", result={"ok": True}
+    )
+    client = DoclingServeClient(
+        base_urls=["http://down-a:5001", "http://up-a:5001"],
+        transport=transport,
+        retry_base_delay=0.0,  # don't sleep in tests
+    )
+
+    result = await client.submit_and_poll(
+        endpoint="/v1/convert/file/async",
+        files={"file": ("x.md", b"x", "text/markdown")},
+        data={},
+    )
+
+    assert result == {"ok": True}
+    # First attempt hit the crashed instance; failover moved to the healthy one.
+    assert seen[0] == "down-a"
+    assert "up-a" in seen
+    # The successful trio (submit/poll/result) all landed on the healthy host.
+    assert seen[-3:] == ["up-a", "up-a", "up-a"]
+
+
+@pytest.mark.asyncio
+async def test_retry_5xx_fails_over():
+    """A 5xx from a struggling instance is retried elsewhere (status-based
+    retryability, distinct from the transport-error path)."""
+    seen: list[str] = []
+    ok = _success_routes("t", {"ok": True})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.host)
+        if request.url.host == "sad-b":
+            return httpx.Response(503)
+        return ok.get(request.url.path, httpx.Response(404))
+
+    client = DoclingServeClient(
+        base_urls=["http://sad-b:5001", "http://ok-b:5001"],
+        transport=httpx.MockTransport(handler),
+        retry_base_delay=0.0,
+    )
+
+    result = await client.submit_and_poll(
+        endpoint="/v1/convert/file/async",
+        files={"file": ("x.md", b"x", "text/markdown")},
+        data={},
+    )
+    assert result == {"ok": True}
+    assert seen[0] == "sad-b"
+    assert "ok-b" in seen
+
+
+@pytest.mark.asyncio
+async def test_retry_exhausts_all_instances_then_raises():
+    """When every instance is down, the call retries up to max_attempts and
+    then surfaces the transport error."""
+    transport, seen = _failover_transport(
+        down_hosts={"down-c", "down-d"}, task_id="t", result={}
+    )
+    client = DoclingServeClient(
+        base_urls=["http://down-c:5001", "http://down-d:5001"],
+        transport=transport,
+        max_attempts=2,
+        retry_base_delay=0.0,
+    )
+
+    with pytest.raises(httpx.ConnectError):
+        await client.submit_and_poll(
+            endpoint="/v1/convert/file/async",
+            files={"file": ("x.md", b"x", "text/markdown")},
+            data={},
+        )
+
+    # Two attempts, each preferring a not-yet-failed instance.
+    assert seen == ["down-c", "down-d"]
+
+
+@pytest.mark.asyncio
+async def test_4xx_is_not_retried():
+    """A 4xx (other than 408/429) is the caller's fault — it must not be
+    retried on another instance; it propagates after a single attempt."""
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.host)
+        return httpx.Response(400, json={"detail": "bad request"})
+
+    client = DoclingServeClient(
+        base_urls=["http://e:5001", "http://f:5001"],
+        transport=httpx.MockTransport(handler),
+        retry_base_delay=0.0,
+    )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await client.submit_and_poll(
+            endpoint="/v1/convert/file/async",
+            files={"file": ("x.md", b"x", "text/markdown")},
+            data={},
+        )
+
+    # Single attempt — no failover on a non-retryable status.
+    assert seen == ["e"]
+
+
 @pytest.mark.asyncio
 async def test_zip_endpoint_uses_round_robin_too():
     transport, seen = _scripted_transport(
