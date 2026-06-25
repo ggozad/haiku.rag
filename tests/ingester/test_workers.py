@@ -585,6 +585,124 @@ async def test_forced_shutdown_cancels_heartbeat(client, jobs, sync):
 
 
 @pytest.mark.asyncio
+async def test_heartbeat_survives_a_renewal_failure(
+    client, jobs, sync, monkeypatch, caplog
+):
+    """A transient DB error during lease renewal is logged and the heartbeat
+    keeps running, rather than dying and leaving in-flight leases unrenewed."""
+    release = asyncio.Event()
+
+    async def _block(*args, **kwargs):
+        await release.wait()
+        return Document(
+            id="d", content="x", uri="u", metadata={"md5": "m", "source_revision": "r"}
+        )
+
+    client.create_document_from_source.side_effect = _block
+
+    calls = 0
+
+    async def _boom(_claims):
+        nonlocal calls
+        calls += 1
+        raise RuntimeError("queue unavailable")
+
+    monkeypatch.setattr(jobs, "renew_claims", _boom)
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+
+    pool = _pool(
+        client,
+        jobs,
+        sync,
+        worker_count=1,
+        lease_ttl_s=5,
+        heartbeat_interval_s=0.05,
+        reaper_interval_s=60,
+    )
+    await pool.start()
+    try:
+        with caplog.at_level("ERROR", logger="haiku.rag.ingester.workers.pool"):
+            for _ in range(100):
+                refreshed = await jobs.get_job(job.id)
+                if refreshed is not None and refreshed.status is JobStatus.CLAIMED:
+                    break
+                await asyncio.sleep(0.02)
+            await asyncio.sleep(0.2)
+        assert calls >= 1
+        assert pool.heartbeat_alive
+        assert "Lease renewal failed" in caplog.text
+    finally:
+        release.set()
+        await pool.stop()
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_done_callback_logs_unexpected_outcomes(
+    client, jobs, sync, caplog
+):
+    """The done-callback surfaces a heartbeat that died or exited while the pool
+    was still running — both should never happen, so they log loudly."""
+    pool = _pool(client, jobs, sync, worker_count=0)
+
+    async def _raises():
+        raise RuntimeError("boom")
+
+    died = asyncio.create_task(_raises())
+    with pytest.raises(RuntimeError):
+        await died
+    with caplog.at_level("ERROR", logger="haiku.rag.ingester.workers.pool"):
+        pool._on_heartbeat_done(died)
+    assert "Heartbeat task died" in caplog.text
+
+    async def _exits():
+        return None
+
+    exited = asyncio.create_task(_exits())
+    await exited
+    caplog.clear()
+    with caplog.at_level("ERROR", logger="haiku.rag.ingester.workers.pool"):
+        pool._on_heartbeat_done(exited)
+    assert "exited while the pool was still running" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_reaper_logs_when_it_resets_a_stale_claim(
+    client, jobs, sync, conn, caplog
+):
+    """A claim that goes stale after startup (so boot-reap misses it) is reset
+    by the periodic reaper, which logs the reset count."""
+    from datetime import UTC, datetime, timedelta
+
+    pool = _pool(
+        client, jobs, sync, worker_count=0, reaper_interval_s=0.05, lease_ttl_s=1
+    )
+    await pool.start()
+    try:
+        job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+        assert job is not None
+        claimed = await jobs.claim_next("external-worker")
+        assert claimed is not None
+        long_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+        await conn.execute(
+            "UPDATE jobs SET claimed_at = ?, last_heartbeat_at = ? WHERE id = ?",
+            (long_ago, long_ago, job.id),
+        )
+        await conn.commit()
+
+        with caplog.at_level("INFO", logger="haiku.rag.ingester.workers.pool"):
+            for _ in range(40):
+                refreshed = await jobs.get_job(job.id)
+                if refreshed is not None and refreshed.status is JobStatus.QUEUED:
+                    break
+                await asyncio.sleep(0.05)
+        assert refreshed is not None and refreshed.status is JobStatus.QUEUED
+        assert "Reaper reset" in caplog.text
+    finally:
+        await pool.stop()
+
+
+@pytest.mark.asyncio
 async def test_worker_loses_claim_to_reaper_does_not_write_sync_state(
     client, jobs, sync
 ):
@@ -860,6 +978,26 @@ async def test_breaker_closes_on_successful_probe(client, jobs, sync):
 
     # The successful job ticks record_success which clears the breaker.
     assert pool.breaker_consecutive_failures == 0
+
+
+@pytest.mark.asyncio
+async def test_breaker_closes_when_success_lands_while_open(client, jobs, sync, caplog):
+    """A job that succeeds while the source's breaker is still open (drained
+    directly, bypassing the paused-source skip) closes it and logs recovery."""
+    client.create_document_from_source.return_value = Document(
+        id="d", content="x", uri="u", metadata={"md5": "m", "source_revision": "r"}
+    )
+    pool = _pool(client, jobs, sync)
+    breaker = pool._breaker_for("src")
+    for _ in range(10):
+        breaker.record_failure()
+    assert breaker.is_open
+
+    await jobs.enqueue("src", "u", JobOp.UPSERT)
+    with caplog.at_level("INFO", logger="haiku.rag.ingester.workers.pool"):
+        await pool.drain_once()
+    assert pool.breaker_consecutive_failures == 0
+    assert "Worker breaker closed" in caplog.text
 
 
 @pytest.mark.asyncio
