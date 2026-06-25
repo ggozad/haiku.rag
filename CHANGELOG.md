@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- A failed FTS index build is logged at `WARNING` instead of `DEBUG`, so silent full-text search degradation is visible.
+
 ### Changed
 
 - A bare `${VAR}` in YAML config now raises `MissingEnvVarError` when the variable is set but empty, matching the unset case. Use `${VAR:-default}` to allow an empty/absent value.

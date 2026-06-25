@@ -510,3 +510,34 @@ async def test_chunk_content_fts_without_headings(temp_db_path):
         # Both should be the same when no headings
         assert record["content"] == "Plain content without headings."
         assert record["content_fts"] == "Plain content without headings."
+
+
+async def test_ensure_fts_index_warns_on_failure(temp_db_path):
+    """A failed FTS index build is surfaced at WARNING, not swallowed silently."""
+    import logging
+
+    from haiku.rag.store.repositories import chunk as chunk_module
+
+    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+        repo = client.chunk_repository
+
+        async def _boom(*_args, **_kwargs):
+            raise RuntimeError("index build failed")
+
+        repo.store.chunks_table.create_index = _boom
+
+        records: list[logging.LogRecord] = []
+
+        class _Capture(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                records.append(record)
+
+        handler = _Capture(level=logging.WARNING)
+        chunk_module.logger.addHandler(handler)
+        try:
+            await repo._ensure_fts_index()
+        finally:
+            chunk_module.logger.removeHandler(handler)
+
+        assert [r for r in records if r.levelno == logging.WARNING]
+        assert any("index build failed" in r.getMessage() for r in records)
