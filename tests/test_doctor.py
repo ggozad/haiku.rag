@@ -3,6 +3,7 @@ from importlib import metadata
 from unittest.mock import AsyncMock, MagicMock
 
 import lancedb
+import numpy as np
 import pytest
 from typer.testing import CliRunner
 
@@ -11,6 +12,8 @@ from haiku.rag.config.models import (
     AppConfig,
     ConversionOptions,
     DoclingServeConfig,
+    DoctorConfig,
+    DuplicateDetectionConfig,
     EmbeddingModelConfig,
     EmbeddingsConfig,
     ModelConfig,
@@ -26,6 +29,7 @@ from haiku.rag.doctor import (
     _check_api_keys,
     _check_embedding_drift,
     _check_vector_index,
+    _duplicate_families,
     _model_present,
     _probe_endpoint,
     _provider_targets,
@@ -933,3 +937,190 @@ async def test_probe_endpoint_connection_error():
     reachable, error, _ = await _probe_with_handler(handler)
     assert not reachable
     assert error is not None and "refused" in error
+
+
+# --- Duplicate-document detection ----------------------------------------
+
+
+def _docs(spec: dict[str, list[int]], dim: int = 8) -> dict[str, np.ndarray]:
+    """Build per-document chunk matrices from one-hot indices.
+
+    A shared index across documents is a shared (identical) chunk; distinct
+    indices are orthogonal, so they never count as twins.
+    """
+    eye = np.eye(dim)
+    return {
+        doc: np.array([eye[i] for i in idxs], dtype=float) for doc, idxs in spec.items()
+    }
+
+
+# Stage-2 (containment/clustering) unit tests disable the centroid gate
+# (candidate_threshold=0.0) so every pair is verified; orthogonal one-hot chunks
+# would otherwise drop centroids below the default gate. The gate itself is
+# exercised by the end-to-end tests below.
+def _stage2_cfg(**kw) -> DuplicateDetectionConfig:
+    return DuplicateDetectionConfig(candidate_threshold=0.0, **kw)
+
+
+def test_duplicate_families_revision_pair():
+    families = _duplicate_families(
+        _docs({"a": [0, 1, 2, 3], "b": [0, 1, 2, 4]}), _stage2_cfg()
+    )
+    assert len(families) == 1
+    assert set(families[0].members) == {"a", "b"}
+
+
+def test_duplicate_families_append_only_is_asymmetric():
+    families = _duplicate_families(
+        _docs({"a": [0, 1, 2], "b": [0, 1, 2, 3, 4, 5]}), _stage2_cfg()
+    )
+    assert len(families) == 1
+    fam = families[0]
+    assert fam.superset == "b"  # the larger document
+    # directed containment: all of A is in B (1.0); only half of B is in A.
+    a_to_b = next(p for p in fam.pairs if p[:2] == ("a", "b"))
+    assert a_to_b[2] == pytest.approx(1.0)
+    assert a_to_b[3] == pytest.approx(0.5)
+
+
+def test_duplicate_families_distinct_docs_none():
+    families = _duplicate_families(
+        _docs({"a": [0, 1, 2], "b": [3, 4, 5]}), _stage2_cfg()
+    )
+    assert families == []
+
+
+def test_duplicate_families_three_way_chain_one_family():
+    families = _duplicate_families(
+        _docs(
+            {
+                "a": [0, 1, 2, 3],
+                "b": [0, 1, 2, 3, 4],
+                "c": [0, 1, 2, 3, 4, 5],
+            }
+        ),
+        _stage2_cfg(),
+    )
+    assert len(families) == 1
+    assert set(families[0].members) == {"a", "b", "c"}
+    assert families[0].superset == "c"
+
+
+def test_duplicate_families_tiny_docs_ignored():
+    # min_chunks = 3 excludes the one-chunk documents.
+    families = _duplicate_families(_docs({"a": [0], "b": [0]}), _stage2_cfg())
+    assert families == []
+
+
+def test_duplicate_families_threshold_is_configurable():
+    # Share 3 of 5 chunks each -> containment 0.6 both ways.
+    spec = {"a": [0, 1, 2, 3, 4], "b": [0, 1, 2, 5, 6]}
+    assert _duplicate_families(_docs(spec), _stage2_cfg()) == []
+    flagged = _duplicate_families(_docs(spec), _stage2_cfg(containment_threshold=0.6))
+    assert len(flagged) == 1
+    assert set(flagged[0].members) == {"a", "b"}
+
+
+async def _build_dup_db(path, docs: dict[str, list[int]], *, vector_dim: int = 8):
+    """Build a multi-document database with one-hot chunk vectors."""
+    eye = np.eye(vector_dim)
+    db = await lancedb.connect_async(path)
+    settings_tbl = await db.create_table("settings", schema=SettingsRecord)
+    docs_tbl = await db.create_table("documents", schema=DocumentRecord)
+    meta_tbl = await db.create_table("document_meta", schema=DocumentMetaRecord)
+    chunk_model = create_chunk_model(vector_dim)
+    chunks_tbl = await db.create_table("chunks", schema=chunk_model)
+    items_tbl = await db.create_table("document_items", schema=DocumentItemRecord)
+
+    await settings_tbl.add(
+        [
+            SettingsRecord(
+                id="settings",
+                settings=json.dumps(
+                    {
+                        "version": CURRENT_VERSION,
+                        "embeddings": {
+                            "model": {
+                                "provider": "ollama",
+                                "name": "test",
+                                "vector_dim": vector_dim,
+                            }
+                        },
+                    }
+                ),
+            )
+        ]
+    )
+    for doc_id, idxs in docs.items():
+        await docs_tbl.add([DocumentRecord(id=doc_id, content="x")])
+        await meta_tbl.add(
+            [DocumentMetaRecord(document_id=doc_id, uri=f"test://{doc_id}")]
+        )
+        await items_tbl.add(
+            [
+                DocumentItemRecord(
+                    document_id=doc_id, position=0, self_ref="#/texts/0", text="x"
+                )
+            ]
+        )
+        await chunks_tbl.add(
+            [
+                chunk_model(
+                    id=f"{doc_id}-c{n}",
+                    document_id=doc_id,
+                    content="x",
+                    metadata=json.dumps({"doc_item_refs": ["#/texts/0"]}),
+                    vector=eye[i].tolist(),
+                )
+                for n, i in enumerate(idxs)
+            ]
+        )
+    return db
+
+
+@pytest.mark.asyncio
+async def test_duplicate_documents_check_warns_end_to_end(temp_db_path):
+    await _build_dup_db(temp_db_path, {"a": [0, 1, 2, 3], "b": [0, 1, 2, 3, 4]})
+    report = await run_doctor(_config(vector_dim=8), temp_db_path, {})
+    result = _result(report, "duplicate_documents")
+    assert result.severity is Severity.WARN
+    blob = " ".join(result.details)
+    assert "test://a" in blob and "test://b" in blob
+
+
+@pytest.mark.asyncio
+async def test_duplicate_documents_check_ok_when_distinct(temp_db_path):
+    await _build_dup_db(temp_db_path, {"a": [0, 1, 2], "b": [3, 4, 5]})
+    report = await run_doctor(_config(vector_dim=8), temp_db_path, {})
+    assert _result(report, "duplicate_documents").severity is Severity.OK
+
+
+@pytest.mark.asyncio
+async def test_duplicate_documents_check_reads_config(temp_db_path):
+    # Share 3 of 5 -> containment 0.6. Disable the centroid gate on both runs so
+    # only containment_threshold decides the outcome.
+    await _build_dup_db(temp_db_path, {"a": [0, 1, 2, 3, 4], "b": [0, 1, 2, 5, 6]})
+
+    base = _config(vector_dim=8)
+    base.doctor = DoctorConfig(
+        duplicates=DuplicateDetectionConfig(candidate_threshold=0.0)
+    )
+    assert (
+        _result(
+            await run_doctor(base, temp_db_path, {}), "duplicate_documents"
+        ).severity
+        is Severity.OK
+    )
+
+    tuned = _config(vector_dim=8)
+    tuned.doctor = DoctorConfig(
+        duplicates=DuplicateDetectionConfig(
+            candidate_threshold=0.0, containment_threshold=0.6
+        )
+    )
+    assert (
+        _result(
+            await run_doctor(tuned, temp_db_path, {}), "duplicate_documents"
+        ).severity
+        is Severity.WARN
+    )

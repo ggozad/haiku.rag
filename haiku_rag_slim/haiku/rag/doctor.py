@@ -8,6 +8,7 @@ import numpy as np
 from pydantic import BaseModel, Field
 
 from haiku.rag.config import AppConfig
+from haiku.rag.config.models import DuplicateDetectionConfig
 from haiku.rag.store.engine import (
     REQUIRED_TABLES,
     Store,
@@ -232,6 +233,153 @@ async def _column_values(table, column: str) -> list:
     return [row[column] for row in rows]
 
 
+# Backstop on how many centroid candidate pairs we verify, bounding memory and
+# runtime on a pathologically self-similar corpus.
+MAX_CANDIDATE_PAIRS = 200_000
+
+
+class _DuplicateFamily(BaseModel):
+    members: list[str]
+    superset: str
+    pairs: list[tuple[str, str, float, float]]
+
+
+def _unit(vector: np.ndarray) -> np.ndarray:
+    norm = np.linalg.norm(vector)
+    return vector / norm if norm else vector
+
+
+def _containment(source: np.ndarray, target: np.ndarray, twin: float) -> float:
+    """Fraction of ``source`` chunks with a near-identical chunk in ``target``."""
+    return float(((source @ target.T).max(axis=1) >= twin).mean())
+
+
+def _duplicate_families(
+    doc_vectors: dict[str, np.ndarray], cfg: DuplicateDetectionConfig
+) -> list[_DuplicateFamily]:
+    """Cluster documents that share most of their chunks (revisions of one another).
+
+    Block-then-verify: cheap centroid similarity proposes candidate document
+    pairs, then directed chunk-overlap containment confirms them. Returns one
+    entry per connected component of confirmed pairs.
+    """
+    # Normalize, drop unembedded (zero) vectors, apply the small-document floor.
+    normalized: dict[str, np.ndarray] = {}
+    for doc_id, matrix in doc_vectors.items():
+        m = np.asarray(matrix, dtype=float)
+        if m.ndim != 2 or m.shape[0] == 0:
+            continue
+        norms = np.linalg.norm(m, axis=1)
+        m = m[norms > 0]
+        if m.shape[0] < cfg.min_chunks:
+            continue
+        normalized[doc_id] = m / np.linalg.norm(m, axis=1)[:, None]
+    if len(normalized) < 2:
+        return []
+
+    order = sorted(normalized)
+    centroids = np.array([_unit(normalized[d].mean(axis=0)) for d in order])
+
+    # Stage 1: centroid candidate pairs, block-wise to avoid a full D×D matrix.
+    candidates: list[tuple[int, int]] = []
+    block = 512
+    for start in range(0, len(order), block):
+        sims = centroids[start : start + block] @ centroids.T
+        for row in range(sims.shape[0]):
+            gi = start + row
+            above = np.nonzero(sims[row, gi + 1 :] >= cfg.candidate_threshold)[0]
+            candidates.extend((gi, gi + 1 + int(j)) for j in above)
+        if len(candidates) >= MAX_CANDIDATE_PAIRS:
+            candidates = candidates[:MAX_CANDIDATE_PAIRS]
+            break
+
+    # Stage 2: confirm candidates with directed chunk-overlap containment.
+    adjacency: dict[int, set[int]] = {}
+    edges: dict[tuple[int, int], tuple[float, float]] = {}
+    for i, j in candidates:
+        a_to_b = _containment(
+            normalized[order[i]], normalized[order[j]], cfg.twin_similarity
+        )
+        b_to_a = _containment(
+            normalized[order[j]], normalized[order[i]], cfg.twin_similarity
+        )
+        if max(a_to_b, b_to_a) >= cfg.containment_threshold:
+            adjacency.setdefault(i, set()).add(j)
+            adjacency.setdefault(j, set()).add(i)
+            edges[(i, j)] = (a_to_b, b_to_a)
+    if not edges:
+        return []
+
+    # Cluster confirmed pairs into families (connected components).
+    families: list[_DuplicateFamily] = []
+    seen: set[int] = set()
+    for node in adjacency:
+        if node in seen:
+            continue
+        component: set[int] = set()
+        stack = [node]
+        while stack:
+            cur = stack.pop()
+            if cur in seen:
+                continue
+            seen.add(cur)
+            component.add(cur)
+            stack.extend(adjacency[cur] - seen)
+        members = sorted(order[i] for i in component)
+        # Largest document (most chunks) is the likely superset; smallest id on a tie.
+        superset = min(members, key=lambda d: (-normalized[d].shape[0], d))
+        pairs = sorted(
+            (order[i], order[j], round(ab, 3), round(ba, 3))
+            for (i, j), (ab, ba) in edges.items()
+            if i in component and j in component
+        )
+        families.append(
+            _DuplicateFamily(members=members, superset=superset, pairs=pairs)
+        )
+    return sorted(families, key=lambda f: f.members)
+
+
+def _check_duplicate_documents(
+    doc_vectors: dict[str, np.ndarray],
+    uri_by_doc: dict[str, str | None],
+    title_by_doc: dict[str, str | None],
+    cfg: DuplicateDetectionConfig,
+) -> CheckResult:
+    families = _duplicate_families(doc_vectors, cfg)
+    if not families:
+        return CheckResult(
+            name="duplicate_documents",
+            severity=Severity.OK,
+            message="No near-duplicate documents detected.",
+        )
+
+    def label(doc_id: str) -> str:
+        return uri_by_doc.get(doc_id) or title_by_doc.get(doc_id) or doc_id
+
+    lines: list[str] = []
+    for family in families:
+        members = ", ".join(label(m) for m in family.members)
+        overlaps = "; ".join(
+            f"{label(a)}→{label(b)}: {ab:.2f}, {label(b)}→{label(a)}: {ba:.2f}"
+            for a, b, ab, ba in family.pairs
+        )
+        lines.append(f"[{members}] keep≈{label(family.superset)} ({overlaps})")
+
+    total_docs = sum(len(f.members) for f in families)
+    return CheckResult(
+        name="duplicate_documents",
+        severity=Severity.WARN,
+        message=(
+            f"{len(families)} group(s) of documents with substantial chunk overlap "
+            f"(potential duplicates/revisions), {total_docs} documents."
+        ),
+        remediation=(
+            "Review each group and remove redundant revisions; overlap may be intentional."
+        ),
+        details=_sample(lines),
+    )
+
+
 async def run_db_checks(
     store: Store, config: AppConfig, stats: dict
 ) -> list[CheckResult]:
@@ -244,7 +392,7 @@ async def run_db_checks(
     doc_ids = set(await _column_values(store.documents_table, "id"))
     meta_rows = (
         await store.document_meta_table.query()
-        .select(["document_id", "metadata"])
+        .select(["document_id", "metadata", "uri", "title"])
         .to_list()
     )
     meta_doc_ids = {row["document_id"] for row in meta_rows}
@@ -254,6 +402,8 @@ async def run_db_checks(
         )
         for row in meta_rows
     }
+    uri_by_doc = {row["document_id"]: row.get("uri") for row in meta_rows}
+    title_by_doc = {row["document_id"]: row.get("title") for row in meta_rows}
 
     chunk_rows = (
         await store.chunks_table.query()
@@ -375,7 +525,11 @@ async def run_db_checks(
 
     # Vector dimension consistency and unembedded (all-zero) vectors share one
     # scan of the vector column — the heaviest check on large corpora.
-    arrow = await store.chunks_table.query().select(["id", "vector"]).to_arrow()
+    arrow = (
+        await store.chunks_table.query()
+        .select(["id", "vector", "document_id"])
+        .to_arrow()
+    )
     stored = await SettingsRepository(store).get_current_settings()
     stored_dim = stored.get("embeddings", {}).get("model", {}).get("vector_dim")
     actual_dim = arrow.schema.field("vector").type.list_size
@@ -416,6 +570,19 @@ async def run_db_checks(
             ),
             remediation="haiku-rag rebuild --embed-only" if zero_ids else None,
             details=_sample(zero_ids),
+        )
+    )
+
+    # Near-duplicate documents (revisions sharing most chunks), grouped from the
+    # same vector scan rather than a second pass.
+    chunk_doc_ids_ordered = arrow.column("document_id").to_pylist()
+    indices_by_doc: dict[str, list[int]] = {}
+    for index, doc_id in enumerate(chunk_doc_ids_ordered):
+        indices_by_doc.setdefault(doc_id, []).append(index)
+    doc_vectors = {doc_id: vectors[idx] for doc_id, idx in indices_by_doc.items()}
+    results.append(
+        _check_duplicate_documents(
+            doc_vectors, uri_by_doc, title_by_doc, config.doctor.duplicates
         )
     )
 
