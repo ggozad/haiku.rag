@@ -282,19 +282,40 @@ def _duplicate_families(
 
     order = sorted(normalized)
     centroids = np.array([_unit(normalized[d].mean(axis=0)) for d in order])
+    sizes = np.array([normalized[d].shape[0] for d in order], dtype=float)
 
     # Stage 1: centroid candidate pairs, block-wise to avoid a full D×D matrix.
+    # The cap is enforced per row (truncating each row's matches) so a
+    # self-similar corpus can never allocate beyond MAX_CANDIDATE_PAIRS.
     candidates: list[tuple[int, int]] = []
     block = 512
+    capped = False
     for start in range(0, len(order), block):
+        if capped:
+            break
         sims = centroids[start : start + block] @ centroids.T
         for row in range(sims.shape[0]):
             gi = start + row
-            above = np.nonzero(sims[row, gi + 1 :] >= cfg.candidate_threshold)[0]
+            targets = np.arange(gi + 1, len(order))
+            if targets.size == 0:
+                continue
+            # A smaller document can be fully contained in a larger append-only
+            # revision even when the fixed centroid threshold would fail:
+            # with orthogonal chunks, cosine falls to sqrt(small / large).
+            # Scale the candidate gate by that size ratio, then let directed
+            # containment make the actual duplicate decision.
+            ratios = np.minimum(sizes[gi], sizes[targets]) / np.maximum(
+                sizes[gi], sizes[targets]
+            )
+            thresholds = cfg.candidate_threshold * np.sqrt(ratios)
+            above = np.nonzero(sims[row, gi + 1 :] >= thresholds)[0]
+            remaining = MAX_CANDIDATE_PAIRS - len(candidates)
+            if len(above) >= remaining:
+                above = above[:remaining]
+                capped = True
             candidates.extend((gi, gi + 1 + int(j)) for j in above)
-        if len(candidates) >= MAX_CANDIDATE_PAIRS:
-            candidates = candidates[:MAX_CANDIDATE_PAIRS]
-            break
+            if capped:
+                break
 
     # Stage 2: confirm candidates with directed chunk-overlap containment.
     adjacency: dict[int, set[int]] = {}

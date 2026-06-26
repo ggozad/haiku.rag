@@ -985,6 +985,17 @@ def test_duplicate_families_append_only_is_asymmetric():
     assert a_to_b[3] == pytest.approx(0.5)
 
 
+def test_duplicate_families_append_only_passes_default_centroid_gate():
+    # Fixed 0.85 centroid gating misses this: centroid cosine is sqrt(3 / 6),
+    # but A is fully contained in B and should reach the containment verifier.
+    families = _duplicate_families(
+        _docs({"a": [0, 1, 2], "b": [0, 1, 2, 3, 4, 5]}),
+        DuplicateDetectionConfig(),
+    )
+    assert len(families) == 1
+    assert set(families[0].members) == {"a", "b"}
+
+
 def test_duplicate_families_distinct_docs_none():
     families = _duplicate_families(
         _docs({"a": [0, 1, 2], "b": [3, 4, 5]}), _stage2_cfg()
@@ -1012,6 +1023,16 @@ def test_duplicate_families_tiny_docs_ignored():
     # min_chunks = 3 excludes the one-chunk documents.
     families = _duplicate_families(_docs({"a": [0], "b": [0]}), _stage2_cfg())
     assert families == []
+
+
+def test_duplicate_families_caps_candidates_during_collection(monkeypatch):
+    # Three mutually-identical docs would yield 3 candidate pairs, but a cap of 1
+    # must stop collection after the first (a,b), leaving c unconfirmed.
+    monkeypatch.setattr("haiku.rag.doctor.MAX_CANDIDATE_PAIRS", 1)
+    docs = _docs({"a": [0, 1, 2], "b": [0, 1, 2], "c": [0, 1, 2]}, dim=3)
+    families = _duplicate_families(docs, _stage2_cfg())
+    assert len(families) == 1
+    assert set(families[0].members) == {"a", "b"}
 
 
 def test_duplicate_families_threshold_is_configurable():
