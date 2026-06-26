@@ -252,9 +252,18 @@ def _unit(vector: np.ndarray) -> np.ndarray:
     return vector / norm if norm else vector
 
 
-def _containment(source: np.ndarray, target: np.ndarray, twin: float) -> float:
-    """Fraction of ``source`` chunks with a near-identical chunk in ``target``."""
-    return float(((source @ target.T).max(axis=1) >= twin).mean())
+def _containment(a: np.ndarray, b: np.ndarray, twin: float) -> tuple[float, float]:
+    """Directed chunk-overlap containment in both directions from one product.
+
+    Returns ``(a_in_b, b_in_a)`` where each value is the fraction of one
+    document's chunks that have a near-identical chunk in the other. Both
+    directions are the row-max and column-max of the same similarity matrix, so
+    the matmul is computed once rather than once per direction.
+    """
+    sims = a @ b.T
+    a_in_b = float((sims.max(axis=1) >= twin).mean())
+    b_in_a = float((sims.max(axis=0) >= twin).mean())
+    return a_in_b, b_in_a
 
 
 def _duplicate_families(
@@ -270,7 +279,7 @@ def _duplicate_families(
     # floor; normalize the rest to unit length.
     normalized: dict[str, np.ndarray] = {}
     for doc_id, matrix in doc_vectors.items():
-        m = np.asarray(matrix, dtype=float)
+        m = np.asarray(matrix, dtype=np.float32)
         if m.ndim != 2 or m.shape[0] == 0:
             continue
         m = m[np.linalg.norm(m, axis=1) > 0]
@@ -321,11 +330,8 @@ def _duplicate_families(
     adjacency: dict[int, set[int]] = {}
     edges: dict[tuple[int, int], tuple[float, float]] = {}
     for i, j in candidates:
-        a_to_b = _containment(
+        a_to_b, b_to_a = _containment(
             normalized[order[i]], normalized[order[j]], cfg.twin_similarity
-        )
-        b_to_a = _containment(
-            normalized[order[j]], normalized[order[i]], cfg.twin_similarity
         )
         if max(a_to_b, b_to_a) >= cfg.containment_threshold:
             adjacency.setdefault(i, set()).add(j)
@@ -661,7 +667,12 @@ async def run_db_checks(
         )
 
     ids = arrow.column("id").to_pylist()
-    vectors = np.asarray(arrow.column("vector").to_pylist(), dtype=float)
+    # Reshape the Arrow fixed-size-list child buffer directly into an (N, dim)
+    # float32 matrix. Going through to_pylist() would box N*dim Python floats
+    # (tens of GB and the bulk of the wall-clock on large corpora); the stored
+    # vectors are already float32, so this keeps the layout and the dtype.
+    vec_col = arrow.column("vector").combine_chunks()
+    vectors = vec_col.values.to_numpy(zero_copy_only=False).reshape(-1, actual_dim)
     zero_ids: list[str] = []
     if vectors.size:
         zero_ids = [ids[i] for i in np.nonzero(~vectors.any(axis=1))[0]]
@@ -686,6 +697,9 @@ async def run_db_checks(
     for index, doc_id in enumerate(chunk_doc_ids_ordered):
         indices_by_doc.setdefault(doc_id, []).append(index)
     doc_vectors = {doc_id: vectors[idx] for doc_id, idx in indices_by_doc.items()}
+    # Per-doc fancy indexing has copied every vector; release the full matrix so
+    # both copies are not resident during duplicate detection.
+    del vectors
     results.append(
         _check_duplicate_documents(
             doc_vectors,
