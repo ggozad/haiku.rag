@@ -237,6 +237,32 @@ async def _column_values(table, column: str) -> list:
 # runtime on a pathologically self-similar corpus.
 MAX_CANDIDATE_PAIRS = 200_000
 
+# A chunk must appear in more than this many documents before its document
+# frequency is even considered for the boilerplate cutoff, so small duplicate
+# families on small corpora are never mistaken for boilerplate.
+_MIN_BOILERPLATE_DOCS = 10
+
+
+def _vector_key(row: np.ndarray) -> int:
+    return hash(row.round(4).tobytes())
+
+
+def _boilerplate_keys(doc_vectors: dict[str, np.ndarray], fraction: float) -> set[int]:
+    """Vector keys of chunks that recur across more documents than the cutoff.
+
+    Such chunks (navigation, FAQ blocks, license headers) carry no
+    document-identity signal and would inflate both centroid and containment.
+    """
+    cutoff = max(_MIN_BOILERPLATE_DOCS, fraction * len(doc_vectors))
+    cluster_docs: dict[int, set[str]] = {}
+    for doc_id, matrix in doc_vectors.items():
+        m = np.asarray(matrix, dtype=float)
+        if m.ndim != 2:
+            continue
+        for row in m:
+            cluster_docs.setdefault(_vector_key(row), set()).add(doc_id)
+    return {key for key, docs in cluster_docs.items() if len(docs) > cutoff}
+
 
 class _DuplicateFamily(BaseModel):
     members: list[str]
@@ -263,14 +289,18 @@ def _duplicate_families(
     pairs, then directed chunk-overlap containment confirms them. Returns one
     entry per connected component of confirmed pairs.
     """
-    # Normalize, drop unembedded (zero) vectors, apply the small-document floor.
+    # Drop boilerplate (corpus-wide ubiquitous chunks), unembedded (zero)
+    # vectors, and documents left below the small-document floor; normalize.
+    boilerplate = _boilerplate_keys(doc_vectors, cfg.boilerplate_doc_fraction)
     normalized: dict[str, np.ndarray] = {}
     for doc_id, matrix in doc_vectors.items():
         m = np.asarray(matrix, dtype=float)
         if m.ndim != 2 or m.shape[0] == 0:
             continue
-        norms = np.linalg.norm(m, axis=1)
-        m = m[norms > 0]
+        keep = np.linalg.norm(m, axis=1) > 0
+        if boilerplate:
+            keep &= np.array([_vector_key(row) not in boilerplate for row in m])
+        m = m[keep]
         if m.shape[0] < cfg.min_chunks:
             continue
         normalized[doc_id] = m / np.linalg.norm(m, axis=1)[:, None]

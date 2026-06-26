@@ -108,14 +108,15 @@ class DuplicateDetectionConfig(BaseModel):
 
     Detection clusters documents that share most of their chunks (revisions of
     one another). ``containment_threshold`` is the decision knob; the others
-    tune the cheap centroid pre-filter, what counts as a shared chunk, and which
-    tiny documents to skip.
+    tune the cheap centroid pre-filter, what counts as a shared chunk, which
+    tiny documents to skip, and which ubiquitous (boilerplate) chunks to ignore.
     """
 
     containment_threshold: float = 0.75
     candidate_threshold: float = 0.85
-    twin_similarity: float = 0.97
+    twin_similarity: float = 0.95
     min_chunks: int = 3
+    boilerplate_doc_fraction: float = 0.01
 
 
 class DoctorConfig(BaseModel):

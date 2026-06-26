@@ -307,7 +307,7 @@ Checks include:
 - the configured embedding identity matches the stored settings
 - no database migrations are pending
 - the vector index covers all chunks
-- near-duplicate documents (revisions sharing most of their chunks) are grouped and reported, with the largest member flagged as the likely one to keep (advisory only, never deleted; tuned via `doctor.duplicates` in config)
+- near-duplicate documents (revisions sharing most of their chunks) are grouped and reported, with the largest member flagged as the likely one to keep (advisory only, never deleted; corpus-wide boilerplate chunks are ignored so shared templates do not create false groups; tuned via `doctor.duplicates` in config)
 - API keys are set for configured providers
 
 It also probes the external endpoints the config uses and reports them under a Providers section:
