@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 from haiku.rag.config import SourceConfig
 from haiku.rag.ingester.batch import BatchChange, BatchSourceSummary
-from haiku.rag.ingester.pollers.circuit_breaker import CircuitBreaker
+from haiku.rag.circuit_breaker import CircuitBreaker
 from haiku.rag.ingester.queue.models import JobOp, SyncRow
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
 from haiku.rag.ingester.sources.base import (

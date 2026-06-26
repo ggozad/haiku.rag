@@ -218,6 +218,20 @@ class OllamaConfig(BaseModel):
     )
 
 
+class CircuitBreakerConfig(BaseModel):
+    """Three-state breaker (closed -> open -> probe) over consecutive failures.
+    Used by the ingester's per-source discover() breaker and the docling-serve
+    per-instance breaker."""
+
+    failure_threshold: int = Field(
+        default=5, description="Consecutive failures before the breaker opens."
+    )
+    cooldown_s: float = Field(
+        default=600.0,
+        description="How long the breaker stays open before allowing a probe.",
+    )
+
+
 class DoclingServeConfig(BaseModel):
     """docling-serve endpoints. Accepts a single URL or a list — when a list
     is given, the client round-robins jobs across the URLs. Each job's
@@ -227,6 +241,14 @@ class DoclingServeConfig(BaseModel):
 
     base_url: str | list[str] = "http://localhost:5001"
     api_key: str = ""
+    circuit_breaker: CircuitBreakerConfig = Field(
+        default_factory=lambda: CircuitBreakerConfig(
+            failure_threshold=3, cooldown_s=30.0
+        ),
+        description="Per-instance circuit breaker: skip an instance after this "
+        "many consecutive failures for this cooldown. Defaults are tuned faster "
+        "than the discover breaker since instances restart quickly.",
+    )
 
     @property
     def base_urls(self) -> list[str]:
@@ -293,19 +315,6 @@ class RetryPolicyConfig(BaseModel):
     base_delay_s: float = 2.0
     max_delay_s: float = 300.0
     jitter: float = Field(default=0.25, ge=0.0, le=1.0)
-
-
-class CircuitBreakerConfig(BaseModel):
-    """Per-source breaker over discover() failures. Stops the ingester from
-    hammering a source that's persistently failing."""
-
-    failure_threshold: int = Field(
-        default=5, description="Consecutive failures before the breaker opens."
-    )
-    cooldown_s: float = Field(
-        default=600.0,
-        description="How long the breaker stays open before allowing a probe.",
-    )
 
 
 class WorkerConfig(BaseModel):

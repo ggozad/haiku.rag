@@ -5,7 +5,11 @@ from haiku.rag.config import CircuitBreakerConfig
 
 
 class CircuitBreaker:
-    """Three-state breaker over discover() failures.
+    """Three-state circuit breaker (closed / open with cooldown).
+
+    Shared by the ingester's per-source discover() breaker and the
+    docling-serve per-instance breaker — lives here, below both
+    ``providers`` and ``ingester``, so neither has to depend on the other.
 
     - closed: failures are counted; threshold flips to open.
     - open: probes are blocked until cooldown elapses, then a single probe

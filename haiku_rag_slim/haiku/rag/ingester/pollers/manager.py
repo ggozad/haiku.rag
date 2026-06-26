@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from haiku.rag.config import FSSourceConfig, SourceConfig
 from haiku.rag.ingester.batch import BatchManifest
 from haiku.rag.ingester.pollers.base import BasePoller
-from haiku.rag.ingester.pollers.circuit_breaker import CircuitBreaker
+from haiku.rag.circuit_breaker import CircuitBreaker
 from haiku.rag.ingester.pollers.factory import build_source
 from haiku.rag.ingester.pollers.fs import FSPoller
 from haiku.rag.ingester.pollers.periodic import PeriodicPoller

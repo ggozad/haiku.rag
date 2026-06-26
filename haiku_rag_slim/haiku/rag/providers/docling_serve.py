@@ -9,6 +9,9 @@ from typing import Any
 
 import httpx
 
+from haiku.rag.circuit_breaker import CircuitBreaker
+from haiku.rag.config import CircuitBreakerConfig
+
 logger = logging.getLogger(__name__)
 
 # HTTP statuses that count against an instance's health: 408/429 are transient
@@ -29,44 +32,6 @@ def _is_instance_failure(exc: BaseException) -> bool:
     return isinstance(exc, httpx.TransportError)
 
 
-class _InstanceBreaker:
-    """Per-instance circuit breaker (closed / open with cooldown).
-
-    Self-contained so the provider layer doesn't depend on the ingester
-    package. ``is_open`` auto-probes after the cooldown elapses: a single
-    request is allowed through, and its success closes the breaker while another
-    failure re-opens it.
-    """
-
-    def __init__(
-        self,
-        failure_threshold: int,
-        cooldown_s: float,
-        now_fn: Callable[[], float],
-    ):
-        self._threshold = failure_threshold
-        self._cooldown_s = cooldown_s
-        self._now = now_fn
-        self._consecutive_failures = 0
-        self._opened_at: float | None = None
-
-    @property
-    def is_open(self) -> bool:
-        if self._opened_at is None:
-            return False
-        # Cooldown elapsed → let the next request probe the instance.
-        return self._now() - self._opened_at < self._cooldown_s
-
-    def record_success(self) -> None:
-        self._consecutive_failures = 0
-        self._opened_at = None
-
-    def record_failure(self) -> None:
-        self._consecutive_failures += 1
-        if self._consecutive_failures >= self._threshold:
-            self._opened_at = self._now()
-
-
 # Process-global registry of round-robin rotators over docling-serve
 # instances, keyed by the sorted tuple of base URLs. Clients are constructed
 # per-job by `get_converter` / `get_chunker`, so the rotation cursor has to
@@ -80,7 +45,7 @@ _instance_rotators: dict[tuple[str, ...], "itertools.cycle[str]"] = {}
 # skipped across subsequent jobs until its cooldown elapses. The first client
 # to touch a URL fixes that breaker's threshold/cooldown/clock; in practice all
 # clients share one config (the docling-serve provider config).
-_instance_breakers: dict[str, "_InstanceBreaker"] = {}
+_instance_breakers: dict[str, "CircuitBreaker"] = {}
 
 
 class DoclingServeClient:
@@ -99,8 +64,7 @@ class DoclingServeClient:
         api_key: str | None = None,
         timeout: float = 300,
         transport: httpx.AsyncBaseTransport | None = None,
-        breaker_failure_threshold: int = 3,
-        breaker_cooldown_s: float = 30.0,
+        breaker_config: CircuitBreakerConfig | None = None,
         now_fn: Callable[[], float] = time.monotonic,
     ):
         urls = [base_urls] if isinstance(base_urls, str) else list(base_urls)
@@ -111,8 +75,12 @@ class DoclingServeClient:
         self.timeout = timeout
         # transport is for testing — production callers leave it None.
         self._transport = transport
-        self._breaker_failure_threshold = breaker_failure_threshold
-        self._breaker_cooldown_s = breaker_cooldown_s
+        # Per-instance breaker config; defaults are tuned faster than the
+        # ingester's discover breaker since docling-serve instances restart
+        # quickly. Overridden from DoclingServeConfig.circuit_breaker.
+        self._breaker_config = breaker_config or CircuitBreakerConfig(
+            failure_threshold=3, cooldown_s=30.0
+        )
         self._now = now_fn
         # setdefault is atomic under the GIL — concurrent constructors with
         # the same instance set will end up sharing one rotator.
@@ -130,31 +98,27 @@ class DoclingServeClient:
         callers should let `_pick_url` round-robin per request."""
         return self.base_urls[0]
 
-    def _breaker_for(self, url: str) -> _InstanceBreaker:
+    def _breaker_for(self, url: str) -> CircuitBreaker:
         breaker = _instance_breakers.get(url)
         if breaker is None:
-            breaker = _InstanceBreaker(
-                self._breaker_failure_threshold,
-                self._breaker_cooldown_s,
-                self._now,
-            )
+            breaker = CircuitBreaker(self._breaker_config, now_fn=self._now)
             _instance_breakers[url] = breaker
         return breaker
 
     def _pick_url(self) -> str:
         """Next instance in the round-robin, skipping any whose circuit breaker
-        is open (an instance that recently crashed / overloaded). Falls back to
-        the first instance seen when every breaker is open — a single-instance
-        fleet, or a fully-down one, still gets a probe rather than no attempt."""
-        fallback: str | None = None
+        is open (an instance that recently crashed / overloaded). When every
+        breaker is open — a single-instance fleet, or a fully-down one — probe
+        one anyway rather than failing with nothing to pick."""
         for _ in range(len(self.base_urls)):
             url = next(self._instance_rotator)
-            if fallback is None:
-                fallback = url
             if not self._breaker_for(url).is_open:
                 return url
-        assert fallback is not None  # base_urls is non-empty (checked in __init__)
-        return fallback
+        # All breakers open. Take one more step (the loop consumed a full
+        # rotation, landing the cursor back at the start) so consecutive
+        # all-open calls rotate across instances instead of pinning the first
+        # one — an all-429 overload shouldn't pile every retry on one node.
+        return next(self._instance_rotator)
 
     def _record_outcome(self, base_url: str, exc: BaseException) -> None:
         """Record a failed request against the instance's breaker, but only when
@@ -170,8 +134,8 @@ class DoclingServeClient:
                 "docling-serve instance %s breaker opened after %d consecutive "
                 "failure(s); skipping it for %.0fs",
                 base_url,
-                self._breaker_failure_threshold,
-                self._breaker_cooldown_s,
+                self._breaker_config.failure_threshold,
+                self._breaker_config.cooldown_s,
             )
 
     def _get_headers(self) -> dict[str, str]:

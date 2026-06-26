@@ -1,5 +1,5 @@
 from haiku.rag.config import CircuitBreakerConfig
-from haiku.rag.ingester.pollers.circuit_breaker import CircuitBreaker
+from haiku.rag.circuit_breaker import CircuitBreaker
 
 
 class _Clock:

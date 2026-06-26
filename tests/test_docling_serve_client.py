@@ -9,6 +9,7 @@ resume mid-rotation, breaking specific-order assertions.
 import httpx
 import pytest
 
+from haiku.rag.config import CircuitBreakerConfig
 from haiku.rag.providers.docling_serve import DoclingServeClient
 
 
@@ -152,7 +153,7 @@ async def test_open_breaker_skips_crashed_instance():
     client = DoclingServeClient(
         base_urls=["http://crash-x:5001", "http://live-x:5001"],
         transport=transport,
-        breaker_failure_threshold=2,
+        breaker_config=CircuitBreakerConfig(failure_threshold=2, cooldown_s=30.0),
     )
 
     await _poll(client)  # picks crash-x → fail (failures=1)
@@ -179,8 +180,7 @@ async def test_breaker_recovers_after_cooldown():
     client = DoclingServeClient(
         base_urls=[flip, "http://spare-y:5001"],
         transport=transport,
-        breaker_failure_threshold=2,
-        breaker_cooldown_s=30.0,
+        breaker_config=CircuitBreakerConfig(failure_threshold=2, cooldown_s=30.0),
         now_fn=lambda: clock[0],
     )
 
@@ -219,7 +219,7 @@ async def test_4xx_does_not_trip_breaker():
     client = DoclingServeClient(
         base_urls=[bad],
         transport=httpx.MockTransport(handler),
-        breaker_failure_threshold=1,
+        breaker_config=CircuitBreakerConfig(failure_threshold=1, cooldown_s=30.0),
     )
 
     for _ in range(3):
@@ -243,7 +243,7 @@ async def test_pick_url_falls_back_when_all_breakers_open():
     client = DoclingServeClient(
         base_urls=[lone],
         transport=transport,
-        breaker_failure_threshold=1,
+        breaker_config=CircuitBreakerConfig(failure_threshold=1, cooldown_s=30.0),
     )
 
     await _poll(client)  # fails → breaker opens (threshold=1)
@@ -251,6 +251,54 @@ async def test_pick_url_falls_back_when_all_breakers_open():
 
     # The only instance's breaker is open; _pick_url falls back to it.
     assert client._pick_url() == lone
+
+
+@pytest.mark.asyncio
+async def test_all_open_breakers_rotate_instead_of_pinning_one():
+    """When every breaker is open, successive picks must rotate across the
+    fleet rather than pinning the first instance — an all-429 overload
+    shouldn't pile every retry on one node."""
+    urls = [
+        "http://allopen-a:5001",
+        "http://allopen-b:5001",
+        "http://allopen-c:5001",
+    ]
+    transport, _ = _health_transport(
+        {"allopen-a", "allopen-b", "allopen-c"}, "t", {"ok": True}
+    )
+    client = DoclingServeClient(
+        base_urls=urls,
+        transport=transport,
+        breaker_config=CircuitBreakerConfig(failure_threshold=1, cooldown_s=30.0),
+    )
+
+    # One failure each opens all three breakers: each _poll picks the next
+    # still-closed instance, fails, and opens it.
+    for _ in range(3):
+        await _poll(client)
+    assert all(client._breaker_for(u).is_open for u in urls)
+
+    picks = [client._pick_url() for _ in range(6)]
+    # All-open fallback rotates a → b → c → a → b → c, not the same URL six times.
+    assert picks == urls + urls
+
+
+def test_config_breaker_reaches_client():
+    """The breaker config set on DoclingServeConfig must reach the client via
+    get_converter / get_chunker (previously hardcoded constructor defaults)."""
+    from haiku.rag.chunkers.docling_serve import DoclingServeChunker
+    from haiku.rag.config import AppConfig
+    from haiku.rag.converters.docling_serve import DoclingServeConverter
+
+    config = AppConfig()
+    config.providers.docling_serve.base_url = "http://cfg-brk:5001"
+    config.providers.docling_serve.circuit_breaker = CircuitBreakerConfig(
+        failure_threshold=9, cooldown_s=123.0
+    )
+
+    for component in (DoclingServeConverter(config), DoclingServeChunker(config)):
+        assert component.client._breaker_config.failure_threshold == 9
+        assert component.client._breaker_config.cooldown_s == 123.0
 
 
 @pytest.mark.asyncio
@@ -262,7 +310,7 @@ async def test_zip_records_instance_failure():
     client = DoclingServeClient(
         base_urls=[z],
         transport=transport,
-        breaker_failure_threshold=1,
+        breaker_config=CircuitBreakerConfig(failure_threshold=1, cooldown_s=30.0),
     )
 
     with pytest.raises(httpx.ConnectError):
