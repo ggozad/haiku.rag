@@ -1,11 +1,12 @@
 import asyncio
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from enum import StrEnum
 from pathlib import Path
 
 import httpx
 import numpy as np
+import yaml
 from pydantic import BaseModel, Field
 
 from haiku.rag.config import AppConfig
@@ -243,6 +244,7 @@ class _DuplicateFamily(BaseModel):
     members: list[str]
     superset: str
     pairs: list[tuple[str, str, float, float]]
+    sizes: dict[str, int]
 
 
 def _unit(vector: np.ndarray) -> np.ndarray:
@@ -335,7 +337,12 @@ def _duplicate_families(
             if i in component and j in component
         )
         families.append(
-            _DuplicateFamily(members=members, superset=superset, pairs=pairs)
+            _DuplicateFamily(
+                members=members,
+                superset=superset,
+                pairs=pairs,
+                sizes={d: int(normalized[d].shape[0]) for d in members},
+            )
         )
     return sorted(families, key=lambda f: f.members)
 
@@ -356,13 +363,52 @@ def _common_path_prefix(labels: list[str]) -> str:
     return lo[: cut + 1] if cut > 16 else ""
 
 
+def _write_duplicates_out(
+    path: Path, families: list[_DuplicateFamily], label: Callable[[str], str]
+) -> None:
+    """One block per group; ``keep_suggested`` marks the superset and
+    ``contained_fraction`` is how much of the document is covered by the rest."""
+    groups = []
+    for n, family in enumerate(families, start=1):
+        contained = dict.fromkeys(family.members, 0.0)
+        for a, b, a_to_b, b_to_a in family.pairs:
+            contained[a] = max(contained[a], a_to_b)
+            contained[b] = max(contained[b], b_to_a)
+        groups.append(
+            {
+                "group": n,
+                "keep": family.superset,
+                "documents": [
+                    {
+                        "document_id": member,
+                        "document": label(member),
+                        "chunks": family.sizes[member],
+                        "contained_fraction": round(contained[member], 3),
+                        "keep_suggested": member == family.superset,
+                    }
+                    for member in family.members
+                ],
+            }
+        )
+    with open(path, "w", encoding="utf-8") as handle:
+        yaml.safe_dump({"groups": groups}, handle, sort_keys=False, allow_unicode=True)
+
+
 def _check_duplicate_documents(
     doc_vectors: dict[str, np.ndarray],
     uri_by_doc: Mapping[str, str | None],
     title_by_doc: Mapping[str, str | None],
     cfg: DuplicateDetectionConfig,
+    yaml_path: Path | None = None,
 ) -> CheckResult:
     families = _duplicate_families(doc_vectors, cfg)
+
+    def label(doc_id: str) -> str:
+        return uri_by_doc.get(doc_id) or title_by_doc.get(doc_id) or doc_id
+
+    if yaml_path is not None:
+        _write_duplicates_out(yaml_path, families, label)
+
     if not families:
         return CheckResult(
             name="duplicate_documents",
@@ -370,21 +416,20 @@ def _check_duplicate_documents(
             message="No near-duplicate documents detected.",
         )
 
-    def label(doc_id: str) -> str:
-        return uri_by_doc.get(doc_id) or title_by_doc.get(doc_id) or doc_id
-
-    prefix = _common_path_prefix([label(m) for f in families for m in f.members])
+    # The terminal report is a summary: show the first few groups whole and
+    # point at the YAML export for the rest. One block per shown group — a
+    # header, each member on its own numbered line, then a compact overlap line.
+    shown = families[:_SAMPLE_LIMIT]
+    prefix = _common_path_prefix([label(m) for f in shown for m in f.members])
 
     def short(doc_id: str) -> str:
         text = label(doc_id)
         return text[len(prefix) :] if prefix and text.startswith(prefix) else text
 
-    # One block per group: a header, each member on its own numbered line, then a
-    # compact overlap summary referencing those numbers. Not truncated.
     details: list[str] = []
     if prefix:
         details.append(f"common path: {prefix}")
-    for n, family in enumerate(families, start=1):
+    for n, family in enumerate(shown, start=1):
         number = {member: i for i, member in enumerate(family.members, start=1)}
         details.append(
             f"group {n} — {len(family.members)} docs, keep #{number[family.superset]}:"
@@ -396,6 +441,11 @@ def _check_duplicate_documents(
             for a, b, ab, ba in family.pairs
         )
         details.append(f"  overlap: {overlaps}")
+    if len(families) > len(shown):
+        details.append(
+            f"... (+{len(families) - len(shown)} more groups; "
+            "use --duplicates-out to export all)"
+        )
 
     total_docs = sum(len(f.members) for f in families)
     return CheckResult(
@@ -413,7 +463,10 @@ def _check_duplicate_documents(
 
 
 async def run_db_checks(
-    store: Store, config: AppConfig, stats: dict
+    store: Store,
+    config: AppConfig,
+    stats: dict,
+    duplicates_out: Path | None = None,
 ) -> list[CheckResult]:
     """Referential and content-integrity checks against an open read-only Store.
 
@@ -614,7 +667,11 @@ async def run_db_checks(
     doc_vectors = {doc_id: vectors[idx] for doc_id, idx in indices_by_doc.items()}
     results.append(
         _check_duplicate_documents(
-            doc_vectors, uri_by_doc, title_by_doc, config.doctor.duplicates
+            doc_vectors,
+            uri_by_doc,
+            title_by_doc,
+            config.doctor.duplicates,
+            yaml_path=duplicates_out,
         )
     )
 
@@ -925,7 +982,10 @@ async def run_provider_checks(config: AppConfig) -> list[CheckResult]:
 
 
 async def run_doctor(
-    config: AppConfig, db_path: Path, environ: dict[str, str]
+    config: AppConfig,
+    db_path: Path,
+    environ: dict[str, str],
+    duplicates_out: Path | None = None,
 ) -> DoctorReport:
     """Open the database read-only and run every diagnostic check.
 
@@ -956,7 +1016,9 @@ async def run_doctor(
                 read_only=True,
                 skip_migration_check=True,
             ) as store:
-                results += await run_db_checks(store, config, stats)
+                results += await run_db_checks(
+                    store, config, stats, duplicates_out=duplicates_out
+                )
 
     results.append(_check_api_keys(config, environ))
     results += await run_provider_checks(config)

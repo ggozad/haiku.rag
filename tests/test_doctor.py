@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import lancedb
 import numpy as np
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from haiku.rag.cli import _cli as cli
@@ -1022,8 +1023,8 @@ def test_duplicate_families_threshold_is_configurable():
     assert set(flagged[0].members) == {"a", "b"}
 
 
-def test_duplicate_documents_report_lists_all_groups_untruncated():
-    pairs = 7  # more than the old detail cap of 5
+def test_duplicate_documents_report_truncates_summary():
+    pairs = 7  # more than the terminal detail cap of 5
     spec: dict[str, list[int]] = {}
     for k in range(pairs):
         idx = [3 * k, 3 * k + 1, 3 * k + 2]
@@ -1033,11 +1034,12 @@ def test_duplicate_documents_report_lists_all_groups_untruncated():
     uris = {d: f"file:///srv/shared/library/docs/{d}.pdf" for d in spec}
     result = _check_duplicate_documents(docs, uris, {}, _stage2_cfg())
     assert result.severity is Severity.WARN
+    # The summary message still reports the full total.
     assert f"{pairs} group(s)" in result.message
-    assert sum(1 for d in result.details if d.startswith("group ")) == pairs
-    assert not any("more)" in d for d in result.details)
+    # The terminal detail shows only the first few groups and points at export.
+    assert sum(1 for d in result.details if d.startswith("group ")) == 5
+    assert any("more groups" in d and "--duplicates-out" in d for d in result.details)
     assert any("keep #" in d for d in result.details)
-    assert any("100%" in d for d in result.details)
 
 
 def test_duplicate_documents_report_factors_common_path():
@@ -1049,6 +1051,35 @@ def test_duplicate_documents_report_factors_common_path():
     member_lines = [d for d in result.details if d.lstrip().startswith("#")]
     assert {d.strip() for d in member_lines} == {"#1 alpha.pdf", "#2 beta.pdf"}
     assert not any(base in d for d in member_lines)
+
+
+def test_duplicate_documents_writes_yaml(tmp_path):
+    # a,b identical (a 4-chunk duplicate); c distinct and excluded.
+    docs = _docs({"a": [0, 1, 2, 3], "b": [0, 1, 2, 3], "c": [4, 5, 6]}, dim=8)
+    uris = {"a": "file:///x/a.pdf", "b": "file:///x/b.pdf", "c": "file:///x/c.pdf"}
+    out = tmp_path / "dups.yaml"
+    _check_duplicate_documents(docs, uris, {}, _stage2_cfg(), yaml_path=out)
+    data = yaml.safe_load(out.read_text())
+    assert len(data["groups"]) == 1
+    group = data["groups"][0]
+    assert group["group"] == 1 and group["keep"] == "a"
+    docs_out = group["documents"]
+    assert [d["document_id"] for d in docs_out] == ["a", "b"]
+    assert [d["document"] for d in docs_out] == ["file:///x/a.pdf", "file:///x/b.pdf"]
+    assert all(d["chunks"] == 4 for d in docs_out)
+    assert {d["document_id"]: d["keep_suggested"] for d in docs_out} == {
+        "a": True,
+        "b": False,
+    }
+
+
+def test_duplicate_documents_writes_empty_yaml_when_none(tmp_path):
+    docs = _docs({"a": [0, 1, 2], "b": [3, 4, 5]}, dim=6)  # distinct
+    out = tmp_path / "dups.yaml"
+    _check_duplicate_documents(
+        docs, {"a": "u", "b": "v"}, {}, _stage2_cfg(), yaml_path=out
+    )
+    assert yaml.safe_load(out.read_text()) == {"groups": []}
 
 
 async def _build_dup_db(path, docs: dict[str, list[int]], *, vector_dim: int = 8):

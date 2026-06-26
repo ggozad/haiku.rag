@@ -289,8 +289,10 @@ At the end, a separate "Versions" section lists runtime package versions:
 Check the database for consistency problems and print a pass/warn/fail report:
 
 ```bash
-haiku-rag doctor [--db /path/to/your.lancedb]
+haiku-rag doctor [--db /path/to/your.lancedb] [--duplicates-out groups.yaml]
 ```
+
+`--duplicates-out PATH` additionally writes the near-duplicate document groups to a YAML file (one block per group with `keep` and a list of `documents`, each carrying `document_id`, `document`, `chunks`, `contained_fraction`, and `keep_suggested`) for offline review.
 
 Checks include:
 

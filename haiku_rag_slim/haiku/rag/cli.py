@@ -593,9 +593,14 @@ def doctor(  # pragma: no cover
         "--db",
         help="Path to the LanceDB database file",
     ),
+    duplicates_out: Path | None = typer.Option(
+        None,
+        "--duplicates-out",
+        help="Write near-duplicate document groups to this YAML file",
+    ),
 ):
     app = create_app(db)
-    if asyncio.run(app.doctor()):
+    if asyncio.run(app.doctor(duplicates_out=duplicates_out)):
         raise typer.Exit(code=1)
 
 

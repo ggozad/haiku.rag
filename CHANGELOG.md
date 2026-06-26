@@ -3,7 +3,7 @@
 
 ### Added
 
-- `doctor` reports groups of near-duplicate documents (revisions sharing most of their chunks), flagging the largest member as the likely one to keep. Tuned via the `doctor.duplicates` config block (`containment_threshold`, `candidate_threshold`, `twin_similarity`, `min_chunks`).
+- `doctor` reports groups of near-duplicate documents (revisions sharing most of their chunks), flagging the largest member as the likely one to keep; `--duplicates-out PATH` writes the groups to a YAML file. Tuned via the `doctor.duplicates` config block (`containment_threshold`, `candidate_threshold`, `twin_similarity`, `min_chunks`).
 
 ### Security
 
