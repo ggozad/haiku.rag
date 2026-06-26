@@ -438,13 +438,12 @@ function ChatContentInner({
 	useEffect(() => {
 		if (agent.messages.length > 0) return;
 		const session = getSession(sessionId);
-		if (!session) return;
-		if (session.ragState) {
-			agent.setState({
-				[AGUI_STATE_KEY]: normalizeRAGState(session.ragState),
-			});
-		}
-		if (session.messages.length > 0) {
+		// Seed the namespaced AG-UI state so the backend's first STATE_DELTA
+		// (e.g. add /rag/searches/...) has a namespace object to patch into.
+		agent.setState({
+			[AGUI_STATE_KEY]: normalizeRAGState(session?.ragState),
+		});
+		if (session && session.messages.length > 0) {
 			// biome-ignore lint/suspicious/noExplicitAny: AG-UI Message type is a broad union
 			agent.setMessages(session.messages as any[]);
 		}

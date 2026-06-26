@@ -1,6 +1,11 @@
 # Changelog
 ## [Unreleased]
 
+### Security
+
+- Bumped dependencies in `uv.lock` to patched versions for known advisories: `aiohttp` 3.14.1, `cryptography` 49.0.0, `idna` 3.18, `langchain-core` 1.4.8, `langchain-text-splitters` 1.1.2, `langsmith` 0.9.1, `lxml` 6.1.1, `pillow` 12.2.0, `pydantic-settings` 2.14.2, `pyjwt` 2.13.0, `pytest` 9.1.1, `python-multipart` 0.0.32, `requests` 2.34.2, `starlette` 1.3.1, `urllib3` 2.7.0, `vcrpy` 8.2.1.
+- `app/frontend`: bumped `next` to 16.2.9 and `@copilotkit/*` to 1.61.1 (clearing their transitive advisories) and added `openai` (now a peer dependency of `@copilotkit/runtime`).
+
 ### Changed
 
 - Ingester reaping is lease-based: a worker renews `last_heartbeat_at` on its in-flight jobs every `heartbeat_interval_s`, and the reaper reclaims a claim only once its lease is older than `lease_ttl_s`. A job slower than the timeout is no longer reaped and reprocessed while still running. Adds queue schema v2 (`last_heartbeat_at` on `jobs`); existing queue databases migrate in place on open.
