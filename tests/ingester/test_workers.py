@@ -24,11 +24,42 @@ def _pool(client, jobs, sync, **kwargs) -> WorkerPool:
         worker_count=kwargs.pop("worker_count", 2),
         poll_idle_interval_s=kwargs.pop("poll_idle_interval_s", 0.05),
         reaper_interval_s=kwargs.pop("reaper_interval_s", 60),
-        claim_timeout_s=kwargs.pop("claim_timeout_s", 60),
+        lease_ttl_s=kwargs.pop("lease_ttl_s", 60),
+        heartbeat_interval_s=kwargs.pop("heartbeat_interval_s", 30),
         retention_s=kwargs.pop("retention_s", None),
         retry_policy=kwargs.pop("retry_policy", RetryPolicy()),
         sources=kwargs.pop("sources", None),
     )
+
+
+# --- worker identity ---
+
+
+@pytest.mark.asyncio
+async def test_worker_ids_are_unique_across_pools(client, jobs, sync):
+    """Two pools built with default construction must not share worker ids;
+    otherwise a stale worker from one pool can satisfy the claimed_by guard of
+    a job re-claimed by another pool and clobber its result."""
+    pool_a = _pool(client, jobs, sync)
+    pool_b = _pool(client, jobs, sync)
+    worker_a = pool_a._worker_id(0)
+    worker_b = pool_b._worker_id(0)
+    assert worker_a != worker_b
+
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+
+    claimed = await jobs.claim_next(worker_a)
+    assert claimed is not None
+    # Reaper resets the claim; pool B re-claims and finishes first.
+    await jobs.reap_stale(lease_ttl_seconds=0)
+    reclaimed = await jobs.claim_next(worker_b)
+    assert reclaimed is not None and reclaimed.id == job.id
+    assert await jobs.mark_succeeded(reclaimed.id, worker_b) is True
+
+    # Pool A's slow worker finishes later: with unique ids this is a no-op, so
+    # pool B's success is not clobbered.
+    assert await jobs.mark_succeeded(job.id, worker_a) is False
 
 
 # --- event-driven wakeup ---
@@ -370,7 +401,7 @@ async def test_shutdown_grace_lets_inflight_job_complete(client, jobs, sync):
 async def test_shutdown_grace_timeout_releases_claim(client, jobs, sync):
     """When grace elapses and the worker is cancelled mid-job, the claim is
     released back to 'queued' so the next process can pick it up immediately
-    — no waiting on the reaper's claim_timeout_s."""
+    — no waiting on the reaper's lease_ttl_s."""
     cancelled = asyncio.Event()
 
     async def _hangs_forever(*args, **kwargs):
@@ -402,6 +433,275 @@ async def test_shutdown_grace_timeout_releases_claim(client, jobs, sync):
     assert refreshed.attempts == 0
 
 
+# --- heartbeat / lease renewal ---
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_keeps_long_job_from_being_reaped(client, jobs, sync):
+    """A job that takes longer than lease_ttl_s is kept alive by the heartbeat,
+    so the reaper never resets it and it completes exactly once. Without
+    renewal the reaper would reset the claim mid-flight and the final
+    mark_succeeded would be a no-op, leaving the job back in 'queued'."""
+    calls = 0
+
+    async def _slow(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(0.8)
+        return Document(
+            id="d", content="x", uri="u", metadata={"md5": "m", "source_revision": "r"}
+        )
+
+    client.create_document_from_source.side_effect = _slow
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+
+    pool = _pool(
+        client,
+        jobs,
+        sync,
+        worker_count=1,
+        lease_ttl_s=0.3,
+        heartbeat_interval_s=0.05,
+        reaper_interval_s=0.05,
+    )
+    await pool.start()
+    try:
+        for _ in range(100):
+            refreshed = await jobs.get_job(job.id)
+            if refreshed is not None and refreshed.status is JobStatus.SUCCEEDED:
+                break
+            await asyncio.sleep(0.05)
+    finally:
+        await pool.stop()
+
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.SUCCEEDED
+    assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_continues_during_graceful_stop(client, jobs, sync):
+    """While stop() waits for an in-flight job to drain, the heartbeat keeps
+    renewing its lease so a peer process doesn't reap it mid-drain."""
+    release = asyncio.Event()
+
+    async def _block(*args, **kwargs):
+        await release.wait()
+        return Document(
+            id="d", content="x", uri="u", metadata={"md5": "m", "source_revision": "r"}
+        )
+
+    client.create_document_from_source.side_effect = _block
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+
+    pool = _pool(
+        client,
+        jobs,
+        sync,
+        worker_count=1,
+        lease_ttl_s=5,
+        heartbeat_interval_s=0.05,
+        reaper_interval_s=60,
+    )
+    await pool.start()
+    stop_task: asyncio.Task | None = None
+    try:
+        for _ in range(100):
+            refreshed = await jobs.get_job(job.id)
+            if refreshed is not None and refreshed.status is JobStatus.CLAIMED:
+                break
+            await asyncio.sleep(0.02)
+        assert refreshed is not None and refreshed.status is JobStatus.CLAIMED
+
+        # Begin a graceful stop; it blocks until the job drains.
+        stop_task = asyncio.create_task(pool.stop())
+        await asyncio.sleep(0.05)
+        first = (await jobs.get_job(job.id)).last_heartbeat_at
+        await asyncio.sleep(0.2)
+        second = (await jobs.get_job(job.id)).last_heartbeat_at
+        assert first is not None and second is not None
+        assert second > first, "heartbeat did not renew during graceful drain"
+        assert not stop_task.done()
+
+        release.set()
+        await asyncio.wait_for(stop_task, timeout=2.0)
+    finally:
+        release.set()
+        if stop_task is not None and not stop_task.done():
+            await stop_task
+
+    final = await jobs.get_job(job.id)
+    assert final is not None and final.status is JobStatus.SUCCEEDED
+
+
+@pytest.mark.asyncio
+async def test_stale_worker_exit_keeps_a_siblings_renewal_entry(client, jobs, sync):
+    """Same-pool reaper race: worker A is processing J, the reaper resets it,
+    sibling worker B re-claims J. A's eventual exit must not evict B's renewal
+    entry, or B's lease would stop being renewed and J could be reaped again."""
+    pool = _pool(client, jobs, sync, worker_count=2)
+    worker_a, worker_b = pool._worker_id(0), pool._worker_id(1)
+
+    pool._track_inflight("J", worker_a)
+    # Reaper reset + sibling re-claim: B now owns J's renewal entry.
+    pool._track_inflight("J", worker_b)
+    assert pool._inflight["J"] == worker_b
+
+    # A finally exits — must leave B's entry intact.
+    pool._untrack_inflight("J", worker_a)
+    assert pool._inflight.get("J") == worker_b
+
+    # B's own exit clears it.
+    pool._untrack_inflight("J", worker_b)
+    assert "J" not in pool._inflight
+
+
+@pytest.mark.asyncio
+async def test_forced_shutdown_cancels_heartbeat(client, jobs, sync):
+    """When the shutdown grace elapses and stop() is cancelled, the heartbeat
+    task is cancelled along with the workers — they are no longer draining."""
+
+    async def _hangs_forever(*args, **kwargs):
+        await asyncio.sleep(60)
+        return Document(id="d", content="x", uri="u")
+
+    client.create_document_from_source.side_effect = _hangs_forever
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+
+    pool = _pool(client, jobs, sync, worker_count=1)
+    await pool.start()
+    await asyncio.sleep(0.05)
+    assert pool.heartbeat_alive
+
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(pool.stop(), timeout=0.2)
+    # Let the cancellation settle.
+    await asyncio.sleep(0.05)
+    assert not pool.heartbeat_alive
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_survives_a_renewal_failure(
+    client, jobs, sync, monkeypatch, caplog
+):
+    """A transient DB error during lease renewal is logged and the heartbeat
+    keeps running, rather than dying and leaving in-flight leases unrenewed."""
+    release = asyncio.Event()
+
+    async def _block(*args, **kwargs):
+        await release.wait()
+        return Document(
+            id="d", content="x", uri="u", metadata={"md5": "m", "source_revision": "r"}
+        )
+
+    client.create_document_from_source.side_effect = _block
+
+    calls = 0
+
+    async def _boom(_claims):
+        nonlocal calls
+        calls += 1
+        raise RuntimeError("queue unavailable")
+
+    monkeypatch.setattr(jobs, "renew_claims", _boom)
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+
+    pool = _pool(
+        client,
+        jobs,
+        sync,
+        worker_count=1,
+        lease_ttl_s=5,
+        heartbeat_interval_s=0.05,
+        reaper_interval_s=60,
+    )
+    await pool.start()
+    try:
+        with caplog.at_level("ERROR", logger="haiku.rag.ingester.workers.pool"):
+            for _ in range(100):
+                refreshed = await jobs.get_job(job.id)
+                if refreshed is not None and refreshed.status is JobStatus.CLAIMED:
+                    break
+                await asyncio.sleep(0.02)
+            await asyncio.sleep(0.2)
+        assert calls >= 1
+        assert pool.heartbeat_alive
+        assert "Lease renewal failed" in caplog.text
+    finally:
+        release.set()
+        await pool.stop()
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_done_callback_logs_unexpected_outcomes(
+    client, jobs, sync, caplog
+):
+    """The done-callback surfaces a heartbeat that died or exited while the pool
+    was still running — both should never happen, so they log loudly."""
+    pool = _pool(client, jobs, sync, worker_count=0)
+
+    async def _raises():
+        raise RuntimeError("boom")
+
+    died = asyncio.create_task(_raises())
+    with pytest.raises(RuntimeError):
+        await died
+    with caplog.at_level("ERROR", logger="haiku.rag.ingester.workers.pool"):
+        pool._on_heartbeat_done(died)
+    assert "Heartbeat task died" in caplog.text
+
+    async def _exits():
+        return None
+
+    exited = asyncio.create_task(_exits())
+    await exited
+    caplog.clear()
+    with caplog.at_level("ERROR", logger="haiku.rag.ingester.workers.pool"):
+        pool._on_heartbeat_done(exited)
+    assert "exited while the pool was still running" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_reaper_logs_when_it_resets_a_stale_claim(
+    client, jobs, sync, conn, caplog
+):
+    """A claim that goes stale after startup (so boot-reap misses it) is reset
+    by the periodic reaper, which logs the reset count."""
+    from datetime import UTC, datetime, timedelta
+
+    pool = _pool(
+        client, jobs, sync, worker_count=0, reaper_interval_s=0.05, lease_ttl_s=1
+    )
+    await pool.start()
+    try:
+        job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+        assert job is not None
+        claimed = await jobs.claim_next("external-worker")
+        assert claimed is not None
+        long_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+        await conn.execute(
+            "UPDATE jobs SET claimed_at = ?, last_heartbeat_at = ? WHERE id = ?",
+            (long_ago, long_ago, job.id),
+        )
+        await conn.commit()
+
+        with caplog.at_level("INFO", logger="haiku.rag.ingester.workers.pool"):
+            for _ in range(40):
+                refreshed = await jobs.get_job(job.id)
+                if refreshed is not None and refreshed.status is JobStatus.QUEUED:
+                    break
+                await asyncio.sleep(0.05)
+        assert refreshed is not None and refreshed.status is JobStatus.QUEUED
+        assert "Reaper reset" in caplog.text
+    finally:
+        await pool.stop()
+
+
 @pytest.mark.asyncio
 async def test_worker_loses_claim_to_reaper_does_not_write_sync_state(
     client, jobs, sync
@@ -418,7 +718,7 @@ async def test_worker_loses_claim_to_reaper_does_not_write_sync_state(
     claimed_by_a = await jobs.claim_next("worker-A")
     assert claimed_by_a is not None
     # Reaper resets A's claim, worker-B re-claims.
-    await jobs.reap_stale(claim_timeout_seconds=0)
+    await jobs.reap_stale(lease_ttl_seconds=0)
     await jobs.claim_next("worker-B")
 
     pool = _pool(client, jobs, sync, worker_count=1)
@@ -448,7 +748,7 @@ async def test_permanent_error_loses_claim_to_reaper_writes_no_marker(
     claimed_by_a = await jobs.claim_next("worker-A")
     assert claimed_by_a is not None
     # Reaper resets A's claim, worker-B re-claims.
-    await jobs.reap_stale(claim_timeout_seconds=0)
+    await jobs.reap_stale(lease_ttl_seconds=0)
     await jobs.claim_next("worker-B")
 
     pool = _pool(client, jobs, sync, worker_count=1)
@@ -681,6 +981,26 @@ async def test_breaker_closes_on_successful_probe(client, jobs, sync):
 
 
 @pytest.mark.asyncio
+async def test_breaker_closes_when_success_lands_while_open(client, jobs, sync, caplog):
+    """A job that succeeds while the source's breaker is still open (drained
+    directly, bypassing the paused-source skip) closes it and logs recovery."""
+    client.create_document_from_source.return_value = Document(
+        id="d", content="x", uri="u", metadata={"md5": "m", "source_revision": "r"}
+    )
+    pool = _pool(client, jobs, sync)
+    breaker = pool._breaker_for("src")
+    for _ in range(10):
+        breaker.record_failure()
+    assert breaker.is_open
+
+    await jobs.enqueue("src", "u", JobOp.UPSERT)
+    with caplog.at_level("INFO", logger="haiku.rag.ingester.workers.pool"):
+        await pool.drain_once()
+    assert pool.breaker_consecutive_failures == 0
+    assert "Worker breaker closed" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_breaker_isolates_sources(client, jobs, sync):
     """An open breaker pauses only the failing source. Workers keep draining
     a healthy source's jobs while the failing source's jobs stay queued."""
@@ -796,15 +1116,24 @@ async def test_permanent_failure_marker_write_failure_does_not_crash_worker(
 
 
 @pytest.mark.asyncio
-async def test_boot_reap_resets_pre_existing_claims(client, jobs, sync):
-    """A SIGKILL'd previous process leaves rows in `claimed` state. The new
-    WorkerPool.start() must reset them immediately so fresh workers can
-    claim them, instead of waiting on the periodic reaper's claim_timeout_s
-    window (default 1800s)."""
+async def test_boot_reap_resets_stale_pre_existing_claims(client, jobs, sync, conn):
+    """A SIGKILL'd previous process leaves a stale claim (its lease stopped
+    being renewed). WorkerPool.start() sweeps it so fresh workers can take it
+    over."""
+    from datetime import UTC, datetime, timedelta
+
     await jobs.enqueue("src", "u", JobOp.UPSERT)
     pre_claimed = await jobs.claim_next("ghost-worker")
     assert pre_claimed is not None
     assert pre_claimed.status is JobStatus.CLAIMED
+
+    # The ghost stopped renewing an hour ago.
+    long_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    await conn.execute(
+        "UPDATE jobs SET claimed_at = ?, last_heartbeat_at = ? WHERE id = ?",
+        (long_ago, long_ago, pre_claimed.id),
+    )
+    await conn.commit()
 
     pool = _pool(client, jobs, sync, worker_count=0)
     await pool.start()
@@ -821,6 +1150,25 @@ async def test_boot_reap_resets_pre_existing_claims(client, jobs, sync):
 
 
 @pytest.mark.asyncio
+async def test_boot_reap_leaves_a_peer_process_fresh_claim_alone(client, jobs, sync):
+    """A peer process sharing the queue holds a freshly-claimed job. Our
+    startup boot-reap must not wipe its live claim."""
+    await jobs.enqueue("src", "u", JobOp.UPSERT)
+    peer_claim = await jobs.claim_next("peer-worker")
+    assert peer_claim is not None
+
+    pool = _pool(client, jobs, sync, worker_count=0)
+    await pool.start()
+    try:
+        refreshed = await jobs.get_job(peer_claim.id)
+        assert refreshed is not None
+        assert refreshed.status is JobStatus.CLAIMED
+        assert refreshed.claimed_by == "peer-worker"
+    finally:
+        await pool.stop()
+
+
+@pytest.mark.asyncio
 async def test_reaper_resets_stale_claims(client, jobs, sync, conn):
     from datetime import UTC, datetime, timedelta
 
@@ -828,10 +1176,11 @@ async def test_reaper_resets_stale_claims(client, jobs, sync, conn):
     claimed = await jobs.claim_next("worker-old")
     assert claimed is not None
 
-    # Push claimed_at back so reap_stale picks it up.
+    # Push the lease back so reap_stale picks it up.
     long_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
     await conn.execute(
-        "UPDATE jobs SET claimed_at = ? WHERE id = ?", (long_ago, job.id)
+        "UPDATE jobs SET claimed_at = ?, last_heartbeat_at = ? WHERE id = ?",
+        (long_ago, long_ago, job.id),
     )
     await conn.commit()
 
@@ -841,7 +1190,7 @@ async def test_reaper_resets_stale_claims(client, jobs, sync, conn):
         sync,
         worker_count=0,
         reaper_interval_s=0.05,
-        claim_timeout_s=1,
+        lease_ttl_s=1,
     )
     await pool.start()
     try:

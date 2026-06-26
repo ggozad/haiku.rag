@@ -2,7 +2,7 @@ import sqlalchemy as sa
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 metadata = sa.MetaData()
 
@@ -24,6 +24,7 @@ jobs = sa.Table(
     sa.Column("scheduled_at", sa.Text, nullable=False),
     sa.Column("claimed_at", sa.Text),
     sa.Column("claimed_by", sa.Text),
+    sa.Column("last_heartbeat_at", sa.Text),
     sa.Column("completed_at", sa.Text),
 )
 

@@ -1,7 +1,9 @@
 import asyncio
 import logging
+import os
 import time
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from haiku.rag.config import CircuitBreakerConfig
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
@@ -26,9 +28,11 @@ _WORKER_BREAKER_COOLDOWN_S = 60.0
 
 class WorkerPool:
     """`worker_count` async tasks each pull jobs from the queue and run them
-    through `run_job`. A reaper task resets claims older than
-    `claim_timeout_s` so a crashed worker doesn't strand its job. Lifecycle:
-    build it, await start(), let it run, await stop().
+    through `run_job`. While a worker processes a job it renews the job's lease
+    on a `heartbeat_interval_s` cadence; a reaper task resets claims whose lease
+    has gone stale (`lease_ttl_s`) so a crashed worker doesn't strand its job,
+    without reaping jobs that are merely slow. Lifecycle: build it, await
+    start(), let it run, await stop().
     """
 
     def __init__(
@@ -40,7 +44,8 @@ class WorkerPool:
         worker_count: int = 4,
         retry_policy: RetryPolicy | None = None,
         poll_idle_interval_s: float = 1.0,
-        claim_timeout_s: int = 1800,
+        lease_ttl_s: int = 120,
+        heartbeat_interval_s: int = 30,
         reaper_interval_s: int = 60,
         retention_s: int | None = None,
         sources: "list[Source] | None" = None,
@@ -52,24 +57,61 @@ class WorkerPool:
         self._worker_count = worker_count
         self._retry = retry_policy or RetryPolicy()
         self._poll_idle_s = poll_idle_interval_s
-        self._claim_timeout_s = claim_timeout_s
+        self._lease_ttl_s = lease_ttl_s
+        self._heartbeat_interval_s = heartbeat_interval_s
         self._reaper_interval_s = reaper_interval_s
         self._retention_s = retention_s
         self._sources: list[Source] = list(sources) if sources else []
         self._metadata_providers: dict[str, MetadataProvider] = (
             dict(metadata_providers) if metadata_providers else {}
         )
+        # Globally-unique so claimed_by distinguishes this pool's workers from
+        # those of any other process sharing the queue; the claimed_by guards on
+        # mark_succeeded/reschedule/release rely on it. The uuid guarantees
+        # uniqueness; the pid just makes claimed_by readable in logs/dashboard.
+        self._instance = f"{os.getpid()}-{uuid4().hex[:8]}"
         self._stop = asyncio.Event()
         self._workers: list[asyncio.Task] = []
         self._reaper: asyncio.Task | None = None
+        self._heartbeat: asyncio.Task | None = None
+        # job_id -> claimed_by for jobs currently being processed by this pool;
+        # the heartbeat renews exactly these leases.
+        self._inflight: dict[str, str] = {}
+        # Set whenever _inflight is empty so the heartbeat can leave promptly
+        # once stopping instead of sleeping out a full interval.
+        self._idle = asyncio.Event()
+        self._idle.set()
         self._pending_releases: set[asyncio.Task] = set()
         self._breakers: dict[str, CircuitBreaker] = {}
+
+    def _worker_id(self, i: int) -> str:
+        return f"{self._instance}-{i}"
+
+    def _track_inflight(self, job_id: str, worker_id: str) -> None:
+        self._inflight[job_id] = worker_id
+        self._idle.clear()
+
+    def _untrack_inflight(self, job_id: str, worker_id: str) -> None:
+        # Only drop our own entry: if the reaper reset this claim and a sibling
+        # worker re-claimed it, the entry now belongs to that worker and must
+        # keep being renewed — our exit must not evict it.
+        if self._inflight.get(job_id) == worker_id:
+            del self._inflight[job_id]
+        if not self._inflight:
+            self._idle.set()
 
     @property
     def live_workers(self) -> int:
         """Worker tasks that are still running. Equal to worker_count under
         normal operation; less when a worker has crashed."""
         return sum(1 for t in self._workers if not t.done())
+
+    @property
+    def heartbeat_alive(self) -> bool:
+        """Whether the lease-renewal task is running. Once the pool is started
+        this stays True until stop(); a False here while workers are live means
+        in-flight leases are no longer being renewed and may be reaped."""
+        return self._heartbeat is not None and not self._heartbeat.done()
 
     @property
     def breaker_open(self) -> bool:
@@ -98,30 +140,47 @@ class WorkerPool:
         if self._workers:
             raise RuntimeError("WorkerPool already started")
         self._stop.clear()
-        # Any rows in `claimed` at start time are owned by workers from a
-        # previous process that didn't get to release them (SIGKILL, OOM,
-        # host reboot). Reset them so fresh workers can claim immediately
-        # instead of waiting on the reaper's claim_timeout_s.
-        reset = await self._jobs.reap_stale(claim_timeout_seconds=0)
+        # Sweep claims left behind by a previous process (SIGKILL, OOM, host
+        # reboot) so fresh workers can take them over. Scoped by the lease TTL,
+        # not 0: a peer process sharing the queue may hold live claims, and
+        # those must not be wiped out from under it on our startup.
+        reset = await self._jobs.reap_stale(lease_ttl_seconds=self._lease_ttl_s)
         if reset:
             logger.info("Boot-reaped %d stale claim(s) from previous process", reset)
         for i in range(self._worker_count):
-            self._workers.append(asyncio.create_task(self._worker_loop(f"worker-{i}")))
+            self._workers.append(
+                asyncio.create_task(self._worker_loop(self._worker_id(i)))
+            )
         self._reaper = asyncio.create_task(self._reaper_loop())
+        self._heartbeat = asyncio.create_task(self._heartbeat_loop())
+        self._heartbeat.add_done_callback(self._on_heartbeat_done)
+
+    def _on_heartbeat_done(self, task: asyncio.Task) -> None:
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.error("Heartbeat task died: %r", exc)
+        elif not self._stop.is_set():
+            logger.error("Heartbeat task exited while the pool was still running")
 
     async def stop(self) -> None:
         self._stop.set()
         # Wake workers parked on job_available.wait() so they notice _stop
         # immediately instead of sleeping out the full poll_idle interval.
+        # _stop also wakes the heartbeat's interval sleep.
         async with self._jobs.job_available:
             self._jobs.job_available.notify_all()
         tasks = list(self._workers)
         if self._reaper is not None:
             tasks.append(self._reaper)
+        if self._heartbeat is not None:
+            tasks.append(self._heartbeat)
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
         self._workers.clear()
         self._reaper = None
+        self._heartbeat = None
 
     async def drain_pending_releases(self, timeout: float = 2.0) -> int:
         """Wait for any in-flight cancel-cleanup release Tasks to finish.
@@ -168,13 +227,42 @@ class WorkerPool:
             await self._sleep_or_stop(self._reaper_interval_s)
             if self._stop.is_set():
                 return
-            reset = await self._jobs.reap_stale(self._claim_timeout_s)
+            reset = await self._jobs.reap_stale(self._lease_ttl_s)
             if reset:
                 logger.info("Reaper reset %d stale claim(s)", reset)
             if self._retention_s is not None:
                 pruned = await self._jobs.prune_terminal(self._retention_s)
                 if pruned:
                     logger.info("Reaper pruned %d terminal job(s)", pruned)
+
+    async def _heartbeat_loop(self) -> None:
+        """Renew the lease on this pool's in-flight jobs so the reaper leaves
+        them alone while they are still being processed. Continues renewing
+        through graceful shutdown until the last job drains, so a peer process
+        doesn't reap a job we're still finishing. A forced shutdown cancels
+        this task along with the workers, which is correct — they are no longer
+        draining gracefully."""
+        while True:
+            if self._inflight:
+                try:
+                    await self._jobs.renew_claims(dict(self._inflight))
+                except Exception:
+                    logger.exception(
+                        "Lease renewal failed; retrying on the next heartbeat"
+                    )
+            if self._stop.is_set() and not self._inflight:
+                return
+            if self._stop.is_set():
+                # Draining: keep the renewal cadence, but leave as soon as the
+                # last in-flight job finishes instead of sleeping it out.
+                try:
+                    await asyncio.wait_for(
+                        self._idle.wait(), timeout=self._heartbeat_interval_s
+                    )
+                except TimeoutError:
+                    pass
+            else:
+                await self._sleep_or_stop(self._heartbeat_interval_s)
 
     async def _sleep_or_stop(self, seconds: float) -> None:
         try:
@@ -185,6 +273,15 @@ class WorkerPool:
     async def _process(self, job: Job) -> None:
         assert job.claimed_by is not None, "_process only runs on claimed jobs"
         worker_id = job.claimed_by
+        # Track before any await so the heartbeat renews this job's lease for
+        # its whole lifetime; untrack on every exit (success, error, cancel).
+        self._track_inflight(job.id, worker_id)
+        try:
+            await self._run_job_lifecycle(job, worker_id)
+        finally:
+            self._untrack_inflight(job.id, worker_id)
+
+    async def _run_job_lifecycle(self, job: Job, worker_id: str) -> None:
         started = time.monotonic()
         logger.info("Processing %s %s (job %s)", job.op.value, job.uri, job.id)
         try:

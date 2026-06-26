@@ -58,6 +58,7 @@ def _row_to_job(row: Mapping) -> Job:
         scheduled_at=datetime.fromisoformat(row["scheduled_at"]),
         claimed_at=_parse_dt(row["claimed_at"]),
         claimed_by=row["claimed_by"],
+        last_heartbeat_at=_parse_dt(row["last_heartbeat_at"]),
         completed_at=_parse_dt(row["completed_at"]),
     )
 
@@ -157,6 +158,7 @@ class JobRepo:
                 status="claimed",
                 claimed_at=now,
                 claimed_by=worker_id,
+                last_heartbeat_at=now,
                 attempts=jobs.c.attempts + 1,
             )
             .returning(*jobs.c)
@@ -230,6 +232,7 @@ class JobRepo:
                 scheduled_at=scheduled,
                 claimed_at=None,
                 claimed_by=None,
+                last_heartbeat_at=None,
                 last_error=error,
             )
             .returning(jobs.c.id)
@@ -259,6 +262,7 @@ class JobRepo:
                 last_error=None,
                 claimed_at=None,
                 claimed_by=None,
+                last_heartbeat_at=None,
                 completed_at=None,
                 scheduled_at=now,
             )
@@ -449,6 +453,7 @@ class JobRepo:
                 status="queued",
                 claimed_at=None,
                 claimed_by=None,
+                last_heartbeat_at=None,
                 scheduled_at=_utcnow_iso(),
                 attempts=_attempts_minus_one(),
             )
@@ -485,22 +490,52 @@ class JobRepo:
             result = await conn.execute(stmt)
         return result.rowcount or 0
 
-    async def reap_stale(self, claim_timeout_seconds: int) -> int:
-        """Reset claimed jobs whose claimed_at is older than the timeout
-        back to `queued`. Decrements `attempts` to undo the increment from
-        `claim_next` — a crashed worker isn't a consumed attempt."""
+    async def reap_stale(self, lease_ttl_seconds: int) -> int:
+        """Reset claimed jobs whose lease has gone stale back to `queued`. A
+        live worker renews its lease via `renew_claims`, so a claim is stale
+        only when its owner stopped renewing (crash, wedged loop, lost DB).
+        Staleness is measured against the last heartbeat, falling back to
+        claimed_at for a claim made by a process that doesn't write the lease
+        (an older version sharing the queue). Decrements `attempts` to undo the
+        increment from `claim_next` — a reaped worker isn't a consumed attempt."""
         threshold = (
-            datetime.now(UTC) - timedelta(seconds=claim_timeout_seconds)
+            datetime.now(UTC) - timedelta(seconds=lease_ttl_seconds)
         ).isoformat()
+        lease = sa.func.coalesce(jobs.c.last_heartbeat_at, jobs.c.claimed_at)
         stmt = (
             sa.update(jobs)
-            .where(jobs.c.status == "claimed", jobs.c.claimed_at < threshold)
+            .where(jobs.c.status == "claimed", lease < threshold)
             .values(
                 status="queued",
                 claimed_at=None,
                 claimed_by=None,
+                last_heartbeat_at=None,
                 attempts=_attempts_minus_one(),
             )
+        )
+        async with self._engine.begin() as conn:
+            result = await conn.execute(stmt)
+        return result.rowcount or 0
+
+    async def renew_claims(self, claims: Mapping[str, str]) -> int:
+        """Refresh `last_heartbeat_at` for the given `job_id -> claimed_by`
+        pairs, extending their lease so the reaper leaves them alone. Guarded
+        on `status='claimed' AND claimed_by=?` per pair, so a job already
+        reaped and re-claimed elsewhere is left untouched — renewal never
+        resurrects a lost claim. Returns the number of rows renewed."""
+        if not claims:
+            return 0
+        now = _utcnow_iso()
+        pair_match = sa.or_(
+            *(
+                sa.and_(jobs.c.id == job_id, jobs.c.claimed_by == worker_id)
+                for job_id, worker_id in claims.items()
+            )
+        )
+        stmt = (
+            sa.update(jobs)
+            .where(jobs.c.status == "claimed", pair_match)
+            .values(last_heartbeat_at=now)
         )
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)

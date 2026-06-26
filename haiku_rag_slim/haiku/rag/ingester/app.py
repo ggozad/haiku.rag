@@ -133,7 +133,8 @@ class IngesterApp:
                     worker_count=ingester_cfg.workers.worker_count,
                     retry_policy=retry,
                     poll_idle_interval_s=ingester_cfg.workers.poll_idle_interval_s,
-                    claim_timeout_s=ingester_cfg.workers.claim_timeout_s,
+                    lease_ttl_s=ingester_cfg.workers.lease_ttl_s,
+                    heartbeat_interval_s=ingester_cfg.workers.heartbeat_interval_s,
                     reaper_interval_s=ingester_cfg.workers.reaper_interval_s,
                     retention_s=(
                         ingester_cfg.queue.retention_days * 86400
@@ -193,12 +194,14 @@ class IngesterApp:
         try:
             await asyncio.wait_for(self._pool.stop(), timeout=grace_s)
         except TimeoutError:
-            # In-flight jobs stay 'claimed'; the reaper resets them after
-            # claim_timeout_s on the next start.
+            # Cancelling the workers triggers their cancel-cleanup, which
+            # releases each in-flight job back to `queued` (drained just below).
+            # Any release that doesn't land has its lease stop being renewed, so
+            # the reaper reclaims it after lease_ttl_s.
             logger.warning(
                 "Shutdown grace of %.1fs elapsed with jobs still in flight; "
-                "cancelling — they'll be reclaimed after claim_timeout_s on "
-                "next start",
+                "cancelling — they'll be released back to the queue (or "
+                "reclaimed after lease_ttl_s if release doesn't land)",
                 grace_s,
             )
         landed = await self._pool.drain_pending_releases(timeout=2.0)
