@@ -1,13 +1,16 @@
 import asyncio
 import json
+from collections.abc import Callable, Mapping
 from enum import StrEnum
 from pathlib import Path
 
 import httpx
 import numpy as np
+import yaml
 from pydantic import BaseModel, Field
 
 from haiku.rag.config import AppConfig
+from haiku.rag.config.models import DuplicateDetectionConfig
 from haiku.rag.store.engine import (
     REQUIRED_TABLES,
     Store,
@@ -232,8 +235,259 @@ async def _column_values(table, column: str) -> list:
     return [row[column] for row in rows]
 
 
+# Backstop on how many centroid candidate pairs we verify, bounding memory and
+# runtime on a pathologically self-similar corpus.
+MAX_CANDIDATE_PAIRS = 200_000
+
+
+class _DuplicateFamily(BaseModel):
+    members: list[str]
+    superset: str
+    pairs: list[tuple[str, str, float, float]]
+    sizes: dict[str, int]
+
+
+def _unit(vector: np.ndarray) -> np.ndarray:
+    norm = np.linalg.norm(vector)
+    return vector / norm if norm else vector
+
+
+def _containment(source: np.ndarray, target: np.ndarray, twin: float) -> float:
+    """Fraction of ``source`` chunks with a near-identical chunk in ``target``."""
+    return float(((source @ target.T).max(axis=1) >= twin).mean())
+
+
+def _duplicate_families(
+    doc_vectors: dict[str, np.ndarray], cfg: DuplicateDetectionConfig
+) -> list[_DuplicateFamily]:
+    """Cluster documents that share most of their chunks (revisions of one another).
+
+    Block-then-verify: cheap centroid similarity proposes candidate document
+    pairs, then directed chunk-overlap containment confirms them. Returns one
+    entry per connected component of confirmed pairs.
+    """
+    # Drop unembedded (zero) vectors and documents below the small-document
+    # floor; normalize the rest to unit length.
+    normalized: dict[str, np.ndarray] = {}
+    for doc_id, matrix in doc_vectors.items():
+        m = np.asarray(matrix, dtype=float)
+        if m.ndim != 2 or m.shape[0] == 0:
+            continue
+        m = m[np.linalg.norm(m, axis=1) > 0]
+        if m.shape[0] < cfg.min_chunks:
+            continue
+        normalized[doc_id] = m / np.linalg.norm(m, axis=1)[:, None]
+    if len(normalized) < 2:
+        return []
+
+    order = sorted(normalized)
+    centroids = np.array([_unit(normalized[d].mean(axis=0)) for d in order])
+    sizes = np.array([normalized[d].shape[0] for d in order], dtype=float)
+
+    # Stage 1: centroid candidate pairs, block-wise to avoid a full D×D matrix.
+    # The cap is enforced per row (truncating each row's matches) so a
+    # self-similar corpus can never allocate beyond MAX_CANDIDATE_PAIRS.
+    candidates: list[tuple[int, int]] = []
+    block = 512
+    capped = False
+    for start in range(0, len(order), block):
+        if capped:
+            break
+        sims = centroids[start : start + block] @ centroids.T
+        for row in range(sims.shape[0]):
+            gi = start + row
+            targets = np.arange(gi + 1, len(order))
+            if targets.size == 0:
+                continue
+            # A smaller document can be fully contained in a larger append-only
+            # revision even when the fixed centroid threshold would fail:
+            # with orthogonal chunks, cosine falls to sqrt(small / large).
+            # Scale the candidate gate by that size ratio, then let directed
+            # containment make the actual duplicate decision.
+            ratios = np.minimum(sizes[gi], sizes[targets]) / np.maximum(
+                sizes[gi], sizes[targets]
+            )
+            thresholds = cfg.candidate_threshold * np.sqrt(ratios)
+            above = np.nonzero(sims[row, gi + 1 :] >= thresholds)[0]
+            remaining = MAX_CANDIDATE_PAIRS - len(candidates)
+            if len(above) >= remaining:
+                above = above[:remaining]
+                capped = True
+            candidates.extend((gi, gi + 1 + int(j)) for j in above)
+            if capped:
+                break
+
+    # Stage 2: confirm candidates with directed chunk-overlap containment.
+    adjacency: dict[int, set[int]] = {}
+    edges: dict[tuple[int, int], tuple[float, float]] = {}
+    for i, j in candidates:
+        a_to_b = _containment(
+            normalized[order[i]], normalized[order[j]], cfg.twin_similarity
+        )
+        b_to_a = _containment(
+            normalized[order[j]], normalized[order[i]], cfg.twin_similarity
+        )
+        if max(a_to_b, b_to_a) >= cfg.containment_threshold:
+            adjacency.setdefault(i, set()).add(j)
+            adjacency.setdefault(j, set()).add(i)
+            edges[(i, j)] = (a_to_b, b_to_a)
+    if not edges:
+        return []
+
+    # Cluster confirmed pairs into families (connected components).
+    families: list[_DuplicateFamily] = []
+    seen: set[int] = set()
+    for node in adjacency:
+        if node in seen:
+            continue
+        component: set[int] = set()
+        stack = [node]
+        while stack:
+            cur = stack.pop()
+            if cur in seen:
+                continue
+            seen.add(cur)
+            component.add(cur)
+            stack.extend(adjacency[cur] - seen)
+        members = sorted(order[i] for i in component)
+        # Largest document (most chunks) is the likely superset; smallest id on a tie.
+        superset = min(members, key=lambda d: (-normalized[d].shape[0], d))
+        pairs = sorted(
+            (order[i], order[j], round(ab, 3), round(ba, 3))
+            for (i, j), (ab, ba) in edges.items()
+            if i in component and j in component
+        )
+        families.append(
+            _DuplicateFamily(
+                members=members,
+                superset=superset,
+                pairs=pairs,
+                sizes={d: int(normalized[d].shape[0]) for d in members},
+            )
+        )
+    return sorted(families, key=lambda f: f.members)
+
+
+def _common_path_prefix(labels: list[str]) -> str:
+    """Longest shared prefix across labels, trimmed to a path boundary.
+
+    Returns "" unless the shared prefix is long enough to be worth factoring out
+    of every line (deep URI trees are otherwise unreadable).
+    """
+    if len(labels) < 2:
+        return ""
+    lo, hi = min(labels), max(labels)
+    end = 0
+    while end < len(lo) and lo[end] == hi[end]:
+        end += 1
+    cut = lo.rfind("/", 0, end)
+    return lo[: cut + 1] if cut > 16 else ""
+
+
+def _write_duplicates_out(
+    path: Path, families: list[_DuplicateFamily], label: Callable[[str], str]
+) -> None:
+    """One block per group; ``keep_suggested`` marks the superset and
+    ``contained_fraction`` is how much of the document is covered by the rest."""
+    groups = []
+    for n, family in enumerate(families, start=1):
+        contained = dict.fromkeys(family.members, 0.0)
+        for a, b, a_to_b, b_to_a in family.pairs:
+            contained[a] = max(contained[a], a_to_b)
+            contained[b] = max(contained[b], b_to_a)
+        groups.append(
+            {
+                "group": n,
+                "keep": family.superset,
+                "documents": [
+                    {
+                        "document_id": member,
+                        "document": label(member),
+                        "chunks": family.sizes[member],
+                        "contained_fraction": round(contained[member], 3),
+                        "keep_suggested": member == family.superset,
+                    }
+                    for member in family.members
+                ],
+            }
+        )
+    with open(path, "w", encoding="utf-8") as handle:
+        yaml.safe_dump({"groups": groups}, handle, sort_keys=False, allow_unicode=True)
+
+
+def _check_duplicate_documents(
+    doc_vectors: dict[str, np.ndarray],
+    uri_by_doc: Mapping[str, str | None],
+    title_by_doc: Mapping[str, str | None],
+    cfg: DuplicateDetectionConfig,
+    yaml_path: Path | None = None,
+) -> CheckResult:
+    families = _duplicate_families(doc_vectors, cfg)
+
+    def label(doc_id: str) -> str:
+        return uri_by_doc.get(doc_id) or title_by_doc.get(doc_id) or doc_id
+
+    if yaml_path is not None:
+        _write_duplicates_out(yaml_path, families, label)
+
+    if not families:
+        return CheckResult(
+            name="duplicate_documents",
+            severity=Severity.OK,
+            message="No near-duplicate documents detected.",
+        )
+
+    # The terminal report is a summary: show the first few groups whole and
+    # point at the YAML export for the rest. One block per shown group — a
+    # header, each member on its own numbered line, then a compact overlap line.
+    shown = families[:_SAMPLE_LIMIT]
+    prefix = _common_path_prefix([label(m) for f in shown for m in f.members])
+
+    def short(doc_id: str) -> str:
+        text = label(doc_id)
+        return text[len(prefix) :] if prefix and text.startswith(prefix) else text
+
+    details: list[str] = []
+    if prefix:
+        details.append(f"common path: {prefix}")
+    for n, family in enumerate(shown, start=1):
+        number = {member: i for i, member in enumerate(family.members, start=1)}
+        details.append(
+            f"group {n} — {len(family.members)} docs, keep #{number[family.superset]}:"
+        )
+        for member in family.members:
+            details.append(f"  #{number[member]} {short(member)}")
+        overlaps = ", ".join(
+            f"#{number[a]}→#{number[b]} {ab:.0%}, #{number[b]}→#{number[a]} {ba:.0%}"
+            for a, b, ab, ba in family.pairs
+        )
+        details.append(f"  overlap: {overlaps}")
+    if len(families) > len(shown):
+        details.append(
+            f"... (+{len(families) - len(shown)} more groups; "
+            "use --duplicates-out to export all)"
+        )
+
+    total_docs = sum(len(f.members) for f in families)
+    return CheckResult(
+        name="duplicate_documents",
+        severity=Severity.WARN,
+        message=(
+            f"{len(families)} group(s) of documents with substantial chunk overlap "
+            f"(potential duplicates/revisions), {total_docs} documents."
+        ),
+        remediation=(
+            "Review each group and remove redundant revisions; overlap may be intentional."
+        ),
+        details=details,
+    )
+
+
 async def run_db_checks(
-    store: Store, config: AppConfig, stats: dict
+    store: Store,
+    config: AppConfig,
+    stats: dict,
+    duplicates_out: Path | None = None,
 ) -> list[CheckResult]:
     """Referential and content-integrity checks against an open read-only Store.
 
@@ -244,7 +498,7 @@ async def run_db_checks(
     doc_ids = set(await _column_values(store.documents_table, "id"))
     meta_rows = (
         await store.document_meta_table.query()
-        .select(["document_id", "metadata"])
+        .select(["document_id", "metadata", "uri", "title"])
         .to_list()
     )
     meta_doc_ids = {row["document_id"] for row in meta_rows}
@@ -254,6 +508,8 @@ async def run_db_checks(
         )
         for row in meta_rows
     }
+    uri_by_doc = {row["document_id"]: row.get("uri") for row in meta_rows}
+    title_by_doc = {row["document_id"]: row.get("title") for row in meta_rows}
 
     chunk_rows = (
         await store.chunks_table.query()
@@ -375,7 +631,11 @@ async def run_db_checks(
 
     # Vector dimension consistency and unembedded (all-zero) vectors share one
     # scan of the vector column — the heaviest check on large corpora.
-    arrow = await store.chunks_table.query().select(["id", "vector"]).to_arrow()
+    arrow = (
+        await store.chunks_table.query()
+        .select(["id", "vector", "document_id"])
+        .to_arrow()
+    )
     stored = await SettingsRepository(store).get_current_settings()
     stored_dim = stored.get("embeddings", {}).get("model", {}).get("vector_dim")
     actual_dim = arrow.schema.field("vector").type.list_size
@@ -416,6 +676,23 @@ async def run_db_checks(
             ),
             remediation="haiku-rag rebuild --embed-only" if zero_ids else None,
             details=_sample(zero_ids),
+        )
+    )
+
+    # Near-duplicate documents (revisions sharing most chunks), grouped from the
+    # same vector scan rather than a second pass.
+    chunk_doc_ids_ordered = arrow.column("document_id").to_pylist()
+    indices_by_doc: dict[str, list[int]] = {}
+    for index, doc_id in enumerate(chunk_doc_ids_ordered):
+        indices_by_doc.setdefault(doc_id, []).append(index)
+    doc_vectors = {doc_id: vectors[idx] for doc_id, idx in indices_by_doc.items()}
+    results.append(
+        _check_duplicate_documents(
+            doc_vectors,
+            uri_by_doc,
+            title_by_doc,
+            config.doctor.duplicates,
+            yaml_path=duplicates_out,
         )
     )
 
@@ -726,7 +1003,10 @@ async def run_provider_checks(config: AppConfig) -> list[CheckResult]:
 
 
 async def run_doctor(
-    config: AppConfig, db_path: Path, environ: dict[str, str]
+    config: AppConfig,
+    db_path: Path,
+    environ: dict[str, str],
+    duplicates_out: Path | None = None,
 ) -> DoctorReport:
     """Open the database read-only and run every diagnostic check.
 
@@ -757,7 +1037,9 @@ async def run_doctor(
                 read_only=True,
                 skip_migration_check=True,
             ) as store:
-                results += await run_db_checks(store, config, stats)
+                results += await run_db_checks(
+                    store, config, stats, duplicates_out=duplicates_out
+                )
 
     results.append(_check_api_keys(config, environ))
     results += await run_provider_checks(config)

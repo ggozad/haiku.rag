@@ -103,6 +103,27 @@ class AnalysisConfig(BaseModel):
     max_executions: int = 15
 
 
+class DuplicateDetectionConfig(BaseModel):
+    """Thresholds for doctor's near-duplicate document detection.
+
+    Detection clusters documents that share most of their chunks (revisions of
+    one another). ``containment_threshold`` is the decision knob; the others
+    tune the cheap centroid pre-filter, what counts as a shared chunk, and which
+    tiny documents to skip.
+    """
+
+    containment_threshold: float = 0.75
+    candidate_threshold: float = 0.85
+    twin_similarity: float = 0.95
+    min_chunks: int = 3
+
+
+class DoctorConfig(BaseModel):
+    duplicates: DuplicateDetectionConfig = Field(
+        default_factory=DuplicateDetectionConfig
+    )
+
+
 class PictureDescriptionConfig(BaseModel):
     """How the VLM runs over each picture when it runs at all.
 
@@ -516,6 +537,7 @@ class AppConfig(BaseModel):
     analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
+    doctor: DoctorConfig = Field(default_factory=DoctorConfig)
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     prompts: PromptsConfig = Field(default_factory=PromptsConfig)
     ingester: IngesterConfig = Field(default_factory=IngesterConfig)

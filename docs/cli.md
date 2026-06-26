@@ -289,8 +289,10 @@ At the end, a separate "Versions" section lists runtime package versions:
 Check the database for consistency problems and print a pass/warn/fail report:
 
 ```bash
-haiku-rag doctor [--db /path/to/your.lancedb]
+haiku-rag doctor [--db /path/to/your.lancedb] [--duplicates-out groups.yaml]
 ```
+
+`--duplicates-out PATH` additionally writes the near-duplicate document groups to a YAML file (one block per group with `keep` and a list of `documents`, each carrying `document_id`, `document`, `chunks`, `contained_fraction`, and `keep_suggested`) for offline review.
 
 Checks include:
 
@@ -307,6 +309,7 @@ Checks include:
 - the configured embedding identity matches the stored settings
 - no database migrations are pending
 - the vector index covers all chunks
+- near-duplicate documents (revisions sharing most of their chunks) are grouped and reported, with the largest member flagged as the likely one to keep (advisory only, never deleted; tuned via `doctor.duplicates` in config)
 - API keys are set for configured providers
 
 It also probes the external endpoints the config uses and reports them under a Providers section:

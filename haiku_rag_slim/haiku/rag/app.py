@@ -198,7 +198,7 @@ class HaikuRAGApp:  # pragma: no cover
             f"  [repr.attrib_name]docling-document schema[/repr.attrib_name]: {info.packages['docling_document_schema']}"
         )
 
-    async def doctor(self) -> bool:
+    async def doctor(self, duplicates_out: Path | None = None) -> bool:
         """Run health checks and print a report. Returns True if any check failed."""
         import os
 
@@ -213,7 +213,9 @@ class HaikuRAGApp:  # pragma: no cover
             self.console.print("[red]Database path does not exist.[/red]")
             return True
 
-        report = await run_doctor(self.config, self.db_path, dict(os.environ))
+        report = await run_doctor(
+            self.config, self.db_path, dict(os.environ), duplicates_out=duplicates_out
+        )
 
         glyphs = {
             Severity.OK: "[green]✓[/green]",
@@ -245,6 +247,10 @@ class HaikuRAGApp:  # pragma: no cover
             f"[yellow]{report.count(Severity.WARN)} warning(s)[/yellow], "
             f"[red]{report.count(Severity.FAIL)} failure(s)[/red]"
         )
+        if duplicates_out is not None:
+            self.console.print(
+                f"[dim]Duplicate-document groups written to {duplicates_out}[/dim]"
+            )
         return report.failed
 
     async def history(self, table: str | None = None, limit: int | None = None):

@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- `doctor` reports groups of near-duplicate documents (revisions sharing most of their chunks), flagging the largest member as the likely one to keep; `--duplicates-out PATH` writes the groups to a YAML file. Tuned via the `doctor.duplicates` config block (`containment_threshold`, `candidate_threshold`, `twin_similarity`, `min_chunks`).
+
 ### Security
 
 - Bumped dependencies in `uv.lock` to patched versions for known advisories: `aiohttp` 3.14.1, `cryptography` 49.0.0, `idna` 3.18, `langchain-core` 1.4.8, `langchain-text-splitters` 1.1.2, `langsmith` 0.9.1, `lxml` 6.1.1, `pillow` 12.2.0, `pydantic-settings` 2.14.2, `pyjwt` 2.13.0, `pytest` 9.1.1, `python-multipart` 0.0.32, `requests` 2.34.2, `starlette` 1.3.1, `urllib3` 2.7.0, `vcrpy` 8.2.1.
