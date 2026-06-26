@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.62.0] - 2026-06-26
+
 ### Added
 
 - `doctor` reports groups of near-duplicate documents (revisions sharing most of their chunks), flagging the largest member as the likely one to keep; `--duplicates-out PATH` writes the groups to a YAML file. Tuned via the `doctor.duplicates` config block (`containment_threshold`, `candidate_threshold`, `twin_similarity`, `min_chunks`).
@@ -1834,7 +1836,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.61.2...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.62.0...HEAD
+[0.62.0]: https://github.com/ggozad/haiku.rag/compare/0.61.2...0.62.0
 [0.61.2]: https://github.com/ggozad/haiku.rag/compare/0.61.1...0.61.2
 [0.61.1]: https://github.com/ggozad/haiku.rag/compare/0.61.0...0.61.1
 [0.61.0]: https://github.com/ggozad/haiku.rag/compare/0.60.0...0.61.0
