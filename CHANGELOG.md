@@ -3,7 +3,7 @@
 
 ### Added
 
-- `doctor` reports groups of near-duplicate documents (revisions sharing most of their chunks), flagging the largest member as the likely one to keep. Corpus-wide boilerplate chunks are excluded so shared templates do not create false groups. Tuned via the `doctor.duplicates` config block (`containment_threshold`, `candidate_threshold`, `twin_similarity`, `min_chunks`, `boilerplate_doc_fraction`).
+- `doctor` reports groups of near-duplicate documents (revisions sharing most of their chunks), flagging the largest member as the likely one to keep. Tuned via the `doctor.duplicates` config block (`containment_threshold`, `candidate_threshold`, `twin_similarity`, `min_chunks`).
 
 ### Security
 

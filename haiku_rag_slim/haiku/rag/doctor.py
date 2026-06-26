@@ -1,5 +1,6 @@
 import asyncio
 import json
+from collections.abc import Mapping
 from enum import StrEnum
 from pathlib import Path
 
@@ -237,32 +238,6 @@ async def _column_values(table, column: str) -> list:
 # runtime on a pathologically self-similar corpus.
 MAX_CANDIDATE_PAIRS = 200_000
 
-# A chunk must appear in more than this many documents before its document
-# frequency is even considered for the boilerplate cutoff, so small duplicate
-# families on small corpora are never mistaken for boilerplate.
-_MIN_BOILERPLATE_DOCS = 10
-
-
-def _vector_key(row: np.ndarray) -> int:
-    return hash(row.round(4).tobytes())
-
-
-def _boilerplate_keys(doc_vectors: dict[str, np.ndarray], fraction: float) -> set[int]:
-    """Vector keys of chunks that recur across more documents than the cutoff.
-
-    Such chunks (navigation, FAQ blocks, license headers) carry no
-    document-identity signal and would inflate both centroid and containment.
-    """
-    cutoff = max(_MIN_BOILERPLATE_DOCS, fraction * len(doc_vectors))
-    cluster_docs: dict[int, set[str]] = {}
-    for doc_id, matrix in doc_vectors.items():
-        m = np.asarray(matrix, dtype=float)
-        if m.ndim != 2:
-            continue
-        for row in m:
-            cluster_docs.setdefault(_vector_key(row), set()).add(doc_id)
-    return {key for key, docs in cluster_docs.items() if len(docs) > cutoff}
-
 
 class _DuplicateFamily(BaseModel):
     members: list[str]
@@ -289,18 +264,14 @@ def _duplicate_families(
     pairs, then directed chunk-overlap containment confirms them. Returns one
     entry per connected component of confirmed pairs.
     """
-    # Drop boilerplate (corpus-wide ubiquitous chunks), unembedded (zero)
-    # vectors, and documents left below the small-document floor; normalize.
-    boilerplate = _boilerplate_keys(doc_vectors, cfg.boilerplate_doc_fraction)
+    # Drop unembedded (zero) vectors and documents below the small-document
+    # floor; normalize the rest to unit length.
     normalized: dict[str, np.ndarray] = {}
     for doc_id, matrix in doc_vectors.items():
         m = np.asarray(matrix, dtype=float)
         if m.ndim != 2 or m.shape[0] == 0:
             continue
-        keep = np.linalg.norm(m, axis=1) > 0
-        if boilerplate:
-            keep &= np.array([_vector_key(row) not in boilerplate for row in m])
-        m = m[keep]
+        m = m[np.linalg.norm(m, axis=1) > 0]
         if m.shape[0] < cfg.min_chunks:
             continue
         normalized[doc_id] = m / np.linalg.norm(m, axis=1)[:, None]
@@ -369,10 +340,26 @@ def _duplicate_families(
     return sorted(families, key=lambda f: f.members)
 
 
+def _common_path_prefix(labels: list[str]) -> str:
+    """Longest shared prefix across labels, trimmed to a path boundary.
+
+    Returns "" unless the shared prefix is long enough to be worth factoring out
+    of every line (deep URI trees are otherwise unreadable).
+    """
+    if len(labels) < 2:
+        return ""
+    lo, hi = min(labels), max(labels)
+    end = 0
+    while end < len(lo) and lo[end] == hi[end]:
+        end += 1
+    cut = lo.rfind("/", 0, end)
+    return lo[: cut + 1] if cut > 16 else ""
+
+
 def _check_duplicate_documents(
     doc_vectors: dict[str, np.ndarray],
-    uri_by_doc: dict[str, str | None],
-    title_by_doc: dict[str, str | None],
+    uri_by_doc: Mapping[str, str | None],
+    title_by_doc: Mapping[str, str | None],
     cfg: DuplicateDetectionConfig,
 ) -> CheckResult:
     families = _duplicate_families(doc_vectors, cfg)
@@ -386,14 +373,29 @@ def _check_duplicate_documents(
     def label(doc_id: str) -> str:
         return uri_by_doc.get(doc_id) or title_by_doc.get(doc_id) or doc_id
 
-    lines: list[str] = []
-    for family in families:
-        members = ", ".join(label(m) for m in family.members)
-        overlaps = "; ".join(
-            f"{label(a)}→{label(b)}: {ab:.2f}, {label(b)}→{label(a)}: {ba:.2f}"
+    prefix = _common_path_prefix([label(m) for f in families for m in f.members])
+
+    def short(doc_id: str) -> str:
+        text = label(doc_id)
+        return text[len(prefix) :] if prefix and text.startswith(prefix) else text
+
+    # One block per group: a header, each member on its own numbered line, then a
+    # compact overlap summary referencing those numbers. Not truncated.
+    details: list[str] = []
+    if prefix:
+        details.append(f"common path: {prefix}")
+    for n, family in enumerate(families, start=1):
+        number = {member: i for i, member in enumerate(family.members, start=1)}
+        details.append(
+            f"group {n} — {len(family.members)} docs, keep #{number[family.superset]}:"
+        )
+        for member in family.members:
+            details.append(f"  #{number[member]} {short(member)}")
+        overlaps = ", ".join(
+            f"#{number[a]}→#{number[b]} {ab:.0%}, #{number[b]}→#{number[a]} {ba:.0%}"
             for a, b, ab, ba in family.pairs
         )
-        lines.append(f"[{members}] keep≈{label(family.superset)} ({overlaps})")
+        details.append(f"  overlap: {overlaps}")
 
     total_docs = sum(len(f.members) for f in families)
     return CheckResult(
@@ -406,7 +408,7 @@ def _check_duplicate_documents(
         remediation=(
             "Review each group and remove redundant revisions; overlap may be intentional."
         ),
-        details=_sample(lines),
+        details=details,
     )
 
 

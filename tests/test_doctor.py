@@ -27,6 +27,7 @@ from haiku.rag.doctor import (
     Severity,
     _active_models,
     _check_api_keys,
+    _check_duplicate_documents,
     _check_embedding_drift,
     _check_vector_index,
     _duplicate_families,
@@ -1021,29 +1022,33 @@ def test_duplicate_families_threshold_is_configurable():
     assert set(flagged[0].members) == {"a", "b"}
 
 
-def test_duplicate_families_strips_boilerplate():
-    # 12 documents, each = 3 shared boilerplate chunks (0,1,2) + 1 unique chunk.
-    # Sharing 3 of 4 chunks would pair every document with every other (0.75)
-    # if boilerplate counted.
-    spec = {f"d{i}": [0, 1, 2, 3 + i] for i in range(12)}
-    docs = _docs(spec, dim=20)
-    # Stripping disabled: boilerplate inflates them into one big false family.
-    inflated = _duplicate_families(docs, _stage2_cfg(boilerplate_doc_fraction=1.0))
-    assert len(inflated) == 1 and len(inflated[0].members) == 12
-    # Default stripping removes the ubiquitous chunks; each doc drops below
-    # min_chunks and nothing is flagged.
-    assert _duplicate_families(docs, _stage2_cfg()) == []
+def test_duplicate_documents_report_lists_all_groups_untruncated():
+    pairs = 7  # more than the old detail cap of 5
+    spec: dict[str, list[int]] = {}
+    for k in range(pairs):
+        idx = [3 * k, 3 * k + 1, 3 * k + 2]
+        spec[f"a{k}"] = idx
+        spec[f"b{k}"] = list(idx)
+    docs = _docs(spec, dim=3 * pairs)
+    uris = {d: f"file:///srv/shared/library/docs/{d}.pdf" for d in spec}
+    result = _check_duplicate_documents(docs, uris, {}, _stage2_cfg())
+    assert result.severity is Severity.WARN
+    assert f"{pairs} group(s)" in result.message
+    assert sum(1 for d in result.details if d.startswith("group ")) == pairs
+    assert not any("more)" in d for d in result.details)
+    assert any("keep #" in d for d in result.details)
+    assert any("100%" in d for d in result.details)
 
 
-def test_duplicate_families_boilerplate_strip_keeps_real_pair():
-    # A real duplicate pair (a,b) shares 4 content chunks present in only those
-    # two documents; 12 filler docs carry the corpus boilerplate (0,1,2).
-    spec = {f"f{i}": [0, 1, 2, 7 + i] for i in range(12)}
-    spec["a"] = [3, 4, 5, 6]
-    spec["b"] = [3, 4, 5, 6]
-    families = _duplicate_families(_docs(spec, dim=24), _stage2_cfg())
-    assert len(families) == 1
-    assert set(families[0].members) == {"a", "b"}
+def test_duplicate_documents_report_factors_common_path():
+    docs = _docs({"a": [0, 1, 2], "b": [0, 1, 2]}, dim=3)
+    base = "file:///srv/shared/library/docs/"
+    uris = {"a": base + "alpha.pdf", "b": base + "beta.pdf"}
+    result = _check_duplicate_documents(docs, uris, {}, _stage2_cfg())
+    assert f"common path: {base}" in result.details
+    member_lines = [d for d in result.details if d.lstrip().startswith("#")]
+    assert {d.strip() for d in member_lines} == {"#1 alpha.pdf", "#2 beta.pdf"}
+    assert not any(base in d for d in member_lines)
 
 
 async def _build_dup_db(path, docs: dict[str, list[int]], *, vector_dim: int = 8):

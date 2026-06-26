@@ -115,12 +115,11 @@ search:
   vector_refine_factor: 30
 
 doctor:
-  duplicates:                     # Near-duplicate document detection (doctor command)
-    containment_threshold: 0.75   # flag a group when one doc shares >= this fraction of the smaller's chunks
-    candidate_threshold: 0.85     # centroid similarity gate for proposing candidate pairs (recall)
-    twin_similarity: 0.95         # cosine at which two chunks count as the same chunk
-    min_chunks: 3                 # documents with fewer chunks are excluded
-    boilerplate_doc_fraction: 0.01  # chunks appearing in more than this fraction of docs are ignored as boilerplate
+  duplicates:                    # Near-duplicate document detection (doctor command)
+    containment_threshold: 0.75  # flag a group when one doc shares >= this fraction of the smaller's chunks
+    candidate_threshold: 0.85    # centroid similarity gate for proposing candidate pairs (recall)
+    twin_similarity: 0.95        # cosine at which two chunks count as the same chunk
+    min_chunks: 3                # documents with fewer chunks are excluded
 
 prompts:
   domain_preamble: ""  # Prepended to skill instructions
