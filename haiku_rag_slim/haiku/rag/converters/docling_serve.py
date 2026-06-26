@@ -59,9 +59,15 @@ class DoclingServeConverter(DocumentConverter):
             config: Application configuration containing docling-serve settings.
         """
         self.config = config
+        ds = config.providers.docling_serve
         self.client = DoclingServeClient(
-            base_urls=config.providers.docling_serve.base_urls,
-            api_key=config.providers.docling_serve.api_key,
+            base_urls=ds.base_urls,
+            api_key=ds.api_key,
+            max_attempts=ds.max_attempts,
+            retry_base_delay=ds.retry_base_delay,
+            retry_max_delay=ds.retry_max_delay,
+            breaker_failure_threshold=ds.breaker_failure_threshold,
+            breaker_cooldown_s=ds.breaker_cooldown_s,
         )
 
     @property

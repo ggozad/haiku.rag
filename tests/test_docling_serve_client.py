@@ -321,6 +321,145 @@ def test_pick_url_all_excluded_falls_back():
     assert picked == "http://solo:5001"
 
 
+async def _convert(client: DoclingServeClient) -> dict:
+    return await client.submit_and_poll(
+        endpoint="/v1/convert/file/async",
+        files={"file": ("x.md", b"x", "text/markdown")},
+        data={},
+    )
+
+
+@pytest.mark.asyncio
+async def test_breaker_opens_after_repeated_failures_then_skips_instance():
+    """Repeated failures on an instance (each failing over to a healthy one)
+    trip its breaker; once open, _pick_url skips it entirely."""
+    down = {"crash-h"}
+    transport, seen = _failover_transport(down, "t", {"ok": True})
+    crash = "http://crash-h:5001"
+    client = DoclingServeClient(
+        base_urls=[crash, "http://live-h:5001"],
+        transport=transport,
+        breaker_failure_threshold=2,
+        retry_base_delay=0.0,
+    )
+
+    # Each call fails on crash-h (recorded) then fails over to live-h.
+    assert await _convert(client) == {"ok": True}
+    assert await _convert(client) == {"ok": True}  # 2nd failure opens crash-h
+    assert client._breaker_for(crash).is_open
+
+    seen.clear()
+    assert await _convert(client) == {"ok": True}
+    assert "crash-h" not in seen  # breaker open → never attempted
+    assert set(seen) == {"live-h"}
+
+
+@pytest.mark.asyncio
+async def test_breaker_recovers_after_cooldown():
+    """An open breaker auto-probes after its cooldown; once the instance is
+    healthy again a successful request closes it."""
+    clock = [1000.0]
+    down = {"flip-j"}
+    transport, seen = _failover_transport(down, "t", {"ok": True})
+    flip = "http://flip-j:5001"
+    client = DoclingServeClient(
+        base_urls=[flip, "http://spare-j:5001"],
+        transport=transport,
+        breaker_failure_threshold=2,
+        breaker_cooldown_s=30.0,
+        retry_base_delay=0.0,
+        now_fn=lambda: clock[0],
+    )
+
+    await _convert(client)
+    await _convert(client)  # opens flip-j's breaker
+    assert client._breaker_for(flip).is_open
+
+    down.clear()  # instance recovers
+    assert client._breaker_for(flip).is_open  # still skipped within cooldown
+    clock[0] += 31.0
+    assert not client._breaker_for(flip).is_open  # cooldown elapsed → probe ok
+
+    seen.clear()
+    await _convert(client)
+    await _convert(client)
+    assert "flip-j" in seen  # traffic returned
+    assert not client._breaker_for(flip).is_open  # success closed it
+
+
+@pytest.mark.asyncio
+async def test_4xx_does_not_trip_breaker():
+    """A 4xx is the caller's fault — it must not count against instance health,
+    even at a 1-failure threshold."""
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.host)
+        return httpx.Response(400, json={"detail": "bad request"})
+
+    bad = "http://bad-k:5001"
+    client = DoclingServeClient(
+        base_urls=[bad],
+        transport=httpx.MockTransport(handler),
+        breaker_failure_threshold=1,
+        retry_base_delay=0.0,
+    )
+
+    for _ in range(3):
+        with pytest.raises(httpx.HTTPStatusError):
+            await _convert(client)
+
+    assert not client._breaker_for(bad).is_open
+
+
+@pytest.mark.asyncio
+async def test_pick_url_falls_back_when_all_breakers_open():
+    """When every instance's breaker is open (here a single-instance fleet that
+    just failed), _pick_url returns one anyway so the request can still probe
+    it rather than having nothing to pick."""
+    lone = "http://lone-m:5001"
+    transport, _ = _failover_transport({"lone-m"}, "t", {"ok": True})
+    client = DoclingServeClient(
+        base_urls=[lone],
+        transport=transport,
+        breaker_failure_threshold=1,
+        max_attempts=1,
+        retry_base_delay=0.0,
+    )
+
+    with pytest.raises(httpx.ConnectError):
+        await _convert(client)
+    assert client._breaker_for(lone).is_open
+
+    # All (one) instances open → fall back to it.
+    assert client._pick_url() == lone
+
+
+def test_config_knobs_reach_the_client():
+    """Retry/breaker knobs set in DoclingServeConfig must reach the client via
+    get_converter / get_chunker (previously hardcoded constructor defaults)."""
+    from haiku.rag.chunkers.docling_serve import DoclingServeChunker
+    from haiku.rag.config import AppConfig
+    from haiku.rag.converters.docling_serve import DoclingServeConverter
+
+    config = AppConfig()
+    ds = config.providers.docling_serve
+    ds.base_url = "http://cfg-n:5001"
+    ds.max_attempts = 7
+    ds.retry_base_delay = 1.25
+    ds.retry_max_delay = 20.0
+    ds.breaker_failure_threshold = 9
+    ds.breaker_cooldown_s = 90.0
+
+    for component in (DoclingServeConverter(config), DoclingServeChunker(config)):
+        client = component.client
+        assert client._max_attempts == 7
+        assert client._retry_base_delay == 1.25
+        assert client._retry_max_delay == 20.0
+        assert client._breaker_failure_threshold == 9
+        assert client._breaker_cooldown_s == 90.0
+
+
 @pytest.mark.asyncio
 async def test_zip_endpoint_uses_round_robin_too():
     transport, seen = _scripted_transport(
