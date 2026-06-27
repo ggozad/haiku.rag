@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.62.1] - 2026-06-27
+
 ### Fixed
 
 - Context expansion now hard-caps each expanded search result at `search.max_context_chars`, anchored on the matched chunk. A single oversized `document_items` row (e.g. a spreadsheet converted to one table) no longer pushes a result far past the budget and overflows the model context window.
@@ -1840,7 +1842,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.62.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.62.1...HEAD
+[0.62.1]: https://github.com/ggozad/haiku.rag/compare/0.62.0...0.62.1
 [0.62.0]: https://github.com/ggozad/haiku.rag/compare/0.61.2...0.62.0
 [0.61.2]: https://github.com/ggozad/haiku.rag/compare/0.61.1...0.61.2
 [0.61.1]: https://github.com/ggozad/haiku.rag/compare/0.61.0...0.61.1
