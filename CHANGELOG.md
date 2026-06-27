@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- Context expansion now hard-caps each expanded search result at `search.max_context_chars`, anchored on the matched chunk. A single oversized `document_items` row (e.g. a spreadsheet converted to one table) no longer pushes a result far past the budget and overflows the model context window.
+
 ## [0.62.0] - 2026-06-26
 
 ### Added
