@@ -2,6 +2,8 @@ import pytest
 
 from haiku.rag.client.documents import _store_document_with_chunks
 from haiku.rag.context import (
+    _clip_to_budget,
+    _evidence_anchors,
     _expand_outward,
     _find_expansion_range,
     _merge_ranges,
@@ -243,6 +245,48 @@ class TestFindExpansionRange:
         assert hi >= 2
 
 
+class TestEvidenceAnchors:
+    def test_empty_content(self):
+        assert _evidence_anchors("", 5000) == []
+
+    def test_anchors_never_exceed_budget(self):
+        # Even when max_chars is smaller than the minimum anchor length, no
+        # anchor may exceed the window it has to fit inside.
+        anchors = _evidence_anchors("z" * 1000, 50)
+        assert anchors
+        assert all(len(a) <= 50 for a in anchors)
+
+    def test_tiny_content_uses_full_text(self):
+        anchors = _evidence_anchors("short", 5000)
+        assert anchors == ["short"]
+
+    def test_long_content_offers_full_and_central_slice(self):
+        content = "L" * 500 + "M" * 500
+        anchors = _evidence_anchors(content, 5000)
+        assert content in anchors
+        # A strictly shorter central slice is also offered for drift tolerance.
+        assert any(a != content and a in content for a in anchors)
+
+
+class TestClipToBudget:
+    def test_zero_budget_returns_empty(self):
+        result = SearchResult(content="anything", score=0.9, document_id="d")
+        assert _clip_to_budget("some long content", [result], 0) == ""
+
+    def test_no_anchor_found_falls_back_to_prefix(self):
+        content = "xyz" * 1000
+        result = SearchResult(content="NOTPRESENT", score=0.9, document_id="d")
+        assert _clip_to_budget(content, [result], 100) == content[:100]
+
+    def test_centers_window_on_evidence(self):
+        marker = "UNIQUE_MATCH_TEXT"
+        content = "A" * 300_000 + marker + "B" * 300_000
+        result = SearchResult(content=marker, score=0.9, document_id="d")
+        clipped = _clip_to_budget(content, [result], 10_000)
+        assert len(clipped) <= 10_000
+        assert marker in clipped
+
+
 @pytest.mark.asyncio
 class TestExpandWithItems:
     async def test_unresolvable_refs_returns_original(self, temp_db_path):
@@ -386,6 +430,186 @@ class TestExpandWithItems:
             # Expansion produces "Steps\n\nClick\n\n+\n\nAdd a New Service" = 38 chars
             # which is less than the chunk's 46 chars — fallback preserves the chunk
             assert expanded[0].content == result.content
+
+    async def test_oversized_item_clipped_to_budget(self, temp_db_path):
+        """A single huge item (e.g. a whole spreadsheet as one table) is clipped
+        to the budget, centered on the matched text."""
+        from haiku.rag.client import HaikuRAG
+
+        marker = "UNIQUE_MATCH_TEXT"
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/tables/0",
+                    label="table",
+                    text="A" * 300_000 + marker + "B" * 300_000,
+                ),
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            result = SearchResult(
+                content=marker,
+                score=0.9,
+                document_id="doc-1",
+                doc_item_refs=["#/tables/0"],
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [result], 10_000
+            )
+            assert len(expanded) == 1
+            assert len(expanded[0].content) <= 10_000
+            assert marker in expanded[0].content
+
+    async def test_giant_neighbor_does_not_blow_budget(self, temp_db_path):
+        """An adjacent giant item swept in by expansion cannot blow the budget,
+        and the matched item's text survives."""
+        from haiku.rag.client import HaikuRAG
+
+        matched_text = "matched small text here"
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/texts/0",
+                    label="text",
+                    text=matched_text,
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=1,
+                    self_ref="#/tables/1",
+                    label="table",
+                    text="C" * 600_000,
+                ),
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            result = SearchResult(
+                content=matched_text,
+                score=0.9,
+                document_id="doc-1",
+                doc_item_refs=["#/texts/0"],
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [result], 10_000
+            )
+            assert len(expanded) == 1
+            assert len(expanded[0].content) <= 10_000
+            assert matched_text in expanded[0].content
+
+    async def test_small_items_under_budget_not_clipped(self, temp_db_path):
+        """Normal small-item expansion is untouched — clipping never triggers."""
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/texts/0",
+                    label="text",
+                    text="First paragraph here.",
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=1,
+                    self_ref="#/texts/1",
+                    label="text",
+                    text="Second matched paragraph.",
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=2,
+                    self_ref="#/texts/2",
+                    label="text",
+                    text="Third paragraph here.",
+                ),
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            result = SearchResult(
+                content="Second matched paragraph.",
+                score=0.9,
+                document_id="doc-1",
+                doc_item_refs=["#/texts/1"],
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [result], 5000
+            )
+            assert len(expanded) == 1
+            assert len(expanded[0].content) < 5000
+            # All three items expanded in, nothing truncated.
+            assert "First paragraph here." in expanded[0].content
+            assert "Second matched paragraph." in expanded[0].content
+            assert "Third paragraph here." in expanded[0].content
+
+    async def test_original_chunk_larger_than_budget_is_capped(self, temp_db_path):
+        """When the floor restores an original chunk bigger than the budget, the
+        hard cap still wins (returning less than the original chunk)."""
+        from haiku.rag.client import HaikuRAG
+
+        marker = "CENTRAL_MARKER_" + "Z" * 200
+        big_chunk = "A" * 10_000 + marker + "A" * 10_000
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/texts/0",
+                    label="text",
+                    text="tiny",
+                ),
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            result = SearchResult(
+                content=big_chunk,
+                score=0.9,
+                document_id="doc-1",
+                doc_item_refs=["#/texts/0"],
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [result], 5000
+            )
+            assert len(expanded) == 1
+            assert len(expanded[0].content) <= 5000
+            assert marker in expanded[0].content
+
+    async def test_fuzzy_match_preserves_central_marker(self, temp_db_path):
+        """The chunk's text need not be verbatim in the joined item text: a clean
+        central marker is still located via the central-slice anchor."""
+        from haiku.rag.client import HaikuRAG
+
+        marker = "M" * 2000
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/tables/0",
+                    label="table",
+                    text="A" * 300_000 + marker + "B" * 300_000,
+                ),
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            # Chunk content has edge formatting that is NOT verbatim in the item
+            # text, but the central marker is identical.
+            result = SearchResult(
+                content="<edge>" + marker + "</edge>",
+                score=0.9,
+                document_id="doc-1",
+                doc_item_refs=["#/tables/0"],
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [result], 10_000
+            )
+            assert len(expanded) == 1
+            assert len(expanded[0].content) <= 10_000
+            assert "M" * 500 in expanded[0].content
 
 
 @pytest.mark.asyncio

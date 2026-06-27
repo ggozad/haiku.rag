@@ -69,6 +69,64 @@ def _merge_ranges(
     return merged
 
 
+_MIN_ANCHOR = 128
+
+
+def _evidence_anchors(content: str, max_chars: int) -> list[str]:
+    """Substrings of a matched chunk used to locate it inside expanded content.
+
+    Tries the exact chunk text first, then a substantial central slice that
+    tolerates edge formatting drift between the chunk and the joined item text.
+    Every anchor is bounded by ``max_chars`` so it always fits inside the window
+    the caller returns, and is never shorter than ``_MIN_ANCHOR`` (unless the
+    chunk itself is) so a short, common substring can't anchor by accident.
+    """
+    if not content:
+        return []
+    anchors: list[str] = []
+    if len(content) <= max_chars:
+        anchors.append(content)
+    if max_chars > 0:
+        min_anchor = min(_MIN_ANCHOR, max_chars, len(content))
+        target = min(max_chars // 2, len(content) // 2)
+        target = min(max(target, min_anchor), max_chars, len(content))
+        if target < len(content):
+            mid = len(content) // 2
+            start = max(0, mid - target // 2)
+            anchors.append(content[start : start + target])
+    if not anchors:
+        anchors.append(content[:max_chars] if max_chars > 0 else content)
+    return anchors
+
+
+def _clip_to_budget(content: str, results: list[SearchResult], max_chars: int) -> str:
+    """Clip expanded content to ``max_chars``, keeping the matched evidence.
+
+    Anchors on the first locatable result in ``results`` order (the primary
+    chunk that supplies the expanded result's identity) and returns a
+    ``max_chars``-wide window centered on it. Falls back to a prefix cut only
+    when no anchor is locatable (heavy drift).
+    """
+    if max_chars <= 0:
+        return ""
+    evidence_start, evidence_len = -1, 0
+    for result in results:
+        for anchor in _evidence_anchors(result.content, max_chars):
+            idx = content.find(anchor)
+            if idx != -1:
+                evidence_start, evidence_len = idx, len(anchor)
+                break
+        if evidence_start != -1:
+            break
+    if evidence_start == -1:
+        return content[:max_chars]
+    center = evidence_start + evidence_len // 2
+    start = max(0, center - max_chars // 2)
+    end = min(len(content), start + max_chars)
+    start = max(0, end - max_chars)
+    return content[start:end]
+
+
 def _expand_outward(
     items: list[DocumentItem],
     center_idx: int,
@@ -273,6 +331,10 @@ async def expand_with_items(
         expanded_content = "\n\n".join(content_parts)
         if len(expanded_content) < len(first.content):
             expanded_content = first.content
+        if len(expanded_content) > max_chars:
+            expanded_content = _clip_to_budget(
+                expanded_content, original_results, max_chars
+            )
 
         final_results.append(
             SearchResult(
