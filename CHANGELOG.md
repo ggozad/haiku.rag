@@ -1,6 +1,16 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- `doctor` shows a spinner naming the check currently in progress while it runs.
+
+### Changed
+
+- `doctor` near-duplicate detection compares whole-document embedding centroids instead of per-chunk overlap, and no longer flags a small document contained in a larger one. The per-chunk check could take hours and tens of GB of memory on corpora with large documents. The centroid check is independent of document size and reduces each document to a centroid during the vector scan without a second copy of the matrix.
+- **Breaking:** the `doctor.duplicates` keys `containment_threshold`, `candidate_threshold`, and `twin_similarity` are replaced by a single `similarity_threshold` (default `0.97`). `min_chunks` is unchanged.
+- `doctor --duplicates-out` YAML reports `similarity` per document instead of `contained_fraction`.
+
 ## [0.62.1] - 2026-06-27
 
 ### Fixed

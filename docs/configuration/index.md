@@ -116,9 +116,7 @@ search:
 
 doctor:
   duplicates:                    # Near-duplicate document detection (doctor command)
-    containment_threshold: 0.75  # flag a group when one doc shares >= this fraction of the smaller's chunks
-    candidate_threshold: 0.85    # centroid similarity gate for proposing candidate pairs (recall)
-    twin_similarity: 0.95        # cosine at which two chunks count as the same chunk
+    similarity_threshold: 0.97   # cosine cutoff on document embedding centroids
     min_chunks: 3                # documents with fewer chunks are excluded
 
 prompts:

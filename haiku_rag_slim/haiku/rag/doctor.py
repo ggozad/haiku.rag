@@ -235,134 +235,90 @@ async def _column_values(table, column: str) -> list:
     return [row[column] for row in rows]
 
 
-# Backstop on how many centroid candidate pairs we verify, bounding memory and
-# runtime on a pathologically self-similar corpus.
-MAX_CANDIDATE_PAIRS = 200_000
-
-
 class _DuplicateFamily(BaseModel):
     members: list[str]
-    superset: str
-    pairs: list[tuple[str, str, float, float]]
+    keep: str
+    similarity: dict[str, float]
     sizes: dict[str, int]
 
 
-def _unit(vector: np.ndarray) -> np.ndarray:
-    norm = np.linalg.norm(vector)
-    return vector / norm if norm else vector
-
-
-def _containment(source: np.ndarray, target: np.ndarray, twin: float) -> float:
-    """Fraction of ``source`` chunks with a near-identical chunk in ``target``."""
-    return float(((source @ target.T).max(axis=1) >= twin).mean())
-
-
 def _duplicate_families(
-    doc_vectors: dict[str, np.ndarray], cfg: DuplicateDetectionConfig
+    doc_ids: list[str],
+    centroids: np.ndarray,
+    counts: np.ndarray,
+    cfg: DuplicateDetectionConfig,
 ) -> list[_DuplicateFamily]:
-    """Cluster documents that share most of their chunks (revisions of one another).
+    """Cluster documents whose embedding centroids are nearly identical.
 
-    Block-then-verify: cheap centroid similarity proposes candidate document
-    pairs, then directed chunk-overlap containment confirms them. Returns one
-    entry per connected component of confirmed pairs.
+    ``centroids`` holds one summed (unnormalized) centroid per document and
+    ``counts`` its embedded-chunk count. Documents below the small-document
+    floor are dropped; the rest are normalized and clustered by union-find over
+    pairwise cosine above ``similarity_threshold``. One family per component,
+    each carrying every member's highest cosine to another member.
     """
-    # Drop unembedded (zero) vectors and documents below the small-document
-    # floor; normalize the rest to unit length.
-    normalized: dict[str, np.ndarray] = {}
-    for doc_id, matrix in doc_vectors.items():
-        m = np.asarray(matrix, dtype=float)
-        if m.ndim != 2 or m.shape[0] == 0:
-            continue
-        m = m[np.linalg.norm(m, axis=1) > 0]
-        if m.shape[0] < cfg.min_chunks:
-            continue
-        normalized[doc_id] = m / np.linalg.norm(m, axis=1)[:, None]
-    if len(normalized) < 2:
+    centroids = np.asarray(centroids, dtype=np.float32)
+    counts = np.asarray(counts)
+    norms = np.linalg.norm(centroids, axis=1)
+    eligible = np.nonzero((counts >= cfg.min_chunks) & (norms > 0))[0]
+    if eligible.size < 2:
         return []
+    unit = centroids[eligible] / norms[eligible][:, None]
+    ids = [doc_ids[i] for i in eligible]
+    sizes = {doc_ids[i]: int(counts[i]) for i in eligible}
+    n = len(ids)
 
-    order = sorted(normalized)
-    centroids = np.array([_unit(normalized[d].mean(axis=0)) for d in order])
-    sizes = np.array([normalized[d].shape[0] for d in order], dtype=float)
+    # Pairwise cosine, block-wise to avoid a full D×D matrix at once. Each row
+    # only compares against higher-indexed documents (upper triangle). Cluster
+    # with union-find and keep only each document's best similarity to a twin —
+    # a self-similar corpus forms one clique, so storing every pair would be
+    # O(D²) objects.
+    parent = list(range(n))
 
-    # Stage 1: centroid candidate pairs, block-wise to avoid a full D×D matrix.
-    # The cap is enforced per row (truncating each row's matches) so a
-    # self-similar corpus can never allocate beyond MAX_CANDIDATE_PAIRS.
-    candidates: list[tuple[int, int]] = []
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    best = np.zeros(n, dtype=np.float32)
+    linked = False
     block = 512
-    capped = False
-    for start in range(0, len(order), block):
-        if capped:
-            break
-        sims = centroids[start : start + block] @ centroids.T
+    for start in range(0, n, block):
+        sims = unit[start : start + block] @ unit.T
         for row in range(sims.shape[0]):
             gi = start + row
-            targets = np.arange(gi + 1, len(order))
-            if targets.size == 0:
-                continue
-            # A smaller document can be fully contained in a larger append-only
-            # revision even when the fixed centroid threshold would fail:
-            # with orthogonal chunks, cosine falls to sqrt(small / large).
-            # Scale the candidate gate by that size ratio, then let directed
-            # containment make the actual duplicate decision.
-            ratios = np.minimum(sizes[gi], sizes[targets]) / np.maximum(
-                sizes[gi], sizes[targets]
+            cols = (
+                gi + 1 + np.nonzero(sims[row, gi + 1 :] >= cfg.similarity_threshold)[0]
             )
-            thresholds = cfg.candidate_threshold * np.sqrt(ratios)
-            above = np.nonzero(sims[row, gi + 1 :] >= thresholds)[0]
-            remaining = MAX_CANDIDATE_PAIRS - len(candidates)
-            if len(above) >= remaining:
-                above = above[:remaining]
-                capped = True
-            candidates.extend((gi, gi + 1 + int(j)) for j in above)
-            if capped:
-                break
-
-    # Stage 2: confirm candidates with directed chunk-overlap containment.
-    adjacency: dict[int, set[int]] = {}
-    edges: dict[tuple[int, int], tuple[float, float]] = {}
-    for i, j in candidates:
-        a_to_b = _containment(
-            normalized[order[i]], normalized[order[j]], cfg.twin_similarity
-        )
-        b_to_a = _containment(
-            normalized[order[j]], normalized[order[i]], cfg.twin_similarity
-        )
-        if max(a_to_b, b_to_a) >= cfg.containment_threshold:
-            adjacency.setdefault(i, set()).add(j)
-            adjacency.setdefault(j, set()).add(i)
-            edges[(i, j)] = (a_to_b, b_to_a)
-    if not edges:
+            if cols.size == 0:
+                continue
+            linked = True
+            row_best = sims[row, cols]
+            best[gi] = max(best[gi], float(row_best.max()))
+            best[cols] = np.maximum(best[cols], row_best)
+            ri = find(gi)
+            for gj in cols.tolist():
+                parent[find(gj)] = ri
+    if not linked:
         return []
 
-    # Cluster confirmed pairs into families (connected components).
+    components: dict[int, list[int]] = {}
+    for idx in range(n):
+        components.setdefault(find(idx), []).append(idx)
+
     families: list[_DuplicateFamily] = []
-    seen: set[int] = set()
-    for node in adjacency:
-        if node in seen:
+    for indices in components.values():
+        if len(indices) < 2:
             continue
-        component: set[int] = set()
-        stack = [node]
-        while stack:
-            cur = stack.pop()
-            if cur in seen:
-                continue
-            seen.add(cur)
-            component.add(cur)
-            stack.extend(adjacency[cur] - seen)
-        members = sorted(order[i] for i in component)
-        # Largest document (most chunks) is the likely superset; smallest id on a tie.
-        superset = min(members, key=lambda d: (-normalized[d].shape[0], d))
-        pairs = sorted(
-            (order[i], order[j], round(ab, 3), round(ba, 3))
-            for (i, j), (ab, ba) in edges.items()
-            if i in component and j in component
-        )
+        members = sorted(ids[i] for i in indices)
+        # Largest document (most chunks) is the one to keep; smallest id on a tie.
+        keep = min(members, key=lambda d: (-sizes[d], d))
         families.append(
             _DuplicateFamily(
                 members=members,
-                superset=superset,
-                pairs=pairs,
-                sizes={d: int(normalized[d].shape[0]) for d in members},
+                keep=keep,
+                similarity={ids[i]: round(float(best[i]), 3) for i in indices},
+                sizes={d: sizes[d] for d in members},
             )
         )
     return sorted(families, key=lambda f: f.members)
@@ -387,25 +343,21 @@ def _common_path_prefix(labels: list[str]) -> str:
 def _write_duplicates_out(
     path: Path, families: list[_DuplicateFamily], label: Callable[[str], str]
 ) -> None:
-    """One block per group; ``keep_suggested`` marks the superset and
-    ``contained_fraction`` is how much of the document is covered by the rest."""
+    """One block per group; ``keep_suggested`` marks the document to keep and
+    ``similarity`` is the highest centroid cosine to another group member."""
     groups = []
     for n, family in enumerate(families, start=1):
-        contained = dict.fromkeys(family.members, 0.0)
-        for a, b, a_to_b, b_to_a in family.pairs:
-            contained[a] = max(contained[a], a_to_b)
-            contained[b] = max(contained[b], b_to_a)
         groups.append(
             {
                 "group": n,
-                "keep": family.superset,
+                "keep": family.keep,
                 "documents": [
                     {
                         "document_id": member,
                         "document": label(member),
                         "chunks": family.sizes[member],
-                        "contained_fraction": round(contained[member], 3),
-                        "keep_suggested": member == family.superset,
+                        "similarity": family.similarity[member],
+                        "keep_suggested": member == family.keep,
                     }
                     for member in family.members
                 ],
@@ -416,13 +368,15 @@ def _write_duplicates_out(
 
 
 def _check_duplicate_documents(
-    doc_vectors: dict[str, np.ndarray],
+    doc_ids: list[str],
+    centroids: np.ndarray,
+    counts: np.ndarray,
     uri_by_doc: Mapping[str, str | None],
     title_by_doc: Mapping[str, str | None],
     cfg: DuplicateDetectionConfig,
     yaml_path: Path | None = None,
 ) -> CheckResult:
-    families = _duplicate_families(doc_vectors, cfg)
+    families = _duplicate_families(doc_ids, centroids, counts, cfg)
 
     def label(doc_id: str) -> str:
         return uri_by_doc.get(doc_id) or title_by_doc.get(doc_id) or doc_id
@@ -439,7 +393,7 @@ def _check_duplicate_documents(
 
     # The terminal report is a summary: show the first few groups whole and
     # point at the YAML export for the rest. One block per shown group — a
-    # header, each member on its own numbered line, then a compact overlap line.
+    # header, each member on its own numbered line, then a compact similarity line.
     shown = families[:_SAMPLE_LIMIT]
     prefix = _common_path_prefix([label(m) for f in shown for m in f.members])
 
@@ -453,15 +407,14 @@ def _check_duplicate_documents(
     for n, family in enumerate(shown, start=1):
         number = {member: i for i, member in enumerate(family.members, start=1)}
         details.append(
-            f"group {n} — {len(family.members)} docs, keep #{number[family.superset]}:"
+            f"group {n} — {len(family.members)} docs, keep #{number[family.keep]}:"
         )
         for member in family.members:
             details.append(f"  #{number[member]} {short(member)}")
-        overlaps = ", ".join(
-            f"#{number[a]}→#{number[b]} {ab:.0%}, #{number[b]}→#{number[a]} {ba:.0%}"
-            for a, b, ab, ba in family.pairs
+        sims = ", ".join(
+            f"#{number[m]} {family.similarity[m]:.0%}" for m in family.members
         )
-        details.append(f"  overlap: {overlaps}")
+        details.append(f"  similarity: {sims}")
     if len(families) > len(shown):
         details.append(
             f"... (+{len(families) - len(shown)} more groups; "
@@ -473,11 +426,11 @@ def _check_duplicate_documents(
         name="duplicate_documents",
         severity=Severity.WARN,
         message=(
-            f"{len(families)} group(s) of documents with substantial chunk overlap "
-            f"(potential duplicates/revisions), {total_docs} documents."
+            f"{len(families)} group(s) of near-identical documents "
+            f"(potential duplicates), {total_docs} documents."
         ),
         remediation=(
-            "Review each group and remove redundant revisions; overlap may be intentional."
+            "Review each group and remove redundant copies; duplication may be intentional."
         ),
         details=details,
     )
@@ -488,13 +441,16 @@ async def run_db_checks(
     config: AppConfig,
     stats: dict,
     duplicates_out: Path | None = None,
+    on_progress: Callable[[str], None] | None = None,
 ) -> list[CheckResult]:
     """Referential and content-integrity checks against an open read-only Store.
 
     Assumes all required tables exist (the caller short-circuits otherwise).
     """
+    notify = on_progress or (lambda _label: None)
     results: list[CheckResult] = []
 
+    notify("Reading document records")
     doc_ids = set(await _column_values(store.documents_table, "id"))
     meta_rows = (
         await store.document_meta_table.query()
@@ -511,6 +467,7 @@ async def run_db_checks(
     uri_by_doc = {row["document_id"]: row.get("uri") for row in meta_rows}
     title_by_doc = {row["document_id"]: row.get("title") for row in meta_rows}
 
+    notify("Reading chunks")
     chunk_rows = (
         await store.chunks_table.query()
         .select(["id", "document_id", "metadata"])
@@ -518,6 +475,7 @@ async def run_db_checks(
     )
     chunk_doc_ids = {row["document_id"] for row in chunk_rows}
 
+    notify("Reading document items")
     item_rows = (
         await store.document_items_table.query()
         .select(["document_id", "self_ref", "label"])
@@ -530,6 +488,7 @@ async def run_db_checks(
         self_refs_by_doc.setdefault(row["document_id"], set()).add(row["self_ref"])
         labels_by_doc.setdefault(row["document_id"], set()).add(row["label"])
 
+    notify("Checking referential integrity")
     # documents <-> document_meta must be 1:1.
     orphan_docs = doc_ids - meta_doc_ids
     orphan_meta = meta_doc_ids - doc_ids
@@ -585,6 +544,7 @@ async def run_db_checks(
         )
     )
 
+    notify("Checking document chunking")
     # Documents with no chunks, classified by what they contain and whether the
     # embedder can index images.
     results += _classify_unchunked(
@@ -608,6 +568,7 @@ async def run_db_checks(
         )
     )
 
+    notify("Checking chunk references")
     # Chunk metadata may reference self_refs that do not exist for that document.
     dangling: list[str] = []
     for row in chunk_rows:
@@ -629,6 +590,7 @@ async def run_db_checks(
         )
     )
 
+    notify("Scanning chunk vectors")
     # Vector dimension consistency and unembedded (all-zero) vectors share one
     # scan of the vector column — the heaviest check on large corpora.
     arrow = (
@@ -660,35 +622,60 @@ async def run_db_checks(
             )
         )
 
-    ids = arrow.column("id").to_pylist()
-    vectors = np.asarray(arrow.column("vector").to_pylist(), dtype=float)
-    zero_ids: list[str] = []
-    if vectors.size:
-        zero_ids = [ids[i] for i in np.nonzero(~vectors.any(axis=1))[0]]
+    # Reshape the Arrow fixed-size-list child buffer directly into an (N, dim)
+    # float32 matrix. Going through to_pylist() would box N*dim Python floats
+    # (tens of GB and most of the wall-clock on large corpora); the stored
+    # vectors are already float32, so this keeps the layout and the dtype.
+    vec_col = arrow.column("vector").combine_chunks()
+    vectors = vec_col.values.to_numpy(zero_copy_only=False).reshape(-1, actual_dim)
+    embedded = vectors.any(axis=1) if vectors.size else np.zeros(0, dtype=bool)
+
+    # Unembedded (all-zero) chunks: report a count and a few sampled ids without
+    # materializing every chunk id.
+    zero_rows = np.nonzero(~embedded)[0]
+    zero_count = int(zero_rows.size)
+    id_col = arrow.column("id")
+    zero_sample = [id_col[int(i)].as_py() for i in zero_rows[:_SAMPLE_LIMIT]]
+    if zero_count > _SAMPLE_LIMIT:
+        zero_sample.append(f"... (+{zero_count - _SAMPLE_LIMIT} more)")
     results.append(
         CheckResult(
             name="unembedded_chunks",
-            severity=Severity.WARN if zero_ids else Severity.OK,
+            severity=Severity.WARN if zero_count else Severity.OK,
             message=(
-                f"{len(zero_ids)} chunk(s) have an all-zero (unembedded) vector."
-                if zero_ids
+                f"{zero_count} chunk(s) have an all-zero (unembedded) vector."
+                if zero_count
                 else "All chunks are embedded."
             ),
-            remediation="haiku-rag rebuild --embed-only" if zero_ids else None,
-            details=_sample(zero_ids),
+            remediation="haiku-rag rebuild --embed-only" if zero_count else None,
+            details=zero_sample,
         )
     )
 
-    # Near-duplicate documents (revisions sharing most chunks), grouped from the
-    # same vector scan rather than a second pass.
-    chunk_doc_ids_ordered = arrow.column("document_id").to_pylist()
-    indices_by_doc: dict[str, list[int]] = {}
-    for index, doc_id in enumerate(chunk_doc_ids_ordered):
-        indices_by_doc.setdefault(doc_id, []).append(index)
-    doc_vectors = {doc_id: vectors[idx] for doc_id, idx in indices_by_doc.items()}
+    notify("Detecting near-duplicate documents")
+    # Near-identical documents (centroid cosine). Reduce each document's chunk
+    # vectors to one summed centroid during the scan: dictionary-encode the
+    # document ids into integer codes, then sum each document's embedded rows in
+    # a single pass per document — no second full copy of the vector matrix.
+    encoded = arrow.column("document_id").combine_chunks().dictionary_encode()
+    doc_ids = encoded.dictionary.to_pylist()
+    codes = encoded.indices.to_numpy(zero_copy_only=False)
+    centroids = np.zeros((len(doc_ids), actual_dim), dtype=np.float32)
+    counts = np.zeros(len(doc_ids), dtype=np.int64)
+    order = np.argsort(codes, kind="stable")
+    bounds = np.searchsorted(codes, np.arange(len(doc_ids) + 1), sorter=order)
+    for d in range(len(doc_ids)):
+        rows = order[bounds[d] : bounds[d + 1]]
+        rows = rows[embedded[rows]]
+        counts[d] = rows.size
+        if rows.size:
+            centroids[d] = vectors[rows].sum(axis=0)
+    del vectors
     results.append(
         _check_duplicate_documents(
-            doc_vectors,
+            doc_ids,
+            centroids,
+            counts,
             uri_by_doc,
             title_by_doc,
             config.doctor.duplicates,
@@ -696,6 +683,7 @@ async def run_db_checks(
         )
     )
 
+    notify("Checking picture data")
     # Pictures from image/PDF sources should carry raster bytes. Pictures that
     # are external image references in a text document (markdown, HTML) have no
     # embedded bytes by nature, so a missing raster there is expected.
@@ -726,6 +714,7 @@ async def run_db_checks(
         )
     )
 
+    notify("Checking settings and indexes")
     # Settings must hold exactly one canonical row.
     total_settings = await store.settings_table.count_rows()
     canonical = len(
@@ -978,12 +967,16 @@ def _endpoint_result(
     )
 
 
-async def run_provider_checks(config: AppConfig) -> list[CheckResult]:
+async def run_provider_checks(
+    config: AppConfig, on_progress: Callable[[str], None] | None = None
+) -> list[CheckResult]:
     """Probe the external endpoints the current config actually uses."""
     targets, local = _provider_targets(config)
 
     results: list[CheckResult] = []
     if targets:
+        if on_progress is not None:
+            on_progress("Probing provider endpoints")
         async with httpx.AsyncClient(timeout=_PROBE_TIMEOUT_S) as client:
             probes = await asyncio.gather(
                 *(_probe_endpoint(client, url) for url in targets)
@@ -1007,12 +1000,15 @@ async def run_doctor(
     db_path: Path,
     environ: dict[str, str],
     duplicates_out: Path | None = None,
+    on_progress: Callable[[str], None] | None = None,
 ) -> DoctorReport:
     """Open the database read-only and run every diagnostic check.
 
     Opens with validation and migration checks skipped so a drifted or
     pre-migration database can still be diagnosed rather than refusing to open.
     """
+    notify = on_progress or (lambda _label: None)
+    notify("Inspecting tables")
     db = await connect_lancedb(config, db_path)
     stats = await get_database_stats(db)
 
@@ -1038,9 +1034,14 @@ async def run_doctor(
                 skip_migration_check=True,
             ) as store:
                 results += await run_db_checks(
-                    store, config, stats, duplicates_out=duplicates_out
+                    store,
+                    config,
+                    stats,
+                    duplicates_out=duplicates_out,
+                    on_progress=on_progress,
                 )
 
+    notify("Checking API keys")
     results.append(_check_api_keys(config, environ))
-    results += await run_provider_checks(config)
+    results += await run_provider_checks(config, on_progress=on_progress)
     return DoctorReport(results=results)

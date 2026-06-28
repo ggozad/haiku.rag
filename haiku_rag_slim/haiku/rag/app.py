@@ -201,6 +201,7 @@ class HaikuRAGApp:  # pragma: no cover
     async def doctor(self, duplicates_out: Path | None = None) -> bool:
         """Run health checks and print a report. Returns True if any check failed."""
         import os
+        from contextlib import nullcontext
 
         from haiku.rag.doctor import Severity, run_doctor
 
@@ -213,9 +214,23 @@ class HaikuRAGApp:  # pragma: no cover
             self.console.print("[red]Database path does not exist.[/red]")
             return True
 
-        report = await run_doctor(
-            self.config, self.db_path, dict(os.environ), duplicates_out=duplicates_out
+        status = (
+            self.console.status("Running checks") if self.console.is_terminal else None
         )
+
+        def on_progress(label: str) -> None:
+            if status is not None:
+                status.update(f"{label}...")
+
+        cm = status if status is not None else nullcontext()
+        with cm:
+            report = await run_doctor(
+                self.config,
+                self.db_path,
+                dict(os.environ),
+                duplicates_out=duplicates_out,
+                on_progress=on_progress,
+            )
 
         glyphs = {
             Severity.OK: "[green]✓[/green]",
