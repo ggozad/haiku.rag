@@ -441,13 +441,16 @@ async def run_db_checks(
     config: AppConfig,
     stats: dict,
     duplicates_out: Path | None = None,
+    on_progress: Callable[[str], None] | None = None,
 ) -> list[CheckResult]:
     """Referential and content-integrity checks against an open read-only Store.
 
     Assumes all required tables exist (the caller short-circuits otherwise).
     """
+    notify = on_progress or (lambda _label: None)
     results: list[CheckResult] = []
 
+    notify("Reading document records")
     doc_ids = set(await _column_values(store.documents_table, "id"))
     meta_rows = (
         await store.document_meta_table.query()
@@ -464,6 +467,7 @@ async def run_db_checks(
     uri_by_doc = {row["document_id"]: row.get("uri") for row in meta_rows}
     title_by_doc = {row["document_id"]: row.get("title") for row in meta_rows}
 
+    notify("Reading chunks")
     chunk_rows = (
         await store.chunks_table.query()
         .select(["id", "document_id", "metadata"])
@@ -471,6 +475,7 @@ async def run_db_checks(
     )
     chunk_doc_ids = {row["document_id"] for row in chunk_rows}
 
+    notify("Reading document items")
     item_rows = (
         await store.document_items_table.query()
         .select(["document_id", "self_ref", "label"])
@@ -483,6 +488,7 @@ async def run_db_checks(
         self_refs_by_doc.setdefault(row["document_id"], set()).add(row["self_ref"])
         labels_by_doc.setdefault(row["document_id"], set()).add(row["label"])
 
+    notify("Checking referential integrity")
     # documents <-> document_meta must be 1:1.
     orphan_docs = doc_ids - meta_doc_ids
     orphan_meta = meta_doc_ids - doc_ids
@@ -538,6 +544,7 @@ async def run_db_checks(
         )
     )
 
+    notify("Checking document chunking")
     # Documents with no chunks, classified by what they contain and whether the
     # embedder can index images.
     results += _classify_unchunked(
@@ -561,6 +568,7 @@ async def run_db_checks(
         )
     )
 
+    notify("Checking chunk references")
     # Chunk metadata may reference self_refs that do not exist for that document.
     dangling: list[str] = []
     for row in chunk_rows:
@@ -582,6 +590,7 @@ async def run_db_checks(
         )
     )
 
+    notify("Scanning chunk vectors")
     # Vector dimension consistency and unembedded (all-zero) vectors share one
     # scan of the vector column — the heaviest check on large corpora.
     arrow = (
@@ -643,6 +652,7 @@ async def run_db_checks(
         )
     )
 
+    notify("Detecting near-duplicate documents")
     # Near-identical documents (centroid cosine). Reduce each document's chunk
     # vectors to one summed centroid during the scan: dictionary-encode the
     # document ids into integer codes, then sum each document's embedded rows in
@@ -673,6 +683,7 @@ async def run_db_checks(
         )
     )
 
+    notify("Checking picture data")
     # Pictures from image/PDF sources should carry raster bytes. Pictures that
     # are external image references in a text document (markdown, HTML) have no
     # embedded bytes by nature, so a missing raster there is expected.
@@ -703,6 +714,7 @@ async def run_db_checks(
         )
     )
 
+    notify("Checking settings and indexes")
     # Settings must hold exactly one canonical row.
     total_settings = await store.settings_table.count_rows()
     canonical = len(
@@ -955,12 +967,16 @@ def _endpoint_result(
     )
 
 
-async def run_provider_checks(config: AppConfig) -> list[CheckResult]:
+async def run_provider_checks(
+    config: AppConfig, on_progress: Callable[[str], None] | None = None
+) -> list[CheckResult]:
     """Probe the external endpoints the current config actually uses."""
     targets, local = _provider_targets(config)
 
     results: list[CheckResult] = []
     if targets:
+        if on_progress is not None:
+            on_progress("Probing provider endpoints")
         async with httpx.AsyncClient(timeout=_PROBE_TIMEOUT_S) as client:
             probes = await asyncio.gather(
                 *(_probe_endpoint(client, url) for url in targets)
@@ -984,12 +1000,15 @@ async def run_doctor(
     db_path: Path,
     environ: dict[str, str],
     duplicates_out: Path | None = None,
+    on_progress: Callable[[str], None] | None = None,
 ) -> DoctorReport:
     """Open the database read-only and run every diagnostic check.
 
     Opens with validation and migration checks skipped so a drifted or
     pre-migration database can still be diagnosed rather than refusing to open.
     """
+    notify = on_progress or (lambda _label: None)
+    notify("Inspecting tables")
     db = await connect_lancedb(config, db_path)
     stats = await get_database_stats(db)
 
@@ -1015,9 +1034,14 @@ async def run_doctor(
                 skip_migration_check=True,
             ) as store:
                 results += await run_db_checks(
-                    store, config, stats, duplicates_out=duplicates_out
+                    store,
+                    config,
+                    stats,
+                    duplicates_out=duplicates_out,
+                    on_progress=on_progress,
                 )
 
+    notify("Checking API keys")
     results.append(_check_api_keys(config, environ))
-    results += await run_provider_checks(config)
+    results += await run_provider_checks(config, on_progress=on_progress)
     return DoctorReport(results=results)

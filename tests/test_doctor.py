@@ -173,6 +173,17 @@ async def test_healthy_db_all_ok(temp_db_path):
 
 
 @pytest.mark.asyncio
+async def test_doctor_reports_progress(temp_db_path):
+    await _build_db(temp_db_path)
+    labels: list[str] = []
+    await run_doctor(_config(), temp_db_path, {}, on_progress=labels.append)
+    assert "Inspecting tables" in labels
+    assert "Scanning chunk vectors" in labels
+    assert "Detecting near-duplicate documents" in labels
+    assert "Probing provider endpoints" in labels
+
+
+@pytest.mark.asyncio
 async def test_empty_db_fails(temp_db_path):
     report = await run_doctor(_config(), temp_db_path, {})
     assert report.failed

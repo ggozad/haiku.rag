@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- `doctor` shows a spinner naming the check currently in progress while it runs.
+
 ### Changed
 
 - `doctor` near-duplicate detection compares whole-document embedding centroids instead of per-chunk overlap, and no longer flags a small document contained in a larger one. The per-chunk check could take hours and tens of GB of memory on corpora with large documents. The centroid check is independent of document size and reduces each document to a centroid during the vector scan without a second copy of the matrix.
