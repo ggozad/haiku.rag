@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.63.0] - 2026-06-28
+
 ### Added
 
 - `doctor` shows a spinner naming the check currently in progress while it runs.
@@ -1852,7 +1854,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.62.1...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.63.0...HEAD
+[0.63.0]: https://github.com/ggozad/haiku.rag/compare/0.62.1...0.63.0
 [0.62.1]: https://github.com/ggozad/haiku.rag/compare/0.62.0...0.62.1
 [0.62.0]: https://github.com/ggozad/haiku.rag/compare/0.61.2...0.62.0
 [0.61.2]: https://github.com/ggozad/haiku.rag/compare/0.61.1...0.61.2
