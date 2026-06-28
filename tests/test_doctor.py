@@ -944,22 +944,28 @@ async def test_probe_endpoint_connection_error():
 # --- Duplicate-document detection ----------------------------------------
 
 
-def _docs(spec: dict[str, list[int]], dim: int = 8) -> dict[str, np.ndarray]:
-    """Build per-document chunk matrices from one-hot indices.
+def _centroids(
+    spec: dict[str, list[int]], dim: int = 8
+) -> tuple[list[str], np.ndarray, np.ndarray]:
+    """Summed one-hot centroids + chunk counts per document, as
+    ``_duplicate_families`` consumes them.
 
     Orthogonal one-hot chunks make the centroid cosine of two documents equal to
     ``shared / sqrt(len(a) * len(b))``: identical documents score 1.0, fully
     distinct documents score 0.0.
     """
     eye = np.eye(dim)
-    return {
-        doc: np.array([eye[i] for i in idxs], dtype=float) for doc, idxs in spec.items()
-    }
+    doc_ids = list(spec)
+    centroids = np.array(
+        [eye[idxs].sum(axis=0) for idxs in spec.values()], dtype=np.float32
+    )
+    counts = np.array([len(idxs) for idxs in spec.values()], dtype=np.int64)
+    return doc_ids, centroids, counts
 
 
 def test_duplicate_families_identical_docs_flagged():
     families = _duplicate_families(
-        _docs({"a": [0, 1, 2, 3], "b": [0, 1, 2, 3]}), DuplicateDetectionConfig()
+        *_centroids({"a": [0, 1, 2, 3], "b": [0, 1, 2, 3]}), DuplicateDetectionConfig()
     )
     assert len(families) == 1
     assert set(families[0].members) == {"a", "b"}
@@ -970,21 +976,22 @@ def test_duplicate_families_append_only_not_flagged():
     # A is fully contained in the larger B, but their centroids diverge
     # (cosine sqrt(3/6) ~= 0.71), so it stays below the similarity cutoff.
     families = _duplicate_families(
-        _docs({"a": [0, 1, 2], "b": [0, 1, 2, 3, 4, 5]}), DuplicateDetectionConfig()
+        *_centroids({"a": [0, 1, 2], "b": [0, 1, 2, 3, 4, 5]}),
+        DuplicateDetectionConfig(),
     )
     assert families == []
 
 
 def test_duplicate_families_distinct_docs_none():
     families = _duplicate_families(
-        _docs({"a": [0, 1, 2], "b": [3, 4, 5]}), DuplicateDetectionConfig()
+        *_centroids({"a": [0, 1, 2], "b": [3, 4, 5]}), DuplicateDetectionConfig()
     )
     assert families == []
 
 
 def test_duplicate_families_three_way_one_family():
     families = _duplicate_families(
-        _docs({"a": [0, 1, 2, 3], "b": [0, 1, 2, 3], "c": [0, 1, 2, 3]}),
+        *_centroids({"a": [0, 1, 2, 3], "b": [0, 1, 2, 3], "c": [0, 1, 2, 3]}),
         DuplicateDetectionConfig(),
     )
     assert len(families) == 1
@@ -997,7 +1004,7 @@ def test_duplicate_families_clique_single_family():
     # A self-similar corpus (all identical) is one clique. Union-find collapses
     # it to a single family without materializing every pair.
     spec = {chr(ord("a") + k): [0, 1, 2, 3] for k in range(8)}
-    families = _duplicate_families(_docs(spec), DuplicateDetectionConfig())
+    families = _duplicate_families(*_centroids(spec), DuplicateDetectionConfig())
     assert len(families) == 1
     assert set(families[0].members) == set(spec)
     assert all(s == pytest.approx(1.0) for s in families[0].similarity.values())
@@ -1006,7 +1013,7 @@ def test_duplicate_families_clique_single_family():
 def test_duplicate_families_tiny_docs_ignored():
     # min_chunks = 3 excludes the one-chunk documents.
     families = _duplicate_families(
-        _docs({"a": [0], "b": [0]}), DuplicateDetectionConfig()
+        *_centroids({"a": [0], "b": [0]}), DuplicateDetectionConfig()
     )
     assert families == []
 
@@ -1014,9 +1021,9 @@ def test_duplicate_families_tiny_docs_ignored():
 def test_duplicate_families_threshold_is_configurable():
     # Share 3 of 4 chunks each -> centroid cosine 0.75.
     spec = {"a": [0, 1, 2, 3], "b": [0, 1, 2, 4]}
-    assert _duplicate_families(_docs(spec), DuplicateDetectionConfig()) == []
+    assert _duplicate_families(*_centroids(spec), DuplicateDetectionConfig()) == []
     flagged = _duplicate_families(
-        _docs(spec), DuplicateDetectionConfig(similarity_threshold=0.7)
+        *_centroids(spec), DuplicateDetectionConfig(similarity_threshold=0.7)
     )
     assert len(flagged) == 1
     assert set(flagged[0].members) == {"a", "b"}
@@ -1029,9 +1036,10 @@ def test_duplicate_documents_report_truncates_summary():
         idx = [3 * k, 3 * k + 1, 3 * k + 2]
         spec[f"a{k}"] = idx
         spec[f"b{k}"] = list(idx)
-    docs = _docs(spec, dim=3 * pairs)
     uris = {d: f"file:///srv/shared/library/docs/{d}.pdf" for d in spec}
-    result = _check_duplicate_documents(docs, uris, {}, DuplicateDetectionConfig())
+    result = _check_duplicate_documents(
+        *_centroids(spec, dim=3 * pairs), uris, {}, DuplicateDetectionConfig()
+    )
     assert result.severity is Severity.WARN
     # The summary message still reports the full total.
     assert f"{pairs} group(s)" in result.message
@@ -1042,10 +1050,14 @@ def test_duplicate_documents_report_truncates_summary():
 
 
 def test_duplicate_documents_report_factors_common_path():
-    docs = _docs({"a": [0, 1, 2], "b": [0, 1, 2]}, dim=3)
     base = "file:///srv/shared/library/docs/"
     uris = {"a": base + "alpha.pdf", "b": base + "beta.pdf"}
-    result = _check_duplicate_documents(docs, uris, {}, DuplicateDetectionConfig())
+    result = _check_duplicate_documents(
+        *_centroids({"a": [0, 1, 2], "b": [0, 1, 2]}, dim=3),
+        uris,
+        {},
+        DuplicateDetectionConfig(),
+    )
     assert f"common path: {base}" in result.details
     member_lines = [d for d in result.details if d.lstrip().startswith("#")]
     assert {d.strip() for d in member_lines} == {"#1 alpha.pdf", "#2 beta.pdf"}
@@ -1054,11 +1066,11 @@ def test_duplicate_documents_report_factors_common_path():
 
 def test_duplicate_documents_writes_yaml(tmp_path):
     # a,b identical (a 4-chunk duplicate); c distinct and excluded.
-    docs = _docs({"a": [0, 1, 2, 3], "b": [0, 1, 2, 3], "c": [4, 5, 6]}, dim=8)
+    spec = {"a": [0, 1, 2, 3], "b": [0, 1, 2, 3], "c": [4, 5, 6]}
     uris = {"a": "file:///x/a.pdf", "b": "file:///x/b.pdf", "c": "file:///x/c.pdf"}
     out = tmp_path / "dups.yaml"
     _check_duplicate_documents(
-        docs, uris, {}, DuplicateDetectionConfig(), yaml_path=out
+        *_centroids(spec, dim=8), uris, {}, DuplicateDetectionConfig(), yaml_path=out
     )
     data = yaml.safe_load(out.read_text())
     assert len(data["groups"]) == 1
@@ -1076,10 +1088,14 @@ def test_duplicate_documents_writes_yaml(tmp_path):
 
 
 def test_duplicate_documents_writes_empty_yaml_when_none(tmp_path):
-    docs = _docs({"a": [0, 1, 2], "b": [3, 4, 5]}, dim=6)  # distinct
+    spec = {"a": [0, 1, 2], "b": [3, 4, 5]}  # distinct
     out = tmp_path / "dups.yaml"
     _check_duplicate_documents(
-        docs, {"a": "u", "b": "v"}, {}, DuplicateDetectionConfig(), yaml_path=out
+        *_centroids(spec, dim=6),
+        {"a": "u", "b": "v"},
+        {},
+        DuplicateDetectionConfig(),
+        yaml_path=out,
     )
     assert yaml.safe_load(out.read_text()) == {"groups": []}
 

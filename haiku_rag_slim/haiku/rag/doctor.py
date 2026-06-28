@@ -243,43 +243,36 @@ class _DuplicateFamily(BaseModel):
 
 
 def _duplicate_families(
-    doc_vectors: dict[str, np.ndarray], cfg: DuplicateDetectionConfig
+    doc_ids: list[str],
+    centroids: np.ndarray,
+    counts: np.ndarray,
+    cfg: DuplicateDetectionConfig,
 ) -> list[_DuplicateFamily]:
     """Cluster documents whose embedding centroids are nearly identical.
 
-    One unit centroid per document, pairwise cosine, then connected components
-    of pairs above ``similarity_threshold``. One family per component, each
-    carrying every member's highest cosine to another member of the family.
+    ``centroids`` holds one summed (unnormalized) centroid per document and
+    ``counts`` its embedded-chunk count. Documents below the small-document
+    floor are dropped; the rest are normalized and clustered by union-find over
+    pairwise cosine above ``similarity_threshold``. One family per component,
+    each carrying every member's highest cosine to another member.
     """
-    # Drop unembedded (zero) vectors and documents below the small-document
-    # floor; reduce each remaining document to a unit centroid.
-    centroids_by_doc: dict[str, np.ndarray] = {}
-    sizes: dict[str, int] = {}
-    for doc_id, matrix in doc_vectors.items():
-        m = np.asarray(matrix, dtype=np.float32)
-        if m.ndim != 2 or m.shape[0] == 0:
-            continue
-        m = m[np.linalg.norm(m, axis=1) > 0]
-        if m.shape[0] < cfg.min_chunks:
-            continue
-        centroid = m.mean(axis=0)
-        norm = np.linalg.norm(centroid)
-        if norm == 0:
-            continue
-        centroids_by_doc[doc_id] = centroid / norm
-        sizes[doc_id] = int(m.shape[0])
-    if len(centroids_by_doc) < 2:
+    centroids = np.asarray(centroids, dtype=np.float32)
+    counts = np.asarray(counts)
+    norms = np.linalg.norm(centroids, axis=1)
+    eligible = np.nonzero((counts >= cfg.min_chunks) & (norms > 0))[0]
+    if eligible.size < 2:
         return []
-
-    order = sorted(centroids_by_doc)
-    centroids = np.array([centroids_by_doc[d] for d in order])
+    unit = centroids[eligible] / norms[eligible][:, None]
+    ids = [doc_ids[i] for i in eligible]
+    sizes = {doc_ids[i]: int(counts[i]) for i in eligible}
+    n = len(ids)
 
     # Pairwise cosine, block-wise to avoid a full D×D matrix at once. Each row
     # only compares against higher-indexed documents (upper triangle). Cluster
     # with union-find and keep only each document's best similarity to a twin —
     # a self-similar corpus forms one clique, so storing every pair would be
     # O(D²) objects.
-    parent = list(range(len(order)))
+    parent = list(range(n))
 
     def find(x: int) -> int:
         while parent[x] != x:
@@ -287,11 +280,11 @@ def _duplicate_families(
             x = parent[x]
         return x
 
-    best = np.zeros(len(order), dtype=np.float32)
+    best = np.zeros(n, dtype=np.float32)
     linked = False
     block = 512
-    for start in range(0, len(order), block):
-        sims = centroids[start : start + block] @ centroids.T
+    for start in range(0, n, block):
+        sims = unit[start : start + block] @ unit.T
         for row in range(sims.shape[0]):
             gi = start + row
             cols = (
@@ -310,21 +303,21 @@ def _duplicate_families(
         return []
 
     components: dict[int, list[int]] = {}
-    for idx in range(len(order)):
+    for idx in range(n):
         components.setdefault(find(idx), []).append(idx)
 
     families: list[_DuplicateFamily] = []
     for indices in components.values():
         if len(indices) < 2:
             continue
-        members = sorted(order[i] for i in indices)
+        members = sorted(ids[i] for i in indices)
         # Largest document (most chunks) is the one to keep; smallest id on a tie.
         keep = min(members, key=lambda d: (-sizes[d], d))
         families.append(
             _DuplicateFamily(
                 members=members,
                 keep=keep,
-                similarity={order[i]: round(float(best[i]), 3) for i in indices},
+                similarity={ids[i]: round(float(best[i]), 3) for i in indices},
                 sizes={d: sizes[d] for d in members},
             )
         )
@@ -375,13 +368,15 @@ def _write_duplicates_out(
 
 
 def _check_duplicate_documents(
-    doc_vectors: dict[str, np.ndarray],
+    doc_ids: list[str],
+    centroids: np.ndarray,
+    counts: np.ndarray,
     uri_by_doc: Mapping[str, str | None],
     title_by_doc: Mapping[str, str | None],
     cfg: DuplicateDetectionConfig,
     yaml_path: Path | None = None,
 ) -> CheckResult:
-    families = _duplicate_families(doc_vectors, cfg)
+    families = _duplicate_families(doc_ids, centroids, counts, cfg)
 
     def label(doc_id: str) -> str:
         return uri_by_doc.get(doc_id) or title_by_doc.get(doc_id) or doc_id
@@ -618,43 +613,59 @@ async def run_db_checks(
             )
         )
 
-    ids = arrow.column("id").to_pylist()
     # Reshape the Arrow fixed-size-list child buffer directly into an (N, dim)
     # float32 matrix. Going through to_pylist() would box N*dim Python floats
     # (tens of GB and most of the wall-clock on large corpora); the stored
     # vectors are already float32, so this keeps the layout and the dtype.
     vec_col = arrow.column("vector").combine_chunks()
     vectors = vec_col.values.to_numpy(zero_copy_only=False).reshape(-1, actual_dim)
-    zero_ids: list[str] = []
-    if vectors.size:
-        zero_ids = [ids[i] for i in np.nonzero(~vectors.any(axis=1))[0]]
+    embedded = vectors.any(axis=1) if vectors.size else np.zeros(0, dtype=bool)
+
+    # Unembedded (all-zero) chunks: report a count and a few sampled ids without
+    # materializing every chunk id.
+    zero_rows = np.nonzero(~embedded)[0]
+    zero_count = int(zero_rows.size)
+    id_col = arrow.column("id")
+    zero_sample = [id_col[int(i)].as_py() for i in zero_rows[:_SAMPLE_LIMIT]]
+    if zero_count > _SAMPLE_LIMIT:
+        zero_sample.append(f"... (+{zero_count - _SAMPLE_LIMIT} more)")
     results.append(
         CheckResult(
             name="unembedded_chunks",
-            severity=Severity.WARN if zero_ids else Severity.OK,
+            severity=Severity.WARN if zero_count else Severity.OK,
             message=(
-                f"{len(zero_ids)} chunk(s) have an all-zero (unembedded) vector."
-                if zero_ids
+                f"{zero_count} chunk(s) have an all-zero (unembedded) vector."
+                if zero_count
                 else "All chunks are embedded."
             ),
-            remediation="haiku-rag rebuild --embed-only" if zero_ids else None,
-            details=_sample(zero_ids),
+            remediation="haiku-rag rebuild --embed-only" if zero_count else None,
+            details=zero_sample,
         )
     )
 
-    # Near-identical documents (centroid cosine), grouped from the same vector
-    # scan rather than a second pass.
-    chunk_doc_ids_ordered = arrow.column("document_id").to_pylist()
-    indices_by_doc: dict[str, list[int]] = {}
-    for index, doc_id in enumerate(chunk_doc_ids_ordered):
-        indices_by_doc.setdefault(doc_id, []).append(index)
-    doc_vectors = {doc_id: vectors[idx] for doc_id, idx in indices_by_doc.items()}
-    # Per-doc fancy indexing has copied every vector; release the full matrix so
-    # both copies are not resident during duplicate detection.
+    # Near-identical documents (centroid cosine). Reduce each document's chunk
+    # vectors to one summed centroid during the scan: dictionary-encode the
+    # document ids into integer codes, then sum each document's embedded rows in
+    # a single pass per document — no second full copy of the vector matrix.
+    encoded = arrow.column("document_id").combine_chunks().dictionary_encode()
+    doc_ids = encoded.dictionary.to_pylist()
+    codes = encoded.indices.to_numpy(zero_copy_only=False)
+    centroids = np.zeros((len(doc_ids), actual_dim), dtype=np.float32)
+    counts = np.zeros(len(doc_ids), dtype=np.int64)
+    order = np.argsort(codes, kind="stable")
+    bounds = np.searchsorted(codes, np.arange(len(doc_ids) + 1), sorter=order)
+    for d in range(len(doc_ids)):
+        rows = order[bounds[d] : bounds[d + 1]]
+        rows = rows[embedded[rows]]
+        counts[d] = rows.size
+        if rows.size:
+            centroids[d] = vectors[rows].sum(axis=0)
     del vectors
     results.append(
         _check_duplicate_documents(
-            doc_vectors,
+            doc_ids,
+            centroids,
+            counts,
             uri_by_doc,
             title_by_doc,
             config.doctor.duplicates,
