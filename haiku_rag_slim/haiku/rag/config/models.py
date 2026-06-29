@@ -246,6 +246,32 @@ class DoclingServeConfig(BaseModel):
 
     base_url: str | list[str] = "http://localhost:5001"
     api_key: str = ""
+    max_attempts: int = Field(
+        default=3,
+        ge=1,
+        description="Total attempts per request before giving up; each retry "
+        "fails over to another instance (instances crash on memory leaks).",
+    )
+    retry_base_delay: float = Field(
+        default=0.5,
+        ge=0,
+        description="Base seconds for the exponential backoff between retries.",
+    )
+    retry_max_delay: float = Field(
+        default=8.0, ge=0, description="Cap on the retry backoff, in seconds."
+    )
+    breaker_failure_threshold: int = Field(
+        default=3,
+        ge=1,
+        description="Consecutive failures before an instance's circuit breaker "
+        "opens and routing skips it.",
+    )
+    breaker_cooldown_s: float = Field(
+        default=30.0,
+        ge=0,
+        description="How long an open breaker skips an instance before allowing "
+        "a probe.",
+    )
 
     @property
     def base_urls(self) -> list[str]:
