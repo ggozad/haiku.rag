@@ -17,22 +17,9 @@ class ZeroEntropyReranker(RerankerBase):  # pragma: no cover
         # Zero Entropy SDK reads ZEROENTROPY_API_KEY from environment by default
         self._client = AsyncZeroEntropy()
 
-    async def rerank(
+    async def _rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10
     ) -> list[tuple[Chunk, float]]:
-        """Rerank the given chunks based on relevance to the query.
-
-        Args:
-            query: The query to rank against
-            chunks: The chunks to rerank
-            top_n: The number of top results to return
-
-        Returns:
-            A list of (chunk, score) tuples, sorted by relevance
-        """
-        if not chunks:
-            return []
-
         # Prepare documents for Zero Entropy API
         documents = [chunk.content for chunk in chunks]
 
@@ -44,13 +31,9 @@ class ZeroEntropyReranker(RerankerBase):  # pragma: no cover
             documents=documents,
         )
 
-        # Extract results and map back to chunks
         # Zero Entropy returns results sorted by relevance with scores
         reranked_results = []
-
-        # Get top_n results
-        for i, result in enumerate(response.results[:top_n]):
-            # Zero Entropy returns index and score for each document
+        for result in response.results[:top_n]:
             chunk_index = result.index
             score = result.relevance_score
 

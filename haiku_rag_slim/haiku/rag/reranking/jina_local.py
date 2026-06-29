@@ -26,12 +26,9 @@ class JinaLocalReranker(RerankerBase):  # pragma: no cover
         self._reranker = AutoModel.from_pretrained(model, trust_remote_code=True)
         self._reranker.eval()
 
-    async def rerank(
+    async def _rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10
     ) -> list[tuple[Chunk, float]]:
-        if not chunks:
-            return []
-
         documents = [chunk.content for chunk in chunks]
 
         results = await asyncio.to_thread(

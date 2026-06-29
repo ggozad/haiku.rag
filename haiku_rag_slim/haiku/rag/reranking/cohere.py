@@ -14,12 +14,9 @@ class CohereReranker(RerankerBase):  # pragma: no cover
         # Cohere SDK reads CO_API_KEY from environment by default
         self._client = cohere.AsyncClientV2()
 
-    async def rerank(
+    async def _rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10
     ) -> list[tuple[Chunk, float]]:
-        if not chunks:
-            return []
-
         documents = [chunk.content for chunk in chunks]
 
         model_name = self._model or "rerank-v3.5"

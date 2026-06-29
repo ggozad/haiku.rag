@@ -25,12 +25,9 @@ class MxBAIReranker(RerankerBase):
         )
         self._client = MxbaiRerankV2(model_name, disable_transformers_warnings=True)
 
-    async def rerank(
+    async def _rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10
     ) -> list[tuple[Chunk, float]]:
-        if not chunks:
-            return []
-
         documents = [chunk.content for chunk in chunks]
 
         results = await asyncio.to_thread(
