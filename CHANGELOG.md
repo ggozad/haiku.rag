@@ -4,7 +4,8 @@
 ### Added
 
 - `orb_multimodal_nemotron` pre-built evaluation database (`nvidia/llama-nemotron-embed-vl-1b-v2` embedder).
-- Reference configs under `evaluations/configs/` for the pre-built evaluation databases (`wix`, `orb_text`, `orb_multimodal`, `orb_multimodal_nemotron`).
+- `t2_finqa` pre-built evaluation database (T²-RAGBench FinQA).
+- Reference configs under `evaluations/configs/` for the pre-built evaluation databases (`wix`, `orb_text`, `orb_multimodal`, `orb_multimodal_nemotron`, `t2_finqa`).
 
 ## [0.63.0] - 2026-06-28
 

@@ -1,0 +1,36 @@
+# Reference config for the `t2_finqa` pre-built evaluation database.
+# T²-RAGBench (FinQA) financial QA, scored by exact numeric match.
+# Run: evaluations run t2_finqa --skip-db --target analysis-skill --config configs/t2_finqa.yaml
+# base_url uses the `vllm` host serving each model over an OpenAI-compatible API.
+
+environment: development
+
+storage:
+  auto_vacuum: false
+
+embeddings:
+  model:
+    provider: openai
+    name: qwen3-embedding-4b
+    vector_dim: 2560
+    base_url: http://vllm:11431/v1
+
+reranking:
+  model:
+    provider: mxbai
+    name: mixedbread-ai/mxbai-rerank-base-v2
+
+qa:
+  model:
+    provider: openai
+    name: gemma4-26b
+    base_url: http://vllm:11432/v1
+
+prompts:
+  domain_preamble: |
+    Use search() to find the relevant documents. Do not iterate over all of
+    /documents or read every document's content, that will time out.
+
+    For questions with a numeric answer, end your response with a final line
+    formatted exactly as `ANSWER: <number>`, containing a single number. Keep a
+    percent sign if the answer is a percentage.
