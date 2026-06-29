@@ -5,79 +5,55 @@ from haiku.rag.reranking.base import RerankerBase
 
 
 def get_reranker(config: AppConfig = Config) -> RerankerBase | None:
-    """
-    Factory function to get the appropriate reranker based on the configuration.
-    Returns None if reranking is disabled.
+    """Build the configured reranker, or None if reranking is disabled or its
+    optional dependency is not installed."""
+    model = config.reranking.model
+    if model is None:
+        return None
 
-    Args:
-        config: Configuration to use. Defaults to global Config.
-
-    Returns:
-        A reranker instance if configured, None otherwise.
-    """
-    if config.reranking.model and config.reranking.model.provider == "mxbai":
-        try:
+    try:
+        if model.provider == "mxbai":
             from haiku.rag.reranking.mxbai import MxBAIReranker
 
             os.environ["TOKENIZERS_PARALLELISM"] = "true"
             return MxBAIReranker()
-        except ImportError:  # pragma: no cover
-            return None
 
-    if config.reranking.model and config.reranking.model.provider == "cohere":
-        try:
+        if model.provider == "cohere":
             from haiku.rag.reranking.cohere import CohereReranker
 
             return CohereReranker()
-        except ImportError:  # pragma: no cover
-            return None
 
-    if config.reranking.model and config.reranking.model.provider == "vllm":
-        try:
+        if model.provider == "vllm":
             from haiku.rag.reranking.vllm import VLLMReranker
 
-            base_url = config.reranking.model.base_url
-            if not base_url:
+            if not model.base_url:
                 raise ValueError("vLLM reranker requires base_url in reranking.model")
-            return VLLMReranker(config.reranking.model.name, base_url)
-        except ImportError:  # pragma: no cover
-            return None
+            return VLLMReranker(model.name, model.base_url)
 
-    if config.reranking.model and config.reranking.model.provider == "zeroentropy":
-        try:
+        if model.provider == "zeroentropy":
             from haiku.rag.reranking.zeroentropy import ZeroEntropyReranker
 
-            model = config.reranking.model.name or "zerank-1"
-            return ZeroEntropyReranker(model)
-        except ImportError:  # pragma: no cover
-            return None
+            return ZeroEntropyReranker(model.name or "zerank-1")
 
-    if config.reranking.model and config.reranking.model.provider == "jina":
-        from haiku.rag.reranking.jina import JinaReranker
+        if model.provider == "jina":
+            from haiku.rag.reranking.jina import JinaReranker
 
-        model = config.reranking.model.name or "jina-reranker-v3"
-        return JinaReranker(model)
+            return JinaReranker(model.name or "jina-reranker-v3")
 
-    if config.reranking.model and config.reranking.model.provider == "jina-local":
-        try:
+        if model.provider == "jina-local":
             from haiku.rag.reranking.jina_local import JinaLocalReranker
 
-            model = config.reranking.model.name or "jinaai/jina-reranker-v3"
-            return JinaLocalReranker(model)
-        except ImportError:  # pragma: no cover
-            return None
+            return JinaLocalReranker(model.name or "jinaai/jina-reranker-v3")
 
-    if config.reranking.model and config.reranking.model.provider == "cross-encoder":
-        try:
+        if model.provider == "cross-encoder":
             from haiku.rag.reranking.cross_encoder import CrossEncoderReranker
 
-            name = config.reranking.model.name
-            if not name:
+            if not model.name:
                 raise ValueError(
                     "cross-encoder reranker requires name in reranking.model"
                 )
-            return CrossEncoderReranker(name)
-        except ImportError:  # pragma: no cover
-            return None
+            return CrossEncoderReranker(model.name)
+    except ImportError:  # pragma: no cover
+        return None
 
     return None
