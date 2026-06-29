@@ -15,6 +15,11 @@ embeddings:
     vector_dim: 2560
     base_url: http://vllm:11431/v1
 
+processing:
+  converter: docling-local
+  pictures: none  # ~4% of pages carry a figure/chart; dropped as non-essential to the numeric QA
+  chunking_use_markdown_tables: true
+
 reranking:
   model:
     provider: mxbai
@@ -23,13 +28,18 @@ reranking:
 qa:
   model:
     provider: openai
-    name: gemma4-26b
-    base_url: http://vllm:11432/v1
+    name: RedHatAI/Qwen3.6-35B-A3B-NVFP4
+    base_url: http://vllm:11430/v1
+    temperature: 0.3
+    max_tokens: 16384
+    extra_body:
+      chat_template_kwargs:
+        enable_thinking: true
 
 prompts:
   domain_preamble: |
     Use search() to find the relevant documents. Do not iterate over all of
-    /documents or read every document's content, that will time out.
+    /documents or read every document's content — that will time out.
 
     For questions with a numeric answer, end your response with a final line
     formatted exactly as `ANSWER: <number>`, containing a single number. Keep a
