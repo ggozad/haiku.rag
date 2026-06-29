@@ -43,9 +43,7 @@ class CohereMultimodalEmbedder(EmbedderWrapper):
         rows = await self._embed_texts([text], "search_query")
         return rows[0]
 
-    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        if not texts:
-            return []
+    async def _embed_documents(self, texts: list[str]) -> list[list[float]]:
         return await self._embed_texts(texts, "search_document")
 
     async def embed_image(self, image: "bytes | PILImage.Image") -> list[float]:

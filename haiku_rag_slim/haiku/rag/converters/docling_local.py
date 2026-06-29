@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 from haiku.rag.config import AppConfig
-from haiku.rag.converters.base import DocumentConverter
+from haiku.rag.converters.base import DocumentConverter, vlm_api_url
 from haiku.rag.converters.text_utils import TextFileHandler
 
 if TYPE_CHECKING:
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from docling.document_converter import FormatOption
     from docling_core.types.doc.document import DoclingDocument
 
-    from haiku.rag.config.models import ConversionOptions, ModelConfig
+    from haiku.rag.config.models import ConversionOptions
 
 
 class DoclingLocalConverter(DocumentConverter):
@@ -61,21 +61,6 @@ class DoclingLocalConverter(DocumentConverter):
     def supported_extensions(self) -> list[str]:
         """Return list of file extensions supported by this converter."""
         return self.docling_extensions + TextFileHandler.text_extensions
-
-    def _get_vlm_api_url(self, model: "ModelConfig") -> str:
-        """Construct VLM API URL from model config."""
-        if model.base_url:
-            base = model.base_url.rstrip("/")
-            return f"{base}/v1/chat/completions"
-
-        if model.provider == "ollama":
-            base = self.config.providers.ollama.base_url.rstrip("/")
-            return f"{base}/v1/chat/completions"
-
-        if model.provider == "openai":
-            return "https://api.openai.com/v1/chat/completions"
-
-        raise ValueError(f"Unsupported VLM provider: {model.provider}")
 
     def _get_ocr_options(self, opts: "ConversionOptions"):
         """Get OCR options based on configuration."""
@@ -145,7 +130,7 @@ class DoclingLocalConverter(DocumentConverter):
 
             pipeline_options.enable_remote_services = True
             pipeline_options.picture_description_options = PictureDescriptionApiOptions(
-                url=AnyUrl(self._get_vlm_api_url(pic_desc.model)),
+                url=AnyUrl(vlm_api_url(self.config, pic_desc.model)),
                 params=dict(
                     model=pic_desc.model.name,
                     max_completion_tokens=pic_desc.max_tokens,

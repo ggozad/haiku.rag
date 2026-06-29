@@ -6,14 +6,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 from haiku.rag.config import AppConfig
-from haiku.rag.converters.base import DocumentConverter
+from haiku.rag.converters.base import DocumentConverter, vlm_api_url
 from haiku.rag.converters.text_utils import TextFileHandler
 from haiku.rag.providers.docling_serve import DoclingServeClient
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
-
-    from haiku.rag.config.models import ModelConfig
 
 
 class DoclingServeConverter(DocumentConverter):
@@ -69,21 +67,6 @@ class DoclingServeConverter(DocumentConverter):
         """Return list of file extensions supported by this converter."""
         return self.docling_serve_extensions + TextFileHandler.text_extensions
 
-    def _get_vlm_api_url(self, model: "ModelConfig") -> str:
-        """Construct VLM API URL from model config."""
-        if model.base_url:
-            base = model.base_url.rstrip("/")
-            return f"{base}/v1/chat/completions"
-
-        if model.provider == "ollama":
-            base = self.config.providers.ollama.base_url.rstrip("/")
-            return f"{base}/v1/chat/completions"
-
-        if model.provider == "openai":
-            return "https://api.openai.com/v1/chat/completions"
-
-        raise ValueError(f"Unsupported VLM provider: {model.provider}")
-
     def _build_conversion_data(self) -> dict[str, str | list[str]]:
         """Build form data for conversion request.
 
@@ -124,7 +107,7 @@ class DoclingServeConverter(DocumentConverter):
         if runs_vlm:
             prompt = self.config.prompts.picture_description
             picture_description_api = {
-                "url": self._get_vlm_api_url(pic_desc.model),
+                "url": vlm_api_url(self.config, pic_desc.model),
                 "params": {
                     "model": pic_desc.model.name,
                     "max_completion_tokens": pic_desc.max_tokens,

@@ -7,6 +7,23 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
+    from haiku.rag.config import AppConfig
+    from haiku.rag.config.models import ModelConfig
+
+
+def vlm_api_url(config: "AppConfig", model: "ModelConfig") -> str:
+    """Construct the VLM chat-completions URL for a picture-description model."""
+    if model.base_url:
+        return f"{model.base_url.rstrip('/')}/v1/chat/completions"
+
+    if model.provider == "ollama":
+        return f"{config.providers.ollama.base_url.rstrip('/')}/v1/chat/completions"
+
+    if model.provider == "openai":
+        return "https://api.openai.com/v1/chat/completions"
+
+    raise ValueError(f"Unsupported VLM provider: {model.provider}")
+
 
 class DocumentConverter(ABC):
     """Abstract base class for document converters.
