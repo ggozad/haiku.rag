@@ -71,6 +71,63 @@ def iter_pdf_slices(
             src.close()
 
 
+def _incremental_merge_available() -> bool:
+    """Whether docling-core exposes the internal merge buffer this module
+    drives incrementally. False on versions that renamed/removed it, in which
+    case ``_SliceMerger`` falls back to the public ``concatenate``."""
+    from docling_core.types.doc.document import DoclingDocument
+
+    return hasattr(DoclingDocument, "_DocIndex") and hasattr(
+        DoclingDocument, "_update_from_index"
+    )
+
+
+class _SliceMerger:
+    """Merges converted PDF-slice documents into one ``DoclingDocument``.
+
+    ``DoclingDocument.concatenate`` indexes each input into an internal
+    ``_DocIndex`` merge buffer (deep-copying its items), then materialises the
+    result. Collecting every slice up front and concatenating at the end thus
+    holds all slices *and* the merged copy at once — roughly twice the
+    document. This merger drives the same ``_DocIndex`` incrementally: each
+    slice is folded in and released before the next is converted, so peak
+    working set is ~one merged document plus one slice. The sequence of
+    ``index()`` calls is identical to ``concatenate``'s, so the merged result
+    is byte-for-byte the same.
+
+    ``_DocIndex``/``_update_from_index`` are docling-core internals; when they
+    are unavailable (version drift, per ``_incremental_merge_available``) the
+    merger collects slices and calls the public ``concatenate`` instead.
+    """
+
+    def __init__(self) -> None:
+        from docling_core.types.doc.document import DoclingDocument
+
+        self._incremental = _incremental_merge_available()
+        self._index = DoclingDocument._DocIndex() if self._incremental else None
+        self._collected: list[DoclingDocument] = []
+
+    def add(self, slice_doc: "DoclingDocument") -> None:
+        """Fold one slice into the merge. CPU-bound (deep-copies the slice's
+        items), so call via ``asyncio.to_thread`` to keep it off the loop."""
+        if self._incremental:
+            assert self._index is not None
+            self._index.index(slice_doc)
+        else:
+            self._collected.append(slice_doc)
+
+    def result(self) -> "DoclingDocument":
+        """Materialise the merged document. Call via ``asyncio.to_thread``."""
+        from docling_core.types.doc.document import DoclingDocument
+
+        if self._incremental:
+            assert self._index is not None
+            merged = DoclingDocument(name="")
+            merged._update_from_index(self._index)
+            return merged
+        return DoclingDocument.concatenate(self._collected)
+
+
 async def convert_pdf_with_splitting(
     converter: "DocumentConverter",
     path: Path,
@@ -81,19 +138,21 @@ async def convert_pdf_with_splitting(
     merged ``DoclingDocument``.
 
     Slices are produced lazily — only one slice's bytes live in memory at a
-    time, so peak working set stays bounded regardless of page count. A
-    single slice failure aborts the whole job (raised as ``ValueError`` so
-    the ingester pipeline classifies it as ``TransientError`` and the queue
-    retries the entire document). Per-slice retry would risk interleaved
-    partial state with subsequent runs and is not worth the complexity.
+    time — and each converted slice is folded into the running merge and
+    released before the next is converted (see ``_SliceMerger``), so peak
+    working set is ~one merged document plus one slice rather than every slice
+    at once. A single slice failure aborts the whole job (raised as
+    ``ValueError`` so the ingester pipeline classifies it as ``TransientError``
+    and the queue retries the entire document). Per-slice retry would risk
+    interleaved partial state with subsequent runs and is not worth the
+    complexity.
     """
-    from docling_core.types.doc.document import DoclingDocument
 
     def _next(it):
         return next(it, _SENTINEL)
 
     it = iter_pdf_slices(path, slice_size)
-    converted: list[DoclingDocument] = []
+    merger = _SliceMerger()
     try:
         while True:
             slice_item = await asyncio.to_thread(_next, it)
@@ -122,7 +181,12 @@ async def convert_pdf_with_splitting(
                         raise ValueError(
                             f"Failed to convert slice pages {start}-{end} of {path}: {exc}"
                         ) from exc
-                converted.append(slice_doc)
+                # Fold the slice in and drop it before the next slice converts,
+                # so peak memory holds ~one merged doc + one slice rather than
+                # every slice at once. index() deep-copies, so run it off the
+                # event loop.
+                await asyncio.to_thread(merger.add, slice_doc)
+                del slice_doc
             finally:
                 # `delete=False` is required so the converter (which opens
                 # tmp_path itself) sees a fully written, closed file. Unlink
@@ -136,7 +200,7 @@ async def convert_pdf_with_splitting(
         # Off the event loop because the close path acquires the lock.
         await asyncio.to_thread(it.close)
 
-    # Merge off the event loop: concatenating slice documents that carry
-    # inlined base64 page/picture images is CPU-heavy and proportional to the
-    # total document size, so running it inline would block other coroutines.
-    return await asyncio.to_thread(DoclingDocument.concatenate, converted)
+    # Materialise off the event loop: the merge buffer holds inlined base64
+    # page/picture images, so building the result is CPU-heavy and proportional
+    # to total document size — running it inline would block other coroutines.
+    return await asyncio.to_thread(merger.result)
