@@ -12,7 +12,7 @@ from haiku.rag.telemetry import logfire
 
 if TYPE_CHECKING:
     from haiku.rag.config import FSSourceConfig
-    from haiku.rag.ingester.pollers.circuit_breaker import CircuitBreaker
+    from haiku.rag.circuit_breaker import CircuitBreaker
     from haiku.rag.ingester.sources.fs import FSSource
 
 logger = logging.getLogger(__name__)

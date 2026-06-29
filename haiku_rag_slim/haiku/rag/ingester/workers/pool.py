@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from haiku.rag.config import CircuitBreakerConfig
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
-from haiku.rag.ingester.pollers.circuit_breaker import CircuitBreaker
+from haiku.rag.circuit_breaker import CircuitBreaker
 from haiku.rag.ingester.queue.models import Job, JobOp
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
 from haiku.rag.ingester.workers.pipeline import run_job

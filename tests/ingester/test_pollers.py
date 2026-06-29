@@ -11,7 +11,7 @@ from haiku.rag.config import (
     S3SourceConfig,
     WebDAVSourceConfig,
 )
-from haiku.rag.ingester.pollers.circuit_breaker import CircuitBreaker
+from haiku.rag.circuit_breaker import CircuitBreaker
 from haiku.rag.ingester.pollers.manager import PollerManager
 from haiku.rag.ingester.pollers.periodic import PeriodicPoller
 from haiku.rag.ingester.queue.models import JobOp, JobStatus

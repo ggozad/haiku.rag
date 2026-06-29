@@ -1,4 +1,4 @@
-from haiku.rag.ingester.pollers.circuit_breaker import CircuitBreaker
+from haiku.rag.circuit_breaker import CircuitBreaker
 from haiku.rag.ingester.pollers.factory import build_source
 from haiku.rag.ingester.pollers.fs import FSPoller
 from haiku.rag.ingester.pollers.manager import PollerManager

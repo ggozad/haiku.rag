@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from haiku.rag.ingester.pollers.base import BasePoller
 
 if TYPE_CHECKING:
-    from haiku.rag.ingester.pollers.circuit_breaker import CircuitBreaker
+    from haiku.rag.circuit_breaker import CircuitBreaker
 
 
 class PeriodicPoller(BasePoller):
