@@ -1,0 +1,27 @@
+# Reference config for the `orb_multimodal` pre-built evaluation database.
+# OpenRAG Bench with a multimodal embedder; picture vectors share the text space.
+# Run: evaluations run orb_multimodal --skip-db --config configs/orb_multimodal.yaml
+# base_url uses the `vllm` host serving each model over an OpenAI-compatible API.
+
+environment: development
+
+storage:
+  auto_vacuum: false
+
+embeddings:
+  model:
+    provider: vllm
+    name: qwen3-embedding-v-8b
+    vector_dim: 4096
+    multimodal: true
+    base_url: http://vllm:11433/v1
+
+reranking:
+  model: null
+
+qa:
+  model:
+    provider: openai
+    name: gemma4-26b
+    base_url: http://vllm:11432/v1
+    vision: true

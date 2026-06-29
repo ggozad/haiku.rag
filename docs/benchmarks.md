@@ -35,12 +35,15 @@ Active datasets:
 | `wix` | ~511MB |
 | `orb_text` — OpenRAG Bench, text embedder (`qwen3-embedding:4b`) with VLM picture descriptions baked into chunk content | ~18 GB |
 | `orb_multimodal` — OpenRAG Bench, multimodal embedder (`qwen3-vl-embedding-8b`); picture vectors live in the same space as text for cross-modal retrieval | ~16 GB |
+| `orb_multimodal_nemotron` — OpenRAG Bench, multimodal embedder (`nvidia/llama-nemotron-embed-vl-1b-v2`), the embedder behind the published headline results | ~16 GB |
 
-After downloading, run benchmarks with `--skip-db` to use the pre-built database:
+After downloading, run benchmarks with `--skip-db`. Each database is built with a specific embedder, so pass its reference config from `evaluations/configs/` (a database only opens against a config whose embedder matches):
 
 ```bash
-evaluations run wix --skip-db
+evaluations run orb_multimodal_nemotron --skip-db --config configs/orb_multimodal_nemotron.yaml
 ```
+
+The configs use `vllm` as the model host. Point `base_url` at your own OpenAI-compatible endpoints to reproduce the numbers.
 
 ### Configuration
 
