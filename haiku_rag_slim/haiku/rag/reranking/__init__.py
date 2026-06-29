@@ -24,10 +24,10 @@ def get_reranker(config: AppConfig = Config) -> RerankerBase | None:
             return CohereReranker()
 
         if model.provider == "vllm":
-            from haiku.rag.reranking.vllm import VLLMReranker
-
             if not model.base_url:
                 raise ValueError("vLLM reranker requires base_url in reranking.model")
+            from haiku.rag.reranking.vllm import VLLMReranker
+
             return VLLMReranker(model.name, model.base_url)
 
         if model.provider == "zeroentropy":
@@ -46,12 +46,12 @@ def get_reranker(config: AppConfig = Config) -> RerankerBase | None:
             return JinaLocalReranker(model.name or "jinaai/jina-reranker-v3")
 
         if model.provider == "cross-encoder":
-            from haiku.rag.reranking.cross_encoder import CrossEncoderReranker
-
             if not model.name:
                 raise ValueError(
                     "cross-encoder reranker requires name in reranking.model"
                 )
+            from haiku.rag.reranking.cross_encoder import CrossEncoderReranker
+
             return CrossEncoderReranker(model.name)
     except ImportError:  # pragma: no cover
         return None
