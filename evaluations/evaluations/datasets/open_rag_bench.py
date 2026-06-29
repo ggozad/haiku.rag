@@ -239,3 +239,8 @@ ORB_MULTIMODAL_SPEC = _orb_spec(
     key="orb_multimodal",
     db_filename="open_rag_bench_multimodal.lancedb",
 )
+
+ORB_MULTIMODAL_NEMOTRON_SPEC = _orb_spec(
+    key="orb_multimodal_nemotron",
+    db_filename="open_rag_bench_multimodal_nemotron.lancedb",
+)
