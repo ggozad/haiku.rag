@@ -15,12 +15,9 @@ class JinaReranker(RerankerBase):
         if not self._api_key:
             raise ValueError("JINA_API_KEY environment variable required")
 
-    async def rerank(
+    async def _rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10
     ) -> list[tuple[Chunk, float]]:
-        if not chunks:
-            return []
-
         documents = [chunk.content for chunk in chunks]
 
         async with httpx.AsyncClient() as client:

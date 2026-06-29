@@ -9,10 +9,41 @@ import pytest
 from docling_core.types.doc.document import DoclingDocument
 
 from haiku.rag.config import AppConfig
+from haiku.rag.config.models import ModelConfig
 from haiku.rag.converters import get_converter
+from haiku.rag.converters.base import vlm_api_url
 from haiku.rag.converters.docling_local import DoclingLocalConverter
 from haiku.rag.converters.docling_serve import DoclingServeConverter
 from haiku.rag.converters.text_utils import TextFileHandler
+
+
+class TestVlmApiUrl:
+    """URL construction for picture-description VLM models (shared by both converters)."""
+
+    def test_ollama_uses_provider_base_url(self):
+        url = vlm_api_url(
+            AppConfig(), ModelConfig(provider="ollama", name="ministral-3")
+        )
+        assert url == "http://localhost:11434/v1/chat/completions"
+
+    def test_custom_base_url_takes_precedence(self):
+        url = vlm_api_url(
+            AppConfig(),
+            ModelConfig(
+                provider="openai", name="gpt-4-vision", base_url="http://my-vllm:8000"
+            ),
+        )
+        assert url == "http://my-vllm:8000/v1/chat/completions"
+
+    def test_openai_uses_public_endpoint(self):
+        url = vlm_api_url(
+            AppConfig(), ModelConfig(provider="openai", name="gpt-4-vision")
+        )
+        assert url == "https://api.openai.com/v1/chat/completions"
+
+    def test_unsupported_provider_raises(self):
+        with pytest.raises(ValueError, match="Unsupported VLM provider"):
+            vlm_api_url(AppConfig(), ModelConfig(provider="unsupported", name="test"))
 
 
 @pytest.fixture(scope="module")
@@ -763,44 +794,6 @@ class TestDoclingLocalConverter:
             "Pages should have image data when generate_page_images=True"
         )
 
-    def test_get_vlm_api_url_with_ollama(self, config):
-        """Test VLM API URL construction for Ollama provider."""
-        converter = DoclingLocalConverter(config)
-        from haiku.rag.config.models import ModelConfig
-
-        model = ModelConfig(provider="ollama", name="ministral-3")
-        url = converter._get_vlm_api_url(model)
-        assert url == "http://localhost:11434/v1/chat/completions"
-
-    def test_get_vlm_api_url_with_custom_base_url(self, config):
-        """Test VLM API URL construction with custom base_url."""
-        converter = DoclingLocalConverter(config)
-        from haiku.rag.config.models import ModelConfig
-
-        model = ModelConfig(
-            provider="openai", name="gpt-4-vision", base_url="http://my-vllm:8000"
-        )
-        url = converter._get_vlm_api_url(model)
-        assert url == "http://my-vllm:8000/v1/chat/completions"
-
-    def test_get_vlm_api_url_with_openai(self, config):
-        """Test VLM API URL construction for OpenAI provider."""
-        converter = DoclingLocalConverter(config)
-        from haiku.rag.config.models import ModelConfig
-
-        model = ModelConfig(provider="openai", name="gpt-4-vision")
-        url = converter._get_vlm_api_url(model)
-        assert url == "https://api.openai.com/v1/chat/completions"
-
-    def test_get_vlm_api_url_unsupported_provider(self, config):
-        """Test VLM API URL construction raises error for unsupported provider."""
-        converter = DoclingLocalConverter(config)
-        from haiku.rag.config.models import ModelConfig
-
-        model = ModelConfig(provider="unsupported", name="test")
-        with pytest.raises(ValueError, match="Unsupported VLM provider"):
-            converter._get_vlm_api_url(model)
-
     def test_ocr_engine_config_applied(self, config):
         """Test that ocr_engine config is stored correctly."""
         config.processing.conversion_options.ocr_engine = "rapidocr"
@@ -1265,44 +1258,6 @@ class TestDoclingServeConverterPictureDescription:
         config.providers.docling_serve.base_url = "http://localhost:5001"
         config.providers.docling_serve.api_key = ""
         return config
-
-    def test_get_vlm_api_url_with_ollama(self, config):
-        """Test VLM API URL construction for Ollama provider."""
-        converter = DoclingServeConverter(config)
-        from haiku.rag.config.models import ModelConfig
-
-        model = ModelConfig(provider="ollama", name="ministral-3")
-        url = converter._get_vlm_api_url(model)
-        assert url == "http://localhost:11434/v1/chat/completions"
-
-    def test_get_vlm_api_url_with_custom_base_url(self, config):
-        """Test VLM API URL construction with custom base_url."""
-        converter = DoclingServeConverter(config)
-        from haiku.rag.config.models import ModelConfig
-
-        model = ModelConfig(
-            provider="openai", name="gpt-4-vision", base_url="http://my-vllm:8000"
-        )
-        url = converter._get_vlm_api_url(model)
-        assert url == "http://my-vllm:8000/v1/chat/completions"
-
-    def test_get_vlm_api_url_with_openai(self, config):
-        """Test VLM API URL construction for OpenAI provider."""
-        converter = DoclingServeConverter(config)
-        from haiku.rag.config.models import ModelConfig
-
-        model = ModelConfig(provider="openai", name="gpt-4-vision")
-        url = converter._get_vlm_api_url(model)
-        assert url == "https://api.openai.com/v1/chat/completions"
-
-    def test_get_vlm_api_url_unsupported_provider(self, config):
-        """Test VLM API URL construction raises error for unsupported provider."""
-        converter = DoclingServeConverter(config)
-        from haiku.rag.config.models import ModelConfig
-
-        model = ModelConfig(provider="unsupported", name="test")
-        with pytest.raises(ValueError, match="Unsupported VLM provider"):
-            converter._get_vlm_api_url(model)
 
     @pytest.mark.asyncio
     async def test_picture_description_options_passed_to_api(self, config):

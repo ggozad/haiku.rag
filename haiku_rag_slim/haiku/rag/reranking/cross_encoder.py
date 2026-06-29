@@ -26,12 +26,9 @@ class CrossEncoderReranker(RerankerBase):
         self._model = model
         self._reranker = CrossEncoder(model)
 
-    async def rerank(
+    async def _rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10
     ) -> list[tuple[Chunk, float]]:
-        if not chunks:
-            return []
-
         documents = [chunk.content for chunk in chunks]
         rankings = await asyncio.to_thread(
             lambda: self._reranker.rank(query, documents, top_k=top_n)

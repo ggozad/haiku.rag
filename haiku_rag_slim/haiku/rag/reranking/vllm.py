@@ -9,12 +9,9 @@ class VLLMReranker(RerankerBase):  # pragma: no cover
         self._model = model
         self._base_url = base_url
 
-    async def rerank(
+    async def _rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10
     ) -> list[tuple[Chunk, float]]:
-        if not chunks:
-            return []
-
         # Prepare documents for reranking
         documents = [chunk.content for chunk in chunks]
 

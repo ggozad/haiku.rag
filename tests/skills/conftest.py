@@ -1,5 +1,5 @@
 import random
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic_ai import RunContext
@@ -10,6 +10,19 @@ from haiku.rag.embeddings import EmbedderWrapper
 from haiku.rag.skills._deps import AnalysisRunDeps, RAGRunDeps
 
 VECTOR_DIM = 2560
+
+
+def _seeded_vector(text: str) -> list[float]:
+    random.seed(hash(text) % (2**32))
+    return [random.random() for _ in range(VECTOR_DIM)]
+
+
+async def _fake_embed_query(self, text: str) -> list[float]:
+    return _seeded_vector(text)
+
+
+async def _fake_embed_documents(self, texts: list[str]) -> list[list[float]]:
+    return [_seeded_vector(t) for t in texts]
 
 
 def _make_ctx(state=None, rag=None, sandbox=None):
@@ -35,20 +48,8 @@ def _get_tool(skill, name):
 @pytest.fixture(autouse=True)
 def mock_embedder(monkeypatch):
     """Monkeypatch the embedder to return deterministic vectors."""
-
-    async def fake_embed_query(self, text):
-        random.seed(hash(text) % (2**32))
-        return [random.random() for _ in range(VECTOR_DIM)]
-
-    async def fake_embed_documents(self, texts):
-        result = []
-        for t in texts:
-            random.seed(hash(t) % (2**32))
-            result.append([random.random() for _ in range(VECTOR_DIM)])
-        return result
-
-    monkeypatch.setattr(EmbedderWrapper, "embed_query", fake_embed_query)
-    monkeypatch.setattr(EmbedderWrapper, "embed_documents", fake_embed_documents)
+    monkeypatch.setattr(EmbedderWrapper, "embed_query", _fake_embed_query)
+    monkeypatch.setattr(EmbedderWrapper, "embed_documents", _fake_embed_documents)
 
 
 @pytest.fixture
@@ -56,23 +57,34 @@ def test_app_config():
     return AppConfig(environment="skills-test")
 
 
-@pytest.fixture
-async def rag_db(temp_db_path):
-    """Create a test database with sample documents."""
-    async with HaikuRAG(temp_db_path, create=True) as rag:
-        await rag.create_document(
-            "Artificial intelligence is transforming industries worldwide. "
-            "Deep learning models are used in healthcare, finance, and transportation.",
-            title="AI Overview",
-            uri="test://ai-overview",
-        )
-        await rag.create_document(
-            "Machine learning is a subset of artificial intelligence. "
-            "It includes supervised learning, unsupervised learning, and reinforcement learning.",
-            title="ML Basics",
-            uri="test://ml-basics",
-        )
-    return temp_db_path
+@pytest.fixture(scope="session")
+async def rag_db(tmp_path_factory):
+    """Sample database with two documents, built once and shared read-only.
+
+    Consumers (``rag_client``, ``sandbox_factory``) only read, so the docling
+    conversion + ingest is paid once per session instead of per test. Document
+    vectors use the same seeded fakes as ``mock_embedder`` so search stays
+    consistent with query-time embeddings.
+    """
+    db_path = tmp_path_factory.mktemp("skills_rag_db") / "rag.lancedb"
+    with (
+        patch.object(EmbedderWrapper, "embed_query", _fake_embed_query),
+        patch.object(EmbedderWrapper, "embed_documents", _fake_embed_documents),
+    ):
+        async with HaikuRAG(db_path, create=True) as rag:
+            await rag.create_document(
+                "Artificial intelligence is transforming industries worldwide. "
+                "Deep learning models are used in healthcare, finance, and transportation.",
+                title="AI Overview",
+                uri="test://ai-overview",
+            )
+            await rag.create_document(
+                "Machine learning is a subset of artificial intelligence. "
+                "It includes supervised learning, unsupervised learning, and reinforcement learning.",
+                title="ML Basics",
+                uri="test://ml-basics",
+            )
+    return db_path
 
 
 @pytest.fixture

@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- Custom rerankers override `RerankerBase._rerank` instead of `rerank`; the base `rerank` handles the empty-input short-circuit.
+
 ## [0.63.1] - 2026-06-29
 
 ### Changed

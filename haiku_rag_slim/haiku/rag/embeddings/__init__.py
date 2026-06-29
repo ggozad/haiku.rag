@@ -54,6 +54,9 @@ class EmbedderWrapper:
         """Embed documents/chunks for indexing."""
         if not texts:
             return []
+        return await self._embed_documents(texts)
+
+    async def _embed_documents(self, texts: list[str]) -> list[list[float]]:
         assert self._embedder is not None
         result = await self._embedder.embed_documents(texts)
         return [list(e) for e in result.embeddings]

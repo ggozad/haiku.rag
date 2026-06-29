@@ -37,9 +37,7 @@ class VoyageMultimodalEmbedder(EmbedderWrapper):
         )
         return list(result.embeddings[0])
 
-    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        if not texts:
-            return []
+    async def _embed_documents(self, texts: list[str]) -> list[list[float]]:
         result = await self._client.multimodal_embed(
             inputs=[[text] for text in texts],
             model=self._model_name,

@@ -86,9 +86,7 @@ class VLLMMultimodalEmbedder(EmbedderWrapper):
         )
         return rows[0]
 
-    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        if not texts:
-            return []
+    async def _embed_documents(self, texts: list[str]) -> list[list[float]]:
         return await self._post(
             {
                 "model": self._model_name,

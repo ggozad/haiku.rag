@@ -8,6 +8,13 @@ class RerankerBase:
     async def rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10
     ) -> list[tuple[Chunk, float]]:
+        if not chunks:
+            return []
+        return await self._rerank(query, chunks, top_n)
+
+    async def _rerank(
+        self, query: str, chunks: list[Chunk], top_n: int = 10
+    ) -> list[tuple[Chunk, float]]:
         raise NotImplementedError(
-            "Reranker is an abstract class. Please implement the rerank method in a subclass."
+            "Reranker is an abstract class. Please implement the _rerank method in a subclass."
         )

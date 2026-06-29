@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -6,6 +7,14 @@ from haiku.rag.config.models import AppConfig, ModelConfig, RerankingConfig
 from haiku.rag.reranking import get_reranker
 from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk
+
+# Providers whose constructor loads a model in-process. Factory-routing tests
+# patch the loader so they assert dispatch without paying the model load.
+HEAVY_LOADERS = {
+    "mxbai": "MxbaiRerankV2",
+    "jina-local": "AutoModel",
+    "cross-encoder": "CrossEncoder",
+}
 
 
 @pytest.fixture(scope="module")
@@ -36,11 +45,16 @@ async def test_reranker_base():
     expected_model = Config.reranking.model.name if Config.reranking.model else None
     assert reranker._model == expected_model
 
+    # Empty input short-circuits in the base class without dispatching to _rerank.
+    assert await reranker.rerank("query", []) == []
+
+    # The actual rerank step is abstract.
     with pytest.raises(NotImplementedError):
-        await reranker.rerank("query", [])
+        await reranker.rerank("query", chunks)
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_mxbai_reranker():
     try:
         from haiku.rag.config import Config
@@ -58,18 +72,6 @@ async def test_mxbai_reranker():
         assert all(isinstance(score, float) for chunk, score in reranked)
         Config.reranking.model = None
 
-    except ImportError:
-        pytest.skip("MxBAI package not installed")
-
-
-@pytest.mark.asyncio
-async def test_mxbai_reranker_empty_chunks():
-    try:
-        from haiku.rag.reranking.mxbai import MxBAIReranker
-
-        reranker = MxBAIReranker()
-        result = await reranker.rerank("query", [], top_n=2)
-        assert result == []
     except ImportError:
         pytest.skip("MxBAI package not installed")
 
@@ -251,6 +253,10 @@ class TestGetReranker:
         mod = pytest.importorskip(class_module)
         expected_class = getattr(mod, class_name)
 
+        loader_attr = HEAVY_LOADERS.get(provider)
+        if loader_attr:
+            monkeypatch.setattr(mod, loader_attr, MagicMock())
+
         for key, value in env_vars.items():
             monkeypatch.setenv(key, value)
 
@@ -275,17 +281,6 @@ def test_jina_reranker_missing_api_key(monkeypatch):
 
     with pytest.raises(ValueError, match="JINA_API_KEY environment variable required"):
         JinaReranker("jina-reranker-v3")
-
-
-@pytest.mark.asyncio
-async def test_jina_reranker_empty_chunks(monkeypatch):
-    monkeypatch.setenv("JINA_API_KEY", "test-api-key")
-
-    from haiku.rag.reranking.jina import JinaReranker
-
-    reranker = JinaReranker("jina-reranker-v3")
-    result = await reranker.rerank("query", [], top_n=2)
-    assert result == []
 
 
 @pytest.mark.asyncio
@@ -332,6 +327,7 @@ async def test_jina_local_reranker():
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_cross_encoder_reranker():
     try:
         from haiku.rag.reranking.cross_encoder import CrossEncoderReranker
@@ -345,17 +341,5 @@ async def test_cross_encoder_reranker():
         assert all(isinstance(score, float) for chunk, score in reranked)
         top_ids = [chunk.document_id for chunk, score in reranked]
         assert "0" in top_ids or "2" in top_ids
-    except ImportError:
-        pytest.skip("sentence-transformers not installed")
-
-
-@pytest.mark.asyncio
-async def test_cross_encoder_reranker_empty_chunks():
-    try:
-        from haiku.rag.reranking.cross_encoder import CrossEncoderReranker
-
-        reranker = CrossEncoderReranker("cross-encoder/ms-marco-MiniLM-L-6-v2")
-        result = await reranker.rerank("query", [], top_n=2)
-        assert result == []
     except ImportError:
         pytest.skip("sentence-transformers not installed")
