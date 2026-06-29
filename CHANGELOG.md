@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- Require `haiku.skills>=0.18.0`.
+
 ### Added
 
 - `orb_multimodal_nemotron` pre-built evaluation database (`nvidia/llama-nemotron-embed-vl-1b-v2` embedder).
