@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.63.1] - 2026-06-29
+
 ### Changed
 
 - Require `haiku.skills>=0.18.0`.
@@ -1864,7 +1866,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.63.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.63.1...HEAD
+[0.63.1]: https://github.com/ggozad/haiku.rag/compare/0.63.0...0.63.1
 [0.63.0]: https://github.com/ggozad/haiku.rag/compare/0.62.1...0.63.0
 [0.62.1]: https://github.com/ggozad/haiku.rag/compare/0.62.0...0.62.1
 [0.62.0]: https://github.com/ggozad/haiku.rag/compare/0.61.2...0.62.0
