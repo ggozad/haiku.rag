@@ -657,6 +657,62 @@ class TestPictureDataStorage:
             }
             assert await repo.get_text_for_refs("doc-1", []) == {}
 
+    async def test_get_caption_picture_refs(self, temp_db_path):
+        """A caption ref resolves to the picture at the immediately preceding
+        position; a table caption (no preceding picture) resolves to nothing."""
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            repo = DocumentItemRepository(rag.store)
+            await repo.create_items(
+                "doc-1",
+                [
+                    DocumentItem(
+                        document_id="doc-1",
+                        position=0,
+                        self_ref="#/pictures/0",
+                        label="picture",
+                        picture_data=b"\x89PNG\r\n\x1a\nfake",
+                    ),
+                    DocumentItem(
+                        document_id="doc-1",
+                        position=1,
+                        self_ref="#/texts/0",
+                        label="caption",
+                        text="Figure 1. A figure caption.",
+                    ),
+                    DocumentItem(
+                        document_id="doc-1",
+                        position=2,
+                        self_ref="#/texts/1",
+                        label="paragraph",
+                        text="Body prose.",
+                    ),
+                    DocumentItem(
+                        document_id="doc-1",
+                        position=3,
+                        self_ref="#/tables/0",
+                        label="table",
+                        text="| a | b |",
+                    ),
+                    DocumentItem(
+                        document_id="doc-1",
+                        position=4,
+                        self_ref="#/texts/2",
+                        label="caption",
+                        text="Table 1. A table caption.",
+                    ),
+                ],
+            )
+
+            # Figure caption resolves to its picture; table caption does not.
+            got = await repo.get_caption_picture_refs(
+                "doc-1", ["#/texts/0", "#/texts/1", "#/texts/2"]
+            )
+            assert got == {"#/texts/0": "#/pictures/0"}
+
+            # A non-caption ref alone yields nothing.
+            assert await repo.get_caption_picture_refs("doc-1", ["#/texts/1"]) == {}
+            assert await repo.get_caption_picture_refs("doc-1", []) == {}
+
     async def test_hot_paths_exclude_picture_data(self, temp_db_path):
         """Light read paths must NOT pull picture_data into memory."""
         async with HaikuRAG(temp_db_path, create=True) as rag:

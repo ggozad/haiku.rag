@@ -79,6 +79,48 @@ async def test_populate_image_data_attaches_base64(temp_db_path):
 
 
 @pytest.mark.asyncio
+async def test_populate_image_data_attaches_picture_via_caption(temp_db_path):
+    """A result whose matched refs include a figure's caption (but not the
+    picture itself) gets the picture bytes attached, resolved through the
+    caption's adjacent picture. This is the common case: the prose chunk
+    carrying a figure's caption ranks, while the picture is its own chunk."""
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        await rag.document_item_repository.create_items(
+            "doc-1",
+            [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/pictures/0",
+                    label="picture",
+                    text="Figure 1. The layout.",
+                    picture_data=PICTURE_BYTES,
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=1,
+                    self_ref="#/texts/0",
+                    label="caption",
+                    text="Figure 1. The layout.",
+                ),
+            ],
+        )
+
+        via_caption = SearchResult(
+            content="Figure 1. The layout.",
+            score=1.0,
+            document_id="doc-1",
+            doc_item_refs=["#/texts/0"],
+            labels=["caption"],
+        )
+
+        await _populate_image_data(rag, [via_caption])
+
+        assert via_caption.image_data == {"#/pictures/0": PICTURE_B64}
+        assert via_caption.picture_captions == {"#/pictures/0": "Figure 1. The layout."}
+
+
+@pytest.mark.asyncio
 async def test_client_search_include_images_false_skips_lookup(temp_db_path):
     """include_images=False must short-circuit the picture-bytes lookup."""
     async with HaikuRAG(temp_db_path, create=True) as rag:
