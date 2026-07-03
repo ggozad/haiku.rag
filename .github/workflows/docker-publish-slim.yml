@@ -53,5 +53,3 @@ jobs:
           tags: |
             ghcr.io/ggozad/haiku.rag-slim:${{ steps.version.outputs.version }}
             ghcr.io/ggozad/haiku.rag-slim:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
