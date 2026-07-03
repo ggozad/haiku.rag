@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.63.2] - 2026-07-03
+
 ### Changed
 
 - Custom rerankers override `RerankerBase._rerank` instead of `rerank`; the base `rerank` handles the empty-input short-circuit.
@@ -1874,7 +1876,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.63.1...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.63.2...HEAD
+[0.63.2]: https://github.com/ggozad/haiku.rag/compare/0.63.1...0.63.2
 [0.63.1]: https://github.com/ggozad/haiku.rag/compare/0.63.0...0.63.1
 [0.63.0]: https://github.com/ggozad/haiku.rag/compare/0.62.1...0.63.0
 [0.62.1]: https://github.com/ggozad/haiku.rag/compare/0.62.0...0.62.1
