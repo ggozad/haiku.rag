@@ -271,3 +271,47 @@ class DocumentItemRepository:
             if text:
                 result[row["self_ref"]] = text
         return result
+
+    async def get_caption_picture_refs(
+        self, document_id: str, refs: list[str]
+    ) -> dict[str, str]:
+        """Map caption refs to the picture item immediately preceding them.
+
+        Docling emits a figure's caption at the position right after its
+        picture, so a caption's picture is the picture item at
+        ``position - 1``. Returns ``{caption_ref: picture_ref}`` for the
+        caption refs among ``refs`` that have a picture predecessor. Non-caption
+        refs, and captions whose predecessor is not a picture (table captions),
+        map to nothing.
+        """
+        if not refs:
+            return {}
+
+        safe_id = escape_sql_string(document_id)
+        refs_sql = ", ".join(f"'{escape_sql_string(r)}'" for r in refs)
+        caption_rows = await (
+            self.store.document_items_table.query()
+            .select(["self_ref", "position"])
+            .where(
+                f"document_id = '{safe_id}' AND label = 'caption' "
+                f"AND self_ref IN ({refs_sql})"
+            )
+            .to_list()
+        )
+        if not caption_rows:
+            return {}
+
+        prev_to_caption = {row["position"] - 1: row["self_ref"] for row in caption_rows}
+        positions_sql = ", ".join(str(p) for p in prev_to_caption)
+        picture_rows = await (
+            self.store.document_items_table.query()
+            .select(["self_ref", "position"])
+            .where(
+                f"document_id = '{safe_id}' AND label = 'picture' "
+                f"AND position IN ({positions_sql})"
+            )
+            .to_list()
+        )
+        return {
+            prev_to_caption[row["position"]]: row["self_ref"] for row in picture_rows
+        }

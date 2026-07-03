@@ -5,6 +5,10 @@
 
 - Custom rerankers override `RerankerBase._rerank` instead of `rerank`; the base `rerank` handles the empty-input short-circuit.
 
+### Fixed
+
+- A search result whose matched refs include a figure's caption now attaches that figure's picture bytes for vision-capable models, resolved through the caption's adjacent picture item.
+
 ## [0.63.1] - 2026-06-29
 
 ### Changed

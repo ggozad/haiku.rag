@@ -110,40 +110,54 @@ def _dedup_picture_chunks(results: list[SearchResult]) -> list[SearchResult]:
 async def _populate_image_data(client: "HaikuRAG", results: list[SearchResult]) -> None:
     """Attach base64 picture bytes to ``SearchResult.image_data`` in-place.
 
+    A result carries a picture when its refs include the picture directly, or
+    when they include the picture's caption — the common case where a prose
+    chunk carrying a figure's caption ranks while the picture is its own chunk.
     Groups results by document_id and batches one picture-bytes lookup per
     document so a result set spanning N documents costs N reads, not one per
-    picture. Only refs starting with ``PICTURE_REF_PREFIX`` are queried.
+    picture.
     """
+    repo = client.document_item_repository
     by_doc: dict[str, list[SearchResult]] = {}
     for r in results:
-        if not r.document_id:
-            continue
-        if not any(ref.startswith(PICTURE_REF_PREFIX) for ref in r.doc_item_refs):
-            continue
-        by_doc.setdefault(r.document_id, []).append(r)
+        if r.document_id and r.doc_item_refs:
+            by_doc.setdefault(r.document_id, []).append(r)
 
     for doc_id, doc_results in by_doc.items():
+        all_refs = {ref for r in doc_results for ref in r.doc_item_refs}
+        caption_to_picture = await repo.get_caption_picture_refs(doc_id, list(all_refs))
+
+        result_pictures: list[tuple[SearchResult, list[str]]] = []
         wanted: list[str] = []
         seen: set[str] = set()
         for r in doc_results:
+            pictures: list[str] = []
             for ref in r.doc_item_refs:
-                if ref.startswith(PICTURE_REF_PREFIX) and ref not in seen:
-                    wanted.append(ref)
-                    seen.add(ref)
+                picture = (
+                    ref
+                    if ref.startswith(PICTURE_REF_PREFIX)
+                    else caption_to_picture.get(ref)
+                )
+                if picture and picture not in pictures:
+                    pictures.append(picture)
+            if pictures:
+                result_pictures.append((r, pictures))
+                for picture in pictures:
+                    if picture not in seen:
+                        wanted.append(picture)
+                        seen.add(picture)
         if not wanted:
             continue
-        bytes_by_ref = await client.document_item_repository.get_pictures_for_chunk(
-            doc_id, wanted
-        )
+        bytes_by_ref = await repo.get_pictures_for_chunk(doc_id, wanted)
         if not bytes_by_ref:
             continue
-        captions_by_ref = await client.document_item_repository.get_text_for_refs(
+        captions_by_ref = await repo.get_text_for_refs(
             doc_id, list(bytes_by_ref.keys())
         )
-        for r in doc_results:
+        for r, pictures in result_pictures:
             attached: dict[str, str] = {}
             captions: dict[str, str] = {}
-            for ref in r.doc_item_refs:
+            for ref in pictures:
                 blob = bytes_by_ref.get(ref)
                 if blob:
                     attached[ref] = base64.b64encode(blob).decode("ascii")
