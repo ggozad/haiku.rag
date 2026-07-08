@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.64.0] - 2026-07-08
+
 ### Added
 
 - `update_document` accepts a `uri` argument to change a document's URI.
@@ -1886,7 +1888,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.63.2...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.64.0...HEAD
+[0.64.0]: https://github.com/ggozad/haiku.rag/compare/0.63.2...0.64.0
 [0.63.2]: https://github.com/ggozad/haiku.rag/compare/0.63.1...0.63.2
 [0.63.1]: https://github.com/ggozad/haiku.rag/compare/0.63.0...0.63.1
 [0.63.0]: https://github.com/ggozad/haiku.rag/compare/0.62.1...0.63.0
