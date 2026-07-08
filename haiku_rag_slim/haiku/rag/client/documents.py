@@ -123,26 +123,48 @@ async def _store_document_with_chunks(
     async with client.store._write_lock:
         versions = await client.store.current_table_versions()
 
-        created_doc = await client.document_repository.create(document)
+        # A concurrent ingestion of the same URI may have created the document
+        # while this one was converting/embedding outside the lock. LanceDB has
+        # no unique constraint on `uri`, so re-check under the lock and update in
+        # place rather than inserting a duplicate.
+        existing = (
+            await client.get_document_by_uri(document.uri)
+            if document.uri is not None
+            else None
+        )
 
         try:
-            assert created_doc.id is not None, (
-                "Document ID should not be None after creation"
+            if existing is not None:
+                document.id = existing.id
+                document.created_at = existing.created_at
+                stored_doc = await client.document_repository.update(document)
+            else:
+                stored_doc = await client.document_repository.create(document)
+
+            assert stored_doc.id is not None, (
+                "Document ID should not be None after storing"
             )
             for order, chunk in enumerate(chunks):
-                chunk.document_id = created_doc.id
+                chunk.document_id = stored_doc.id
                 chunk.order = order
-
-            await client.chunk_repository.create(chunks)
-
             for item in items:
-                item.document_id = created_doc.id
-            await client.document_item_repository.create_items(created_doc.id, items)
+                item.document_id = stored_doc.id
+
+            if existing is not None:
+                await client.chunk_repository.replace_for_document(
+                    stored_doc.id, chunks
+                )
+                await client.document_item_repository.replace_for_document(
+                    stored_doc.id, items
+                )
+            else:
+                await client.chunk_repository.create(chunks)
+                await client.document_item_repository.create_items(stored_doc.id, items)
 
             if client._config.storage.auto_vacuum:
                 client._schedule_vacuum()
 
-            return created_doc
+            return stored_doc
         except Exception:
             await client.store.restore_table_versions(versions)
             raise
