@@ -5,7 +5,7 @@ from haiku.rag.config import CircuitBreakerConfig
 
 
 class CircuitBreaker:
-    """Three-state breaker over discover() failures.
+    """Three-state breaker over repeated failures of a single target.
 
     - closed: failures are counted; threshold flips to open.
     - open: probes are blocked until cooldown elapses, then a single probe
