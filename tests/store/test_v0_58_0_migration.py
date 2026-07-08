@@ -52,7 +52,7 @@ class TestV0_58_0Migration:
             meta_rows = await store.document_meta_table.query().to_list()
             assert len(meta_rows) == 1
             row = meta_rows[0]
-            assert row["document_id"] == "doc-1"
+            assert row["id"] == "doc-1"
             assert row["uri"] == "s3://b/one"
             assert row["title"] == "One"
             assert json.loads(row["metadata"]) == {"source_revision": "r1", "md5": "a"}
@@ -95,7 +95,7 @@ class TestV0_58_0Migration:
 
             meta_rows = await store.document_meta_table.query().to_list()
             assert len(meta_rows) == 1
-            assert meta_rows[0]["document_id"] == "doc-1"
+            assert meta_rows[0]["id"] == "doc-1"
 
 
 @pytest.mark.asyncio
@@ -115,14 +115,14 @@ class TestV0_58_0MigrationEdgeCases:
             )
             # Pretend a prior run already moved doc "a".
             await store.document_meta_table.add(
-                [DocumentMetaRecord(document_id="a", uri="u-a", metadata="{}")]
+                [DocumentMetaRecord(id="a", uri="u-a", metadata="{}")]
             )
             await store.set_haiku_version("0.57.0")
 
         async with Store(temp_db_path, skip_migration_check=True) as store:
             await store.migrate()
             rows = await store.document_meta_table.query().to_list()
-            by_id = {r["document_id"]: r for r in rows}
+            by_id = {r["id"]: r for r in rows}
             assert set(by_id) == {"a", "b"}  # exactly one row each, no duplicates
             assert len(rows) == 2
 

@@ -9,6 +9,7 @@
 ### Fixed
 
 - Concurrent ingestion of the same URI no longer creates duplicate documents; the URI is re-checked under the write lock and a colliding create becomes an update.
+- Document filters can reference `id` (`list_documents`/`count_documents`/`search`/`analyze` `filter=`); the `document_meta` identity column is renamed `document_id` → `id` with a migration.
 
 ## [0.63.2] - 2026-07-03
 

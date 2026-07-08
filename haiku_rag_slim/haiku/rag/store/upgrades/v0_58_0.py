@@ -31,10 +31,8 @@ async def _apply_split_document_meta(store: Store) -> None:
 
     # Resume support: skip documents whose meta row already exists.
     existing_meta = {
-        row["document_id"]
-        for row in await store.document_meta_table.query()
-        .select(["document_id"])
-        .to_list()
+        row["id"]
+        for row in await store.document_meta_table.query().select(["id"]).to_list()
     }
 
     rows = await store.documents_table.query().select(["id", *present]).to_list()
@@ -45,7 +43,7 @@ async def _apply_split_document_meta(store: Store) -> None:
         meta = row.get("metadata")
         records.append(
             DocumentMetaRecord(
-                document_id=row["id"],
+                id=row["id"],
                 uri=row.get("uri"),
                 title=row.get("title"),
                 metadata=meta if isinstance(meta, str) and meta else "{}",

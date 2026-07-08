@@ -454,18 +454,16 @@ async def run_db_checks(
     doc_ids = set(await _column_values(store.documents_table, "id"))
     meta_rows = (
         await store.document_meta_table.query()
-        .select(["document_id", "metadata", "uri", "title"])
+        .select(["id", "metadata", "uri", "title"])
         .to_list()
     )
-    meta_doc_ids = {row["document_id"] for row in meta_rows}
+    meta_doc_ids = {row["id"] for row in meta_rows}
     content_type_by_doc = {
-        row["document_id"]: json.loads(row.get("metadata") or "{}").get(
-            "content_type", ""
-        )
+        row["id"]: json.loads(row.get("metadata") or "{}").get("content_type", "")
         for row in meta_rows
     }
-    uri_by_doc = {row["document_id"]: row.get("uri") for row in meta_rows}
-    title_by_doc = {row["document_id"]: row.get("title") for row in meta_rows}
+    uri_by_doc = {row["id"]: row.get("uri") for row in meta_rows}
+    title_by_doc = {row["id"]: row.get("title") for row in meta_rows}
 
     notify("Reading chunks")
     chunk_rows = (

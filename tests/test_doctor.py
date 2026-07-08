@@ -114,7 +114,7 @@ async def _build_db(
         ]
     )
     await docs_tbl.add([DocumentRecord(id="d1", content="hello")])
-    await meta_tbl.add([DocumentMetaRecord(document_id="d1", uri="test://d1")])
+    await meta_tbl.add([DocumentMetaRecord(id="d1", uri="test://d1")])
     await items_tbl.add(
         [
             DocumentItemRecord(
@@ -240,7 +240,7 @@ async def _add_doc(db, doc_id, *, items, metadata=None, chunks=None):
     await meta_tbl.add(
         [
             DocumentMetaRecord(
-                document_id=doc_id,
+                id=doc_id,
                 uri=f"test://{doc_id}",
                 metadata=json.dumps(metadata or {}),
             )
@@ -1143,9 +1143,7 @@ async def _build_dup_db(path, docs: dict[str, list[int]], *, vector_dim: int = 8
     )
     for doc_id, idxs in docs.items():
         await docs_tbl.add([DocumentRecord(id=doc_id, content="x")])
-        await meta_tbl.add(
-            [DocumentMetaRecord(document_id=doc_id, uri=f"test://{doc_id}")]
-        )
+        await meta_tbl.add([DocumentMetaRecord(id=doc_id, uri=f"test://{doc_id}")])
         await items_tbl.add(
             [
                 DocumentItemRecord(

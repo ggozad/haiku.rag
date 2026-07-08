@@ -94,7 +94,7 @@ class DocumentRepository:
         updated_at: str,
     ) -> DocumentMetaRecord:
         return DocumentMetaRecord(
-            document_id=doc_id,
+            id=doc_id,
             uri=entity.uri,
             title=entity.title,
             metadata=json.dumps(entity.metadata),
@@ -105,9 +105,7 @@ class DocumentRepository:
     async def _meta_by_id(self, doc_id: str) -> DocumentMetaRecord | None:
         safe_id = escape_sql_string(doc_id)
         results = await query_to_pydantic(
-            self.store.document_meta_table.query()
-            .where(f"document_id = '{safe_id}'")
-            .limit(1),
+            self.store.document_meta_table.query().where(f"id = '{safe_id}'").limit(1),
             DocumentMetaRecord,
         )
         return results[0] if results else None
@@ -146,9 +144,7 @@ class DocumentRepository:
                 )
             except Exception:
                 safe_id = escape_sql_string(doc_id)
-                await self.store.document_meta_table.delete(
-                    f"document_id = '{safe_id}'"
-                )
+                await self.store.document_meta_table.delete(f"id = '{safe_id}'")
                 raise
             entity.id = doc_id
             entity.created_at = datetime.fromisoformat(now)
@@ -178,7 +174,7 @@ class DocumentRepository:
             await self.store.documents_table.add(doc_records)
         except Exception:
             ids = ", ".join(f"'{escape_sql_string(d)}'" for d in doc_ids)
-            await self.store.document_meta_table.delete(f"document_id IN ({ids})")
+            await self.store.document_meta_table.delete(f"id IN ({ids})")
             raise
         return documents
 
@@ -271,7 +267,7 @@ class DocumentRepository:
         # from create()/migration; inserting on no-match would manufacture a
         # ghost row (visible to list_all/count) for an id with no documents row.
         await (
-            self.store.document_meta_table.merge_insert("document_id")
+            self.store.document_meta_table.merge_insert("id")
             .when_matched_update_all()
             .execute([record])
         )
@@ -310,7 +306,7 @@ class DocumentRepository:
         # Delete the document row, its mutable attributes
         safe_id = escape_sql_string(entity_id)
         await self.store.documents_table.delete(f"id = '{safe_id}'")
-        await self.store.document_meta_table.delete(f"document_id = '{safe_id}'")
+        await self.store.document_meta_table.delete(f"id = '{safe_id}'")
         return True
 
     async def list_all(
@@ -348,13 +344,13 @@ class DocumentRepository:
 
         if not include_content:
             return [
-                self._merge_to_document(DocumentRecord(id=m.document_id, content=""), m)
+                self._merge_to_document(DocumentRecord(id=m.id, content=""), m)
                 for m in meta_records
             ]
 
         documents: list[Document] = []
         for meta in meta_records:
-            safe_id = escape_sql_string(meta.document_id)
+            safe_id = escape_sql_string(meta.id)
             doc_results = await query_to_pydantic(
                 self.store.documents_table.query().where(f"id = '{safe_id}'").limit(1),
                 DocumentRecord,
@@ -362,7 +358,7 @@ class DocumentRepository:
             doc_record = (
                 doc_results[0]
                 if doc_results
-                else DocumentRecord(id=meta.document_id, content="")
+                else DocumentRecord(id=meta.id, content="")
             )
             documents.append(self._merge_to_document(doc_record, meta))
         return documents
@@ -385,7 +381,7 @@ class DocumentRepository:
             return None
 
         meta = meta_results[0]
-        safe_id = escape_sql_string(meta.document_id)
+        safe_id = escape_sql_string(meta.id)
         doc_results = await query_to_pydantic(
             self.store.documents_table.query().where(f"id = '{safe_id}'").limit(1),
             DocumentRecord,
@@ -433,7 +429,7 @@ class DocumentRepository:
                 "document_meta", schema=DocumentMetaRecord
             )
             await self.store.document_meta_table.create_index(
-                "document_id", config=BTree(), replace=True
+                "id", config=BTree(), replace=True
             )
             await self.store.document_meta_table.create_index(
                 "uri", config=BTree(), replace=True

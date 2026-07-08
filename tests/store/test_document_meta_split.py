@@ -156,6 +156,6 @@ async def test_get_by_uri_with_orphan_meta_returns_none(temp_db_path):
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
         repo = DocumentRepository(store)
         await store.document_meta_table.add(
-            [DocumentMetaRecord(document_id="ghost", uri="u-ghost", metadata="{}")]
+            [DocumentMetaRecord(id="ghost", uri="u-ghost", metadata="{}")]
         )
         assert await repo.get_by_uri("u-ghost") is None
