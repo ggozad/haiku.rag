@@ -405,13 +405,18 @@ class ChatApp(App):
             return
 
         citation = selected_widgets[0].citation
-        chunk = await self.client.get_chunk_by_id(citation.chunk_id)
-        if not chunk:
+        chunk_ids = citation.chunk_ids or [citation.chunk_id]
+        chunks = []
+        for cid in chunk_ids:
+            chunk = await self.client.get_chunk_by_id(cid)
+            if chunk:
+                chunks.append(chunk)
+        if not chunks:
             return
 
         from haiku.rag.inspector.widgets.visual_modal import VisualGroundingModal
 
-        await self.push_screen(VisualGroundingModal(chunk=chunk, client=self.client))
+        await self.push_screen(VisualGroundingModal(chunk=chunks, client=self.client))
 
     async def action_show_info(self) -> None:
         """Show database info modal."""

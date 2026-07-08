@@ -2,6 +2,7 @@ export interface Citation {
 	index: number;
 	document_id: string;
 	chunk_id: string;
+	chunk_ids?: string[];
 	document_uri: string;
 	document_title: string | null;
 	page_numbers: number[];

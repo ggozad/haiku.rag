@@ -1,4 +1,5 @@
 import base64
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from haiku.rag.store.models.chunk import Chunk, SearchResult, SearchType
@@ -223,12 +224,15 @@ async def expand_context(
     return expanded_results
 
 
-async def visualize_chunk(client: "HaikuRAG", chunk: Chunk) -> list:
-    """Render page images with bounding box highlights for a chunk.
+async def visualize_chunk(client: "HaikuRAG", chunk: "Chunk | Sequence[Chunk]") -> list:
+    """Render page images with bounding box highlights for one or more chunks.
 
-    Expands the chunk's context to find the full section, then resolves
+    Expands the chunks' context to find the full section, then resolves
     bounding boxes from all items in the expanded range. This ensures
-    visualization covers all pages the expanded content spans.
+    visualization covers all pages the expanded content spans. Passing all
+    constituent chunks of a merged search result (``SearchResult.chunk_ids``)
+    reproduces the merged expansion; chunks from a different document than
+    the first are ignored.
 
     Returns a list of PIL Image objects, one per page with bounding boxes.
     Empty list if no bounding boxes or page images available.
@@ -239,10 +243,15 @@ async def visualize_chunk(client: "HaikuRAG", chunk: Chunk) -> list:
 
     from haiku.rag.store.models.chunk import ChunkMetadata
 
-    if not chunk.document_id:
+    chunks = [chunk] if isinstance(chunk, Chunk) else list(chunk)
+    if not chunks:
         return []
+    document_id = chunks[0].document_id
+    if not document_id:
+        return []
+    chunks = [c for c in chunks if c.document_id == document_id]
 
-    doc = await client.document_repository.get_docling_data(chunk.document_id)
+    doc = await client.document_repository.get_docling_data(document_id)
     if not doc:
         return []
 
@@ -251,21 +260,28 @@ async def visualize_chunk(client: "HaikuRAG", chunk: Chunk) -> list:
         return []
 
     # Expand context to get all doc_item_refs in the section
-    chunk_meta = chunk.get_chunk_metadata()
-    if chunk_meta.doc_item_refs:
-        search_result = SearchResult(
-            content=chunk.content,
+    search_results = [
+        SearchResult(
+            content=c.content,
             score=1.0,
-            chunk_id=chunk.id,
-            document_id=chunk.document_id,
-            doc_item_refs=chunk_meta.doc_item_refs,
-            page_numbers=chunk_meta.page_numbers,
+            chunk_id=c.id,
+            document_id=c.document_id,
+            doc_item_refs=meta.doc_item_refs,
+            page_numbers=meta.page_numbers,
         )
-        expanded = await expand_context(client, [search_result])
-        refs = expanded[0].doc_item_refs if expanded else chunk_meta.doc_item_refs
+        for c in chunks
+        if (meta := c.get_chunk_metadata()).doc_item_refs
+    ]
+    if search_results:
+        expanded = await expand_context(client, search_results)
+        refs: list[str] = []
+        for result in expanded:
+            refs.extend(r for r in result.doc_item_refs if r not in refs)
+        if not refs:
+            refs = [r for sr in search_results for r in sr.doc_item_refs]
         meta = ChunkMetadata(doc_item_refs=refs)
     else:
-        meta = chunk_meta
+        meta = chunks[0].get_chunk_metadata()
     bounding_boxes = meta.resolve_bounding_boxes(docling_doc)
     if not bounding_boxes:
         return []
@@ -278,7 +294,7 @@ async def visualize_chunk(client: "HaikuRAG", chunk: Chunk) -> list:
         boxes_by_page[bbox.page_no].append(bbox)
 
     # Load only the needed page images
-    pages_doc = await client.document_repository.get_pages_data(chunk.document_id)
+    pages_doc = await client.document_repository.get_pages_data(document_id)
     if not pages_doc:
         return []
     page_images = pages_doc.get_page_images(list(boxes_by_page.keys()))

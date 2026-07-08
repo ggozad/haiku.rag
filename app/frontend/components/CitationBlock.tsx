@@ -55,7 +55,13 @@ function CitationItem({
 					<button
 						type="button"
 						className="citation-view-btn"
-						onClick={() => onViewInDocument(citation.chunk_id)}
+						onClick={() =>
+							onViewInDocument(
+								citation.chunk_ids?.length
+									? citation.chunk_ids.join(",")
+									: citation.chunk_id,
+							)
+						}
 					>
 						View in Document
 					</button>
@@ -96,9 +102,12 @@ export default function CitationBlock({ citations }: CitationBlockProps) {
 		});
 
 		try {
-			const response = await fetch(`/api/visualize/${chunkId}`, {
-				signal: controller.signal,
-			});
+			const response = await fetch(
+				`/api/visualize/${encodeURIComponent(chunkId)}`,
+				{
+					signal: controller.signal,
+				},
+			);
 			const data = await response.json();
 
 			if (controller.signal.aborted) return;

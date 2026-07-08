@@ -4,7 +4,7 @@ import json
 import logging
 import mimetypes
 import tempfile
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from datetime import datetime
 from enum import Enum
 from functools import cached_property
@@ -504,7 +504,7 @@ class HaikuRAG:
 
         return await analyze(self, question, filter)
 
-    async def visualize_chunk(self, chunk: Chunk) -> list:
+    async def visualize_chunk(self, chunk: Chunk | Sequence[Chunk]) -> list:
         from haiku.rag.client.search import visualize_chunk
 
         return await visualize_chunk(self, chunk)

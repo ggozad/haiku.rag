@@ -131,14 +131,19 @@ def create_skill_extras(
     - 'visualize_chunk': returns visualizations for chunks in the database
     """
 
-    async def visualize_chunk(chunk_id: str) -> list:
+    async def visualize_chunk(chunk_id: str | list[str]) -> list:
         from haiku.rag.client import HaikuRAG
 
+        chunk_ids = [chunk_id] if isinstance(chunk_id, str) else chunk_id
         async with HaikuRAG(db_path, config=config, read_only=True) as rag:
-            chunk = await rag.get_chunk_by_id(chunk_id)
-            if chunk is None:
+            chunks = []
+            for cid in chunk_ids:
+                chunk = await rag.get_chunk_by_id(cid)
+                if chunk is not None:
+                    chunks.append(chunk)
+            if not chunks:
                 return []
-            return await rag.visualize_chunk(chunk)
+            return await rag.visualize_chunk(chunks)
 
     async def list_documents(
         limit: int | None = None,

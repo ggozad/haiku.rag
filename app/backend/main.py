@@ -203,7 +203,11 @@ async def db_info(_: Request) -> JSONResponse:
 
 
 async def visualize_chunk(request: Request) -> JSONResponse:
-    """Return visual grounding images for a chunk as base64."""
+    """Return visual grounding images for one or more chunks as base64.
+
+    The path param accepts comma-separated chunk ids so a merged citation
+    can render the union of its constituent chunks' expansions.
+    """
     import base64
     from io import BytesIO
 
@@ -214,11 +218,15 @@ async def visualize_chunk(request: Request) -> JSONResponse:
 
     client = await get_client()
 
-    chunk = await client.chunk_repository.get_by_id(chunk_id)
-    if not chunk:
+    chunks = []
+    for cid in chunk_id.split(","):
+        chunk = await client.chunk_repository.get_by_id(cid)
+        if chunk:
+            chunks.append(chunk)
+    if not chunks:
         return JSONResponse({"error": "Chunk not found"}, status_code=404)
 
-    images = await client.visualize_chunk(chunk)
+    images = await client.visualize_chunk(chunks)
     if not images:
         return JSONResponse({"images": [], "message": "No visual grounding available"})
 
@@ -233,7 +241,7 @@ async def visualize_chunk(request: Request) -> JSONResponse:
         {
             "images": base64_images,
             "chunk_id": chunk_id,
-            "document_uri": chunk.document_uri,
+            "document_uri": chunks[0].document_uri,
         }
     )
 

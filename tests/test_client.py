@@ -1590,6 +1590,82 @@ async def test_client_visualize_chunk_multi_page(temp_db_path):
             assert img.tobytes() != blank.tobytes()
 
 
+async def test_client_visualize_chunk_merged_chunks_union_pages(temp_db_path):
+    """Visualizing all chunks of a merged result covers the union of their
+    expansions, which a single constituent chunk alone does not reach."""
+    from docling_core.types.doc.base import BoundingBox, Size
+    from docling_core.types.doc.document import (
+        DoclingDocument,
+        ImageRef,
+        ProvenanceItem,
+    )
+    from docling_core.types.doc.labels import DocItemLabel
+    from PIL import Image as PilImageModule
+
+    docling_doc = DoclingDocument(name="merged-viz-test")
+    page_size = Size(width=612.0, height=792.0)
+    for page_no in (1, 2):
+        docling_doc.add_page(
+            page_no=page_no,
+            size=page_size,
+            image=ImageRef.from_pil(
+                PilImageModule.new("RGB", (612, 792), color="white"), dpi=72
+            ),
+        )
+
+    # Five large paragraphs: with max_context_chars=10000 each chunk's own
+    # outward expansion spans three items, so chunk one alone stays on page
+    # one while the merged ranges [0,2] and [2,4] union to cover page two.
+    pages = [1, 1, 1, 2, 2]
+    for i, page_no in enumerate(pages):
+        docling_doc.add_text(
+            label=DocItemLabel.PARAGRAPH,
+            text=f"Paragraph {i}. " + "x" * 4000,
+            prov=ProvenanceItem(
+                page_no=page_no,
+                bbox=BoundingBox(l=50, t=700 - i * 100, r=550, b=650 - i * 100),
+                charspan=(0, 20),
+            ),
+        )
+
+    chunks = [
+        Chunk(
+            content="Paragraph 0. " + "x" * 4000,
+            metadata={
+                "doc_item_refs": ["#/texts/0"],
+                "page_numbers": [1],
+                "labels": ["paragraph"],
+            },
+            order=0,
+            embedding=[0.1] * 2560,
+        ),
+        Chunk(
+            content="Paragraph 3. " + "x" * 4000,
+            metadata={
+                "doc_item_refs": ["#/texts/3"],
+                "page_numbers": [2],
+                "labels": ["paragraph"],
+            },
+            order=1,
+            embedding=[0.1] * 2560,
+        ),
+    ]
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(docling_doc, chunks, uri="test://merged")
+
+        stored_chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        stored_chunks.sort(key=lambda c: c.order)
+        assert len(stored_chunks) == 2
+        c1, c2 = stored_chunks
+
+        solo_images = await client.visualize_chunk(c1)
+        assert len(solo_images) == 1
+
+        merged_images = await client.visualize_chunk([c1, c2])
+        assert len(merged_images) == 2
+
+
 # =============================================================================
 # convert() method tests
 # =============================================================================
