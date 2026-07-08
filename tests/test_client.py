@@ -256,6 +256,16 @@ async def test_client_update_document(qa_corpus: list[dict[str, str]], temp_db_p
         assert doc_chunks[0].content == "Custom chunk 1"
         assert doc_chunks[1].content == "Custom chunk 2"
 
+        # Test updating only the uri
+        new_uri = "file:///path/to/new.txt"
+        updated_doc = await client.update_document(document_id=original_id, uri=new_uri)
+        assert updated_doc.uri == new_uri
+        refetched = await client.get_document_by_id(original_id)
+        assert refetched is not None
+        assert refetched.uri == new_uri
+        assert (await client.get_document_by_uri(new_uri)) is not None
+        assert (await client.get_document_by_uri(test_uri)) is None
+
 
 @pytest.mark.vcr()
 async def test_client_create_document_from_source(temp_db_path):

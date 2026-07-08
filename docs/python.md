@@ -141,6 +141,9 @@ await client.update_document(
 # Update title only (no re-chunking)
 await client.update_document(document_id=doc.id, title="New Title")
 
+# Update uri only (no re-chunking)
+await client.update_document(document_id=doc.id, uri="file:///new/path.txt")
+
 # Update multiple fields at once
 await client.update_document(
     document_id=doc.id,
