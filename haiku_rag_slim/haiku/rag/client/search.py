@@ -234,6 +234,10 @@ async def visualize_chunk(client: "HaikuRAG", chunk: "Chunk | Sequence[Chunk]") 
     reproduces the merged expansion; chunks from a different document than
     the first are ignored.
 
+    The chunks' own items draw in a strong highlight; items swept in by
+    expansion draw fainter, so the matched content stands out from its
+    surrounding context.
+
     Returns a list of PIL Image objects, one per page with bounding boxes.
     Empty list if no bounding boxes or page images available.
     """
@@ -279,19 +283,29 @@ async def visualize_chunk(client: "HaikuRAG", chunk: "Chunk | Sequence[Chunk]") 
             refs.extend(r for r in result.doc_item_refs if r not in refs)
         if not refs:
             refs = [r for sr in search_results for r in sr.doc_item_refs]
-        meta = ChunkMetadata(doc_item_refs=refs)
     else:
-        meta = chunks[0].get_chunk_metadata()
-    bounding_boxes = meta.resolve_bounding_boxes(docling_doc)
-    if not bounding_boxes:
+        refs = chunks[0].get_chunk_metadata().doc_item_refs
+
+    matched_refs = {r for sr in search_results for r in sr.doc_item_refs} or set(refs)
+    swept_refs = [r for r in refs if r not in matched_refs]
+
+    matched_boxes = ChunkMetadata(
+        doc_item_refs=sorted(matched_refs)
+    ).resolve_bounding_boxes(docling_doc)
+    swept_boxes = ChunkMetadata(doc_item_refs=swept_refs).resolve_bounding_boxes(
+        docling_doc
+    )
+    if not matched_boxes and not swept_boxes:
         return []
 
-    # Group bounding boxes by page
+    # Group bounding boxes by page; swept boxes first so matched draw on top
     boxes_by_page: dict[int, list] = {}
-    for bbox in bounding_boxes:
+    for bbox, is_matched in [(b, False) for b in swept_boxes] + [
+        (b, True) for b in matched_boxes
+    ]:
         if bbox.page_no not in boxes_by_page:
             boxes_by_page[bbox.page_no] = []
-        boxes_by_page[bbox.page_no].append(bbox)
+        boxes_by_page[bbox.page_no].append((bbox, is_matched))
 
     # Load only the needed page images
     pages_doc = await client.document_repository.get_pages_data(document_id)
@@ -319,7 +333,7 @@ async def visualize_chunk(client: "HaikuRAG", chunk: "Chunk | Sequence[Chunk]") 
         image = deepcopy(pil_image)
         draw = ImageDraw.Draw(image, "RGBA")
 
-        for bbox in boxes_by_page[page_no]:
+        for bbox, is_matched in boxes_by_page[page_no]:
             # Document coords are bottom-left origin; PIL uses top-left
             x0 = bbox.left * scale_x
             y0 = (page_height - bbox.top) * scale_y
@@ -329,8 +343,12 @@ async def visualize_chunk(client: "HaikuRAG", chunk: "Chunk | Sequence[Chunk]") 
             if y0 > y1:
                 y0, y1 = y1, y0
 
-            fill_color = (255, 255, 0, 40)  # Yellow with transparency
-            outline_color = (255, 165, 0, 100)  # Orange outline
+            if is_matched:
+                fill_color = (255, 255, 0, 40)  # Yellow with transparency
+                outline_color = (255, 165, 0, 100)  # Orange outline
+            else:
+                fill_color = (255, 255, 0, 15)
+                outline_color = (255, 165, 0, 50)
 
             draw.rectangle([(x0, y0), (x1, y1)], fill=fill_color, outline=None)
             draw.rectangle([(x0, y0), (x1, y1)], outline=outline_color, width=1)

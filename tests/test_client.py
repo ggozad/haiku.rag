@@ -1666,6 +1666,73 @@ async def test_client_visualize_chunk_merged_chunks_union_pages(temp_db_path):
         assert len(merged_images) == 2
 
 
+async def test_client_visualize_chunk_two_tone_highlights(temp_db_path):
+    """Matched content draws stronger than context swept in by expansion."""
+    from docling_core.types.doc.base import BoundingBox, Size
+    from docling_core.types.doc.document import (
+        DoclingDocument,
+        ImageRef,
+        ProvenanceItem,
+    )
+    from docling_core.types.doc.labels import DocItemLabel
+    from PIL import Image as PilImageModule
+
+    docling_doc = DoclingDocument(name="two-tone-test")
+    page_size = Size(width=612.0, height=792.0)
+    docling_doc.add_page(
+        page_no=1,
+        size=page_size,
+        image=ImageRef.from_pil(
+            PilImageModule.new("RGB", (612, 792), color="white"), dpi=72
+        ),
+    )
+
+    # Three small paragraphs; the chunk matches only the middle one, so
+    # expansion sweeps in its neighbors.
+    for i in range(3):
+        docling_doc.add_text(
+            label=DocItemLabel.PARAGRAPH,
+            text=f"Paragraph {i}.",
+            prov=ProvenanceItem(
+                page_no=1,
+                bbox=BoundingBox(l=50, t=700 - i * 100, r=550, b=650 - i * 100),
+                charspan=(0, 12),
+            ),
+        )
+
+    chunks = [
+        Chunk(
+            content="Paragraph 1.",
+            metadata={
+                "doc_item_refs": ["#/texts/1"],
+                "page_numbers": [1],
+                "labels": ["paragraph"],
+            },
+            order=0,
+            embedding=[0.1] * 2560,
+        )
+    ]
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(docling_doc, chunks, uri="test://two-tone")
+        stored_chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        assert len(stored_chunks) == 1
+
+        images = await client.visualize_chunk(stored_chunks[0])
+        assert len(images) == 1
+        image = images[0]
+
+        # Page dpi 72 == document coords, bottom-left origin flipped to
+        # top-left: item i's box spans y = 92 + i * 100 .. 142 + i * 100.
+        matched = image.getpixel((300, 217))  # inside #/texts/1
+        swept = image.getpixel((300, 117))  # inside #/texts/0
+        background = image.getpixel((300, 30))  # outside all boxes
+
+        assert matched != background
+        assert swept != background
+        assert matched != swept
+
+
 # =============================================================================
 # convert() method tests
 # =============================================================================

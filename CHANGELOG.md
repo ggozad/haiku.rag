@@ -18,6 +18,7 @@
 - `update_document` accepts a `uri` argument to change a document's URI.
 - `SearchResult.chunk_ids` and `Citation.chunk_ids` carry the chunk ids merged into an expanded result.
 - `visualize_chunk` accepts multiple chunks and reproduces merged-result expansion; chat, inspector, and app visualizations pass all cited chunks.
+- Chunk visualizations draw matched content in a stronger highlight than expanded context.
 - docling-serve requests fail over to another instance on transport/5xx errors and skip instances whose circuit breaker is open; tune via `providers.docling_serve.max_attempts` and `providers.docling_serve.circuit_breaker`.
 
 ### Fixed
