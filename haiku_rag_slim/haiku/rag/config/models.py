@@ -237,15 +237,44 @@ class OllamaConfig(BaseModel):
     )
 
 
+class CircuitBreakerConfig(BaseModel):
+    """Breaker over repeated failures of a single target. Stops callers from
+    hammering a target that's persistently failing (an ingester source, a
+    docling-serve instance)."""
+
+    failure_threshold: int = Field(
+        default=5, description="Consecutive failures before the breaker opens."
+    )
+    cooldown_s: float = Field(
+        default=600.0,
+        description="How long the breaker stays open before allowing a probe.",
+    )
+
+
 class DoclingServeConfig(BaseModel):
-    """docling-serve endpoints. Accepts a single URL or a list — when a list
-    is given, the client round-robins jobs across the URLs. Each job's
-    submit/poll/result trio stays on the same instance (task IDs are
-    instance-local). The round-robin counter is per-process; for true load
-    balancing or failover, put an LB in front."""
+    """docling-serve endpoints. Accepts a single URL or a list — when a list is
+    given, the client round-robins jobs across the URLs, fails a request over to
+    another instance when one crashes or returns 5xx, and trips a per-instance
+    circuit breaker so repeated failures route around a dead instance. Each
+    job's submit/poll/result trio stays on the same instance (task IDs are
+    instance-local).
+
+    An external load balancer can only front docling-serve in RQ mode (shared
+    Redis task state); in the default standalone LocalOrchestrator mode the trio
+    is instance-pinned, so this client does the balancing/failover itself."""
 
     base_url: str | list[str] = "http://localhost:5001"
     api_key: str = ""
+    max_attempts: int = Field(
+        default=3,
+        description="Max attempts per request across the fleet before giving up; "
+        "each retry fails over to another instance.",
+    )
+    circuit_breaker: CircuitBreakerConfig = Field(
+        default_factory=lambda: CircuitBreakerConfig(
+            failure_threshold=3, cooldown_s=30.0
+        )
+    )
 
     @property
     def base_urls(self) -> list[str]:
@@ -312,19 +341,6 @@ class RetryPolicyConfig(BaseModel):
     base_delay_s: float = 2.0
     max_delay_s: float = 300.0
     jitter: float = Field(default=0.25, ge=0.0, le=1.0)
-
-
-class CircuitBreakerConfig(BaseModel):
-    """Per-source breaker over discover() failures. Stops the ingester from
-    hammering a source that's persistently failing."""
-
-    failure_threshold: int = Field(
-        default=5, description="Consecutive failures before the breaker opens."
-    )
-    cooldown_s: float = Field(
-        default=600.0,
-        description="How long the breaker stays open before allowing a probe.",
-    )
 
 
 class WorkerConfig(BaseModel):

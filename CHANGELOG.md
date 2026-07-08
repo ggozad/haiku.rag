@@ -4,6 +4,7 @@
 ### Added
 
 - `update_document` accepts a `uri` argument to change a document's URI.
+- docling-serve requests fail over to another instance on transport/5xx errors and skip instances whose circuit breaker is open; tune via `providers.docling_serve.max_attempts` and `providers.docling_serve.circuit_breaker`.
 
 ## [0.63.2] - 2026-07-03
 
