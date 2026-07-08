@@ -2,6 +2,8 @@
 
 A conversational RAG interface built with [CopilotKit](https://copilotkit.ai/) and [pydantic-ai](https://github.com/pydantic/pydantic-ai)'s AG-UI protocol.
 
+> **Note:** An illustrative example meant as a starting point, with no authentication. The compose files bind the backend to `127.0.0.1`; don't expose it to an untrusted network.
+
 ## Prerequisites
 
 - Docker and Docker Compose

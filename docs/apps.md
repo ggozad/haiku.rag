@@ -4,6 +4,9 @@ A browser-based reference implementation of conversational RAG, built on a Starl
 
 This is a starting point for your own deployments, not the canonical haiku.rag UX. For the day-to-day terminal experience see [Chat](chat.md).
 
+!!! warning "No authentication"
+    An illustrative example meant as a starting point, with no authentication. The compose files bind the backend to `127.0.0.1`; don't expose it to an untrusted network.
+
 ## Features
 
 - Streaming chat with real-time tool execution visibility.

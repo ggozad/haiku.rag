@@ -7,8 +7,9 @@ services:
       dockerfile: app/backend/Dockerfile
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     working_dir: /app/src
+    # No authentication; bound to loopback. The frontend reaches it over the compose network.
     ports:
-      - "8001:8000"
+      - "127.0.0.1:8001:8000"
     environment:
       - DB_PATH=/data
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
