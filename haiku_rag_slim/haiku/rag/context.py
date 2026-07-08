@@ -12,7 +12,8 @@ For STRUCTURED documents (containing section_header or title labels):
   5. If the section is too small (under 20% of max_context_chars), expand
      item-by-item crossing into adjacent sections until the budget is filled.
      This lets small sections (e.g., title+authors) grow into neighboring
-     content.
+     content. Picture and table matches are exempt: they return their
+     enclosing section as-is, never crossing section boundaries.
   6. Merge overlapping ranges from multiple results in the same document.
      Adjacent but non-overlapping ranges stay separate to preserve section
      independence.
@@ -35,6 +36,10 @@ from haiku.rag.store.repositories.document_item import DocumentItemRepository
 
 _NOISE_LABELS = {"footnote", "page_header", "page_footer", "document_index"}
 _SECTION_BOUNDARY_LABELS = {"section_header", "title"}
+
+# Labels whose pertinent unit is the item plus its own section: expansion
+# never crosses section boundaries for these matches.
+_TIGHT_LABELS = {"picture", "table"}
 
 # Sections with fewer chars than this fraction of max_context_chars are
 # considered too small — expansion falls through to item-by-item outward
@@ -221,6 +226,11 @@ def _find_expansion_range(
             lo_bound=sec_start,
             hi_bound=sec_end,
         )
+
+    # Picture/table hits stay section-bounded: their pertinent unit is the
+    # figure or table plus its section, never neighboring sections.
+    if any(items[i].label in _TIGHT_LABELS for i in matched_indices):
+        return (items[sec_start].position, items[sec_end].position)
 
     # Section too small (e.g., title+authors) — expand across boundaries
     return _expand_outward(items, center_idx, max_chars, skip_noise=True)

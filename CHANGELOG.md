@@ -9,6 +9,7 @@
 ### Fixed
 
 - vLLM embedding and vLLM/Jina reranking reuse one HTTP client across requests instead of opening one per request.
+- Picture and table search hits expand within their section, never across section boundaries.
 
 ## [0.64.0] - 2026-07-08
 

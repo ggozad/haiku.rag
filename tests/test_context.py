@@ -244,6 +244,46 @@ class TestFindExpansionRange:
         # Should expand outward into the first section
         assert hi >= 2
 
+    def test_picture_in_small_section_stays_section_bounded(self):
+        items = [
+            _item(0, label="section_header", text="Chapter 1"),
+            _item(1, text="Chapter 1 prose. " * 100),
+            _item(2, label="section_header", text="Figure heading"),
+            _item(3, label="picture", text="Diagram description."),
+            _item(4, label="caption", text="Figure 2-3. Balance arm."),
+            _item(5, label="section_header", text="Chapter 3"),
+            _item(6, text="Chapter 3 prose. " * 100),
+        ]
+        # Figure section (items 2-4) is far under 20% of 5000 chars.
+        lo, hi = _find_expansion_range(items, {3}, has_sections=True, max_chars=5000)
+        # Never crosses either header
+        assert (lo, hi) == (2, 4)
+
+    def test_table_in_small_section_stays_section_bounded(self):
+        items = [
+            _item(0, label="section_header", text="Chapter 1"),
+            _item(1, text="Chapter 1 prose. " * 100),
+            _item(2, label="section_header", text="Table heading"),
+            _item(3, label="table", text="Header | Value"),
+            _item(4, label="section_header", text="Chapter 3"),
+            _item(5, text="Chapter 3 prose. " * 100),
+        ]
+        lo, hi = _find_expansion_range(items, {3}, has_sections=True, max_chars=5000)
+        assert (lo, hi) == (2, 3)
+
+    def test_text_in_small_section_still_expands_outward(self):
+        items = [
+            _item(0, label="section_header", text="Chapter 1"),
+            _item(1, text="Chapter 1 prose. " * 100),
+            _item(2, label="section_header", text="Short note"),
+            _item(3, text="A brief remark."),
+            _item(4, label="section_header", text="Chapter 3"),
+            _item(5, text="Chapter 3 prose. " * 100),
+        ]
+        lo, hi = _find_expansion_range(items, {3}, has_sections=True, max_chars=5000)
+        # Text hits keep growing across section boundaries
+        assert lo < 2 or hi > 3
+
 
 class TestEvidenceAnchors:
     def test_empty_content(self):
@@ -368,6 +408,85 @@ class TestExpandWithItems:
             # with skip_noise crosses into the Introduction section which has
             # real content — so we get expanded content, not the fallback.
             assert len(expanded[0].content) > 0
+
+    async def test_picture_expansion_stays_within_section_pages(self, temp_db_path):
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/texts/0",
+                    label="section_header",
+                    text="Chapter 1",
+                    page_numbers=[10],
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=1,
+                    self_ref="#/texts/1",
+                    label="text",
+                    text="Chapter 1 prose. " * 200,
+                    page_numbers=[10],
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=2,
+                    self_ref="#/texts/2",
+                    label="section_header",
+                    text="Figure heading",
+                    page_numbers=[13],
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=3,
+                    self_ref="#/pictures/0",
+                    label="picture",
+                    text="Diagram description.",
+                    page_numbers=[13],
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=4,
+                    self_ref="#/texts/3",
+                    label="caption",
+                    text="Figure 2-3. Balance arm.",
+                    page_numbers=[13],
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=5,
+                    self_ref="#/texts/4",
+                    label="section_header",
+                    text="Chapter 3",
+                    page_numbers=[15],
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=6,
+                    self_ref="#/texts/5",
+                    label="text",
+                    text="Chapter 3 prose. " * 200,
+                    page_numbers=[15],
+                ),
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            result = SearchResult(
+                content="Diagram description.",
+                score=0.9,
+                document_id="doc-1",
+                doc_item_refs=["#/pictures/0"],
+                page_numbers=[13],
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [result], 5000
+            )
+            assert len(expanded) == 1
+            assert expanded[0].page_numbers == [13]
+            assert "Chapter 1 prose" not in expanded[0].content
+            assert "Chapter 3 prose" not in expanded[0].content
 
     async def test_fragmented_items_preserve_chunk(self, temp_db_path):
         """When items are fragmented (e.g., list_item children), the original
