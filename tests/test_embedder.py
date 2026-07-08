@@ -281,7 +281,8 @@ async def test_embed_chunks_non_bytes_picture_not_deduped():
     chunks = []
     for i in range(2):
         c = Chunk(id=f"pic{i}", content="x", order=i)
-        c._picture_data = payload
+        # Deliberately off-type to exercise the non-bytes defensive branch.
+        c._picture_data = payload  # ty: ignore[invalid-assignment]
         chunks.append(c)
 
     embedder = _ImageStubEmbedder()
@@ -484,7 +485,7 @@ async def test_vllm_reuses_pooled_client(monkeypatch):
     instead of opening a fresh connection per call."""
     from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
 
-    constructed: list[object] = []
+    stats = {"constructed": 0, "closed": 0}
 
     class FakeResponse:
         def raise_for_status(self):
@@ -495,14 +496,13 @@ async def test_vllm_reuses_pooled_client(monkeypatch):
 
     class FakeAsyncClient:
         def __init__(self, *args, **kwargs):
-            constructed.append(self)
-            self.closed = False
+            stats["constructed"] += 1
 
         async def post(self, url, json, headers):
             return FakeResponse()
 
         async def aclose(self):
-            self.closed = True
+            stats["closed"] += 1
 
     monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
 
@@ -513,9 +513,9 @@ async def test_vllm_reuses_pooled_client(monkeypatch):
     await embedder.embed_query("two")
     await embedder.embed_documents(["three", "four"])
 
-    assert len(constructed) == 1  # one pooled client, reused
+    assert stats["constructed"] == 1  # one pooled client, reused
     await embedder.aclose()
-    assert constructed[0].closed is True
+    assert stats["closed"] == 1
 
 
 async def test_vllm_aclose_without_request_is_noop(monkeypatch):
