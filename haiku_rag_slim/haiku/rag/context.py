@@ -335,6 +335,11 @@ async def expand_with_items(
 
         first = original_results[0]
 
+        chunk_ids: list[str] = []
+        for r in original_results:
+            if r.chunk_id and r.chunk_id not in chunk_ids:
+                chunk_ids.append(r.chunk_id)
+
         # Expansion should never return less content than the original chunk.
         # This can happen when item texts are fragmented (e.g., docling splits
         # formatted HTML list items into many small text nodes).
@@ -351,6 +356,7 @@ async def expand_with_items(
                 content=expanded_content,
                 score=max(r.score for r in original_results),
                 chunk_id=first.chunk_id,
+                chunk_ids=chunk_ids,
                 document_id=first.document_id,
                 document_uri=first.document_uri,
                 document_title=first.document_title,

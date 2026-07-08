@@ -697,6 +697,76 @@ class TestExpandWithItems:
             assert len(expanded[0].content) <= 5000
             assert marker in expanded[0].content
 
+    async def test_solo_result_carries_own_chunk_id(self, temp_db_path):
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=i,
+                    self_ref=f"#/texts/{i}",
+                    label="text",
+                    text=f"Paragraph {i}. " * 10,
+                )
+                for i in range(5)
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            result = SearchResult(
+                content="Paragraph 2.",
+                score=0.9,
+                chunk_id="c1",
+                document_id="doc-1",
+                doc_item_refs=["#/texts/2"],
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [result], 5000
+            )
+            assert len(expanded) == 1
+            assert expanded[0].chunk_ids == ["c1"]
+
+    async def test_merged_results_carry_all_chunk_ids(self, temp_db_path):
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=i,
+                    self_ref=f"#/texts/{i}",
+                    label="text",
+                    text=f"Paragraph {i}. " * 10,
+                )
+                for i in range(5)
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            r1 = SearchResult(
+                content="Paragraph 1.",
+                score=0.9,
+                chunk_id="c1",
+                document_id="doc-1",
+                doc_item_refs=["#/texts/1"],
+            )
+            r2 = SearchResult(
+                content="Paragraph 3.",
+                score=0.85,
+                chunk_id="c2",
+                document_id="doc-1",
+                doc_item_refs=["#/texts/3"],
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [r1, r2], 5000
+            )
+            # Ranges around positions 1 and 3 overlap → one merged result.
+            assert len(expanded) == 1
+            assert expanded[0].chunk_id == "c1"
+            assert expanded[0].chunk_ids == ["c1", "c2"]
+            # Sibling chunk ids are plumbing for visualization, never shown
+            # to the model.
+            assert "c2" not in expanded[0].format_for_agent()
+
     async def test_fuzzy_match_preserves_central_marker(self, temp_db_path):
         """The chunk's text need not be verbatim in the joined item text: a clean
         central marker is still located via the central-slice anchor."""
