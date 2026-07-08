@@ -143,6 +143,13 @@ class HaikuRAG:
     async def __aexit__(self, exc_type, exc_val, exc_tb):  # noqa: ARG002
         """Async context manager exit."""
         await self._await_vacuum_tasks()
+        # Release the embedder's pooled HTTP client (if any). Best-effort like
+        # the vacuum drain: __aexit__ runs during exception unwinding, so a
+        # raising close here must not mask the original exception.
+        try:
+            await self.embedder.aclose()
+        except Exception:
+            logger.debug("Embedder aclose failed on teardown", exc_info=True)
         self.close()
         return False
 

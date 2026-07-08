@@ -228,6 +228,77 @@ async def test_embed_chunks_picture_with_text_only_embedder_raises():
         await embed_chunks([chunk], get_embedder(config), config)
 
 
+class _ImageStubEmbedder(EmbedderWrapper):
+    """Multimodal stub that records each image it is asked to embed and
+    returns a distinct vector per unique payload."""
+
+    def __init__(self):
+        super().__init__(embedder=None, vector_dim=4, supports_images=True)
+        self.embedded: list[bytes] = []
+        self._vectors: dict[bytes, list[float]] = {}
+
+    async def embed_documents(self, texts):
+        return [[0.1] * 4 for _ in texts]
+
+    async def embed_image(self, image):
+        self.embedded.append(image)
+        # Deterministic, payload-specific vector so callers can prove that a
+        # reused (deduped) vector really came from the matching image.
+        vec = self._vectors.setdefault(image, [float(len(self._vectors))] * 4)
+        return list(vec)
+
+
+async def test_embed_chunks_dedupes_identical_pictures():
+    """Identical image bytes are embedded once and the vector is reused for
+    every chunk that shares them, preserving order."""
+    img_a = b"\x89PNG\r\n\x1a\nAAAA"
+    img_b = b"\x89PNG\r\n\x1a\nBBBB"
+    # Order: a, b, a, a, b — 5 chunks, 2 unique images.
+    payloads = [img_a, img_b, img_a, img_a, img_b]
+    chunks = []
+    for i, data in enumerate(payloads):
+        c = Chunk(id=f"pic{i}", content="x", order=i)
+        c._picture_data = data
+        chunks.append(c)
+
+    embedder = _ImageStubEmbedder()
+    embedded = await embed_chunks(chunks, embedder, AppConfig())
+
+    # Only the two unique images hit embed_image, in first-seen order.
+    assert embedder.embedded == [img_a, img_b]
+    # Every chunk gets a vector, and duplicates share the right one.
+    vecs = [c.embedding for c in embedded]
+    assert vecs[0] == vecs[2] == vecs[3]  # all img_a
+    assert vecs[1] == vecs[4]  # all img_b
+    assert vecs[0] != vecs[1]
+
+
+async def test_embed_chunks_non_bytes_picture_not_deduped():
+    """Picture data that isn't bytes bypasses the content-hash cache and is
+    embedded per-occurrence (defensive path; build_picture_chunks yields bytes
+    in practice)."""
+    payload = "not-bytes-sentinel"
+    chunks = []
+    for i in range(2):
+        c = Chunk(id=f"pic{i}", content="x", order=i)
+        c._picture_data = payload
+        chunks.append(c)
+
+    embedder = _ImageStubEmbedder()
+    embedded = await embed_chunks(chunks, embedder, AppConfig())
+
+    # No dedup for unhashable/non-bytes payloads: both occurrences embed.
+    assert embedder.embedded == [payload, payload]
+    assert embedded[0].embedding is not None
+    assert embedded[1].embedding is not None
+
+
+async def test_embedder_aclose_without_owned_client_is_noop():
+    """Base aclose is a no-op when the wrapper owns no HTTP client."""
+    embedder = EmbedderWrapper(embedder=None, vector_dim=4)
+    await embedder.aclose()  # must not raise
+
+
 async def test_embed_chunks_respects_configured_batch_size(monkeypatch):
     """`embeddings.batch_size` controls how `embed_chunks` slices its input.
 
@@ -406,6 +477,185 @@ async def test_vllm_embed_image_request_shape(monkeypatch):
     assert content[0]["type"] == "image_url"
     url = content[0]["image_url"]["url"]
     assert url.startswith("data:image/png;base64,")
+
+
+async def test_vllm_reuses_pooled_client(monkeypatch):
+    """The embedder builds one httpx client and reuses it across requests
+    instead of opening a fresh connection per call."""
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    constructed: list[object] = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"data": [{"embedding": [0.1, 0.2]}]}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            constructed.append(self)
+            self.closed = False
+
+        async def post(self, url, json, headers):
+            return FakeResponse()
+
+        async def aclose(self):
+            self.closed = True
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="x", vector_dim=2, base_url="http://localhost:8000/v1"
+    )
+    await embedder.embed_query("one")
+    await embedder.embed_query("two")
+    await embedder.embed_documents(["three", "four"])
+
+    assert len(constructed) == 1  # one pooled client, reused
+    await embedder.aclose()
+    assert constructed[0].closed is True
+
+
+async def test_vllm_aclose_without_request_is_noop(monkeypatch):
+    """aclose is safe when no request was ever made (client is lazy)."""
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    def fail(*args, **kwargs):
+        raise AssertionError("no client should be built before a request")
+
+    monkeypatch.setattr("httpx.AsyncClient", fail)
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="x", vector_dim=2, base_url="http://localhost:8000/v1"
+    )
+    await embedder.aclose()  # must not raise or construct a client
+
+
+def test_embeddings_http_config_defaults():
+    """Defaults preserve the historical transport behavior."""
+    http = EmbeddingsConfig().http
+    assert http.timeout_s == 60.0
+    assert http.max_connections == 16
+    assert http.max_keepalive_connections == 16
+    assert http.keepalive_expiry_s == 300.0
+
+
+async def test_vllm_client_built_from_http_config(monkeypatch):
+    """The pooled client's timeout and pool limits come from
+    EmbeddingHTTPConfig, not hardcoded constants."""
+    from haiku.rag.config import EmbeddingHTTPConfig
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    captured: dict = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"data": [{"embedding": [0.1]}]}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            captured["timeout"] = kwargs.get("timeout")
+            captured["limits"] = kwargs.get("limits")
+
+        async def post(self, url, json, headers):
+            return FakeResponse()
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    http = EmbeddingHTTPConfig(
+        timeout_s=12.0,
+        max_connections=3,
+        max_keepalive_connections=2,
+        keepalive_expiry_s=45.0,
+    )
+    embedder = VLLMMultimodalEmbedder(
+        model_name="x", vector_dim=2, base_url="http://localhost:8000/v1", http=http
+    )
+    await embedder.embed_query("hi")
+
+    assert captured["timeout"].read == 12.0
+    assert captured["limits"].max_connections == 3
+    assert captured["limits"].max_keepalive_connections == 2
+    assert captured["limits"].keepalive_expiry == 45.0
+
+
+async def test_openai_embedder_owns_and_closes_pooled_client(monkeypatch):
+    """The openai flow builds one pooled client, hands it to the provider, and
+    the wrapper closes it on aclose()."""
+    import haiku.rag.embeddings as emb
+
+    closed = {"value": False}
+
+    class FakeClient:
+        async def aclose(self):
+            closed["value"] = True
+
+    fake_client = FakeClient()
+    captured: dict = {}
+
+    class FakeProvider:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(emb, "build_http_client", lambda http: fake_client)
+    monkeypatch.setattr(emb, "OpenAIProvider", FakeProvider)
+    monkeypatch.setattr(
+        emb, "OpenAIEmbeddingModel", lambda name, provider: ("model", name, provider)
+    )
+    monkeypatch.setattr(emb, "Embedder", lambda model: ("embedder", model))
+
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="openai", name="text-embedding-3-small", vector_dim=1536
+            )
+        )
+    )
+    embedder = emb.get_embedder(config)
+
+    # The same pooled client is passed to the provider and owned by the wrapper.
+    assert captured["http_client"] is fake_client
+    await embedder.aclose()
+    assert closed["value"] is True
+
+
+async def test_openai_embedder_forwards_base_url(monkeypatch):
+    """A configured base_url is forwarded to the OpenAI provider (OpenAI-
+    compatible servers like vLLM/LM Studio)."""
+    import haiku.rag.embeddings as emb
+
+    class FakeClient:
+        async def aclose(self):
+            pass
+
+    captured: dict = {}
+
+    class FakeProvider:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(emb, "build_http_client", lambda http: FakeClient())
+    monkeypatch.setattr(emb, "OpenAIProvider", FakeProvider)
+    monkeypatch.setattr(emb, "OpenAIEmbeddingModel", lambda name, provider: object())
+    monkeypatch.setattr(emb, "Embedder", lambda model: object())
+
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="openai",
+                name="text-embedding-3-small",
+                vector_dim=1536,
+                base_url="http://vllm:8000/v1",
+            )
+        )
+    )
+    emb.get_embedder(config)
+    assert captured["base_url"] == "http://vllm:8000/v1"
 
 
 async def test_vllm_supports_images_flag():

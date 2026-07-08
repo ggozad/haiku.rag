@@ -68,9 +68,29 @@ class LanceDBConfig(BaseModel):
     storage_options: dict[str, str] = Field(default_factory=dict)
 
 
+class EmbeddingHTTPConfig(BaseModel):
+    """HTTP transport tuning for embedding requests to OpenAI-compatible
+    servers (vllm, openai, ollama).
+
+    Applied to the pooled ``httpx.AsyncClient`` the embedder reuses across
+    every request, so a connection — and its name resolution — is established
+    once and kept warm. Providers whose SDKs manage their own transport
+    (voyageai, cohere, sentence-transformers) ignore these settings.
+
+    ``max_connections`` bounds concurrent in-flight requests; keep it >= any
+    future embedding concurrency so the pool is never the limiter.
+    """
+
+    timeout_s: float = 60.0
+    max_connections: int = 16
+    max_keepalive_connections: int = 16
+    keepalive_expiry_s: float = 300.0
+
+
 class EmbeddingsConfig(BaseModel):
     model: EmbeddingModelConfig = Field(default_factory=EmbeddingModelConfig)
     batch_size: int = 512
+    http: EmbeddingHTTPConfig = Field(default_factory=EmbeddingHTTPConfig)
 
 
 class RerankingConfig(BaseModel):

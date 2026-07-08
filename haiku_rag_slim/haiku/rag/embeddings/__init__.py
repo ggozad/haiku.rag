@@ -1,7 +1,9 @@
 import base64
+import hashlib
 import io
 from typing import TYPE_CHECKING, Any
 
+import httpx
 from pydantic_ai.embeddings import Embedder
 from pydantic_ai.embeddings.openai import OpenAIEmbeddingModel
 from pydantic_ai.providers.ollama import OllamaProvider
@@ -12,8 +14,24 @@ from haiku.rag.config import AppConfig, Config
 if TYPE_CHECKING:
     from PIL import Image as PILImage
 
-    from haiku.rag.config.models import EmbeddingModelConfig
+    from haiku.rag.config.models import EmbeddingHTTPConfig, EmbeddingModelConfig
     from haiku.rag.store.models.chunk import Chunk
+
+
+def build_http_client(http: "EmbeddingHTTPConfig") -> httpx.AsyncClient:
+    """A pooled ``httpx.AsyncClient`` configured from ``EmbeddingHTTPConfig``.
+
+    Shared across an embedder's requests so a connection (and its name
+    resolution) is established once and kept warm rather than rebuilt per call.
+    """
+    return httpx.AsyncClient(
+        timeout=httpx.Timeout(http.timeout_s),
+        limits=httpx.Limits(
+            max_connections=http.max_connections,
+            max_keepalive_connections=http.max_keepalive_connections,
+            keepalive_expiry=http.keepalive_expiry_s,
+        ),
+    )
 
 
 ImageInput = "bytes | PILImage.Image"
@@ -34,11 +52,17 @@ class EmbedderWrapper:
         embedder: Embedder | None,
         vector_dim: int,
         supports_images: bool | None = None,
+        *,
+        owned_http_client: "Any | None" = None,
     ):
         self._embedder = embedder
         self._vector_dim = vector_dim
         if supports_images is not None:
             self.supports_images = supports_images
+        # An httpx.AsyncClient this wrapper built and must close on teardown —
+        # e.g. the pooled client passed to an openai/ollama provider. None when
+        # the underlying SDK owns its own transport.
+        self._owned_http_client = owned_http_client
 
     @property
     def vector_dim(self) -> int:
@@ -72,6 +96,15 @@ class EmbedderWrapper:
             f"{type(self).__name__} does not support image embedding. Set "
             "embeddings.model.multimodal: true on a vllm, voyageai, or cohere model."
         )
+
+    async def aclose(self) -> None:
+        """Release any resources held by the embedder. Closes a pooled HTTP
+        client this wrapper owns (openai/ollama); a no-op otherwise. Lets
+        callers tear down uniformly regardless of embedder type. Subclasses
+        that own their own client (e.g. vLLM) override this."""
+        if self._owned_http_client is not None:
+            await self._owned_http_client.aclose()
+            self._owned_http_client = None
 
 
 def _to_data_uri(image: "bytes | PILImage.Image") -> str:
@@ -152,8 +185,27 @@ async def embed_chunks(
                 "embeddings.model.multimodal: true on a vllm, voyageai, or cohere "
                 "model, or omit picture chunks."
             )
+        # Identical image bytes embed to identical vectors, so embed each
+        # distinct image once and reuse the result for every chunk that shares
+        # it. A document that repeats one figure across many pages (header,
+        # watermark, logo) collapses from one request per occurrence to one
+        # per unique image. Keyed by a FIPS-safe content hash; order is
+        # preserved because we append one vector per chunk in chunk order.
+        embedding_cache: dict[bytes, list[float]] = {}
         for chunk in picture_chunks:
-            picture_embeddings.append(await embedder.embed_image(chunk._picture_data))
+            data = chunk._picture_data
+            key = (
+                hashlib.sha256(data, usedforsecurity=False).digest()
+                if isinstance(data, bytes | bytearray)
+                else None
+            )
+            if key is not None and (cached := embedding_cache.get(key)) is not None:
+                picture_embeddings.append(cached)
+                continue
+            embedding = await embedder.embed_image(data)
+            if key is not None:
+                embedding_cache[key] = embedding
+            picture_embeddings.append(embedding)
 
     text_iter = iter(text_embeddings)
     picture_iter = iter(picture_embeddings)
@@ -187,32 +239,36 @@ def get_embedder(config: AppConfig = Config) -> EmbedderWrapper:
         An embedder instance configured according to the config.
     """
     embedding_model = config.embeddings.model
+    http = config.embeddings.http
     provider = embedding_model.provider
     model_name = embedding_model.name
     vector_dim = embedding_model.vector_dim
 
     if embedding_model.multimodal:
-        return _get_multimodal_embedder(embedding_model)
+        return _get_multimodal_embedder(embedding_model, http)
 
     if provider == "ollama":
         # Use model-level base_url if set, otherwise fall back to providers config
         base_url = embedding_model.base_url or config.providers.ollama.base_url
         if not base_url.rstrip("/").endswith("/v1"):
             base_url = base_url.rstrip("/") + "/v1"
+        client = build_http_client(http)
         model = OpenAIEmbeddingModel(
             model_name,
-            provider=OllamaProvider(base_url=base_url),
+            provider=OllamaProvider(base_url=base_url, http_client=client),
         )
-        return EmbedderWrapper(Embedder(model), vector_dim)
+        return EmbedderWrapper(Embedder(model), vector_dim, owned_http_client=client)
 
     if provider == "openai":
+        client = build_http_client(http)
+        provider_kwargs: dict[str, Any] = {"http_client": client}
         if embedding_model.base_url:
-            model = OpenAIEmbeddingModel(
-                model_name,
-                provider=OpenAIProvider(base_url=embedding_model.base_url),
-            )
-            return EmbedderWrapper(Embedder(model), vector_dim)
-        return EmbedderWrapper(Embedder(f"openai:{model_name}"), vector_dim)
+            provider_kwargs["base_url"] = embedding_model.base_url
+        model = OpenAIEmbeddingModel(
+            model_name,
+            provider=OpenAIProvider(**provider_kwargs),
+        )
+        return EmbedderWrapper(Embedder(model), vector_dim, owned_http_client=client)
 
     if provider == "voyageai":
         return EmbedderWrapper(Embedder(f"voyageai:{model_name}"), vector_dim)
@@ -230,7 +286,7 @@ def get_embedder(config: AppConfig = Config) -> EmbedderWrapper:
 
         base_url = _vllm_base_url(embedding_model.base_url)
         return VLLMMultimodalEmbedder(
-            model_name, vector_dim, base_url=base_url, supports_images=False
+            model_name, vector_dim, base_url=base_url, http=http, supports_images=False
         )
 
     raise ValueError(f"Unsupported embedding provider: {provider}")
@@ -245,6 +301,7 @@ def _vllm_base_url(base_url: str | None) -> str:
 
 def _get_multimodal_embedder(
     embedding_model: "EmbeddingModelConfig",
+    http: "EmbeddingHTTPConfig",
 ) -> EmbedderWrapper:
     """Build an image-capable embedder for providers that support multimodal.
 
@@ -260,7 +317,7 @@ def _get_multimodal_embedder(
 
         base_url = _vllm_base_url(embedding_model.base_url)
         return VLLMMultimodalEmbedder(
-            model_name, vector_dim, base_url=base_url, supports_images=True
+            model_name, vector_dim, base_url=base_url, http=http, supports_images=True
         )
 
     if provider == "voyageai":
