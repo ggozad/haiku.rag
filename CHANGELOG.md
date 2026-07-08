@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- `update_document` accepts a `uri` argument to change a document's URI.
+
 ## [0.63.2] - 2026-07-03
 
 ### Changed

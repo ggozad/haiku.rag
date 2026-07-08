@@ -810,6 +810,7 @@ async def update_document(
     chunks: list[Chunk] | None = None,
     title: str | None = None,
     docling_document: "DoclingDocument | None" = None,
+    uri: str | None = None,
 ) -> Document:
     """Update a document by ID.
 
@@ -837,6 +838,8 @@ async def update_document(
         existing_doc.title = title
     if metadata is not None:
         existing_doc.metadata = metadata
+    if uri is not None:
+        existing_doc.uri = uri
 
     if content is None and chunks is None and docling_document is None:
         updated = await client.document_repository.update_meta(existing_doc)

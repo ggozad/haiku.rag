@@ -304,6 +304,7 @@ class HaikuRAG:
         chunks: list[Chunk] | None = None,
         title: str | None = None,
         docling_document: "DoclingDocument | None" = None,
+        uri: str | None = None,
     ) -> Document:
         from haiku.rag.client.documents import update_document
 
@@ -315,6 +316,7 @@ class HaikuRAG:
             chunks,
             title,
             docling_document,
+            uri,
         )
 
     async def get_document_by_id(self, document_id: str) -> Document | None:
