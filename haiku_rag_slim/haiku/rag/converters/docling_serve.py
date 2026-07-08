@@ -57,10 +57,7 @@ class DoclingServeConverter(DocumentConverter):
             config: Application configuration containing docling-serve settings.
         """
         self.config = config
-        self.client = DoclingServeClient(
-            base_urls=config.providers.docling_serve.base_urls,
-            api_key=config.providers.docling_serve.api_key,
-        )
+        self.client = DoclingServeClient.from_config(config.providers.docling_serve)
 
     @property
     def supported_extensions(self) -> list[str]:

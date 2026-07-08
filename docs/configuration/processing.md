@@ -96,13 +96,21 @@ providers:
       - http://gpu-1:5001
       - http://cpu-1:5001
       - http://cpu-2:5001
+    max_attempts: 3
+    circuit_breaker:
+      failure_threshold: 3
+      cooldown_s: 30.0
 ```
 
 The round-robin counter is per-process — multiple concurrent ingester or
 client processes pick independently, so the distribution evens out over many
-jobs without coordination. For tight load balancing, failover, or health
-checks, run a real load balancer (nginx `least_conn`, etc.) in front and
-configure a single URL here.
+jobs without coordination. When a listed instance crashes or returns 5xx, the
+client fails the request over to another instance (up to `max_attempts`) and
+opens that instance's circuit breaker so subsequent jobs skip it until its
+`cooldown_s` elapses. An external load balancer can only front docling-serve in
+RQ mode (shared Redis task state); with the default standalone instances the
+submit / poll / result trio is instance-pinned, so the failover and health
+checks live in the client.
 
 **Tuning `ingester.workers.worker_count` for docling-serve users**: convert
 is usually the throughput ceiling — a default docling-serve instance
