@@ -154,6 +154,21 @@ async def test_client_embedder_is_store_embedder(temp_db_path):
         assert client.embedder is client.store.embedder
 
 
+async def test_client_aexit_swallows_embedder_aclose_error(temp_db_path, monkeypatch):
+    """A failure while closing the embedder's pooled client on teardown is
+    best-effort: __aexit__ swallows it so it can't mask an unwinding exception
+    or break a normal exit."""
+    from haiku.rag.client import HaikuRAG
+
+    async def _boom():
+        raise RuntimeError("aclose failed")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        monkeypatch.setattr(client.embedder, "aclose", _boom)
+    # Reaching here means the context manager exited without propagating the
+    # RuntimeError raised by aclose().
+
+
 @pytest.mark.vcr()
 async def test_embed_chunks_basic(allow_model_requests):
     """Test that embed_chunks generates embeddings for chunks."""
