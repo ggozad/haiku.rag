@@ -38,6 +38,32 @@ async def test_search_with_uri_filter(temp_db_path):
 
 
 @pytest.mark.vcr()
+async def test_filter_by_document_id(temp_db_path):
+    """A document's identity is `id` everywhere user-facing, so filtering by
+    `id` must resolve against the document_meta table (list/count/search)."""
+    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
+        doc = await client.create_document(
+            content="Filterable content about pelicans",
+            uri="https://example.com/pelican.html",
+            title="Pelican Guide",
+        )
+        await client.create_document(
+            content="Other content about penguins",
+            uri="https://example.com/penguin.html",
+            title="Penguin Guide",
+        )
+
+        listed = await client.list_documents(filter=f"id = '{doc.id}'")
+        assert [d.id for d in listed] == [doc.id]
+
+        assert await client.count_documents(filter=f"id = '{doc.id}'") == 1
+
+        results = await client.search("content", limit=5, filter=f"id = '{doc.id}'")
+        assert len(results) > 0
+        assert all(r.document_id == doc.id for r in results)
+
+
+@pytest.mark.vcr()
 async def test_search_with_title_filter(temp_db_path):
     """Test filtering by document title."""
     async with HaikuRAG(db_path=temp_db_path, create=True) as client:

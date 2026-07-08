@@ -87,7 +87,7 @@ class DocumentMetaRecord(LanceModel):
     write-once content/blobs in `documents`. Updating these (metadata, title,
     source_revision) must not rewrite the multi-MB docling row."""
 
-    document_id: str
+    id: str
     uri: str | None = None
     title: str | None = None
     metadata: str = Field(default="{}")
@@ -610,7 +610,7 @@ class Store:
                 "document_meta", schema=DocumentMetaRecord
             )
             await self.document_meta_table.create_index(
-                "document_id", config=BTree(), replace=True
+                "id", config=BTree(), replace=True
             )
             await self.document_meta_table.create_index(
                 "uri", config=BTree(), replace=True

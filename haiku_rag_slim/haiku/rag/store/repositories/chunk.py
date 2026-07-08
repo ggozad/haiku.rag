@@ -272,13 +272,13 @@ class ChunkRepository:
             # whenever the top-N window lacked `limit` matching chunks.
             docs_df = await (
                 self.store.document_meta_table.query()
-                .select(["document_id"])
+                .select(["id"])
                 .where(filter)
                 .to_pandas()
             )
             if docs_df.empty:
                 return []
-            id_list = ", ".join(f"'{d}'" for d in docs_df["document_id"])
+            id_list = ", ".join(f"'{d}'" for d in docs_df["id"])
             chunk_filter = f"document_id IN ({id_list})"
 
         if query_vector is not None:
@@ -346,8 +346,8 @@ class ChunkRepository:
         # Get document info from the mutable attributes table
         doc_rows = await (
             self.store.document_meta_table.query()
-            .select(["document_id", "uri", "title", "metadata"])
-            .where(f"document_id = '{document_id}'")
+            .select(["id", "uri", "title", "metadata"])
+            .where(f"id = '{document_id}'")
             .limit(1)
             .to_list()
         )
@@ -503,14 +503,14 @@ class ChunkRepository:
         documents_map: dict[str, dict] = {}
         if document_ids:
             id_list = "', '".join(document_ids)
-            where_clause = f"document_id IN ('{id_list}')"
+            where_clause = f"id IN ('{id_list}')"
             doc_rows = await (
                 self.store.document_meta_table.query()
-                .select(["document_id", "uri", "title", "metadata"])
+                .select(["id", "uri", "title", "metadata"])
                 .where(where_clause)
                 .to_list()
             )
-            documents_map = {str(row["document_id"]): row for row in doc_rows}
+            documents_map = {str(row["id"]): row for row in doc_rows}
 
         # Build final results with document info
         chunks_with_scores = []

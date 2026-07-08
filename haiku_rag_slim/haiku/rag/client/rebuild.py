@@ -520,7 +520,7 @@ async def _flush_rebuild_batch(
         )
         meta_records.append(
             DocumentMetaRecord(
-                document_id=doc.id,
+                id=doc.id,
                 uri=doc.uri,
                 title=doc.title,
                 metadata=json.dumps(doc.metadata),
@@ -535,7 +535,7 @@ async def _flush_rebuild_batch(
         .execute(doc_records)
     )
     await (
-        client.store.document_meta_table.merge_insert("document_id")
+        client.store.document_meta_table.merge_insert("id")
         .when_matched_update_all()
         .when_not_matched_insert_all()
         .execute(meta_records)
