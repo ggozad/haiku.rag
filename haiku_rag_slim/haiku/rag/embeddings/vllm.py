@@ -38,6 +38,10 @@ class VLLMMultimodalEmbedder(EmbedderWrapper):
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
         self._timeout = timeout
+        # One client reused across every request so the connection (and its
+        # name resolution) is established once and kept alive, rather than
+        # rebuilt per call.
+        self._client = httpx.AsyncClient(timeout=timeout)
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -45,16 +49,18 @@ class VLLMMultimodalEmbedder(EmbedderWrapper):
             headers["Authorization"] = f"Bearer {self._api_key}"
         return headers
 
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
     async def _post(self, body: dict[str, Any]) -> list[list[float]]:
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                response = await client.post(
-                    f"{self._base_url}/embeddings",
-                    json=body,
-                    headers=self._headers(),
-                )
-                response.raise_for_status()
-                payload = response.json()
+            response = await self._client.post(
+                f"{self._base_url}/embeddings",
+                json=body,
+                headers=self._headers(),
+            )
+            response.raise_for_status()
+            payload = response.json()
         except httpx.ConnectError as e:
             raise ValueError(
                 f"Could not connect to vLLM at {self._base_url}. "

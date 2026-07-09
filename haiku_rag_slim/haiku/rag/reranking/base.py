@@ -18,3 +18,7 @@ class RerankerBase:
         raise NotImplementedError(
             "Reranker is an abstract class. Please implement the _rerank method in a subclass."
         )
+
+    async def aclose(self) -> None:
+        """Release resources held by the reranker. No-op by default;
+        rerankers that own an HTTP client override this."""

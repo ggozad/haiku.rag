@@ -259,6 +259,8 @@ Per-image failures (404, timeout, oversized, unreadable) leave that picture as a
 | `description` | on | yes | yes |
 | `image` (default) | on | yes | no |
 
+Not every picture becomes a picture chunk. Identical picture bytes within a document produce a single chunk, so a watermark or logo repeated on every page embeds once. Pictures smaller than `processing.min_picture_size` pixels on their smaller side (default 64, `0` disables) are skipped entirely. Filtered pictures keep their bytes in `document_items`, so context expansion and vision QA still see them.
+
 Use `none` when you don't need picture content (e.g. very large reference manuals where RAM is tight). Use `description` to weave VLM-generated text into chunk content and keep bytes for later. Use `image` (default) to keep bytes without paying the VLM cost. The prompt is configurable under `prompts.picture_description`. See [Prompts](prompts.md).
 
 ```yaml
@@ -302,9 +304,9 @@ The Embedder column below is driven by `embeddings.model.multimodal`, not the pr
 |---|---|---|---|
 | `none` | any | text only (caption/surrounding) | none |
 | `image` | text-only | text only (caption/surrounding) | none |
-| `image` | multimodal | text only | one per picture, vector = image embedding |
+| `image` | multimodal | text only | one per distinct picture, vector = image embedding |
 | `description` | text-only | text + descriptions | none |
-| `description` | multimodal | text + descriptions | one per picture, vector = image embedding |
+| `description` | multimodal | text + descriptions | one per distinct picture, vector = image embedding |
 
 **What QA receives** at search time:
 

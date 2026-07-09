@@ -281,6 +281,8 @@ async def test_embed_only_preserves_picture_vectors(temp_db_path, monkeypatch):
             model=EmbeddingModelConfig(provider="ollama", name="stub", vector_dim=4)
         )
     )
+    # The fixture picture is 8x8; disable the size filter so it still chunks.
+    config.processing.min_picture_size = 0
 
     docling_doc = _docling_doc_with_picture()
 
@@ -514,6 +516,124 @@ def test_build_picture_chunks_skips_pictures_without_bytes():
     assert chunks == []
 
 
+def _doc_with_picture_images(*images):
+    """DoclingDocument with one paragraph and one PictureItem per PIL image."""
+    from docling_core.types.doc.document import DoclingDocument, ImageRef
+    from docling_core.types.doc.labels import DocItemLabel
+
+    doc = DoclingDocument(name="pics")
+    doc.add_text(label=DocItemLabel.PARAGRAPH, text="Hello world")
+    for img in images:
+        doc.add_picture(image=ImageRef.from_pil(img, dpi=72))
+    return doc
+
+
+def test_build_picture_chunks_dedupes_identical_bytes():
+    """Identical picture bytes within a document produce one chunk — the
+    first occurrence. A watermark repeated on every page embeds once."""
+    from PIL import Image as PILImageModule
+
+    from haiku.rag.client.processing import build_picture_chunks
+
+    red = PILImageModule.new("RGB", (100, 100), "red")
+    blue = PILImageModule.new("RGB", (100, 100), "blue")
+    doc = _doc_with_picture_images(red, red, blue, red)
+
+    chunks = build_picture_chunks(doc, document_id="doc-1")
+
+    refs = [c.metadata["doc_item_refs"][0] for c in chunks]
+    assert refs == ["#/pictures/0", "#/pictures/2"]
+
+
+def test_build_picture_chunks_skips_small_pictures():
+    """Pictures whose smaller side is under min_picture_size are not chunked."""
+    from PIL import Image as PILImageModule
+
+    from haiku.rag.client.processing import build_picture_chunks
+
+    icon = PILImageModule.new("RGB", (16, 16), "red")
+    figure = PILImageModule.new("RGB", (100, 100), "blue")
+    banner = PILImageModule.new("RGB", (200, 16), "green")
+    doc = _doc_with_picture_images(icon, figure, banner)
+
+    chunks = build_picture_chunks(doc, document_id="doc-1", min_picture_size=64)
+
+    assert [c.metadata["doc_item_refs"][0] for c in chunks] == ["#/pictures/1"]
+
+
+def test_build_picture_chunks_measures_snapshot_bytes():
+    """Rebuild path: picture.image is None, so size comes from a PIL header
+    read of the snapshot bytes — existing DBs shed small pictures on rebuild."""
+    import io
+
+    from PIL import Image as PILImageModule
+
+    from haiku.rag.client.processing import build_picture_chunks
+
+    icon_png = io.BytesIO()
+    PILImageModule.new("RGB", (16, 16), "red").save(icon_png, format="PNG")
+    doc = _doc_with_picture_images(PILImageModule.new("RGB", (16, 16), "red"))
+    for picture in doc.pictures:
+        picture.image = None
+
+    chunks = build_picture_chunks(
+        doc,
+        document_id="doc-1",
+        existing_picture_data={"#/pictures/0": icon_png.getvalue()},
+        min_picture_size=64,
+    )
+    assert chunks == []
+
+
+def test_build_picture_chunks_keeps_unmeasurable_bytes():
+    """Bytes PIL can't parse are kept — the filter only drops what it can
+    measure."""
+    from haiku.rag.client.processing import build_picture_chunks
+    from tests.store.test_document_items import _docling_doc_with_picture
+
+    doc = _docling_doc_with_picture()
+    for picture in doc.pictures:
+        picture.image = None
+
+    chunks = build_picture_chunks(
+        doc,
+        document_id="doc-1",
+        existing_picture_data={"#/pictures/0": b"not-an-image"},
+        min_picture_size=64,
+    )
+    assert len(chunks) == 1
+
+
+@pytest.mark.asyncio
+async def test_chunk_filters_small_pictures_by_config(monkeypatch):
+    """``chunk()`` applies ``processing.min_picture_size`` — with the default
+    config, icon-sized pictures don't become picture chunks."""
+    from haiku.rag.client.processing import chunk
+    from haiku.rag.embeddings import EmbedderWrapper
+    from haiku.rag.store.models.chunk import Chunk
+    from tests.store.test_document_items import _docling_doc_with_picture
+
+    class StubMultimodalEmbedder(EmbedderWrapper):
+        supports_images = True
+
+        def __init__(self):
+            super().__init__(embedder=None, vector_dim=4)
+
+    class StubChunker:
+        async def chunk(self, document):
+            return [Chunk(content="text", metadata={"doc_item_refs": ["#/texts/0"]})]
+
+    monkeypatch.setattr(
+        "haiku.rag.chunkers.get_chunker", lambda *a, **kw: StubChunker()
+    )
+
+    doc = _docling_doc_with_picture()  # 8x8 picture, below the 64px default
+    chunks = await chunk(AppConfig(), doc, embedder=StubMultimodalEmbedder())
+
+    assert [c.content for c in chunks] == ["text"]
+    assert not any("picture" in (c.metadata or {}).get("labels", []) for c in chunks)
+
+
 @pytest.mark.asyncio
 async def test_chunk_interleaves_picture_in_structural_order(monkeypatch):
     """``chunk()`` merges text and picture chunks by their first
@@ -554,7 +674,7 @@ async def test_chunk_interleaves_picture_in_structural_order(monkeypatch):
     from docling_core.types.doc.labels import DocItemLabel
     from PIL import Image as PILImageModule
 
-    img = PILImageModule.new("RGB", (8, 8), "blue")
+    img = PILImageModule.new("RGB", (64, 64), "blue")
     doc = DoclingDocument(name="ordered")
     doc.add_text(label=DocItemLabel.PARAGRAPH, text="A")
     doc.add_text(label=DocItemLabel.PARAGRAPH, text="B")
@@ -676,6 +796,8 @@ async def test_ingest_emits_picture_chunks_with_multimodal_embedder(
             model=EmbeddingModelConfig(provider="ollama", name="stub", vector_dim=4)
         )
     )
+    # The fixture picture is 8x8; disable the size filter so it still chunks.
+    config.processing.min_picture_size = 0
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
         chunks = await rag.chunk(docling_doc)

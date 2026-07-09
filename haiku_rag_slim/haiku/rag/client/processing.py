@@ -1,4 +1,5 @@
 import asyncio
+import io
 import logging
 import tempfile
 from pathlib import Path
@@ -14,7 +15,7 @@ from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document_item import _picture_description_text
 
 if TYPE_CHECKING:
-    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.document import DoclingDocument, PictureItem
 
     from haiku.rag.embeddings import EmbedderWrapper
 
@@ -173,11 +174,13 @@ def _merge_picture_chunks(
     text_chunks: list[Chunk],
     document_id: str | None,
     existing_picture_data: dict[str, bytes] | None,
+    min_picture_size: int,
 ) -> list[Chunk]:
     picture_chunks = build_picture_chunks(
         docling_document,
         document_id=document_id,
         existing_picture_data=existing_picture_data,
+        min_picture_size=min_picture_size,
     )
 
     if not picture_chunks:
@@ -235,7 +238,26 @@ async def chunk(
         text_chunks,
         document_id,
         existing_picture_data,
+        config.processing.min_picture_size,
     )
+
+
+def _min_picture_side(picture: "PictureItem", data: bytes) -> float | None:
+    """The picture's smaller pixel dimension, or None when it can't be
+    determined. Uses ``ImageRef.size`` when the live image is present; falls
+    back to a PIL header read of the bytes (rebuild path, where picture URIs
+    have been stripped)."""
+    if picture.image is not None:
+        return min(picture.image.size.width, picture.image.size.height)
+
+    from PIL import Image as PILImage
+    from PIL import UnidentifiedImageError
+
+    try:
+        with PILImage.open(io.BytesIO(data)) as img:
+            return min(img.size)
+    except UnidentifiedImageError:
+        return None
 
 
 def build_picture_chunks(
@@ -243,13 +265,21 @@ def build_picture_chunks(
     *,
     document_id: str | None = None,
     existing_picture_data: dict[str, bytes] | None = None,
+    min_picture_size: int = 0,
 ) -> list[Chunk]:
-    """Emit one synthetic ``Chunk`` per ``PictureItem`` with available bytes.
+    """Emit one synthetic ``Chunk`` per distinct ``PictureItem`` with available
+    bytes.
 
     Bytes come from ``picture.image.uri`` (live data URI on a freshly-converted
     docling) or from ``existing_picture_data`` keyed by ``self_ref`` (snapshot
     taken before a delete-and-re-extract cycle, when the live docling has had
     its picture URIs stripped). Pictures with no available bytes are skipped.
+
+    Pictures whose bytes were already seen in this document are skipped — the
+    first occurrence carries the chunk, so a watermark repeated on every page
+    embeds once. Pictures whose smaller side is under ``min_picture_size``
+    pixels are skipped entirely (``0`` disables the size filter; pictures
+    whose size can't be determined are kept).
 
     The bytes ride on ``Chunk._picture_data`` (a PrivateAttr — not serialized)
     so ``embed_chunks`` can route them through ``embed_image``. The
@@ -262,6 +292,7 @@ def build_picture_chunks(
     )
 
     existing = existing_picture_data or {}
+    seen: set[bytes] = set()
     chunks: list[Chunk] = []
 
     for picture in docling_document.pictures:
@@ -270,6 +301,15 @@ def build_picture_chunks(
             picture_data = existing.get(picture.self_ref)
         if picture_data is None:
             continue
+
+        if picture_data in seen:
+            continue
+        seen.add(picture_data)
+
+        if min_picture_size > 0:
+            side = _min_picture_side(picture, picture_data)
+            if side is not None and side < min_picture_size:
+                continue
 
         text = extract_item_text(picture, docling_document) or ""
 

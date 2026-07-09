@@ -274,6 +274,84 @@ class TestGetReranker:
             assert getattr(result, attr) == value
 
 
+class _PoolStats:
+    """Fake httpx.AsyncClient factory counting constructions and closes."""
+
+    def __init__(self, response_json):
+        self.constructed = 0
+        self.closed = 0
+        stats = self
+
+        class FakeResponse:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return response_json
+
+        class FakeAsyncClient:
+            def __init__(self, *args, **kwargs):
+                stats.constructed += 1
+
+            async def post(self, url, json, headers):
+                return FakeResponse()
+
+            async def aclose(self):
+                stats.closed += 1
+
+        self.client_class = FakeAsyncClient
+
+
+@pytest.mark.asyncio
+async def test_vllm_reranker_reuses_pooled_client(monkeypatch):
+    """One httpx client is built and reused across rerank calls; aclose
+    releases it."""
+    from haiku.rag.reranking.vllm import VLLMReranker
+
+    stats = _PoolStats({"results": [{"index": 0, "relevance_score": 0.9}]})
+    monkeypatch.setattr("httpx.AsyncClient", stats.client_class)
+
+    reranker = VLLMReranker(model="m", base_url="http://localhost:8000")
+    docs = [Chunk(content="a", order=0)]
+    await reranker.rerank("q", docs)
+    await reranker.rerank("q", docs)
+
+    assert stats.constructed == 1
+    await reranker.aclose()
+    assert stats.closed == 1
+
+
+@pytest.mark.asyncio
+async def test_jina_reranker_reuses_pooled_client(monkeypatch):
+    """One httpx client is built and reused across rerank calls; aclose
+    releases it."""
+    monkeypatch.setenv("JINA_API_KEY", "test-api-key")
+    from haiku.rag.reranking.jina import JinaReranker
+
+    stats = _PoolStats({"results": [{"index": 0, "relevance_score": 0.9}]})
+    monkeypatch.setattr("httpx.AsyncClient", stats.client_class)
+
+    reranker = JinaReranker("jina-reranker-v3")
+    docs = [Chunk(content="a", order=0)]
+    await reranker.rerank("q", docs)
+    await reranker.rerank("q", docs)
+
+    assert stats.constructed == 1
+    await reranker.aclose()
+    assert stats.closed == 1
+
+
+@pytest.mark.asyncio
+async def test_reranker_base_aclose_is_noop():
+    """Base aclose exists so client teardown can close any reranker."""
+
+    class Custom(RerankerBase):
+        async def _rerank(self, query, chunks, top_n=10):
+            return []
+
+    await Custom().aclose()  # must not raise
+
+
 def test_jina_reranker_missing_api_key(monkeypatch):
     monkeypatch.delenv("JINA_API_KEY", raising=False)
 
