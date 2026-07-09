@@ -244,6 +244,46 @@ class TestFindExpansionRange:
         # Should expand outward into the first section
         assert hi >= 2
 
+    def test_picture_in_small_section_stays_section_bounded(self):
+        items = [
+            _item(0, label="section_header", text="Chapter 1"),
+            _item(1, text="Chapter 1 prose. " * 100),
+            _item(2, label="section_header", text="Figure heading"),
+            _item(3, label="picture", text="Diagram description."),
+            _item(4, label="caption", text="Figure 2-3. Balance arm."),
+            _item(5, label="section_header", text="Chapter 3"),
+            _item(6, text="Chapter 3 prose. " * 100),
+        ]
+        # Figure section (items 2-4) is far under 20% of 5000 chars.
+        lo, hi = _find_expansion_range(items, {3}, has_sections=True, max_chars=5000)
+        # Never crosses either header
+        assert (lo, hi) == (2, 4)
+
+    def test_table_in_small_section_stays_section_bounded(self):
+        items = [
+            _item(0, label="section_header", text="Chapter 1"),
+            _item(1, text="Chapter 1 prose. " * 100),
+            _item(2, label="section_header", text="Table heading"),
+            _item(3, label="table", text="Header | Value"),
+            _item(4, label="section_header", text="Chapter 3"),
+            _item(5, text="Chapter 3 prose. " * 100),
+        ]
+        lo, hi = _find_expansion_range(items, {3}, has_sections=True, max_chars=5000)
+        assert (lo, hi) == (2, 3)
+
+    def test_text_in_small_section_still_expands_outward(self):
+        items = [
+            _item(0, label="section_header", text="Chapter 1"),
+            _item(1, text="Chapter 1 prose. " * 100),
+            _item(2, label="section_header", text="Short note"),
+            _item(3, text="A brief remark."),
+            _item(4, label="section_header", text="Chapter 3"),
+            _item(5, text="Chapter 3 prose. " * 100),
+        ]
+        lo, hi = _find_expansion_range(items, {3}, has_sections=True, max_chars=5000)
+        # Text hits keep growing across section boundaries
+        assert lo < 2 or hi > 3
+
 
 class TestEvidenceAnchors:
     def test_empty_content(self):
@@ -368,6 +408,85 @@ class TestExpandWithItems:
             # with skip_noise crosses into the Introduction section which has
             # real content — so we get expanded content, not the fallback.
             assert len(expanded[0].content) > 0
+
+    async def test_picture_expansion_stays_within_section_pages(self, temp_db_path):
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/texts/0",
+                    label="section_header",
+                    text="Chapter 1",
+                    page_numbers=[10],
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=1,
+                    self_ref="#/texts/1",
+                    label="text",
+                    text="Chapter 1 prose. " * 200,
+                    page_numbers=[10],
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=2,
+                    self_ref="#/texts/2",
+                    label="section_header",
+                    text="Figure heading",
+                    page_numbers=[13],
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=3,
+                    self_ref="#/pictures/0",
+                    label="picture",
+                    text="Diagram description.",
+                    page_numbers=[13],
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=4,
+                    self_ref="#/texts/3",
+                    label="caption",
+                    text="Figure 2-3. Balance arm.",
+                    page_numbers=[13],
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=5,
+                    self_ref="#/texts/4",
+                    label="section_header",
+                    text="Chapter 3",
+                    page_numbers=[15],
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=6,
+                    self_ref="#/texts/5",
+                    label="text",
+                    text="Chapter 3 prose. " * 200,
+                    page_numbers=[15],
+                ),
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            result = SearchResult(
+                content="Diagram description.",
+                score=0.9,
+                document_id="doc-1",
+                doc_item_refs=["#/pictures/0"],
+                page_numbers=[13],
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [result], 5000
+            )
+            assert len(expanded) == 1
+            assert expanded[0].page_numbers == [13]
+            assert "Chapter 1 prose" not in expanded[0].content
+            assert "Chapter 3 prose" not in expanded[0].content
 
     async def test_fragmented_items_preserve_chunk(self, temp_db_path):
         """When items are fragmented (e.g., list_item children), the original
@@ -578,6 +697,187 @@ class TestExpandWithItems:
             assert len(expanded[0].content) <= 5000
             assert marker in expanded[0].content
 
+    async def test_solo_result_carries_own_chunk_id(self, temp_db_path):
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=i,
+                    self_ref=f"#/texts/{i}",
+                    label="text",
+                    text=f"Paragraph {i}. " * 10,
+                )
+                for i in range(5)
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            result = SearchResult(
+                content="Paragraph 2.",
+                score=0.9,
+                chunk_id="c1",
+                document_id="doc-1",
+                doc_item_refs=["#/texts/2"],
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [result], 5000
+            )
+            assert len(expanded) == 1
+            assert expanded[0].chunk_ids == ["c1"]
+
+    async def test_merged_results_carry_all_chunk_ids(self, temp_db_path):
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=i,
+                    self_ref=f"#/texts/{i}",
+                    label="text",
+                    text=f"Paragraph {i}. " * 10,
+                )
+                for i in range(5)
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            r1 = SearchResult(
+                content="Paragraph 1.",
+                score=0.9,
+                chunk_id="c1",
+                document_id="doc-1",
+                doc_item_refs=["#/texts/1"],
+            )
+            r2 = SearchResult(
+                content="Paragraph 3.",
+                score=0.85,
+                chunk_id="c2",
+                document_id="doc-1",
+                doc_item_refs=["#/texts/3"],
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [r1, r2], 5000
+            )
+            # Ranges around positions 1 and 3 overlap → one merged result.
+            assert len(expanded) == 1
+            assert expanded[0].chunk_id == "c1"
+            assert expanded[0].chunk_ids == ["c1", "c2"]
+            # Sibling chunk ids are plumbing for visualization, never shown
+            # to the model.
+            assert "c2" not in expanded[0].format_for_agent()
+
+    async def test_merged_anchor_is_highest_scoring_constituent(self, temp_db_path):
+        """A merged result's chunk_id anchors on the best-scoring constituent,
+        not whichever chunk sits earliest in the document."""
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=i,
+                    self_ref=f"#/texts/{i}",
+                    label="text",
+                    text=f"Paragraph {i}. " * 10,
+                )
+                for i in range(5)
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            # earlier in the document, lower score
+            r_early = SearchResult(
+                content="Paragraph 1.",
+                score=0.40,
+                chunk_id="c-early",
+                document_id="doc-1",
+                doc_item_refs=["#/texts/1"],
+            )
+            # later in the document, higher score — the real hit
+            r_best = SearchResult(
+                content="Paragraph 3.",
+                score=0.95,
+                chunk_id="c-best",
+                document_id="doc-1",
+                doc_item_refs=["#/texts/3"],
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [r_early, r_best], 5000
+            )
+            assert len(expanded) == 1
+            assert expanded[0].chunk_id == "c-best"
+            assert expanded[0].score == 0.95
+            # provenance still lists both
+            assert set(expanded[0].chunk_ids) == {"c-early", "c-best"}
+
+    async def test_clipped_merged_result_keeps_anchor_evidence_and_pages(
+        self, temp_db_path
+    ):
+        """When a merged result is clipped to budget, the surviving window is
+        centered on the anchor (highest-scoring) chunk, and page_numbers reflect
+        only the content that survived — not the full merged range."""
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/texts/0",
+                    label="text",
+                    text="LOWMARK " + "a" * 400,
+                    page_numbers=[1],
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=1,
+                    self_ref="#/texts/1",
+                    label="text",
+                    text="b" * 400,
+                    page_numbers=[2],
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=2,
+                    self_ref="#/texts/2",
+                    label="text",
+                    text="c" * 400 + " HIGHMARK",
+                    page_numbers=[3],
+                ),
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            r_low = SearchResult(
+                content="LOWMARK " + "a" * 400,
+                score=0.4,
+                chunk_id="c-low",
+                document_id="doc-1",
+                doc_item_refs=["#/texts/0"],
+                page_numbers=[1],
+            )
+            r_high = SearchResult(
+                content="c" * 400 + " HIGHMARK",
+                score=0.9,
+                chunk_id="c-high",
+                document_id="doc-1",
+                doc_item_refs=["#/texts/2"],
+                page_numbers=[3],
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [r_low, r_high], 500
+            )
+            assert len(expanded) == 1
+            e = expanded[0]
+            # anchor is the high-scoring chunk, and its evidence survives clipping
+            assert e.chunk_id == "c-high"
+            assert "HIGHMARK" in e.content
+            assert "LOWMARK" not in e.content
+            # page_numbers reflect only the surviving window, not the full range
+            assert 3 in e.page_numbers
+            assert 1 not in e.page_numbers
+            # refs likewise exclude the clipped-out item
+            assert "#/texts/0" not in e.doc_item_refs
+
     async def test_fuzzy_match_preserves_central_marker(self, temp_db_path):
         """The chunk's text need not be verbatim in the joined item text: a clean
         central marker is still located via the central-slice anchor."""
@@ -715,3 +1015,61 @@ class TestExpandWithItemsPictureBytes:
                 "#/pictures/1": "A",
                 "#/pictures/3": "B",
             }
+
+    async def test_clipped_out_picture_bytes_dropped(self, temp_db_path):
+        """A lower-scoring picture chunk clipped out of the budget window no
+        longer contributes its image bytes — the model must not receive an
+        image the citation and visualization omit."""
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/pictures/0",
+                    label="picture",
+                    text="LOWPIC " + "a" * 400,
+                    page_numbers=[1],
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=1,
+                    self_ref="#/texts/1",
+                    label="text",
+                    text="b" * 400,
+                    page_numbers=[2],
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=2,
+                    self_ref="#/pictures/1",
+                    label="picture",
+                    text="c" * 400 + " HIGHPIC",
+                    page_numbers=[3],
+                ),
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            r_low = SearchResult(
+                content="LOWPIC " + "a" * 400,
+                score=0.4,
+                chunk_id="c-low",
+                document_id="doc-1",
+                doc_item_refs=["#/pictures/0"],
+                image_data={"#/pictures/0": "LOWBYTES"},
+            )
+            r_high = SearchResult(
+                content="c" * 400 + " HIGHPIC",
+                score=0.9,
+                chunk_id="c-high",
+                document_id="doc-1",
+                doc_item_refs=["#/pictures/1"],
+                image_data={"#/pictures/1": "HIGHBYTES"},
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [r_low, r_high], 500
+            )
+            assert len(expanded) == 1
+            assert "#/pictures/0" not in expanded[0].doc_item_refs
+            assert expanded[0].image_data == {"#/pictures/1": "HIGHBYTES"}

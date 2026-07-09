@@ -18,16 +18,26 @@ class Citation(BaseModel):
     cited chunk. Empty for text-only citations. UIs can fetch the picture
     bytes via ``DocumentItemRepository.get_picture_bytes(document_id, ref)``
     and render them alongside the text content.
+
+    ``chunk_ids`` lists the ids of all chunks whose expansion ranges merged
+    into the cited result (always includes ``chunk_id``).
+
+    ``doc_item_refs`` are the ``self_ref`` values of every item in the cited
+    content — the exact items the model saw. Visual grounding resolves bounding
+    boxes from them so the rendered pages match the citation precisely.
+    ``picture_refs`` is the picture-labeled subset.
     """
 
     index: int | None = None
     document_id: str
     chunk_id: str
+    chunk_ids: list[str] = Field(default_factory=list)
     document_uri: str
     document_title: str | None = None
     page_numbers: list[int] = Field(default_factory=list)
     headings: list[str] | None = None
     content: str
+    doc_item_refs: list[str] = Field(default_factory=list)
     picture_refs: list[str] = Field(default_factory=list)
 
 
@@ -51,11 +61,13 @@ def resolve_citations(
             Citation(
                 document_id=r.document_id or "",
                 chunk_id=chunk_id,
+                chunk_ids=r.chunk_ids or [chunk_id],
                 document_uri=r.document_uri or "",
                 document_title=r.document_title,
                 page_numbers=r.page_numbers,
                 headings=r.headings,
                 content=r.content,
+                doc_item_refs=list(r.doc_item_refs),
                 picture_refs=picture_refs,
             )
         )

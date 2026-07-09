@@ -2,11 +2,13 @@ export interface Citation {
 	index: number;
 	document_id: string;
 	chunk_id: string;
+	chunk_ids?: string[];
 	document_uri: string;
 	document_title: string | null;
 	page_numbers: number[];
 	headings: string[] | null;
 	content: string;
+	doc_item_refs?: string[];
 }
 
 // Matches RAGState from the backend skill

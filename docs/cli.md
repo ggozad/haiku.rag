@@ -246,7 +246,9 @@ Display visual grounding for a chunk - shows page images with highlighted boundi
 haiku-rag visualize <chunk_id>
 ```
 
-This renders the source document pages with the chunk's location highlighted. Useful for verifying chunk boundaries and understanding document structure.
+This renders the source document pages with the chunk's location highlighted. The chunk itself draws in a strong highlight, while surrounding context swept in by expansion draws fainter. Useful for verifying chunk boundaries and understanding document structure.
+
+Pass `--no-expand` to highlight only the chunk itself, without its expanded context.
 
 !!! note
     Requires a terminal with image support (iTerm2, Kitty, WezTerm, etc.) and documents processed with docling that have page images stored.

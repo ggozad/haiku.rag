@@ -1,4 +1,5 @@
 import base64
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from haiku.rag.store.models.chunk import Chunk, SearchResult, SearchType
@@ -223,12 +224,24 @@ async def expand_context(
     return expanded_results
 
 
-async def visualize_chunk(client: "HaikuRAG", chunk: Chunk) -> list:
-    """Render page images with bounding box highlights for a chunk.
+async def visualize_chunk(
+    client: "HaikuRAG",
+    chunk: "Chunk | Sequence[Chunk]",
+    refs: list[str] | None = None,
+    expand: bool = True,
+) -> list:
+    """Render page images with bounding box highlights for one or more chunks.
 
-    Expands the chunk's context to find the full section, then resolves
-    bounding boxes from all items in the expanded range. This ensures
-    visualization covers all pages the expanded content spans.
+    When ``refs`` is given (the ``doc_item_refs`` of the citation, i.e. the
+    exact items the model saw), bounding boxes are resolved from them directly
+    so the visualization matches the cited context precisely. Otherwise, with
+    ``expand=True`` (default) the chunks' context is re-expanded to recover the
+    surrounding section; with ``expand=False`` only the chunks' own items are
+    drawn, so the visualization shows just the retrieved chunk with no context.
+
+    The chunks' own items draw in a strong highlight; the remaining items draw
+    fainter, so the matched content stands out from its surrounding context.
+    Chunks from a different document than the first are ignored.
 
     Returns a list of PIL Image objects, one per page with bounding boxes.
     Empty list if no bounding boxes or page images available.
@@ -239,10 +252,15 @@ async def visualize_chunk(client: "HaikuRAG", chunk: Chunk) -> list:
 
     from haiku.rag.store.models.chunk import ChunkMetadata
 
-    if not chunk.document_id:
+    chunks = [chunk] if isinstance(chunk, Chunk) else list(chunk)
+    if not chunks:
         return []
+    document_id = chunks[0].document_id
+    if not document_id:
+        return []
+    chunks = [c for c in chunks if c.document_id == document_id]
 
-    doc = await client.document_repository.get_docling_data(chunk.document_id)
+    doc = await client.document_repository.get_docling_data(document_id)
     if not doc:
         return []
 
@@ -250,35 +268,60 @@ async def visualize_chunk(client: "HaikuRAG", chunk: Chunk) -> list:
     if not docling_doc:
         return []
 
-    # Expand context to get all doc_item_refs in the section
-    chunk_meta = chunk.get_chunk_metadata()
-    if chunk_meta.doc_item_refs:
-        search_result = SearchResult(
-            content=chunk.content,
-            score=1.0,
-            chunk_id=chunk.id,
-            document_id=chunk.document_id,
-            doc_item_refs=chunk_meta.doc_item_refs,
-            page_numbers=chunk_meta.page_numbers,
-        )
-        expanded = await expand_context(client, [search_result])
-        refs = expanded[0].doc_item_refs if expanded else chunk_meta.doc_item_refs
-        meta = ChunkMetadata(doc_item_refs=refs)
+    matched_refs = {r for c in chunks for r in c.get_chunk_metadata().doc_item_refs}
+
+    if refs is not None:
+        all_refs = list(refs)
+    elif not expand:
+        # Chunk-only: draw just the retrieved chunks' own items, no context.
+        all_refs = list(matched_refs)
     else:
-        meta = chunk_meta
-    bounding_boxes = meta.resolve_bounding_boxes(docling_doc)
-    if not bounding_boxes:
+        # No stored context: re-expand the chunks to recover their section.
+        search_results = [
+            SearchResult(
+                content=c.content,
+                score=1.0,
+                chunk_id=c.id,
+                document_id=c.document_id,
+                doc_item_refs=meta.doc_item_refs,
+                page_numbers=meta.page_numbers,
+            )
+            for c in chunks
+            if (meta := c.get_chunk_metadata()).doc_item_refs
+        ]
+        if search_results:
+            expanded = await expand_context(client, search_results)
+            all_refs = []
+            for result in expanded:
+                all_refs.extend(r for r in result.doc_item_refs if r not in all_refs)
+            if not all_refs:
+                all_refs = [r for sr in search_results for r in sr.doc_item_refs]
+        else:
+            all_refs = list(chunks[0].get_chunk_metadata().doc_item_refs)
+
+    matched_draw = [r for r in all_refs if r in matched_refs]
+    swept_refs = [r for r in all_refs if r not in matched_refs]
+
+    matched_boxes = ChunkMetadata(doc_item_refs=matched_draw).resolve_bounding_boxes(
+        docling_doc
+    )
+    swept_boxes = ChunkMetadata(doc_item_refs=swept_refs).resolve_bounding_boxes(
+        docling_doc
+    )
+    if not matched_boxes and not swept_boxes:
         return []
 
-    # Group bounding boxes by page
+    # Group bounding boxes by page; swept boxes first so matched draw on top
     boxes_by_page: dict[int, list] = {}
-    for bbox in bounding_boxes:
+    for bbox, is_matched in [(b, False) for b in swept_boxes] + [
+        (b, True) for b in matched_boxes
+    ]:
         if bbox.page_no not in boxes_by_page:
             boxes_by_page[bbox.page_no] = []
-        boxes_by_page[bbox.page_no].append(bbox)
+        boxes_by_page[bbox.page_no].append((bbox, is_matched))
 
     # Load only the needed page images
-    pages_doc = await client.document_repository.get_pages_data(chunk.document_id)
+    pages_doc = await client.document_repository.get_pages_data(document_id)
     if not pages_doc:
         return []
     page_images = pages_doc.get_page_images(list(boxes_by_page.keys()))
@@ -303,7 +346,7 @@ async def visualize_chunk(client: "HaikuRAG", chunk: Chunk) -> list:
         image = deepcopy(pil_image)
         draw = ImageDraw.Draw(image, "RGBA")
 
-        for bbox in boxes_by_page[page_no]:
+        for bbox, is_matched in boxes_by_page[page_no]:
             # Document coords are bottom-left origin; PIL uses top-left
             x0 = bbox.left * scale_x
             y0 = (page_height - bbox.top) * scale_y
@@ -313,8 +356,12 @@ async def visualize_chunk(client: "HaikuRAG", chunk: Chunk) -> list:
             if y0 > y1:
                 y0, y1 = y1, y0
 
-            fill_color = (255, 255, 0, 40)  # Yellow with transparency
-            outline_color = (255, 165, 0, 100)  # Orange outline
+            if is_matched:
+                fill_color = (255, 150, 0, 55)  # Orange, matched content
+                outline_color = (240, 130, 0, 150)  # Orange outline
+            else:
+                fill_color = (255, 255, 0, 40)  # Yellow, surrounding context
+                outline_color = (255, 165, 0, 100)
 
             draw.rectangle([(x0, y0), (x1, y1)], fill=fill_color, outline=None)
             draw.rectangle([(x0, y0), (x1, y1)], outline=outline_color, width=1)

@@ -124,11 +124,17 @@ class SearchResult(BaseModel):
     when the caller asked to omit them via ``include_images=False`` on
     ``client.search``. Same shape is used everywhere — MCP, in-process search,
     agent toolsets — so non-vision callers see ``None`` and pay nothing.
+
+    ``chunk_ids`` lists the ids of all chunks whose expansion ranges merged
+    into this result; empty means just ``chunk_id``. It lets citation
+    consumers (visual grounding) reproduce a merged expansion and is never
+    part of ``format_for_agent`` output.
     """
 
     content: str
     score: float
     chunk_id: str | None = None
+    chunk_ids: list[str] = []
     document_id: str | None = None
     document_uri: str | None = None
     document_title: str | None = None

@@ -457,7 +457,7 @@ class HaikuRAGApp:  # pragma: no cover
             for result in results:
                 self._rich_print_search_result(result)
 
-    async def visualize_chunk(self, chunk_id: str):
+    async def visualize_chunk(self, chunk_id: str, expand: bool = True):
         """Display visual grounding images for a chunk."""
         from textual_image.renderable import Image as RichImage
 
@@ -472,7 +472,7 @@ class HaikuRAGApp:  # pragma: no cover
                 self.console.print(f"[red]Chunk with id {chunk_id} not found.[/red]")
                 return
 
-            images = await self.client.visualize_chunk(chunk)
+            images = await self.client.visualize_chunk(chunk, expand=expand)
             if not images:
                 self.console.print(
                     "[yellow]No visual grounding available for this chunk.[/yellow]"

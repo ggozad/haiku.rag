@@ -1590,6 +1590,269 @@ async def test_client_visualize_chunk_multi_page(temp_db_path):
             assert img.tobytes() != blank.tobytes()
 
 
+async def test_client_visualize_chunk_merged_chunks_union_pages(temp_db_path):
+    """Visualizing all chunks of a merged result covers the union of their
+    expansions, which a single constituent chunk alone does not reach."""
+    from docling_core.types.doc.base import BoundingBox, Size
+    from docling_core.types.doc.document import (
+        DoclingDocument,
+        ImageRef,
+        ProvenanceItem,
+    )
+    from docling_core.types.doc.labels import DocItemLabel
+    from PIL import Image as PilImageModule
+
+    docling_doc = DoclingDocument(name="merged-viz-test")
+    page_size = Size(width=612.0, height=792.0)
+    for page_no in (1, 2):
+        docling_doc.add_page(
+            page_no=page_no,
+            size=page_size,
+            image=ImageRef.from_pil(
+                PilImageModule.new("RGB", (612, 792), color="white"), dpi=72
+            ),
+        )
+
+    # Two sections, one per page, each large enough to be returned whole and
+    # under budget (so no cross-boundary expansion and no clip). A single
+    # chunk visualizes its own section's page; both chunks cover both pages.
+    layout = [
+        (DocItemLabel.SECTION_HEADER, "Section One", 1),
+        (DocItemLabel.PARAGRAPH, "Page one body. " + "x" * 3000, 1),
+        (DocItemLabel.SECTION_HEADER, "Section Two", 2),
+        (DocItemLabel.PARAGRAPH, "Page two body. " + "y" * 3000, 2),
+    ]
+    for i, (label, text, page_no) in enumerate(layout):
+        docling_doc.add_text(
+            label=label,
+            text=text,
+            prov=ProvenanceItem(
+                page_no=page_no,
+                bbox=BoundingBox(l=50, t=700 - (i % 2) * 100, r=550, b=650),
+                charspan=(0, 20),
+            ),
+        )
+
+    chunks = [
+        Chunk(
+            content="Page one body. " + "x" * 3000,
+            metadata={
+                "doc_item_refs": ["#/texts/1"],
+                "page_numbers": [1],
+                "labels": ["paragraph"],
+            },
+            order=0,
+            embedding=[0.1] * 2560,
+        ),
+        Chunk(
+            content="Page two body. " + "y" * 3000,
+            metadata={
+                "doc_item_refs": ["#/texts/3"],
+                "page_numbers": [2],
+                "labels": ["paragraph"],
+            },
+            order=1,
+            embedding=[0.1] * 2560,
+        ),
+    ]
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(docling_doc, chunks, uri="test://merged")
+
+        stored_chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        stored_chunks.sort(key=lambda c: c.order)
+        assert len(stored_chunks) == 2
+        c1, c2 = stored_chunks
+
+        solo_images = await client.visualize_chunk(c1)
+        assert len(solo_images) == 1
+
+        merged_images = await client.visualize_chunk([c1, c2])
+        assert len(merged_images) == 2
+
+
+async def test_client_visualize_chunk_two_tone_highlights(temp_db_path):
+    """Matched content draws stronger than context swept in by expansion."""
+    from docling_core.types.doc.base import BoundingBox, Size
+    from docling_core.types.doc.document import (
+        DoclingDocument,
+        ImageRef,
+        ProvenanceItem,
+    )
+    from docling_core.types.doc.labels import DocItemLabel
+    from PIL import Image as PilImageModule
+
+    docling_doc = DoclingDocument(name="two-tone-test")
+    page_size = Size(width=612.0, height=792.0)
+    docling_doc.add_page(
+        page_no=1,
+        size=page_size,
+        image=ImageRef.from_pil(
+            PilImageModule.new("RGB", (612, 792), color="white"), dpi=72
+        ),
+    )
+
+    # Three small paragraphs; the chunk matches only the middle one, so
+    # expansion sweeps in its neighbors.
+    for i in range(3):
+        docling_doc.add_text(
+            label=DocItemLabel.PARAGRAPH,
+            text=f"Paragraph {i}.",
+            prov=ProvenanceItem(
+                page_no=1,
+                bbox=BoundingBox(l=50, t=700 - i * 100, r=550, b=650 - i * 100),
+                charspan=(0, 12),
+            ),
+        )
+
+    chunks = [
+        Chunk(
+            content="Paragraph 1.",
+            metadata={
+                "doc_item_refs": ["#/texts/1"],
+                "page_numbers": [1],
+                "labels": ["paragraph"],
+            },
+            order=0,
+            embedding=[0.1] * 2560,
+        )
+    ]
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(docling_doc, chunks, uri="test://two-tone")
+        stored_chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        assert len(stored_chunks) == 1
+
+        images = await client.visualize_chunk(stored_chunks[0])
+        assert len(images) == 1
+        image = images[0]
+
+        # Page dpi 72 == document coords, bottom-left origin flipped to
+        # top-left: item i's box spans y = 92 + i * 100 .. 142 + i * 100.
+        matched = image.getpixel((300, 217))  # inside #/texts/1
+        swept = image.getpixel((300, 117))  # inside #/texts/0
+        background = image.getpixel((300, 30))  # outside all boxes
+
+        assert matched != background
+        assert swept != background
+        assert matched != swept
+
+
+async def test_client_visualize_chunk_uses_given_refs(temp_db_path):
+    """Explicit refs (the citation's doc_item_refs) restrict the visualization
+    to exactly those items, instead of re-expanding the chunk's context."""
+    from docling_core.types.doc.base import BoundingBox, Size
+    from docling_core.types.doc.document import (
+        DoclingDocument,
+        ImageRef,
+        ProvenanceItem,
+    )
+    from docling_core.types.doc.labels import DocItemLabel
+    from PIL import Image as PilImageModule
+
+    docling_doc = DoclingDocument(name="refs-test")
+    page_size = Size(width=612.0, height=792.0)
+    for page_no in (1, 2):
+        docling_doc.add_page(
+            page_no=page_no,
+            size=page_size,
+            image=ImageRef.from_pil(
+                PilImageModule.new("RGB", (612, 792), color="white"), dpi=72
+            ),
+        )
+    docling_doc.add_text(
+        label=DocItemLabel.PARAGRAPH,
+        text="Content on page one.",
+        prov=ProvenanceItem(
+            page_no=1, bbox=BoundingBox(l=50, t=700, r=550, b=650), charspan=(0, 20)
+        ),
+    )
+    docling_doc.add_text(
+        label=DocItemLabel.PARAGRAPH,
+        text="Content on page two.",
+        prov=ProvenanceItem(
+            page_no=2, bbox=BoundingBox(l=50, t=700, r=550, b=650), charspan=(0, 20)
+        ),
+    )
+
+    chunks = [
+        Chunk(
+            content="Content on page one.\nContent on page two.",
+            metadata={
+                "doc_item_refs": ["#/texts/0", "#/texts/1"],
+                "page_numbers": [1, 2],
+                "labels": ["paragraph", "paragraph"],
+            },
+            order=0,
+            embedding=[0.1] * 2560,
+        )
+    ]
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(docling_doc, chunks, uri="test://refs")
+        chunk = (await client.chunk_repository.get_by_document_id(doc.id))[0]
+
+        # No refs: re-expands the chunk's own refs → both pages.
+        assert len(await client.visualize_chunk(chunk)) == 2
+        # Given only the page-one ref → only page one is rendered.
+        assert len(await client.visualize_chunk(chunk, refs=["#/texts/0"])) == 1
+
+
+async def test_client_visualize_chunk_no_expand_shows_only_chunk(temp_db_path):
+    """expand=False draws only the chunk's own items, not the expanded section."""
+    from docling_core.types.doc.base import BoundingBox, Size
+    from docling_core.types.doc.document import (
+        DoclingDocument,
+        ImageRef,
+        ProvenanceItem,
+    )
+    from docling_core.types.doc.labels import DocItemLabel
+    from PIL import Image as PilImageModule
+
+    docling_doc = DoclingDocument(name="no-expand-test")
+    page_size = Size(width=612.0, height=792.0)
+    for page_no in (1, 2):
+        docling_doc.add_page(
+            page_no=page_no,
+            size=page_size,
+            image=ImageRef.from_pil(
+                PilImageModule.new("RGB", (612, 792), color="white"), dpi=72
+            ),
+        )
+    for page_no in (1, 2):
+        docling_doc.add_text(
+            label=DocItemLabel.PARAGRAPH,
+            text=f"Short paragraph on page {page_no}.",
+            prov=ProvenanceItem(
+                page_no=page_no,
+                bbox=BoundingBox(l=50, t=700, r=550, b=650),
+                charspan=(0, 20),
+            ),
+        )
+
+    chunks = [
+        Chunk(
+            content="Short paragraph on page 1.",
+            metadata={
+                "doc_item_refs": ["#/texts/0"],
+                "page_numbers": [1],
+                "labels": ["paragraph"],
+            },
+            order=0,
+            embedding=[0.1] * 2560,
+        )
+    ]
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(docling_doc, chunks, uri="test://no-expand")
+        chunk = (await client.chunk_repository.get_by_document_id(doc.id))[0]
+
+        # Default expands the chunk's context outward → reaches page two.
+        assert len(await client.visualize_chunk(chunk)) == 2
+        # expand=False draws only the chunk's own page-one item.
+        assert len(await client.visualize_chunk(chunk, expand=False)) == 1
+
+
 # =============================================================================
 # convert() method tests
 # =============================================================================

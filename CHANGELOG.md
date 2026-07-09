@@ -1,6 +1,13 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- `SearchResult.chunk_ids` and `Citation.chunk_ids` carry the chunk ids merged into an expanded result.
+- `Citation.doc_item_refs` carries the items the model saw; `visualize_chunk` accepts a `refs` argument and resolves bounding boxes from them, so visualizations match the cited content instead of re-expanding.
+- Chunk visualizations draw matched content in a stronger highlight than surrounding context.
+- `haiku-rag visualize --no-expand` highlights only the chunk itself, without its expanded context (`visualize_chunk` gains an `expand` argument).
+
 ### Changed
 
 - Duplicate images within a document produce a single picture chunk.
@@ -9,6 +16,9 @@
 ### Fixed
 
 - vLLM embedding and vLLM/Jina reranking reuse one HTTP client across requests instead of opening one per request.
+- Picture and table search hits expand within their section, never across section boundaries.
+- A merged search result anchors its `chunk_id` on the highest-scoring constituent chunk instead of the one earliest in the document.
+- A clipped citation's `page_numbers` and `doc_item_refs` reflect only the content that survived the budget, not the full expanded range.
 
 ## [0.64.0] - 2026-07-08
 

@@ -203,22 +203,43 @@ async def db_info(_: Request) -> JSONResponse:
 
 
 async def visualize_chunk(request: Request) -> JSONResponse:
-    """Return visual grounding images for a chunk as base64."""
+    """Return visual grounding images for one or more chunks as base64.
+
+    The path param accepts comma-separated chunk ids (a merged citation's
+    constituent chunks). The optional ``refs`` query param is a JSON-encoded
+    list of the citation's ``doc_item_refs`` — the exact items the model saw —
+    so the highlight matches the cited content instead of re-expanding.
+    """
     import base64
+    import json
     from io import BytesIO
 
     chunk_id = request.path_params["chunk_id"]
+
+    refs: list[str] | None = None
+    refs_param = request.query_params.get("refs")
+    if refs_param:
+        try:
+            parsed = json.loads(refs_param)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, list):
+            refs = [str(x) for x in parsed]
 
     if not db_path.exists():
         return JSONResponse({"error": "Database not found"}, status_code=404)
 
     client = await get_client()
 
-    chunk = await client.chunk_repository.get_by_id(chunk_id)
-    if not chunk:
+    chunks = []
+    for cid in chunk_id.split(","):
+        chunk = await client.chunk_repository.get_by_id(cid)
+        if chunk:
+            chunks.append(chunk)
+    if not chunks:
         return JSONResponse({"error": "Chunk not found"}, status_code=404)
 
-    images = await client.visualize_chunk(chunk)
+    images = await client.visualize_chunk(chunks, refs)
     if not images:
         return JSONResponse({"images": [], "message": "No visual grounding available"})
 
@@ -233,7 +254,7 @@ async def visualize_chunk(request: Request) -> JSONResponse:
         {
             "images": base64_images,
             "chunk_id": chunk_id,
-            "document_uri": chunk.document_uri,
+            "document_uri": chunks[0].document_uri,
         }
     )
 
