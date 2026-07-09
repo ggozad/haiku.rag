@@ -60,10 +60,12 @@ class VisualGroundingModal(Screen):
         chunk: "Chunk | list[Chunk]",
         client: "HaikuRAG",
         document_uri: str | None = None,
+        refs: list[str] | None = None,
     ):
         super().__init__()
         self.chunks = chunk if isinstance(chunk, list) else [chunk]
         self.client = client
+        self.refs = refs
         self.document_uri = document_uri or self.chunks[0].document_uri
         self.images: list[PILImage] = []
         self.current_page_idx = 0
@@ -81,7 +83,7 @@ class VisualGroundingModal(Screen):
 
     async def on_mount(self) -> None:
         """Load images and display the first page."""
-        self.images = await self.client.visualize_chunk(self.chunks)
+        self.images = await self.client.visualize_chunk(self.chunks, self.refs)
         await self._render_current_page()
 
     async def _render_current_page(self) -> None:

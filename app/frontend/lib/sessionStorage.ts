@@ -8,6 +8,7 @@ export interface Citation {
 	page_numbers: number[];
 	headings: string[] | null;
 	content: string;
+	doc_item_refs?: string[];
 }
 
 // Matches RAGState from the backend skill

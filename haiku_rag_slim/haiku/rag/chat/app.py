@@ -416,7 +416,13 @@ class ChatApp(App):
 
         from haiku.rag.inspector.widgets.visual_modal import VisualGroundingModal
 
-        await self.push_screen(VisualGroundingModal(chunk=chunks, client=self.client))
+        await self.push_screen(
+            VisualGroundingModal(
+                chunk=chunks,
+                client=self.client,
+                refs=citation.doc_item_refs or None,
+            )
+        )
 
     async def action_show_info(self) -> None:
         """Show database info modal."""

@@ -1613,26 +1613,31 @@ async def test_client_visualize_chunk_merged_chunks_union_pages(temp_db_path):
             ),
         )
 
-    # Five large paragraphs: with max_context_chars=10000 each chunk's own
-    # outward expansion spans three items, so chunk one alone stays on page
-    # one while the merged ranges [0,2] and [2,4] union to cover page two.
-    pages = [1, 1, 1, 2, 2]
-    for i, page_no in enumerate(pages):
+    # Two sections, one per page, each large enough to be returned whole and
+    # under budget (so no cross-boundary expansion and no clip). A single
+    # chunk visualizes its own section's page; both chunks cover both pages.
+    layout = [
+        (DocItemLabel.SECTION_HEADER, "Section One", 1),
+        (DocItemLabel.PARAGRAPH, "Page one body. " + "x" * 3000, 1),
+        (DocItemLabel.SECTION_HEADER, "Section Two", 2),
+        (DocItemLabel.PARAGRAPH, "Page two body. " + "y" * 3000, 2),
+    ]
+    for i, (label, text, page_no) in enumerate(layout):
         docling_doc.add_text(
-            label=DocItemLabel.PARAGRAPH,
-            text=f"Paragraph {i}. " + "x" * 4000,
+            label=label,
+            text=text,
             prov=ProvenanceItem(
                 page_no=page_no,
-                bbox=BoundingBox(l=50, t=700 - i * 100, r=550, b=650 - i * 100),
+                bbox=BoundingBox(l=50, t=700 - (i % 2) * 100, r=550, b=650),
                 charspan=(0, 20),
             ),
         )
 
     chunks = [
         Chunk(
-            content="Paragraph 0. " + "x" * 4000,
+            content="Page one body. " + "x" * 3000,
             metadata={
-                "doc_item_refs": ["#/texts/0"],
+                "doc_item_refs": ["#/texts/1"],
                 "page_numbers": [1],
                 "labels": ["paragraph"],
             },
@@ -1640,7 +1645,7 @@ async def test_client_visualize_chunk_merged_chunks_union_pages(temp_db_path):
             embedding=[0.1] * 2560,
         ),
         Chunk(
-            content="Paragraph 3. " + "x" * 4000,
+            content="Page two body. " + "y" * 3000,
             metadata={
                 "doc_item_refs": ["#/texts/3"],
                 "page_numbers": [2],
@@ -1731,6 +1736,66 @@ async def test_client_visualize_chunk_two_tone_highlights(temp_db_path):
         assert matched != background
         assert swept != background
         assert matched != swept
+
+
+async def test_client_visualize_chunk_uses_given_refs(temp_db_path):
+    """Explicit refs (the citation's doc_item_refs) restrict the visualization
+    to exactly those items, instead of re-expanding the chunk's context."""
+    from docling_core.types.doc.base import BoundingBox, Size
+    from docling_core.types.doc.document import (
+        DoclingDocument,
+        ImageRef,
+        ProvenanceItem,
+    )
+    from docling_core.types.doc.labels import DocItemLabel
+    from PIL import Image as PilImageModule
+
+    docling_doc = DoclingDocument(name="refs-test")
+    page_size = Size(width=612.0, height=792.0)
+    for page_no in (1, 2):
+        docling_doc.add_page(
+            page_no=page_no,
+            size=page_size,
+            image=ImageRef.from_pil(
+                PilImageModule.new("RGB", (612, 792), color="white"), dpi=72
+            ),
+        )
+    docling_doc.add_text(
+        label=DocItemLabel.PARAGRAPH,
+        text="Content on page one.",
+        prov=ProvenanceItem(
+            page_no=1, bbox=BoundingBox(l=50, t=700, r=550, b=650), charspan=(0, 20)
+        ),
+    )
+    docling_doc.add_text(
+        label=DocItemLabel.PARAGRAPH,
+        text="Content on page two.",
+        prov=ProvenanceItem(
+            page_no=2, bbox=BoundingBox(l=50, t=700, r=550, b=650), charspan=(0, 20)
+        ),
+    )
+
+    chunks = [
+        Chunk(
+            content="Content on page one.\nContent on page two.",
+            metadata={
+                "doc_item_refs": ["#/texts/0", "#/texts/1"],
+                "page_numbers": [1, 2],
+                "labels": ["paragraph", "paragraph"],
+            },
+            order=0,
+            embedding=[0.1] * 2560,
+        )
+    ]
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(docling_doc, chunks, uri="test://refs")
+        chunk = (await client.chunk_repository.get_by_document_id(doc.id))[0]
+
+        # No refs: re-expands the chunk's own refs → both pages.
+        assert len(await client.visualize_chunk(chunk)) == 2
+        # Given only the page-one ref → only page one is rendered.
+        assert len(await client.visualize_chunk(chunk, refs=["#/texts/0"])) == 1
 
 
 # =============================================================================

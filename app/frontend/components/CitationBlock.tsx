@@ -20,7 +20,7 @@ function CitationItem({
 	onViewInDocument,
 }: {
 	citation: Citation;
-	onViewInDocument: (chunkId: string) => void;
+	onViewInDocument: (chunkId: string, refs?: string[]) => void;
 }) {
 	const [expanded, setExpanded] = useState(false);
 
@@ -60,6 +60,7 @@ function CitationItem({
 								citation.chunk_ids?.length
 									? citation.chunk_ids.join(",")
 									: citation.chunk_id,
+								citation.doc_item_refs,
 							)
 						}
 					>
@@ -88,48 +89,54 @@ export default function CitationBlock({ citations }: CitationBlockProps) {
 		return () => abortRef.current?.abort();
 	}, []);
 
-	const fetchVisualGrounding = useCallback(async (chunkId: string) => {
-		abortRef.current?.abort();
-		const controller = new AbortController();
-		abortRef.current = controller;
+	const fetchVisualGrounding = useCallback(
+		async (chunkId: string, refs?: string[]) => {
+			abortRef.current?.abort();
+			const controller = new AbortController();
+			abortRef.current = controller;
 
-		setVisualGrounding({
-			isOpen: true,
-			chunkId,
-			images: [],
-			loading: true,
-			error: null,
-		});
+			setVisualGrounding({
+				isOpen: true,
+				chunkId,
+				images: [],
+				loading: true,
+				error: null,
+			});
 
-		try {
-			const response = await fetch(
-				`/api/visualize/${encodeURIComponent(chunkId)}`,
-				{
-					signal: controller.signal,
-				},
-			);
-			const data = await response.json();
+			const query = refs?.length
+				? `?refs=${encodeURIComponent(JSON.stringify(refs))}`
+				: "";
+			try {
+				const response = await fetch(
+					`/api/visualize/${encodeURIComponent(chunkId)}${query}`,
+					{
+						signal: controller.signal,
+					},
+				);
+				const data = await response.json();
 
-			if (controller.signal.aborted) return;
-			if (!response.ok) {
-				throw new Error(data.error || "Failed to fetch visual grounding");
+				if (controller.signal.aborted) return;
+				if (!response.ok) {
+					throw new Error(data.error || "Failed to fetch visual grounding");
+				}
+
+				setVisualGrounding((prev) => ({
+					...prev,
+					images: data.images || [],
+					loading: false,
+					error: data.images?.length === 0 ? data.message : null,
+				}));
+			} catch (err) {
+				if (controller.signal.aborted) return;
+				setVisualGrounding((prev) => ({
+					...prev,
+					loading: false,
+					error: err instanceof Error ? err.message : "Unknown error",
+				}));
 			}
-
-			setVisualGrounding((prev) => ({
-				...prev,
-				images: data.images || [],
-				loading: false,
-				error: data.images?.length === 0 ? data.message : null,
-			}));
-		} catch (err) {
-			if (controller.signal.aborted) return;
-			setVisualGrounding((prev) => ({
-				...prev,
-				loading: false,
-				error: err instanceof Error ? err.message : "Unknown error",
-			}));
-		}
-	}, []);
+		},
+		[],
+	);
 
 	const closeVisualGrounding = useCallback(() => {
 		abortRef.current?.abort();

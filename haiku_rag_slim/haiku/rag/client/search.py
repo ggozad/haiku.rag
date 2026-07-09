@@ -224,19 +224,22 @@ async def expand_context(
     return expanded_results
 
 
-async def visualize_chunk(client: "HaikuRAG", chunk: "Chunk | Sequence[Chunk]") -> list:
+async def visualize_chunk(
+    client: "HaikuRAG",
+    chunk: "Chunk | Sequence[Chunk]",
+    refs: list[str] | None = None,
+) -> list:
     """Render page images with bounding box highlights for one or more chunks.
 
-    Expands the chunks' context to find the full section, then resolves
-    bounding boxes from all items in the expanded range. This ensures
-    visualization covers all pages the expanded content spans. Passing all
-    constituent chunks of a merged search result (``SearchResult.chunk_ids``)
-    reproduces the merged expansion; chunks from a different document than
-    the first are ignored.
+    When ``refs`` is given (the ``doc_item_refs`` of the citation, i.e. the
+    exact items the model saw), bounding boxes are resolved from them directly
+    so the visualization matches the cited context precisely. When ``refs`` is
+    ``None`` (e.g. the CLI or inspector, where there is no stored context), the
+    chunks' context is re-expanded to recover the surrounding section.
 
-    The chunks' own items draw in a strong highlight; items swept in by
-    expansion draw fainter, so the matched content stands out from its
-    surrounding context.
+    The chunks' own items draw in a strong highlight; the remaining items draw
+    fainter, so the matched content stands out from its surrounding context.
+    Chunks from a different document than the first are ignored.
 
     Returns a list of PIL Image objects, one per page with bounding boxes.
     Empty list if no bounding boxes or page images available.
@@ -263,35 +266,40 @@ async def visualize_chunk(client: "HaikuRAG", chunk: "Chunk | Sequence[Chunk]") 
     if not docling_doc:
         return []
 
-    # Expand context to get all doc_item_refs in the section
-    search_results = [
-        SearchResult(
-            content=c.content,
-            score=1.0,
-            chunk_id=c.id,
-            document_id=c.document_id,
-            doc_item_refs=meta.doc_item_refs,
-            page_numbers=meta.page_numbers,
-        )
-        for c in chunks
-        if (meta := c.get_chunk_metadata()).doc_item_refs
-    ]
-    if search_results:
-        expanded = await expand_context(client, search_results)
-        refs: list[str] = []
-        for result in expanded:
-            refs.extend(r for r in result.doc_item_refs if r not in refs)
-        if not refs:
-            refs = [r for sr in search_results for r in sr.doc_item_refs]
+    matched_refs = {r for c in chunks for r in c.get_chunk_metadata().doc_item_refs}
+
+    if refs is not None:
+        all_refs = list(refs)
     else:
-        refs = chunks[0].get_chunk_metadata().doc_item_refs
+        # No stored context: re-expand the chunks to recover their section.
+        search_results = [
+            SearchResult(
+                content=c.content,
+                score=1.0,
+                chunk_id=c.id,
+                document_id=c.document_id,
+                doc_item_refs=meta.doc_item_refs,
+                page_numbers=meta.page_numbers,
+            )
+            for c in chunks
+            if (meta := c.get_chunk_metadata()).doc_item_refs
+        ]
+        if search_results:
+            expanded = await expand_context(client, search_results)
+            all_refs = []
+            for result in expanded:
+                all_refs.extend(r for r in result.doc_item_refs if r not in all_refs)
+            if not all_refs:
+                all_refs = [r for sr in search_results for r in sr.doc_item_refs]
+        else:
+            all_refs = list(chunks[0].get_chunk_metadata().doc_item_refs)
 
-    matched_refs = {r for sr in search_results for r in sr.doc_item_refs} or set(refs)
-    swept_refs = [r for r in refs if r not in matched_refs]
+    matched_draw = [r for r in all_refs if r in matched_refs]
+    swept_refs = [r for r in all_refs if r not in matched_refs]
 
-    matched_boxes = ChunkMetadata(
-        doc_item_refs=sorted(matched_refs)
-    ).resolve_bounding_boxes(docling_doc)
+    matched_boxes = ChunkMetadata(doc_item_refs=matched_draw).resolve_bounding_boxes(
+        docling_doc
+    )
     swept_boxes = ChunkMetadata(doc_item_refs=swept_refs).resolve_bounding_boxes(
         docling_doc
     )

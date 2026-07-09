@@ -20,9 +20,12 @@ class Citation(BaseModel):
     and render them alongside the text content.
 
     ``chunk_ids`` lists the ids of all chunks whose expansion ranges merged
-    into the cited result (always includes ``chunk_id``). Visual grounding
-    passes them all to ``visualize_chunk`` so the rendered pages reproduce
-    the merged expansion.
+    into the cited result (always includes ``chunk_id``).
+
+    ``doc_item_refs`` are the ``self_ref`` values of every item in the cited
+    content — the exact items the model saw. Visual grounding resolves bounding
+    boxes from them so the rendered pages match the citation precisely.
+    ``picture_refs`` is the picture-labeled subset.
     """
 
     index: int | None = None
@@ -34,6 +37,7 @@ class Citation(BaseModel):
     page_numbers: list[int] = Field(default_factory=list)
     headings: list[str] | None = None
     content: str
+    doc_item_refs: list[str] = Field(default_factory=list)
     picture_refs: list[str] = Field(default_factory=list)
 
 
@@ -63,6 +67,7 @@ def resolve_citations(
                 page_numbers=r.page_numbers,
                 headings=r.headings,
                 content=r.content,
+                doc_item_refs=list(r.doc_item_refs),
                 picture_refs=picture_refs,
             )
         )
