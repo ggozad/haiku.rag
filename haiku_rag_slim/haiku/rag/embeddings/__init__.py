@@ -73,6 +73,10 @@ class EmbedderWrapper:
             "embeddings.model.multimodal: true on a vllm, voyageai, or cohere model."
         )
 
+    async def aclose(self) -> None:
+        """Release resources held by the embedder. No-op by default;
+        embedders that own an HTTP client override this."""
+
 
 def _to_data_uri(image: "bytes | PILImage.Image") -> str:
     """Render an image as a ``data:image/png;base64,...`` URI."""

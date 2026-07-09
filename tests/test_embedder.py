@@ -154,6 +154,29 @@ async def test_client_embedder_is_store_embedder(temp_db_path):
         assert client.embedder is client.store.embedder
 
 
+async def test_client_aexit_closes_embedder(temp_db_path, monkeypatch):
+    """__aexit__ releases the embedder's HTTP resources. A never-accessed
+    reranker is not materialized just to be closed; an accessed-but-None
+    reranker (reranking disabled) is handled."""
+    from haiku.rag.client import HaikuRAG
+
+    closed = []
+
+    async def _record():
+        closed.append(True)
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        monkeypatch.setattr(client.embedder, "aclose", _record)
+        assert client.reranker is None  # default config: reranking disabled
+
+    assert closed == [True]
+
+    async with HaikuRAG(temp_db_path) as client:
+        monkeypatch.setattr(client.embedder, "aclose", _record)
+
+    assert "reranker" not in client.__dict__
+
+
 @pytest.mark.vcr()
 async def test_embed_chunks_basic(allow_model_requests):
     """Test that embed_chunks generates embeddings for chunks."""
@@ -406,6 +429,44 @@ async def test_vllm_embed_image_request_shape(monkeypatch):
     assert content[0]["type"] == "image_url"
     url = content[0]["image_url"]["url"]
     assert url.startswith("data:image/png;base64,")
+
+
+async def test_vllm_reuses_pooled_client(monkeypatch):
+    """The embedder builds one httpx client and reuses it across requests
+    instead of opening a fresh connection per call; aclose releases it."""
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    stats = {"constructed": 0, "closed": 0}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"data": [{"embedding": [0.1, 0.2]}]}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            stats["constructed"] += 1
+
+        async def post(self, url, json, headers):
+            return FakeResponse()
+
+        async def aclose(self):
+            stats["closed"] += 1
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="x", vector_dim=2, base_url="http://localhost:8000/v1"
+    )
+    await embedder.embed_query("one")
+    await embedder.embed_query("two")
+    await embedder.embed_documents(["three", "four"])
+
+    assert stats["constructed"] == 1
+    await embedder.aclose()
+    assert stats["closed"] == 1
 
 
 async def test_vllm_supports_images_flag():

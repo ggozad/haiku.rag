@@ -143,6 +143,16 @@ class HaikuRAG:
     async def __aexit__(self, exc_type, exc_val, exc_tb):  # noqa: ARG002
         """Async context manager exit."""
         await self._await_vacuum_tasks()
+        # Best-effort: __aexit__ may run during exception unwinding, and a
+        # raising close must not mask the original exception. The reranker is
+        # a cached_property — close it only if it was materialized.
+        try:
+            await self.embedder.aclose()
+            reranker = self.__dict__.get("reranker")
+            if reranker is not None:
+                await reranker.aclose()
+        except Exception:
+            logger.debug("Closing embedder/reranker failed on teardown", exc_info=True)
         self.close()
         return False
 
