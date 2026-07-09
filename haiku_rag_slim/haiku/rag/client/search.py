@@ -228,14 +228,16 @@ async def visualize_chunk(
     client: "HaikuRAG",
     chunk: "Chunk | Sequence[Chunk]",
     refs: list[str] | None = None,
+    expand: bool = True,
 ) -> list:
     """Render page images with bounding box highlights for one or more chunks.
 
     When ``refs`` is given (the ``doc_item_refs`` of the citation, i.e. the
     exact items the model saw), bounding boxes are resolved from them directly
-    so the visualization matches the cited context precisely. When ``refs`` is
-    ``None`` (e.g. the CLI or inspector, where there is no stored context), the
-    chunks' context is re-expanded to recover the surrounding section.
+    so the visualization matches the cited context precisely. Otherwise, with
+    ``expand=True`` (default) the chunks' context is re-expanded to recover the
+    surrounding section; with ``expand=False`` only the chunks' own items are
+    drawn, so the visualization shows just the retrieved chunk with no context.
 
     The chunks' own items draw in a strong highlight; the remaining items draw
     fainter, so the matched content stands out from its surrounding context.
@@ -270,6 +272,9 @@ async def visualize_chunk(
 
     if refs is not None:
         all_refs = list(refs)
+    elif not expand:
+        # Chunk-only: draw just the retrieved chunks' own items, no context.
+        all_refs = list(matched_refs)
     else:
         # No stored context: re-expand the chunks to recover their section.
         search_results = [

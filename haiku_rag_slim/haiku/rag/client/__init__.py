@@ -505,11 +505,14 @@ class HaikuRAG:
         return await analyze(self, question, filter)
 
     async def visualize_chunk(
-        self, chunk: Chunk | Sequence[Chunk], refs: list[str] | None = None
+        self,
+        chunk: Chunk | Sequence[Chunk],
+        refs: list[str] | None = None,
+        expand: bool = True,
     ) -> list:
         from haiku.rag.client.search import visualize_chunk
 
-        return await visualize_chunk(self, chunk, refs)
+        return await visualize_chunk(self, chunk, refs, expand)
 
     async def rebuild_database(
         self, mode: RebuildMode = RebuildMode.FULL

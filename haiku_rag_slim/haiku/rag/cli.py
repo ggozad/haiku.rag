@@ -346,9 +346,14 @@ def visualize(  # pragma: no cover
         "--db",
         help="Path to the LanceDB database file",
     ),
+    no_expand: bool = typer.Option(
+        False,
+        "--no-expand",
+        help="Highlight only the chunk itself, without its expanded context",
+    ),
 ):
     app = create_app(db)
-    asyncio.run(app.visualize_chunk(chunk_id=chunk_id))
+    asyncio.run(app.visualize_chunk(chunk_id=chunk_id, expand=not no_expand))
 
 
 @_cli.command("ask", help="Ask a question using the QA agent")
