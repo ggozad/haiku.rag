@@ -218,7 +218,7 @@ def test_merge_picture_chunks_no_pictures_returns_text_chunks():
     doc = _doc_without_pictures()
     text_chunks = [Chunk(content="a"), Chunk(content="b")]
 
-    result = _merge_picture_chunks(doc, text_chunks, None, None)
+    result = _merge_picture_chunks(doc, text_chunks, None, None, 0)
 
     assert result is text_chunks
     assert [c.order for c in result] == [0, 1]

@@ -1,6 +1,11 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- Duplicate images within a document produce a single picture chunk.
+- Pictures smaller than `processing.min_picture_size` pixels on the smaller side (default 64) no longer become picture chunks; `0` disables the filter.
+
 ## [0.64.0] - 2026-07-08
 
 ### Added

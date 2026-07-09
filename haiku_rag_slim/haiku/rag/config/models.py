@@ -206,6 +206,11 @@ class ProcessingConfig(BaseModel):
     - ``"image"``: docling generates picture images and stores them in
       ``document_items.picture_data``; no VLM runs at ingest.
     """
+    min_picture_size: int = 64
+    """Minimum pixel size (smaller side) for a picture to become a picture
+    chunk. Smaller pictures — icons, bullets, decorative graphics — are not
+    embedded or indexed; their bytes stay in ``document_items`` for context
+    expansion. ``0`` keeps all pictures."""
     extract_pdf_attachments: bool = True
     """When a PDF carries `/EmbeddedFiles`, ingest each attachment as a separate
     Document linked back to the wrapper via ``metadata.parent_uri``. Cap depth
