@@ -104,16 +104,18 @@ def _evidence_anchors(content: str, max_chars: int) -> list[str]:
     return anchors
 
 
-def _clip_to_budget(content: str, results: list[SearchResult], max_chars: int) -> str:
-    """Clip expanded content to ``max_chars``, keeping the matched evidence.
+def _clip_window(
+    content: str, results: list[SearchResult], max_chars: int
+) -> tuple[int, int]:
+    """Return the ``[start, end)`` char window to keep when clipping ``content``.
 
     Anchors on the first locatable result in ``results`` order (the primary
     chunk that supplies the expanded result's identity) and returns a
-    ``max_chars``-wide window centered on it. Falls back to a prefix cut only
+    ``max_chars``-wide window centered on it. Falls back to a prefix window only
     when no anchor is locatable (heavy drift).
     """
     if max_chars <= 0:
-        return ""
+        return (0, 0)
     evidence_start, evidence_len = -1, 0
     for result in results:
         for anchor in _evidence_anchors(result.content, max_chars):
@@ -124,12 +126,43 @@ def _clip_to_budget(content: str, results: list[SearchResult], max_chars: int) -
         if evidence_start != -1:
             break
     if evidence_start == -1:
-        return content[:max_chars]
+        return (0, min(len(content), max_chars))
     center = evidence_start + evidence_len // 2
     start = max(0, center - max_chars // 2)
     end = min(len(content), start + max_chars)
     start = max(0, end - max_chars)
+    return (start, end)
+
+
+def _clip_to_budget(content: str, results: list[SearchResult], max_chars: int) -> str:
+    """Clip expanded content to ``max_chars``, keeping the matched evidence."""
+    start, end = _clip_window(content, results, max_chars)
     return content[start:end]
+
+
+def _collect_meta(
+    spans: list[tuple[int, int, DocumentItem]],
+) -> tuple[set[int], list[str], set[str]]:
+    """Union the page numbers, refs, and labels of the given item spans."""
+    pages: set[int] = set()
+    refs: list[str] = []
+    labels: set[str] = set()
+    for _start, _end, item in spans:
+        refs.append(item.self_ref)
+        if item.label:
+            labels.add(item.label)
+        pages.update(item.page_numbers)
+    return pages, refs, labels
+
+
+def _span_in_window(
+    span: tuple[int, int, DocumentItem], win_start: int, win_end: int
+) -> bool:
+    """Whether an item's char span overlaps the ``[win_start, win_end]`` clip window."""
+    start, end, _item = span
+    if start == end:  # zero-width picture position
+        return win_start <= start <= win_end
+    return start < win_end and end > win_start
 
 
 def _expand_outward(
@@ -290,9 +323,11 @@ async def expand_with_items(
     final_results: list[SearchResult] = []
     for range_start, range_end, original_results in merged:
         content_parts: list[str] = []
-        refs: list[str] = []
-        pages: set[int] = set()
-        labels: set[str] = set()
+        # Char span of each contributing item within the joined content, so
+        # metadata can be narrowed to whatever survives a budget clip.
+        item_spans: list[tuple[int, int, DocumentItem]] = []
+        cursor = 0
+        separator = "\n\n"
 
         for pos in range(range_start, range_end + 1):
             item = pos_to_item.get(pos)
@@ -301,55 +336,89 @@ async def expand_with_items(
             if has_sections and item.label in _NOISE_LABELS:
                 continue
             if item.text:
+                if content_parts:
+                    cursor += len(separator)
+                start = cursor
                 content_parts.append(item.text)
-                refs.append(item.self_ref)
-                if item.label:
-                    labels.add(item.label)
-                pages.update(item.page_numbers)
+                cursor += len(item.text)
+                item_spans.append((start, cursor, item))
             elif item.label == "picture":
                 # Pictures may legitimately have empty text (no VLM
                 # description configured). Keep their self_ref so the
-                # downstream image_data lookup can still attach bytes.
-                refs.append(item.self_ref)
-                labels.add(item.label)
-                pages.update(item.page_numbers)
+                # downstream image_data lookup can still attach bytes. They
+                # occupy a zero-width position in reading order.
+                item_spans.append((cursor, cursor, item))
 
         all_headings: list[str] = []
         for r in original_results:
             if r.headings:
                 all_headings.extend(h for h in r.headings if h not in all_headings)
 
-        # Carry image_data and picture_captions through expansion so that
-        # only pictures from the originally retrieved chunks get attached.
-        # Pictures swept in by section expansion are referenced in `refs`
-        # for cross-referencing but their bytes are not re-fetched —
-        # otherwise a single search can balloon the response with adjacent
-        # figures the model did not actually retrieve.
-        merged_image_data: dict[str, str] = {}
-        merged_captions: dict[str, str] = {}
-        for r in original_results:
-            if r.image_data:
-                merged_image_data.update(r.image_data)
-            if r.picture_captions:
-                merged_captions.update(r.picture_captions)
-
-        first = original_results[0]
+        # Anchor identity (chunk_id, content/refs fallbacks) on the
+        # best-scoring constituent — the chunk that earned the result its
+        # rank — rather than whichever sits earliest in the document.
+        first = max(original_results, key=lambda r: r.score)
 
         chunk_ids: list[str] = []
         for r in original_results:
             if r.chunk_id and r.chunk_id not in chunk_ids:
                 chunk_ids.append(r.chunk_id)
 
+        joined = separator.join(content_parts)
+
         # Expansion should never return less content than the original chunk.
         # This can happen when item texts are fragmented (e.g., docling splits
-        # formatted HTML list items into many small text nodes).
-        expanded_content = "\n\n".join(content_parts)
-        if len(expanded_content) < len(first.content):
-            expanded_content = first.content
-        if len(expanded_content) > max_chars:
-            expanded_content = _clip_to_budget(
-                expanded_content, original_results, max_chars
+        # formatted HTML list items into many small text nodes); fall back to
+        # the chunk's own content, described by the chunk's own metadata.
+        if len(joined) < len(first.content):
+            base_content, base_spans = first.content, None
+        else:
+            base_content, base_spans = joined, item_spans
+
+        if len(base_content) > max_chars:
+            # Clip to the budget, anchored on the primary (highest-scoring)
+            # chunk, and narrow metadata to whatever survives the window.
+            win_start, win_end = _clip_window(
+                base_content, [first, *original_results], max_chars
             )
+            expanded_content = base_content[win_start:win_end]
+            if base_spans is None:
+                pages, refs, labels = (
+                    set(first.page_numbers),
+                    list(first.doc_item_refs),
+                    set(first.labels),
+                )
+            else:
+                pages, refs, labels = _collect_meta(
+                    [s for s in base_spans if _span_in_window(s, win_start, win_end)]
+                )
+        else:
+            expanded_content = base_content
+            if base_spans is None:
+                pages, refs, labels = (
+                    set(first.page_numbers),
+                    list(first.doc_item_refs),
+                    set(first.labels),
+                )
+            else:
+                pages, refs, labels = _collect_meta(base_spans)
+
+        # Carry image_data and picture_captions from the originally retrieved
+        # chunks, but only for constituents whose refs survive the window — a
+        # chunk clipped out of the budget must not still ship its image to the
+        # model. Pictures swept in by section expansion are referenced in
+        # ``refs`` but their bytes are never re-fetched, so the multimodal
+        # payload stays bounded to what was actually retrieved and shown.
+        surviving_refs = set(refs)
+        merged_image_data: dict[str, str] = {}
+        merged_captions: dict[str, str] = {}
+        for r in original_results:
+            if r.doc_item_refs and not surviving_refs.intersection(r.doc_item_refs):
+                continue
+            if r.image_data:
+                merged_image_data.update(r.image_data)
+            if r.picture_captions:
+                merged_captions.update(r.picture_captions)
 
         final_results.append(
             SearchResult(
