@@ -357,11 +357,11 @@ async def visualize_chunk(
                 y0, y1 = y1, y0
 
             if is_matched:
-                fill_color = (255, 255, 0, 40)  # Yellow with transparency
-                outline_color = (255, 165, 0, 100)  # Orange outline
+                fill_color = (255, 150, 0, 55)  # Orange, matched content
+                outline_color = (240, 130, 0, 150)  # Orange outline
             else:
-                fill_color = (255, 255, 0, 15)
-                outline_color = (255, 165, 0, 50)
+                fill_color = (255, 255, 0, 40)  # Yellow, surrounding context
+                outline_color = (255, 165, 0, 100)
 
             draw.rectangle([(x0, y0), (x1, y1)], fill=fill_color, outline=None)
             draw.rectangle([(x0, y0), (x1, y1)], outline=outline_color, width=1)
