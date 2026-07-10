@@ -40,7 +40,7 @@ from haiku.skills.agent import (
 from haiku.skills.models import Skill
 from haiku.skills.prompts import build_system_prompt
 
-configure_telemetry()
+configure_telemetry(service_name="haiku-rag")
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult

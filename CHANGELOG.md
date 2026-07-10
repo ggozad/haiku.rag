@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- Logfire spans carry `service.version` and a per-process `service.name` (`haiku-ingester`, `haiku-rag`, `haiku-rag-app`); `OTEL_SERVICE_NAME` / `LOGFIRE_SERVICE_NAME` override the default.
+
 ## [0.65.0] - 2026-07-09
 
 ### Added

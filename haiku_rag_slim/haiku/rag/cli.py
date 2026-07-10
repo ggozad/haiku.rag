@@ -137,7 +137,9 @@ def main(
     from haiku.rag.telemetry import configure as configure_telemetry
 
     is_production = get_config().environment != "development"
-    configure_telemetry(console=False if is_production else None)
+    configure_telemetry(
+        service_name="haiku-rag", console=False if is_production else None
+    )
 
     if get_config().environment != "development":
         # Suppress warnings in production

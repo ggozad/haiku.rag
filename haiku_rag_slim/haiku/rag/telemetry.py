@@ -1,3 +1,5 @@
+import os
+from importlib import metadata
 from typing import Literal
 
 from logfire import Logfire, attach_context, get_context
@@ -25,8 +27,10 @@ def configure(
     Silently no-ops on failure so a missing/misconfigured LOGFIRE_TOKEN
     never crashes the app.
 
-    - service_name: identifies the process in the Logfire UI (e.g.
-      "haiku-ingester"). Falls back to logfire's default when None.
+    - service_name: the default name for this process in the Logfire UI
+      (e.g. "haiku-ingester"). The OTEL_SERVICE_NAME / LOGFIRE_SERVICE_NAME
+      env vars, when set, take precedence so operators can distinguish
+      concurrent processes.
     - console: False (default) suppresses span lines on stderr so they
       don't interleave with RichHandler logs. Pass None to let logfire
       decide (its own default applies).
@@ -34,8 +38,21 @@ def configure(
     try:
         import logfire as _lf
 
+        # An explicit service_name arg would beat the env vars in logfire's
+        # precedence; deferring to None when an env var is set lets the
+        # operator's OTEL_SERVICE_NAME / LOGFIRE_SERVICE_NAME win over our
+        # per-process default.
+        env_service = os.environ.get("OTEL_SERVICE_NAME") or os.environ.get(
+            "LOGFIRE_SERVICE_NAME"
+        )
+        try:
+            service_version = metadata.version("haiku.rag-slim")
+        except metadata.PackageNotFoundError:  # pragma: no cover
+            service_version = None
+
         _lf.configure(
-            service_name=service_name,
+            service_name=None if env_service else service_name,
+            service_version=service_version,
             send_to_logfire="if-token-present",
             console=console,
         )
