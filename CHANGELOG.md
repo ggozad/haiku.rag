@@ -3,6 +3,10 @@
 
 ## [0.65.1] - 2026-07-10
 
+### Added
+
+- `debug-evals` and `debug-ingestion` Claude skills (`.claude/skills/`) with canned Logfire queries for eval-run and ingestion debugging.
+
 ### Changed
 
 - Logfire spans carry `service.version` and a per-process `service.name` (`haiku-ingester`, `haiku-rag`, `haiku-rag-app`); `OTEL_SERVICE_NAME` / `LOGFIRE_SERVICE_NAME` override the default.
