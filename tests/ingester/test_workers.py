@@ -935,6 +935,37 @@ async def test_breaker_opens_after_n_consecutive_transient_failures(client, jobs
 
 
 @pytest.mark.asyncio
+async def test_breaker_open_emits_logfire_event(client, jobs, sync, monkeypatch):
+    """The worker breaker opening emits exactly one structured Logfire event
+    (on the closed->open transition, not on every failure), tagged with the
+    source so it's queryable without scraping stderr logs."""
+    from haiku.rag.ingester.workers import pool as pool_module
+    from haiku.rag.ingester.workers.pool import _WORKER_BREAKER_THRESHOLD
+
+    events: list[dict] = []
+
+    def _capture(msg, /, **attrs):
+        events.append({"msg": msg, **attrs})
+
+    monkeypatch.setattr(pool_module.logfire, "warn", _capture)
+
+    client.create_document_from_source.side_effect = TransientError("downstream down")
+    for i in range(_WORKER_BREAKER_THRESHOLD + 2):
+        await jobs.enqueue("src", f"u{i}", JobOp.UPSERT, max_attempts=5)
+
+    pool = _pool(
+        client, jobs, sync, retry_policy=RetryPolicy(base_delay_s=60.0, jitter=0.0)
+    )
+    # Drain past the threshold: the transition fires once, later failures don't.
+    for _ in range(_WORKER_BREAKER_THRESHOLD + 1):
+        await pool.drain_once()
+    assert pool.breaker_open is True
+
+    assert len(events) == 1
+    assert events[0]["source_id"] == "src"
+
+
+@pytest.mark.asyncio
 async def test_breaker_pauses_worker_loop_claims(client, jobs, sync):
     """Worker loop honours the breaker: an open source is excluded from
     claim_next, so its queued jobs stay queued until the breaker closes."""

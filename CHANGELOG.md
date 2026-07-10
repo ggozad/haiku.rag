@@ -5,6 +5,7 @@
 
 - Logfire spans carry `service.version` and a per-process `service.name` (`haiku-ingester`, `haiku-rag`, `haiku-rag-app`); `OTEL_SERVICE_NAME` / `LOGFIRE_SERVICE_NAME` override the default.
 - Each docling-serve request emits a `docling_serve.request` span carrying the instance `url` and `attempt`.
+- The ingester worker circuit breaker opening emits a `ingester.worker breaker opened` Logfire event with `source_id`, `threshold`, `cooldown_s`.
 
 ## [0.65.0] - 2026-07-09
 

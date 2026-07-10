@@ -654,7 +654,13 @@ The span tree is `ingester.poller.sweep` -> `ingester.job` (tagged with
 `source_id` and `uri`) -> `document.convert` / `document.chunk`. When a source
 uses docling-serve, each request emits a `docling_serve.request` span carrying
 the instance `url` and `attempt`, so a failed conversion can be traced to the
-exact instance that served it.
+exact instance that served it. A worker circuit breaker opening emits an
+`ingester.worker breaker opened` event with `source_id`, `threshold`, and
+`cooldown_s`.
+
+The `debug-ingestion` skill in `.claude/skills/` turns these spans into
+ready-made Logfire queries (failed jobs, docling-serve failover, per-source
+sweeps, breaker trips) for use from Claude Code.
 
 ### Operating against the API
 

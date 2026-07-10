@@ -12,6 +12,7 @@ from haiku.rag.ingester.queue.models import Job, JobOp
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
 from haiku.rag.ingester.workers.pipeline import run_job
 from haiku.rag.ingester.workers.retry import RetryPolicy, compute_backoff
+from haiku.rag.telemetry import logfire
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -352,6 +353,12 @@ class WorkerPool:
             was_closed = not breaker.is_open
             breaker.record_failure()
             if was_closed and breaker.is_open:
+                logfire.warn(
+                    "ingester.worker breaker opened",
+                    source_id=job.source_id,
+                    threshold=_WORKER_BREAKER_THRESHOLD,
+                    cooldown_s=_WORKER_BREAKER_COOLDOWN_S,
+                )
                 logger.warning(
                     "Worker breaker opened for source %s after %d consecutive "
                     "transient failures; pausing its claims for %.0fs",
