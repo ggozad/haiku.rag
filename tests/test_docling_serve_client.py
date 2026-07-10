@@ -301,6 +301,36 @@ async def test_task_failure_is_not_retried():
     assert set(seen) == {"h"}
 
 
+@pytest.mark.asyncio
+async def test_request_span_records_instance_per_attempt(monkeypatch):
+    """Each attempt opens a docling_serve.request span tagged with the
+    instance URL, so failover is traceable in Logfire."""
+    from contextlib import nullcontext
+
+    from haiku.rag.providers import docling_serve as ds_module
+
+    spans: list[dict] = []
+
+    def _fake_span(span_name, /, **attrs):
+        spans.append({"span_name": span_name, **attrs})
+        return nullcontext()
+
+    monkeypatch.setattr(ds_module.logfire, "span", _fake_span)
+
+    transport, _ = _failover_transport({"down-s"}, "t", {"ok": True})
+    client = DoclingServeClient(
+        base_urls=["http://down-s:5001", "http://up-s:5001"],
+        transport=transport,
+        retry_base_delay=0.0,
+    )
+
+    await _poll(client)
+
+    requests = [s for s in spans if s["span_name"] == "docling_serve.request"]
+    assert [s["url"] for s in requests] == ["http://down-s:5001", "http://up-s:5001"]
+    assert [s["attempt"] for s in requests] == [0, 1]
+
+
 def test_pick_url_skips_excluded_instances():
     """On retry, _pick_url advances past every excluded instance."""
     urls = ["http://p1:5001", "http://p2:5001", "http://p3:5001"]
