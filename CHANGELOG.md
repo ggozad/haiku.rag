@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.65.1] - 2026-07-10
+
 ### Changed
 
 - Logfire spans carry `service.version` and a per-process `service.name` (`haiku-ingester`, `haiku-rag`, `haiku-rag-app`); `OTEL_SERVICE_NAME` / `LOGFIRE_SERVICE_NAME` override the default.
@@ -1915,7 +1917,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.65.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.65.1...HEAD
+[0.65.1]: https://github.com/ggozad/haiku.rag/compare/0.65.0...0.65.1
 [0.65.0]: https://github.com/ggozad/haiku.rag/compare/0.64.0...0.65.0
 [0.64.0]: https://github.com/ggozad/haiku.rag/compare/0.63.2...0.64.0
 [0.63.2]: https://github.com/ggozad/haiku.rag/compare/0.63.1...0.63.2
