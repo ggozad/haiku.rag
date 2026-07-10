@@ -640,7 +640,21 @@ INFO     Processing upsert file:///.../a.md (job 5d9a...)
 INFO     Job 5d9a... succeeded in 0.34s: file:///.../a.md
 ```
 
-When `LOGFIRE_TOKEN` is set, spans are also shipped to Logfire.
+When `LOGFIRE_TOKEN` is set, spans are also shipped to Logfire. Spans carry
+`service.name` (`haiku-ingester`) and `service.version`. To tell concurrent
+ingestions apart in Logfire, give each process a distinct name via the standard
+`OTEL_SERVICE_NAME` (or `LOGFIRE_SERVICE_NAME`) environment variable, which
+overrides the default:
+
+```bash
+OTEL_SERVICE_NAME=ingester-tenant-a haiku-ingester serve
+```
+
+The span tree is `ingester.poller.sweep` -> `ingester.job` (tagged with
+`source_id` and `uri`) -> `document.convert` / `document.chunk`. When a source
+uses docling-serve, each request emits a `docling_serve.request` span carrying
+the instance `url` and `attempt`, so a failed conversion can be traced to the
+exact instance that served it.
 
 ### Operating against the API
 

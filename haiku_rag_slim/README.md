@@ -52,7 +52,7 @@ Adds support for 40+ file formats including PDF, DOCX, HTML, and more.
 ```bash
 # Common combinations
 uv pip install haiku.rag-slim[docling,anthropic,mxbai]
-uv pip install haiku.rag-slim[docling,groq,logfire]
+uv pip install haiku.rag-slim[docling,groq]
 ```
 
 ## Usage
