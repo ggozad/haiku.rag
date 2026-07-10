@@ -35,3 +35,9 @@ site/
 
 # Claude Code personal notes
 .claude.local.md
+
+# Publish shared Claude skills, keep local Claude settings private
+!.claude/
+.claude/*
+!.claude/skills/
+!.claude/skills/**

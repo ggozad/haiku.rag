@@ -55,6 +55,13 @@ the judge (defaults to `qa.model`, or `analysis.model` when set for the
 analysis-skill target). A citation retrieval metric (`cited_map`) is computed
 alongside QA accuracy from the URIs the skill registered via the `cite` tool.
 
+### Debugging runs in Logfire
+
+With `LOGFIRE_TOKEN` set, runs ship spans under `service_name = 'evals'`. The
+`debug-evals` skill in `.claude/skills/` turns these into ready-made Logfire
+queries (recent runs, per-case pass rate and `cited_map`, failing and slowest
+cases) for use from Claude Code.
+
 ### Pre-built Databases
 
 Download pre-built evaluation databases from HuggingFace:
