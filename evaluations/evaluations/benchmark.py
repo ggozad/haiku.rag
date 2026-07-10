@@ -4,7 +4,6 @@ from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Any, Literal, cast
 
-import logfire
 import typer
 from dotenv import find_dotenv, load_dotenv
 from huggingface_hub import HfApi, snapshot_download
@@ -26,6 +25,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.logging import configure_cli_logging
+from haiku.rag.telemetry import configure as configure_telemetry
 from haiku.rag.utils import get_model, parse_model_option
 
 Target = Literal["rag-skill", "analysis-skill"]
@@ -42,10 +42,7 @@ HF_REPO_ID = "ggozad/haiku-rag-eval-dbs"
 
 # Scrubbing off: eval outputs are financial answers with words like "authorized"
 # that trip Logfire's secret scrubber and redact the model's answer text.
-logfire.configure(
-    send_to_logfire="if-token-present", service_name="evals", scrubbing=False
-)
-logfire.instrument_pydantic_ai()
+configure_telemetry(service_name="evals", scrubbing=False)
 configure_cli_logging()
 console = Console()
 

@@ -55,3 +55,16 @@ def test_service_version_is_package_version(captured_configure, monkeypatch):
     telemetry.configure(service_name="haiku-rag")
 
     assert captured_configure["service_version"] == metadata.version("haiku.rag-slim")
+
+
+def test_scrubbing_defaults_to_enabled(captured_configure):
+    telemetry.configure(service_name="haiku-rag")
+
+    # None is logfire's "scrubbing enabled" default.
+    assert captured_configure["scrubbing"] is None
+
+
+def test_scrubbing_can_be_disabled(captured_configure):
+    telemetry.configure(service_name="evals", scrubbing=False)
+
+    assert captured_configure["scrubbing"] is False

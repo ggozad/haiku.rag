@@ -21,6 +21,7 @@ def configure(
     *,
     service_name: str | None = None,
     console: Literal[False] | None = False,
+    scrubbing: Literal[False] | None = None,
 ) -> None:
     """Configure Logfire and enable pydantic-ai instrumentation for the
     running process. Each CLI entry point calls this once at startup.
@@ -34,6 +35,9 @@ def configure(
     - console: False (default) suppresses span lines on stderr so they
       don't interleave with RichHandler logs. Pass None to let logfire
       decide (its own default applies).
+    - scrubbing: None (default) keeps logfire's secret scrubbing on. Pass
+      False to disable it when span content legitimately contains tokens
+      that trip the scrubber (e.g. eval answer text).
     """
     try:
         import logfire as _lf
@@ -55,6 +59,7 @@ def configure(
             service_version=service_version,
             send_to_logfire="if-token-present",
             console=console,
+            scrubbing=scrubbing,
         )
         _lf.instrument_pydantic_ai()
     except Exception:  # pragma: no cover
