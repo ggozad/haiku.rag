@@ -11,6 +11,7 @@ import httpx
 
 from haiku.rag.circuit_breaker import CircuitBreaker
 from haiku.rag.config import CircuitBreakerConfig, DoclingServeConfig
+from haiku.rag.telemetry import logfire
 
 logger = logging.getLogger(__name__)
 
@@ -156,8 +157,14 @@ class DoclingServeClient:
             base_url = self._pick_url(exclude=frozenset(tried))
             breaker = self._breaker_for(base_url)
             try:
-                async with self._httpx_client() as client:
-                    result = await attempt(client, base_url)
+                with logfire.span(
+                    "docling_serve.request",
+                    name=name,
+                    url=base_url,
+                    attempt=attempt_no,
+                ):
+                    async with self._httpx_client() as client:
+                        result = await attempt(client, base_url)
             except Exception as exc:
                 if not _is_retryable(exc):
                     raise

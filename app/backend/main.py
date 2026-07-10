@@ -20,6 +20,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import load_yaml_config
 from haiku.rag.config.models import AppConfig
 from haiku.rag.skills.rag import create_skill, get_agent_preamble
+from haiku.rag.telemetry import configure as configure_telemetry
 from haiku.rag.utils import get_model
 from haiku.skills import (
     SkillDeps,
@@ -30,14 +31,7 @@ from haiku.skills.prompts import build_system_prompt
 
 load_dotenv(find_dotenv(usecwd=True))
 
-# Configure logfire (only sends data if LOGFIRE_TOKEN is present)
-try:
-    import logfire
-
-    logfire.configure(send_to_logfire="if-token-present", console=False)
-    logfire.instrument_pydantic_ai()
-except Exception:
-    pass
+configure_telemetry(service_name="haiku-rag-app")
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
