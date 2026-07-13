@@ -7,6 +7,7 @@
 - The `haiku.rag` package declares the `jina` extra, so `provider: jina-local` is supported by declaration rather than through `cross-encoder`'s transitive `transformers` and `torch`. Raises the full package's torch floor to 2.0.
 - `providers.docling_serve.timeout` (default 300 seconds), forwarded to the docling-serve client's per-request timeout.
 - Client lifecycle hooks (`after_ingest`, `after_delete`, `before_search`, `after_search`) registered under the `haiku.rag.hooks` entry-point group and activated via the `hooks:` config list.
+- `SearchResult.annotations` carries notes attached by `after_search` hooks, preserved through context expansion and rendered in agent-facing output.
 
 ### Changed
 
