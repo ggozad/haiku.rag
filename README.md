@@ -17,7 +17,7 @@ Built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.pydantic.dev/
 - **Search** with hybrid vector and full-text retrieval, optional reranking (cross-encoders, Jina, Cohere, Zero Entropy, vLLM, OpenRouter), section-aware context expansion, and image search with a multimodal embedder (vLLM, OpenRouter, VoyageAI, Cohere). Across several named databases at once.
 - **Answer** with the RAG capability: it searches, runs sandboxed Python over the documents for counting and aggregation, and cites page numbers and headings. Vision models receive the figures. Optional capabilities compact earlier evidence in long conversations and require every answer to declare its grounding.
 - **Check** a citation by drawing its chunk on the page image, from the CLI, the chat TUI or Python.
-- **Integrate** through the Python API, native Pydantic AI capabilities, an MCP server for Claude Code, Codex and Claude Desktop, and a reference web app.
+- **Integrate** through the Python API, native Pydantic AI capabilities, plugin hooks that observe document writes and transform searches, an MCP server for Claude Code, Codex and Claude Desktop, and a reference web app.
 - **Operate** with the `haiku-ingester` service (filesystem, HTTP, S3 and WebDAV sources, a SQLite or Postgres job queue with retries, a control plane and dashboard), tags and rollback, vacuum, and `haiku-rag doctor` health checks.
 
 ## Installation
