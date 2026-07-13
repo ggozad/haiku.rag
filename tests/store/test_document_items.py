@@ -473,7 +473,7 @@ class TestDocumentItemPopulation:
             # Use _store_document_with_chunks directly with empty chunks
             # to avoid needing embeddings
             created = await _store_document_with_chunks(
-                writing(rag), document, [], docling_doc
+                writing(rag), None, document, [], docling_doc
             )
             assert created.id is not None
 
@@ -505,7 +505,7 @@ class TestDocumentItemPopulation:
             )
             document.set_docling(docling_doc)
             created = await _store_document_with_chunks(
-                writing(rag), document, [], docling_doc
+                writing(rag), None, document, [], docling_doc
             )
             assert created.id is not None
             assert await rag.document_item_repository.get_item_count(created.id) == 6
@@ -515,7 +515,7 @@ class TestDocumentItemPopulation:
             new_doc.add_text(label=DocItemLabel.PARAGRAPH, text="Only one item now.")
             created.set_docling(new_doc)
 
-            await _update_document_with_chunks(writing(rag), created, [], new_doc)
+            await _update_document_with_chunks(writing(rag), None, created, [], new_doc)
             assert await rag.document_item_repository.get_item_count(created.id) == 1
 
     async def test_delete_document_cascades_items(self, temp_db_path):
@@ -531,7 +531,7 @@ class TestDocumentItemPopulation:
             )
             document.set_docling(docling_doc)
             created = await _store_document_with_chunks(
-                writing(rag), document, [], docling_doc
+                writing(rag), None, document, [], docling_doc
             )
             assert created.id is not None
             assert await rag.document_item_repository.get_item_count(created.id) == 6
@@ -905,7 +905,7 @@ class TestPictureDataPreservedThroughRoundTrip:
             document = Document(content="Hello world", uri="test://doc")
             document.set_docling(docling_doc)
             created = await _store_document_with_chunks(
-                writing(rag), document, [], docling_doc
+                writing(rag), None, document, [], docling_doc
             )
             assert created.id is not None
 
@@ -919,7 +919,9 @@ class TestPictureDataPreservedThroughRoundTrip:
             assert from_blob is not None
             assert all(p.image is None for p in from_blob.pictures)
 
-            await _update_document_with_chunks(writing(rag), created, [], from_blob)
+            await _update_document_with_chunks(
+                writing(rag), None, created, [], from_blob
+            )
 
             after = await rag.document_item_repository.get_all_picture_data(created.id)
             assert after.get("#/pictures/0") == original.get("#/pictures/0")

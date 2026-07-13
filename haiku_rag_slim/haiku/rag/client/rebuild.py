@@ -924,6 +924,7 @@ async def _rebuild_full(
                 # in place, so a failure here cannot cost the document.
                 refreshed = await create_document_from_source(
                     session,
+                    None,
                     source=light_doc.uri,
                     metadata=light_doc.metadata or {},
                     force=True,

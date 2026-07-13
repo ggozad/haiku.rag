@@ -562,6 +562,7 @@ async def test_force_ignores_a_matching_observed_revision(temp_db_path, monkeypa
             monkeypatch.setattr(FSSource, "head", _counting_head(calls))
             second = await documents.create_document_from_source(
                 client._single_session("t"),
+                None,
                 path,
                 sources=[source],
                 source_id=source.source_id,
