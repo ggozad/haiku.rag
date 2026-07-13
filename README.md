@@ -31,6 +31,7 @@ Built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.pydantic.dev/
 - **MCP server** — Expose as tools for AI assistants (Claude Desktop, etc.)
 - **Visual grounding** — View chunks highlighted on original page images
 - **Production ingester** — Long-lived `haiku-ingester` service with persistent SQLite queue, async worker pool with retries and a dead-letter queue, FS / HTTP / S3 / WebDAV source adapters, FastAPI control plane, and a browser dashboard for operators. See [docs/ingester.md](docs/ingester.md).
+- **Hooks** — Plugin packages can observe document writes and transform searches (query expansion, result annotation) via the `haiku.rag.hooks` entry-point group. See [docs/hooks.md](docs/hooks.md).
 - **Tags** — Name database states with `haiku-rag tag` and roll back to them
 - **Inspector** — TUI for browsing documents, chunks, and search results
 

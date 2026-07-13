@@ -394,6 +394,7 @@ def _build_result(
     surviving_refs = set(refs)
     merged_image_data: dict[str, str] = {}
     merged_captions: dict[str, str] = {}
+    merged_annotations: dict[str, None] = {}
     for r in original_results:
         if r.doc_item_refs and not surviving_refs.intersection(r.doc_item_refs):
             continue
@@ -401,6 +402,8 @@ def _build_result(
             merged_image_data.update(r.image_data)
         if r.picture_captions:
             merged_captions.update(r.picture_captions)
+        if r.annotations:
+            merged_annotations.update(dict.fromkeys(r.annotations))
 
     return SearchResult(
         content=expanded_content,
@@ -418,6 +421,7 @@ def _build_result(
         labels=sorted(labels) or first.labels,
         image_data=merged_image_data or None,
         picture_captions=merged_captions,
+        annotations=list(merged_annotations) or None,
     )
 
 

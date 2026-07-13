@@ -4,6 +4,7 @@
 ### Added
 
 - Client lifecycle hooks (`after_ingest`, `after_delete`, `before_search`, `after_search`) registered under the `haiku.rag.hooks` entry-point group and activated via the `hooks:` config list.
+- `SearchResult.annotations` carries notes attached by `after_search` hooks, preserved through context expansion and rendered in agent-facing output.
 
 ## [0.78.0] - 2026-08-24
 
