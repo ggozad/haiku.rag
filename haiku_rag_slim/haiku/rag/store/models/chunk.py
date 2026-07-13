@@ -132,6 +132,10 @@ class SearchResult(BaseModel):
 
     ``document_meta`` carries the parent document's metadata for citation
     consumers (UIs). Never part of ``format_for_agent`` output.
+
+    ``annotations`` carries free-text notes attached by ``after_search``
+    hooks (e.g. definitions of terms appearing in the content). They
+    survive context expansion and render as notes in ``format_for_agent``.
     """
 
     content: str
@@ -149,6 +153,7 @@ class SearchResult(BaseModel):
     labels: list[str] = []
     image_data: dict[str, str] | None = None
     picture_captions: dict[str, str] = {}
+    annotations: list[str] | None = None
 
     @classmethod
     def from_chunk(
@@ -218,6 +223,10 @@ class SearchResult(BaseModel):
             for self_ref, caption in self.picture_captions.items():
                 if caption:
                     parts.append(f"Figure caption ({self_ref}): {caption}")
+
+        if self.annotations:
+            for note in self.annotations:
+                parts.append(f"Note: {note}")
 
         # The actual content
         parts.append(f"Content:\n{self.content}")

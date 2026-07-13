@@ -71,6 +71,8 @@ qa:
 # haiku.rag.yaml
 environment: production
 
+hooks: []  # Lifecycle hook plugin names, see the Hooks page under Develop
+
 storage:
   data_dir: ""  # Empty = use default platform location
   vacuum_retention_seconds: 86400
