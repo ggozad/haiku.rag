@@ -5,6 +5,7 @@
 ### Added
 
 - `search.rerank_pool_factor` (default 10): candidates per requested result a reranker scores.
+- Client lifecycle hooks (`after_ingest`, `after_delete`, `before_search`, `after_search`) registered under the `haiku.rag.hooks` entry-point group and activated via the `hooks:` config list.
 
 ### Changed
 

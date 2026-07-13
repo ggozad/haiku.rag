@@ -15,6 +15,7 @@ from haiku.rag.client.session import (
 )
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.embeddings import get_embedder
+from haiku.rag.hooks import build_hooks, load_hooks
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import EmbedderIdentity, Store
 from haiku.rag.store.exceptions import (
@@ -158,6 +159,11 @@ class HaikuRAG:
         self._session: SingleDatabaseSession | FederatedSession | None = None
         self._owns_session = True
         self._closed = False
+        self._hooks = (
+            build_hooks(self._configured.hooks, load_hooks())
+            if self._configured.hooks
+            else []
+        )
 
     @property
     def covers_multiple(self) -> bool:
@@ -568,7 +574,9 @@ class HaikuRAG:
 
         session = self._single_session("create_document")
 
-        return await create_document(session, content, uri, title, metadata, format)
+        return await create_document(
+            session, self, content, uri, title, metadata, format
+        )
 
     async def import_document(
         self,
@@ -583,7 +591,7 @@ class HaikuRAG:
         session = self._single_session("import_document")
 
         return await import_document(
-            session, docling_document, chunks, uri, title, metadata
+            session, self, docling_document, chunks, uri, title, metadata
         )
 
     async def import_documents(
@@ -594,7 +602,7 @@ class HaikuRAG:
 
         session = self._single_session("import_documents")
 
-        return await import_documents(session, imports)
+        return await import_documents(session, self, imports)
 
     async def create_document_from_source(
         self,
@@ -613,6 +621,7 @@ class HaikuRAG:
 
         return await create_document_from_source(
             session,
+            self,
             source,
             title,
             metadata,
@@ -644,6 +653,7 @@ class HaikuRAG:
 
         return await create_document_from_source(
             session,
+            self,
             source,
             sources=sources,
             source_id=source_id,
@@ -677,6 +687,7 @@ class HaikuRAG:
 
         return await update_document(
             session,
+            self,
             document_id,
             content,
             metadata,
@@ -819,9 +830,14 @@ class HaikuRAG:
         """Delete a document by its ID. Cascades to children linked via
         ``metadata.parent_uri``. With ``source_id``, deletes only a document
         that source owns."""
-        return await self._single_session("delete_document").delete_document(
+        deleted = await self._single_session("delete_document").delete_document(
             document_id, source_id=source_id
         )
+        for doc in deleted:
+            assert doc.id is not None
+            for hook in self._hooks:
+                await hook.after_delete(self, doc.id)
+        return bool(deleted)
 
     async def list_documents(
         self,
@@ -949,15 +965,25 @@ class HaikuRAG:
     ) -> list[SearchResult]:
         from haiku.rag.client.search import search, search_sources
 
+        if isinstance(query, str):
+            for hook in self._hooks:
+                query, filter = await hook.before_search(self, query, filter)
+
         if self.covers_multiple:
-            return await search_sources(
+            results = await search_sources(
                 self, query, limit, search_type, filter, include_images, sources
             )
-        if not await self.clients_covering(sources):
-            return []
-        results = await search(self, query, limit, search_type, filter, include_images)
-        for result in results:
-            result.source = self.source
+        elif not await self.clients_covering(sources):
+            results = []
+        else:
+            results = await search(
+                self, query, limit, search_type, filter, include_images
+            )
+            for result in results:
+                result.source = self.source
+
+        for hook in self._hooks:
+            results = await hook.after_search(self, query, results)
         return results
 
     async def expand_context(

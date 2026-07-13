@@ -351,6 +351,7 @@ class TestExpandWithItems:
         async with HaikuRAG(temp_db_path, create=True) as rag:
             doc = await _store_document_with_chunks(
                 writing(rag),
+                None,
                 Document(content="test"),
                 [],
                 __import__(

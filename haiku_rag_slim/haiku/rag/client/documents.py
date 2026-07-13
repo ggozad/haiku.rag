@@ -30,6 +30,7 @@ from haiku.rag.utils.sql import escape_like_pattern, escape_sql_string
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
+    from haiku.rag.client import HaikuRAG
     from haiku.rag.ingester.metadata import BoundMetadataProvider, MetadataProvider
     from haiku.rag.sources.base import FetchResult, Source
 
@@ -169,6 +170,7 @@ async def _extract_items_observed(
 
 async def _store_document_with_chunks(
     session: SingleDatabaseSession,
+    client: "HaikuRAG | None",
     document: Document,
     chunks: list[Chunk],
     docling_document: "DoclingDocument",
@@ -247,11 +249,15 @@ async def _store_document_with_chunks(
         session.schedule_vacuum()
 
     session.name(stored_doc)
+    if client is not None:
+        for hook in client._hooks:
+            await hook.after_ingest(client, stored_doc)
     return stored_doc
 
 
 async def _update_document_with_chunks(
     session: SingleDatabaseSession,
+    client: "HaikuRAG | None",
     document: Document,
     chunks: list[Chunk],
     docling_document: "DoclingDocument | None" = None,
@@ -314,11 +320,15 @@ async def _update_document_with_chunks(
         session.schedule_vacuum()
 
     session.name(updated_doc)
+    if client is not None:
+        for hook in client._hooks:
+            await hook.after_ingest(client, updated_doc)
     return updated_doc
 
 
 async def create_document(
     session: SingleDatabaseSession,
+    client: "HaikuRAG | None",
     content: str,
     uri: str | None = None,
     title: str | None = None,
@@ -342,12 +352,13 @@ async def create_document(
     await _prepare_and_title(session, document, docling_document)
 
     return await _store_document_with_chunks(
-        session, document, chunks, docling_document
+        session, client, document, chunks, docling_document
     )
 
 
 async def import_document(
     session: SingleDatabaseSession,
+    client: "HaikuRAG | None",
     docling_document: "DoclingDocument",
     chunks: list[Chunk],
     uri: str | None = None,
@@ -372,12 +383,13 @@ async def import_document(
     await _prepare_and_title(session, document, docling_document)
 
     return await _store_document_with_chunks(
-        session, document, chunks, docling_document
+        session, client, document, chunks, docling_document
     )
 
 
 async def _store_documents_with_chunks(
     session: SingleDatabaseSession,
+    client: "HaikuRAG | None",
     prepared: list[tuple[Document, list[Chunk], "DoclingDocument"]],
 ) -> list[Document]:
     """Store many documents with their chunks in a single table version each.
@@ -436,11 +448,17 @@ async def _store_documents_with_chunks(
     if session.config.storage.auto_vacuum:
         session.schedule_vacuum()
 
-    return session.name_all(created)
+    session.name_all(created)
+    if client is not None:
+        for doc in created:
+            for hook in client._hooks:
+                await hook.after_ingest(client, doc)
+    return created
 
 
 async def import_documents(
     session: SingleDatabaseSession,
+    client: "HaikuRAG | None",
     imports: list[DocumentImport],
 ) -> list[Document]:
     """Batch-import pre-processed documents with their chunks.
@@ -463,7 +481,7 @@ async def import_documents(
         await _prepare_and_title(session, document, item.docling_document)
         prepared.append((document, item.chunks, item.docling_document))
 
-    return await _store_documents_with_chunks(session, prepared)
+    return await _store_documents_with_chunks(session, client, prepared)
 
 
 async def _refresh_doc_metadata(
@@ -550,6 +568,7 @@ async def _provider_metadata(
 
 async def _ingest_fetch_result(
     session: SingleDatabaseSession,
+    client: "HaikuRAG | None",
     result: "FetchResult",
     *,
     title: str | None,
@@ -640,7 +659,12 @@ async def _ingest_fetch_result(
             existing_doc.title = title
         await _prepare_and_title(session, existing_doc, docling_document)
         stored = await _update_document_with_chunks(
-            session, existing_doc, chunks, docling_document, observed_uri=result.uri
+            session,
+            client,
+            existing_doc,
+            chunks,
+            docling_document,
+            observed_uri=result.uri,
         )
     else:
         document = Document(
@@ -651,7 +675,7 @@ async def _ingest_fetch_result(
         )
         await _prepare_and_title(session, document, docling_document)
         stored = await _store_document_with_chunks(
-            session, document, chunks, docling_document, observed_uri=result.uri
+            session, client, document, chunks, docling_document, observed_uri=result.uri
         )
 
     if written_ids is not None:
@@ -660,6 +684,7 @@ async def _ingest_fetch_result(
 
     await _reconcile_pdf_attachments(
         session,
+        client,
         stored,
         result.body,
         depth=depth,
@@ -743,6 +768,7 @@ def _extract_pdf_attachments(
 
 async def _reconcile_pdf_attachments(
     session: SingleDatabaseSession,
+    client: "HaikuRAG | None",
     parent_doc: Document,
     parent_body: bytes,
     *,
@@ -796,6 +822,7 @@ async def _reconcile_pdf_attachments(
         try:
             await _ingest_fetch_result(
                 session,
+                client,
                 child_fr,
                 title=None,
                 user_metadata=_caller_metadata(existing_child.metadata)
@@ -826,6 +853,7 @@ async def _reconcile_pdf_attachments(
 
 async def create_document_from_source(
     session: SingleDatabaseSession,
+    client: "HaikuRAG | None",
     source: str | Path,
     title: str | None = None,
     metadata: dict | None = None,
@@ -885,6 +913,7 @@ async def create_document_from_source(
                 if child.is_file() and filter.include_file(str(child)):
                     doc = await create_document_from_source(
                         session,
+                        client,
                         child,
                         title=None,
                         metadata=metadata,
@@ -1021,6 +1050,7 @@ async def create_document_from_source(
         return _note_source_change(
             await _ingest_fetch_result(
                 session,
+                client,
                 result,
                 title=title,
                 user_metadata=user_metadata,
@@ -1079,6 +1109,7 @@ async def set_document_source(
 
 async def update_document(
     session: SingleDatabaseSession,
+    client: "HaikuRAG | None",
     document_id: str,
     content: str | None = None,
     metadata: dict | None = None,
@@ -1136,7 +1167,7 @@ async def update_document(
             existing_doc.content = content
 
         return await _update_document_with_chunks(
-            session, existing_doc, chunks, docling_document
+            session, client, existing_doc, chunks, docling_document
         )
 
     if docling_document is not None:
@@ -1144,7 +1175,7 @@ async def update_document(
 
         new_chunks = await chunk_document(session, docling_document)
         return await _update_document_with_chunks(
-            session, existing_doc, new_chunks, docling_document
+            session, client, existing_doc, new_chunks, docling_document
         )
 
     assert content is not None
@@ -1155,7 +1186,7 @@ async def update_document(
 
     new_chunks = await chunk_document(session, converted_docling)
     return await _update_document_with_chunks(
-        session, existing_doc, new_chunks, converted_docling
+        session, client, existing_doc, new_chunks, converted_docling
     )
 
 

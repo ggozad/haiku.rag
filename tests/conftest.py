@@ -379,6 +379,7 @@ def build_pdf(attachments: list[tuple[str, bytes]]) -> bytes:
 
 async def fake_ingest_fetch_result(
     session,
+    client,
     result,
     *,
     title,
@@ -428,7 +429,13 @@ async def fake_ingest_fetch_result(
     if written_ids is not None:
         written_ids.add(doc.id)
     await _reconcile_pdf_attachments(
-        session, doc, result.body, depth=depth, force=force, written_ids=written_ids
+        session,
+        client,
+        doc,
+        result.body,
+        depth=depth,
+        force=force,
+        written_ids=written_ids,
     )
     return doc
 

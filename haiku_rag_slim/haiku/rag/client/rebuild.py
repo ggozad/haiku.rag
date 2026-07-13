@@ -1032,6 +1032,7 @@ async def _rebuild_full(
             try:
                 await create_document_from_source(
                     session,
+                    None,
                     source=source,
                     metadata=light_doc.metadata or {},
                     force=True,
