@@ -265,6 +265,84 @@ async def test_after_delete_fires_for_cascade(temp_db_path):
         assert all(event[0] == "delete" for event in spy.events)
 
 
+class AnnotateHook(Hook):
+    async def after_search(self, client, query, results):
+        for result in results:
+            result.annotations = ["XMT: transmit"]
+        return results
+
+
+@pytest.mark.asyncio
+async def test_after_search_hook_annotations_render_for_agent(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [AnnotateHook()]
+
+        async def fake_search(query, limit, search_type=None, filter=None, **kwargs):
+            return [(Chunk(id="c1", content="XMT lamp check", order=0), 0.9)]
+
+        client.chunk_repository.search = fake_search
+
+        results = await client.search("lamp", include_images=False)
+
+        assert results[0].annotations == ["XMT: transmit"]
+        assert "Note: XMT: transmit" in results[0].format_for_agent()
+
+
+def test_format_for_agent_without_annotations_has_no_notes():
+    from haiku.rag.store.models.chunk import SearchResult
+
+    result = SearchResult(content="plain", score=0.5)
+    assert "Note:" not in result.format_for_agent()
+
+
+@pytest.mark.asyncio
+async def test_annotations_survive_context_expansion(temp_db_path):
+    from haiku.rag.context import expand_with_items
+    from haiku.rag.store.models.chunk import SearchResult
+    from haiku.rag.store.models.document_item import DocumentItem
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        items = [
+            DocumentItem(
+                document_id="doc-1",
+                position=i,
+                self_ref=f"#/texts/{i}",
+                label="text",
+                text=f"Paragraph {i}. " * 10,
+            )
+            for i in range(5)
+        ]
+        await client.document_item_repository.create_items("doc-1", items)
+
+        r1 = SearchResult(
+            content="Paragraph 1.",
+            score=0.9,
+            chunk_id="c1",
+            document_id="doc-1",
+            doc_item_refs=["#/texts/1"],
+            annotations=["XMT: transmit", "shared note"],
+        )
+        r2 = SearchResult(
+            content="Paragraph 3.",
+            score=0.85,
+            chunk_id="c2",
+            document_id="doc-1",
+            doc_item_refs=["#/texts/3"],
+            annotations=["RCV: receive", "shared note"],
+        )
+
+        expanded = await expand_with_items(
+            client.document_item_repository, "doc-1", [r1, r2], 5000
+        )
+
+        assert len(expanded) == 1
+        assert expanded[0].annotations == [
+            "XMT: transmit",
+            "shared note",
+            "RCV: receive",
+        ]
+
+
 @pytest.mark.asyncio
 async def test_delete_missing_document_fires_nothing(temp_db_path):
     spy = RecordingHook()
