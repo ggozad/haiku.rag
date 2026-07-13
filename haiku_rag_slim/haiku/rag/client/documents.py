@@ -160,6 +160,9 @@ async def _store_document_with_chunks(
     if client._config.storage.auto_vacuum:
         client._schedule_vacuum()
 
+
+    for hook in client._hooks:
+        await hook.after_ingest(client, stored_doc)
     return stored_doc
 
 
@@ -211,6 +214,9 @@ async def _update_document_with_chunks(
     if client._config.storage.auto_vacuum:
         client._schedule_vacuum()
 
+
+    for hook in client._hooks:
+        await hook.after_ingest(client, updated_doc)
     return updated_doc
 
 
@@ -313,6 +319,10 @@ async def _store_documents_with_chunks(
     if client._config.storage.auto_vacuum:
         client._schedule_vacuum()
 
+
+    for doc in created:
+        for hook in client._hooks:
+            await hook.after_ingest(client, doc)
     return created
 
 
