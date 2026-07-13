@@ -18,6 +18,7 @@ import httpx
 from haiku.rag.client.documents import DocumentImport
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.converters import get_converter
+from haiku.rag.hooks import build_hooks, load_hooks
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.chunk import Chunk, SearchResult, SearchType
@@ -97,6 +98,7 @@ class HaikuRAG:
         self._vacuum_tasks: set[asyncio.Task] = set()
         self._last_vacuum_at: float | None = None
         self._vacuum_dirty = False
+        self._hooks = build_hooks(config.hooks, load_hooks()) if config.hooks else []
 
     @property
     def is_read_only(self) -> bool:
@@ -430,6 +432,9 @@ class HaikuRAG:
 
         if self._config.storage.auto_vacuum:
             self._schedule_vacuum()
+        for doc_id in ids_to_delete:
+            for hook in self._hooks:
+                await hook.after_delete(self, doc_id)
         return True
 
     async def list_documents(

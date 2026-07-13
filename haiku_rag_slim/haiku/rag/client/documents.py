@@ -163,11 +163,13 @@ async def _store_document_with_chunks(
 
             if client._config.storage.auto_vacuum:
                 client._schedule_vacuum()
-
-            return stored_doc
         except Exception:
             await client.store.restore_table_versions(versions)
             raise
+
+    for hook in client._hooks:
+        await hook.after_ingest(client, stored_doc)
+    return stored_doc
 
 
 async def _update_document_with_chunks(
@@ -220,11 +222,13 @@ async def _update_document_with_chunks(
 
             if client._config.storage.auto_vacuum:
                 client._schedule_vacuum()
-
-            return updated_doc
         except Exception:
             await client.store.restore_table_versions(versions)
             raise
+
+    for hook in client._hooks:
+        await hook.after_ingest(client, updated_doc)
+    return updated_doc
 
 
 async def create_document(
@@ -334,11 +338,14 @@ async def _store_documents_with_chunks(
 
             if client._config.storage.auto_vacuum:
                 client._schedule_vacuum()
-
-            return created
         except Exception:
             await client.store.restore_table_versions(versions)
             raise
+
+    for doc in created:
+        for hook in client._hooks:
+            await hook.after_ingest(client, doc)
+    return created
 
 
 async def import_documents(

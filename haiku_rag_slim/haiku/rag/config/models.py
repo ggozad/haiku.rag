@@ -548,6 +548,7 @@ class IngesterConfig(BaseModel):
 
 class AppConfig(BaseModel):
     environment: str = "production"
+    hooks: list[str] = Field(default_factory=list)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     lancedb: LanceDBConfig = Field(default_factory=LanceDBConfig)
     embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)

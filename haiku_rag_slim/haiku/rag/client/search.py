@@ -42,6 +42,9 @@ async def search(
         if search_type is None:
             search_type = "hybrid"
 
+        for hook in client._hooks:
+            query, filter = await hook.before_search(client, query, filter)
+
         reranker = client.reranker
 
         if reranker is None:
@@ -76,6 +79,9 @@ async def search(
 
     if include_images:
         await _populate_image_data(client, results)
+
+    for hook in client._hooks:
+        results = await hook.after_search(client, query, results)
 
     return results
 

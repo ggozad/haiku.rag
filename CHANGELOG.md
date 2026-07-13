@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- Client lifecycle hooks (`after_ingest`, `after_delete`, `before_search`, `after_search`) registered under the `haiku.rag.hooks` entry-point group and activated via the `hooks:` config list.
+
 ## [0.66.0] - 2026-07-14
 
 ### Changed
