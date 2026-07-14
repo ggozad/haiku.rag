@@ -1,6 +1,8 @@
 import asyncio
+import contextlib
 import json
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 from importlib import metadata
@@ -186,6 +188,23 @@ REQUIRED_TABLES: tuple[str, ...] = (
     "document_items",
     "settings",
 )
+
+
+@dataclass
+class TagInfo:
+    """A database-level tag aggregated across all tables.
+
+    A complete tag names the same tag on every table; a partial one (created
+    outside haiku.rag or left behind by a failure) lists the tables it is
+    missing from.
+    """
+
+    tables: dict[str, int]
+    missing_tables: list[str]
+
+    @property
+    def complete(self) -> bool:
+        return not self.missing_tables
 
 
 async def get_database_stats(db: lancedb.AsyncConnection) -> dict:
@@ -788,15 +807,19 @@ class Store:
         if hasattr(self, "db"):
             self.db.close()
 
+    def _tables(self) -> dict[str, lancedb.AsyncTable]:
+        """Map every haiku.rag table name to its open AsyncTable."""
+        return {
+            "documents": self.documents_table,
+            "document_meta": self.document_meta_table,
+            "chunks": self.chunks_table,
+            "document_items": self.document_items_table,
+            "settings": self.settings_table,
+        }
+
     async def current_table_versions(self) -> dict[str, int]:
         """Capture current versions of key tables for rollback using LanceDB's API."""
-        return {
-            "documents": await self.documents_table.version(),
-            "document_meta": await self.document_meta_table.version(),
-            "chunks": await self.chunks_table.version(),
-            "document_items": await self.document_items_table.version(),
-            "settings": await self.settings_table.version(),
-        }
+        return {name: await table.version() for name, table in self._tables().items()}
 
     async def restore_table_versions(self, versions: dict[str, int]) -> bool:
         """Restore tables to the provided versions using LanceDB's API.
@@ -805,12 +828,79 @@ class Store:
             ReadOnlyError: If the store is in read-only mode.
         """
         self._assert_writable()
-        await self.documents_table.restore(int(versions["documents"]))
-        await self.document_meta_table.restore(int(versions["document_meta"]))
-        await self.chunks_table.restore(int(versions["chunks"]))
-        await self.document_items_table.restore(int(versions["document_items"]))
-        await self.settings_table.restore(int(versions["settings"]))
+        for name, table in self._tables().items():
+            await table.restore(int(versions[name]))
         return True
+
+    async def create_tag(self, name: str) -> None:
+        """Tag the current version of every table with the given name.
+
+        Raises:
+            ReadOnlyError: If the store is in read-only mode.
+            ValueError: If the tag already exists on any table. A partial tag
+                (present on some tables only) must be deleted before the name
+                can be reused.
+        """
+        self._assert_writable()
+        tables = self._tables()
+
+        existing = [
+            table_name
+            for table_name, table in tables.items()
+            if name in await table.tags.list()
+        ]
+        if len(existing) == len(tables):
+            raise ValueError(f"Tag '{name}' already exists")
+        if existing:
+            raise ValueError(
+                f"Tag '{name}' already exists on some tables "
+                f"({', '.join(existing)}); delete it first with delete_tag"
+            )
+
+        versions = await self.current_table_versions()
+        created: list[str] = []
+        try:
+            for table_name, table in tables.items():
+                await table.tags.create(name, versions[table_name])
+                created.append(table_name)
+        except Exception:
+            for table_name in created:
+                with contextlib.suppress(Exception):
+                    await tables[table_name].tags.delete(name)
+            raise
+
+    async def list_tags(self) -> dict[str, TagInfo]:
+        """Aggregate per-table tags into database-level tags.
+
+        Returns:
+            Tag name mapped to a TagInfo with the tagged version per table
+            and the tables the tag is missing from (empty when complete).
+        """
+        tables = self._tables()
+        tags: dict[str, TagInfo] = {}
+        for table_name, table in tables.items():
+            for tag_name, tag in (await table.tags.list()).items():
+                info = tags.setdefault(tag_name, TagInfo(tables={}, missing_tables=[]))
+                info.tables[table_name] = tag["version"]
+        for info in tags.values():
+            info.missing_tables = [t for t in tables if t not in info.tables]
+        return tags
+
+    async def delete_tag(self, name: str) -> None:
+        """Delete the tag from every table that has it.
+
+        Raises:
+            ReadOnlyError: If the store is in read-only mode.
+            ValueError: If no table has the tag.
+        """
+        self._assert_writable()
+        found = False
+        for table in self._tables().values():
+            if name in await table.tags.list():
+                await table.tags.delete(name)
+                found = True
+        if not found:
+            raise ValueError(f"Tag '{name}' does not exist")
 
     async def _checkout_tables_before(self, before: datetime) -> None:
         """Checkout all tables to their state at or before the given datetime.
@@ -830,15 +920,7 @@ class Store:
             # Already naive, assume local time
             before_local = before
 
-        tables = [
-            ("documents", self.documents_table),
-            ("document_meta", self.document_meta_table),
-            ("chunks", self.chunks_table),
-            ("document_items", self.document_items_table),
-            ("settings", self.settings_table),
-        ]
-
-        for table_name, table in tables:
+        for table in self._tables().values():
             versions = await table.list_versions()
             # Find the latest version at or before the target datetime
             # Versions are sorted by version number, not timestamp, so we need to check all
@@ -884,14 +966,7 @@ class Store:
         Returns:
             List of version info dicts with "version" and "timestamp" keys
         """
-        table_map = {
-            "documents": self.documents_table,
-            "document_meta": self.document_meta_table,
-            "chunks": self.chunks_table,
-            "document_items": self.document_items_table,
-            "settings": self.settings_table,
-        }
-        table = table_map.get(table_name)
+        table = self._tables().get(table_name)
         if table is None:
             raise ValueError(f"Unknown table: {table_name}")
 

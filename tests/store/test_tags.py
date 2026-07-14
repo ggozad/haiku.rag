@@ -1,0 +1,125 @@
+import pytest
+from lancedb.table import AsyncTags
+
+from haiku.rag.store import ReadOnlyError, Store
+from haiku.rag.store.engine import REQUIRED_TABLES
+from haiku.rag.store.models import Document
+from haiku.rag.store.repositories.document import DocumentRepository
+
+
+@pytest.mark.asyncio
+async def test_create_and_list_tags(temp_db_path):
+    """create_tag tags every table at its current version; list_tags reports
+    the tag as complete with the exact versions."""
+    async with Store(temp_db_path, create=True) as store:
+        repo = DocumentRepository(store)
+        await repo.create(Document(content="First document"))
+
+        versions = await store.current_table_versions()
+        await store.create_tag("release-1")
+
+        tags = await store.list_tags()
+        assert set(tags) == {"release-1"}
+        info = tags["release-1"]
+        assert info.complete is True
+        assert info.missing_tables == []
+        assert info.tables == versions
+
+
+@pytest.mark.asyncio
+async def test_create_tag_rejects_existing(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        await store.create_tag("release-1")
+
+        with pytest.raises(ValueError, match="already exists"):
+            await store.create_tag("release-1")
+
+        tags = await store.list_tags()
+        assert tags["release-1"].complete is True
+
+
+@pytest.mark.asyncio
+async def test_create_tag_rejects_partial_existing(temp_db_path):
+    """A tag present on only some tables blocks creation before anything is
+    written; the error tells the user to delete it first."""
+    async with Store(temp_db_path, create=True) as store:
+        version = await store.chunks_table.version()
+        await store.chunks_table.tags.create("stale", version)
+
+        with pytest.raises(ValueError, match="delete"):
+            await store.create_tag("stale")
+
+        tags = await store.list_tags()
+        assert tags["stale"].complete is False
+        assert set(tags["stale"].tables) == {"chunks"}
+        assert set(tags["stale"].missing_tables) == set(REQUIRED_TABLES) - {"chunks"}
+
+
+@pytest.mark.asyncio
+async def test_create_tag_rolls_back_own_tags_on_failure(temp_db_path, monkeypatch):
+    """A midway failure removes the tags this call created and leaves
+    pre-existing tags untouched."""
+    async with Store(temp_db_path, create=True) as store:
+        await store.create_tag("keep")
+
+        real_create = AsyncTags.create
+        calls = {"n": 0}
+
+        async def flaky(self, name: str, version: int) -> None:
+            calls["n"] += 1
+            if calls["n"] == 4:
+                raise RuntimeError("boom")
+            await real_create(self, name, version)
+
+        monkeypatch.setattr(AsyncTags, "create", flaky)
+
+        with pytest.raises(RuntimeError, match="boom"):
+            await store.create_tag("broken")
+
+        monkeypatch.undo()
+
+        tags = await store.list_tags()
+        assert "broken" not in tags
+        assert tags["keep"].complete is True
+
+
+@pytest.mark.asyncio
+async def test_delete_tag(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        await store.create_tag("release-1")
+        await store.delete_tag("release-1")
+
+        assert await store.list_tags() == {}
+
+
+@pytest.mark.asyncio
+async def test_delete_tag_heals_partial(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        version = await store.chunks_table.version()
+        await store.chunks_table.tags.create("stale", version)
+
+        await store.delete_tag("stale")
+
+        assert await store.list_tags() == {}
+
+
+@pytest.mark.asyncio
+async def test_delete_tag_missing_raises(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        with pytest.raises(ValueError, match="does not exist"):
+            await store.delete_tag("nope")
+
+
+@pytest.mark.asyncio
+async def test_tag_writes_raise_when_read_only(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        await store.create_tag("release-1")
+
+    async with Store(temp_db_path, read_only=True) as store:
+        with pytest.raises(ReadOnlyError):
+            await store.create_tag("release-2")
+        with pytest.raises(ReadOnlyError):
+            await store.delete_tag("release-1")
+
+        tags = await store.list_tags()
+        assert tags["release-1"].complete is True
