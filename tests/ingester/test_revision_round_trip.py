@@ -38,7 +38,9 @@ async def test_fs_second_sweep_emits_unchanged_after_ingest(temp_db_path, tmp_pa
     """The full round-trip: ingest a file, build a sync_state-shaped snapshot
     from document.metadata, hand it to FSSource.discover() — must see
     UNCHANGED, not UPSERT. This is exactly what the periodic poller does."""
-    file_path = tmp_path / "doc.md"
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    file_path = docs_dir / "doc.md"
     file_path.write_text("hello")
 
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -47,7 +49,7 @@ async def test_fs_second_sweep_emits_unchanged_after_ingest(temp_db_path, tmp_pa
     assert doc.uri is not None
     snapshot = {doc.uri: doc.metadata["source_revision"]}
 
-    src = FSSource(root=tmp_path)
+    src = FSSource(root=docs_dir)
     kinds: list[SourceEventKind] = []
     async for event in src.discover(since=snapshot):
         kinds.append(event.kind)
@@ -60,7 +62,9 @@ async def test_fs_second_sweep_emits_unchanged_after_ingest(temp_db_path, tmp_pa
 async def test_fs_second_sweep_emits_upsert_when_file_changes(temp_db_path, tmp_path):
     """Counterpart to the unchanged test: a file modified after ingest still
     triggers UPSERT. Ensures the round-trip doesn't accidentally over-skip."""
-    file_path = tmp_path / "doc.md"
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    file_path = docs_dir / "doc.md"
     file_path.write_text("hello")
 
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -74,7 +78,7 @@ async def test_fs_second_sweep_emits_upsert_when_file_changes(temp_db_path, tmp_
     # on any sane filesystem, but assert anyway to make the intent explicit.
     assert str(file_path.stat().st_mtime_ns) != doc.metadata["source_revision"]
 
-    src = FSSource(root=tmp_path)
+    src = FSSource(root=docs_dir)
     kinds: list[SourceEventKind] = []
     async for event in src.discover(since=snapshot):
         kinds.append(event.kind)
@@ -242,7 +246,9 @@ async def test_directory_ingest_threads_configured_source_to_provider(
     """Directory ingestion with a configured source passes that source's id and
     fetch context to each child, so the provider sees the configured source id
     rather than an ad-hoc fs: identity."""
-    (tmp_path / "doc.md").write_text("hello")
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "doc.md").write_text("hello")
 
     seen_source_ids: list[str] = []
 
@@ -251,11 +257,11 @@ async def test_directory_ingest_threads_configured_source_to_provider(
             seen_source_ids.append(source_id)
             return {"collection": source_id}
 
-    source = FSSource(root=tmp_path, source_id="docs")
+    source = FSSource(root=docs_dir, source_id="docs")
 
     async with HaikuRAG(temp_db_path, create=True) as client:
         docs = await client.create_document_from_source(
-            tmp_path,
+            docs_dir,
             sources=[source],
             source_id="docs",
             metadata_provider=Provider(),
