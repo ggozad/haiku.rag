@@ -165,7 +165,7 @@ qa:
 
 search:
   limit: 5
-  max_context_chars: 10000
+  max_context_chars: 5000
 ```
 
 See [Search and question answering](../configuration/qa.md) for every knob.

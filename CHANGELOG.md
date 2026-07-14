@@ -4,6 +4,7 @@
 ### Changed
 
 - Unknown `reranking.model.provider` raises `ValueError` instead of silently disabling reranking.
+- `search.max_context_chars` default lowered from 10000 to 5000.
 
 ### Removed
 
