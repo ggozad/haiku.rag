@@ -16,6 +16,21 @@ from haiku.rag.store.models.chunk import Chunk
 tqdm.tqdm.set_lock(threading.RLock())
 
 
+def _prepare_for_model(
+    ids: list[int],
+    pair_ids: list[int] | None = None,
+    max_length: int | None = None,
+    **_,
+) -> dict[str, list[int]]:
+    # transformers 5.x removed tokenizer.prepare_for_model, which mxbai-rerank
+    # calls with add_special_tokens=False and truncation="only_second"; for that
+    # call pattern it reduces to truncating the pair and concatenating.
+    pair_ids = pair_ids or []
+    if max_length is not None:
+        pair_ids = pair_ids[: max(0, max_length - len(ids))]
+    return {"input_ids": ids + pair_ids}
+
+
 class MxBAIReranker(RerankerBase):
     def __init__(self):
         model_name = (
@@ -24,6 +39,8 @@ class MxBAIReranker(RerankerBase):
             else "mixedbread-ai/mxbai-rerank-base-v2"
         )
         self._client = MxbaiRerankV2(model_name, disable_transformers_warnings=True)
+        if not hasattr(self._client.tokenizer, "prepare_for_model"):
+            self._client.tokenizer.prepare_for_model = _prepare_for_model
 
     async def _rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10

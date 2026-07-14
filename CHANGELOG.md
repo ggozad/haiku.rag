@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- `mxbai` extra allows `transformers` 5.x (`<6.0.0`); `MxBAIReranker` supplies the `tokenizer.prepare_for_model` variant `mxbai-rerank` needs when the tokenizer lacks it.
+
 ### Fixed
 
 - Context expansion no longer drops a retrieved result from a merged group when clipping to `search.max_context_chars`; groups whose clip would evict a constituent's evidence are returned as separate expanded results.

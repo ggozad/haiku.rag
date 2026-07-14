@@ -76,6 +76,17 @@ async def test_mxbai_reranker():
         pytest.skip("MxBAI package not installed")
 
 
+def test_mxbai_prepare_for_model_shim():
+    pytest.importorskip("mxbai_rerank")
+    from haiku.rag.reranking.mxbai import _prepare_for_model
+
+    assert _prepare_for_model([1, 2], [3, 4]) == {"input_ids": [1, 2, 3, 4]}
+    assert _prepare_for_model([1, 2], [3, 4, 5], max_length=4) == {
+        "input_ids": [1, 2, 3, 4]
+    }
+    assert _prepare_for_model([1, 2], [3, 4], max_length=2) == {"input_ids": [1, 2]}
+
+
 @pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_cohere_reranker():

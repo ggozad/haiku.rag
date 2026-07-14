@@ -1793,7 +1793,7 @@ requires-dist = [
     { name = "textual-image", specifier = ">=0.8.5" },
     { name = "torch", marker = "extra == 'jina'", specifier = ">=2.0.0" },
     { name = "transformers", marker = "extra == 'jina'", specifier = ">=4.40.0" },
-    { name = "transformers", marker = "extra == 'mxbai'", specifier = ">=4.49.0,<5.0.0" },
+    { name = "transformers", marker = "extra == 'mxbai'", specifier = ">=4.49.0,<6.0.0" },
     { name = "tree-sitter", marker = "extra == 'tui'", specifier = ">=0.25.2" },
     { name = "tree-sitter-json", marker = "extra == 'tui'", specifier = ">=0.24.8" },
     { name = "typer", specifier = ">=0.21.0,<0.22.0" },
