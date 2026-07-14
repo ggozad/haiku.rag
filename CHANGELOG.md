@@ -4,6 +4,7 @@
 ### Fixed
 
 - Context expansion no longer drops a retrieved result from a merged group when clipping to `search.max_context_chars`; groups whose clip would evict a constituent's evidence are returned as separate expanded results.
+- Context expansion now fills missing page metadata from input search results when the referenced items survive in the expanded result.
 
 ## [0.65.1] - 2026-07-10
 

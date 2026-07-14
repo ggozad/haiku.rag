@@ -1027,6 +1027,107 @@ class TestExpandWithItems:
             assert by_chunk["c2"].content == "B" * 400
             assert by_chunk["c2"].page_numbers == [2]
 
+    async def test_surviving_refs_fill_missing_item_pages_from_input(
+        self, temp_db_path
+    ):
+        """When a visible item has missing page metadata, use the input
+        result's page_numbers as a floor for that surviving ref."""
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/texts/0",
+                    label="text",
+                    text="Visible item with missing item-table pages.",
+                    page_numbers=[],
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=1,
+                    self_ref="#/texts/1",
+                    label="text",
+                    text="Visible item with stored item-table pages.",
+                    page_numbers=[8],
+                ),
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            r_missing_item_page = SearchResult(
+                content=items[0].text,
+                score=0.9,
+                chunk_id="c-missing",
+                document_id="doc-1",
+                doc_item_refs=["#/texts/0"],
+                page_numbers=[7],
+            )
+            r_with_item_page = SearchResult(
+                content=items[1].text,
+                score=0.8,
+                chunk_id="c-present",
+                document_id="doc-1",
+                doc_item_refs=["#/texts/1"],
+                page_numbers=[8],
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository,
+                "doc-1",
+                [r_missing_item_page, r_with_item_page],
+                5000,
+            )
+
+            assert len(expanded) == 1
+            assert set(expanded[0].doc_item_refs) == {"#/texts/0", "#/texts/1"}
+            assert expanded[0].page_numbers == [7, 8]
+
+    async def test_input_pages_not_added_for_clipped_out_refs(self, temp_db_path):
+        """Input page metadata is not blindly unioned when only some of a
+        constituent's refs survive the clip window."""
+        from haiku.rag.client import HaikuRAG
+
+        item0_text = "LEFTMARK " + "a" * 91
+        item1_text = "RIGHTMARK " + "b" * 70
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/texts/0",
+                    label="text",
+                    text=item0_text,
+                    page_numbers=[1],
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=1,
+                    self_ref="#/texts/1",
+                    label="text",
+                    text=item1_text,
+                    page_numbers=[2],
+                ),
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            result = SearchResult(
+                content=item0_text,
+                score=0.9,
+                chunk_id="c-both",
+                document_id="doc-1",
+                doc_item_refs=["#/texts/0", "#/texts/1"],
+                page_numbers=[1, 2],
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [result], 100
+            )
+
+            assert len(expanded) == 1
+            assert "LEFTMARK" in expanded[0].content
+            assert "RIGHTMARK" not in expanded[0].content
+            assert expanded[0].doc_item_refs == ["#/texts/0"]
+            assert expanded[0].page_numbers == [1]
+
     async def test_fuzzy_match_preserves_central_marker(self, temp_db_path):
         """The chunk's text need not be verbatim in the joined item text: a clean
         central marker is still located via the central-slice anchor."""

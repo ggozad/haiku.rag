@@ -284,6 +284,20 @@ def _group_lost_constituent(built: SearchResult, group: list[SearchResult]) -> b
     )
 
 
+def _add_input_pages_for_surviving_refs(
+    pages: set[int], refs: list[str], original_results: list[SearchResult]
+) -> None:
+    """Fill missing item-table pages from inputs whose own refs all survived."""
+    surviving = set(refs)
+    if not surviving:
+        return
+    for result in original_results:
+        if not result.page_numbers or not result.doc_item_refs:
+            continue
+        if set(result.doc_item_refs) <= surviving:
+            pages.update(result.page_numbers)
+
+
 def _build_result(
     range_start: int,
     range_end: int,
@@ -373,6 +387,8 @@ def _build_result(
             )
         else:
             pages, refs, labels = _collect_meta(base_spans)
+
+    _add_input_pages_for_surviving_refs(pages, refs, original_results)
 
     # Carry image_data and picture_captions from the originally retrieved
     # chunks, but only for constituents whose refs survive the window — a
