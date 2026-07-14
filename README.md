@@ -23,7 +23,7 @@ Agentic RAG built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.p
 - **MCP server** — Expose as tools for AI assistants (Claude Desktop, etc.)
 - **Visual grounding** — View chunks highlighted on original page images
 - **Production ingester** — Long-lived `haiku-ingester` service with persistent SQLite queue, async worker pool with retries and a dead-letter queue, FS / HTTP / S3 / WebDAV source adapters, FastAPI control plane, and a browser dashboard for operators. See [docs/ingester.md](docs/ingester.md).
-- **Time travel** — Query the database at any historical point with `--before`
+- **Time travel** — Query the database at any historical point with `--before`, or tag states and query them with `--at`
 - **Inspector** — TUI for browsing documents, chunks, and search results
 
 ## Installation

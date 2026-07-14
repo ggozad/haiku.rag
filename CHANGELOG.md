@@ -1,6 +1,14 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- Database tags: `haiku-rag tag create/list/delete`, `--at TAG` time travel, tags shown in `history`. Vacuum retains versions back to the oldest tag.
+
+### Changed
+
+- `lancedb` bumped to 0.34.0.
+
 ### Fixed
 
 - `docling-local` text conversion no longer misroutes markdown/HTML content whose first bytes collide with a binary magic signature (e.g. `BM`, `ID3`) to an image or audio backend.
@@ -11,7 +19,6 @@
 
 - Unknown `reranking.model.provider` raises `ValueError` instead of silently disabling reranking.
 - `search.max_context_chars` default lowered from 10000 to 5000.
-- `lancedb` bumped to 0.34.0.
 
 ### Removed
 

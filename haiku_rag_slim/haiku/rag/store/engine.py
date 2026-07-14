@@ -371,18 +371,25 @@ class Store:
         create: bool = False,
         read_only: bool = False,
         before: datetime | None = None,
+        at_tag: str | None = None,
         skip_migration_check: bool = False,
     ):
+        if before is not None and at_tag is not None:
+            raise ValueError("before and at_tag are mutually exclusive")
         self.db_path: Path = db_path
         self._config = config
         self._before = before
+        self._at_tag = at_tag
         # Time-travel mode is always read-only
-        self._read_only = read_only or (before is not None)
+        self._read_only = read_only or before is not None or at_tag is not None
         self._create = create
         self._skip_validation = skip_validation
         self._skip_migration_check = skip_migration_check
         self._vacuum_lock = asyncio.Lock()
         self._write_lock = asyncio.Lock()
+        # Held by rebuild_database for its whole run; tag operations check it
+        # and fail fast instead of snapshotting a half-rebuilt database.
+        self._rebuild_lock = asyncio.Lock()
         self._is_new_db = False
 
         # Check if database exists (for local filesystem only)
@@ -432,9 +439,11 @@ class Store:
         # pending, before creating any newly-introduced table.
         await self._init_tables(is_new_db)
 
-        # Checkout tables to historical state if before is specified
+        # Checkout tables to historical state if before or at_tag is specified
         if self._before is not None:
             await self._checkout_tables_before(self._before)
+        if self._at_tag is not None:
+            await self._checkout_tables_at_tag(self._at_tag)
 
         # Set version for new databases.
         if is_new_db and not self._read_only:
@@ -496,6 +505,13 @@ class Store:
         """Raise ReadOnlyError if the store is in read-only mode."""
         if self._read_only:
             raise ReadOnlyError("Cannot modify database in read-only mode")
+
+    def _assert_not_rebuilding(self) -> None:
+        """Raise if a rebuild is in progress in this process."""
+        if self._rebuild_lock.locked():
+            raise ValueError(
+                "Rebuild in progress; tag operations are unavailable until it completes"
+            )
 
     async def vacuum(self, retention_seconds: int | None = None) -> None:
         """Optimize and clean up old versions across all tables to reduce disk usage.
@@ -871,11 +887,12 @@ class Store:
 
         Raises:
             ReadOnlyError: If the store is in read-only mode.
-            ValueError: If the tag already exists on any table. A partial tag
-                (present on some tables only) must be deleted before the name
-                can be reused.
+            ValueError: If a rebuild is in progress, or if the tag already
+                exists on any table. A partial tag (present on some tables
+                only) must be deleted before the name can be reused.
         """
         self._assert_writable()
+        self._assert_not_rebuilding()
         tables = self._tables()
 
         async with self._write_lock:
@@ -928,9 +945,10 @@ class Store:
 
         Raises:
             ReadOnlyError: If the store is in read-only mode.
-            ValueError: If no table has the tag.
+            ValueError: If a rebuild is in progress or no table has the tag.
         """
         self._assert_writable()
+        self._assert_not_rebuilding()
         async with self._write_lock:
             found = False
             for table in self._tables().values():
@@ -993,6 +1011,17 @@ class Store:
 
             # Checkout to the found version
             await table.checkout(best_version)
+
+    async def _checkout_tables_at_tag(self, name: str) -> None:
+        """Checkout all tables at the version the tag points to.
+
+        Raises:
+            ValueError: If any table is missing the tag.
+        """
+        for table_name, table in self._tables().items():
+            if name not in await table.tags.list():
+                raise ValueError(f"Tag '{name}' does not exist on table '{table_name}'")
+            await table.checkout(name)
 
     async def list_table_versions(self, table_name: str) -> list[dict[str, Any]]:
         """List version history for a table.

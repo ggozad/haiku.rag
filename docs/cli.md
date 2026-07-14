@@ -8,6 +8,7 @@ The `haiku-rag` CLI provides complete document management functionality.
     - `--config` - Specify custom configuration file
     - `--read-only` - Open database in read-only mode (blocks writes, skips upgrades)
     - `--before` - Query database as it existed before a datetime (implies `--read-only`)
+    - `--at` - Query database at a tag (implies `--read-only`, mutually exclusive with `--before`)
     - `--version` / `-v` - Show version and exit
 
     Per-command options:
@@ -572,6 +573,31 @@ Supported datetime formats:
 !!! note
     Time travel mode automatically enables read-only mode. You cannot modify the database while viewing historical state.
 
+### Tags
+
+Tags name the current database state so you can return to it without remembering timestamps. A tag covers every table in the database. Tagged versions survive `vacuum`; everything older than your oldest tag is retained until that tag is deleted, so remove tags you no longer need.
+
+```bash
+# Tag the current state, e.g. at deploy time or after an ingestion run
+haiku-rag tag create release-1
+
+# List tags with the versions they point to
+haiku-rag tag list
+
+# Delete a tag, releasing its versions for cleanup
+haiku-rag tag delete release-1
+```
+
+Query the database at a tag with `--at`:
+
+```bash
+haiku-rag --at release-1 list
+haiku-rag --at release-1 search "machine learning"
+haiku-rag --at release-1 ask "What documents existed?"
+```
+
+`--at` implies read-only mode and is mutually exclusive with `--before`.
+
 ### Version History
 
 View version history for database tables:
@@ -587,20 +613,20 @@ haiku-rag history --table documents
 haiku-rag history --limit 10
 ```
 
-Output shows version numbers and timestamps, sorted newest first:
+Output shows version numbers and timestamps, sorted newest first, with tags marked:
 
 ```
 Version History
 
 documents
-  v5: 2025-01-15 14:30:00
+  v5: 2025-01-15 14:30:00  <- release-1
   v4: 2025-01-14 10:00:00
   v3: 2025-01-13 09:15:00
 
 chunks
-  v8: 2025-01-15 14:30:00
+  v8: 2025-01-15 14:30:00  <- release-1
   v7: 2025-01-14 10:00:00
   ...
 ```
 
-Use the timestamps from `history` to construct `--before` queries.
+Use the timestamps from `history` to construct `--before` queries, or tag names with `--at`.

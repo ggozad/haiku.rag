@@ -84,3 +84,98 @@ class TestCliMigrationError:
             with pytest.raises(SystemExit) as exc_info:
                 cli_wrapper()
             assert exc_info.value.code == 1
+
+
+class TestTagCommands:
+    def test_tag_round_trip(self, temp_db_path):
+        db = str(temp_db_path)
+
+        result = runner.invoke(cli, ["init", "--db", db])
+        assert result.exit_code == 0
+
+        result = runner.invoke(cli, ["tag", "create", "release-1", "--db", db])
+        assert result.exit_code == 0
+        assert "release-1" in result.output
+
+        result = runner.invoke(cli, ["tag", "list", "--db", db])
+        assert result.exit_code == 0
+        assert "release-1" in result.output
+        assert "partial" not in result.output
+
+        result = runner.invoke(cli, ["history", "--db", db, "-t", "documents"])
+        assert result.exit_code == 0
+        assert "release-1" in result.output
+
+        result = runner.invoke(cli, ["tag", "create", "release-1", "--db", db])
+        assert result.exit_code == 1
+        assert "already exists" in result.output
+
+        result = runner.invoke(cli, ["tag", "delete", "release-1", "--db", db])
+        assert result.exit_code == 0
+
+        result = runner.invoke(cli, ["tag", "list", "--db", db])
+        assert result.exit_code == 0
+        assert "No tags" in result.output
+
+        result = runner.invoke(cli, ["tag", "delete", "release-1", "--db", db])
+        assert result.exit_code == 1
+        assert "does not exist" in result.output
+
+    def test_tag_create_rejected_when_migrations_pending(self, temp_db_path):
+        """A writable tag operation must hit the migration gate and must not
+        mutate a legacy database (e.g. by creating missing tables)."""
+        import asyncio
+
+        import lancedb
+
+        from haiku.rag.store.engine import Store
+
+        async def _prepare_legacy_db():
+            async with Store(temp_db_path, create=True) as store:
+                await store.set_haiku_version("0.19.0")
+            db = await lancedb.connect_async(temp_db_path.absolute())
+            await db.drop_table("document_meta")
+            db.close()
+
+        asyncio.run(_prepare_legacy_db())
+
+        result = runner.invoke(
+            cli, ["tag", "create", "release-1", "--db", str(temp_db_path)]
+        )
+        assert result.exit_code == 1
+        assert isinstance(result.exception, MigrationRequiredError)
+
+        async def _table_names() -> list[str]:
+            db = await lancedb.connect_async(temp_db_path.absolute())
+            tables = (await db.list_tables()).tables
+            db.close()
+            return tables
+
+        assert "document_meta" not in asyncio.run(_table_names())
+
+    def test_tag_write_commands_reject_time_travel(self, temp_db_path):
+        db = str(temp_db_path)
+        result = runner.invoke(cli, ["init", "--db", db])
+        assert result.exit_code == 0
+
+        result = runner.invoke(cli, ["--at", "x", "tag", "create", "r1", "--db", db])
+        assert result.exit_code == 1
+        assert "--at" in result.output
+
+        result = runner.invoke(
+            cli, ["--before", "2025-01-01", "tag", "delete", "r1", "--db", db]
+        )
+        assert result.exit_code == 1
+        assert "--before" in result.output
+
+    def test_tag_create_invalid_name_fails_cleanly(self, temp_db_path):
+        """lance restricts ref names to alphanumeric, '.', '-', '_'; the CLI
+        surfaces that as a clean error instead of a traceback."""
+        db = str(temp_db_path)
+        result = runner.invoke(cli, ["init", "--db", db])
+        assert result.exit_code == 0
+
+        result = runner.invoke(cli, ["tag", "create", "[red]release[/red]", "--db", db])
+        assert result.exit_code == 1
+        assert "Error:" in result.output
+        assert "Ref characters" in result.output

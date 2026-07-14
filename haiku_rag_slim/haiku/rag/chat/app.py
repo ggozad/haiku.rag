@@ -86,6 +86,7 @@ class ChatApp(App):
         skills: list[Skill],
         read_only: bool = False,
         before: datetime | None = None,
+        at_tag: str | None = None,
         model: str | None = None,
     ) -> None:
         super().__init__()
@@ -93,6 +94,7 @@ class ChatApp(App):
         self._skills = skills
         self.read_only = read_only
         self.before = before
+        self.at_tag = at_tag
         self._model = model
         self.client: HaikuRAG | None = None
         self.config = get_config()
@@ -151,6 +153,7 @@ class ChatApp(App):
             config=self.config,
             read_only=self.read_only,
             before=self.before,
+            at_tag=self.at_tag,
         )
         await self.client.__aenter__()
 

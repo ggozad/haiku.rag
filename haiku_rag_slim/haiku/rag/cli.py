@@ -48,6 +48,7 @@ def cli():
 # Module-level flags set by callback
 _read_only: bool = False
 _before: datetime | None = None
+_at_tag: str | None = None
 
 
 def create_app(db: Path | None = None) -> HaikuRAGApp:  # pragma: no cover
@@ -62,7 +63,11 @@ def create_app(db: Path | None = None) -> HaikuRAGApp:  # pragma: no cover
     config = get_config()
     db_path = db if db else config.storage.data_dir / "haiku.rag.lancedb"
     return HaikuRAGApp(
-        db_path=db_path, config=config, read_only=_read_only, before=_before
+        db_path=db_path,
+        config=config,
+        read_only=_read_only,
+        before=_before,
+        at_tag=_at_tag,
     )
 
 
@@ -108,10 +113,20 @@ def main(
         help="Query database as it existed before this datetime (implies --read-only). "
         "Accepts ISO 8601 format (e.g., 2025-01-15T14:30:00) or date (e.g., 2025-01-15)",
     ),
+    at: str | None = typer.Option(
+        None,
+        "--at",
+        help="Query database at this tag (implies --read-only). "
+        "Mutually exclusive with --before",
+    ),
 ):
     """haiku.rag CLI - Vector database RAG system"""
-    global _read_only, _before
+    global _read_only, _before, _at_tag
     _read_only = read_only
+
+    if before is not None and at is not None:  # pragma: no cover
+        typer.echo("Error: --before and --at are mutually exclusive")
+        raise typer.Exit(1)
 
     # Parse and store before datetime
     if before is not None:  # pragma: no cover
@@ -124,6 +139,7 @@ def main(
             raise typer.Exit(1)
     else:
         _before = None
+    _at_tag = at
     # Load config from --config, local folder, or default directory
     config_path = find_config_file(cli_path=config)
     if config_path:
@@ -635,6 +651,70 @@ def history(  # pragma: no cover
     asyncio.run(app.history(table=table, limit=limit))
 
 
+tag_cli = typer.Typer(
+    help="Manage database tags (named versions across all tables)",
+    no_args_is_help=True,
+)
+_cli.add_typer(tag_cli, name="tag")
+
+
+def _reject_time_travel(operation: str) -> None:
+    """Writable tag operations act on the live database state; combining them
+    with a historical checkout would tag something other than what the user
+    sees."""
+    if _before is not None or _at_tag is not None:
+        typer.echo(f"Error: --before/--at cannot be used with {operation}", err=True)
+        raise typer.Exit(1)
+
+
+@tag_cli.command("create", help="Tag the current database state")
+def tag_create(  # pragma: no cover
+    name: str = typer.Argument(help="Name of the tag to create"),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    _reject_time_travel("tag create")
+    app = create_app(db)
+    try:
+        asyncio.run(app.create_tag(name))
+    except (ValueError, RuntimeError) as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+
+
+@tag_cli.command("list", help="List database tags")
+def tag_list(  # pragma: no cover
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    asyncio.run(app.list_tags())
+
+
+@tag_cli.command("delete", help="Delete a tag")
+def tag_delete(  # pragma: no cover
+    name: str = typer.Argument(help="Name of the tag to delete"),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    _reject_time_travel("tag delete")
+    app = create_app(db)
+    try:
+        asyncio.run(app.delete_tag(name))
+    except (ValueError, RuntimeError) as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+
+
 @_cli.command("download-models", help="Download Docling and Ollama models per config")
 def download_models_cmd():  # pragma: no cover
     app = HaikuRAGApp(db_path=Path(), config=get_config(), read_only=True)
@@ -661,7 +741,7 @@ def inspect(  # pragma: no cover
         raise typer.Exit(1) from e
 
     db_path = db if db else get_config().storage.data_dir / "haiku.rag.lancedb"
-    run_inspector(db_path, read_only=True, before=_before)
+    run_inspector(db_path, read_only=True, before=_before, at_tag=_at_tag)
 
 
 @_cli.command("chat", help="Launch interactive chat TUI for conversational RAG")
@@ -693,6 +773,7 @@ def chat(  # pragma: no cover
         db_path,
         read_only=True,
         before=_before,
+        at_tag=_at_tag,
         model=model,
         skills=skills,
     )

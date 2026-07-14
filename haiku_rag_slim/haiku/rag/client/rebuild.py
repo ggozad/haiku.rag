@@ -71,15 +71,30 @@ async def rebuild_database(
     """Rebuild the database with the specified mode.
 
     Yields the ID of each document as it is processed.
+
+    Holds the store's rebuild lock for the whole run so tag operations fail
+    fast instead of snapshotting a half-rebuilt database. The lock is held
+    across yields; an abandoned generator releases it when closed or
+    garbage-collected.
     """
     from haiku.rag.client import RebuildMode
 
     if mode is None:
         mode = RebuildMode.FULL
 
-    if mode == RebuildMode.SET_EMBEDDER:
-        await _set_embedder(client)
-        return
+    async with client.store._rebuild_lock:
+        if mode == RebuildMode.SET_EMBEDDER:
+            await _set_embedder(client)
+            return
+
+        async for doc_id in _rebuild_locked(client, mode):
+            yield doc_id
+
+
+async def _rebuild_locked(
+    client: "HaikuRAG", mode: "RebuildMode"
+) -> AsyncGenerator[str, None]:
+    from haiku.rag.client import RebuildMode
 
     # Resolve any leftover staging/marker tables from a previously
     # interrupted rebuild. Returns True only when phase 1 was already

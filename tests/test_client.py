@@ -2264,3 +2264,32 @@ async def test_rebuild_rechunk_with_url_prefixed_stored_content(
         assert doc_after is not None
         assert "example.com" in doc_after.content
         assert "Stored" in doc_after.content
+
+
+async def test_client_at_tag_opens_tagged_state_read_only(temp_db_path):
+    """HaikuRAG(at_tag=...) opens the database read-only at the tagged state."""
+    dim = Config.embeddings.model.vector_dim
+
+    def _doc(name: str, text: str) -> DoclingDocument:
+        doc = DoclingDocument(name=name)
+        doc.add_text(label=DocItemLabel.TEXT, text=text)
+        return doc
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.import_document(
+            _doc("first", "First document"),
+            [Chunk(content="First document", embedding=[0.1] * dim, order=0)],
+            uri="mem://first",
+        )
+        await client.store.create_tag("release-1")
+        await client.import_document(
+            _doc("second", "Second document"),
+            [Chunk(content="Second document", embedding=[0.1] * dim, order=0)],
+            uri="mem://second",
+        )
+
+    async with HaikuRAG(temp_db_path, at_tag="release-1") as client:
+        assert client.is_read_only is True
+        docs = await client.list_documents()
+        assert len(docs) == 1
+        assert docs[0].uri == "mem://first"

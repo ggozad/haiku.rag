@@ -74,6 +74,67 @@ class TestStoreTimeTravel:
         assert "No data exists before" in str(exc_info.value)
 
     @pytest.mark.asyncio
+    async def test_store_with_at_tag_is_read_only(self, temp_db_path):
+        """Store with at_tag parameter is automatically read-only."""
+        async with Store(temp_db_path, create=True) as store:
+            await store.create_tag("release-1")
+
+        async with Store(temp_db_path, at_tag="release-1") as store:
+            assert store.is_read_only is True
+            with pytest.raises(ReadOnlyError):
+                store._assert_writable()
+
+    @pytest.mark.asyncio
+    async def test_store_at_tag_checks_out_tagged_state(self, temp_db_path):
+        """Store with at_tag checks out every table at the tagged version."""
+        async with Store(temp_db_path, create=True) as store:
+            repo = DocumentRepository(store)
+            await repo.create(Document(content="First document"))
+            await store.create_tag("release-1")
+            await repo.create(Document(content="Second document"))
+
+        async with Store(temp_db_path, at_tag="release-1") as store:
+            docs = await DocumentRepository(store).list_all(include_content=True)
+            assert len(docs) == 1
+            assert docs[0].content == "First document"
+
+        async with Store(temp_db_path) as store:
+            docs = await DocumentRepository(store).list_all()
+            assert len(docs) == 2
+
+    @pytest.mark.asyncio
+    async def test_store_at_tag_unknown_raises(self, temp_db_path):
+        async with Store(temp_db_path, create=True):
+            pass
+
+        with pytest.raises(ValueError, match="nope"):
+            async with Store(temp_db_path, at_tag="nope"):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_store_at_tag_partial_raises_naming_table(self, temp_db_path):
+        """A tag missing from some tables fails with the table named."""
+        async with Store(temp_db_path, create=True) as store:
+            version = await store.chunks_table.version()
+            await store.chunks_table.tags.create("stale", version)
+
+        with pytest.raises(ValueError, match="documents"):
+            async with Store(temp_db_path, at_tag="stale"):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_store_at_tag_and_before_mutually_exclusive(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            await store.create_tag("release-1")
+
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            Store(
+                temp_db_path,
+                at_tag="release-1",
+                before=datetime.now(UTC),
+            )
+
+    @pytest.mark.asyncio
     async def test_current_table_versions_returns_versions(self, temp_db_path):
         """current_table_versions returns dict of table versions."""
         async with Store(temp_db_path, create=True) as store:

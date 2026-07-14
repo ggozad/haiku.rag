@@ -176,6 +176,24 @@ async def test_vacuum_cleans_untagged_versions_and_keeps_tagged(temp_db_path):
 
 
 @pytest.mark.asyncio
+async def test_tag_operations_rejected_during_rebuild(temp_db_path):
+    """While a rebuild holds the rebuild lock, tag operations fail fast
+    instead of snapshotting a half-rebuilt database."""
+    async with Store(temp_db_path, create=True) as store:
+        await store.create_tag("keep")
+
+        async with store._rebuild_lock:
+            with pytest.raises(ValueError, match="[Rr]ebuild in progress"):
+                await store.create_tag("release-1")
+            with pytest.raises(ValueError, match="[Rr]ebuild in progress"):
+                await store.delete_tag("keep")
+
+        await store.create_tag("release-1")
+        await store.delete_tag("keep")
+        assert set(await store.list_tags()) == {"release-1"}
+
+
+@pytest.mark.asyncio
 async def test_vacuum_waits_for_write_lock(temp_db_path):
     """Vacuum serializes with writers and tag operations so a tag cannot be
     created between _tag_safe_retention's read and the optimize call."""
