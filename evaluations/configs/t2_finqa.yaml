@@ -22,7 +22,7 @@ processing:
 
 reranking:
   model:
-    provider: mxbai
+    provider: cross-encoder
     name: mixedbread-ai/mxbai-rerank-base-v2
 
 qa:

@@ -28,7 +28,7 @@ async def download_models(
     - Docling models
     - HuggingFace tokenizer
     - Sentence-transformers embedder (if configured)
-    - HuggingFace reranker models (mxbai, jina-local)
+    - HuggingFace reranker models (cross-encoder, jina-local)
     - Ollama models
     """
     # Docling models
@@ -69,14 +69,14 @@ async def download_models(
         provider = config.reranking.model.provider
         model_name = config.reranking.model.name
 
-        if provider == "mxbai":
+        if provider == "cross-encoder":
             try:
-                from mxbai_rerank import MxbaiRerankV2
+                from sentence_transformers import (  # type: ignore[import-not-found]
+                    CrossEncoder,
+                )
 
                 yield DownloadProgress(model=model_name, status="start")
-                await asyncio.to_thread(
-                    MxbaiRerankV2, model_name, disable_transformers_warnings=True
-                )
+                await asyncio.to_thread(lambda: CrossEncoder(model_name))
                 yield DownloadProgress(model=model_name, status="done")
             except ImportError:
                 pass

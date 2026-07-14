@@ -390,23 +390,6 @@ Reranking improves search quality by re-ordering the initial search results usin
 
 Reranking is **disabled by default** (`provider: ""`) for faster searches. You can enable it by configuring one of the providers below.
 
-### MixedBread AI
-
-If you installed `haiku.rag` (full package), MxBAI is already included. If you installed `haiku.rag-slim`, add the mxbai extra:
-
-```bash
-uv pip install haiku.rag-slim[mxbai]
-```
-
-Then configure:
-
-```yaml
-reranking:
-  model:
-    provider: mxbai
-    name: mixedbread-ai/mxbai-rerank-base-v2
-```
-
 ### Cohere
 
 If you installed `haiku.rag` (full package), Cohere is already included. If you installed `haiku.rag-slim`, add the cohere extra:
@@ -523,7 +506,7 @@ Then configure with any HuggingFace model id:
 reranking:
   model:
     provider: cross-encoder
-    name: BAAI/bge-reranker-v2-m3
+    name: mixedbread-ai/mxbai-rerank-base-v2
 ```
 
-Other tested models: `Qwen/Qwen3-Reranker-0.6B`, `cross-encoder/ms-marco-MiniLM-L-6-v2`. Any model exposed as a `sentence_transformers.CrossEncoder` works.
+Other tested models: `BAAI/bge-reranker-v2-m3`, `Qwen/Qwen3-Reranker-0.6B`, `cross-encoder/ms-marco-MiniLM-L-6-v2`. Any model exposed as a `sentence_transformers.CrossEncoder` works.

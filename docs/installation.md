@@ -25,14 +25,14 @@ uv pip install haiku.rag-slim
 uv pip install haiku.rag-slim[docling]
 
 # With specific providers
-uv pip install haiku.rag-slim[docling,voyageai,mxbai]
+uv pip install haiku.rag-slim[docling,voyageai,cross-encoder]
 ```
 
 The slim package has minimal dependencies and lets you install only what you need:
 
 - `docling` - PDF, DOCX, PPTX, images, and other document formats
 - `voyageai` - VoyageAI embeddings
-- `mxbai` - MixedBread AI reranking
+- `cross-encoder` - Local reranking via sentence-transformers
 - `cohere` - Cohere reranking
 - `zeroentropy` - Zero Entropy reranking
 - `tui` - Terminal UI for `chat` and `inspect` commands

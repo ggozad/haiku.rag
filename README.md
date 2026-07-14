@@ -13,7 +13,7 @@ Agentic RAG built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.p
 - **Multimodal & cross-modal search** — Multimodal embedders (vLLM, VoyageAI, Cohere) put picture vectors in the same space as text; supports text-as-query → figure hits and image-as-query
 - **Question answering** — RAG skill with citations (page numbers, section headings)
 - **Vision QA** — Vision-capable models receive figure bytes alongside chunk text
-- **Reranking** — MxBAI, Cohere, Zero Entropy, or vLLM
+- **Reranking** — local cross-encoders, Cohere, Zero Entropy, or vLLM
 - **Analysis skill** — Complex analytical tasks via sandboxed Python code execution (aggregation, computation, multi-document analysis)
 - **Conversational RAG** — Chat TUI and web application for multi-turn conversations with session memory
 - **Document structure** — Stores full [DoclingDocument](https://docling-project.github.io/docling/concepts/docling_document/), enabling structure-aware context expansion

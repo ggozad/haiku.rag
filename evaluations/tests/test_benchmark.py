@@ -63,12 +63,12 @@ class TestBuildExperimentMetadata:
     def test_with_reranker(self) -> None:
         config = AppConfig()
         config.reranking.model = ModelConfig(
-            provider="mxbai", name="mixedbread-ai/mxbai-rerank-base-v2"
+            provider="cross-encoder", name="mixedbread-ai/mxbai-rerank-base-v2"
         )
         result = build_experiment_metadata(
             dataset_key="test", test_cases=1, config=config
         )
-        assert result["rerank_provider"] == "mxbai"
+        assert result["rerank_provider"] == "cross-encoder"
         assert result["rerank_model"] == "mixedbread-ai/mxbai-rerank-base-v2"
 
 

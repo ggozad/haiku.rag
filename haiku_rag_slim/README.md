@@ -35,7 +35,7 @@ Adds support for 40+ file formats including PDF, DOCX, HTML, and more.
 - `voyageai` - VoyageAI embeddings
 
 **Rerankers:**
-- `mxbai` - MixedBread AI
+- `cross-encoder` - Local reranking via sentence-transformers
 - `cohere` - Cohere
 - `zeroentropy` - Zero Entropy
 
@@ -51,7 +51,7 @@ Adds support for 40+ file formats including PDF, DOCX, HTML, and more.
 
 ```bash
 # Common combinations
-uv pip install haiku.rag-slim[docling,anthropic,mxbai]
+uv pip install haiku.rag-slim[docling,anthropic,cross-encoder]
 uv pip install haiku.rag-slim[docling,groq]
 ```
 

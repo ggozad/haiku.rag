@@ -324,15 +324,6 @@ wheels = [
 ]
 
 [[package]]
-name = "batched"
-version = "0.1.5"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/c9/40/8d9a8ed9b95cb95acf599698557b7074b462df652823a61e7e43899aa519/batched-0.1.5.tar.gz", hash = "sha256:58b8a41d3f8d4d39a0edba79c6238ed204938cfc2c8908224919d70af07c610d", size = 23940, upload-time = "2025-07-14T09:58:31.862Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/fb/c8/16a977fd90cdc974ef7781e237b8a0e0008a6204768ededbef2b2ff1bb43/batched-0.1.5-py3-none-any.whl", hash = "sha256:356dae99f15c906629992e4bd3481a857114790b5316268fa38fe8ad0d0b9480", size = 29367, upload-time = "2025-07-14T09:58:30.968Z" },
-]
-
-[[package]]
 name = "beartype"
 version = "0.22.9"
 source = { registry = "https://pypi.org/simple" }
@@ -1583,7 +1574,7 @@ name = "haiku-rag"
 version = "0.65.1"
 source = { editable = "." }
 dependencies = [
-    { name = "haiku-rag-slim", extra = ["cohere", "cross-encoder", "docling", "mxbai", "tui", "voyageai", "zeroentropy"] },
+    { name = "haiku-rag-slim", extra = ["cohere", "cross-encoder", "docling", "tui", "voyageai", "zeroentropy"] },
 ]
 
 [package.optional-dependencies]
@@ -1619,7 +1610,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "haiku-rag-slim", extras = ["cross-encoder"], marker = "extra == 'cross-encoder'", editable = "haiku_rag_slim" },
-    { name = "haiku-rag-slim", extras = ["docling", "voyageai", "mxbai", "cohere", "zeroentropy", "tui", "cross-encoder"], editable = "haiku_rag_slim" },
+    { name = "haiku-rag-slim", extras = ["docling", "voyageai", "cohere", "zeroentropy", "tui", "cross-encoder"], editable = "haiku_rag_slim" },
     { name = "haiku-rag-slim", extras = ["ingester"], marker = "extra == 'ingester'", editable = "haiku_rag_slim" },
     { name = "haiku-rag-slim", extras = ["s3"], marker = "extra == 's3'", editable = "haiku_rag_slim" },
     { name = "textual", marker = "extra == 'tui'", specifier = ">=8.2.4" },
@@ -1732,10 +1723,6 @@ jina = [
 mistral = [
     { name = "pydantic-ai-slim", extra = ["mistral"] },
 ]
-mxbai = [
-    { name = "mxbai-rerank" },
-    { name = "transformers" },
-]
 s3 = [
     { name = "obstore" },
 ]
@@ -1769,7 +1756,6 @@ requires-dist = [
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "jsonpatch", specifier = ">=1.33" },
     { name = "lancedb", specifier = "==0.30.2" },
-    { name = "mxbai-rerank", marker = "extra == 'mxbai'", specifier = ">=0.1.6" },
     { name = "obstore", marker = "extra == 's3'", specifier = ">=0.9,<0.10" },
     { name = "opencv-python-headless", marker = "extra == 'docling'", specifier = ">=4.6.0.66,<5.0.0.0" },
     { name = "pathspec", specifier = ">=1.0.4" },
@@ -1793,7 +1779,6 @@ requires-dist = [
     { name = "textual-image", specifier = ">=0.8.5" },
     { name = "torch", marker = "extra == 'jina'", specifier = ">=2.0.0" },
     { name = "transformers", marker = "extra == 'jina'", specifier = ">=4.40.0" },
-    { name = "transformers", marker = "extra == 'mxbai'", specifier = ">=4.49.0,<6.0.0" },
     { name = "tree-sitter", marker = "extra == 'tui'", specifier = ">=0.25.2" },
     { name = "tree-sitter-json", marker = "extra == 'tui'", specifier = ">=0.24.8" },
     { name = "typer", specifier = ">=0.21.0,<0.22.0" },
@@ -1802,7 +1787,7 @@ requires-dist = [
     { name = "zeroentropy", marker = "extra == 'zeroentropy'", specifier = ">=0.1.0a11" },
     { name = "zstandard", marker = "python_full_version < '3.14'", specifier = ">=0.23.0" },
 ]
-provides-extras = ["docling", "s3", "voyageai", "mxbai", "cohere", "zeroentropy", "jina", "cross-encoder", "ingester", "tui", "anthropic", "groq", "google", "mistral", "bedrock", "vertexai"]
+provides-extras = ["docling", "s3", "voyageai", "cohere", "zeroentropy", "jina", "cross-encoder", "ingester", "tui", "anthropic", "groq", "google", "mistral", "bedrock", "vertexai"]
 
 [[package]]
 name = "haiku-skills"
@@ -2812,23 +2797,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/7f/74/d2c27e03cb84251dfe7249b8e82923643c6d48fa4883b9476b025e7dc7eb/multiprocess-0.70.19-py313-none-any.whl", hash = "sha256:8d5eb4ec5017ba2fab4e34a747c6d2c2b6fecfe9e7236e77988db91580ada952", size = 156414, upload-time = "2026-01-19T06:47:35.915Z" },
     { url = "https://files.pythonhosted.org/packages/a0/61/af9115673a5870fd885247e2f1b68c4f1197737da315b520a91c757a861a/multiprocess-0.70.19-py314-none-any.whl", hash = "sha256:e8cc7fbdff15c0613f0a1f1f8744bef961b0a164c0ca29bdff53e9d2d93c5e5f", size = 160318, upload-time = "2026-01-19T06:47:37.497Z" },
     { url = "https://files.pythonhosted.org/packages/7e/82/69e539c4c2027f1e1697e09aaa2449243085a0edf81ae2c6341e84d769b6/multiprocess-0.70.19-py39-none-any.whl", hash = "sha256:0d4b4397ed669d371c81dcd1ef33fd384a44d6c3de1bd0ca7ac06d837720d3c5", size = 133477, upload-time = "2026-01-19T06:47:38.619Z" },
-]
-
-[[package]]
-name = "mxbai-rerank"
-version = "0.1.6"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "accelerate" },
-    { name = "batched" },
-    { name = "numpy" },
-    { name = "torch" },
-    { name = "tqdm" },
-    { name = "transformers" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/0f/76/a19c864a1025222d3304a888ed4ed9217bfdf55dbaf4ed37500ee03935e0/mxbai_rerank-0.1.6.tar.gz", hash = "sha256:8d08e8464796429a7415314ce6de682bf9b538eb4ee5a7ddcd1a07839ee02879", size = 21449, upload-time = "2025-06-02T14:59:42.45Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a6/2a/503622b3a80272c662dabef421c9635168e5cbf6d51f0aa1883998561292/mxbai_rerank-0.1.6-py3-none-any.whl", hash = "sha256:aee94e7a14d5fba6520052ff2098f0f03db6cd9cc39553b7d2e82389deec9e05", size = 18458, upload-time = "2025-06-02T14:59:41.003Z" },
 ]
 
 [[package]]

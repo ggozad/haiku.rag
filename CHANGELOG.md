@@ -3,7 +3,11 @@
 
 ### Changed
 
-- `mxbai` extra allows `transformers` 5.x (`<6.0.0`); `MxBAIReranker` supplies the `tokenizer.prepare_for_model` variant `mxbai-rerank` needs when the tokenizer lacks it.
+- Unknown `reranking.model.provider` raises `ValueError` instead of silently disabling reranking.
+
+### Removed
+
+- `mxbai` reranking provider and extra; the `transformers<5.0.0` cap goes with it. Migrate to `provider: cross-encoder` with the same model name (`mixedbread-ai/mxbai-rerank-base-v2`), installed via the `cross-encoder` extra.
 
 ### Fixed
 

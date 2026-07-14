@@ -322,7 +322,7 @@ It also probes the external endpoints the config uses and reports them under a P
 - docling-serve is reachable when used as the converter or chunker (`{base_url}/health`)
 - custom OpenAI-compatible and vLLM endpoints respond (`{base_url}/models`)
 
-SaaS providers (OpenAI, Anthropic, Cohere, Jina, ZeroEntropy, Voyage) are covered by the API-key check rather than a network probe. In-process local models (sentence-transformers, cross-encoder, mxbai, jina-local) have no endpoint and are reported as such.
+SaaS providers (OpenAI, Anthropic, Cohere, Jina, ZeroEntropy, Voyage) are covered by the API-key check rather than a network probe. In-process local models (sentence-transformers, cross-encoder, jina-local) have no endpoint and are reported as such.
 
 Each failure prints the command that fixes it (`rebuild`, `create-index`, `migrate`, `rebuild --set-embedder`). `doctor` makes no changes. It exits with status 1 when any check fails, so it can gate CI or monitoring.
 
