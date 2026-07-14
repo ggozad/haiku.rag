@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.66.0] - 2026-07-14
+
 ### Changed
 
 - Unknown `reranking.model.provider` raises `ValueError` instead of silently disabling reranking.
@@ -1935,7 +1937,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.65.1...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.66.0...HEAD
+[0.66.0]: https://github.com/ggozad/haiku.rag/compare/0.65.1...0.66.0
 [0.65.1]: https://github.com/ggozad/haiku.rag/compare/0.65.0...0.65.1
 [0.65.0]: https://github.com/ggozad/haiku.rag/compare/0.64.0...0.65.0
 [0.64.0]: https://github.com/ggozad/haiku.rag/compare/0.63.2...0.64.0
