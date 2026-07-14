@@ -14,9 +14,11 @@ For STRUCTURED documents (containing section_header or title labels):
      This lets small sections (e.g., title+authors) grow into neighboring
      content. Picture and table matches are exempt: they return their
      enclosing section as-is, never crossing section boundaries.
-  6. Merge overlapping ranges from multiple results in the same document.
-     Adjacent but non-overlapping ranges stay separate to preserve section
-     independence.
+  6. Merge overlapping ranges from multiple results in the same document,
+     but only when every constituent's matched evidence survives in the
+     final budget-clipped window; otherwise the group is split back into
+     per-result windows so no retrieved result is dropped. Adjacent but
+     non-overlapping ranges stay separate to preserve section independence.
 
 For UNSTRUCTURED documents (no section headers):
   Expand outward item-by-item from the match center until the character
@@ -269,6 +271,159 @@ def _find_expansion_range(
     return _expand_outward(items, center_idx, max_chars, skip_noise=True)
 
 
+def _group_lost_constituent(built: SearchResult, group: list[SearchResult]) -> bool:
+    """Whether any constituent's matched refs were entirely evicted from ``built``.
+
+    Fires when the budget clip (or the fragmented-content fallback) left a
+    constituent with none of its own items in the built result — its evidence
+    would be silently dropped if the group stayed merged.
+    """
+    surviving = set(built.doc_item_refs)
+    return any(
+        r.doc_item_refs and not surviving.intersection(r.doc_item_refs) for r in group
+    )
+
+
+def _add_input_pages_for_surviving_refs(
+    pages: set[int], refs: list[str], original_results: list[SearchResult]
+) -> None:
+    """Fill missing item-table pages from inputs whose own refs all survived."""
+    surviving = set(refs)
+    if not surviving:
+        return
+    for result in original_results:
+        if not result.page_numbers or not result.doc_item_refs:
+            continue
+        if set(result.doc_item_refs) <= surviving:
+            pages.update(result.page_numbers)
+
+
+def _build_result(
+    range_start: int,
+    range_end: int,
+    original_results: list[SearchResult],
+    pos_to_item: dict[int, DocumentItem],
+    has_sections: bool,
+    max_chars: int,
+) -> SearchResult:
+    """Build one expanded result from the items in ``[range_start, range_end]``."""
+    content_parts: list[str] = []
+    # Char span of each contributing item within the joined content, so
+    # metadata can be narrowed to whatever survives a budget clip.
+    item_spans: list[tuple[int, int, DocumentItem]] = []
+    cursor = 0
+    separator = "\n\n"
+
+    for pos in range(range_start, range_end + 1):
+        item = pos_to_item.get(pos)
+        if item is None:
+            continue
+        if has_sections and item.label in _NOISE_LABELS:
+            continue
+        if item.text:
+            if content_parts:
+                cursor += len(separator)
+            start = cursor
+            content_parts.append(item.text)
+            cursor += len(item.text)
+            item_spans.append((start, cursor, item))
+        elif item.label == "picture":
+            # Pictures may legitimately have empty text (no VLM
+            # description configured). Keep their self_ref so the
+            # downstream image_data lookup can still attach bytes. They
+            # occupy a zero-width position in reading order.
+            item_spans.append((cursor, cursor, item))
+
+    all_headings: list[str] = []
+    for r in original_results:
+        if r.headings:
+            all_headings.extend(h for h in r.headings if h not in all_headings)
+
+    # Anchor identity (chunk_id, content/refs fallbacks) on the
+    # best-scoring constituent — the chunk that earned the result its
+    # rank — rather than whichever sits earliest in the document.
+    first = max(original_results, key=lambda r: r.score)
+
+    chunk_ids: list[str] = []
+    for r in original_results:
+        if r.chunk_id and r.chunk_id not in chunk_ids:
+            chunk_ids.append(r.chunk_id)
+
+    joined = separator.join(content_parts)
+
+    # Expansion should never return less content than the original chunk.
+    # This can happen when item texts are fragmented (e.g., docling splits
+    # formatted HTML list items into many small text nodes); fall back to
+    # the chunk's own content, described by the chunk's own metadata.
+    if len(joined) < len(first.content):
+        base_content, base_spans = first.content, None
+    else:
+        base_content, base_spans = joined, item_spans
+
+    if len(base_content) > max_chars:
+        # Clip to the budget, anchored on the primary (highest-scoring)
+        # chunk, and narrow metadata to whatever survives the window.
+        win_start, win_end = _clip_window(
+            base_content, [first, *original_results], max_chars
+        )
+        expanded_content = base_content[win_start:win_end]
+        if base_spans is None:
+            pages, refs, labels = (
+                set(first.page_numbers),
+                list(first.doc_item_refs),
+                set(first.labels),
+            )
+        else:
+            pages, refs, labels = _collect_meta(
+                [s for s in base_spans if _span_in_window(s, win_start, win_end)]
+            )
+    else:
+        expanded_content = base_content
+        if base_spans is None:
+            pages, refs, labels = (
+                set(first.page_numbers),
+                list(first.doc_item_refs),
+                set(first.labels),
+            )
+        else:
+            pages, refs, labels = _collect_meta(base_spans)
+
+    _add_input_pages_for_surviving_refs(pages, refs, original_results)
+
+    # Carry image_data and picture_captions from the originally retrieved
+    # chunks, but only for constituents whose refs survive the window — a
+    # chunk clipped out of the budget must not still ship its image to the
+    # model. Pictures swept in by section expansion are referenced in
+    # ``refs`` but their bytes are never re-fetched, so the multimodal
+    # payload stays bounded to what was actually retrieved and shown.
+    surviving_refs = set(refs)
+    merged_image_data: dict[str, str] = {}
+    merged_captions: dict[str, str] = {}
+    for r in original_results:
+        if r.doc_item_refs and not surviving_refs.intersection(r.doc_item_refs):
+            continue
+        if r.image_data:
+            merged_image_data.update(r.image_data)
+        if r.picture_captions:
+            merged_captions.update(r.picture_captions)
+
+    return SearchResult(
+        content=expanded_content,
+        score=max(r.score for r in original_results),
+        chunk_id=first.chunk_id,
+        chunk_ids=chunk_ids,
+        document_id=first.document_id,
+        document_uri=first.document_uri,
+        document_title=first.document_title,
+        doc_item_refs=refs or first.doc_item_refs,
+        page_numbers=sorted(pages) or first.page_numbers,
+        headings=all_headings or None,
+        labels=sorted(labels) or first.labels,
+        image_data=merged_image_data or None,
+        picture_captions=merged_captions,
+    )
+
+
 _WINDOW_MARGIN = 100
 
 
@@ -317,125 +472,27 @@ async def expand_with_items(
         ranges.append((lo, hi, result))
 
     merged = _merge_ranges(ranges)
+    constituent_range = {id(result): (lo, hi) for lo, hi, result in ranges}
 
     # Build results from the window items
     pos_to_item = {item.position: item for item in window_items}
     final_results: list[SearchResult] = []
-    for range_start, range_end, original_results in merged:
-        content_parts: list[str] = []
-        # Char span of each contributing item within the joined content, so
-        # metadata can be narrowed to whatever survives a budget clip.
-        item_spans: list[tuple[int, int, DocumentItem]] = []
-        cursor = 0
-        separator = "\n\n"
-
-        for pos in range(range_start, range_end + 1):
-            item = pos_to_item.get(pos)
-            if item is None:
-                continue
-            if has_sections and item.label in _NOISE_LABELS:
-                continue
-            if item.text:
-                if content_parts:
-                    cursor += len(separator)
-                start = cursor
-                content_parts.append(item.text)
-                cursor += len(item.text)
-                item_spans.append((start, cursor, item))
-            elif item.label == "picture":
-                # Pictures may legitimately have empty text (no VLM
-                # description configured). Keep their self_ref so the
-                # downstream image_data lookup can still attach bytes. They
-                # occupy a zero-width position in reading order.
-                item_spans.append((cursor, cursor, item))
-
-        all_headings: list[str] = []
-        for r in original_results:
-            if r.headings:
-                all_headings.extend(h for h in r.headings if h not in all_headings)
-
-        # Anchor identity (chunk_id, content/refs fallbacks) on the
-        # best-scoring constituent — the chunk that earned the result its
-        # rank — rather than whichever sits earliest in the document.
-        first = max(original_results, key=lambda r: r.score)
-
-        chunk_ids: list[str] = []
-        for r in original_results:
-            if r.chunk_id and r.chunk_id not in chunk_ids:
-                chunk_ids.append(r.chunk_id)
-
-        joined = separator.join(content_parts)
-
-        # Expansion should never return less content than the original chunk.
-        # This can happen when item texts are fragmented (e.g., docling splits
-        # formatted HTML list items into many small text nodes); fall back to
-        # the chunk's own content, described by the chunk's own metadata.
-        if len(joined) < len(first.content):
-            base_content, base_spans = first.content, None
-        else:
-            base_content, base_spans = joined, item_spans
-
-        if len(base_content) > max_chars:
-            # Clip to the budget, anchored on the primary (highest-scoring)
-            # chunk, and narrow metadata to whatever survives the window.
-            win_start, win_end = _clip_window(
-                base_content, [first, *original_results], max_chars
-            )
-            expanded_content = base_content[win_start:win_end]
-            if base_spans is None:
-                pages, refs, labels = (
-                    set(first.page_numbers),
-                    list(first.doc_item_refs),
-                    set(first.labels),
-                )
-            else:
-                pages, refs, labels = _collect_meta(
-                    [s for s in base_spans if _span_in_window(s, win_start, win_end)]
-                )
-        else:
-            expanded_content = base_content
-            if base_spans is None:
-                pages, refs, labels = (
-                    set(first.page_numbers),
-                    list(first.doc_item_refs),
-                    set(first.labels),
-                )
-            else:
-                pages, refs, labels = _collect_meta(base_spans)
-
-        # Carry image_data and picture_captions from the originally retrieved
-        # chunks, but only for constituents whose refs survive the window — a
-        # chunk clipped out of the budget must not still ship its image to the
-        # model. Pictures swept in by section expansion are referenced in
-        # ``refs`` but their bytes are never re-fetched, so the multimodal
-        # payload stays bounded to what was actually retrieved and shown.
-        surviving_refs = set(refs)
-        merged_image_data: dict[str, str] = {}
-        merged_captions: dict[str, str] = {}
-        for r in original_results:
-            if r.doc_item_refs and not surviving_refs.intersection(r.doc_item_refs):
-                continue
-            if r.image_data:
-                merged_image_data.update(r.image_data)
-            if r.picture_captions:
-                merged_captions.update(r.picture_captions)
-
-        final_results.append(
-            SearchResult(
-                content=expanded_content,
-                score=max(r.score for r in original_results),
-                chunk_id=first.chunk_id,
-                chunk_ids=chunk_ids,
-                document_id=first.document_id,
-                document_uri=first.document_uri,
-                document_title=first.document_title,
-                doc_item_refs=refs or first.doc_item_refs,
-                page_numbers=sorted(pages) or first.page_numbers,
-                headings=all_headings or None,
-                labels=sorted(labels) or first.labels,
-                image_data=merged_image_data or None,
-                picture_captions=merged_captions,
-            )
+    for range_start, range_end, group in merged:
+        built = _build_result(
+            range_start, range_end, group, pos_to_item, has_sections, max_chars
         )
+        if len(group) > 1 and _group_lost_constituent(built, group):
+            # The merged window cannot afford every constituent's evidence:
+            # un-merge so no retrieved result is dropped from the group. Each
+            # constituent gets its own window, clipped around its own anchor.
+            for result in group:
+                lo, hi = constituent_range[id(result)]
+                final_results.append(
+                    _build_result(
+                        lo, hi, [result], pos_to_item, has_sections, max_chars
+                    )
+                )
+            continue
+        final_results.append(built)
 
     return final_results + passthrough

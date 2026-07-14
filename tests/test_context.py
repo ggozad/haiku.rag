@@ -810,12 +810,11 @@ class TestExpandWithItems:
             # provenance still lists both
             assert set(expanded[0].chunk_ids) == {"c-early", "c-best"}
 
-    async def test_clipped_merged_result_keeps_anchor_evidence_and_pages(
-        self, temp_db_path
-    ):
-        """When a merged result is clipped to budget, the surviving window is
-        centered on the anchor (highest-scoring) chunk, and page_numbers reflect
-        only the content that survived — not the full merged range."""
+    async def test_clipped_merge_that_evicts_a_constituent_splits(self, temp_db_path):
+        """A merged group whose budget clip would evict a constituent's evidence
+        is split back into per-result windows: no retrieved result is dropped.
+        Each split result keeps its own evidence and metadata describing only
+        its visible content."""
         from haiku.rag.client import HaikuRAG
 
         async with HaikuRAG(temp_db_path, create=True) as rag:
@@ -866,17 +865,268 @@ class TestExpandWithItems:
             expanded = await expand_with_items(
                 rag.document_item_repository, "doc-1", [r_low, r_high], 500
             )
+            # The clip window around HIGHMARK cannot contain LOWMARK's item,
+            # so the group splits instead of dropping r_low.
+            assert len(expanded) == 2
+            by_chunk = {e.chunk_id: e for e in expanded}
+            e_high = by_chunk["c-high"]
+            assert "HIGHMARK" in e_high.content
+            assert "LOWMARK" not in e_high.content
+            assert 3 in e_high.page_numbers
+            # per-result metadata still describes only the visible content
+            assert 1 not in e_high.page_numbers
+            assert "#/texts/0" not in e_high.doc_item_refs
+            assert e_high.chunk_ids == ["c-high"]
+            e_low = by_chunk["c-low"]
+            assert "LOWMARK" in e_low.content
+            assert 1 in e_low.page_numbers
+            assert e_low.chunk_ids == ["c-low"]
+
+    async def test_split_results_each_keep_own_evidence_and_budget(self, temp_db_path):
+        """Close matches on different pages at a small budget: the merged
+        window cannot afford both, so each hit gets its own clipped window.
+        Every input result's page survives across the output results."""
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=pos,
+                    self_ref=f"#/texts/{pos}",
+                    label="text",
+                    text=f"i{pos:02d}" + "x" * 17,
+                    page_numbers=[1 if pos < 3 else 2],
+                )
+                for pos in range(8)
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            inputs = [
+                SearchResult(
+                    content=items[1].text,
+                    score=0.5,
+                    document_id="doc-1",
+                    doc_item_refs=["#/texts/1"],
+                    page_numbers=[1],
+                ),
+                SearchResult(
+                    content=items[5].text,
+                    score=0.9,
+                    document_id="doc-1",
+                    doc_item_refs=["#/texts/5"],
+                    page_numbers=[2],
+                ),
+            ]
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", inputs, 100
+            )
+            assert len(expanded) == 2
+            for e in expanded:
+                assert len(e.content) <= 100
+            contents = " || ".join(e.content for e in expanded)
+            assert items[1].text in contents
+            assert items[5].text in contents
+            input_pages = {p for r in inputs for p in r.page_numbers}
+            output_pages = {p for e in expanded for p in e.page_numbers}
+            assert input_pages <= output_pages
+
+    async def test_clipped_merge_stays_merged_when_all_evidence_survives(
+        self, temp_db_path
+    ):
+        """A merged group is clipped but the window still contains every
+        constituent's evidence: no split, one merged result."""
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=pos,
+                    self_ref=f"#/texts/{pos}",
+                    label="text",
+                    text=f"i{pos:02d}" + "y" * 97,
+                )
+                for pos in range(10)
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            r1 = SearchResult(
+                content=items[4].text,
+                score=0.5,
+                chunk_id="c1",
+                document_id="doc-1",
+                doc_item_refs=["#/texts/4"],
+            )
+            r2 = SearchResult(
+                content=items[5].text,
+                score=0.9,
+                chunk_id="c2",
+                document_id="doc-1",
+                doc_item_refs=["#/texts/5"],
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [r1, r2], 400
+            )
             assert len(expanded) == 1
             e = expanded[0]
-            # anchor is the high-scoring chunk, and its evidence survives clipping
-            assert e.chunk_id == "c-high"
-            assert "HIGHMARK" in e.content
-            assert "LOWMARK" not in e.content
-            # page_numbers reflect only the surviving window, not the full range
-            assert 3 in e.page_numbers
-            assert 1 not in e.page_numbers
-            # refs likewise exclude the clipped-out item
-            assert "#/texts/0" not in e.doc_item_refs
+            assert len(e.content) <= 400
+            assert items[4].text in e.content
+            assert items[5].text in e.content
+            assert set(e.chunk_ids) == {"c1", "c2"}
+
+    async def test_fragmented_merge_splits_instead_of_dropping(self, temp_db_path):
+        """When fragmented item text triggers the chunk-content fallback for a
+        merged group, the group splits so the non-primary hit is not dropped."""
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/texts/0",
+                    label="text",
+                    text="frag a",
+                    page_numbers=[1],
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=1,
+                    self_ref="#/texts/1",
+                    label="text",
+                    text="frag b",
+                    page_numbers=[2],
+                ),
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            r1 = SearchResult(
+                content="A" * 500,
+                score=0.9,
+                chunk_id="c1",
+                document_id="doc-1",
+                doc_item_refs=["#/texts/0"],
+                page_numbers=[1],
+            )
+            r2 = SearchResult(
+                content="B" * 400,
+                score=0.5,
+                chunk_id="c2",
+                document_id="doc-1",
+                doc_item_refs=["#/texts/1"],
+                page_numbers=[2],
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [r1, r2], 5000
+            )
+            assert len(expanded) == 2
+            by_chunk = {e.chunk_id: e for e in expanded}
+            assert by_chunk["c1"].content == "A" * 500
+            assert by_chunk["c1"].page_numbers == [1]
+            assert by_chunk["c2"].content == "B" * 400
+            assert by_chunk["c2"].page_numbers == [2]
+
+    async def test_surviving_refs_fill_missing_item_pages_from_input(
+        self, temp_db_path
+    ):
+        """When a visible item has missing page metadata, use the input
+        result's page_numbers as a floor for that surviving ref."""
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/texts/0",
+                    label="text",
+                    text="Visible item with missing item-table pages.",
+                    page_numbers=[],
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=1,
+                    self_ref="#/texts/1",
+                    label="text",
+                    text="Visible item with stored item-table pages.",
+                    page_numbers=[8],
+                ),
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            r_missing_item_page = SearchResult(
+                content=items[0].text,
+                score=0.9,
+                chunk_id="c-missing",
+                document_id="doc-1",
+                doc_item_refs=["#/texts/0"],
+                page_numbers=[7],
+            )
+            r_with_item_page = SearchResult(
+                content=items[1].text,
+                score=0.8,
+                chunk_id="c-present",
+                document_id="doc-1",
+                doc_item_refs=["#/texts/1"],
+                page_numbers=[8],
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository,
+                "doc-1",
+                [r_missing_item_page, r_with_item_page],
+                5000,
+            )
+
+            assert len(expanded) == 1
+            assert set(expanded[0].doc_item_refs) == {"#/texts/0", "#/texts/1"}
+            assert expanded[0].page_numbers == [7, 8]
+
+    async def test_input_pages_not_added_for_clipped_out_refs(self, temp_db_path):
+        """Input page metadata is not blindly unioned when only some of a
+        constituent's refs survive the clip window."""
+        from haiku.rag.client import HaikuRAG
+
+        item0_text = "LEFTMARK " + "a" * 91
+        item1_text = "RIGHTMARK " + "b" * 70
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/texts/0",
+                    label="text",
+                    text=item0_text,
+                    page_numbers=[1],
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=1,
+                    self_ref="#/texts/1",
+                    label="text",
+                    text=item1_text,
+                    page_numbers=[2],
+                ),
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            result = SearchResult(
+                content=item0_text,
+                score=0.9,
+                chunk_id="c-both",
+                document_id="doc-1",
+                doc_item_refs=["#/texts/0", "#/texts/1"],
+                page_numbers=[1, 2],
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [result], 100
+            )
+
+            assert len(expanded) == 1
+            assert "LEFTMARK" in expanded[0].content
+            assert "RIGHTMARK" not in expanded[0].content
+            assert expanded[0].doc_item_refs == ["#/texts/0"]
+            assert expanded[0].page_numbers == [1]
 
     async def test_fuzzy_match_preserves_central_marker(self, temp_db_path):
         """The chunk's text need not be verbatim in the joined item text: a clean
@@ -1016,10 +1266,10 @@ class TestExpandWithItemsPictureBytes:
                 "#/pictures/3": "B",
             }
 
-    async def test_clipped_out_picture_bytes_dropped(self, temp_db_path):
-        """A lower-scoring picture chunk clipped out of the budget window no
-        longer contributes its image bytes — the model must not receive an
-        image the citation and visualization omit."""
+    async def test_split_results_carry_only_own_picture_bytes(self, temp_db_path):
+        """When a clipped merge splits, each result ships only the image bytes
+        its own window shows — the model must not receive an image the
+        citation and visualization omit."""
         from haiku.rag.client import HaikuRAG
 
         async with HaikuRAG(temp_db_path, create=True) as rag:
@@ -1070,6 +1320,11 @@ class TestExpandWithItemsPictureBytes:
             expanded = await expand_with_items(
                 rag.document_item_repository, "doc-1", [r_low, r_high], 500
             )
-            assert len(expanded) == 1
-            assert "#/pictures/0" not in expanded[0].doc_item_refs
-            assert expanded[0].image_data == {"#/pictures/1": "HIGHBYTES"}
+            assert len(expanded) == 2
+            by_chunk = {e.chunk_id: e for e in expanded}
+            e_high = by_chunk["c-high"]
+            assert "#/pictures/0" not in e_high.doc_item_refs
+            assert e_high.image_data == {"#/pictures/1": "HIGHBYTES"}
+            e_low = by_chunk["c-low"]
+            assert e_low.image_data == {"#/pictures/0": "LOWBYTES"}
+            assert "HIGHBYTES" not in (e_low.image_data or {}).values()
