@@ -189,6 +189,10 @@ REQUIRED_TABLES: tuple[str, ...] = (
     "settings",
 )
 
+# Keeps the vacuum cleanup cutoff safely older than the oldest tagged
+# version; guards against timestamp precision at the boundary.
+TAG_RETENTION_MARGIN = timedelta(seconds=1)
+
 
 @dataclass
 class TagInfo:
@@ -523,17 +527,44 @@ class Store:
                     retention_seconds = self._config.storage.vacuum_retention_seconds
                 # Perform maintenance per table using optimize() with configurable retention
                 retention = timedelta(seconds=retention_seconds)
-                for table in [
-                    self.documents_table,
-                    self.document_meta_table,
-                    self.chunks_table,
-                    self.document_items_table,
-                    self.settings_table,
-                ]:
-                    await table.optimize(cleanup_older_than=retention)
+                for table in self._tables().values():
+                    await table.optimize(
+                        cleanup_older_than=await self._tag_safe_retention(
+                            table, retention
+                        )
+                    )
             except (RuntimeError, OSError) as e:
                 # Handle resource errors gracefully
                 logger.debug(f"Vacuum skipped due to resource constraints: {e}")
+
+    async def _tag_safe_retention(
+        self, table: lancedb.AsyncTable, retention: timedelta
+    ) -> timedelta:
+        """Grow the retention so the cleanup cutoff stays older than the
+        table's oldest tagged version.
+
+        Lance hard-errors when a tagged version falls inside the cleanup
+        window and the Python API exposes no way to skip tagged versions, so
+        everything older than the oldest tag is retained until that tag is
+        deleted.
+        """
+        tags = await table.tags.list()
+        if not tags:
+            return retention
+
+        timestamps = {v["version"]: v["timestamp"] for v in await table.list_versions()}
+        tagged = [
+            timestamps[tag["version"]]
+            for tag in tags.values()
+            if tag["version"] in timestamps
+        ]
+        if not tagged:
+            return retention
+
+        # LanceDB version timestamps are naive datetimes in local time.
+        oldest = min(ts.replace(tzinfo=None) for ts in tagged)
+        needed = datetime.now() - oldest + TAG_RETENTION_MARGIN
+        return max(retention, needed)
 
     @property
     def _connection_mode(self) -> ConnectionMode:

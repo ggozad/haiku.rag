@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from lancedb.table import AsyncTags
 
@@ -108,6 +110,38 @@ async def test_delete_tag_missing_raises(temp_db_path):
     async with Store(temp_db_path, create=True) as store:
         with pytest.raises(ValueError, match="does not exist"):
             await store.delete_tag("nope")
+
+
+@pytest.mark.asyncio
+async def test_vacuum_cleans_untagged_versions_and_keeps_tagged(temp_db_path):
+    """Vacuum must both preserve tagged versions (lance hard-errors when a
+    tagged version falls inside the cleanup window, which vacuum would
+    swallow) and still clean untagged versions older than the oldest tag's
+    safety margin."""
+    async with Store(temp_db_path, create=True) as store:
+        repo = DocumentRepository(store)
+        await repo.create(Document(content="First document"))
+        versions_before = [
+            v["version"] for v in await store.list_table_versions("documents")
+        ]
+
+        # Age the pre-tag versions past the retention safety margin.
+        await asyncio.sleep(1.5)
+
+        await repo.create(Document(content="Second document"))
+        await store.create_tag("release-1")
+        tagged_version = (await store.list_tags())["release-1"].tables["documents"]
+
+        await store.vacuum(retention_seconds=0)
+
+        remaining = [v["version"] for v in await store.list_table_versions("documents")]
+        assert tagged_version in remaining
+        assert min(versions_before) not in remaining
+
+        await store.documents_table.checkout("release-1")
+        rows = await store.documents_table.count_rows()
+        await store.documents_table.checkout_latest()
+        assert rows == 2
 
 
 @pytest.mark.asyncio
