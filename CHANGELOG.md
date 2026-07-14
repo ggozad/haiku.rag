@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- Context expansion no longer drops a retrieved result from a merged group when clipping to `search.max_context_chars`; groups whose clip would evict a constituent's evidence are returned as separate expanded results.
+
 ## [0.65.1] - 2026-07-10
 
 ### Added
