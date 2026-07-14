@@ -11,7 +11,6 @@ from haiku.rag.store.models.chunk import Chunk
 # Providers whose constructor loads a model in-process. Factory-routing tests
 # patch the loader so they assert dispatch without paying the model load.
 HEAVY_LOADERS = {
-    "mxbai": "MxbaiRerankV2",
     "jina-local": "AutoModel",
     "cross-encoder": "CrossEncoder",
 }
@@ -51,29 +50,6 @@ async def test_reranker_base():
     # The actual rerank step is abstract.
     with pytest.raises(NotImplementedError):
         await reranker.rerank("query", chunks)
-
-
-@pytest.mark.asyncio
-@pytest.mark.integration
-async def test_mxbai_reranker():
-    try:
-        from haiku.rag.config import Config
-        from haiku.rag.config.models import ModelConfig
-        from haiku.rag.reranking.mxbai import MxBAIReranker
-
-        Config.reranking.model = ModelConfig(
-            provider="mxbai", name="mixedbread-ai/mxbai-rerank-base-v2"
-        )
-        reranker = MxBAIReranker()
-        reranked = await reranker.rerank(
-            "Who wrote 'To Kill a Mockingbird'?", chunks, top_n=2
-        )
-        assert [chunk.document_id for chunk, score in reranked] == ["0", "2"]
-        assert all(isinstance(score, float) for chunk, score in reranked)
-        Config.reranking.model = None
-
-    except ImportError:
-        pytest.skip("MxBAI package not installed")
 
 
 @pytest.mark.asyncio
@@ -122,14 +98,14 @@ class TestGetReranker:
         result = get_reranker(config)
         assert result is None
 
-    def test_unknown_provider_returns_none(self):
+    def test_unknown_provider_raises_error(self):
         config = AppConfig(
             reranking=RerankingConfig(
                 model=ModelConfig(provider="unknown_provider", name="some-model")
             )
         )
-        result = get_reranker(config)
-        assert result is None
+        with pytest.raises(ValueError, match="Unknown reranking provider"):
+            get_reranker(config)
 
     def test_vllm_provider_without_base_url_raises_error(self):
         config = AppConfig(
@@ -152,15 +128,6 @@ class TestGetReranker:
     @pytest.mark.parametrize(
         "provider, model_name, class_module, class_name, extra_model_kwargs, expected_attrs, env_vars",
         [
-            (
-                "mxbai",
-                "mixedbread-ai/mxbai-rerank-base-v2",
-                "haiku.rag.reranking.mxbai",
-                "MxBAIReranker",
-                {},
-                {},
-                {},
-            ),
             (
                 "cohere",
                 "rerank-v3.5",
@@ -229,7 +196,6 @@ class TestGetReranker:
             ),
         ],
         ids=[
-            "mxbai",
             "cohere",
             "vllm",
             "zeroentropy",

@@ -1,6 +1,6 @@
 # haiku.rag Docker Image
 
-The full haiku.rag Docker image includes all features and extras (docling, voyageai, mxbai). You can build it locally using the provided Dockerfile.
+The full haiku.rag Docker image includes all features and extras (docling, voyageai, cross-encoder). You can build it locally using the provided Dockerfile.
 
 ## Building the Image
 

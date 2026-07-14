@@ -1,5 +1,3 @@
-import os
-
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.reranking.base import RerankerBase
 
@@ -12,12 +10,6 @@ def get_reranker(config: AppConfig = Config) -> RerankerBase | None:
         return None
 
     try:
-        if model.provider == "mxbai":
-            from haiku.rag.reranking.mxbai import MxBAIReranker
-
-            os.environ["TOKENIZERS_PARALLELISM"] = "true"
-            return MxBAIReranker()
-
         if model.provider == "cohere":
             from haiku.rag.reranking.cohere import CohereReranker
 
@@ -56,4 +48,4 @@ def get_reranker(config: AppConfig = Config) -> RerankerBase | None:
     except ImportError:  # pragma: no cover
         return None
 
-    return None
+    raise ValueError(f"Unknown reranking provider: {model.provider}")

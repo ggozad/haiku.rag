@@ -1,6 +1,14 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- Unknown `reranking.model.provider` raises `ValueError` instead of silently disabling reranking.
+
+### Removed
+
+- `mxbai` reranking provider and extra; the `transformers<5.0.0` cap goes with it. Migrate to `provider: cross-encoder` with the same model name (`mixedbread-ai/mxbai-rerank-base-v2`), installed via the `cross-encoder` extra.
+
 ### Fixed
 
 - Context expansion no longer drops a retrieved result from a merged group when clipping to `search.max_context_chars`; groups whose clip would evict a constituent's evidence are returned as separate expanded results.

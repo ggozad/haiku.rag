@@ -34,7 +34,7 @@ _PROVIDER_ENV_VARS: dict[str, str] = {
 }
 
 # Providers backed by in-process local models — no endpoint to probe.
-_LOCAL_PROVIDERS = {"sentence-transformers", "mxbai", "cross-encoder", "jina-local"}
+_LOCAL_PROVIDERS = {"sentence-transformers", "cross-encoder", "jina-local"}
 
 # Item labels that never yield a standalone chunk: pictures (handled via the
 # image path), headings (folded into chunk context, not embedded alone), and

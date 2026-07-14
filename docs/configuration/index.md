@@ -97,7 +97,7 @@ embeddings:
 
 reranking:
   model:
-    provider: ""  # Empty to disable, or mxbai, cohere, zeroentropy, vllm
+    provider: ""  # Empty to disable, or cross-encoder, cohere, zeroentropy, vllm
     name: ""
 
 qa:
