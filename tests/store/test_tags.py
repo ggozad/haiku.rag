@@ -86,6 +86,37 @@ async def test_create_tag_rolls_back_own_tags_on_failure(temp_db_path, monkeypat
 
 
 @pytest.mark.asyncio
+async def test_create_tag_waits_for_write_lock(temp_db_path):
+    """create_tag serializes with client writes so a write cannot land
+    between the version snapshot and the per-table tag creation."""
+    async with Store(temp_db_path, create=True) as store:
+        async with store._write_lock:
+            task = asyncio.create_task(store.create_tag("release-1"))
+            await asyncio.sleep(0.1)
+            assert not task.done()
+        await task
+
+        tags = await store.list_tags()
+        assert tags["release-1"].complete is True
+
+
+@pytest.mark.asyncio
+async def test_delete_tag_waits_for_write_lock(temp_db_path):
+    """delete_tag serializes with create_tag and client writes so it cannot
+    remove tags out from under a concurrent create_tag."""
+    async with Store(temp_db_path, create=True) as store:
+        await store.create_tag("release-1")
+
+        async with store._write_lock:
+            task = asyncio.create_task(store.delete_tag("release-1"))
+            await asyncio.sleep(0.1)
+            assert not task.done()
+        await task
+
+        assert await store.list_tags() == {}
+
+
+@pytest.mark.asyncio
 async def test_delete_tag(temp_db_path):
     async with Store(temp_db_path, create=True) as store:
         await store.create_tag("release-1")
@@ -142,6 +173,18 @@ async def test_vacuum_cleans_untagged_versions_and_keeps_tagged(temp_db_path):
         rows = await store.documents_table.count_rows()
         await store.documents_table.checkout_latest()
         assert rows == 2
+
+
+@pytest.mark.asyncio
+async def test_vacuum_waits_for_write_lock(temp_db_path):
+    """Vacuum serializes with writers and tag operations so a tag cannot be
+    created between _tag_safe_retention's read and the optimize call."""
+    async with Store(temp_db_path, create=True) as store:
+        async with store._write_lock:
+            task = asyncio.create_task(store.vacuum(retention_seconds=0))
+            await asyncio.sleep(0.1)
+            assert not task.done()
+        await task
 
 
 @pytest.mark.asyncio

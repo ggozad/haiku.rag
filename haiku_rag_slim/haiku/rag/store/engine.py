@@ -520,7 +520,7 @@ class Store:
         if self._vacuum_lock.locked():
             return
 
-        async with self._vacuum_lock:
+        async with self._vacuum_lock, self._write_lock:
             try:
                 # Evaluate config at runtime to allow dynamic changes
                 if retention_seconds is None:
@@ -866,6 +866,9 @@ class Store:
     async def create_tag(self, name: str) -> None:
         """Tag the current version of every table with the given name.
 
+        Serializes with client writes via the write lock so a write cannot
+        land between the version snapshot and the per-table tag creation.
+
         Raises:
             ReadOnlyError: If the store is in read-only mode.
             ValueError: If the tag already exists on any table. A partial tag
@@ -875,30 +878,31 @@ class Store:
         self._assert_writable()
         tables = self._tables()
 
-        existing = [
-            table_name
-            for table_name, table in tables.items()
-            if name in await table.tags.list()
-        ]
-        if len(existing) == len(tables):
-            raise ValueError(f"Tag '{name}' already exists")
-        if existing:
-            raise ValueError(
-                f"Tag '{name}' already exists on some tables "
-                f"({', '.join(existing)}); delete it first with delete_tag"
-            )
+        async with self._write_lock:
+            existing = [
+                table_name
+                for table_name, table in tables.items()
+                if name in await table.tags.list()
+            ]
+            if len(existing) == len(tables):
+                raise ValueError(f"Tag '{name}' already exists")
+            if existing:
+                raise ValueError(
+                    f"Tag '{name}' already exists on some tables "
+                    f"({', '.join(existing)}); delete it first with delete_tag"
+                )
 
-        versions = await self.current_table_versions()
-        created: list[str] = []
-        try:
-            for table_name, table in tables.items():
-                await table.tags.create(name, versions[table_name])
-                created.append(table_name)
-        except Exception:
-            for table_name in created:
-                with contextlib.suppress(Exception):
-                    await tables[table_name].tags.delete(name)
-            raise
+            versions = await self.current_table_versions()
+            created: list[str] = []
+            try:
+                for table_name, table in tables.items():
+                    await table.tags.create(name, versions[table_name])
+                    created.append(table_name)
+            except Exception:
+                for table_name in created:
+                    with contextlib.suppress(Exception):
+                        await tables[table_name].tags.delete(name)
+                raise
 
     async def list_tags(self) -> dict[str, TagInfo]:
         """Aggregate per-table tags into database-level tags.
@@ -920,18 +924,21 @@ class Store:
     async def delete_tag(self, name: str) -> None:
         """Delete the tag from every table that has it.
 
+        Serializes with create_tag and client writes via the write lock.
+
         Raises:
             ReadOnlyError: If the store is in read-only mode.
             ValueError: If no table has the tag.
         """
         self._assert_writable()
-        found = False
-        for table in self._tables().values():
-            if name in await table.tags.list():
-                await table.tags.delete(name)
-                found = True
-        if not found:
-            raise ValueError(f"Tag '{name}' does not exist")
+        async with self._write_lock:
+            found = False
+            for table in self._tables().values():
+                if name in await table.tags.list():
+                    await table.tags.delete(name)
+                    found = True
+            if not found:
+                raise ValueError(f"Tag '{name}' does not exist")
 
     async def _checkout_tables_before(self, before: datetime) -> None:
         """Checkout all tables to their state at or before the given datetime.
