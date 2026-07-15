@@ -7,8 +7,6 @@ The `haiku-rag` CLI provides complete document management functionality.
 
     - `--config` - Specify custom configuration file
     - `--read-only` - Open database in read-only mode (blocks writes, skips upgrades)
-    - `--before` - Query database as it existed before a datetime (implies `--read-only`)
-    - `--at` - Query database at a tag (implies `--read-only`, mutually exclusive with `--before`)
     - `--version` / `-v` - Show version and exit
 
     Per-command options:
@@ -21,7 +19,6 @@ The `haiku-rag` CLI provides complete document management functionality.
     haiku-rag --config /path/to/config.yaml list
     haiku-rag --config /path/to/config.yaml list --db /path/to/custom.db
     haiku-rag --read-only search "query"
-    haiku-rag --before "2025-01-15" search "query"
     haiku-rag add -h
     ```
 
@@ -543,39 +540,9 @@ haiku-skills chat --use-entrypoints --skill medic
         └── haiku.rag.yaml    # Optional config
 ```
 
-## Time Travel
+## Tags
 
-LanceDB maintains version history for tables, enabling you to query the database as it existed at a previous point in time. This is useful for:
-
-- **Debugging**: Investigate data before a problematic change
-- **Auditing**: Verify what knowledge was available when a support ticket was filed
-
-### Query Historical State
-
-Use `--before` to query the database as it existed before a specific datetime:
-
-```bash
-# Query documents as of January 15, 2025
-haiku-rag --before "2025-01-15" list
-
-# Search historical state
-haiku-rag --before "2025-01-15T14:30:00" search "machine learning"
-
-# Ask questions against historical data
-haiku-rag --before "2025-01-15" ask "What documents existed?"
-```
-
-Supported datetime formats:
-
-- ISO 8601: `2025-01-15T14:30:00`, `2025-01-15T14:30:00Z`, `2025-01-15T14:30:00+00:00`
-- Date only: `2025-01-15` (interpreted as start of day)
-
-!!! note
-    Time travel mode automatically enables read-only mode. You cannot modify the database while viewing historical state.
-
-### Tags
-
-Tags name the current database state so you can return to it without remembering timestamps. A tag covers every table in the database. Tagged versions survive `vacuum`; everything older than your oldest tag is retained until that tag is deleted, so remove tags you no longer need.
+Tags name the current database state so you can return to it. A tag covers every table in the database. Tagged versions survive `vacuum`; everything older than your oldest tag is retained until that tag is deleted, so remove tags you no longer need.
 
 ```bash
 # Tag the current state, e.g. at deploy time or after an ingestion run
@@ -587,16 +554,6 @@ haiku-rag tag list
 # Delete a tag, releasing its versions for cleanup
 haiku-rag tag delete release-1
 ```
-
-Query the database at a tag with `--at`:
-
-```bash
-haiku-rag --at release-1 list
-haiku-rag --at release-1 search "machine learning"
-haiku-rag --at release-1 ask "What documents existed?"
-```
-
-`--at` implies read-only mode and is mutually exclusive with `--before`.
 
 ### Version History
 
@@ -628,5 +585,3 @@ chunks
   v7: 2025-01-14 10:00:00
   ...
 ```
-
-Use the timestamps from `history` to construct `--before` queries, or tag names with `--at`.

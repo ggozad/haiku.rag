@@ -3,11 +3,15 @@
 
 ### Added
 
-- Database tags: `haiku-rag tag create/list/delete`, `--at TAG` time travel, tags shown in `history`. Vacuum retains versions back to the oldest tag.
+- Database tags: `haiku-rag tag create/list/delete`, tags shown in `history`. Vacuum retains versions back to the oldest tag.
 
 ### Changed
 
 - `lancedb` bumped to 0.34.0.
+
+### Removed
+
+- `--before` global flag. There is no read-only replacement; create tags prospectively before important changes and use `tag restore` during a maintenance window.
 
 ### Fixed
 

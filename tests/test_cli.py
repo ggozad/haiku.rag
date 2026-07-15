@@ -153,21 +153,6 @@ class TestTagCommands:
 
         assert "document_meta" not in asyncio.run(_table_names())
 
-    def test_tag_write_commands_reject_time_travel(self, temp_db_path):
-        db = str(temp_db_path)
-        result = runner.invoke(cli, ["init", "--db", db])
-        assert result.exit_code == 0
-
-        result = runner.invoke(cli, ["--at", "x", "tag", "create", "r1", "--db", db])
-        assert result.exit_code == 1
-        assert "--at" in result.output
-
-        result = runner.invoke(
-            cli, ["--before", "2025-01-01", "tag", "delete", "r1", "--db", db]
-        )
-        assert result.exit_code == 1
-        assert "--before" in result.output
-
     def test_tag_create_invalid_name_fails_cleanly(self, temp_db_path):
         """lance restricts ref names to alphanumeric, '.', '-', '_'; the CLI
         surfaces that as a clean error instead of a traceback."""

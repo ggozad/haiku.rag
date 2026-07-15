@@ -218,3 +218,27 @@ async def test_tag_writes_raise_when_read_only(temp_db_path):
 
         tags = await store.list_tags()
         assert tags["release-1"].complete is True
+
+
+@pytest.mark.asyncio
+async def test_current_table_versions_returns_versions(temp_db_path):
+    """current_table_versions returns dict of table versions."""
+    async with Store(temp_db_path, create=True) as store:
+        versions = await store.current_table_versions()
+
+        assert "documents" in versions
+        assert "chunks" in versions
+        assert "settings" in versions
+        assert all(isinstance(v, int) for v in versions.values())
+
+
+@pytest.mark.asyncio
+async def test_list_table_versions_returns_history(temp_db_path):
+    """list_table_versions returns version history for a table."""
+    async with Store(temp_db_path, create=True) as store:
+        versions = await store.list_table_versions("documents")
+
+        assert len(versions) >= 1
+        for v in versions:
+            assert "version" in v
+            assert "timestamp" in v

@@ -11,18 +11,14 @@ runner = CliRunner()
 
 
 def test_chat_command():
-    """Test chat command launches chat TUI with the global time-travel flags."""
+    """Test chat command launches chat TUI."""
     with patch("haiku.rag.chat.run_chat") as mock_chat:
         mock_chat.return_value = None
 
-        result = runner.invoke(cli, ["--at", "release-1", "chat"])
+        result = runner.invoke(cli, ["chat"])
 
         assert result.exit_code == 0
         mock_chat.assert_called_once()
-        kwargs = mock_chat.call_args.kwargs
-        assert kwargs["read_only"] is True
-        assert kwargs["before"] is None
-        assert kwargs["at_tag"] == "release-1"
 
 
 def test_run_chat_creates_app_and_runs(temp_db_path: Path):

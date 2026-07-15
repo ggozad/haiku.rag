@@ -1,12 +1,9 @@
-from datetime import datetime
 from pathlib import Path
 
 
 def run_chat(
     db_path: Path | None = None,
     read_only: bool = False,
-    before: datetime | None = None,
-    at_tag: str | None = None,
     model: str | None = None,
     skills: list[str] | None = None,
 ) -> None:
@@ -15,8 +12,6 @@ def run_chat(
     Args:
         db_path: Path to the LanceDB database. If None, uses default from config.
         read_only: Whether to open the database in read-only mode.
-        before: Query database as it existed before this datetime.
-        at_tag: Query database at this tag.
         model: Model to use for the chat.
         skills: Skills to enable ("rag", "analysis"). Defaults to ["rag"].
     """
@@ -57,8 +52,6 @@ def run_chat(
         db_path,
         skills=skill_list,
         read_only=read_only,
-        before=before,
-        at_tag=at_tag,
         model=model or get_model(config.qa.model, config),
     )
     app.run()

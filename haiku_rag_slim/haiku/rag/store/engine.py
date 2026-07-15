@@ -370,18 +370,11 @@ class Store:
         skip_validation: bool = False,
         create: bool = False,
         read_only: bool = False,
-        before: datetime | None = None,
-        at_tag: str | None = None,
         skip_migration_check: bool = False,
     ):
-        if before is not None and at_tag is not None:
-            raise ValueError("before and at_tag are mutually exclusive")
         self.db_path: Path = db_path
         self._config = config
-        self._before = before
-        self._at_tag = at_tag
-        # Time-travel mode is always read-only
-        self._read_only = read_only or before is not None or at_tag is not None
+        self._read_only = read_only
         self._create = create
         self._skip_validation = skip_validation
         self._skip_migration_check = skip_migration_check
@@ -438,12 +431,6 @@ class Store:
         # DB this raises MigrationRequiredError up front when migrations are
         # pending, before creating any newly-introduced table.
         await self._init_tables(is_new_db)
-
-        # Checkout tables to historical state if before or at_tag is specified
-        if self._before is not None:
-            await self._checkout_tables_before(self._before)
-        if self._at_tag is not None:
-            await self._checkout_tables_at_tag(self._at_tag)
 
         # Set version for new databases.
         if is_new_db and not self._read_only:
@@ -957,71 +944,6 @@ class Store:
                     found = True
             if not found:
                 raise ValueError(f"Tag '{name}' does not exist")
-
-    async def _checkout_tables_before(self, before: datetime) -> None:
-        """Checkout all tables to their state at or before the given datetime.
-
-        Args:
-            before: The datetime to checkout to
-
-        Raises:
-            ValueError: If no version exists before the given datetime
-        """
-        # LanceDB stores timestamps as naive datetimes in local time.
-        # Convert 'before' to naive local time for comparison.
-        if before.tzinfo is not None:
-            # Convert to local time and make naive
-            before_local = before.astimezone().replace(tzinfo=None)
-        else:
-            # Already naive, assume local time
-            before_local = before
-
-        for table in self._tables().values():
-            versions = await table.list_versions()
-            # Find the latest version at or before the target datetime
-            # Versions are sorted by version number, not timestamp, so we need to check all
-            best_version = None
-            best_timestamp = None
-
-            for v in versions:
-                # LanceDB version timestamps are naive datetime objects in local time
-                v_timestamp = v["timestamp"]
-                # Make sure it's naive for comparison
-                if v_timestamp.tzinfo is not None:
-                    v_timestamp = v_timestamp.replace(tzinfo=None)
-
-                if v_timestamp <= before_local:
-                    if best_timestamp is None or v_timestamp > best_timestamp:
-                        best_version = v["version"]
-                        best_timestamp = v_timestamp
-
-            if best_version is None:
-                # Find the earliest version to report in error message
-                if versions:
-                    earliest = min(versions, key=lambda v: v["timestamp"])
-                    earliest_ts = earliest["timestamp"]
-                    raise ValueError(
-                        f"No data exists before {before}. "
-                        f"Database was created on {earliest_ts}"
-                    )
-                else:
-                    raise ValueError(
-                        f"No data exists before {before}. Table has no versions."
-                    )
-
-            # Checkout to the found version
-            await table.checkout(best_version)
-
-    async def _checkout_tables_at_tag(self, name: str) -> None:
-        """Checkout all tables at the version the tag points to.
-
-        Raises:
-            ValueError: If any table is missing the tag.
-        """
-        for table_name, table in self._tables().items():
-            if name not in await table.tags.list():
-                raise ValueError(f"Tag '{name}' does not exist on table '{table_name}'")
-            await table.checkout(name)
 
     async def list_table_versions(self, table_name: str) -> list[dict[str, Any]]:
         """List version history for a table.

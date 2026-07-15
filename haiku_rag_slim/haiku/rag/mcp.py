@@ -1,4 +1,3 @@
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -12,11 +11,7 @@ from haiku.rag.utils import format_citations
 
 
 def create_mcp_server(
-    db_path: Path,
-    config: AppConfig = Config,
-    read_only: bool = False,
-    before: datetime | None = None,
-    at_tag: str | None = None,
+    db_path: Path, config: AppConfig = Config, read_only: bool = False
 ) -> FastMCP:
     """Create an MCP server with the specified database path.
 
@@ -24,10 +19,7 @@ def create_mcp_server(
         db_path: Path to the database file.
         config: Configuration to use.
         read_only: If True, write tools (add_document_*, delete_document) are not registered.
-        before: Serve the database as it existed at this datetime. Implies read_only.
-        at_tag: Serve the database at this tag. Implies read_only.
     """
-    read_only = read_only or before is not None or at_tag is not None
     mcp = FastMCP("haiku-rag")
 
     # Write tools - only registered when not in read-only mode
@@ -112,8 +104,6 @@ def create_mcp_server(
                 db_path,
                 config=config,
                 read_only=read_only,
-                before=before,
-                at_tag=at_tag,
             ) as rag:
                 return await rag.search(
                     query, limit=limit, include_images=include_images
@@ -153,8 +143,6 @@ def create_mcp_server(
                     db_path,
                     config=config,
                     read_only=read_only,
-                    before=before,
-                    at_tag=at_tag,
                 ) as rag:
                     return await rag.search(
                         raw, limit=limit, include_images=include_images
@@ -170,8 +158,6 @@ def create_mcp_server(
                 db_path,
                 config=config,
                 read_only=read_only,
-                before=before,
-                at_tag=at_tag,
             ) as rag:
                 return await rag.get_document_by_id(document_id)
         except Exception:
@@ -195,8 +181,6 @@ def create_mcp_server(
                 db_path,
                 config=config,
                 read_only=read_only,
-                before=before,
-                at_tag=at_tag,
             ) as rag:
                 documents = await rag.list_documents(limit, offset, filter)
 
@@ -231,8 +215,6 @@ def create_mcp_server(
                 db_path,
                 config=config,
                 read_only=read_only,
-                before=before,
-                at_tag=at_tag,
             ) as rag:
                 answer, citations = await rag.ask(question)
                 if cite and citations:
@@ -264,8 +246,6 @@ def create_mcp_server(
                 db_path,
                 config=config,
                 read_only=read_only,
-                before=before,
-                at_tag=at_tag,
             ) as rag:
                 result = await rag.analyze(question, filter=filter)
                 return result.answer

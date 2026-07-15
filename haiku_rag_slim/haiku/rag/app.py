@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -36,14 +35,10 @@ class HaikuRAGApp:  # pragma: no cover
         db_path: Path,
         config: AppConfig = Config,
         read_only: bool = False,
-        before: datetime | None = None,
-        at_tag: str | None = None,
     ):
         self.db_path = db_path
         self.config = config
         self.read_only = read_only
-        self.before = before
-        self.at_tag = at_tag
         self.console = Console()
 
         from haiku.rag.store.engine import ConnectionMode
@@ -70,11 +65,6 @@ class HaikuRAGApp:  # pragma: no cover
         """Display read-only information about the database without modifying it."""
 
         from haiku.rag.store.engine import gather_database_info
-
-        if self.before is not None or self.at_tag is not None:
-            self.console.print(
-                "[yellow]Note: --before/--at is not supported by info; showing current state.[/yellow]"
-            )
 
         # Basic: show path/URI
         self.console.print("[bold]haiku.rag database info[/bold]")
@@ -292,8 +282,6 @@ class HaikuRAGApp:  # pragma: no cover
             skip_validation=True,
             read_only=True,
             skip_migration_check=True,
-            before=self.before,
-            at_tag=self.at_tag,
         ) as store:
             tables = [
                 "documents",
@@ -421,8 +409,6 @@ class HaikuRAGApp:  # pragma: no cover
             db_path=self.db_path,
             config=self.config,
             read_only=True,
-            before=self.before,
-            at_tag=self.at_tag,
         ) as self.client:
             documents = await self.client.list_documents(filter=filter)
             for doc in documents:
@@ -435,8 +421,6 @@ class HaikuRAGApp:  # pragma: no cover
             db_path=self.db_path,
             config=self.config,
             read_only=self.read_only,
-            before=self.before,
-            at_tag=self.at_tag,
         ) as self.client:
             doc = await self.client.create_document(
                 text, title=title, metadata=metadata
@@ -453,8 +437,6 @@ class HaikuRAGApp:  # pragma: no cover
             db_path=self.db_path,
             config=self.config,
             read_only=self.read_only,
-            before=self.before,
-            at_tag=self.at_tag,
         ) as self.client:
             result = await self.client.create_document_from_source(
                 source, title=title, metadata=metadata
@@ -476,8 +458,6 @@ class HaikuRAGApp:  # pragma: no cover
             db_path=self.db_path,
             config=self.config,
             read_only=True,
-            before=self.before,
-            at_tag=self.at_tag,
         ) as self.client:
             doc = await self.client.get_document_by_id(doc_id)
             if doc is None:
@@ -490,8 +470,6 @@ class HaikuRAGApp:  # pragma: no cover
             db_path=self.db_path,
             config=self.config,
             read_only=self.read_only,
-            before=self.before,
-            at_tag=self.at_tag,
         ) as self.client:
             deleted = await self.client.delete_document(doc_id)
             if deleted:
@@ -535,8 +513,6 @@ class HaikuRAGApp:  # pragma: no cover
             db_path=self.db_path,
             config=self.config,
             read_only=True,
-            before=self.before,
-            at_tag=self.at_tag,
         ) as self.client:
             results = await self.client.search(
                 search_input,
@@ -558,8 +534,6 @@ class HaikuRAGApp:  # pragma: no cover
             db_path=self.db_path,
             config=self.config,
             read_only=True,
-            before=self.before,
-            at_tag=self.at_tag,
         ) as self.client:
             chunk = await self.client.get_chunk_by_id(chunk_id)
             if not chunk:
@@ -603,8 +577,6 @@ class HaikuRAGApp:  # pragma: no cover
             db_path=self.db_path,
             config=self.config,
             read_only=True,
-            before=self.before,
-            at_tag=self.at_tag,
         ) as self.client:
             answer, citations = await self.client.ask(question, filter=filter)
 
@@ -632,8 +604,6 @@ class HaikuRAGApp:  # pragma: no cover
             db_path=self.db_path,
             config=self.config,
             read_only=True,
-            before=self.before,
-            at_tag=self.at_tag,
         ) as self.client:
             self.console.print(f"[bold blue]Question:[/bold blue] {question}")
             self.console.print()
@@ -657,8 +627,6 @@ class HaikuRAGApp:  # pragma: no cover
             config=self.config,
             skip_validation=True,
             read_only=self.read_only,
-            before=self.before,
-            at_tag=self.at_tag,
         ) as client:
             if mode == RebuildMode.SET_EMBEDDER:
                 async for _ in client.rebuild_database(mode=mode):
@@ -702,8 +670,6 @@ class HaikuRAGApp:  # pragma: no cover
             config=self.config,
             skip_validation=True,
             read_only=self.read_only,
-            before=self.before,
-            at_tag=self.at_tag,
         ) as client:
             await client.vacuum()
         self.console.print("[bold green]Vacuum completed successfully.[/bold green]")
@@ -732,8 +698,6 @@ class HaikuRAGApp:  # pragma: no cover
             config=self.config,
             skip_validation=True,
             read_only=self.read_only,
-            before=self.before,
-            at_tag=self.at_tag,
         ) as client:
             row_count = await client.store.chunks_table.count_rows()
             self.console.print(f"Chunks in database: {row_count}")
@@ -901,15 +865,9 @@ class HaikuRAGApp:  # pragma: no cover
             self.db_path,
             config=self.config,
             read_only=self.read_only,
-            before=self.before,
-            at_tag=self.at_tag,
         ):
             server = create_mcp_server(
-                self.db_path,
-                config=self.config,
-                read_only=self.read_only,
-                before=self.before,
-                at_tag=self.at_tag,
+                self.db_path, config=self.config, read_only=self.read_only
             )
             try:
                 if transport == "stdio":
