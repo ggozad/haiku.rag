@@ -17,7 +17,7 @@ import httpx
 from haiku.rag.client.documents import DocumentImport
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.converters import get_converter
-from haiku.rag.hooks import build_hooks, load_hooks
+from haiku.rag.hooks import DeleteEvent, build_hooks, load_hooks
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.chunk import Chunk, SearchResult, SearchType
@@ -400,7 +400,7 @@ class HaikuRAG:
             # can't appear or move between collection and deletion. parent_uri
             # links a child to its parent's uri; walk transitively, guarding
             # against cycles.
-            ids_to_delete: list[str] = []
+            docs_to_delete: list[Document] = []
             seen: set[str] = set()
             queue = [await self.get_document_by_id(document_id)]
             while queue:
@@ -408,23 +408,24 @@ class HaikuRAG:
                 if doc is None or doc.id is None or doc.id in seen:
                     continue
                 seen.add(doc.id)
-                ids_to_delete.append(doc.id)
+                docs_to_delete.append(doc)
                 if doc.uri:
                     queue.extend(
                         await self.list_documents(filter=parent_uri_filter(doc.uri))
                     )
 
-            if not ids_to_delete:
+            if not docs_to_delete:
                 return False
 
-            for doc_id in ids_to_delete:
-                await self.document_repository.delete(doc_id)
+            for doc in docs_to_delete:
+                assert doc.id is not None
+                await self.document_repository.delete(doc.id)
 
         if self._config.storage.auto_vacuum:
             self._schedule_vacuum()
-        for doc_id in ids_to_delete:
-            for hook in self._hooks:
-                await hook.after_delete(self, doc_id)
+        event = DeleteEvent(documents=docs_to_delete)
+        for hook in self._hooks:
+            await hook.after_delete(self, event)
         return True
 
     async def list_documents(
