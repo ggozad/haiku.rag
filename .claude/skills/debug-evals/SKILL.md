@@ -11,13 +11,16 @@ single case. Read-only.
 
 ## How to query
 
-1. Confirm the current schema with `mcp__logfire__schema_reference` (spans and
-   logs share the `records` table).
-2. Run SQL with `mcp__logfire__arbitrary_query` (`query` + `age` in minutes, max
-   30 days). The same SQL works pasted into Logfire's Explore UI.
+1. Confirm the current schema with `mcp__logfire__query_schema_reference` (spans
+   and logs share the `records` table).
+2. Run SQL with `mcp__logfire__query_run` (`query` + `project: "haiku"` +
+   `start_timestamp`/`end_timestamp`, max 14 days). The remote MCP is
+   org-scoped, so `project` is required; eval runs land in project `haiku`.
+   The same SQL works pasted into Logfire's Explore UI.
 3. Read span attributes as JSON: `attributes->>'key'`, nested as
    `attributes->'a'->'b'->>'c'`. Cast when needed: `(...)::float`, `(...)::int`.
-4. Hand back a clickable trace with `mcp__logfire__logfire_link(trace_id)`.
+4. Hand back a clickable trace with
+   `mcp__logfire__project_logfire_link(trace_id, project="haiku")`.
 
 ## Vocabulary
 
@@ -137,8 +140,8 @@ ORDER BY start_timestamp;
    mean_task_seconds — always report task time).
 3. Pull failing and low-citation cases, read the judge `reason`.
 4. To understand one case, take its start/end from the case query and run the
-   agent-activity query, then `logfire_link(trace_id)` so the user can expand
-   that case in the UI.
+   agent-activity query, then `project_logfire_link(trace_id)` so the user can
+   expand that case in the UI.
 
 ## When a query returns nothing
 

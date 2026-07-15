@@ -12,15 +12,19 @@ that served a request. Read-only.
 
 ## How to query
 
-1. Confirm the current schema with `mcp__logfire__schema_reference` (spans and
-   logs share the `records` table).
-2. Run SQL with `mcp__logfire__arbitrary_query` (`query` + `age` in minutes, max
-   30 days). The same SQL works pasted into Logfire's Explore UI.
+1. Confirm the current schema with `mcp__logfire__query_schema_reference` (spans
+   and logs share the `records` table).
+2. Run SQL with `mcp__logfire__query_run` (`query` + `project: "haiku"` +
+   `start_timestamp`/`end_timestamp`, max 14 days). The remote MCP is
+   org-scoped, so `project` is required; the ingester ships to project `haiku`.
+   The same SQL works pasted into Logfire's Explore UI.
 3. Read span attributes as JSON: `attributes->>'key'`, cast when needed
    (`(attributes->>'attempt')::int`).
-4. Hand back a clickable trace with `mcp__logfire__logfire_link(trace_id)`.
-5. For recent exceptions tied to a file, `mcp__logfire__find_exceptions_in_file`
-   accepts `client/documents.py`, `ingester/workers/pool.py`, or
+4. Hand back a clickable trace with
+   `mcp__logfire__project_logfire_link(trace_id, project="haiku")`.
+5. For recent exceptions tied to a file,
+   `mcp__logfire__query_find_exceptions_in_file` accepts
+   `client/documents.py`, `ingester/workers/pool.py`, or
    `ingester/pollers/base.py`.
 
 Adjust `service_name` if the operator set `OTEL_SERVICE_NAME` (e.g. per tenant).
@@ -185,7 +189,8 @@ ORDER BY n DESC;
    `ingester.worker breaker opened` event flags a source the pool paused. The
    per-job dead/reschedule narration stays in the ingester console and the queue
    API, not Logfire.
-5. `logfire_link(trace_id)` for a document lets the user expand the full tree.
+5. `project_logfire_link(trace_id)` for a document lets the user expand the
+   full tree.
 
 ## When a query returns nothing
 
