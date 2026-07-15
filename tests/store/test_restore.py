@@ -302,3 +302,37 @@ async def test_restore_rejected_during_rebuild(temp_db_path):
         async with store._rebuild_lock:
             with pytest.raises(ValueError, match="[Rr]ebuild in progress"):
                 await store.restore_tag("release-1")
+
+
+@pytest.mark.asyncio
+async def test_restore_old_version_marker_requires_explicit_migration(temp_db_path):
+    """Restore never migrates: restoring a tag whose settings carry an old
+    version marker completes, the next normal open hits the migration gate,
+    explicit migration works, and the safety tag remains usable after it."""
+    from haiku.rag.store.exceptions import MigrationRequiredError
+
+    async with Store(temp_db_path, create=True) as store:
+        repo = DocumentRepository(store)
+        await repo.create(Document(content="First document"))
+        current_version = await store.get_haiku_version()
+        await store.set_haiku_version("0.63.0")
+        await store.create_tag("old-marker")
+        await store.set_haiku_version(current_version)
+        await repo.create(Document(content="Second document"))
+
+    async with Store(temp_db_path) as store:
+        safety_tag = await store.restore_tag("old-marker")
+        assert await store.get_haiku_version() == "0.63.0"
+        assert await _doc_contents(store) == {"First document"}
+
+    with pytest.raises(MigrationRequiredError):
+        async with Store(temp_db_path):
+            pass
+
+    async with Store(temp_db_path, skip_migration_check=True) as store:
+        await store.migrate()
+
+    async with Store(temp_db_path) as store:
+        assert await _doc_contents(store) == {"First document"}
+        await store.restore_tag(safety_tag)
+        assert await _doc_contents(store) == {"First document", "Second document"}
