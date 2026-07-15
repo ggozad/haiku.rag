@@ -1,5 +1,4 @@
 import asyncio
-import contextlib
 import json
 import logging
 from dataclasses import dataclass
@@ -882,7 +881,7 @@ class Store:
         self._assert_not_rebuilding()
         tables = self._tables()
 
-        async with self._write_lock:
+        async with self._rebuild_lock, self._write_lock:
             existing = [
                 table_name
                 for table_name, table in tables.items()
@@ -902,10 +901,19 @@ class Store:
                 for table_name, table in tables.items():
                     await table.tags.create(name, versions[table_name])
                     created.append(table_name)
-            except Exception:
+            except Exception as exc:
+                failed_cleanup: list[str] = []
                 for table_name in created:
-                    with contextlib.suppress(Exception):
+                    try:
                         await tables[table_name].tags.delete(name)
+                    except Exception:
+                        failed_cleanup.append(table_name)
+                if failed_cleanup:
+                    raise RuntimeError(
+                        f"Tag '{name}' creation failed ({exc}) and cleanup "
+                        f"failed on: {', '.join(failed_cleanup)}. A partial "
+                        "tag may remain; delete it with delete_tag."
+                    ) from exc
                 raise
 
     async def list_tags(self) -> dict[str, TagInfo]:
@@ -933,17 +941,28 @@ class Store:
         Raises:
             ReadOnlyError: If the store is in read-only mode.
             ValueError: If a rebuild is in progress or no table has the tag.
+            RuntimeError: If deletion failed on some tables; remnants remain
+                until a retry succeeds.
         """
         self._assert_writable()
         self._assert_not_rebuilding()
-        async with self._write_lock:
+        async with self._rebuild_lock, self._write_lock:
             found = False
-            for table in self._tables().values():
+            failed: list[str] = []
+            for table_name, table in self._tables().items():
                 if name in await table.tags.list():
-                    await table.tags.delete(name)
                     found = True
+                    try:
+                        await table.tags.delete(name)
+                    except Exception:
+                        failed.append(table_name)
             if not found:
                 raise ValueError(f"Tag '{name}' does not exist")
+            if failed:
+                raise RuntimeError(
+                    f"Tag '{name}' deletion failed on: {', '.join(failed)}. "
+                    "Remnants remain; retry delete_tag."
+                )
 
     async def list_table_versions(self, table_name: str) -> list[dict[str, Any]]:
         """List version history for a table.

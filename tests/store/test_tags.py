@@ -86,6 +86,70 @@ async def test_create_tag_rolls_back_own_tags_on_failure(temp_db_path, monkeypat
 
 
 @pytest.mark.asyncio
+async def test_create_tag_reports_failed_cleanup(temp_db_path, monkeypatch):
+    """When midway-failure cleanup also fails, the error reports both the
+    original failure and the remaining partial-tag risk."""
+    async with Store(temp_db_path, create=True) as store:
+        real_create = AsyncTags.create
+        calls = {"n": 0}
+
+        async def flaky_create(self, name: str, version: int) -> None:
+            calls["n"] += 1
+            if calls["n"] == 4:
+                raise RuntimeError("create boom")
+            await real_create(self, name, version)
+
+        async def failing_delete(self, name: str) -> None:
+            raise RuntimeError("delete boom")
+
+        monkeypatch.setattr(AsyncTags, "create", flaky_create)
+        monkeypatch.setattr(AsyncTags, "delete", failing_delete)
+
+        with pytest.raises(RuntimeError) as exc_info:
+            await store.create_tag("broken")
+
+        msg = str(exc_info.value)
+        assert "create boom" in msg
+        assert "partial" in msg
+        assert exc_info.value.__cause__ is not None
+
+        monkeypatch.undo()
+        tags = await store.list_tags()
+        assert tags["broken"].complete is False
+
+
+@pytest.mark.asyncio
+async def test_delete_tag_reports_failed_tables(temp_db_path, monkeypatch):
+    """delete_tag never claims success when remnants remain: it names the
+    tables where deletion failed."""
+    async with Store(temp_db_path, create=True) as store:
+        await store.create_tag("release-1")
+
+        real_delete = AsyncTags.delete
+        calls = {"n": 0}
+
+        async def flaky_delete(self, name: str) -> None:
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise RuntimeError("delete boom")
+            await real_delete(self, name)
+
+        monkeypatch.setattr(AsyncTags, "delete", flaky_delete)
+
+        with pytest.raises(RuntimeError) as exc_info:
+            await store.delete_tag("release-1")
+
+        assert "document_meta" in str(exc_info.value)
+
+        monkeypatch.undo()
+        tags = await store.list_tags()
+        assert set(tags["release-1"].tables) == {"document_meta"}
+
+        await store.delete_tag("release-1")
+        assert await store.list_tags() == {}
+
+
+@pytest.mark.asyncio
 async def test_create_tag_waits_for_write_lock(temp_db_path):
     """create_tag serializes with client writes so a write cannot land
     between the version snapshot and the per-table tag creation."""

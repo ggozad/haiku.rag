@@ -337,20 +337,16 @@ class HaikuRAGApp:  # pragma: no cover
                     )
 
     def _tag_write_store(self) -> "Store":
-        """Writable store for tag create/delete.
+        """Writable store for tag create/delete with normal validation and
+        migration checks.
 
-        Migration checks stay on: a coordinated tag is only reliable when the
-        database schema is current, and a writable open of a legacy database
-        would create missing tables as a side effect.
+        A coordinated tag is only reliable when the database schema is
+        current, and a writable open of a legacy database would create
+        missing tables as a side effect.
         """
         from haiku.rag.store.engine import Store
 
-        return Store(
-            self.db_path,
-            config=self.config,
-            skip_validation=True,
-            read_only=self.read_only,
-        )
+        return Store(self.db_path, config=self.config, read_only=self.read_only)
 
     def _tag_read_store(self) -> "Store":
         """Read-only store for tag inspection; works on old or drifted DBs."""
