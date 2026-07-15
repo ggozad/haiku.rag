@@ -3,7 +3,7 @@
 
 ### Added
 
-- Database tags: `haiku-rag tag create/list/delete`, tags shown in `history`. Vacuum retains versions back to the oldest tag.
+- Database tags: `haiku-rag tag create/list/delete/restore`, tags shown in `history`. `tag restore` creates a `before-restore-*` safety tag before changing live state. Vacuum retains versions back to the oldest tag.
 
 ### Changed
 

@@ -542,7 +542,7 @@ haiku-skills chat --use-entrypoints --skill medic
 
 ## Tags
 
-Tags name the current database state so you can return to it. A tag covers every table in the database. Tagged versions survive `vacuum`; everything older than your oldest tag is retained until that tag is deleted, so remove tags you no longer need.
+A tag names the current database state. It is a logical snapshot composed of one LanceDB tag on each of the five tables, created from a single version snapshot.
 
 ```bash
 # Tag the current state, e.g. at deploy time or after an ingestion run
@@ -554,6 +554,37 @@ haiku-rag tag list
 # Delete a tag, releasing its versions for cleanup
 haiku-rag tag delete release-1
 ```
+
+A tag present on every table is complete. A tag missing from some tables (created outside haiku.rag, or left behind by a failure) is partial. `tag list` marks partial tags. Partial tags can be listed and deleted but never restored.
+
+Tagged versions survive `vacuum`. Vacuum retains the oldest tagged version and every newer version; versions older than the oldest tag remain eligible for cleanup. Delete tags you no longer need so cleanup can advance.
+
+### Restore
+
+`tag restore` brings the database back to a tagged state:
+
+```bash
+haiku-rag tag restore release-1
+```
+
+Restore changes the live state. It is not a read-only view: each table gets a new latest version equal to the tagged one, and reads and writes continue from there. Versions written after the tag remain in history until vacuum removes them.
+
+Before changing anything, restore creates a complete safety tag (`before-restore-<timestamp>`) for the current state and reports it, so you always have a named path back:
+
+```bash
+haiku-rag tag create release-1 --db /path/to/db.lancedb
+# Stop all writers before either restore.
+haiku-rag tag restore release-1 --db /path/to/db.lancedb --yes
+haiku-rag tag list --db /path/to/db.lancedb
+haiku-rag tag restore before-restore-YYYYMMDDTHHMMSSZ --db /path/to/db.lancedb --yes
+```
+
+Restore is a maintenance operation:
+
+- Stop all ingestion and other writers before restoring and keep them stopped until it finishes.
+- The operation is coordinated but not transactionally atomic across tables. On failure it attempts to roll back to the pre-restore state and reports whether the rollback succeeded.
+- `--yes` only skips the confirmation prompt. It provides no locking and no concurrent-writer protection.
+- Restore never migrates. Restoring a tag from an older haiku.rag version completes normally, and the next open reports the required migration. Run `haiku-rag migrate` explicitly.
 
 ### Version History
 

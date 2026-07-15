@@ -300,7 +300,13 @@ class HaikuRAGApp:  # pragma: no cover
 
             self.console.print("[bold]Version History[/bold]")
 
-            tags = await store.list_tags()
+            try:
+                tags = await store.list_tags()
+            except Exception as exc:
+                tags = {}
+                self.console.print(
+                    f"[yellow]Tag annotations unavailable: {escape(str(exc))}[/yellow]"
+                )
 
             for table_name in tables:
                 versions = await store.list_table_versions(table_name)
