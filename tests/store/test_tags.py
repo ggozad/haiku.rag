@@ -240,6 +240,112 @@ async def test_vacuum_cleans_untagged_versions_and_keeps_tagged(temp_db_path):
 
 
 @pytest.mark.asyncio
+async def test_vacuum_reraises_runtime_error(temp_db_path, monkeypatch):
+    """Vacuum suppresses OSError only; lance errors (RuntimeError) surface
+    instead of silently skipping cleanup."""
+    from lancedb.table import AsyncTable
+
+    async with Store(temp_db_path, create=True) as store:
+
+        async def failing_optimize(self, **kwargs):
+            raise RuntimeError("lance error: boom")
+
+        monkeypatch.setattr(AsyncTable, "optimize", failing_optimize)
+        with pytest.raises(RuntimeError, match="boom"):
+            await store.vacuum(retention_seconds=0)
+
+        async def failing_optimize_os(self, **kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(AsyncTable, "optimize", failing_optimize_os)
+        await store.vacuum(retention_seconds=0)
+
+
+@pytest.mark.asyncio
+async def test_vacuum_multiple_tags_uses_oldest_cutoff(temp_db_path):
+    """With several tags the retention clamp must key off the oldest one;
+    clamping to a newer tag would put the older tagged version inside the
+    cleanup window and lance would hard-error."""
+    async with Store(temp_db_path, create=True) as store:
+        repo = DocumentRepository(store)
+        await repo.create(Document(content="First document"))
+        await store.create_tag("old")
+
+        await asyncio.sleep(1.5)
+
+        await repo.create(Document(content="Second document"))
+        await store.create_tag("new")
+
+        await store.vacuum(retention_seconds=0)
+
+        tags = await store.list_tags()
+        remaining = [v["version"] for v in await store.list_table_versions("documents")]
+        assert tags["old"].tables["documents"] in remaining
+        assert tags["new"].tables["documents"] in remaining
+
+
+@pytest.mark.asyncio
+async def test_vacuum_partial_tag_protects_its_tables(temp_db_path):
+    """A partial tag still protects the versions of the tables it exists on,
+    while untagged tables clean up normally."""
+    async with Store(temp_db_path, create=True) as store:
+        repo = DocumentRepository(store)
+        await repo.create(Document(content="First document"))
+
+        chunks_version = await store.chunks_table.version()
+        await store.chunks_table.tags.create("stale", chunks_version)
+        docs_versions_before = [
+            v["version"] for v in await store.list_table_versions("documents")
+        ]
+
+        await asyncio.sleep(1.5)
+
+        await repo.create(Document(content="Second document"))
+        await store.vacuum(retention_seconds=0)
+
+        chunk_versions = [
+            v["version"] for v in await store.list_table_versions("chunks")
+        ]
+        assert chunks_version in chunk_versions
+
+        docs_versions_after = [
+            v["version"] for v in await store.list_table_versions("documents")
+        ]
+        assert min(docs_versions_before) not in docs_versions_after
+
+
+@pytest.mark.asyncio
+async def test_deleting_oldest_tag_advances_cleanup(temp_db_path):
+    """Versions pinned by a tag become cleanable once the tag is deleted;
+    the cleanup cutoff advances to the next retained tag without removing
+    its version."""
+    async with Store(temp_db_path, create=True) as store:
+        repo = DocumentRepository(store)
+        await repo.create(Document(content="First document"))
+        await store.create_tag("old")
+        old_version = (await store.list_tags())["old"].tables["documents"]
+
+        await asyncio.sleep(1.5)
+
+        await repo.create(Document(content="Second document"))
+        await store.create_tag("new")
+        new_version = (await store.list_tags())["new"].tables["documents"]
+
+        await store.vacuum(retention_seconds=0)
+        remaining = [v["version"] for v in await store.list_table_versions("documents")]
+        assert old_version in remaining
+        assert new_version in remaining
+
+        await store.delete_tag("old")
+        await asyncio.sleep(1.5)
+        await store.vacuum(retention_seconds=0)
+
+        remaining = [v["version"] for v in await store.list_table_versions("documents")]
+        assert old_version not in remaining
+        assert new_version in remaining
+
+
+@pytest.mark.asyncio
 async def test_tag_operations_rejected_during_rebuild(temp_db_path):
     """While a rebuild holds the rebuild lock, tag operations fail fast
     instead of snapshotting a half-rebuilt database."""

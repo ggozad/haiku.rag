@@ -512,6 +512,8 @@ class Store:
 
         Raises:
             ReadOnlyError: If the store is in read-only mode.
+            RuntimeError: On lance errors during optimize; only OSError
+                (resource pressure) skips the pass.
         """
         self._assert_writable()
 
@@ -535,8 +537,10 @@ class Store:
                             table, retention
                         )
                     )
-            except (RuntimeError, OSError) as e:
-                # Handle resource errors gracefully
+            except OSError as e:
+                # Resource errors (e.g. disk pressure) skip the pass; lance
+                # errors surface as RuntimeError and must not be swallowed —
+                # a silently skipped cleanup hides tag-interaction bugs.
                 logger.debug(f"Vacuum skipped due to resource constraints: {e}")
 
     async def _tag_safe_retention(
