@@ -321,6 +321,24 @@ class TestTextToDoclingWithFormat:
         assert "MZ Wallace" in exported
 
     @pytest.mark.asyncio
+    async def test_text_starting_with_magic_bytes_parses_as_markdown(self):
+        """Text whose first bytes collide with a binary magic signature
+        ("BM" = BMP, "ID3" = MP3) must still be parsed as markdown, not
+        routed to an image/audio backend by content sniffing.
+        """
+        config = AppConfig()
+        converter = DoclingLocalConverter(config)
+
+        for prefix in ("BMW", "ID3 Algorithm"):
+            text = f"{prefix} overview.\n\n## History\n\n- First item\n- Second item"
+            doc = await converter.convert_text(text, format="md")
+            labels = [
+                str(getattr(item, "label", "")) for item, _ in doc.iterate_items()
+            ]
+            assert "section_header" in labels
+            assert "list_item" in labels
+
+    @pytest.mark.asyncio
     async def test_plain_text_without_markdown_syntax_fallback(self):
         """Test that plain text without markdown syntax falls back gracefully.
 
