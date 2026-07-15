@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- `docling-local` text conversion no longer misroutes markdown/HTML content whose first bytes collide with a binary magic signature (e.g. `BM`, `ID3`) to an image or audio backend.
+
 ## [0.66.0] - 2026-07-14
 
 ### Changed

@@ -311,7 +311,12 @@ class DoclingLocalConverter(DocumentConverter):
         from docling.exceptions import ConversionError
         from docling_core.types.io import DocumentStream
 
-        bytes_io = BytesIO(text.encode("utf-8"))
+        # Docling sniffs magic bytes before considering the extension, so text
+        # starting with e.g. "BM" (BMP) or "ID3" (MP3) gets routed to a binary
+        # backend. A leading newline defeats every magic signature (all match
+        # at offset 0) without changing the md/html parse, making docling fall
+        # back to the extension in doc_name, which encodes the known format.
+        bytes_io = BytesIO(b"\n" + text.encode("utf-8"))
         doc_stream = DocumentStream(name=doc_name, stream=bytes_io)
         converter = DoclingDocConverter(
             format_options=self._build_format_options(source_uri=source_uri)
