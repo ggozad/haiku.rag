@@ -10,12 +10,12 @@ Subclass `haiku.rag.hooks.Hook` and override any subset:
 
 | Method | Fires | Use for |
 |--------|-------|---------|
-| `after_ingest(client, document)` | A document's content was written (create, import, batch import, update) | Deriving state from documents |
-| `after_delete(client, document_id)` | A document was deleted, once per document in a cascade | Cleaning up derived state |
-| `before_search(client, query, filter)` | Before retrieval, text queries only | Query expansion, filter injection |
-| `after_search(client, query, results)` | After retrieval, reranking, and deduplication | Annotating, reordering, or filtering results |
+| `after_ingest(client, event)` | Document content was written (create, import, batch import, update) | Deriving state from documents |
+| `after_delete(client, event)` | Documents were deleted | Cleaning up derived state |
+| `before_search(client, request)` | Before retrieval, text queries only | Query expansion, filter injection |
+| `after_search(client, request, results)` | After retrieval, reranking, and deduplication | Annotating, reordering, or filtering results |
 
-`before_search` returns the `(query, filter)` pair to search with. The returned query feeds both the vector and the full-text side. `after_search` returns the result list. Hooks run in the order listed in config, each receiving the previous hook's output.
+Events are batch shaped. `IngestEvent` carries `documents` (a batch import arrives as one event with the whole batch) and `operation` (`"create"` or `"update"`). `DeleteEvent` carries the deleted `documents` in their last-known state, since the rows are already gone; a cascade arrives as one event. `SearchRequest` carries `query`, `filter`, `search_type`, and `limit`. `before_search` returns the request to search with, and may modify any of its fields. The query feeds both the vector and the full-text side. `after_search` returns the result list. Hooks run in the order listed in config, each receiving the previous hook's output.
 
 Hooks receive the `HaikuRAG` client, so they can search, read repositories, and store their own state.
 
@@ -25,11 +25,11 @@ Hooks receive the `HaikuRAG` client, so they can search, read repositories, and 
 from haiku.rag.hooks import Hook
 
 class AbbreviationHook(Hook):
-    async def before_search(self, client, query, filter):
-        expanded = my_glossary.expand(query)
-        return expanded, filter
+    async def before_search(self, client, request):
+        request.query = my_glossary.expand(request.query)
+        return request
 
-    async def after_search(self, client, query, results):
+    async def after_search(self, client, request, results):
         for result in results:
             result.annotations = [
                 f"{term}: {definition}"
@@ -60,7 +60,8 @@ An unknown name in `hooks:` raises `ValueError` when the client is constructed, 
 
 ## Semantics
 
-- **Update equals ingest.** `after_ingest` fires for both creation and content updates. Treat it as "replace any state you derived from this document". Metadata-only and title-only updates do not fire.
+- **Update equals ingest.** `after_ingest` fires for both creation and content updates, with `event.operation` set to `"create"` or `"update"` (creation against an already-stored URI reports `"update"`). Treat both as "replace any state you derived from these documents". The operation is informational, for notification or sync hooks. Metadata-only and title-only updates do not fire.
+- **Batch your writes.** A batch import delivers all its documents in one event. A hook keeping LanceDB state should write once per event, not once per document, to avoid creating a table version per document.
 - **Hooks run after the write commits.** They execute outside the store's write lock, so a hook may itself write to the database, and a hook failure never rolls back the document write.
 - **Rebuild does not fire hooks.** `rebuild` re-chunks and re-embeds but never changes document content, so content-derived state is unaffected.
 - **Backfill is your loop.** A hook enabled on an existing database can backfill by iterating `client.list_documents()` and calling its own `after_ingest`.

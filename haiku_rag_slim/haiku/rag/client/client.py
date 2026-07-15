@@ -15,7 +15,7 @@ from haiku.rag.client.session import (
 )
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.embeddings import get_embedder
-from haiku.rag.hooks import build_hooks, load_hooks
+from haiku.rag.hooks import DeleteEvent, build_hooks, load_hooks
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import Store
 from haiku.rag.store.exceptions import (
@@ -809,10 +809,10 @@ class HaikuRAG:
         deleted = await self._single_session("delete_document").delete_document(
             document_id
         )
-        for doc in deleted:
-            assert doc.id is not None
+        if deleted:
+            event = DeleteEvent(documents=deleted)
             for hook in self._hooks:
-                await hook.after_delete(self, doc.id)
+                await hook.after_delete(self, event)
         return bool(deleted)
 
     async def list_documents(
@@ -940,10 +940,23 @@ class HaikuRAG:
         sources: list[str] | None = None,
     ) -> list[SearchResult]:
         from haiku.rag.client.search import search, search_sources
+        from haiku.rag.hooks import SearchRequest
 
+        if limit is None:
+            limit = self._config.search.limit
+        request = SearchRequest(
+            query=query, filter=filter, search_type=search_type, limit=limit
+        )
         if isinstance(query, str):
+            if request.search_type is None:
+                request.search_type = "hybrid"
             for hook in self._hooks:
-                query, filter = await hook.before_search(self, query, filter)
+                request = await hook.before_search(self, request)
+            query = request.query
+            assert isinstance(query, str), "before_search must keep text queries text"
+            filter = request.filter
+            limit = request.limit
+            search_type = request.search_type
 
         if self.covers_multiple:
             results = await search_sources(
@@ -959,7 +972,7 @@ class HaikuRAG:
                 result.source = self.source
 
         for hook in self._hooks:
-            results = await hook.after_search(self, query, results)
+            results = await hook.after_search(self, request, results)
         return results
 
     async def expand_context(
