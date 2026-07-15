@@ -16,6 +16,7 @@ from haiku.rag.client.processing import (
 )
 from haiku.rag.client.titles import resolve_title
 from haiku.rag.converters import get_converter
+from haiku.rag.hooks import IngestEvent
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import DocumentItem, extract_items
@@ -167,8 +168,12 @@ async def _store_document_with_chunks(
             await client.store.restore_table_versions(versions)
             raise
 
+    event = IngestEvent(
+        documents=[stored_doc],
+        operation="create" if existing is None else "update",
+    )
     for hook in client._hooks:
-        await hook.after_ingest(client, stored_doc)
+        await hook.after_ingest(client, event)
     return stored_doc
 
 
@@ -226,8 +231,9 @@ async def _update_document_with_chunks(
             await client.store.restore_table_versions(versions)
             raise
 
+    event = IngestEvent(documents=[updated_doc], operation="update")
     for hook in client._hooks:
-        await hook.after_ingest(client, updated_doc)
+        await hook.after_ingest(client, event)
     return updated_doc
 
 
@@ -342,9 +348,9 @@ async def _store_documents_with_chunks(
             await client.store.restore_table_versions(versions)
             raise
 
-    for doc in created:
-        for hook in client._hooks:
-            await hook.after_ingest(client, doc)
+    event = IngestEvent(documents=created, operation="create")
+    for hook in client._hooks:
+        await hook.after_ingest(client, event)
     return created
 
 
