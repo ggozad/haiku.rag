@@ -153,6 +153,17 @@ class TestTagCommands:
 
         assert "document_meta" not in asyncio.run(_table_names())
 
+    def test_tag_commands_missing_database_exit_nonzero(self, tmp_path):
+        missing = str(tmp_path / "does_not_exist.lancedb")
+        for args in (
+            ["tag", "create", "r1", "--db", missing],
+            ["tag", "delete", "r1", "--db", missing],
+            ["tag", "list", "--db", missing],
+        ):
+            result = runner.invoke(cli, args)
+            assert result.exit_code == 1, args
+            assert "does not exist" in result.output, args
+
     def test_tag_create_invalid_name_fails_cleanly(self, temp_db_path):
         """lance restricts ref names to alphanumeric, '.', '-', '_'; the CLI
         surfaces that as a clean error instead of a traceback."""
@@ -164,3 +175,92 @@ class TestTagCommands:
         assert result.exit_code == 1
         assert "Error:" in result.output
         assert "Ref characters" in result.output
+
+
+class TestTagRestore:
+    def test_restore_requires_confirmation_and_decline_changes_nothing(
+        self, temp_db_path
+    ):
+        db = str(temp_db_path)
+        assert runner.invoke(cli, ["init", "--db", db]).exit_code == 0
+        assert runner.invoke(cli, ["tag", "create", "r1", "--db", db]).exit_code == 0
+
+        result = runner.invoke(cli, ["tag", "restore", "r1", "--db", db], input="n\n")
+        assert result.exit_code == 1
+        assert "live database state" in result.output
+        assert "Stop all ingestion" in result.output
+        assert "not transactionally atomic" in result.output
+        assert "safety tag" in result.output
+
+        result = runner.invoke(cli, ["tag", "list", "--db", db])
+        assert "before-restore" not in result.output
+
+    def test_restore_non_interactive_without_yes_fails(self, temp_db_path):
+        db = str(temp_db_path)
+        assert runner.invoke(cli, ["init", "--db", db]).exit_code == 0
+        assert runner.invoke(cli, ["tag", "create", "r1", "--db", db]).exit_code == 0
+
+        result = runner.invoke(cli, ["tag", "restore", "r1", "--db", db])
+        assert result.exit_code == 1
+
+        result = runner.invoke(cli, ["tag", "list", "--db", db])
+        assert "before-restore" not in result.output
+
+    def test_restore_with_yes(self, temp_db_path):
+        db = str(temp_db_path)
+        assert runner.invoke(cli, ["init", "--db", db]).exit_code == 0
+        assert runner.invoke(cli, ["tag", "create", "r1", "--db", db]).exit_code == 0
+
+        result = runner.invoke(cli, ["tag", "restore", "r1", "--yes", "--db", db])
+        assert result.exit_code == 0
+        assert "Restored database to tag 'r1'" in result.output
+        assert "before-restore-" in result.output
+        assert "now live" in result.output
+        assert "migrate" in result.output
+
+        result = runner.invoke(cli, ["tag", "list", "--db", db])
+        assert "before-restore-" in result.output
+
+    def test_restore_missing_tag_errors(self, temp_db_path):
+        db = str(temp_db_path)
+        assert runner.invoke(cli, ["init", "--db", db]).exit_code == 0
+
+        result = runner.invoke(cli, ["tag", "restore", "nope", "--yes", "--db", db])
+        assert result.exit_code == 1
+        assert "does not exist" in result.output
+
+    def test_restore_partial_tag_errors(self, temp_db_path):
+        import asyncio
+
+        from haiku.rag.store.engine import Store
+
+        async def _partial_tag():
+            async with Store(temp_db_path, create=True) as store:
+                version = await store.chunks_table.version()
+                await store.chunks_table.tags.create("stale", version)
+
+        asyncio.run(_partial_tag())
+
+        result = runner.invoke(
+            cli, ["tag", "restore", "stale", "--yes", "--db", str(temp_db_path)]
+        )
+        assert result.exit_code == 1
+        assert "partial" in result.output
+        assert "documents" in result.output
+
+    def test_restore_missing_database_exits_nonzero(self, tmp_path):
+        missing = tmp_path / "does_not_exist.lancedb"
+        result = runner.invoke(
+            cli, ["tag", "restore", "r1", "--yes", "--db", str(missing)]
+        )
+        assert result.exit_code == 1
+        assert "does not exist" in result.output
+
+    def test_tag_help_includes_restore(self):
+        result = runner.invoke(cli, ["tag", "--help"])
+        assert result.exit_code == 0
+        assert "restore" in result.output
+
+        result = runner.invoke(cli, ["--help"])
+        assert "--before" not in result.output
+        assert "--at" not in result.output

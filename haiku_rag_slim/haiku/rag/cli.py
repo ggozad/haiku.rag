@@ -646,7 +646,11 @@ def tag_list(  # pragma: no cover
     ),
 ):
     app = create_app(db)
-    asyncio.run(app.list_tags())
+    try:
+        asyncio.run(app.list_tags())
+    except (ValueError, RuntimeError) as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
 
 
 @tag_cli.command("delete", help="Delete a tag")
@@ -661,6 +665,38 @@ def tag_delete(  # pragma: no cover
     app = create_app(db)
     try:
         asyncio.run(app.delete_tag(name))
+    except (ValueError, RuntimeError) as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+
+
+@tag_cli.command("restore", help="Restore the database to a tagged state")
+def tag_restore(  # pragma: no cover
+    name: str = typer.Argument(help="Name of the tag to restore"),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        help="Skip the confirmation prompt. Provides no locking or "
+        "concurrent-writer protection.",
+    ),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    if not yes:
+        typer.echo(f"Database: {app.db_path}")
+        typer.echo(f"Tag: {name}")
+        typer.echo("This changes the live database state across all tables.")
+        typer.echo("Stop all ingestion and other writers before continuing.")
+        typer.echo("The operation is coordinated but not transactionally atomic.")
+        typer.echo("A safety tag will preserve the current state.")
+        if not typer.confirm("Continue?", default=False):
+            raise typer.Exit(1)
+    try:
+        asyncio.run(app.restore_tag(name))
     except (ValueError, RuntimeError) as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)

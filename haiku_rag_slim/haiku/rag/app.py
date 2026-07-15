@@ -363,8 +363,7 @@ class HaikuRAGApp:  # pragma: no cover
     async def create_tag(self, name: str):
         """Tag the current version of every table."""
         if self._is_local and not self.db_path.exists():
-            self.console.print("[red]Database path does not exist.[/red]")
-            return
+            raise ValueError(f"Database path does not exist: {self.db_path}")
         async with self._tag_write_store() as store:
             await store.create_tag(name)
         self.console.print(f"[green]Created tag '{escape(name)}'[/green]")
@@ -372,8 +371,7 @@ class HaikuRAGApp:  # pragma: no cover
     async def list_tags(self):
         """List database tags, flagging partial ones."""
         if self._is_local and not self.db_path.exists():
-            self.console.print("[red]Database path does not exist.[/red]")
-            return
+            raise ValueError(f"Database path does not exist: {self.db_path}")
         async with self._tag_read_store() as store:
             tags = await store.list_tags()
 
@@ -394,11 +392,33 @@ class HaikuRAGApp:  # pragma: no cover
     async def delete_tag(self, name: str):
         """Delete a tag from every table that has it."""
         if self._is_local and not self.db_path.exists():
-            self.console.print("[red]Database path does not exist.[/red]")
-            return
+            raise ValueError(f"Database path does not exist: {self.db_path}")
         async with self._tag_write_store() as store:
             await store.delete_tag(name)
         self.console.print(f"[green]Deleted tag '{escape(name)}'[/green]")
+
+    async def restore_tag(self, name: str):
+        """Restore the database to a tagged state and report the outcome.
+
+        The Store context exits before anything is printed; no high-level
+        database access happens after the restore.
+
+        Raises:
+            ValueError: If the database path does not exist.
+        """
+        if self._is_local and not self.db_path.exists():
+            raise ValueError(f"Database path does not exist: {self.db_path}")
+        async with self._tag_write_store() as store:
+            safety_tag = await store.restore_tag(name)
+        self.console.print(f"[green]Restored database to tag '{escape(name)}'.[/green]")
+        self.console.print(
+            f"The previous state is preserved as '{escape(safety_tag)}'."
+        )
+        self.console.print(
+            "The restored state is now live. Later historical versions remain "
+            "until eligible for vacuum. Run [cyan]haiku-rag migrate[/cyan] if "
+            "migration is required."
+        )
 
     async def list_documents(self, filter: str | None = None):
         async with HaikuRAG(
