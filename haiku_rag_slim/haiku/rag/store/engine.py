@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from importlib import metadata
 from pathlib import Path
@@ -191,6 +191,24 @@ REQUIRED_TABLES: tuple[str, ...] = (
 # Keeps the vacuum cleanup cutoff safely older than the oldest tagged
 # version; guards against timestamp precision at the boundary.
 TAG_RETENTION_MARGIN = timedelta(seconds=1)
+
+# Restore order for multi-table restore and its rollback. documents restores
+# last: writes land in it last on the ingest path, making it the closest
+# available database commit point.
+RESTORE_TABLE_ORDER: tuple[str, ...] = tuple(
+    name for name in REQUIRED_TABLES if name != "documents"
+) + ("documents",)
+
+
+def _safety_tag_name(existing: set[str]) -> str:
+    """Collision-resistant name for the pre-restore safety tag."""
+    base = f"before-restore-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
+    if base not in existing:
+        return base
+    n = 2
+    while f"{base}-{n}" in existing:
+        n += 1
+    return f"{base}-{n}"
 
 
 @dataclass
@@ -883,42 +901,47 @@ class Store:
         """
         self._assert_writable()
         self._assert_not_rebuilding()
-        tables = self._tables()
 
         async with self._rebuild_lock, self._write_lock:
-            existing = [
-                table_name
-                for table_name, table in tables.items()
-                if name in await table.tags.list()
-            ]
-            if len(existing) == len(tables):
-                raise ValueError(f"Tag '{name}' already exists")
-            if existing:
-                raise ValueError(
-                    f"Tag '{name}' already exists on some tables "
-                    f"({', '.join(existing)}); delete it first with delete_tag"
-                )
+            await self._create_tag_locked(name)
 
-            versions = await self.current_table_versions()
-            created: list[str] = []
-            try:
-                for table_name, table in tables.items():
-                    await table.tags.create(name, versions[table_name])
-                    created.append(table_name)
-            except Exception as exc:
-                failed_cleanup: list[str] = []
-                for table_name in created:
-                    try:
-                        await tables[table_name].tags.delete(name)
-                    except Exception:
-                        failed_cleanup.append(table_name)
-                if failed_cleanup:
-                    raise RuntimeError(
-                        f"Tag '{name}' creation failed ({exc}) and cleanup "
-                        f"failed on: {', '.join(failed_cleanup)}. A partial "
-                        "tag may remain; delete it with delete_tag."
-                    ) from exc
-                raise
+    async def _create_tag_locked(self, name: str) -> None:
+        """Create a tag on every table; the caller must hold the write lock."""
+        tables = self._tables()
+
+        existing = [
+            table_name
+            for table_name, table in tables.items()
+            if name in await table.tags.list()
+        ]
+        if len(existing) == len(tables):
+            raise ValueError(f"Tag '{name}' already exists")
+        if existing:
+            raise ValueError(
+                f"Tag '{name}' already exists on some tables "
+                f"({', '.join(existing)}); delete it first with delete_tag"
+            )
+
+        versions = await self.current_table_versions()
+        created: list[str] = []
+        try:
+            for table_name, table in tables.items():
+                await table.tags.create(name, versions[table_name])
+                created.append(table_name)
+        except Exception as exc:
+            failed_cleanup: list[str] = []
+            for table_name in created:
+                try:
+                    await tables[table_name].tags.delete(name)
+                except Exception:
+                    failed_cleanup.append(table_name)
+            if failed_cleanup:
+                raise RuntimeError(
+                    f"Tag '{name}' creation failed ({exc}) and cleanup "
+                    f"failed on: {', '.join(failed_cleanup)}. A partial "
+                    "tag may remain; delete it with delete_tag."
+                ) from exc
+            raise
 
     async def list_tags(self) -> dict[str, TagInfo]:
         """Aggregate per-table tags into database-level tags.
@@ -967,6 +990,109 @@ class Store:
                     f"Tag '{name}' deletion failed on: {', '.join(failed)}. "
                     "Remnants remain; retry delete_tag."
                 )
+
+    async def _restore_tables(
+        self, versions: dict[str, int], *, best_effort: bool = False
+    ) -> list[tuple[str, Exception]]:
+        """Restore every table to the given versions, documents last.
+
+        Stops at the first failure by default; with best_effort, continues
+        through all tables. Returns the failures either way.
+        """
+        tables = self._tables()
+        failures: list[tuple[str, Exception]] = []
+        for table_name in RESTORE_TABLE_ORDER:
+            try:
+                await tables[table_name].restore(int(versions[table_name]))
+            except Exception as exc:
+                failures.append((table_name, exc))
+                if not best_effort:
+                    break
+        return failures
+
+    async def restore_tag(self, name: str) -> str:
+        """Restore every table to the versions of a complete tag.
+
+        Creates a complete safety tag for the pre-restore state before
+        changing any table and returns its name. Each table restore writes a
+        new latest version; nothing is left checked out read-only.
+
+        In-process coordination only: all other writers must be stopped for
+        the duration of the operation.
+
+        Raises:
+            ReadOnlyError: If the store is in read-only mode.
+            ValueError: If a rebuild is in progress, the tag does not exist,
+                or the tag is partial.
+            RuntimeError: If the safety tag could not be created (no table
+                changed), or a table restore failed (the error states whether
+                rollback succeeded).
+        """
+        self._assert_writable()
+        self._assert_not_rebuilding()
+
+        async with self._rebuild_lock, self._write_lock:
+            tags = await self.list_tags()
+            info = tags.get(name)
+            if info is None:
+                raise ValueError(f"Tag '{name}' does not exist")
+            if not info.complete:
+                raise ValueError(
+                    f"Tag '{name}' is partial (missing tables: "
+                    f"{', '.join(info.missing_tables)}) and cannot be "
+                    "restored; delete it with delete_tag"
+                )
+
+            snapshot = await self.current_table_versions()
+            safety_tag = _safety_tag_name(set(tags))
+            try:
+                await self._create_tag_locked(safety_tag)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Restore of tag '{name}' did not begin: safety tag "
+                    f"creation failed ({exc}). No table was changed."
+                ) from exc
+
+            try:
+                failures = await self._restore_tables(info.tables)
+            except asyncio.CancelledError:
+                # CancelledError is a BaseException and escapes the
+                # per-table handler; roll back before re-raising, shielded
+                # from further cancellation.
+                rollback_failures = await asyncio.shield(
+                    self._restore_tables(snapshot, best_effort=True)
+                )
+                if rollback_failures:
+                    failed_names = ", ".join(t for t, _ in rollback_failures)
+                    raise RuntimeError(
+                        f"Restore of tag '{name}' was cancelled and rollback "
+                        f"failed on: {failed_names}. The database may be "
+                        f"cross-table inconsistent; manual recovery is "
+                        f"required using safety tag '{safety_tag}'."
+                    ) from None
+                raise
+            if failures:
+                failed_table, cause = failures[0]
+                rollback_failures = await self._restore_tables(
+                    snapshot, best_effort=True
+                )
+                if rollback_failures:
+                    failed_names = ", ".join(t for t, _ in rollback_failures)
+                    raise RuntimeError(
+                        f"Restore of tag '{name}' failed on table "
+                        f"'{failed_table}' and rollback failed on: "
+                        f"{failed_names}. The database may be cross-table "
+                        f"inconsistent; manual recovery is required using "
+                        f"safety tag '{safety_tag}'."
+                    ) from cause
+                raise RuntimeError(
+                    f"Restore of tag '{name}' failed on table "
+                    f"'{failed_table}'; all tables were rolled back to the "
+                    f"pre-restore state. Safety tag '{safety_tag}' is "
+                    "preserved."
+                ) from cause
+
+            return safety_tag
 
     async def list_table_versions(self, table_name: str) -> list[dict[str, Any]]:
         """List version history for a table.
