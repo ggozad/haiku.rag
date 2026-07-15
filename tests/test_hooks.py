@@ -11,29 +11,33 @@ class RecordingHook(Hook):
     def __init__(self):
         self.events: list[tuple] = []
 
-    async def after_ingest(self, client, document):
-        self.events.append(("ingest", document.id, document.uri))
+    async def after_ingest(self, client, event):
+        self.events.append(
+            ("ingest", event.operation, tuple((d.id, d.uri) for d in event.documents))
+        )
 
-    async def after_delete(self, client, document_id):
-        self.events.append(("delete", document_id))
+    async def after_delete(self, client, event):
+        self.events.append(("delete", tuple((d.id, d.uri) for d in event.documents)))
 
 
 class AppendTokenHook(Hook):
     def __init__(self, token: str = "expanded"):
         self.token = token
 
-    async def before_search(self, client, query, filter):
-        return f"{query} {self.token}", filter
+    async def before_search(self, client, request):
+        request.query = f"{request.query} {self.token}"
+        return request
 
 
 class FilterHook(Hook):
-    async def before_search(self, client, query, filter):
-        return query, "uri = 'mem://hooked'"
+    async def before_search(self, client, request):
+        request.filter = "uri = 'mem://hooked'"
+        return request
 
 
 class ReverseResultsHook(Hook):
-    async def after_search(self, client, query, results):
-        self.seen_query = query
+    async def after_search(self, client, request, results):
+        self.seen_query = request.query
         return list(reversed(results))
 
 
@@ -111,22 +115,30 @@ async def _capture_repo_search(client):
 @pytest.mark.asyncio
 async def test_before_search_hooks_chain_in_order(temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as client:
-        client._hooks = [AppendTokenHook("one"), AppendTokenHook("two"), FilterHook()]
+        spy = SpyBeforeSearchHook()
+        client._hooks = [
+            AppendTokenHook("one"),
+            AppendTokenHook("two"),
+            FilterHook(),
+            spy,
+        ]
         captured = await _capture_repo_search(client)
 
         await client.search("alpha")
 
         assert captured["query"] == "alpha one two"
         assert captured["filter"] == "uri = 'mem://hooked'"
+        # The request carries the resolved search parameters.
+        assert spy.requests == [("alpha one two", "hybrid", Config.search.limit)]
 
 
 class SpyBeforeSearchHook(Hook):
     def __init__(self):
-        self.called: list[str] = []
+        self.requests: list[tuple] = []
 
-    async def before_search(self, client, query, filter):
-        self.called.append(query)
-        return query, filter
+    async def before_search(self, client, request):
+        self.requests.append((request.query, request.search_type, request.limit))
+        return request
 
 
 @pytest.mark.asyncio
@@ -151,7 +163,7 @@ async def test_before_search_skips_non_text_queries(temp_db_path):
 
         await client.search(b"image-bytes")
 
-        assert hook.called == []
+        assert hook.requests == []
 
 
 @pytest.mark.asyncio
@@ -190,8 +202,9 @@ async def test_after_ingest_fires_on_import_batch_update(temp_db_path):
             uri="mem://a",
             title="Alpha",
         )
-        assert spy.events == [("ingest", doc.id, "mem://a")]
+        assert spy.events == [("ingest", "create", ((doc.id, "mem://a"),))]
 
+        # A batch import arrives as one event carrying all documents.
         spy.events.clear()
         batch = await client.import_documents(
             [
@@ -200,8 +213,11 @@ async def test_after_ingest_fires_on_import_batch_update(temp_db_path):
             ]
         )
         assert spy.events == [
-            ("ingest", batch[0].id, "mem://b"),
-            ("ingest", batch[1].id, "mem://c"),
+            (
+                "ingest",
+                "create",
+                ((batch[0].id, "mem://b"), (batch[1].id, "mem://c")),
+            )
         ]
 
         spy.events.clear()
@@ -211,7 +227,17 @@ async def test_after_ingest_fires_on_import_batch_update(temp_db_path):
             docling_document=_docling_doc("a2", "Alpha updated"),
             chunks=[Chunk(content="Alpha updated", embedding=[0.2] * dim, order=0)],
         )
-        assert spy.events == [("ingest", doc.id, "mem://a")]
+        assert spy.events == [("ingest", "update", ((doc.id, "mem://a"),))]
+
+        # Creation against an already-stored URI updates in place.
+        spy.events.clear()
+        await client.import_document(
+            _docling_doc("a3", "Alpha again"),
+            [Chunk(content="Alpha again", embedding=[0.3] * dim, order=0)],
+            uri="mem://a",
+            title="Alpha",
+        )
+        assert spy.events == [("ingest", "update", ((doc.id, "mem://a"),))]
 
 
 @pytest.mark.asyncio
@@ -260,13 +286,16 @@ async def test_after_delete_fires_for_cascade(temp_db_path):
 
         assert await client.delete_document(parent.id) is True
 
-        deleted = {event[1] for event in spy.events}
-        assert deleted == {parent.id, child.id}
-        assert all(event[0] == "delete" for event in spy.events)
+        # One event for the whole cascade, carrying the deleted documents'
+        # last-known state (uri still resolvable).
+        assert len(spy.events) == 1
+        kind, deleted = spy.events[0]
+        assert kind == "delete"
+        assert set(deleted) == {(parent.id, "mem://parent"), (child.id, "mem://child")}
 
 
 class AnnotateHook(Hook):
-    async def after_search(self, client, query, results):
+    async def after_search(self, client, request, results):
         for result in results:
             result.annotations = ["XMT: transmit"]
         return results
