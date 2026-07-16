@@ -865,7 +865,8 @@ async def update_document(
         existing_doc.uri = uri
 
     if content is None and chunks is None and docling_document is None:
-        updated = await client.document_repository.update_meta(existing_doc)
+        async with client.store._write_lock:
+            updated = await client.document_repository.update_meta(existing_doc)
         if client._config.storage.auto_vacuum:
             client._schedule_vacuum()
         return updated
