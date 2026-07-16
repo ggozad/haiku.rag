@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.67.0] - 2026-07-16
+
 ### Added
 
 - Database tags: `haiku-rag tag create/list/delete/restore`, tags shown in `history`. `tag restore` creates a `before-restore-*` safety tag before changing live state. Vacuum retains versions back to the oldest tag.
@@ -1953,7 +1955,10 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.66.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.67.0...HEAD
+[0.67.0]: https://github.com/ggozad/haiku.rag/compare/0.67.0...0.67.0
+[0.67.0]: https://github.com/ggozad/haiku.rag/compare/0.67.0...0.67.0
+[0.67.0]: https://github.com/ggozad/haiku.rag/compare/0.66.0...0.67.0
 [0.66.0]: https://github.com/ggozad/haiku.rag/compare/0.65.1...0.66.0
 [0.65.1]: https://github.com/ggozad/haiku.rag/compare/0.65.0...0.65.1
 [0.65.0]: https://github.com/ggozad/haiku.rag/compare/0.64.0...0.65.0
