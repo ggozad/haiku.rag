@@ -100,11 +100,7 @@ def create_mcp_server(
         response (smaller JSON payload for plain-text consumers).
         """
         try:
-            async with HaikuRAG(
-                db_path,
-                config=config,
-                read_only=read_only,
-            ) as rag:
+            async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
                 return await rag.search(
                     query, limit=limit, include_images=include_images
                 )
@@ -139,11 +135,7 @@ def create_mcp_server(
             except Exception:
                 return []
             try:
-                async with HaikuRAG(
-                    db_path,
-                    config=config,
-                    read_only=read_only,
-                ) as rag:
+                async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
                     return await rag.search(
                         raw, limit=limit, include_images=include_images
                     )
@@ -154,11 +146,7 @@ def create_mcp_server(
     async def get_document(document_id: str) -> Document | None:
         """Get a document by its ID."""
         try:
-            async with HaikuRAG(
-                db_path,
-                config=config,
-                read_only=read_only,
-            ) as rag:
+            async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
                 return await rag.get_document_by_id(document_id)
         except Exception:
             return None
@@ -177,11 +165,7 @@ def create_mcp_server(
             filter: Optional SQL WHERE clause to filter documents.
         """
         try:
-            async with HaikuRAG(
-                db_path,
-                config=config,
-                read_only=read_only,
-            ) as rag:
+            async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
                 documents = await rag.list_documents(limit, offset, filter)
 
                 return [
@@ -211,11 +195,7 @@ def create_mcp_server(
             The answer as a string.
         """
         try:
-            async with HaikuRAG(
-                db_path,
-                config=config,
-                read_only=read_only,
-            ) as rag:
+            async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
                 answer, citations = await rag.ask(question)
                 if cite and citations:
                     answer += "\n\n" + format_citations(citations)
@@ -242,11 +222,7 @@ def create_mcp_server(
             The answer as a string.
         """
         try:
-            async with HaikuRAG(
-                db_path,
-                config=config,
-                read_only=read_only,
-            ) as rag:
+            async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
                 result = await rag.analyze(question, filter=filter)
                 return result.answer
         except Exception as e:

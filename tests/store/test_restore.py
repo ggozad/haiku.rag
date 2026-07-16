@@ -381,3 +381,28 @@ async def test_restore_failure_rollback_survives_cancellation(
         # 3 forward calls (2 ok, 1 failed) + all 5 rollback calls ran.
         assert calls["n"] == 8
         assert await _doc_contents(store) == {"First document", "Second document"}
+
+
+@pytest.mark.asyncio
+async def test_wait_protected_returns_result_on_same_tick_cancellation():
+    """A cancellation landing after the recovery task completed but before
+    the waiter resumed must not discard the recovery result."""
+    import asyncio
+
+    from haiku.rag.store.engine import _wait_protected
+
+    async def recovery() -> str:
+        return "done"
+
+    outer = asyncio.create_task(_wait_protected(recovery()))
+    # First pass: outer starts, spawns the recovery task, suspends on shield.
+    await asyncio.sleep(0)
+    # Second pass: the recovery task completes; outer is scheduled to resume.
+    await asyncio.sleep(0)
+    # Cancellation beats the resumption: delivered at the shield await even
+    # though the recovery already finished.
+    outer.cancel()
+
+    result, cancelled = await outer
+    assert result == "done"
+    assert cancelled is True

@@ -215,9 +215,11 @@ async def _wait_protected[T](coro: Coroutine[Any, Any, T]) -> tuple[T, bool]:
         try:
             return await asyncio.shield(task), cancelled
         except asyncio.CancelledError:
-            if task.done():
+            if task.cancelled():
                 # The recovery coroutine itself ended cancelled; there is
-                # nothing left to wait for.
+                # nothing left to wait for. A task that completed (even in
+                # the same tick as the cancellation) still returns its
+                # result on the next pass.
                 raise
             cancelled = True
 

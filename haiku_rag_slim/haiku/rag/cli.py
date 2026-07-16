@@ -686,6 +686,9 @@ def tag_restore(  # pragma: no cover
     ),
 ):
     app = create_app(db)
+    if app._is_local and not app.db_path.exists():
+        typer.echo(f"Error: Database path does not exist: {app.db_path}", err=True)
+        raise typer.Exit(1)
     if not yes:
         typer.echo(f"Database: {app.db_path}")
         typer.echo(f"Tag: {name}")

@@ -256,6 +256,13 @@ class TestTagRestore:
         assert result.exit_code == 1
         assert "does not exist" in result.output
 
+        # Without --yes the missing database is reported before the
+        # confirmation prompt, not after the user confirms.
+        result = runner.invoke(cli, ["tag", "restore", "r1", "--db", str(missing)])
+        assert result.exit_code == 1
+        assert "does not exist" in result.output
+        assert "Continue?" not in result.output
+
     def test_tag_help_includes_restore(self):
         result = runner.invoke(cli, ["tag", "--help"])
         assert result.exit_code == 0
