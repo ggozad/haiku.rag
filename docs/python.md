@@ -436,7 +436,7 @@ This compacts tables and removes historical versions to keep disk usage in check
 
 ### Tags
 
-Tag the current database state and restore it later, for example after an ingestion run. A tag covers all five tables and is created from a single version snapshot:
+Tag the current database state and restore it later, for example after an ingestion run. A tag covers all five tables and is created from a single version snapshot. Create tags with other writers stopped: the snapshot is coordinated within one process only, and a writer in another process can commit between the per-table reads.
 
 ```python
 await client.store.create_tag("release-1")
@@ -444,8 +444,6 @@ await client.store.create_tag("release-1")
 tags = await client.store.list_tags()
 for name, info in tags.items():
     print(name, info.tables, info.complete)
-
-await client.store.delete_tag("release-1")
 ```
 
 `restore_tag` brings the live database back to a tagged state. It creates a complete safety tag for the current state before changing any table and returns its name:
@@ -454,7 +452,13 @@ await client.store.delete_tag("release-1")
 safety_tag = await client.store.restore_tag("release-1")
 ```
 
-Restore is a maintenance operation: stop all other writers first. A tag present on only some tables is partial; `list_tags` reports it via `missing_tables`, and partial tags can be deleted but never restored. Vacuum retains the oldest tagged version and everything newer, so delete tags you no longer need.
+Restore is a maintenance operation: stop all other writers first. A tag present on only some tables is partial; `list_tags` reports it via `missing_tables`, and partial tags can be deleted but never restored.
+
+Delete tags you no longer need. Vacuum retains the oldest tagged version and everything newer:
+
+```python
+await client.store.delete_tag("release-1")
+```
 
 ### Rebuilding the Database
 

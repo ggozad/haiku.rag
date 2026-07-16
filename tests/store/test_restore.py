@@ -336,3 +336,48 @@ async def test_restore_old_version_marker_requires_explicit_migration(temp_db_pa
         assert await _doc_contents(store) == {"First document"}
         await store.restore_tag(safety_tag)
         assert await _doc_contents(store) == {"First document", "Second document"}
+
+
+@pytest.mark.asyncio
+async def test_restore_failure_rollback_survives_cancellation(
+    temp_db_path, monkeypatch
+):
+    """Cancelling restore while it rolls back a failed restore must not
+    interrupt the rollback: all tables return to the snapshot before the
+    cancellation is delivered."""
+    import asyncio
+
+    async with Store(temp_db_path, create=True) as store:
+        repo = DocumentRepository(store)
+        await repo.create(Document(content="First document"))
+        await store.create_tag("release-1")
+        await repo.create(Document(content="Second document"))
+
+        real_restore = AsyncTable.restore
+        calls = {"n": 0}
+        rollback_started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def flaky_restore(self, version=None):
+            calls["n"] += 1
+            if calls["n"] == 3:
+                raise RuntimeError("restore boom")
+            if calls["n"] == 4:
+                rollback_started.set()
+                await release.wait()
+            return await real_restore(self, version)
+
+        monkeypatch.setattr(AsyncTable, "restore", flaky_restore)
+
+        task = asyncio.create_task(store.restore_tag("release-1"))
+        await rollback_started.wait()
+        task.cancel()
+        release.set()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        monkeypatch.undo()
+        # 3 forward calls (2 ok, 1 failed) + all 5 rollback calls ran.
+        assert calls["n"] == 8
+        assert await _doc_contents(store) == {"First document", "Second document"}

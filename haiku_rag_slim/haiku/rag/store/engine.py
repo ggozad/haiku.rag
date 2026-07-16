@@ -569,8 +569,8 @@ class Store:
 
         Lance hard-errors when a tagged version falls inside the cleanup
         window and the Python API exposes no way to skip tagged versions, so
-        everything older than the oldest tag is retained until that tag is
-        deleted.
+        the oldest tagged version and everything newer are retained; versions
+        older than the oldest tag remain eligible for cleanup.
         """
         tags = await table.tags.list()
         if not tags:
@@ -892,6 +892,9 @@ class Store:
 
         Serializes with client writes via the write lock so a write cannot
         land between the version snapshot and the per-table tag creation.
+        This is in-process coordination only: a writer in another process
+        can commit between the per-table version reads, so create tags with
+        all other writers stopped when a consistent snapshot matters.
 
         Raises:
             ReadOnlyError: If the store is in read-only mode.
@@ -977,19 +980,21 @@ class Store:
             found = False
             failed: list[str] = []
             for table_name, table in self._tables().items():
-                if name in await table.tags.list():
-                    found = True
-                    try:
+                try:
+                    if name in await table.tags.list():
+                        found = True
                         await table.tags.delete(name)
-                    except Exception:
-                        failed.append(table_name)
-            if not found:
-                raise ValueError(f"Tag '{name}' does not exist")
+                except Exception:
+                    failed.append(table_name)
             if failed:
+                # A listing failure obscures whether the tag exists on that
+                # table, so failures take precedence over not-found.
                 raise RuntimeError(
                     f"Tag '{name}' deletion failed on: {', '.join(failed)}. "
-                    "Remnants remain; retry delete_tag."
+                    "Remnants may remain; retry delete_tag."
                 )
+            if not found:
+                raise ValueError(f"Tag '{name}' does not exist")
 
     async def _restore_tables(
         self, versions: dict[str, int], *, best_effort: bool = False
@@ -1009,6 +1014,28 @@ class Store:
                 if not best_effort:
                     break
         return failures
+
+    async def _rollback_to_snapshot(
+        self, snapshot: dict[str, int]
+    ) -> tuple[list[tuple[str, Exception]], bool]:
+        """Best-effort rollback that a cancellation cannot interrupt.
+
+        Runs the rollback as a task and keeps waiting for it even if this
+        coroutine is cancelled, so a Ctrl-C cannot leave the rollback half
+        applied. Returns the rollback failures and whether a cancellation
+        was absorbed; the caller must re-deliver an absorbed cancellation.
+        """
+        task = asyncio.ensure_future(self._restore_tables(snapshot, best_effort=True))
+        cancelled = False
+        while True:
+            try:
+                return await asyncio.shield(task), cancelled
+            except asyncio.CancelledError:
+                if task.done():
+                    # The rollback coroutine itself ended cancelled; there is
+                    # nothing left to wait for.
+                    raise
+                cancelled = True
 
     async def restore_tag(self, name: str) -> str:
         """Restore every table to the versions of a complete tag.
@@ -1057,11 +1084,8 @@ class Store:
                 failures = await self._restore_tables(info.tables)
             except asyncio.CancelledError:
                 # CancelledError is a BaseException and escapes the
-                # per-table handler; roll back before re-raising, shielded
-                # from further cancellation.
-                rollback_failures = await asyncio.shield(
-                    self._restore_tables(snapshot, best_effort=True)
-                )
+                # per-table handler; roll back before re-raising.
+                rollback_failures, _ = await self._rollback_to_snapshot(snapshot)
                 if rollback_failures:
                     failed_names = ", ".join(t for t, _ in rollback_failures)
                     raise RuntimeError(
@@ -1073,8 +1097,8 @@ class Store:
                 raise
             if failures:
                 failed_table, cause = failures[0]
-                rollback_failures = await self._restore_tables(
-                    snapshot, best_effort=True
+                rollback_failures, cancelled = await self._rollback_to_snapshot(
+                    snapshot
                 )
                 if rollback_failures:
                     failed_names = ", ".join(t for t, _ in rollback_failures)
@@ -1085,6 +1109,8 @@ class Store:
                         f"inconsistent; manual recovery is required using "
                         f"safety tag '{safety_tag}'."
                     ) from cause
+                if cancelled:
+                    raise asyncio.CancelledError()
                 raise RuntimeError(
                     f"Restore of tag '{name}' failed on table "
                     f"'{failed_table}'; all tables were rolled back to the "

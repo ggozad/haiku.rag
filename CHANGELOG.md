@@ -11,7 +11,7 @@
 
 ### Removed
 
-- `--before` global flag. There is no read-only replacement; create tags prospectively before important changes and use `tag restore` during a maintenance window.
+- `--before` global flag and the `before` constructor arguments on `HaikuRAG`, `Store`, `HaikuRAGApp`, `ChatApp`/`run_chat`, and `InspectorApp`/`run_inspector`. There is no read-only replacement; create tags prospectively before important changes and use `tag restore` during a maintenance window.
 
 ### Fixed
 

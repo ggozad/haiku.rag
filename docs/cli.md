@@ -557,6 +557,8 @@ haiku-rag tag delete release-1
 
 A tag present on every table is complete. A tag missing from some tables (created outside haiku.rag, or left behind by a failure) is partial. `tag list` marks partial tags. Partial tags can be listed and deleted but never restored.
 
+Create tags with other writers stopped. Tag creation coordinates writers within one process only; a writer in another process can commit between the per-table snapshot reads, and the tag then captures a mixed state.
+
 Tagged versions survive `vacuum`. Vacuum retains the oldest tagged version and every newer version; versions older than the oldest tag remain eligible for cleanup. Delete tags you no longer need so cleanup can advance.
 
 ### Restore

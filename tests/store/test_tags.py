@@ -412,3 +412,36 @@ async def test_list_table_versions_returns_history(temp_db_path):
         for v in versions:
             assert "version" in v
             assert "timestamp" in v
+
+
+@pytest.mark.asyncio
+async def test_delete_tag_reports_listing_failures(temp_db_path, monkeypatch):
+    """A tags.list() failure mid-delete is reported with the table named and
+    a recovery hint, instead of escaping raw after earlier deletions."""
+    async with Store(temp_db_path, create=True) as store:
+        await store.create_tag("release-1")
+
+        real_list = AsyncTags.list
+        calls = {"n": 0}
+
+        async def flaky_list(self):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise RuntimeError("list boom")
+            return await real_list(self)
+
+        monkeypatch.setattr(AsyncTags, "list", flaky_list)
+
+        with pytest.raises(RuntimeError) as exc_info:
+            await store.delete_tag("release-1")
+
+        msg = str(exc_info.value)
+        assert "document_meta" in msg
+        assert "retry delete_tag" in msg
+
+        monkeypatch.undo()
+        tags = await store.list_tags()
+        assert set(tags["release-1"].tables) == {"document_meta"}
+
+        await store.delete_tag("release-1")
+        assert await store.list_tags() == {}
