@@ -1,6 +1,18 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- Database tags: `haiku-rag tag create/list/delete/restore`, tags shown in `history`. `tag restore` creates a `before-restore-*` safety tag before changing live state. Vacuum retains versions back to the oldest tag.
+
+### Changed
+
+- `lancedb` bumped to 0.34.0.
+
+### Removed
+
+- `--before` global flag and the `before` constructor arguments on `HaikuRAG`, `Store`, `HaikuRAGApp`, `ChatApp`/`run_chat`, and `InspectorApp`/`run_inspector`. There is no read-only replacement; create tags prospectively before important changes and use `tag restore` during a maintenance window.
+
 ### Fixed
 
 - `docling-local` text conversion no longer misroutes markdown/HTML content whose first bytes collide with a binary magic signature (e.g. `BM`, `ID3`) to an image or audio backend.

@@ -76,4 +76,4 @@ For everyday Q&A, the rag skill alone is faster and cheaper. Attaching both lets
 
 Run "Filter documents" from the command palette to restrict searches to a subset. The filter applies to every search the agent runs for the rest of the session.
 
-Chat also honors the global `--read-only` and `--before` flags. See the [CLI reference](cli.md) for details.
+Chat also honors the global `--read-only` flag. See the [CLI reference](cli.md) for details.

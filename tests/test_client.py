@@ -2264,3 +2264,30 @@ async def test_rebuild_rechunk_with_url_prefixed_stored_content(
         assert doc_after is not None
         assert "example.com" in doc_after.content
         assert "Stored" in doc_after.content
+
+
+async def test_metadata_only_update_waits_for_write_lock(temp_db_path):
+    """The metadata-only update path serializes with other writers so it
+    cannot land inside another writer's critical section (e.g. between
+    create_tag's version snapshot and its per-table tag creation)."""
+    import asyncio
+
+    dim = Config.embeddings.model.vector_dim
+    docling_doc = DoclingDocument(name="d")
+    docling_doc.add_text(label=DocItemLabel.TEXT, text="body")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(
+            docling_doc,
+            [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+            uri="mem://meta",
+        )
+
+        async with client.store._write_lock:
+            task = asyncio.create_task(
+                client.update_document(document_id=doc.id, metadata={"k": "v"})
+            )
+            await asyncio.sleep(0.1)
+            assert not task.done()
+        updated = await task
+        assert updated.metadata == {"k": "v"}

@@ -2,7 +2,6 @@ import asyncio
 import json
 import sys
 import warnings
-from datetime import datetime
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any
@@ -47,7 +46,6 @@ def cli():
 
 # Module-level flags set by callback
 _read_only: bool = False
-_before: datetime | None = None
 
 
 def create_app(db: Path | None = None) -> HaikuRAGApp:  # pragma: no cover
@@ -61,9 +59,7 @@ def create_app(db: Path | None = None) -> HaikuRAGApp:  # pragma: no cover
     """
     config = get_config()
     db_path = db if db else config.storage.data_dir / "haiku.rag.lancedb"
-    return HaikuRAGApp(
-        db_path=db_path, config=config, read_only=_read_only, before=_before
-    )
+    return HaikuRAGApp(db_path=db_path, config=config, read_only=_read_only)
 
 
 async def check_version():  # pragma: no cover
@@ -102,28 +98,10 @@ def main(
         "--read-only",
         help="Open database in read-only mode",
     ),
-    before: str | None = typer.Option(
-        None,
-        "--before",
-        help="Query database as it existed before this datetime (implies --read-only). "
-        "Accepts ISO 8601 format (e.g., 2025-01-15T14:30:00) or date (e.g., 2025-01-15)",
-    ),
 ):
     """haiku.rag CLI - Vector database RAG system"""
-    global _read_only, _before
+    global _read_only
     _read_only = read_only
-
-    # Parse and store before datetime
-    if before is not None:  # pragma: no cover
-        from haiku.rag.utils import parse_datetime, to_utc
-
-        try:
-            _before = to_utc(parse_datetime(before))
-        except ValueError as e:
-            typer.echo(f"Error: {e}")
-            raise typer.Exit(1)
-    else:
-        _before = None
     # Load config from --config, local folder, or default directory
     config_path = find_config_file(cli_path=config)
     if config_path:
@@ -635,6 +613,98 @@ def history(  # pragma: no cover
     asyncio.run(app.history(table=table, limit=limit))
 
 
+tag_cli = typer.Typer(
+    help="Manage database tags (named versions across all tables)",
+    no_args_is_help=True,
+)
+_cli.add_typer(tag_cli, name="tag")
+
+
+@tag_cli.command("create", help="Tag the current database state")
+def tag_create(  # pragma: no cover
+    name: str = typer.Argument(help="Name of the tag to create"),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    try:
+        asyncio.run(app.create_tag(name))
+    except (ValueError, RuntimeError) as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+
+
+@tag_cli.command("list", help="List database tags")
+def tag_list(  # pragma: no cover
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    try:
+        asyncio.run(app.list_tags())
+    except (ValueError, RuntimeError) as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+
+
+@tag_cli.command("delete", help="Delete a tag")
+def tag_delete(  # pragma: no cover
+    name: str = typer.Argument(help="Name of the tag to delete"),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    try:
+        asyncio.run(app.delete_tag(name))
+    except (ValueError, RuntimeError) as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+
+
+@tag_cli.command("restore", help="Restore the database to a tagged state")
+def tag_restore(  # pragma: no cover
+    name: str = typer.Argument(help="Name of the tag to restore"),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        help="Skip the confirmation prompt. Provides no locking or "
+        "concurrent-writer protection.",
+    ),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    if app._is_local and not app.db_path.exists():
+        typer.echo(f"Error: Database path does not exist: {app.db_path}", err=True)
+        raise typer.Exit(1)
+    if not yes:
+        typer.echo(f"Database: {app.db_path}")
+        typer.echo(f"Tag: {name}")
+        typer.echo("This changes the live database state across all tables.")
+        typer.echo("Stop all ingestion and other writers before continuing.")
+        typer.echo("The operation is coordinated but not transactionally atomic.")
+        typer.echo("A safety tag will preserve the current state.")
+        if not typer.confirm("Continue?", default=False):
+            raise typer.Exit(1)
+    try:
+        asyncio.run(app.restore_tag(name))
+    except (ValueError, RuntimeError) as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+
+
 @_cli.command("download-models", help="Download Docling and Ollama models per config")
 def download_models_cmd():  # pragma: no cover
     app = HaikuRAGApp(db_path=Path(), config=get_config(), read_only=True)
@@ -661,7 +731,7 @@ def inspect(  # pragma: no cover
         raise typer.Exit(1) from e
 
     db_path = db if db else get_config().storage.data_dir / "haiku.rag.lancedb"
-    run_inspector(db_path, read_only=True, before=_before)
+    run_inspector(db_path, read_only=True)
 
 
 @_cli.command("chat", help="Launch interactive chat TUI for conversational RAG")
@@ -692,7 +762,6 @@ def chat(  # pragma: no cover
     run_chat(
         db_path,
         read_only=True,
-        before=_before,
         model=model,
         skills=skills,
     )

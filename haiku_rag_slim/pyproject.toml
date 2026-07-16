@@ -28,7 +28,7 @@ dependencies = [
     "jinja2>=3.1.0",
     "jsonpatch>=1.33",
     "fastmcp>=3.3.0",
-    "lancedb==0.30.2",
+    "lancedb==0.34.0",
     "pathspec>=1.0.4",
     "pydantic>=2.12.5",
     "pydantic-ai-slim[openai,logfire,ag-ui]>=1.100.0",

@@ -1,10 +1,10 @@
 import logging
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.markup import escape
 from rich.progress import (
     BarColumn,
     DownloadColumn,
@@ -22,6 +22,7 @@ from haiku.rag.store.models.chunk import SearchType
 from haiku.rag.store.models.document import Document
 
 if TYPE_CHECKING:
+    from haiku.rag.store.engine import Store
     from haiku.rag.store.models import SearchResult
 from haiku.rag.utils import format_bytes, format_citations_rich
 
@@ -34,12 +35,10 @@ class HaikuRAGApp:  # pragma: no cover
         db_path: Path,
         config: AppConfig = Config,
         read_only: bool = False,
-        before: datetime | None = None,
     ):
         self.db_path = db_path
         self.config = config
         self.read_only = read_only
-        self.before = before
         self.console = Console()
 
         from haiku.rag.store.engine import ConnectionMode
@@ -66,11 +65,6 @@ class HaikuRAGApp:  # pragma: no cover
         """Display read-only information about the database without modifying it."""
 
         from haiku.rag.store.engine import gather_database_info
-
-        if self.before is not None:
-            self.console.print(
-                "[yellow]Note: --before is not supported by info; showing current state.[/yellow]"
-            )
 
         # Basic: show path/URI
         self.console.print("[bold]haiku.rag database info[/bold]")
@@ -288,7 +282,6 @@ class HaikuRAGApp:  # pragma: no cover
             skip_validation=True,
             read_only=True,
             skip_migration_check=True,
-            before=self.before,
         ) as store:
             tables = [
                 "documents",
@@ -307,6 +300,14 @@ class HaikuRAGApp:  # pragma: no cover
 
             self.console.print("[bold]Version History[/bold]")
 
+            try:
+                tags = await store.list_tags()
+            except Exception as exc:
+                tags = {}
+                self.console.print(
+                    f"[yellow]Tag annotations unavailable: {escape(str(exc))}[/yellow]"
+                )
+
             for table_name in tables:
                 versions = await store.list_table_versions(table_name)
 
@@ -315,6 +316,12 @@ class HaikuRAGApp:  # pragma: no cover
 
                 if limit:
                     versions = versions[:limit]
+
+                version_tags: dict[int, list[str]] = {}
+                for tag_name, info in tags.items():
+                    tagged_version = info.tables.get(table_name)
+                    if tagged_version is not None:
+                        version_tags.setdefault(tagged_version, []).append(tag_name)
 
                 self.console.print(f"\n[bold cyan]{table_name}[/bold cyan]")
 
@@ -325,16 +332,105 @@ class HaikuRAGApp:  # pragma: no cover
                 for v in versions:
                     version_num = v["version"]
                     timestamp = v["timestamp"]
+                    suffix = ""
+                    if version_num in version_tags:
+                        names = ", ".join(
+                            escape(n) for n in sorted(version_tags[version_num])
+                        )
+                        suffix = f"  [magenta]<- {names}[/magenta]"
                     self.console.print(
-                        f"  [repr.attrib_name]v{version_num}[/repr.attrib_name]: {timestamp}"
+                        f"  [repr.attrib_name]v{version_num}[/repr.attrib_name]: {timestamp}{suffix}"
                     )
+
+    def _tag_write_store(self) -> "Store":
+        """Writable store for tag create/delete with normal validation and
+        migration checks.
+
+        A coordinated tag is only reliable when the database schema is
+        current, and a writable open of a legacy database would create
+        missing tables as a side effect.
+        """
+        from haiku.rag.store.engine import Store
+
+        return Store(self.db_path, config=self.config, read_only=self.read_only)
+
+    def _tag_read_store(self) -> "Store":
+        """Read-only store for tag inspection; works on old or drifted DBs."""
+        from haiku.rag.store.engine import Store
+
+        return Store(
+            self.db_path,
+            config=self.config,
+            skip_validation=True,
+            skip_migration_check=True,
+            read_only=True,
+        )
+
+    async def create_tag(self, name: str):
+        """Tag the current version of every table."""
+        if self._is_local and not self.db_path.exists():
+            raise ValueError(f"Database path does not exist: {self.db_path}")
+        async with self._tag_write_store() as store:
+            await store.create_tag(name)
+        self.console.print(f"[green]Created tag '{escape(name)}'[/green]")
+
+    async def list_tags(self):
+        """List database tags, flagging partial ones."""
+        if self._is_local and not self.db_path.exists():
+            raise ValueError(f"Database path does not exist: {self.db_path}")
+        async with self._tag_read_store() as store:
+            tags = await store.list_tags()
+
+        if not tags:
+            self.console.print("No tags")
+            return
+
+        self.console.print("[bold]Tags[/bold]")
+        for name in sorted(tags):
+            info = tags[name]
+            versions = " ".join(f"{t}=v{v}" for t, v in info.tables.items())
+            line = f"  [repr.attrib_name]{escape(name)}[/repr.attrib_name]: {versions}"
+            if not info.complete:
+                missing = ", ".join(info.missing_tables)
+                line += f" [yellow](partial - missing: {missing})[/yellow]"
+            self.console.print(line)
+
+    async def delete_tag(self, name: str):
+        """Delete a tag from every table that has it."""
+        if self._is_local and not self.db_path.exists():
+            raise ValueError(f"Database path does not exist: {self.db_path}")
+        async with self._tag_write_store() as store:
+            await store.delete_tag(name)
+        self.console.print(f"[green]Deleted tag '{escape(name)}'[/green]")
+
+    async def restore_tag(self, name: str):
+        """Restore the database to a tagged state and report the outcome.
+
+        The Store context exits before anything is printed; no high-level
+        database access happens after the restore.
+
+        Raises:
+            ValueError: If the database path does not exist.
+        """
+        if self._is_local and not self.db_path.exists():
+            raise ValueError(f"Database path does not exist: {self.db_path}")
+        async with self._tag_write_store() as store:
+            safety_tag = await store.restore_tag(name)
+        self.console.print(f"[green]Restored database to tag '{escape(name)}'.[/green]")
+        self.console.print(
+            f"The previous state is preserved as '{escape(safety_tag)}'."
+        )
+        self.console.print(
+            "The restored state is now live. Later historical versions remain "
+            "until eligible for vacuum. Run [cyan]haiku-rag migrate[/cyan] if "
+            "migration is required."
+        )
 
     async def list_documents(self, filter: str | None = None):
         async with HaikuRAG(
             db_path=self.db_path,
             config=self.config,
             read_only=True,
-            before=self.before,
         ) as self.client:
             documents = await self.client.list_documents(filter=filter)
             for doc in documents:
@@ -347,7 +443,6 @@ class HaikuRAGApp:  # pragma: no cover
             db_path=self.db_path,
             config=self.config,
             read_only=self.read_only,
-            before=self.before,
         ) as self.client:
             doc = await self.client.create_document(
                 text, title=title, metadata=metadata
@@ -364,7 +459,6 @@ class HaikuRAGApp:  # pragma: no cover
             db_path=self.db_path,
             config=self.config,
             read_only=self.read_only,
-            before=self.before,
         ) as self.client:
             result = await self.client.create_document_from_source(
                 source, title=title, metadata=metadata
@@ -386,7 +480,6 @@ class HaikuRAGApp:  # pragma: no cover
             db_path=self.db_path,
             config=self.config,
             read_only=True,
-            before=self.before,
         ) as self.client:
             doc = await self.client.get_document_by_id(doc_id)
             if doc is None:
@@ -399,7 +492,6 @@ class HaikuRAGApp:  # pragma: no cover
             db_path=self.db_path,
             config=self.config,
             read_only=self.read_only,
-            before=self.before,
         ) as self.client:
             deleted = await self.client.delete_document(doc_id)
             if deleted:
@@ -443,7 +535,6 @@ class HaikuRAGApp:  # pragma: no cover
             db_path=self.db_path,
             config=self.config,
             read_only=True,
-            before=self.before,
         ) as self.client:
             results = await self.client.search(
                 search_input,
@@ -465,7 +556,6 @@ class HaikuRAGApp:  # pragma: no cover
             db_path=self.db_path,
             config=self.config,
             read_only=True,
-            before=self.before,
         ) as self.client:
             chunk = await self.client.get_chunk_by_id(chunk_id)
             if not chunk:
@@ -509,7 +599,6 @@ class HaikuRAGApp:  # pragma: no cover
             db_path=self.db_path,
             config=self.config,
             read_only=True,
-            before=self.before,
         ) as self.client:
             answer, citations = await self.client.ask(question, filter=filter)
 
@@ -537,7 +626,6 @@ class HaikuRAGApp:  # pragma: no cover
             db_path=self.db_path,
             config=self.config,
             read_only=True,
-            before=self.before,
         ) as self.client:
             self.console.print(f"[bold blue]Question:[/bold blue] {question}")
             self.console.print()
@@ -561,7 +649,6 @@ class HaikuRAGApp:  # pragma: no cover
             config=self.config,
             skip_validation=True,
             read_only=self.read_only,
-            before=self.before,
         ) as client:
             if mode == RebuildMode.SET_EMBEDDER:
                 async for _ in client.rebuild_database(mode=mode):
@@ -605,7 +692,6 @@ class HaikuRAGApp:  # pragma: no cover
             config=self.config,
             skip_validation=True,
             read_only=self.read_only,
-            before=self.before,
         ) as client:
             await client.vacuum()
         self.console.print("[bold green]Vacuum completed successfully.[/bold green]")
@@ -634,7 +720,6 @@ class HaikuRAGApp:  # pragma: no cover
             config=self.config,
             skip_validation=True,
             read_only=self.read_only,
-            before=self.before,
         ) as client:
             row_count = await client.store.chunks_table.count_rows()
             self.console.print(f"Chunks in database: {row_count}")
@@ -802,7 +887,6 @@ class HaikuRAGApp:  # pragma: no cover
             self.db_path,
             config=self.config,
             read_only=self.read_only,
-            before=self.before,
         ):
             server = create_mcp_server(
                 self.db_path, config=self.config, read_only=self.read_only

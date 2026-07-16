@@ -2,7 +2,6 @@ import asyncio
 import json
 import uuid
 from collections.abc import Iterable
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -85,14 +84,12 @@ class ChatApp(App):
         db_path: Path,
         skills: list[Skill],
         read_only: bool = False,
-        before: datetime | None = None,
         model: str | None = None,
     ) -> None:
         super().__init__()
         self.db_path = db_path
         self._skills = skills
         self.read_only = read_only
-        self.before = before
         self._model = model
         self.client: HaikuRAG | None = None
         self.config = get_config()
@@ -150,7 +147,6 @@ class ChatApp(App):
             db_path=self.db_path,
             config=self.config,
             read_only=self.read_only,
-            before=self.before,
         )
         await self.client.__aenter__()
 

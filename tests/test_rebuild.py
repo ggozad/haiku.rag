@@ -1049,3 +1049,49 @@ async def test_rebuild_set_embedder_raises_on_vector_dim_mismatch(temp_db_path):
         with pytest.raises(ConfigMismatchError):
             async for _ in client.rebuild_database(mode=RebuildMode.SET_EMBEDDER):
                 pass
+
+
+async def test_rebuild_blocks_tag_operations(temp_db_path, monkeypatch):
+    """rebuild_database holds the rebuild lock for its whole run: tag
+    operations fail mid-rebuild and work again once it completes."""
+    import random
+
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
+    from haiku.rag.embeddings import EmbedderWrapper
+    from haiku.rag.store.models.chunk import Chunk
+
+    async def fake_embed_documents(self, texts):
+        result = []
+        for t in texts:
+            random.seed(hash(t) % (2**32))
+            result.append([random.random() for _ in range(2560)])
+        return result
+
+    monkeypatch.setattr(EmbedderWrapper, "embed_documents", fake_embed_documents)
+
+    dim = Config.embeddings.model.vector_dim
+    docling_doc = DoclingDocument(name="d")
+    docling_doc.add_text(label=DocItemLabel.TEXT, text="body")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.import_document(
+            docling_doc,
+            [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+            uri="mem://rebuild",
+        )
+
+        rebuild = client.rebuild_database(mode=RebuildMode.EMBED_ONLY)
+        await anext(rebuild)
+
+        assert client.store._rebuild_lock.locked()
+        with pytest.raises(ValueError, match="[Rr]ebuild in progress"):
+            await client.store.create_tag("mid-rebuild")
+
+        async for _ in rebuild:
+            pass
+
+        assert not client.store._rebuild_lock.locked()
+        await client.store.create_tag("post-rebuild")
+        assert set(await client.store.list_tags()) == {"post-rebuild"}

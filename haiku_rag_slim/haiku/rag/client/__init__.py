@@ -5,7 +5,6 @@ import logging
 import mimetypes
 import tempfile
 from collections.abc import AsyncGenerator, Sequence
-from datetime import datetime
 from enum import Enum
 from functools import cached_property
 from pathlib import Path
@@ -72,7 +71,6 @@ class HaikuRAG:
         skip_validation: bool = False,
         create: bool = False,
         read_only: bool = False,
-        before: datetime | None = None,
     ):
         """Initialize the RAG client with a database path.
 
@@ -82,8 +80,6 @@ class HaikuRAG:
             skip_validation: Whether to skip configuration validation on database load.
             create: Whether to create the database if it doesn't exist.
             read_only: Whether to open the database in read-only mode.
-            before: Query the database as it existed at this datetime.
-                Implies read_only=True.
         """
         self._config = config
         if db_path is None:
@@ -93,7 +89,6 @@ class HaikuRAG:
         self._skip_validation = skip_validation
         self._create = create
         self._read_only = read_only
-        self._before = before
         self._vacuum_tasks: set[asyncio.Task] = set()
         self._last_vacuum_at: float | None = None
         self._vacuum_dirty = False
@@ -125,7 +120,6 @@ class HaikuRAG:
             skip_validation=self._skip_validation,
             create=self._create,
             read_only=self._read_only,
-            before=self._before,
         )
         # If _initialize fails mid-way (e.g. migration check raises after
         # connect), close the store so we don't leak the LanceDB connection —

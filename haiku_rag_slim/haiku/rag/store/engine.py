@@ -1,7 +1,9 @@
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta
+from collections.abc import Coroutine
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from importlib import metadata
 from pathlib import Path
@@ -187,6 +189,68 @@ REQUIRED_TABLES: tuple[str, ...] = (
     "settings",
 )
 
+# Keeps the vacuum cleanup cutoff safely older than the oldest tagged
+# version; guards against timestamp precision at the boundary.
+TAG_RETENTION_MARGIN = timedelta(seconds=1)
+
+# Restore order for multi-table restore and its rollback. documents restores
+# last: writes land in it last on the ingest path, making it the closest
+# available database commit point.
+RESTORE_TABLE_ORDER: tuple[str, ...] = tuple(
+    name for name in REQUIRED_TABLES if name != "documents"
+) + ("documents",)
+
+
+async def _wait_protected[T](coro: Coroutine[Any, Any, T]) -> tuple[T, bool]:
+    """Await a recovery coroutine that a cancellation cannot interrupt.
+
+    Runs the coroutine as a task and keeps waiting for it even if this
+    coroutine is cancelled, so a Ctrl-C cannot leave recovery half applied.
+    Returns the result and whether a cancellation was absorbed; the caller
+    must re-deliver an absorbed cancellation.
+    """
+    task = asyncio.ensure_future(coro)
+    cancelled = False
+    while True:
+        try:
+            return await asyncio.shield(task), cancelled
+        except asyncio.CancelledError:
+            if task.cancelled():
+                # The recovery coroutine itself ended cancelled; there is
+                # nothing left to wait for. A task that completed (even in
+                # the same tick as the cancellation) still returns its
+                # result on the next pass.
+                raise
+            cancelled = True
+
+
+def _safety_tag_name(existing: set[str]) -> str:
+    """Collision-resistant name for the pre-restore safety tag."""
+    base = f"before-restore-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
+    if base not in existing:
+        return base
+    n = 2
+    while f"{base}-{n}" in existing:
+        n += 1
+    return f"{base}-{n}"
+
+
+@dataclass
+class TagInfo:
+    """A database-level tag aggregated across all tables.
+
+    A complete tag names the same tag on every table; a partial one (created
+    outside haiku.rag or left behind by a failure) lists the tables it is
+    missing from.
+    """
+
+    tables: dict[str, int]
+    missing_tables: list[str]
+
+    @property
+    def complete(self) -> bool:
+        return not self.missing_tables
+
 
 async def get_database_stats(db: lancedb.AsyncConnection) -> dict:
     """Collect stats for every haiku.rag table on the connection.
@@ -347,19 +411,19 @@ class Store:
         skip_validation: bool = False,
         create: bool = False,
         read_only: bool = False,
-        before: datetime | None = None,
         skip_migration_check: bool = False,
     ):
         self.db_path: Path = db_path
         self._config = config
-        self._before = before
-        # Time-travel mode is always read-only
-        self._read_only = read_only or (before is not None)
+        self._read_only = read_only
         self._create = create
         self._skip_validation = skip_validation
         self._skip_migration_check = skip_migration_check
         self._vacuum_lock = asyncio.Lock()
         self._write_lock = asyncio.Lock()
+        # Held by rebuild_database for its whole run; tag operations check it
+        # and fail fast instead of snapshotting a half-rebuilt database.
+        self._rebuild_lock = asyncio.Lock()
         self._is_new_db = False
 
         # Check if database exists (for local filesystem only)
@@ -408,10 +472,6 @@ class Store:
         # DB this raises MigrationRequiredError up front when migrations are
         # pending, before creating any newly-introduced table.
         await self._init_tables(is_new_db)
-
-        # Checkout tables to historical state if before is specified
-        if self._before is not None:
-            await self._checkout_tables_before(self._before)
 
         # Set version for new databases.
         if is_new_db and not self._read_only:
@@ -474,6 +534,13 @@ class Store:
         if self._read_only:
             raise ReadOnlyError("Cannot modify database in read-only mode")
 
+    def _assert_not_rebuilding(self) -> None:
+        """Raise if a rebuild is in progress in this process."""
+        if self._rebuild_lock.locked():
+            raise ValueError(
+                "Rebuild in progress; tag operations are unavailable until it completes"
+            )
+
     async def vacuum(self, retention_seconds: int | None = None) -> None:
         """Optimize and clean up old versions across all tables to reduce disk usage.
 
@@ -487,6 +554,8 @@ class Store:
 
         Raises:
             ReadOnlyError: If the store is in read-only mode.
+            RuntimeError: On lance errors during optimize; only OSError
+                (resource pressure) skips the pass.
         """
         self._assert_writable()
 
@@ -497,24 +566,53 @@ class Store:
         if self._vacuum_lock.locked():
             return
 
-        async with self._vacuum_lock:
+        async with self._vacuum_lock, self._write_lock:
             try:
                 # Evaluate config at runtime to allow dynamic changes
                 if retention_seconds is None:
                     retention_seconds = self._config.storage.vacuum_retention_seconds
                 # Perform maintenance per table using optimize() with configurable retention
                 retention = timedelta(seconds=retention_seconds)
-                for table in [
-                    self.documents_table,
-                    self.document_meta_table,
-                    self.chunks_table,
-                    self.document_items_table,
-                    self.settings_table,
-                ]:
-                    await table.optimize(cleanup_older_than=retention)
-            except (RuntimeError, OSError) as e:
-                # Handle resource errors gracefully
+                for table in self._tables().values():
+                    await table.optimize(
+                        cleanup_older_than=await self._tag_safe_retention(
+                            table, retention
+                        )
+                    )
+            except OSError as e:
+                # Resource errors (e.g. disk pressure) skip the pass; lance
+                # errors surface as RuntimeError and must not be swallowed —
+                # a silently skipped cleanup hides tag-interaction bugs.
                 logger.debug(f"Vacuum skipped due to resource constraints: {e}")
+
+    async def _tag_safe_retention(
+        self, table: lancedb.AsyncTable, retention: timedelta
+    ) -> timedelta:
+        """Grow the retention so the cleanup cutoff stays older than the
+        table's oldest tagged version.
+
+        Lance hard-errors when a tagged version falls inside the cleanup
+        window and the Python API exposes no way to skip tagged versions, so
+        the oldest tagged version and everything newer are retained; versions
+        older than the oldest tag remain eligible for cleanup.
+        """
+        tags = await table.tags.list()
+        if not tags:
+            return retention
+
+        timestamps = {v["version"]: v["timestamp"] for v in await table.list_versions()}
+        tagged = [
+            timestamps[tag["version"]]
+            for tag in tags.values()
+            if tag["version"] in timestamps
+        ]
+        if not tagged:
+            return retention
+
+        # LanceDB version timestamps are naive datetimes in local time.
+        oldest = min(ts.replace(tzinfo=None) for ts in tagged)
+        needed = datetime.now() - oldest + TAG_RETENTION_MARGIN
+        return max(retention, needed)
 
     @property
     def _connection_mode(self) -> ConnectionMode:
@@ -788,15 +886,19 @@ class Store:
         if hasattr(self, "db"):
             self.db.close()
 
+    def _tables(self) -> dict[str, lancedb.AsyncTable]:
+        """Map every haiku.rag table name to its open AsyncTable."""
+        return {
+            "documents": self.documents_table,
+            "document_meta": self.document_meta_table,
+            "chunks": self.chunks_table,
+            "document_items": self.document_items_table,
+            "settings": self.settings_table,
+        }
+
     async def current_table_versions(self) -> dict[str, int]:
         """Capture current versions of key tables for rollback using LanceDB's API."""
-        return {
-            "documents": await self.documents_table.version(),
-            "document_meta": await self.document_meta_table.version(),
-            "chunks": await self.chunks_table.version(),
-            "document_items": await self.document_items_table.version(),
-            "settings": await self.settings_table.version(),
-        }
+        return {name: await table.version() for name, table in self._tables().items()}
 
     async def restore_table_versions(self, versions: dict[str, int]) -> bool:
         """Restore tables to the provided versions using LanceDB's API.
@@ -805,74 +907,243 @@ class Store:
             ReadOnlyError: If the store is in read-only mode.
         """
         self._assert_writable()
-        await self.documents_table.restore(int(versions["documents"]))
-        await self.document_meta_table.restore(int(versions["document_meta"]))
-        await self.chunks_table.restore(int(versions["chunks"]))
-        await self.document_items_table.restore(int(versions["document_items"]))
-        await self.settings_table.restore(int(versions["settings"]))
+        for name, table in self._tables().items():
+            await table.restore(int(versions[name]))
         return True
 
-    async def _checkout_tables_before(self, before: datetime) -> None:
-        """Checkout all tables to their state at or before the given datetime.
+    async def create_tag(self, name: str) -> None:
+        """Tag the current version of every table with the given name.
 
-        Args:
-            before: The datetime to checkout to
+        Serializes with client writes via the write lock so a write cannot
+        land between the version snapshot and the per-table tag creation.
+        This is in-process coordination only: a writer in another process
+        can commit between the per-table version reads, so create tags with
+        all other writers stopped when a consistent snapshot matters.
 
         Raises:
-            ValueError: If no version exists before the given datetime
+            ReadOnlyError: If the store is in read-only mode.
+            ValueError: If a rebuild is in progress, or if the tag already
+                exists on any table. A partial tag (present on some tables
+                only) must be deleted before the name can be reused.
         """
-        # LanceDB stores timestamps as naive datetimes in local time.
-        # Convert 'before' to naive local time for comparison.
-        if before.tzinfo is not None:
-            # Convert to local time and make naive
-            before_local = before.astimezone().replace(tzinfo=None)
-        else:
-            # Already naive, assume local time
-            before_local = before
+        self._assert_writable()
+        self._assert_not_rebuilding()
 
-        tables = [
-            ("documents", self.documents_table),
-            ("document_meta", self.document_meta_table),
-            ("chunks", self.chunks_table),
-            ("document_items", self.document_items_table),
-            ("settings", self.settings_table),
+        async with self._rebuild_lock, self._write_lock:
+            await self._create_tag_locked(name)
+
+    async def _create_tag_locked(self, name: str) -> None:
+        """Create a tag on every table; the caller must hold the write lock."""
+        tables = self._tables()
+
+        existing = [
+            table_name
+            for table_name, table in tables.items()
+            if name in await table.tags.list()
         ]
+        if len(existing) == len(tables):
+            raise ValueError(f"Tag '{name}' already exists")
+        if existing:
+            raise ValueError(
+                f"Tag '{name}' already exists on some tables "
+                f"({', '.join(existing)}); delete it first with delete_tag"
+            )
 
-        for table_name, table in tables:
-            versions = await table.list_versions()
-            # Find the latest version at or before the target datetime
-            # Versions are sorted by version number, not timestamp, so we need to check all
-            best_version = None
-            best_timestamp = None
+        versions = await self.current_table_versions()
+        try:
+            for table_name, table in tables.items():
+                await table.tags.create(name, versions[table_name])
+        except BaseException as exc:
+            # BaseException: cancellation must also trigger cleanup, and the
+            # cleanup itself is protected from further cancellation. The
+            # sweep covers all tables, not only the recorded ones: a
+            # cancellation can land after lance committed a table's tag but
+            # before this attempt recorded it, and preflight guarantees the
+            # name was unused, so any occurrence belongs to this attempt.
+            (_, failed_cleanup), cancelled = await _wait_protected(
+                self._delete_tag_locked(name)
+            )
+            if failed_cleanup:
+                raise RuntimeError(
+                    f"Tag '{name}' creation failed ({exc!r}) and cleanup "
+                    f"failed on: {', '.join(failed_cleanup)}. A partial "
+                    "tag may remain; delete it with delete_tag."
+                ) from exc
+            if cancelled and not isinstance(exc, asyncio.CancelledError):
+                raise asyncio.CancelledError()
+            raise
 
-            for v in versions:
-                # LanceDB version timestamps are naive datetime objects in local time
-                v_timestamp = v["timestamp"]
-                # Make sure it's naive for comparison
-                if v_timestamp.tzinfo is not None:
-                    v_timestamp = v_timestamp.replace(tzinfo=None)
+    async def _delete_tag_locked(self, name: str) -> tuple[bool, list[str]]:
+        """Delete the tag from every table that has it; the caller must
+        hold the write lock.
 
-                if v_timestamp <= before_local:
-                    if best_timestamp is None or v_timestamp > best_timestamp:
-                        best_version = v["version"]
-                        best_timestamp = v_timestamp
+        Returns whether the tag was found anywhere and the tables where
+        listing or deletion failed.
+        """
+        found = False
+        failed: list[str] = []
+        for table_name, table in self._tables().items():
+            try:
+                if name in await table.tags.list():
+                    found = True
+                    await table.tags.delete(name)
+            except Exception:
+                failed.append(table_name)
+        return found, failed
 
-            if best_version is None:
-                # Find the earliest version to report in error message
-                if versions:
-                    earliest = min(versions, key=lambda v: v["timestamp"])
-                    earliest_ts = earliest["timestamp"]
-                    raise ValueError(
-                        f"No data exists before {before}. "
-                        f"Database was created on {earliest_ts}"
-                    )
-                else:
-                    raise ValueError(
-                        f"No data exists before {before}. Table has no versions."
-                    )
+    async def list_tags(self) -> dict[str, TagInfo]:
+        """Aggregate per-table tags into database-level tags.
 
-            # Checkout to the found version
-            await table.checkout(best_version)
+        Returns:
+            Tag name mapped to a TagInfo with the tagged version per table
+            and the tables the tag is missing from (empty when complete).
+        """
+        tables = self._tables()
+        tags: dict[str, TagInfo] = {}
+        for table_name, table in tables.items():
+            for tag_name, tag in (await table.tags.list()).items():
+                info = tags.setdefault(tag_name, TagInfo(tables={}, missing_tables=[]))
+                info.tables[table_name] = tag["version"]
+        for info in tags.values():
+            info.missing_tables = [t for t in tables if t not in info.tables]
+        return tags
+
+    async def delete_tag(self, name: str) -> None:
+        """Delete the tag from every table that has it.
+
+        Serializes with create_tag and client writes via the write lock.
+
+        Raises:
+            ReadOnlyError: If the store is in read-only mode.
+            ValueError: If a rebuild is in progress or no table has the tag.
+            RuntimeError: If deletion failed on some tables; remnants remain
+                until a retry succeeds.
+        """
+        self._assert_writable()
+        self._assert_not_rebuilding()
+        async with self._rebuild_lock, self._write_lock:
+            found, failed = await self._delete_tag_locked(name)
+            if failed:
+                # A listing failure obscures whether the tag exists on that
+                # table, so failures take precedence over not-found.
+                raise RuntimeError(
+                    f"Tag '{name}' deletion failed on: {', '.join(failed)}. "
+                    "Remnants may remain; retry delete_tag."
+                )
+            if not found:
+                raise ValueError(f"Tag '{name}' does not exist")
+
+    async def _restore_tables(
+        self, versions: dict[str, int], *, best_effort: bool = False
+    ) -> list[tuple[str, Exception]]:
+        """Restore every table to the given versions, documents last.
+
+        Stops at the first failure by default; with best_effort, continues
+        through all tables. Returns the failures either way.
+        """
+        tables = self._tables()
+        failures: list[tuple[str, Exception]] = []
+        for table_name in RESTORE_TABLE_ORDER:
+            try:
+                await tables[table_name].restore(int(versions[table_name]))
+            except Exception as exc:
+                failures.append((table_name, exc))
+                if not best_effort:
+                    break
+        return failures
+
+    async def _rollback_to_snapshot(
+        self, snapshot: dict[str, int]
+    ) -> tuple[list[tuple[str, Exception]], bool]:
+        """Best-effort rollback that a cancellation cannot interrupt.
+
+        Returns the rollback failures and whether a cancellation was
+        absorbed; the caller must re-deliver an absorbed cancellation.
+        """
+        return await _wait_protected(self._restore_tables(snapshot, best_effort=True))
+
+    async def restore_tag(self, name: str) -> str:
+        """Restore every table to the versions of a complete tag.
+
+        Creates a complete safety tag for the pre-restore state before
+        changing any table and returns its name. Each table restore writes a
+        new latest version; nothing is left checked out read-only.
+
+        In-process coordination only: all other writers must be stopped for
+        the duration of the operation.
+
+        Raises:
+            ReadOnlyError: If the store is in read-only mode.
+            ValueError: If a rebuild is in progress, the tag does not exist,
+                or the tag is partial.
+            RuntimeError: If the safety tag could not be created (no table
+                changed), or a table restore failed (the error states whether
+                rollback succeeded).
+        """
+        self._assert_writable()
+        self._assert_not_rebuilding()
+
+        async with self._rebuild_lock, self._write_lock:
+            tags = await self.list_tags()
+            info = tags.get(name)
+            if info is None:
+                raise ValueError(f"Tag '{name}' does not exist")
+            if not info.complete:
+                raise ValueError(
+                    f"Tag '{name}' is partial (missing tables: "
+                    f"{', '.join(info.missing_tables)}) and cannot be "
+                    "restored; delete it with delete_tag"
+                )
+
+            snapshot = await self.current_table_versions()
+            safety_tag = _safety_tag_name(set(tags))
+            try:
+                await self._create_tag_locked(safety_tag)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Restore of tag '{name}' did not begin: safety tag "
+                    f"creation failed ({exc}). No table was changed."
+                ) from exc
+
+            try:
+                failures = await self._restore_tables(info.tables)
+            except asyncio.CancelledError:
+                # CancelledError is a BaseException and escapes the
+                # per-table handler; roll back before re-raising.
+                rollback_failures, _ = await self._rollback_to_snapshot(snapshot)
+                if rollback_failures:
+                    failed_names = ", ".join(t for t, _ in rollback_failures)
+                    raise RuntimeError(
+                        f"Restore of tag '{name}' was cancelled and rollback "
+                        f"failed on: {failed_names}. The database may be "
+                        f"cross-table inconsistent; manual recovery is "
+                        f"required using safety tag '{safety_tag}'."
+                    ) from None
+                raise
+            if failures:
+                failed_table, cause = failures[0]
+                rollback_failures, cancelled = await self._rollback_to_snapshot(
+                    snapshot
+                )
+                if rollback_failures:
+                    failed_names = ", ".join(t for t, _ in rollback_failures)
+                    raise RuntimeError(
+                        f"Restore of tag '{name}' failed on table "
+                        f"'{failed_table}' and rollback failed on: "
+                        f"{failed_names}. The database may be cross-table "
+                        f"inconsistent; manual recovery is required using "
+                        f"safety tag '{safety_tag}'."
+                    ) from cause
+                if cancelled:
+                    raise asyncio.CancelledError()
+                raise RuntimeError(
+                    f"Restore of tag '{name}' failed on table "
+                    f"'{failed_table}'; all tables were rolled back to the "
+                    f"pre-restore state. Safety tag '{safety_tag}' is "
+                    "preserved."
+                ) from cause
+
+            return safety_tag
 
     async def list_table_versions(self, table_name: str) -> list[dict[str, Any]]:
         """List version history for a table.
@@ -884,14 +1155,7 @@ class Store:
         Returns:
             List of version info dicts with "version" and "timestamp" keys
         """
-        table_map = {
-            "documents": self.documents_table,
-            "document_meta": self.document_meta_table,
-            "chunks": self.chunks_table,
-            "document_items": self.document_items_table,
-            "settings": self.settings_table,
-        }
-        table = table_map.get(table_name)
+        table = self._tables().get(table_name)
         if table is None:
             raise ValueError(f"Unknown table: {table_name}")
 

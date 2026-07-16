@@ -157,10 +157,12 @@ async def _apply_extract_picture_bytes(store: Store) -> None:
                     schema=_V0_45_0_ITEMS_SCHEMA,
                 )
 
+                # Update-only merge: v0.40.0 guarantees a matching row per
+                # self_ref, and an insert branch would require the source to
+                # carry every non-nullable column of the live schema.
                 await (
                     store.document_items_table.merge_insert(["document_id", "self_ref"])
                     .when_matched_update_all()
-                    .when_not_matched_insert_all()
                     .execute(new_records)
                 )
                 wrote_items = True

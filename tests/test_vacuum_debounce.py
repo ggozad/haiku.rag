@@ -92,3 +92,33 @@ async def test_metadata_refresh_sweep_schedules_vacuum(temp_db_path):
             source_metadata={"source_revision": "r2", "md5": "same"},
         )
         assert client._vacuum_dirty is True
+
+
+@pytest.mark.asyncio
+async def test_metadata_refresh_waits_for_write_lock(temp_db_path):
+    """The revision/MD5 short-circuit write serializes with other writers so
+    it cannot land inside another writer's critical section (e.g. between
+    create_tag's version snapshot and its per-table tag creation)."""
+    dim = Config.embeddings.model.vector_dim
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(
+            _docling_doc("d", "body"),
+            [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+            uri="mem://sweep",
+            metadata={"source_revision": "r1"},
+        )
+
+        async with client.store._write_lock:
+            task = asyncio.create_task(
+                _refresh_doc_metadata(
+                    client,
+                    doc,
+                    title=None,
+                    user_metadata={},
+                    source_metadata={"source_revision": "r2", "md5": "same"},
+                )
+            )
+            await asyncio.sleep(0.1)
+            assert not task.done()
+        refreshed = await task
+        assert refreshed.metadata["source_revision"] == "r2"

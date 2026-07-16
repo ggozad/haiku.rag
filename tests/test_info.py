@@ -355,7 +355,77 @@ async def test_app_history_skips_exists_check_for_remote(tmp_path):
     with patch("haiku.rag.store.engine.Store") as mock_store_cls:
         mock_store = AsyncMock()
         mock_store.list_table_versions = AsyncMock(return_value=[])
+        mock_store.list_tags = AsyncMock(return_value={})
         mock_store_cls.return_value.__aenter__ = AsyncMock(return_value=mock_store)
         mock_store_cls.return_value.__aexit__ = AsyncMock(return_value=False)
         await app.history()
         mock_store_cls.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_app_tag_rendering_escapes_markup(tmp_path):
+    """lance forbids markup characters in ref names, but externally created
+    tags are rendered defensively: markup-looking names must come out as
+    literal text in tag list and history, not be interpreted by Rich."""
+    from rich.console import Console
+
+    from haiku.rag.store.engine import TagInfo
+
+    config = AppConfig(
+        lancedb=LanceDBConfig(
+            uri="s3://bucket/path",
+            storage_options={"endpoint": "http://localhost:9000"},
+        )
+    )
+    app = HaikuRAGApp(db_path=tmp_path / "db.lancedb", config=config)
+    app.console = Console(record=True, width=200)
+
+    hostile = "[red]release[/red]"
+    tags = {hostile: TagInfo(tables={"documents": 1}, missing_tables=[])}
+
+    with patch("haiku.rag.store.engine.Store") as mock_store_cls:
+        mock_store = AsyncMock()
+        mock_store.list_tags = AsyncMock(return_value=tags)
+        mock_store.list_table_versions = AsyncMock(
+            return_value=[{"version": 1, "timestamp": "2026-07-14 10:00:00"}]
+        )
+        mock_store_cls.return_value.__aenter__ = AsyncMock(return_value=mock_store)
+        mock_store_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        await app.list_tags()
+        await app.history(table="documents")
+
+    output = app.console.export_text()
+    assert output.count(hostile) == 2
+
+
+@pytest.mark.asyncio
+async def test_app_history_survives_tag_annotation_failure(tmp_path):
+    """history degrades to version history without annotations, with a
+    warning, when aggregate tag loading fails."""
+    from rich.console import Console
+
+    config = AppConfig(
+        lancedb=LanceDBConfig(
+            uri="s3://bucket/path",
+            storage_options={"endpoint": "http://localhost:9000"},
+        )
+    )
+    app = HaikuRAGApp(db_path=tmp_path / "db.lancedb", config=config)
+    app.console = Console(record=True, width=200)
+
+    with patch("haiku.rag.store.engine.Store") as mock_store_cls:
+        mock_store = AsyncMock()
+        mock_store.list_tags = AsyncMock(side_effect=RuntimeError("tags boom"))
+        mock_store.list_table_versions = AsyncMock(
+            return_value=[{"version": 1, "timestamp": "2026-07-15 10:00:00"}]
+        )
+        mock_store_cls.return_value.__aenter__ = AsyncMock(return_value=mock_store)
+        mock_store_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        await app.history(table="documents")
+
+    output = app.console.export_text()
+    assert "v1" in output
+    assert "2026-07-15 10:00:00" in output
+    assert "tags boom" in output

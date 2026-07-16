@@ -7,7 +7,6 @@ The `haiku-rag` CLI provides complete document management functionality.
 
     - `--config` - Specify custom configuration file
     - `--read-only` - Open database in read-only mode (blocks writes, skips upgrades)
-    - `--before` - Query database as it existed before a datetime (implies `--read-only`)
     - `--version` / `-v` - Show version and exit
 
     Per-command options:
@@ -20,7 +19,6 @@ The `haiku-rag` CLI provides complete document management functionality.
     haiku-rag --config /path/to/config.yaml list
     haiku-rag --config /path/to/config.yaml list --db /path/to/custom.db
     haiku-rag --read-only search "query"
-    haiku-rag --before "2025-01-15" search "query"
     haiku-rag add -h
     ```
 
@@ -542,35 +540,53 @@ haiku-skills chat --use-entrypoints --skill medic
         └── haiku.rag.yaml    # Optional config
 ```
 
-## Time Travel
+## Tags
 
-LanceDB maintains version history for tables, enabling you to query the database as it existed at a previous point in time. This is useful for:
-
-- **Debugging**: Investigate data before a problematic change
-- **Auditing**: Verify what knowledge was available when a support ticket was filed
-
-### Query Historical State
-
-Use `--before` to query the database as it existed before a specific datetime:
+A tag names the current database state. It is a logical snapshot composed of one LanceDB tag on each of the five tables, created from a single version snapshot.
 
 ```bash
-# Query documents as of January 15, 2025
-haiku-rag --before "2025-01-15" list
+# Tag the current state, e.g. at deploy time or after an ingestion run
+haiku-rag tag create release-1
 
-# Search historical state
-haiku-rag --before "2025-01-15T14:30:00" search "machine learning"
+# List tags with the versions they point to
+haiku-rag tag list
 
-# Ask questions against historical data
-haiku-rag --before "2025-01-15" ask "What documents existed?"
+# Delete a tag, releasing its versions for cleanup
+haiku-rag tag delete release-1
 ```
 
-Supported datetime formats:
+A tag present on every table is complete. A tag missing from some tables (created outside haiku.rag, or left behind by a failure) is partial. `tag list` marks partial tags. Partial tags can be listed and deleted but never restored.
 
-- ISO 8601: `2025-01-15T14:30:00`, `2025-01-15T14:30:00Z`, `2025-01-15T14:30:00+00:00`
-- Date only: `2025-01-15` (interpreted as start of day)
+Create tags with other writers stopped. Tag creation coordinates writers within one process only; a writer in another process can commit between the per-table snapshot reads, and the tag then captures a mixed state.
 
-!!! note
-    Time travel mode automatically enables read-only mode. You cannot modify the database while viewing historical state.
+Tagged versions survive `vacuum`. Vacuum retains the oldest tagged version and every newer version; versions older than the oldest tag remain eligible for cleanup. Delete tags you no longer need so cleanup can advance.
+
+### Restore
+
+`tag restore` brings the database back to a tagged state:
+
+```bash
+haiku-rag tag restore release-1
+```
+
+Restore changes the live state. It is not a read-only view: each table gets a new latest version equal to the tagged one, and reads and writes continue from there. Versions written after the tag remain in history until vacuum removes them.
+
+Before changing anything, restore creates a complete safety tag (`before-restore-<timestamp>`) for the current state and reports it, so you always have a named path back:
+
+```bash
+haiku-rag tag create release-1 --db /path/to/db.lancedb
+# Stop all writers before either restore.
+haiku-rag tag restore release-1 --db /path/to/db.lancedb --yes
+haiku-rag tag list --db /path/to/db.lancedb
+haiku-rag tag restore before-restore-YYYYMMDDTHHMMSSZ --db /path/to/db.lancedb --yes
+```
+
+Restore is a maintenance operation:
+
+- Stop all ingestion and other writers before restoring and keep them stopped until it finishes.
+- The operation is coordinated but not transactionally atomic across tables. On failure it attempts to roll back to the pre-restore state and reports whether the rollback succeeded.
+- `--yes` only skips the confirmation prompt. It provides no locking and no concurrent-writer protection.
+- Restore never migrates. Restoring a tag from an older haiku.rag version completes normally, and the next open reports the required migration. Run `haiku-rag migrate` explicitly.
 
 ### Version History
 
@@ -587,20 +603,18 @@ haiku-rag history --table documents
 haiku-rag history --limit 10
 ```
 
-Output shows version numbers and timestamps, sorted newest first:
+Output shows version numbers and timestamps, sorted newest first, with tags marked:
 
 ```
 Version History
 
 documents
-  v5: 2025-01-15 14:30:00
+  v5: 2025-01-15 14:30:00  <- release-1
   v4: 2025-01-14 10:00:00
   v3: 2025-01-13 09:15:00
 
 chunks
-  v8: 2025-01-15 14:30:00
+  v8: 2025-01-15 14:30:00  <- release-1
   v7: 2025-01-14 10:00:00
   ...
 ```
-
-Use the timestamps from `history` to construct `--before` queries.
