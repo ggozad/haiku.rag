@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from collections.abc import Coroutine
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -198,6 +199,27 @@ TAG_RETENTION_MARGIN = timedelta(seconds=1)
 RESTORE_TABLE_ORDER: tuple[str, ...] = tuple(
     name for name in REQUIRED_TABLES if name != "documents"
 ) + ("documents",)
+
+
+async def _wait_protected[T](coro: Coroutine[Any, Any, T]) -> tuple[T, bool]:
+    """Await a recovery coroutine that a cancellation cannot interrupt.
+
+    Runs the coroutine as a task and keeps waiting for it even if this
+    coroutine is cancelled, so a Ctrl-C cannot leave recovery half applied.
+    Returns the result and whether a cancellation was absorbed; the caller
+    must re-deliver an absorbed cancellation.
+    """
+    task = asyncio.ensure_future(coro)
+    cancelled = False
+    while True:
+        try:
+            return await asyncio.shield(task), cancelled
+        except asyncio.CancelledError:
+            if task.done():
+                # The recovery coroutine itself ended cancelled; there is
+                # nothing left to wait for.
+                raise
+            cancelled = True
 
 
 def _safety_tag_name(existing: set[str]) -> str:
@@ -926,25 +948,46 @@ class Store:
             )
 
         versions = await self.current_table_versions()
-        created: list[str] = []
         try:
             for table_name, table in tables.items():
                 await table.tags.create(name, versions[table_name])
-                created.append(table_name)
-        except Exception as exc:
-            failed_cleanup: list[str] = []
-            for table_name in created:
-                try:
-                    await tables[table_name].tags.delete(name)
-                except Exception:
-                    failed_cleanup.append(table_name)
+        except BaseException as exc:
+            # BaseException: cancellation must also trigger cleanup, and the
+            # cleanup itself is protected from further cancellation. The
+            # sweep covers all tables, not only the recorded ones: a
+            # cancellation can land after lance committed a table's tag but
+            # before this attempt recorded it, and preflight guarantees the
+            # name was unused, so any occurrence belongs to this attempt.
+            (_, failed_cleanup), cancelled = await _wait_protected(
+                self._delete_tag_locked(name)
+            )
             if failed_cleanup:
                 raise RuntimeError(
-                    f"Tag '{name}' creation failed ({exc}) and cleanup "
+                    f"Tag '{name}' creation failed ({exc!r}) and cleanup "
                     f"failed on: {', '.join(failed_cleanup)}. A partial "
                     "tag may remain; delete it with delete_tag."
                 ) from exc
+            if cancelled and not isinstance(exc, asyncio.CancelledError):
+                raise asyncio.CancelledError()
             raise
+
+    async def _delete_tag_locked(self, name: str) -> tuple[bool, list[str]]:
+        """Delete the tag from every table that has it; the caller must
+        hold the write lock.
+
+        Returns whether the tag was found anywhere and the tables where
+        listing or deletion failed.
+        """
+        found = False
+        failed: list[str] = []
+        for table_name, table in self._tables().items():
+            try:
+                if name in await table.tags.list():
+                    found = True
+                    await table.tags.delete(name)
+            except Exception:
+                failed.append(table_name)
+        return found, failed
 
     async def list_tags(self) -> dict[str, TagInfo]:
         """Aggregate per-table tags into database-level tags.
@@ -977,15 +1020,7 @@ class Store:
         self._assert_writable()
         self._assert_not_rebuilding()
         async with self._rebuild_lock, self._write_lock:
-            found = False
-            failed: list[str] = []
-            for table_name, table in self._tables().items():
-                try:
-                    if name in await table.tags.list():
-                        found = True
-                        await table.tags.delete(name)
-                except Exception:
-                    failed.append(table_name)
+            found, failed = await self._delete_tag_locked(name)
             if failed:
                 # A listing failure obscures whether the tag exists on that
                 # table, so failures take precedence over not-found.
@@ -1020,22 +1055,10 @@ class Store:
     ) -> tuple[list[tuple[str, Exception]], bool]:
         """Best-effort rollback that a cancellation cannot interrupt.
 
-        Runs the rollback as a task and keeps waiting for it even if this
-        coroutine is cancelled, so a Ctrl-C cannot leave the rollback half
-        applied. Returns the rollback failures and whether a cancellation
-        was absorbed; the caller must re-deliver an absorbed cancellation.
+        Returns the rollback failures and whether a cancellation was
+        absorbed; the caller must re-deliver an absorbed cancellation.
         """
-        task = asyncio.ensure_future(self._restore_tables(snapshot, best_effort=True))
-        cancelled = False
-        while True:
-            try:
-                return await asyncio.shield(task), cancelled
-            except asyncio.CancelledError:
-                if task.done():
-                    # The rollback coroutine itself ended cancelled; there is
-                    # nothing left to wait for.
-                    raise
-                cancelled = True
+        return await _wait_protected(self._restore_tables(snapshot, best_effort=True))
 
     async def restore_tag(self, name: str) -> str:
         """Restore every table to the versions of a complete tag.

@@ -445,3 +445,90 @@ async def test_delete_tag_reports_listing_failures(temp_db_path, monkeypatch):
 
         await store.delete_tag("release-1")
         assert await store.list_tags() == {}
+
+
+@pytest.mark.asyncio
+async def test_create_tag_cancellation_cleans_up(temp_db_path, monkeypatch):
+    """Cancellation during per-table tag creation must not leave a partial
+    tag behind: cleanup runs before the cancellation propagates."""
+    async with Store(temp_db_path, create=True) as store:
+        real_create = AsyncTags.create
+        calls = {"n": 0}
+
+        async def cancelled_create(self, name: str, version: int) -> None:
+            calls["n"] += 1
+            if calls["n"] == 4:
+                raise asyncio.CancelledError()
+            await real_create(self, name, version)
+
+        monkeypatch.setattr(AsyncTags, "create", cancelled_create)
+
+        with pytest.raises(asyncio.CancelledError):
+            await store.create_tag("broken")
+
+        monkeypatch.undo()
+        assert await store.list_tags() == {}
+
+
+@pytest.mark.asyncio
+async def test_create_tag_cleanup_survives_cancellation(temp_db_path, monkeypatch):
+    """Cancelling create_tag while it cleans up a failed creation does not
+    interrupt the cleanup: no partial tag remains and the cancellation is
+    delivered afterwards."""
+    async with Store(temp_db_path, create=True) as store:
+        real_create = AsyncTags.create
+        real_delete = AsyncTags.delete
+        create_calls = {"n": 0}
+        cleanup_started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def flaky_create(self, name: str, version: int) -> None:
+            create_calls["n"] += 1
+            if create_calls["n"] == 4:
+                raise RuntimeError("create boom")
+            await real_create(self, name, version)
+
+        async def slow_delete(self, name: str) -> None:
+            cleanup_started.set()
+            await release.wait()
+            await real_delete(self, name)
+
+        monkeypatch.setattr(AsyncTags, "create", flaky_create)
+        monkeypatch.setattr(AsyncTags, "delete", slow_delete)
+
+        task = asyncio.create_task(store.create_tag("broken"))
+        await cleanup_started.wait()
+        task.cancel()
+        release.set()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        monkeypatch.undo()
+        assert await store.list_tags() == {}
+
+
+@pytest.mark.asyncio
+async def test_create_tag_cancellation_after_commit_cleans_committed_tag(
+    temp_db_path, monkeypatch
+):
+    """Cancellation arriving after lance committed a table's tag but before
+    the attempt recorded it must still clean that table: cleanup sweeps all
+    tables, relying on the preflight guarantee that the name was unused."""
+    async with Store(temp_db_path, create=True) as store:
+        real_create = AsyncTags.create
+        calls = {"n": 0}
+
+        async def committing_cancelled_create(self, name: str, version: int) -> None:
+            calls["n"] += 1
+            await real_create(self, name, version)
+            if calls["n"] == 4:
+                raise asyncio.CancelledError()
+
+        monkeypatch.setattr(AsyncTags, "create", committing_cancelled_create)
+
+        with pytest.raises(asyncio.CancelledError):
+            await store.create_tag("broken")
+
+        monkeypatch.undo()
+        assert await store.list_tags() == {}
