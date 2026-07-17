@@ -20,7 +20,7 @@ from evaluations.evaluators import (
     CitationMAPEvaluator,
     MAPEvaluator,
 )
-from evaluations.skill_runner import SkillFactory, run_skill_question
+from evaluations.capability_runner import CapabilityFactory, run_capability_question
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
 from haiku.rag.config.models import ModelConfig
@@ -28,8 +28,8 @@ from haiku.rag.logging import configure_cli_logging
 from haiku.rag.telemetry import configure as configure_telemetry
 from haiku.rag.utils import get_model, parse_model_option
 
-Target = Literal["rag-skill", "analysis-skill"]
-TARGETS: tuple[Target, ...] = ("rag-skill", "analysis-skill")
+Target = Literal["rag-capability", "analysis-capability"]
+TARGETS: tuple[Target, ...] = ("rag-capability", "analysis-capability")
 
 # Pinned judge model. Decoupled from `config.qa.model` so a user changing
 # their QA model does not inadvertently change the judge — keeps cross-run
@@ -52,8 +52,8 @@ def build_experiment_metadata(
     test_cases: int,
     config: AppConfig,
     judge_config: ModelConfig | None = None,
-    target: Target = "rag-skill",
-    skill_config: ModelConfig | None = None,
+    target: Target = "rag-capability",
+    capability_config: ModelConfig | None = None,
 ) -> dict[str, Any]:
     """Build experiment metadata for Logfire tracking."""
     metadata: dict[str, Any] = {
@@ -87,14 +87,14 @@ def build_experiment_metadata(
                 "judge_enable_thinking": judge_config.enable_thinking,
             }
         )
-    if skill_config is not None:
+    if capability_config is not None:
         metadata.update(
             {
-                "skill_provider": skill_config.provider,
-                "skill_model": skill_config.name,
-                "skill_temperature": skill_config.temperature,
-                "skill_max_tokens": skill_config.max_tokens,
-                "skill_enable_thinking": skill_config.enable_thinking,
+                "capability_provider": capability_config.provider,
+                "capability_model": capability_config.name,
+                "capability_temperature": capability_config.temperature,
+                "capability_max_tokens": capability_config.max_tokens,
+                "capability_enable_thinking": capability_config.enable_thinking,
             }
         )
     return metadata
@@ -221,6 +221,7 @@ async def run_retrieval_benchmark(
     metric_name = evaluator.__class__.__name__.replace("Evaluator", "").upper()
 
     dataset = EvalDataset(
+        name=f"{spec.key}-retrieval",
         cases=cases,
         evaluators=[evaluator],
     )
@@ -286,16 +287,16 @@ async def run_retrieval_benchmark(
     }
 
 
-def _skill_factory_for_target(target: Target) -> SkillFactory:
-    if target == "rag-skill":
-        from haiku.rag.skills.rag import create_skill
+def _capability_factory_for_target(target: Target) -> CapabilityFactory:
+    if target == "rag-capability":
+        from haiku.rag.capabilities.rag import create_capability
 
-        return create_skill
-    if target == "analysis-skill":
-        from haiku.rag.skills.analysis import create_skill
+        return create_capability
+    if target == "analysis-capability":
+        from haiku.rag.capabilities.analysis import create_capability
 
-        return create_skill
-    raise ValueError(f"target {target!r} is not a skill target")
+        return create_capability
+    raise ValueError(f"target {target!r} is not a capability target")
 
 
 def _citation_evaluator_for(retrieval_evaluator: Evaluator | None) -> Evaluator | None:
@@ -352,8 +353,8 @@ async def run_qa_benchmark(
     name: str | None = None,
     db_path: Path | None = None,
     judge_model: ModelConfig | None = None,
-    target: Target = "rag-skill",
-    skill_model: ModelConfig | None = None,
+    target: Target = "rag-capability",
+    capability_model: ModelConfig | None = None,
     case_ids: set[str] | None = None,
 ) -> ReportCaseFailure[str, str, dict[str, str]] | None:
     corpus = spec.qa_loader()
@@ -367,12 +368,12 @@ async def run_qa_benchmark(
     ]
 
     judge_config = judge_model or DEFAULT_JUDGE_MODEL
-    if target == "analysis-skill":
-        # Mirror the skill-code resolver: explicit analysis.model wins,
+    if target == "analysis-capability":
+        # Mirror the capability-code resolver: explicit analysis.model wins,
         # else fall back to qa.model.
-        skill_config = skill_model or config.analysis.model or config.qa.model
+        capability_config = capability_model or config.analysis.model or config.qa.model
     else:
-        skill_config = skill_model or config.qa.model
+        capability_config = capability_model or config.qa.model
     db = spec.db_path(db_path)
 
     _attach_relevant_uris(cases, spec, limit)
@@ -409,7 +410,7 @@ async def run_qa_benchmark(
         config=config,
         judge_config=judge_config,
         target=target,
-        skill_config=skill_config,
+        capability_config=capability_config,
     )
 
     async def _evaluate(answer_fn: Callable[[str], Awaitable[str]]):
@@ -421,16 +422,16 @@ async def run_qa_benchmark(
             metadata=experiment_metadata,
         )
 
-    skill_factory = _skill_factory_for_target(target)
-    resolved_skill_model = get_model(skill_config, config)
+    capability_factory = _capability_factory_for_target(target)
+    resolved_capability_model = get_model(capability_config, config)
 
     async def answer_question(question: str) -> str:
-        result = await run_skill_question(
-            skill_factory=skill_factory,
+        result = await run_capability_question(
+            capability_factory=capability_factory,
             db_path=db,
             config=config,
             question=question,
-            skill_model=resolved_skill_model,
+            capability_model=resolved_capability_model,
         )
         set_eval_attribute("cited_uris", result.cited_uris)
         return result.answer
@@ -510,8 +511,8 @@ async def evaluate_dataset(
     vacuum_interval: int = 100,
     multimodal_only: bool = False,
     judge_model: ModelConfig | None = None,
-    target: Target = "rag-skill",
-    skill_model: ModelConfig | None = None,
+    target: Target = "rag-capability",
+    capability_model: ModelConfig | None = None,
     case_ids: set[str] | None = None,
 ) -> None:
     if not skip_db:
@@ -543,7 +544,7 @@ async def evaluate_dataset(
             db_path=db_path,
             judge_model=judge_model,
             target=target,
-            skill_model=skill_model,
+            capability_model=capability_model,
             case_ids=case_ids,
         )
 
@@ -622,16 +623,16 @@ def run(
         help="Only evaluate queries requiring image understanding.",
     ),
     target: str = typer.Option(
-        "rag-skill",
+        "rag-capability",
         "--target",
-        help="What to benchmark: rag-skill | analysis-skill.",
+        help="What to benchmark: rag-capability | analysis-capability.",
     ),
-    skill_model: str | None = typer.Option(
+    capability_model: str | None = typer.Option(
         None,
-        "--skill-model",
+        "--capability-model",
         help=(
-            "Skill model as 'provider:name'. Defaults to qa.model (or "
-            "analysis.model when --target is analysis-skill) from the config."
+            "Capability model as 'provider:name'. Defaults to qa.model (or "
+            "analysis.model when --target is analysis-capability) from the config."
         ),
     ),
     filter_ids: Path | None = typer.Option(
@@ -651,7 +652,9 @@ def run(
         )
     target_value = cast(Target, target)
     judge_model_config = app_config.evaluations.judge
-    skill_model_config = parse_model_option(skill_model) if skill_model else None
+    capability_model_config = (
+        parse_model_option(capability_model) if capability_model else None
+    )
 
     asyncio.run(
         evaluate_dataset(
@@ -667,7 +670,7 @@ def run(
             multimodal_only=multimodal_only,
             judge_model=judge_model_config,
             target=target_value,
-            skill_model=skill_model_config,
+            capability_model=capability_model_config,
             case_ids=_load_case_ids(filter_ids),
         )
     )

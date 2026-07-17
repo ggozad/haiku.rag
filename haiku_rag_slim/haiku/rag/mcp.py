@@ -210,10 +210,10 @@ def create_mcp_server(
         question: str,
         filter: str | None = None,
     ) -> str:
-        """Answer complex questions using the rag-analysis skill.
+        """Answer complex questions using the analysis capability.
 
         Use this for questions requiring computation, aggregation, or
-        structural traversal across documents. The skill can write and
+        structural traversal across documents. The capability can write and
         execute Python code in a sandboxed interpreter.
 
         Args:
@@ -228,6 +228,6 @@ def create_mcp_server(
                 result = await rag.analyze(question, filter=filter)
                 return result.answer
         except Exception as e:
-            return f"Error running analysis skill: {e!s}"
+            return f"Error running analysis capability: {e!s}"
 
     return mcp

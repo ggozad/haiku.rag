@@ -23,15 +23,13 @@ classifiers = [
 
 dependencies = [
     "docling-core>=2.82.0,<3.0.0",
-    "haiku.skills>=0.18.0",
     "httpx>=0.28.1",
     "jinja2>=3.1.0",
-    "jsonpatch>=1.33",
     "fastmcp>=3.3.0",
     "lancedb==0.34.0",
     "pathspec>=1.0.4",
     "pydantic>=2.12.5",
-    "pydantic-ai-slim[openai,logfire,ag-ui]>=1.100.0",
+    "pydantic-ai-slim[openai,logfire,ag-ui]>=2.11.0,<3.0.0",
     "pydantic-monty>=0.0.17",
     "pypdfium2>=5.0",
     "python-dotenv>=1.2.2",
@@ -76,11 +74,7 @@ groq = ["pydantic-ai-slim[groq]"]
 google = ["pydantic-ai-slim[google]"]
 mistral = ["pydantic-ai-slim[mistral]"]
 bedrock = ["pydantic-ai-slim[bedrock]"]
-vertexai = ["pydantic-ai-slim[vertexai]"]
-
-[project.entry-points."haiku.skills"]
-rag = "haiku.rag.skills.rag:create_skill"
-rag-analysis = "haiku.rag.skills.analysis:create_skill"
+vertexai = ["pydantic-ai-slim[google]"]
 
 [project.scripts]
 haiku-rag = "haiku.rag.cli:cli"

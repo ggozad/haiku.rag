@@ -60,4 +60,4 @@ analysis:
 - **max_output_chars**: Truncate code output after this many characters (default: 50000)
 - **max_executions**: Maximum `execute_code` calls per question before the skill is told to answer from what it has (default: 15)
 
-See [Analysis skill](../skills/analysis.md) for usage details.
+See [Analysis capability](../capabilities/analysis.md) for usage details.

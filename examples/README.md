@@ -16,7 +16,7 @@ See `docker/README.md` for setup instructions.
 
 **Script:** `custom_agent.py`
 
-Uses the RAG skill with `SkillToolset` to build a conversational agent.
+Uses the deferred RAG capability to build a conversational agent.
 
 ```bash
 uv run python examples/custom_agent.py /path/to/db.lancedb
@@ -26,7 +26,7 @@ uv run python examples/custom_agent.py /path/to/db.lancedb
 
 **Script:** `custom_agent_agui.py`
 
-A Starlette app that serves an AG-UI streaming endpoint using the RAG skill with `SkillToolset`.
+A Starlette app that adapts a native RAG-capable agent to AG-UI.
 
 ```bash
 DB_PATH=/path/to/db.lancedb uv run uvicorn examples.custom_agent_agui:app --reload --port 8000

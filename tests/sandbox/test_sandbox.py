@@ -419,7 +419,7 @@ class TestSandboxVFS:
 class TestSandboxHeldConnection:
     """VFS reads must work while another connection to the same DB stays open.
 
-    Mirrors the analysis-skill lifespan, which keeps a read-only connection open
+    Mirrors the analysis-capability lifespan, which keeps a read-only connection open
     for the whole turn while sandboxed code reads the document VFS.
     """
 

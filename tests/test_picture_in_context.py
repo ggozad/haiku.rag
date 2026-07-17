@@ -12,6 +12,7 @@ from pydantic_ai.messages import BinaryContent, ToolReturn
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
 
+from haiku.rag.capabilities.rag import RAGState, create_capability
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.search import _populate_image_data
 from haiku.rag.config import AppConfig, Config
@@ -982,16 +983,7 @@ async def test_search_tool_returns_plain_string_when_no_pictures():
 
 
 @pytest.mark.asyncio
-async def test_skill_search_tool_uses_skill_model_vision_flag(tmp_path):
-    """The skill-level ``search`` tool gates picture attachment on the model
-    passed to ``create_skill_tools`` (per-skill driving model), not on
-    ``config.qa.model.vision``. Verifies the per-skill plumbing by setting
-    qa.model.vision=False and analysis.model.vision=True simultaneously."""
-    from haiku.rag.client import HaikuRAG
-    from haiku.rag.skills._deps import RAGRunDeps
-    from haiku.rag.skills._tools import create_skill_tools
-    from haiku.rag.skills.rag import RAGState
-
+async def test_rag_capability_attaches_images_for_vision_model(temp_db_path):
     picture_result = SearchResult(
         content="A figure",
         score=1.0,
@@ -1001,58 +993,21 @@ async def test_skill_search_tool_uses_skill_model_vision_flag(tmp_path):
         labels=["picture"],
         image_data={"#/pictures/0": PICTURE_B64},
     )
-
-    from haiku.rag.config.models import ModelConfig
-
+    fake_client = AsyncMock()
+    fake_client.search = AsyncMock(return_value=[picture_result])
+    fake_client.expand_context = AsyncMock(return_value=[picture_result])
     config = AppConfig()
-    config.qa.model.vision = False
-    # Explicitly set analysis.model (it defaults to None = inherit from qa).
-    config.analysis.model = ModelConfig(
-        provider="openai", name="vision-model", vision=True
+    config.qa.model.vision = True
+    capability = create_capability(
+        db_path=temp_db_path,
+        config=config,
+        defer_loading=False,
     )
+    capability.state = RAGState()
+    capability.rag = fake_client
 
-    async with HaikuRAG(tmp_path / "db.lancedb", create=True) as rag:
-        rag.search = AsyncMock(return_value=[picture_result])  # type: ignore[method-assign]
-        rag.expand_context = AsyncMock(return_value=[picture_result])  # type: ignore[method-assign]
+    result = await capability._search("anything", None)
 
-        # rag skill: should NOT attach binaries (qa.model.vision is False)
-        rag_tools = create_skill_tools(
-            tmp_path / "db.lancedb",
-            config,
-            RAGState,
-            ["search"],
-            model=config.qa.model,
-        )
-        deps = RAGRunDeps(state=RAGState(), rag=rag, emit=lambda _e: None)
-        ctx = RunContext(
-            deps=deps,
-            model=TestModel(),
-            usage=RunUsage(),
-            run_id="run-1",
-        )
-        result_rag = await rag_tools["search"](ctx, "anything")
-        assert isinstance(result_rag, str), (
-            "rag skill with qa.model.vision=False must return plain text"
-        )
-
-        # analysis skill: SHOULD attach binaries (analysis.model.vision is True)
-        analysis_tools = create_skill_tools(
-            tmp_path / "db.lancedb",
-            config,
-            RAGState,  # state shape doesn't matter for this assertion
-            ["search"],
-            model=config.analysis.model or config.qa.model,
-        )
-        deps2 = RAGRunDeps(state=RAGState(), rag=rag, emit=lambda _e: None)
-        ctx2 = RunContext(
-            deps=deps2,
-            model=TestModel(),
-            usage=RunUsage(),
-            run_id="run-2",
-        )
-        result_analysis = await analysis_tools["search"](ctx2, "anything")
-        assert isinstance(result_analysis, ToolReturn), (
-            "analysis skill with analysis.model.vision=True must wrap binaries"
-        )
-        assert result_analysis.content is not None
-        assert any(isinstance(p, BinaryContent) for p in result_analysis.content)
+    assert isinstance(result, ToolReturn)
+    assert result.content is not None
+    assert any(isinstance(part, BinaryContent) for part in result.content)

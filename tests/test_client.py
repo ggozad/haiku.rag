@@ -1133,14 +1133,13 @@ async def test_delete_missing_id_returns_false_without_vacuum(temp_db_path):
 
 @pytest.mark.vcr()
 async def test_client_ask(allow_model_requests, temp_db_path):
-    """Test asking questions returns answer and citations (VCR recorded)."""
+    """Test asking questions through the native RAG capability."""
     async with HaikuRAG(temp_db_path, create=True) as client:
         # Create a test document for the agent to search
         await client.create_document(
             content="Python is a high-level programming language.", uri="test.txt"
         )
 
-        # Use real QA agent with VCR-recorded responses
         answer, citations = await client.ask("What is Python?")
 
         # Should return a valid response

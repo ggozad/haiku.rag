@@ -620,7 +620,7 @@ class HaikuRAGApp:  # pragma: no cover
         question: str,
         filter: str | None = None,
     ):
-        """Answer a question using the rag-analysis skill.
+        """Answer a question using the analysis capability.
 
         Args:
             question: The question to answer
@@ -634,7 +634,7 @@ class HaikuRAGApp:  # pragma: no cover
             self.console.print(f"[bold blue]Question:[/bold blue] {question}")
             self.console.print()
             self.console.print(
-                "[dim]Running analysis skill with code execution...[/dim]"
+                "[dim]Running analysis capability with code execution...[/dim]"
             )
             self.console.print()
 

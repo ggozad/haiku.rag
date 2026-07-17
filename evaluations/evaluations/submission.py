@@ -19,7 +19,7 @@ def _format_number(value: float) -> str:
 
 
 def extract_prediction(output: str | None) -> str:
-    """Pull the primary numeric answer from a skill output, for submission.
+    """Pull the primary numeric answer from a capability output, for submission.
 
     Restricts to a declared ``ANSWER:`` line when present (via ``_answer_segment``)
     so reasoning numbers don't leak. Strips ``$`` and thousands separators,

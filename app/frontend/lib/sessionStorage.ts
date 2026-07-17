@@ -11,7 +11,7 @@ export interface Citation {
 	doc_item_refs?: string[];
 }
 
-// Matches RAGState from the backend skill
+// Matches RAGState from the backend capability.
 export interface RAGState {
 	citation_index: Record<string, Citation>;
 	citations: string[];

@@ -1,11 +1,11 @@
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from typer.testing import CliRunner
 
+from haiku.rag.capabilities.rag import RAGState, create_capability
 from haiku.rag.cli import _cli as cli
-from haiku.rag.skills.rag import RAGState
 
 runner = CliRunner()
 
@@ -45,42 +45,23 @@ def _make_app(db_path: Path, mock_client: AsyncMock | None = None):
     if mock_client is None:
         mock_client = _make_mock_client()
 
-    skill = MagicMock()
-    skill.state_type = None
-    skill.state_namespace = None
-    skill.tools = []
-    skill.toolsets = []
-    skill.resources = []
-    skill.metadata = MagicMock()
-    skill.metadata.name = "rag"
-    skill.metadata.description = "RAG skill"
-
     return ChatApp(
         db_path=db_path,
-        skills=[skill],
+        capabilities=[create_capability(db_path=db_path)],
         read_only=True,
     ), mock_client
 
 
 def _make_app_with_state(db_path: Path, mock_client: AsyncMock | None = None):
-    """Create a ChatApp with a skill that has RAGState."""
+    """Create a ChatApp with a RAG capability and state."""
     from haiku.rag.chat.app import ChatApp
-    from haiku.skills.models import Skill, SkillMetadata, SkillSource
 
     if mock_client is None:
         mock_client = _make_mock_client()
 
-    skill = Skill(
-        metadata=SkillMetadata(name="rag", description="RAG skill"),
-        source=SkillSource.ENTRYPOINT,
-        tools=[],
-        state_type=RAGState,
-        state_namespace="rag",
-    )
-
     return ChatApp(
         db_path=db_path,
-        skills=[skill],
+        capabilities=[create_capability(db_path=db_path)],
         read_only=True,
     ), mock_client
 
@@ -289,8 +270,7 @@ async def test_show_citations_renders_from_flat_state(temp_db_path: Path):
 
     with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
         async with app.run_test() as pilot:
-            rag_state = app._toolset.get_namespace(RAG_STATE_NAMESPACE)
-            assert isinstance(rag_state, RAGState)
+            rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
 
             citation = Citation(
                 index=1,
@@ -303,6 +283,7 @@ async def test_show_citations_renders_from_flat_state(temp_db_path: Path):
             )
             rag_state.citation_index["chunk1"] = citation
             rag_state.citations.append("chunk1")
+            app._state[RAG_STATE_NAMESPACE] = rag_state.model_dump(mode="json")
 
             chat_history = app.query_one(ChatHistory)
             await app._show_citations_and_programs(chat_history)
@@ -331,8 +312,7 @@ async def test_document_filter_updates_rag_state(temp_db_path: Path):
             )
 
             # RAGState.document_filter should be set
-            rag_state = app._toolset.get_namespace(RAG_STATE_NAMESPACE)
-            assert rag_state is not None
+            rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
             expected_filter = build_multi_document_filter(selected)
             assert rag_state.document_filter == expected_filter
 
@@ -354,12 +334,13 @@ async def test_document_filter_cleared_when_empty(temp_db_path: Path):
             app.on_document_filter_modal_filter_changed(
                 DocumentFilterModal.FilterChanged(["AI Overview"])
             )
-            rag_state = app._toolset.get_namespace(RAG_STATE_NAMESPACE)
+            rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
             assert rag_state.document_filter is not None
 
             # Then clear it
             app.on_document_filter_modal_filter_changed(
                 DocumentFilterModal.FilterChanged([])
             )
+            rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
             assert rag_state.document_filter is None
             assert app._state["rag"]["document_filter"] is None

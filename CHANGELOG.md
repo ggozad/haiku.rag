@@ -28,6 +28,21 @@
 ### Added
 
 - `hotpotqa` evaluation dataset.
+- Native deferred Pydantic AI `RAGCapability` and `AnalysisCapability` implementations under `haiku.rag.capabilities`, with namespaced host state and lazy per-run database and sandbox resources.
+- Prior-turn RAG and analysis tool results are compacted before model requests while current-turn evidence remains intact.
+
+### Changed
+
+- Require `pydantic-ai-slim>=2.11,<3`; the `vertexai` optional extra now installs Pydantic AI's `google` extra.
+- The chat TUI consumes native Pydantic AI stream events. The web example uses the standard `AGUIAdapter` and emits one final state snapshot instead of forwarding sub-agent activity and per-tool state events.
+- Chat capability selection is now `haiku-rag chat --capability/-c {rag,analysis}`. Migrate from `--skill/-s`.
+- Evaluation targets are now `rag-capability` and `analysis-capability`, and the model override is `--capability-model`. Migrate from `rag-skill`, `analysis-skill`, and `--skill-model`.
+
+### Removed
+
+- The `haiku.skills` dependency, `haiku.rag.skills` modules, Python entry-point discovery, and sub-agent execution layer. Migrate `create_skill(...)` plus `SkillToolset` usage to `haiku.rag.capabilities.*.create_capability(...)` passed through `Agent(capabilities=[...])`.
+- The `haiku-rag create-skill` package generator. Compose native capabilities directly and package application-specific instructions and data in the consuming project.
+- Legacy sub-agent `ActivitySnapshotEvent` plumbing and per-tool `StateDeltaEvent` generation.
 
 ### Changed
 

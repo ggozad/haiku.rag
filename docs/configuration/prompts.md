@@ -1,6 +1,6 @@
 # Prompt Customization
 
-Customize the prompts used by haiku.rag's skills to better match your domain and use case.
+Customize the prompts used by haiku.rag's capabilities to match your domain.
 
 ## Configuration
 
@@ -24,7 +24,7 @@ The `domain_preamble` field provides **domain context** prepended to the rag and
 - Clarify domain-specific terminology
 - Provide context that helps the model interpret ambiguous queries
 
-**Important:** `domain_preamble` is for domain context, not behavioral instructions. Descriptions of subject matter, terminology, and content scope belong here. Behavioral guidance (tone, response style, formatting rules) lives in the skill's SKILL.md. Fork the skill via `haiku-rag create-skill` to customize behavior.
+**Important:** `domain_preamble` is for domain context, not behavioral instructions. Descriptions of subject matter, terminology, and content scope belong here. Applications can add behavioral guidance through normal Pydantic AI agent instructions.
 
 **Example:**
 

@@ -1,43 +1,34 @@
 import asyncio
-import json
 import uuid
 from collections.abc import Iterable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import textual_image.widget  # noqa: F401 - import early for renderer detection
-from ag_ui.core import (
-    ActivitySnapshotEvent,
-    AssistantMessage,
-    EventType,
-    RunAgentInput,
-    StateDeltaEvent,
-    TextMessageContentEvent,
-    ToolCallArgsEvent,
-    ToolCallEndEvent,
-    ToolCallStartEvent,
-    UserMessage,
-)
-from jsonpatch import JsonPatch
 from pydantic_ai import Agent
-from pydantic_ai.ui.ag_ui import AGUIAdapter
+from pydantic_ai.messages import (
+    FunctionToolCallEvent,
+    FunctionToolResultEvent,
+    PartDeltaEvent,
+    PartEndEvent,
+    PartStartEvent,
+    TextPart,
+    TextPartDelta,
+)
+from pydantic_ai.run import AgentRunResultEvent
 from textual.app import App, SystemCommand
 from textual.binding import Binding
 from textual.widgets import Footer, Header, Input
 from textual.worker import Worker
 
+from haiku.rag.capabilities._base import RAGCapabilityBase
+from haiku.rag.capabilities.analysis import AnalysisState
+from haiku.rag.capabilities.rag import AGENT_PREAMBLE, RAGState
 from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
-from haiku.rag.skills.analysis import AnalysisState
-from haiku.rag.skills.rag import RAGState, get_agent_preamble
 from haiku.rag.telemetry import configure as configure_telemetry
-from haiku.skills.agent import (
-    SkillToolset,
-    run_agui_stream,
-)
-from haiku.skills.models import Skill
-from haiku.skills.prompts import build_system_prompt
 
 configure_telemetry(service_name="haiku-rag")
 
@@ -47,6 +38,11 @@ if TYPE_CHECKING:
 
 RAG_STATE_NAMESPACE = "rag"
 ANALYSIS_STATE_NAMESPACE = "analysis"
+
+
+@dataclass
+class ChatDeps:
+    state: dict[str, Any] = field(default_factory=dict)
 
 
 class ChatApp(App):
@@ -82,27 +78,24 @@ class ChatApp(App):
     def __init__(
         self,
         db_path: Path,
-        skills: list[Skill],
+        capabilities: list[RAGCapabilityBase[Any]],
         read_only: bool = False,
         model: str | None = None,
     ) -> None:
         super().__init__()
         self.db_path = db_path
-        self._skills = skills
+        self._capabilities = capabilities
         self.read_only = read_only
         self._model = model
         self.client: HaikuRAG | None = None
         self.config = get_config()
-        self._toolset: SkillToolset | None = None
-        self._agent: Agent[None, str] | None = None
+        self._agent: Agent[ChatDeps, str] | None = None
         self._messages: list[Any] = []
         self._state: dict[str, Any] = {}
         self._is_processing = False
         self._current_worker: Worker[None] | None = None
         self._document_filter: list[str] = []
-        # Stable per-launch id so multi-turn chats land in one Logfire
-        # conversation. AGUIAdapter reads run_input.thread_id and exports it
-        # as the `gen_ai.conversation.id` OTel attribute on every agent run.
+        # Stable per-launch id for multi-turn model and telemetry correlation.
         self._conversation_id = str(uuid.uuid4())
 
     def compose(self) -> "ComposeResult":
@@ -135,11 +128,6 @@ class ChatApp(App):
             "Show database information",
             self.action_show_info,
         )
-        yield SystemCommand(
-            "View state",
-            "Show the current session state",
-            self.action_view_state,
-        )
 
     async def on_mount(self) -> None:
         """Initialize the app when mounted."""
@@ -150,16 +138,17 @@ class ChatApp(App):
         )
         await self.client.__aenter__()
 
-        self._toolset = SkillToolset(skills=self._skills)
         self._agent = Agent(
             self._model,
-            instructions=build_system_prompt(
-                self._toolset.skill_catalog,
-                preamble=get_agent_preamble(self.config),
-            ),
-            toolsets=[self._toolset],
+            deps_type=ChatDeps,
+            instructions=AGENT_PREAMBLE,
+            capabilities=self._capabilities,
         )
-        self._state = self._toolset.build_state_snapshot()
+        self._state = {}
+        for capability in self._capabilities:
+            self._state[capability.state_namespace] = (
+                capability.state_type().model_dump(mode="json")
+            )
 
         self.query_one(Input).focus()
 
@@ -179,14 +168,6 @@ class ChatApp(App):
         chat_history = self.query_one(ChatHistory)
         await chat_history.add_message("user", user_message)
 
-        self._messages.append(
-            UserMessage(
-                id=str(uuid.uuid4()),
-                role="user",
-                content=user_message,
-            )
-        )
-
         self._is_processing = True
         self.query_one(Input).disabled = True
         self._current_worker = self.run_worker(
@@ -195,113 +176,58 @@ class ChatApp(App):
 
     async def _run_agent(self, user_message: str) -> None:
         """Run the agent in a background worker."""
-        if not self._agent or not self._toolset:
+        if not self._agent:
             return
 
         chat_history = self.query_one(ChatHistory)
         await chat_history.show_thinking()
 
-        run_input = RunAgentInput(
-            thread_id=self._conversation_id,
-            run_id=str(uuid.uuid4()),
-            messages=self._messages,
-            state=self._state,
-            tools=[],
-            context=[],
-            forwarded_props={},
-        )
-
-        adapter = AGUIAdapter(agent=self._agent, run_input=run_input)
-
         message = None
-        accumulated_text = ""
-        tool_args_deltas: dict[str, str] = {}
+        deps = ChatDeps(state=self._state)
 
         try:
-            async with run_agui_stream(adapter, toolset=self._toolset) as stream:
+            async with self._agent.run_stream_events(
+                user_message,
+                message_history=self._messages,
+                conversation_id=self._conversation_id,
+                deps=deps,
+            ) as stream:
                 async for event in stream:
-                    if event.type == EventType.TEXT_MESSAGE_START:
+                    if isinstance(event, PartStartEvent) and isinstance(
+                        event.part, TextPart
+                    ):
                         chat_history.hide_thinking()
                         message = await chat_history.add_message("assistant")
-                        accumulated_text = ""
-                    elif event.type == EventType.TEXT_MESSAGE_CONTENT:
-                        assert isinstance(event, TextMessageContentEvent)
-                        accumulated_text += event.delta
+                        if event.part.content:
+                            await message.append_delta(event.part.content)
+                    elif isinstance(event, PartDeltaEvent) and isinstance(
+                        event.delta, TextPartDelta
+                    ):
                         if message:
-                            await message.append_delta(event.delta)
+                            await message.append_delta(event.delta.content_delta)
                             chat_history.scroll_end(animate=False)
-                    elif event.type == EventType.TEXT_MESSAGE_END:
+                    elif isinstance(event, PartEndEvent) and isinstance(
+                        event.part, TextPart
+                    ):
                         if message:
                             await message.finish_stream()
-                        self._messages.append(
-                            AssistantMessage(
-                                id=str(uuid.uuid4()),
-                                role="assistant",
-                                content=accumulated_text,
-                            )
-                        )
-                        await self._show_citations_and_programs(chat_history)
-                    elif event.type == EventType.TOOL_CALL_START:
-                        assert isinstance(event, ToolCallStartEvent)
+                    elif isinstance(event, FunctionToolCallEvent):
+                        part = event.part
                         chat_history.hide_thinking()
                         await chat_history.add_tool_call(
-                            event.tool_call_id, event.tool_call_name
+                            part.tool_call_id, part.tool_name
                         )
-                        tool_args_deltas[event.tool_call_id] = ""
+                        chat_history.update_tool_args(
+                            part.tool_call_id, part.args_as_dict()
+                        )
                         await chat_history.show_thinking("Executing tasks...")
-                    elif event.type == EventType.TOOL_CALL_ARGS:
-                        assert isinstance(event, ToolCallArgsEvent)
-                        tool_args_deltas[event.tool_call_id] = (
-                            tool_args_deltas.get(event.tool_call_id, "") + event.delta
-                        )
-                        try:
-                            args = json.loads(tool_args_deltas[event.tool_call_id])
-                            chat_history.update_tool_args(event.tool_call_id, args)
-                        except json.JSONDecodeError:
-                            pass
-                    elif event.type == EventType.TOOL_CALL_END:
-                        assert isinstance(event, ToolCallEndEvent)
-                        chat_history.mark_tool_complete(event.tool_call_id)
-                    elif event.type == EventType.ACTIVITY_SNAPSHOT:
-                        assert isinstance(event, ActivitySnapshotEvent)
-                        content = event.content
-                        if event.activity_type == "skill_tool_call":
-                            tool_call_id = content["tool_call_id"]
-                            skill_name = content.get("skill", "")
-                            tool_name = content["tool_name"]
-                            display_name = (
-                                f"{skill_name} → {tool_name}"
-                                if skill_name
-                                else tool_name
-                            )
-                            args_str = content.get("args", "{}")
-                            chat_history.hide_thinking()
-                            await chat_history.add_tool_call(tool_call_id, display_name)
-                            try:
-                                args = json.loads(args_str)
-                                chat_history.update_tool_args(tool_call_id, args)
-                            except json.JSONDecodeError:
-                                pass
-                            await chat_history.show_thinking("Working...")
-                        elif event.activity_type == "skill_tool_result":
-                            tool_call_id = content["tool_call_id"]
-                            chat_history.mark_tool_complete(tool_call_id)
-                    elif event.type == EventType.STATE_DELTA:
-                        assert isinstance(event, StateDeltaEvent)
-                        patch = JsonPatch(event.delta)
-                        self._state = patch.apply(self._state)
-                        self._toolset.restore_state_snapshot(self._state)
-                    elif event.type == EventType.STATE_SNAPSHOT:
-                        self._state = getattr(event, "snapshot", self._state)
-                        self._toolset.restore_state_snapshot(self._state)
-                    elif event.type == EventType.RUN_FINISHED:
+                    elif isinstance(event, FunctionToolResultEvent):
+                        chat_history.mark_tool_complete(event.part.tool_call_id)
+                    elif isinstance(event, AgentRunResultEvent):
+                        self._messages = event.result.all_messages()
+                        self._state = deps.state
                         chat_history.hide_thinking()
-                    elif event.type == EventType.RUN_ERROR:
-                        chat_history.hide_thinking()
-                        error_msg = getattr(event, "message", "Unknown error")
-                        await chat_history.add_message(
-                            "assistant", f"Error: {error_msg}"
-                        )
+                        await self._show_citations_and_programs(chat_history)
 
         except asyncio.CancelledError:
             chat_history.hide_thinking()
@@ -321,14 +247,14 @@ class ChatApp(App):
             chat_input.focus()
 
     async def _show_citations_and_programs(self, chat_history: "ChatHistory") -> None:
-        """Show citations and programs from skill states after an agent response."""
-        if not self._toolset:
-            return
+        """Show citations and programs from capability states after a response."""
         citations = []
         for namespace in (RAG_STATE_NAMESPACE, ANALYSIS_STATE_NAMESPACE):
-            state = self._toolset.get_namespace(namespace)
-            if not state:
+            state_data = self._state.get(namespace)
+            if not state_data:
                 continue
+            state_type = RAGState if namespace == RAG_STATE_NAMESPACE else AnalysisState
+            state = state_type.model_validate(state_data)
             cited_ids = getattr(state, "citations", [])
             citation_index = getattr(state, "citation_index", {})
             for cid in cited_ids:
@@ -355,8 +281,8 @@ class ChatApp(App):
 
         await chat_history.add_citations(citations, picture_bytes=picture_bytes)
 
-        analysis_state = self._toolset.get_namespace(ANALYSIS_STATE_NAMESPACE)
-        if analysis_state:
+        if analysis_data := self._state.get(ANALYSIS_STATE_NAMESPACE):
+            analysis_state = AnalysisState.model_validate(analysis_data)
             executions = getattr(analysis_state, "executions", [])
             successful = [e for e in executions if e.success]
             if successful:
@@ -367,9 +293,10 @@ class ChatApp(App):
         chat_history = self.query_one(ChatHistory)
         await chat_history.clear_messages()
         self._messages.clear()
-        # Reset state
-        if self._toolset:
-            self._state = self._toolset.build_state_snapshot()
+        self._state = {
+            capability.state_namespace: capability.state_type().model_dump(mode="json")
+            for capability in self._capabilities
+        }
         # Cleared chat starts a fresh Logfire conversation.
         self._conversation_id = str(uuid.uuid4())
 
@@ -429,24 +356,6 @@ class ChatApp(App):
 
         await self.push_screen(InfoModal(self.client, self.db_path))
 
-    def action_view_state(self) -> None:
-        """Show the current session state."""
-        from haiku.skills.chat.app import StateScreen
-
-        self.push_screen(StateScreen(self._state, on_save=self._apply_state_edit))
-
-    def _apply_state_edit(self, new_state: dict[str, Any]) -> None:
-        if self._toolset is None:
-            return
-        if not isinstance(new_state, dict):
-            raise ValueError("state must be a JSON object")
-        for namespace, data in new_state.items():
-            current = self._toolset.get_namespace(namespace)
-            if current is not None:
-                type(current).model_validate(data)
-        self._toolset.restore_state_snapshot(new_state)
-        self._state = self._toolset.build_state_snapshot()
-
     def on_citation_widget_selected(self, event: CitationWidget.Selected) -> None:
         """Handle citation selection."""
         chat_history = self.query_one(ChatHistory)
@@ -476,12 +385,12 @@ class ChatApp(App):
 
         self._document_filter = event.selected
 
-        if self._toolset:
-            doc_filter = build_multi_document_filter(self._document_filter)
-            rag_state = self._toolset.get_namespace(RAG_STATE_NAMESPACE)
-            if isinstance(rag_state, RAGState):
-                rag_state.document_filter = doc_filter
-            analysis_state = self._toolset.get_namespace(ANALYSIS_STATE_NAMESPACE)
-            if isinstance(analysis_state, AnalysisState):
-                analysis_state.document_filter = doc_filter
-            self._state = self._toolset.build_state_snapshot()
+        doc_filter = build_multi_document_filter(self._document_filter)
+        for namespace, state_type in (
+            (RAG_STATE_NAMESPACE, RAGState),
+            (ANALYSIS_STATE_NAMESPACE, AnalysisState),
+        ):
+            if namespace in self._state:
+                state = state_type.model_validate(self._state[namespace])
+                state.document_filter = doc_filter
+                self._state[namespace] = state.model_dump(mode="json")

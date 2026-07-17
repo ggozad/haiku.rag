@@ -32,7 +32,7 @@ import DbInfo from "./DbInfo";
 import DocumentFilter from "./DocumentFilter";
 import SessionManager from "./SessionManager";
 
-// Must match state_namespace from haiku.rag.skills.rag
+// Must match RAGCapability.state_namespace.
 const AGUI_STATE_KEY = "rag";
 
 // AG-UI state is namespaced under AGUI_STATE_KEY
@@ -115,24 +115,6 @@ function MessageIcon() {
 	);
 }
 
-function FileIcon() {
-	return (
-		<svg
-			width="14"
-			height="14"
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="2"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-		>
-			<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
-			<path d="M14 2v4a2 2 0 0 0 2 2h4" />
-		</svg>
-	);
-}
-
 function ToolCallIndicator({
 	toolName,
 	status,
@@ -146,13 +128,9 @@ function ToolCallIndicator({
 
 	const getToolIcon = () => {
 		switch (toolName) {
-			case "search":
+			case "rag_search":
 				return <SearchIcon />;
-			case "get_document":
-				return <FileIcon />;
-			case "execute_skill":
-			case "execute_code":
-			case "cite":
+			case "rag_cite":
 				return <MessageIcon />;
 			default:
 				return <SearchIcon />;
@@ -161,18 +139,10 @@ function ToolCallIndicator({
 
 	const getToolLabel = () => {
 		switch (toolName) {
-			case "search":
+			case "rag_search":
 				return "Search";
-			case "get_document":
-				return "Document";
-			case "execute_skill":
-				return "Skill";
-			case "execute_code":
-				return "Code";
-			case "cite":
+			case "rag_cite":
 				return "Cite";
-			case "list_documents":
-				return "Documents";
 			default:
 				return toolName;
 		}
@@ -180,34 +150,12 @@ function ToolCallIndicator({
 
 	const getDescription = () => {
 		switch (toolName) {
-			case "execute_skill": {
-				const skill = args.skill_name as string | undefined;
-				const request = args.request as string | undefined;
-				return (
-					<span className="tool-query">
-						{skill ? `${skill}: ` : ""}
-						{request ?? "Processing..."}
-					</span>
-				);
-			}
-			case "search": {
+			case "rag_search": {
 				const query = args.query as string;
 				return <span className="tool-query">{query}</span>;
 			}
-			case "get_document":
-				return <span className="tool-query">{args.query as string}</span>;
-			case "execute_code": {
-				const code = args.code as string | undefined;
-				return (
-					<span className="tool-query">
-						{code ? code.slice(0, 80) : "Running code..."}
-					</span>
-				);
-			}
-			case "cite":
+			case "rag_cite":
 				return <span className="tool-query">Registering citations</span>;
-			case "list_documents":
-				return <span className="tool-query">Listing documents</span>;
 			default:
 				return <span>Processing...</span>;
 		}
@@ -231,39 +179,6 @@ function ToolCallIndicator({
 				<div className="tool-description">{getDescription()}</div>
 			</div>
 		</div>
-	);
-}
-
-// Render an activity message from a skill sub-agent tool call/result
-function ActivityIndicator({
-	message,
-	isComplete,
-}: {
-	// biome-ignore lint/suspicious/noExplicitAny: AG-UI activity message shape
-	message: any;
-	isComplete: boolean;
-}) {
-	const content = message.content ?? {};
-	const toolName = content.tool_name ?? "tool";
-
-	let args: Record<string, unknown> = {};
-	if (content.args) {
-		try {
-			args =
-				typeof content.args === "string"
-					? JSON.parse(content.args)
-					: content.args;
-		} catch {
-			// ignore parse errors
-		}
-	}
-
-	return (
-		<ToolCallIndicator
-			toolName={toolName}
-			status={isComplete ? "complete" : "loading"}
-			args={args}
-		/>
 	);
 }
 
@@ -298,21 +213,6 @@ function MessageViewWithCitations({
 	const ragState = useContext(ChatStateContext);
 	const latestCitations = ragState ? getLatestCitations(ragState) : [];
 
-	// Collect completed tool_call_ids from skill_tool_result activity messages
-	const completedToolCallIds = useMemo(() => {
-		const ids = new Set<string>();
-		for (const msg of messages) {
-			if (
-				msg.role === "activity" &&
-				msg.activityType === "skill_tool_result" &&
-				msg.content?.tool_call_id
-			) {
-				ids.add(msg.content.tool_call_id);
-			}
-		}
-		return ids;
-	}, [messages]);
-
 	const cursor = isRunning ? (
 		<div key="cursor" className="streaming-cursor">
 			<span className="dot" />
@@ -322,8 +222,7 @@ function MessageViewWithCitations({
 	) : null;
 
 	// CopilotChatMessageView renders one element per user/assistant message.
-	// We interleave activity indicators (skill sub-agent tool calls) and
-	// optionally inject CitationBlocks after assistant responses that
+	// Inject CitationBlocks after assistant responses that
 	// followed tool calls.
 	return (
 		<CopilotChatMessageView messages={messages} isRunning={isRunning}>
@@ -343,24 +242,6 @@ function MessageViewWithCitations({
 						msg.toolCalls.length > 0
 					) {
 						seenToolCalls = true;
-					}
-
-					// Activity messages are not rendered by CopilotKit —
-					// render them ourselves without consuming messageElements
-					if (msg.role === "activity") {
-						if (msg.activityType === "skill_tool_call") {
-							const toolCallId = msg.content?.tool_call_id;
-							result.push(
-								<ActivityIndicator
-									key={`activity-${msg.id}`}
-									message={msg}
-									isComplete={
-										toolCallId ? completedToolCallIds.has(toolCallId) : false
-									}
-								/>,
-							);
-						}
-						continue;
 					}
 
 					if (msg.role !== "user" && msg.role !== "assistant") continue;
@@ -438,8 +319,7 @@ function ChatContentInner({
 	useEffect(() => {
 		if (agent.messages.length > 0) return;
 		const session = getSession(sessionId);
-		// Seed the namespaced AG-UI state so the backend's first STATE_DELTA
-		// (e.g. add /rag/searches/...) has a namespace object to patch into.
+		// Seed state for the capability; the backend replaces it after each run.
 		agent.setState({
 			[AGUI_STATE_KEY]: normalizeRAGState(session?.ragState),
 		});
@@ -466,10 +346,7 @@ function ChatContentInner({
 		}
 	}, [JSON.stringify(agent.messages), ragState, sessionId]);
 
-	// Deduplicate messages by id, keeping the last occurrence.
-	// haiku.skills 0.10.0+ sends activity snapshots with the same id
-	// and replace=true — CopilotKit doesn't deduplicate these, so we
-	// must do it to avoid React duplicate key warnings.
+	// Deduplicate messages by id to avoid React duplicate key warnings.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: stable identity via agent ref
 	const messages = useMemo(() => {
 		const seen = new Map<string, number>();

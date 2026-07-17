@@ -13,11 +13,11 @@ haiku-rag chat --db /path/to/database.lancedb
 haiku-rag chat --model openai:gpt-4o
 ```
 
-![Chat TUI session against the rag-analysis skill](img/chat-qa.png)
+![Chat TUI session with the analysis capability](img/chat-qa.png)
 
 ## How it works
 
-The chat is a Pydantic AI agent with the `rag` [skill](skills/rag.md) attached by default. Each turn the agent decides which tool to call next, runs hybrid search against your documents, expands context around the hits, may issue further searches, and answers with citations. You see streaming text and a live indicator of which tool is running.
+The chat is a Pydantic AI agent with the deferred [RAG capability](capabilities/rag.md) attached by default. Each turn the agent decides which tool to call next, runs hybrid search against your documents, expands context around the hits, may issue further searches, and answers with citations. You see streaming text and native tool events directly from Pydantic AI.
 
 The session is in-memory for the lifetime of the TUI. Conversation history is kept across turns so follow-up questions reuse prior context. Citations are tracked per turn and inspectable via the command palette. Clearing the chat resets the session and the agent's memory.
 
@@ -51,26 +51,26 @@ haiku-rag visualize <chunk_id>
 | Database info | Document and chunk counts, storage stats |
 | View state | Current session state, citations, and intermediate tool results |
 
-## Skills
+## Capabilities
 
-The default skill is `rag`. Enable `analysis` when the question needs computation, aggregation, comparison across documents, or section-scoped reading that a single search can't deliver:
+The default capability is `rag`. Enable `analysis` when the question needs computation, aggregation, comparison across documents, or section-scoped reading that a single search can't deliver:
 
 ```bash
-# both skills (the agent routes between them)
+# both capabilities (the agent routes between them)
 haiku-rag chat -s rag -s analysis
 
 # analysis only
 haiku-rag chat -s analysis
 ```
 
-The `analysis` skill mounts every document as a virtual filesystem at `/documents/{id}/` (with `metadata.json`, `content.txt`, `items.jsonl`, and `toc.json`) and runs Python in a sandboxed interpreter with `search` and `list_documents` as awaitable functions. It's the right choice for questions like:
+The `analysis` capability mounts every document as a virtual filesystem at `/documents/{id}/` (with `metadata.json`, `content.txt`, `items.jsonl`, and `toc.json`) and runs Python in a sandboxed interpreter with `search` and `list_documents` as awaitable functions. It's the right choice for questions like:
 
 - "How many of these documents mention X?"
 - "Summarize Section 5 of paper Y."
 - "Compare the experimental sections across these three reports."
 - "Which section discusses the proof of Theorem 4.10?"
 
-For everyday Q&A, the rag skill alone is faster and cheaper. Attaching both lets the agent pick. See [Analysis skill](skills/analysis.md) for the full sandbox capabilities and worked code patterns.
+For everyday Q&A, RAG alone is faster and cheaper. Attaching both lets the agent pick. See [Analysis capability](capabilities/analysis.md).
 
 ## Document filter
 

@@ -328,11 +328,11 @@ answer, citations = await client.ask(
 )
 ```
 
-`client.ask` runs the [rag skill](skills/index.md) and returns `(answer_text, list[Citation])`. Citations include page numbers, section headings, document references, and the document's metadata (`document_meta`), so UIs can render metadata keys such as a public source URL alongside the citation.
+`client.ask` runs the [RAG capability](capabilities/rag.md) and returns `(answer_text, list[Citation])`. Citations include page numbers, section headings, document references, and the document's metadata (`document_meta`), so UIs can render metadata keys such as a public source URL alongside the citation.
 
 The QA provider and model are configured in `haiku.rag.yaml` or can be passed directly to the client (see [Configuration](configuration/index.md)).
 
-See also: [Skills](skills/index.md) for details on the skills the client wraps.
+See also: [Capabilities](capabilities/index.md) for direct agent composition.
 
 ## Analysis
 
@@ -352,13 +352,13 @@ result = await client.analyze(
 )
 ```
 
-`client.analyze` runs the [analysis skill](skills/index.md), which writes and executes Python code in a sandboxed environment to solve problems that traditional RAG struggles with: aggregation, computation, and multi-document analysis.
+`client.analyze` runs the [analysis capability](capabilities/analysis.md), which writes and executes Python code in a sandboxed environment to solve problems that traditional RAG struggles with: aggregation, computation, and multi-document analysis.
 
-See [Analysis skill](skills/analysis.md) for details on capabilities and configuration.
+See [Analysis capability](capabilities/analysis.md) for details and configuration.
 
 ## Building custom agents
 
-`client.ask` and `client.analyze` are the convenience wrappers. To build your own Pydantic AI agent against the same database, attach the rag and rag-analysis skills directly with `SkillToolset`. See [Skills](skills/index.md) for the full story and worked examples.
+`client.ask` and `client.analyze` are convenience wrappers. To build your own Pydantic AI agent, attach the native RAG and analysis capabilities directly. See [Capabilities](capabilities/index.md).
 
 For the low-level toolset factories under `haiku.rag.tools` (one rung below the skill abstraction), see [Toolsets](tools.md).
 

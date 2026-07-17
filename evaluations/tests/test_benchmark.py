@@ -131,7 +131,9 @@ class TestRunQaBenchmarkJudgeModel:
 
         with (
             patch("evaluations.benchmark.get_model") as mock_get_model,
-            patch("evaluations.benchmark.run_skill_question", new_callable=AsyncMock),
+            patch(
+                "evaluations.benchmark.run_capability_question", new_callable=AsyncMock
+            ),
         ):
             mock_get_model.return_value = "fake-model"
             await run_qa_benchmark(
@@ -149,7 +151,9 @@ class TestRunQaBenchmarkJudgeModel:
 
         with (
             patch("evaluations.benchmark.get_model") as mock_get_model,
-            patch("evaluations.benchmark.run_skill_question", new_callable=AsyncMock),
+            patch(
+                "evaluations.benchmark.run_capability_question", new_callable=AsyncMock
+            ),
         ):
             mock_get_model.return_value = "fake-model"
             await run_qa_benchmark(
@@ -195,27 +199,29 @@ class TestEvaluateDatasetJudgeModel:
 
 
 class TestExperimentMetadataTargets:
-    def test_default_target_is_rag_skill(self) -> None:
+    def test_default_target_is_rag_capability(self) -> None:
         result = build_experiment_metadata(
             dataset_key="test", test_cases=1, config=AppConfig()
         )
-        assert result["target"] == "rag-skill"
-        assert "skill_provider" not in result
-        assert "skill_model" not in result
+        assert result["target"] == "rag-capability"
+        assert "capability_provider" not in result
+        assert "capability_model" not in result
 
-    def test_skill_target_includes_skill_config(self) -> None:
-        skill = ModelConfig(provider="ollama", name="gpt-oss-large", temperature=0.2)
+    def test_capability_target_includes_capability_config(self) -> None:
+        capability = ModelConfig(
+            provider="ollama", name="gpt-oss-large", temperature=0.2
+        )
         result = build_experiment_metadata(
             dataset_key="test",
             test_cases=1,
             config=AppConfig(),
-            target="rag-skill",
-            skill_config=skill,
+            target="rag-capability",
+            capability_config=capability,
         )
-        assert result["target"] == "rag-skill"
-        assert result["skill_provider"] == "ollama"
-        assert result["skill_model"] == "gpt-oss-large"
-        assert result["skill_temperature"] == 0.2
+        assert result["target"] == "rag-capability"
+        assert result["capability_provider"] == "ollama"
+        assert result["capability_model"] == "gpt-oss-large"
+        assert result["capability_temperature"] == 0.2
 
 
 class TestEvaluateDatasetTarget:
@@ -230,8 +236,8 @@ class TestEvaluateDatasetTarget:
         )
 
     @pytest.mark.asyncio
-    async def test_threads_target_and_skill_model(self) -> None:
-        skill = ModelConfig(provider="ollama", name="gpt-oss")
+    async def test_threads_target_and_capability_model(self) -> None:
+        capability = ModelConfig(provider="ollama", name="gpt-oss")
         with patch(
             "evaluations.benchmark.run_qa_benchmark", new_callable=AsyncMock
         ) as mock_qa:
@@ -244,16 +250,16 @@ class TestEvaluateDatasetTarget:
                 limit=None,
                 name=None,
                 db_path=None,
-                target="rag-skill",
-                skill_model=skill,
+                target="rag-capability",
+                capability_model=capability,
             )
 
         mock_qa.assert_called_once()
-        assert mock_qa.call_args[1]["target"] == "rag-skill"
-        assert mock_qa.call_args[1]["skill_model"] is skill
+        assert mock_qa.call_args[1]["target"] == "rag-capability"
+        assert mock_qa.call_args[1]["capability_model"] is capability
 
     @pytest.mark.asyncio
-    async def test_default_target_is_rag_skill(self) -> None:
+    async def test_default_target_is_rag_capability(self) -> None:
         with patch(
             "evaluations.benchmark.run_qa_benchmark", new_callable=AsyncMock
         ) as mock_qa:
@@ -267,11 +273,11 @@ class TestEvaluateDatasetTarget:
                 name=None,
                 db_path=None,
             )
-        assert mock_qa.call_args[1]["target"] == "rag-skill"
-        assert mock_qa.call_args[1]["skill_model"] is None
+        assert mock_qa.call_args[1]["target"] == "rag-capability"
+        assert mock_qa.call_args[1]["capability_model"] is None
 
 
-class TestRunQaBenchmarkSkillTarget:
+class TestRunQaBenchmarkCapabilityTarget:
     def _spec(self, tmp_path: Path) -> DatasetSpec:
         return DatasetSpec(
             key="test",
@@ -283,17 +289,19 @@ class TestRunQaBenchmarkSkillTarget:
         )
 
     @pytest.mark.asyncio
-    async def test_rag_skill_target_uses_run_skill_question(
+    async def test_rag_capability_target_uses_run_capability_question(
         self, tmp_path: Path
     ) -> None:
-        from evaluations.skill_runner import SkillRunResult
+        from evaluations.capability_runner import CapabilityRunResult
 
-        skill_run = AsyncMock(return_value=SkillRunResult(answer="from skill"))
+        capability_run = AsyncMock(
+            return_value=CapabilityRunResult(answer="from capability")
+        )
         with (
             patch("evaluations.benchmark.get_model") as mock_get_model,
             patch(
-                "evaluations.benchmark.run_skill_question", new=skill_run
-            ) as mock_run_skill,
+                "evaluations.benchmark.run_capability_question", new=capability_run
+            ) as mock_run_capability,
             patch("evaluations.benchmark.HaikuRAG") as mock_haiku,
         ):
             mock_get_model.return_value = "fake-model"
@@ -301,27 +309,31 @@ class TestRunQaBenchmarkSkillTarget:
                 self._spec(tmp_path),
                 AppConfig(),
                 db_path=tmp_path / "test.lancedb",
-                target="rag-skill",
+                target="rag-capability",
             )
 
-        # When target is rag-skill, HaikuRAG context manager is NOT entered
-        # (the skill manages its own client via lifespan).
+        # When target is rag-capability, HaikuRAG context manager is NOT entered
+        # (the capability manages its own client via lifespan).
         mock_haiku.assert_not_called()
-        # skill model defaults to qa.model when not provided
-        skill_call = mock_get_model.call_args_list[-1]
-        assert skill_call[0][0] == AppConfig().qa.model
-        assert mock_run_skill is skill_run
+        # capability model defaults to qa.model when not provided
+        capability_call = mock_get_model.call_args_list[-1]
+        assert capability_call[0][0] == AppConfig().qa.model
+        assert mock_run_capability is capability_run
 
     @pytest.mark.asyncio
-    async def test_analysis_skill_target_resolves_factory(self, tmp_path: Path) -> None:
-        from evaluations.benchmark import _skill_factory_for_target
-        from haiku.rag.skills.analysis import create_skill as analysis_factory
-        from haiku.rag.skills.rag import create_skill as rag_factory
+    async def test_analysis_capability_target_resolves_factory(
+        self, tmp_path: Path
+    ) -> None:
+        from evaluations.benchmark import _capability_factory_for_target
+        from haiku.rag.capabilities.analysis import (
+            create_capability as analysis_factory,
+        )
+        from haiku.rag.capabilities.rag import create_capability as rag_factory
 
-        assert _skill_factory_for_target("rag-skill") is rag_factory
-        assert _skill_factory_for_target("analysis-skill") is analysis_factory
-        with pytest.raises(ValueError, match="not a skill target"):
-            _skill_factory_for_target("unknown")  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        assert _capability_factory_for_target("rag-capability") is rag_factory
+        assert _capability_factory_for_target("analysis-capability") is analysis_factory
+        with pytest.raises(ValueError, match="not a capability target"):
+            _capability_factory_for_target("unknown")  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
 
 class TestCitationEvaluatorWiring:

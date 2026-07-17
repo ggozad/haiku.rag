@@ -362,7 +362,7 @@ def ask(  # pragma: no cover
     )
 
 
-@_cli.command("analyze", help="Answer questions using the rag-analysis skill")
+@_cli.command("analyze", help="Answer questions using the analysis capability")
 def analyze(  # pragma: no cover
     question: str = typer.Argument(
         help="The question to answer",
@@ -746,24 +746,24 @@ def chat(  # pragma: no cover
         "--model",
         help="Model to use for the chat (e.g. openai-chat:gpt-4o)",
     ),
-    skill: list[str] | None = typer.Option(
+    capability: list[str] | None = typer.Option(
         None,
-        "--skill",
-        "-s",
-        help="Skills to enable: rag, analysis (can repeat, default: rag)",
+        "--capability",
+        "-c",
+        help="Capabilities to enable: rag, analysis (can repeat, default: rag)",
     ),
 ):
     """Launch the chat TUI for conversational RAG."""
     from haiku.rag.chat import run_chat
 
     db_path = db if db else get_config().storage.data_dir / "haiku.rag.lancedb"
-    skills = skill if skill else ["rag"]
+    capabilities = capability if capability else ["rag"]
 
     run_chat(
         db_path,
         read_only=True,
         model=model,
-        skills=skills,
+        capabilities=capabilities,
     )
 
 
@@ -801,79 +801,6 @@ def mcp(
     asyncio.run(  # pragma: no cover
         app.run_mcp(transport=transport, host=host, port=port)
     )
-
-
-@_cli.command(
-    "create-skill",
-    help="Generate a standalone skill package with an embedded or remote database",
-)
-def create_skill_cmd(  # pragma: no cover
-    name: str = typer.Option(
-        ...,
-        "--name",
-        help="Skill name (lowercase alphanumeric and hyphens)",
-    ),
-    db: Path | None = typer.Option(
-        None,
-        "--db",
-        help="Path to the LanceDB database to embed (omit for remote storage)",
-    ),
-    description: str | None = typer.Option(
-        None,
-        "--description",
-        help="Skill description (default: standard RAG description)",
-    ),
-    tools: str = typer.Option(
-        "all",
-        "--tools",
-        help="Comma-separated tool names, or 'all'",
-    ),
-    preamble: str | None = typer.Option(
-        None,
-        "--preamble",
-        help="Custom preamble for the skill instructions",
-    ),
-    config_file: Path | None = typer.Option(
-        None,
-        "--config-file",
-        help="Path to haiku.rag.yaml to embed in the skill",
-    ),
-    output: Path = typer.Option(
-        Path("."),
-        "--output",
-        "-o",
-        help="Output directory for the generated package",
-    ),
-):
-    """Generate a standalone haiku.skills package with an embedded database."""
-    from haiku.rag.skill_generator import (
-        AVAILABLE_TOOLS,
-        DEFAULT_DESCRIPTION,
-        generate_skill,
-    )
-
-    if description is None:
-        description = DEFAULT_DESCRIPTION
-
-    if tools.strip().lower() == "all":
-        tool_names = sorted(AVAILABLE_TOOLS)
-    else:
-        tool_names = [t.strip() for t in tools.split(",") if t.strip()]
-
-    try:
-        result = generate_skill(
-            db_path=db,
-            output_dir=output,
-            name=name,
-            description=description,
-            tool_names=tool_names,
-            config_path=config_file,
-            preamble=preamble,
-        )
-        typer.echo(f"Skill generated: {result}")
-    except ValueError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
 
 
 if __name__ == "__main__":  # pragma: no cover

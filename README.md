@@ -96,7 +96,7 @@ async with HaikuRAG("knowledge.lancedb", create=True) as rag:
         print(f"  [{cite.chunk_id}] p.{cite.page_numbers}: {cite.content[:80]}")
 ```
 
-For details on the skills the client wraps, see the [Skills docs](https://ggozad.github.io/haiku.rag/skills/).
+For direct agent composition, see the [capabilities documentation](https://ggozad.github.io/haiku.rag/capabilities/).
 
 ## MCP Server
 
@@ -137,7 +137,7 @@ Full documentation at: https://ggozad.github.io/haiku.rag/
 - [Configuration](https://ggozad.github.io/haiku.rag/configuration/) - YAML reference
 - [CLI](https://ggozad.github.io/haiku.rag/cli/) - Command reference
 - [Python API](https://ggozad.github.io/haiku.rag/python/) - Complete API docs
-- [Skills](https://ggozad.github.io/haiku.rag/skills/) - The RAG and analysis skills the client wraps
+- [Capabilities](https://ggozad.github.io/haiku.rag/capabilities/) - Native Pydantic AI RAG and analysis capabilities
 - [Tuning](https://ggozad.github.io/haiku.rag/tuning/) - Retrieval and answer-quality tuning
 - [Ingester](https://ggozad.github.io/haiku.rag/ingester/) - Production ingester for continuous indexing from FS, HTTP, S3, and WebDAV
 - [MCP](https://ggozad.github.io/haiku.rag/mcp/) - Model Context Protocol integration

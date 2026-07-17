@@ -134,9 +134,8 @@ def get_model(
 
         # Apply thinking control only for reasoning models (o-series, gpt-5)
         profile = cast(OpenAIModelProfile, openai_model_profile(model))
-        if (
-            model_config.enable_thinking is not None
-            and profile.openai_supports_encrypted_reasoning_content
+        if model_config.enable_thinking is not None and profile.get(
+            "openai_supports_reasoning", False
         ):
             if model_config.enable_thinking is False:
                 openai_settings = OpenAIChatModelSettings(openai_reasoning_effort="low")

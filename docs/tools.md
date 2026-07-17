@@ -1,12 +1,12 @@
 # Toolsets
 
-haiku.rag exposes its RAG capabilities as [haiku.skills](https://github.com/ggozad/haiku.skills) skills. For most integrations, see [Skills](skills/index.md).
+For agent integrations, use the native Pydantic AI [capabilities](capabilities/index.md). This page documents the lower-level toolsets used by other haiku.rag surfaces.
 
-For lower-level access, `haiku.rag.tools` provides individual `FunctionToolset` factories that the skills themselves compose.
+For lower-level access, `haiku.rag.tools` provides individual `FunctionToolset` factories used across haiku.rag.
 
 ## Low-Level Toolsets
 
-For advanced use cases, individual toolset factories are available in `haiku.rag.tools`. These are the same primitives the rag and rag-analysis skills compose, and can be reused to build custom agents.
+For advanced use cases, individual toolset factories are available in `haiku.rag.tools` and can be reused to build custom agents.
 
 ### RAGDeps Protocol
 

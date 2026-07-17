@@ -1,6 +1,6 @@
 # Benchmarks
 
-We evaluate `haiku.rag` on a small set of datasets that exercise different parts of the pipeline. OpenRAG Bench (ORB), T²-RAGBench, HotpotQA, and Wix are the datasets we currently track. Retrieval, QA accuracy, and citation retrieval are scored end-to-end through the rag and rag-analysis skills.
+We evaluate `haiku.rag` on a small set of datasets that exercise different parts of the pipeline. OpenRAG Bench (ORB), T²-RAGBench, HotpotQA, and Wix are the datasets we currently track. Retrieval, QA accuracy, and citation retrieval are scored end-to-end through the RAG and analysis capabilities.
 
 ## Running Evaluations
 
@@ -36,7 +36,7 @@ Active datasets:
 | `orb_text` — OpenRAG Bench, text embedder (`qwen3-embedding:4b`) with VLM picture descriptions baked into chunk content | ~18 GB |
 | `orb_multimodal` — OpenRAG Bench, multimodal embedder (`qwen3-vl-embedding-8b`); picture vectors live in the same space as text for cross-modal retrieval | ~16 GB |
 | `orb_multimodal_nemotron` — OpenRAG Bench, multimodal embedder (`nvidia/llama-nemotron-embed-vl-1b-v2`), the embedder behind the published headline results | ~16 GB |
-| `t2_finqa` — T²-RAGBench (FinQA) financial QA, text embedder (`qwen3-embedding:4b`); scored by exact numeric match, run with `--target analysis-skill` | ~2 GB |
+| `t2_finqa` — T²-RAGBench (FinQA) financial QA, text embedder (`qwen3-embedding:4b`); scored by exact numeric match, run with `--target analysis-capability` | ~2 GB |
 | `hotpotqa` — HotpotQA multi-hop QA over Wikipedia paragraphs, text embedder (`qwen3-embedding:4b`) | ~1.5 GB |
 
 After downloading, run benchmarks with `--skip-db`. Each database is built with a specific embedder, so pass its reference config from `evaluations/configs/` (a database only opens against a config whose embedder matches):
@@ -64,8 +64,8 @@ evaluations run wix --config /path/to/haiku.rag.yaml --db /path/to/custom.lanced
 - `--skip-qa` - Skip QA benchmark
 - `--limit N` - Limit number of test cases
 - `--name NAME` - Override the evaluation name
-- `--target {rag-skill,analysis-skill}` - Choose which [skill](skills/index.md) to benchmark end-to-end (default: `rag-skill`).
-- `--skill-model PROVIDER:NAME` - Override the skill model independently from the judge (default: `config.qa.model`, or `config.analysis.model` when set for `--target analysis-skill`).
+- `--target {rag-capability,analysis-capability}` - Choose which [capability](capabilities/index.md) to benchmark end-to-end (default: `rag-capability`). The target names remain stable dataset identifiers.
+- `--capability-model PROVIDER:NAME` - Override the capability model independently from the judge (default: `config.qa.model`, or `config.analysis.model` when set for `--target analysis-capability`).
 
 If no config file is specified, the script searches standard locations: `./haiku.rag.yaml`, user config directory, then falls back to defaults.
 
@@ -93,15 +93,15 @@ evaluations:
 
 ### QA Accuracy
 
-`pydantic-evals` coordinates an LLM judge to determine whether the skill's answer is correct. The default judge is `ollama:qwen3.6`, pinned so changes to the skill model don't change the judge underneath. Set `evaluations.judge` in `haiku.rag.yaml` to override (including a custom `base_url` for any OpenAI-compatible endpoint). Accuracy is the fraction of correctly answered questions.
+`pydantic-evals` coordinates an LLM judge to determine whether the capability's answer is correct. The default judge is `ollama:qwen3.6`, pinned so changes to the capability model don't change the judge underneath. Set `evaluations.judge` in `haiku.rag.yaml` to override (including a custom `base_url` for any OpenAI-compatible endpoint). Accuracy is the fraction of correctly answered questions.
 
 We picked `qwen3.6` over the previously-pinned `gpt-oss` after a 4-cell calibration (gpt-oss / qwen3.6 as both answerer and judge, with Claude Opus 4.7 as a reference). `qwen3.6` had κ ≥ 0.66 vs the reference on both same-family and cross-family answerers (vs ~0.39–0.55 for `gpt-oss`) and showed no measurable self-preference bias, while `gpt-oss` was ~10 pp more lenient on its own outputs.
 
 ### Citation Retrieval
 
-Alongside QA accuracy, a second metric scores the URIs the skill registered via the `cite` tool against each dataset's gold `expected_uris`, using the same MAP math as raw retrieval. The score key is `cited_map`. Console output also includes the cite rate (% of cases with at least one citation) and the mean number of citations per case.
+Alongside QA accuracy, a second metric scores the URIs the capability registered via the `cite` tool against each dataset's gold `expected_uris`, using the same MAP math as raw retrieval. The score key is `cited_map`. Console output also includes the cite rate (% of cases with at least one citation) and the mean number of citations per case.
 
-This is computed alongside QA accuracy from the same skill run, no extra invocations. The signal complements raw retrieval: where raw retrieval measures whether the retriever surfaced the gold document at any rank, citation retrieval measures whether the skill grounded its answer on it.
+This is computed alongside QA accuracy from the same capability run, no extra invocations. The signal complements raw retrieval: where raw retrieval measures whether the retriever surfaced the gold document at any rank, citation retrieval measures whether the capability grounded its answer on it.
 
 ## Current results
 
@@ -130,12 +130,12 @@ Two approaches are benchmarked separately:
 
 ##### QA accuracy + citation retrieval
 
-| Embedding Model                          | Target          | Skill model                       | Cases | QA accuracy | Mean `cited_map` |
+| Embedding Model                          | Target          | Capability model                       | Cases | QA accuracy | Mean `cited_map` |
 |------------------------------------------|-----------------|-----------------------------------|------:|-------------|------------------|
-| `Qwen/Qwen3-VL-Embedding-8B`             | `rag-skill`     | `vllm:Gemma-4-26B-A4B-NVFP4`      |  1409 | 0.89        | —                |
-| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `rag-skill`     | `vllm:Gemma-4-26B-A4B-NVFP4`      |  3045 | 0.92        | 0.93             |
-| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `analysis-skill`| `vllm:Gemma-4-26B-A4B-NVFP4`      |  3045 | 0.94        | 0.78             |
-| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `analysis-skill`| `vllm:Qwen3.6-35B-A3B-NVFP4`      |  3045 | 0.95        | 0.93             |
+| `Qwen/Qwen3-VL-Embedding-8B`             | `rag-capability`     | `vllm:Gemma-4-26B-A4B-NVFP4`      |  1409 | 0.89        | —                |
+| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `rag-capability`     | `vllm:Gemma-4-26B-A4B-NVFP4`      |  3045 | 0.92        | 0.93             |
+| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `analysis-capability`| `vllm:Gemma-4-26B-A4B-NVFP4`      |  3045 | 0.94        | 0.78             |
+| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `analysis-capability`| `vllm:Qwen3.6-35B-A3B-NVFP4`      |  3045 | 0.95        | 0.93             |
 
 *Measured on haiku.rag v0.52.0, no reranker, judged by `vllm:Qwen3.6-35B-A3B-NVFP4`. Qwen3-VL covered 1409 / 3045 cases.*
 
@@ -152,7 +152,7 @@ Two approaches are benchmarked separately:
 
 ##### QA accuracy + citation retrieval
 
-| Embedding Model                          | VLM                  | Skill model                  | Cases | QA accuracy | Mean `cited_map` |
+| Embedding Model                          | VLM                  | Capability model                  | Cases | QA accuracy | Mean `cited_map` |
 |------------------------------------------|----------------------|------------------------------|------:|-------------|------------------|
 | `qwen3-embedding:4b`                     | Ollama / ministral-3 | `vllm:Gemma-4-26B-A4B-NVFP4` |  3045 | 0.92        | 0.80             |
 | `nvidia/llama-nemotron-embed-vl-1b-v2`   | Ollama / ministral-3 | `vllm:Gemma-4-26B-A4B-NVFP4` |  2836 | 0.96        | 0.81             |
@@ -165,9 +165,9 @@ Two approaches are benchmarked separately:
 
 ##### QA accuracy + citation retrieval
 
-| Embedding Model      | Reranker               | Target           | Skill model                  | Cases | QA accuracy | Mean `cited_map` |
+| Embedding Model      | Reranker               | Target           | Capability model                  | Cases | QA accuracy | Mean `cited_map` |
 |----------------------|------------------------|------------------|------------------------------|------:|-------------|------------------|
-| `qwen3-embedding:4b` | `mxbai-rerank-base-v2` | `analysis-skill` | `vllm:Qwen3.6-35B-A3B-NVFP4` |  7939 | 0.77        | 0.78             |
+| `qwen3-embedding:4b` | `mxbai-rerank-base-v2` | `analysis-capability` | `vllm:Qwen3.6-35B-A3B-NVFP4` |  7939 | 0.77        | 0.78             |
 
 *Measured on haiku.rag v0.55.0, deterministic Number-Match scoring (ε=0.01), 2560-dim `qwen3-embedding:4b` (vLLM) with `mxbai-rerank-base-v2`. 341 / 8281 cases excluded as nulls (analysis spirals from the request limit and in-generation loops). Accuracy and `cited_map` are over the 7939 scored cases. Mean 16.0s/case.*
 
@@ -197,9 +197,9 @@ The reranker's contribution is larger here than on the single-doc datasets: hybr
 
 [WixQA](https://huggingface.co/datasets/Wix/WixQA) is real customer support questions paired with curated answers. 200 cases.
 
-`evaluations run wix --target rag-skill` runs the RAG skill end-to-end and produces both QA accuracy and a citation retrieval metric (`cited_map`) computed from the URIs the skill registered via the `cite` tool against the gold `expected_uris`.
+`evaluations run wix --target rag-capability` runs the RAG capability end-to-end and produces both QA accuracy and a citation retrieval metric (`cited_map`) computed from the URIs the capability registered via the `cite` tool against the gold `expected_uris`.
 
-| Skill model                  | Reranker               | QA accuracy | Mean `cited_map` |
+| Capability model                  | Reranker               | QA accuracy | Mean `cited_map` |
 |------------------------------|------------------------|-------------|------------------|
 | `vllm:Gemma-4-26B-A4B-NVFP4` | `mxbai-rerank-base-v2` | 0.87        | 0.38             |
 
