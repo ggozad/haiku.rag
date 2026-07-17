@@ -16,7 +16,7 @@ from haiku.rag.client.processing import (
 )
 from haiku.rag.client.titles import resolve_title
 from haiku.rag.converters import get_converter
-from haiku.rag.hooks import IngestEvent
+from haiku.rag.hooks import IngestEvent, notify
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import DocumentItem, extract_items
@@ -162,13 +162,11 @@ async def _store_document_with_chunks(
     if client._config.storage.auto_vacuum:
         client._schedule_vacuum()
 
-
     event = IngestEvent(
         documents=[stored_doc],
         operation="create" if existing is None else "update",
     )
-    for hook in client._hooks:
-        await hook.after_ingest(client, event)
+    await notify(client._hooks, "after_ingest", client, event)
     return stored_doc
 
 
@@ -220,10 +218,8 @@ async def _update_document_with_chunks(
     if client._config.storage.auto_vacuum:
         client._schedule_vacuum()
 
-
     event = IngestEvent(documents=[updated_doc], operation="update")
-    for hook in client._hooks:
-        await hook.after_ingest(client, event)
+    await notify(client._hooks, "after_ingest", client, event)
     return updated_doc
 
 
@@ -326,10 +322,8 @@ async def _store_documents_with_chunks(
     if client._config.storage.auto_vacuum:
         client._schedule_vacuum()
 
-
     event = IngestEvent(documents=created, operation="create")
-    for hook in client._hooks:
-        await hook.after_ingest(client, event)
+    await notify(client._hooks, "after_ingest", client, event)
     return created
 
 
