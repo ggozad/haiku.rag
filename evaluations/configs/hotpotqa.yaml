@@ -15,13 +15,17 @@ embeddings:
     vector_dim: 2560
     base_url: http://vllm:11431/v1
 
-reranking:
-  model:
-    provider: cross-encoder
-    name: mixedbread-ai/mxbai-rerank-base-v2
-
 qa:
   model:
     provider: openai
     name: gemma4-26b
     base_url: http://vllm:11432/v1
+    max_tokens: 49152
+
+evaluations:
+  judge:
+    provider: openai
+    name: RedHatAI/Qwen3.6-35B-A3B-NVFP4
+    base_url: http://vllm:11430/v1
+    temperature: 0.0
+    max_tokens: 32768

@@ -9,6 +9,7 @@ This package is not published to PyPI and is only used for development and testi
 Contains evaluation scripts for benchmarking RAG retrieval and QA performance. Available datasets:
 
 - WiX (`wix`)
+- HotpotQA (`hotpotqa`) — multi-hop QA over Wikipedia paragraphs (distractor validation split, 7,405 questions, two gold documents per question)
 - OpenRAG Bench, two variants:
   - `orb_text` — text embedder (`qwen3-embedding:4b`, 2560-dim) with VLM picture descriptions baked into chunk content at ingest. Use for text-only retrieval/QA against figure-rich corpora.
   - `orb_multimodal` — multimodal embedder (`qwen3-vl-embedding-8b`, 4096-dim) with picture vectors in the same space as text. Use for cross-modal retrieval (text-as-query → figure hits, image-as-query) and vision QA where the figure itself is the answer.
