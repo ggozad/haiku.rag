@@ -17,7 +17,7 @@ import httpx
 from haiku.rag.client.documents import DocumentImport
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.converters import get_converter
-from haiku.rag.hooks import DeleteEvent, build_hooks, load_hooks
+from haiku.rag.hooks import DeleteEvent, build_hooks, load_hooks, notify
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.chunk import Chunk, SearchResult, SearchType
@@ -428,8 +428,7 @@ class HaikuRAG:
         if self._config.storage.auto_vacuum:
             self._schedule_vacuum()
         event = DeleteEvent(documents=docs_to_delete)
-        for hook in self._hooks:
-            await hook.after_delete(self, event)
+        await notify(self._hooks, "after_delete", self, event)
         return True
 
     async def list_documents(

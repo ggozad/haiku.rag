@@ -3,7 +3,7 @@
 
 ### Added
 
-- Client lifecycle hooks (`after_ingest`, `after_delete`, `before_search`, `after_search`) registered under the `haiku.rag.hooks` entry-point group and activated via the `hooks:` config list.
+- Client lifecycle hooks (`after_ingest`, `after_delete`, `before_search`, `after_search`) registered under the `haiku.rag.hooks` entry-point group and activated via the `hooks:` config list. Post-commit observer hooks are best-effort; failures are logged and do not change the completed operation's result.
 - `SearchResult.annotations` carries notes attached by `after_search` hooks, preserved through context expansion and rendered in agent-facing output.
 
 ### Fixed
