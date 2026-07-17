@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 
 from haiku.rag.client import HaikuRAG
@@ -370,6 +372,80 @@ async def test_annotations_survive_context_expansion(temp_db_path):
             "shared note",
             "RCV: receive",
         ]
+
+
+class ThrowingHook(Hook):
+    async def after_ingest(self, client, event):
+        raise RuntimeError("ingest hook boom")
+
+    async def after_delete(self, client, event):
+        raise RuntimeError("delete hook boom")
+
+    async def before_search(self, client, request):
+        raise RuntimeError("search hook boom")
+
+
+@pytest.mark.asyncio
+async def test_after_ingest_hook_failure_is_logged_not_raised(temp_db_path, caplog):
+    spy = RecordingHook()
+    dim = Config.embeddings.model.vector_dim
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [ThrowingHook(), spy]
+
+        with caplog.at_level(logging.ERROR, logger="haiku.rag.hooks"):
+            doc = await client.import_document(
+                _docling_doc("a", "Alpha body"),
+                [Chunk(content="Alpha body", embedding=[0.1] * dim, order=0)],
+                uri="mem://a",
+                title="Alpha",
+            )
+
+        assert doc.id is not None
+        stored = await client.get_document_by_id(doc.id)
+        assert stored is not None
+
+        # Subsequent hooks still run after a failing one.
+        assert spy.events == [("ingest", "create", ((doc.id, "mem://a"),))]
+
+        record = next(r for r in caplog.records if "after_ingest" in r.message)
+        assert "tests.test_hooks.ThrowingHook" in record.message
+        assert str(doc.id) in record.message
+
+
+@pytest.mark.asyncio
+async def test_after_delete_hook_failure_is_logged_not_raised(temp_db_path, caplog):
+    spy = RecordingHook()
+    dim = Config.embeddings.model.vector_dim
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(
+            _docling_doc("a", "Alpha body"),
+            [Chunk(content="Alpha body", embedding=[0.1] * dim, order=0)],
+            uri="mem://a",
+            title="Alpha",
+        )
+        assert doc.id is not None
+        client._hooks = [ThrowingHook(), spy]
+
+        with caplog.at_level(logging.ERROR, logger="haiku.rag.hooks"):
+            assert await client.delete_document(doc.id) is True
+
+        assert await client.get_document_by_id(doc.id) is None
+        assert spy.events == [("delete", ((doc.id, "mem://a"),))]
+
+        record = next(r for r in caplog.records if "after_delete" in r.message)
+        assert "tests.test_hooks.ThrowingHook" in record.message
+        assert str(doc.id) in record.message
+
+
+@pytest.mark.asyncio
+async def test_before_search_hook_failure_propagates(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [ThrowingHook()]
+
+        with pytest.raises(RuntimeError, match="search hook boom"):
+            await client.search("alpha")
 
 
 @pytest.mark.asyncio
