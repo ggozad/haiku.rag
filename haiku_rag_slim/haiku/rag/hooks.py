@@ -1,7 +1,8 @@
+import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from importlib.metadata import entry_points
-from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Literal, Protocol, overload, runtime_checkable
 
 from haiku.rag.store.models.chunk import SearchResult, SearchType
 from haiku.rag.store.models.document import Document
@@ -12,6 +13,8 @@ if TYPE_CHECKING:
     from haiku.rag.client import HaikuRAG
 
 ENTRY_POINT_GROUP = "haiku.rag.hooks"
+
+logger = logging.getLogger(__name__)
 
 IngestOperation = Literal["create", "update"]
 
@@ -62,10 +65,19 @@ class Hook:
         document's content was rewritten (including creation against an
         already-stored URI). Replace any state derived from the documents
         regardless of the operation: even a creation may be a retry.
-        Metadata/title-only updates do not fire."""
+        Metadata/title-only updates do not fire.
+
+        Best-effort observer: the operation has already committed, so
+        exceptions are logged and never raised, and subsequent hooks still
+        run. Correctness-critical derived state needs its own
+        reconciliation. Post-commit hooks are not a supported transformation
+        point: mutating event models does not alter the committed record,
+        and explicit client writes are separate operations, not atomic with
+        the original write."""
 
     async def after_delete(self, client: "HaikuRAG", event: DeleteEvent) -> None:
-        """``event.documents`` were deleted; cascades arrive as one event."""
+        """``event.documents`` were deleted; cascades arrive as one event.
+        Best-effort observer with the same contract as ``after_ingest``."""
 
     async def before_search(
         self, client: "HaikuRAG", request: SearchRequest
@@ -84,6 +96,47 @@ class Hook:
         """Transform or annotate search results before they are returned.
         ``request`` reflects any ``before_search`` transformations."""
         return results
+
+
+@overload
+async def notify(
+    hooks: Sequence[Hook],
+    method: Literal["after_ingest"],
+    client: "HaikuRAG",
+    event: IngestEvent,
+) -> None: ...
+
+
+@overload
+async def notify(
+    hooks: Sequence[Hook],
+    method: Literal["after_delete"],
+    client: "HaikuRAG",
+    event: DeleteEvent,
+) -> None: ...
+
+
+async def notify(
+    hooks: Sequence[Hook],
+    method: Literal["after_ingest", "after_delete"],
+    client: "HaikuRAG",
+    event: IngestEvent | DeleteEvent,
+) -> None:
+    """Fire post-commit observer hooks best-effort: a hook failure is logged
+    and never raised (the operation already committed), and subsequent hooks
+    still run."""
+    for hook in hooks:
+        try:
+            await getattr(hook, method)(client, event)
+        except Exception:
+            cls = type(hook)
+            logger.exception(
+                "%s.%s.%s failed for documents %s",
+                cls.__module__,
+                cls.__qualname__,
+                method,
+                [d.id for d in event.documents],
+            )
 
 
 HookFactory = Callable[[], Hook]

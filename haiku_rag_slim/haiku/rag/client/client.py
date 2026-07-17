@@ -15,7 +15,7 @@ from haiku.rag.client.session import (
 )
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.embeddings import get_embedder
-from haiku.rag.hooks import DeleteEvent, build_hooks, load_hooks
+from haiku.rag.hooks import DeleteEvent, build_hooks, load_hooks, notify
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import Store
 from haiku.rag.store.exceptions import (
@@ -810,9 +810,7 @@ class HaikuRAG:
             document_id
         )
         if deleted:
-            event = DeleteEvent(documents=deleted)
-            for hook in self._hooks:
-                await hook.after_delete(self, event)
+            await notify(self._hooks, "after_delete", self, DeleteEvent(deleted))
         return bool(deleted)
 
     async def list_documents(
