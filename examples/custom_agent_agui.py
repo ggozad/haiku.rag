@@ -32,7 +32,7 @@ if not db_path:
     )
     sys.exit(1)
 
-capability = create_capability(db_path=Path(db_path))
+capability = create_capability(db_path=Path(db_path), defer_loading=False)
 
 agent = Agent(
     "anthropic:claude-haiku-4-5-20251001",

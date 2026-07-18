@@ -1,6 +1,6 @@
 """Custom agent using the native haiku.rag RAG capability.
 
-Demonstrates composing a deferred Pydantic AI capability into an agent.
+Demonstrates composing a native Pydantic AI capability into an agent.
 
 Requirements:
     - An Ollama instance running locally (default embedder)
@@ -21,7 +21,7 @@ from haiku.rag.capabilities.rag import create_capability
 
 
 async def main(db_path: str) -> None:
-    capability = create_capability(db_path=Path(db_path))
+    capability = create_capability(db_path=Path(db_path), defer_loading=False)
 
     agent = Agent(
         "anthropic:claude-haiku-4-5-20251001",

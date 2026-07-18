@@ -76,7 +76,7 @@ class AppDeps:
     state: dict[str, Any] = field(default_factory=dict)
 
 
-capability = create_capability(db_path=db_path, config=Config)
+capability = create_capability(db_path=db_path, config=Config, defer_loading=False)
 
 agent = Agent(
     get_model(Config.qa.model, Config),

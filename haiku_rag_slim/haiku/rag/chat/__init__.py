@@ -40,12 +40,16 @@ def run_chat(
     if "rag" in enabled:
         from haiku.rag.capabilities.rag import create_capability
 
-        capability_list.append(create_capability(db_path=db_path, config=config))
+        capability_list.append(
+            create_capability(db_path=db_path, config=config, defer_loading=False)
+        )
 
     if "analysis" in enabled:
         from haiku.rag.capabilities.analysis import create_capability
 
-        capability_list.append(create_capability(db_path=db_path, config=config))
+        capability_list.append(
+            create_capability(db_path=db_path, config=config, defer_loading=False)
+        )
 
     app = ChatApp(
         db_path,

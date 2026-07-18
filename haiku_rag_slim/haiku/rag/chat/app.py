@@ -1,6 +1,6 @@
 import asyncio
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -78,7 +78,7 @@ class ChatApp(App):
     def __init__(
         self,
         db_path: Path,
-        capabilities: list[RAGCapabilityBase[Any]],
+        capabilities: Sequence[RAGCapabilityBase[Any]],
         read_only: bool = False,
         model: str | None = None,
     ) -> None:
