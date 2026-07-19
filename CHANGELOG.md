@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- `hotpotqa` evaluation dataset.
+
 ## [0.67.0] - 2026-07-16
 
 ### Added

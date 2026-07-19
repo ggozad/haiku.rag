@@ -1,6 +1,6 @@
 # Benchmarks
 
-We evaluate `haiku.rag` on a small set of datasets that exercise different parts of the pipeline. OpenRAG Bench (ORB), T²-RAGBench, and Wix are the datasets we currently track. Retrieval, QA accuracy, and citation retrieval are scored end-to-end through the rag and rag-analysis skills.
+We evaluate `haiku.rag` on a small set of datasets that exercise different parts of the pipeline. OpenRAG Bench (ORB), T²-RAGBench, HotpotQA, and Wix are the datasets we currently track. Retrieval, QA accuracy, and citation retrieval are scored end-to-end through the rag and rag-analysis skills.
 
 ## Running Evaluations
 
@@ -37,6 +37,7 @@ Active datasets:
 | `orb_multimodal` — OpenRAG Bench, multimodal embedder (`qwen3-vl-embedding-8b`); picture vectors live in the same space as text for cross-modal retrieval | ~16 GB |
 | `orb_multimodal_nemotron` — OpenRAG Bench, multimodal embedder (`nvidia/llama-nemotron-embed-vl-1b-v2`), the embedder behind the published headline results | ~16 GB |
 | `t2_finqa` — T²-RAGBench (FinQA) financial QA, text embedder (`qwen3-embedding:4b`); scored by exact numeric match, run with `--target analysis-skill` | ~2 GB |
+| `hotpotqa` — HotpotQA multi-hop QA over Wikipedia paragraphs, text embedder (`qwen3-embedding:4b`) | ~1.5 GB |
 
 After downloading, run benchmarks with `--skip-db`. Each database is built with a specific embedder, so pass its reference config from `evaluations/configs/` (a database only opens against a config whose embedder matches):
 
@@ -166,6 +167,28 @@ Two approaches are benchmarked separately:
 | `qwen3-embedding:4b` | `mxbai-rerank-base-v2` | `analysis-skill` | `vllm:Qwen3.6-35B-A3B-NVFP4` |  7939 | 0.77        | 0.78             |
 
 *Measured on haiku.rag v0.55.0, deterministic Number-Match scoring (ε=0.01), 2560-dim `qwen3-embedding:4b` (vLLM) with `mxbai-rerank-base-v2`. 341 / 8281 cases excluded as nulls (analysis spirals from the request limit and in-generation loops). Accuracy and `cited_map` are over the 7939 scored cases. Mean 16.0s/case.*
+
+### HotpotQA
+
+[HotpotQA](https://huggingface.co/datasets/hotpotqa/hotpot_qa) is multi-hop question answering over Wikipedia: each question requires combining facts from two supporting paragraphs, with distractor paragraphs in the corpus. We use the distractor validation split: 7,405 questions over ~66k unique paragraphs, each question mapping to two gold documents.
+
+##### Retrieval (MAP)
+
+| Embedding Model      | Reranker            | Cases | MAP    |
+|----------------------|---------------------|------:|-------:|
+| `qwen3-embedding:4b` | `Qwen3-Reranker-4B` |  7405 | 0.8202 |
+| `qwen3-embedding:4b` | none                |  7405 | 0.6995 |
+
+The reranker's contribution is larger here than on the single-doc datasets: hybrid search usually surfaces the first-hop document at rank 1, while the second-hop document often needs the reranker to climb into the result window.
+
+##### QA accuracy + citation retrieval
+
+| Skill model                  | Reranker            | QA accuracy | Mean `cited_map` |
+|------------------------------|---------------------|-------------|------------------|
+| `vllm:Gemma-4-26B-A4B-NVFP4` | `Qwen3-Reranker-4B` | 0.85        | 0.80             |
+| `vllm:Gemma-4-26B-A4B-NVFP4` | none                | 0.83        | 0.75             |
+
+*Measured on haiku.rag v0.66.0 with `qwen3-embedding:4b` (vLLM, dim 2560), judged by `vllm:Qwen3.6-35B-A3B-NVFP4`, 7,405 cases. The reranker lifts QA accuracy +2.7pts and `cited_map` +4.6pts. Without a reranker, `cited_map` (0.75) still exceeds the no-reranker retrieval MAP (0.70): the skill reformulates queries across search calls, partially recovering second-hop documents that a single query misses.*
 
 ### Wix
 
