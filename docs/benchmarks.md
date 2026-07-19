@@ -174,20 +174,21 @@ Two approaches are benchmarked separately:
 
 ##### Retrieval (MAP)
 
-| Embedding Model      | Reranker               | Cases | MAP    |
-|----------------------|------------------------|------:|-------:|
-| `qwen3-embedding:4b` | `mxbai-rerank-base-v2` |  7405 | 0.8235 |
-| `qwen3-embedding:4b` | none                   |  7405 | 0.6995 |
+| Embedding Model      | Reranker            | Cases | MAP    |
+|----------------------|---------------------|------:|-------:|
+| `qwen3-embedding:4b` | `Qwen3-Reranker-4B` |  7405 | 0.8202 |
+| `qwen3-embedding:4b` | none                |  7405 | 0.6995 |
 
 The reranker's contribution is larger here than on the single-doc datasets: hybrid search usually surfaces the first-hop document at rank 1, while the second-hop document often needs the reranker to climb into the result window.
 
 ##### QA accuracy + citation retrieval
 
-| Skill model                  | Reranker | QA accuracy | Mean `cited_map` |
-|------------------------------|----------|-------------|------------------|
-| `vllm:Gemma-4-26B-A4B-NVFP4` | none     | 0.83        | 0.75             |
+| Skill model                  | Reranker            | QA accuracy | Mean `cited_map` |
+|------------------------------|---------------------|-------------|------------------|
+| `vllm:Gemma-4-26B-A4B-NVFP4` | `Qwen3-Reranker-4B` | 0.85        | 0.80             |
+| `vllm:Gemma-4-26B-A4B-NVFP4` | none                | 0.83        | 0.75             |
 
-*Measured on haiku.rag v0.66.0 with `qwen3-embedding:4b` (vLLM, dim 2560), judged by `vllm:Qwen3.6-35B-A3B-NVFP4`. 7,405 cases (8 errored). Mean `cited_map` (0.75) exceeds the no-reranker retrieval MAP (0.70): the skill reformulates queries across search calls, partially recovering second-hop documents that a single query misses.*
+*Measured on haiku.rag v0.66.0 with `qwen3-embedding:4b` (vLLM, dim 2560), judged by `vllm:Qwen3.6-35B-A3B-NVFP4`, 7,405 cases. The reranker lifts QA accuracy +2.7pts and `cited_map` +4.6pts. Without a reranker, `cited_map` (0.75) still exceeds the no-reranker retrieval MAP (0.70): the skill reformulates queries across search calls, partially recovering second-hop documents that a single query misses.*
 
 ### Wix
 
