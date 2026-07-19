@@ -17,7 +17,6 @@ from pydantic_ai.messages import (
     TextPartDelta,
 )
 from pydantic_ai.run import AgentRunResultEvent
-from pydantic_ai.usage import UsageLimits
 from textual.app import App, SystemCommand
 from textual.binding import Binding
 from textual.widgets import Footer, Header, Input
@@ -86,14 +85,6 @@ class ChatApp(App):
         super().__init__()
         self.db_path = db_path
         self._capabilities = capabilities
-        request_limits = [
-            capability.default_request_limit
-            for capability in capabilities
-            if capability.default_request_limit is not None
-        ]
-        self._usage_limits = (
-            UsageLimits(request_limit=min(request_limits)) if request_limits else None
-        )
         self.read_only = read_only
         self._model = model
         self.client: HaikuRAG | None = None
@@ -200,7 +191,6 @@ class ChatApp(App):
                 message_history=self._messages,
                 conversation_id=self._conversation_id,
                 deps=deps,
-                usage_limits=self._usage_limits,
             ) as stream:
                 async for event in stream:
                     if isinstance(event, PartStartEvent) and isinstance(

@@ -5,7 +5,6 @@ from typing import Any, Protocol, cast
 
 from pydantic_ai import Agent
 from pydantic_ai.models import Model
-from pydantic_ai.usage import UsageLimits
 
 from haiku.rag.capabilities import RAGCapabilityBase
 from haiku.rag.config.models import AppConfig
@@ -61,6 +60,8 @@ async def run_capability_question(
         config=config,
         defer_loading=False,
     )
+    if request_limit is not None:
+        capability.request_limit = request_limit
     state = capability.state_type()
     typed = cast(_RagLikeState, state)
     if document_filter is not None:
@@ -72,18 +73,7 @@ async def run_capability_question(
         deps_type=_EvalDeps,
         capabilities=[capability],
     )
-    effective_request_limit = (
-        request_limit if request_limit is not None else capability.default_request_limit
-    )
-    agent_result = await agent.run(
-        question,
-        deps=deps,
-        usage_limits=(
-            UsageLimits(request_limit=effective_request_limit)
-            if effective_request_limit is not None
-            else None
-        ),
-    )
+    agent_result = await agent.run(question, deps=deps)
     state = capability.state_type.model_validate(deps.state[capability.state_namespace])
     typed = cast(_RagLikeState, state)
 

@@ -24,7 +24,9 @@ result = await agent.run("What safety equipment does the manual require?")
 print(result.output)
 ```
 
-`create_capability` accepts `db_path`, `config`, and `defer_loading`. Set `defer_loading=False` for a dedicated RAG agent where routing is unnecessary.
+`create_capability` accepts `db_path`, `config`, `defer_loading`, and `request_limit`. Set `defer_loading=False` for a dedicated RAG agent where routing is unnecessary. The default request limit is 20 model requests per question; set `request_limit=None` to disable it.
+
+When the limit is reached, only the RAG capability's tools are removed. The model gets one more turn to answer from evidence already gathered, while unrelated agent and capability tools remain available. A new agent run starts a fresh limit, so multi-turn chat does not consume one shared budget.
 
 ## State
 

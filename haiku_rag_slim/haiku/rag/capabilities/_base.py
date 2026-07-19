@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import (
+    InstructionPart,
     ModelMessage,
     ModelRequest,
     ToolReturn,
@@ -16,6 +17,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.run import AgentRunResult
+from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import AgentToolset
 
 from haiku.rag.capabilities._tools import CodeExecutionEntry, search_corpus
@@ -87,13 +89,14 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
     instruction_text: str
     model: ModelConfig
     tool_names: frozenset[str]
-    default_request_limit: int | None = None
+    request_limit: int | None = None
     state: StateT | None = field(default=None, repr=False)
     outer_state: dict[str, Any] | None = field(default=None, repr=False)
     rag: HaikuRAG | None = field(default=None, repr=False)
     rag_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     resource_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     search_count: int = field(default=0, repr=False)
+    request_count: int = field(default=0, repr=False)
 
     async def for_run(self, ctx: RunContext[Any]) -> "RAGCapabilityBase[StateT]":
         outer = getattr(ctx.deps, "state", None)
@@ -109,6 +112,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
             rag_lock=asyncio.Lock(),
             resource_lock=asyncio.Lock(),
             search_count=0,
+            request_count=0,
         )
         run_capability._sync_state()
         return run_capability
@@ -124,7 +128,44 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         request_context.messages = _compact_old_tool_returns(
             request_context.messages, self.tool_names
         )
+        if self._request_limit_reached:
+            current_request = request_context.messages[-1]
+            if isinstance(current_request, ModelRequest):
+                instruction = (
+                    f"The {self.state_namespace} capability has reached its request "
+                    "limit. Its tools are no longer available. Give the best answer "
+                    "possible using the evidence already gathered."
+                )
+                current_request.instructions = "\n\n".join(
+                    part for part in (current_request.instructions, instruction) if part
+                )
+                parameters = request_context.model_request_parameters
+                request_context.model_request_parameters = replace(
+                    parameters,
+                    instruction_parts=[
+                        *(parameters.instruction_parts or []),
+                        InstructionPart(content=instruction, dynamic=True),
+                    ],
+                )
+        else:
+            self.request_count += 1
         return request_context
+
+    async def prepare_tools(
+        self,
+        ctx: RunContext[Any],
+        tool_defs: list[ToolDefinition],
+    ) -> list[ToolDefinition]:
+        """Remove only this capability's tools after its per-question limit."""
+        if not self._request_limit_reached:
+            return tool_defs
+        return [tool for tool in tool_defs if tool.capability_id != self.id]
+
+    @property
+    def _request_limit_reached(self) -> bool:
+        return (
+            self.request_limit is not None and self.request_count >= self.request_limit
+        )
 
     async def after_run(
         self, ctx: RunContext[Any], *, result: AgentRunResult[Any]

@@ -49,6 +49,7 @@ def test_rag_capability_api(temp_db_path):
     assert toolset.sequential is True
     assert capability.state_type is RAGState
     assert capability.state_namespace == "rag"
+    assert capability.request_limit == 20
 
 
 def test_analysis_capability_api(temp_db_path):
@@ -66,6 +67,7 @@ def test_analysis_capability_api(temp_db_path):
     assert toolset.max_retries == 3
     assert toolset.sequential is True
     assert capability.state_type is AnalysisState
+    assert capability.request_limit == 30
 
 
 def test_domain_preamble_is_added_to_capability_instructions(temp_db_path):
@@ -115,6 +117,113 @@ async def test_capability_instructions_are_injected_once(
 
     assert seen_instructions[0].count(domain) == 1
     assert seen_instructions[0].count(heading) == 1
+
+
+@pytest.mark.asyncio
+async def test_request_limit_removes_only_exhausted_capability_tools_per_run(
+    temp_db_path,
+):
+    calls = 0
+    seen_tools = []
+    seen_instructions = []
+
+    def model_function(_messages, info):
+        nonlocal calls
+        calls += 1
+        seen_tools.append({tool.name for tool in info.function_tools})
+        seen_instructions.append(info.instructions or "")
+        if calls % 2 == 1:
+            return ModelResponse(parts=[ToolCallPart("host_tool", {})])
+        return ModelResponse(parts=[TextPart("best available answer")])
+
+    def host_tool(_ctx: RunContext[Deps]) -> str:
+        """Return host-owned context."""
+        return "host context"
+
+    rag = create_rag(
+        db_path=temp_db_path,
+        config=AppConfig(),
+        defer_loading=False,
+    )
+    analysis = create_analysis(
+        db_path=temp_db_path,
+        config=AppConfig(),
+        defer_loading=False,
+        request_limit=1,
+    )
+    agent = Agent(
+        FunctionModel(model_function),
+        deps_type=Deps,
+        tools=[host_tool],
+        capabilities=[rag, analysis],
+    )
+
+    first = await agent.run("Analyze this", deps=Deps())
+    second = await agent.run("Analyze another question", deps=Deps())
+
+    assert first.output == "best available answer"
+    assert second.output == "best available answer"
+    analysis_tools = {
+        "analysis_search",
+        "analysis_execute_code",
+        "analysis_cite",
+    }
+    for initial, exhausted in ((0, 1), (2, 3)):
+        assert analysis_tools <= seen_tools[initial]
+        assert analysis_tools.isdisjoint(seen_tools[exhausted])
+        assert {"host_tool", "rag_search", "rag_cite"} <= seen_tools[exhausted]
+        assert (
+            "analysis capability has reached its request limit"
+            in (seen_instructions[exhausted])
+        )
+
+
+@pytest.mark.asyncio
+async def test_deferred_request_limit_starts_after_capability_load(temp_db_path):
+    seen_tools = []
+    seen_instructions = []
+
+    def model_function(_messages, info):
+        seen_tools.append({tool.name for tool in info.function_tools})
+        seen_instructions.append(info.instructions or "")
+        if len(seen_tools) == 1:
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        "load_capability",
+                        {"id": "haiku-rag-analysis"},
+                    )
+                ]
+            )
+        if len(seen_tools) == 2:
+            return ModelResponse(parts=[ToolCallPart("host_tool", {})])
+        return ModelResponse(parts=[TextPart("best available answer")])
+
+    def host_tool(_ctx: RunContext[Deps]) -> str:
+        """Return host-owned context."""
+        return "host context"
+
+    agent = Agent(
+        FunctionModel(model_function),
+        deps_type=Deps,
+        tools=[host_tool],
+        capabilities=[
+            create_analysis(
+                db_path=temp_db_path,
+                config=AppConfig(),
+                request_limit=1,
+            )
+        ],
+    )
+
+    result = await agent.run("Analyze this", deps=Deps())
+
+    assert result.output == "best available answer"
+    assert "load_capability" in seen_tools[0]
+    assert "analysis_search" in seen_tools[1]
+    assert "analysis_search" not in seen_tools[2]
+    assert "host_tool" in seen_tools[2]
+    assert "analysis capability has reached its request limit" in seen_instructions[2]
 
 
 @pytest.mark.asyncio

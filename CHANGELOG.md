@@ -30,6 +30,7 @@
 - `hotpotqa` evaluation dataset.
 - Native deferred Pydantic AI `RAGCapability` and `AnalysisCapability` implementations under `haiku.rag.capabilities`, with namespaced host state and lazy per-run database and sandbox resources.
 - Prior-turn RAG and analysis tool results are compacted before model requests while current-turn evidence remains intact.
+- Per-question capability request limits force a final answer from gathered evidence by removing only the exhausted capability's tools; unrelated agent and capability tools remain available.
 
 ### Changed
 

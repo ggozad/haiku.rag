@@ -41,13 +41,18 @@ async def test_runs_analysis_capability_without_legacy_capability_layer(tmp_path
 
 @pytest.mark.parametrize(("override", "expected"), [(None, 30), (5, 5)])
 async def test_analysis_capability_applies_request_limit(tmp_path, override, expected):
+    capability = create_analysis(
+        db_path=tmp_path / "rag.lancedb",
+        config=AppConfig(),
+        defer_loading=False,
+    )
     with patch(
         "evaluations.capability_runner.Agent.run", new_callable=AsyncMock
     ) as run:
         run.return_value = SimpleNamespace(output="done")
 
         await run_capability_question(
-            create_analysis,
+            lambda **_kwargs: capability,
             tmp_path / "rag.lancedb",
             AppConfig(),
             "hello",
@@ -55,4 +60,5 @@ async def test_analysis_capability_applies_request_limit(tmp_path, override, exp
             request_limit=override,
         )
 
-    assert run.call_args.kwargs["usage_limits"].request_limit == expected
+    assert capability.request_limit == expected
+    assert "usage_limits" not in run.call_args.kwargs

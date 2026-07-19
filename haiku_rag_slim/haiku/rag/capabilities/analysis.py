@@ -128,6 +128,7 @@ def create_capability(
     config: AppConfig | None = None,
     *,
     defer_loading: bool = True,
+    request_limit: int | None = 30,
 ) -> AnalysisCapability:
     """Create a native Pydantic AI analysis capability."""
     if config is None:
@@ -142,10 +143,12 @@ def create_capability(
         instruction_text=instructions(),
         model=config.analysis.model or config.qa.model,
         tool_names=_TOOL_NAMES,
-        default_request_limit=30,
+        request_limit=request_limit,
         id=_CAPABILITY_ID,
         description=(
-            "Analyze the haiku.rag corpus with search and sandboxed Python code."
+            "Analyze the haiku.rag corpus with search and sandboxed Python code. "
+            "Use for counting, aggregation, statistics, data traversal, comparison "
+            "across documents, and other tasks best solved by writing Python code."
         ),
         defer_loading=defer_loading,
     )

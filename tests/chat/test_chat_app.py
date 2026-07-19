@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from haiku.rag.capabilities.analysis import create_capability as create_analysis
 from haiku.rag.capabilities.rag import RAGState, create_capability
 from haiku.rag.cli import _cli as cli
 
@@ -81,23 +80,6 @@ def _make_app_with_state(db_path: Path, mock_client: AsyncMock | None = None):
         capabilities=[create_capability(db_path=db_path)],
         read_only=True,
     ), mock_client
-
-
-def test_chat_uses_capability_request_limit(temp_db_path: Path):
-    """Test chat applies the strictest request guard from its capabilities."""
-    from haiku.rag.chat.app import ChatApp
-
-    app = ChatApp(
-        db_path=temp_db_path,
-        capabilities=[
-            create_capability(db_path=temp_db_path),
-            create_analysis(db_path=temp_db_path),
-        ],
-        read_only=True,
-    )
-
-    assert app._usage_limits is not None
-    assert app._usage_limits.request_limit == 30
 
 
 @pytest.mark.asyncio

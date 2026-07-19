@@ -4,6 +4,8 @@
 
 It is deferred by default, keeping its substantial instructions and tool schemas out of context until the model chooses to load it.
 
+The default request limit is 30 model requests per question. Override it with `create_capability(request_limit=...)`, or set `request_limit=None` to disable it. At the limit, only analysis tools are removed and the model gets one more turn to answer from gathered evidence. Other agent and capability tools remain available, and the budget resets for every agent run.
+
 ## Tools
 
 | Tool | Purpose |

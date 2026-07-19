@@ -70,6 +70,7 @@ def create_capability(
     config: AppConfig | None = None,
     *,
     defer_loading: bool = True,
+    request_limit: int | None = 20,
 ) -> RAGCapability:
     """Create a native Pydantic AI RAG capability."""
     if config is None:
@@ -84,6 +85,7 @@ def create_capability(
         instruction_text=instructions(),
         model=config.qa.model,
         tool_names=_TOOL_NAMES,
+        request_limit=request_limit,
         id=_CAPABILITY_ID,
         description=(
             "Search the haiku.rag knowledge base and cite evidence for grounded answers."

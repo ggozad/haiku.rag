@@ -2,7 +2,6 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from pydantic_ai import Agent
-from pydantic_ai.usage import UsageLimits
 
 if TYPE_CHECKING:
     from haiku.rag.client import HaikuRAG
@@ -103,11 +102,7 @@ async def analyze(
         deps_type=_AgentDeps,
         capabilities=[capability],
     )
-    result = await agent.run(
-        question,
-        deps=deps,
-        usage_limits=UsageLimits(request_limit=capability.default_request_limit),
-    )
+    result = await agent.run(question, deps=deps)
     state = AnalysisState.model_validate(deps.state["analysis"])
     citations = [
         state.citation_index[cid]
