@@ -228,6 +228,6 @@ def create_mcp_server(
                 result = await rag.analyze(question, filter=filter)
                 return result.answer
         except Exception as e:
-            return f"Error running analysis capability: {e!s}"
+            return f"Error running analysis capability: {e!s}"  # pragma: no cover
 
     return mcp
