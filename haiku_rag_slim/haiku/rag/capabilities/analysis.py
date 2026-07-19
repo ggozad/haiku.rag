@@ -116,7 +116,9 @@ class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
             return await self._with_state(self._cite(chunk_ids))
 
         return FunctionToolset(
-            [analysis_search, analysis_execute_code, analysis_cite], id=_CAPABILITY_ID
+            [analysis_search, analysis_execute_code, analysis_cite],
+            id=_CAPABILITY_ID,
+            max_retries=3,
         )
 
 
