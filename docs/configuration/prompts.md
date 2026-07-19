@@ -6,7 +6,7 @@ Customize the prompts used by haiku.rag's capabilities to match your domain.
 
 ```yaml
 prompts:
-  # Domain context prepended to skill instructions
+  # Domain context prepended to capability instructions
   domain_preamble: |
     This knowledge base contains technical documentation for the Helios solar panel
     system, including installation manuals, maintenance procedures, and safety guidelines.
@@ -18,7 +18,7 @@ prompts:
 
 ## Domain Preamble
 
-The `domain_preamble` field provides **domain context** prepended to the rag and rag-analysis skill instructions. Use this to:
+The `domain_preamble` field provides **domain context** prepended to the RAG and analysis capability instructions. Use this to:
 
 - Describe what the knowledge base contains
 - Clarify domain-specific terminology

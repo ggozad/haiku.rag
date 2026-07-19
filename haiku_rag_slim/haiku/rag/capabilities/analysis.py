@@ -119,6 +119,7 @@ class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
             [analysis_search, analysis_execute_code, analysis_cite],
             id=_CAPABILITY_ID,
             max_retries=3,
+            sequential=True,
         )
 
 

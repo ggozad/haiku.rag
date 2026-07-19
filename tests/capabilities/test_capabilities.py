@@ -44,7 +44,9 @@ def test_rag_capability_api(temp_db_path):
     assert capability.id == "haiku-rag"
     assert capability.defer_loading is True
     assert set(capability.get_toolset().tools) == {"rag_search", "rag_cite"}
-    assert capability.get_toolset().max_retries == 3
+    toolset = capability.get_toolset()
+    assert toolset.max_retries == 3
+    assert toolset.sequential is True
     assert capability.state_type is RAGState
     assert capability.state_namespace == "rag"
 
@@ -60,7 +62,9 @@ def test_analysis_capability_api(temp_db_path):
         "analysis_execute_code",
         "analysis_cite",
     }
-    assert capability.get_toolset().max_retries == 3
+    toolset = capability.get_toolset()
+    assert toolset.max_retries == 3
+    assert toolset.sequential is True
     assert capability.state_type is AnalysisState
 
 

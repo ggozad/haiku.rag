@@ -57,7 +57,12 @@ class RAGCapability(RAGCapabilityBase[RAGState]):
             """Register exact search-result chunk IDs as citations for the answer."""
             return await self._with_state(self._cite(chunk_ids))
 
-        return FunctionToolset([rag_search, rag_cite], id=_CAPABILITY_ID, max_retries=3)
+        return FunctionToolset(
+            [rag_search, rag_cite],
+            id=_CAPABILITY_ID,
+            max_retries=3,
+            sequential=True,
+        )
 
 
 def create_capability(

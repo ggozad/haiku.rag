@@ -20,7 +20,7 @@ Context expansion is automatic and section-aware. For structured documents (with
 
 ## Question Answering Configuration
 
-Configure the rag skill (used by `client.ask`, `haiku-rag ask`, and the MCP `ask_question` tool):
+Configure the RAG capability (used by `client.ask`, `haiku-rag ask`, and the MCP `ask_question` tool):
 
 ```yaml
 qa:
@@ -34,15 +34,15 @@ qa:
 ```
 
 - **model**: LLM configuration (see [Providers](providers.md#model-settings))
-- **model.vision**: Set to `true` for vision-capable models (`qwen2.5vl`, `qwen3.6`, `gpt-4o`, `claude-sonnet`, …). The skill's `search` tool only attaches picture bytes (`BinaryContent`) to its `ToolReturn` when this is `true`, otherwise picture bytes are withheld. See [Pictures × embedder × QA model](processing.md#pictures-embedder-qa-model-how-the-pieces-compose) for the full matrix.
-- **max_searches**: Maximum number of search tool calls the rag skill can make per question (default: 3)
+- **model.vision**: Set to `true` for vision-capable models (`qwen2.5vl`, `qwen3.6`, `gpt-4o`, `claude-sonnet`, …). The capability's `search` tool only attaches picture bytes (`BinaryContent`) to its `ToolReturn` when this is `true`, otherwise picture bytes are withheld. See [Pictures × embedder × QA model](processing.md#pictures-embedder-qa-model-how-the-pieces-compose) for the full matrix.
+- **max_searches**: Maximum number of search tool calls the RAG capability can make per question (default: 3)
 
 !!! note "Thinking on vLLM"
     `enable_thinking` only applies to models with a pydantic-ai reasoning profile (o-series, gpt-5, gpt-oss). For other vLLM-served models such as Qwen3 or the Gemma family, the field is a silent no-op — set the chat template switch via [`extra_body`](providers.md#raw-provider-pass-through) instead.
 
 ## Analysis Configuration
 
-Configure the analysis skill:
+Configure the analysis capability:
 
 ```yaml
 analysis:
@@ -58,6 +58,6 @@ analysis:
 - **model**: LLM configuration (see [Providers](providers.md#model-settings)). When unset, falls back to `qa.model`.
 - **code_timeout**: Maximum seconds for each code execution (default: 60)
 - **max_output_chars**: Truncate code output after this many characters (default: 50000)
-- **max_executions**: Maximum `execute_code` calls per question before the skill is told to answer from what it has (default: 15)
+- **max_executions**: Maximum `execute_code` calls per question before the capability is told to answer from what it has (default: 15)
 
 See [Analysis capability](../capabilities/analysis.md) for usage details.

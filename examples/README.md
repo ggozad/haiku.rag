@@ -16,7 +16,7 @@ See `docker/README.md` for setup instructions.
 
 **Script:** `custom_agent.py`
 
-Uses the deferred RAG capability to build a conversational agent.
+Uses the eagerly loaded RAG capability to build a conversational agent.
 
 ```bash
 uv run python examples/custom_agent.py /path/to/db.lancedb

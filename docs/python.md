@@ -360,7 +360,7 @@ See [Analysis capability](capabilities/analysis.md) for details and configuratio
 
 `client.ask` and `client.analyze` are convenience wrappers. To build your own Pydantic AI agent, attach the native RAG and analysis capabilities directly. See [Capabilities](capabilities/index.md).
 
-For the low-level toolset factories under `haiku.rag.tools` (one rung below the skill abstraction), see [Toolsets](tools.md).
+For the low-level toolset factories under `haiku.rag.tools` (one rung below the capability abstraction), see [Toolsets](tools.md).
 
 ## Importing Pre-Processed Documents
 

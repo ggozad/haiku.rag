@@ -36,19 +36,24 @@ def run_chat(
 
     enabled = capabilities or ["rag"]
     capability_list = []
+    defer_loading = len(enabled) > 1
 
     if "rag" in enabled:
         from haiku.rag.capabilities.rag import create_capability
 
         capability_list.append(
-            create_capability(db_path=db_path, config=config, defer_loading=False)
+            create_capability(
+                db_path=db_path, config=config, defer_loading=defer_loading
+            )
         )
 
     if "analysis" in enabled:
         from haiku.rag.capabilities.analysis import create_capability
 
         capability_list.append(
-            create_capability(db_path=db_path, config=config, defer_loading=False)
+            create_capability(
+                db_path=db_path, config=config, defer_loading=defer_loading
+            )
         )
 
     app = ChatApp(

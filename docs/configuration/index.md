@@ -121,7 +121,7 @@ doctor:
     min_chunks: 3                # documents with fewer chunks are excluded
 
 prompts:
-  domain_preamble: ""  # Prepended to skill instructions
+  domain_preamble: ""  # Prepended to capability instructions
 
 processing:
   converter: docling-local  # docling-local or docling-serve

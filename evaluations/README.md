@@ -59,7 +59,7 @@ alongside QA accuracy from the URIs the capability registered via the `cite` too
 ### Debugging runs in Logfire
 
 With `LOGFIRE_TOKEN` set, runs ship spans under `service_name = 'evals'`. The
-`debug-evals` capability in `.claude/capabilities/` turns these into ready-made Logfire
+`debug-evals` skill in `.claude/skills/` turns these into ready-made Logfire
 queries (recent runs, per-case pass rate and `cited_map`, failing and slowest
 cases) for use from Claude Code.
 

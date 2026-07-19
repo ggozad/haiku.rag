@@ -195,7 +195,7 @@ Launch an interactive chat session for multi-turn conversations:
 haiku-rag chat
 haiku-rag chat --db /path/to/database.lancedb
 
-# Enable analysis skill (code execution)
+# Enable the analysis capability (code execution)
 haiku-rag chat -s rag -s analysis
 ```
 

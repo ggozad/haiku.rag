@@ -17,7 +17,7 @@ haiku-rag chat --model openai:gpt-4o
 
 ## How it works
 
-The chat is a Pydantic AI agent with the deferred [RAG capability](capabilities/rag.md) attached by default. Each turn the agent decides which tool to call next, runs hybrid search against your documents, expands context around the hits, may issue further searches, and answers with citations. You see streaming text and native tool events directly from Pydantic AI.
+The chat is a Pydantic AI agent with the [RAG capability](capabilities/rag.md) attached by default. A single capability loads eagerly; when both RAG and analysis are enabled, they remain deferred until the model chooses which one to load. Each turn the agent decides which tool to call next, runs hybrid search against your documents, expands context around the hits, may issue further searches, and answers with citations. You see streaming text and native tool events directly from Pydantic AI.
 
 The session is in-memory for the lifetime of the TUI. Conversation history is kept across turns so follow-up questions reuse prior context. Citations are tracked per turn and inspectable via the command palette. Clearing the chat resets the session and the agent's memory.
 

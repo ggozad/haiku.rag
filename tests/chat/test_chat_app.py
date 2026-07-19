@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from typer.testing import CliRunner
 
+from haiku.rag.capabilities.analysis import create_capability as create_analysis
 from haiku.rag.capabilities.rag import RAGState, create_capability
 from haiku.rag.cli import _cli as cli
 
@@ -22,12 +23,28 @@ def test_chat_command():
 
 
 def test_run_chat_creates_app_and_runs(temp_db_path: Path):
-    """Test run_chat() creates a ChatApp and calls run()."""
-    with patch("haiku.rag.chat.app.ChatApp.run") as mock_run:
+    """Test run_chat() eagerly attaches one capability and runs the app."""
+    with patch("haiku.rag.chat.app.ChatApp") as mock_app:
         from haiku.rag.chat import run_chat
 
         run_chat(db_path=temp_db_path)
-        mock_run.assert_called_once()
+
+    mock_app.return_value.run.assert_called_once()
+    attached = mock_app.call_args.kwargs["capabilities"]
+    assert len(attached) == 1
+    assert attached[0].defer_loading is False
+
+
+def test_run_chat_defers_multiple_capabilities(temp_db_path: Path):
+    """Test chat only defers capabilities when routing between multiple choices."""
+    with patch("haiku.rag.chat.app.ChatApp") as mock_app:
+        from haiku.rag.chat import run_chat
+
+        run_chat(db_path=temp_db_path, capabilities=["rag", "analysis"])
+
+    attached = mock_app.call_args.kwargs["capabilities"]
+    assert len(attached) == 2
+    assert all(capability.defer_loading for capability in attached)
 
 
 def _make_mock_client():
@@ -64,6 +81,23 @@ def _make_app_with_state(db_path: Path, mock_client: AsyncMock | None = None):
         capabilities=[create_capability(db_path=db_path)],
         read_only=True,
     ), mock_client
+
+
+def test_chat_uses_capability_request_limit(temp_db_path: Path):
+    """Test chat applies the strictest request guard from its capabilities."""
+    from haiku.rag.chat.app import ChatApp
+
+    app = ChatApp(
+        db_path=temp_db_path,
+        capabilities=[
+            create_capability(db_path=temp_db_path),
+            create_analysis(db_path=temp_db_path),
+        ],
+        read_only=True,
+    )
+
+    assert app._usage_limits is not None
+    assert app._usage_limits.request_limit == 30
 
 
 @pytest.mark.asyncio
