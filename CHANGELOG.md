@@ -5,6 +5,10 @@
 
 - `hotpotqa` evaluation dataset.
 
+### Changed
+
+- `cite` skill tool names unresolvable chunk ids in its response when at least one id resolves.
+
 ### Fixed
 
 - Document deletion no longer raises `ConfigMismatchError` on embedding config drift.

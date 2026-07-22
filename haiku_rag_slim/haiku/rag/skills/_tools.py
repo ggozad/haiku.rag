@@ -382,6 +382,15 @@ def create_skill_tools(
 
             if citations:
                 _register_citations(state, citations)
+                resolved_ids = {c.chunk_id for c in citations}
+                unresolved = [cid for cid in missing if cid not in resolved_ids]
+                if unresolved:
+                    return (
+                        f"Registered {len(citations)} citation(s); "
+                        f"ignored {len(unresolved)} unresolvable id(s): "
+                        f"{unresolved}. Copy chunk_ids verbatim from `search` "
+                        "results or items.jsonl / toc.json rows and cite again."
+                    )
                 return f"Registered {len(citations)} citation(s)."
 
             raise ModelRetry(
