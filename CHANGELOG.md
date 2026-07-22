@@ -5,6 +5,10 @@
 
 - `hotpotqa` evaluation dataset.
 
+### Fixed
+
+- Document deletion no longer raises `ConfigMismatchError` on embedding config drift.
+
 ## [0.67.0] - 2026-07-16
 
 ### Added

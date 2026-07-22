@@ -1,5 +1,7 @@
+from haiku.rag.app import HaikuRAGApp
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.documents import parent_uri_filter
+from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models.document import Document
 
 
@@ -123,6 +125,25 @@ async def test_delete_handles_self_referential_parent(temp_db_path):
 
         deleted = await client.delete_document(doc.id)
         assert deleted is True
+        assert await client.get_document_by_id(doc.id) is None
+
+
+async def test_delete_succeeds_with_embedding_dim_mismatch(temp_db_path):
+    """Deletion touches no embeddings, so a vector_dim mismatch must not block it."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.document_repository.create(
+            Document(content="body", uri="file:///doc.pdf", metadata={})
+        )
+
+    mismatched = AppConfig()
+    mismatched.embeddings.model.vector_dim = 9999
+
+    app = HaikuRAGApp(db_path=temp_db_path, config=mismatched)
+    await app.delete_document(doc.id)
+
+    async with HaikuRAG(
+        temp_db_path, config=mismatched, skip_validation=True
+    ) as client:
         assert await client.get_document_by_id(doc.id) is None
 
 

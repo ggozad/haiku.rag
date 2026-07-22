@@ -82,7 +82,9 @@ def create_mcp_server(
         async def delete_document(document_id: str) -> bool:
             """Delete a document by its ID."""
             try:
-                async with HaikuRAG(db_path, config=config) as rag:
+                async with HaikuRAG(
+                    db_path, config=config, skip_validation=True
+                ) as rag:
                     return await rag.delete_document(document_id)
             except Exception:
                 return False
