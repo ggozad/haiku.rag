@@ -327,6 +327,32 @@ async def test_cite_resolves_direct_chunk_ids_and_reuses_document_lookup(temp_db
 
 
 @pytest.mark.asyncio
+async def test_cite_reports_unresolved_ids_on_partial_success(temp_db_path):
+    capability = create_rag(db_path=temp_db_path, config=AppConfig())
+    capability.state = RAGState()
+    client = AsyncMock()
+    client.get_chunk_by_id.side_effect = [
+        Chunk(id="chunk-1", document_id="doc-1", content="first"),
+        None,
+        None,
+    ]
+    client.get_document_by_id.return_value = SimpleNamespace(
+        uri="test://document",
+        title="Document",
+        metadata={},
+    )
+    capability.rag = client
+
+    result = await capability._cite(["chunk-1", "6.43", "6.51.2"])
+
+    assert "Registered 1 citation(s)" in result
+    assert "6.43" in result
+    assert "6.51.2" in result
+    assert "verbatim" in result
+    assert capability.state.citations == ["chunk-1"]
+
+
+@pytest.mark.asyncio
 async def test_analysis_records_new_sandbox_search_results(temp_db_path):
     capability = create_analysis(db_path=temp_db_path, config=AppConfig())
     existing = SearchResult(content="existing", score=1, chunk_id="chunk-1")

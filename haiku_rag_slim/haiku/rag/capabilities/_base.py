@@ -264,6 +264,15 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
                 "Copy chunk_ids verbatim from search results."
             )
         self._register_citations(citations)
+        resolved = {citation.chunk_id for citation in citations}
+        unresolved = [cid for cid in missing if cid not in resolved]
+        if unresolved:
+            return (
+                f"Registered {len(citations)} citation(s); "
+                f"ignored {len(unresolved)} unresolvable id(s): "
+                f"{unresolved}. Copy chunk_ids verbatim from search "
+                "results and cite again."
+            )
         return f"Registered {len(citations)} citation(s)."
 
     def _register_citations(self, citations: list[Citation]) -> None:
