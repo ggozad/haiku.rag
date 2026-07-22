@@ -492,6 +492,7 @@ class HaikuRAGApp:  # pragma: no cover
             db_path=self.db_path,
             config=self.config,
             read_only=self.read_only,
+            skip_validation=True,
         ) as self.client:
             deleted = await self.client.delete_document(doc_id)
             if deleted:
