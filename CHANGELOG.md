@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.67.1] - 2026-07-22
+
 ### Added
 
 - `hotpotqa` evaluation dataset.
@@ -1967,7 +1969,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.67.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.67.1...HEAD
+[0.67.1]: https://github.com/ggozad/haiku.rag/compare/0.67.0...0.67.1
 [0.67.0]: https://github.com/ggozad/haiku.rag/compare/0.67.0...0.67.0
 [0.67.0]: https://github.com/ggozad/haiku.rag/compare/0.67.0...0.67.0
 [0.67.0]: https://github.com/ggozad/haiku.rag/compare/0.66.0...0.67.0
