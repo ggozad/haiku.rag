@@ -355,6 +355,35 @@ class TestCiteTool:
         assert "verbatim" in message
         assert "nonexistent-chunk-id" in message
 
+    async def test_cite_reports_unresolved_ids_on_partial_success(
+        self, rag_db, rag_client
+    ):
+        """A cite call mixing valid and bogus ids registers the valid ones
+        and names the rejected ids so the model can re-cite the rest."""
+        from haiku.rag.skills.rag import RAGState, create_skill
+
+        skill = create_skill(db_path=rag_db)
+        search = _get_tool(skill, "search")
+        cite = _get_tool(skill, "cite")
+        state = RAGState()
+        ctx = _make_ctx(state, rag=rag_client)
+
+        await search(ctx, query="artificial intelligence")
+        valid_id = next(
+            sr.chunk_id
+            for results in state.searches.values()
+            for sr in results
+            if sr.chunk_id
+        )
+
+        result = await cite(ctx, chunk_ids=[valid_id, "6.43", "6.51.2"])
+        assert "Registered 1 citation(s)" in result
+        assert "6.43" in result
+        assert "6.51.2" in result
+        assert "verbatim" in result
+        assert len(state.citations) == 1
+        assert valid_id in state.citations
+
     async def test_cite_returns_message_when_chunk_ids_empty(self, rag_db):
         """An empty chunk_ids list is a no-op, not a retry trigger."""
         from haiku.rag.skills.rag import RAGState, create_skill
