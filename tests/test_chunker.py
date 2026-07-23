@@ -33,6 +33,7 @@ async def test_local_chunker(qa_corpus: list[dict[str, str]]):
 
     # Load tokenizer for verification
     tokenizer = AutoTokenizer.from_pretrained(chunker.tokenizer_name)
+    assert tokenizer is not None
 
     # Ensure that chunks are reasonably sized (allowing more flexibility for structure-aware chunking)
     total_tokens = 0
@@ -74,7 +75,7 @@ async def test_local_chunker_runs_off_event_loop_thread():
 
     original = chunker._chunk_sync
 
-    def recording_chunk_sync(self, document):
+    def recording_chunk_sync(_self, document):
         called_from.append(threading.current_thread())
         return original(document)
 
