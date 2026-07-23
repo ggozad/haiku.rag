@@ -187,6 +187,8 @@ for result in results:
     print(f"Document ID: {result.document_id}")
 ```
 
+Each result carries the parent document's metadata in `result.document_meta`. It is not shown to the model during QA.
+
 Search with different search types:
 ```python
 # Vector search only
@@ -326,7 +328,7 @@ answer, citations = await client.ask(
 )
 ```
 
-`client.ask` runs the [rag skill](skills/index.md) and returns `(answer_text, list[Citation])`. Citations include page numbers, section headings, and document references.
+`client.ask` runs the [rag skill](skills/index.md) and returns `(answer_text, list[Citation])`. Citations include page numbers, section headings, document references, and the document's metadata (`document_meta`), so UIs can render metadata keys such as a public source URL alongside the citation.
 
 The QA provider and model are configured in `haiku.rag.yaml` or can be passed directly to the client (see [Configuration](configuration/index.md)).
 

@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- `SearchResult.document_meta` and `Citation.document_meta` carry the parent document's metadata.
+
 ## [0.67.1] - 2026-07-22
 
 ### Added

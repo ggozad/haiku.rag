@@ -767,6 +767,38 @@ class TestExpandWithItems:
             # to the model.
             assert "c2" not in expanded[0].format_for_agent()
 
+    async def test_expanded_result_carries_document_meta(self, temp_db_path):
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=i,
+                    self_ref=f"#/texts/{i}",
+                    label="text",
+                    text=f"Paragraph {i}. " * 10,
+                )
+                for i in range(5)
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            r1 = SearchResult(
+                content="Paragraph 1.",
+                score=0.9,
+                chunk_id="c1",
+                document_id="doc-1",
+                doc_item_refs=["#/texts/1"],
+                document_meta={"source_url": "https://example.org/report/view"},
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [r1], 5000
+            )
+            assert len(expanded) == 1
+            assert expanded[0].document_meta == {
+                "source_url": "https://example.org/report/view"
+            }
+
     async def test_merged_anchor_is_highest_scoring_constituent(self, temp_db_path):
         """A merged result's chunk_id anchors on the best-scoring constituent,
         not whichever chunk sits earliest in the document."""

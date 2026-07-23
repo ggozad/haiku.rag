@@ -129,6 +129,9 @@ class SearchResult(BaseModel):
     into this result; empty means just ``chunk_id``. It lets citation
     consumers (visual grounding) reproduce a merged expansion and is never
     part of ``format_for_agent`` output.
+
+    ``document_meta`` carries the parent document's metadata for citation
+    consumers (UIs). Never part of ``format_for_agent`` output.
     """
 
     content: str
@@ -138,6 +141,7 @@ class SearchResult(BaseModel):
     document_id: str | None = None
     document_uri: str | None = None
     document_title: str | None = None
+    document_meta: dict = {}
     order: int = 0
     doc_item_refs: list[str] = []
     page_numbers: list[int] = []
@@ -162,6 +166,7 @@ class SearchResult(BaseModel):
             document_id=chunk.document_id,
             document_uri=chunk.document_uri,
             document_title=chunk.document_title,
+            document_meta=chunk.document_meta,
             order=chunk.order,
             doc_item_refs=meta.doc_item_refs,
             page_numbers=meta.page_numbers,

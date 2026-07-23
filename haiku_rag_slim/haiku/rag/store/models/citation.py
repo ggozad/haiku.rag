@@ -26,6 +26,8 @@ class Citation(BaseModel):
     content — the exact items the model saw. Visual grounding resolves bounding
     boxes from them so the rendered pages match the citation precisely.
     ``picture_refs`` is the picture-labeled subset.
+
+    ``document_meta`` carries the cited document's metadata for UIs.
     """
 
     index: int | None = None
@@ -34,6 +36,7 @@ class Citation(BaseModel):
     chunk_ids: list[str] = Field(default_factory=list)
     document_uri: str
     document_title: str | None = None
+    document_meta: dict = Field(default_factory=dict)
     page_numbers: list[int] = Field(default_factory=list)
     headings: list[str] | None = None
     content: str
@@ -64,6 +67,7 @@ def resolve_citations(
                 chunk_ids=r.chunk_ids or [chunk_id],
                 document_uri=r.document_uri or "",
                 document_title=r.document_title,
+                document_meta=r.document_meta,
                 page_numbers=r.page_numbers,
                 headings=r.headings,
                 content=r.content,
