@@ -10,6 +10,7 @@ Contains evaluation scripts for benchmarking RAG retrieval and QA performance. A
 
 - WiX (`wix`)
 - HotpotQA (`hotpotqa`) — multi-hop QA over Wikipedia paragraphs (distractor validation split, 7,405 questions, two gold documents per question)
+- FRAMES (`frames`) — multi-hop QA (824 questions, 2-23 gold Wikipedia articles per question). The corpus is the union of the ~2.5k linked articles, fetched from the Wikipedia REST API at current revision (revision id and fetch date recorded in the article cache) with navigation chrome stripped. There is no official FRAMES evaluation setup; numbers here correspond to the paper's multi-step retrieval setting (fixed corpus, agentic retrieval, judged accuracy) and are not comparable to its closed-book, oracle-prompt, or web-search settings. Answers were authored against ~2024 revisions and may have drifted with article content.
 - OpenRAG Bench, two variants:
   - `orb_text` — text embedder (`qwen3-embedding:4b`, 2560-dim) with VLM picture descriptions baked into chunk content at ingest. Use for text-only retrieval/QA against figure-rich corpora.
   - `orb_multimodal` — multimodal embedder (`qwen3-vl-embedding-8b`, 4096-dim) with picture vectors in the same space as text. Use for cross-modal retrieval (text-as-query → figure hits, image-as-query) and vision QA where the figure itself is the answer.

@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- `frames` evaluation dataset.
+
 ## [0.72.1] - 2026-07-31
 
 ### Changed

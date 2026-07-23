@@ -1647,6 +1647,7 @@ name = "haiku-rag-evals"
 version = "0.72.1"
 source = { editable = "evaluations" }
 dependencies = [
+    { name = "beautifulsoup4" },
     { name = "datasets" },
     { name = "haiku-rag-slim" },
     { name = "huggingface-hub" },
@@ -1657,6 +1658,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "beautifulsoup4", specifier = ">=4.12.0" },
     { name = "datasets", specifier = ">=4.6.1" },
     { name = "haiku-rag-slim", editable = "haiku_rag_slim" },
     { name = "huggingface-hub", specifier = ">=0.20.0" },
