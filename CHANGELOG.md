@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.67.2] - 2026-07-23
+
 ### Added
 
 - `SearchResult.document_meta` and `Citation.document_meta` carry the parent document's metadata.
@@ -1973,7 +1975,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.67.1...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.67.2...HEAD
+[0.67.2]: https://github.com/ggozad/haiku.rag/compare/0.67.1...0.67.2
 [0.67.1]: https://github.com/ggozad/haiku.rag/compare/0.67.0...0.67.1
 [0.67.0]: https://github.com/ggozad/haiku.rag/compare/0.67.0...0.67.0
 [0.67.0]: https://github.com/ggozad/haiku.rag/compare/0.67.0...0.67.0
