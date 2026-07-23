@@ -255,6 +255,37 @@ def test_chunk_metadata_resolve_empty_refs():
     assert doc_items == []
 
 
+def test_search_result_from_chunk_preserves_document_meta():
+    """Document metadata flows from Chunk to SearchResult for citation
+    consumers (UIs)."""
+    chunk = Chunk(
+        id="chunk-1",
+        document_id="doc-1",
+        content="Some content.",
+        document_uri="file:///docs/report.pdf",
+        document_meta={"source_url": "https://example.org/report/view"},
+    )
+
+    result = SearchResult.from_chunk(chunk, score=0.9)
+
+    assert result.document_meta == {"source_url": "https://example.org/report/view"}
+
+
+def test_search_result_format_for_agent_omits_document_meta():
+    """Document metadata is UI plumbing, never shown to the model."""
+    result = SearchResult(
+        content="Some content.",
+        score=0.9,
+        chunk_id="chunk-1",
+        document_meta={"source_url": "https://example.org/report/view"},
+    )
+
+    formatted = result.format_for_agent(rank=1, total=1)
+
+    assert "source_url" not in formatted
+    assert "https://example.org/report/view" not in formatted
+
+
 def test_search_result_format_for_agent_with_rank():
     """Test format_for_agent with rank and total parameters."""
     result = SearchResult(

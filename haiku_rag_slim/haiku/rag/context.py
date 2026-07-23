@@ -415,6 +415,7 @@ def _build_result(
         document_id=first.document_id,
         document_uri=first.document_uri,
         document_title=first.document_title,
+        document_meta=first.document_meta,
         doc_item_refs=refs or first.doc_item_refs,
         page_numbers=sorted(pages) or first.page_numbers,
         headings=all_headings or None,

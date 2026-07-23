@@ -376,6 +376,7 @@ def create_skill_tools(
                             doc_cache[did] = doc
                         chunk.document_uri = doc.uri if doc else None
                         chunk.document_title = doc.title if doc else None
+                        chunk.document_meta = doc.metadata if doc else {}
                         synthetic.append(SearchResult.from_chunk(chunk, score=1.0))
                     if synthetic:
                         citations.extend(resolve_citations(missing, synthetic))

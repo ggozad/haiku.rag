@@ -77,6 +77,7 @@ async def rag_db(tmp_path_factory):
                 "Deep learning models are used in healthcare, finance, and transportation.",
                 title="AI Overview",
                 uri="test://ai-overview",
+                metadata={"topic": "ai"},
             )
             await rag.create_document(
                 "Machine learning is a subset of artificial intelligence. "

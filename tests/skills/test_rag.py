@@ -406,9 +406,9 @@ class TestCiteTool:
         """
         from haiku.rag.skills.rag import RAGState, create_skill
 
-        docs = await rag_client.list_documents(limit=1)
-        assert docs, "fixture should have at least one document"
-        doc_id = docs[0].id
+        doc = await rag_client.get_document_by_uri("test://ai-overview")
+        assert doc, "fixture should have the ai-overview document"
+        doc_id = doc.id
         chunks = await rag_client.chunk_repository.get_by_document_id(doc_id)
         assert chunks, "fixture document should have chunks"
         chunk_id = chunks[0].id
@@ -425,6 +425,7 @@ class TestCiteTool:
         registered = state.citation_index[chunk_id]
         assert registered.document_id == doc_id
         assert registered.document_uri  # uri must be populated from doc lookup
+        assert registered.document_meta.get("topic") == "ai"
 
 
 class TestLifespan:
