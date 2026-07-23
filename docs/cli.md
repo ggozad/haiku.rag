@@ -196,7 +196,7 @@ haiku-rag chat
 haiku-rag chat --db /path/to/database.lancedb
 
 # Enable the analysis capability (code execution)
-haiku-rag chat -s rag -s analysis
+haiku-rag chat -c rag -c analysis
 ```
 
 !!! note

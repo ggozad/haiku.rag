@@ -49,7 +49,6 @@ haiku-rag visualize <chunk_id>
 | Filter documents | Restrict searches to selected documents |
 | Show visual grounding | Visual grounding for a citation |
 | Database info | Document and chunk counts, storage stats |
-| View state | Current session state, citations, and intermediate tool results |
 
 ## Capabilities
 
@@ -57,10 +56,10 @@ The default capability is `rag`. Enable `analysis` when the question needs compu
 
 ```bash
 # both capabilities (the agent routes between them)
-haiku-rag chat -s rag -s analysis
+haiku-rag chat -c rag -c analysis
 
 # analysis only
-haiku-rag chat -s analysis
+haiku-rag chat -c analysis
 ```
 
 The `analysis` capability mounts every document as a virtual filesystem at `/documents/{id}/` (with `metadata.json`, `content.txt`, `items.jsonl`, and `toc.json`) and runs Python in a sandboxed interpreter with `search` and `list_documents` as awaitable functions. It's the right choice for questions like:

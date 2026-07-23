@@ -46,6 +46,41 @@ def test_run_chat_defers_multiple_capabilities(temp_db_path: Path):
     assert all(capability.defer_loading for capability in attached)
 
 
+@pytest.mark.parametrize(
+    ("enabled", "expected_model"),
+    [
+        (["analysis"], "analysis-model"),
+        (["rag"], "qa-model"),
+        (["rag", "analysis"], "qa-model"),
+    ],
+)
+def test_run_chat_drives_analysis_only_with_analysis_model(
+    temp_db_path: Path, enabled, expected_model
+):
+    """Analysis-only chat runs on analysis.model; otherwise on qa.model."""
+    from haiku.rag.config.models import AppConfig, ModelConfig
+
+    config = AppConfig()
+    config.qa.model = ModelConfig(provider="openai", name="qa-model")
+    config.analysis.model = ModelConfig(provider="openai", name="analysis-model")
+    captured: dict[str, str] = {}
+
+    def fake_get_model(model_config, _config):
+        captured["name"] = model_config.name
+        return "resolved-model"
+
+    with (
+        patch("haiku.rag.chat.app.ChatApp"),
+        patch("haiku.rag.config.get_config", return_value=config),
+        patch("haiku.rag.utils.get_model", side_effect=fake_get_model),
+    ):
+        from haiku.rag.chat import run_chat
+
+        run_chat(db_path=temp_db_path, capabilities=enabled)
+
+    assert captured["name"] == expected_model
+
+
 def _make_mock_client():
     """Create a mock HaikuRAG client."""
     mock_client = AsyncMock()

@@ -56,10 +56,18 @@ def run_chat(
             )
         )
 
+    # Drive with the analysis model when analysis is the only capability, so the
+    # running model matches the one the analysis capability configures (including
+    # its vision flag). RAG runs on the QA model.
+    if "rag" not in enabled and "analysis" in enabled:
+        driving_model = config.analysis.model or config.qa.model
+    else:
+        driving_model = config.qa.model
+
     app = ChatApp(
         db_path,
         capabilities=capability_list,
         read_only=read_only,
-        model=model or get_model(config.qa.model, config),
+        model=model or get_model(driving_model, config),
     )
     app.run()

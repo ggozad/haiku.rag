@@ -13,8 +13,11 @@ Usage:
 
 import os
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
+from ag_ui.core import EventType, StateSnapshotEvent
 from pydantic_ai import Agent
 from pydantic_ai.ui import SSE_CONTENT_TYPE
 from pydantic_ai.ui.ag_ui import AGUIAdapter
@@ -23,7 +26,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
-from haiku.rag.capabilities.rag import create_capability
+from haiku.rag.capabilities.rag import RAGState, create_capability
 
 db_path = os.environ.get("DB_PATH")
 if not db_path:
@@ -34,9 +37,16 @@ if not db_path:
 
 capability = create_capability(db_path=Path(db_path), defer_loading=False)
 
+
+@dataclass
+class AppDeps:
+    state: dict[str, Any] = field(default_factory=dict)
+
+
 agent = Agent(
     "anthropic:claude-haiku-4-5-20251001",
     capabilities=[capability],
+    deps_type=AppDeps,
 )
 
 
@@ -47,8 +57,21 @@ async def stream_chat(request: Request) -> Response:
 
     adapter = AGUIAdapter(agent=agent, run_input=run_input, accept=accept)
 
+    incoming_state = run_input.state if isinstance(run_input.state, dict) else {}
+    incoming_state.setdefault("rag", RAGState().model_dump(mode="json"))
+    deps = AppDeps(state=incoming_state)
+
     async def event_stream():
-        async for chunk in adapter.encode_stream(adapter.run_stream()):
+        async def with_final_state():
+            async for event in adapter.run_stream(deps=deps):
+                if getattr(event, "type", None) == EventType.RUN_FINISHED:
+                    yield StateSnapshotEvent(
+                        type=EventType.STATE_SNAPSHOT,
+                        snapshot=deps.state,
+                    )
+                yield event
+
+        async for chunk in adapter.encode_stream(with_final_state()):
             yield chunk
 
     return StreamingResponse(
