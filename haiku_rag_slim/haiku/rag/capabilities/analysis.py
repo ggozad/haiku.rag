@@ -13,7 +13,7 @@ from haiku.rag.capabilities._base import (
     RAGCapabilityBase,
     resolve_db_path,
 )
-from haiku.rag.config.models import AppConfig
+from haiku.rag.config.models import AppConfig, ModelConfig
 from haiku.rag.sandbox import AnalysisContext, Sandbox
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.citation import Citation
@@ -129,8 +129,14 @@ def create_capability(
     *,
     defer_loading: bool = True,
     request_limit: int | None = 30,
+    model: ModelConfig | None = None,
 ) -> AnalysisCapability:
-    """Create a native Pydantic AI analysis capability."""
+    """Create a native Pydantic AI analysis capability.
+
+    ``model`` sets the capability's image-attachment gate and should be the
+    model the hosting agent actually runs. Defaults to ``config.analysis.model``
+    (falling back to ``config.qa.model``).
+    """
     if config is None:
         from haiku.rag.config import get_config
 
@@ -141,7 +147,7 @@ def create_capability(
         state_type=AnalysisState,
         state_namespace=STATE_NAMESPACE,
         instruction_text=instructions(),
-        model=config.analysis.model or config.qa.model,
+        model=model or config.analysis.model or config.qa.model,
         tool_names=_TOOL_NAMES,
         request_limit=request_limit,
         id=_CAPABILITY_ID,

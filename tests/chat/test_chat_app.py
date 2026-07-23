@@ -54,10 +54,11 @@ def test_run_chat_defers_multiple_capabilities(temp_db_path: Path):
         (["rag", "analysis"], "qa-model"),
     ],
 )
-def test_run_chat_drives_analysis_only_with_analysis_model(
+def test_run_chat_gates_capability_vision_on_driving_model(
     temp_db_path: Path, enabled, expected_model
 ):
-    """Analysis-only chat runs on analysis.model; otherwise on qa.model."""
+    """Analysis-only chat runs on analysis.model; otherwise on qa.model. Every
+    attached capability's vision gate (its ``model``) tracks that one model."""
     from haiku.rag.config.models import AppConfig, ModelConfig
 
     config = AppConfig()
@@ -70,7 +71,7 @@ def test_run_chat_drives_analysis_only_with_analysis_model(
         return "resolved-model"
 
     with (
-        patch("haiku.rag.chat.app.ChatApp"),
+        patch("haiku.rag.chat.app.ChatApp") as mock_app,
         patch("haiku.rag.config.get_config", return_value=config),
         patch("haiku.rag.utils.get_model", side_effect=fake_get_model),
     ):
@@ -79,6 +80,8 @@ def test_run_chat_drives_analysis_only_with_analysis_model(
         run_chat(db_path=temp_db_path, capabilities=enabled)
 
     assert captured["name"] == expected_model
+    attached = mock_app.call_args.kwargs["capabilities"]
+    assert {capability.model.name for capability in attached} == {expected_model}
 
 
 def _make_mock_client():

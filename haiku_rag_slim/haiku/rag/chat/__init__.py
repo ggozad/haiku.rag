@@ -38,12 +38,24 @@ def run_chat(
     capability_list = []
     defer_loading = len(enabled) > 1
 
+    # One agent drives every attached capability, so a capability's
+    # image-attachment gate must track that single model: analysis.model only
+    # when analysis runs alone, otherwise qa.model. Passing it to every
+    # capability keeps their vision flag aligned with the model actually running.
+    if "rag" not in enabled and "analysis" in enabled:
+        driving_model = config.analysis.model or config.qa.model
+    else:
+        driving_model = config.qa.model
+
     if "rag" in enabled:
         from haiku.rag.capabilities.rag import create_capability
 
         capability_list.append(
             create_capability(
-                db_path=db_path, config=config, defer_loading=defer_loading
+                db_path=db_path,
+                config=config,
+                defer_loading=defer_loading,
+                model=driving_model,
             )
         )
 
@@ -52,17 +64,12 @@ def run_chat(
 
         capability_list.append(
             create_capability(
-                db_path=db_path, config=config, defer_loading=defer_loading
+                db_path=db_path,
+                config=config,
+                defer_loading=defer_loading,
+                model=driving_model,
             )
         )
-
-    # Drive with the analysis model when analysis is the only capability, so the
-    # running model matches the one the analysis capability configures (including
-    # its vision flag). RAG runs on the QA model.
-    if "rag" not in enabled and "analysis" in enabled:
-        driving_model = config.analysis.model or config.qa.model
-    else:
-        driving_model = config.qa.model
 
     app = ChatApp(
         db_path,
