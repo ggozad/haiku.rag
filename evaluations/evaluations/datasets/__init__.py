@@ -1,5 +1,6 @@
 from evaluations.config import DatasetSpec
 
+from .frames import FRAMES_SPEC
 from .hotpotqa import HOTPOTQA_SPEC
 from .mtrag import (
     MTRAG_CLAPNQ_LIVE_SPEC,
@@ -17,6 +18,7 @@ from .t2_ragbench import T2_FINQA_SPEC, T2_TATDQA_SPEC
 DATASETS: dict[str, DatasetSpec] = {
     spec.key: spec
     for spec in (
+        FRAMES_SPEC,
         HOTPOTQA_SPEC,
         MTRAG_CLAPNQ_SPEC,
         MTRAG_CLAPNQ_REWRITE_SPEC,
