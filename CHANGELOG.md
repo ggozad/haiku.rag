@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- Security dependency updates: pillow 12.3.0, mcp 1.28.1, pydantic-ai 1.102.0, torch 2.13.0, soupsieve 2.9.1, joserfc 1.7.4, pyasn1 0.6.4, setuptools 83.0.0; frontend next 16.2.11, sharp 0.35.3, fast-uri 3.1.4, dompurify 3.4.12, body-parser 1.20.6.
+
 ## [0.67.2] - 2026-07-23
 
 ### Added
