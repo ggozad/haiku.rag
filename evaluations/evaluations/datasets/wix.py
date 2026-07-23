@@ -6,7 +6,7 @@ from datasets import Dataset, load_dataset
 from pydantic_evals import Case
 
 from evaluations.config import DatasetSpec, DocumentPayload, RetrievalSample
-from evaluations.evaluators import MAPEvaluator
+from evaluations.evaluators import CitationMAPEvaluator, MAPEvaluator
 
 
 def load_wix_corpus() -> Dataset:
@@ -80,5 +80,6 @@ WIX_SPEC = DatasetSpec(
     qa_case_builder=build_wix_case,
     retrieval_loader=load_wix_qa,
     retrieval_mapper=map_wix_retrieval,
-    retrieval_evaluator=MAPEvaluator(),
+    retrieval_evaluators=[MAPEvaluator()],
+    citation_evaluator=CitationMAPEvaluator(),
 )

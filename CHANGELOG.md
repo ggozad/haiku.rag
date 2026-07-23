@@ -24,6 +24,7 @@
 
 ### Changed
 
+- `import_documents` embeds chunks across the whole batch in one pass instead of per document.
 - Require `pydantic-ai-slim>=2.11,<3`; the `vertexai` optional extra now installs Pydantic AI's `google` extra.
 - The chat TUI consumes native Pydantic AI stream events. The web example uses the standard `AGUIAdapter` and emits one final state snapshot instead of forwarding sub-agent activity and per-tool state events.
 - Chat capability selection is now `haiku-rag chat --capability/-c {rag,analysis}`. Migrate from `--skill/-s`.
@@ -62,6 +63,7 @@
 ### Added
 
 - `hotpotqa` evaluation dataset.
+- `mtrag_clapnq` / `mtrag_clapnq_rewrite` / `mtrag_clapnq_live` evaluation datasets: multi-turn QA with gold-prefix and live-session conversation replay, Recall@k/nDCG@k retrieval metrics, eligibility-aware citation scoring, and refusal precision/recall.
 
 ### Changed
 
