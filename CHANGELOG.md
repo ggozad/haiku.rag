@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.67.3] - 2026-07-23
+
 ### Changed
 
 - Security dependency updates: pillow 12.3.0, mcp 1.28.1, pydantic-ai 1.102.0, torch 2.13.0, transformers 5.5.0, soupsieve 2.9.1, joserfc 1.7.4, pyasn1 0.6.4, setuptools 83.0.0; frontend next 16.2.11, sharp 0.35.3, fast-uri 3.1.4, dompurify 3.4.12, body-parser 1.20.6.
@@ -1979,7 +1981,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.67.2...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.67.3...HEAD
+[0.67.3]: https://github.com/ggozad/haiku.rag/compare/0.67.2...0.67.3
 [0.67.2]: https://github.com/ggozad/haiku.rag/compare/0.67.1...0.67.2
 [0.67.1]: https://github.com/ggozad/haiku.rag/compare/0.67.0...0.67.1
 [0.67.0]: https://github.com/ggozad/haiku.rag/compare/0.67.0...0.67.0
