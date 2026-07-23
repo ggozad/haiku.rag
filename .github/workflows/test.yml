@@ -66,7 +66,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
-          key: huggingface-${{ runner.os }}-test-models-v1
+          key: huggingface-${{ runner.os }}-test-models-v2
       - name: Pre-download tokenizer
         if: steps.hf-cache.outputs.cache-hit != 'true'
         run: uv run python -c "from transformers import AutoTokenizer; AutoTokenizer.from_pretrained('Qwen/Qwen3-Embedding-0.6B')"
