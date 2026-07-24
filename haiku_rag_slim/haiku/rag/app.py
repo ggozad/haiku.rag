@@ -431,6 +431,7 @@ class HaikuRAGApp:  # pragma: no cover
             db_path=self.db_path,
             config=self.config,
             read_only=True,
+            skip_validation=True,
         ) as self.client:
             documents = await self.client.list_documents(filter=filter)
             for doc in documents:
@@ -480,6 +481,7 @@ class HaikuRAGApp:  # pragma: no cover
             db_path=self.db_path,
             config=self.config,
             read_only=True,
+            skip_validation=True,
         ) as self.client:
             doc = await self.client.get_document_by_id(doc_id)
             if doc is None:
@@ -557,6 +559,7 @@ class HaikuRAGApp:  # pragma: no cover
             db_path=self.db_path,
             config=self.config,
             read_only=True,
+            skip_validation=True,
         ) as self.client:
             chunk = await self.client.get_chunk_by_id(chunk_id)
             if not chunk:

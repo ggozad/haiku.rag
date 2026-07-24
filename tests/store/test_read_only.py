@@ -332,6 +332,62 @@ class TestAppReadVerbsDoNotWrite:
         assert version_after == version_before
 
     @pytest.mark.asyncio
+    async def test_list_works_with_mismatched_embeddings_config(self, temp_db_path):
+        """list skips the embeddings compatibility check and never writes."""
+        from haiku.rag.app import HaikuRAGApp
+        from haiku.rag.config import AppConfig
+
+        async with Store(temp_db_path, create=True) as store:
+            await DocumentRepository(store).create(Document(content="test content"))
+            settings_before = await SettingsRepository(store).get_current_settings()
+
+        drift = AppConfig()
+        drift.embeddings.model.name = "different-model"
+        drift.embeddings.model.vector_dim = 4096
+
+        app = HaikuRAGApp(db_path=temp_db_path, config=drift)
+        await app.list_documents()
+
+        async with Store(temp_db_path, skip_validation=True, read_only=True) as store:
+            settings_after = await SettingsRepository(store).get_current_settings()
+        assert settings_after == settings_before
+
+    @pytest.mark.asyncio
+    async def test_get_works_with_mismatched_embeddings_config(self, temp_db_path):
+        """get skips the embeddings compatibility check."""
+        from haiku.rag.app import HaikuRAGApp
+        from haiku.rag.config import AppConfig
+
+        async with Store(temp_db_path, create=True) as store:
+            doc = await DocumentRepository(store).create(
+                Document(content="test content")
+            )
+
+        drift = AppConfig()
+        drift.embeddings.model.vector_dim = 4096
+
+        app = HaikuRAGApp(db_path=temp_db_path, config=drift)
+        assert doc.id is not None
+        await app.get_document(doc.id)
+
+    @pytest.mark.asyncio
+    async def test_visualize_works_with_mismatched_embeddings_config(
+        self, temp_db_path
+    ):
+        """visualize skips the embeddings compatibility check."""
+        from haiku.rag.app import HaikuRAGApp
+        from haiku.rag.config import AppConfig
+
+        async with Store(temp_db_path, create=True):
+            pass
+
+        drift = AppConfig()
+        drift.embeddings.model.vector_dim = 4096
+
+        app = HaikuRAGApp(db_path=temp_db_path, config=drift)
+        await app.visualize_chunk("missing-chunk-id")
+
+    @pytest.mark.asyncio
     async def test_write_verb_raises_on_drift_without_writing(self, temp_db_path):
         """A write CLI verb opens writable: drift raises before any write."""
         from haiku.rag.app import HaikuRAGApp

@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- `list`, `get`, and `visualize` no longer require an embeddings config matching the database.
+
 ## [0.67.3] - 2026-07-23
 
 ### Changed
