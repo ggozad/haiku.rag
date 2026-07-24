@@ -456,9 +456,13 @@ async def test_search_attaches_picture_bytes_for_multimodal_reranker(
         document_id="doc-1",
         metadata={"doc_item_refs": ["#/pictures/0"], "labels": ["picture"]},
     )
+    detached_chunk = Chunk(
+        content="no parent document",
+        metadata={"doc_item_refs": ["#/pictures/1"], "labels": ["picture"]},
+    )
 
     async def fake_chunk_search(query, limit, search_type, filter):
-        return [(text_chunk, 0.9), (picture_chunk, 0.8)]
+        return [(text_chunk, 0.9), (picture_chunk, 0.8), (detached_chunk, 0.7)]
 
     async with HaikuRAG(temp_db_path, create=True) as rag:
         await rag.document_item_repository.create_items(
@@ -480,8 +484,9 @@ async def test_search_attaches_picture_bytes_for_multimodal_reranker(
 
         await rag.search("totals", include_images=False)
 
-    reranked_text, reranked_picture = captured["chunks"]
+    reranked_text, reranked_picture, reranked_detached = captured["chunks"]
     assert reranked_text._picture_data is None
+    assert reranked_detached._picture_data is None
     if multimodal:
         assert reranked_picture._picture_data == b"picture-bytes"
     else:
