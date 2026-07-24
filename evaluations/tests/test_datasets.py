@@ -11,6 +11,7 @@ from evaluations.datasets.frames import (
     normalize_wiki_url,
     parse_revid,
     parse_wiki_links,
+    question_is_answerable,
     strip_navigation,
 )
 from evaluations.datasets.hotpotqa import (
@@ -747,7 +748,7 @@ class TestFrames:
         monkeypatch.setattr(frames, "_cached_corpus", None)
         monkeypatch.setattr(
             frames,
-            "load_frames_test",
+            "load_frames_questions",
             lambda: [
                 {
                     "wiki_links": "['https://en.wikipedia.org/wiki/A', "
@@ -760,3 +761,12 @@ class TestFrames:
         )
         with pytest.raises(RuntimeError, match="0/2"):
             frames.load_frames_corpus()
+
+    def test_question_with_deleted_article_is_excluded(self) -> None:
+        gone = {
+            "wiki_links": "['https://en.wikipedia.org/wiki/Jack_Vance_(tennis)', "
+            "'https://en.wikipedia.org/wiki/Capybara']"
+        }
+        kept = {"wiki_links": "['https://en.wikipedia.org/wiki/Capybara']"}
+        assert question_is_answerable(gone) is False
+        assert question_is_answerable(kept) is True
