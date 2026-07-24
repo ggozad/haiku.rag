@@ -24,7 +24,7 @@ result = await agent.run("What safety equipment does the manual require?")
 print(result.output)
 ```
 
-`create_capability` accepts `db_path`, `config`, `defer_loading`, and `request_limit`. Set `defer_loading=False` for a dedicated RAG agent where routing is unnecessary. The default request limit is 20 model requests per question; set `request_limit=None` to disable it.
+`create_capability` accepts `db_path`, `config`, `defer_loading`, `request_limit`, and `vision`. Set `defer_loading=False` for a dedicated RAG agent where routing is unnecessary. The default request limit is 20 model requests per question; set `request_limit=None` to disable it. `vision` controls whether picture results are attached to search returns as images and should reflect the model the hosting agent runs; it defaults to the configured QA model's `vision` flag.
 
 When the limit is reached, only the RAG capability's tools are removed. The model gets one more turn to answer from evidence already gathered, while unrelated agent and capability tools remain available. A new agent run starts a fresh limit, so multi-turn chat does not consume one shared budget.
 
@@ -50,6 +50,6 @@ Large RAG tool results from earlier user turns are replaced with a short marker 
 
 ## Domain context and vision
 
-`prompts.domain_preamble` is prepended to the packaged capability instructions. When the selected QA model has `vision: true`, picture results are attached to search returns as `BinaryContent`.
+`prompts.domain_preamble` is prepended to the packaged capability instructions. When the capability's `vision` gate is on (by default, when the configured QA model has `vision: true`), picture results are attached to search returns as `BinaryContent`.
 
 See [Search and question answering](../configuration/qa.md) and [picture processing](../configuration/processing.md#picture-handling).
