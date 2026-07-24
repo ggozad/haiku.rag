@@ -1,7 +1,7 @@
 """Custom agent with AG-UI streaming.
 
 A Starlette app that serves an AG-UI streaming endpoint using the
-haiku.rag RAG skill with haiku.skills SkillToolset.
+haiku.rag's native Pydantic AI RAG capability.
 
 Requirements:
     - An Ollama instance running locally (default embedder)
@@ -13,8 +13,11 @@ Usage:
 
 import os
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
+from ag_ui.core import EventType, StateSnapshotEvent
 from pydantic_ai import Agent
 from pydantic_ai.ui import SSE_CONTENT_TYPE
 from pydantic_ai.ui.ag_ui import AGUIAdapter
@@ -23,9 +26,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
-from haiku.rag.skills.rag import create_skill
-from haiku.skills.agent import SkillToolset, run_agui_stream
-from haiku.skills.prompts import build_system_prompt
+from haiku.rag.capabilities.rag import RAGState, create_capability
 
 db_path = os.environ.get("DB_PATH")
 if not db_path:
@@ -34,13 +35,18 @@ if not db_path:
     )
     sys.exit(1)
 
-skill = create_skill(db_path=Path(db_path))
-toolset = SkillToolset(skills=[skill])
+capability = create_capability(db_path=Path(db_path), defer_loading=False)
+
+
+@dataclass
+class AppDeps:
+    state: dict[str, Any] = field(default_factory=dict)
+
 
 agent = Agent(
     "anthropic:claude-haiku-4-5-20251001",
-    instructions=build_system_prompt(toolset.skill_catalog),
-    toolsets=[toolset],
+    capabilities=[capability],
+    deps_type=AppDeps,
 )
 
 
@@ -51,10 +57,22 @@ async def stream_chat(request: Request) -> Response:
 
     adapter = AGUIAdapter(agent=agent, run_input=run_input, accept=accept)
 
+    incoming_state = run_input.state if isinstance(run_input.state, dict) else {}
+    incoming_state.setdefault("rag", RAGState().model_dump(mode="json"))
+    deps = AppDeps(state=incoming_state)
+
     async def event_stream():
-        async with run_agui_stream(adapter, toolset=toolset) as stream:
-            async for chunk in adapter.encode_stream(stream):
-                yield chunk
+        async def with_final_state():
+            async for event in adapter.run_stream(deps=deps):
+                if getattr(event, "type", None) == EventType.RUN_FINISHED:
+                    yield StateSnapshotEvent(
+                        type=EventType.STATE_SNAPSHOT,
+                        snapshot=deps.state,
+                    )
+                yield event
+
+        async for chunk in adapter.encode_stream(with_final_state()):
+            yield chunk
 
     return StreamingResponse(
         event_stream(),

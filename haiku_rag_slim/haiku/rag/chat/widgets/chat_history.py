@@ -82,21 +82,12 @@ class ToolCallWidget(Static):
                 yield Static(desc, classes="tool-desc")
 
     def _build_description(self) -> str:
-        if self.tool_name == "execute_skill":
-            skill = self.args.get("skill_name", "")
-            request = self.args.get("request", "...")
-            prefix = f"{skill}: " if skill else ""
-            return f'{prefix}"{request}"'
-        elif self.tool_name == "search":
+        if self.tool_name in {"rag_search", "analysis_search"}:
             query = self.args.get("query", "...")
             return f'"{query}"'
-        elif self.tool_name == "ask":
-            question = self.args.get("question", "...")
-            return f'"{question}"'
-        elif self.tool_name == "get_document":
-            query = self.args.get("query", "...")
-            return f'"{query}"'
-        elif self.args:
+        if self.tool_name == "analysis_execute_code":
+            return str(self.args.get("code", "..."))[:120]
+        if self.args:
             return str(self.args)
         return ""
 

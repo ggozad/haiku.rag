@@ -19,11 +19,10 @@ nav = [
         { CLI = "cli.md" },
         { Chat = "chat.md" },
     ] },
-    { Skills = [
-        "skills/index.md",
-        { "RAG skill" = "skills/rag.md" },
-        { "Analysis skill" = "skills/analysis.md" },
-        { "Custom skills" = "skills/custom.md" },
+    { Capabilities = [
+        "capabilities/index.md",
+        { "RAG capability" = "capabilities/rag.md" },
+        { "Analysis capability" = "capabilities/analysis.md" },
     ] },
     { Configure = [
         "configuration/index.md",

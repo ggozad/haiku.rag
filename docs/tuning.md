@@ -34,7 +34,7 @@ Context expansion is automatic and section-aware. Search results are expanded to
 
 Model and temperature selection affect answer quality directly. See [Providers](configuration/providers.md#model-settings) for options.
 
-`domain_preamble` prepends domain context to the rag and rag-analysis skill instructions. Use it to describe what the knowledge base contains and clarify domain-specific terminology. See [Prompt Customization](configuration/prompts.md).
+`domain_preamble` prepends domain context to the RAG and analysis capability instructions. Use it to describe what the knowledge base contains and clarify domain-specific terminology. See [Prompt Customization](configuration/prompts.md).
 
 ## What Requires a Rebuild
 
@@ -46,7 +46,7 @@ Model and temperature selection affect answer quality directly. See [Providers](
 
 ## Inspector
 
-The inspector shows what your model would actually receive for a given query. Run it against your database and step through the same hybrid search, context expansion, and chunk previews the rag skill uses at runtime. Press `c` on a chunk and you see the exact context the LLM would get back from a search hit.
+The inspector shows what your model would actually receive for a given query. Run it against your database and step through the same hybrid search, context expansion, and chunk previews the RAG capability uses at runtime. Press `c` on a chunk and you see the exact context the LLM would get back from a search hit.
 
 ```bash
 haiku-rag inspect
@@ -81,11 +81,11 @@ Mouse: click to select, scroll to view content.
 
 ### Search
 
-Press `/` to open the search modal. Type a query and press `Enter`. The left panel lists results with relevance scores like `[0.95] content preview`. The right panel shows the full chunk and its metadata. `↑` / `↓` navigates results, `Enter` jumps to the document and chunk, `Esc` closes the modal. Search uses the same hybrid (vector + full-text) retrieval the rag skill uses.
+Press `/` to open the search modal. Type a query and press `Enter`. The left panel lists results with relevance scores like `[0.95] content preview`. The right panel shows the full chunk and its metadata. `↑` / `↓` navigates results, `Enter` jumps to the document and chunk, `Esc` closes the modal. Search uses the same hybrid (vector + full-text) retrieval the RAG capability uses.
 
 ### Context expansion (`c`)
 
-Press `c` on a chunk to see the expanded context that would be fed to the rag skill. This is where you find out whether your `chunk_size`, `chunker_type`, and `max_context_chars` settings actually deliver the surrounding content the model needs. The modal shows:
+Press `c` on a chunk to see the expanded context that would be fed to the RAG capability. This is where you find out whether your `chunk_size`, `chunker_type`, and `max_context_chars` settings actually deliver the surrounding content the model needs. The modal shows:
 
 - The expanded text. Section-aware expansion stays within section boundaries on structured documents and fills `max_context_chars` outward on unstructured ones.
 - Source document, content type, and relevance score.

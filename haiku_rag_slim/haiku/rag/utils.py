@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, cast
 from packaging.version import Version, parse
 
 if TYPE_CHECKING:
+    from pydantic_ai.profiles.openai import OpenAIModelProfile
     from rich.console import RenderableType
 
     from haiku.rag.client import HaikuRAG
@@ -75,6 +76,16 @@ def apply_common_settings(
     return settings_dict
 
 
+# Strict OpenAI-compatible backends (some vLLM chat templates, e.g. Qwen's)
+# reject more than one leading system message. Instructions from multiple
+# sources (agent preamble, capability instructions, dynamic notices) map to
+# one system message each, so have pydantic-ai merge them for any endpoint
+# that is not api.openai.com. Harmless on backends that allow multiples.
+_OPENAI_COMPAT_PROFILE: "OpenAIModelProfile" = {
+    "openai_chat_supports_multiple_system_messages": False
+}
+
+
 def get_model(
     model_config: "ModelConfig",
     app_config: "AppConfig | None" = None,
@@ -125,6 +136,7 @@ def get_model(
             model_name=model,
             provider=OllamaProvider(base_url=base_url),
             settings=model_settings,
+            profile=_OPENAI_COMPAT_PROFILE,
         )
 
     elif provider == "openai":
@@ -134,9 +146,8 @@ def get_model(
 
         # Apply thinking control only for reasoning models (o-series, gpt-5)
         profile = cast(OpenAIModelProfile, openai_model_profile(model))
-        if (
-            model_config.enable_thinking is not None
-            and profile.openai_supports_encrypted_reasoning_content
+        if model_config.enable_thinking is not None and profile.get(
+            "openai_supports_reasoning", False
         ):
             if model_config.enable_thinking is False:
                 openai_settings = OpenAIChatModelSettings(openai_reasoning_effort="low")
@@ -155,6 +166,7 @@ def get_model(
                 model_name=model,
                 provider=OpenAIProvider(base_url=model_config.base_url),
                 settings=openai_settings,
+                profile=_OPENAI_COMPAT_PROFILE,
             )
 
         return OpenAIChatModel(model_name=model, settings=openai_settings)

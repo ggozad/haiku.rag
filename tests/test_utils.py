@@ -229,6 +229,45 @@ def test_get_model_openai_extra_body_forwarded():
     assert result._settings.get("extra_body") == extra
 
 
+@pytest.mark.asyncio
+async def test_get_model_merges_system_messages_for_openai_compatible():
+    """Instruction parts from multiple sources (agent preamble, capability
+    instructions, dynamic notices) each map to their own system message.
+    Strict OpenAI-compatible templates (e.g. Qwen on vLLM) reject more than
+    one leading system message, so OpenAI-compatible endpoints merge them;
+    plain OpenAI keeps them separate."""
+    from pydantic_ai.messages import InstructionPart, ModelRequest, UserPromptPart
+    from pydantic_ai.models import ModelRequestParameters
+
+    parts = [
+        InstructionPart(content="Base instructions."),
+        InstructionPart(content="Limit notice.", dynamic=True),
+    ]
+    messages = [ModelRequest(parts=[UserPromptPart("hi")])]
+
+    async def mapped_for(model):
+        return await model._map_messages(
+            messages, ModelRequestParameters(instruction_parts=parts)
+        )
+
+    vllm = get_model(
+        ModelConfig(provider="openai", name="qwen3.6", base_url="http://vllm:1/v1")
+    )
+    mapped = await mapped_for(vllm)
+    assert [m["role"] for m in mapped] == ["system", "user"]
+    assert mapped[0]["content"] == "Base instructions.\n\nLimit notice."
+
+    ollama = get_model(ModelConfig(provider="ollama", name="llama3"))
+    assert [m["role"] for m in await mapped_for(ollama)] == ["system", "user"]
+
+    openai_native = get_model(ModelConfig(provider="openai", name="gpt-4o"))
+    assert [m["role"] for m in await mapped_for(openai_native)] == [
+        "system",
+        "system",
+        "user",
+    ]
+
+
 def test_get_model_ollama_extra_body_forwarded():
     """`extra_body` is forwarded through the Ollama (openai-compatible) branch too."""
     extra = {"chat_template_kwargs": {"enable_thinking": False}}

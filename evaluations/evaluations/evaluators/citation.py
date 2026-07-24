@@ -15,7 +15,7 @@ def _relevant_uris(ctx: EvaluatorContext) -> set[str]:
 
 @dataclass
 class CitationMAPEvaluator(Evaluator):
-    """Average precision over the URIs the skill cited via the `cite` tool.
+    """Average precision over the URIs the capability cited via the `cite` tool.
 
     Reads ``cited_uris`` from ``ctx.attributes`` (recorded during the task run
     via :func:`pydantic_evals.set_eval_attribute`) and ``relevant_uris`` from

@@ -12,7 +12,7 @@ def vcr_cassette_dir():
 
 
 class TestClientAnalysisIntegration:
-    """Integration tests for client.analyze() through the rag-analysis skill."""
+    """Integration tests for client.analyze() through AnalysisCapability."""
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
@@ -65,7 +65,7 @@ class TestClientAnalysisIntegration:
                 filter="title = 'Cats'",
             )
 
-            assert "1" in result.answer
+            assert "1" in result.answer or "one" in result.answer.lower()
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()

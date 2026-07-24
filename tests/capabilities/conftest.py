@@ -1,13 +1,11 @@
 import random
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
-from pydantic_ai import RunContext
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.embeddings import EmbedderWrapper
-from haiku.rag.skills._deps import AnalysisRunDeps, RAGRunDeps
 
 VECTOR_DIM = 2560
 
@@ -25,26 +23,6 @@ async def _fake_embed_documents(self, texts: list[str]) -> list[list[float]]:
     return [_seeded_vector(t) for t in texts]
 
 
-def _make_ctx(state=None, rag=None, sandbox=None):
-    """Create a mock RunContext with RAGRunDeps (or AnalysisRunDeps when state is AnalysisState)."""
-    from haiku.rag.skills.analysis import AnalysisState
-
-    ctx = MagicMock(spec=RunContext)
-    if isinstance(state, AnalysisState) or sandbox is not None:
-        ctx.deps = AnalysisRunDeps(state=state, rag=rag, sandbox=sandbox)
-    else:
-        ctx.deps = RAGRunDeps(state=state, rag=rag)
-    return ctx
-
-
-def _get_tool(skill, name):
-    """Get a tool function from a skill by name."""
-    for tool in skill.tools:
-        if callable(tool) and tool.__name__ == name:
-            return tool
-    raise ValueError(f"Tool {name!r} not found in skill")
-
-
 @pytest.fixture(autouse=True)
 def mock_embedder(monkeypatch):
     """Monkeypatch the embedder to return deterministic vectors."""
@@ -54,7 +32,7 @@ def mock_embedder(monkeypatch):
 
 @pytest.fixture
 def test_app_config():
-    return AppConfig(environment="skills-test")
+    return AppConfig(environment="capabilities-test")
 
 
 @pytest.fixture(scope="session")
@@ -66,7 +44,7 @@ async def rag_db(tmp_path_factory):
     vectors use the same seeded fakes as ``mock_embedder`` so search stays
     consistent with query-time embeddings.
     """
-    db_path = tmp_path_factory.mktemp("skills_rag_db") / "rag.lancedb"
+    db_path = tmp_path_factory.mktemp("capabilities_rag_db") / "rag.lancedb"
     with (
         patch.object(EmbedderWrapper, "embed_query", _fake_embed_query),
         patch.object(EmbedderWrapper, "embed_documents", _fake_embed_documents),

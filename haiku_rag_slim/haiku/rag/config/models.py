@@ -99,7 +99,7 @@ class QAConfig(BaseModel):
 
 
 class AnalysisConfig(BaseModel):
-    """Driving model + sandbox limits for the analysis skill.
+    """Driving model and sandbox limits for the analysis capability.
 
     ``model`` defaults to ``None``, meaning "no override — use ``qa.model``."
     Consumers resolve via ``config.analysis.model or config.qa.model``. Set

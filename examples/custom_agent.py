@@ -1,7 +1,6 @@
-"""Custom agent using the haiku.rag RAG skill.
+"""Custom agent using the native haiku.rag RAG capability.
 
-Demonstrates how to use the RAG skill with haiku.skills SkillToolset
-to build a conversational agent.
+Demonstrates composing a native Pydantic AI capability into an agent.
 
 Requirements:
     - An Ollama instance running locally (default embedder)
@@ -18,19 +17,15 @@ from pathlib import Path
 
 from pydantic_ai import Agent
 
-from haiku.rag.skills.rag import create_skill
-from haiku.skills.agent import SkillToolset
-from haiku.skills.prompts import build_system_prompt
+from haiku.rag.capabilities.rag import create_capability
 
 
 async def main(db_path: str) -> None:
-    skill = create_skill(db_path=Path(db_path))
-    toolset = SkillToolset(skills=[skill])
+    capability = create_capability(db_path=Path(db_path), defer_loading=False)
 
     agent = Agent(
         "anthropic:claude-haiku-4-5-20251001",
-        instructions=build_system_prompt(toolset.skill_catalog),
-        toolsets=[toolset],
+        capabilities=[capability],
     )
 
     print("Custom agent ready. Ctrl+C to exit.\n")

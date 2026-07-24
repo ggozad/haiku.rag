@@ -1,6 +1,6 @@
 # Reference config for the `t2_finqa` pre-built evaluation database.
 # T²-RAGBench (FinQA) financial QA, scored by exact numeric match.
-# Run: evaluations run t2_finqa --skip-db --target analysis-skill --config configs/t2_finqa.yaml
+# Run: evaluations run t2_finqa --skip-db --target analysis-capability --config configs/t2_finqa.yaml
 # base_url uses the `vllm` host serving each model over an OpenAI-compatible API.
 
 environment: development

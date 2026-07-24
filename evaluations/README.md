@@ -42,19 +42,19 @@ evaluations run wix --limit 100
 
 ### Choosing the target
 
-`evaluations run` benchmarks `--target rag-skill` by default. Use
-`--target analysis-skill` to benchmark the analysis skill against the same
+`evaluations run` benchmarks `--target rag-capability` by default. Use
+`--target analysis-capability` to benchmark the analysis capability against the same
 datasets and judge:
 
 ```bash
-evaluations run wix --target rag-skill
-evaluations run wix --target analysis-skill --skill-model ollama:gpt-oss
+evaluations run wix --target rag-capability
+evaluations run wix --target analysis-capability --capability-model ollama:gpt-oss
 ```
 
-`--skill-model "provider:name"` overrides the skill model independently from
+`--capability-model "provider:name"` overrides the capability model independently from
 the judge (defaults to `qa.model`, or `analysis.model` when set for the
-analysis-skill target). A citation retrieval metric (`cited_map`) is computed
-alongside QA accuracy from the URIs the skill registered via the `cite` tool.
+analysis-capability target). A citation retrieval metric (`cited_map`) is computed
+alongside QA accuracy from the URIs the capability registered via the `cite` tool.
 
 ### Debugging runs in Logfire
 

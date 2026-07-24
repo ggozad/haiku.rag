@@ -81,6 +81,6 @@ haiku-rag ask "Who wrote haiku.rag?"
 - [Chat](chat.md): sessions, citations, and the full TUI.
 - [CLI reference](cli.md): every command.
 - [Python API](python.md): use haiku.rag in your own code.
-- [Skills](skills/index.md): the rag and rag-analysis skills the client wraps.
+- [Capabilities](capabilities/index.md): native RAG and analysis components used by the client.
 - [Tuning](tuning.md): better retrieval.
 - [Configuration](configuration/index.md): every setting.

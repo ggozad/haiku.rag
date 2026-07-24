@@ -161,7 +161,7 @@ Filter to specific documents:
 haiku-rag ask "What are the main findings?" --filter "uri LIKE '%paper%'"
 ```
 
-`ask` runs the [rag skill](skills/index.md) and always renders citations under the answer. When available, citations use the document title, otherwise they fall back to the URI.
+`ask` runs the [RAG capability](capabilities/rag.md) and always renders citations under the answer. When available, citations use the document title, otherwise they fall back to the URI.
 
 Flags:
 
@@ -185,7 +185,7 @@ Flags:
 
 - `--filter` / `-f`: SQL WHERE clause to restrict document access
 
-See [Analysis skill](skills/analysis.md) for details on capabilities and configuration.
+See [Analysis capability](capabilities/analysis.md) for details and configuration.
 
 ## Chat
 
@@ -195,8 +195,8 @@ Launch an interactive chat session for multi-turn conversations:
 haiku-rag chat
 haiku-rag chat --db /path/to/database.lancedb
 
-# Enable analysis skill (code execution)
-haiku-rag chat -s rag -s analysis
+# Enable the analysis capability (code execution)
+haiku-rag chat -c rag -c analysis
 ```
 
 !!! note
@@ -204,7 +204,7 @@ haiku-rag chat -s rag -s analysis
 
 Flags:
 
-- `--skill` / `-s`: Skills to enable. `rag` (default), `analysis`. Can be repeated for multiple skills.
+- `--capability` / `-c`: Capabilities to enable. `rag` (default), `analysis`. Can be repeated.
 
 The chat interface provides:
 
@@ -481,64 +481,6 @@ haiku-rag init-config [output_path]
 ```
 
 If no path is specified, creates `haiku.rag.yaml` in the current directory.
-
-## Create Skill
-
-Generate a standalone skill package with an embedded database:
-
-```bash
-haiku-rag create-skill --name myskill --db /path/to/database.lancedb
-```
-
-The generated package is a pip-installable Python package that registers as a `haiku.skills` entry point.
-
-### Options
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--name` | Skill name (lowercase alphanumeric and hyphens, required) | — |
-| `--db` | Path to LanceDB database to embed (required) | — |
-| `--description` | Skill description | Standard RAG description |
-| `--tools` | Comma-separated tool names, or `all` | `all` |
-| `--preamble` | Custom preamble for skill instructions | Standard RAG preamble |
-| `--config-file` | Path to `haiku.rag.yaml` to embed | None |
-| `--output` / `-o` | Output directory | Current directory |
-
-### Available Tools
-
-`cite`, `execute_code`, `get_document`, `list_documents`, `search`
-
-### Example
-
-```bash
-# Generate a skill with specific tools and custom preamble
-haiku-rag create-skill \
-  --name medic \
-  --db /path/to/medic.lancedb \
-  --tools search,cite \
-  --config-file /path/to/haiku.rag.yaml \
-  --description "Military medic knowledge base" \
-  --preamble "You are a military medic expert."
-
-# Install the generated package
-uv pip install -e ./medic-skill
-
-# Use with haiku-skills
-haiku-skills chat --use-entrypoints --skill medic
-```
-
-### Generated Package Structure
-
-```
-{name}-skill/
-├── pyproject.toml
-└── {name}_skill/
-    ├── __init__.py    # create_skill() entry point
-    ├── SKILL.md       # Skill metadata and instructions
-    └── assets/
-        ├── {name}.lancedb/   # Embedded database
-        └── haiku.rag.yaml    # Optional config
-```
 
 ## Tags
 

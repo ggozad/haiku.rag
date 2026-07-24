@@ -7,7 +7,7 @@ haiku.rag supports multiple AI providers for embeddings, question answering, and
 
 ## Model Settings
 
-Configure model behavior for the `qa` and `analysis` skills. These settings apply to any provider that supports them.
+Configure model behavior for the `qa` and `analysis` capabilities. These settings apply to any provider that supports them.
 
 ### Basic Settings
 

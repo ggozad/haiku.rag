@@ -11,10 +11,10 @@ Agentic RAG built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.p
 
 - **Hybrid search** — Vector + full-text with Reciprocal Rank Fusion
 - **Multimodal & cross-modal search** — Multimodal embedders (vLLM, VoyageAI, Cohere) put picture vectors in the same space as text; supports text-as-query → figure hits and image-as-query
-- **Question answering** — RAG skill with citations (page numbers, section headings)
+- **Question answering** — RAG capability with citations (page numbers, section headings)
 - **Vision QA** — Vision-capable models receive figure bytes alongside chunk text
 - **Reranking** — local cross-encoders, Cohere, Zero Entropy, or vLLM
-- **Analysis skill** — Complex analytical tasks via sandboxed Python code execution (aggregation, computation, multi-document analysis)
+- **Analysis capability** — Complex analytical tasks via sandboxed Python code execution (aggregation, computation, multi-document analysis)
 - **Conversational RAG** — Chat TUI and web application for multi-turn conversations with session memory
 - **Document structure** — Stores full [DoclingDocument](https://docling-project.github.io/docling/concepts/docling_document/), enabling structure-aware context expansion
 - **Multiple providers** — Embeddings: Ollama, OpenAI, VoyageAI, Cohere, LM Studio, vLLM (multimodal via `multimodal: true` on vLLM/VoyageAI/Cohere). QA: any model supported by Pydantic AI
@@ -96,7 +96,7 @@ async with HaikuRAG("knowledge.lancedb", create=True) as rag:
         print(f"  [{cite.chunk_id}] p.{cite.page_numbers}: {cite.content[:80]}")
 ```
 
-For details on the skills the client wraps, see the [Skills docs](https://ggozad.github.io/haiku.rag/skills/).
+For direct agent composition, see the [capabilities documentation](https://ggozad.github.io/haiku.rag/capabilities/).
 
 ## MCP Server
 
@@ -137,7 +137,7 @@ Full documentation at: https://ggozad.github.io/haiku.rag/
 - [Configuration](https://ggozad.github.io/haiku.rag/configuration/) - YAML reference
 - [CLI](https://ggozad.github.io/haiku.rag/cli/) - Command reference
 - [Python API](https://ggozad.github.io/haiku.rag/python/) - Complete API docs
-- [Skills](https://ggozad.github.io/haiku.rag/skills/) - The RAG and analysis skills the client wraps
+- [Capabilities](https://ggozad.github.io/haiku.rag/capabilities/) - Native Pydantic AI RAG and analysis capabilities
 - [Tuning](https://ggozad.github.io/haiku.rag/tuning/) - Retrieval and answer-quality tuning
 - [Ingester](https://ggozad.github.io/haiku.rag/ingester/) - Production ingester for continuous indexing from FS, HTTP, S3, and WebDAV
 - [MCP](https://ggozad.github.io/haiku.rag/mcp/) - Model Context Protocol integration

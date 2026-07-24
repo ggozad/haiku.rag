@@ -1,4 +1,7 @@
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
+
+from pydantic_ai import Agent
 
 if TYPE_CHECKING:
     from haiku.rag.client import HaikuRAG
@@ -6,12 +9,17 @@ if TYPE_CHECKING:
     from haiku.rag.store.models.citation import Citation
 
 
+@dataclass
+class _AgentDeps:
+    state: dict[str, Any] = field(default_factory=dict)
+
+
 async def ask(
     client: "HaikuRAG",
     question: str,
     filter: str | None = None,
 ) -> "tuple[str, list[Citation]]":
-    """Ask a question against the knowledge base via the rag skill.
+    """Ask a question against the knowledge base via the RAG capability.
 
     Args:
         client: The HaikuRAG client.
@@ -21,20 +29,36 @@ async def ask(
     Returns:
         Tuple of (answer text, list of resolved citations).
     """
-    from haiku.rag.skills.rag import RAGState, create_skill
+    from haiku.rag.capabilities.rag import (
+        AGENT_PREAMBLE,
+        RAGState,
+        create_capability,
+    )
     from haiku.rag.utils import get_model
-    from haiku.skills import run_skill
 
-    skill = create_skill(db_path=client.store.db_path, config=client._config)
-    state = RAGState(document_filter=filter)
+    capability = create_capability(
+        db_path=client.store.db_path,
+        config=client._config,
+        defer_loading=False,
+    )
+    deps = _AgentDeps(
+        state={"rag": RAGState(document_filter=filter).model_dump(mode="json")}
+    )
     model = get_model(client._config.qa.model, client._config)
-    answer, _, _ = await run_skill(model, skill, question, state=state)
+    agent = Agent(
+        model,
+        deps_type=_AgentDeps,
+        instructions=AGENT_PREAMBLE,
+        capabilities=[capability],
+    )
+    result = await agent.run(question, deps=deps)
+    state = RAGState.model_validate(deps.state["rag"])
     citations = [
         state.citation_index[cid]
         for cid in state.citations
         if cid in state.citation_index
     ]
-    return answer, citations
+    return result.output, citations
 
 
 async def analyze(
@@ -42,9 +66,9 @@ async def analyze(
     question: str,
     filter: str | None = None,
 ) -> "AnalysisResult":
-    """Answer a question against the knowledge base via the rag-analysis skill.
+    """Answer a question using the analysis capability.
 
-    The analysis skill exposes ``search``, ``execute_code``, and ``cite`` tools.
+    The capability exposes search, code execution, and citation tools.
     The driving model decides when to reach for code (structural traversal,
     computation, aggregation) versus a direct ``search → cite → answer``.
 
@@ -56,20 +80,33 @@ async def analyze(
     Returns:
         AnalysisResult with the answer and resolved citations.
     """
+    from haiku.rag.capabilities.analysis import AnalysisState, create_capability
     from haiku.rag.sandbox import AnalysisResult
-    from haiku.rag.skills.analysis import AnalysisState, create_skill
     from haiku.rag.utils import get_model
-    from haiku.skills import run_skill
 
-    skill = create_skill(db_path=client.store.db_path, config=client._config)
-    state = AnalysisState(document_filter=filter)
+    capability = create_capability(
+        db_path=client.store.db_path,
+        config=client._config,
+        defer_loading=False,
+    )
+    deps = _AgentDeps(
+        state={
+            "analysis": AnalysisState(document_filter=filter).model_dump(mode="json")
+        }
+    )
     model = get_model(
         client._config.analysis.model or client._config.qa.model, client._config
     )
-    answer, _, _ = await run_skill(model, skill, question, state=state)
+    agent = Agent(
+        model,
+        deps_type=_AgentDeps,
+        capabilities=[capability],
+    )
+    result = await agent.run(question, deps=deps)
+    state = AnalysisState.model_validate(deps.state["analysis"])
     citations = [
         state.citation_index[cid]
         for cid in state.citations
         if cid in state.citation_index
     ]
-    return AnalysisResult(answer=answer, citations=citations)
+    return AnalysisResult(answer=result.output, citations=citations)
