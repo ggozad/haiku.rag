@@ -28,7 +28,9 @@ class VLLMReranker(RerankerBase):
         self._model = model
         self._base_url = base_url
         # One client reused across rerank calls (connection kept alive).
-        self._client = httpx.AsyncClient()
+        # Multimodal document batches can take far longer than httpx's 5s
+        # default timeout to score.
+        self._client = httpx.AsyncClient(timeout=httpx.Timeout(120.0))
 
     async def aclose(self) -> None:
         await self._client.aclose()
