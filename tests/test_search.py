@@ -426,6 +426,74 @@ async def test_reranker_built_once_across_searches(temp_db_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("multimodal", [True, False])
+async def test_search_attaches_picture_bytes_for_multimodal_reranker(
+    temp_db_path, multimodal
+):
+    """With reranking.multimodal on, picture chunks reach the reranker with
+    their picture bytes attached; text chunks and the multimodal-off path are
+    untouched."""
+    from haiku.rag.store.models.chunk import Chunk
+    from haiku.rag.store.models.document_item import DocumentItem
+
+    captured = {}
+
+    class StubReranker:
+        async def rerank(self, query, chunks, top_n):
+            captured["chunks"] = chunks
+            return [(chunk, 1.0) for chunk in chunks][:top_n]
+
+        async def aclose(self):
+            pass
+
+    text_chunk = Chunk(
+        content="prose",
+        document_id="doc-1",
+        metadata={"doc_item_refs": ["#/texts/0"], "labels": ["paragraph"]},
+    )
+    picture_chunk = Chunk(
+        content="a chart of quarterly totals",
+        document_id="doc-1",
+        metadata={"doc_item_refs": ["#/pictures/0"], "labels": ["picture"]},
+    )
+    detached_chunk = Chunk(
+        content="no parent document",
+        metadata={"doc_item_refs": ["#/pictures/1"], "labels": ["picture"]},
+    )
+
+    async def fake_chunk_search(query, limit, search_type, filter):
+        return [(text_chunk, 0.9), (picture_chunk, 0.8), (detached_chunk, 0.7)]
+
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        await rag.document_item_repository.create_items(
+            "doc-1",
+            [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/pictures/0",
+                    label="picture",
+                    text="a chart of quarterly totals",
+                    picture_data=b"picture-bytes",
+                ),
+            ],
+        )
+        rag.chunk_repository.search = fake_chunk_search  # type: ignore[method-assign]
+        rag.__dict__["reranker"] = StubReranker()
+        rag._config.reranking.multimodal = multimodal
+
+        await rag.search("totals", include_images=False)
+
+    reranked_text, reranked_picture, reranked_detached = captured["chunks"]
+    assert reranked_text._picture_data is None
+    assert reranked_detached._picture_data is None
+    if multimodal:
+        assert reranked_picture._picture_data == b"picture-bytes"
+    else:
+        assert reranked_picture._picture_data is None
+
+
+@pytest.mark.asyncio
 async def test_search_with_pil_image_works_like_bytes(temp_db_path, monkeypatch):
     from PIL import Image as PILImageModule
 

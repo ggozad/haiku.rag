@@ -125,6 +125,32 @@ class TestGetReranker:
         with pytest.raises(ValueError, match="cross-encoder reranker requires name"):
             get_reranker(config)
 
+    def test_multimodal_requires_vllm_provider(self):
+        config = AppConfig(
+            reranking=RerankingConfig(
+                model=ModelConfig(provider="cohere", name="rerank-v3.5"),
+                multimodal=True,
+            )
+        )
+        with pytest.raises(ValueError, match="multimodal"):
+            get_reranker(config)
+
+    def test_multimodal_vllm_provider_builds_reranker(self):
+        pytest.importorskip("haiku.rag.reranking.vllm")
+        from haiku.rag.reranking.vllm import VLLMReranker
+
+        config = AppConfig(
+            reranking=RerankingConfig(
+                model=ModelConfig(
+                    provider="vllm",
+                    name="nvidia/llama-nemotron-rerank-vl-1b-v2",
+                    base_url="http://localhost:8000",
+                ),
+                multimodal=True,
+            )
+        )
+        assert isinstance(get_reranker(config), VLLMReranker)
+
     @pytest.mark.parametrize(
         "provider, model_name, class_module, class_name, extra_model_kwargs, expected_attrs, env_vars",
         [
@@ -285,6 +311,72 @@ async def test_vllm_reranker_reuses_pooled_client(monkeypatch):
     assert stats.constructed == 1
     await reranker.aclose()
     assert stats.closed == 1
+
+
+@pytest.mark.asyncio
+async def test_vllm_reranker_builds_multimodal_documents(monkeypatch):
+    """Chunks carrying picture bytes are sent as content-parts documents
+    (data-URI image plus text when the chunk has content); plain text chunks
+    stay strings in the same request."""
+    import base64
+
+    from haiku.rag.reranking.vllm import VLLMReranker
+
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {
+                "results": [
+                    {"index": 0, "relevance_score": 0.9},
+                    {"index": 1, "relevance_score": 0.8},
+                    {"index": 2, "relevance_score": 0.7},
+                ]
+            }
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def post(self, url, json, headers):
+            captured["json"] = json
+            return FakeResponse()
+
+        async def aclose(self):
+            pass
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    png = b"\x89PNG\r\n\x1a\n" + b"png-payload"
+    jpeg = b"\xff\xd8\xff" + b"jpeg-payload"
+
+    text_chunk = Chunk(content="plain text")
+    described = Chunk(content="a described picture")
+    described._picture_data = png
+    undescribed = Chunk(content="")
+    undescribed._picture_data = jpeg
+
+    reranker = VLLMReranker(model="m", base_url="http://localhost:8000")
+    reranked = await reranker.rerank("q", [text_chunk, described, undescribed])
+
+    docs = captured["json"]["documents"]
+    assert docs[0] == "plain text"
+
+    image_part, text_part = docs[1]["content"]
+    prefix = "data:image/png;base64,"
+    assert image_part["type"] == "image_url"
+    assert image_part["image_url"]["url"].startswith(prefix)
+    assert base64.b64decode(image_part["image_url"]["url"].removeprefix(prefix)) == png
+    assert text_part == {"type": "text", "text": "a described picture"}
+
+    (jpeg_part,) = docs[2]["content"]
+    assert jpeg_part["image_url"]["url"].startswith("data:image/jpeg;base64,")
+
+    # Result indices pair back to the right chunks.
+    assert [c for c, _ in reranked] == [text_chunk, described, undescribed]
 
 
 @pytest.mark.asyncio

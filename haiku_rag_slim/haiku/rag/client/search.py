@@ -54,6 +54,8 @@ async def search(
                 query, search_limit, search_type, filter
             )
             chunks = [chunk for chunk, _ in raw_results]
+            if client._config.reranking.multimodal:
+                await _attach_picture_data(client, chunks)
             chunk_results = await reranker.rerank(query, chunks, top_n=limit)
     else:
         embedder = client.embedder
@@ -78,6 +80,29 @@ async def search(
         await _populate_image_data(client, results)
 
     return results
+
+
+async def _attach_picture_data(client: "HaikuRAG", chunks: list[Chunk]) -> None:
+    """Attach picture bytes to synthetic picture chunks in-place, so a
+    multimodal reranker can score the pixels instead of just the chunk's
+    description text. Batches one picture-bytes lookup per document."""
+    by_doc: dict[str, list[tuple[Chunk, str]]] = {}
+    for chunk in chunks:
+        if chunk.document_id is None:
+            continue
+        refs = chunk.get_chunk_metadata().doc_item_refs
+        if len(refs) == 1 and refs[0].startswith(PICTURE_REF_PREFIX):
+            by_doc.setdefault(chunk.document_id, []).append((chunk, refs[0]))
+
+    for doc_id, doc_chunks in by_doc.items():
+        refs = [ref for _, ref in doc_chunks]
+        bytes_by_ref = await client.document_item_repository.get_pictures_for_chunk(
+            doc_id, refs
+        )
+        for chunk, ref in doc_chunks:
+            data = bytes_by_ref.get(ref)
+            if data:
+                chunk._picture_data = data
 
 
 def _dedup_picture_chunks(results: list[SearchResult]) -> list[SearchResult]:

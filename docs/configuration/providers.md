@@ -450,6 +450,21 @@ reranking:
 
 **Note:** vLLM reranking uses the `/v1/rerank` API endpoint. You need to run a vLLM server separately with a reranking model loaded.
 
+#### Multimodal reranking
+
+When serving a vision reranker (for example `nvidia/llama-nemotron-rerank-vl-1b-v2`), set `multimodal: true` to score picture chunks by their image bytes in addition to their description text:
+
+```yaml
+reranking:
+  multimodal: true
+  model:
+    provider: vllm
+    name: nvidia/llama-nemotron-rerank-vl-1b-v2
+    base_url: http://localhost:8001
+```
+
+Picture chunks are sent as image documents (base64 data URIs) alongside plain text documents in the same rerank request. The flag is supported on the vllm provider only, and the served model must accept multimodal inputs.
+
 ### Jina AI
 
 Jina provides high-quality reranking with two deployment options: API mode and local inference.
