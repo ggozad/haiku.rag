@@ -120,10 +120,13 @@ Two approaches are benchmarked separately:
 
 ##### Retrieval (MAP)
 
-| Embedding Model                          | Cases | MAP    |
-|------------------------------------------|------:|-------:|
-| `Qwen/Qwen3-VL-Embedding-8B`             |  3045 | 0.9774 |
-| `nvidia/llama-nemotron-embed-vl-1b-v2`   |  3045 | 0.9709 |
+| Embedding Model                          | Reranker                                             | Cases | MAP    |
+|------------------------------------------|------------------------------------------------------|------:|-------:|
+| `Qwen/Qwen3-VL-Embedding-8B`             | none                                                 |  3045 | 0.9774 |
+| `nvidia/llama-nemotron-embed-vl-1b-v2`   | none                                                 |  3045 | 0.9709 |
+| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `nvidia/llama-nemotron-rerank-vl-1b-v2` (multimodal) |  3045 | 0.9913 |
+
+*The reranked row uses `reranking.multimodal: true`: picture chunks reach the vision reranker as images alongside their description text. Measured on haiku.rag main post-v0.67.3 (multimodal reranking ships in the next release).*
 
 ##### QA accuracy + citation retrieval
 
