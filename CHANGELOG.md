@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.68.0] - 2026-07-24
+
 ### Added
 
 - `reranking.multimodal` config flag: picture chunks are sent to a vllm reranker as image documents.
@@ -1989,7 +1991,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.67.3...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.68.0...HEAD
+[0.68.0]: https://github.com/ggozad/haiku.rag/compare/0.67.3...0.68.0
 [0.67.3]: https://github.com/ggozad/haiku.rag/compare/0.67.2...0.67.3
 [0.67.2]: https://github.com/ggozad/haiku.rag/compare/0.67.1...0.67.2
 [0.67.1]: https://github.com/ggozad/haiku.rag/compare/0.67.0...0.67.1
