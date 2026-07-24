@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.69.0] - 2026-07-24
+
 ### Added
 
 - Native deferred Pydantic AI `RAGCapability` and `AnalysisCapability` implementations under `haiku.rag.capabilities`, with namespaced host state and lazy per-run database and sandbox resources.
@@ -2010,7 +2012,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.68.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.69.0...HEAD
+[0.69.0]: https://github.com/ggozad/haiku.rag/compare/0.68.0...0.69.0
 [0.68.0]: https://github.com/ggozad/haiku.rag/compare/0.67.3...0.68.0
 [0.67.3]: https://github.com/ggozad/haiku.rag/compare/0.67.2...0.67.3
 [0.67.2]: https://github.com/ggozad/haiku.rag/compare/0.67.1...0.67.2
