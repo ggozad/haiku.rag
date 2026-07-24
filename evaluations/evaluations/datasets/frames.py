@@ -10,6 +10,7 @@ import ast
 import json
 import logging
 import re
+import time
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,6 +28,9 @@ from evaluations.evaluators import CitationMAPEvaluator, MAPEvaluator
 logger = logging.getLogger(__name__)
 
 USER_AGENT = "haiku.rag-evaluations (https://github.com/ggozad/haiku.rag)"
+FETCH_ATTEMPTS = 3
+THROTTLE_SECONDS = 1.0
+RATE_LIMIT_BACKOFF_SECONDS = 60.0
 
 
 def load_frames_test() -> Dataset:
@@ -153,6 +157,13 @@ def _fetch_article_page(
     return response.text, "html", revid, title
 
 
+def _backoff_seconds(error: Exception, attempt: int) -> float:
+    if isinstance(error, httpx.HTTPStatusError) and error.response.status_code == 429:
+        retry_after = error.response.headers.get("retry-after")
+        return float(retry_after) if retry_after else RATE_LIMIT_BACKOFF_SECONDS
+    return 5.0 * attempt
+
+
 def fetch_article(
     uri: str, cache_dir: Path, client: httpx.Client | None
 ) -> dict[str, Any] | None:
@@ -170,17 +181,24 @@ def fetch_article(
         return row
 
     assert client is not None
-    try:
-        title = unquote(urlsplit(uri).path[len("/wiki/") :])
-        if title.startswith("Category:"):
-            content, format, revid = _fetch_category_page(
-                urlsplit(uri).netloc, title, client
-            )
-        else:
-            content, format, revid, title = _fetch_article_page(uri, client)
-    except Exception as e:
-        logger.warning(f"Failed to fetch {uri}: {e}")
-        return None
+    title = unquote(urlsplit(uri).path[len("/wiki/") :])
+    # Wikimedia throttles sustained bot traffic; pace uncached fetches.
+    time.sleep(THROTTLE_SECONDS)
+    for attempt in range(1, FETCH_ATTEMPTS + 1):
+        try:
+            if title.startswith("Category:"):
+                content, format, revid = _fetch_category_page(
+                    urlsplit(uri).netloc, title, client
+                )
+            else:
+                content, format, revid, title = _fetch_article_page(uri, client)
+            break
+        except Exception as e:
+            if attempt == FETCH_ATTEMPTS:
+                logger.warning(f"Failed to fetch {uri}: {e}")
+                return None
+            logger.info(f"Retrying {uri} after error: {e}")
+            time.sleep(_backoff_seconds(e, attempt))
 
     row: dict[str, Any] = {
         "uri": uri,
@@ -228,6 +246,11 @@ def load_frames_corpus() -> list[dict[str, Any]]:
                 if index % 100 == 0:
                     logger.info(f"Fetched {index}/{len(uris)} articles")
         logger.info(f"Fetched {len(rows)}/{len(uris)} articles")
+        if len(rows) < len(uris):
+            raise RuntimeError(
+                f"Fetched only {len(rows)}/{len(uris)} FRAMES articles; "
+                "refusing to build a partial corpus. Re-run to resume from cache."
+            )
         _cached_corpus = rows
     return _cached_corpus
 

@@ -1,6 +1,9 @@
 from pathlib import Path
 
+import pytest
+
 from evaluations.datasets.frames import (
+    FETCH_ATTEMPTS,
     build_frames_case,
     fetch_article,
     map_frames_document,
@@ -564,3 +567,124 @@ class TestFrames:
         content = Path(row["path"]).read_text()
         assert "1908 Summer Olympics" in content
         assert "2012 Summer Olympics" in content
+
+    def test_fetch_article_retries_transient_failures(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        sleeps: list[float] = []
+        monkeypatch.setattr(
+            "evaluations.datasets.frames.time.sleep", lambda s: sleeps.append(s)
+        )
+
+        class FlakyResponse:
+            text = "<html><body>ok</body></html>"
+            headers = {"etag": 'W/"42/uuid"'}
+
+            def raise_for_status(self) -> None:
+                pass
+
+        class FlakyClient:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def get(self, url: str, params: dict | None = None) -> FlakyResponse:
+                self.calls += 1
+                if self.calls < 3:
+                    raise OSError("connection reset")
+                return FlakyResponse()
+
+        client = FlakyClient()
+        row = fetch_article(
+            "https://en.wikipedia.org/wiki/Capybara",
+            tmp_path,
+            client=client,  # ty: ignore[invalid-argument-type]
+        )
+        assert row is not None
+        assert row["revid"] == "42"
+        assert client.calls == 3
+        # One throttle sleep before fetching plus one backoff per failure.
+        assert len(sleeps) == 3
+
+    def test_fetch_article_honors_retry_after_on_rate_limit(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        import httpx
+
+        sleeps: list[float] = []
+        monkeypatch.setattr(
+            "evaluations.datasets.frames.time.sleep", lambda s: sleeps.append(s)
+        )
+        request = httpx.Request("GET", "https://en.wikipedia.org/x")
+
+        class OkResponse:
+            text = "<html><body>ok</body></html>"
+            headers = {"etag": 'W/"42/uuid"'}
+
+            def raise_for_status(self) -> None:
+                pass
+
+        class RateLimitedClient:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def get(self, url: str, params: dict | None = None) -> OkResponse:
+                self.calls += 1
+                if self.calls == 1:
+                    raise httpx.HTTPStatusError(
+                        "429 too many requests",
+                        request=request,
+                        response=httpx.Response(
+                            429, headers={"retry-after": "13"}, request=request
+                        ),
+                    )
+                return OkResponse()
+
+        row = fetch_article(
+            "https://en.wikipedia.org/wiki/Capybara",
+            tmp_path,
+            client=RateLimitedClient(),  # ty: ignore[invalid-argument-type]
+        )
+        assert row is not None
+        assert 13.0 in sleeps
+
+    def test_fetch_article_gives_up_after_max_attempts(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        monkeypatch.setattr("evaluations.datasets.frames.time.sleep", lambda s: None)
+
+        class DeadClient:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def get(self, url: str, params: dict | None = None):
+                self.calls += 1
+                raise OSError("connection reset")
+
+        client = DeadClient()
+        row = fetch_article(
+            "https://en.wikipedia.org/wiki/Capybara",
+            tmp_path,
+            client=client,  # ty: ignore[invalid-argument-type]
+        )
+        assert row is None
+        assert client.calls == FETCH_ATTEMPTS
+
+    def test_load_corpus_raises_on_partial_fetch(self, monkeypatch) -> None:
+        import evaluations.datasets.frames as frames
+
+        monkeypatch.setattr(frames, "_cached_corpus", None)
+        monkeypatch.setattr(
+            frames,
+            "load_frames_test",
+            lambda: [
+                {
+                    "wiki_links": "['https://en.wikipedia.org/wiki/A', "
+                    "'https://en.wikipedia.org/wiki/B']"
+                }
+            ],
+        )
+        monkeypatch.setattr(
+            frames, "fetch_article", lambda uri, cache_dir, client: None
+        )
+        with pytest.raises(RuntimeError, match="0/2"):
+            frames.load_frames_corpus()
