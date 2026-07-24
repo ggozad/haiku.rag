@@ -1,7 +1,26 @@
+import base64
+
 import httpx
 
 from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk
+
+
+def _document(chunk: Chunk) -> str | dict:
+    """Rerank document for a chunk: plain text, or content parts carrying the
+    picture bytes as a data URI when the chunk has them (multimodal rerank)."""
+    data = chunk._picture_data
+    if data is None:
+        return chunk.content
+
+    mime = "image/jpeg" if data.startswith(b"\xff\xd8") else "image/png"
+    encoded = base64.b64encode(data).decode("ascii")
+    parts: list[dict] = [
+        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{encoded}"}}
+    ]
+    if chunk.content:
+        parts.append({"type": "text", "text": chunk.content})
+    return {"content": parts}
 
 
 class VLLMReranker(RerankerBase):
@@ -17,8 +36,7 @@ class VLLMReranker(RerankerBase):
     async def _rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10
     ) -> list[tuple[Chunk, float]]:
-        # Prepare documents for reranking
-        documents = [chunk.content for chunk in chunks]
+        documents = [_document(chunk) for chunk in chunks]
 
         response = await self._client.post(
             f"{self._base_url}/v1/rerank",

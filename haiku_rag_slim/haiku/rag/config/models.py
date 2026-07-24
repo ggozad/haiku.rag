@@ -74,7 +74,16 @@ class EmbeddingsConfig(BaseModel):
 
 
 class RerankingConfig(BaseModel):
+    """Configuration for reranking search results.
+
+    Attributes:
+        model: Reranker model, or None to disable reranking.
+        multimodal: Whether the reranker scores picture chunks by their image
+            bytes in addition to text. Supported on the vllm provider only.
+    """
+
     model: ModelConfig | None = None
+    multimodal: bool = False
 
 
 class QAConfig(BaseModel):

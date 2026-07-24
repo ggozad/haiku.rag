@@ -99,6 +99,7 @@ reranking:
   model:
     provider: ""  # Empty to disable, or cross-encoder, cohere, zeroentropy, vllm
     name: ""
+  multimodal: false  # vllm only: send picture chunks to the reranker as images
 
 qa:
   model:

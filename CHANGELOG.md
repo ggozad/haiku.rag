@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- `reranking.multimodal` config flag: picture chunks are sent to a vllm reranker as image documents.
+
 ### Fixed
 
 - `list`, `get`, and `visualize` no longer require an embeddings config matching the database.

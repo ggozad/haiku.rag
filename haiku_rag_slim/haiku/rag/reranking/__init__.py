@@ -9,6 +9,9 @@ def get_reranker(config: AppConfig = Config) -> RerankerBase | None:
     if model is None:
         return None
 
+    if config.reranking.multimodal and model.provider != "vllm":
+        raise ValueError("reranking.multimodal is only supported on the vllm provider")
+
     try:
         if model.provider == "cohere":
             from haiku.rag.reranking.cohere import CohereReranker
