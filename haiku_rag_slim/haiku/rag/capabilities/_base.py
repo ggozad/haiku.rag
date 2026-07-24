@@ -22,7 +22,7 @@ from pydantic_ai.toolsets import AgentToolset
 
 from haiku.rag.capabilities._tools import CodeExecutionEntry, search_corpus
 from haiku.rag.client import HaikuRAG
-from haiku.rag.config.models import AppConfig, ModelConfig
+from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.citation import Citation, resolve_citations
 from haiku.rag.tools.search import build_binary_parts_from_results
@@ -87,7 +87,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
     state_type: type[StateT]
     state_namespace: str
     instruction_text: str
-    model: ModelConfig
+    vision: bool
     tool_names: frozenset[str]
     request_limit: int | None = None
     state: StateT | None = field(default=None, repr=False)
@@ -220,7 +220,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
             )
         state = cast(Any, self.state)
         state.searches[query] = results
-        if self.model.vision and (parts := build_binary_parts_from_results(results)):
+        if self.vision and (parts := build_binary_parts_from_results(results)):
             return ToolReturn(return_value=formatted, content=parts)
         return formatted
 

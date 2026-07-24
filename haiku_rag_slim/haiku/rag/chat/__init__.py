@@ -55,7 +55,7 @@ def run_chat(
                 db_path=db_path,
                 config=config,
                 defer_loading=defer_loading,
-                model=driving_model,
+                vision=driving_model.vision,
             )
         )
 
@@ -67,7 +67,7 @@ def run_chat(
                 db_path=db_path,
                 config=config,
                 defer_loading=defer_loading,
-                model=driving_model,
+                vision=driving_model.vision,
             )
         )
 

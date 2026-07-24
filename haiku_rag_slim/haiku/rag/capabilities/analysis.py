@@ -13,7 +13,7 @@ from haiku.rag.capabilities._base import (
     RAGCapabilityBase,
     resolve_db_path,
 )
-from haiku.rag.config.models import AppConfig, ModelConfig
+from haiku.rag.config.models import AppConfig
 from haiku.rag.sandbox import AnalysisContext, Sandbox
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.citation import Citation
@@ -129,25 +129,27 @@ def create_capability(
     *,
     defer_loading: bool = True,
     request_limit: int | None = 30,
-    model: ModelConfig | None = None,
+    vision: bool | None = None,
 ) -> AnalysisCapability:
     """Create a native Pydantic AI analysis capability.
 
-    ``model`` sets the capability's image-attachment gate and should be the
-    model the hosting agent actually runs. Defaults to ``config.analysis.model``
-    (falling back to ``config.qa.model``).
+    ``vision`` gates whether picture chunks are attached to search results as
+    images, and should reflect the model the hosting agent actually runs.
+    Defaults to ``config.analysis.model.vision`` (falling back to
+    ``config.qa.model.vision``).
     """
     if config is None:
         from haiku.rag.config import get_config
 
         config = get_config()
+    analysis_model = config.analysis.model or config.qa.model
     return AnalysisCapability(
         db_path=resolve_db_path(db_path, config),
         config=config,
         state_type=AnalysisState,
         state_namespace=STATE_NAMESPACE,
         instruction_text=instructions(),
-        model=model or config.analysis.model or config.qa.model,
+        vision=analysis_model.vision if vision is None else vision,
         tool_names=_TOOL_NAMES,
         request_limit=request_limit,
         id=_CAPABILITY_ID,

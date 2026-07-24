@@ -47,23 +47,25 @@ def test_run_chat_defers_multiple_capabilities(temp_db_path: Path):
 
 
 @pytest.mark.parametrize(
-    ("enabled", "expected_model"),
+    ("enabled", "expected_model", "expected_vision"),
     [
-        (["analysis"], "analysis-model"),
-        (["rag"], "qa-model"),
-        (["rag", "analysis"], "qa-model"),
+        (["analysis"], "analysis-model", False),
+        (["rag"], "qa-model", True),
+        (["rag", "analysis"], "qa-model", True),
     ],
 )
 def test_run_chat_gates_capability_vision_on_driving_model(
-    temp_db_path: Path, enabled, expected_model
+    temp_db_path: Path, enabled, expected_model, expected_vision
 ):
     """Analysis-only chat runs on analysis.model; otherwise on qa.model. Every
-    attached capability's vision gate (its ``model``) tracks that one model."""
+    attached capability's vision gate tracks that one driving model."""
     from haiku.rag.config.models import AppConfig, ModelConfig
 
     config = AppConfig()
-    config.qa.model = ModelConfig(provider="openai", name="qa-model")
-    config.analysis.model = ModelConfig(provider="openai", name="analysis-model")
+    config.qa.model = ModelConfig(provider="openai", name="qa-model", vision=True)
+    config.analysis.model = ModelConfig(
+        provider="openai", name="analysis-model", vision=False
+    )
     captured: dict[str, str] = {}
 
     def fake_get_model(model_config, _config):
@@ -81,7 +83,7 @@ def test_run_chat_gates_capability_vision_on_driving_model(
 
     assert captured["name"] == expected_model
     attached = mock_app.call_args.kwargs["capabilities"]
-    assert {capability.model.name for capability in attached} == {expected_model}
+    assert {capability.vision for capability in attached} == {expected_vision}
 
 
 def _make_mock_client():
