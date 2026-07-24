@@ -33,8 +33,26 @@ THROTTLE_SECONDS = 1.0
 RATE_LIMIT_BACKOFF_SECONDS = 60.0
 
 
+# Articles deleted from Wikipedia since FRAMES was authored; the questions
+# linking them have lost their evidence and are excluded from the benchmark.
+_DELETED_ARTICLES = frozenset(
+    {
+        "https://en.wikipedia.org/wiki/Nemanja_Marković",
+        "https://en.wikipedia.org/wiki/Jack_Vance_(tennis)",
+    }
+)
+
+
 def load_frames_test() -> Dataset:
     return load_dataset("google/frames-benchmark")["test"]
+
+
+def question_is_answerable(doc: Mapping[str, Any]) -> bool:
+    return not _DELETED_ARTICLES & set(question_expected_uris(doc))
+
+
+def load_frames_questions() -> Dataset:
+    return load_frames_test().filter(question_is_answerable)
 
 
 def parse_wiki_links(raw: str) -> list[str]:
@@ -231,7 +249,7 @@ def load_frames_corpus() -> list[dict[str, Any]]:
     global _cached_corpus
     if _cached_corpus is None:
         uris: dict[str, None] = {}
-        for doc in load_frames_test():
+        for doc in load_frames_questions():
             for uri in question_expected_uris(doc):
                 uris.setdefault(uri)
         cache_dir = get_cache_dir()
@@ -301,9 +319,9 @@ FRAMES_SPEC = DatasetSpec(
     db_filename="frames.lancedb",
     document_loader=document_loader,
     document_mapper=map_frames_document,
-    qa_loader=load_frames_test,
+    qa_loader=load_frames_questions,
     qa_case_builder=build_frames_case,
-    retrieval_loader=load_frames_test,
+    retrieval_loader=load_frames_questions,
     retrieval_mapper=map_frames_retrieval,
     retrieval_evaluators=[MAPEvaluator()],
     citation_evaluator=CitationMAPEvaluator(),
