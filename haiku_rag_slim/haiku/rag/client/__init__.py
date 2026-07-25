@@ -484,19 +484,21 @@ class HaikuRAG:
         self,
         question: str,
         filter: str | None = None,
+        images: Sequence[bytes] | None = None,
     ) -> "tuple[str, list[Citation]]":
         from haiku.rag.client.agents import ask
 
-        return await ask(self, question, filter)
+        return await ask(self, question, filter, images)
 
     async def analyze(
         self,
         question: str,
         filter: str | None = None,
+        images: Sequence[bytes] | None = None,
     ) -> "AnalysisResult":
         from haiku.rag.client.agents import analyze
 
-        return await analyze(self, question, filter)
+        return await analyze(self, question, filter, images)
 
     async def visualize_chunk(
         self,

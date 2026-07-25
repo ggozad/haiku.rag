@@ -39,6 +39,12 @@ You can also render visual grounding from the CLI without launching the TUI:
 haiku-rag visualize <chunk_id>
 ```
 
+## Attaching images
+
+Press `Ctrl+I` to open the image picker: a directory tree filtered to image files with a live preview. Selecting an image inserts an `[Image #N]` token at the cursor and attaches the image to your next message. Tokens delete as a unit with backspace or delete, and you can place them anywhere in the text to control where each image appears relative to your words.
+
+Retrieval stays text-based; the images are sent to the model alongside your message, so the driving model needs `vision: true` in its configuration.
+
 ## Command palette
 
 `Ctrl+P` opens the palette.

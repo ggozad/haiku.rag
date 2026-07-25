@@ -107,12 +107,12 @@ After restarting Claude Desktop, you can ask Claude to search your documents, ad
 - **`ask_question`** - Ask questions about your documents
   - `question` (required): The question to ask
   - `cite` (optional): Include source citations (default: false)
-  - `deep` (optional): Use multi-agent deep QA for complex questions (default: false)
+  - `images_base64` (optional): Base64-encoded images attached to the question (requires a vision-capable QA model)
 
 - **`analyze`** - Answer complex analytical questions via code execution
   - `question` (required): The question to answer
   - `filter` (optional): SQL WHERE clause to restrict document access
-  - `document` (optional): Document title/ID to pre-load (can repeat)
+  - `images_base64` (optional): Base64-encoded images attached to the question (requires a vision-capable analysis model)
   - Best for aggregation, computation, and multi-document analysis
 
 ## Continuous ingestion

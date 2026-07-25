@@ -592,19 +592,25 @@ class HaikuRAGApp:  # pragma: no cover
         self,
         question: str,
         filter: str | None = None,
+        images: list[Path] | None = None,
     ):
         """Ask a question using the RAG system.
 
         Args:
             question: The question to ask
             filter: SQL WHERE clause to filter documents
+            images: Paths of images to attach to the question
         """
         async with HaikuRAG(
             db_path=self.db_path,
             config=self.config,
             read_only=True,
         ) as self.client:
-            answer, citations = await self.client.ask(question, filter=filter)
+            answer, citations = await self.client.ask(
+                question,
+                filter=filter,
+                images=[path.read_bytes() for path in images] if images else None,
+            )
 
             self.console.print(f"[bold blue]Question:[/bold blue] {question}")
             self.console.print()
@@ -619,12 +625,14 @@ class HaikuRAGApp:  # pragma: no cover
         self,
         question: str,
         filter: str | None = None,
+        images: list[Path] | None = None,
     ):
         """Answer a question using the analysis capability.
 
         Args:
             question: The question to answer
             filter: SQL WHERE clause to filter documents
+            images: Paths of images to attach to the question
         """
         async with HaikuRAG(
             db_path=self.db_path,
@@ -638,7 +646,11 @@ class HaikuRAGApp:  # pragma: no cover
             )
             self.console.print()
 
-            result = await self.client.analyze(question, filter=filter)
+            result = await self.client.analyze(
+                question,
+                filter=filter,
+                images=[path.read_bytes() for path in images] if images else None,
+            )
 
             self.console.print("[bold green]Answer:[/bold green]")
             self.console.print(Markdown(result.answer))

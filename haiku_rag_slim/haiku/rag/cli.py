@@ -352,12 +352,18 @@ def ask(  # pragma: no cover
         "-f",
         help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
     ),
+    image: list[Path] | None = typer.Option(
+        None,
+        "--image",
+        help="Path to an image to attach to the question (repeatable; requires a vision-capable model)",
+    ),
 ):
     app = create_app(db)
     asyncio.run(
         app.ask(
             question=question,
             filter=filter,
+            images=image,
         )
     )
 
@@ -378,12 +384,18 @@ def analyze(  # pragma: no cover
         "-f",
         help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
     ),
+    image: list[Path] | None = typer.Option(
+        None,
+        "--image",
+        help="Path to an image to attach to the question (repeatable; requires a vision-capable model)",
+    ),
 ):
     app = create_app(db)
     asyncio.run(
         app.analyze(
             question=question,
             filter=filter,
+            images=image,
         )
     )
 

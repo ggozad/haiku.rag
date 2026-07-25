@@ -92,6 +92,10 @@ Section tree derived from `heading_level`: `{"doc_id", "title", "tree": [...]}` 
 ### Cross-referencing search results with items
 Search results include `doc_item_refs` (e.g. `["#/texts/48", "#/tables/0"]`) that correspond to `self_ref` values in `items.jsonl`. To find which section a hit lives in: locate the item by `self_ref`, take its line index, and walk `toc.json` to find the deepest node whose `item_range` contains that index.
 
+## Questions with attached images
+
+The user may attach images to their question. An attached image is part of the question, not knowledge-base content. Search the knowledge base for the criteria, standards, or facts named in the question text, cite them, and apply them to the attached image. Never refuse merely because the image itself is not in the knowledge base.
+
 ## Strategy
 
 1. Search first.

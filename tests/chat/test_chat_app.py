@@ -124,7 +124,7 @@ def _make_app_with_state(db_path: Path, mock_client: AsyncMock | None = None):
 
 @pytest.mark.asyncio
 async def test_chat_app_has_required_widgets(temp_db_path: Path):
-    """Test that ChatApp has the required widgets: ChatHistory, Input."""
+    """Test that ChatApp has the required widgets: ChatHistory, FlexibleInput."""
     from haiku.rag.chat.widgets.chat_history import ChatHistory
 
     app, mock_client = _make_app(temp_db_path)
@@ -134,9 +134,9 @@ async def test_chat_app_has_required_widgets(temp_db_path: Path):
             chat_history = app.query_one(ChatHistory)
             assert chat_history is not None
 
-            from textual.widgets import Input
+            from haiku.rag.chat.widgets.prompt import FlexibleInput
 
-            chat_input = app.query_one(Input)
+            chat_input = app.query_one(FlexibleInput)
             assert chat_input is not None
 
 
@@ -400,3 +400,15 @@ async def test_document_filter_cleared_when_empty(temp_db_path: Path):
             rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
             assert rag_state.document_filter is None
             assert app._state["rag"]["document_filter"] is None
+
+
+@pytest.mark.asyncio
+async def test_chat_app_open_failure_surfaces_real_error(tmp_path: Path):
+    """A failed database open must surface its own error, not an
+    AttributeError from tearing down a client that never opened."""
+    from haiku.rag.chat.app import ChatApp
+
+    app = ChatApp(db_path=tmp_path / "missing.lancedb", capabilities=[])
+    with pytest.raises(FileNotFoundError):
+        async with app.run_test():
+            pass

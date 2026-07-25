@@ -12,7 +12,7 @@ Agentic RAG built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.p
 - **Hybrid search** — Vector + full-text with Reciprocal Rank Fusion
 - **Multimodal & cross-modal search** — Multimodal embedders (vLLM, VoyageAI, Cohere) put picture vectors in the same space as text; supports text-as-query → figure hits and image-as-query
 - **Question answering** — RAG capability with citations (page numbers, section headings)
-- **Vision QA** — Vision-capable models receive figure bytes alongside chunk text
+- **Vision QA** — Vision-capable models receive figure bytes alongside chunk text; attach your own images to questions in `ask`, `analyze`, MCP, and the chat TUI
 - **Reranking** — local cross-encoders, Cohere, Zero Entropy, or vLLM
 - **Analysis capability** — Complex analytical tasks via sandboxed Python code execution (aggregation, computation, multi-document analysis)
 - **Conversational RAG** — Chat TUI and web application for multi-turn conversations with session memory
@@ -61,6 +61,9 @@ haiku-rag search "attention mechanism"
 
 # Ask questions with citations
 haiku-rag ask "What datasets were used for evaluation?"
+
+# Ask about an image (vision-capable model)
+haiku-rag ask "Does this figure match the spec in the design doc?" --image figure.png
 
 # Analyze — complex analytical tasks via code execution
 haiku-rag analyze "How many documents mention transformers?"

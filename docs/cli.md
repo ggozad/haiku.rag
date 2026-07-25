@@ -161,11 +161,17 @@ Filter to specific documents:
 haiku-rag ask "What are the main findings?" --filter "uri LIKE '%paper%'"
 ```
 
+Attach images to the question, for example to check an image against indexed documents:
+```bash
+haiku-rag ask "Does this photo satisfy the spec in the design document?" --image photo.jpg
+```
+
 `ask` runs the [RAG capability](capabilities/rag.md) and always renders citations under the answer. When available, citations use the document title, otherwise they fall back to the URI.
 
 Flags:
 
 - `--filter` / `-f`: Restrict searches to documents matching the filter (see [Filtering Search Results](python.md#filtering-search-results))
+- `--image`: Path to an image attached to the question (repeatable). Retrieval stays text-based; the model must have `vision: true` configured.
 
 ## Analyze
 
@@ -184,6 +190,7 @@ haiku-rag analyze "What is the total revenue?" --filter "title LIKE '%Financial%
 Flags:
 
 - `--filter` / `-f`: SQL WHERE clause to restrict document access
+- `--image`: Path to an image attached to the question (repeatable). Requires `vision: true` on the analysis model.
 
 See [Analysis capability](capabilities/analysis.md) for details and configuration.
 
