@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 import textual_image.widget  # noqa: F401 - import early for renderer detection
 from pydantic_ai import Agent
 from pydantic_ai.messages import (
+    BinaryContent,
     FunctionToolCallEvent,
     FunctionToolResultEvent,
     PartDeltaEvent,
@@ -19,13 +20,19 @@ from pydantic_ai.messages import (
 from pydantic_ai.run import AgentRunResultEvent
 from textual.app import App, SystemCommand
 from textual.binding import Binding
-from textual.widgets import Footer, Header, Input
+from textual.widgets import Footer, Header
 from textual.worker import Worker
 
 from haiku.rag.capabilities._base import RAGCapabilityBase
 from haiku.rag.capabilities.analysis import AnalysisState
 from haiku.rag.capabilities.rag import AGENT_PREAMBLE, RAGState
 from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
+from haiku.rag.chat.widgets.image_select import ImageAdded
+from haiku.rag.chat.widgets.prompt import (
+    FlexibleInput,
+    PostableTextArea,
+    build_user_prompt,
+)
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
 from haiku.rag.telemetry import configure as configure_telemetry
@@ -95,6 +102,7 @@ class ChatApp(App):
         self._is_processing = False
         self._current_worker: Worker[None] | None = None
         self._document_filter: list[str] = []
+        self._images: list[bytes] = []
         # Stable per-launch id for multi-turn model and telemetry correlation.
         self._conversation_id = str(uuid.uuid4())
 
@@ -102,7 +110,7 @@ class ChatApp(App):
         """Compose the UI layout."""
         yield Header()
         yield ChatHistory(id="chat-history")
-        yield Input(placeholder="Ask a question...", id="chat-input")
+        yield FlexibleInput(id="chat-input")
         yield Footer()
 
     def get_system_commands(self, screen: Any) -> Iterable[SystemCommand]:
@@ -150,14 +158,14 @@ class ChatApp(App):
                 capability.state_type().model_dump(mode="json")
             )
 
-        self.query_one(Input).focus()
+        self.query_one(FlexibleInput).focus()
 
     async def on_unmount(self) -> None:
         """Clean up when unmounting."""
         if self.client:
             await self.client.__aexit__(None, None, None)
 
-    async def on_input_submitted(self, event: Input.Submitted) -> None:
+    async def on_flexible_input_submitted(self, event: FlexibleInput.Submitted) -> None:
         """Handle user input submission."""
         user_message = event.value.strip()
         if not user_message or self._is_processing:
@@ -168,13 +176,24 @@ class ChatApp(App):
         chat_history = self.query_one(ChatHistory)
         await chat_history.add_message("user", user_message)
 
+        user_prompt = build_user_prompt(user_message, self._images)
+        self._images = []
+
         self._is_processing = True
-        self.query_one(Input).disabled = True
+        self.query_one(FlexibleInput).disabled = True
         self._current_worker = self.run_worker(
-            self._run_agent(user_message), exclusive=True
+            self._run_agent(user_prompt), exclusive=True
         )
 
-    async def _run_agent(self, user_message: str) -> None:
+    def on_image_added(self, event: ImageAdded) -> None:
+        """Attach a picked image and insert its token into the prompt."""
+        self._images.append(event.data)
+        prompt = self.query_one(FlexibleInput)
+        prompt.insert_at_cursor(f"[Image #{len(self._images)}]")
+        prompt.focus()
+        self.notify(f"Attached {event.path.name}")
+
+    async def _run_agent(self, user_prompt: str | list[str | BinaryContent]) -> None:
         """Run the agent in a background worker."""
         if not self._agent:
             return
@@ -187,7 +206,7 @@ class ChatApp(App):
 
         try:
             async with self._agent.run_stream_events(
-                user_message,
+                user_prompt,
                 message_history=self._messages,
                 conversation_id=self._conversation_id,
                 deps=deps,
@@ -242,7 +261,7 @@ class ChatApp(App):
         finally:
             self._is_processing = False
             self._current_worker = None
-            chat_input = self.query_one(Input)
+            chat_input = self.query_one(FlexibleInput)
             chat_input.disabled = False
             chat_input.focus()
 
@@ -304,7 +323,7 @@ class ChatApp(App):
         """Focus the input field, or cancel if processing."""
         if self._is_processing and self._current_worker:
             self._current_worker.cancel()
-        self.query_one(Input).focus()
+        self.query_one(FlexibleInput).focus()
 
     def _clear_citation_selection(self) -> None:
         """Clear citation selection."""
@@ -314,7 +333,7 @@ class ChatApp(App):
 
     def on_descendant_focus(self, _event: object) -> None:
         """Clear citation selection when chat input is focused."""
-        if isinstance(self.focused, Input) and self.focused.id == "chat-input":
+        if isinstance(self.focused, PostableTextArea):
             self._clear_citation_selection()
 
     async def action_show_visual(self) -> None:

@@ -124,7 +124,7 @@ def _make_app_with_state(db_path: Path, mock_client: AsyncMock | None = None):
 
 @pytest.mark.asyncio
 async def test_chat_app_has_required_widgets(temp_db_path: Path):
-    """Test that ChatApp has the required widgets: ChatHistory, Input."""
+    """Test that ChatApp has the required widgets: ChatHistory, FlexibleInput."""
     from haiku.rag.chat.widgets.chat_history import ChatHistory
 
     app, mock_client = _make_app(temp_db_path)
@@ -134,9 +134,9 @@ async def test_chat_app_has_required_widgets(temp_db_path: Path):
             chat_history = app.query_one(ChatHistory)
             assert chat_history is not None
 
-            from textual.widgets import Input
+            from haiku.rag.chat.widgets.prompt import FlexibleInput
 
-            chat_input = app.query_one(Input)
+            chat_input = app.query_one(FlexibleInput)
             assert chat_input is not None
 
 
