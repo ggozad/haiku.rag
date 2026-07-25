@@ -8,6 +8,10 @@
 - MCP `ask_question` and `analyze` tools accept `images_base64`.
 - Chat TUI: `Ctrl+I` opens an image picker; attached images insert `[Image #N]` tokens in a multi-line prompt and are sent to the model with the message.
 
+### Fixed
+
+- Chat and inspector TUIs report the actual database-open error instead of an `AttributeError` from teardown.
+
 ## [0.69.0] - 2026-07-24
 
 ### Added

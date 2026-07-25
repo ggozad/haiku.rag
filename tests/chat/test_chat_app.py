@@ -400,3 +400,15 @@ async def test_document_filter_cleared_when_empty(temp_db_path: Path):
             rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
             assert rag_state.document_filter is None
             assert app._state["rag"]["document_filter"] is None
+
+
+@pytest.mark.asyncio
+async def test_chat_app_open_failure_surfaces_real_error(tmp_path: Path):
+    """A failed database open must surface its own error, not an
+    AttributeError from tearing down a client that never opened."""
+    from haiku.rag.chat.app import ChatApp
+
+    app = ChatApp(db_path=tmp_path / "missing.lancedb", capabilities=[])
+    with pytest.raises(FileNotFoundError):
+        async with app.run_test():
+            pass

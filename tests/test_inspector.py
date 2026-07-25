@@ -223,3 +223,15 @@ async def test_context_modal_suppresses_pictures_when_vision_disabled():
         await pilot.pause()
         modal = app.screen
         assert list(modal.query(TextualImage)) == []
+
+
+@pytest.mark.asyncio
+async def test_inspector_open_failure_surfaces_real_error(tmp_path):
+    """A failed database open must surface its own error, not an
+    AttributeError from tearing down a client that never opened."""
+    from haiku.rag.inspector.app import InspectorApp
+
+    app = InspectorApp(db_path=tmp_path / "missing.lancedb", read_only=True)
+    with pytest.raises(FileNotFoundError):
+        async with app.run_test():
+            pass
