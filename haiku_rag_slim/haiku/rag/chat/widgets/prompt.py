@@ -172,12 +172,16 @@ class FlexibleInput(Widget):
     DEFAULT_CSS = """
     FlexibleInput {
         height: auto;
-        padding: 0 1;
+        padding: 0 1 1 1;
         border-top: solid $primary-darken-1;
     }
 
     FlexibleInput:focus-within {
         border-top: solid $primary;
+    }
+
+    FlexibleInput > Horizontal {
+        height: auto;
     }
 
     FlexibleInput #promptMarker {

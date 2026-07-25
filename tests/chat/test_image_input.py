@@ -138,3 +138,25 @@ class TestChatAppImageAttach:
             await pilot.pause()
             assert app._images == [data]
             assert "[Image #1]" in app.query_one(PostableTextArea).text
+
+
+class TestChatAppLayout:
+    @pytest.mark.asyncio
+    async def test_prompt_stays_compact_and_history_visible(self, temp_db_path):
+        from haiku.rag.chat.app import ChatApp
+        from haiku.rag.chat.widgets.chat_history import ChatHistory
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True):
+            pass
+
+        app = ChatApp(db_path=temp_db_path, capabilities=[])
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            prompt = app.query_one(FlexibleInput)
+            history = app.query_one(ChatHistory)
+            assert prompt.region.height <= 4
+            assert history.region.height > prompt.region.height
+            assert history.region.y < prompt.region.y
+            area = app.query_one(PostableTextArea)
+            assert prompt.region.contains_region(area.region)
