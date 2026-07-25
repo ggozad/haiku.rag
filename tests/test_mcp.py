@@ -316,3 +316,19 @@ class TestMCPImageInput:
 
         result = await ask(question="q", images_base64=["!!! not base64 !!!"])
         assert "Error" in result
+
+    @pytest.mark.asyncio
+    async def test_ask_question_without_images_passes_none(self, mcp_db, monkeypatch):
+        captured = {}
+
+        async def fake_ask(self, question, filter=None, images=None):
+            captured["images"] = images
+            return ("answer", [])
+
+        monkeypatch.setattr(HaikuRAG, "ask", fake_ask)
+        mcp = create_mcp_server(mcp_db, read_only=True)
+        ask = await _get_tool(mcp, "ask_question")
+
+        result = await ask(question="q")
+        assert result == "answer"
+        assert captured["images"] is None
