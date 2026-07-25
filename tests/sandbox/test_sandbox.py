@@ -453,7 +453,7 @@ class TestSandboxHeldConnection:
                 assert int(lines[1]) > 0
                 assert lines[2] == "True"
             finally:
-                sb.close()
+                await sb.close()
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
@@ -557,7 +557,7 @@ class TestSandboxHeldConnection:
             assert first.stdout == second.stdout
             assert not any(t.name == "sandbox-vfs" for t in threading.enumerate())
         finally:
-            sb.close()
+            await sb.close()
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
@@ -584,21 +584,21 @@ class TestSandboxHeldConnection:
             assert second.success, second.stderr
             assert int(second.stdout.strip()) > 0
         finally:
-            sb.close()
+            await sb.close()
 
     @pytest.mark.asyncio
     async def test_close_is_safe_without_vfs_read(self, temp_db_path):
-        """close() is a no-op (and safe to call twice) when no VFS read happened."""
+        """close() is safe and idempotent before any code has run."""
         async with HaikuRAG(temp_db_path, create=True):
             config = AppConfig()
             sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
-            sb.close()
-            sb.close()
+            await sb.close()
+            await sb.close()
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_close_is_idempotent_after_vfs_read(self, temp_db_path):
-        """close() is a safe no-op after a VFS read; no background thread lingers."""
+        """close() tears down the worker and is idempotent; no thread lingers."""
         config = AppConfig()
         async with HaikuRAG(temp_db_path, create=True) as client:
             doc = await client.create_document(
@@ -616,5 +616,5 @@ class TestSandboxHeldConnection:
         )
         assert result.success
         assert not any(t.name == "sandbox-vfs" for t in threading.enumerate())
-        sb.close()
-        sb.close()
+        await sb.close()
+        await sb.close()

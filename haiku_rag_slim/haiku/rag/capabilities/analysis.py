@@ -66,7 +66,7 @@ class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
 
     async def _close(self) -> None:
         if self.sandbox is not None:
-            self.sandbox.close()
+            await self.sandbox.close()
             self.sandbox = None
         await super()._close()
 
