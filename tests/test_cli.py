@@ -271,3 +271,61 @@ class TestTagRestore:
         result = runner.invoke(cli, ["--help"])
         assert "--before" not in result.output
         assert "--at" not in result.output
+
+
+class TestAskAnalyzeImageOption:
+    def test_ask_forwards_image_paths(self):
+        from unittest.mock import AsyncMock
+
+        from haiku.rag.app import HaikuRAGApp
+
+        with patch.object(HaikuRAGApp, "ask", new_callable=AsyncMock) as mock_ask:
+            result = runner.invoke(
+                cli,
+                ["ask", "q", "--image", "/tmp/a.png", "--image", "/tmp/b.jpg"],
+            )
+        assert result.exit_code == 0
+        from pathlib import Path
+
+        assert mock_ask.call_args.kwargs["images"] == [
+            Path("/tmp/a.png"),
+            Path("/tmp/b.jpg"),
+        ]
+
+    def test_analyze_forwards_image_paths(self):
+        from unittest.mock import AsyncMock
+
+        from haiku.rag.app import HaikuRAGApp
+
+        with patch.object(HaikuRAGApp, "analyze", new_callable=AsyncMock) as mock:
+            result = runner.invoke(cli, ["analyze", "q", "--image", "/tmp/a.png"])
+        assert result.exit_code == 0
+        from pathlib import Path
+
+        assert mock.call_args.kwargs["images"] == [Path("/tmp/a.png")]
+
+    @pytest.mark.asyncio
+    async def test_app_ask_reads_image_bytes(self, temp_db_path, tmp_path):
+        from io import BytesIO
+        from unittest.mock import AsyncMock
+
+        from PIL import Image as PILImage
+
+        from haiku.rag.app import HaikuRAGApp
+        from haiku.rag.client import HaikuRAG
+
+        buffer = BytesIO()
+        PILImage.new("RGB", (4, 4)).save(buffer, format="PNG")
+        img_path = tmp_path / "img.png"
+        img_path.write_bytes(buffer.getvalue())
+
+        async with HaikuRAG(temp_db_path, create=True):
+            pass
+
+        with patch.object(
+            HaikuRAG, "ask", new_callable=AsyncMock, return_value=("answer", [])
+        ) as mock_ask:
+            app = HaikuRAGApp(db_path=temp_db_path)
+            await app.ask("q", images=[img_path])
+
+        assert mock_ask.call_args.kwargs["images"] == [buffer.getvalue()]

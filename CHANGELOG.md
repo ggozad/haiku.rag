@@ -4,6 +4,8 @@
 ### Added
 
 - `HaikuRAG.ask` and `HaikuRAG.analyze` accept `images: Sequence[bytes]`, attached to the question as model input; requires `vision: true` on the driving model.
+- `haiku-rag ask` and `haiku-rag analyze` accept `--image PATH` (repeatable).
+- MCP `ask_question` and `analyze` tools accept `images_base64`.
 
 ## [0.69.0] - 2026-07-24
 

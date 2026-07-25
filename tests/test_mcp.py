@@ -267,3 +267,52 @@ class TestMCPImageQuery:
         # in search_documents_by_image rejects it.
         results = await search_by_image(image_base64="!!! not base64 !!!")
         assert results == []
+
+
+class TestMCPImageInput:
+    @pytest.mark.asyncio
+    async def test_ask_question_decodes_images(self, mcp_db, monkeypatch):
+        from base64 import b64encode
+
+        captured = {}
+
+        async def fake_ask(self, question, filter=None, images=None):
+            captured["images"] = images
+            return ("answer", [])
+
+        monkeypatch.setattr(HaikuRAG, "ask", fake_ask)
+        mcp = create_mcp_server(mcp_db, read_only=True)
+        ask = await _get_tool(mcp, "ask_question")
+
+        png = b"fake image bytes"
+        result = await ask(question="q", images_base64=[b64encode(png).decode()])
+        assert result == "answer"
+        assert captured["images"] == [png]
+
+    @pytest.mark.asyncio
+    async def test_analyze_decodes_images(self, mcp_db, monkeypatch):
+        from base64 import b64encode
+        from types import SimpleNamespace
+
+        captured = {}
+
+        async def fake_analyze(self, question, filter=None, images=None):
+            captured["images"] = images
+            return SimpleNamespace(answer="answer")
+
+        monkeypatch.setattr(HaikuRAG, "analyze", fake_analyze)
+        mcp = create_mcp_server(mcp_db, read_only=True)
+        analyze = await _get_tool(mcp, "analyze")
+
+        jpeg = b"fake jpeg bytes"
+        result = await analyze(question="q", images_base64=[b64encode(jpeg).decode()])
+        assert result == "answer"
+        assert captured["images"] == [jpeg]
+
+    @pytest.mark.asyncio
+    async def test_ask_question_rejects_invalid_base64(self, mcp_db):
+        mcp = create_mcp_server(mcp_db, read_only=True)
+        ask = await _get_tool(mcp, "ask_question")
+
+        result = await ask(question="q", images_base64=["!!! not base64 !!!"])
+        assert "Error" in result

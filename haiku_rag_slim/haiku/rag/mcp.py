@@ -10,6 +10,14 @@ from haiku.rag.tools.document import DocumentInfo
 from haiku.rag.utils import format_citations
 
 
+def _decode_images(images_base64: list[str] | None) -> list[bytes] | None:
+    if not images_base64:
+        return None
+    import base64
+
+    return [base64.b64decode(b64, validate=True) for b64 in images_base64]
+
+
 def create_mcp_server(
     db_path: Path, config: AppConfig = Config, read_only: bool = False
 ) -> FastMCP:
@@ -186,19 +194,23 @@ def create_mcp_server(
     async def ask_question(
         question: str,
         cite: bool = False,
+        images_base64: list[str] | None = None,
     ) -> str:
         """Ask a question using the QA agent.
 
         Args:
             question: The question to ask.
             cite: Whether to include citations in the response.
+            images_base64: Base64-encoded images attached to the question
+                (requires a vision-capable QA model).
 
         Returns:
             The answer as a string.
         """
         try:
+            images = _decode_images(images_base64)
             async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
-                answer, citations = await rag.ask(question)
+                answer, citations = await rag.ask(question, images=images)
                 if cite and citations:
                     answer += "\n\n" + format_citations(citations)
                 return answer
@@ -209,6 +221,7 @@ def create_mcp_server(
     async def analyze(
         question: str,
         filter: str | None = None,
+        images_base64: list[str] | None = None,
     ) -> str:
         """Answer complex questions using the analysis capability.
 
@@ -219,13 +232,16 @@ def create_mcp_server(
         Args:
             question: The question to answer.
             filter: Optional SQL WHERE clause to filter documents.
+            images_base64: Base64-encoded images attached to the question
+                (requires a vision-capable analysis model).
 
         Returns:
             The answer as a string.
         """
         try:
+            images = _decode_images(images_base64)
             async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
-                result = await rag.analyze(question, filter=filter)
+                result = await rag.analyze(question, filter=filter, images=images)
                 return result.answer
         except Exception as e:
             return f"Error running analysis capability: {e!s}"  # pragma: no cover
