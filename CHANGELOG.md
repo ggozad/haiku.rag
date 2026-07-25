@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.70.0] - 2026-07-25
+
 ### Added
 
 - `HaikuRAG.ask` and `HaikuRAG.analyze` accept `images: Sequence[bytes]`, attached to the question as model input; requires `vision: true` on the driving model.
@@ -2023,7 +2025,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.69.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.70.0...HEAD
+[0.70.0]: https://github.com/ggozad/haiku.rag/compare/0.69.0...0.70.0
 [0.69.0]: https://github.com/ggozad/haiku.rag/compare/0.68.0...0.69.0
 [0.68.0]: https://github.com/ggozad/haiku.rag/compare/0.67.3...0.68.0
 [0.67.3]: https://github.com/ggozad/haiku.rag/compare/0.67.2...0.67.3
