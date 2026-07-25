@@ -1,5 +1,7 @@
 # Haiku RAG
 
+[![MCP Toplist](https://mcptoplist.com/badge/io.github.ggozad%2Fhaiku-rag.svg)](https://mcptoplist.com/server/io.github.ggozad%2Fhaiku-rag)
+
 [![Tests](https://github.com/ggozad/haiku.rag/actions/workflows/test.yml/badge.svg)](https://github.com/ggozad/haiku.rag/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/ggozad/haiku.rag/graph/badge.svg)](https://codecov.io/gh/ggozad/haiku.rag)
 
