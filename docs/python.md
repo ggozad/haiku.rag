@@ -328,6 +328,17 @@ answer, citations = await client.ask(
 )
 ```
 
+Attach images to the question, for example to check an image against indexed documents:
+
+```python
+answer, citations = await client.ask(
+    "Does this image satisfy the requirements in the design spec?",
+    images=[Path("photo.jpg").read_bytes()],
+)
+```
+
+Images are passed to the model alongside the question. Retrieval stays text-based. The QA model must have `vision: true` in its configuration.
+
 `client.ask` runs the [RAG capability](capabilities/rag.md) and returns `(answer_text, list[Citation])`. Citations include page numbers, section headings, document references, and the document's metadata (`document_meta`), so UIs can render metadata keys such as a public source URL alongside the citation.
 
 The QA provider and model are configured in `haiku.rag.yaml` or can be passed directly to the client (see [Configuration](configuration/index.md)).
@@ -353,6 +364,8 @@ result = await client.analyze(
 ```
 
 `client.analyze` runs the [analysis capability](capabilities/analysis.md), which writes and executes Python code in a sandboxed environment to solve problems that traditional RAG struggles with: aggregation, computation, and multi-document analysis.
+
+`client.analyze` also accepts `images=` like `client.ask`, requiring `vision: true` on the analysis model (or the QA model when no analysis model is configured).
 
 See [Analysis capability](capabilities/analysis.md) for details and configuration.
 

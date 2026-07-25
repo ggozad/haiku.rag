@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, cast
 from packaging.version import Version, parse
 
 if TYPE_CHECKING:
+    from pydantic_ai.messages import BinaryContent
     from pydantic_ai.profiles.openai import OpenAIModelProfile
     from rich.console import RenderableType
 
@@ -35,6 +36,21 @@ def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
     if norm1 == 0 or norm2 == 0:
         return 0.0
     return dot_product / (norm1 * norm2)
+
+
+def image_binary_content(data: bytes) -> "BinaryContent":
+    """Wrap raw image bytes as BinaryContent with the sniffed media type."""
+    from io import BytesIO
+
+    from PIL import Image as PILImage
+    from PIL import UnidentifiedImageError
+    from pydantic_ai.messages import BinaryContent
+
+    try:
+        fmt = PILImage.open(BytesIO(data)).format or "PNG"
+    except UnidentifiedImageError as e:
+        raise ValueError("data is not a recognizable image") from e
+    return BinaryContent(data=data, media_type=f"image/{fmt.lower()}")
 
 
 def apply_common_settings(
