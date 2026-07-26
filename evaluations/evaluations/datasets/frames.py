@@ -52,7 +52,9 @@ def question_is_answerable(doc: Mapping[str, Any]) -> bool:
 
 
 def load_frames_questions() -> Dataset:
-    return load_frames_test().filter(question_is_answerable)
+    """Answerable questions with a stable `id` (the dataset row number)."""
+    dataset = load_frames_test().filter(question_is_answerable)
+    return dataset.map(lambda row: {"id": str(row["Unnamed: 0"])})
 
 
 def parse_wiki_links(raw: str) -> list[str]:
@@ -304,10 +306,11 @@ def build_frames_case(
     index: int, doc: Mapping[str, Any]
 ) -> Case[str, str, dict[str, str]]:
     return Case(
-        name=f"{index}",
+        name=f"{index}_{doc['id']}",
         inputs=doc["Prompt"],
         expected_output=doc["Answer"],
         metadata={
+            "question_id": str(doc["id"]),
             "reasoning_types": str(doc["reasoning_types"]),
             "case_index": str(index),
         },

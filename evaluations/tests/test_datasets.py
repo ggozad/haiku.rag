@@ -500,15 +500,17 @@ class TestFrames:
 
     def test_build_case(self) -> None:
         row = {
+            "id": "7",
             "Prompt": "Who was the 15th president?",
             "Answer": "James Buchanan",
             "reasoning_types": "Multiple constraints | Temporal reasoning",
         }
         case = build_frames_case(3, row)
-        assert case.name == "3"
+        assert case.name == "3_7"
         assert case.inputs == "Who was the 15th president?"
         assert case.expected_output == "James Buchanan"
         assert case.metadata == {
+            "question_id": "7",
             "reasoning_types": "Multiple constraints | Temporal reasoning",
             "case_index": "3",
         }
@@ -698,3 +700,23 @@ class TestFrames:
         kept = {"wiki_links": "['https://en.wikipedia.org/wiki/Capybara']"}
         assert question_is_answerable(gone) is False
         assert question_is_answerable(kept) is True
+
+    def test_questions_carry_stable_ids(self, monkeypatch) -> None:
+        import evaluations.datasets.frames as frames
+        from datasets import Dataset
+
+        rows = Dataset.from_list(
+            [
+                {
+                    "Unnamed: 0": 7,
+                    "wiki_links": "['https://en.wikipedia.org/wiki/Capybara']",
+                },
+                {
+                    "Unnamed: 0": 8,
+                    "wiki_links": "['https://en.wikipedia.org/wiki/Jack_Vance_(tennis)']",
+                },
+            ]
+        )
+        monkeypatch.setattr(frames, "load_frames_test", lambda: rows)
+        questions = frames.load_frames_questions()
+        assert [row["id"] for row in questions] == ["7"]
