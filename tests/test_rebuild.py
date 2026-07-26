@@ -1069,3 +1069,383 @@ async def test_rebuild_blocks_tag_operations(temp_db_path, monkeypatch):
         assert not client.store._rebuild_lock.locked()
         await client.store.create_tag("post-rebuild")
         assert set(await client.store.list_tags()) == {"post-rebuild"}
+
+
+# --- unit-level rebuild helpers (no embedder involved) ---
+
+
+async def test_flush_rebuild_batch_is_a_noop_without_documents(temp_db_path):
+    from haiku.rag.client.rebuild import _flush_rebuild_batch
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        before = await client.store.documents_table.count_rows()
+
+        await _flush_rebuild_batch(client, [], [])
+
+        assert await client.store.documents_table.count_rows() == before
+
+
+async def test_mark_phase1_complete_is_idempotent(temp_db_path):
+    from haiku.rag.client.rebuild import (
+        _STAGING_MARKER_TABLE_NAME,
+        _mark_phase1_complete,
+    )
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await _mark_phase1_complete(client)
+        await _mark_phase1_complete(client)
+
+        tables = (await client.store.db.list_tables()).tables
+        assert _STAGING_MARKER_TABLE_NAME in tables
+
+
+async def test_populate_staging_returns_early_without_chunks_table(temp_db_path):
+    from haiku.rag.client.rebuild import _STAGING_TABLE_NAME, _populate_staging_table
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.store.db.drop_table("chunks")
+
+        await _populate_staging_table(client)
+
+        staging = await client.store.db.open_table(_STAGING_TABLE_NAME)
+        assert await staging.count_rows() == 0
+
+
+async def test_hydrate_skips_documents_deleted_mid_rebuild(temp_db_path):
+    """A document removed between listing and hydration is skipped."""
+    from haiku.rag.client.rebuild import _hydrate
+    from haiku.rag.store.models.document import Document
+    from haiku.rag.store.repositories.document import DocumentRepository
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        stored = await DocumentRepository(client.store).create(
+            Document(content="body", uri="test://gone")
+        )
+
+        async def vanished(_document_id):
+            return None
+
+        client.get_document_by_id = vanished  # type: ignore[method-assign]
+
+        assert [doc async for doc in _hydrate(client, [stored])] == []
+
+
+async def test_apply_descriptions_skips_pictures_without_text():
+    """A picture whose generated description is empty is left untouched."""
+    from haiku.rag.client.rebuild import _apply_descriptions_sync
+    from haiku.rag.store.models.document import Document
+    from tests.store.test_document_items import _docling_doc_with_picture
+
+    docling_doc = _docling_doc_with_picture()
+    ref = docling_doc.pictures[0].self_ref
+    document = Document(content="x", uri="test://doc")
+
+    _apply_descriptions_sync(docling_doc, document, {ref: ""})
+
+    assert docling_doc.pictures[0].meta is None
+
+
+@pytest.mark.asyncio
+async def test_patch_picture_descriptions_returns_zero_without_descriptions(
+    temp_db_path, monkeypatch
+):
+    """When the VLM returns nothing, no blob rewrite is attempted."""
+    from haiku.rag.client.documents import _store_document_with_chunks
+    from haiku.rag.client.rebuild import _patch_picture_descriptions
+    from haiku.rag.config import AppConfig
+    from haiku.rag.store.models.document import Document
+    from tests.store.test_document_items import _docling_doc_with_picture
+
+    docling_doc = _docling_doc_with_picture()
+    config = AppConfig()
+    config.processing.pictures = "description"
+
+    async def no_descriptions(_bytes_by_ref, config=None):
+        return {}
+
+    monkeypatch.setattr(
+        "haiku.rag.providers.picture_description.describe_pictures",
+        no_descriptions,
+    )
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
+        document = Document(content="x", uri="test://doc")
+        document.set_docling(docling_doc)
+        created = await _store_document_with_chunks(rag, document, [], docling_doc)
+
+        assert await _patch_picture_descriptions(rag, created) == 0
+
+
+@pytest.mark.vcr()
+async def test_rebuild_warns_when_post_rebuild_vacuum_fails(temp_db_path, monkeypatch):
+    """A failing post-rebuild vacuum is logged, not raised — the rebuild itself
+    already succeeded."""
+    import logging
+
+    from haiku.rag.client import rebuild as rebuild_module
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document(content="vacuum failure doc")
+        assert doc.id is not None
+        client._config.storage.auto_vacuum = True
+
+        async def failing_vacuum():
+            raise RuntimeError("vacuum exploded")
+
+        monkeypatch.setattr(client.store, "vacuum", failing_vacuum)
+
+        with capture_logs(rebuild_module.logger, logging.WARNING) as records:
+            processed = [
+                doc_id
+                async for doc_id in client.rebuild_database(mode=RebuildMode.RECHUNK)
+            ]
+
+        assert doc.id in processed
+        assert any("vacuum failed" in r.getMessage() for r in records)
+
+
+@pytest.mark.vcr()
+async def test_rebuild_embed_only_yields_documents_without_chunks(temp_db_path):
+    """A document whose chunks were all removed is still reported as processed."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document(content="doc that loses its chunks")
+        assert doc.id is not None
+        await client.chunk_repository.delete_by_document_id(doc.id)
+
+        processed = [
+            doc_id
+            async for doc_id in client.rebuild_database(mode=RebuildMode.EMBED_ONLY)
+        ]
+
+        assert processed == [doc.id]
+
+
+@pytest.mark.vcr()
+async def test_rebuild_embed_only_flushes_in_batches(temp_db_path, monkeypatch):
+    """Forces a tiny batch size so the mid-loop flush in phase 2 runs."""
+    from haiku.rag.client import rebuild as rebuild_module
+
+    monkeypatch.setattr(rebuild_module, "_REBUILD_BATCH_SIZE", 2)
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        ids = []
+        for i in range(3):
+            doc = await client.create_document(content=f"embed only batch doc {i}")
+            assert doc.id is not None
+            ids.append(doc.id)
+
+        processed = [
+            doc_id
+            async for doc_id in client.rebuild_database(mode=RebuildMode.EMBED_ONLY)
+        ]
+
+        assert sorted(processed) == sorted(ids)
+        for doc_id in ids:
+            assert await client.chunk_repository.get_by_document_id(doc_id)
+
+
+@pytest.mark.vcr()
+async def test_rechunk_raises_when_docling_blob_is_missing(temp_db_path):
+    """RECHUNK needs the stored docling document; without it the user is told
+    to run a full rebuild."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document(content="doc with a cleared blob")
+        assert doc.id is not None
+
+        await client.store.documents_table.update(
+            {"docling_document": None}, where=f"id = '{doc.id}'"
+        )
+
+        with pytest.raises(ValueError, match="has no stored docling document"):
+            async for _ in client.rebuild_database(mode=RebuildMode.RECHUNK):
+                pass
+
+
+@pytest.mark.vcr()
+async def test_rebuild_full_flushes_in_batches(temp_db_path, monkeypatch):
+    from haiku.rag.client import rebuild as rebuild_module
+
+    monkeypatch.setattr(rebuild_module, "_REBUILD_BATCH_SIZE", 2)
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        ids = []
+        for i in range(3):
+            doc = await client.create_document(content=f"full batch doc {i}")
+            assert doc.id is not None
+            ids.append(doc.id)
+
+        processed = [
+            doc_id async for doc_id in client.rebuild_database(mode=RebuildMode.FULL)
+        ]
+
+        assert sorted(processed) == sorted(ids)
+
+
+@pytest.mark.vcr()
+async def test_rebuild_full_warns_when_source_is_missing(temp_db_path):
+    """A document whose file source is gone is re-embedded from stored content."""
+    import logging
+
+    from haiku.rag.client import rebuild as rebuild_module
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document(
+            content="content whose source vanished",
+            uri="file:///definitely/not/here.txt",
+        )
+        assert doc.id is not None
+
+        with capture_logs(rebuild_module.logger, logging.WARNING) as records:
+            processed = [
+                doc_id
+                async for doc_id in client.rebuild_database(mode=RebuildMode.FULL)
+            ]
+
+        assert doc.id in processed
+        assert any("Source missing" in r.getMessage() for r in records)
+
+
+@pytest.mark.vcr()
+async def test_rebuild_full_flushes_pending_before_source_rebuild(temp_db_path):
+    """A live source is re-ingested, which creates a new document, so any
+    documents pending from the content path must be flushed first."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        content_doc = await client.create_document(content="plain content doc")
+        assert content_doc.id is not None
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "live.txt"
+            source.write_text("content from a source that still exists")
+            source_doc = await client.create_document_from_source(source)
+            assert not isinstance(source_doc, list)
+
+            processed = [
+                doc_id
+                async for doc_id in client.rebuild_database(mode=RebuildMode.FULL)
+            ]
+
+        assert content_doc.id in processed
+
+
+@pytest.mark.vcr()
+async def test_rebuild_descriptions_flushes_in_batches(temp_db_path, monkeypatch):
+    """Two picture documents with a batch size of one exercise the mid-loop
+    flush in the descriptions path."""
+    from haiku.rag.client import rebuild as rebuild_module
+    from haiku.rag.client.documents import _store_document_with_chunks
+    from haiku.rag.config import AppConfig
+    from haiku.rag.store.models.document import Document
+    from tests.store.test_document_items import _docling_doc_with_picture
+
+    config = AppConfig()
+    config.processing.pictures = "description"
+
+    monkeypatch.setattr(rebuild_module, "_REBUILD_BATCH_SIZE", 1)
+
+    async def fake_describe(image_bytes_by_ref, *, config):
+        return {ref: "A red square (mocked)." for ref in image_bytes_by_ref}
+
+    monkeypatch.setattr(
+        "haiku.rag.providers.picture_description.describe_pictures", fake_describe
+    )
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
+        ids = []
+        for i in range(2):
+            docling_doc = _docling_doc_with_picture()
+            document = Document(content=f"picture doc {i}", uri=f"test://doc-{i}")
+            document.set_docling(docling_doc)
+            created = await _store_document_with_chunks(rag, document, [], docling_doc)
+            assert created.id is not None
+            ids.append(created.id)
+
+        processed = [
+            doc_id
+            async for doc_id in rag.rebuild_database(mode=RebuildMode.DESCRIPTIONS)
+        ]
+
+        assert sorted(processed) == sorted(ids)
+
+
+@pytest.mark.vcr()
+async def test_rebuild_full_skips_document_deleted_mid_rebuild(temp_db_path):
+    """A document removed between listing and the content-path reload is skipped."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document(content="doc that disappears")
+        assert doc.id is not None
+
+        async def vanished(_document_id):
+            return None
+
+        client.get_document_by_id = vanished  # type: ignore[method-assign]
+
+        processed = [
+            doc_id async for doc_id in client.rebuild_database(mode=RebuildMode.FULL)
+        ]
+
+        assert processed == []
+
+
+@pytest.mark.vcr()
+@pytest.mark.parametrize("wipe_bytes", [True, False], ids=["wiped", "recoverable"])
+async def test_rebuild_embed_only_recovers_picture_bytes(
+    temp_db_path, monkeypatch, wipe_bytes
+):
+    """Embed-only re-attaches picture bytes from document_items. When they are
+    gone the chunk falls back to embedding its caption as text rather than
+    failing the rebuild."""
+    import logging
+
+    from haiku.rag.client import rebuild as rebuild_module
+    from haiku.rag.client.documents import _store_document_with_chunks
+    from haiku.rag.store.models.chunk import Chunk
+    from haiku.rag.store.models.document import Document
+    from tests.store.test_document_items import _docling_doc_with_picture
+
+    docling_doc = _docling_doc_with_picture()
+    ref = docling_doc.pictures[0].self_ref
+
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        # The configured ollama embedder is text-only; stand in for a
+        # multimodal one so the picture-bytes recovery branch runs.
+        async def fake_embed_image(image):
+            return [0.2] * rag.embedder.vector_dim
+
+        monkeypatch.setattr(rag.embedder, "supports_images", True)
+        monkeypatch.setattr(rag.embedder, "embed_image", fake_embed_image)
+
+        document = Document(content="picture doc", uri="test://pic")
+        document.set_docling(docling_doc)
+        picture_chunk = Chunk(
+            content="Figure caption",
+            metadata={"doc_item_refs": [ref], "labels": ["picture"]},
+            order=0,
+            embedding=[0.1] * rag.embedder.vector_dim,
+        )
+        # A sibling text chunk exercises the non-picture skip in the same loop.
+        text_chunk = Chunk(
+            content="Surrounding prose",
+            metadata={"doc_item_refs": ["#/texts/0"], "labels": ["text"]},
+            order=1,
+            embedding=[0.1] * rag.embedder.vector_dim,
+        )
+        created = await _store_document_with_chunks(
+            rag, document, [picture_chunk, text_chunk], docling_doc
+        )
+        assert created.id is not None
+
+        if wipe_bytes:
+            await rag.store.document_items_table.update(
+                {"picture_data": None},
+                where=f"document_id = '{created.id}' AND label = 'picture'",
+            )
+
+        with capture_logs(rebuild_module.logger, logging.WARNING) as records:
+            processed = [
+                doc_id
+                async for doc_id in rag.rebuild_database(mode=RebuildMode.EMBED_ONLY)
+            ]
+
+        assert created.id in processed
+        warned = any("no recoverable bytes" in r.getMessage() for r in records)
+        assert warned is wipe_bytes
