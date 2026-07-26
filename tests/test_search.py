@@ -480,20 +480,26 @@ def _picture_only_result(
     )
 
 
-def test_dedup_keeps_higher_scoring_picture_chunk():
+@pytest.mark.parametrize(
+    "first_score,second_score",
+    # Whichever duplicate scores higher wins, regardless of arrival order.
+    [(0.7, 0.9), (0.9, 0.7)],
+    ids=["later_wins", "earlier_wins"],
+)
+def test_dedup_keeps_higher_scoring_picture_chunk(first_score, second_score):
     """Two results referencing the same single picture self_ref collapse
     to the one with the higher score."""
     from haiku.rag.client.search import _dedup_picture_chunks
 
-    text_chunk = _picture_only_result("#/pictures/0", score=0.7)
-    pic_chunk = _picture_only_result("#/pictures/0", score=0.9)
+    text_chunk = _picture_only_result("#/pictures/0", score=first_score)
+    pic_chunk = _picture_only_result("#/pictures/0", score=second_score)
     other = _picture_only_result("#/pictures/1", score=0.6)
 
     deduped = _dedup_picture_chunks([text_chunk, pic_chunk, other])
 
     assert len(deduped) == 2
     chosen = next(r for r in deduped if r.doc_item_refs == ["#/pictures/0"])
-    assert chosen.score == 0.9
+    assert chosen.score == max(first_score, second_score)
     assert any(r.doc_item_refs == ["#/pictures/1"] for r in deduped)
 
 
@@ -525,3 +531,56 @@ def test_dedup_does_not_collapse_across_documents():
 
     deduped = _dedup_picture_chunks([a, b])
     assert len(deduped) == 2
+
+
+# visualize_chunk short-circuits
+
+
+@pytest.mark.asyncio
+async def test_expand_context_passes_through_results_without_document(temp_db_path):
+    """A result with no document_id can't be expanded; it is returned as-is."""
+    from haiku.rag.client.search import expand_context
+
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        orphan = SearchResult(content="loose text", score=0.5, chunk_id="c1")
+        assert await expand_context(rag, [orphan]) == [orphan]
+
+
+@pytest.mark.asyncio
+async def test_visualize_chunk_returns_empty_for_no_chunks(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        assert await rag.visualize_chunk([]) == []
+
+
+@pytest.mark.asyncio
+async def test_visualize_chunk_returns_empty_without_document_id(temp_db_path):
+    from haiku.rag.store.models.chunk import Chunk
+
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        assert await rag.visualize_chunk(Chunk(content="x", metadata={})) == []
+
+
+@pytest.mark.asyncio
+async def test_visualize_chunk_returns_empty_when_document_missing(temp_db_path):
+    from haiku.rag.store.models.chunk import Chunk
+
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        chunk = Chunk(content="x", document_id="does-not-exist", metadata={})
+        assert await rag.visualize_chunk(chunk) == []
+
+
+@pytest.mark.asyncio
+async def test_visualize_chunk_returns_empty_when_docling_blob_absent(temp_db_path):
+    """A markdown-ingested document has no docling structure to resolve boxes in."""
+    from haiku.rag.store.models.chunk import Chunk
+    from haiku.rag.store.models.document import Document
+    from haiku.rag.store.repositories.document import DocumentRepository
+
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        doc = await DocumentRepository(rag.store).create(
+            Document(content="plain body", uri="test://plain")
+        )
+        assert doc.id is not None
+        chunk = Chunk(content="plain body", document_id=doc.id, metadata={})
+
+        assert await rag.visualize_chunk(chunk) == []

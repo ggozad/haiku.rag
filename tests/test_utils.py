@@ -139,27 +139,38 @@ Emoji test: 🚀 ✅ 📝"""
     assert "🚀" in result_markdown
 
 
-def test_get_model_ollama():
-    """Test get_model returns OpenAIChatModel for Ollama."""
-    model_config = ModelConfig(provider="ollama", name="llama3")
-    result = get_model(model_config)
-    assert isinstance(result, OpenAIChatModel)
-
-
-def test_get_model_ollama_without_thinking():
-    """Test get_model configures thinking for gpt-oss on Ollama."""
-    model_config = ModelConfig(provider="ollama", name="gpt-oss", enable_thinking=False)
-    result = get_model(model_config)
-    assert isinstance(result, OpenAIChatModel)
-
-
-def test_get_model_ollama_with_settings():
-    """Test get_model applies temperature and max_tokens for Ollama."""
-    model_config = ModelConfig(
-        provider="ollama", name="llama3", temperature=0.5, max_tokens=100
-    )
-    result = get_model(model_config)
-    assert isinstance(result, OpenAIChatModel)
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"provider": "ollama", "name": "llama3"},
+        {"provider": "ollama", "name": "gpt-oss", "enable_thinking": False},
+        {"provider": "ollama", "name": "gpt-oss", "enable_thinking": True},
+        {"provider": "ollama", "name": "llama3", "temperature": 0.5, "max_tokens": 100},
+        {"provider": "openai", "name": "gpt-4o"},
+        {"provider": "openai", "name": "o1", "enable_thinking": True},
+        {"provider": "openai", "name": "o1", "enable_thinking": False},
+        {
+            "provider": "openai",
+            "name": "gpt-4o",
+            "enable_thinking": False,
+            "temperature": 0.7,
+            "max_tokens": 500,
+        },
+    ],
+    ids=[
+        "ollama",
+        "ollama_thinking_off",
+        "ollama_thinking_on",
+        "ollama_with_settings",
+        "openai",
+        "openai_reasoning_thinking_on",
+        "openai_reasoning_thinking_off",
+        "openai_all_settings",
+    ],
+)
+def test_get_model_returns_openai_chat_model(kwargs):
+    """Every ollama and openai configuration resolves to an OpenAIChatModel."""
+    assert isinstance(get_model(ModelConfig(**kwargs)), OpenAIChatModel)
 
 
 def test_get_model_ollama_appends_v1_to_per_model_base_url():
@@ -181,20 +192,6 @@ def test_get_model_ollama_does_not_double_append_v1():
     url = str(result.client.base_url).rstrip("/")
     assert url.endswith("/v1")
     assert not url.endswith("/v1/v1")
-
-
-def test_get_model_openai():
-    """Test get_model returns OpenAIChatModel for OpenAI."""
-    model_config = ModelConfig(provider="openai", name="gpt-4o")
-    result = get_model(model_config)
-    assert isinstance(result, OpenAIChatModel)
-
-
-def test_get_model_openai_with_thinking():
-    """Test get_model configures thinking for OpenAI reasoning models."""
-    model_config = ModelConfig(provider="openai", name="o1", enable_thinking=True)
-    result = get_model(model_config)
-    assert isinstance(result, OpenAIChatModel)
 
 
 def test_get_model_openai_non_reasoning_model_ignores_thinking():
@@ -299,14 +296,15 @@ def test_get_model_anthropic():
 
 
 @pytest.mark.skipif(not HAS_ANTHROPIC, reason="Anthropic not installed")
-def test_get_model_anthropic_with_thinking():
+@pytest.mark.parametrize("enable_thinking", [True, False])
+def test_get_model_anthropic_with_thinking(enable_thinking):
     """Test get_model configures thinking for Anthropic."""
     from pydantic_ai.models.anthropic import AnthropicModel
 
     model_config = ModelConfig(
         provider="anthropic",
         name="claude-3-5-sonnet-20241022",
-        enable_thinking=True,
+        enable_thinking=enable_thinking,
     )
     result = get_model(model_config)
     assert isinstance(result, AnthropicModel)
@@ -345,12 +343,15 @@ def test_get_model_groq():
 
 
 @pytest.mark.skipif(not HAS_GROQ, reason="Groq not installed")
-def test_get_model_groq_with_thinking():
+@pytest.mark.parametrize("enable_thinking", [True, False])
+def test_get_model_groq_with_thinking(enable_thinking):
     """Test get_model configures thinking format for Groq."""
     from pydantic_ai.models.groq import GroqModel
 
     model_config = ModelConfig(
-        provider="groq", name="llama-3.3-70b-versatile", enable_thinking=False
+        provider="groq",
+        name="llama-3.3-70b-versatile",
+        enable_thinking=enable_thinking,
     )
     result = get_model(model_config)
     assert isinstance(result, GroqModel)
@@ -369,14 +370,26 @@ def test_get_model_bedrock():
 
 
 @pytest.mark.skipif(not HAS_BEDROCK, reason="Bedrock not installed")
-def test_get_model_bedrock_with_thinking():
-    """Test get_model configures thinking for Bedrock Claude models."""
+@pytest.mark.parametrize("enable_thinking", [True, False])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "openai.o3-mini-v1:0",
+        "qwen.qwen3-32b-v1:0",
+        # A family with no reasoning mapping leaves the request fields untouched.
+        "meta.llama3-70b-instruct-v1:0",
+    ],
+    ids=["claude", "o_series", "qwen", "unmapped_family"],
+)
+def test_get_model_bedrock_with_thinking(name, enable_thinking):
+    """Each Bedrock model family maps thinking onto its own request field."""
     from pydantic_ai.models.bedrock import BedrockConverseModel
 
     model_config = ModelConfig(
         provider="bedrock",
-        name="anthropic.claude-3-5-sonnet-20241022-v2:0",
-        enable_thinking=True,
+        name=name,
+        enable_thinking=enable_thinking,
     )
     result = get_model(model_config)
     assert isinstance(result, BedrockConverseModel)
@@ -388,19 +401,6 @@ def test_get_model_unknown_provider():
     result = get_model(model_config)
     assert isinstance(result, str)
     assert result == "mistral:mistral-large-latest"
-
-
-def test_get_model_with_all_settings():
-    """Test get_model applies all settings together."""
-    model_config = ModelConfig(
-        provider="openai",
-        name="gpt-4o",
-        enable_thinking=False,
-        temperature=0.7,
-        max_tokens=500,
-    )
-    result = get_model(model_config)
-    assert isinstance(result, OpenAIChatModel)
 
 
 def test_get_package_versions():
@@ -526,20 +526,7 @@ def test_format_citations_multiple_pages():
     result = format_citations([citation])
     assert "[1] test://doc" in result
     assert "pp. 1-3" in result
-
-
-def test_format_citations_no_title():
-    from haiku.rag.store.models.citation import Citation
-    from haiku.rag.utils import format_citations
-
-    citation = Citation(
-        document_id="doc1",
-        chunk_id="chunk1",
-        document_uri="test://doc",
-        content="Content",
-    )
-    result = format_citations([citation])
-    assert "[1] test://doc" in result
+    # No title: the URI stands in, and the document id never leaks.
     assert "doc1" not in result
 
 
@@ -758,3 +745,85 @@ def test_parse_model_option():
     for bad in ["just-a-name", ":model", "provider:"]:
         with pytest.raises(ValueError, match="Invalid model format"):
             parse_model_option(bad)
+
+
+def test_cosine_similarity_identical_vectors():
+    from haiku.rag.utils import cosine_similarity
+
+    assert cosine_similarity([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
+    assert cosine_similarity([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
+
+
+async def test_format_citations_rich_separates_multiple_citations():
+    from haiku.rag.store.models.citation import Citation
+    from haiku.rag.utils import format_citations_rich
+
+    citations = [
+        Citation(
+            document_id=f"doc{i}",
+            chunk_id=f"chunk{i}",
+            document_uri=f"test://doc{i}",
+            document_title=f"Doc {i}",
+            content=f"Body {i}",
+        )
+        for i in (1, 2)
+    ]
+
+    output = _render_rich(await format_citations_rich(citations))
+
+    assert "[1] Doc 1 (test://doc1)" in output
+    assert "[2] Doc 2 (test://doc2)" in output
+
+
+@pytest.mark.parametrize(
+    "stored,renders",
+    [
+        (None, False),
+        (b"not a real image", False),
+        ("png", True),
+    ],
+    ids=["no_bytes", "undecodable_bytes", "valid_png"],
+)
+async def test_render_picture_handles_stored_bytes(stored, renders):
+    from unittest.mock import AsyncMock
+
+    from haiku.rag.utils import _render_picture
+
+    if stored == "png":
+        from io import BytesIO
+
+        from PIL import Image as PILImage
+
+        buf = BytesIO()
+        PILImage.new("RGB", (4, 4), "red").save(buf, format="PNG")
+        stored = buf.getvalue()
+
+    client = AsyncMock()
+    client.document_item_repository.get_picture_bytes = AsyncMock(return_value=stored)
+
+    result = await _render_picture(client, "doc1", "#/pictures/0")
+
+    assert (result is not None) is renders
+
+
+async def test_render_picture_without_client_returns_none():
+    from haiku.rag.utils import _render_picture
+
+    assert await _render_picture(None, "doc1", "#/pictures/0") is None
+
+
+def test_get_package_versions_reports_missing_docling(monkeypatch):
+    from importlib import metadata as importlib_metadata
+
+    from haiku.rag.utils import get_package_versions
+
+    real_version = importlib_metadata.version
+
+    def fake_version(name):
+        if name == "docling":
+            raise importlib_metadata.PackageNotFoundError(name)
+        return real_version(name)
+
+    monkeypatch.setattr(importlib_metadata, "version", fake_version)
+
+    assert get_package_versions()["docling"] == "not installed"
