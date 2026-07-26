@@ -7,6 +7,7 @@ import pytest
 
 from haiku.rag.client.processing import _warn_if_descriptions_missing, convert
 from haiku.rag.config import AppConfig
+from tests.conftest import capture_logs
 
 
 def _doc_with_pictures(*, with_descriptions: bool):
@@ -44,24 +45,12 @@ def _doc_without_pictures():
 
 
 @pytest.fixture
-def caplog_warnings(caplog):
+def caplog_warnings():
     """Capture WARNING-level records from the processing logger."""
-    caplog.set_level(logging.WARNING, logger="haiku.rag.client.processing")
-    # The haiku.rag parent logger sets propagate=False after get_logger() runs,
-    # which can break caplog under xdist when other tests have already
-    # configured logging. Attach directly to the module logger.
     from haiku.rag.client.processing import logger as proc_logger
 
-    records: list[logging.LogRecord] = []
-
-    class _Capture(logging.Handler):
-        def emit(self, record: logging.LogRecord) -> None:
-            records.append(record)
-
-    handler = _Capture(level=logging.WARNING)
-    proc_logger.addHandler(handler)
-    yield records
-    proc_logger.removeHandler(handler)
+    with capture_logs(proc_logger, logging.WARNING) as records:
+        yield records
 
 
 def test_no_warning_when_picture_description_disabled(caplog_warnings):

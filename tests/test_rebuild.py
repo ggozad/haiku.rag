@@ -7,6 +7,7 @@ import pytest
 
 from haiku.rag.client import HaikuRAG, RebuildMode
 from haiku.rag.config import Config
+from tests.conftest import capture_logs
 
 
 class ChunkData(TypedDict):
@@ -615,25 +616,11 @@ async def test_rebuild_full_source_failure_is_logged_and_skipped(
 
             monkeypatch.setattr(client, "create_document_from_source", failing_create)
 
-            # Attach directly to the rebuild module's logger rather than
-            # relying on caplog — `haiku.rag.logging.get_logger()` (invoked
-            # by other tests) sets `propagate=False` on the `haiku.rag`
-            # logger, which breaks caplog under xdist ordering.
-            records: list[logging.LogRecord] = []
-
-            class _ListHandler(logging.Handler):
-                def emit(self, record: logging.LogRecord) -> None:
-                    records.append(record)
-
-            handler = _ListHandler(level=logging.ERROR)
-            rebuild_module.logger.addHandler(handler)
-            try:
+            with capture_logs(rebuild_module.logger, logging.ERROR) as records:
                 processed_ids = [
                     doc_id
                     async for doc_id in client.rebuild_database(mode=RebuildMode.FULL)
                 ]
-            finally:
-                rebuild_module.logger.removeHandler(handler)
 
             assert processed_ids == []
             assert any(
@@ -843,7 +830,7 @@ async def test_patch_picture_descriptions_returns_zero_for_doc_without_pictures(
 
 
 @pytest.mark.asyncio
-async def test_patch_picture_descriptions_warns_on_missing_bytes(temp_db_path, caplog):
+async def test_patch_picture_descriptions_warns_on_missing_bytes(temp_db_path):
     """When the docling blob has pictures but document_items.picture_data is
     empty (e.g. legacy DB ingested before A2b), the helper logs a warning
     and returns 0 instead of trying to drive the VLM with no input."""
@@ -872,23 +859,10 @@ async def test_patch_picture_descriptions_warns_on_missing_bytes(temp_db_path, c
             where=f"document_id = '{created.id}' AND label = 'picture'",
         )
 
-        # Capture warnings directly off the rebuild module logger — the
-        # haiku.rag parent logger is configured non-propagating elsewhere
-        # in the suite so caplog can miss records.
         from haiku.rag.client import rebuild as rebuild_module
 
-        records: list[logging.LogRecord] = []
-
-        class _ListHandler(logging.Handler):
-            def emit(self, record: logging.LogRecord) -> None:
-                records.append(record)
-
-        handler = _ListHandler(level=logging.WARNING)
-        rebuild_module.logger.addHandler(handler)
-        try:
+        with capture_logs(rebuild_module.logger, logging.WARNING) as records:
             n = await _patch_picture_descriptions(rag, created)
-        finally:
-            rebuild_module.logger.removeHandler(handler)
 
         assert n == 0
         assert any("no stored picture bytes" in r.getMessage() for r in records)

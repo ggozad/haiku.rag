@@ -3,6 +3,7 @@ import pytest
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import Config
 from haiku.rag.store.models.chunk import Chunk, ChunkMetadata, SearchResult
+from tests.conftest import capture_logs
 
 
 @pytest.mark.vcr()
@@ -123,136 +124,86 @@ async def test_chunking_pipeline(qa_corpus: list[dict[str, str]], temp_db_path):
             assert chunk.order == i
 
 
-def test_chunk_metadata_parsing():
+@pytest.mark.parametrize(
+    "metadata,refs,headings,labels,page_numbers",
+    [
+        (
+            {
+                "doc_item_refs": ["#/texts/0", "#/texts/1", "#/tables/0"],
+                "headings": ["Chapter 1", "Section 1.1"],
+                "labels": ["paragraph", "paragraph", "table"],
+                "page_numbers": [1, 1, 2],
+            },
+            ["#/texts/0", "#/texts/1", "#/tables/0"],
+            ["Chapter 1", "Section 1.1"],
+            ["paragraph", "paragraph", "table"],
+            [1, 1, 2],
+        ),
+        ({}, [], None, [], []),
+    ],
+    ids=["populated", "defaults"],
+)
+def test_chunk_metadata_parsing(metadata, refs, headings, labels, page_numbers):
     """Test ChunkMetadata parsing from chunk metadata dict."""
-    metadata_dict = {
-        "doc_item_refs": ["#/texts/0", "#/texts/1", "#/tables/0"],
-        "headings": ["Chapter 1", "Section 1.1"],
-        "labels": ["paragraph", "paragraph", "table"],
-        "page_numbers": [1, 1, 2],
-    }
-
-    chunk = Chunk(
-        content="Test content",
-        metadata=metadata_dict,
-    )
+    chunk = Chunk(content="Test content", metadata=metadata)
 
     chunk_meta = chunk.get_chunk_metadata()
 
     assert isinstance(chunk_meta, ChunkMetadata)
-    assert chunk_meta.doc_item_refs == ["#/texts/0", "#/texts/1", "#/tables/0"]
-    assert chunk_meta.headings == ["Chapter 1", "Section 1.1"]
-    assert chunk_meta.labels == ["paragraph", "paragraph", "table"]
-    assert chunk_meta.page_numbers == [1, 1, 2]
+    assert chunk_meta.doc_item_refs == refs
+    assert chunk_meta.headings == headings
+    assert chunk_meta.labels == labels
+    assert chunk_meta.page_numbers == page_numbers
 
 
-def test_chunk_metadata_defaults():
-    """Test ChunkMetadata with empty/default values."""
-    chunk = Chunk(content="Test content", metadata={})
-    chunk_meta = chunk.get_chunk_metadata()
+@pytest.fixture
+def two_text_docling_doc():
+    """Minimal DoclingDocument with two resolvable text items."""
+    from docling_core.types.doc.document import DoclingDocument
 
-    assert chunk_meta.doc_item_refs == []
-    assert chunk_meta.headings is None
-    assert chunk_meta.labels == []
-    assert chunk_meta.page_numbers == []
+    return DoclingDocument.model_validate(
+        {
+            "name": "test_doc",
+            "texts": [
+                {
+                    "self_ref": "#/texts/0",
+                    "text": "First text",
+                    "orig": "First text",
+                    "label": "paragraph",
+                },
+                {
+                    "self_ref": "#/texts/1",
+                    "text": "Second text",
+                    "orig": "Second text",
+                    "label": "title",
+                },
+            ],
+            "tables": [],
+            "pictures": [],
+            "groups": [],
+            "body": {"self_ref": "#/body", "children": []},
+            "furniture": {"self_ref": "#/furniture", "children": []},
+        }
+    )
 
 
-def test_chunk_metadata_resolve_doc_items():
+@pytest.mark.parametrize(
+    "refs,expected_texts",
+    [
+        (["#/texts/0", "#/texts/1"], ["First text", "Second text"]),
+        # Out-of-range and malformed refs are skipped rather than raising.
+        (["#/texts/0", "#/texts/999", "#/invalid/path"], ["First text"]),
+        ([], []),
+    ],
+    ids=["all_valid", "graceful_degradation", "empty_refs"],
+)
+def test_chunk_metadata_resolve_doc_items(two_text_docling_doc, refs, expected_texts):
     """Test resolving doc_item_refs to actual DocItem objects."""
-    from docling_core.types.doc.document import DoclingDocument
+    chunk_meta = ChunkMetadata(doc_item_refs=refs)
 
-    # Create a minimal DoclingDocument with some text items
-    doc_json = {
-        "name": "test_doc",
-        "texts": [
-            {
-                "self_ref": "#/texts/0",
-                "text": "First text",
-                "orig": "First text",
-                "label": "paragraph",
-            },
-            {
-                "self_ref": "#/texts/1",
-                "text": "Second text",
-                "orig": "Second text",
-                "label": "title",
-            },
-        ],
-        "tables": [],
-        "pictures": [],
-        "groups": [],
-        "body": {"self_ref": "#/body", "children": []},
-        "furniture": {"self_ref": "#/furniture", "children": []},
-    }
-    docling_doc = DoclingDocument.model_validate(doc_json)
+    doc_items = chunk_meta.resolve_doc_items(two_text_docling_doc)
 
-    # Create chunk metadata with refs
-    chunk_meta = ChunkMetadata(
-        doc_item_refs=["#/texts/0", "#/texts/1"],
-        labels=["paragraph", "title"],
-    )
-
-    # Resolve refs
-    doc_items = chunk_meta.resolve_doc_items(docling_doc)
-
-    assert len(doc_items) == 2
-    assert getattr(doc_items[0], "text") == "First text"
-    assert getattr(doc_items[1], "text") == "Second text"
-
-
-def test_chunk_metadata_resolve_doc_items_graceful_degradation():
-    """Test that invalid refs are skipped gracefully."""
-    from docling_core.types.doc.document import DoclingDocument
-
-    doc_json = {
-        "name": "test_doc",
-        "texts": [
-            {
-                "self_ref": "#/texts/0",
-                "text": "Only text",
-                "orig": "Only text",
-                "label": "paragraph",
-            },
-        ],
-        "tables": [],
-        "pictures": [],
-        "groups": [],
-        "body": {"self_ref": "#/body", "children": []},
-        "furniture": {"self_ref": "#/furniture", "children": []},
-    }
-    docling_doc = DoclingDocument.model_validate(doc_json)
-
-    # Create chunk metadata with one valid and one invalid ref
-    chunk_meta = ChunkMetadata(
-        doc_item_refs=["#/texts/0", "#/texts/999", "#/invalid/path"],
-    )
-
-    # Resolve refs - invalid ones should be skipped
-    doc_items = chunk_meta.resolve_doc_items(docling_doc)
-
-    assert len(doc_items) == 1
-    assert getattr(doc_items[0], "text") == "Only text"
-
-
-def test_chunk_metadata_resolve_empty_refs():
-    """Test resolving with no refs returns empty list."""
-    from docling_core.types.doc.document import DoclingDocument
-
-    doc_json = {
-        "name": "test_doc",
-        "texts": [],
-        "tables": [],
-        "pictures": [],
-        "groups": [],
-        "body": {"self_ref": "#/body", "children": []},
-        "furniture": {"self_ref": "#/furniture", "children": []},
-    }
-    docling_doc = DoclingDocument.model_validate(doc_json)
-
-    chunk_meta = ChunkMetadata()
-    doc_items = chunk_meta.resolve_doc_items(docling_doc)
-
-    assert doc_items == []
+    assert [getattr(item, "text") for item in doc_items] == expected_texts
 
 
 def test_search_result_from_chunk_preserves_document_meta():
@@ -286,11 +237,12 @@ def test_search_result_format_for_agent_omits_document_meta():
     assert "https://example.org/report/view" not in formatted
 
 
-def test_search_result_format_for_agent_with_rank():
-    """Test format_for_agent with rank and total parameters."""
-    result = SearchResult(
+@pytest.fixture
+def rich_search_result():
+    """SearchResult with every optional field populated."""
+    return SearchResult(
         content="This is the chunk content about elections.",
-        score=0.02,  # Low RRF score that would confuse agents
+        score=0.85,
         chunk_id="chunk-123",
         document_id="doc-456",
         document_uri="file:///docs/report.pdf",
@@ -300,16 +252,30 @@ def test_search_result_format_for_agent_with_rank():
         page_numbers=[1, 2],
     )
 
-    formatted = result.format_for_agent(rank=1, total=5)
 
+@pytest.mark.parametrize(
+    "kwargs,present,absent",
+    [
+        # A rank is supplied, so the raw RRF score is withheld from the agent.
+        ({"rank": 1, "total": 5}, "[rank 1 of 5]", "score:"),
+        ({}, "(score: 0.85)", "[rank"),
+    ],
+    ids=["with_rank", "score_fallback"],
+)
+def test_search_result_format_for_agent_rank_vs_score(
+    rich_search_result, kwargs, present, absent
+):
+    """format_for_agent shows a rank when given one, else falls back to score."""
+    formatted = rich_search_result.format_for_agent(**kwargs)
+
+    assert present in formatted
+    assert absent not in formatted
     assert "[chunk-123]" in formatted
-    assert "[rank 1 of 5]" in formatted
-    assert "score:" not in formatted  # Score should NOT appear when rank is provided
     assert (
         'Source: "Annual Report 2024" > Chapter 1 > Section 1.1 > Elections'
         in formatted
     )
-    assert "Type: table" in formatted
+    assert "Type: table" in formatted  # table has higher priority than paragraph
     assert "Content:\nThis is the chunk content about elections." in formatted
 
 
@@ -357,134 +323,104 @@ def test_search_result_format_for_agent_no_captions_no_line():
     assert "Figure caption" not in formatted
 
 
-def test_search_result_format_for_agent_rank_only():
-    """Test format_for_agent with rank but no total."""
-    result = SearchResult(
-        content="Some content.",
-        score=0.03,
-        chunk_id="chunk-abc",
-    )
-
-    formatted = result.format_for_agent(rank=2)
-
-    assert "[chunk-abc]" in formatted
-    assert "[rank 2]" in formatted
-    assert "score:" not in formatted
-
-
-def test_search_result_format_for_agent_fallback():
-    """Test format_for_agent falls back to score when no rank provided."""
-    result = SearchResult(
-        content="This is the chunk content about elections.",
-        score=0.85,
-        chunk_id="chunk-123",
-        document_id="doc-456",
-        document_uri="file:///docs/report.pdf",
-        document_title="Annual Report 2024",
-        headings=["Chapter 1", "Section 1.1", "Elections"],
-        labels=["paragraph", "table"],
-        page_numbers=[1, 2],
-    )
-
-    formatted = result.format_for_agent()
-
-    assert "[chunk-123]" in formatted
-    assert "(score: 0.85)" in formatted
-    assert (
-        'Source: "Annual Report 2024" > Chapter 1 > Section 1.1 > Elections'
-        in formatted
-    )
-    assert "Type: table" in formatted  # table has higher priority than paragraph
-    assert "Content:\nThis is the chunk content about elections." in formatted
-
-
-def test_search_result_format_for_agent_minimal():
-    """Test format_for_agent with minimal metadata."""
+@pytest.mark.parametrize(
+    "kwargs,present,absent",
+    [
+        ({"rank": 2}, "[rank 2]", ["score:"]),
+        # No structural metadata at all, so no Source:/Type: lines are emitted.
+        ({}, "(score: 0.72)", ["[rank", "Source:", "Type:"]),
+    ],
+    ids=["rank_only", "minimal"],
+)
+def test_search_result_format_for_agent_minimal(kwargs, present, absent):
+    """A result carrying only content/score/chunk_id formats without metadata lines."""
     result = SearchResult(
         content="Some content here.",
         score=0.72,
         chunk_id="chunk-abc",
     )
 
-    formatted = result.format_for_agent()
+    formatted = result.format_for_agent(**kwargs)
 
     assert "[chunk-abc]" in formatted
-    assert "(score: 0.72)" in formatted
-    assert "Source:" not in formatted  # No title or headings
-    assert "Type:" not in formatted  # No labels
+    assert present in formatted
+    for token in absent:
+        assert token not in formatted
     assert "Content:\nSome content here." in formatted
 
 
-def test_search_result_format_for_agent_title_only():
-    """Test format_for_agent with only document title."""
+@pytest.mark.parametrize(
+    "fields,expected_source",
+    [
+        ({"document_title": "My Document"}, 'Source: "My Document"'),
+        (
+            {"headings": ["Introduction", "Background"]},
+            "Source: Introduction > Background",
+        ),
+    ],
+    ids=["title_only", "headings_only"],
+)
+def test_search_result_format_for_agent_source_line(fields, expected_source):
+    """The Source: line is built from the title, the headings, or both."""
     result = SearchResult(
         content="Content text.",
         score=0.60,
         chunk_id="chunk-xyz",
-        document_title="My Document",
+        **fields,
     )
 
-    formatted = result.format_for_agent()
-
-    assert 'Source: "My Document"' in formatted
+    assert expected_source in result.format_for_agent()
 
 
-def test_search_result_format_for_agent_headings_only():
-    """Test format_for_agent with only headings (no title)."""
-    result = SearchResult(
-        content="Content text.",
-        score=0.60,
-        chunk_id="chunk-xyz",
-        headings=["Introduction", "Background"],
-    )
-
-    formatted = result.format_for_agent()
-
-    assert "Source: Introduction > Background" in formatted
-
-
-def test_search_result_get_primary_label():
+@pytest.mark.parametrize(
+    "labels,expected",
+    [
+        (["paragraph", "table", "text"], "table"),
+        (["paragraph", "code"], "code"),
+        (["list_item", "code"], "code"),
+        (["text", "list_item"], "list_item"),
+        # No structural label: falls through to the first label.
+        (["paragraph", "text"], "paragraph"),
+        ([], None),
+    ],
+)
+def test_search_result_get_primary_label(labels, expected):
     """Test _get_primary_label prioritization."""
-    # Table takes priority over text labels
-    result = SearchResult(content="x", score=0.5, labels=["paragraph", "table", "text"])
-    assert result._get_primary_label() == "table"
-
-    # Code takes priority over list_item
-    result = SearchResult(content="x", score=0.5, labels=["list_item", "code"])
-    assert result._get_primary_label() == "code"
-
-    # Text labels fall through to first
-    result = SearchResult(content="x", score=0.5, labels=["paragraph", "text"])
-    assert result._get_primary_label() == "paragraph"
-
-    # Empty labels
-    result = SearchResult(content="x", score=0.5, labels=[])
-    assert result._get_primary_label() is None
+    result = SearchResult(content="x", score=0.5, labels=labels)
+    assert result._get_primary_label() == expected
 
 
 @pytest.mark.vcr()
-async def test_chunk_content_fts_populated(temp_db_path):
-    """Test that content_fts column is populated with contextualized content."""
+@pytest.mark.parametrize(
+    "metadata,content,expected_content_fts",
+    [
+        (
+            {"headings": ["Chapter 1", "Section 1.1"]},
+            "This is the raw chunk content.",
+            "Chapter 1\nSection 1.1\nThis is the raw chunk content.",
+        ),
+        ({}, "Plain content without headings.", "Plain content without headings."),
+    ],
+    ids=["populated", "without_headings"],
+)
+async def test_chunk_content_fts(temp_db_path, metadata, content, expected_content_fts):
+    """content_fts holds the contextualized content while content stays raw."""
     from haiku.rag.embeddings import get_embedder
 
     async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
-        # Create a chunk with headings
         chunk = Chunk(
             document_id="test-doc",
-            content="This is the raw chunk content.",
-            metadata={"headings": ["Chapter 1", "Section 1.1"]},
+            content=content,
+            metadata=metadata,
             order=0,
         )
 
-        # Generate embedding
         embedder = get_embedder(Config)
         embedding = (await embedder.embed_documents([chunk.content]))[0]
         chunk.embedding = embedding
 
-        # Store the chunk
         await client.chunk_repository.create(chunk)
 
-        # Read the raw record from the database
         records = (
             await client.store.chunks_table.query()
             .where(f"id = '{chunk.id}'")
@@ -495,52 +431,8 @@ async def test_chunk_content_fts_populated(temp_db_path):
         assert len(records) == 1
         record = records[0]
 
-        # Verify content is raw (no headings)
-        assert record["content"] == "This is the raw chunk content."
-
-        # Verify content_fts is contextualized (headings + content)
-        assert (
-            record["content_fts"]
-            == "Chapter 1\nSection 1.1\nThis is the raw chunk content."
-        )
-
-
-@pytest.mark.vcr()
-async def test_chunk_content_fts_without_headings(temp_db_path):
-    """Test that content_fts equals content when no headings present."""
-    from haiku.rag.embeddings import get_embedder
-
-    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
-        # Create a chunk without headings
-        chunk = Chunk(
-            document_id="test-doc",
-            content="Plain content without headings.",
-            metadata={},
-            order=0,
-        )
-
-        # Generate embedding
-        embedder = get_embedder(Config)
-        embedding = (await embedder.embed_documents([chunk.content]))[0]
-        chunk.embedding = embedding
-
-        # Store the chunk
-        await client.chunk_repository.create(chunk)
-
-        # Read the raw record from the database
-        records = (
-            await client.store.chunks_table.query()
-            .where(f"id = '{chunk.id}'")
-            .limit(1)
-            .to_arrow()
-        ).to_pylist()
-
-        assert len(records) == 1
-        record = records[0]
-
-        # Both should be the same when no headings
-        assert record["content"] == "Plain content without headings."
-        assert record["content_fts"] == "Plain content without headings."
+        assert record["content"] == content
+        assert record["content_fts"] == expected_content_fts
 
 
 async def test_ensure_fts_index_warns_on_failure(temp_db_path):
@@ -557,18 +449,8 @@ async def test_ensure_fts_index_warns_on_failure(temp_db_path):
 
         repo.store.chunks_table.create_index = _boom
 
-        records: list[logging.LogRecord] = []
-
-        class _Capture(logging.Handler):
-            def emit(self, record: logging.LogRecord) -> None:
-                records.append(record)
-
-        handler = _Capture(level=logging.WARNING)
-        chunk_module.logger.addHandler(handler)
-        try:
+        with capture_logs(chunk_module.logger, logging.WARNING) as records:
             await repo._ensure_fts_index()
-        finally:
-            chunk_module.logger.removeHandler(handler)
 
         assert [r for r in records if r.levelno == logging.WARNING]
         assert any("index build failed" in r.getMessage() for r in records)

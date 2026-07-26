@@ -299,23 +299,6 @@ async def test_client_create_document_from_source(temp_db_path):
 
 
 @pytest.mark.vcr()
-async def test_client_create_document_from_source_with_title(temp_db_path):
-    """Test creating a document from a file source with a title."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            test_content = "This is test content from a file."
-            temp_path = Path(temp_dir) / "test_title.txt"
-            temp_path.write_text(test_content)
-
-            doc = await client.create_document_from_source(
-                source=temp_path, title="My Doc"
-            )
-            assert isinstance(doc, Document)
-            assert doc.id is not None
-            assert doc.title == "My Doc"
-
-
-@pytest.mark.vcr()
 async def test_client_update_title_noop_behavior(temp_db_path):
     """When content is unchanged, updating title should update document without re-chunking."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -326,6 +309,7 @@ async def test_client_update_title_noop_behavior(temp_db_path):
             doc1 = await client.create_document_from_source(temp_path, title="Title A")
             assert isinstance(doc1, Document)
             assert doc1.id is not None
+            assert doc1.title == "Title A"
 
             # Re-add with same content but new title
             doc2 = await client.create_document_from_source(temp_path, title="Title B")
@@ -646,12 +630,14 @@ async def test_client_create_update_no_op_behavior(temp_db_path):
             assert doc1.id is not None
             assert doc1.content == test_content
             original_id = doc1.id
+            original_updated_at = doc1.updated_at
 
             # Second call with same content - should return existing document (no-op)
             doc2 = await client.create_document_from_source(temp_path)
             assert isinstance(doc2, Document)
             assert doc2.id == original_id  # Same document
             assert doc2.content == test_content
+            assert doc2.updated_at == original_updated_at  # No-op leaves it untouched
 
             # Modify file content
             updated_content = "Updated content for testing."
@@ -667,28 +653,6 @@ async def test_client_create_update_no_op_behavior(temp_db_path):
             retrieved_doc = await client.get_document_by_id(original_id)
             assert retrieved_doc is not None
             assert retrieved_doc.content == updated_content
-
-
-@pytest.mark.vcr()
-async def test_client_unchanged_file_keeps_timestamp(temp_db_path):
-    """Test that unchanged files don't update the updated_at timestamp."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        # Create a temporary file
-        test_content = "Test content for timestamp check."
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir) / "test.txt"
-            temp_path.write_text(test_content)
-
-            # First call - create document
-            doc1 = await client.create_document_from_source(temp_path)
-            assert isinstance(doc1, Document)
-            original_updated_at = doc1.updated_at
-
-            # Second call with same content - should not update timestamp
-            doc2 = await client.create_document_from_source(temp_path)
-            assert isinstance(doc2, Document)
-            assert doc2.id == doc1.id
-            assert doc2.updated_at == original_updated_at  # Timestamp should not change
 
 
 @pytest.mark.vcr()
