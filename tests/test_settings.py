@@ -263,3 +263,23 @@ class TestValidateConfigCompatibility:
                 await settings_repo.validate_config_compatibility()
 
             assert "9999" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_save_current_settings_recreates_a_deleted_row(temp_db_path):
+    from haiku.rag.store.engine import Store
+    from haiku.rag.store.repositories.settings import SettingsRepository
+
+    async with Store(temp_db_path, create=True, skip_validation=True) as store:
+        settings_repo = SettingsRepository(store)
+
+        await store.settings_table.delete("id = 'settings'")
+        assert await settings_repo.get_current_settings() == {}
+
+        await settings_repo.save_current_settings()
+
+        recreated = await settings_repo.get_current_settings()
+        assert (
+            recreated["embeddings"]
+            == store._config.model_dump(mode="json")["embeddings"]
+        )

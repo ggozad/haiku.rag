@@ -454,3 +454,76 @@ async def test_ensure_fts_index_warns_on_failure(temp_db_path):
 
         assert [r for r in records if r.levelno == logging.WARNING]
         assert any("index build failed" in r.getMessage() for r in records)
+
+
+@pytest.mark.vcr()
+async def test_chunk_repository_get_by_id_and_list_all_pagination(temp_db_path):
+    """get_by_id resolves a stored chunk; list_all honours limit and offset."""
+    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+        doc = await client.create_document(
+            content="First paragraph.\n\nSecond paragraph.\n\nThird paragraph."
+        )
+        assert doc.id is not None
+
+        stored = await client.chunk_repository.get_by_document_id(doc.id)
+        assert stored
+
+        fetched = await client.get_chunk_by_id(stored[0].id)
+        assert fetched is not None
+        assert fetched.id == stored[0].id
+        assert fetched.content == stored[0].content
+
+        assert await client.get_chunk_by_id("no-such-chunk") is None
+
+        everything = await client.chunk_repository.list_all()
+        assert len(everything) == len(stored)
+
+        first = await client.chunk_repository.list_all(limit=1)
+        assert len(first) == 1
+        assert first[0].id == everything[0].id
+
+        if len(everything) > 1:
+            second = await client.chunk_repository.list_all(limit=1, offset=1)
+            assert len(second) == 1
+            assert second[0].id == everything[1].id
+
+
+async def test_chunk_search_returns_empty_for_blank_query(temp_db_path):
+    """A blank query with no precomputed vector has nothing to search for."""
+    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+        assert await client.chunk_repository.search("   ") == []
+
+
+@pytest.mark.vcr()
+async def test_chunk_search_with_precomputed_vector_skips_text_query(temp_db_path):
+    """The image-as-query path searches vector-only using a stored embedding."""
+    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+        doc = await client.create_document(content="Vector-only search target.")
+        assert doc.id is not None
+
+        rows = (await client.store.chunks_table.query().limit(1).to_arrow()).to_pylist()
+        stored_vector = list(rows[0]["vector"])
+
+        results = await client.chunk_repository.search("", query_vector=stored_vector)
+
+        assert results
+        assert any(c.document_id == doc.id for c, _ in results)
+
+
+async def test_get_chunk_ids_by_self_ref_grouped_without_documents(temp_db_path):
+    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+        assert await client.chunk_repository.get_chunk_ids_by_self_ref_grouped([]) == {}
+
+
+async def test_process_search_results_rejects_unknown_score_column(temp_db_path):
+    """A result frame with no recognised score column is a programming error."""
+    import pandas as pd
+
+    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+
+        class _Frame:
+            async def to_pandas(self):
+                return pd.DataFrame([{"id": "c1", "content": "x", "metadata": "{}"}])
+
+        with pytest.raises(ValueError, match="Unknown search result format"):
+            await client.chunk_repository._process_search_results(_Frame())  # ty: ignore[invalid-argument-type]

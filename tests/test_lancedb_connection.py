@@ -310,3 +310,48 @@ class TestInitFailureCleanup:
                 pass
 
         assert close_calls, "Store.close() was not called when _initialize raised"
+
+
+class TestVectorIndexCreation:
+    """_ensure_vector_index needs 256 rows of training data before it builds."""
+
+    @staticmethod
+    async def _seed_chunks(store, count: int) -> None:
+        import random
+
+        records = [
+            store.ChunkRecord(
+                document_id="doc-1",
+                content=f"row {i}",
+                content_fts=f"row {i}",
+                metadata="{}",
+                order=i,
+                vector=[random.random() for _ in range(store.embedder.vector_dim)],
+            )
+            for i in range(count)
+        ]
+        await store.chunks_table.add(records)
+
+    @pytest.mark.asyncio
+    async def test_builds_index_once_enough_rows_exist(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            await self._seed_chunks(store, 256)
+
+            await store._ensure_vector_index()
+
+            indexes = await store.chunks_table.list_indices()
+            assert any("vector" in idx.columns for idx in indexes)
+
+    @pytest.mark.asyncio
+    async def test_index_failure_is_warned_not_raised(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            await self._seed_chunks(store, 256)
+
+            async def boom(*_args, **_kwargs):
+                raise RuntimeError("index build failed")
+
+            with patch.object(store.chunks_table, "create_index", boom):
+                await store._ensure_vector_index()
+
+            indexes = await store.chunks_table.list_indices()
+            assert not any("vector" in idx.columns for idx in indexes)

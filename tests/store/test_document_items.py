@@ -986,3 +986,20 @@ class TestPictureDataPreservedThroughRoundTrip:
 
             after = await rag.document_item_repository.get_all_picture_data(created.id)
             assert after.get("#/pictures/0") == original.get("#/pictures/0")
+
+
+@pytest.mark.asyncio
+async def test_replace_for_document_with_no_items_deletes_existing(temp_db_path):
+    """Replacing with an empty list clears the document's items."""
+    from haiku.rag.store.engine import Store
+    from haiku.rag.store.repositories.document_item import DocumentItemRepository
+
+    async with Store(temp_db_path, create=True) as store:
+        repo = DocumentItemRepository(store)
+        docling_doc = _make_docling_doc()
+        await repo.replace_for_document("doc-1", extract_items("doc-1", docling_doc))
+        assert await repo.get_all_items("doc-1")
+
+        await repo.replace_for_document("doc-1", [])
+
+        assert await repo.get_all_items("doc-1") == []
