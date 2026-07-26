@@ -14,6 +14,7 @@ from haiku.rag.client.documents import (
     DocumentImport,
     _prepare_document_from_docling,
     _write_fetch_body,
+    check_source_accessible,
 )
 from haiku.rag.config import Config
 from haiku.rag.store.compression import decompress_json
@@ -2254,3 +2255,27 @@ async def test_metadata_only_update_waits_for_write_lock(temp_db_path):
             assert not task.done()
         updated = await task
         assert updated.metadata == {"k": "v"}
+
+
+@pytest.mark.parametrize(
+    "uri,expected",
+    [
+        ("https://example.com/doc.pdf", True),
+        ("s3://bucket/key", True),
+        ("mem://not-a-source", False),
+        # urlparse rejects a malformed IPv6 host; a stored URI that no longer
+        # parses must not abort the caller's rebuild sweep.
+        ("http://[::1", False),
+    ],
+    ids=["https", "s3", "unknown_scheme", "unparseable"],
+)
+def test_check_source_accessible(uri, expected):
+    assert check_source_accessible(uri) is expected
+
+
+def test_check_source_accessible_file_uri(tmp_path):
+    existing = tmp_path / "there.txt"
+    existing.write_text("x")
+
+    assert check_source_accessible(existing.as_uri()) is True
+    assert check_source_accessible((tmp_path / "gone.txt").as_uri()) is False

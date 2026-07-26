@@ -105,10 +105,6 @@ def extract_item_text(
         except Exception:
             pass
 
-    if caption := getattr(item, "caption", None):
-        if hasattr(caption, "text"):
-            return caption.text
-
     return None
 
 

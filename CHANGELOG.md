@@ -1,6 +1,15 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- `Store.set_haiku_version` stamps the store's own config into a recreated settings row instead of the process-global `Config`.
+- `check_source_accessible` returns `False` for a URI that fails to parse instead of raising `ValueError`.
+
+### Removed
+
+- `SettingsRepository.create`, `get_by_id`, `update`, `delete`, `list_all` and `ChunkRepository.update`, `delete`, `get_chunks_in_range`.
+
 ## [0.70.0] - 2026-07-25
 
 ### Added

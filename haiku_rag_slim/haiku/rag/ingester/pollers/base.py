@@ -55,7 +55,6 @@ class BasePoller:
         self._sync = sync_repo
         self._breaker = breaker or CircuitBreaker(config.circuit_breaker)
         self._stop = asyncio.Event()
-        self._task: asyncio.Task | None = None
         self._last_polled_at: datetime | None = None
         self._last_skip_reason: str | None = None
         self._default_max_attempts = default_max_attempts
@@ -84,9 +83,6 @@ class BasePoller:
 
     async def stop(self) -> None:
         self._stop.set()
-        if self._task is not None:
-            await asyncio.gather(self._task, return_exceptions=True)
-            self._task = None
 
     async def _stagger_start(self) -> bool:
         """Sleep a random fraction of the interval so pollers sharing an

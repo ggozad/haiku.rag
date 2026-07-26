@@ -847,7 +847,7 @@ class Store:
                 )
         else:
             # Create new settings record
-            settings_data = Config.model_dump(mode="json")
+            settings_data = self._config.model_dump(mode="json")
             settings_data["version"] = version
             await self.settings_table.add(
                 [SettingsRecord(id="settings", settings=json.dumps(settings_data))]
