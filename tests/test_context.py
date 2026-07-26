@@ -1360,3 +1360,16 @@ class TestExpandWithItemsPictureBytes:
             e_low = by_chunk["c-low"]
             assert e_low.image_data == {"#/pictures/0": "LOWBYTES"}
             assert "HIGHBYTES" not in (e_low.image_data or {}).values()
+
+
+class TestSpanInWindow:
+    def test_zero_width_span_is_inside_when_position_is_in_window(self):
+        from haiku.rag.context import _span_in_window
+        from haiku.rag.store.models.document_item import DocumentItem
+
+        item = DocumentItem(
+            document_id="d1", position=0, self_ref="#/pictures/0", label="picture"
+        )
+        # A picture occupies no characters, so containment is by position.
+        assert _span_in_window((10, 10, item), 0, 20) is True
+        assert _span_in_window((30, 30, item), 0, 20) is False
