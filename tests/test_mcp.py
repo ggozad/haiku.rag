@@ -332,3 +332,152 @@ class TestMCPImageInput:
         result = await ask(question="q")
         assert result == "answer"
         assert captured["images"] is None
+
+
+class TestMCPFileAndUrlIngestion:
+    @pytest.mark.asyncio
+    async def test_add_document_from_file(self, temp_db_path, tmp_path):
+        async with HaikuRAG(temp_db_path, create=True):
+            pass
+        source = tmp_path / "note.txt"
+        source.write_text("Ingested from a file path.")
+
+        mcp = create_mcp_server(temp_db_path, read_only=False)
+        add_file = await _get_tool(mcp, "add_document_from_file")
+
+        doc_id = await add_file(file_path=str(source), title="File Doc")
+        assert doc_id is not None
+
+        get_doc = await _get_tool(mcp, "get_document")
+        doc = await get_doc(document_id=doc_id)
+        assert doc.title == "File Doc"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "tool_name,kwargs",
+        [
+            ("add_document_from_file", {"file_path": "/tmp/x.txt"}),
+            ("add_document_from_url", {"url": "https://example.com/x.txt"}),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "results,expected",
+        [
+            (
+                [Document(id="first", content="a"), Document(id="second", content="b")],
+                "first",
+            ),
+            ([], None),
+        ],
+        ids=["directory_reports_first_id", "empty_directory_reports_none"],
+    )
+    async def test_add_tools_handle_multi_document_sources(
+        self, mcp_db, monkeypatch, tool_name, kwargs, results, expected
+    ):
+        """A source resolving to several documents reports the first id."""
+
+        async def fake_from_source(self, source, title=None, metadata=None, **kw):
+            return results
+
+        monkeypatch.setattr(HaikuRAG, "create_document_from_source", fake_from_source)
+        mcp = create_mcp_server(mcp_db, read_only=False)
+        add = await _get_tool(mcp, tool_name)
+
+        assert await add(**kwargs) == expected
+
+    @pytest.mark.asyncio
+    async def test_add_document_from_url(self, mcp_db, monkeypatch):
+        async def fake_from_source(self, source, title=None, metadata=None, **kwargs):
+            assert source == "https://example.com/doc.txt"
+            return Document(id="url-doc", content="fetched")
+
+        monkeypatch.setattr(HaikuRAG, "create_document_from_source", fake_from_source)
+        mcp = create_mcp_server(mcp_db, read_only=False)
+        add_url = await _get_tool(mcp, "add_document_from_url")
+
+        assert await add_url(url="https://example.com/doc.txt") == "url-doc"
+
+
+class TestMCPToolsDegradeOnError:
+    """Every tool swallows client failures and returns its empty value rather
+    than propagating an exception to the MCP transport."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "client_method,tool_name,kwargs,expected",
+        [
+            (
+                "create_document_from_source",
+                "add_document_from_file",
+                {"file_path": "/tmp/x.txt"},
+                None,
+            ),
+            (
+                "create_document_from_source",
+                "add_document_from_url",
+                {"url": "https://example.com/x"},
+                None,
+            ),
+            ("create_document", "add_document_from_text", {"content": "x"}, None),
+            ("delete_document", "delete_document", {"document_id": "x"}, False),
+            ("search", "search_documents", {"query": "x"}, []),
+            ("get_document_by_id", "get_document", {"document_id": "x"}, None),
+            ("list_documents", "list_documents", {}, []),
+        ],
+    )
+    async def test_tool_returns_empty_value_when_client_raises(
+        self, mcp_db, monkeypatch, client_method, tool_name, kwargs, expected
+    ):
+        async def boom(self, *args, **kw):
+            raise RuntimeError("client exploded")
+
+        monkeypatch.setattr(HaikuRAG, client_method, boom)
+        mcp = create_mcp_server(mcp_db, read_only=False)
+        tool = await _get_tool(mcp, tool_name)
+
+        assert await tool(**kwargs) == expected
+
+    @pytest.mark.asyncio
+    async def test_list_documents_returns_empty_for_invalid_filter(self, mcp_db):
+        mcp = create_mcp_server(mcp_db, read_only=True)
+        list_docs = await _get_tool(mcp, "list_documents")
+
+        assert await list_docs(filter="no_such_column = 1") == []
+
+    @pytest.mark.asyncio
+    async def test_analyze_reports_the_error(self, mcp_db, monkeypatch):
+        async def boom(self, question, filter=None, images=None):
+            raise RuntimeError("sandbox exploded")
+
+        monkeypatch.setattr(HaikuRAG, "analyze", boom)
+        mcp = create_mcp_server(mcp_db, read_only=True)
+        analyze = await _get_tool(mcp, "analyze")
+
+        assert "sandbox exploded" in await analyze(question="q")
+
+    @pytest.mark.asyncio
+    async def test_ask_question_appends_citations_when_requested(
+        self, mcp_db, monkeypatch
+    ):
+        from haiku.rag.store.models.citation import Citation
+
+        citation = Citation(
+            chunk_id="c1",
+            document_id="d1",
+            content="cited text",
+            document_uri="test://ai-overview",
+            document_title="AI Overview",
+        )
+
+        async def fake_ask(self, question, filter=None, images=None):
+            return ("the answer", [citation])
+
+        monkeypatch.setattr(HaikuRAG, "ask", fake_ask)
+        mcp = create_mcp_server(mcp_db, read_only=True)
+        ask = await _get_tool(mcp, "ask_question")
+
+        with_cite = await ask(question="q", cite=True)
+        assert with_cite.startswith("the answer")
+        assert "AI Overview" in with_cite
+
+        assert await ask(question="q", cite=False) == "the answer"

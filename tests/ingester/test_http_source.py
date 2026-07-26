@@ -422,3 +422,14 @@ async def test_fetch_skips_head_when_no_max_size():
     )
     await src.fetch("https://example.com/a.md")
     assert calls == ["GET"]
+
+
+@pytest.mark.asyncio
+async def test_aclose_closes_the_http_client():
+    src = HTTPSource(
+        source_id="urls",
+        urls=[],
+        transport=httpx.MockTransport(lambda r: httpx.Response(200)),
+    )
+    await src.aclose()
+    assert src._http.is_closed

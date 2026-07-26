@@ -330,3 +330,41 @@ async def test_fs_source_fetch_reads_off_event_loop_thread(fs_root: Path):
         "FSSource._read_body ran on the event-loop thread; the read+hash must "
         "be dispatched via asyncio.to_thread"
     )
+
+
+@pytest.mark.asyncio
+async def test_fetch_rejects_foreign_scheme(tmp_path):
+    """`supports()` short-circuits on scheme, but fetch/head resolve directly,
+    so the unsupported-scheme path must be handled there too."""
+    src = FSSource(root=tmp_path, supported_extensions=[".md"], source_id="local")
+
+    with pytest.raises(UnsupportedSourceError):
+        await src.fetch("s3://bucket/key.md")
+
+    assert await src.head("s3://bucket/key.md") is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_falls_back_to_octet_stream_for_unknown_extension(tmp_path):
+    target = tmp_path / "data.unknownext"
+    target.write_bytes(b"payload")
+    src = FSSource(
+        root=tmp_path, supported_extensions=[".unknownext"], source_id="local"
+    )
+
+    result = await src.fetch(target.as_uri())
+
+    assert result.content_type == "application/octet-stream"
+    assert result.body == b"payload"
+
+
+@pytest.mark.asyncio
+async def test_discover_skips_symlink_to_missing_in_root_target(tmp_path):
+    """A broken symlink inside the root resolves to a path that is not a file."""
+    (tmp_path / "real.md").write_text("real")
+    (tmp_path / "broken.md").symlink_to(tmp_path / "absent.md")
+    src = FSSource(root=tmp_path, supported_extensions=[".md"], source_id="local")
+
+    events = [e async for e in src.discover()]
+
+    assert {e.uri for e in events} == {(tmp_path / "real.md").as_uri()}

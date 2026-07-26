@@ -148,3 +148,47 @@ def test_vllm_embedder_does_not_double_append_v1():
     base_url = embedder._base_url.rstrip("/")  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
     assert base_url.endswith("/v1")
     assert not base_url.endswith("/v1/v1")
+
+
+def test_vector_dim_property_reports_configured_dimension():
+    from haiku.rag.embeddings import EmbedderWrapper
+
+    assert EmbedderWrapper(embedder=None, vector_dim=512).vector_dim == 512
+
+
+@pytest.mark.parametrize(
+    "provider,env_var",
+    [("voyageai", "VOYAGE_API_KEY"), ("cohere", "CO_API_KEY")],
+)
+def test_saas_providers_build_offline(monkeypatch, provider, env_var):
+    """Construction only wires the SDK; no request is made."""
+    monkeypatch.setenv(env_var, "test-key")
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider=provider, name="some-model", vector_dim=1024
+            ),
+        ),
+    )
+
+    embedder = get_embedder(config)
+
+    assert embedder.vector_dim == 1024
+
+
+def test_cohere_floats_rejects_missing_embeddings():
+    from types import SimpleNamespace
+
+    from haiku.rag.embeddings.cohere import _floats
+
+    result = SimpleNamespace(embeddings=SimpleNamespace(float_=None))
+
+    with pytest.raises(ValueError, match="no float embeddings"):
+        _floats(result)
+
+
+def test_voyageai_to_pil_rejects_unsupported_type():
+    from haiku.rag.embeddings.voyageai import _to_pil
+
+    with pytest.raises(TypeError, match="Unsupported image type"):
+        _to_pil("not an image")  # ty: ignore[invalid-argument-type]

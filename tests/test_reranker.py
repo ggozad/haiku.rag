@@ -479,3 +479,30 @@ async def test_cross_encoder_reranker():
         assert "0" in top_ids or "2" in top_ids
     except ImportError:
         pytest.skip("sentence-transformers not installed")
+
+
+@pytest.mark.asyncio
+async def test_cross_encoder_reranks_via_model_ranking(monkeypatch):
+    """The rank() results map back onto the input chunks by corpus_id."""
+    from haiku.rag.reranking import cross_encoder as ce_module
+
+    class _StubCrossEncoder:
+        def __init__(self, model):
+            self.model = model
+
+        def rank(self, query, documents, top_k=10):
+            # Reverse order so the mapping back to chunks is observable.
+            return [
+                {"corpus_id": i, "score": 1.0 - (i / 10)}
+                for i in reversed(range(len(documents)))
+            ][:top_k]
+
+    monkeypatch.setattr(ce_module, "CrossEncoder", _StubCrossEncoder)
+
+    reranker = ce_module.CrossEncoderReranker("stub/model")
+    reranked = await reranker.rerank("query", chunks, top_n=2)
+
+    assert len(reranked) == 2
+    last_index = len(chunks) - 1
+    assert reranked[0][0] is chunks[last_index]
+    assert reranked[0][1] == pytest.approx(1.0 - last_index / 10)

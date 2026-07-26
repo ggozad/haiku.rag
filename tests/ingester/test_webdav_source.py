@@ -7,26 +7,29 @@ from haiku.rag.ingester.sources.base import FileTooLargeError, SourceEventKind
 from haiku.rag.ingester.sources.webdav import WebDAVSource, _strip_etag
 
 
-def test_strip_etag_strong_quoted():
-    assert _strip_etag('"abc123"') == "abc123"
-
-
-def test_strip_etag_weak_marker():
-    assert _strip_etag('W/"abc123"') == "abc123"
-
-
-def test_strip_etag_unquoted():
-    assert _strip_etag("abc123") == "abc123"
-
-
-def test_strip_etag_whitespace():
-    assert _strip_etag('  W/"abc"  ') == "abc"
-
-
-def test_strip_etag_empty_returns_none():
-    assert _strip_etag("") is None
-    assert _strip_etag('""') is None
-    assert _strip_etag(None) is None
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ('"abc123"', "abc123"),
+        ('W/"abc123"', "abc123"),
+        ("abc123", "abc123"),
+        ('  W/"abc"  ', "abc"),
+        ("", None),
+        ('""', None),
+        (None, None),
+    ],
+    ids=[
+        "strong_quoted",
+        "weak_marker",
+        "unquoted",
+        "whitespace",
+        "empty",
+        "empty_quotes",
+        "none",
+    ],
+)
+def test_strip_etag(raw, expected):
+    assert _strip_etag(raw) == expected
 
 
 def _transport(handler) -> httpx.MockTransport:
@@ -628,3 +631,131 @@ async def test_fetch_skips_head_when_no_max_size():
     )
     await src.fetch("https://nc.example.com/dav/a.txt")
     assert calls == ["GET"]
+
+
+# Malformed multistatus bodies: a <response> that can't be decoded is dropped
+# rather than aborting the whole listing.
+
+
+def _raw_multistatus(*response_blocks: str) -> bytes:
+    body = ['<?xml version="1.0" encoding="utf-8"?>', '<d:multistatus xmlns:d="DAV:">']
+    body.extend(response_blocks)
+    body.append("</d:multistatus>")
+    return "\n".join(body).encode()
+
+
+_NO_HREF = """  <d:response>
+    <d:propstat>
+      <d:status>HTTP/1.1 200 OK</d:status>
+      <d:prop><d:getetag>"r"</d:getetag></d:prop>
+    </d:propstat>
+  </d:response>"""
+
+_EMPTY_HREF = """  <d:response>
+    <d:href></d:href>
+    <d:propstat>
+      <d:status>HTTP/1.1 200 OK</d:status>
+      <d:prop><d:getetag>"r"</d:getetag></d:prop>
+    </d:propstat>
+  </d:response>"""
+
+_NO_STATUS = """  <d:response>
+    <d:href>/dav/a.md</d:href>
+    <d:propstat>
+      <d:prop><d:getetag>"r"</d:getetag></d:prop>
+    </d:propstat>
+  </d:response>"""
+
+_NOT_FOUND_STATUS = """  <d:response>
+    <d:href>/dav/a.md</d:href>
+    <d:propstat>
+      <d:status>HTTP/1.1 404 Not Found</d:status>
+      <d:prop><d:getetag>"r"</d:getetag></d:prop>
+    </d:propstat>
+  </d:response>"""
+
+_STATUS_WITHOUT_PROP = """  <d:response>
+    <d:href>/dav/a.md</d:href>
+    <d:propstat>
+      <d:status>HTTP/1.1 200 OK</d:status>
+    </d:propstat>
+  </d:response>"""
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "block",
+    [_NO_HREF, _EMPTY_HREF, _NO_STATUS, _NOT_FOUND_STATUS],
+    ids=["no_href", "empty_href", "propstat_without_status", "propstat_404"],
+)
+async def test_head_returns_none_for_undecodable_response(block):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(207, content=_raw_multistatus(block))
+
+    src = WebDAVSource(
+        source_id="nc",
+        base_url="https://nc.example.com/dav/",
+        transport=_transport(handler),
+    )
+    assert await src.head("https://nc.example.com/dav/a.md") is None
+
+
+@pytest.mark.asyncio
+async def test_head_returns_none_for_empty_multistatus():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(207, content=_raw_multistatus())
+
+    src = WebDAVSource(
+        source_id="nc",
+        base_url="https://nc.example.com/dav/",
+        transport=_transport(handler),
+    )
+    assert await src.head("https://nc.example.com/dav/a.md") is None
+
+
+@pytest.mark.asyncio
+async def test_entry_with_status_but_no_prop_has_no_revision():
+    """A 200 propstat carrying no <prop> still yields an entry, without a revision."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(207, content=_raw_multistatus(_STATUS_WITHOUT_PROP))
+
+    src = WebDAVSource(
+        source_id="nc",
+        base_url="https://nc.example.com/dav/",
+        transport=_transport(handler),
+    )
+    assert await src.head("https://nc.example.com/dav/a.md") is None
+
+
+@pytest.mark.asyncio
+async def test_discover_skips_base_url_reported_as_file():
+    """Broken servers list the base URL itself as a non-collection; it and any
+    href outside the base are skipped."""
+    body = _multistatus(
+        {"href": "/dav/", "etag": '"base"'},
+        {"href": "/outside/x.md", "etag": '"out"'},
+        {"href": "/dav/keep.md", "etag": '"keep"'},
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(207, content=body)
+
+    src = WebDAVSource(
+        source_id="nc",
+        base_url="https://nc.example.com/dav/",
+        transport=_transport(handler),
+    )
+    events = [event async for event in src.discover()]
+    assert {e.uri for e in events} == {"https://nc.example.com/dav/keep.md"}
+
+
+@pytest.mark.asyncio
+async def test_aclose_closes_the_http_client():
+    src = WebDAVSource(
+        source_id="nc",
+        base_url="https://nc.example.com/dav/",
+        transport=_transport(lambda r: httpx.Response(200)),
+    )
+    await src.aclose()
+    assert src._http.is_closed
