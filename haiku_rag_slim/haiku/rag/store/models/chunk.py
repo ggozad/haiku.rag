@@ -74,8 +74,7 @@ class ChunkMetadata(BaseModel):
                 continue
             for prov_item in prov:
                 bbox = getattr(prov_item, "bbox", None)
-                if bbox is None:  # pragma: no cover - docling's ProvenanceItem
-                    # always carries a bbox; guards against a shape change.
+                if bbox is None:  # pragma: no cover - prov always carries a bbox
                     continue
                 bounding_boxes.append(
                     BoundingBox(

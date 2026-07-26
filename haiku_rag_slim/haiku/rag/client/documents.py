@@ -570,8 +570,7 @@ def _extract_pdf_attachments(
             for i in range(attachment_count):
                 att = pdf.get_attachment(i)
                 name = att.get_name()
-                if not name:  # pragma: no cover - pypdfium2 cannot produce a
-                    # nameless attachment, so no craftable PDF reaches this.
+                if not name:  # pragma: no cover - pypdfium2 always names them
                     continue
                 data = bytes(att.get_data())
                 child_uri = f"{parent_uri}#attachment={quote(name, safe='')}"

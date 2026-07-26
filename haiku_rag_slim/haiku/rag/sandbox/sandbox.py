@@ -356,8 +356,7 @@ class Sandbox:
             return read_toc
 
         for doc in docs:
-            if not doc.id:  # pragma: no cover - rows read from LanceDB always
-                # carry an id; only a hand-built Document could be id-less.
+            if not doc.id:  # pragma: no cover - stored rows always carry an id
                 continue
             doc_id: str = doc.id
             doc_dir = f"/documents/{doc_id}"
@@ -438,11 +437,10 @@ class Sandbox:
 
         stdout_lines: list[str] = []
 
-        def print_callback(_stream: Literal["stdout"], text: str) -> None:
-            # pragma: no cover - Monty invokes this from its own Rust-owned
-            # thread, which coverage cannot trace. The captured stdout is
-            # asserted by test_execute_simple_code.
-            stdout_lines.append(text)  # pragma: no cover
+        def print_callback(  # pragma: no cover - runs on Monty's Rust thread
+            _stream: Literal["stdout"], text: str
+        ) -> None:
+            stdout_lines.append(text)
 
         max_chars = self._config.analysis.max_output_chars
 

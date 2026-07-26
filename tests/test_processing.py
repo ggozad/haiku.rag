@@ -244,12 +244,18 @@ async def test_convert_dispatches_large_pdfs_through_split_and_merge(
     assert called["path"] == pdf
 
 
+def _write_unsupported(directory):
+    target = directory / "thing.sqlite3"
+    target.write_bytes(b"binary")
+    return target.as_uri()
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "make_source,match",
     [
         (lambda d: (d / "missing.md").as_uri(), "File does not exist"),
-        (lambda d: _write_unsupported(d), "Unsupported file extension"),
+        (_write_unsupported, "Unsupported file extension"),
     ],
     ids=["missing_file", "unsupported_extension"],
 )
@@ -258,9 +264,3 @@ async def test_convert_rejects_bad_file_uris(tmp_path, make_source, match):
 
     with pytest.raises(UnsupportedSourceError, match=match):
         await convert(AppConfig(), make_source(tmp_path))
-
-
-def _write_unsupported(directory):
-    target = directory / "thing.sqlite3"
-    target.write_bytes(b"binary")
-    return target.as_uri()

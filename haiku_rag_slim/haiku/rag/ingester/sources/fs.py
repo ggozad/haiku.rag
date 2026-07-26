@@ -143,9 +143,7 @@ class FSSource:
                 if path.is_symlink():
                     try:
                         resolved = path.resolve(strict=False)
-                    except OSError:  # pragma: no cover - strict=False absorbs
-                        # symlink cycles and missing targets, so no real link
-                        # reaches this; kept as a guard against platform drift.
+                    except OSError:  # pragma: no cover - strict=False absorbs these
                         continue
                     if not resolved.is_relative_to(self.root):
                         continue
