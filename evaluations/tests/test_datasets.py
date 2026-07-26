@@ -770,3 +770,23 @@ class TestFrames:
         kept = {"wiki_links": "['https://en.wikipedia.org/wiki/Capybara']"}
         assert question_is_answerable(gone) is False
         assert question_is_answerable(kept) is True
+
+    def test_questions_carry_stable_ids(self, monkeypatch) -> None:
+        import evaluations.datasets.frames as frames
+        from datasets import Dataset
+
+        rows = Dataset.from_list(
+            [
+                {
+                    "Unnamed: 0": 7,
+                    "wiki_links": "['https://en.wikipedia.org/wiki/Capybara']",
+                },
+                {
+                    "Unnamed: 0": 8,
+                    "wiki_links": "['https://en.wikipedia.org/wiki/Jack_Vance_(tennis)']",
+                },
+            ]
+        )
+        monkeypatch.setattr(frames, "load_frames_test", lambda: rows)
+        questions = frames.load_frames_questions()
+        assert [row["id"] for row in questions] == ["7"]
