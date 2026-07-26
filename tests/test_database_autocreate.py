@@ -43,3 +43,26 @@ async def test_operations_work_after_database_created(tmp_path):
         doc = await client.get_document_by_id(docs[0].id)
         assert doc is not None
         assert doc.content == "Test content"
+
+
+@pytest.mark.asyncio
+async def test_default_db_path_comes_from_storage_data_dir(tmp_path):
+    """Omitting db_path places the database under the configured data dir."""
+    from haiku.rag.client import HaikuRAG
+    from haiku.rag.config import AppConfig
+
+    config = AppConfig()
+    config.storage.data_dir = tmp_path
+
+    client = HaikuRAG(config=config)
+
+    assert client._db_path == tmp_path / "haiku.rag.lancedb"
+
+
+@pytest.mark.asyncio
+async def test_vacuum_is_callable_on_the_client(temp_db_path):
+    """The public vacuum() delegates to the store."""
+    from haiku.rag.client import HaikuRAG
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.vacuum()

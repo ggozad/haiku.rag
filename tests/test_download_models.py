@@ -6,6 +6,7 @@ import pytest
 
 from haiku.rag.client.downloads import download_models
 from haiku.rag.config import Config
+from haiku.rag.config.models import ModelConfig
 
 
 @pytest.fixture
@@ -108,3 +109,73 @@ async def test_download_models_no_ollama_models(mock_to_thread):
     models = {e.model for e in events}
     assert "qwen3-embedding:4b" not in models
     assert "gpt-oss" not in models
+
+
+@pytest.mark.parametrize(
+    "configure,expected_model",
+    [
+        (
+            lambda c: setattr(
+                c.reranking,
+                "model",
+                ModelConfig(provider="ollama", name="rerank-model"),
+            ),
+            "rerank-model",
+        ),
+        (
+            lambda c: (
+                setattr(c.processing, "pictures", "description"),
+                setattr(
+                    c.processing.conversion_options.picture_description.model,
+                    "provider",
+                    "ollama",
+                ),
+                setattr(
+                    c.processing.conversion_options.picture_description.model,
+                    "name",
+                    "vision-model",
+                ),
+            ),
+            "vision-model",
+        ),
+        (
+            lambda c: (
+                setattr(c.processing, "auto_title", True),
+                setattr(c.processing.title_model, "provider", "ollama"),
+                setattr(c.processing.title_model, "name", "title-model"),
+            ),
+            "title-model",
+        ),
+    ],
+    ids=["reranker", "picture_description", "auto_title"],
+)
+async def test_ollama_models_from_every_config_slot_are_pulled(
+    mock_to_thread, configure, expected_model
+):
+    """Each config slot that can name an ollama model contributes to the pull set."""
+    from haiku.rag.config import AppConfig
+
+    config = AppConfig()
+    configure(config)
+
+    @asynccontextmanager
+    async def mock_stream(method, url, **kwargs):
+        mock_resp = AsyncMock()
+
+        async def aiter_lines():
+            yield '{"status": "success"}'
+
+        mock_resp.aiter_lines = aiter_lines
+        yield mock_resp
+
+    with patch(
+        "haiku.rag.client.downloads.httpx.AsyncClient",
+        return_value=_mock_httpx_client(mock_stream),
+    ):
+        pulled = {
+            progress.model
+            async for progress in download_models(config)
+            if progress.status == "pulling"
+        }
+
+    assert expected_model in pulled

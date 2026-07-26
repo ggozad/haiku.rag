@@ -1672,7 +1672,7 @@ class TestDoclingServeZipParsing:
     @pytest.mark.asyncio
     async def test_convert_text_plain_builds_document_locally(self, converter):
         """format="plain" never reaches the network."""
-        converter.client.submit_and_poll_zip = AsyncMock(  # ty: ignore[invalid-assignment]
+        converter.client.submit_and_poll_zip = AsyncMock(
             side_effect=AssertionError("must not call docling-serve")
         )
 
@@ -1680,3 +1680,18 @@ class TestDoclingServeZipParsing:
 
         assert isinstance(doc, DoclingDocument)
         assert "just text" in doc.export_to_markdown()
+
+
+@pytest.mark.asyncio
+async def test_docling_serve_convert_file_wraps_text_read_failure(tmp_path):
+    """An undecodable text file surfaces as a ValueError naming the path."""
+    config = AppConfig()
+    config.processing.converter = "docling-serve"
+    converter = get_converter(config)
+    assert isinstance(converter, DoclingServeConverter)
+
+    source = tmp_path / "broken.txt"
+    source.write_bytes(b"\xff\xfe\x00\x01 not utf-8")
+
+    with pytest.raises(ValueError, match="Failed to read text file"):
+        await converter.convert_file(source)

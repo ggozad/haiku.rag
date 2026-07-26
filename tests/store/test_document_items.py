@@ -1003,3 +1003,35 @@ async def test_replace_for_document_with_no_items_deletes_existing(temp_db_path)
         await repo.replace_for_document("doc-1", [])
 
         assert await repo.get_all_items("doc-1") == []
+
+
+class TestExtractItemTextFallbacks:
+    def test_table_returns_none_when_serialization_fails(self):
+        """A serializer that raises leaves the table with no extractable text
+        rather than aborting the extraction pass."""
+        doc = _doc_with_tables(1)
+
+        class _Boom:
+            def serialize(self, item):
+                raise RuntimeError("serializer exploded")
+
+        assert extract_item_text(doc.tables[0], doc, get_serializer=_Boom) is None
+
+    def test_file_backed_picture_has_no_inline_bytes(self):
+        """A picture whose ImageRef points at a file rather than a data: URI
+        carries nothing to decode."""
+        from docling_core.types.doc.document import ImageRef
+
+        from haiku.rag.store.models.document_item import _decode_picture_bytes
+
+        doc, pic = _doc_with_captioned_picture("caption")
+        pic.image = ImageRef.model_validate(
+            {
+                "mimetype": "image/png",
+                "dpi": 72,
+                "size": {"width": 1, "height": 1},
+                "uri": "file:///tmp/picture.png",
+            }
+        )
+
+        assert _decode_picture_bytes(pic) is None

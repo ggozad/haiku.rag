@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- Test coverage is enforced at 100% via `fail_under` in `[tool.coverage.report]`.
+
 ### Fixed
 
 - `Store.set_haiku_version` stamps the store's own config into a recreated settings row instead of the process-global `Config`.

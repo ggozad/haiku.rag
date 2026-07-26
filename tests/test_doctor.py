@@ -1206,3 +1206,26 @@ async def test_duplicate_documents_check_reads_config(temp_db_path):
         ).severity
         is Severity.WARN
     )
+
+
+@pytest.mark.asyncio
+async def test_many_unembedded_chunks_are_sampled(temp_db_path):
+    """Beyond the sample limit the detail list ends with a count of the rest."""
+    db = await _build_db(temp_db_path)
+    chunks_tbl = await db.open_table("chunks")
+    await chunks_tbl.add(
+        [
+            ChunkRecord(
+                id=f"z{i}",
+                document_id="d1",
+                content="x",
+                metadata=json.dumps({"doc_item_refs": ["#/texts/0"]}),
+                vector=[0.0] * VECTOR_DIM,
+            )
+            for i in range(8)
+        ]
+    )
+    report = await run_doctor(_config(), temp_db_path, {})
+    details = _result(report, "unembedded_chunks").details
+    assert len(details) == 6
+    assert details[-1] == "... (+3 more)"

@@ -42,17 +42,17 @@ def test_find_config_file_cwd(tmp_path, monkeypatch):
 def test_find_config_file_user_config(tmp_path, monkeypatch):
     """Test finding config in user config directory."""
     monkeypatch.delenv("HAIKU_RAG_CONFIG_PATH", raising=False)
-    monkeypatch.chdir(tmp_path)
 
-    # Mock get_default_data_dir to return tmp_path
-    def mock_get_default_data_dir():
-        return tmp_path
+    # The data dir must differ from the cwd, or the cwd branch answers first
+    # and this never reaches the user-directory lookup.
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    monkeypatch.chdir(cwd)
+    monkeypatch.setattr("haiku.rag.utils.get_default_data_dir", lambda: data_dir)
 
-    monkeypatch.setattr(
-        "haiku.rag.utils.get_default_data_dir", mock_get_default_data_dir
-    )
-
-    config_file = tmp_path / "haiku.rag.yaml"
+    config_file = data_dir / "haiku.rag.yaml"
     config_file.write_text("environment: production")
 
     found = find_config_file()
@@ -518,3 +518,26 @@ def test_expand_env_var_plain_string_unchanged(tmp_path):
 
     config = load_yaml_config(config_file)
     assert config["environment"] == "production"
+
+
+def test_find_config_file_returns_none_when_nothing_exists(tmp_path, monkeypatch):
+    """No env var, no file in cwd, none in the data dir."""
+    monkeypatch.delenv("HAIKU_RAG_CONFIG_PATH", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    empty_data_dir = tmp_path / "data"
+    empty_data_dir.mkdir()
+    monkeypatch.setattr("haiku.rag.utils.get_default_data_dir", lambda: empty_data_dir)
+
+    assert find_config_file() is None
+
+
+def test_load_default_config_falls_back_to_builtin_defaults(monkeypatch):
+    """With no config file discoverable, the packaged defaults are used."""
+    from haiku.rag.config import _load_default_config
+
+    monkeypatch.setattr("haiku.rag.config.find_config_file", lambda _=None: None)
+
+    config = _load_default_config()
+
+    assert config.environment == AppConfig().environment

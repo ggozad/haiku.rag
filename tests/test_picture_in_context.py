@@ -1011,3 +1011,32 @@ async def test_rag_capability_attaches_images_for_vision_model(temp_db_path):
     assert isinstance(result, ToolReturn)
     assert result.content is not None
     assert any(isinstance(part, BinaryContent) for part in result.content)
+
+
+def test_build_picture_chunks_records_provenance_pages():
+    """A picture with provenance contributes its page numbers to the chunk."""
+    from docling_core.types.doc.base import BoundingBox
+    from docling_core.types.doc.document import ProvenanceItem
+
+    from haiku.rag.client.processing import build_picture_chunks
+    from tests.store.test_document_items import _docling_doc_with_picture
+
+    doc = _docling_doc_with_picture()
+    picture = doc.pictures[0]
+    picture.prov = [
+        ProvenanceItem(
+            page_no=3,
+            bbox=BoundingBox(l=0, t=10, r=10, b=0),
+            charspan=(0, 0),
+        ),
+        # A repeat of the same page must not be counted twice.
+        ProvenanceItem(
+            page_no=3,
+            bbox=BoundingBox(l=0, t=20, r=10, b=10),
+            charspan=(0, 0),
+        ),
+    ]
+
+    chunks = build_picture_chunks(doc, document_id="doc-1")
+
+    assert chunks[0].metadata["page_numbers"] == [3]

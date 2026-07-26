@@ -355,3 +355,36 @@ class TestVectorIndexCreation:
 
             indexes = await store.chunks_table.list_indices()
             assert not any("vector" in idx.columns for idx in indexes)
+
+
+class TestStoreMiscellany:
+    @pytest.mark.asyncio
+    async def test_create_makes_missing_parent_directories(self, tmp_path):
+        nested = tmp_path / "a" / "b" / "db.lancedb"
+
+        async with Store(nested, create=True) as store:
+            assert store._is_new_db is True
+
+        assert nested.exists()
+
+    @pytest.mark.asyncio
+    async def test_stored_vector_dim_is_none_for_corrupt_settings(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            await store.settings_table.update(
+                {"settings": "not json at all"}, where="id = 'settings'"
+            )
+
+            assert await store._get_stored_vector_dim() is None
+
+    @pytest.mark.asyncio
+    async def test_vacuum_skips_when_already_running(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            async with store._vacuum_lock:
+                # Returns immediately rather than blocking on the held lock.
+                await store.vacuum()
+
+    @pytest.mark.asyncio
+    async def test_history_rejects_unknown_table(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            with pytest.raises(ValueError, match="Unknown table"):
+                await store.list_table_versions("not_a_table")

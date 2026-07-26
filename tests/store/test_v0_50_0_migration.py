@@ -126,6 +126,19 @@ class TestV0_50_0Migration:
                             }
                         ),
                     ),
+                    # Matches the LIKE on the quoted-key form, but only nested —
+                    # there is no top-level key to rename.
+                    LegacyDocumentRecord(
+                        id="nested-only",
+                        content="x",
+                        uri="u3",
+                        metadata=json.dumps(
+                            {
+                                "raw_headers": {"etag": "abc"},
+                                "source_revision": "v3",
+                            }
+                        ),
+                    ),
                 ],
             )
 
@@ -140,6 +153,10 @@ class TestV0_50_0Migration:
             assert by_id["composite-key"] == {
                 "my_etag_key": "v",
                 "source_revision": "v2",
+            }
+            assert by_id["nested-only"] == {
+                "raw_headers": {"etag": "abc"},
+                "source_revision": "v3",
             }
 
     async def test_unparseable_metadata_skipped_without_crashing(self, temp_db_path):

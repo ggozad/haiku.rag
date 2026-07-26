@@ -606,7 +606,9 @@ class Store:
             for tag in tags.values()
             if tag["version"] in timestamps
         ]
-        if not tagged:
+        if not tagged:  # pragma: no cover - a tag's version is never absent from
+            # list_versions: vacuum retains every version at or after the
+            # oldest tag, so a tagged version is never cleaned away.
             return retention
 
         # LanceDB version timestamps are naive datetimes in local time.

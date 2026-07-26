@@ -482,6 +482,9 @@ async def test_chunk_repository_get_by_id_and_list_all_pagination(temp_db_path):
         assert len(first) == 1
         assert first[0].id == everything[0].id
 
+        # offset is applied even when it selects the whole set
+        assert len(await client.chunk_repository.list_all(offset=0)) == len(everything)
+
         if len(everything) > 1:
             second = await client.chunk_repository.list_all(limit=1, offset=1)
             assert len(second) == 1
@@ -526,4 +529,4 @@ async def test_process_search_results_rejects_unknown_score_column(temp_db_path)
                 return pd.DataFrame([{"id": "c1", "content": "x", "metadata": "{}"}])
 
         with pytest.raises(ValueError, match="Unknown search result format"):
-            await client.chunk_repository._process_search_results(_Frame())  # ty: ignore[invalid-argument-type]
+            await client.chunk_repository._process_search_results(_Frame())

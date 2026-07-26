@@ -211,3 +211,56 @@ def test_merge_picture_chunks_no_pictures_returns_text_chunks():
 
     assert result is text_chunks
     assert [c.order for c in result] == [0, 1]
+
+
+@pytest.mark.asyncio
+async def test_convert_dispatches_large_pdfs_through_split_and_merge(
+    tmp_path, monkeypatch
+):
+    """With split_pages configured, PDF conversion routes through the
+    split-and-merge helper rather than the converter directly."""
+    from docling_core.types.doc.document import DoclingDocument
+
+    config = AppConfig()
+    config.processing.split_pages = 2
+
+    pdf = tmp_path / "big.pdf"
+    pdf.write_bytes(b"%PDF-1.4 stub")
+    called: dict = {}
+
+    async def fake_split(converter, path, uri, slice_size):
+        called["slice_size"] = slice_size
+        called["path"] = path
+        return DoclingDocument(name="merged")
+
+    monkeypatch.setattr(
+        "haiku.rag.converters.pdf_split.convert_pdf_with_splitting", fake_split
+    )
+
+    doc = await convert(config, pdf)
+
+    assert doc.name == "merged"
+    assert called["slice_size"] == 2
+    assert called["path"] == pdf
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "make_source,match",
+    [
+        (lambda d: (d / "missing.md").as_uri(), "File does not exist"),
+        (lambda d: _write_unsupported(d), "Unsupported file extension"),
+    ],
+    ids=["missing_file", "unsupported_extension"],
+)
+async def test_convert_rejects_bad_file_uris(tmp_path, make_source, match):
+    from haiku.rag.client.exceptions import UnsupportedSourceError
+
+    with pytest.raises(UnsupportedSourceError, match=match):
+        await convert(AppConfig(), make_source(tmp_path))
+
+
+def _write_unsupported(directory):
+    target = directory / "thing.sqlite3"
+    target.write_bytes(b"binary")
+    return target.as_uri()
