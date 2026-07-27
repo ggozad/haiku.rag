@@ -3,9 +3,10 @@
 
 ### Changed
 
-- Bump `pydantic-ai` to 2.18.0.
-- `enable_thinking` maps onto Pydantic AI's unified `thinking` setting for the `anthropic`, `gemini`, `groq` and `bedrock` providers. The Anthropic thinking budget is now Pydantic AI's default of 10000 tokens, was 4096; `enable_thinking: false` disables Gemini thinking rather than only hiding thoughts; Groq maps reasoning effort rather than `groq_reasoning_format`. The `openai` and `ollama` providers still map to `openai_reasoning_effort`.
+- Require `pydantic-ai-slim>=2.18,<3`.
+- `enable_thinking` maps onto Pydantic AI's unified `thinking` setting for the `anthropic`, `gemini`, `groq` and `bedrock` providers. The Anthropic thinking budget is now Pydantic AI's default of 10000 tokens, was 4096, and `max_tokens` must exceed it on budget-based Claude models; `enable_thinking: false` disables Gemini thinking rather than only hiding thoughts; Groq maps reasoning effort rather than `groq_reasoning_format`; Bedrock Qwen with `enable_thinking: false` no longer sends `reasoning_config`, while Bedrock-served Claude keeps an explicit `thinking: disabled`. The `openai` and `ollama` providers still map to `openai_reasoning_effort`.
 - `provider: bedrock` with a proprietary OpenAI model such as `openai.o3-mini-v1:0` raises `UserError`: Bedrock Converse serves only the `gpt-oss` family. Use `provider: bedrock-mantle`.
+- Tool failures raise `pydantic_ai.ToolFailed` instead of returning failure text: search and code-execution limits, sandbox execution errors, and `get_document`/`summarize_document` misses.
 
 ### Fixed
 

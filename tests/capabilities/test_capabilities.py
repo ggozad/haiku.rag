@@ -4,7 +4,7 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent, ModelRetry, RunContext, ToolFailed
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
@@ -291,13 +291,11 @@ async def test_search_and_empty_citation_limits(temp_db_path):
     capability = create_rag(db_path=temp_db_path, config=config)
     capability.state = RAGState()
 
-    result = await capability._search("anything", None)
+    with pytest.raises(ToolFailed, match="Search limit reached"):
+        await capability._search("anything", None)
 
-    assert (
-        result
-        == "Search limit reached. Answer the question using the results you already have."
-    )
-    assert await capability._cite([]) == "Registered 0 citations (empty chunk_ids)."
+    with pytest.raises(ModelRetry, match="chunk_ids was empty"):
+        await capability._cite([])
 
 
 @pytest.mark.asyncio
@@ -370,6 +368,75 @@ async def test_analysis_records_new_sandbox_search_results(temp_db_path):
         "chunk-1",
         "chunk-2",
     ]
+
+
+@pytest.mark.asyncio
+async def test_failed_tool_reaches_the_model_and_the_run_continues(temp_db_path):
+    """A `ToolFailed` tool leaves a failed result in history and answers anyway."""
+    config = AppConfig()
+    config.qa.max_searches = 0
+    calls = 0
+
+    def model_function(_messages, _info):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return ModelResponse(parts=[ToolCallPart("rag_search", {"query": "x"})])
+        return ModelResponse(parts=[TextPart("answered from what I had")])
+
+    agent = Agent(
+        FunctionModel(model_function),
+        deps_type=Deps,
+        capabilities=[
+            create_rag(db_path=temp_db_path, config=config, defer_loading=False)
+        ],
+    )
+
+    result = await agent.run("question", deps=Deps())
+
+    assert result.output == "answered from what I had"
+    failed = [
+        part
+        for message in result.all_messages()
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.outcome == "failed"
+    ]
+    assert [part.tool_name for part in failed] == ["rag_search"]
+    assert "Search limit reached" in str(failed[0].content)
+
+
+@pytest.mark.asyncio
+async def test_analysis_execution_limit_fails_the_tool(temp_db_path):
+    config = AppConfig()
+    config.analysis.max_executions = 0
+    capability = create_analysis(db_path=temp_db_path, config=config)
+    capability.state = AnalysisState()
+
+    with pytest.raises(ToolFailed, match="Code-execution limit reached"):
+        await capability._execute_code("print('done')")
+
+
+@pytest.mark.asyncio
+async def test_analysis_sandbox_failure_records_execution_and_fails_the_tool(
+    temp_db_path,
+):
+    capability = create_analysis(db_path=temp_db_path, config=AppConfig())
+    capability.state = AnalysisState()
+    capability.outer_state = {}
+    sandbox = AsyncMock()
+    sandbox.execute.return_value = SandboxResult(
+        stdout="partial", stderr="NameError: undefined", success=False
+    )
+    sandbox._search_results = []
+    capability.sandbox = cast(Sandbox, sandbox)
+
+    with pytest.raises(ToolFailed, match="NameError: undefined"):
+        await capability._with_state(capability._execute_code("boom"))
+
+    entry = capability.state.executions[-1]
+    assert entry.success is False
+    assert entry.stderr == "NameError: undefined"
+    assert capability.outer_state["analysis"]["executions"][-1]["code"] == "boom"
 
 
 @pytest.mark.asyncio

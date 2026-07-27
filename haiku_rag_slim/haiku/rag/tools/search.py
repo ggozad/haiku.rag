@@ -3,7 +3,7 @@ from collections.abc import Callable
 from io import BytesIO
 
 from PIL import Image
-from pydantic_ai import FunctionToolset, RunContext
+from pydantic_ai import FunctionToolset, RunContext, ToolFailed
 from pydantic_ai.messages import BinaryContent, ToolReturn
 
 from haiku.rag.config.models import AppConfig
@@ -68,8 +68,9 @@ def create_search_toolset(
         tool_name: Name for the search tool. Defaults to "search".
         on_results: Optional callback invoked with search results after each search.
             Useful for accumulating results externally (e.g., for citation resolution).
-        max_searches: Maximum number of searches allowed. When exceeded, returns
-            a message directing the agent to answer with existing results.
+        max_searches: Maximum number of searches allowed. When exceeded, the
+            tool fails with a message directing the agent to answer with
+            existing results.
 
     Returns:
         FunctionToolset with a search tool.
@@ -99,7 +100,7 @@ def create_search_toolset(
         rid = ctx.run_id or ""
         search_counts[rid] = search_counts.get(rid, 0) + 1
         if max_searches is not None and search_counts[rid] > max_searches:
-            return (
+            raise ToolFailed(
                 "Search limit reached. "
                 "Answer the question using the results you already have."
             )

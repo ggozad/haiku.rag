@@ -2,6 +2,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from pydantic_ai import ToolFailed
 
 from haiku.rag.store.models import SearchResult
 from haiku.rag.tools.search import create_search_toolset
@@ -139,26 +140,22 @@ class TestSearchMaxSearches:
         search_tool = toolset.tools["search"]
         ctx = make_ctx(search_client)
 
-        result1 = await search_tool.function(ctx, "Python")
-        assert "Search limit reached" not in result1
-
-        result2 = await search_tool.function(ctx, "JavaScript")
-        assert "Search limit reached" not in result2
+        assert await search_tool.function(ctx, "Python")
+        assert await search_tool.function(ctx, "JavaScript")
 
     @pytest.mark.asyncio
-    async def test_searches_beyond_limit_return_cap_message(
+    async def test_searches_beyond_limit_fail_the_tool(
         self, search_client, search_config
     ):
-        """Searches beyond max_searches return limit message."""
+        """Searches beyond max_searches fail with the limit message."""
         toolset = create_search_toolset(search_config, max_searches=1)
         search_tool = toolset.tools["search"]
         ctx = make_ctx(search_client)
 
-        result1 = await search_tool.function(ctx, "Python")
-        assert "Search limit reached" not in result1
+        assert await search_tool.function(ctx, "Python")
 
-        result2 = await search_tool.function(ctx, "JavaScript")
-        assert "Search limit reached" in result2
+        with pytest.raises(ToolFailed, match="Search limit reached"):
+            await search_tool.function(ctx, "JavaScript")
 
     @pytest.mark.asyncio
     async def test_counter_resets_across_runs(self, search_client, search_config):
@@ -167,15 +164,13 @@ class TestSearchMaxSearches:
         search_tool = toolset.tools["search"]
 
         ctx_run1 = make_ctx(search_client, run_id="run-1")
-        result = await search_tool.function(ctx_run1, "Python")
-        assert "Search limit reached" not in result
+        assert await search_tool.function(ctx_run1, "Python")
 
-        result2 = await search_tool.function(ctx_run1, "JavaScript")
-        assert "Search limit reached" in result2
+        with pytest.raises(ToolFailed, match="Search limit reached"):
+            await search_tool.function(ctx_run1, "JavaScript")
 
         ctx_run2 = make_ctx(search_client, run_id="run-2")
-        result3 = await search_tool.function(ctx_run2, "Python")
-        assert "Search limit reached" not in result3
+        assert await search_tool.function(ctx_run2, "Python")
 
     @pytest.mark.asyncio
     async def test_no_limit_by_default(self, search_client, search_config):
@@ -185,8 +180,7 @@ class TestSearchMaxSearches:
         ctx = make_ctx(search_client)
 
         for _ in range(5):
-            result = await search_tool.function(ctx, "Python")
-            assert "Search limit reached" not in result
+            assert await search_tool.function(ctx, "Python")
 
 
 @pytest.fixture

@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
-from pydantic_ai import RunContext
+from pydantic_ai import RunContext, ToolFailed
 from pydantic_ai.messages import ToolReturn
 from pydantic_ai.toolsets import FunctionToolset
 
@@ -74,7 +74,7 @@ class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
         assert self.state is not None
         self.execute_count += 1
         if self.execute_count > self.config.analysis.max_executions:
-            return (
+            raise ToolFailed(
                 "Code-execution limit reached. Give your final answer now from what "
                 "you already have; do not call analysis_execute_code again."
             )
@@ -96,9 +96,9 @@ class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
                 success=result.success,
             )
         )
-        if result.success:
-            return result.stdout or "No output."
-        return f"Error: {result.stderr}\n\nOutput: {result.stdout}"
+        if not result.success:
+            raise ToolFailed(f"{result.stderr}\n\nOutput: {result.stdout}")
+        return result.stdout or "No output."
 
     def get_toolset(self) -> FunctionToolset[Any]:
         async def analysis_search(

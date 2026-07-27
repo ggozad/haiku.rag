@@ -2,6 +2,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from pydantic_ai import ToolFailed
 
 from haiku.rag.tools.document import (
     DocumentInfo,
@@ -130,9 +131,9 @@ class TestDocumentToolExecution:
 
         get_tool = toolset.tools["get_document"]
         ctx = make_ctx(doc_client)
-        result = await get_tool.function(ctx, "nonexistent")
 
-        assert "Document not found" in result
+        with pytest.raises(ToolFailed, match="Document not found: nonexistent"):
+            await get_tool.function(ctx, "nonexistent")
 
     @pytest.mark.asyncio
     async def test_list_documents_with_base_filter(self, doc_client, doc_config):
@@ -183,9 +184,9 @@ class TestSummarizeDocumentTool:
 
         summarize_tool = toolset.tools["summarize_document"]
         ctx = make_ctx(doc_client)
-        result = await summarize_tool.function(ctx, "nonexistent document")
 
-        assert "Document not found" in result
+        with pytest.raises(ToolFailed, match="Document not found: nonexistent"):
+            await summarize_tool.function(ctx, "nonexistent document")
 
     @pytest.mark.vcr()
     @pytest.mark.asyncio

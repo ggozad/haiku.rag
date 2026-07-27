@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from pydantic_ai import Agent, FunctionToolset, RunContext
+from pydantic_ai import Agent, FunctionToolset, RunContext, ToolFailed
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
@@ -123,14 +123,14 @@ def create_document_toolset(
             query: The document title or URI to look up.
 
         Returns:
-            Document content and metadata, or not found message.
+            Document content and metadata.
         """
         client = ctx.deps.client
 
         doc = await find_document(client, query)
 
         if doc is None:
-            return f"Document not found: {query}"
+            raise ToolFailed(f"Document not found: {query}")
 
         return (
             f"**{doc.title or 'Untitled'}**\n\n"
@@ -147,14 +147,14 @@ def create_document_toolset(
             query: The document title or URI to summarize.
 
         Returns:
-            Generated summary or not found message.
+            Generated summary.
         """
         client = ctx.deps.client
 
         doc = await find_document(client, query)
 
         if doc is None:
-            return f"Document not found: {query}"
+            raise ToolFailed(f"Document not found: {query}")
 
         summary_model = get_model(config.qa.model, config)
         summary_agent: Agent[None, str] = Agent(
