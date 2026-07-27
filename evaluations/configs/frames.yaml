@@ -23,6 +23,11 @@ reranking:
     name: Qwen/Qwen3-Reranker-4B
     base_url: http://vllm:11433
 
+analysis:
+  # Bounds per-execution sandbox output so accumulated code returns cannot
+  # outgrow the model's input budget.
+  max_output_chars: 20000
+
 qa:
   model:
     provider: openai
