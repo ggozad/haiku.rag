@@ -44,6 +44,31 @@ async def test_settings_save_and_retrieve(temp_db_path):
         Config.processing.chunk_size = original_chunk_size
 
 
+@pytest.mark.asyncio
+async def test_set_haiku_version_recreates_row_from_store_config(temp_db_path):
+    """Recreating a missing settings row stamps the store's own config, not the
+    process-global one."""
+    from haiku.rag.store.engine import Store
+    from haiku.rag.store.repositories.settings import SettingsRepository
+
+    config = AppConfig()
+    config.processing.chunk_size = Config.processing.chunk_size + 512
+
+    async with Store(temp_db_path, config=config, create=True) as store:
+        settings_repo = SettingsRepository(store)
+
+        await store.settings_table.delete("id = 'settings'")
+        assert await settings_repo.get_current_settings() == {}
+        assert await store.get_haiku_version() == "0.0.0"
+
+        await store.set_haiku_version("1.2.3")
+
+        recreated = await settings_repo.get_current_settings()
+        assert recreated["version"] == "1.2.3"
+        assert recreated["processing"]["chunk_size"] == config.processing.chunk_size
+        assert await store.get_haiku_version() == "1.2.3"
+
+
 class TestValidateConfigCompatibility:
     """Tests for validate_config_compatibility method."""
 
@@ -238,3 +263,23 @@ class TestValidateConfigCompatibility:
                 await settings_repo.validate_config_compatibility()
 
             assert "9999" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_save_current_settings_recreates_a_deleted_row(temp_db_path):
+    from haiku.rag.store.engine import Store
+    from haiku.rag.store.repositories.settings import SettingsRepository
+
+    async with Store(temp_db_path, create=True, skip_validation=True) as store:
+        settings_repo = SettingsRepository(store)
+
+        await store.settings_table.delete("id = 'settings'")
+        assert await settings_repo.get_current_settings() == {}
+
+        await settings_repo.save_current_settings()
+
+        recreated = await settings_repo.get_current_settings()
+        assert (
+            recreated["embeddings"]
+            == store._config.model_dump(mode="json")["embeddings"]
+        )

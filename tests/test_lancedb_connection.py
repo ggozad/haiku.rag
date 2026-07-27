@@ -310,3 +310,91 @@ class TestInitFailureCleanup:
                 pass
 
         assert close_calls, "Store.close() was not called when _initialize raised"
+
+
+class TestVectorIndexCreation:
+    """_ensure_vector_index needs 256 rows of training data before it builds."""
+
+    @staticmethod
+    async def _seed_chunks(store, count: int) -> None:
+        import random
+
+        records = [
+            store.ChunkRecord(
+                document_id="doc-1",
+                content=f"row {i}",
+                content_fts=f"row {i}",
+                metadata="{}",
+                order=i,
+                vector=[random.random() for _ in range(store.embedder.vector_dim)],
+            )
+            for i in range(count)
+        ]
+        await store.chunks_table.add(records)
+
+    @pytest.mark.asyncio
+    async def test_builds_index_once_enough_rows_exist(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            await self._seed_chunks(store, 256)
+
+            await store._ensure_vector_index()
+
+            indexes = await store.chunks_table.list_indices()
+            assert any("vector" in idx.columns for idx in indexes)
+
+    @pytest.mark.asyncio
+    async def test_index_failure_is_warned_not_raised(self, temp_db_path):
+        import logging
+
+        from haiku.rag.store import engine as engine_module
+        from tests.conftest import capture_logs
+
+        async with Store(temp_db_path, create=True) as store:
+            await self._seed_chunks(store, 256)
+
+            async def boom(*_args, **_kwargs):
+                raise RuntimeError("index build failed")
+
+            with patch.object(store.chunks_table, "create_index", boom):
+                with capture_logs(engine_module.logger, logging.WARNING) as records:
+                    await store._ensure_vector_index()
+
+            assert any("index build failed" in r.getMessage() for r in records)
+            indexes = await store.chunks_table.list_indices()
+            assert not any("vector" in idx.columns for idx in indexes)
+
+
+class TestStoreMiscellany:
+    @pytest.mark.asyncio
+    async def test_create_makes_missing_parent_directories(self, tmp_path):
+        nested = tmp_path / "a" / "b" / "db.lancedb"
+
+        async with Store(nested, create=True) as store:
+            assert store._is_new_db is True
+
+        assert nested.exists()
+
+    @pytest.mark.asyncio
+    async def test_stored_vector_dim_is_none_for_corrupt_settings(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            await store.settings_table.update(
+                {"settings": "not json at all"}, where="id = 'settings'"
+            )
+
+            assert await store._get_stored_vector_dim() is None
+
+    @pytest.mark.asyncio
+    async def test_vacuum_skips_when_already_running(self, temp_db_path):
+        import asyncio
+
+        async with Store(temp_db_path, create=True) as store:
+            async with store._vacuum_lock:
+                # Bounded: a regression here blocks on the held lock, and the
+                # timeout turns that deadlock into a clean failure.
+                await asyncio.wait_for(store.vacuum(), timeout=5)
+
+    @pytest.mark.asyncio
+    async def test_history_rejects_unknown_table(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            with pytest.raises(ValueError, match="Unknown table"):
+                await store.list_table_versions("not_a_table")

@@ -570,7 +570,10 @@ def _extract_pdf_attachments(
             for i in range(attachment_count):
                 att = pdf.get_attachment(i)
                 name = att.get_name()
-                if not name:
+                # A malformed PDF can carry an attachment with an empty /F, so
+                # this is real validation on untrusted input — it just needs a
+                # hand-crafted file to reach, which no fixture here produces.
+                if not name:  # pragma: no cover - needs a malformed PDF
                     continue
                 data = bytes(att.get_data())
                 child_uri = f"{parent_uri}#attachment={quote(name, safe='')}"
@@ -906,13 +909,19 @@ async def update_document(
 
 
 def check_source_accessible(uri: str) -> bool:
-    """Check if a document's source URI is accessible."""
-    parsed_url = urlparse(uri)
+    """Check if a document's source URI is accessible.
+
+    Anything the URI itself makes unanswerable counts as inaccessible rather
+    than aborting the caller's sweep: ``urlparse`` rejects malformed IPv6
+    hosts, and ``Path.exists`` re-raises errno values outside its ignored set
+    (an unreadable parent directory, an over-long name).
+    """
     try:
+        parsed_url = urlparse(uri)
         if parsed_url.scheme == "file":
             return Path(parsed_url.path).exists()
         elif parsed_url.scheme in ("http", "https", "s3"):
             return True
         return False
-    except Exception:
+    except (ValueError, OSError):
         return False

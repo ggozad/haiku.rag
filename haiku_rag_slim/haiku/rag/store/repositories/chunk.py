@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 if TYPE_CHECKING:
-    import pandas as pd
     from lancedb.query import AsyncQueryBase
 
 from lancedb.index import FTS
@@ -152,40 +151,6 @@ class ChunkRepository:
             metadata=md,
             order=chunk_record.order,
         )
-
-    async def update(self, entity: Chunk) -> Chunk:
-        """Update an existing chunk.
-
-        Chunk must have embedding set before calling this method.
-        """
-        self.store._assert_writable()
-        assert entity.id, "Chunk ID is required for update"
-        assert entity.embedding is not None, "Chunk must have an embedding"
-
-        await self.store.chunks_table.update(
-            {
-                "document_id": entity.document_id,
-                "content": entity.content,
-                "content_fts": self._contextualize_content(entity),
-                "metadata": json.dumps(
-                    {k: v for k, v in entity.metadata.items() if k != "order"}
-                ),
-                "order": int(entity.order),
-                "vector": entity.embedding,
-            },
-            where=f"id = '{entity.id}'",
-        )
-        return entity
-
-    async def delete(self, entity_id: str) -> bool:
-        """Delete a chunk by its ID."""
-        self.store._assert_writable()
-        chunk = await self.get_by_id(entity_id)
-        if chunk is None:
-            return False
-
-        await self.store.chunks_table.delete(f"id = '{entity_id}'")
-        return True
 
     async def list_all(
         self, limit: int | None = None, offset: int | None = None
@@ -417,46 +382,10 @@ class ChunkRepository:
         )
         return len(df)
 
-    async def get_chunks_in_range(
-        self, document_id: str, min_order: int, max_order: int
-    ) -> list[Chunk]:
-        """Get chunks for a document within an order range.
-
-        Args:
-            document_id: The document ID to get chunks for.
-            min_order: Minimum order value (inclusive).
-            max_order: Maximum order value (inclusive).
-
-        Returns:
-            List of chunks within the order range.
-        """
-        where = (
-            f"document_id = '{document_id}'"
-            f" AND `order` >= {min_order}"
-            f" AND `order` <= {max_order}"
-        )
-        results = await query_to_pydantic(
-            self.store.chunks_table.query().where(where), self.store.ChunkRecord
-        )
-        return [
-            Chunk(
-                id=rec.id,
-                document_id=rec.document_id,
-                content=rec.content,
-                metadata=json.loads(rec.metadata),
-                order=rec.order,
-            )
-            for rec in results
-        ]
-
     async def _process_search_results(
-        self, query_result: "pd.DataFrame | AsyncQueryBase"
+        self, query_result: "AsyncQueryBase"
     ) -> list[tuple[Chunk, float]]:
-        """Process search results into chunks with document info and scores.
-
-        Args:
-            query_result: Either a pandas DataFrame or a LanceDB async query result
-        """
+        """Process search results into chunks with document info and scores."""
         import pandas as pd
 
         def extract_scores(df: pd.DataFrame) -> list[float]:
@@ -473,12 +402,7 @@ class ChunkRepository:
             else:
                 raise ValueError("Unknown search result format, cannot extract scores")
 
-        # Convert everything to DataFrame for uniform processing
-        if isinstance(query_result, pd.DataFrame):
-            df = query_result
-        else:
-            # Convert LanceDB query result to DataFrame
-            df = await query_result.to_pandas()
+        df = await query_result.to_pandas()
 
         # Extract scores
         scores = extract_scores(df)

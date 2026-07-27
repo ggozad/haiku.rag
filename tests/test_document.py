@@ -8,47 +8,31 @@ from haiku.rag.store.repositories.document_item import DocumentItemRepository
 
 
 @pytest.mark.asyncio
-async def test_document_list_excludes_content_by_default(
-    qa_corpus: list[dict[str, str]], temp_db_path
+@pytest.mark.parametrize("include_content", [False, True])
+async def test_document_list_all(
+    qa_corpus: list[dict[str, str]], temp_db_path, include_content
 ):
-    """list_all excludes content and docling_document by default."""
+    """list_all excludes content and docling_document unless include_content=True."""
     async with Store(temp_db_path, create=True) as store:
         doc_repo = DocumentRepository(store)
 
+        content = qa_corpus[0]["document_extracted"]
         doc = Document(
-            content=qa_corpus[0]["document_extracted"],
+            content=content,
             uri="https://example.com/doc.txt",
             title="Test Document",
             metadata={"key": "value"},
         )
         created = await doc_repo.create(doc)
 
-        docs = await doc_repo.list_all()
+        docs = await doc_repo.list_all(include_content=include_content)
         assert len(docs) == 1
         assert docs[0].id == created.id
         assert docs[0].title == "Test Document"
         assert docs[0].uri == "https://example.com/doc.txt"
         assert docs[0].metadata == {"key": "value"}
-        assert docs[0].content == ""
+        assert docs[0].content == (content if include_content else "")
         assert docs[0].docling_document is None
-
-
-@pytest.mark.asyncio
-async def test_document_list_includes_content_when_requested(
-    qa_corpus: list[dict[str, str]], temp_db_path
-):
-    """list_all returns content when include_content=True."""
-    async with Store(temp_db_path, create=True) as store:
-        doc_repo = DocumentRepository(store)
-
-        content = qa_corpus[0]["document_extracted"]
-        doc = Document(content=content, uri="https://example.com/doc.txt")
-        created = await doc_repo.create(doc)
-
-        docs = await doc_repo.list_all(include_content=True)
-        assert len(docs) == 1
-        assert docs[0].id == created.id
-        assert docs[0].content == content
 
 
 @pytest.mark.asyncio
@@ -391,16 +375,26 @@ async def test_get_docling_data_loads_only_docling_columns(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "with_pages",
+    # Markdown documents have no page images, so their pages blob stays None.
+    [True, False],
+    ids=["with_pages", "markdown"],
+)
 async def test_get_pages_data_loads_only_pages_column(
-    qa_corpus: list[dict[str, str]], temp_db_path
+    qa_corpus: list[dict[str, str]], temp_db_path, with_pages
 ):
     """get_pages_data returns only page image data for a document."""
     import json
 
     from haiku.rag.store.compression import compress_json
 
-    pages_blob = compress_json(
-        json.dumps({"1": {"size": {"width": 612, "height": 792}, "page_no": 1}})
+    pages_blob = (
+        compress_json(
+            json.dumps({"1": {"size": {"width": 612, "height": 792}, "page_no": 1}})
+        )
+        if with_pages
+        else None
     )
 
     async with Store(temp_db_path, create=True) as store:
@@ -422,27 +416,6 @@ async def test_get_pages_data_loads_only_pages_column(
 
         # Non-existent ID returns None
         assert await doc_repo.get_pages_data("nonexistent-id") is None
-
-
-@pytest.mark.asyncio
-async def test_get_pages_data_none_for_markdown_document(
-    qa_corpus: list[dict[str, str]], temp_db_path
-):
-    """Markdown documents have no page images — get_pages_data returns None pages."""
-    async with Store(temp_db_path, create=True) as store:
-        doc_repo = DocumentRepository(store)
-
-        doc = Document(
-            content=qa_corpus[0]["document_extracted"],
-            uri="https://example.com/doc.md",
-        )
-        created = await doc_repo.create(doc)
-        assert created.id is not None
-
-        result = await doc_repo.get_pages_data(created.id)
-        assert result is not None
-        assert result.id == created.id
-        assert result.docling_pages is None
 
 
 @pytest.mark.asyncio

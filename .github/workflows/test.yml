@@ -11,13 +11,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version-file: "pyproject.toml"
+          python-version-file: ".python-version"
       - name: Install dependencies
         run: uv sync --all-extras
       - name: Lint
@@ -52,13 +52,13 @@ jobs:
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version-file: "pyproject.toml"
+          python-version-file: ".python-version"
       - name: Install dependencies
         run: uv sync --all-extras
       - name: Cache HuggingFace models
@@ -77,7 +77,7 @@ jobs:
         env:
           HF_HUB_OFFLINE: ${{ steps.hf-cache.outputs.cache-hit == 'true' && '1' || '0' }}
           TRANSFORMERS_OFFLINE: ${{ steps.hf-cache.outputs.cache-hit == 'true' && '1' || '0' }}
-        run: uv run pytest -m "not integration" --cov=haiku --cov-report=xml
+        run: uv run pytest -m "not integration" --cov=haiku --cov-report=xml --cov-report=term-missing:skip-covered
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:

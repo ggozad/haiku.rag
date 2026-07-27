@@ -18,47 +18,6 @@ class SettingsRepository:
     def __init__(self, store: Store) -> None:
         self.store = store
 
-    async def create(self, entity: dict) -> dict:
-        """Create settings in the database."""
-        settings_record = SettingsRecord(id="settings", settings=json.dumps(entity))
-        await self.store.settings_table.add([settings_record])
-        return entity
-
-    async def get_by_id(self, entity_id: str) -> dict | None:
-        """Get settings by ID."""
-        results = await query_to_pydantic(
-            self.store.settings_table.query().where(f"id = '{entity_id}'").limit(1),
-            SettingsRecord,
-        )
-
-        if not results:
-            return None
-
-        return json.loads(results[0].settings) if results[0].settings else {}
-
-    async def update(self, entity: dict) -> dict:
-        """Update existing settings."""
-        await self.store.settings_table.update(
-            {"settings": json.dumps(entity)}, where="id = 'settings'"
-        )
-        return entity
-
-    async def delete(self, entity_id: str) -> bool:
-        """Delete settings by ID."""
-        await self.store.settings_table.delete(f"id = '{entity_id}'")
-        return True
-
-    async def list_all(
-        self, limit: int | None = None, offset: int | None = None
-    ) -> list[dict]:
-        """List all settings."""
-        results = await query_to_pydantic(
-            self.store.settings_table.query(), SettingsRecord
-        )
-        return [
-            json.loads(record.settings) if record.settings else {} for record in results
-        ]
-
     async def get_current_settings(self) -> dict:
         """Get the current settings."""
         results = await query_to_pydantic(

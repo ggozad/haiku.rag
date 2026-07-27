@@ -798,3 +798,81 @@ async def test_serve_chunker_accepts_picture_laden_docling(doclaynet_first_page_
     chunks = await serve_chunker.chunk(doc)
 
     assert len(chunks) > 0, "docling-serve chunker returned 0 chunks"
+
+
+class TestDoclingServeChunkerRefResolution:
+    """_resolve_label_from_document and the dict-shaped doc_items branch."""
+
+    @pytest.fixture
+    def chunker(self):
+        config = AppConfig()
+        config.providers.docling_serve.base_url = "http://localhost:5001"
+        config.processing.chunk_size = 256
+        config.processing.chunking_tokenizer = "Qwen/Qwen3-Embedding-0.6B"
+        return DoclingServeChunker(config)
+
+    @pytest.fixture
+    def document(self):
+        from docling_core.types.doc.document import DoclingDocument
+
+        return DoclingDocument.model_validate(
+            {
+                "name": "doc",
+                "texts": [
+                    {
+                        "self_ref": "#/texts/0",
+                        "text": "body",
+                        "orig": "body",
+                        "label": "paragraph",
+                    }
+                ],
+                "tables": [],
+                "pictures": [],
+                "groups": [],
+                "body": {"self_ref": "#/body", "children": []},
+                "furniture": {"self_ref": "#/furniture", "children": []},
+            }
+        )
+
+    @pytest.mark.parametrize(
+        "ref",
+        ["not-a-ref", "#/texts/999", "#/nope/0"],
+        ids=["unparseable", "index_out_of_range", "unknown_collection"],
+    )
+    def test_unresolvable_ref_yields_no_label(self, document, ref):
+        from haiku.rag.chunkers.docling_serve import _resolve_label_from_document
+
+        assert _resolve_label_from_document(ref, document) is None
+
+    def test_resolvable_ref_yields_label(self, document):
+        from haiku.rag.chunkers.docling_serve import _resolve_label_from_document
+
+        assert _resolve_label_from_document("#/texts/0", document) == "paragraph"
+
+    @pytest.mark.asyncio
+    async def test_chunk_of_none_returns_empty(self, chunker):
+        assert await chunker.chunk(None) == []
+
+    @pytest.mark.asyncio
+    async def test_dict_shaped_doc_items_are_decoded(self, chunker, document):
+        """docling-serve returns refs as strings today; the dict shape is
+        accepted in case the API changes."""
+
+        async def fake_chunk_api(_document):
+            return [
+                {
+                    "raw_text": "body",
+                    # A label the document does NOT carry, so the assertion
+                    # proves the dict's own label was used rather than a
+                    # lookup against the document.
+                    "doc_items": [{"self_ref": "#/texts/0", "label": "caption"}],
+                }
+            ]
+
+        chunker._call_chunk_api = fake_chunk_api  # type: ignore[method-assign]
+
+        chunks = await chunker.chunk(document)
+
+        assert len(chunks) == 1
+        assert chunks[0].metadata["doc_item_refs"] == ["#/texts/0"]
+        assert chunks[0].metadata["labels"] == ["caption"]

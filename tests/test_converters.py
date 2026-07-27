@@ -406,6 +406,46 @@ class TestDoclingLocalConverter:
         assert doc.name == "test"
 
     @pytest.mark.asyncio
+    async def test_convert_file_reads_unknown_extension_as_text(
+        self, converter, tmp_path
+    ):
+        """An extension in neither the docling nor the text set is read as text."""
+        source = tmp_path / "notes.xyz"
+        source.write_text("Plain body for an unknown extension.")
+
+        doc = await converter.convert_file(source)
+
+        assert isinstance(doc, DoclingDocument)
+        assert "Plain body for an unknown extension." in doc.export_to_markdown()
+
+    @pytest.mark.asyncio
+    async def test_convert_file_raises_for_undecodable_file(self, converter, tmp_path):
+        source = tmp_path / "binary.xyz"
+        source.write_bytes(b"\xff\xfe\x00\x01 not utf-8")
+
+        with pytest.raises(ValueError, match="Failed to parse file"):
+            await converter.convert_file(source)
+
+    @pytest.mark.asyncio
+    async def test_convert_text_wraps_conversion_failure(self, converter, monkeypatch):
+        def boom(*_args, **_kwargs):
+            raise RuntimeError("docling exploded")
+
+        monkeypatch.setattr(converter, "_sync_convert_docling_text", boom)
+
+        with pytest.raises(ValueError, match="Failed to convert text"):
+            await converter.convert_text("# Test", name="test.md")
+
+    @pytest.mark.asyncio
+    async def test_convert_text_falls_back_when_format_not_inferable(self, converter):
+        """docling raises ConversionError for an extension it has no backend
+        for; the simple-document fallback keeps the text."""
+        doc = await converter.convert_text("just some prose", name="mystery.zzz")
+
+        assert isinstance(doc, DoclingDocument)
+        assert "just some prose" in doc.export_to_markdown()
+
+    @pytest.mark.asyncio
     async def test_convert_code_file(self, converter):
         """Test that code files are wrapped in code blocks."""
         python_code = "def hello():\n    print('Hello')"
@@ -1522,3 +1562,136 @@ class TestDoclingServeConverterIntegration:
         assert str(sample.image.uri).startswith("data:image/"), (
             "Rehydrated picture URI should be a data: URI, not a bare artifact filename"
         )
+
+
+class TestDoclingServeZipParsing:
+    """_parse_zip_to_docling decodes the target_type=zip payload. These drive
+    its branches directly — no docling-serve instance involved."""
+
+    @pytest.fixture
+    def converter(self):
+        config = AppConfig()
+        config.processing.converter = "docling-serve"
+        conv = get_converter(config)
+        assert isinstance(conv, DoclingServeConverter)
+        return conv
+
+    @staticmethod
+    def _zip(entries: dict[str, bytes]) -> bytes:
+        import io
+        import zipfile
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, mode="w") as zf:
+            for name, blob in entries.items():
+                zf.writestr(name, blob)
+        return buf.getvalue()
+
+    @staticmethod
+    def _doc_json(**extra) -> dict:
+        base = {
+            "name": "document",
+            "texts": [],
+            "tables": [],
+            "pictures": [],
+            "groups": [],
+            "body": {"self_ref": "#/body", "children": []},
+            "furniture": {"self_ref": "#/furniture", "children": []},
+        }
+        base.update(extra)
+        return base
+
+    def test_raises_without_top_level_json(self, converter):
+        blob = self._zip({"artifacts/image.png": b"png"})
+
+        with pytest.raises(ValueError, match="no top-level JSON document"):
+            converter._parse_zip_to_docling(blob, "doc.pdf")
+
+    def test_picture_without_image_is_left_alone(self, converter):
+        import json as _json
+
+        doc_json = self._doc_json(
+            pictures=[
+                {
+                    "self_ref": "#/pictures/0",
+                    "label": "picture",
+                    "image": None,
+                    "prov": [],
+                }
+            ]
+        )
+        blob = self._zip({"document.json": _json.dumps(doc_json).encode()})
+
+        doc = converter._parse_zip_to_docling(blob, "doc.pdf")
+
+        assert doc.pictures[0].image is None
+
+    def test_data_uri_image_is_passed_through(self, converter):
+        import json as _json
+
+        data_uri = "data:image/png;base64,aGVsbG8="
+        doc_json = self._doc_json(
+            pictures=[
+                {
+                    "self_ref": "#/pictures/0",
+                    "label": "picture",
+                    "image": {
+                        "mimetype": "image/png",
+                        "dpi": 72,
+                        "size": {"width": 1, "height": 1},
+                        "uri": data_uri,
+                    },
+                    "prov": [],
+                }
+            ]
+        )
+        blob = self._zip({"document.json": _json.dumps(doc_json).encode()})
+
+        doc = converter._parse_zip_to_docling(blob, "doc.pdf")
+
+        assert str(doc.pictures[0].image.uri) == data_uri
+
+    def test_non_dict_page_entry_is_skipped_while_inlining(self, converter):
+        """A page entry that isn't an object must not blow up the image-inlining
+        loop with an AttributeError; it falls through to schema validation."""
+        import json as _json
+
+        from pydantic import ValidationError
+
+        doc_json = self._doc_json(pages={"1": "not-a-page-object"})
+        blob = self._zip({"document.json": _json.dumps(doc_json).encode()})
+
+        with pytest.raises(ValidationError):
+            converter._parse_zip_to_docling(blob, "doc.pdf")
+
+    @pytest.mark.asyncio
+    async def test_convert_text_rejects_unsupported_format(self, converter):
+        with pytest.raises(ValueError, match="Unsupported format"):
+            await converter.convert_text("body", format="pdf")
+
+    @pytest.mark.asyncio
+    async def test_convert_text_plain_builds_document_locally(self, converter):
+        """format="plain" never reaches the network."""
+        converter.client.submit_and_poll_zip = AsyncMock(
+            side_effect=AssertionError("must not call docling-serve")
+        )
+
+        doc = await converter.convert_text("just text", format="plain")
+
+        assert isinstance(doc, DoclingDocument)
+        assert "just text" in doc.export_to_markdown()
+
+
+@pytest.mark.asyncio
+async def test_docling_serve_convert_file_wraps_text_read_failure(tmp_path):
+    """An undecodable text file surfaces as a ValueError naming the path."""
+    config = AppConfig()
+    config.processing.converter = "docling-serve"
+    converter = get_converter(config)
+    assert isinstance(converter, DoclingServeConverter)
+
+    source = tmp_path / "broken.txt"
+    source.write_bytes(b"\xff\xfe\x00\x01 not utf-8")
+
+    with pytest.raises(ValueError, match="Failed to read text file"):
+        await converter.convert_file(source)

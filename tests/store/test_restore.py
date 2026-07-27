@@ -112,8 +112,10 @@ async def test_restore_safety_tag_name_collision(temp_db_path, monkeypatch):
         await store.create_tag("release-1")
         await store.create_tag("before-restore-20260715T143012Z")
 
+        await store.create_tag("before-restore-20260715T143012Z-2")
+
         safety_tag = await store.restore_tag("release-1")
-        assert safety_tag == "before-restore-20260715T143012Z-2"
+        assert safety_tag == "before-restore-20260715T143012Z-3"
 
 
 @pytest.mark.asyncio
@@ -406,3 +408,26 @@ async def test_wait_protected_returns_result_on_same_tick_cancellation():
     result, cancelled = await outer
     assert result == "done"
     assert cancelled is True
+
+
+@pytest.mark.asyncio
+async def test_wait_protected_reraises_when_recovery_itself_is_cancelled():
+    """If the recovery coroutine ends cancelled there is nothing to wait for,
+    so the cancellation propagates instead of looping forever."""
+    import asyncio
+
+    from haiku.rag.store.engine import _wait_protected
+
+    async def self_cancelling_recovery() -> str:
+        current = asyncio.current_task()
+        assert current is not None
+        current.cancel()
+        await asyncio.sleep(0)
+        return "unreachable"
+
+    outer = asyncio.create_task(_wait_protected(self_cancelling_recovery()))
+
+    # Bounded: without the re-raise the retry loop spins forever on an
+    # already-cancelled task, and the timeout turns that into a clean failure.
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(outer, timeout=5)

@@ -38,7 +38,7 @@ async def download_models(
         yield DownloadProgress(model="docling", status="start")
         await asyncio.to_thread(download_models)
         yield DownloadProgress(model="docling", status="done")
-    except ImportError:
+    except ImportError:  # pragma: no cover - docling installed in test env
         pass
 
     # HuggingFace tokenizer

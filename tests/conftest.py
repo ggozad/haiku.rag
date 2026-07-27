@@ -2,6 +2,8 @@ import json
 import logging
 import os
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -30,6 +32,31 @@ if TYPE_CHECKING:
 
 setattr(pydantic_ai.models, "ALLOW_MODEL_REQUESTS", False)
 logging.getLogger("vcr.cassette").setLevel(logging.WARNING)
+
+
+@contextmanager
+def capture_logs(
+    logger: logging.Logger, level: int
+) -> Iterator[list[logging.LogRecord]]:
+    """Collect records emitted by ``logger`` at or above ``level``.
+
+    Attaches directly to the given logger instead of using ``caplog``:
+    ``haiku.rag.logging.get_logger()`` sets ``propagate=False`` on the
+    ``haiku.rag`` logger, so records never reach caplog's root handler once
+    any test in the session has called it.
+    """
+    records: list[logging.LogRecord] = []
+
+    class _ListHandler(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    handler = _ListHandler(level=level)
+    logger.addHandler(handler)
+    try:
+        yield records
+    finally:
+        logger.removeHandler(handler)
 
 
 @pytest.fixture(scope="session")

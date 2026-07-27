@@ -214,3 +214,49 @@ def search_config():
     from haiku.rag.config import Config
 
     return Config
+
+
+class TestBuildBinaryPartsFromResults:
+    """Picture bytes are attached once per (document, self_ref) pair."""
+
+    def test_results_without_image_data_contribute_nothing(self):
+        from haiku.rag.tools.search import build_binary_parts_from_results
+
+        results = [
+            SearchResult(content="text only", score=0.5, chunk_id="c1", image_data=None)
+        ]
+
+        assert build_binary_parts_from_results(results) == []
+
+    def test_duplicate_document_and_ref_is_attached_once(self):
+        import base64
+        from io import BytesIO
+
+        from PIL import Image as PILImage
+
+        from haiku.rag.tools.search import build_binary_parts_from_results
+
+        buf = BytesIO()
+        PILImage.new("RGB", (4, 4), "red").save(buf, format="PNG")
+        png = base64.b64encode(buf.getvalue()).decode()
+        shared = {"#/pictures/0": png}
+        results = [
+            SearchResult(
+                content="a",
+                score=0.9,
+                chunk_id="c1",
+                document_id="doc-1",
+                image_data=shared,
+            ),
+            SearchResult(
+                content="b",
+                score=0.8,
+                chunk_id="c2",
+                document_id="doc-1",
+                image_data=shared,
+            ),
+        ]
+
+        parts = build_binary_parts_from_results(results)
+
+        assert len(parts) == 1

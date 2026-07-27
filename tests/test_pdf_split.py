@@ -243,3 +243,14 @@ def test_concatenate_shifts_page_nos_and_unique_self_refs():
     assert page_nos == [1, 2], f"expected b's page 1 to shift to page 2, got {page_nos}"
 
     assert sorted(merged.pages.keys()) == [1, 2]
+
+
+def test_iter_pdf_slices_rejects_unopenable_pdf(tmp_path):
+    """pdfium refuses non-PDF bytes; the caller sees UnsupportedSourceError."""
+    from haiku.rag.client.exceptions import UnsupportedSourceError
+
+    junk = tmp_path / "not-really.pdf"
+    junk.write_bytes(b"this is not a pdf at all")
+
+    with pytest.raises(UnsupportedSourceError, match="cannot open PDF"):
+        list(iter_pdf_slices(junk, slice_size=1))

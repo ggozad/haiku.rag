@@ -101,8 +101,6 @@ def _evidence_anchors(content: str, max_chars: int) -> list[str]:
             mid = len(content) // 2
             start = max(0, mid - target // 2)
             anchors.append(content[start : start + target])
-    if not anchors:
-        anchors.append(content[:max_chars] if max_chars > 0 else content)
     return anchors
 
 
@@ -289,8 +287,6 @@ def _add_input_pages_for_surviving_refs(
 ) -> None:
     """Fill missing item-table pages from inputs whose own refs all survived."""
     surviving = set(refs)
-    if not surviving:
-        return
     for result in original_results:
         if not result.page_numbers or not result.doc_item_refs:
             continue

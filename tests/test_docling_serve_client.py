@@ -481,3 +481,29 @@ def test_from_config_wires_retry_and_breaker():
         assert client._max_attempts == 7
         assert client._breaker_config.failure_threshold == 9
         assert client._breaker_config.cooldown_s == 90.0
+
+
+@pytest.mark.asyncio
+async def test_submit_without_task_id_raises():
+    """A 200 that carries no task_id is a protocol violation, not a silent pass."""
+    import httpx
+
+    from haiku.rag.providers.docling_serve import DoclingServeClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={})
+
+    client = DoclingServeClient(base_urls="http://docling:5001")
+    files = {"files": ("doc.pdf", b"pdf", "application/octet-stream")}
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        with pytest.raises(ValueError, match="did not return a task_id"):
+            await client._submit_and_wait(
+                http,
+                "http://docling:5001",
+                "/v1/convert/source/async",
+                files,
+                {},
+                {},
+                "doc.pdf",
+            )

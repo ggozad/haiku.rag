@@ -371,3 +371,40 @@ class TestRebuildTitleOnly:
 
             # Only the second doc should have been processed
             assert len(processed_ids) == 1
+
+
+@pytest.mark.asyncio
+async def test_generate_title_with_llm_returns_model_output(monkeypatch):
+    """The agent's output is stripped and returned."""
+    from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
+    from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+    from haiku.rag.client.titles import generate_title_with_llm
+    from haiku.rag.config import AppConfig
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[TextPart("  A Generated Title  ")])
+
+    monkeypatch.setattr(
+        "haiku.rag.utils.get_model", lambda *a, **kw: FunctionModel(respond)
+    )
+
+    assert await generate_title_with_llm(AppConfig(), "body") == "A Generated Title"
+
+
+@pytest.mark.asyncio
+async def test_generate_title_with_llm_returns_none_for_blank_output(monkeypatch):
+    from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
+    from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+    from haiku.rag.client.titles import generate_title_with_llm
+    from haiku.rag.config import AppConfig
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[TextPart("   ")])
+
+    monkeypatch.setattr(
+        "haiku.rag.utils.get_model", lambda *a, **kw: FunctionModel(respond)
+    )
+
+    assert await generate_title_with_llm(AppConfig(), "body") is None

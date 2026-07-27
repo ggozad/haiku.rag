@@ -66,7 +66,7 @@ class _StagingMarkerRecord(LanceModel):
 
 
 async def rebuild_database(
-    client: "HaikuRAG", mode: "RebuildMode | None" = None
+    client: "HaikuRAG", mode: "RebuildMode"
 ) -> AsyncGenerator[str, None]:
     """Rebuild the database with the specified mode.
 
@@ -78,9 +78,6 @@ async def rebuild_database(
     garbage-collected.
     """
     from haiku.rag.client import RebuildMode
-
-    if mode is None:
-        mode = RebuildMode.FULL
 
     async with client.store._rebuild_lock:
         if mode == RebuildMode.SET_EMBEDDER:
@@ -284,11 +281,12 @@ async def _populate_staging_table(client: "HaikuRAG") -> None:
     pagination drift), so peak memory stays bounded regardless of corpus
     size. The vector column is omitted — the point of embed-only rebuild is
     to regenerate it.
+
+    Requires ``_resolve_rebuild_recovery`` to have cleared any leftover
+    staging table first: ``create_table`` raises if the name is already taken.
     """
     db = client.store.db
     tables = (await db.list_tables()).tables
-    if _STAGING_TABLE_NAME in tables:
-        await db.drop_table(_STAGING_TABLE_NAME)
 
     staging = await db.create_table(_STAGING_TABLE_NAME, schema=_StagingChunkRecord)
     if "chunks" not in tables:
@@ -301,8 +299,6 @@ async def _populate_staging_table(client: "HaikuRAG") -> None:
     )
     async for batch in stream:
         rows = batch.to_pylist()
-        if not rows:
-            continue
         records = [
             _StagingChunkRecord(
                 id=r["id"],

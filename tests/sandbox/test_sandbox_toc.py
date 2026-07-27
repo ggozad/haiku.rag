@@ -364,3 +364,72 @@ class TestItemsJsonlSurfacesNewFields:
             assert expected <= set(r)
             assert "position" not in r
             assert "tree_depth" not in r
+
+
+@pytest.mark.asyncio
+class TestVfsReadPaths:
+    """The synchronous VFS readers bridge back to the event loop; drive them
+    through a worker thread the way execute() does."""
+
+    async def test_content_txt_is_read_lazily_per_document(self, temp_db_path):
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.document_repository.create(
+                Document(content="the stored body", uri="test://body", title="Body")
+            )
+            doc_id = doc.id
+
+        sandbox = Sandbox(temp_db_path, AppConfig(), AnalysisContext())
+
+        # Build the VFS first, then change the stored content. A lazy
+        # CallbackFile reads through at access time and sees the new body;
+        # an eager MemoryFile mount would have captured the old one.
+        vfs = await sandbox._build_vfs()
+        sandbox._loop = asyncio.get_running_loop()
+
+        # Rewrite via the repository rather than client.update_document: the
+        # latter re-chunks and re-embeds, which this file deliberately avoids
+        # so these tests need no embedding endpoint.
+        async with HaikuRAG(temp_db_path, create=False) as client:
+            doc.content = "the rewritten body"
+            await client.document_repository.update(doc)
+
+        content = await asyncio.to_thread(
+            vfs.path_read_text, PurePosixPath(f"/documents/{doc_id}/content.txt")
+        )
+
+        assert content == "the rewritten body"
+
+    async def test_document_files_are_read_only(self, temp_db_path):
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.document_repository.create(
+                Document(content="x", uri="test://ro", title="RO")
+            )
+            doc_id = doc.id
+
+        sandbox = Sandbox(temp_db_path, AppConfig(), AnalysisContext())
+        vfs = await sandbox._build_vfs()
+        sandbox._loop = asyncio.get_running_loop()
+
+        with pytest.raises(PermissionError, match="read-only"):
+            await asyncio.to_thread(
+                vfs.path_write_text,
+                PurePosixPath(f"/documents/{doc_id}/content.txt"),
+                "nope",
+            )
+
+    async def test_toc_skips_gaps_in_item_positions(self, temp_db_path):
+        """Positions need not be contiguous — a heading's span may cover
+        positions that carry no item."""
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc_id = await _empty_doc(client, uri="test://gaps", title="Gaps")
+            # Positions 1 and 2 are absent between the header and the paragraph.
+            items = [
+                _header(doc_id, 0, 1, "Intro"),
+                _para(doc_id, 3),
+            ]
+            await client.document_item_repository.create_items(doc_id, items)
+
+        sandbox = Sandbox(temp_db_path, AppConfig(), AnalysisContext())
+        toc = await _read_toc(sandbox, doc_id)
+
+        assert [n["title"] for n in toc["tree"]] == ["Intro"]

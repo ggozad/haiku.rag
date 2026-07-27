@@ -74,7 +74,7 @@ class ChunkMetadata(BaseModel):
                 continue
             for prov_item in prov:
                 bbox = getattr(prov_item, "bbox", None)
-                if bbox is None:
+                if bbox is None:  # pragma: no cover - prov always carries a bbox
                     continue
                 bounding_boxes.append(
                     BoundingBox(

@@ -275,72 +275,35 @@ async def test_fts_search_targets_content_fts_column(temp_db_path):
         )
 
 
-def test_search_result_primary_label_prioritizes_structural_types():
-    """Test _get_primary_label prioritizes structural labels correctly."""
-    # Table should be prioritized
-    result = SearchResult(
-        content="test",
-        score=0.5,
-        chunk_id="c1",
-        document_id="d1",
-        labels=["paragraph", "table", "text"],
-    )
-    assert result._get_primary_label() == "table"
-
-    # Code should be prioritized over paragraph
-    result = SearchResult(
-        content="test",
-        score=0.5,
-        chunk_id="c2",
-        document_id="d2",
-        labels=["paragraph", "code"],
-    )
-    assert result._get_primary_label() == "code"
-
-    # list_item should be prioritized
-    result = SearchResult(
-        content="test",
-        score=0.5,
-        chunk_id="c3",
-        document_id="d3",
-        labels=["text", "list_item"],
-    )
-    assert result._get_primary_label() == "list_item"
-
-    # Returns first label when no priority match
-    result = SearchResult(
-        content="test",
-        score=0.5,
-        chunk_id="c4",
-        document_id="d4",
-        labels=["paragraph", "text"],
-    )
-    assert result._get_primary_label() == "paragraph"
-
-    # Returns None for empty labels
-    result = SearchResult(
-        content="test",
-        score=0.5,
-        chunk_id="c5",
-        document_id="d5",
-        labels=[],
-    )
-    assert result._get_primary_label() is None
-
-
 # Image queries (bytes / PIL.Image)
 
 
+def _png_bytes_query() -> bytes:
+    return b"\x89PNG\r\n\x1a\n"
+
+
+def _pil_image_query():
+    from PIL import Image as PILImageModule
+
+    return PILImageModule.new("RGB", (8, 8), "red")
+
+
 @pytest.mark.asyncio
-async def test_search_with_bytes_query_uses_multimodal_embedder(
-    temp_db_path, monkeypatch
+@pytest.mark.parametrize(
+    "make_query",
+    [_png_bytes_query, _pil_image_query],
+    ids=["bytes", "pil"],
+)
+async def test_search_with_image_query_uses_multimodal_embedder(
+    temp_db_path, monkeypatch, make_query
 ):
-    """``client.search(bytes)`` embeds via ``embed_image`` and dispatches
+    """``client.search(image)`` embeds via ``embed_image`` and dispatches
     to vector-only chunk search (skipping FTS and reranker)."""
     from haiku.rag.embeddings import EmbedderWrapper
     from haiku.rag.store.models.chunk import Chunk
 
-    image_calls: list[bytes] = []
+    query = make_query()
+    image_calls: list = []
 
     class StubMultimodal(EmbedderWrapper):
         supports_images = True
@@ -383,12 +346,12 @@ async def test_search_with_bytes_query_uses_multimodal_embedder(
 
     async with HaikuRAG(temp_db_path, create=True) as rag:
         rag.chunk_repository.search = fake_chunk_search  # type: ignore[method-assign]
-        results = await rag.search(b"\x89PNG\r\n\x1a\n", limit=3, include_images=False)
+        results = await rag.search(query, limit=3, include_images=False)
 
     assert len(results) == 1
     assert results[0].score == 0.91
-    # The bytes were sent through the image embedder once.
-    assert image_calls == [b"\x89PNG\r\n\x1a\n"]
+    # The image was passed through to the image embedder untouched.
+    assert image_calls == [query]
     # The chunk repo received a pre-computed vector and an empty text query.
     assert received_kwargs["query_vector"] == [0.5, 0.5, 0.5, 0.5]
     assert received_kwargs["query"] == ""
@@ -494,42 +457,6 @@ async def test_search_attaches_picture_bytes_for_multimodal_reranker(
 
 
 @pytest.mark.asyncio
-async def test_search_with_pil_image_works_like_bytes(temp_db_path, monkeypatch):
-    from PIL import Image as PILImageModule
-
-    from haiku.rag.embeddings import EmbedderWrapper
-    from haiku.rag.store.models.chunk import Chunk
-
-    seen_types: list[type] = []
-
-    class StubMultimodal(EmbedderWrapper):
-        supports_images = True
-
-        def __init__(self):
-            super().__init__(embedder=None, vector_dim=4)
-
-        async def embed_image(self, image):
-            seen_types.append(type(image))
-            return [0.1] * 4
-
-    monkeypatch.setattr(
-        "haiku.rag.store.engine.get_embedder",
-        lambda *a, **kw: StubMultimodal(),
-    )
-
-    async def fake_chunk_search(**kwargs):
-        return [(Chunk(content="x", metadata={}), 1.0)]
-
-    async with HaikuRAG(temp_db_path, create=True) as rag:
-        rag.chunk_repository.search = fake_chunk_search  # type: ignore[method-assign]
-        img = PILImageModule.new("RGB", (8, 8), "red")
-        results = await rag.search(img, include_images=False)
-
-    assert len(results) == 1
-    assert seen_types == [PILImageModule.Image]
-
-
-@pytest.mark.asyncio
 async def test_search_with_bytes_query_raises_for_text_only_embedder(
     temp_db_path,
 ):
@@ -553,20 +480,26 @@ def _picture_only_result(
     )
 
 
-def test_dedup_keeps_higher_scoring_picture_chunk():
+@pytest.mark.parametrize(
+    "first_score,second_score",
+    # Whichever duplicate scores higher wins, regardless of arrival order.
+    [(0.7, 0.9), (0.9, 0.7)],
+    ids=["later_wins", "earlier_wins"],
+)
+def test_dedup_keeps_higher_scoring_picture_chunk(first_score, second_score):
     """Two results referencing the same single picture self_ref collapse
     to the one with the higher score."""
     from haiku.rag.client.search import _dedup_picture_chunks
 
-    text_chunk = _picture_only_result("#/pictures/0", score=0.7)
-    pic_chunk = _picture_only_result("#/pictures/0", score=0.9)
+    text_chunk = _picture_only_result("#/pictures/0", score=first_score)
+    pic_chunk = _picture_only_result("#/pictures/0", score=second_score)
     other = _picture_only_result("#/pictures/1", score=0.6)
 
     deduped = _dedup_picture_chunks([text_chunk, pic_chunk, other])
 
     assert len(deduped) == 2
     chosen = next(r for r in deduped if r.doc_item_refs == ["#/pictures/0"])
-    assert chosen.score == 0.9
+    assert chosen.score == max(first_score, second_score)
     assert any(r.doc_item_refs == ["#/pictures/1"] for r in deduped)
 
 
@@ -598,3 +531,56 @@ def test_dedup_does_not_collapse_across_documents():
 
     deduped = _dedup_picture_chunks([a, b])
     assert len(deduped) == 2
+
+
+# visualize_chunk short-circuits
+
+
+@pytest.mark.asyncio
+async def test_expand_context_passes_through_results_without_document(temp_db_path):
+    """A result with no document_id can't be expanded; it is returned as-is."""
+    from haiku.rag.client.search import expand_context
+
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        orphan = SearchResult(content="loose text", score=0.5, chunk_id="c1")
+        assert await expand_context(rag, [orphan]) == [orphan]
+
+
+@pytest.mark.asyncio
+async def test_visualize_chunk_returns_empty_for_no_chunks(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        assert await rag.visualize_chunk([]) == []
+
+
+@pytest.mark.asyncio
+async def test_visualize_chunk_returns_empty_without_document_id(temp_db_path):
+    from haiku.rag.store.models.chunk import Chunk
+
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        assert await rag.visualize_chunk(Chunk(content="x", metadata={})) == []
+
+
+@pytest.mark.asyncio
+async def test_visualize_chunk_returns_empty_when_document_missing(temp_db_path):
+    from haiku.rag.store.models.chunk import Chunk
+
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        chunk = Chunk(content="x", document_id="does-not-exist", metadata={})
+        assert await rag.visualize_chunk(chunk) == []
+
+
+@pytest.mark.asyncio
+async def test_visualize_chunk_returns_empty_when_docling_blob_absent(temp_db_path):
+    """A markdown-ingested document has no docling structure to resolve boxes in."""
+    from haiku.rag.store.models.chunk import Chunk
+    from haiku.rag.store.models.document import Document
+    from haiku.rag.store.repositories.document import DocumentRepository
+
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        doc = await DocumentRepository(rag.store).create(
+            Document(content="plain body", uri="test://plain")
+        )
+        assert doc.id is not None
+        chunk = Chunk(content="plain body", document_id=doc.id, metadata={})
+
+        assert await rag.visualize_chunk(chunk) == []

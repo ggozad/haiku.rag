@@ -1360,3 +1360,147 @@ class TestExpandWithItemsPictureBytes:
             e_low = by_chunk["c-low"]
             assert e_low.image_data == {"#/pictures/0": "LOWBYTES"}
             assert "HIGHBYTES" not in (e_low.image_data or {}).values()
+
+
+class TestSpanInWindow:
+    def test_zero_width_span_is_inside_when_position_is_in_window(self):
+        from haiku.rag.context import _span_in_window
+        from haiku.rag.store.models.document_item import DocumentItem
+
+        item = DocumentItem(
+            document_id="d1", position=0, self_ref="#/pictures/0", label="picture"
+        )
+        # A picture occupies no characters, so containment is by position.
+        assert _span_in_window((10, 10, item), 0, 20) is True
+        assert _span_in_window((30, 30, item), 0, 20) is False
+
+
+@pytest.mark.asyncio
+class TestExpandWithItemsWindowEdges:
+    async def test_empty_window_returns_original_results(
+        self, temp_db_path, monkeypatch
+    ):
+        """Refs resolve but the surrounding window comes back empty, so there is
+        nothing to expand from."""
+        from haiku.rag.client import HaikuRAG
+        from haiku.rag.store.models.document import Document
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            doc = await rag.document_repository.create(
+                Document(content="body", uri="test://window")
+            )
+            assert doc.id is not None
+            await rag.document_item_repository.create_items(
+                doc.id,
+                [
+                    DocumentItem(
+                        document_id=doc.id,
+                        position=0,
+                        self_ref="#/texts/0",
+                        label="paragraph",
+                        text="body",
+                        page_numbers=[1],
+                    )
+                ],
+            )
+
+            async def no_window(*_args, **_kwargs):
+                return []
+
+            monkeypatch.setattr(
+                rag.document_item_repository, "get_items_in_range", no_window
+            )
+
+            result = SearchResult(
+                content="original",
+                score=0.9,
+                document_id=doc.id,
+                doc_item_refs=["#/texts/0"],
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, doc.id, [result], 5000
+            )
+
+            assert [r.content for r in expanded] == ["original"]
+
+    async def test_result_with_unmatched_refs_passes_through(self, temp_db_path):
+        """Two results share a document; the one whose refs resolve is expanded
+        and the other is returned unchanged."""
+        from haiku.rag.client import HaikuRAG
+        from haiku.rag.store.models.document import Document
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            doc = await rag.document_repository.create(
+                Document(content="body", uri="test://mixed")
+            )
+            assert doc.id is not None
+            await rag.document_item_repository.create_items(
+                doc.id,
+                [
+                    DocumentItem(
+                        document_id=doc.id,
+                        position=i,
+                        self_ref=f"#/texts/{i}",
+                        label="paragraph",
+                        text=f"paragraph {i}",
+                        page_numbers=[1],
+                    )
+                    for i in range(2)
+                ],
+            )
+
+            resolvable = SearchResult(
+                content="paragraph 0",
+                score=0.9,
+                document_id=doc.id,
+                doc_item_refs=["#/texts/0"],
+            )
+            unmatched = SearchResult(
+                content="untouched",
+                score=0.5,
+                document_id=doc.id,
+                doc_item_refs=["#/texts/404"],
+            )
+
+            expanded = await expand_with_items(
+                rag.document_item_repository, doc.id, [resolvable, unmatched], 5000
+            )
+
+            assert len(expanded) == 2
+            by_content = {r.content for r in expanded}
+            # The unmatched result is passed through byte-for-byte...
+            assert "untouched" in by_content
+            # ...while the resolvable one actually grew to its neighbours.
+            grew = next(c for c in by_content if c != "untouched")
+            assert "paragraph 0" in grew and "paragraph 1" in grew
+
+
+def test_build_result_skips_positions_with_no_item():
+    """A sparse position map (items removed or never stored) leaves gaps in the
+    range; those positions contribute nothing."""
+    from haiku.rag.context import _build_result
+
+    original = SearchResult(content="p0", score=0.9, document_id="d1")
+    # Positions 1 and 2 in the 0..3 range carry no item.
+    pos_to_item = {
+        0: DocumentItem(
+            document_id="d1",
+            position=0,
+            self_ref="#/texts/0",
+            label="paragraph",
+            text="first",
+            page_numbers=[1],
+        ),
+        3: DocumentItem(
+            document_id="d1",
+            position=3,
+            self_ref="#/texts/3",
+            label="paragraph",
+            text="last",
+            page_numbers=[1],
+        ),
+    }
+
+    built = _build_result(0, 3, [original], pos_to_item, False, 5000)
+
+    assert built.content == "first\n\nlast"

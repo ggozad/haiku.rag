@@ -1,3 +1,4 @@
+import asyncio
 import json
 import tempfile
 import threading
@@ -14,6 +15,7 @@ from haiku.rag.client.documents import (
     DocumentImport,
     _prepare_document_from_docling,
     _write_fetch_body,
+    check_source_accessible,
 )
 from haiku.rag.config import Config
 from haiku.rag.store.compression import decompress_json
@@ -299,23 +301,6 @@ async def test_client_create_document_from_source(temp_db_path):
 
 
 @pytest.mark.vcr()
-async def test_client_create_document_from_source_with_title(temp_db_path):
-    """Test creating a document from a file source with a title."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            test_content = "This is test content from a file."
-            temp_path = Path(temp_dir) / "test_title.txt"
-            temp_path.write_text(test_content)
-
-            doc = await client.create_document_from_source(
-                source=temp_path, title="My Doc"
-            )
-            assert isinstance(doc, Document)
-            assert doc.id is not None
-            assert doc.title == "My Doc"
-
-
-@pytest.mark.vcr()
 async def test_client_update_title_noop_behavior(temp_db_path):
     """When content is unchanged, updating title should update document without re-chunking."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -326,6 +311,7 @@ async def test_client_update_title_noop_behavior(temp_db_path):
             doc1 = await client.create_document_from_source(temp_path, title="Title A")
             assert isinstance(doc1, Document)
             assert doc1.id is not None
+            assert doc1.title == "Title A"
 
             # Re-add with same content but new title
             doc2 = await client.create_document_from_source(temp_path, title="Title B")
@@ -646,12 +632,14 @@ async def test_client_create_update_no_op_behavior(temp_db_path):
             assert doc1.id is not None
             assert doc1.content == test_content
             original_id = doc1.id
+            original_updated_at = doc1.updated_at
 
             # Second call with same content - should return existing document (no-op)
             doc2 = await client.create_document_from_source(temp_path)
             assert isinstance(doc2, Document)
             assert doc2.id == original_id  # Same document
             assert doc2.content == test_content
+            assert doc2.updated_at == original_updated_at  # No-op leaves it untouched
 
             # Modify file content
             updated_content = "Updated content for testing."
@@ -667,28 +655,6 @@ async def test_client_create_update_no_op_behavior(temp_db_path):
             retrieved_doc = await client.get_document_by_id(original_id)
             assert retrieved_doc is not None
             assert retrieved_doc.content == updated_content
-
-
-@pytest.mark.vcr()
-async def test_client_unchanged_file_keeps_timestamp(temp_db_path):
-    """Test that unchanged files don't update the updated_at timestamp."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        # Create a temporary file
-        test_content = "Test content for timestamp check."
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir) / "test.txt"
-            temp_path.write_text(test_content)
-
-            # First call - create document
-            doc1 = await client.create_document_from_source(temp_path)
-            assert isinstance(doc1, Document)
-            original_updated_at = doc1.updated_at
-
-            # Second call with same content - should not update timestamp
-            doc2 = await client.create_document_from_source(temp_path)
-            assert isinstance(doc2, Document)
-            assert doc2.id == doc1.id
-            assert doc2.updated_at == original_updated_at  # Timestamp should not change
 
 
 @pytest.mark.vcr()
@@ -2290,3 +2256,326 @@ async def test_metadata_only_update_waits_for_write_lock(temp_db_path):
             assert not task.done()
         updated = await task
         assert updated.metadata == {"k": "v"}
+
+
+@pytest.mark.parametrize(
+    "uri,expected",
+    [
+        ("https://example.com/doc.pdf", True),
+        ("s3://bucket/key", True),
+        ("mem://not-a-source", False),
+        # urlparse rejects a malformed IPv6 host; a stored URI that no longer
+        # parses must not abort the caller's rebuild sweep.
+        ("http://[::1", False),
+    ],
+    ids=["https", "s3", "unknown_scheme", "unparseable"],
+)
+def test_check_source_accessible(uri, expected):
+    assert check_source_accessible(uri) is expected
+
+
+def test_check_source_accessible_file_uri(tmp_path):
+    existing = tmp_path / "there.txt"
+    existing.write_text("x")
+
+    assert check_source_accessible(existing.as_uri()) is True
+    assert check_source_accessible((tmp_path / "gone.txt").as_uri()) is False
+
+
+def _bbox_doc(*, with_page_image: bool, pages: tuple[int, ...] = (1,)):
+    """DoclingDocument with one paragraph per page, each carrying a bbox.
+
+    ``with_page_image=False`` produces pages with no raster, so bounding boxes
+    resolve but there is nothing to draw them on.
+    """
+    from docling_core.types.doc.base import BoundingBox, Size
+    from docling_core.types.doc.document import ImageRef, ProvenanceItem
+    from PIL import Image as PilImageModule
+
+    doc = DoclingDocument(name="bbox-doc")
+    size = Size(width=612.0, height=792.0)
+    for page_no in pages:
+        image = (
+            ImageRef.from_pil(
+                PilImageModule.new("RGB", (612, 792), color="white"), dpi=72
+            )
+            if with_page_image
+            else None
+        )
+        doc.add_page(page_no=page_no, size=size, image=image)
+        doc.add_text(
+            label=DocItemLabel.PARAGRAPH,
+            text=f"Content on page {page_no}.",
+            prov=ProvenanceItem(
+                page_no=page_no,
+                bbox=BoundingBox(l=50, t=700, r=550, b=650),
+                charspan=(0, 20),
+            ),
+        )
+    return doc
+
+
+@pytest.mark.asyncio
+async def test_visualize_chunk_returns_empty_without_page_rasters(temp_db_path):
+    """Boxes resolve, but a document ingested without page images has nothing
+    to render them onto."""
+    docling_doc = _bbox_doc(with_page_image=False)
+    chunks = [
+        Chunk(
+            content="Content on page 1.",
+            metadata={
+                "doc_item_refs": ["#/texts/0"],
+                "page_numbers": [1],
+                "labels": ["paragraph"],
+            },
+            order=0,
+            embedding=[0.1] * 2560,
+        )
+    ]
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(docling_doc, chunks, uri="test://no-raster")
+        stored = await client.chunk_repository.get_by_document_id(doc.id)
+
+        assert await client.visualize_chunk(stored[0]) == []
+
+
+@pytest.mark.asyncio
+async def test_visualize_chunk_skips_pages_without_a_raster(temp_db_path):
+    """A document where only some pages carry a raster renders just those."""
+    from docling_core.types.doc.base import BoundingBox, Size
+    from docling_core.types.doc.document import ImageRef, ProvenanceItem
+    from PIL import Image as PilImageModule
+
+    docling_doc = DoclingDocument(name="mixed-rasters")
+    size = Size(width=612.0, height=792.0)
+    docling_doc.add_page(
+        page_no=1,
+        size=size,
+        image=ImageRef.from_pil(
+            PilImageModule.new("RGB", (612, 792), color="white"), dpi=72
+        ),
+    )
+    docling_doc.add_page(page_no=2, size=size, image=None)
+    for page_no in (1, 2):
+        docling_doc.add_text(
+            label=DocItemLabel.PARAGRAPH,
+            text=f"Content on page {page_no}.",
+            prov=ProvenanceItem(
+                page_no=page_no,
+                bbox=BoundingBox(l=50, t=700, r=550, b=650),
+                charspan=(0, 20),
+            ),
+        )
+
+    chunks = [
+        Chunk(
+            content="Content on page 1.\nContent on page 2.",
+            metadata={
+                "doc_item_refs": ["#/texts/0", "#/texts/1"],
+                "page_numbers": [1, 2],
+                "labels": ["paragraph", "paragraph"],
+            },
+            order=0,
+            embedding=[0.1] * 2560,
+        )
+    ]
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(
+            docling_doc, chunks, uri="test://mixed-rasters"
+        )
+        stored = await client.chunk_repository.get_by_document_id(doc.id)
+
+        images = await client.visualize_chunk(stored[0])
+
+    assert len(images) == 1
+
+
+@pytest.mark.asyncio
+async def test_visualize_chunk_returns_empty_when_pages_row_missing(temp_db_path):
+    docling_doc = _bbox_doc(with_page_image=True)
+    chunks = [
+        Chunk(
+            content="Content on page 1.",
+            metadata={
+                "doc_item_refs": ["#/texts/0"],
+                "page_numbers": [1],
+                "labels": ["paragraph"],
+            },
+            order=0,
+            embedding=[0.1] * 2560,
+        )
+    ]
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(docling_doc, chunks, uri="test://no-row")
+        stored = await client.chunk_repository.get_by_document_id(doc.id)
+
+        async def no_pages_row(document_id):
+            return None
+
+        client.document_repository.get_pages_data = no_pages_row  # type: ignore[method-assign]
+
+        assert await client.visualize_chunk(stored[0]) == []
+
+
+@pytest.mark.asyncio
+async def test_visualize_chunk_skips_box_on_unstored_page(temp_db_path):
+    """A bounding box referencing a page the document never registered is
+    skipped rather than raising."""
+    from docling_core.types.doc.base import BoundingBox, Size
+    from docling_core.types.doc.document import ImageRef, ProvenanceItem
+    from PIL import Image as PilImageModule
+
+    docling_doc = DoclingDocument(name="orphan-page-box")
+    docling_doc.add_page(
+        page_no=1,
+        size=Size(width=612.0, height=792.0),
+        image=ImageRef.from_pil(
+            PilImageModule.new("RGB", (612, 792), color="white"), dpi=72
+        ),
+    )
+    docling_doc.add_text(
+        label=DocItemLabel.PARAGRAPH,
+        text="Content attributed to a page with no raster.",
+        prov=ProvenanceItem(
+            page_no=3,
+            bbox=BoundingBox(l=50, t=700, r=550, b=650),
+            charspan=(0, 20),
+        ),
+    )
+
+    chunks = [
+        Chunk(
+            content="Content attributed to a page with no raster.",
+            metadata={
+                "doc_item_refs": ["#/texts/0"],
+                "page_numbers": [3],
+                "labels": ["paragraph"],
+            },
+            order=0,
+            embedding=[0.1] * 2560,
+        )
+    ]
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(
+            docling_doc, chunks, uri="test://orphan-page"
+        )
+        stored = await client.chunk_repository.get_by_document_id(doc.id)
+
+        assert await client.visualize_chunk(stored[0]) == []
+
+
+@pytest.mark.asyncio
+async def test_visualize_chunk_without_refs_falls_back_to_chunk_metadata(temp_db_path):
+    """A chunk carrying no doc_item_refs has nothing to expand from."""
+    docling_doc = _bbox_doc(with_page_image=True)
+    chunks = [
+        Chunk(
+            content="Content on page 1.",
+            metadata={"page_numbers": [1], "labels": ["paragraph"]},
+            order=0,
+            embedding=[0.1] * 2560,
+        )
+    ]
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(docling_doc, chunks, uri="test://no-refs")
+        stored = await client.chunk_repository.get_by_document_id(doc.id)
+
+        assert await client.visualize_chunk(stored[0]) == []
+
+
+@pytest.mark.asyncio
+async def test_visualize_chunk_falls_back_when_expansion_drops_refs(temp_db_path):
+    """If expansion returns results carrying no refs, the original search
+    results' refs are used instead."""
+    from haiku.rag.client import search as search_module
+
+    docling_doc = _bbox_doc(with_page_image=True)
+    chunks = [
+        Chunk(
+            content="Content on page 1.",
+            metadata={
+                "doc_item_refs": ["#/texts/0"],
+                "page_numbers": [1],
+                "labels": ["paragraph"],
+            },
+            order=0,
+            embedding=[0.1] * 2560,
+        )
+    ]
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(docling_doc, chunks, uri="test://drops-refs")
+        stored = await client.chunk_repository.get_by_document_id(doc.id)
+
+        async def expansion_without_refs(_client, results):
+            return [r.model_copy(update={"doc_item_refs": []}) for r in results]
+
+        with patch.object(search_module, "expand_context", expansion_without_refs):
+            images = await client.visualize_chunk(stored[0])
+
+    assert len(images) == 1
+
+
+@pytest.mark.vcr()
+@pytest.mark.parametrize("auto_vacuum", [True, False])
+async def test_import_documents_schedules_vacuum_per_config(temp_db_path, auto_vacuum):
+    """A batch import runs a background vacuum only when auto_vacuum is on."""
+    from haiku.rag.config import AppConfig
+
+    config = AppConfig()
+    config.storage.auto_vacuum = auto_vacuum
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        docling_doc = await client.convert("Batch imported body.")
+        chunks = await client.chunk(docling_doc)
+
+        # Spy rather than inspecting _vacuum_tasks: the scheduling code
+        # discards each task on completion, so the set races to empty. The
+        # spy's count does not race, and draining the scheduled task keeps
+        # the assertion deterministic without pulling in the close-time pass.
+        with patch.object(client.store, "vacuum", new=AsyncMock()) as vacuum:
+            await client.import_documents(
+                [
+                    DocumentImport(
+                        docling_document=docling_doc,
+                        chunks=chunks,
+                        uri="test://batch-vacuum",
+                    )
+                ]
+            )
+            await asyncio.gather(*client._vacuum_tasks)
+
+            assert vacuum.await_count == (1 if auto_vacuum else 0)
+
+
+@pytest.mark.vcr()
+async def test_reingesting_a_source_applies_an_explicit_title(temp_db_path):
+    """Re-adding a changed source with a title updates both, in place."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "retitled.txt"
+            source.write_text("stable content")
+
+            first = await client.create_document_from_source(source)
+            assert not isinstance(first, list)
+            source.write_text("changed content")
+
+            second = await client.create_document_from_source(
+                source, title="Explicit Title"
+            )
+
+        assert not isinstance(second, list)
+        assert second.id == first.id
+        assert second.title == "Explicit Title"
+        assert second.content == "changed content"
+
+
+async def test_update_document_rejects_unknown_id(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with pytest.raises(ValueError, match="not found"):
+            await client.update_document("no-such-document", content="x")

@@ -187,6 +187,33 @@ class TestSummarizeDocumentTool:
 
         assert "Document not found" in result
 
+    @pytest.mark.vcr()
+    @pytest.mark.asyncio
+    async def test_summarize_document_returns_model_summary(
+        self, doc_client, doc_config, monkeypatch
+    ):
+        """A resolvable document is summarised and labelled with its title."""
+        from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
+        from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+        def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+            return ModelResponse(parts=[TextPart("A concise summary.")])
+
+        monkeypatch.setattr(
+            "haiku.rag.tools.document.get_model",
+            lambda *a, **kw: FunctionModel(respond),
+        )
+
+        docs = await doc_client.list_documents()
+        assert docs and docs[0].uri
+
+        toolset = create_document_toolset(doc_config)
+        summarize_tool = toolset.tools["summarize_document"]
+        result = await summarize_tool.function(make_ctx(doc_client), docs[0].uri)
+
+        assert "A concise summary." in result
+        assert "Summary of" in result
+
 
 @pytest.fixture
 async def doc_client(temp_db_path):

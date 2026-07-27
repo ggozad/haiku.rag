@@ -356,7 +356,7 @@ class Sandbox:
             return read_toc
 
         for doc in docs:
-            if not doc.id:
+            if not doc.id:  # pragma: no cover - stored rows always carry an id
                 continue
             doc_id: str = doc.id
             doc_dir = f"/documents/{doc_id}"
@@ -437,7 +437,9 @@ class Sandbox:
 
         stdout_lines: list[str] = []
 
-        def print_callback(_stream: Literal["stdout"], text: str) -> None:
+        def print_callback(  # pragma: no cover - runs on Monty's Rust thread
+            _stream: Literal["stdout"], text: str
+        ) -> None:
             stdout_lines.append(text)
 
         max_chars = self._config.analysis.max_output_chars
