@@ -237,6 +237,27 @@ def test_get_model_openai_non_reasoning_model_ignores_thinking():
     assert result._settings is None
 
 
+def test_get_model_vllm_model_without_reasoning_profile_sends_no_thinking():
+    """A vLLM-served model with no reasoning profile carries no thinking settings.
+
+    Its chat template reads the switch from `chat_template_kwargs`, which only
+    `extra_body` can reach, and the endpoint rejects `reasoning_effort`.
+    """
+    model_config = ModelConfig(
+        provider="openai",
+        name="Qwen/Qwen3-32B",
+        base_url="http://vllm:8000/v1",
+        enable_thinking=True,
+        temperature=0.2,
+    )
+    result = get_model(model_config)
+
+    assert isinstance(result, OpenAIChatModel)
+    assert result._settings is not None
+    assert "thinking" not in result._settings
+    assert "openai_reasoning_effort" not in result._settings
+
+
 def test_get_model_openai_extra_body_forwarded():
     """`extra_body` on ModelConfig is forwarded to ModelSettings.extra_body.
 
@@ -328,27 +349,41 @@ def test_get_model_anthropic():
 
 
 @pytest.mark.skipif(not HAS_ANTHROPIC, reason="Anthropic not installed")
-@pytest.mark.parametrize(
-    "enable_thinking,expected_thinking",
-    [
-        (True, {"type": "enabled", "budget_tokens": 4096}),
-        (False, {"type": "disabled"}),
-    ],
-)
-def test_get_model_anthropic_with_thinking(enable_thinking, expected_thinking):
+def test_get_model_anthropic_with_thinking():
     """Test get_model configures thinking for Anthropic."""
     from pydantic_ai.models.anthropic import AnthropicModel
 
     model_config = ModelConfig(
         provider="anthropic",
         name="claude-3-5-sonnet-20241022",
-        enable_thinking=enable_thinking,
+        enable_thinking=True,
     )
     result = get_model(model_config)
 
     assert isinstance(result, AnthropicModel)
     assert result.settings is not None
-    assert result.settings.get("anthropic_thinking") == expected_thinking
+    assert result.settings.get("thinking") is True
+
+
+@pytest.mark.skipif(not HAS_ANTHROPIC, reason="Anthropic not installed")
+def test_get_model_anthropic_thinking_off_disables_adaptive_models():
+    """Adaptive-thinking models think by default, so off must be explicit.
+
+    The unified `thinking=False` omits the request field, which leaves Sonnet
+    4.6+ and Opus 4.6+ thinking.
+    """
+    from pydantic_ai.models.anthropic import AnthropicModel
+
+    model_config = ModelConfig(
+        provider="anthropic", name="claude-sonnet-4-6", enable_thinking=False
+    )
+    result = get_model(model_config)
+
+    assert isinstance(result, AnthropicModel)
+    assert result.settings is not None
+    assert result.settings.get("anthropic_thinking") == {"type": "disabled"}
+    # The explicit disable replaces the unified key rather than joining it.
+    assert "thinking" not in result.settings
 
 
 @pytest.mark.skipif(not HAS_GOOGLE, reason="Google not installed")
@@ -362,15 +397,21 @@ def test_get_model_gemini():
 
 
 @pytest.mark.skipif(not HAS_GOOGLE, reason="Google not installed")
-def test_get_model_gemini_with_thinking():
+@pytest.mark.parametrize("enable_thinking", [True, False])
+def test_get_model_gemini_with_thinking(enable_thinking):
     """Test get_model configures thinking for Gemini."""
     from pydantic_ai.models.google import GoogleModel
 
     model_config = ModelConfig(
-        provider="gemini", name="gemini-2.0-flash-thinking-exp", enable_thinking=True
+        provider="gemini",
+        name="gemini-2.0-flash-thinking-exp",
+        enable_thinking=enable_thinking,
     )
     result = get_model(model_config)
+
     assert isinstance(result, GoogleModel)
+    assert result.settings is not None
+    assert result.settings.get("thinking") == enable_thinking
 
 
 @pytest.mark.skipif(not HAS_GROQ, reason="Groq not installed")
@@ -384,11 +425,9 @@ def test_get_model_groq():
 
 
 @pytest.mark.skipif(not HAS_GROQ, reason="Groq not installed")
-@pytest.mark.parametrize(
-    "enable_thinking,expected_format", [(True, "parsed"), (False, "hidden")]
-)
-def test_get_model_groq_with_thinking(enable_thinking, expected_format):
-    """Test get_model configures thinking format for Groq."""
+@pytest.mark.parametrize("enable_thinking", [True, False])
+def test_get_model_groq_with_thinking(enable_thinking):
+    """Test get_model configures thinking for Groq."""
     from pydantic_ai.models.groq import GroqModel
 
     model_config = ModelConfig(
@@ -400,7 +439,7 @@ def test_get_model_groq_with_thinking(enable_thinking, expected_format):
 
     assert isinstance(result, GroqModel)
     assert result.settings is not None
-    assert result.settings.get("groq_reasoning_format") == expected_format
+    assert result.settings.get("thinking") == enable_thinking
 
 
 @pytest.mark.skipif(not HAS_BEDROCK, reason="Bedrock not installed")
@@ -417,57 +456,81 @@ def test_get_model_bedrock():
 
 @pytest.mark.skipif(not HAS_BEDROCK, reason="Bedrock not installed")
 @pytest.mark.parametrize(
-    "name,enable_thinking,expected_fields",
+    "name",
     [
-        (
-            "anthropic.claude-3-5-sonnet-20241022-v2:0",
-            True,
-            {"thinking": {"type": "enabled", "budget_tokens": 4096}},
-        ),
-        (
-            "anthropic.claude-3-5-sonnet-20241022-v2:0",
-            False,
-            {"thinking": {"type": "disabled"}},
-        ),
-        ("openai.o3-mini-v1:0", True, {"reasoning_effort": "high"}),
-        ("openai.o3-mini-v1:0", False, {"reasoning_effort": "low"}),
-        ("qwen.qwen3-32b-v1:0", True, {"reasoning_config": "high"}),
-        ("qwen.qwen3-32b-v1:0", False, {"reasoning_config": "low"}),
-        # A family with no reasoning mapping leaves the request fields untouched.
-        ("meta.llama3-70b-instruct-v1:0", True, None),
-        ("meta.llama3-70b-instruct-v1:0", False, None),
+        "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "openai.gpt-oss-120b-1:0",
+        "qwen.qwen3-32b-v1:0",
+        "meta.llama3-70b-instruct-v1:0",
     ],
-    ids=[
-        "claude_on",
-        "claude_off",
-        "o_series_on",
-        "o_series_off",
-        "qwen_on",
-        "qwen_off",
-        "unmapped_on",
-        "unmapped_off",
-    ],
+    ids=["claude", "gpt_oss", "qwen", "unmapped"],
 )
-def test_get_model_bedrock_with_thinking(name, enable_thinking, expected_fields):
-    """Each Bedrock model family maps thinking onto its own request field."""
+def test_get_model_bedrock_with_thinking(name):
+    """Every Bedrock family carries the unified thinking setting."""
     from pydantic_ai.models.bedrock import BedrockConverseModel
 
     model_config = ModelConfig(
         provider="bedrock",
         name=name,
-        enable_thinking=enable_thinking,
+        enable_thinking=True,
     )
     result = get_model(model_config)
 
     assert isinstance(result, BedrockConverseModel)
-    if expected_fields is None:
-        assert result.settings is None
-        return
     assert result.settings is not None
-    assert (
-        result.settings.get("bedrock_additional_model_requests_fields")
-        == expected_fields
+    assert result.settings.get("thinking") is True
+
+
+@pytest.mark.skipif(not HAS_BEDROCK, reason="Bedrock not installed")
+@pytest.mark.parametrize(
+    "name",
+    [
+        "anthropic.claude-sonnet-4-6-20260514-v1:0",
+        "us.anthropic.claude-sonnet-4-6-20260514-v1:0",
+    ],
+    ids=["plain", "cross_region"],
+)
+def test_get_model_bedrock_thinking_off_disables_adaptive_claude(name):
+    """Bedrock omits the field for adaptive Claude, which leaves it thinking."""
+    from pydantic_ai.models.bedrock import BedrockConverseModel
+
+    model_config = ModelConfig(provider="bedrock", name=name, enable_thinking=False)
+    result = get_model(model_config)
+
+    assert isinstance(result, BedrockConverseModel)
+    assert result.settings is not None
+    assert result.settings.get("bedrock_additional_model_requests_fields") == {
+        "thinking": {"type": "disabled"}
+    }
+    # The explicit disable replaces the unified key rather than joining it.
+    assert "thinking" not in result.settings
+
+
+@pytest.mark.skipif(not HAS_BEDROCK, reason="Bedrock not installed")
+def test_get_model_bedrock_thinking_off_leaves_non_claude_families_alone():
+    """Only the Anthropic variant takes a `thinking` request field."""
+    from pydantic_ai.models.bedrock import BedrockConverseModel
+
+    model_config = ModelConfig(
+        provider="bedrock", name="qwen.qwen3-32b-v1:0", enable_thinking=False
     )
+    result = get_model(model_config)
+
+    assert isinstance(result, BedrockConverseModel)
+    assert result.settings is not None
+    assert "bedrock_additional_model_requests_fields" not in result.settings
+    assert result.settings.get("thinking") is False
+
+
+@pytest.mark.skipif(not HAS_BEDROCK, reason="Bedrock not installed")
+def test_get_model_bedrock_rejects_mantle_only_model():
+    """Proprietary OpenAI models are Bedrock Mantle-only, not served by Converse."""
+    from pydantic_ai.exceptions import UserError
+
+    model_config = ModelConfig(provider="bedrock", name="openai.o3-mini-v1:0")
+
+    with pytest.raises(UserError):
+        get_model(model_config)
 
 
 def test_get_model_unknown_provider():
@@ -491,7 +554,7 @@ def test_get_package_versions():
     assert "docling_document_schema" in versions
 
     # All should be non-empty strings
-    for key, value in versions.items():
+    for value in versions.values():
         assert isinstance(value, str)
         assert len(value) > 0
 
@@ -504,7 +567,7 @@ def test_apply_common_settings_no_settings():
     from haiku.rag.utils import apply_common_settings
 
     mc = ModelConfig(provider="openai", name="gpt-4o")
-    result = apply_common_settings(None, dict, mc)
+    result = apply_common_settings(None, mc)
     assert result is None
 
 
@@ -513,7 +576,7 @@ def test_apply_common_settings_temperature():
     from haiku.rag.utils import apply_common_settings
 
     mc = ModelConfig(provider="openai", name="gpt-4o", temperature=0.7)
-    result = apply_common_settings(None, dict, mc)
+    result = apply_common_settings(None, mc)
     assert result is not None
     assert result["temperature"] == 0.7
 
@@ -523,7 +586,7 @@ def test_apply_common_settings_max_tokens():
     from haiku.rag.utils import apply_common_settings
 
     mc = ModelConfig(provider="openai", name="gpt-4o", max_tokens=500)
-    result = apply_common_settings(None, dict, mc)
+    result = apply_common_settings(None, mc)
     assert result is not None
     assert result["max_tokens"] == 500
 
@@ -534,7 +597,7 @@ def test_apply_common_settings_existing():
 
     mc = ModelConfig(provider="openai", name="gpt-4o", temperature=0.5)
     existing = {"some_key": "value"}
-    result = apply_common_settings(existing, dict, mc)
+    result = apply_common_settings(existing, mc)
     assert result is not None
     assert result["temperature"] == 0.5
     assert result["some_key"] == "value"

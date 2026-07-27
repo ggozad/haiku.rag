@@ -54,7 +54,7 @@ See the [Pydantic AI thinking documentation](https://ai.pydantic.dev/thinking/) 
 - **Anthropic**: All Claude models
 - **Google**: Gemini models with thinking support
 - **Groq**: Models with reasoning capabilities
-- **Bedrock**: Claude, OpenAI, and Qwen models
+- **Bedrock**: Claude, Qwen, and `gpt-oss` models. Bedrock Converse does not serve the proprietary OpenAI models, so configuring one raises an error. Reach those through `provider: bedrock-mantle`.
 - **Ollama**: Models supporting reasoning (gpt-oss, etc.)
 - **vLLM**: Models with a pydantic-ai reasoning profile (gpt-oss). Qwen3, Gemma, and similar templates ignore the OpenAI `reasoning_effort` that `enable_thinking` translates to — use [`extra_body`](#raw-provider-pass-through) to drive them.
 - **LM Studio**: Models supporting reasoning (gpt-oss, etc.)
@@ -62,6 +62,9 @@ See the [Pydantic AI thinking documentation](https://ai.pydantic.dev/thinking/) 
 **When to use:**
 - Enable for QA, complex reasoning, and mathematical problems
 - Disable for speed-critical applications, title generation, and simple tasks
+
+!!! note "Anthropic thinking and max_tokens"
+    Anthropic requires `max_tokens` to exceed the thinking budget, and `enable_thinking: true` requests Pydantic AI's default budget of 10000 tokens. Set `max_tokens` above 10000 on Claude models that use budget-based thinking, or leave it unset on Sonnet 4.6+ and Opus 4.6+, which use adaptive thinking instead of a budget.
 
 !!! note "vLLM-served models without a reasoning profile"
     On `provider: openai` with a custom `base_url`, `enable_thinking` only takes effect for models whose pydantic-ai profile advertises reasoning support (o-series, gpt-5, gpt-oss). For other vLLM-served models (Qwen3, Gemma family, …) the field is a silent no-op. Reach the chat template's thinking switch directly via [`extra_body`](#raw-provider-pass-through).

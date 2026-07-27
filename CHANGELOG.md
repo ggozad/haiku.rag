@@ -1,6 +1,12 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- Bump `pydantic-ai` to 2.18.0.
+- `enable_thinking` maps onto Pydantic AI's unified `thinking` setting for the `anthropic`, `gemini`, `groq` and `bedrock` providers. The Anthropic thinking budget is now Pydantic AI's default of 10000 tokens, was 4096; `enable_thinking: false` disables Gemini thinking rather than only hiding thoughts; Groq maps reasoning effort rather than `groq_reasoning_format`. The `openai` and `ollama` providers still map to `openai_reasoning_effort`.
+- `provider: bedrock` with a proprietary OpenAI model such as `openai.o3-mini-v1:0` raises `UserError`: Bedrock Converse serves only the `gpt-oss` family. Use `provider: bedrock-mantle`.
+
 ### Fixed
 
 - `Store.set_haiku_version` stamps the store's own config into a recreated settings row instead of the process-global `Config`.

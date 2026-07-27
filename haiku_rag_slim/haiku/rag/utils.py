@@ -55,30 +55,35 @@ def image_binary_content(data: bytes) -> "BinaryContent":
 
 def apply_common_settings(
     settings: Any | None,
-    settings_class: type[Any],
     model_config: Any,
+    *,
+    map_thinking: bool = True,
 ) -> Any | None:
-    """Apply common settings (temperature, max_tokens) to model settings.
+    """Apply the settings every provider shares onto a model settings dict.
 
     Args:
         settings: Existing settings instance or None
-        settings_class: Settings class to instantiate if needed
         model_config: ModelConfig with temperature and max_tokens
+        map_thinking: Whether to map `enable_thinking` onto the unified
+            `thinking` setting. The OpenAI-compatible branches opt out and set
+            `openai_reasoning_effort` themselves, so that models whose profile
+            advertises thinking without OpenAI reasoning support (Ollama's
+            deepseek-r1, for one) keep receiving no `reasoning_effort`.
 
     Returns:
         Updated settings instance or None if no settings to apply
     """
+    thinking = model_config.enable_thinking if map_thinking else None
+
     if (
         model_config.temperature is None
         and model_config.max_tokens is None
         and model_config.extra_body is None
+        and thinking is None
     ):
         return settings
 
-    if settings is None:
-        settings_dict = settings_class()
-    else:
-        settings_dict = settings
+    settings_dict = {} if settings is None else settings
 
     if model_config.temperature is not None:
         settings_dict["temperature"] = model_config.temperature
@@ -88,6 +93,9 @@ def apply_common_settings(
 
     if model_config.extra_body is not None:
         settings_dict["extra_body"] = model_config.extra_body
+
+    if thinking is not None:
+        settings_dict["thinking"] = thinking
 
     return settings_dict
 
@@ -139,7 +147,7 @@ def get_model(
                 model_settings = OpenAIChatModelSettings(openai_reasoning_effort="high")
 
         model_settings = apply_common_settings(
-            model_settings, OpenAIChatModelSettings, model_config
+            model_settings, model_config, map_thinking=False
         )
 
         # Ollama's OpenAI-compatible API lives under /v1. Append it if the
@@ -173,7 +181,7 @@ def get_model(
                 )
 
         openai_settings = apply_common_settings(
-            openai_settings, OpenAIChatModelSettings, model_config
+            openai_settings, model_config, map_thinking=False
         )
 
         # Use model-level base_url if set (for vLLM, LM Studio, etc.)
@@ -188,74 +196,41 @@ def get_model(
         return OpenAIChatModel(model_name=model, settings=openai_settings)
 
     elif provider == "anthropic":
-        from anthropic.types.beta import (
-            BetaThinkingConfigDisabledParam,
-            BetaThinkingConfigEnabledParam,
-        )
+        from anthropic.types.beta import BetaThinkingConfigDisabledParam
         from pydantic_ai.models.anthropic import AnthropicModel, AnthropicModelSettings
 
         anthropic_settings: Any = None
 
-        # Apply thinking control
-        if model_config.enable_thinking is not None:
-            if model_config.enable_thinking:
-                thinking_config: BetaThinkingConfigEnabledParam = {
-                    "type": "enabled",
-                    "budget_tokens": 4096,
-                }
-                anthropic_settings = AnthropicModelSettings(
-                    anthropic_thinking=thinking_config
-                )
-            else:
-                thinking_disabled: BetaThinkingConfigDisabledParam = {
-                    "type": "disabled"
-                }
-                anthropic_settings = AnthropicModelSettings(
-                    anthropic_thinking=thinking_disabled
-                )
+        # Unified `thinking=False` omits the request field, which leaves the
+        # adaptive-thinking models (Sonnet 4.6+, Opus 4.6+) thinking by default.
+        disable_thinking = model_config.enable_thinking is False
+        if disable_thinking:
+            thinking_disabled: BetaThinkingConfigDisabledParam = {"type": "disabled"}
+            anthropic_settings = AnthropicModelSettings(
+                anthropic_thinking=thinking_disabled
+            )
 
         anthropic_settings = apply_common_settings(
-            anthropic_settings, AnthropicModelSettings, model_config
+            anthropic_settings, model_config, map_thinking=not disable_thinking
         )
 
         return AnthropicModel(model_name=model, settings=anthropic_settings)
 
     elif provider == "gemini":
-        from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
+        from pydantic_ai.models.google import GoogleModel
 
-        gemini_settings: Any = None
-
-        # Apply thinking control
-        if model_config.enable_thinking is not None:
-            gemini_settings = GoogleModelSettings(
-                google_thinking_config={
-                    "include_thoughts": model_config.enable_thinking
-                }
-            )
-
-        gemini_settings = apply_common_settings(
-            gemini_settings, GoogleModelSettings, model_config
+        return GoogleModel(
+            model_name=model,
+            settings=apply_common_settings(None, model_config),
         )
-
-        return GoogleModel(model_name=model, settings=gemini_settings)
 
     elif provider == "groq":
-        from pydantic_ai.models.groq import GroqModel, GroqModelSettings
+        from pydantic_ai.models.groq import GroqModel
 
-        groq_settings: Any = None
-
-        # Apply thinking control
-        if model_config.enable_thinking is not None:
-            if model_config.enable_thinking:
-                groq_settings = GroqModelSettings(groq_reasoning_format="parsed")
-            else:
-                groq_settings = GroqModelSettings(groq_reasoning_format="hidden")
-
-        groq_settings = apply_common_settings(
-            groq_settings, GroqModelSettings, model_config
+        return GroqModel(
+            model_name=model,
+            settings=apply_common_settings(None, model_config),
         )
-
-        return GroqModel(model_name=model, settings=groq_settings)
 
     elif provider == "bedrock":
         from pydantic_ai.models.bedrock import (
@@ -265,41 +240,25 @@ def get_model(
 
         bedrock_settings: Any = None
 
-        # Apply thinking control for Claude models
-        if model_config.enable_thinking is not None:
-            additional_fields: dict[str, Any] = {}
-            if model.startswith("anthropic.claude"):
-                if model_config.enable_thinking:
-                    additional_fields = {
-                        "thinking": {"type": "enabled", "budget_tokens": 4096}
-                    }
-                else:
-                    additional_fields = {"thinking": {"type": "disabled"}}
-            elif "o1" in model or "o3" in model:
-                # OpenAI reasoning models on Bedrock (o-series only, not gpt-4o)
-                additional_fields = {
-                    "reasoning_effort": "high"
-                    if model_config.enable_thinking
-                    else "low"
-                }
-            elif "qwen" in model:
-                # Qwen models on Bedrock
-                additional_fields = {
-                    "reasoning_config": "high"
-                    if model_config.enable_thinking
-                    else "low"
-                }
-
-            if additional_fields:
-                bedrock_settings = BedrockModelSettings(
-                    bedrock_additional_model_requests_fields=additional_fields
-                )
-
-        bedrock_settings = apply_common_settings(
-            bedrock_settings, BedrockModelSettings, model_config
+        # Same omission as the direct Anthropic branch: unified `thinking=False`
+        # leaves the adaptive-thinking Claude models thinking. Bedrock ids are
+        # `[<geo>.]<family>.<model>`, as in `us.anthropic.claude-...`.
+        disable_claude_thinking = (
+            model_config.enable_thinking is False and "anthropic." in model
         )
+        if disable_claude_thinking:
+            bedrock_settings = BedrockModelSettings(
+                bedrock_additional_model_requests_fields={
+                    "thinking": {"type": "disabled"}
+                }
+            )
 
-        return BedrockConverseModel(model_name=model, settings=bedrock_settings)
+        return BedrockConverseModel(
+            model_name=model,
+            settings=apply_common_settings(
+                bedrock_settings, model_config, map_thinking=not disable_claude_thinking
+            ),
+        )
 
     else:
         # For any other provider, use string format and let Pydantic AI handle it
