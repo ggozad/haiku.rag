@@ -338,6 +338,11 @@ async def test_fetch_rejects_foreign_scheme(tmp_path):
     so the unsupported-scheme path must be handled there too."""
     src = FSSource(root=tmp_path, supported_extensions=[".md"], source_id="local")
 
+    # A same-named file under the root exists, so a scheme-blind implementation
+    # would happily resolve it — None/raise here really is the scheme check.
+    (tmp_path / "key.md").write_text("local copy")
+    assert await src.head((tmp_path / "key.md").as_uri()) is not None
+
     with pytest.raises(UnsupportedSourceError):
         await src.fetch("s3://bucket/key.md")
 

@@ -344,6 +344,11 @@ class TestVectorIndexCreation:
 
     @pytest.mark.asyncio
     async def test_index_failure_is_warned_not_raised(self, temp_db_path):
+        import logging
+
+        from haiku.rag.store import engine as engine_module
+        from tests.conftest import capture_logs
+
         async with Store(temp_db_path, create=True) as store:
             await self._seed_chunks(store, 256)
 
@@ -351,8 +356,10 @@ class TestVectorIndexCreation:
                 raise RuntimeError("index build failed")
 
             with patch.object(store.chunks_table, "create_index", boom):
-                await store._ensure_vector_index()
+                with capture_logs(engine_module.logger, logging.WARNING) as records:
+                    await store._ensure_vector_index()
 
+            assert any("index build failed" in r.getMessage() for r in records)
             indexes = await store.chunks_table.list_indices()
             assert not any("vector" in idx.columns for idx in indexes)
 
@@ -378,10 +385,13 @@ class TestStoreMiscellany:
 
     @pytest.mark.asyncio
     async def test_vacuum_skips_when_already_running(self, temp_db_path):
+        import asyncio
+
         async with Store(temp_db_path, create=True) as store:
             async with store._vacuum_lock:
-                # Returns immediately rather than blocking on the held lock.
-                await store.vacuum()
+                # Bounded: a regression here blocks on the held lock, and the
+                # timeout turns that deadlock into a clean failure.
+                await asyncio.wait_for(store.vacuum(), timeout=5)
 
     @pytest.mark.asyncio
     async def test_history_rejects_unknown_table(self, temp_db_path):

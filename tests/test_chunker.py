@@ -862,7 +862,10 @@ class TestDoclingServeChunkerRefResolution:
             return [
                 {
                     "raw_text": "body",
-                    "doc_items": [{"self_ref": "#/texts/0", "label": "paragraph"}],
+                    # A label the document does NOT carry, so the assertion
+                    # proves the dict's own label was used rather than a
+                    # lookup against the document.
+                    "doc_items": [{"self_ref": "#/texts/0", "label": "caption"}],
                 }
             ]
 
@@ -872,4 +875,4 @@ class TestDoclingServeChunkerRefResolution:
 
         assert len(chunks) == 1
         assert chunks[0].metadata["doc_item_refs"] == ["#/texts/0"]
-        assert chunks[0].metadata["labels"] == ["paragraph"]
+        assert chunks[0].metadata["labels"] == ["caption"]

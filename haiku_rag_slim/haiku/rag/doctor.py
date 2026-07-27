@@ -330,6 +330,8 @@ def _common_path_prefix(labels: list[str]) -> str:
     Returns "" unless the shared prefix is long enough to be worth factoring out
     of every line (deep URI trees are otherwise unreadable).
     """
+    if len(labels) < 2:  # pragma: no cover - families always have >=2 members
+        return ""
     lo, hi = min(labels), max(labels)
     end = 0
     while end < len(lo) and lo[end] == hi[end]:

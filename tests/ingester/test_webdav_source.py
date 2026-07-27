@@ -713,19 +713,16 @@ async def test_head_returns_none_for_empty_multistatus():
     assert await src.head("https://nc.example.com/dav/a.md") is None
 
 
-@pytest.mark.asyncio
-async def test_entry_with_status_but_no_prop_has_no_revision():
-    """A 200 propstat carrying no <prop> still yields an entry, without a revision."""
+def test_entry_with_status_but_no_prop_has_no_revision():
+    """A 200 propstat carrying no <prop> still yields an entry, without a
+    revision — distinct from the malformed bodies that yield no entry at all."""
+    from haiku.rag.ingester.sources.webdav import _parse_multistatus
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(207, content=_raw_multistatus(_STATUS_WITHOUT_PROP))
+    entries = _parse_multistatus(_raw_multistatus(_STATUS_WITHOUT_PROP))
 
-    src = WebDAVSource(
-        source_id="nc",
-        base_url="https://nc.example.com/dav/",
-        transport=_transport(handler),
-    )
-    assert await src.head("https://nc.example.com/dav/a.md") is None
+    assert len(entries) == 1
+    assert entries[0].revision is None
+    assert _parse_multistatus(_raw_multistatus(_NO_HREF)) == []
 
 
 @pytest.mark.asyncio

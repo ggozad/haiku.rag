@@ -457,12 +457,14 @@ async def test_ensure_fts_index_warns_on_failure(temp_db_path):
 
 
 @pytest.mark.vcr()
-async def test_chunk_repository_get_by_id_and_list_all_pagination(temp_db_path):
+async def test_chunk_repository_get_by_id_and_list_all_pagination(
+    qa_corpus: list[dict[str, str]], temp_db_path
+):
     """get_by_id resolves a stored chunk; list_all honours limit and offset."""
     async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
-        doc = await client.create_document(
-            content="First paragraph.\n\nSecond paragraph.\n\nThird paragraph."
-        )
+        # A corpus document is long enough to chunk more than once, which is
+        # what makes the offset assertion below meaningful.
+        doc = await client.create_document(content=qa_corpus[0]["document_extracted"])
         assert doc.id is not None
 
         stored = await client.chunk_repository.get_by_document_id(doc.id)
@@ -482,18 +484,23 @@ async def test_chunk_repository_get_by_id_and_list_all_pagination(temp_db_path):
         assert len(first) == 1
         assert first[0].id == everything[0].id
 
-        # offset is applied even when it selects the whole set
-        assert len(await client.chunk_repository.list_all(offset=0)) == len(everything)
+        # Fail loudly if the fixture stops producing enough chunks to page.
+        assert len(everything) >= 2
 
-        if len(everything) > 1:
-            second = await client.chunk_repository.list_all(limit=1, offset=1)
-            assert len(second) == 1
-            assert second[0].id == everything[1].id
+        second = await client.chunk_repository.list_all(limit=1, offset=1)
+        assert len(second) == 1
+        assert second[0].id == everything[1].id
 
 
+@pytest.mark.vcr()
 async def test_chunk_search_returns_empty_for_blank_query(temp_db_path):
-    """A blank query with no precomputed vector has nothing to search for."""
+    """A blank query with no precomputed vector short-circuits before searching."""
     async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+        await client.create_document(content="Searchable body about elections.")
+
+        # Positive control: the corpus is non-empty, so [] is a real decision
+        # rather than the answer to every query.
+        assert await client.chunk_repository.search("elections")
         assert await client.chunk_repository.search("   ") == []
 
 

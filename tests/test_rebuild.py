@@ -1071,18 +1071,38 @@ async def test_rebuild_blocks_tag_operations(temp_db_path, monkeypatch):
         assert set(await client.store.list_tags()) == {"post-rebuild"}
 
 
+def _count_flushes(monkeypatch, rebuild_module) -> list[int]:
+    """Record the size of every batch handed to _flush_rebuild_batch."""
+    real = rebuild_module._flush_rebuild_batch
+    sizes: list[int] = []
+
+    async def spy(client, documents, chunks):
+        sizes.append(len(documents))
+        return await real(client, documents, chunks)
+
+    monkeypatch.setattr(rebuild_module, "_flush_rebuild_batch", spy)
+    return sizes
+
+
 # --- unit-level rebuild helpers (no embedder involved) ---
 
 
+@pytest.mark.vcr()
 async def test_flush_rebuild_batch_is_a_noop_without_documents(temp_db_path):
     from haiku.rag.client.rebuild import _flush_rebuild_batch
 
     async with HaikuRAG(temp_db_path, create=True) as client:
+        # A populated table makes "unchanged" distinguishable from "wiped".
+        existing = await client.create_document(content="keep me")
         before = await client.store.documents_table.count_rows()
+        assert before == 1
 
         await _flush_rebuild_batch(client, [], [])
 
         assert await client.store.documents_table.count_rows() == before
+        after = await client.get_document_by_id(existing.id)
+        assert after is not None
+        assert after.updated_at == existing.updated_at
 
 
 async def test_mark_phase1_complete_is_idempotent(temp_db_path):
@@ -1130,8 +1150,16 @@ async def test_hydrate_skips_documents_deleted_mid_rebuild(temp_db_path):
         assert [doc async for doc in _hydrate(client, [stored])] == []
 
 
-async def test_apply_descriptions_skips_pictures_without_text():
-    """A picture whose generated description is empty is left untouched."""
+@pytest.mark.parametrize(
+    "description,expected_text",
+    [("", None), ("a red square", "a red square")],
+    ids=["empty_skipped", "populated_applied"],
+)
+async def test_apply_descriptions_writes_only_non_empty_text(
+    description, expected_text
+):
+    """An empty generated description leaves the picture untouched; a real one
+    is written through to the picture meta."""
     from haiku.rag.client.rebuild import _apply_descriptions_sync
     from haiku.rag.store.models.document import Document
     from tests.store.test_document_items import _docling_doc_with_picture
@@ -1140,9 +1168,13 @@ async def test_apply_descriptions_skips_pictures_without_text():
     ref = docling_doc.pictures[0].self_ref
     document = Document(content="x", uri="test://doc")
 
-    _apply_descriptions_sync(docling_doc, document, {ref: ""})
+    _apply_descriptions_sync(docling_doc, document, {ref: description})
 
-    assert docling_doc.pictures[0].meta is None
+    meta = docling_doc.pictures[0].meta
+    actual = getattr(getattr(meta, "description", None), "text", None) if meta else None
+    assert actual == expected_text
+    # The blob is re-compressed either way; page rasters must survive it.
+    assert document.docling_document is not None
 
 
 @pytest.mark.asyncio
@@ -1234,6 +1266,22 @@ async def test_rebuild_embed_only_flushes_in_batches(temp_db_path, monkeypatch):
             assert doc.id is not None
             ids.append(doc.id)
 
+        # Phase 2 writes straight to the chunks table rather than going
+        # through _flush_rebuild_batch, so count the adds it makes. Patch at
+        # class level: embed-only recreates the table, discarding any patch
+        # applied to the instance that exists now.
+        import lancedb
+
+        real_add = lancedb.AsyncTable.add
+        adds: list[int] = []
+
+        async def counting_add(self, records, *args, **kwargs):
+            if self.name == "chunks":
+                adds.append(len(records))
+            return await real_add(self, records, *args, **kwargs)
+
+        monkeypatch.setattr(lancedb.AsyncTable, "add", counting_add)
+
         processed = [
             doc_id
             async for doc_id in client.rebuild_database(mode=RebuildMode.EMBED_ONLY)
@@ -1242,6 +1290,9 @@ async def test_rebuild_embed_only_flushes_in_batches(temp_db_path, monkeypatch):
         assert sorted(processed) == sorted(ids)
         for doc_id in ids:
             assert await client.chunk_repository.get_by_document_id(doc_id)
+
+        # 3 docs at batch size 2: one mid-loop write plus the trailing one.
+        assert len(adds) == 2
 
 
 @pytest.mark.vcr()
@@ -1266,6 +1317,7 @@ async def test_rebuild_full_flushes_in_batches(temp_db_path, monkeypatch):
     from haiku.rag.client import rebuild as rebuild_module
 
     monkeypatch.setattr(rebuild_module, "_REBUILD_BATCH_SIZE", 2)
+    flushes = _count_flushes(monkeypatch, rebuild_module)
 
     async with HaikuRAG(temp_db_path, create=True) as client:
         ids = []
@@ -1279,6 +1331,8 @@ async def test_rebuild_full_flushes_in_batches(temp_db_path, monkeypatch):
         ]
 
         assert sorted(processed) == sorted(ids)
+
+    assert len(flushes) == 2
 
 
 @pytest.mark.vcr()
@@ -1324,7 +1378,13 @@ async def test_rebuild_full_flushes_pending_before_source_rebuild(temp_db_path):
                 async for doc_id in client.rebuild_database(mode=RebuildMode.FULL)
             ]
 
-        assert content_doc.id in processed
+            # The content-path document keeps its id and must survive the
+            # flush that precedes the source re-ingest; the source document
+            # is replaced by a freshly ingested one with a new id.
+            assert content_doc.id in processed
+            assert source_doc.id not in processed
+            assert len(processed) == 2
+            assert await client.store.documents_table.count_rows() == 2
 
 
 @pytest.mark.vcr()
@@ -1341,6 +1401,7 @@ async def test_rebuild_descriptions_flushes_in_batches(temp_db_path, monkeypatch
     config.processing.pictures = "description"
 
     monkeypatch.setattr(rebuild_module, "_REBUILD_BATCH_SIZE", 1)
+    flushes = _count_flushes(monkeypatch, rebuild_module)
 
     async def fake_describe(image_bytes_by_ref, *, config):
         return {ref: "A red square (mocked)." for ref in image_bytes_by_ref}
@@ -1365,6 +1426,9 @@ async def test_rebuild_descriptions_flushes_in_batches(temp_db_path, monkeypatch
         ]
 
         assert sorted(processed) == sorted(ids)
+
+    # 2 docs at batch size 1: one flush each, none left for the trailing pass.
+    assert len(flushes) == 2
 
 
 @pytest.mark.vcr()
@@ -1408,7 +1472,10 @@ async def test_rebuild_embed_only_recovers_picture_bytes(
     async with HaikuRAG(temp_db_path, create=True) as rag:
         # The configured ollama embedder is text-only; stand in for a
         # multimodal one so the picture-bytes recovery branch runs.
+        embedded_images: list[bytes] = []
+
         async def fake_embed_image(image):
+            embedded_images.append(image)
             return [0.2] * rag.embedder.vector_dim
 
         monkeypatch.setattr(rag.embedder, "supports_images", True)
@@ -1449,3 +1516,11 @@ async def test_rebuild_embed_only_recovers_picture_bytes(
         assert created.id in processed
         warned = any("no recoverable bytes" in r.getMessage() for r in records)
         assert warned is wipe_bytes
+
+        if wipe_bytes:
+            # Nothing to recover, so the caption is text-embedded instead.
+            assert embedded_images == []
+        else:
+            # The stored PNG was re-attached and routed through embed_image.
+            assert len(embedded_images) == 1
+            assert embedded_images[0].startswith(b"\x89PNG")

@@ -540,4 +540,4 @@ def test_load_default_config_falls_back_to_builtin_defaults(monkeypatch):
 
     config = _load_default_config()
 
-    assert config.environment == AppConfig().environment
+    assert config.model_dump() == AppConfig().model_dump()

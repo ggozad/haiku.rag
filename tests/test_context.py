@@ -1466,7 +1466,13 @@ class TestExpandWithItemsWindowEdges:
                 rag.document_item_repository, doc.id, [resolvable, unmatched], 5000
             )
 
-            assert "untouched" in [r.content for r in expanded]
+            assert len(expanded) == 2
+            by_content = {r.content for r in expanded}
+            # The unmatched result is passed through byte-for-byte...
+            assert "untouched" in by_content
+            # ...while the resolvable one actually grew to its neighbours.
+            grew = next(c for c in by_content if c != "untouched")
+            assert "paragraph 0" in grew and "paragraph 1" in grew
 
 
 def test_build_result_skips_positions_with_no_item():

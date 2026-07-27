@@ -380,9 +380,20 @@ class TestVfsReadPaths:
 
         sandbox = Sandbox(temp_db_path, AppConfig(), AnalysisContext())
 
-        content = await _read_vfs_text(sandbox, f"/documents/{doc_id}/content.txt")
+        # Build the VFS first, then change the stored content. A lazy
+        # CallbackFile reads through at access time and sees the new body;
+        # an eager MemoryFile mount would have captured the old one.
+        vfs = await sandbox._build_vfs()
+        sandbox._loop = asyncio.get_running_loop()
 
-        assert content == "the stored body"
+        async with HaikuRAG(temp_db_path, create=False) as client:
+            await client.update_document(doc_id, content="the rewritten body")
+
+        content = await asyncio.to_thread(
+            vfs.path_read_text, PurePosixPath(f"/documents/{doc_id}/content.txt")
+        )
+
+        assert content == "the rewritten body"
 
     async def test_document_files_are_read_only(self, temp_db_path):
         async with HaikuRAG(temp_db_path, create=True) as client:

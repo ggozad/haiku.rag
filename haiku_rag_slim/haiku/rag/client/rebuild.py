@@ -281,6 +281,9 @@ async def _populate_staging_table(client: "HaikuRAG") -> None:
     pagination drift), so peak memory stays bounded regardless of corpus
     size. The vector column is omitted — the point of embed-only rebuild is
     to regenerate it.
+
+    Requires ``_resolve_rebuild_recovery`` to have cleared any leftover
+    staging table first: ``create_table`` raises if the name is already taken.
     """
     db = client.store.db
     tables = (await db.list_tables()).tables

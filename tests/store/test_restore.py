@@ -427,5 +427,7 @@ async def test_wait_protected_reraises_when_recovery_itself_is_cancelled():
 
     outer = asyncio.create_task(_wait_protected(self_cancelling_recovery()))
 
+    # Bounded: without the re-raise the retry loop spins forever on an
+    # already-cancelled task, and the timeout turns that into a clean failure.
     with pytest.raises(asyncio.CancelledError):
-        await outer
+        await asyncio.wait_for(outer, timeout=5)

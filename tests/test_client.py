@@ -1,3 +1,4 @@
+import asyncio
 import json
 import tempfile
 import threading
@@ -2521,32 +2522,40 @@ async def test_visualize_chunk_falls_back_when_expansion_drops_refs(temp_db_path
 
 
 @pytest.mark.vcr()
-async def test_import_documents_schedules_vacuum_when_enabled(temp_db_path):
-    """A batch import with auto_vacuum on queues a background vacuum."""
+@pytest.mark.parametrize("auto_vacuum", [True, False])
+async def test_import_documents_schedules_vacuum_per_config(temp_db_path, auto_vacuum):
+    """A batch import runs a background vacuum only when auto_vacuum is on."""
     from haiku.rag.config import AppConfig
 
     config = AppConfig()
-    config.storage.auto_vacuum = True
+    config.storage.auto_vacuum = auto_vacuum
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         docling_doc = await client.convert("Batch imported body.")
         chunks = await client.chunk(docling_doc)
-        await client.import_documents(
-            [
-                DocumentImport(
-                    docling_document=docling_doc,
-                    chunks=chunks,
-                    uri="test://batch-vacuum",
-                )
-            ]
-        )
 
-        assert client._vacuum_tasks
+        # Spy rather than inspecting _vacuum_tasks: the scheduling code
+        # discards each task on completion, so the set races to empty. The
+        # spy's count does not race, and draining the scheduled task keeps
+        # the assertion deterministic without pulling in the close-time pass.
+        with patch.object(client.store, "vacuum", new=AsyncMock()) as vacuum:
+            await client.import_documents(
+                [
+                    DocumentImport(
+                        docling_document=docling_doc,
+                        chunks=chunks,
+                        uri="test://batch-vacuum",
+                    )
+                ]
+            )
+            await asyncio.gather(*client._vacuum_tasks)
+
+            assert vacuum.await_count == (1 if auto_vacuum else 0)
 
 
 @pytest.mark.vcr()
 async def test_reingesting_a_source_applies_an_explicit_title(temp_db_path):
-    """Re-adding an unchanged source with a new title updates just the title."""
+    """Re-adding a changed source with a title updates both, in place."""
     async with HaikuRAG(temp_db_path, create=True) as client:
         with tempfile.TemporaryDirectory() as temp_dir:
             source = Path(temp_dir) / "retitled.txt"
@@ -2563,6 +2572,7 @@ async def test_reingesting_a_source_applies_an_explicit_title(temp_db_path):
         assert not isinstance(second, list)
         assert second.id == first.id
         assert second.title == "Explicit Title"
+        assert second.content == "changed content"
 
 
 async def test_update_document_rejects_unknown_id(temp_db_path):

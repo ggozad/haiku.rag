@@ -140,22 +140,46 @@ Emoji test: 🚀 ✅ 📝"""
 
 
 @pytest.mark.parametrize(
-    "kwargs",
+    "kwargs,expected_settings",
     [
-        {"provider": "ollama", "name": "llama3"},
-        {"provider": "ollama", "name": "gpt-oss", "enable_thinking": False},
-        {"provider": "ollama", "name": "gpt-oss", "enable_thinking": True},
-        {"provider": "ollama", "name": "llama3", "temperature": 0.5, "max_tokens": 100},
-        {"provider": "openai", "name": "gpt-4o"},
-        {"provider": "openai", "name": "o1", "enable_thinking": True},
-        {"provider": "openai", "name": "o1", "enable_thinking": False},
-        {
-            "provider": "openai",
-            "name": "gpt-4o",
-            "enable_thinking": False,
-            "temperature": 0.7,
-            "max_tokens": 500,
-        },
+        ({"provider": "ollama", "name": "llama3"}, None),
+        (
+            {"provider": "ollama", "name": "gpt-oss", "enable_thinking": False},
+            {"openai_reasoning_effort": "low"},
+        ),
+        (
+            {"provider": "ollama", "name": "gpt-oss", "enable_thinking": True},
+            {"openai_reasoning_effort": "high"},
+        ),
+        (
+            {
+                "provider": "ollama",
+                "name": "llama3",
+                "temperature": 0.5,
+                "max_tokens": 100,
+            },
+            {"temperature": 0.5, "max_tokens": 100},
+        ),
+        ({"provider": "openai", "name": "gpt-4o"}, None),
+        (
+            {"provider": "openai", "name": "o1", "enable_thinking": True},
+            {"openai_reasoning_effort": "high"},
+        ),
+        (
+            {"provider": "openai", "name": "o1", "enable_thinking": False},
+            {"openai_reasoning_effort": "low"},
+        ),
+        (
+            {
+                "provider": "openai",
+                "name": "gpt-4o",
+                "enable_thinking": False,
+                "temperature": 0.7,
+                "max_tokens": 500,
+            },
+            # gpt-4o is not a reasoning model, so only the common settings land.
+            {"temperature": 0.7, "max_tokens": 500},
+        ),
     ],
     ids=[
         "ollama",
@@ -168,9 +192,17 @@ Emoji test: 🚀 ✅ 📝"""
         "openai_all_settings",
     ],
 )
-def test_get_model_returns_openai_chat_model(kwargs):
-    """Every ollama and openai configuration resolves to an OpenAIChatModel."""
-    assert isinstance(get_model(ModelConfig(**kwargs)), OpenAIChatModel)
+def test_get_model_openai_chat_settings(kwargs, expected_settings):
+    """Each ollama/openai configuration maps onto the expected model settings."""
+    result = get_model(ModelConfig(**kwargs))
+
+    assert isinstance(result, OpenAIChatModel)
+    if expected_settings is None:
+        assert result.settings is None
+        return
+    assert result.settings is not None
+    for key, value in expected_settings.items():
+        assert result.settings.get(key) == value
 
 
 def test_get_model_ollama_appends_v1_to_per_model_base_url():
@@ -296,8 +328,14 @@ def test_get_model_anthropic():
 
 
 @pytest.mark.skipif(not HAS_ANTHROPIC, reason="Anthropic not installed")
-@pytest.mark.parametrize("enable_thinking", [True, False])
-def test_get_model_anthropic_with_thinking(enable_thinking):
+@pytest.mark.parametrize(
+    "enable_thinking,expected_thinking",
+    [
+        (True, {"type": "enabled", "budget_tokens": 4096}),
+        (False, {"type": "disabled"}),
+    ],
+)
+def test_get_model_anthropic_with_thinking(enable_thinking, expected_thinking):
     """Test get_model configures thinking for Anthropic."""
     from pydantic_ai.models.anthropic import AnthropicModel
 
@@ -307,7 +345,10 @@ def test_get_model_anthropic_with_thinking(enable_thinking):
         enable_thinking=enable_thinking,
     )
     result = get_model(model_config)
+
     assert isinstance(result, AnthropicModel)
+    assert result.settings is not None
+    assert result.settings.get("anthropic_thinking") == expected_thinking
 
 
 @pytest.mark.skipif(not HAS_GOOGLE, reason="Google not installed")
@@ -343,8 +384,10 @@ def test_get_model_groq():
 
 
 @pytest.mark.skipif(not HAS_GROQ, reason="Groq not installed")
-@pytest.mark.parametrize("enable_thinking", [True, False])
-def test_get_model_groq_with_thinking(enable_thinking):
+@pytest.mark.parametrize(
+    "enable_thinking,expected_format", [(True, "parsed"), (False, "hidden")]
+)
+def test_get_model_groq_with_thinking(enable_thinking, expected_format):
     """Test get_model configures thinking format for Groq."""
     from pydantic_ai.models.groq import GroqModel
 
@@ -354,7 +397,10 @@ def test_get_model_groq_with_thinking(enable_thinking):
         enable_thinking=enable_thinking,
     )
     result = get_model(model_config)
+
     assert isinstance(result, GroqModel)
+    assert result.settings is not None
+    assert result.settings.get("groq_reasoning_format") == expected_format
 
 
 @pytest.mark.skipif(not HAS_BEDROCK, reason="Bedrock not installed")
@@ -370,19 +416,39 @@ def test_get_model_bedrock():
 
 
 @pytest.mark.skipif(not HAS_BEDROCK, reason="Bedrock not installed")
-@pytest.mark.parametrize("enable_thinking", [True, False])
 @pytest.mark.parametrize(
-    "name",
+    "name,enable_thinking,expected_fields",
     [
-        "anthropic.claude-3-5-sonnet-20241022-v2:0",
-        "openai.o3-mini-v1:0",
-        "qwen.qwen3-32b-v1:0",
+        (
+            "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            True,
+            {"thinking": {"type": "enabled", "budget_tokens": 4096}},
+        ),
+        (
+            "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            False,
+            {"thinking": {"type": "disabled"}},
+        ),
+        ("openai.o3-mini-v1:0", True, {"reasoning_effort": "high"}),
+        ("openai.o3-mini-v1:0", False, {"reasoning_effort": "low"}),
+        ("qwen.qwen3-32b-v1:0", True, {"reasoning_config": "high"}),
+        ("qwen.qwen3-32b-v1:0", False, {"reasoning_config": "low"}),
         # A family with no reasoning mapping leaves the request fields untouched.
-        "meta.llama3-70b-instruct-v1:0",
+        ("meta.llama3-70b-instruct-v1:0", True, None),
+        ("meta.llama3-70b-instruct-v1:0", False, None),
     ],
-    ids=["claude", "o_series", "qwen", "unmapped_family"],
+    ids=[
+        "claude_on",
+        "claude_off",
+        "o_series_on",
+        "o_series_off",
+        "qwen_on",
+        "qwen_off",
+        "unmapped_on",
+        "unmapped_off",
+    ],
 )
-def test_get_model_bedrock_with_thinking(name, enable_thinking):
+def test_get_model_bedrock_with_thinking(name, enable_thinking, expected_fields):
     """Each Bedrock model family maps thinking onto its own request field."""
     from pydantic_ai.models.bedrock import BedrockConverseModel
 
@@ -392,7 +458,16 @@ def test_get_model_bedrock_with_thinking(name, enable_thinking):
         enable_thinking=enable_thinking,
     )
     result = get_model(model_config)
+
     assert isinstance(result, BedrockConverseModel)
+    if expected_fields is None:
+        assert result.settings is None
+        return
+    assert result.settings is not None
+    assert (
+        result.settings.get("bedrock_additional_model_requests_fields")
+        == expected_fields
+    )
 
 
 def test_get_model_unknown_provider():
@@ -803,7 +878,12 @@ async def test_render_picture_handles_stored_bytes(stored, renders):
 
     result = await _render_picture(client, "doc1", "#/pictures/0")
 
-    assert (result is not None) is renders
+    if renders:
+        from textual_image.renderable import Image as RichImage
+
+        assert isinstance(result, RichImage)
+    else:
+        assert result is None
 
 
 async def test_render_picture_without_client_returns_none():

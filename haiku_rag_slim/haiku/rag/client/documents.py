@@ -908,8 +908,10 @@ async def update_document(
 def check_source_accessible(uri: str) -> bool:
     """Check if a document's source URI is accessible.
 
-    A stored URI that no longer parses (``urlparse`` rejects malformed IPv6
-    hosts) counts as inaccessible rather than aborting the caller's sweep.
+    Anything the URI itself makes unanswerable counts as inaccessible rather
+    than aborting the caller's sweep: ``urlparse`` rejects malformed IPv6
+    hosts, and ``Path.exists`` re-raises errno values outside its ignored set
+    (an unreadable parent directory, an over-long name).
     """
     try:
         parsed_url = urlparse(uri)
@@ -918,5 +920,5 @@ def check_source_accessible(uri: str) -> bool:
         elif parsed_url.scheme in ("http", "https", "s3"):
             return True
         return False
-    except ValueError:
+    except (ValueError, OSError):
         return False

@@ -160,8 +160,8 @@ def test_vector_dim_property_reports_configured_dimension():
     "provider,env_var",
     [("voyageai", "VOYAGE_API_KEY"), ("cohere", "CO_API_KEY")],
 )
-def test_saas_providers_build_offline(monkeypatch, provider, env_var):
-    """Construction only wires the SDK; no request is made."""
+def test_saas_providers_are_wired_without_a_request(monkeypatch, provider, env_var):
+    """Construction wires the SDK and reports the configured dimension."""
     monkeypatch.setenv(env_var, "test-key")
     config = AppConfig(
         embeddings=EmbeddingsConfig(
@@ -174,6 +174,9 @@ def test_saas_providers_build_offline(monkeypatch, provider, env_var):
     embedder = get_embedder(config)
 
     assert embedder.vector_dim == 1024
+    assert embedder.supports_images is False
+    # The provider and model reach the underlying pydantic-ai embedder.
+    assert embedder._embedder._model == f"{provider}:some-model"  # ty: ignore[unresolved-attribute]
 
 
 def test_cohere_floats_rejects_missing_embeddings():

@@ -45,8 +45,7 @@ async def test_operations_work_after_database_created(tmp_path):
         assert doc.content == "Test content"
 
 
-@pytest.mark.asyncio
-async def test_default_db_path_comes_from_storage_data_dir(tmp_path):
+def test_default_db_path_comes_from_storage_data_dir(tmp_path):
     """Omitting db_path places the database under the configured data dir."""
     from haiku.rag.client import HaikuRAG
     from haiku.rag.config import AppConfig
@@ -62,7 +61,12 @@ async def test_default_db_path_comes_from_storage_data_dir(tmp_path):
 @pytest.mark.asyncio
 async def test_vacuum_is_callable_on_the_client(temp_db_path):
     """The public vacuum() delegates to the store."""
+    from unittest.mock import AsyncMock, patch
+
     from haiku.rag.client import HaikuRAG
 
     async with HaikuRAG(temp_db_path, create=True) as client:
-        await client.vacuum()
+        with patch.object(client.store, "vacuum", new=AsyncMock()) as store_vacuum:
+            await client.vacuum()
+
+        store_vacuum.assert_awaited_once()
