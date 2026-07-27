@@ -59,14 +59,20 @@ def test_default_db_path_comes_from_storage_data_dir(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_vacuum_is_callable_on_the_client(temp_db_path):
-    """The public vacuum() delegates to the store."""
-    from unittest.mock import AsyncMock, patch
-
-    from haiku.rag.client import HaikuRAG
+async def test_vacuum_optimizes_tables_without_losing_rows(temp_db_path):
+    """The public vacuum() runs the store's optimize pass over real rows."""
+    from haiku.rag.store.models.document import Document
+    from haiku.rag.store.repositories.document import DocumentRepository
 
     async with HaikuRAG(temp_db_path, create=True) as client:
-        with patch.object(client.store, "vacuum", new=AsyncMock()) as store_vacuum:
-            await client.vacuum()
+        repo = DocumentRepository(client.store)
+        for i in range(3):
+            await repo.create(Document(content=f"body {i}", uri=f"test://doc{i}"))
+        before = len(await client.store.documents_table.list_versions())
 
-        store_vacuum.assert_awaited_once()
+        await client.vacuum()
+
+        # Optimize compacts the per-document fragments into new versions; an
+        # unchanged count would mean nothing reached the tables.
+        assert len(await client.store.documents_table.list_versions()) > before
+        assert await client.count_documents() == 3
