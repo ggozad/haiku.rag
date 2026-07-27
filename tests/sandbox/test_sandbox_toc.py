@@ -386,8 +386,12 @@ class TestVfsReadPaths:
         vfs = await sandbox._build_vfs()
         sandbox._loop = asyncio.get_running_loop()
 
+        # Rewrite via the repository rather than client.update_document: the
+        # latter re-chunks and re-embeds, which this file deliberately avoids
+        # so these tests need no embedding endpoint.
         async with HaikuRAG(temp_db_path, create=False) as client:
-            await client.update_document(doc_id, content="the rewritten body")
+            doc.content = "the rewritten body"
+            await client.document_repository.update(doc)
 
         content = await asyncio.to_thread(
             vfs.path_read_text, PurePosixPath(f"/documents/{doc_id}/content.txt")
