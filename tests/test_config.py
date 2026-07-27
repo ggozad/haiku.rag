@@ -541,3 +541,19 @@ def test_load_default_config_falls_back_to_builtin_defaults(monkeypatch):
     config = _load_default_config()
 
     assert config.model_dump() == AppConfig().model_dump()
+
+
+def test_get_config_initialises_lazily_then_reuses(monkeypatch):
+    """get_config() builds the instance on first use and caches it.
+
+    Asserted explicitly rather than relying on some test happening to be the
+    first caller in its worker process: under xdist that depends on how cases
+    shard across workers, which varies with the core count.
+    """
+    from haiku.rag import config as config_module
+
+    monkeypatch.setattr(config_module, "_config", None)
+
+    first = config_module.get_config()
+    assert isinstance(first, AppConfig)
+    assert config_module.get_config() is first
