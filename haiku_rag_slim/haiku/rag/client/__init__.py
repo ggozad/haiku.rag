@@ -17,6 +17,7 @@ import httpx
 from haiku.rag.client.documents import DocumentImport
 from haiku.rag.config import AppConfig, Config
 from haiku.rag.converters import get_converter
+from haiku.rag.hooks import DeleteEvent, build_hooks, load_hooks, notify
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.chunk import Chunk, SearchResult, SearchType
@@ -92,6 +93,7 @@ class HaikuRAG:
         self._vacuum_tasks: set[asyncio.Task] = set()
         self._last_vacuum_at: float | None = None
         self._vacuum_dirty = False
+        self._hooks = build_hooks(config.hooks, load_hooks()) if config.hooks else []
 
     @property
     def is_read_only(self) -> bool:
@@ -397,7 +399,7 @@ class HaikuRAG:
             # can't appear or move between collection and deletion. parent_uri
             # links a child to its parent's uri; walk transitively, guarding
             # against cycles.
-            ids_to_delete: list[str] = []
+            docs_to_delete: list[Document] = []
             seen: set[str] = set()
             queue = [await self.get_document_by_id(document_id)]
             while queue:
@@ -405,25 +407,28 @@ class HaikuRAG:
                 if doc is None or doc.id is None or doc.id in seen:
                     continue
                 seen.add(doc.id)
-                ids_to_delete.append(doc.id)
+                docs_to_delete.append(doc)
                 if doc.uri:
                     queue.extend(
                         await self.list_documents(filter=parent_uri_filter(doc.uri))
                     )
 
-            if not ids_to_delete:
+            if not docs_to_delete:
                 return False
 
             versions = await self.store.current_table_versions()
             try:
-                for doc_id in ids_to_delete:
-                    await self.document_repository.delete(doc_id)
+                for doc in docs_to_delete:
+                    assert doc.id is not None
+                    await self.document_repository.delete(doc.id)
             except Exception:
                 await self.store.restore_table_versions(versions)
                 raise
 
         if self._config.storage.auto_vacuum:
             self._schedule_vacuum()
+        event = DeleteEvent(documents=docs_to_delete)
+        await notify(self._hooks, "after_delete", self, event)
         return True
 
     async def list_documents(

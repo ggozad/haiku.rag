@@ -35,12 +35,27 @@ async def search(
     Returns:
         List of SearchResult objects ordered by relevance.
     """
+    from haiku.rag.hooks import SearchRequest
+
     if limit is None:
         limit = client._config.search.limit
 
+    request = SearchRequest(
+        query=query, filter=filter, search_type=search_type, limit=limit
+    )
+
     if isinstance(query, str):
-        if search_type is None:
-            search_type = "hybrid"
+        if request.search_type is None:
+            request.search_type = "hybrid"
+
+        for hook in client._hooks:
+            request = await hook.before_search(client, request)
+
+        query = request.query
+        assert isinstance(query, str), "before_search must keep text queries text"
+        filter = request.filter
+        limit = request.limit
+        search_type = request.search_type or "hybrid"
 
         reranker = client.reranker
 
@@ -78,6 +93,9 @@ async def search(
 
     if include_images:
         await _populate_image_data(client, results)
+
+    for hook in client._hooks:
+        results = await hook.after_search(client, request, results)
 
     return results
 
