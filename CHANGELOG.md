@@ -1,14 +1,10 @@
 # Changelog
 ## [Unreleased]
 
-### Changed
-
-- Test coverage is enforced at 100% via `fail_under` in `[tool.coverage.report]`.
-
 ### Fixed
 
 - `Store.set_haiku_version` stamps the store's own config into a recreated settings row instead of the process-global `Config`.
-- `check_source_accessible` returns `False` for a URI that fails to parse instead of raising `ValueError`.
+- `check_source_accessible` returns `False` for a URI it cannot resolve (unparseable host, unreadable path) instead of raising and aborting a full rebuild.
 
 ### Removed
 

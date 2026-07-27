@@ -570,7 +570,10 @@ def _extract_pdf_attachments(
             for i in range(attachment_count):
                 att = pdf.get_attachment(i)
                 name = att.get_name()
-                if not name:  # pragma: no cover - pypdfium2 always names them
+                # A malformed PDF can carry an attachment with an empty /F, so
+                # this is real validation on untrusted input — it just needs a
+                # hand-crafted file to reach, which no fixture here produces.
+                if not name:  # pragma: no cover - needs a malformed PDF
                     continue
                 data = bytes(att.get_data())
                 child_uri = f"{parent_uri}#attachment={quote(name, safe='')}"
