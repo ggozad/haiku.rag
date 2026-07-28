@@ -733,3 +733,77 @@ class TestSandboxHeldConnection:
         assert not any(t.name == "sandbox-vfs" for t in threading.enumerate())
         await sb.close()
         await sb.close()
+
+
+class TestSandboxReadDeadline:
+    """The VFS bridge suspends the worker for the length of a read, so Monty
+    cannot check its duration budget while one is in flight. The sandbox
+    enforces the budget itself, before each read."""
+
+    @pytest.mark.asyncio
+    async def test_read_after_deadline_raises_without_scheduling(self, sandbox):
+        """A read attempted past the deadline fails instead of querying."""
+        scheduled = False
+
+        async def _never_runs():
+            nonlocal scheduled
+            scheduled = True
+
+        sandbox._loop = asyncio.get_running_loop()
+        sandbox._deadline = sandbox._loop.time() - 1.0
+
+        coro = _never_runs()
+        with pytest.raises(TimeoutError, match="time limit exceeded"):
+            sandbox._run_on_loop(coro)
+
+        coro.close()
+        assert scheduled is False
+
+    def test_session_budget_covers_every_permitted_execution(self, temp_db_path):
+        """Monty spends its duration budget across the session's whole life, so a
+        per-call value would let the first call starve the rest."""
+        config = AppConfig()
+        config.analysis.code_timeout = 5.0
+        config.analysis.max_executions = 3
+
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+
+        assert sb._session_limits() == {"max_duration_secs": 15.0}
+
+    @pytest.mark.asyncio
+    async def test_document_read_past_the_deadline_fails_the_execution(
+        self, temp_db_path
+    ):
+        """The overrun surfaces as a failed result, not a raised exception."""
+        from docling_core.types.doc.document import DoclingDocument
+        from docling_core.types.doc.labels import DocItemLabel
+
+        config = AppConfig()
+        config.analysis.code_timeout = 0.0
+
+        docling = DoclingDocument(name="d")
+        docling.add_text(label=DocItemLabel.TEXT, text="Foxes and dogs.")
+
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.import_document(
+                docling,
+                [
+                    Chunk(
+                        content="Foxes and dogs.",
+                        embedding=[0.1] * config.embeddings.model.vector_dim,
+                        order=0,
+                    )
+                ],
+                uri="test://deadline",
+            )
+
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            result = await sb.execute(
+                "from pathlib import Path\n"
+                f"print(Path('/documents/{doc.id}/content.txt').read_text())"
+            )
+            assert result.success is False
+            assert "no further document reads" in result.stderr
+        finally:
+            await sb.close()

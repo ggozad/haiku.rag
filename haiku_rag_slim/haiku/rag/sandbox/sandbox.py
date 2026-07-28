@@ -14,6 +14,7 @@ from pydantic_monty import (
     CallbackFile,
     MemoryFile,
     OSAccess,
+    ResourceLimits,
 )
 
 from haiku.rag.config.models import AppConfig
@@ -151,6 +152,7 @@ class Sandbox:
     _session: AsyncMontySession | None
     _vfs: OSAccess | None
     _loop: asyncio.AbstractEventLoop | None
+    _deadline: float | None
 
     def __init__(
         self,
@@ -174,6 +176,7 @@ class Sandbox:
         self._session = None
         self._vfs = None
         self._loop = None
+        self._deadline = None
 
     @asynccontextmanager
     async def _connection(self) -> "AsyncIterator[HaikuRAG]":
@@ -197,10 +200,24 @@ class Sandbox:
 
         Called off the loop while ``feed_run`` is awaited, so scheduling onto it
         and blocking for the result is safe.
+
+        Blocking here suspends the worker, and Monty checks its duration budget
+        between interpreter steps, so it cannot check while a read is in flight.
+        Enforce the budget before starting another read, or code that reads in a
+        loop overruns it by however long the outstanding reads take. Raising from
+        inside the callback answers the worker's suspension, which keeps the
+        session usable — cancelling ``feed_run`` from outside does not, and wedges
+        the protocol.
         """
         assert self._loop is not None, (
             "VFS reads happen during execute(); the loop must be captured first."
         )
+        if self._deadline is not None and self._loop.time() > self._deadline:
+            coro.close()
+            raise TimeoutError(
+                "time limit exceeded: no further document reads after "
+                f"{self._config.analysis.code_timeout}s"
+            )
         return asyncio.run_coroutine_threadsafe(coro, self._loop).result()
 
     async def close(self) -> None:
@@ -428,15 +445,26 @@ class Sandbox:
 
         return OSAccess(files)
 
+    def _session_limits(self) -> ResourceLimits:
+        """Resource limits for the worker session.
+
+        Monty spends ``max_duration_secs`` across the session's whole life, and
+        the session is reused so variables persist between calls. Budget it for
+        the run rather than for one call, or the first slow call starves every
+        later one. ``code_timeout`` is enforced per call by the read deadline in
+        ``_run_on_loop``. This is the backstop for code that computes without
+        reading, and one such call can spend all of it.
+        """
+        analysis = self._config.analysis
+        return {"max_duration_secs": analysis.code_timeout * analysis.max_executions}
+
     async def _ensure_initialized(self) -> tuple[AsyncMontySession, OSAccess]:
         """Check out a worker session and build the VFS on first use."""
         if self._session is None:
             self._vfs = await self._build_vfs()
             self._pool = AsyncMonty()
             await self._pool.__aenter__()
-            session = self._pool.checkout(
-                limits={"max_duration_secs": self._config.analysis.code_timeout},
-            )
+            session = self._pool.checkout(limits=self._session_limits())
             await session.__aenter__()
             self._session = session
         assert self._session is not None and self._vfs is not None
@@ -449,6 +477,7 @@ class Sandbox:
         """
         # Monty's synchronous file callbacks bridge DB reads back to this loop.
         self._loop = asyncio.get_running_loop()
+        self._deadline = self._loop.time() + self._config.analysis.code_timeout
         session, vfs = await self._ensure_initialized()
         external_fns = self._build_external_functions()
 
