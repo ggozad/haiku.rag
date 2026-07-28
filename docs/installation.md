@@ -10,10 +10,17 @@
 uv pip install haiku.rag
 ```
 
-The full package includes **all features and extras**:
+The full package pulls the `docling`, `voyageai`, `cohere`, `zeroentropy`, `cross-encoder` and `tui` extras:
 - **Document processing** (Docling) - PDF, DOCX, PPTX, images, and 40+ file formats
-- **All embedding providers** - VoyageAI
-- **All rerankers** - MixedBread AI, Cohere, Zero Entropy
+- **Embedding providers** - VoyageAI and Cohere
+- **Rerankers** - local cross-encoders, local Jina, Cohere, Zero Entropy
+
+It does not include the `s3` or `ingester` extras:
+
+```bash
+uv pip install 'haiku.rag[ingester]'   # the haiku-ingester service
+uv pip install 'haiku.rag[s3]'         # S3 and object storage
+```
 
 ### Slim Package (Minimal Dependencies)
 
@@ -33,14 +40,20 @@ The slim package has minimal dependencies and lets you install only what you nee
 - `docling` - PDF, DOCX, PPTX, images, and other document formats
 - `voyageai` - VoyageAI embeddings
 - `cross-encoder` - Local reranking via sentence-transformers
-- `cohere` - Cohere reranking
+- `jina` - Local Jina reranking (`provider: jina-local`). Needs transformers and torch, which `cross-encoder` also pulls
+- `cohere` - Cohere embeddings and reranking
 - `zeroentropy` - Zero Entropy reranking
+- `s3` - S3 and object-storage access
+- `ingester` - The `haiku-ingester` service (also pulls `s3`)
 - `tui` - Terminal UI for `chat` and `inspect` commands
 
 **Built-in providers** (no extras needed):
 - **Ollama** (default embedding provider)
 - **OpenAI** (GPT models for QA and embeddings)
-- **Anthropic** (Claude models for QA)
+- **vLLM** and other OpenAI-compatible endpoints (embeddings, QA, reranking)
+- **Jina** reranking via `provider: jina`, which calls the Jina HTTP API
+
+Other Pydantic AI providers need their own Pydantic AI extra. For Claude models, install `pydantic-ai-slim[anthropic]`.
 
 See [Configuration](configuration/index.md) for configuring providers including advanced options like vLLM.
 
@@ -74,7 +87,7 @@ See [Remote processing](remote-processing.md) for setup instructions and [Docume
 
 ## Docker
 
-Two Docker images are available:
+Only the slim image is published. Build the full image yourself:
 
 ### Slim Image (Minimal)
 

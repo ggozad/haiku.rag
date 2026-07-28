@@ -2,7 +2,7 @@
 
 How to adjust haiku.rag's pipeline for better retrieval and answer quality. For individual setting definitions and defaults, see [Configuration](configuration/index.md).
 
-For ingester-side tuning (worker count, claim timeout, retry policy, backpressure, circuit breakers), see [Ingester → Workers and retry](ingester.md#workers-and-retry).
+For ingester-side tuning (worker count, lease TTL and heartbeat, retry policy, backpressure, circuit breakers), see [Ingester → Workers and retry](ingester.md#workers-and-retry).
 
 ## Pipeline Overview
 
