@@ -2,13 +2,19 @@ import asyncio
 import json
 import os
 from collections.abc import AsyncIterator, Callable, Coroutine
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import pydantic_monty
-from pydantic_monty import CallbackFile, MemoryFile, MontyRepl, OSAccess
+from pydantic_monty import (
+    AsyncMonty,
+    AsyncMontySession,
+    CallbackFile,
+    OSAccess,
+    ResourceLimits,
+)
 
 from haiku.rag.config.models import AppConfig
 from haiku.rag.sandbox.dependencies import AnalysisContext
@@ -109,24 +115,26 @@ class Sandbox:
     """Execute code in a sandboxed Python interpreter.
 
     Uses pydantic-monty, a minimal secure Python interpreter written in Rust.
-    External functions (search, list_documents) are called by Monty code
+    The interpreter runs in a subprocess worker checked out of an ``AsyncMonty``
+    pool. External functions (search, list_documents) are called by Monty code
     using ``await`` and resolved asynchronously on the host. Documents are
     exposed via a virtual filesystem at ``/documents/{id}/``.
 
-    The interpreter uses a REPL session — variables persist across
-    ``execute()`` calls within the same Sandbox instance.
+    The session persists across ``execute()`` calls within the same Sandbox
+    instance — variables carry over. Call ``close()`` to return the worker to
+    the pool and shut the pool down.
 
         sandbox = Sandbox(db_path, config, context)
         result = await sandbox.execute("x = await search('query')")
         result = await sandbox.execute("print(x[0]['content'])")  # x persists
+        await sandbox.close()
 
     All database access runs on the event loop that drives ``execute()``. Monty's
-    file callbacks are synchronous and run on the interpreter's worker thread, so
-    they bridge back to that loop via ``run_coroutine_threadsafe``; the loop is
-    free during ``feed_run_async`` (the VM runs on the worker thread), so the
-    bridge does not deadlock. When a ``rag`` connection is supplied it is used
-    for every read, so an analysis run drives a single connection on a single
-    loop; otherwise each read opens an ephemeral read-only connection.
+    file callbacks are synchronous and run off that loop while ``feed_run`` is
+    awaited, so they bridge back to it via ``run_coroutine_threadsafe`` without
+    deadlocking. When a ``rag`` connection is supplied it is used for every read,
+    so an analysis run drives a single connection on a single loop; otherwise
+    each read opens an ephemeral read-only connection.
     """
 
     _db_path: Path
@@ -139,9 +147,11 @@ class Sandbox:
     _doc_chunk_index: dict[str, dict[str, list[str]]]
     _items_jsonl_cache: dict[str, str]
     _toc_json_cache: dict[str, str]
-    _repl: MontyRepl | None
+    _pool: AsyncMonty | None
+    _session: AsyncMontySession | None
     _vfs: OSAccess | None
     _loop: asyncio.AbstractEventLoop | None
+    _deadline: float | None
 
     def __init__(
         self,
@@ -161,9 +171,11 @@ class Sandbox:
         self._doc_chunk_index = {}
         self._items_jsonl_cache = {}
         self._toc_json_cache = {}
-        self._repl = None
+        self._pool = None
+        self._session = None
         self._vfs = None
         self._loop = None
+        self._deadline = None
 
     @asynccontextmanager
     async def _connection(self) -> "AsyncIterator[HaikuRAG]":
@@ -185,17 +197,49 @@ class Sandbox:
     def _run_on_loop(self, coro: Coroutine[Any, Any, Any]) -> Any:
         """Run a coroutine on the execute() loop from a synchronous callback.
 
-        Called from Monty's worker thread while ``feed_run_async`` leaves the
-        loop free, so scheduling onto it and blocking for the result is safe.
+        Called off the loop while ``feed_run`` is awaited, so scheduling onto it
+        and blocking for the result is safe.
+
+        Blocking here suspends the worker, and Monty checks its duration budget
+        between interpreter steps, so it cannot check while a read is in flight.
+        Enforce the budget before starting another read, or code that reads in a
+        loop overruns it by however long the outstanding reads take. Raising from
+        inside the callback answers the worker's suspension, which keeps the
+        session usable — cancelling ``feed_run`` from outside does not, and wedges
+        the protocol.
         """
         assert self._loop is not None, (
             "VFS reads happen during execute(); the loop must be captured first."
         )
+        if self._deadline is not None and self._loop.time() > self._deadline:
+            coro.close()
+            raise TimeoutError(
+                "time limit exceeded: no further document reads after "
+                f"{self._config.analysis.code_timeout}s"
+            )
         return asyncio.run_coroutine_threadsafe(coro, self._loop).result()
 
-    def close(self) -> None:
-        """Retained for API compatibility; the sandbox owns no resources."""
-        return
+    async def _discard_session(self) -> None:
+        """Drop a session whose worker is gone.
+
+        The session object is unusable once its worker dies: it answers every
+        later call with ``RuntimeError: this checkout has already been
+        finished``. Clearing it makes ``_ensure_initialized`` check out a
+        replacement, at the cost of the variables the dead worker held.
+        """
+        session, self._session = self._session, None
+        if session is not None:
+            with suppress(Exception):
+                await session.__aexit__(None, None, None)
+
+    async def close(self) -> None:
+        """Return the worker to the pool and shut the pool down. Idempotent."""
+        if self._session is not None:
+            await self._session.__aexit__(None, None, None)
+            self._session = None
+        if self._pool is not None:
+            await self._pool.__aexit__(None, None, None)
+            self._pool = None
 
     def _build_external_functions(self) -> dict[str, Any]:
         """Build async external functions for the Monty interpreter."""
@@ -255,12 +299,12 @@ class Sandbox:
         """Build the virtual filesystem with document data.
 
         Mounts per-document directories with:
-        - metadata.json: MemoryFile (eager, small)
+        - metadata.json: CallbackFile (eager, small)
         - content.txt: CallbackFile (lazy, can be large)
         - items.jsonl: CallbackFile (lazy, bulk-cached)
         - toc.json: CallbackFile (lazy, bulk-cached)
         """
-        files: list[MemoryFile | CallbackFile] = []
+        files: list[CallbackFile] = []
 
         def _deny_write(_path: "PurePosixPath", _content: str | bytes) -> None:
             raise PermissionError(f"Document files are read-only: {_path}")
@@ -370,7 +414,16 @@ class Sandbox:
                 },
                 ensure_ascii=False,
             )
-            files.append(MemoryFile(f"{doc_dir}/metadata.json", metadata))
+
+            # MemoryFile has no write hook, so metadata.json goes through the
+            # same read and deny pair as the rest. Its content is already built.
+            files.append(
+                CallbackFile(
+                    f"{doc_dir}/metadata.json",
+                    read=lambda _path, text=metadata: text,
+                    write=_deny_write,
+                )
+            )
 
             def _make_content_reader(
                 did: str,
@@ -413,52 +466,79 @@ class Sandbox:
 
         return OSAccess(files)
 
-    async def _ensure_initialized(self) -> tuple[MontyRepl, OSAccess]:
-        """Initialize the REPL session and VFS on first use."""
-        if self._repl is None:
+    def _session_limits(self) -> ResourceLimits:
+        """Resource limits for the worker session.
+
+        Monty spends ``max_duration_secs`` across the session's whole life, and
+        the session is reused so variables persist between calls. Budget it for
+        the run rather than for one call, or the first slow call starves every
+        later one. ``code_timeout`` is enforced per call elsewhere: the read
+        deadline in ``_run_on_loop`` bounds a call that reads, and the pool's
+        ``request_timeout`` bounds one that computes.
+        """
+        analysis = self._config.analysis
+        return {"max_duration_secs": analysis.code_timeout * analysis.max_executions}
+
+    async def _ensure_initialized(self) -> tuple[AsyncMontySession, OSAccess]:
+        """Check out a worker session and build the VFS on first use."""
+        if self._vfs is None:
             self._vfs = await self._build_vfs()
-            self._repl = MontyRepl(
-                limits={
-                    "max_duration_secs": self._config.analysis.code_timeout,
-                },
-            )
-        assert self._repl is not None and self._vfs is not None
-        return self._repl, self._vfs
+        if self._pool is None:
+            # The watchdog counts only time the worker spends running code, so a
+            # read that blocks the worker never trips it. That leaves the two
+            # limits disjoint: this one bounds a call that computes, and the read
+            # deadline bounds a call that reads.
+            pool = AsyncMonty(request_timeout=self._config.analysis.code_timeout)
+            await pool.__aenter__()
+            self._pool = pool
+        if self._session is None:
+            session = self._pool.checkout(limits=self._session_limits())
+            await session.__aenter__()
+            self._session = session
+        assert self._session is not None and self._vfs is not None
+        return self._session, self._vfs
 
     async def execute(self, code: str) -> SandboxResult:
-        """Execute Python code in the Monty REPL.
+        """Execute Python code in the Monty worker session.
 
         Variables persist across calls within the same Sandbox instance.
         """
         # Monty's synchronous file callbacks bridge DB reads back to this loop.
         self._loop = asyncio.get_running_loop()
-        repl, vfs = await self._ensure_initialized()
+        self._deadline = self._loop.time() + self._config.analysis.code_timeout
+        session, vfs = await self._ensure_initialized()
         external_fns = self._build_external_functions()
 
         stdout_lines: list[str] = []
 
-        def print_callback(  # pragma: no cover - runs on Monty's Rust thread
-            _stream: Literal["stdout"], text: str
+        def print_callback(  # pragma: no cover - runs on Monty's worker thread
+            _stream: Literal["stdout", "stderr"], text: str
         ) -> None:
             stdout_lines.append(text)
 
         max_chars = self._config.analysis.max_output_chars
 
         try:
-            output = await repl.feed_run_async(
+            output = await session.feed_run(
                 code,
-                external_functions=external_fns,
+                external_lookup=external_fns,
                 print_callback=print_callback,
                 os=vfs,
             )
-        except (
-            pydantic_monty.MontySyntaxError,
-            pydantic_monty.MontyRuntimeError,
-        ) as e:
+        except (pydantic_monty.MontyError, RuntimeError) as e:
             stdout = "".join(stdout_lines)
             if len(stdout) > max_chars:
                 stdout = stdout[:max_chars] + "\n... (output truncated)"
-            return SandboxResult(stdout=stdout, stderr=str(e), success=False)
+            stderr = str(e)
+            # A crash kills the worker, and a protocol error leaves it out of
+            # step. Both poison the session. Bad user code does not.
+            if isinstance(e, pydantic_monty.MontyCrashedError | RuntimeError):
+                await self._discard_session()
+                stderr = (
+                    f"{stderr}\n\nThe interpreter restarted. Variables from "
+                    "earlier calls are gone."
+                )
+            return SandboxResult(stdout=stdout, stderr=stderr, success=False)
 
         stdout = "".join(stdout_lines)
         if output is not None:

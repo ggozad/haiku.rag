@@ -84,6 +84,23 @@ def _flatten(tree: list[dict]) -> list[dict]:
 
 
 @pytest.mark.asyncio
+class TestMetadataJson:
+    """metadata.json is served by a reader callback, like the other VFS files."""
+
+    async def test_metadata_reader_returns_document_fields(self, temp_db_path):
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc_id = await _empty_doc(client, uri="test://meta", title="Meta Doc")
+
+        sandbox = Sandbox(temp_db_path, AppConfig(), AnalysisContext())
+        raw = await _read_vfs_text(sandbox, f"/documents/{doc_id}/metadata.json")
+        meta = json.loads(raw)
+
+        assert meta["id"] == doc_id
+        assert meta["title"] == "Meta Doc"
+        assert meta["uri"] == "test://meta"
+
+
+@pytest.mark.asyncio
 class TestTocShape:
     """toc.json builds a section tree from heading_level + position."""
 

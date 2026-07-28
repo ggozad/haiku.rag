@@ -7,6 +7,7 @@ import pytest
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.sandbox import AnalysisContext, Sandbox, SandboxResult
+from haiku.rag.store.models.chunk import Chunk
 
 
 @pytest.fixture(scope="module")
@@ -385,6 +386,175 @@ class TestSandboxVFS:
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
+    async def test_open_read(self, temp_db_path):
+        """open() and a with-block read document files through the VFS."""
+        config = AppConfig()
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.create_document(
+                content="Content about foxes and dogs.",
+                uri="test://doc",
+                title="Fox Document",
+            )
+
+            context = AnalysisContext()
+            sb = Sandbox(db_path=temp_db_path, config=config, context=context)
+            result = await sb.execute(
+                f"with open('/documents/{doc.id}/content.txt') as f:\n"
+                "    data = f.read()\n"
+                "print('foxes' in data.lower())"
+            )
+            assert result.success
+            assert "True" in result.stdout
+
+    @pytest.mark.asyncio
+    @pytest.mark.vcr()
+    async def test_open_readlines(self, temp_db_path):
+        """readlines() splits a newline-delimited VFS file into lines."""
+        config = AppConfig()
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.create_document(
+                content="The quick brown fox jumps over the lazy dog.",
+                uri="test://animals",
+                title="Animals",
+            )
+
+            context = AnalysisContext()
+            sb = Sandbox(db_path=temp_db_path, config=config, context=context)
+            result = await sb.execute(
+                f"lines = open('/documents/{doc.id}/items.jsonl').readlines()\n"
+                "print(len(lines) > 0)\n"
+                "import json\n"
+                "print('self_ref' in json.loads(lines[0]))"
+            )
+            assert result.success
+            assert result.stdout.count("True") == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "filename", ["content.txt", "items.jsonl", "toc.json", "metadata.json"]
+    )
+    async def test_write_denied_for_every_document_file(self, temp_db_path, filename):
+        """Every file in the document VFS is read-only, metadata.json included."""
+        from docling_core.types.doc.document import DoclingDocument
+        from docling_core.types.doc.labels import DocItemLabel
+
+        config = AppConfig()
+        docling = DoclingDocument(name="d")
+        docling.add_text(label=DocItemLabel.TEXT, text="Foxes and dogs.")
+
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.import_document(
+                docling,
+                [
+                    Chunk(
+                        content="Foxes and dogs.",
+                        embedding=[0.1] * config.embeddings.model.vector_dim,
+                        order=0,
+                    )
+                ],
+                uri="test://readonly",
+            )
+
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            result = await sb.execute(
+                "from pathlib import Path\n"
+                "try:\n"
+                f"    Path('/documents/{doc.id}/{filename}').write_text('nope')\n"
+                "    print('WROTE')\n"
+                "except PermissionError:\n"
+                "    print('DENIED')"
+            )
+            assert result.success, result.stderr
+            assert "DENIED" in result.stdout
+            assert "WROTE" not in result.stdout
+        finally:
+            await sb.close()
+
+    @pytest.mark.asyncio
+    async def test_open_for_writing_is_denied(self, temp_db_path):
+        """`open()` in write mode is refused, not only `Path.write_text`."""
+        from docling_core.types.doc.document import DoclingDocument
+        from docling_core.types.doc.labels import DocItemLabel
+
+        config = AppConfig()
+        docling = DoclingDocument(name="d")
+        docling.add_text(label=DocItemLabel.TEXT, text="Foxes and dogs.")
+
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.import_document(
+                docling,
+                [
+                    Chunk(
+                        content="Foxes and dogs.",
+                        embedding=[0.1] * config.embeddings.model.vector_dim,
+                        order=0,
+                    )
+                ],
+                uri="test://openwrite",
+            )
+
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            result = await sb.execute(
+                "try:\n"
+                f"    with open('/documents/{doc.id}/content.txt', 'w') as f:\n"
+                "        f.write('nope')\n"
+                "    print('WROTE')\n"
+                "except PermissionError:\n"
+                "    print('DENIED')"
+            )
+            assert result.success, result.stderr
+            assert "DENIED" in result.stdout
+            assert "WROTE" not in result.stdout
+        finally:
+            await sb.close()
+
+    @pytest.mark.asyncio
+    async def test_open_file_objects_are_not_iterable(self, temp_db_path):
+        """Pins the limitation the instructions warn about: pydantic/monty#490.
+
+        A failure here means Monty gained iteration support and the
+        `for line in f` prohibition in the analysis instructions is now wrong.
+        """
+        from docling_core.types.doc.document import DoclingDocument
+        from docling_core.types.doc.labels import DocItemLabel
+
+        config = AppConfig()
+        docling = DoclingDocument(name="d")
+        docling.add_text(label=DocItemLabel.TEXT, text="one\ntwo")
+
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.import_document(
+                docling,
+                [
+                    Chunk(
+                        content="one\ntwo",
+                        embedding=[0.1] * config.embeddings.model.vector_dim,
+                        order=0,
+                    )
+                ],
+                uri="test://lines",
+            )
+
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            result = await sb.execute(
+                f"for line in open('/documents/{doc.id}/content.txt'):\n    print(line)"
+            )
+            assert result.success is False
+            assert "not iterable" in result.stderr
+
+            # The documented alternatives do work.
+            result = await sb.execute(
+                f"print(len(open('/documents/{doc.id}/content.txt').readlines()))"
+            )
+            assert result.success, result.stderr
+        finally:
+            await sb.close()
+
+    @pytest.mark.asyncio
+    @pytest.mark.vcr()
     async def test_context_filter_limits_vfs(self, temp_db_path):
         """Context filter restricts which documents appear in VFS."""
         config = AppConfig()
@@ -453,7 +623,7 @@ class TestSandboxHeldConnection:
                 assert int(lines[1]) > 0
                 assert lines[2] == "True"
             finally:
-                sb.close()
+                await sb.close()
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
@@ -557,7 +727,7 @@ class TestSandboxHeldConnection:
             assert first.stdout == second.stdout
             assert not any(t.name == "sandbox-vfs" for t in threading.enumerate())
         finally:
-            sb.close()
+            await sb.close()
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
@@ -584,21 +754,21 @@ class TestSandboxHeldConnection:
             assert second.success, second.stderr
             assert int(second.stdout.strip()) > 0
         finally:
-            sb.close()
+            await sb.close()
 
     @pytest.mark.asyncio
     async def test_close_is_safe_without_vfs_read(self, temp_db_path):
-        """close() is a no-op (and safe to call twice) when no VFS read happened."""
+        """close() is safe and idempotent before any code has run."""
         async with HaikuRAG(temp_db_path, create=True):
             config = AppConfig()
             sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
-            sb.close()
-            sb.close()
+            await sb.close()
+            await sb.close()
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_close_is_idempotent_after_vfs_read(self, temp_db_path):
-        """close() is a safe no-op after a VFS read; no background thread lingers."""
+        """close() tears down the worker and is idempotent; no thread lingers."""
         config = AppConfig()
         async with HaikuRAG(temp_db_path, create=True) as client:
             doc = await client.create_document(
@@ -616,5 +786,149 @@ class TestSandboxHeldConnection:
         )
         assert result.success
         assert not any(t.name == "sandbox-vfs" for t in threading.enumerate())
-        sb.close()
-        sb.close()
+        await sb.close()
+        await sb.close()
+
+
+class TestSandboxReadDeadline:
+    """The VFS bridge suspends the worker for the length of a read, so Monty
+    cannot check its duration budget while one is in flight. The sandbox
+    enforces the budget itself, before each read."""
+
+    @pytest.mark.asyncio
+    async def test_read_after_deadline_raises_without_scheduling(self, sandbox):
+        """A read attempted past the deadline fails instead of querying."""
+        scheduled = False
+
+        async def _never_runs():
+            nonlocal scheduled
+            scheduled = True
+
+        sandbox._loop = asyncio.get_running_loop()
+        sandbox._deadline = sandbox._loop.time() - 1.0
+
+        coro = _never_runs()
+        with pytest.raises(TimeoutError, match="time limit exceeded"):
+            sandbox._run_on_loop(coro)
+
+        coro.close()
+        assert scheduled is False
+
+    def test_session_budget_covers_every_permitted_execution(self, temp_db_path):
+        """Monty spends its duration budget across the session's whole life, so a
+        per-call value would let the first call starve the rest."""
+        config = AppConfig()
+        config.analysis.code_timeout = 5.0
+        config.analysis.max_executions = 3
+
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+
+        assert sb._session_limits() == {"max_duration_secs": 15.0}
+
+    @pytest.mark.asyncio
+    async def test_refused_read_fails_the_execution(self, temp_db_path, monkeypatch):
+        """The refusal surfaces as a failed result, not a raised exception."""
+        from docling_core.types.doc.document import DoclingDocument
+        from docling_core.types.doc.labels import DocItemLabel
+
+        config = AppConfig()
+        docling = DoclingDocument(name="d")
+        docling.add_text(label=DocItemLabel.TEXT, text="Foxes and dogs.")
+
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.import_document(
+                docling,
+                [
+                    Chunk(
+                        content="Foxes and dogs.",
+                        embedding=[0.1] * config.embeddings.model.vector_dim,
+                        order=0,
+                    )
+                ],
+                uri="test://deadline",
+            )
+
+        def _past_deadline(*_args, **_kwargs):
+            raise TimeoutError(
+                "time limit exceeded: no further document reads after 60.0s"
+            )
+
+        monkeypatch.setattr(Sandbox, "_run_on_loop", _past_deadline)
+
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            result = await sb.execute(
+                "from pathlib import Path\n"
+                f"print(Path('/documents/{doc.id}/content.txt').read_text())"
+            )
+            assert result.success is False
+            assert "no further document reads" in result.stderr
+        finally:
+            await sb.close()
+
+
+class TestSandboxWorkerCrash:
+    """A dead worker must not poison every later call in the run."""
+
+    @pytest.mark.asyncio
+    async def test_crashed_worker_is_replaced(self, temp_db_path):
+        """The crash fails one call. The next call gets a fresh session."""
+        import os
+        import signal
+
+        config = AppConfig()
+        async with HaikuRAG(temp_db_path, create=True):
+            pass
+
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            first = await sb.execute("x = 1\nprint(x)")
+            assert first.success, first.stderr
+            assert sb._session is not None
+            pid = sb._session.worker_pid
+            assert pid is not None
+
+            os.kill(pid, signal.SIGKILL)
+
+            crashed = await sb.execute("print(2)")
+            assert crashed.success is False
+            assert "restarted" in crashed.stderr
+
+            # Without the discard every later call fails on the dead session.
+            recovered = await sb.execute("print(3)")
+            assert recovered.success, recovered.stderr
+            assert "3" in recovered.stdout
+
+            # The replacement worker starts empty, which the failure said.
+            lost = await sb.execute("print(x)")
+            assert lost.success is False
+        finally:
+            await sb.close()
+
+
+class TestSandboxRequestTimeout:
+    """The pool watchdog bounds a call that never reads."""
+
+    @pytest.mark.asyncio
+    async def test_runaway_compute_is_killed_and_the_next_call_recovers(
+        self, temp_db_path
+    ):
+        """Code that never reads escapes the read deadline. The watchdog kills it."""
+        config = AppConfig()
+        config.analysis.code_timeout = 1.0
+        async with HaikuRAG(temp_db_path, create=True):
+            pass
+
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            runaway = await sb.execute(
+                "x = 0\nfor i in range(500000000):\n    x += i\nprint(x)"
+            )
+            assert runaway.success is False
+            assert "restarted" in runaway.stderr
+
+            recovered = await sb.execute("print('alive')")
+            assert recovered.success, recovered.stderr
+            assert "alive" in recovered.stdout
+        finally:
+            await sb.close()
