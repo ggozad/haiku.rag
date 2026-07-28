@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 from collections.abc import AsyncIterator, Callable, Coroutine
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -220,6 +220,19 @@ class Sandbox:
             )
         return asyncio.run_coroutine_threadsafe(coro, self._loop).result()
 
+    async def _discard_session(self) -> None:
+        """Drop a session whose worker is gone.
+
+        The session object is unusable once its worker dies: it answers every
+        later call with ``RuntimeError: this checkout has already been
+        finished``. Clearing it makes ``_ensure_initialized`` check out a
+        replacement, at the cost of the variables the dead worker held.
+        """
+        session, self._session = self._session, None
+        if session is not None:
+            with suppress(Exception):
+                await session.__aexit__(None, None, None)
+
     async def close(self) -> None:
         """Return the worker to the pool and shut the pool down. Idempotent."""
         if self._session is not None:
@@ -402,7 +415,25 @@ class Sandbox:
                 },
                 ensure_ascii=False,
             )
-            files.append(MemoryFile(f"{doc_dir}/metadata.json", metadata))
+
+            # A MemoryFile accepts writes, so mount metadata.json through the
+            # same read/deny pair as the rest. The content is already built,
+            # so the reader stays eager.
+            def _make_metadata_reader(
+                text: str,
+            ) -> Callable[["PurePosixPath"], str]:
+                def read_metadata(_path: "PurePosixPath") -> str:
+                    return text
+
+                return read_metadata
+
+            files.append(
+                CallbackFile(
+                    f"{doc_dir}/metadata.json",
+                    read=_make_metadata_reader(metadata),
+                    write=_deny_write,
+                )
+            )
 
             def _make_content_reader(
                 did: str,
@@ -497,11 +528,20 @@ class Sandbox:
                 print_callback=print_callback,
                 os=vfs,
             )
-        except pydantic_monty.MontyError as e:
+        except (pydantic_monty.MontyError, RuntimeError) as e:
             stdout = "".join(stdout_lines)
             if len(stdout) > max_chars:
                 stdout = stdout[:max_chars] + "\n... (output truncated)"
-            return SandboxResult(stdout=stdout, stderr=str(e), success=False)
+            stderr = str(e)
+            # A crash kills the worker, and a protocol error leaves it out of
+            # step. Both poison the session. Bad user code does not.
+            if isinstance(e, pydantic_monty.MontyCrashedError | RuntimeError):
+                await self._discard_session()
+                stderr = (
+                    f"{stderr}\n\nThe interpreter restarted. Variables from "
+                    "earlier calls are gone."
+                )
+            return SandboxResult(stdout=stdout, stderr=stderr, success=False)
 
         stdout = "".join(stdout_lines)
         if output is not None:

@@ -22,6 +22,8 @@
 - `docs/installation.md` documents the `jina`, `s3` and `ingester` extras, names the extras the full package actually pulls, drops the removed MixedBread AI reranker, and no longer lists Anthropic as a built-in provider.
 - `docs/tuning.md` no longer points at the removed `claim_timeout_s` setting.
 - `analysis.code_timeout` is checked before each document read; code that reads in a loop no longer overruns it by the duration of the outstanding reads.
+- A crashed Monty worker no longer poisons the analysis sandbox for the rest of the run: `execute` reports the crash and the next call checks out a replacement session.
+- `metadata.json` in the document VFS rejects writes, matching `content.txt`, `items.jsonl` and `toc.json`.
 
 ### Removed
 

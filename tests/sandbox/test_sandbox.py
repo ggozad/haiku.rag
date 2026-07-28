@@ -430,71 +430,44 @@ class TestSandboxVFS:
             assert result.stdout.count("True") == 2
 
     @pytest.mark.asyncio
-    @pytest.mark.vcr()
-    async def test_open_write_denied(self, temp_db_path):
-        """Opening a document file for writing raises PermissionError."""
-        config = AppConfig()
-        async with HaikuRAG(temp_db_path, create=True) as client:
-            doc = await client.create_document(
-                content="Content about foxes and dogs.",
-                uri="test://doc",
-                title="Fox Document",
-            )
-
-            context = AnalysisContext()
-            sb = Sandbox(db_path=temp_db_path, config=config, context=context)
-            result = await sb.execute(
-                "try:\n"
-                f"    with open('/documents/{doc.id}/content.txt', 'w') as f:\n"
-                "        f.write('nope')\n"
-                "    print('WROTE')\n"
-                "except PermissionError:\n"
-                "    print('DENIED')"
-            )
-            assert result.success
-            assert "DENIED" in result.stdout
-            assert "WROTE" not in result.stdout
-
-    @pytest.mark.asyncio
-    async def test_open_file_objects_are_not_iterable(self, temp_db_path):
-        """Pins the limitation the instructions warn about: pydantic/monty#490.
-
-        A failure here means Monty gained iteration support and the
-        `for line in f` prohibition in the analysis instructions is now wrong.
-        """
+    @pytest.mark.parametrize(
+        "filename", ["content.txt", "items.jsonl", "toc.json", "metadata.json"]
+    )
+    async def test_write_denied_for_every_document_file(self, temp_db_path, filename):
+        """Every file in the document VFS is read-only, metadata.json included."""
         from docling_core.types.doc.document import DoclingDocument
         from docling_core.types.doc.labels import DocItemLabel
 
         config = AppConfig()
         docling = DoclingDocument(name="d")
-        docling.add_text(label=DocItemLabel.TEXT, text="one\ntwo")
+        docling.add_text(label=DocItemLabel.TEXT, text="Foxes and dogs.")
 
         async with HaikuRAG(temp_db_path, create=True) as client:
             doc = await client.import_document(
                 docling,
                 [
                     Chunk(
-                        content="one\ntwo",
+                        content="Foxes and dogs.",
                         embedding=[0.1] * config.embeddings.model.vector_dim,
                         order=0,
                     )
                 ],
-                uri="test://lines",
+                uri="test://readonly",
             )
 
         sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
         try:
             result = await sb.execute(
-                f"for line in open('/documents/{doc.id}/content.txt'):\n    print(line)"
-            )
-            assert result.success is False
-            assert "not iterable" in result.stderr
-
-            # The documented alternatives do work.
-            result = await sb.execute(
-                f"print(len(open('/documents/{doc.id}/content.txt').readlines()))"
+                "from pathlib import Path\n"
+                "try:\n"
+                f"    Path('/documents/{doc.id}/{filename}').write_text('nope')\n"
+                "    print('WROTE')\n"
+                "except PermissionError:\n"
+                "    print('DENIED')"
             )
             assert result.success, result.stderr
+            assert "DENIED" in result.stdout
+            assert "WROTE" not in result.stdout
         finally:
             await sb.close()
 
@@ -805,5 +778,44 @@ class TestSandboxReadDeadline:
             )
             assert result.success is False
             assert "no further document reads" in result.stderr
+        finally:
+            await sb.close()
+
+
+class TestSandboxWorkerCrash:
+    """A dead worker must not poison every later call in the run."""
+
+    @pytest.mark.asyncio
+    async def test_crashed_worker_is_replaced(self, temp_db_path):
+        """The crash fails one call. The next call gets a fresh session."""
+        import os
+        import signal
+
+        config = AppConfig()
+        async with HaikuRAG(temp_db_path, create=True):
+            pass
+
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            first = await sb.execute("x = 1\nprint(x)")
+            assert first.success, first.stderr
+            assert sb._session is not None
+            pid = sb._session.worker_pid
+            assert pid is not None
+
+            os.kill(pid, signal.SIGKILL)
+
+            crashed = await sb.execute("print(2)")
+            assert crashed.success is False
+            assert "restarted" in crashed.stderr
+
+            # Without the discard this raises RuntimeError out of execute().
+            recovered = await sb.execute("print(3)")
+            assert recovered.success, recovered.stderr
+            assert "3" in recovered.stdout
+
+            # The replacement worker starts empty, which the failure said.
+            lost = await sb.execute("print(x)")
+            assert lost.success is False
         finally:
             await sb.close()
