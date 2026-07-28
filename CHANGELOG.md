@@ -8,7 +8,7 @@
 ### Changed
 
 - Require `pydantic-ai-slim>=2.18,<3`.
-- `pydantic-monty` bumped to `>=0.0.19`; sandbox code now runs in a subprocess worker pool.
+- `pydantic-monty` bumped to `>=0.0.19`; sandbox code now runs in a subprocess worker pool. A crashed or timed-out worker fails one call and the next call gets a replacement session.
 - The analysis sandbox gives Monty a duration budget of `analysis.code_timeout * analysis.max_executions` for the session, was `analysis.code_timeout`.
 - `enable_thinking` maps onto Pydantic AI's unified `thinking` setting for the `anthropic`, `gemini`, `groq` and `bedrock` providers. The Anthropic thinking budget is now Pydantic AI's default of 10000 tokens, was 4096, and `max_tokens` must exceed it on budget-based Claude models; `enable_thinking: false` disables Gemini thinking rather than only hiding thoughts; Groq maps reasoning effort rather than `groq_reasoning_format`; Bedrock Qwen with `enable_thinking: false` no longer sends `reasoning_config`, while Bedrock-served Claude keeps an explicit `thinking: disabled`. The `openai` and `ollama` providers still map to `openai_reasoning_effort`.
 - `provider: bedrock` with a proprietary OpenAI model such as `openai.o3-mini-v1:0` raises `UserError`: Bedrock Converse serves only the `gpt-oss` family. Use `provider: bedrock-mantle`.
@@ -22,7 +22,6 @@
 - `docs/installation.md` documents the `jina`, `s3` and `ingester` extras, names the extras the full package actually pulls, drops the removed MixedBread AI reranker, and no longer lists Anthropic as a built-in provider.
 - `docs/tuning.md` no longer points at the removed `claim_timeout_s` setting.
 - `analysis.code_timeout` is checked before each document read; code that reads in a loop no longer overruns it by the duration of the outstanding reads.
-- A crashed Monty worker no longer poisons the analysis sandbox for the rest of the run: `execute` reports the crash and the next call checks out a replacement session.
 - `metadata.json` in the document VFS rejects writes, matching `content.txt`, `items.jsonl` and `toc.json`.
 
 ### Removed

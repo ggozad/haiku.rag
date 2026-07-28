@@ -28,6 +28,10 @@ if TYPE_CHECKING:
     from haiku.rag.client import HaikuRAG
 
 
+_REQUEST_TIMEOUT_MARGIN_S = 30.0
+"""Grace above ``code_timeout`` before the pool watchdog kills the worker."""
+
+
 @dataclass
 class SandboxResult:
     """Result of executing code in the sandbox."""
@@ -417,20 +421,11 @@ class Sandbox:
             )
 
             # A MemoryFile accepts writes, so mount metadata.json through the
-            # same read/deny pair as the rest. The content is already built,
-            # so the reader stays eager.
-            def _make_metadata_reader(
-                text: str,
-            ) -> Callable[["PurePosixPath"], str]:
-                def read_metadata(_path: "PurePosixPath") -> str:
-                    return text
-
-                return read_metadata
-
+            # same read and deny pair as the rest. The content is already built.
             files.append(
                 CallbackFile(
                     f"{doc_dir}/metadata.json",
-                    read=_make_metadata_reader(metadata),
+                    read=lambda _path, text=metadata: text,
                     write=_deny_write,
                 )
             )
@@ -476,6 +471,17 @@ class Sandbox:
 
         return OSAccess(files)
 
+    def _request_timeout(self) -> float:
+        """Hard per-call deadline for the pool watchdog.
+
+        The read deadline refuses the next read at ``code_timeout`` and keeps the
+        session, so it wins for code that reads. This watchdog is the fallback
+        for code that computes without reading: it kills the worker, which loses
+        the variables the session held. Leave room for one read that is already
+        in flight, so the graceful refusal wins the race.
+        """
+        return self._config.analysis.code_timeout + _REQUEST_TIMEOUT_MARGIN_S
+
     def _session_limits(self) -> ResourceLimits:
         """Resource limits for the worker session.
 
@@ -491,10 +497,13 @@ class Sandbox:
 
     async def _ensure_initialized(self) -> tuple[AsyncMontySession, OSAccess]:
         """Check out a worker session and build the VFS on first use."""
-        if self._session is None:
+        if self._vfs is None:
             self._vfs = await self._build_vfs()
-            self._pool = AsyncMonty()
-            await self._pool.__aenter__()
+        if self._pool is None:
+            pool = AsyncMonty(request_timeout=self._request_timeout())
+            await pool.__aenter__()
+            self._pool = pool
+        if self._session is None:
             session = self._pool.checkout(limits=self._session_limits())
             await session.__aenter__()
             self._session = session
