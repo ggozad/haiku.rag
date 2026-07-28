@@ -142,6 +142,7 @@ class Sandbox:
     _repl: MontyRepl | None
     _vfs: OSAccess | None
     _loop: asyncio.AbstractEventLoop | None
+    _deadline: float | None
 
     def __init__(
         self,
@@ -164,6 +165,7 @@ class Sandbox:
         self._repl = None
         self._vfs = None
         self._loop = None
+        self._deadline = None
 
     @asynccontextmanager
     async def _connection(self) -> "AsyncIterator[HaikuRAG]":
@@ -187,10 +189,21 @@ class Sandbox:
 
         Called from Monty's worker thread while ``feed_run_async`` leaves the
         loop free, so scheduling onto it and blocking for the result is safe.
+
+        Blocking here parks the worker thread, so Monty cannot check its own
+        duration budget until the read returns. Enforce the budget before
+        starting another one, or code that reads in a loop overruns it by
+        however long the outstanding reads take.
         """
         assert self._loop is not None, (
             "VFS reads happen during execute(); the loop must be captured first."
         )
+        if self._deadline is not None and self._loop.time() > self._deadline:
+            coro.close()
+            raise TimeoutError(
+                "time limit exceeded: no further document reads after "
+                f"{self._config.analysis.code_timeout}s"
+            )
         return asyncio.run_coroutine_threadsafe(coro, self._loop).result()
 
     def close(self) -> None:
@@ -417,9 +430,18 @@ class Sandbox:
         """Initialize the REPL session and VFS on first use."""
         if self._repl is None:
             self._vfs = await self._build_vfs()
+            # Monty spends `max_duration_secs` across the REPL's whole life, and
+            # the REPL is reused so variables persist between calls. Budget it for
+            # the run rather than for one call, or the first slow call starves
+            # every later one. `code_timeout` is enforced per call by the read
+            # deadline in `_run_on_loop`; this is the backstop for code that
+            # computes without reading, and one such call can spend it all.
             self._repl = MontyRepl(
                 limits={
-                    "max_duration_secs": self._config.analysis.code_timeout,
+                    "max_duration_secs": (
+                        self._config.analysis.code_timeout
+                        * self._config.analysis.max_executions
+                    ),
                 },
             )
         assert self._repl is not None and self._vfs is not None
@@ -432,6 +454,7 @@ class Sandbox:
         """
         # Monty's synchronous file callbacks bridge DB reads back to this loop.
         self._loop = asyncio.get_running_loop()
+        self._deadline = self._loop.time() + self._config.analysis.code_timeout
         repl, vfs = await self._ensure_initialized()
         external_fns = self._build_external_functions()
 
