@@ -826,16 +826,12 @@ class TestSandboxReadDeadline:
         assert sb._session_limits() == {"max_duration_secs": 15.0}
 
     @pytest.mark.asyncio
-    async def test_document_read_past_the_deadline_fails_the_execution(
-        self, temp_db_path
-    ):
-        """The overrun surfaces as a failed result, not a raised exception."""
+    async def test_refused_read_fails_the_execution(self, temp_db_path, monkeypatch):
+        """The refusal surfaces as a failed result, not a raised exception."""
         from docling_core.types.doc.document import DoclingDocument
         from docling_core.types.doc.labels import DocItemLabel
 
         config = AppConfig()
-        config.analysis.code_timeout = 0.0
-
         docling = DoclingDocument(name="d")
         docling.add_text(label=DocItemLabel.TEXT, text="Foxes and dogs.")
 
@@ -851,6 +847,13 @@ class TestSandboxReadDeadline:
                 ],
                 uri="test://deadline",
             )
+
+        def _past_deadline(*_args, **_kwargs):
+            raise TimeoutError(
+                "time limit exceeded: no further document reads after 60.0s"
+            )
+
+        monkeypatch.setattr(Sandbox, "_run_on_loop", _past_deadline)
 
         sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
         try:
@@ -906,25 +909,17 @@ class TestSandboxWorkerCrash:
 class TestSandboxRequestTimeout:
     """The pool watchdog bounds a call that never reads."""
 
-    def test_request_timeout_sits_above_the_read_deadline(self, temp_db_path):
-        """A read refusal keeps the session, so it must win the race."""
-        config = AppConfig()
-        config.analysis.code_timeout = 5.0
-        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
-
-        assert sb._request_timeout() > config.analysis.code_timeout
-
     @pytest.mark.asyncio
     async def test_runaway_compute_is_killed_and_the_next_call_recovers(
-        self, temp_db_path, monkeypatch
+        self, temp_db_path
     ):
         """Code that never reads escapes the read deadline. The watchdog kills it."""
         config = AppConfig()
+        config.analysis.code_timeout = 1.0
         async with HaikuRAG(temp_db_path, create=True):
             pass
 
         sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
-        monkeypatch.setattr(sb, "_request_timeout", lambda: 1.0)
         try:
             runaway = await sb.execute(
                 "x = 0\nfor i in range(500000000):\n    x += i\nprint(x)"

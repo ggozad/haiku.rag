@@ -56,7 +56,7 @@ analysis:
 ```
 
 - **model**: LLM configuration (see [Providers](providers.md#model-settings)). When unset, falls back to `qa.model`.
-- **code_timeout**: Seconds a single `execute_code` call may spend reading documents (default: 60). The sandbox refuses further reads past this point. Code that computes without reading is bounded instead by the session budget of `code_timeout * max_executions`.
+- **code_timeout**: Seconds a single `execute_code` call may spend reading documents (default: 60). The sandbox refuses further reads past this point. Code that computes without reading is killed by the worker watchdog at the same limit. `code_timeout * max_executions` is the cumulative ceiling across all calls in one question.
 - **max_output_chars**: Truncate code output after this many characters (default: 50000)
 - **max_executions**: Maximum `execute_code` calls per question before the capability is told to answer from what it has (default: 15)
 

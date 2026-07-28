@@ -17,7 +17,7 @@ Inside the code, these functions are available (use `await`):
 - `await list_documents()` → list of dicts with keys: id, title, uri, created_at
 
 Available modules: `json`, `re`, `math`, `pathlib`
-Not supported: class definitions, generators/yield, match statements, decorators, `collections`, iterating a file object (`for line in f`)
+Not supported: class inheritance and metaclasses, generators/yield, match statements, decorators, `collections`, iterating a file object (`for line in f`)
 
 ### analysis_search
 Search the knowledge base directly (outside code execution). Each result has a `Type:` (paragraph, table, code, list_item, picture). When the Type is `picture`, the corresponding figure may also be attached to the tool response as an image alongside the text — use it directly to answer questions about figures, diagrams, charts, screenshots.

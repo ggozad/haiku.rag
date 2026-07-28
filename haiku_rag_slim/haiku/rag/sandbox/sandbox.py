@@ -12,7 +12,6 @@ from pydantic_monty import (
     AsyncMonty,
     AsyncMontySession,
     CallbackFile,
-    MemoryFile,
     OSAccess,
     ResourceLimits,
 )
@@ -26,10 +25,6 @@ if TYPE_CHECKING:
     from pathlib import PurePosixPath
 
     from haiku.rag.client import HaikuRAG
-
-
-_REQUEST_TIMEOUT_MARGIN_S = 30.0
-"""Grace above ``code_timeout`` before the pool watchdog kills the worker."""
 
 
 @dataclass
@@ -304,12 +299,12 @@ class Sandbox:
         """Build the virtual filesystem with document data.
 
         Mounts per-document directories with:
-        - metadata.json: MemoryFile (eager, small)
+        - metadata.json: CallbackFile (eager, small)
         - content.txt: CallbackFile (lazy, can be large)
         - items.jsonl: CallbackFile (lazy, bulk-cached)
         - toc.json: CallbackFile (lazy, bulk-cached)
         """
-        files: list[MemoryFile | CallbackFile] = []
+        files: list[CallbackFile] = []
 
         def _deny_write(_path: "PurePosixPath", _content: str | bytes) -> None:
             raise PermissionError(f"Document files are read-only: {_path}")
@@ -471,17 +466,6 @@ class Sandbox:
 
         return OSAccess(files)
 
-    def _request_timeout(self) -> float:
-        """Hard per-call deadline for the pool watchdog.
-
-        The read deadline refuses the next read at ``code_timeout`` and keeps the
-        session, so it wins for code that reads. This watchdog is the fallback
-        for code that computes without reading: it kills the worker, which loses
-        the variables the session held. Leave room for one read that is already
-        in flight, so the graceful refusal wins the race.
-        """
-        return self._config.analysis.code_timeout + _REQUEST_TIMEOUT_MARGIN_S
-
     def _session_limits(self) -> ResourceLimits:
         """Resource limits for the worker session.
 
@@ -500,7 +484,11 @@ class Sandbox:
         if self._vfs is None:
             self._vfs = await self._build_vfs()
         if self._pool is None:
-            pool = AsyncMonty(request_timeout=self._request_timeout())
+            # The watchdog counts only time the worker spends running code, so a
+            # read that blocks the worker never trips it. That leaves the two
+            # limits disjoint: this one bounds a call that computes, and the read
+            # deadline bounds a call that reads.
+            pool = AsyncMonty(request_timeout=self._config.analysis.code_timeout)
             await pool.__aenter__()
             self._pool = pool
         if self._session is None:
