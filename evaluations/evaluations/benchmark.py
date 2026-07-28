@@ -227,7 +227,7 @@ async def run_retrieval_benchmark(
     )
 
     db = spec.db_path(db_path)
-    async with HaikuRAG(db, config=config) as rag:
+    async with HaikuRAG(db, config=config, read_only=True) as rag:
 
         async def retrieval_target(question: str) -> list[str]:
             chunks = await rag.search(query=question, limit=5)

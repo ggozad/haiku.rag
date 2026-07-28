@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from pydantic import BaseModel
-from pydantic_ai import ModelRetry, RunContext
+from pydantic_ai import ModelRetry, RunContext, ToolFailed
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import (
     InstructionPart,
@@ -198,16 +198,21 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
             self.outer_state[self.state_namespace] = self.state.model_dump(mode="json")
 
     async def _with_state(self, operation: Any) -> Any:
-        """Execute an operation and copy its state back to the host dependencies."""
-        result = await operation
-        self._sync_state()
-        return result
+        """Execute an operation and copy its state back to the host dependencies.
+
+        A failing tool still syncs, so evidence it gathered before the failure
+        reaches the host.
+        """
+        try:
+            return await operation
+        finally:
+            self._sync_state()
 
     async def _search(self, query: str, limit: int | None) -> str | ToolReturn:
         assert self.state is not None
         self.search_count += 1
         if self.search_count > self.config.qa.max_searches:
-            return (
+            raise ToolFailed(
                 "Search limit reached. Answer the question using "
                 "the results you already have."
             )
@@ -227,7 +232,10 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
     async def _cite(self, chunk_ids: list[str]) -> str:
         assert self.state is not None
         if not chunk_ids:
-            return "Registered 0 citations (empty chunk_ids)."
+            raise ModelRetry(
+                "No citations registered: chunk_ids was empty. Pass the chunk_ids "
+                "you want to cite, copied verbatim from search results."
+            )
 
         all_results: list[SearchResult] = []
         state = cast(Any, self.state)
