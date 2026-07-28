@@ -12,6 +12,7 @@
 
 - `Store.set_haiku_version` stamps the store's own config into a recreated settings row instead of the process-global `Config`.
 - `check_source_accessible` returns `False` for a URI it cannot resolve (unparseable host, unreadable path) instead of raising and aborting a full rebuild.
+- `evaluations run` opens the database read-only outside the population phase, so an embedder identity differing from the stored one warns instead of aborting the run.
 
 ### Removed
 

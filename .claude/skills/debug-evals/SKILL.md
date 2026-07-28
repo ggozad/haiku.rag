@@ -31,7 +31,7 @@ A run is one experiment span; its cases are direct children sharing its
   - `attributes->>'name'` — run label (the `--name` arg, or `{dataset}_qa_evaluation` / `{dataset}_retrieval_evaluation`).
   - `attributes->>'dataset_name'` — dataset.
   - `(attributes->>'assertion_pass_rate')::float` — overall judge pass rate (QA runs).
-  - `attributes->'logfire.experiment.metadata'->'metadata'` — run config: `target` (`rag-skill`|`analysis-skill`), `qa_model`, `embedder_model`, `chunk_size`, `search_limit`, `rerank_model`, `judge_model`, `skill_model`, etc.
+  - `attributes->'logfire.experiment.metadata'->'metadata'` — run config: `target` (`rag-capability`|`analysis-capability`), `qa_model`, `embedder_model`, `chunk_size`, `search_limit`, `rerank_model`, `judge_model`, `qa_max_searches`, etc.
   - `trace_id` — scopes the whole run.
 - Case span: `span_name = 'case: {case_name}'` (scope `pydantic-evals`).
   - `message` — `case: <id>`.
@@ -39,8 +39,8 @@ A run is one experiment span; its cases are direct children sharing its
   - `attributes->'scores'->'cited_map'->>'value'` — citation average precision (0..1).
   - `attributes->'scores'->'number_match'->>'value'` — numeric-answer match (datasets that use it).
   - `duration` — task time in seconds.
-- Inside each case the skill under test emits agent spans (scope `pydantic-ai`):
-  `execute {task}`, `agent run`, `running tool`, `chat {model}`.
+- Inside each case the capability under test emits agent spans (scope `pydantic-ai`):
+  `execute {task}`, `invoke_agent agent`, `execute_tool {tool_name}`, `chat {model}`.
 
 The service is `evals` regardless of model, so filter on `service_name = 'evals'`
 first. `otel_scope_name` separates the layers (`pydantic-evals` for run/case,
