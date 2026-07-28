@@ -7,6 +7,7 @@ import pytest
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.sandbox import AnalysisContext, Sandbox, SandboxResult
+from haiku.rag.store.models.chunk import Chunk
 
 
 @pytest.fixture(scope="module")
@@ -453,6 +454,49 @@ class TestSandboxVFS:
             assert result.success
             assert "DENIED" in result.stdout
             assert "WROTE" not in result.stdout
+
+    @pytest.mark.asyncio
+    async def test_open_file_objects_are_not_iterable(self, temp_db_path):
+        """Pins the limitation the instructions warn about: pydantic/monty#490.
+
+        A failure here means Monty gained iteration support and the
+        `for line in f` prohibition in the analysis instructions is now wrong.
+        """
+        from docling_core.types.doc.document import DoclingDocument
+        from docling_core.types.doc.labels import DocItemLabel
+
+        config = AppConfig()
+        docling = DoclingDocument(name="d")
+        docling.add_text(label=DocItemLabel.TEXT, text="one\ntwo")
+
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.import_document(
+                docling,
+                [
+                    Chunk(
+                        content="one\ntwo",
+                        embedding=[0.1] * config.embeddings.model.vector_dim,
+                        order=0,
+                    )
+                ],
+                uri="test://lines",
+            )
+
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            result = await sb.execute(
+                f"for line in open('/documents/{doc.id}/content.txt'):\n    print(line)"
+            )
+            assert result.success is False
+            assert "not iterable" in result.stderr
+
+            # The documented alternatives do work.
+            result = await sb.execute(
+                f"print(len(open('/documents/{doc.id}/content.txt').readlines()))"
+            )
+            assert result.success, result.stderr
+        finally:
+            await sb.close()
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
