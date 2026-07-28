@@ -415,8 +415,8 @@ class Sandbox:
                 ensure_ascii=False,
             )
 
-            # A MemoryFile accepts writes, so mount metadata.json through the
-            # same read and deny pair as the rest. The content is already built.
+            # MemoryFile has no write hook, so metadata.json goes through the
+            # same read and deny pair as the rest. Its content is already built.
             files.append(
                 CallbackFile(
                     f"{doc_dir}/metadata.json",
@@ -472,9 +472,9 @@ class Sandbox:
         Monty spends ``max_duration_secs`` across the session's whole life, and
         the session is reused so variables persist between calls. Budget it for
         the run rather than for one call, or the first slow call starves every
-        later one. ``code_timeout`` is enforced per call by the read deadline in
-        ``_run_on_loop``. This is the backstop for code that computes without
-        reading, and one such call can spend all of it.
+        later one. ``code_timeout`` is enforced per call elsewhere: the read
+        deadline in ``_run_on_loop`` bounds a call that reads, and the pool's
+        ``request_timeout`` bounds one that computes.
         """
         analysis = self._config.analysis
         return {"max_duration_secs": analysis.code_timeout * analysis.max_executions}

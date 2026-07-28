@@ -21,7 +21,7 @@
 - `evaluations run` opens the database read-only outside the population phase, so an embedder identity differing from the stored one warns instead of aborting the run.
 - `docs/installation.md` documents the `jina`, `s3` and `ingester` extras, names the extras the full package actually pulls, drops the removed MixedBread AI reranker, and no longer lists Anthropic as a built-in provider.
 - `docs/tuning.md` no longer points at the removed `claim_timeout_s` setting.
-- `analysis.code_timeout` is checked before each document read; code that reads in a loop no longer overruns it by the duration of the outstanding reads.
+- `analysis.code_timeout` is enforced before each document read, bounding a call that reads in a loop.
 - `metadata.json` in the document VFS rejects writes, matching `content.txt`, `items.jsonl` and `toc.json`.
 
 ### Removed

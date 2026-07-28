@@ -894,7 +894,7 @@ class TestSandboxWorkerCrash:
             assert crashed.success is False
             assert "restarted" in crashed.stderr
 
-            # Without the discard this raises RuntimeError out of execute().
+            # Without the discard every later call fails on the dead session.
             recovered = await sb.execute("print(3)")
             assert recovered.success, recovered.stderr
             assert "3" in recovered.stdout
