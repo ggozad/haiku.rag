@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.71.0] - 2026-07-29
+
 ### Added
 
 - Analysis sandbox supports `open()` and `with` blocks for reading document files, including `.read()`, `.readline()`, and `.readlines()`.
@@ -2052,7 +2054,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.70.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.71.0...HEAD
+[0.71.0]: https://github.com/ggozad/haiku.rag/compare/0.70.0...0.71.0
 [0.70.0]: https://github.com/ggozad/haiku.rag/compare/0.69.0...0.70.0
 [0.69.0]: https://github.com/ggozad/haiku.rag/compare/0.68.0...0.69.0
 [0.68.0]: https://github.com/ggozad/haiku.rag/compare/0.67.3...0.68.0
