@@ -354,6 +354,44 @@ async def test_cite_reports_unresolved_ids_on_partial_success(temp_db_path):
 
 
 @pytest.mark.asyncio
+async def test_cite_repairs_chunk_ids_damaged_in_transcription(temp_db_path):
+    """Models mistype opaque UUIDs; near misses resolve to the retrieved id."""
+    true_id = "b8e25ea1-0bb3-48b1-8fea-2ac1f148bf7c"
+    unrelated = "9c2cd07e-5a3f-45a6-968d-cbd6f06ab57b"
+    capability = create_rag(db_path=temp_db_path, config=AppConfig())
+    capability.state = RAGState(
+        searches={
+            "q": [
+                SearchResult(
+                    content="evidence",
+                    score=1.0,
+                    chunk_id=true_id,
+                    document_id="doc-1",
+                    document_uri="test://document",
+                )
+            ]
+        }
+    )
+    client = AsyncMock()
+    client.get_chunk_by_id.return_value = None
+    capability.rag = client
+
+    dropped_char = "b8e25ea1-0bb3-48b1-8fea-2ac1f148bf7"
+    dropped_group = "0bb3-48b1-8fea-2ac1f148bf7c"
+
+    assert await capability._cite([dropped_char]) == "Registered 1 citation(s)."
+    assert await capability._cite([dropped_group]) == "Registered 1 citation(s)."
+    assert capability.state.citations == [true_id]
+
+    # An unrelated UUID is never attributed to a retrieved neighbour.
+    with pytest.raises(ModelRetry, match=unrelated):
+        await capability._cite([unrelated])
+
+    assert capability.state.citations == [true_id]
+    client.get_chunk_by_id.assert_awaited_once_with(unrelated)
+
+
+@pytest.mark.asyncio
 async def test_analysis_records_new_sandbox_search_results(temp_db_path):
     capability = create_analysis(db_path=temp_db_path, config=AppConfig())
     existing = SearchResult(content="existing", score=1, chunk_id="chunk-1")

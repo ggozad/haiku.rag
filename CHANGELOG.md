@@ -8,6 +8,7 @@
 ### Fixed
 
 - A capability that reaches its request limit keeps its cite tool for two further model requests while its other tools are removed, so an exhausted run can still register citations.
+- A cited chunk id that does not match a retrieved id exactly resolves to the closest one above a 0.75 similarity cutoff, recovering ids mistyped from search results.
 - Dotfiles are parsed as their actual format instead of a single unstructured text block. Docling ignores the extension of a name starting with a dot, so converters strip leading dots from the name they hand it.
 
 ### Documentation

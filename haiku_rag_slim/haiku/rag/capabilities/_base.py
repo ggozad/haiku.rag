@@ -1,6 +1,7 @@
 import asyncio
 import os
 from dataclasses import dataclass, field, replace
+from difflib import get_close_matches
 from pathlib import Path
 from typing import Any, cast
 
@@ -29,6 +30,27 @@ from haiku.rag.tools.search import build_binary_parts_from_results
 
 CITATION_GRACE_REQUESTS = 2
 """Requests the cite tool outlives this capability's other tools by."""
+
+CHUNK_ID_MATCH_CUTOFF = 0.75
+"""Similarity a cited chunk id needs to be treated as a corrupted known id.
+
+Calibration knob. Two unrelated UUID4s reach about 0.5, while dropping or
+duplicating a character or a whole group stays above 0.75, so the gap is wide.
+"""
+
+
+def _nearest_known_id(chunk_id: str, known_ids: list[str]) -> str:
+    """Recover a chunk id the model damaged while transcribing it.
+
+    Models copying opaque UUIDs drop and duplicate characters and whole
+    hyphen-separated groups. Candidates are limited to ids the run actually
+    retrieved, so a wrong match needs both a near miss and a same-run neighbour.
+    Ids that match nothing are returned unchanged for the caller to report.
+    """
+    if not known_ids or chunk_id in known_ids:
+        return chunk_id
+    match = get_close_matches(chunk_id, known_ids, n=1, cutoff=CHUNK_ID_MATCH_CUTOFF)
+    return match[0] if match else chunk_id
 
 
 def resolve_db_path(db_path: Path | None, config: AppConfig) -> Path:
@@ -293,11 +315,11 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         state = cast(Any, self.state)
         for results in state.searches.values():
             all_results.extend(results)
-        citations = resolve_citations(chunk_ids, all_results)
+        known_ids = [result.chunk_id for result in all_results if result.chunk_id]
+        requested = [_nearest_known_id(cid.strip("[]"), known_ids) for cid in chunk_ids]
+        citations = resolve_citations(requested, all_results)
         resolved = {citation.chunk_id for citation in citations}
-        missing = [
-            cid.strip("[]") for cid in chunk_ids if cid.strip("[]") not in resolved
-        ]
+        missing = [cid for cid in requested if cid not in resolved]
 
         if missing:
             async with self.rag_lock:
