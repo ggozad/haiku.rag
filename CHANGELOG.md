@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- `evaluations run` records `cited_chunk_ids`, `searched_uris`, `n_searches`, `n_search_calls`, `n_rejected_calls`, `n_executions`, `n_requests` and `budget_spent` as eval attributes alongside `cited_uris`.
+
 ### Changed
 
 - A capability whose search or code-execution budget is spent says so in its instructions on every following request, naming the exhausted tools.

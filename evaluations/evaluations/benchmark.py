@@ -434,6 +434,14 @@ async def run_qa_benchmark(
             capability_model=resolved_capability_model,
         )
         set_eval_attribute("cited_uris", result.cited_uris)
+        set_eval_attribute("cited_chunk_ids", result.cited_chunk_ids)
+        set_eval_attribute("searched_uris", result.searched_uris)
+        set_eval_attribute("n_searches", result.n_searches)
+        set_eval_attribute("n_search_calls", result.n_search_calls)
+        set_eval_attribute("n_rejected_calls", result.n_rejected_calls)
+        set_eval_attribute("n_executions", result.n_executions)
+        set_eval_attribute("n_requests", result.n_requests)
+        set_eval_attribute("budget_spent", result.budget_spent)
         return result.answer
 
     report = await _evaluate(answer_question)

@@ -2,12 +2,53 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from pydantic_ai.messages import (
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+    UserPromptPart,
+)
 from pydantic_ai.models.test import TestModel
 
-from evaluations.capability_runner import run_capability_question
+from evaluations.capability_runner import _count_tool_traffic, run_capability_question
 from haiku.rag.capabilities.analysis import create_capability as create_analysis
 from haiku.rag.capabilities.rag import create_capability as create_rag
 from haiku.rag.config.models import AppConfig
+
+
+def test_count_tool_traffic_counts_attempts_not_distinct_queries():
+    """Rejected and repeated calls both count; `state.searches` hides them."""
+    messages = [
+        ModelRequest(parts=[UserPromptPart(content="q")]),
+        ModelResponse(
+            parts=[
+                ToolCallPart("analysis_search", {"query": "same"}),
+                ToolCallPart("analysis_search", {"query": "same"}),
+            ]
+        ),
+        ModelRequest(
+            parts=[
+                ToolReturnPart(
+                    tool_name="analysis_search", content="results", tool_call_id="1"
+                ),
+                ToolReturnPart(
+                    tool_name="analysis_search",
+                    content="Search limit reached.",
+                    tool_call_id="2",
+                    outcome="failed",
+                ),
+            ]
+        ),
+        ModelResponse(parts=[TextPart("done")]),
+    ]
+
+    search_calls, rejected, requests = _count_tool_traffic(messages, "analysis")
+
+    assert search_calls == 2
+    assert rejected == 1
+    assert requests == 2
 
 
 async def test_runs_rag_capability_without_legacy_capability_layer(tmp_path):
@@ -49,7 +90,7 @@ async def test_analysis_capability_applies_request_limit(tmp_path, override, exp
     with patch(
         "evaluations.capability_runner.Agent.run", new_callable=AsyncMock
     ) as run:
-        run.return_value = SimpleNamespace(output="done")
+        run.return_value = SimpleNamespace(output="done", all_messages=lambda: [])
 
         await run_capability_question(
             lambda **_kwargs: capability,

@@ -4,6 +4,12 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 from pydantic_ai import Agent
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelResponse,
+    ToolCallPart,
+    ToolReturnPart,
+)
 from pydantic_ai.models import Model
 
 from haiku.rag.capabilities import RAGCapabilityBase
@@ -29,6 +35,41 @@ class CapabilityRunResult:
     searched_uris: list[str] = field(default_factory=list)
     n_searches: int = 0
     n_executions: int = 0
+    n_search_calls: int = 0
+    n_rejected_calls: int = 0
+    n_requests: int = 0
+    budget_spent: bool = False
+
+
+def _count_tool_traffic(
+    messages: list[ModelMessage], namespace: str
+) -> tuple[int, int, int]:
+    """Count search calls, rejected calls and model requests in a run.
+
+    ``state.searches`` is keyed by query, so it collapses repeated queries and
+    never records a call the capability refused. Counting the message history
+    instead gives the real number of attempts, which is what shows whether a
+    case ran out of budget.
+    """
+    search_tool = f"{namespace}_search"
+    search_calls = 0
+    rejected = 0
+    requests = 0
+    for message in messages:
+        if isinstance(message, ModelResponse):
+            requests += 1
+            search_calls += sum(
+                1
+                for part in message.parts
+                if isinstance(part, ToolCallPart) and part.tool_name == search_tool
+            )
+            continue
+        rejected += sum(
+            1
+            for part in message.parts
+            if isinstance(part, ToolReturnPart) and part.outcome == "failed"
+        )
+    return search_calls, rejected, requests
 
 
 @dataclass
@@ -100,6 +141,10 @@ async def run_capability_question(
     executions = getattr(state, "executions", None)
     n_executions = len(executions) if executions is not None else 0
 
+    n_search_calls, n_rejected_calls, n_requests = _count_tool_traffic(
+        agent_result.all_messages(), capability.state_namespace
+    )
+
     return CapabilityRunResult(
         answer=agent_result.output,
         cited_uris=cited_uris,
@@ -107,4 +152,8 @@ async def run_capability_question(
         searched_uris=searched_uris,
         n_searches=len(typed.searches),
         n_executions=n_executions,
+        n_search_calls=n_search_calls,
+        n_rejected_calls=n_rejected_calls,
+        n_requests=n_requests,
+        budget_spent=n_rejected_calls > 0,
     )
