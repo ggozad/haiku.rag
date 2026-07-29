@@ -59,6 +59,11 @@ class StorageConfig(BaseModel):
     data_dir: Path = Field(default_factory=get_default_data_dir)
     auto_vacuum: bool = True
     vacuum_retention_seconds: int = 86400
+    # Upper bound (seconds) on a single vacuum/optimize pass. ``None`` leaves it
+    # unbounded (the historical behavior). A finite value converts a stuck
+    # compaction into a logged, skipped pass instead of an unbounded hang that
+    # would also wedge client teardown (which drains background vacuums).
+    vacuum_timeout_seconds: float | None = None
 
 
 class LanceDBConfig(BaseModel):

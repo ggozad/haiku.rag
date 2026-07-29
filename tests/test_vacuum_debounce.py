@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 import pytest
 
@@ -16,6 +17,58 @@ def _docling_doc(name: str, text: str):
     doc = DoclingDocument(name=name)
     doc.add_text(label=DocItemLabel.TEXT, text=text)
     return doc
+
+
+@pytest.mark.asyncio
+async def test_vacuum_times_out_and_skips(temp_db_path, monkeypatch, caplog):
+    """A stuck optimize is bounded by storage.vacuum_timeout_seconds: the pass
+    is skipped (logged), the call returns instead of hanging, and no exception
+    propagates."""
+
+    class _SlowTable:
+        async def optimize(self, **_kwargs):
+            await asyncio.sleep(30)  # far longer than the timeout
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        store = client.store
+        # setattr (not direct assignment) so the shared global Config is restored.
+        monkeypatch.setattr(store._config.storage, "vacuum_timeout_seconds", 0.05)
+        monkeypatch.setattr(store, "_tables", lambda: {"t": _SlowTable()})
+
+        async def _passthrough_retention(_table, retention):
+            return retention
+
+        monkeypatch.setattr(store, "_tag_safe_retention", _passthrough_retention)
+
+        with caplog.at_level(logging.WARNING, logger="haiku.rag.store.engine"):
+            # wait_for guards the test itself from hanging if the bound fails.
+            await asyncio.wait_for(store.vacuum(), timeout=5)
+
+        assert "Vacuum timed out" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_vacuum_unbounded_when_timeout_none(temp_db_path, monkeypatch):
+    """timeout=None preserves the historical unbounded behavior (optimize runs
+    to completion)."""
+    ran: list[int] = []
+
+    class _Table:
+        async def optimize(self, **_kwargs):
+            ran.append(1)
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        store = client.store
+        monkeypatch.setattr(store._config.storage, "vacuum_timeout_seconds", None)
+        monkeypatch.setattr(store, "_tables", lambda: {"t": _Table()})
+
+        async def _passthrough_retention(_table, retention):
+            return retention
+
+        monkeypatch.setattr(store, "_tag_safe_retention", _passthrough_retention)
+
+        await store.vacuum()
+        assert ran == [1]
 
 
 @pytest.mark.asyncio

@@ -571,14 +571,29 @@ class Store:
                 # Evaluate config at runtime to allow dynamic changes
                 if retention_seconds is None:
                     retention_seconds = self._config.storage.vacuum_retention_seconds
-                # Perform maintenance per table using optimize() with configurable retention
-                retention = timedelta(seconds=retention_seconds)
-                for table in self._tables().values():
-                    await table.optimize(
-                        cleanup_older_than=await self._tag_safe_retention(
-                            table, retention
+                # Bound the pass so a stuck compaction degrades to a logged,
+                # skipped pass rather than an unbounded await -- which would also
+                # wedge client teardown (__aexit__ drains background vacuums).
+                # timeout=None leaves it unbounded (historical behavior).
+                timeout = self._config.storage.vacuum_timeout_seconds
+                async with asyncio.timeout(timeout):
+                    # Perform maintenance per table using optimize() with configurable retention
+                    retention = timedelta(seconds=retention_seconds)
+                    for table in self._tables().values():
+                        await table.optimize(
+                            cleanup_older_than=await self._tag_safe_retention(
+                                table, retention
+                            )
                         )
-                    )
+            except TimeoutError:
+                # The pass is best-effort maintenance; a timeout is not fatal.
+                # NOTE: cancellation only takes effect if the underlying
+                # operation is cancellable -- a fully-unresponsive native future
+                # may still linger, but the caller's coroutine is freed.
+                logger.warning(
+                    "Vacuum timed out after %ss; skipping this pass",
+                    self._config.storage.vacuum_timeout_seconds,
+                )
             except OSError as e:
                 # Resource errors (e.g. disk pressure) skip the pass; lance
                 # errors surface as RuntimeError and must not be swallowed —
