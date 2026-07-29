@@ -191,7 +191,10 @@ async def test_request_limit_removes_only_exhausted_capability_tools_per_run(
     }
     for initial, exhausted in ((0, 1), (2, 3)):
         assert analysis_tools <= seen_tools[initial]
-        assert analysis_tools.isdisjoint(seen_tools[exhausted])
+        assert {"analysis_search", "analysis_execute_code"}.isdisjoint(
+            seen_tools[exhausted]
+        )
+        assert "analysis_cite" in seen_tools[exhausted]
         assert {"host_tool", "rag_search", "rag_cite"} <= seen_tools[exhausted]
         assert (
             "analysis capability has reached its request limit"
@@ -414,6 +417,138 @@ async def test_analysis_execution_limit_fails_the_tool(temp_db_path):
 
     with pytest.raises(ToolFailed, match="Code-execution limit reached"):
         await capability._execute_code("print('done')")
+
+
+@pytest.mark.asyncio
+async def test_spent_search_budget_is_announced_but_keeps_the_tool(rag_db):
+    """A spent budget is announced; the tool stays declared to avoid a dead run.
+
+    Withdrawing it would make a model that calls it anyway hit `Unknown tool
+    name`, which exhausts the agent's unknown-tool retries and aborts the run.
+    """
+    config = AppConfig()
+    config.qa.max_searches = 1
+    seen_tools = []
+    seen_instructions = []
+    calls = 0
+
+    def model_function(_messages, info):
+        nonlocal calls
+        calls += 1
+        seen_tools.append({tool.name for tool in info.function_tools})
+        seen_instructions.append(info.instructions or "")
+        if calls == 1:
+            return ModelResponse(
+                parts=[ToolCallPart("rag_search", {"query": "machine learning"})]
+            )
+        return ModelResponse(parts=[TextPart("answered")])
+
+    agent = Agent(
+        FunctionModel(model_function),
+        deps_type=Deps,
+        capabilities=[create_rag(db_path=rag_db, config=config, defer_loading=False)],
+    )
+
+    result = await agent.run("question", deps=Deps())
+
+    assert result.output == "answered"
+    assert {"rag_search", "rag_cite"} <= seen_tools[1]
+    assert "spent its budget for rag_search" in seen_instructions[1]
+
+
+@pytest.mark.asyncio
+async def test_spent_execution_budget_joins_the_notice(temp_db_path):
+    config = AppConfig()
+    config.analysis.max_executions = 3
+    capability = create_analysis(db_path=temp_db_path, config=config)
+
+    assert capability._spent_tool_names() == set()
+
+    capability.execute_count = 3
+
+    assert capability._spent_tool_names() == {"analysis_execute_code"}
+    notice = capability._budget_notice()
+    assert notice is not None
+    assert "analysis_execute_code" in notice
+
+
+@pytest.mark.asyncio
+async def test_exhausted_run_can_still_register_citations(rag_db):
+    """The cite tool outlives the request limit so evidence is not lost.
+
+    Reproduces the measured pathology: the model burns its request budget and
+    reaches the limit, at which point it must still be able to cite what it
+    already found.
+    """
+    config = AppConfig()
+    seen_tools = []
+    calls = 0
+    chunk_id: str | None = None
+
+    def model_function(_messages, info):
+        nonlocal calls
+        calls += 1
+        seen_tools.append({tool.name for tool in info.function_tools})
+        if calls == 1:
+            return ModelResponse(
+                parts=[ToolCallPart("rag_search", {"query": "machine learning"})]
+            )
+        if calls == 2:
+            return ModelResponse(
+                parts=[ToolCallPart("rag_cite", {"chunk_ids": [chunk_id]})]
+            )
+        return ModelResponse(parts=[TextPart("answered from gathered evidence")])
+
+    capability = create_rag(
+        db_path=rag_db,
+        config=config,
+        defer_loading=False,
+        request_limit=1,
+    )
+    agent = Agent(
+        FunctionModel(model_function),
+        deps_type=Deps,
+        capabilities=[capability],
+    )
+    deps = Deps()
+
+    async with agent.iter("question", deps=deps) as run:
+        async for node in run:
+            if chunk_id is None:
+                searches = deps.state.get("rag", {}).get("searches") or {}
+                for results in searches.values():
+                    if results:
+                        chunk_id = results[0]["chunk_id"]
+                        break
+
+    assert chunk_id is not None
+    # The limit lands on request 2, where cite must still be offered.
+    assert "rag_search" not in seen_tools[1]
+    assert "rag_cite" in seen_tools[1]
+    assert deps.state["rag"]["citations"] == [chunk_id]
+
+
+@pytest.mark.asyncio
+async def test_cite_tool_is_withdrawn_after_the_grace_window(temp_db_path):
+    capability = create_rag(
+        db_path=temp_db_path,
+        config=AppConfig(),
+        defer_loading=False,
+        request_limit=2,
+    )
+    tool_defs = [
+        SimpleNamespace(name=name, capability_id=capability.id)
+        for name in ("rag_search", "rag_cite")
+    ]
+    ctx = make_context(Deps())
+
+    capability.request_count = 2
+    kept = await capability.prepare_tools(ctx, cast(Any, tool_defs))
+    assert {tool.name for tool in kept} == {"rag_cite"}
+
+    capability.request_count = 4
+    kept = await capability.prepare_tools(ctx, cast(Any, tool_defs))
+    assert kept == []
 
 
 @pytest.mark.asyncio

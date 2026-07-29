@@ -4,7 +4,9 @@
 
 It is deferred by default, keeping its substantial instructions and tool schemas out of context until the model chooses to load it.
 
-The default request limit is 30 model requests per question. Override it with `create_capability(request_limit=...)`, or set `request_limit=None` to disable it. As with the RAG capability, `create_capability(vision=...)` overrides the image-attachment gate, defaulting to the configured analysis model's `vision` flag. At the limit, only analysis tools are removed and the model gets one more turn to answer from gathered evidence. Other agent and capability tools remain available, and the budget resets for every agent run.
+The default request limit is 30 model requests per question. Override it with `create_capability(request_limit=...)`, or set `request_limit=None` to disable it. As with the RAG capability, `create_capability(vision=...)` overrides the image-attachment gate, defaulting to the configured analysis model's `vision` flag. At the limit, `analysis_search` and `analysis_execute_code` are removed while `analysis_cite` remains for two further requests, so the model can register citations before answering from gathered evidence. Other agent and capability tools remain available, and the budget resets for every agent run.
+
+When `qa.max_searches` or `analysis.max_executions` runs out, the exhausted tool keeps failing rather than disappearing, and the instructions name it on every following request. Searching from inside `analysis_execute_code` does not count against `qa.max_searches`.
 
 ## Tools
 

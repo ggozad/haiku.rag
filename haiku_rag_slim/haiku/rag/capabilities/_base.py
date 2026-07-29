@@ -27,6 +27,9 @@ from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.citation import Citation, resolve_citations
 from haiku.rag.tools.search import build_binary_parts_from_results
 
+CITATION_GRACE_REQUESTS = 2
+"""Requests the cite tool outlives this capability's other tools by."""
+
 
 def resolve_db_path(db_path: Path | None, config: AppConfig) -> Path:
     if db_path is not None:
@@ -128,14 +131,9 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         request_context.messages = _compact_old_tool_returns(
             request_context.messages, self.tool_names
         )
-        if self._request_limit_reached:
+        if instruction := self._budget_notice():
             current_request = request_context.messages[-1]
             if isinstance(current_request, ModelRequest):
-                instruction = (
-                    f"The {self.state_namespace} capability has reached its request "
-                    "limit. Its tools are no longer available. Give the best answer "
-                    "possible using the evidence already gathered."
-                )
                 current_request.instructions = "\n\n".join(
                     part for part in (current_request.instructions, instruction) if part
                 )
@@ -147,24 +145,78 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
                         InstructionPart(content=instruction, dynamic=True),
                     ],
                 )
-        else:
-            self.request_count += 1
+        self.request_count += 1
         return request_context
+
+    def _budget_notice(self) -> str | None:
+        """Tell the model which of this capability's budgets just ran out."""
+        if self._request_limit_reached:
+            return (
+                f"The {self.state_namespace} capability has reached its request "
+                f"limit. Only {self._cite_tool_name} remains available: register "
+                "the chunk_ids supporting your answer, then answer from the "
+                "evidence already gathered."
+            )
+        if spent := self._spent_tool_names():
+            return (
+                f"The {self.state_namespace} capability has spent its budget for "
+                f"{', '.join(sorted(spent))}; further calls to them fail. Answer "
+                f"from the evidence already gathered and call "
+                f"{self._cite_tool_name} with the chunk_ids supporting it."
+            )
+        return None
 
     async def prepare_tools(
         self,
         ctx: RunContext[Any],
         tool_defs: list[ToolDefinition],
     ) -> list[ToolDefinition]:
-        """Remove only this capability's tools after its per-question limit."""
+        """Remove this capability's tools past its limit, cite tool last.
+
+        The cite tool outlives the others by ``CITATION_GRACE_REQUESTS`` so a run
+        that exhausts its budget can still record the evidence it gathered.
+
+        Tools whose own budget is spent stay declared on purpose. Removing one
+        makes a model that calls it anyway hit ``Unknown tool name``, which is
+        charged against the agent's unknown-tool retry budget and kills the run
+        after two attempts. A spent tool that keeps failing wastes requests; a
+        withdrawn one loses the whole answer.
+        """
+        if self._citation_grace_expired:
+            return [tool for tool in tool_defs if tool.capability_id != self.id]
         if not self._request_limit_reached:
             return tool_defs
-        return [tool for tool in tool_defs if tool.capability_id != self.id]
+        return [
+            tool
+            for tool in tool_defs
+            if tool.capability_id != self.id or tool.name == self._cite_tool_name
+        ]
+
+    def _spent_tool_names(self) -> set[str]:
+        """This capability's tools whose own budget is exhausted."""
+        if self.search_count >= self._max_searches:
+            return {f"{self.state_namespace}_search"}
+        return set()
+
+    @property
+    def _cite_tool_name(self) -> str:
+        return f"{self.state_namespace}_cite"
+
+    @property
+    def _max_searches(self) -> int:
+        return self.config.qa.max_searches
 
     @property
     def _request_limit_reached(self) -> bool:
         return (
             self.request_limit is not None and self.request_count >= self.request_limit
+        )
+
+    @property
+    def _citation_grace_expired(self) -> bool:
+        return (
+            self.request_limit is not None
+            and self.request_count >= self.request_limit + CITATION_GRACE_REQUESTS
         )
 
     async def after_run(
@@ -211,7 +263,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
     async def _search(self, query: str, limit: int | None) -> str | ToolReturn:
         assert self.state is not None
         self.search_count += 1
-        if self.search_count > self.config.qa.max_searches:
+        if self.search_count > self._max_searches:
             raise ToolFailed(
                 "Search limit reached. Answer the question using "
                 "the results you already have."

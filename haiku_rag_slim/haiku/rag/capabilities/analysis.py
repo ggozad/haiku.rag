@@ -70,6 +70,12 @@ class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
             self.sandbox = None
         await super()._close()
 
+    def _spent_tool_names(self) -> set[str]:
+        spent = super()._spent_tool_names()
+        if self.execute_count >= self.config.analysis.max_executions:
+            spent.add("analysis_execute_code")
+        return spent
+
     async def _execute_code(self, code: str) -> str:
         assert self.state is not None
         self.execute_count += 1
