@@ -18,6 +18,26 @@ storage:
 !!! warning "Vacuum Retention Threshold"
     The `vacuum_retention_seconds` value should be larger than the typical time it takes to process and write a document. If a concurrent operation is in progress while vacuum runs, setting this value too low can cause race conditions where vacuum removes table versions that an in-flight operation still needs. The default of 86400 seconds (1 day) is conservative and safe for most use cases.
 
+### Vacuum Memory Requirements
+
+Vacuum compacts small data files into larger ones. LanceDB targets roughly one million rows per fragment, which a `documents` table holding multi-megabyte docling blobs never reaches, so each vacuum that follows new documents re-merges the whole existing fragment rather than only the new ones. Peak memory therefore scales with the total size of the `documents` table, not with how much was added.
+
+Measured peak resident memory is about 5x the size of the `documents` table's data files. An 8.8 GB table peaked at 48.7 GB. Plan for **6x the size of `documents/` on disk** as available RAM, or the vacuum will be killed by the OOM killer partway through.
+
+Check the current size with:
+
+```bash
+du -sh /path/to/database.lancedb/documents.lance
+```
+
+If that number times six exceeds available RAM, use one of:
+
+- Reduce `images_scale` (see [Image Settings](processing.md#image-settings)). Rendered page rasters dominate the size of `documents`, and their byte cost falls with the square of the scale factor.
+- Set `generate_page_images: false` if visual grounding through `visualize_chunk()` is not needed. This removes page rasters entirely.
+- Set `auto_vacuum: false` and run `haiku-rag vacuum` manually when the machine is otherwise idle, so the peak does not land alongside ingestion.
+
+This is an upstream limitation rather than a `haiku.rag` setting. Compaction bounds itself by row count instead of bytes, and LanceDB's async API exposes no batch size or fragment target to override it. Tracked at [lancedb/lancedb#2325](https://github.com/lancedb/lancedb/issues/2325). The requirement above will drop once compaction batches by bytes.
+
 ## Database Creation
 
 Databases must be explicitly created before use:

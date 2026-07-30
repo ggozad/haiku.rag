@@ -5,6 +5,10 @@
 
 - Dotfiles are parsed as their actual format instead of a single unstructured text block. Docling ignores the extension of a name starting with a dot, so converters strip leading dots from the name they hand it.
 
+### Documentation
+
+- New "Vacuum Memory Requirements" subsection in `docs/configuration/storage.md` documenting the ~5x peak memory of vacuum compaction relative to the `documents` table, the mitigations, and upstream issue lancedb/lancedb#2325.
+
 ## [0.71.0] - 2026-07-29
 
 ### Added
