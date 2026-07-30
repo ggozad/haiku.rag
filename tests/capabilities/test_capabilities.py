@@ -590,6 +590,35 @@ async def test_cite_tool_is_withdrawn_after_the_grace_window(temp_db_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("stderr", "expect_hint"),
+    [
+        ("TypeError: '_io.TextIOWrapper' object is not iterable", True),
+        ("TypeError: 'list' object is not an iterator", False),
+    ],
+)
+async def test_sandbox_iteration_failure_carries_the_workaround(
+    temp_db_path, stderr, expect_hint
+):
+    """A model that iterates a file object gets told what to do instead."""
+    capability = create_analysis(db_path=temp_db_path, config=AppConfig())
+    capability.state = AnalysisState()
+    sandbox = AsyncMock()
+    sandbox.execute.return_value = SandboxResult(
+        stdout="", stderr=stderr, success=False
+    )
+    sandbox._search_results = []
+    capability.sandbox = cast(Sandbox, sandbox)
+
+    with pytest.raises(ToolFailed) as failure:
+        await capability._execute_code(
+            "for line in open('/documents/x/items.jsonl'): pass"
+        )
+
+    assert (".readlines()" in str(failure.value)) is expect_hint
+
+
+@pytest.mark.asyncio
 async def test_analysis_sandbox_failure_records_execution_and_fails_the_tool(
     temp_db_path,
 ):

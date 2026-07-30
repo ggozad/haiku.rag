@@ -37,6 +37,21 @@ def instructions() -> str:
     return _instructions_path.read_text().strip()
 
 
+def _recovery_hint(stderr: str) -> str:
+    """Name the workaround for sandbox limits models trip over repeatedly.
+
+    The instructions already say file objects are not iterable, and models write
+    ``for line in open(...)`` regardless. Carrying the fix in the error gives
+    them something to act on for the retry.
+    """
+    if "TextIOWrapper" in stderr and "not iterable" in stderr:
+        return (
+            "\n\nHint: file objects cannot be iterated here. Read lines with "
+            '.readlines() or .read().split("\\n").'
+        )
+    return ""
+
+
 @dataclass
 class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
     """Deferred capability for sandboxed computation over a RAG corpus."""
@@ -103,7 +118,10 @@ class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
             )
         )
         if not result.success:
-            raise ToolFailed(f"{result.stderr}\n\nOutput: {result.stdout}")
+            raise ToolFailed(
+                f"{result.stderr}{_recovery_hint(result.stderr)}"
+                f"\n\nOutput: {result.stdout}"
+            )
         return result.stdout or "No output."
 
     def get_toolset(self) -> FunctionToolset[Any]:
