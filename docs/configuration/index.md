@@ -107,7 +107,7 @@ qa:
     name: gpt-oss
     enable_thinking: true
     temperature: 0.3
-  max_searches: 3
+  max_searches: 5
 
 search:
   limit: 10                    # Default number of results to return
