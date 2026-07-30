@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from haiku.rag.config import AppConfig
 from haiku.rag.converters.base import DocumentConverter, vlm_api_url
-from haiku.rag.converters.text_utils import TextFileHandler
+from haiku.rag.converters.text_utils import TextFileHandler, docling_safe_name
 from haiku.rag.providers.docling_serve import DoclingServeClient
 
 if TYPE_CHECKING:
@@ -245,7 +245,13 @@ class DoclingServeConverter(DocumentConverter):
                 return f.read()
 
         file_content = await asyncio.to_thread(read_file)
-        files = {"files": (path.name, file_content, "application/octet-stream")}
+        files = {
+            "files": (
+                docling_safe_name(path.name),
+                file_content,
+                "application/octet-stream",
+            )
+        }
         return await self._make_request(files, path.name)
 
     SUPPORTED_FORMATS = ("md", "html", "plain")
@@ -276,8 +282,6 @@ class DoclingServeConverter(DocumentConverter):
         Raises:
             ValueError: If the text cannot be converted or format is unsupported.
         """
-        from haiku.rag.converters.text_utils import TextFileHandler
-
         if format not in self.SUPPORTED_FORMATS:
             raise ValueError(
                 f"Unsupported format: {format}. "
@@ -285,7 +289,9 @@ class DoclingServeConverter(DocumentConverter):
             )
 
         # Derive document name from format to tell docling which parser to use
-        doc_name = f"content.{format}" if name == "content.md" else name
+        doc_name = docling_safe_name(
+            f"content.{format}" if name == "content.md" else name
+        )
 
         # Plain text doesn't need remote parsing - create document directly
         if format == "plain":

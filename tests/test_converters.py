@@ -14,7 +14,7 @@ from haiku.rag.converters import get_converter
 from haiku.rag.converters.base import vlm_api_url
 from haiku.rag.converters.docling_local import DoclingLocalConverter
 from haiku.rag.converters.docling_serve import DoclingServeConverter
-from haiku.rag.converters.text_utils import TextFileHandler
+from haiku.rag.converters.text_utils import TextFileHandler, docling_safe_name
 
 
 class TestVlmApiUrl:
@@ -164,6 +164,13 @@ async def test_parse_zip_runs_off_event_loop_thread():
 
 class TestTextFileHandler:
     """Tests for TextFileHandler utility class."""
+
+    def test_docling_safe_name(self):
+        """Leading dots are stripped, other names are untouched, and a name of
+        nothing but dots is kept rather than reduced to an empty filename."""
+        assert docling_safe_name(".customrc.md") == "customrc.md"
+        assert docling_safe_name("notes.md") == "notes.md"
+        assert docling_safe_name("...") == "..."
 
     def test_text_extensions_defined(self):
         """Test that text extensions list is defined."""
@@ -337,6 +344,21 @@ class TestTextToDoclingWithFormat:
             ]
             assert "section_header" in labels
             assert "list_item" in labels
+
+    @pytest.mark.asyncio
+    async def test_dotfile_derived_name_parses_as_markdown(self):
+        """Docling ignores the extension of a stream name starting with a dot,
+        so a name derived from a dotfile (".customrc" -> ".customrc.md") must
+        be normalized or the whole document collapses to one plain-text block.
+        """
+        config = AppConfig()
+        converter = DoclingLocalConverter(config)
+
+        text = "Overview.\n\n## History\n\n- First item\n- Second item"
+        doc = await converter.convert_text(text, name=".customrc.md")
+        labels = [str(getattr(item, "label", "")) for item, _ in doc.iterate_items()]
+        assert "section_header" in labels
+        assert "list_item" in labels
 
     @pytest.mark.asyncio
     async def test_plain_text_without_markdown_syntax_fallback(self):
@@ -1304,6 +1326,48 @@ class TestDoclingServeConverter:
             mock_client.post.assert_called_once()
             call_kwargs = mock_client.post.call_args.kwargs
             assert "files" in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_dotfile_uploads_with_detectable_name(self, converter):
+        """docling-serve runs the same format detection on the uploaded
+        filename, which ignores the extension of any name starting with a dot.
+        """
+        doc_json = create_mock_docling_document("test")
+        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(return_value=submit_resp)
+            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            await converter.convert_text("# Test", name=".customrc.md")
+            uploaded_name = mock_client.post.call_args.kwargs["files"]["files"][0]
+            assert uploaded_name == "customrc.md"
+
+    @pytest.mark.asyncio
+    async def test_dotfile_path_uploads_with_detectable_name(self, converter, tmp_path):
+        """A dotfile with no extension is uploaded under a name docling can
+        still probe by content rather than one it refuses to classify.
+        """
+        doc_json = create_mock_docling_document("test")
+        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
+        dotfile = tmp_path / ".customrc"
+        dotfile.write_bytes(b"\x00binary")
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(return_value=submit_resp)
+            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            await converter.convert_file(dotfile)
+            uploaded_name = mock_client.post.call_args.kwargs["files"]["files"][0]
+            assert uploaded_name == "customrc"
 
 
 class TestDoclingServeConverterPictureDescription:

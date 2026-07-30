@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- Dotfiles are parsed as their actual format instead of a single unstructured text block. Docling ignores the extension of a name starting with a dot, so converters strip leading dots from the name they hand it.
+
 ## [0.71.0] - 2026-07-29
 
 ### Added
