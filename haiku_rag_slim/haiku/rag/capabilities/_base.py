@@ -12,6 +12,8 @@ from pydantic_ai.messages import (
     InstructionPart,
     ModelMessage,
     ModelRequest,
+    ModelResponse,
+    ToolCallPart,
     ToolReturn,
     ToolReturnPart,
     UserPromptPart,
@@ -29,7 +31,13 @@ from haiku.rag.store.models.citation import Citation, resolve_citations
 from haiku.rag.tools.search import build_binary_parts_from_results
 
 CITATION_GRACE_REQUESTS = 2
-"""Requests the cite tool outlives this capability's other tools by."""
+"""Requests calling this capability's tools that its cite tool outlives the rest by.
+
+A loop guard, not a budget: cite consumes no retry budget and raises nothing, so
+left available forever a stuck model calls it until the agent's own request limit
+raises ``UsageLimitExceeded`` and the question returns no answer at all. Only
+engagement can loop, which is why other capabilities' turns do not spend it.
+"""
 
 CHUNK_ID_MATCH_CUTOFF = 0.75
 """Similarity a cited chunk id needs to be treated as a corrupted known id.
@@ -105,6 +113,17 @@ def _compact_old_tool_returns(
     return compacted
 
 
+def _called_own_tool(messages: list[ModelMessage], tool_names: frozenset[str]) -> bool:
+    """Whether the model's most recent response called one of these tools."""
+    for message in reversed(messages):
+        if isinstance(message, ModelResponse):
+            return any(
+                isinstance(part, ToolCallPart) and part.tool_name in tool_names
+                for part in message.parts
+            )
+    return False
+
+
 @dataclass
 class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
     db_path: Path
@@ -122,6 +141,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
     resource_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     search_count: int = field(default=0, repr=False)
     request_count: int = field(default=0, repr=False)
+    grace_requests_used: int = field(default=0, repr=False)
 
     async def for_run(self, ctx: RunContext[Any]) -> "RAGCapabilityBase[StateT]":
         outer = getattr(ctx.deps, "state", None)
@@ -138,6 +158,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
             resource_lock=asyncio.Lock(),
             search_count=0,
             request_count=0,
+            grace_requests_used=0,
         )
         run_capability._sync_state()
         return run_capability
@@ -167,6 +188,10 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
                         InstructionPart(content=instruction, dynamic=True),
                     ],
                 )
+        if self._request_limit_reached and _called_own_tool(
+            request_context.messages, self.tool_names
+        ):
+            self.grace_requests_used += 1
         self.request_count += 1
         return request_context
 
@@ -186,9 +211,9 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         if self._request_limit_reached:
             return (
                 f"The {self.state_namespace} capability has reached its request "
-                f"limit. Only {self._cite_tool_name} remains available: register "
-                "the chunk_ids supporting your answer, then answer from the "
-                "evidence already gathered."
+                f"limit. Only {self._cite_tool_name} remains among its tools: "
+                "register the chunk_ids supporting your answer, then answer from "
+                "the evidence already gathered."
             )
         if spent := self._spent_tool_names():
             names = ", ".join(sorted(spent))
@@ -215,14 +240,10 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
     ) -> list[ToolDefinition]:
         """Remove this capability's tools past its limit, cite tool last.
 
-        The cite tool outlives the others by ``CITATION_GRACE_REQUESTS`` so a run
-        that exhausts its budget can still record the evidence it gathered.
-
         Tools whose own budget is spent stay declared on purpose. Removing one
-        makes a model that calls it anyway hit ``Unknown tool name``, which is
-        charged against the agent's unknown-tool retry budget and kills the run
-        after two attempts. A spent tool that keeps failing wastes requests; a
-        withdrawn one loses the whole answer.
+        makes a model that calls it anyway hit ``Unknown tool name``, charged
+        against the agent's unknown-tool retry budget, which kills the run after
+        two attempts. A spent tool that keeps failing only wastes requests.
         """
         if self._citation_grace_expired:
             return [tool for tool in tool_defs if tool.capability_id != self.id]
@@ -235,11 +256,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         ]
 
     def _evidence_tool_names(self) -> set[str]:
-        """Tools that can bring new evidence into the run.
-
-        Drives the spent-budget notice: while one of these still has budget the
-        model must be pointed at it, not told to answer from what it has.
-        """
+        """Tools that can bring new evidence into the run."""
         return {f"{self.state_namespace}_search"}
 
     def _spent_tool_names(self) -> set[str]:
@@ -264,10 +281,9 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
 
     @property
     def _citation_grace_expired(self) -> bool:
-        return (
-            self.request_limit is not None
-            and self.request_count >= self.request_limit + CITATION_GRACE_REQUESTS
-        )
+        # No `request_limit is None` guard: the counter only advances under
+        # `_request_limit_reached`, which already requires a limit.
+        return self.grace_requests_used >= CITATION_GRACE_REQUESTS
 
     async def after_run(
         self, ctx: RunContext[Any], *, result: AgentRunResult[Any]

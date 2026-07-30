@@ -17,7 +17,11 @@ from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
 
-from haiku.rag.capabilities._base import _compact_old_tool_returns
+from haiku.rag.capabilities._base import (
+    CITATION_GRACE_REQUESTS,
+    _called_own_tool,
+    _compact_old_tool_returns,
+)
 from haiku.rag.capabilities.analysis import AnalysisCapability, AnalysisState
 from haiku.rag.capabilities.analysis import create_capability as create_analysis
 from haiku.rag.capabilities.rag import AGENT_PREAMBLE, RAGCapability, RAGState
@@ -494,6 +498,40 @@ async def test_spent_search_budget_is_announced_but_keeps_the_tool(rag_db):
     assert "spent its budget for rag_search" in seen_instructions[1]
 
 
+def test_grace_window_ignores_other_capabilities_turns():
+    """Only this capability's own tool calls may spend its cite window.
+
+    A multi-capability agent spends turns elsewhere; those must not expire the
+    window that exists to give this capability a chance to cite.
+    """
+    rag_tools = frozenset({"rag_search", "rag_cite"})
+
+    # Nothing to attribute before the model has responded at all.
+    assert not _called_own_tool(
+        [ModelRequest(parts=[UserPromptPart(content="q")])], rag_tools
+    )
+    assert not _called_own_tool(
+        [ModelResponse(parts=[ToolCallPart("analysis_search", {"query": "x"})])],
+        rag_tools,
+    )
+    assert not _called_own_tool(
+        [ModelResponse(parts=[TextPart("just talking")])], rag_tools
+    )
+    assert _called_own_tool(
+        [ModelResponse(parts=[ToolCallPart("rag_cite", {"chunk_ids": ["a"]})])],
+        rag_tools,
+    )
+    # Only the most recent response counts, not any earlier one.
+    assert not _called_own_tool(
+        [
+            ModelResponse(parts=[ToolCallPart("rag_cite", {"chunk_ids": ["a"]})]),
+            ModelRequest(parts=[UserPromptPart(content="next")]),
+            ModelResponse(parts=[ToolCallPart("analysis_search", {"query": "x"})]),
+        ],
+        rag_tools,
+    )
+
+
 @pytest.mark.asyncio
 async def test_spent_search_notice_points_at_code_while_it_has_budget(temp_db_path):
     """Analysis must be sent to the sandbox, not told to answer, while it can.
@@ -511,13 +549,13 @@ async def test_spent_search_notice_points_at_code_while_it_has_budget(temp_db_pa
     assert notice is not None
     assert "analysis_search" in notice
     assert "analysis_execute_code" in notice
-    assert "Answer from the evidence already gathered" not in notice
 
-    # Once the code budget is gone too there is nowhere left to go.
+    # Once the code budget is gone too there is nowhere left to send it.
     capability.execute_count = config.analysis.max_executions
     notice = capability._budget_notice()
     assert notice is not None
-    assert "Answer from the evidence already gathered" in notice
+    assert "analysis_execute_code" in notice
+    assert capability._evidence_tool_names() <= capability._spent_tool_names()
 
 
 @pytest.mark.asyncio
@@ -531,7 +569,8 @@ async def test_spent_search_notice_tells_rag_to_answer(temp_db_path):
     notice = capability._budget_notice()
 
     assert notice is not None
-    assert "Answer from the evidence already gathered" in notice
+    assert "rag_search" in notice
+    assert capability._evidence_tool_names() == {"rag_search"}
 
 
 @pytest.mark.asyncio
@@ -591,7 +630,7 @@ async def test_exhausted_run_can_still_register_citations(rag_db):
     deps = Deps()
 
     async with agent.iter("question", deps=deps) as run:
-        async for node in run:
+        async for _node in run:
             if chunk_id is None:
                 searches = deps.state.get("rag", {}).get("searches") or {}
                 for results in searches.values():
@@ -626,7 +665,7 @@ async def test_cite_tool_is_withdrawn_after_the_grace_window(temp_db_path):
     notice = capability._budget_notice()
     assert notice is not None and "rag_cite" in notice
 
-    capability.request_count = 4
+    capability.grace_requests_used = CITATION_GRACE_REQUESTS
     kept = await capability.prepare_tools(ctx, cast(Any, tool_defs))
     assert kept == []
     # The notice must never point at a tool prepare_tools has withdrawn:

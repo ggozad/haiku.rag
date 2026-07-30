@@ -12,12 +12,13 @@
 ### Fixed
 
 - A failed `analysis_execute_code` call that iterated a file object reports the `.readlines()` workaround alongside the `TypeError`.
-- A capability that reaches its request limit keeps its cite tool for two further model requests while its other tools are removed.
-- A cited chunk id that does not match a retrieved id exactly resolves to the closest one above a 0.75 similarity cutoff, recovering ids mistyped from search results.
+- A capability that reaches its request limit keeps its cite tool for two further requests that call one of its tools, while its other tools are removed.
+- A cited chunk id that does not match a retrieved id exactly resolves to the closest one above a 0.75 similarity cutoff.
 - Dotfiles are parsed as their actual format instead of a single unstructured text block. Docling ignores the extension of a name starting with a dot, so converters strip leading dots from the name they hand it.
 
 ### Documentation
 
+- `qa.max_searches` is documented as defaulting to 5 in `docs/configuration/qa.md` and `docs/configuration/index.md`, was 3.
 - New "Vacuum Memory Requirements" subsection in `docs/configuration/storage.md` documenting the ~5x peak memory of vacuum compaction relative to the `documents` table, the mitigations, and upstream issue lancedb/lancedb#2325.
 
 ## [0.71.0] - 2026-07-29

@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, NamedTuple, Protocol, cast
 
 from pydantic_ai import Agent
 from pydantic_ai.messages import (
@@ -42,32 +42,32 @@ class CapabilityRunResult:
     n_requests: int = 0
 
 
+class ToolTraffic(NamedTuple):
+    n_search_calls: int
+    n_rejected_searches: int
+    n_failed_tools: int
+    n_requests: int
+
+
 def _count_tool_traffic(
-    messages: list[ModelMessage], namespace: str
-) -> tuple[int, int, int, int]:
+    messages: list[ModelMessage], namespace: str, tool_names: frozenset[str]
+) -> ToolTraffic:
     """Count search calls, failed calls and model requests in a run.
 
-    ``state.searches`` is keyed by query, so it collapses repeated queries and
-    never records a call the capability refused. The capability object cannot be
-    read instead: ``for_run`` hands the run a ``replace()`` copy, so the outer
-    instance's counters stay at zero. Counting the message history is the only
-    way to see the real number of attempts.
+    The history is the only source: ``state.searches`` is keyed by query so it
+    hides repeats and refusals, and ``for_run`` hands the run a ``replace()``
+    copy, leaving the outer capability's counters at zero.
 
-    Search failures are counted apart because the search tool fails only when
-    its budget is spent. A failed code call is ambiguous — an exhausted
-    execution budget and any error in model-written Python both surface as
-    ``ToolFailed``, distinguishable in the history only by message text — so
-    ``n_failed_tools`` covers both without claiming to tell them apart.
+    Only search failures mean an exhausted budget. A failed code call may be
+    either the execution budget or any error in model-written Python, so
+    ``n_failed_tools`` covers both without claiming to tell them apart. It counts
+    ``RetryPromptPart`` too, since ``_cite`` rejects with ``ModelRetry`` and only
+    ``ToolFailed`` sets ``outcome="failed"``. Both are restricted to
+    ``tool_names``, excluding host tools and output-validation retries.
 
-    ``n_failed_tools`` counts ``RetryPromptPart`` as well as failed returns.
-    ``_cite`` rejects a call with ``ModelRetry`` rather than ``ToolFailed``, and
-    only the latter sets ``outcome="failed"``, so counting returns alone would
-    leave a run whose every cite attempt was rejected reporting zero failures.
-
-    ``requests`` is the run's model-request count, which equals the capability's
-    own ``request_count`` budget only while the capability is loaded for the
-    whole run. A deferred capability skips hooks until it loads, so a router
-    turn before that is counted here and not against its limit.
+    ``n_requests`` counts the run's requests, which matches the capability's own
+    budget only while it stays loaded — a deferred capability skips hooks until
+    it loads.
     """
     search_tool = f"{namespace}_search"
     search_calls = 0
@@ -84,13 +84,22 @@ def _count_tool_traffic(
             )
             continue
         for part in message.parts:
+            if not isinstance(part, RetryPromptPart | ToolReturnPart):
+                continue
+            if part.tool_name not in tool_names:
+                continue
             if isinstance(part, RetryPromptPart):
                 failed_tools += 1
-            elif isinstance(part, ToolReturnPart) and part.outcome == "failed":
+            elif part.outcome == "failed":
                 failed_tools += 1
                 if part.tool_name == search_tool:
                     rejected_searches += 1
-    return search_calls, rejected_searches, failed_tools, requests
+    return ToolTraffic(
+        n_search_calls=search_calls,
+        n_rejected_searches=rejected_searches,
+        n_failed_tools=failed_tools,
+        n_requests=requests,
+    )
 
 
 @dataclass
@@ -162,8 +171,10 @@ async def run_capability_question(
     executions = getattr(state, "executions", None)
     n_executions = len(executions) if executions is not None else 0
 
-    n_search_calls, n_rejected_searches, n_failed_tools, n_requests = (
-        _count_tool_traffic(agent_result.all_messages(), capability.state_namespace)
+    traffic = _count_tool_traffic(
+        agent_result.all_messages(),
+        capability.state_namespace,
+        capability.tool_names,
     )
 
     return CapabilityRunResult(
@@ -171,10 +182,14 @@ async def run_capability_question(
         cited_uris=cited_uris,
         cited_chunk_ids=cited_chunk_ids,
         searched_uris=searched_uris,
+        # Distinct search keys, not searches. Analysis files every in-code
+        # `search()` under one "_sandbox" key, so twenty sandbox searches read
+        # as one here; `n_search_calls` is the true count of search *tool*
+        # calls, and in-code searches are not counted anywhere.
         n_searches=len(typed.searches),
         n_executions=n_executions,
-        n_search_calls=n_search_calls,
-        n_rejected_searches=n_rejected_searches,
-        n_failed_tools=n_failed_tools,
-        n_requests=n_requests,
+        n_search_calls=traffic.n_search_calls,
+        n_rejected_searches=traffic.n_rejected_searches,
+        n_failed_tools=traffic.n_failed_tools,
+        n_requests=traffic.n_requests,
     )

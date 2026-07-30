@@ -18,6 +18,10 @@ from haiku.rag.capabilities.analysis import create_capability as create_analysis
 from haiku.rag.capabilities.rag import create_capability as create_rag
 from haiku.rag.config.models import AppConfig
 
+ANALYSIS_TOOLS = frozenset(
+    {"analysis_search", "analysis_execute_code", "analysis_cite"}
+)
+
 
 def test_count_tool_traffic_sees_a_rejected_cite_call():
     """`_cite` rejects with ModelRetry, which is not a failed ToolReturnPart."""
@@ -36,12 +40,10 @@ def test_count_tool_traffic_sees_a_rejected_cite_call():
         ModelResponse(parts=[TextPart("done")]),
     ]
 
-    _search_calls, rejected_searches, failed_tools, _requests = _count_tool_traffic(
-        messages, "analysis"
-    )
+    traffic = _count_tool_traffic(messages, "analysis", ANALYSIS_TOOLS)
 
-    assert failed_tools == 1
-    assert rejected_searches == 0
+    assert traffic.n_failed_tools == 1
+    assert traffic.n_rejected_searches == 0
 
 
 def test_count_tool_traffic_separates_search_rejections_from_code_errors():
@@ -62,14 +64,12 @@ def test_count_tool_traffic_separates_search_rejections_from_code_errors():
         ModelResponse(parts=[TextPart("done")]),
     ]
 
-    search_calls, rejected_searches, failed_tools, requests = _count_tool_traffic(
-        messages, "analysis"
-    )
+    traffic = _count_tool_traffic(messages, "analysis", ANALYSIS_TOOLS)
 
-    assert search_calls == 0
-    assert rejected_searches == 0
-    assert failed_tools == 1
-    assert requests == 2
+    assert traffic.n_search_calls == 0
+    assert traffic.n_rejected_searches == 0
+    assert traffic.n_failed_tools == 1
+    assert traffic.n_requests == 2
 
 
 def test_count_tool_traffic_counts_attempts_not_distinct_queries():
@@ -98,13 +98,11 @@ def test_count_tool_traffic_counts_attempts_not_distinct_queries():
         ModelResponse(parts=[TextPart("done")]),
     ]
 
-    search_calls, rejected, _failed, requests = _count_tool_traffic(
-        messages, "analysis"
-    )
+    traffic = _count_tool_traffic(messages, "analysis", ANALYSIS_TOOLS)
 
-    assert search_calls == 2
-    assert rejected == 1
-    assert requests == 2
+    assert traffic.n_search_calls == 2
+    assert traffic.n_rejected_searches == 1
+    assert traffic.n_requests == 2
 
 
 async def test_runs_rag_capability_without_legacy_capability_layer(tmp_path):
