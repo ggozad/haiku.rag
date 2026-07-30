@@ -85,6 +85,12 @@ class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
             self.sandbox = None
         await super()._close()
 
+    def _evidence_tool_names(self) -> set[str]:
+        # Searching from inside the sandbox does not count against
+        # `qa.max_searches`, so code execution outlives a spent search budget
+        # as a way to reach new evidence.
+        return super()._evidence_tool_names() | {"analysis_execute_code"}
+
     def _spent_tool_names(self) -> set[str]:
         spent = super()._spent_tool_names()
         if self.execute_count >= self.config.analysis.max_executions:

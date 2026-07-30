@@ -5,6 +5,7 @@ import pytest
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
+    RetryPromptPart,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
@@ -16,6 +17,31 @@ from evaluations.capability_runner import _count_tool_traffic, run_capability_qu
 from haiku.rag.capabilities.analysis import create_capability as create_analysis
 from haiku.rag.capabilities.rag import create_capability as create_rag
 from haiku.rag.config.models import AppConfig
+
+
+def test_count_tool_traffic_sees_a_rejected_cite_call():
+    """`_cite` rejects with ModelRetry, which is not a failed ToolReturnPart."""
+    messages = [
+        ModelRequest(parts=[UserPromptPart(content="q")]),
+        ModelResponse(parts=[ToolCallPart("analysis_cite", {"chunk_ids": []})]),
+        ModelRequest(
+            parts=[
+                RetryPromptPart(
+                    tool_name="analysis_cite",
+                    content="No citations registered: chunk_ids was empty.",
+                    tool_call_id="1",
+                )
+            ]
+        ),
+        ModelResponse(parts=[TextPart("done")]),
+    ]
+
+    _search_calls, rejected_searches, failed_tools, _requests = _count_tool_traffic(
+        messages, "analysis"
+    )
+
+    assert failed_tools == 1
+    assert rejected_searches == 0
 
 
 def test_count_tool_traffic_separates_search_rejections_from_code_errors():

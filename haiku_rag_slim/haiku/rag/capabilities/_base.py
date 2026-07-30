@@ -191,11 +191,20 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
                 "evidence already gathered."
             )
         if spent := self._spent_tool_names():
+            names = ", ".join(sorted(spent))
+            if remaining := sorted(self._evidence_tool_names() - spent):
+                return (
+                    f"The {self.state_namespace} capability has spent its budget "
+                    f"for {names}; further calls to them fail. Gather any further "
+                    f"evidence with {', '.join(remaining)}, or call "
+                    f"{self._cite_tool_name} with the chunk_ids you have and "
+                    "answer."
+                )
             return (
                 f"The {self.state_namespace} capability has spent its budget for "
-                f"{', '.join(sorted(spent))}; further calls to them fail. Answer "
-                f"from the evidence already gathered and call "
-                f"{self._cite_tool_name} with the chunk_ids supporting it."
+                f"{names}; further calls to them fail. Answer from the evidence "
+                f"already gathered and call {self._cite_tool_name} with the "
+                "chunk_ids supporting it."
             )
         return None
 
@@ -224,6 +233,14 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
             for tool in tool_defs
             if tool.capability_id != self.id or tool.name == self._cite_tool_name
         ]
+
+    def _evidence_tool_names(self) -> set[str]:
+        """Tools that can bring new evidence into the run.
+
+        Drives the spent-budget notice: while one of these still has budget the
+        model must be pointed at it, not told to answer from what it has.
+        """
+        return {f"{self.state_namespace}_search"}
 
     def _spent_tool_names(self) -> set[str]:
         """This capability's tools whose own budget is exhausted."""

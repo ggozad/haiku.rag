@@ -7,6 +7,7 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import (
     ModelMessage,
     ModelResponse,
+    RetryPromptPart,
     ToolCallPart,
     ToolReturnPart,
 )
@@ -57,6 +58,16 @@ def _count_tool_traffic(
     execution budget and any error in model-written Python both surface as
     ``ToolFailed``, distinguishable in the history only by message text — so
     ``n_failed_tools`` covers both without claiming to tell them apart.
+
+    ``n_failed_tools`` counts ``RetryPromptPart`` as well as failed returns.
+    ``_cite`` rejects a call with ``ModelRetry`` rather than ``ToolFailed``, and
+    only the latter sets ``outcome="failed"``, so counting returns alone would
+    leave a run whose every cite attempt was rejected reporting zero failures.
+
+    ``requests`` is the run's model-request count, which equals the capability's
+    own ``request_count`` budget only while the capability is loaded for the
+    whole run. A deferred capability skips hooks until it loads, so a router
+    turn before that is counted here and not against its limit.
     """
     search_tool = f"{namespace}_search"
     search_calls = 0
@@ -73,7 +84,9 @@ def _count_tool_traffic(
             )
             continue
         for part in message.parts:
-            if isinstance(part, ToolReturnPart) and part.outcome == "failed":
+            if isinstance(part, RetryPromptPart):
+                failed_tools += 1
+            elif isinstance(part, ToolReturnPart) and part.outcome == "failed":
                 failed_tools += 1
                 if part.tool_name == search_tool:
                     rejected_searches += 1

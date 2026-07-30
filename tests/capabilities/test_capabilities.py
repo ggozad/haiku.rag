@@ -495,6 +495,46 @@ async def test_spent_search_budget_is_announced_but_keeps_the_tool(rag_db):
 
 
 @pytest.mark.asyncio
+async def test_spent_search_notice_points_at_code_while_it_has_budget(temp_db_path):
+    """Analysis must be sent to the sandbox, not told to answer, while it can.
+
+    In-code `search()` bypasses `qa.max_searches`, and the instructions tell the
+    model to escalate to code when search results are insufficient.
+    """
+    config = AppConfig()
+    config.qa.max_searches = 2
+    capability = create_analysis(db_path=temp_db_path, config=config)
+    capability.search_count = 2
+
+    notice = capability._budget_notice()
+
+    assert notice is not None
+    assert "analysis_search" in notice
+    assert "analysis_execute_code" in notice
+    assert "Answer from the evidence already gathered" not in notice
+
+    # Once the code budget is gone too there is nowhere left to go.
+    capability.execute_count = config.analysis.max_executions
+    notice = capability._budget_notice()
+    assert notice is not None
+    assert "Answer from the evidence already gathered" in notice
+
+
+@pytest.mark.asyncio
+async def test_spent_search_notice_tells_rag_to_answer(temp_db_path):
+    """Search is the RAG capability's only evidence tool, so stopping is right."""
+    config = AppConfig()
+    config.qa.max_searches = 2
+    capability = create_rag(db_path=temp_db_path, config=config)
+    capability.search_count = 2
+
+    notice = capability._budget_notice()
+
+    assert notice is not None
+    assert "Answer from the evidence already gathered" in notice
+
+
+@pytest.mark.asyncio
 async def test_spent_execution_budget_joins_the_notice(temp_db_path):
     config = AppConfig()
     config.analysis.max_executions = 3
