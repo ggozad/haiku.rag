@@ -10,7 +10,7 @@ def docling_safe_name(name: str) -> str:
     """Strip leading dots from a filename handed to docling.
 
     Docling ignores the extension of any name starting with a dot, so a name
-    derived from a dotfile (".gitignore" -> ".gitignore.md") is classified as
+    derived from a dotfile (".customrc" -> ".customrc.md") is classified as
     an unknown format and parsed as one unstructured text block.
     """
     return name.lstrip(".") or name

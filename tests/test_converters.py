@@ -168,7 +168,7 @@ class TestTextFileHandler:
     def test_docling_safe_name(self):
         """Leading dots are stripped, other names are untouched, and a name of
         nothing but dots is kept rather than reduced to an empty filename."""
-        assert docling_safe_name(".gitignore.md") == "gitignore.md"
+        assert docling_safe_name(".customrc.md") == "customrc.md"
         assert docling_safe_name("notes.md") == "notes.md"
         assert docling_safe_name("...") == "..."
 
@@ -348,14 +348,14 @@ class TestTextToDoclingWithFormat:
     @pytest.mark.asyncio
     async def test_dotfile_derived_name_parses_as_markdown(self):
         """Docling ignores the extension of a stream name starting with a dot,
-        so a name derived from a dotfile (".gitignore" -> ".gitignore.md") must
+        so a name derived from a dotfile (".customrc" -> ".customrc.md") must
         be normalized or the whole document collapses to one plain-text block.
         """
         config = AppConfig()
         converter = DoclingLocalConverter(config)
 
         text = "Overview.\n\n## History\n\n- First item\n- Second item"
-        doc = await converter.convert_text(text, name=".gitignore.md")
+        doc = await converter.convert_text(text, name=".customrc.md")
         labels = [str(getattr(item, "label", "")) for item, _ in doc.iterate_items()]
         assert "section_header" in labels
         assert "list_item" in labels
@@ -1343,9 +1343,9 @@ class TestDoclingServeConverter:
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
 
-            await converter.convert_text("# Test", name=".gitignore.md")
+            await converter.convert_text("# Test", name=".customrc.md")
             uploaded_name = mock_client.post.call_args.kwargs["files"]["files"][0]
-            assert uploaded_name == "gitignore.md"
+            assert uploaded_name == "customrc.md"
 
     @pytest.mark.asyncio
     async def test_dotfile_path_uploads_with_detectable_name(self, converter, tmp_path):
