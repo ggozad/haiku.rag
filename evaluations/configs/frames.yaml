@@ -21,7 +21,7 @@ reranking:
   model:
     provider: vllm
     name: Qwen/Qwen3-Reranker-4B
-    base_url: http://vllm:11433
+    base_url: http://vllm:11455
 
 analysis:
   # Bounds per-execution sandbox output so accumulated code returns cannot
@@ -40,7 +40,13 @@ qa:
 evaluations:
   judge:
     provider: openai
-    name: RedHatAI/Qwen3.6-35B-A3B-NVFP4
-    base_url: http://vllm:11430/v1
-    temperature: 0.0
+    name: Inferact/Qwen3.8-27B-NVFP4
+    base_url: http://vllm:11439/v1
+    temperature: 0.6
     max_tokens: 16384
+    extra_body:
+      top_p: 0.95
+      top_k: 20
+      min_p: 0
+      chat_template_kwargs:
+        reasoning_effort: low
