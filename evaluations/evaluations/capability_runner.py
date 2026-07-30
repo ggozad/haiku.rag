@@ -39,7 +39,6 @@ class CapabilityRunResult:
     n_rejected_searches: int = 0
     n_failed_tools: int = 0
     n_requests: int = 0
-    budget_spent: bool = False
 
 
 def _count_tool_traffic(
@@ -48,13 +47,16 @@ def _count_tool_traffic(
     """Count search calls, failed calls and model requests in a run.
 
     ``state.searches`` is keyed by query, so it collapses repeated queries and
-    never records a call the capability refused. Counting the message history
-    instead gives the real number of attempts.
+    never records a call the capability refused. The capability object cannot be
+    read instead: ``for_run`` hands the run a ``replace()`` copy, so the outer
+    instance's counters stay at zero. Counting the message history is the only
+    way to see the real number of attempts.
 
-    Failures are split by tool. Only the search tool fails for want of budget,
-    whereas the code tool raises ``ToolFailed`` for any error in model-written
-    Python, so counting every failure together would report a ``ZeroDivisionError``
-    as budget exhaustion.
+    Search failures are counted apart because the search tool fails only when
+    its budget is spent. A failed code call is ambiguous — an exhausted
+    execution budget and any error in model-written Python both surface as
+    ``ToolFailed``, distinguishable in the history only by message text — so
+    ``n_failed_tools`` covers both without claiming to tell them apart.
     """
     search_tool = f"{namespace}_search"
     search_calls = 0
@@ -162,5 +164,4 @@ async def run_capability_question(
         n_rejected_searches=n_rejected_searches,
         n_failed_tools=n_failed_tools,
         n_requests=n_requests,
-        budget_spent=n_rejected_searches > 0,
     )

@@ -3,7 +3,7 @@
 
 ### Added
 
-- `evaluations run` records `cited_chunk_ids`, `searched_uris`, `n_searches`, `n_search_calls`, `n_rejected_searches`, `n_failed_tools`, `n_executions`, `n_requests` and `budget_spent` as eval attributes alongside `cited_uris`.
+- `evaluations run` records `cited_chunk_ids`, `searched_uris`, `n_searches`, `n_search_calls`, `n_rejected_searches`, `n_failed_tools`, `n_executions` and `n_requests` as eval attributes alongside `cited_uris`.
 
 ### Changed
 

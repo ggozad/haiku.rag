@@ -442,7 +442,6 @@ async def run_qa_benchmark(
         set_eval_attribute("n_failed_tools", result.n_failed_tools)
         set_eval_attribute("n_executions", result.n_executions)
         set_eval_attribute("n_requests", result.n_requests)
-        set_eval_attribute("budget_spent", result.budget_spent)
         return result.answer
 
     report = await _evaluate(answer_question)
