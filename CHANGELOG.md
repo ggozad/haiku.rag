@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.72.0] - 2026-07-30
+
 ### Added
 
 - `evaluations run` records `cited_chunk_ids`, `searched_uris`, `n_searches`, `n_search_calls`, `n_rejected_searches`, `n_failed_tools`, `n_executions` and `n_requests` as eval attributes alongside `cited_uris`.
@@ -2074,7 +2076,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.71.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.72.0...HEAD
+[0.72.0]: https://github.com/ggozad/haiku.rag/compare/0.71.0...0.72.0
 [0.71.0]: https://github.com/ggozad/haiku.rag/compare/0.70.0...0.71.0
 [0.70.0]: https://github.com/ggozad/haiku.rag/compare/0.69.0...0.70.0
 [0.69.0]: https://github.com/ggozad/haiku.rag/compare/0.68.0...0.69.0
