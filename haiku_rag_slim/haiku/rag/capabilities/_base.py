@@ -1,6 +1,7 @@
 import asyncio
 import os
 from dataclasses import dataclass, field, replace
+from difflib import get_close_matches
 from pathlib import Path
 from typing import Any, cast
 
@@ -11,6 +12,8 @@ from pydantic_ai.messages import (
     InstructionPart,
     ModelMessage,
     ModelRequest,
+    ModelResponse,
+    ToolCallPart,
     ToolReturn,
     ToolReturnPart,
     UserPromptPart,
@@ -26,6 +29,36 @@ from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.citation import Citation, resolve_citations
 from haiku.rag.tools.search import build_binary_parts_from_results
+
+CITATION_GRACE_REQUESTS = 2
+"""Requests calling this capability's tools that its cite tool outlives the rest by.
+
+A loop guard, not a budget: cite consumes no retry budget and raises nothing, so
+left available forever a stuck model calls it until the agent's own request limit
+raises ``UsageLimitExceeded`` and the question returns no answer at all. Only
+engagement can loop, which is why other capabilities' turns do not spend it.
+"""
+
+CHUNK_ID_MATCH_CUTOFF = 0.75
+"""Similarity a cited chunk id needs to be treated as a corrupted known id.
+
+Calibration knob. Two unrelated UUID4s reach about 0.5, while dropping or
+duplicating a character or a whole group stays above 0.75, so the gap is wide.
+"""
+
+
+def _nearest_known_id(chunk_id: str, known_ids: list[str]) -> str:
+    """Recover a chunk id the model damaged while transcribing it.
+
+    Models copying opaque UUIDs drop and duplicate characters and whole
+    hyphen-separated groups. Candidates are limited to ids the run actually
+    retrieved, so a wrong match needs both a near miss and a same-run neighbour.
+    Ids that match nothing are returned unchanged for the caller to report.
+    """
+    if not known_ids or chunk_id in known_ids:
+        return chunk_id
+    match = get_close_matches(chunk_id, known_ids, n=1, cutoff=CHUNK_ID_MATCH_CUTOFF)
+    return match[0] if match else chunk_id
 
 
 def resolve_db_path(db_path: Path | None, config: AppConfig) -> Path:
@@ -80,6 +113,17 @@ def _compact_old_tool_returns(
     return compacted
 
 
+def _called_own_tool(messages: list[ModelMessage], tool_names: frozenset[str]) -> bool:
+    """Whether the model's most recent response called one of these tools."""
+    for message in reversed(messages):
+        if isinstance(message, ModelResponse):
+            return any(
+                isinstance(part, ToolCallPart) and part.tool_name in tool_names
+                for part in message.parts
+            )
+    return False
+
+
 @dataclass
 class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
     db_path: Path
@@ -97,6 +141,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
     resource_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     search_count: int = field(default=0, repr=False)
     request_count: int = field(default=0, repr=False)
+    grace_requests_used: int = field(default=0, repr=False)
 
     async def for_run(self, ctx: RunContext[Any]) -> "RAGCapabilityBase[StateT]":
         outer = getattr(ctx.deps, "state", None)
@@ -113,6 +158,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
             resource_lock=asyncio.Lock(),
             search_count=0,
             request_count=0,
+            grace_requests_used=0,
         )
         run_capability._sync_state()
         return run_capability
@@ -128,14 +174,9 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         request_context.messages = _compact_old_tool_returns(
             request_context.messages, self.tool_names
         )
-        if self._request_limit_reached:
+        if instruction := self._budget_notice():
             current_request = request_context.messages[-1]
             if isinstance(current_request, ModelRequest):
-                instruction = (
-                    f"The {self.state_namespace} capability has reached its request "
-                    "limit. Its tools are no longer available. Give the best answer "
-                    "possible using the evidence already gathered."
-                )
                 current_request.instructions = "\n\n".join(
                     part for part in (current_request.instructions, instruction) if part
                 )
@@ -147,25 +188,102 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
                         InstructionPart(content=instruction, dynamic=True),
                     ],
                 )
-        else:
-            self.request_count += 1
+        if self._request_limit_reached and _called_own_tool(
+            request_context.messages, self.tool_names
+        ):
+            self.grace_requests_used += 1
+        self.request_count += 1
         return request_context
+
+    def _budget_notice(self) -> str | None:
+        """Tell the model which of this capability's budgets just ran out.
+
+        Never names a tool ``prepare_tools`` has already withdrawn: pointing the
+        model at a tool that is gone costs it the agent's unknown-tool retry
+        budget and can abort the run.
+        """
+        if self._citation_grace_expired:
+            return (
+                f"The {self.state_namespace} capability's tools are no longer "
+                "available. Give the best answer possible using the evidence "
+                "already gathered."
+            )
+        if self._request_limit_reached:
+            return (
+                f"The {self.state_namespace} capability has reached its request "
+                f"limit. Only {self._cite_tool_name} remains among its tools: "
+                "register the chunk_ids supporting your answer, then answer from "
+                "the evidence already gathered."
+            )
+        if spent := self._spent_tool_names():
+            names = ", ".join(sorted(spent))
+            if remaining := sorted(self._evidence_tool_names() - spent):
+                return (
+                    f"The {self.state_namespace} capability has spent its budget "
+                    f"for {names}; further calls to them fail. Gather any further "
+                    f"evidence with {', '.join(remaining)}, or call "
+                    f"{self._cite_tool_name} with the chunk_ids you have and "
+                    "answer."
+                )
+            return (
+                f"The {self.state_namespace} capability has spent its budget for "
+                f"{names}; further calls to them fail. Answer from the evidence "
+                f"already gathered and call {self._cite_tool_name} with the "
+                "chunk_ids supporting it."
+            )
+        return None
 
     async def prepare_tools(
         self,
         ctx: RunContext[Any],
         tool_defs: list[ToolDefinition],
     ) -> list[ToolDefinition]:
-        """Remove only this capability's tools after its per-question limit."""
+        """Remove this capability's tools past its limit, cite tool last.
+
+        Tools whose own budget is spent stay declared on purpose. Removing one
+        makes a model that calls it anyway hit ``Unknown tool name``, charged
+        against the agent's unknown-tool retry budget, which kills the run after
+        two attempts. A spent tool that keeps failing only wastes requests.
+        """
+        if self._citation_grace_expired:
+            return [tool for tool in tool_defs if tool.capability_id != self.id]
         if not self._request_limit_reached:
             return tool_defs
-        return [tool for tool in tool_defs if tool.capability_id != self.id]
+        return [
+            tool
+            for tool in tool_defs
+            if tool.capability_id != self.id or tool.name == self._cite_tool_name
+        ]
+
+    def _evidence_tool_names(self) -> set[str]:
+        """Tools that can bring new evidence into the run."""
+        return {f"{self.state_namespace}_search"}
+
+    def _spent_tool_names(self) -> set[str]:
+        """This capability's tools whose own budget is exhausted."""
+        if self.search_count >= self._max_searches:
+            return {f"{self.state_namespace}_search"}
+        return set()
+
+    @property
+    def _cite_tool_name(self) -> str:
+        return f"{self.state_namespace}_cite"
+
+    @property
+    def _max_searches(self) -> int:
+        return self.config.qa.max_searches
 
     @property
     def _request_limit_reached(self) -> bool:
         return (
             self.request_limit is not None and self.request_count >= self.request_limit
         )
+
+    @property
+    def _citation_grace_expired(self) -> bool:
+        # No `request_limit is None` guard: the counter only advances under
+        # `_request_limit_reached`, which already requires a limit.
+        return self.grace_requests_used >= CITATION_GRACE_REQUESTS
 
     async def after_run(
         self, ctx: RunContext[Any], *, result: AgentRunResult[Any]
@@ -211,7 +329,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
     async def _search(self, query: str, limit: int | None) -> str | ToolReturn:
         assert self.state is not None
         self.search_count += 1
-        if self.search_count > self.config.qa.max_searches:
+        if self.search_count > self._max_searches:
             raise ToolFailed(
                 "Search limit reached. Answer the question using "
                 "the results you already have."
@@ -241,11 +359,11 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         state = cast(Any, self.state)
         for results in state.searches.values():
             all_results.extend(results)
-        citations = resolve_citations(chunk_ids, all_results)
+        known_ids = [result.chunk_id for result in all_results if result.chunk_id]
+        requested = [_nearest_known_id(cid.strip("[]"), known_ids) for cid in chunk_ids]
+        citations = resolve_citations(requested, all_results)
         resolved = {citation.chunk_id for citation in citations}
-        missing = [
-            cid.strip("[]") for cid in chunk_ids if cid.strip("[]") not in resolved
-        ]
+        missing = [cid for cid in requested if cid not in resolved]
 
         if missing:
             async with self.rag_lock:

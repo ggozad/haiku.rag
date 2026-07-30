@@ -37,6 +37,21 @@ def instructions() -> str:
     return _instructions_path.read_text().strip()
 
 
+def _recovery_hint(stderr: str) -> str:
+    """Name the workaround for sandbox limits models trip over repeatedly.
+
+    The instructions already say file objects are not iterable, and models write
+    ``for line in open(...)`` regardless. Carrying the fix in the error gives
+    them something to act on for the retry.
+    """
+    if "TextIOWrapper" in stderr and "not iterable" in stderr:
+        return (
+            "\n\nHint: file objects cannot be iterated here. Read lines with "
+            '.readlines() or .read().split("\\n").'
+        )
+    return ""
+
+
 @dataclass
 class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
     """Deferred capability for sandboxed computation over a RAG corpus."""
@@ -70,6 +85,18 @@ class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
             self.sandbox = None
         await super()._close()
 
+    def _evidence_tool_names(self) -> set[str]:
+        # Searching from inside the sandbox does not count against
+        # `qa.max_searches`, so code execution outlives a spent search budget
+        # as a way to reach new evidence.
+        return super()._evidence_tool_names() | {"analysis_execute_code"}
+
+    def _spent_tool_names(self) -> set[str]:
+        spent = super()._spent_tool_names()
+        if self.execute_count >= self.config.analysis.max_executions:
+            spent.add("analysis_execute_code")
+        return spent
+
     async def _execute_code(self, code: str) -> str:
         assert self.state is not None
         self.execute_count += 1
@@ -97,7 +124,10 @@ class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
             )
         )
         if not result.success:
-            raise ToolFailed(f"{result.stderr}\n\nOutput: {result.stdout}")
+            raise ToolFailed(
+                f"{result.stderr}{_recovery_hint(result.stderr)}"
+                f"\n\nOutput: {result.stdout}"
+            )
         return result.stdout or "No output."
 
     def get_toolset(self) -> FunctionToolset[Any]:

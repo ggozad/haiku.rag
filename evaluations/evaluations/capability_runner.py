@@ -1,9 +1,16 @@
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, NamedTuple, Protocol, cast
 
 from pydantic_ai import Agent
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelResponse,
+    RetryPromptPart,
+    ToolCallPart,
+    ToolReturnPart,
+)
 from pydantic_ai.models import Model
 
 from haiku.rag.capabilities import RAGCapabilityBase
@@ -29,6 +36,70 @@ class CapabilityRunResult:
     searched_uris: list[str] = field(default_factory=list)
     n_searches: int = 0
     n_executions: int = 0
+    n_search_calls: int = 0
+    n_rejected_searches: int = 0
+    n_failed_tools: int = 0
+    n_requests: int = 0
+
+
+class ToolTraffic(NamedTuple):
+    n_search_calls: int
+    n_rejected_searches: int
+    n_failed_tools: int
+    n_requests: int
+
+
+def _count_tool_traffic(
+    messages: list[ModelMessage], namespace: str, tool_names: frozenset[str]
+) -> ToolTraffic:
+    """Count search calls, failed calls and model requests in a run.
+
+    The history is the only source: ``state.searches`` is keyed by query so it
+    hides repeats and refusals, and ``for_run`` hands the run a ``replace()``
+    copy, leaving the outer capability's counters at zero.
+
+    Only search failures mean an exhausted budget. A failed code call may be
+    either the execution budget or any error in model-written Python, so
+    ``n_failed_tools`` covers both without claiming to tell them apart. It counts
+    ``RetryPromptPart`` too, since ``_cite`` rejects with ``ModelRetry`` and only
+    ``ToolFailed`` sets ``outcome="failed"``. Both are restricted to
+    ``tool_names``, excluding host tools and output-validation retries.
+
+    ``n_requests`` counts the run's requests, which matches the capability's own
+    budget only while it stays loaded — a deferred capability skips hooks until
+    it loads.
+    """
+    search_tool = f"{namespace}_search"
+    search_calls = 0
+    rejected_searches = 0
+    failed_tools = 0
+    requests = 0
+    for message in messages:
+        if isinstance(message, ModelResponse):
+            requests += 1
+            search_calls += sum(
+                1
+                for part in message.parts
+                if isinstance(part, ToolCallPart) and part.tool_name == search_tool
+            )
+            continue
+        for part in message.parts:
+            if not isinstance(part, RetryPromptPart | ToolReturnPart):
+                continue
+            if part.tool_name not in tool_names:
+                continue
+            if isinstance(part, RetryPromptPart):
+                failed_tools += 1
+            elif part.outcome == "failed":
+                failed_tools += 1
+                if part.tool_name == search_tool:
+                    rejected_searches += 1
+    return ToolTraffic(
+        n_search_calls=search_calls,
+        n_rejected_searches=rejected_searches,
+        n_failed_tools=failed_tools,
+        n_requests=requests,
+    )
 
 
 @dataclass
@@ -100,11 +171,25 @@ async def run_capability_question(
     executions = getattr(state, "executions", None)
     n_executions = len(executions) if executions is not None else 0
 
+    traffic = _count_tool_traffic(
+        agent_result.all_messages(),
+        capability.state_namespace,
+        capability.tool_names,
+    )
+
     return CapabilityRunResult(
         answer=agent_result.output,
         cited_uris=cited_uris,
         cited_chunk_ids=cited_chunk_ids,
         searched_uris=searched_uris,
+        # Distinct search keys, not searches. Analysis files every in-code
+        # `search()` under one "_sandbox" key, so twenty sandbox searches read
+        # as one here; `n_search_calls` is the true count of search *tool*
+        # calls, and in-code searches are not counted anywhere.
         n_searches=len(typed.searches),
         n_executions=n_executions,
+        n_search_calls=traffic.n_search_calls,
+        n_rejected_searches=traffic.n_rejected_searches,
+        n_failed_tools=traffic.n_failed_tools,
+        n_requests=traffic.n_requests,
     )

@@ -26,7 +26,7 @@ print(result.output)
 
 `create_capability` accepts `db_path`, `config`, `defer_loading`, `request_limit`, and `vision`. Set `defer_loading=False` for a dedicated RAG agent where routing is unnecessary. The default request limit is 20 model requests per question; set `request_limit=None` to disable it. `vision` controls whether picture results are attached to search returns as images and should reflect the model the hosting agent runs; it defaults to the configured QA model's `vision` flag.
 
-When the limit is reached, only the RAG capability's tools are removed. The model gets one more turn to answer from evidence already gathered, while unrelated agent and capability tools remain available. A new agent run starts a fresh limit, so multi-turn chat does not consume one shared budget.
+When the limit is reached, `rag_search` is removed while `rag_cite` remains for two further requests that call a RAG tool, so the model can register citations before answering from evidence already gathered. Requests spent on other capabilities do not count against that window. Unrelated agent and capability tools remain available. A new agent run starts a fresh limit, so multi-turn chat does not consume one shared budget.
 
 ## State
 
