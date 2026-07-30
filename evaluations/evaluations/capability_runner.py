@@ -36,24 +36,30 @@ class CapabilityRunResult:
     n_searches: int = 0
     n_executions: int = 0
     n_search_calls: int = 0
-    n_rejected_calls: int = 0
+    n_rejected_searches: int = 0
+    n_failed_tools: int = 0
     n_requests: int = 0
     budget_spent: bool = False
 
 
 def _count_tool_traffic(
     messages: list[ModelMessage], namespace: str
-) -> tuple[int, int, int]:
-    """Count search calls, rejected calls and model requests in a run.
+) -> tuple[int, int, int, int]:
+    """Count search calls, failed calls and model requests in a run.
 
     ``state.searches`` is keyed by query, so it collapses repeated queries and
     never records a call the capability refused. Counting the message history
-    instead gives the real number of attempts, which is what shows whether a
-    case ran out of budget.
+    instead gives the real number of attempts.
+
+    Failures are split by tool. Only the search tool fails for want of budget,
+    whereas the code tool raises ``ToolFailed`` for any error in model-written
+    Python, so counting every failure together would report a ``ZeroDivisionError``
+    as budget exhaustion.
     """
     search_tool = f"{namespace}_search"
     search_calls = 0
-    rejected = 0
+    rejected_searches = 0
+    failed_tools = 0
     requests = 0
     for message in messages:
         if isinstance(message, ModelResponse):
@@ -64,12 +70,12 @@ def _count_tool_traffic(
                 if isinstance(part, ToolCallPart) and part.tool_name == search_tool
             )
             continue
-        rejected += sum(
-            1
-            for part in message.parts
-            if isinstance(part, ToolReturnPart) and part.outcome == "failed"
-        )
-    return search_calls, rejected, requests
+        for part in message.parts:
+            if isinstance(part, ToolReturnPart) and part.outcome == "failed":
+                failed_tools += 1
+                if part.tool_name == search_tool:
+                    rejected_searches += 1
+    return search_calls, rejected_searches, failed_tools, requests
 
 
 @dataclass
@@ -141,8 +147,8 @@ async def run_capability_question(
     executions = getattr(state, "executions", None)
     n_executions = len(executions) if executions is not None else 0
 
-    n_search_calls, n_rejected_calls, n_requests = _count_tool_traffic(
-        agent_result.all_messages(), capability.state_namespace
+    n_search_calls, n_rejected_searches, n_failed_tools, n_requests = (
+        _count_tool_traffic(agent_result.all_messages(), capability.state_namespace)
     )
 
     return CapabilityRunResult(
@@ -153,7 +159,8 @@ async def run_capability_question(
         n_searches=len(typed.searches),
         n_executions=n_executions,
         n_search_calls=n_search_calls,
-        n_rejected_calls=n_rejected_calls,
+        n_rejected_searches=n_rejected_searches,
+        n_failed_tools=n_failed_tools,
         n_requests=n_requests,
-        budget_spent=n_rejected_calls > 0,
+        budget_spent=n_rejected_searches > 0,
     )

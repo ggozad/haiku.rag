@@ -3,7 +3,7 @@
 
 ### Added
 
-- `evaluations run` records `cited_chunk_ids`, `searched_uris`, `n_searches`, `n_search_calls`, `n_rejected_calls`, `n_executions`, `n_requests` and `budget_spent` as eval attributes alongside `cited_uris`.
+- `evaluations run` records `cited_chunk_ids`, `searched_uris`, `n_searches`, `n_search_calls`, `n_rejected_searches`, `n_failed_tools`, `n_executions`, `n_requests` and `budget_spent` as eval attributes alongside `cited_uris`.
 
 ### Changed
 
@@ -12,7 +12,7 @@
 ### Fixed
 
 - A failed `analysis_execute_code` call that iterated a file object reports the `.readlines()` workaround alongside the `TypeError`.
-- A capability that reaches its request limit keeps its cite tool for two further model requests while its other tools are removed, so an exhausted run can still register citations.
+- A capability that reaches its request limit keeps its cite tool for two further model requests while its other tools are removed.
 - A cited chunk id that does not match a retrieved id exactly resolves to the closest one above a 0.75 similarity cutoff, recovering ids mistyped from search results.
 - Dotfiles are parsed as their actual format instead of a single unstructured text block. Docling ignores the extension of a name starting with a dot, so converters strip leading dots from the name they hand it.
 

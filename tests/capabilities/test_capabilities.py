@@ -583,10 +583,19 @@ async def test_cite_tool_is_withdrawn_after_the_grace_window(temp_db_path):
     capability.request_count = 2
     kept = await capability.prepare_tools(ctx, cast(Any, tool_defs))
     assert {tool.name for tool in kept} == {"rag_cite"}
+    notice = capability._budget_notice()
+    assert notice is not None and "rag_cite" in notice
 
     capability.request_count = 4
     kept = await capability.prepare_tools(ctx, cast(Any, tool_defs))
     assert kept == []
+    # The notice must never point at a tool prepare_tools has withdrawn:
+    # calling a missing tool burns the agent's unknown-tool retries and can
+    # abort the run.
+    notice = capability._budget_notice()
+    assert notice is not None
+    assert "rag_cite" not in notice
+    assert "no longer available" in notice
 
 
 @pytest.mark.asyncio

@@ -18,6 +18,34 @@ from haiku.rag.capabilities.rag import create_capability as create_rag
 from haiku.rag.config.models import AppConfig
 
 
+def test_count_tool_traffic_separates_search_rejections_from_code_errors():
+    """A crash in model-written Python must not read as budget exhaustion."""
+    messages = [
+        ModelRequest(parts=[UserPromptPart(content="q")]),
+        ModelResponse(parts=[ToolCallPart("analysis_execute_code", {"code": "1/0"})]),
+        ModelRequest(
+            parts=[
+                ToolReturnPart(
+                    tool_name="analysis_execute_code",
+                    content="ZeroDivisionError",
+                    tool_call_id="1",
+                    outcome="failed",
+                )
+            ]
+        ),
+        ModelResponse(parts=[TextPart("done")]),
+    ]
+
+    search_calls, rejected_searches, failed_tools, requests = _count_tool_traffic(
+        messages, "analysis"
+    )
+
+    assert search_calls == 0
+    assert rejected_searches == 0
+    assert failed_tools == 1
+    assert requests == 2
+
+
 def test_count_tool_traffic_counts_attempts_not_distinct_queries():
     """Rejected and repeated calls both count; `state.searches` hides them."""
     messages = [
@@ -44,7 +72,9 @@ def test_count_tool_traffic_counts_attempts_not_distinct_queries():
         ModelResponse(parts=[TextPart("done")]),
     ]
 
-    search_calls, rejected, requests = _count_tool_traffic(messages, "analysis")
+    search_calls, rejected, _failed, requests = _count_tool_traffic(
+        messages, "analysis"
+    )
 
     assert search_calls == 2
     assert rejected == 1

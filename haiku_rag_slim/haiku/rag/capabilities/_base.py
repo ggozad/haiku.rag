@@ -171,7 +171,18 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         return request_context
 
     def _budget_notice(self) -> str | None:
-        """Tell the model which of this capability's budgets just ran out."""
+        """Tell the model which of this capability's budgets just ran out.
+
+        Never names a tool ``prepare_tools`` has already withdrawn: pointing the
+        model at a tool that is gone costs it the agent's unknown-tool retry
+        budget and can abort the run.
+        """
+        if self._citation_grace_expired:
+            return (
+                f"The {self.state_namespace} capability's tools are no longer "
+                "available. Give the best answer possible using the evidence "
+                "already gathered."
+            )
         if self._request_limit_reached:
             return (
                 f"The {self.state_namespace} capability has reached its request "
