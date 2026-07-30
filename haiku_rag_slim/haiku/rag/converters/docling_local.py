@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from haiku.rag.config import AppConfig
 from haiku.rag.converters.base import DocumentConverter, vlm_api_url
-from haiku.rag.converters.text_utils import TextFileHandler
+from haiku.rag.converters.text_utils import TextFileHandler, docling_safe_name
 
 if TYPE_CHECKING:
     from docling.datamodel.base_models import InputFormat
@@ -287,7 +287,9 @@ class DoclingLocalConverter(DocumentConverter):
                 f"Supported formats: {', '.join(TextFileHandler.SUPPORTED_FORMATS)}"
             )
 
-        doc_name = f"content.{format}" if name == "content.md" else name
+        doc_name = docling_safe_name(
+            f"content.{format}" if name == "content.md" else name
+        )
 
         if format == "plain":
             return TextFileHandler._create_simple_docling_document(text, doc_name)
