@@ -3,6 +3,7 @@ import pytest
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import DocumentItem
+from haiku.rag.store.repositories import document as document_repository
 from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.repositories.document_item import DocumentItemRepository
 
@@ -33,6 +34,44 @@ async def test_document_list_all(
         assert docs[0].metadata == {"key": "value"}
         assert docs[0].content == (content if include_content else "")
         assert docs[0].docling_document is None
+
+
+@pytest.mark.asyncio
+async def test_document_list_all_content_skips_docling_blobs(temp_db_path):
+    """include_content loads content only; the docling blobs (page rasters run
+    to hundreds of MB per document) are never materialized."""
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+
+        for content in ("first", "second"):
+            await doc_repo.create(
+                Document(
+                    content=content,
+                    docling_document=b"structure-blob",
+                    docling_pages=b"page-raster-blob",
+                )
+            )
+
+        docs = await doc_repo.list_all(include_content=True)
+
+        assert {d.content for d in docs} == {"first", "second"}
+        assert all(d.docling_document is None for d in docs)
+        assert all(d.docling_pages is None for d in docs)
+
+
+@pytest.mark.asyncio
+async def test_document_list_all_content_spans_batches(temp_db_path, monkeypatch):
+    """Every document gets its content when the lookup spans several batches."""
+    monkeypatch.setattr(document_repository, "_CONTENT_BATCH", 2)
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+        contents = {f"document {i}" for i in range(5)}
+        for content in contents:
+            await doc_repo.create(Document(content=content))
+
+        docs = await doc_repo.list_all(include_content=True)
+
+        assert {d.content for d in docs} == contents
 
 
 @pytest.mark.asyncio
