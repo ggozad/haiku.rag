@@ -15,6 +15,10 @@ from haiku.rag.store.engine import (
 from haiku.rag.store.models.document import Document
 from haiku.rag.utils import escape_sql_string
 
+# Ids per `id IN (...)` content lookup. Keeps the filter string bounded on an
+# unpaginated listing of a large database.
+_CONTENT_BATCH = 512
+
 
 class DocumentRepository:
     """Repository for Document operations.
@@ -320,13 +324,16 @@ class DocumentRepository:
 
         Listing reads `document_meta` (uri/title/metadata/timestamps); the
         SQL `filter` is evaluated against those columns. When `include_content`
-        is set, the content+blob row is loaded from `documents` and merged in.
+        is set, `content` is projected out of `documents` and merged in. The
+        docling blobs are left out: a single document's page rasters run to
+        hundreds of MB, so reading whole rows stalls a listing. Load them per
+        document with `get_docling_data` / `get_pages_data`.
 
         Args:
             limit: Maximum number of documents to return.
             offset: Number of documents to skip.
             filter: Optional SQL WHERE clause over document_meta columns.
-            include_content: Whether to also load content and docling blobs.
+            include_content: Whether to also load the text content.
 
         Returns:
             List of Document instances matching the criteria.
@@ -342,26 +349,25 @@ class DocumentRepository:
 
         meta_records = await query_to_pydantic(query, DocumentMetaRecord)
 
-        if not include_content:
-            return [
-                self._merge_to_document(DocumentRecord(id=m.id, content=""), m)
-                for m in meta_records
-            ]
+        content_by_id: dict[str, str] = {}
+        if include_content:
+            for start in range(0, len(meta_records), _CONTENT_BATCH):
+                batch = meta_records[start : start + _CONTENT_BATCH]
+                ids = ", ".join(f"'{escape_sql_string(m.id)}'" for m in batch)
+                rows = await (
+                    self.store.documents_table.query()
+                    .select(["id", "content"])
+                    .where(f"id IN ({ids})")
+                    .to_list()
+                )
+                content_by_id.update((row["id"], row["content"]) for row in rows)
 
-        documents: list[Document] = []
-        for meta in meta_records:
-            safe_id = escape_sql_string(meta.id)
-            doc_results = await query_to_pydantic(
-                self.store.documents_table.query().where(f"id = '{safe_id}'").limit(1),
-                DocumentRecord,
+        return [
+            self._merge_to_document(
+                DocumentRecord(id=m.id, content=content_by_id.get(m.id, "")), m
             )
-            doc_record = (
-                doc_results[0]
-                if doc_results
-                else DocumentRecord(id=meta.id, content="")
-            )
-            documents.append(self._merge_to_document(doc_record, meta))
-        return documents
+            for m in meta_records
+        ]
 
     async def count(self, filter: str | None = None) -> int:
         """Count documents with optional filtering (over document_meta columns)."""

@@ -98,7 +98,8 @@ List all documents:
 ```python
 docs = await client.list_documents(limit=10, offset=0)
 
-# Include full content and docling document (not loaded by default)
+# Include the text content (not loaded by default). A listing never loads the
+# docling blobs.
 docs = await client.list_documents(include_content=True)
 ```
 

@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- `list_documents(include_content=True)` returns `content` only; the docling structure and page-image blobs are no longer loaded by a listing.
+
 ## [0.72.0] - 2026-07-30
 
 ### Added

@@ -439,8 +439,8 @@ class HaikuRAG:
             limit: Maximum number of documents to return.
             offset: Number of documents to skip.
             filter: Optional SQL WHERE clause to filter documents.
-            include_content: Whether to load content and docling_document.
-                Defaults to False to avoid loading large blobs.
+            include_content: Whether to load the text content. Defaults to
+                False. A listing never loads the docling blobs.
 
         Returns:
             List of Document instances matching the criteria.
