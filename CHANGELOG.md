@@ -5,6 +5,10 @@
 
 - `evaluations run --filter/-f CLAUSE`: SQL `WHERE` clause over document columns, applied to the retrieval benchmark's searches and to every capability search during QA. Recorded as `document_filter` in experiment metadata.
 
+### Changed
+
+- `import_documents` embeds chunks across the whole batch in one pass instead of per document.
+
 ### Removed
 
 - `wix` evaluation dataset and its reference config `evaluations/configs/wix.yaml`.
