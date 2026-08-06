@@ -16,8 +16,9 @@ embeddings:
 
 reranking:
   model:
-    provider: cross-encoder
-    name: mixedbread-ai/mxbai-rerank-base-v2
+    provider: vllm
+    name: Qwen/Qwen3-Reranker-4B
+    base_url: http://vllm:11455
 
 qa:
   model:
@@ -25,3 +26,17 @@ qa:
     name: gemma4-26b
     base_url: http://vllm:11432/v1
     vision: true
+
+evaluations:
+  judge:
+    provider: openai
+    name: RedHatAI/Qwen3.6-35B-A3B-NVFP4
+    base_url: http://vllm:11430/v1
+    temperature: 0.6
+    max_tokens: 16384
+    extra_body:
+      top_p: 0.95
+      top_k: 20
+      min_p: 0
+      chat_template_kwargs:
+        enable_thinking: true

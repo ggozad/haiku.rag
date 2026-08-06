@@ -1,9 +1,15 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- `evaluations run` records `judge_extra_body`, `qa_extra_body` and `capability_extra_body` in experiment metadata.
+
 ### Changed
 
 - `get_document_by_id` / `get_document_by_uri` no longer load the docling structure and page-image blobs. Load them with `DocumentRepository.get_docling_data` / `get_pages_data`, or `get_by_id(..., include_blobs=True)`.
+- Pinned judge sampling in every reference config under `evaluations/configs/` whose dataset is judged: `temperature` 0.6, `max_tokens` 16384, `extra_body` `top_p` 0.95 / `top_k` 20 / `min_p` 0 / `chat_template_kwargs.enable_thinking` true. `DEFAULT_JUDGE_MODEL` takes `temperature` 0.6, `max_tokens` 16384 and `top_p` 0.95, the subset ollama honours.
+- Reranker in the `orb_text`, `wix` and `t2_finqa` reference configs and in the reranking provider docs: `mixedbread-ai/mxbai-rerank-base-v2` → `Qwen/Qwen3-Reranker-4B` on the `vllm` provider.
 
 ### Fixed
 

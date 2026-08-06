@@ -34,7 +34,18 @@ TARGETS: tuple[Target, ...] = ("rag-capability", "analysis-capability")
 # Pinned judge model. Decoupled from `config.qa.model` so a user changing
 # their QA model does not inadvertently change the judge — keeps cross-run
 # comparisons stable. Override per-run with `--judge-model provider:name`.
-DEFAULT_JUDGE_MODEL = ModelConfig(provider="ollama", name="qwen3.6")
+#
+# Sampling follows Qwen's recommendation for thinking mode; its model cards
+# forbid greedy decoding. Only the keys ollama honours are set: it silently
+# ignores `top_k`, `min_p` and `chat_template_kwargs`. The vLLM reference
+# configs under `evaluations/configs/` carry those too.
+DEFAULT_JUDGE_MODEL = ModelConfig(
+    provider="ollama",
+    name="qwen3.6",
+    temperature=0.6,
+    max_tokens=16384,
+    extra_body={"top_p": 0.95},
+)
 
 load_dotenv(find_dotenv(usecwd=True))
 
@@ -75,6 +86,7 @@ def build_experiment_metadata(
         "qa_temperature": config.qa.model.temperature,
         "qa_max_tokens": config.qa.model.max_tokens,
         "qa_enable_thinking": config.qa.model.enable_thinking,
+        "qa_extra_body": config.qa.model.extra_body,
         "qa_max_searches": config.qa.max_searches,
     }
     if judge_config is not None:
@@ -85,6 +97,9 @@ def build_experiment_metadata(
                 "judge_temperature": judge_config.temperature,
                 "judge_max_tokens": judge_config.max_tokens,
                 "judge_enable_thinking": judge_config.enable_thinking,
+                # Sampling and thinking reach vLLM through extra_body, so
+                # without it a trace cannot tell which judge settings ran.
+                "judge_extra_body": judge_config.extra_body,
             }
         )
     if capability_config is not None:
@@ -95,6 +110,7 @@ def build_experiment_metadata(
                 "capability_temperature": capability_config.temperature,
                 "capability_max_tokens": capability_config.max_tokens,
                 "capability_enable_thinking": capability_config.enable_thinking,
+                "capability_extra_body": capability_config.extra_body,
             }
         )
     return metadata

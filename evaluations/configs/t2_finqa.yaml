@@ -1,5 +1,7 @@
 # Reference config for the `t2_finqa` pre-built evaluation database.
 # T²-RAGBench (FinQA) financial QA, scored by exact numeric match.
+# No `evaluations.judge` block: the spec sets `NumberMatchEvaluator`, which
+# replaces the evaluator list, so no LLM judge is constructed for this dataset.
 # Run: evaluations run t2_finqa --skip-db --target analysis-capability --config configs/t2_finqa.yaml
 # base_url uses the `vllm` host serving each model over an OpenAI-compatible API.
 
@@ -22,8 +24,9 @@ processing:
 
 reranking:
   model:
-    provider: cross-encoder
-    name: mixedbread-ai/mxbai-rerank-base-v2
+    provider: vllm
+    name: Qwen/Qwen3-Reranker-4B
+    base_url: http://vllm:11455
 
 qa:
   model:

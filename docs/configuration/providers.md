@@ -447,7 +447,7 @@ For high-performance local reranking using dedicated reranking models:
 reranking:
   model:
     provider: vllm
-    name: mixedbread-ai/mxbai-rerank-base-v2
+    name: Qwen/Qwen3-Reranker-4B
     base_url: http://localhost:8001
 ```
 
@@ -524,7 +524,7 @@ Then configure with any HuggingFace model id:
 reranking:
   model:
     provider: cross-encoder
-    name: mixedbread-ai/mxbai-rerank-base-v2
+    name: Qwen/Qwen3-Reranker-0.6B
 ```
 
-Other tested models: `BAAI/bge-reranker-v2-m3`, `Qwen/Qwen3-Reranker-0.6B`, `cross-encoder/ms-marco-MiniLM-L-6-v2`. Any model exposed as a `sentence_transformers.CrossEncoder` works.
+Other tested models: `BAAI/bge-reranker-v2-m3`, `cross-encoder/ms-marco-MiniLM-L-6-v2`. Any model exposed as a `sentence_transformers.CrossEncoder` works.

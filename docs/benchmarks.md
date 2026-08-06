@@ -69,14 +69,22 @@ evaluations run wix --config /path/to/haiku.rag.yaml --db /path/to/custom.lanced
 
 If no config file is specified, the script searches standard locations: `./haiku.rag.yaml`, user config directory, then falls back to defaults.
 
-To pin the LLM judge in YAML (rather than the default `ollama:qwen3.6`):
+To pin the LLM judge in YAML (rather than the default `ollama:qwen3.6`). These are the recommended settings:
 
 ```yaml
 evaluations:
   judge:
     provider: openai
-    name: gpt-4o-mini
+    name: RedHatAI/Qwen3.6-35B-A3B-NVFP4
     base_url: http://localhost:8000/v1   # optional, for OpenAI-compatible servers (vLLM, LM Studio, etc.)
+    temperature: 0.6
+    max_tokens: 16384
+    extra_body:
+      top_p: 0.95
+      top_k: 20
+      min_p: 0
+      chat_template_kwargs:
+        enable_thinking: true
 ```
 
 ## Methodology
@@ -94,6 +102,8 @@ evaluations:
 ### QA Accuracy
 
 `pydantic-evals` coordinates an LLM judge to determine whether the capability's answer is correct. The default judge is `ollama:qwen3.6`, pinned so changes to the capability model don't change the judge underneath. Set `evaluations.judge` in `haiku.rag.yaml` to override (including a custom `base_url` for any OpenAI-compatible endpoint). Accuracy is the fraction of correctly answered questions.
+
+A dataset that brings its own deterministic evaluator is scored by that evaluator instead, and no judge runs. T²-RAGBench is the only such dataset today, scored by `NumberMatchEvaluator`.
 
 We picked `qwen3.6` over the previously-pinned `gpt-oss` after a 4-cell calibration (gpt-oss / qwen3.6 as both answerer and judge, with Claude Opus 4.7 as a reference). `qwen3.6` had κ ≥ 0.66 vs the reference on both same-family and cross-family answerers (vs ~0.39–0.55 for `gpt-oss`) and showed no measurable self-preference bias, while `gpt-oss` was ~10 pp more lenient on its own outputs.
 
