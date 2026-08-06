@@ -66,6 +66,31 @@ class TestBuildExperimentMetadata:
         assert result["judge_temperature"] == 0.0
         assert result["judge_enable_thinking"] is False
 
+    def test_records_extra_body(self) -> None:
+        config = AppConfig()
+        config.qa.model.extra_body = {"top_k": 5}
+        judge = ModelConfig(
+            provider="openai",
+            name="qwen",
+            extra_body={"chat_template_kwargs": {"enable_thinking": True}},
+        )
+        capability = ModelConfig(
+            provider="openai", name="gemma", extra_body={"min_p": 0}
+        )
+        result = build_experiment_metadata(
+            dataset_key="test",
+            test_cases=1,
+            config=config,
+            judge_config=judge,
+            capability_config=capability,
+        )
+
+        assert result["qa_extra_body"] == {"top_k": 5}
+        assert result["judge_extra_body"] == {
+            "chat_template_kwargs": {"enable_thinking": True}
+        }
+        assert result["capability_extra_body"] == {"min_p": 0}
+
     def test_no_reranker(self) -> None:
         config = AppConfig()
         result = build_experiment_metadata(
@@ -77,13 +102,13 @@ class TestBuildExperimentMetadata:
     def test_with_reranker(self) -> None:
         config = AppConfig()
         config.reranking.model = ModelConfig(
-            provider="cross-encoder", name="mixedbread-ai/mxbai-rerank-base-v2"
+            provider="vllm", name="Qwen/Qwen3-Reranker-4B"
         )
         result = build_experiment_metadata(
             dataset_key="test", test_cases=1, config=config
         )
-        assert result["rerank_provider"] == "cross-encoder"
-        assert result["rerank_model"] == "mixedbread-ai/mxbai-rerank-base-v2"
+        assert result["rerank_provider"] == "vllm"
+        assert result["rerank_model"] == "Qwen/Qwen3-Reranker-4B"
 
 
 class TestResolveDataset:
@@ -177,6 +202,13 @@ class TestRunQaBenchmarkJudgeModel:
             )
 
         mock_get_model.assert_any_call(DEFAULT_JUDGE_MODEL, AppConfig())
+
+    def test_pinned_judge_avoids_greedy_decoding(self) -> None:
+        from evaluations.benchmark import DEFAULT_JUDGE_MODEL
+
+        assert DEFAULT_JUDGE_MODEL.temperature == 0.6
+        assert DEFAULT_JUDGE_MODEL.max_tokens == 16384
+        assert DEFAULT_JUDGE_MODEL.extra_body == {"top_p": 0.95}
 
 
 class TestEvaluateDatasetJudgeModel:
