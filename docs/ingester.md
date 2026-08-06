@@ -351,7 +351,8 @@ job at a time. `worker_count` is therefore also the maximum number of
 concurrent in-flight jobs. Jobs that hit a `TransientError` are
 rescheduled with exponential backoff plus jitter, up to `max_attempts`,
 then land in the dead-letter queue. `PermanentError` (unsupported
-extension, 4xx HTTP except 408/429, etc.) skips retry entirely.
+extension, 4xx HTTP except 408/429, object-store credential and
+configuration errors, etc.) skips retry entirely.
 
 While a worker processes a job it renews the job's lease every
 `heartbeat_interval_s`. A reaper task resets any claim whose lease has not

@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- Ingester jobs failing with an `obstore` `PermissionDeniedError`, `UnauthenticatedError`, `UnknownConfigurationKeyError` or `InvalidPathError` are dead-lettered instead of retried to `max_attempts`.
+
 ## [0.72.1] - 2026-07-31
 
 ### Changed
