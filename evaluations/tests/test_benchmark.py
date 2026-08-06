@@ -15,6 +15,20 @@ from evaluations.config import DatasetSpec
 from haiku.rag.config.models import AppConfig, ModelConfig
 
 
+def _stub_spec(**overrides) -> DatasetSpec:
+    """A DatasetSpec whose loaders/mappers are inert, for tests that only
+    exercise the surrounding plumbing."""
+    return DatasetSpec(
+        key="test",
+        db_filename="test.lancedb",
+        document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        document_mapper=lambda doc: None,
+        qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        **overrides,
+    )
+
+
 class TestBuildExperimentMetadata:
     def test_basic_metadata(self) -> None:
         config = AppConfig()
@@ -455,16 +469,89 @@ class TestLoadCaseIds:
         assert _load_case_ids(None) is None
 
 
+class TestRetrievalTarget:
+    def _spec(self) -> DatasetSpec:
+        from evaluations.config import RetrievalSample
+        from evaluations.evaluators import MAPEvaluator
+
+        return _stub_spec(
+            retrieval_loader=lambda: [{"q": "What is X?", "uris": ("uri-x",)}],
+            retrieval_mapper=lambda d: RetrievalSample(
+                question=d["q"], expected_uris=d["uris"]
+            ),
+            retrieval_evaluator=MAPEvaluator(),
+        )
+
+    @pytest.mark.asyncio
+    async def test_scores_from_search_results_without_reading_documents(
+        self, tmp_path: Path
+    ) -> None:
+        from haiku.rag.store.models.chunk import SearchResult
+
+        from evaluations.benchmark import run_retrieval_benchmark
+
+        searches: list[dict] = []
+
+        class FakeRag:
+            async def search(self, **kwargs) -> list[SearchResult]:
+                searches.append(kwargs)
+                return [
+                    SearchResult(
+                        content="x",
+                        score=1.0,
+                        document_id="doc-1",
+                        document_uri="uri-x",
+                    )
+                ]
+
+            async def get_document_by_id(self, document_id: str) -> None:
+                raise AssertionError(
+                    "retrieval scoring must not read whole document rows"
+                )
+
+        fake = FakeRag()
+        with patch("evaluations.benchmark.HaikuRAG") as mock_haiku:
+            mock_haiku.return_value.__aenter__.return_value = fake
+            result = await run_retrieval_benchmark(
+                self._spec(), AppConfig(), db_path=tmp_path / "test.lancedb"
+            )
+
+        assert result is not None
+        assert result["map"] == 1.0
+        assert searches[0]["include_images"] is False
+
+    @pytest.mark.asyncio
+    async def test_ranks_each_document_once(self, tmp_path: Path) -> None:
+        from haiku.rag.store.models.chunk import SearchResult
+
+        from evaluations.benchmark import run_retrieval_benchmark
+
+        def _result(uri: str, score: float) -> SearchResult:
+            return SearchResult(content="x", score=score, document_uri=uri)
+
+        class FakeRag:
+            async def search(self, **kwargs) -> list[SearchResult]:
+                return [
+                    _result("uri-other", 1.0),
+                    _result("uri-x", 0.9),
+                    _result("uri-other", 0.8),
+                    _result("uri-x", 0.7),
+                ]
+
+        with patch("evaluations.benchmark.HaikuRAG") as mock_haiku:
+            mock_haiku.return_value.__aenter__.return_value = FakeRag()
+            result = await run_retrieval_benchmark(
+                self._spec(), AppConfig(), db_path=tmp_path / "test.lancedb"
+            )
+
+        # uri-x is the only relevant document and ranks second of two
+        assert result is not None
+        assert result["map"] == 0.5
+
+
 class TestEvaluateDatasetCaseIds:
     def _spec(self) -> DatasetSpec:
-        return DatasetSpec(
-            key="test",
-            db_filename="test.lancedb",
-            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            document_mapper=lambda doc: None,
-            qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        )
+        return _stub_spec()
 
     @pytest.mark.asyncio
     async def test_threads_case_ids_to_qa_benchmark(self) -> None:

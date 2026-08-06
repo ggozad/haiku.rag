@@ -984,13 +984,17 @@ async def test_metadata_only_update_does_not_advance_documents_table(temp_db_pat
         # The light document_meta table absorbs the updates.
         assert await client.store.document_meta_table.version() > meta_v0
 
-        # Reads still hydrate the full document (content + blobs + metadata).
+        # Reads still hydrate content and the mutable attributes together.
         fetched = await client.get_document_by_id(created.id)
         assert fetched is not None
         assert fetched.metadata["source_revision"] == "rev-5"
         assert fetched.title == "Title 5"
         assert fetched.content == "Body text"
-        assert fetched.get_docling_document() is not None
+
+        # And the untouched docling blob is still there.
+        docling = await client.document_repository.get_docling_data(created.id)
+        assert docling is not None
+        assert docling.get_docling_document() is not None
 
 
 async def test_delete_marks_vacuum_dirty(temp_db_path):
@@ -1202,7 +1206,9 @@ async def test_client_create_document_from_file_stores_docling_json(temp_db_path
             assert doc.docling_version is not None
 
             # Verify the stored document also has the JSON
-            retrieved = await client.get_document_by_id(doc.id)
+            retrieved = await client.document_repository.get_by_id(
+                doc.id, include_blobs=True
+            )
             assert retrieved is not None
             assert retrieved.docling_document == doc.docling_document
             assert retrieved.docling_version == doc.docling_version
@@ -2198,6 +2204,32 @@ async def test_update_document_with_url_prefixed_content(temp_db_path, monkeypat
 
         assert "example.com" in updated.content
         assert "New heading" in updated.content
+
+
+async def test_update_document_with_chunks_keeps_page_images(temp_db_path, monkeypatch):
+    """Replacing content and chunks without a docling document writes the stored
+    record back as-is, so its page rasters must survive the round trip."""
+    _patch_embed_chunks(monkeypatch)
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document(content="initial body", uri="test://pages")
+        assert doc.id is not None
+
+        sentinel_pages = b"\x80SENTINEL_PAGE_BYTES"
+        await client.store.documents_table.update(
+            {"docling_pages": sentinel_pages}, where=f"id = '{doc.id}'"
+        )
+
+        await client.update_document(
+            doc.id,
+            content="replacement body",
+            chunks=[Chunk(content="replacement body")],
+        )
+
+        stored = await client.document_repository.get_by_id(doc.id, include_blobs=True)
+        assert stored is not None
+        assert stored.content == "replacement body"
+        assert stored.docling_pages == sentinel_pages
 
 
 async def test_rebuild_rechunk_with_url_prefixed_stored_content(

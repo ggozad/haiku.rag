@@ -176,7 +176,7 @@ async def _set_embedder(client: "HaikuRAG") -> None:
 
 
 async def _hydrate(
-    client: "HaikuRAG", light_docs: list[Document]
+    client: "HaikuRAG", light_docs: list[Document], include_blobs: bool = True
 ) -> AsyncGenerator[Document, None]:
     """Yield fully-loaded documents one at a time from a light listing.
 
@@ -187,7 +187,9 @@ async def _hydrate(
     """
     for light_doc in light_docs:
         assert light_doc.id is not None
-        doc = await client.get_document_by_id(light_doc.id)
+        doc = await client.document_repository.get_by_id(
+            light_doc.id, include_blobs=include_blobs
+        )
         if doc is None:
             continue
         assert doc.id is not None
@@ -197,9 +199,18 @@ async def _hydrate(
 async def _rebuild_title_only(
     client: "HaikuRAG", documents: list[Document]
 ) -> AsyncGenerator[str, None]:
-    """Generate titles for documents that don't have one."""
+    """Generate titles for documents that don't have one.
+
+    A title comes from the content or the docling structure, never the page
+    rasters, so those are left out of the per-document load.
+    """
+    repo = client.document_repository
     untitled = [d for d in documents if d.title is None]
-    async for doc in _hydrate(client, untitled):
+    async for doc in _hydrate(client, untitled, include_blobs=False):
+        assert doc.id is not None
+        structure = await repo.get_docling_data(doc.id)
+        if structure is not None:
+            doc.docling_document = structure.docling_document
         try:
             title = await client.generate_title(doc)
         except Exception:
@@ -209,8 +220,7 @@ async def _rebuild_title_only(
             continue
         if title is not None:
             doc.title = title
-            await client.document_repository.update_meta(doc)
-            assert doc.id is not None
+            await repo.update_meta(doc)
             yield doc.id
 
 
@@ -822,7 +832,9 @@ async def _rebuild_full(
 
         # Fallback: rebuild from stored content. Now we need the full
         # record (content + docling_pages for the round-trip write).
-        doc = await client.get_document_by_id(light_doc.id)
+        doc = await client.document_repository.get_by_id(
+            light_doc.id, include_blobs=True
+        )
         if doc is None:
             continue
         assert doc.id is not None

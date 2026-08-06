@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Changed
+
+- `get_document_by_id` / `get_document_by_uri` no longer load the docling structure and page-image blobs. Load them with `DocumentRepository.get_docling_data` / `get_pages_data`, or `get_by_id(..., include_blobs=True)`.
+
 ### Fixed
 
 - Ingester jobs failing with an `obstore` `PermissionDeniedError`, `UnauthenticatedError`, `UnknownConfigurationKeyError` or `InvalidPathError` are dead-lettered instead of retried to `max_attempts`.

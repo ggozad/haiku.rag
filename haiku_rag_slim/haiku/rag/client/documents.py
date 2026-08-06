@@ -856,7 +856,11 @@ async def update_document(
             "Provide one or the other, not both."
         )
 
-    existing_doc = await client.get_document_by_id(document_id)
+    # Caller-supplied chunks without a docling document replace neither blob,
+    # and the row is written back whole, so they have to make the round trip.
+    existing_doc = await client.document_repository.get_by_id(
+        document_id, include_blobs=chunks is not None and docling_document is None
+    )
     if existing_doc is None:
         raise ValueError(f"Document with ID {document_id} not found")
 

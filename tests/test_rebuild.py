@@ -36,7 +36,9 @@ async def test_rebuild_full(qa_corpus: list[dict[str, str]], temp_db_path):
         assert doc.id in processed_ids
 
         # Verify DoclingDocument JSON is preserved after rebuild
-        doc_after = await client.document_repository.get_by_id(doc.id)
+        doc_after = await client.document_repository.get_by_id(
+            doc.id, include_blobs=True
+        )
         assert doc_after is not None
         assert doc_after.docling_document is not None
         assert doc_after.docling_version is not None
@@ -70,7 +72,9 @@ async def test_rebuild_embed_only(qa_corpus: list[dict[str, str]], temp_db_path)
         assert doc.id in processed_ids
 
         # DoclingDocument JSON should be unchanged (embed-only doesn't touch documents)
-        doc_after = await client.document_repository.get_by_id(doc.id)
+        doc_after = await client.document_repository.get_by_id(
+            doc.id, include_blobs=True
+        )
         assert doc_after is not None
         assert doc_after.docling_document == original_docling_json
 
@@ -498,7 +502,9 @@ async def test_rebuild_rechunk(qa_corpus: list[dict[str, str]], temp_db_path):
         assert doc.id in processed_ids
 
         # Document content should be unchanged, but docling JSON should be updated
-        doc_after = await client.document_repository.get_by_id(doc.id)
+        doc_after = await client.document_repository.get_by_id(
+            doc.id, include_blobs=True
+        )
         assert doc_after is not None
         assert doc_after.content == content_before
         assert doc_after.docling_document is not None
@@ -543,6 +549,34 @@ async def test_rebuild_full_with_accessible_source(temp_db_path):
             assert new_doc is not None
             assert new_doc.uri == source_path.as_uri()
             assert "Fresh content" in new_doc.content
+
+
+async def test_rebuild_title_only_reads_structural_title(temp_db_path):
+    """TITLE_ONLY takes the title from the stored docling structure, so it never
+    reaches the LLM for a document that carries one."""
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
+    from haiku.rag.store.models.document import Document
+
+    docling_doc = DoclingDocument(name="structured")
+    docling_doc.add_text(label=DocItemLabel.TITLE, text="The Stored Title")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = Document(content="body text", metadata={})
+        doc.set_docling(docling_doc)
+        created = await client.document_repository.create(doc)
+        assert created.id is not None
+
+        processed_ids = [
+            doc_id
+            async for doc_id in client.rebuild_database(mode=RebuildMode.TITLE_ONLY)
+        ]
+
+        assert processed_ids == [created.id]
+        refreshed = await client.get_document_by_id(created.id)
+        assert refreshed is not None
+        assert refreshed.title == "The Stored Title"
 
 
 async def test_rebuild_title_only_handles_llm_failure(temp_db_path, monkeypatch):
@@ -707,7 +741,7 @@ async def test_rebuild_descriptions_patches_blob_and_chunks(temp_db_path, monkey
         )
 
         from_blob = (
-            await rag.document_repository.get_by_id(created.id)
+            await rag.document_repository.get_by_id(created.id, include_blobs=True)
         ).get_docling_document()  # type: ignore[union-attr]
         assert from_blob is not None and from_blob.pictures
         # No description in the freshly-ingested doc
@@ -737,7 +771,7 @@ async def test_rebuild_descriptions_patches_blob_and_chunks(temp_db_path, monkey
         assert created.id in processed
 
         # The stored docling blob now has the description
-        after = await rag.document_repository.get_by_id(created.id)
+        after = await rag.document_repository.get_by_id(created.id, include_blobs=True)
         assert after is not None
         after_doc = after.get_docling_document()
         assert after_doc is not None and after_doc.pictures
@@ -799,7 +833,7 @@ async def test_rebuild_descriptions_skips_already_described(temp_db_path, monkey
         # VLM was never called for this picture (it already had a description)
         assert called_with == [] or all(not d for d in called_with)
 
-        after = await rag.document_repository.get_by_id(created.id)
+        after = await rag.document_repository.get_by_id(created.id, include_blobs=True)
         assert after is not None
         after_doc = after.get_docling_document()
         assert after_doc is not None
@@ -1142,10 +1176,10 @@ async def test_hydrate_skips_documents_deleted_mid_rebuild(temp_db_path):
             Document(content="body", uri="test://gone")
         )
 
-        async def vanished(_document_id):
+        async def vanished(_document_id, include_blobs=False):
             return None
 
-        client.get_document_by_id = vanished  # type: ignore[method-assign]
+        client.document_repository.get_by_id = vanished  # type: ignore[method-assign]
 
         assert [doc async for doc in _hydrate(client, [stored])] == []
 
@@ -1438,10 +1472,10 @@ async def test_rebuild_full_skips_document_deleted_mid_rebuild(temp_db_path):
         doc = await client.create_document(content="doc that disappears")
         assert doc.id is not None
 
-        async def vanished(_document_id):
+        async def vanished(_document_id, include_blobs=False):
             return None
 
-        client.get_document_by_id = vanished  # type: ignore[method-assign]
+        client.document_repository.get_by_id = vanished  # type: ignore[method-assign]
 
         processed = [
             doc_id async for doc_id in client.rebuild_database(mode=RebuildMode.FULL)

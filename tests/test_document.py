@@ -458,6 +458,75 @@ async def test_get_pages_data_loads_only_pages_column(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("include_blobs", [False, True])
+async def test_document_get_by_id_docling_blobs(temp_db_path, include_blobs):
+    """get_by_id leaves the docling blobs out unless asked for them: a single
+    document's page rasters run to hundreds of MB."""
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+
+        created = await doc_repo.create(
+            Document(
+                content="the text",
+                uri="https://example.com/doc.pdf",
+                title="Test Document",
+                metadata={"key": "value"},
+                docling_document=b"structure-blob",
+                docling_pages=b"page-raster-blob",
+                docling_version="2.1.0",
+            )
+        )
+        assert created.id is not None
+
+        doc = await doc_repo.get_by_id(created.id, include_blobs=include_blobs)
+
+        assert doc is not None
+        assert doc.id == created.id
+        assert doc.content == "the text"
+        assert doc.uri == "https://example.com/doc.pdf"
+        assert doc.title == "Test Document"
+        assert doc.metadata == {"key": "value"}
+        if include_blobs:
+            assert doc.docling_document == b"structure-blob"
+            assert doc.docling_pages == b"page-raster-blob"
+            assert doc.docling_version == "2.1.0"
+        else:
+            assert doc.docling_document is None
+            assert doc.docling_pages is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("include_blobs", [False, True])
+async def test_document_get_by_uri_docling_blobs(temp_db_path, include_blobs):
+    """get_by_uri has the same projection as get_by_id."""
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+
+        created = await doc_repo.create(
+            Document(
+                content="the text",
+                uri="https://example.com/doc.pdf",
+                docling_document=b"structure-blob",
+                docling_pages=b"page-raster-blob",
+            )
+        )
+
+        doc = await doc_repo.get_by_uri(
+            "https://example.com/doc.pdf", include_blobs=include_blobs
+        )
+
+        assert doc is not None
+        assert doc.id == created.id
+        assert doc.content == "the text"
+        if include_blobs:
+            assert doc.docling_document == b"structure-blob"
+            assert doc.docling_pages == b"page-raster-blob"
+        else:
+            assert doc.docling_document is None
+            assert doc.docling_pages is None
+
+
+@pytest.mark.asyncio
 async def test_document_get_by_uri_with_special_characters(
     qa_corpus: list[dict[str, str]], temp_db_path
 ):
