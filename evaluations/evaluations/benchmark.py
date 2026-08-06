@@ -235,11 +235,10 @@ async def run_retrieval_benchmark(
             seen = set()
             identifiers = []
             for result in chunks:
-                # Use arxiv_id from metadata if present, otherwise use URI
-                doc_id = result.document_meta.get("arxiv_id") or result.document_uri
-                if doc_id and doc_id not in seen:
-                    identifiers.append(doc_id)
-                    seen.add(doc_id)
+                uri = result.document_uri
+                if uri and uri not in seen:
+                    identifiers.append(uri)
+                    seen.add(uri)
 
             return identifiers
 

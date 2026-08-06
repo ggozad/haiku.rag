@@ -515,21 +515,21 @@ class TestRetrievalTarget:
         assert searches[0]["include_images"] is False
 
     @pytest.mark.asyncio
-    async def test_prefers_metadata_identifier_over_uri(self, tmp_path: Path) -> None:
+    async def test_ranks_each_document_once(self, tmp_path: Path) -> None:
         from haiku.rag.store.models.chunk import SearchResult
 
         from evaluations.benchmark import run_retrieval_benchmark
 
+        def _result(uri: str, score: float) -> SearchResult:
+            return SearchResult(content="x", score=score, document_uri=uri)
+
         class FakeRag:
             async def search(self, **kwargs) -> list[SearchResult]:
                 return [
-                    SearchResult(
-                        content="x",
-                        score=1.0,
-                        document_id="doc-1",
-                        document_uri="uri-other",
-                        document_meta={"arxiv_id": "uri-x"},
-                    )
+                    _result("uri-other", 1.0),
+                    _result("uri-x", 0.9),
+                    _result("uri-other", 0.8),
+                    _result("uri-x", 0.7),
                 ]
 
         with patch("evaluations.benchmark.HaikuRAG") as mock_haiku:
@@ -538,8 +538,9 @@ class TestRetrievalTarget:
                 self._spec(), AppConfig(), db_path=tmp_path / "test.lancedb"
             )
 
+        # uri-x is the only relevant document and ranks second of two
         assert result is not None
-        assert result["map"] == 1.0
+        assert result["map"] == 0.5
 
 
 class TestEvaluateDatasetCaseIds:
