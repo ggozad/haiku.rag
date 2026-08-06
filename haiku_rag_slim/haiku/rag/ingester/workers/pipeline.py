@@ -3,6 +3,12 @@ from contextlib import nullcontext
 from typing import TYPE_CHECKING
 
 import httpx
+from obstore.exceptions import (
+    InvalidPathError,
+    PermissionDeniedError,
+    UnauthenticatedError,
+    UnknownConfigurationKeyError,
+)
 from pydantic import BaseModel
 
 from haiku.rag.client.exceptions import UnsupportedSourceError
@@ -61,6 +67,19 @@ def _classify(exc: BaseException) -> Exception:
         # Umbrella for ConnectError, NetworkError, TimeoutException, ProtocolError,
         # ProxyError — every transport-layer failure that's worth retrying.
         return TransientError(f"network: {exc}")
+
+    if isinstance(
+        exc,
+        PermissionDeniedError
+        | UnauthenticatedError
+        | UnknownConfigurationKeyError
+        | InvalidPathError,
+    ):
+        # These subclass neither OSError nor httpx, so without this branch
+        # they'd fall through to the transient default and retry the whole
+        # backoff ladder. A missing object arrives as a builtin
+        # FileNotFoundError instead, handled below.
+        return PermanentError(f"object store: {exc}")
 
     if isinstance(exc, FileNotFoundError):
         return PermanentError(f"file not found: {exc}")

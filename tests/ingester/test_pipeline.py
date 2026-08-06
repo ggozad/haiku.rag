@@ -3,6 +3,14 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from obstore.exceptions import (
+    GenericError,
+    InvalidPathError,
+    JoinError,
+    PermissionDeniedError,
+    UnauthenticatedError,
+    UnknownConfigurationKeyError,
+)
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
@@ -540,4 +548,35 @@ async def test_file_too_large_classified_as_permanent():
     client = _mock_client()
     client.create_document_from_source.side_effect = FileTooLargeError("too big")
     with pytest.raises(PermanentError, match="too big"):
+        await run_job(client, _job())
+
+
+@pytest.mark.parametrize(
+    "exc_class",
+    [
+        PermissionDeniedError,
+        UnauthenticatedError,
+        UnknownConfigurationKeyError,
+        InvalidPathError,
+    ],
+)
+@pytest.mark.asyncio
+async def test_obstore_config_errors_classified_permanent(exc_class):
+    client = _mock_client()
+    client.create_document_from_source.side_effect = exc_class("bad config")
+    with pytest.raises(PermanentError, match="object store"):
+        await run_job(client, _job())
+
+
+@pytest.mark.parametrize(
+    "exc_class",
+    [GenericError, JoinError],
+)
+@pytest.mark.asyncio
+async def test_other_obstore_errors_classified_transient(exc_class):
+    """Only the credential/configuration errors are permanent; umbrellaing on
+    obstore's BaseError would sweep up retryable failures too."""
+    client = _mock_client()
+    client.create_document_from_source.side_effect = exc_class("upstream hiccup")
+    with pytest.raises(TransientError):
         await run_job(client, _job())
