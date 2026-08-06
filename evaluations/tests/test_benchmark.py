@@ -455,6 +455,93 @@ class TestLoadCaseIds:
         assert _load_case_ids(None) is None
 
 
+class TestRetrievalTarget:
+    def _spec(self) -> DatasetSpec:
+        from evaluations.config import RetrievalSample
+        from evaluations.evaluators import MAPEvaluator
+
+        return DatasetSpec(
+            key="test",
+            db_filename="test.lancedb",
+            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            document_mapper=lambda doc: None,
+            qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            retrieval_loader=lambda: [  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+                {"q": "What is X?", "uris": ("uri-x",)},
+            ],
+            retrieval_mapper=lambda d: RetrievalSample(
+                question=d["q"], expected_uris=d["uris"]
+            ),
+            retrieval_evaluator=MAPEvaluator(),
+        )
+
+    @pytest.mark.asyncio
+    async def test_scores_from_search_results_without_reading_documents(
+        self, tmp_path: Path
+    ) -> None:
+        from haiku.rag.store.models.chunk import SearchResult
+
+        from evaluations.benchmark import run_retrieval_benchmark
+
+        searches: list[dict] = []
+
+        class FakeRag:
+            async def search(self, **kwargs) -> list[SearchResult]:
+                searches.append(kwargs)
+                return [
+                    SearchResult(
+                        content="x",
+                        score=1.0,
+                        document_id="doc-1",
+                        document_uri="uri-x",
+                    )
+                ]
+
+            async def get_document_by_id(self, document_id: str) -> None:
+                raise AssertionError(
+                    "retrieval scoring must not read whole document rows"
+                )
+
+        fake = FakeRag()
+        with patch("evaluations.benchmark.HaikuRAG") as mock_haiku:
+            mock_haiku.return_value.__aenter__.return_value = fake
+            result = await run_retrieval_benchmark(
+                self._spec(), AppConfig(), db_path=tmp_path / "test.lancedb"
+            )
+
+        assert result is not None
+        assert result["map"] == 1.0
+        assert searches[0]["include_images"] is False
+
+    @pytest.mark.asyncio
+    async def test_prefers_metadata_identifier_over_uri(self, tmp_path: Path) -> None:
+        from haiku.rag.store.models.chunk import SearchResult
+
+        from evaluations.benchmark import run_retrieval_benchmark
+
+        class FakeRag:
+            async def search(self, **kwargs) -> list[SearchResult]:
+                return [
+                    SearchResult(
+                        content="x",
+                        score=1.0,
+                        document_id="doc-1",
+                        document_uri="uri-other",
+                        document_meta={"arxiv_id": "uri-x"},
+                    )
+                ]
+
+        with patch("evaluations.benchmark.HaikuRAG") as mock_haiku:
+            mock_haiku.return_value.__aenter__.return_value = FakeRag()
+            result = await run_retrieval_benchmark(
+                self._spec(), AppConfig(), db_path=tmp_path / "test.lancedb"
+            )
+
+        assert result is not None
+        assert result["map"] == 1.0
+
+
 class TestEvaluateDatasetCaseIds:
     def _spec(self) -> DatasetSpec:
         return DatasetSpec(

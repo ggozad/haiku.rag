@@ -230,20 +230,13 @@ async def run_retrieval_benchmark(
     async with HaikuRAG(db, config=config, read_only=True) as rag:
 
         async def retrieval_target(question: str) -> list[str]:
-            chunks = await rag.search(query=question, limit=5)
+            chunks = await rag.search(query=question, limit=5, include_images=False)
 
             seen = set()
             identifiers = []
             for result in chunks:
-                if result.document_id is None:
-                    continue
-                doc = await rag.get_document_by_id(result.document_id)
-                if doc is None:
-                    continue
                 # Use arxiv_id from metadata if present, otherwise use URI
-                doc_id = doc.metadata.get("arxiv_id") if doc.metadata else None
-                if doc_id is None:
-                    doc_id = doc.uri
+                doc_id = result.document_meta.get("arxiv_id") or result.document_uri
                 if doc_id and doc_id not in seen:
                     identifiers.append(doc_id)
                     seen.add(doc_id)
