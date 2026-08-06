@@ -856,7 +856,11 @@ async def update_document(
             "Provide one or the other, not both."
         )
 
-    existing_doc = await client.get_document_by_id(document_id)
+    # An update that only replaces content writes the record back as-is, so
+    # the blobs have to make the round trip.
+    existing_doc = await client.document_repository.get_by_id(
+        document_id, include_blobs=True
+    )
     if existing_doc is None:
         raise ValueError(f"Document with ID {document_id} not found")
 

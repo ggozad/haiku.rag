@@ -59,7 +59,7 @@ class TestV0_58_0Migration:
 
             # Full hydration still works (content + metadata + blobs intact).
             repo = DocumentRepository(store)
-            doc = await repo.get_by_id("doc-1")
+            doc = await repo.get_by_id("doc-1", include_blobs=True)
             assert doc is not None
             assert doc.content == "body one"
             assert doc.uri == "s3://b/one"

@@ -187,7 +187,9 @@ async def _hydrate(
     """
     for light_doc in light_docs:
         assert light_doc.id is not None
-        doc = await client.get_document_by_id(light_doc.id)
+        doc = await client.document_repository.get_by_id(
+            light_doc.id, include_blobs=True
+        )
         if doc is None:
             continue
         assert doc.id is not None
@@ -822,7 +824,9 @@ async def _rebuild_full(
 
         # Fallback: rebuild from stored content. Now we need the full
         # record (content + docling_pages for the round-trip write).
-        doc = await client.get_document_by_id(light_doc.id)
+        doc = await client.document_repository.get_by_id(
+            light_doc.id, include_blobs=True
+        )
         if doc is None:
             continue
         assert doc.id is not None

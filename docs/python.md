@@ -94,6 +94,14 @@ By URI:
 doc = await client.get_document_by_uri("file:///path/to/document.pdf")
 ```
 
+Both return content, uri, title and metadata. The multi-MB docling blobs are
+loaded separately:
+
+```python
+docling = await client.document_repository.get_docling_data(doc.id)
+pages = await client.document_repository.get_pages_data(doc.id)
+```
+
 List all documents:
 ```python
 docs = await client.list_documents(limit=10, offset=0)

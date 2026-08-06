@@ -182,11 +182,16 @@ class DocumentRepository:
             raise
         return documents
 
-    async def get_by_id(self, entity_id: str) -> Document | None:
-        """Get a document by its ID."""
+    _LIGHT_COLUMNS = ["id", "content"]
+
+    async def get_by_id(
+        self, entity_id: str, include_blobs: bool = False
+    ) -> Document | None:
+        """Get a document by its ID. `include_blobs` adds the docling blobs."""
         safe_id = escape_sql_string(entity_id)
+        query = self.store.documents_table.query().where(f"id = '{safe_id}'").limit(1)
         results = await query_to_pydantic(
-            self.store.documents_table.query().where(f"id = '{safe_id}'").limit(1),
+            query if include_blobs else query.select(self._LIGHT_COLUMNS),
             DocumentRecord,
         )
 
@@ -373,7 +378,9 @@ class DocumentRepository:
         """Count documents with optional filtering (over document_meta columns)."""
         return await self.store.document_meta_table.count_rows(filter=filter)
 
-    async def get_by_uri(self, uri: str) -> Document | None:
+    async def get_by_uri(
+        self, uri: str, include_blobs: bool = False
+    ) -> Document | None:
         """Get a document by its URI (resolved via document_meta)."""
         escaped_uri = escape_sql_string(uri)
         meta_results = await query_to_pydantic(
@@ -388,8 +395,9 @@ class DocumentRepository:
 
         meta = meta_results[0]
         safe_id = escape_sql_string(meta.id)
+        query = self.store.documents_table.query().where(f"id = '{safe_id}'").limit(1)
         doc_results = await query_to_pydantic(
-            self.store.documents_table.query().where(f"id = '{safe_id}'").limit(1),
+            query if include_blobs else query.select(self._LIGHT_COLUMNS),
             DocumentRecord,
         )
         if not doc_results:
