@@ -1,6 +1,6 @@
 # Benchmarks
 
-We evaluate `haiku.rag` on a small set of datasets that exercise different parts of the pipeline. OpenRAG Bench (ORB), T²-RAGBench, and HotpotQA are the datasets we currently track. Retrieval, QA accuracy, and citation retrieval are scored end-to-end through the RAG and analysis capabilities.
+We evaluate `haiku.rag` on a small set of datasets that exercise different parts of the pipeline. OpenRAG Bench (ORB), T²-RAGBench, HotpotQA, and MTRAG are the datasets we currently track. Retrieval, QA accuracy, and citation retrieval are scored end-to-end through the RAG and analysis capabilities.
 
 ## Running Evaluations
 
@@ -37,6 +37,7 @@ Active datasets:
 | `orb_multimodal_nemotron` — OpenRAG Bench, multimodal embedder (`nvidia/llama-nemotron-embed-vl-1b-v2`), the embedder behind the published headline results | ~16 GB |
 | `t2_finqa` — T²-RAGBench (FinQA) financial QA, text embedder (`qwen3-embedding:4b`); scored by exact numeric match, run with `--target analysis-capability` | ~2 GB |
 | `hotpotqa` — HotpotQA multi-hop QA over Wikipedia paragraphs, text embedder (`qwen3-embedding:4b`) | ~1.5 GB |
+| `mtrag_clapnq` — MTRAG multi-turn RAG, ClapNQ (Wikipedia) passages, text embedder (`qwen3-embedding:4b`); also serves the `mtrag_clapnq_rewrite` and `mtrag_clapnq_live` keys | ~2.8 GB |
 
 After downloading, run benchmarks with `--skip-db`. Each database is built with a specific embedder, so pass its reference config from `evaluations/configs/` (a database only opens against a config whose embedder matches):
 
@@ -225,3 +226,29 @@ The reranker's contribution is larger here than on the single-doc datasets: hybr
 | `vllm:Gemma-4-26B-A4B-NVFP4` | none                | 0.83        | 0.75             |
 
 *Measured on haiku.rag v0.66.0 with `qwen3-embedding:4b` (vLLM, dim 2560), judged by `vllm:Qwen3.6-35B-A3B-NVFP4`, 7,405 cases. The reranker lifts QA accuracy +2.7pts and `cited_map` +4.6pts. Without a reranker, `cited_map` (0.75) still exceeds the no-reranker retrieval MAP (0.70): the skill reformulates queries across search calls, partially recovering second-hop documents that a single query misses.*
+
+### MTRAG (ClapNQ)
+
+[MTRAG](https://github.com/IBM/mt-rag-benchmark) is IBM's multi-turn RAG benchmark (TACL 2025, SemEval-2026 Task 8): human-authored conversations with per-turn answerability labels and binary relevance judgments. We evaluate the ClapNQ (Wikipedia) domain: 183,408 passages, 29 conversations, 224 turns, 208 retrieval queries.
+
+Three dataset keys share one database. `mtrag_clapnq` retrieves with the raw last user turn and runs QA by replaying each task's reference conversation prefix as message history. `mtrag_clapnq_rewrite` retrieves with the human standalone rewrites. `mtrag_clapnq_live` replays whole conversations through a single capability session, carrying the model's own answers and tool history across turns.
+
+##### Retrieval (Recall@k / nDCG@k)
+
+Directly comparable with [IBM's published results](https://github.com/IBM/mt-rag-benchmark/tree/main/mtrag-human/retrieval_tasks). Elser is IBM's strongest reported retriever.
+
+| Retriever | Queries | R@5 | R@10 | nDCG@5 | nDCG@10 |
+|-----------|---------|----:|-----:|-------:|--------:|
+| Elser (IBM) | lastturn | 0.49 | 0.58 | 0.45 | 0.49 |
+| `haiku.rag` | lastturn | 0.501 | 0.600 | 0.455 | 0.497 |
+| Elser (IBM) | rewrite | 0.52 | 0.64 | 0.48 | 0.54 |
+| `haiku.rag` | rewrite | 0.548 | 0.668 | 0.503 | 0.556 |
+
+##### QA accuracy + citation retrieval
+
+| Mode | Capability model | Turns | QA accuracy | Mean `cited_map` |
+|------|------------------|------:|-------------|------------------|
+| Gold-prefix (`mtrag_clapnq`) | `vllm:Gemma-4-26B-A4B-NVFP4` | 223 | 0.68 | 0.35 |
+| Live (`mtrag_clapnq_live`) | `vllm:Gemma-4-26B-A4B-NVFP4` | 195/224 scored | 0.72 micro / 0.73 macro | 0.35 |
+
+*Measured on haiku.rag v0.67.1 with `qwen3-embedding:4b` (vLLM, dim 2560) and `Qwen3-Reranker-4B`, stock capability instructions, judged by `vllm:Qwen3.6-35B-A3B-NVFP4` at temperature 0. The judge sampling has since been re-pinned repo-wide (0.6 with thinking), so future runs re-baseline. QA numbers are internal (our judge and rubric) and not comparable with IBM's published generation metrics. Live mode additionally reports refusal precision/recall against the per-turn answerability labels and per-turn pass rates; pass rate declines with conversation depth (93% at turn 1 to 38% at turn 9). The dataset is text-only (ClapNQ passages), so it exercises no multimodal paths.*

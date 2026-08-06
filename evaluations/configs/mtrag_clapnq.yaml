@@ -1,0 +1,48 @@
+# Reference config for the `mtrag_clapnq` pre-built evaluation database.
+# IBM MTRAG, ClapNQ (Wikipedia) domain: multi-turn retrieval and QA over
+# 183,408 passages. Also serves mtrag_clapnq_rewrite and mtrag_clapnq_live.
+# Run: evaluations run mtrag_clapnq --config configs/mtrag_clapnq.yaml
+# base_url uses the `vllm` host serving each model over an OpenAI-compatible API.
+# The corpus is text-only: no multimodal embedder, no vision paths. This eval
+# cannot exercise image or vision turn-boundary behavior.
+
+environment: development
+
+storage:
+  auto_vacuum: false
+
+embeddings:
+  model:
+    provider: openai
+    name: qwen3-embedding-4b
+    vector_dim: 2560
+    base_url: http://vllm:11431/v1
+
+reranking:
+  model:
+    provider: vllm
+    name: Qwen/Qwen3-Reranker-4B
+    base_url: http://vllm:11455
+
+qa:
+  model:
+    provider: openai
+    name: gemma4-26b
+    base_url: http://vllm:11432/v1
+    # vLLM enforces input + max_tokens <= max_model_len, so a large output
+    # budget silently shrinks the input budget. MTRAG answers are sentences.
+    max_tokens: 8192
+
+evaluations:
+  judge:
+    provider: openai
+    name: RedHatAI/Qwen3.6-35B-A3B-NVFP4
+    base_url: http://vllm:11430/v1
+    temperature: 0.6
+    max_tokens: 16384
+    extra_body:
+      top_p: 0.95
+      top_k: 20
+      min_p: 0
+      chat_template_kwargs:
+        enable_thinking: true

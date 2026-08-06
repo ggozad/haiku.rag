@@ -1,7 +1,16 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from evaluations.config import DatasetSpec, DocumentPayload, RetrievalSample
+import pytest
+from pydantic import ValidationError
+
+from evaluations.config import (
+    ConversationInput,
+    DatasetSpec,
+    DocumentPayload,
+    RetrievalSample,
+    Turn,
+)
 
 
 def _make_spec(**kwargs: object) -> DatasetSpec:
@@ -49,8 +58,53 @@ class TestDatasetSpecDefaults:
         spec = _make_spec()
         assert spec.retrieval_loader is None
         assert spec.retrieval_mapper is None
-        assert spec.retrieval_evaluator is None
+        assert spec.retrieval_evaluators is None
+        assert spec.citation_evaluator is None
         assert spec.document_limit is None
+        assert spec.retrieval_limit == 5
+
+
+class TestConversationInput:
+    def _conversation(self) -> ConversationInput:
+        return ConversationInput(
+            turns=[
+                Turn(speaker="user", text="who takes photos of planes?"),
+                Turn(speaker="agent", text="Ground-to-air photographers."),
+                Turn(speaker="user", text="No, I meant photos in the air."),
+            ]
+        )
+
+    def test_question_is_last_turn(self) -> None:
+        assert self._conversation().question == "No, I meant photos in the air."
+
+    def test_prefix_excludes_last_turn(self) -> None:
+        prefix = self._conversation().prefix
+        assert [t.speaker for t in prefix] == ["user", "agent"]
+
+    def test_transcript_renders_speaker_lines(self) -> None:
+        assert self._conversation().transcript == (
+            "user: who takes photos of planes?\n"
+            "agent: Ground-to-air photographers.\n"
+            "user: No, I meant photos in the air."
+        )
+
+    def test_single_turn_has_empty_prefix(self) -> None:
+        conversation = ConversationInput(turns=[Turn(speaker="user", text="hi")])
+        assert conversation.prefix == []
+        assert conversation.question == "hi"
+
+    def test_must_end_with_user_turn(self) -> None:
+        with pytest.raises(ValidationError, match="user turn"):
+            ConversationInput(
+                turns=[
+                    Turn(speaker="user", text="q"),
+                    Turn(speaker="agent", text="a"),
+                ]
+            )
+
+    def test_must_have_turns(self) -> None:
+        with pytest.raises(ValidationError, match="user turn"):
+            ConversationInput(turns=[])
 
 
 class TestDocumentPayload:

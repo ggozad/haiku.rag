@@ -1,9 +1,14 @@
-from unittest.mock import MagicMock
+import math
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic_evals.evaluators import EvaluatorContext
+
+from evaluations.evaluators import REFUSAL_RUBRIC, RefusalJudge
 
 from evaluations.evaluators.map import MAPEvaluator
 from evaluations.evaluators.number_match import NumberMatchEvaluator
+from evaluations.evaluators.retrieval import NDCGEvaluator, RecallEvaluator
 
 
 class TestMAPEvaluator:
@@ -55,6 +60,189 @@ class TestMAPEvaluator:
     def test_empty_relevant_uris(self) -> None:
         ctx = self._make_ctx([], ["doc1", "doc2"])
         assert self.evaluator.evaluate(ctx) == 0.0
+
+
+def _retrieval_ctx(relevant_uris: list[str], retrieved_uris: list[str]) -> MagicMock:
+    ctx = MagicMock()
+    ctx.metadata = {"relevant_uris": relevant_uris}
+    ctx.output = retrieved_uris
+    return ctx
+
+
+class TestRecallEvaluator:
+    def test_evaluation_name_includes_k(self) -> None:
+        assert RecallEvaluator(k=5).get_default_evaluation_name() == "recall_5"
+        assert RecallEvaluator(k=10).get_default_evaluation_name() == "recall_10"
+
+    def test_all_relevant_within_k(self) -> None:
+        ctx = _retrieval_ctx(["a", "b"], ["a", "b", "c"])
+        assert RecallEvaluator(k=5).evaluate(ctx) == 1.0
+
+    def test_partial_recall(self) -> None:
+        ctx = _retrieval_ctx(["a", "b"], ["a", "c", "d"])
+        assert RecallEvaluator(k=3).evaluate(ctx) == 0.5
+
+    def test_relevant_beyond_k_not_counted(self) -> None:
+        ctx = _retrieval_ctx(["a"], ["b", "c", "d", "e", "f", "a"])
+        assert RecallEvaluator(k=5).evaluate(ctx) == 0.0
+        assert RecallEvaluator(k=10).evaluate(ctx) == 1.0
+
+    def test_empty_relevant(self) -> None:
+        ctx = _retrieval_ctx([], ["a"])
+        assert RecallEvaluator(k=5).evaluate(ctx) == 0.0
+
+    def test_none_metadata(self) -> None:
+        ctx = MagicMock()
+        ctx.metadata = None
+        ctx.output = ["a"]
+        assert RecallEvaluator(k=5).evaluate(ctx) == 0.0
+
+
+class TestNDCGEvaluator:
+    def test_evaluation_name_includes_k(self) -> None:
+        assert NDCGEvaluator(k=5).get_default_evaluation_name() == "ndcg_5"
+
+    def test_perfect_ranking(self) -> None:
+        ctx = _retrieval_ctx(["a", "b"], ["a", "b", "c"])
+        assert NDCGEvaluator(k=5).evaluate(ctx) == pytest.approx(1.0)
+
+    def test_single_relevant_at_rank_two(self) -> None:
+        # DCG = 1/log2(3); IDCG = 1/log2(2) = 1
+        ctx = _retrieval_ctx(["a"], ["b", "a"])
+        expected = 1 / math.log2(3)
+        assert NDCGEvaluator(k=5).evaluate(ctx) == pytest.approx(expected)
+
+    def test_two_relevant_with_gap(self) -> None:
+        # Relevant at ranks 1 and 3: DCG = 1 + 1/log2(4) = 1.5
+        # IDCG = 1 + 1/log2(3)
+        ctx = _retrieval_ctx(["a", "b"], ["a", "c", "b"])
+        expected = 1.5 / (1 + 1 / math.log2(3))
+        assert NDCGEvaluator(k=3).evaluate(ctx) == pytest.approx(expected)
+
+    def test_relevant_beyond_k_not_counted(self) -> None:
+        ctx = _retrieval_ctx(["a"], ["b", "c", "d", "e", "f", "a"])
+        assert NDCGEvaluator(k=5).evaluate(ctx) == 0.0
+
+    def test_ideal_dcg_capped_at_k(self) -> None:
+        # 3 relevant but k=2: IDCG uses only the top-2 ideal ranks, so a
+        # retrieval with both top-2 slots relevant scores 1.0.
+        ctx = _retrieval_ctx(["a", "b", "c"], ["a", "b"])
+        assert NDCGEvaluator(k=2).evaluate(ctx) == pytest.approx(1.0)
+
+    def test_empty_relevant(self) -> None:
+        ctx = _retrieval_ctx([], ["a"])
+        assert NDCGEvaluator(k=5).evaluate(ctx) == 0.0
+
+    def test_none_metadata(self) -> None:
+        ctx = MagicMock()
+        ctx.metadata = None
+        ctx.output = ["a"]
+        assert NDCGEvaluator(k=5).evaluate(ctx) == 0.0
+
+
+def _evaluator_ctx(inputs: object, metadata: dict | None = None) -> EvaluatorContext:
+    return EvaluatorContext(
+        name="case",
+        inputs=inputs,
+        metadata=metadata,
+        expected_output="expected",
+        output="answer",
+        duration=0.0,
+        _span_tree=MagicMock(),
+        attributes={},
+        metrics={},
+    )
+
+
+class TestTranscriptLLMJudge:
+    @pytest.mark.asyncio
+    async def test_conversation_inputs_judged_as_transcript(self) -> None:
+        from evaluations.config import ConversationInput, Turn
+        from evaluations.evaluators import TranscriptLLMJudge
+
+        judge = TranscriptLLMJudge(
+            rubric="rubric",
+            include_input=True,
+            include_expected_output=True,
+            model="test",
+        )
+        conversation = ConversationInput(
+            turns=[
+                Turn(speaker="user", text="q1"),
+                Turn(speaker="agent", text="a1"),
+                Turn(speaker="user", text="q2"),
+            ]
+        )
+        grading = MagicMock(score=None, pass_=True, reason="ok")
+        with patch(
+            "pydantic_evals.evaluators.llm_as_a_judge.judge_input_output_expected",
+            new_callable=AsyncMock,
+            return_value=grading,
+        ) as judge_call:
+            await judge.evaluate(_evaluator_ctx(conversation))
+
+        assert judge_call.await_args is not None
+        assert judge_call.await_args.args[0] == "user: q1\nagent: a1\nuser: q2"
+
+    @pytest.mark.asyncio
+    async def test_string_inputs_pass_through(self) -> None:
+        from evaluations.evaluators import TranscriptLLMJudge
+
+        judge = TranscriptLLMJudge(
+            rubric="rubric",
+            include_input=True,
+            include_expected_output=True,
+            model="test",
+        )
+        grading = MagicMock(score=None, pass_=True, reason="ok")
+        with patch(
+            "pydantic_evals.evaluators.llm_as_a_judge.judge_input_output_expected",
+            new_callable=AsyncMock,
+            return_value=grading,
+        ) as judge_call:
+            await judge.evaluate(_evaluator_ctx("plain question"))
+
+        assert judge_call.await_args is not None
+        assert judge_call.await_args.args[0] == "plain question"
+
+
+class TestRefusalJudge:
+    def _judge(self) -> RefusalJudge:
+        return RefusalJudge(
+            rubric=REFUSAL_RUBRIC,
+            model="test",
+            assertion={"evaluation_name": "refused", "include_reason": False},
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("label", ["ANSWERABLE", "UNANSWERABLE"])
+    async def test_judges_eligible_labels(self, label: str) -> None:
+        grading = MagicMock(score=None, pass_=True, reason=None)
+        with patch(
+            "pydantic_evals.evaluators.llm_as_a_judge.judge_output",
+            new_callable=AsyncMock,
+            return_value=grading,
+        ) as judge_call:
+            result = await self._judge().evaluate(
+                _evaluator_ctx("q", metadata={"answerability": label})
+            )
+
+        judge_call.assert_awaited_once()
+        assert result == {"refused": True}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "metadata", [{"answerability": "PARTIAL"}, {"answerability": None}, {}, None]
+    )
+    async def test_ineligible_turns_skip_the_judge(self, metadata) -> None:
+        with patch(
+            "pydantic_evals.evaluators.llm_as_a_judge.judge_output",
+            new_callable=AsyncMock,
+        ) as judge_call:
+            result = await self._judge().evaluate(_evaluator_ctx("q", metadata))
+
+        judge_call.assert_not_awaited()
+        assert result == {}
 
 
 class TestNumberMatchEvaluator:

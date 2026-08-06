@@ -10,7 +10,7 @@ from huggingface_hub import hf_hub_download
 from pydantic_evals import Case
 
 from evaluations.config import DatasetSpec, DocumentPayload, RetrievalSample
-from evaluations.evaluators import MAPEvaluator
+from evaluations.evaluators import CitationMAPEvaluator, MAPEvaluator
 
 logger = logging.getLogger(__name__)
 
@@ -226,7 +226,8 @@ def _orb_spec(key: str, db_filename: str) -> DatasetSpec:
         qa_case_builder=build_orb_case,
         retrieval_loader=load_orb_retrieval,
         retrieval_mapper=map_orb_retrieval,
-        retrieval_evaluator=MAPEvaluator(),
+        retrieval_evaluators=[MAPEvaluator()],
+        citation_evaluator=CitationMAPEvaluator(),
     )
 
 

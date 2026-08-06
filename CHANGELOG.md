@@ -4,6 +4,7 @@
 ### Added
 
 - `evaluations run --filter/-f CLAUSE`: SQL `WHERE` clause over document columns, applied to the retrieval benchmark's searches and to every capability search during QA. Recorded as `document_filter` in experiment metadata.
+- `mtrag_clapnq` / `mtrag_clapnq_rewrite` / `mtrag_clapnq_live` evaluation datasets: multi-turn QA with gold-prefix and live-session conversation replay, Recall@k/nDCG@k retrieval metrics, eligibility-aware citation scoring, refusal precision/recall, and per-turn tool-traffic attributes.
 
 ### Changed
 
