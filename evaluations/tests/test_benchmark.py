@@ -15,6 +15,20 @@ from evaluations.config import DatasetSpec
 from haiku.rag.config.models import AppConfig, ModelConfig
 
 
+def _stub_spec(**overrides) -> DatasetSpec:
+    """A DatasetSpec whose loaders/mappers are inert, for tests that only
+    exercise the surrounding plumbing."""
+    return DatasetSpec(
+        key="test",
+        db_filename="test.lancedb",
+        document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        document_mapper=lambda doc: None,
+        qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        **overrides,
+    )
+
+
 class TestBuildExperimentMetadata:
     def test_basic_metadata(self) -> None:
         config = AppConfig()
@@ -460,16 +474,8 @@ class TestRetrievalTarget:
         from evaluations.config import RetrievalSample
         from evaluations.evaluators import MAPEvaluator
 
-        return DatasetSpec(
-            key="test",
-            db_filename="test.lancedb",
-            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            document_mapper=lambda doc: None,
-            qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            retrieval_loader=lambda: [  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-                {"q": "What is X?", "uris": ("uri-x",)},
-            ],
+        return _stub_spec(
+            retrieval_loader=lambda: [{"q": "What is X?", "uris": ("uri-x",)}],
             retrieval_mapper=lambda d: RetrievalSample(
                 question=d["q"], expected_uris=d["uris"]
             ),
@@ -545,14 +551,7 @@ class TestRetrievalTarget:
 
 class TestEvaluateDatasetCaseIds:
     def _spec(self) -> DatasetSpec:
-        return DatasetSpec(
-            key="test",
-            db_filename="test.lancedb",
-            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            document_mapper=lambda doc: None,
-            qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        )
+        return _stub_spec()
 
     @pytest.mark.asyncio
     async def test_threads_case_ids_to_qa_benchmark(self) -> None:

@@ -551,6 +551,34 @@ async def test_rebuild_full_with_accessible_source(temp_db_path):
             assert "Fresh content" in new_doc.content
 
 
+async def test_rebuild_title_only_reads_structural_title(temp_db_path):
+    """TITLE_ONLY takes the title from the stored docling structure, so it never
+    reaches the LLM for a document that carries one."""
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
+    from haiku.rag.store.models.document import Document
+
+    docling_doc = DoclingDocument(name="structured")
+    docling_doc.add_text(label=DocItemLabel.TITLE, text="The Stored Title")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = Document(content="body text", metadata={})
+        doc.set_docling(docling_doc)
+        created = await client.document_repository.create(doc)
+        assert created.id is not None
+
+        processed_ids = [
+            doc_id
+            async for doc_id in client.rebuild_database(mode=RebuildMode.TITLE_ONLY)
+        ]
+
+        assert processed_ids == [created.id]
+        refreshed = await client.get_document_by_id(created.id)
+        assert refreshed is not None
+        assert refreshed.title == "The Stored Title"
+
+
 async def test_rebuild_title_only_handles_llm_failure(temp_db_path, monkeypatch):
     """TITLE_ONLY: a failure on one document does not abort the generator.
 

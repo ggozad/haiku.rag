@@ -3,7 +3,7 @@
 
 ### Changed
 
-- `get_document_by_id` / `get_document_by_uri` return content and the mutable attributes only; the docling structure and page-image blobs are no longer loaded. Load them with `DocumentRepository.get_docling_data` / `get_pages_data`, or pass `include_blobs=True` to the repository method.
+- `get_document_by_id` / `get_document_by_uri` no longer load the docling structure and page-image blobs. Load them with `DocumentRepository.get_docling_data` / `get_pages_data`, or `get_by_id(..., include_blobs=True)`.
 
 ### Fixed
 

@@ -184,22 +184,26 @@ class DocumentRepository:
 
     _LIGHT_COLUMNS = ["id", "content"]
 
+    async def _record_by_id(
+        self, doc_id: str, include_blobs: bool
+    ) -> DocumentRecord | None:
+        safe_id = escape_sql_string(doc_id)
+        query = self.store.documents_table.query().where(f"id = '{safe_id}'").limit(1)
+        if not include_blobs:
+            query = query.select(self._LIGHT_COLUMNS)
+        results = await query_to_pydantic(query, DocumentRecord)
+        return results[0] if results else None
+
     async def get_by_id(
         self, entity_id: str, include_blobs: bool = False
     ) -> Document | None:
         """Get a document by its ID. `include_blobs` adds the docling blobs."""
-        safe_id = escape_sql_string(entity_id)
-        query = self.store.documents_table.query().where(f"id = '{safe_id}'").limit(1)
-        results = await query_to_pydantic(
-            query if include_blobs else query.select(self._LIGHT_COLUMNS),
-            DocumentRecord,
-        )
-
-        if not results:
+        record = await self._record_by_id(entity_id, include_blobs)
+        if record is None:
             return None
 
         meta = await self._meta_by_id(entity_id)
-        return self._merge_to_document(results[0], meta)
+        return self._merge_to_document(record, meta)
 
     async def get_content(self, entity_id: str) -> str | None:
         """Get only the text content of a document (skips docling blobs)."""
@@ -394,16 +398,11 @@ class DocumentRepository:
             return None
 
         meta = meta_results[0]
-        safe_id = escape_sql_string(meta.id)
-        query = self.store.documents_table.query().where(f"id = '{safe_id}'").limit(1)
-        doc_results = await query_to_pydantic(
-            query if include_blobs else query.select(self._LIGHT_COLUMNS),
-            DocumentRecord,
-        )
-        if not doc_results:
+        record = await self._record_by_id(meta.id, include_blobs)
+        if record is None:
             return None
 
-        return self._merge_to_document(doc_results[0], meta)
+        return self._merge_to_document(record, meta)
 
     async def delete_all(self) -> None:
         """Delete all documents from the database."""
