@@ -1,5 +1,4 @@
 # Adapted from pydantic-ai: https://github.com/pydantic/pydantic-ai/blob/main/tests/json_body_serializer.py
-# pyright: reportUnknownMemberType=false, reportUnknownVariableType=false
 import json
 import urllib.parse
 from typing import TYPE_CHECKING, Any

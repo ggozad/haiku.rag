@@ -1,9 +1,9 @@
 import asyncio
+import math
 
 try:
-    from sentence_transformers import (
-        CrossEncoder,  # pyright: ignore[reportMissingImports]
-    )
+    import torch
+    from sentence_transformers import CrossEncoder
 except ImportError as e:  # pragma: no cover
     raise ImportError(
         "sentence-transformers is not installed. Install it with "
@@ -30,7 +30,15 @@ class CrossEncoderReranker(RerankerBase):
         self, query: str, chunks: list[Chunk], top_n: int = 10
     ) -> list[tuple[Chunk, float]]:
         documents = [chunk.content for chunk in chunks]
+        # Ask for logits and squash them here: the model's own sigmoid runs in
+        # bf16, where saturated scores round onto identical values and leave the
+        # order of the top candidates to the sort.
         rankings = await asyncio.to_thread(
-            lambda: self._reranker.rank(query, documents, top_k=top_n)
+            lambda: self._reranker.rank(
+                query, documents, top_k=top_n, activation_fn=torch.nn.Identity()
+            )
         )
-        return [(chunks[r["corpus_id"]], float(r["score"])) for r in rankings]
+        return [
+            (chunks[r["corpus_id"]], 1.0 / (1.0 + math.exp(-r["score"])))
+            for r in rankings
+        ]

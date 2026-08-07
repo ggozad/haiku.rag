@@ -1,9 +1,7 @@
 import asyncio
 
 try:
-    from transformers import (
-        AutoModel,  # pyright: ignore[reportMissingImports]
-    )
+    from transformers import AutoModel
 except ImportError as e:  # pragma: no cover
     raise ImportError(
         "transformers is not installed. Please install it with `pip install transformers torch` "

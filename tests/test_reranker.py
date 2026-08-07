@@ -482,15 +482,55 @@ async def test_cross_encoder_reranker():
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
+async def test_cross_encoder_separates_saturated_scores():
+    """`mxbai-rerank-base-v2` ships a Sigmoid it evaluates in bf16, where every
+    strongly-relevant candidate rounds to exactly 1.0. Squashing the logits
+    ourselves keeps them apart."""
+    try:
+        from haiku.rag.reranking.cross_encoder import CrossEncoderReranker
+
+        saturating = [
+            Chunk(content=content, document_id=str(i))
+            for i, content in enumerate(
+                [
+                    "To Kill a Mockingbird is a novel by Harper Lee published in 1960.",
+                    "Harper Lee wrote To Kill a Mockingbird, published in 1960.",
+                    "The author of To Kill a Mockingbird is Harper Lee.",
+                    "To Kill a Mockingbird, written by Harper Lee, appeared in 1960.",
+                    "Harper Lee, author of To Kill a Mockingbird, won a Pulitzer Prize.",
+                    "Harper Lee is the novelist who wrote To Kill a Mockingbird.",
+                ]
+            )
+        ]
+
+        reranker = CrossEncoderReranker("mixedbread-ai/mxbai-rerank-base-v2")
+        reranked = await reranker.rerank(
+            "Who wrote 'To Kill a Mockingbird'?", saturating, top_n=len(saturating)
+        )
+
+        scores = [score for chunk, score in reranked]
+        assert len(set(scores)) == len(scores)
+        assert all(0.0 < score < 1.0 for score in scores)
+    except ImportError:
+        pytest.skip("sentence-transformers not installed")
+
+
+@pytest.mark.asyncio
 async def test_cross_encoder_reranks_via_model_ranking(monkeypatch):
     """The rank() results map back onto the input chunks by corpus_id."""
+    import math
+
+    import torch
+
     from haiku.rag.reranking import cross_encoder as ce_module
 
     class _StubCrossEncoder:
         def __init__(self, model):
             self.model = model
 
-        def rank(self, query, documents, top_k=10):
+        def rank(self, query, documents, top_k=10, activation_fn=None):
+            self.activation_fn = activation_fn
             # Reverse order so the mapping back to chunks is observable.
             return [
                 {"corpus_id": i, "score": 1.0 - (i / 10)}
@@ -505,4 +545,7 @@ async def test_cross_encoder_reranks_via_model_ranking(monkeypatch):
     assert len(reranked) == 2
     last_index = len(chunks) - 1
     assert reranked[0][0] is chunks[last_index]
-    assert reranked[0][1] == pytest.approx(1.0 - last_index / 10)
+    # The stub returns logits; the reranker squashes them itself.
+    stub_logit = 1.0 - last_index / 10
+    assert reranked[0][1] == pytest.approx(1.0 / (1.0 + math.exp(-stub_logit)))
+    assert isinstance(reranker._reranker.activation_fn, torch.nn.Identity)
