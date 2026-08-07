@@ -7,7 +7,7 @@ from typing import Any, cast
 
 from pydantic import BaseModel
 from pydantic_ai import ModelRetry, RunContext, ToolFailed
-from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.capabilities import AbstractCapability, WrapModelRequestHandler
 from pydantic_ai.messages import (
     InstructionPart,
     ModelMessage,
@@ -76,20 +76,43 @@ def _clear_invocation_state(state: BaseModel) -> None:
             value.clear()
 
 
+PRIOR_TURN_NOTICE = (
+    "[Evidence retrieved for an earlier question, no longer shown. It does not "
+    "count as cited for the current question.]"
+)
+
+
+def _is_user_turn(message: ModelMessage) -> bool:
+    """Whether this message is a user turn rather than tool output.
+
+    Content attached to a ``ToolReturn`` (page images) arrives as its own
+    ``UserPromptPart`` in the same ``ModelRequest`` as the ``ToolReturnPart``,
+    so a bare ``UserPromptPart`` check reads tool output as a new turn.
+    """
+    if not isinstance(message, ModelRequest):
+        return False
+    return any(isinstance(part, UserPromptPart) for part in message.parts) and not any(
+        isinstance(part, ToolReturnPart) for part in message.parts
+    )
+
+
 def _compact_old_tool_returns(
     messages: list[ModelMessage], tool_names: frozenset[str]
 ) -> list[ModelMessage]:
-    """Remove bulky prior-turn evidence while retaining the current turn.
+    """Remove bulky earlier-question evidence while retaining the current one.
 
     Tool call and return parts remain paired; only the old return payload is
-    replaced. This keeps provider histories valid and preserves all evidence
-    gathered since the most recent user prompt.
+    replaced.
+
+    Page images attached to a replaced return are deliberately left in place.
+    Dropping them alongside their text is tempting — they are the bulk, and
+    they accumulate — but a follow-up about a figure already shown ("what
+    colour is that box?") carries no terms that could retrieve it again, so
+    removing the image turns an answerable question into a refusal.
     """
     latest_user_message = -1
     for index, message in enumerate(messages):
-        if isinstance(message, ModelRequest) and any(
-            isinstance(part, UserPromptPart) for part in message.parts
-        ):
+        if _is_user_turn(message):
             latest_user_message = index
 
     if latest_user_message < 0:
@@ -100,10 +123,7 @@ def _compact_old_tool_returns(
         if not isinstance(message, ModelRequest):
             continue
         parts = [
-            replace(
-                part,
-                content="[Prior-turn RAG tool output removed; citations remain in state.]",
-            )
+            replace(part, content=PRIOR_TURN_NOTICE)
             if isinstance(part, ToolReturnPart) and part.tool_name in tool_names
             else part
             for part in message.parts
@@ -168,12 +188,27 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
             return f"{self.config.prompts.domain_preamble}\n\n{self.instruction_text}"
         return self.instruction_text
 
-    async def before_model_request(
-        self, ctx: RunContext[Any], request_context: ModelRequestContext
-    ) -> ModelRequestContext:
+    async def wrap_model_request(
+        self,
+        ctx: RunContext[Any],
+        *,
+        request_context: ModelRequestContext,
+        handler: WrapModelRequestHandler,
+    ) -> ModelResponse:
+        """Trim earlier-question evidence off the wire only.
+
+        Deliberately not ``before_model_request``: that hook's result is
+        assigned back onto the run's message history, so trimming there would
+        destroy the host's record of what was retrieved.
+        """
         request_context.messages = _compact_old_tool_returns(
             request_context.messages, self.tool_names
         )
+        return await handler(request_context)
+
+    async def before_model_request(
+        self, ctx: RunContext[Any], request_context: ModelRequestContext
+    ) -> ModelRequestContext:
         if instruction := self._budget_notice():
             current_request = request_context.messages[-1]
             if isinstance(current_request, ModelRequest):

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pydantic_ai import Agent, ModelRetry, RunContext, ToolFailed
 from pydantic_ai.messages import (
+    BinaryContent,
     ModelRequest,
     ModelResponse,
     TextPart,
@@ -19,6 +20,7 @@ from pydantic_ai.usage import RunUsage
 
 from haiku.rag.capabilities._base import (
     CITATION_GRACE_REQUESTS,
+    PRIOR_TURN_NOTICE,
     _called_own_tool,
     _compact_old_tool_returns,
 )
@@ -806,7 +808,7 @@ def test_prior_turn_tool_results_are_compacted_but_current_evidence_is_kept():
     old_return = compacted[2].parts[0]
     current_return = compacted[5].parts[0]
     assert isinstance(old_return, ToolReturnPart)
-    assert "removed" in str(old_return.content)
+    assert old_return.content == PRIOR_TURN_NOTICE
     assert isinstance(current_return, ToolReturnPart)
     assert current_return.content == "current evidence"
 
@@ -825,3 +827,116 @@ def test_tool_results_are_unchanged_when_history_has_no_user_prompt():
     current_return = compacted[1].parts[0]
     assert isinstance(current_return, ToolReturnPart)
     assert current_return.content == "current evidence"
+
+
+PAGE_IMAGE = BinaryContent(data=b"\x89PNG" + b"\x00" * 64, media_type="image/png")
+
+
+def _search_exchange(call_id: str, evidence: str, *, images: bool):
+    """One search round-trip in the shape pydantic-ai produces.
+
+    Images on a ``ToolReturn`` arrive as a separate ``UserPromptPart`` appended
+    to the same ``ModelRequest`` as the ``ToolReturnPart``.
+    """
+    parts: list[Any] = [ToolReturnPart("rag_search", evidence, call_id)]
+    if images:
+        parts.append(UserPromptPart(content=[PAGE_IMAGE]))
+    return [
+        ModelResponse(parts=[ToolCallPart("rag_search", {}, call_id)]),
+        ModelRequest(parts=parts),
+    ]
+
+
+def test_image_bearing_tool_return_does_not_end_the_current_turn():
+    messages = [
+        ModelRequest(parts=[UserPromptPart("current question")]),
+        *_search_exchange("first-call", "first evidence", images=False),
+        *_search_exchange("second-call", "second evidence", images=True),
+    ]
+
+    compacted = _compact_old_tool_returns(messages, frozenset({"rag_search"}))
+
+    first_return = compacted[2].parts[0]
+    assert isinstance(first_return, ToolReturnPart)
+    assert first_return.content == "first evidence"
+
+
+def test_prior_turn_images_outlive_their_tool_return():
+    """A follow-up about a figure cannot retrieve it again, so keep the image.
+
+    "What colour is that box?" has no terms the search can use, so dropping the
+    image with its text turns an answerable question into a refusal.
+    """
+    messages = [
+        ModelRequest(parts=[UserPromptPart("old question")]),
+        *_search_exchange("old-call", "old evidence", images=True),
+        ModelResponse(parts=[TextPart("an answer")]),
+        ModelRequest(parts=[UserPromptPart("current question")]),
+    ]
+
+    compacted = _compact_old_tool_returns(messages, frozenset({"rag_search"}))
+
+    old_return = compacted[2].parts[0]
+    assert isinstance(old_return, ToolReturnPart)
+    assert old_return.content == PRIOR_TURN_NOTICE
+    assert any(
+        isinstance(part, UserPromptPart) and not isinstance(part.content, str)
+        for message in compacted
+        for part in message.parts
+    )
+
+
+def test_user_attached_image_starts_a_turn_and_is_never_dropped():
+    messages = [
+        ModelRequest(parts=[UserPromptPart("old question")]),
+        *_search_exchange("old-call", "old evidence", images=False),
+        ModelResponse(parts=[TextPart("an answer")]),
+        ModelRequest(parts=[UserPromptPart(content=[PAGE_IMAGE, "what is this?"])]),
+    ]
+
+    compacted = _compact_old_tool_returns(messages, frozenset({"rag_search"}))
+
+    old_return = compacted[2].parts[0]
+    assert isinstance(old_return, ToolReturnPart)
+    assert old_return.content == PRIOR_TURN_NOTICE
+    attached = compacted[-1].parts[0]
+    assert isinstance(attached, UserPromptPart)
+    assert attached.content == [PAGE_IMAGE, "what is this?"]
+
+
+async def test_compaction_never_reaches_the_stored_message_history(temp_db_path):
+    """Trimming is for the wire; hosts keep the evidence they gathered."""
+    capability = create_rag(
+        db_path=temp_db_path, config=AppConfig(), defer_loading=False
+    )
+    turns = iter(
+        [
+            ModelResponse(parts=[ToolCallPart("rag_search", {"query": "q"}, "call-1")]),
+            ModelResponse(parts=[TextPart("first answer")]),
+            ModelResponse(parts=[TextPart("second answer")]),
+        ]
+    )
+
+    async def model(_messages, _info):
+        return next(turns)
+
+    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[capability])
+    deps = Deps(state={"rag": RAGState().model_dump(mode="json")})
+
+    with patch.object(
+        RAGCapability, "_search", AsyncMock(return_value="REAL EVIDENCE")
+    ):
+        first = await agent.run("old question", deps=deps)
+        second = await agent.run(
+            "current question", deps=deps, message_history=first.all_messages()
+        )
+
+    returns = [
+        str(part.content)
+        for message in second.all_messages()
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    ]
+    assert "REAL EVIDENCE" in returns
+    assert PRIOR_TURN_NOTICE not in returns

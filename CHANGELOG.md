@@ -7,6 +7,8 @@
 - `haiku-rag` and `haiku-ingester` CLI startup no longer imports `lancedb`, `pyarrow` and `pydantic_ai`.
 - `haiku.rag.store` no longer re-exports `Store`; import it from `haiku.rag.store.engine`.
 - `docling-local` reuses one docling `DocumentConverter` per set of conversion options instead of building one per document, so local layout, table and OCR models are no longer loaded per document. Conversions through a shared converter are serialized.
+- Prior-question tool output is trimmed from the model request only; `all_messages()` retains what the run gathered.
+- A search result carrying page images no longer counts as a turn boundary; evidence retrieved earlier in the same turn survives.
 
 ## [0.73.0] - 2026-08-06
 
