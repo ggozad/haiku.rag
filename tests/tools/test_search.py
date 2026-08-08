@@ -210,30 +210,35 @@ def search_config():
     return Config
 
 
-class TestBuildBinaryPartsFromResults:
-    """Picture bytes are attached once per (document, self_ref) pair."""
+def _png_b64():
+    import base64
+    from io import BytesIO
+
+    from PIL import Image as PILImage
+
+    buf = BytesIO()
+    PILImage.new("RGB", (4, 4), "red").save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+class TestBuildImageContentFromResults:
+    """Picture bytes are attached once per (document, self_ref) pair, and labelled."""
 
     def test_results_without_image_data_contribute_nothing(self):
-        from haiku.rag.tools.search import build_binary_parts_from_results
+        from haiku.rag.tools.search import build_image_content_from_results
 
         results = [
             SearchResult(content="text only", score=0.5, chunk_id="c1", image_data=None)
         ]
 
-        assert build_binary_parts_from_results(results) == []
+        assert build_image_content_from_results(results) == []
 
     def test_duplicate_document_and_ref_is_attached_once(self):
-        import base64
-        from io import BytesIO
+        from pydantic_ai.messages import BinaryContent
 
-        from PIL import Image as PILImage
+        from haiku.rag.tools.search import build_image_content_from_results
 
-        from haiku.rag.tools.search import build_binary_parts_from_results
-
-        buf = BytesIO()
-        PILImage.new("RGB", (4, 4), "red").save(buf, format="PNG")
-        png = base64.b64encode(buf.getvalue()).decode()
-        shared = {"#/pictures/0": png}
+        shared = {"#/pictures/0": _png_b64()}
         results = [
             SearchResult(
                 content="a",
@@ -251,6 +256,53 @@ class TestBuildBinaryPartsFromResults:
             ),
         ]
 
-        parts = build_binary_parts_from_results(results)
+        content = build_image_content_from_results(results)
 
-        assert len(parts) == 1
+        images = [item for item in content if isinstance(item, BinaryContent)]
+        assert len(images) == 1
+
+    def test_each_image_is_labelled_with_the_result_it_belongs_to(self):
+        """Label every picture, not just the batch.
+
+        ``ToolReturn.content`` reaches the model as a user-role message, and one
+        leading note does not override that: with a single note on the wire,
+        gemma4-26b still reasoned "the user also provided images in the prompt".
+        A label adjacent to each picture also names the chunk to cite for it,
+        which ``BinaryContent.identifier`` cannot do — it does not survive
+        serialization to the vision API.
+        """
+        from pydantic_ai.messages import BinaryContent
+
+        from haiku.rag.tools.search import build_image_content_from_results
+
+        results = [
+            SearchResult(
+                content="a",
+                score=0.9,
+                chunk_id="c1",
+                document_id="doc-1",
+                image_data={"#/pictures/0": _png_b64()},
+            ),
+            SearchResult(
+                content="b",
+                score=0.8,
+                chunk_id="c2",
+                document_id="doc-2",
+                image_data={"#/pictures/3": _png_b64()},
+            ),
+        ]
+
+        content = build_image_content_from_results(results)
+
+        # label, image, label, image — each picture preceded by its own line.
+        assert [type(item) is str for item in content] == [True, False, True, False]
+        assert isinstance(content[1], BinaryContent)
+        assert isinstance(content[3], BinaryContent)
+
+        first, second = content[0], content[2]
+        assert isinstance(first, str) and isinstance(second, str)
+        assert "c1" in first and "#/pictures/0" in first
+        assert "c2" in second and "#/pictures/3" in second
+        assert "1 of 2" in first and "2 of 2" in second
+        for label in (first, second):
+            assert "not provided by the user" in label.lower()

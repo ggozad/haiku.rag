@@ -27,7 +27,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.citation import Citation, resolve_citations
-from haiku.rag.tools.search import build_binary_parts_from_results
+from haiku.rag.tools.search import build_image_content_from_results
 
 CITATION_GRACE_REQUESTS = 2
 """Requests calling this capability's tools that its cite tool outlives the rest by.
@@ -372,7 +372,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
             )
         state = cast(Any, self.state)
         state.searches[query] = results
-        if self.vision and (parts := build_binary_parts_from_results(results)):
+        if self.vision and (parts := build_image_content_from_results(results)):
             return ToolReturn(return_value=formatted, content=parts)
         return formatted
 

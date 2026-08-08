@@ -7,6 +7,7 @@
 - `haiku-rag` and `haiku-ingester` CLI startup no longer imports `lancedb`, `pyarrow` and `pydantic_ai`.
 - `haiku.rag.store` no longer re-exports `Store`; import it from `haiku.rag.store.engine`.
 - `docling-local` reuses one docling `DocumentConverter` per set of conversion options instead of building one per document, so local layout, table and OCR models are no longer loaded per document. Conversions through a shared converter are serialized.
+- Each page image attached to a search result is preceded by a line giving its position and the chunk id it came from. `build_binary_parts_from_results` is now `build_image_content_from_results` and returns those labels interleaved with the pictures.
 - Prior-question tool output is trimmed from the model request only; `all_messages()` retains what the run gathered.
 - Evidence retrieved for the current question is no longer trimmed mid-question, whether or not it carries page images.
 - `rag_cite` / `analysis_cite` returns are no longer replaced by the prior-question notice.

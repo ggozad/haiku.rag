@@ -402,8 +402,9 @@ async def test_search_tool_returns_multimodal_when_picture_present():
     assert isinstance(result.return_value, str)
     assert "Type: picture" in result.return_value or "rank 1" in result.return_value
     assert result.content is not None
-    assert len(result.content) == 1
-    part = result.content[0]
+    images = [c for c in result.content if isinstance(c, BinaryContent)]
+    assert len(images) == 1
+    part = images[0]
     assert isinstance(part, BinaryContent)
     assert part.media_type == "image/png"
     assert part.identifier == "#/pictures/0"
@@ -457,11 +458,12 @@ async def test_search_tool_attaches_same_self_ref_from_different_documents():
 
     assert isinstance(result, ToolReturn)
     assert result.content is not None
-    assert len(result.content) == 2, (
+    images = [c for c in result.content if isinstance(c, BinaryContent)]
+    assert len(images) == 2, (
         "Both documents' figures must reach the model — dedup keyed on "
         "self_ref alone would drop doc-B's bytes."
     )
-    payloads = {part.data for part in result.content}  # type: ignore[attr-defined]
+    payloads = {part.data for part in images}
     assert PICTURE_BYTES in payloads
     assert other_bytes in payloads
 
@@ -905,7 +907,7 @@ async def test_search_tool_drops_invalid_image_bytes():
 
     assert isinstance(result, ToolReturn)
     assert result.content is not None
-    identifiers = {p.identifier for p in result.content}  # type: ignore[attr-defined]
+    identifiers = {p.identifier for p in result.content if isinstance(p, BinaryContent)}
     assert identifiers == {"#/pictures/0"}, (
         "Only the decodable PNG should reach the model — the corrupt "
         "ref must be dropped so we don't emit a placeholder for an "
