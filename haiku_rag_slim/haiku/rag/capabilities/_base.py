@@ -16,7 +16,6 @@ from pydantic_ai.messages import (
     ToolCallPart,
     ToolReturn,
     ToolReturnPart,
-    UserPromptPart,
 )
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.run import AgentRunResult
@@ -82,22 +81,11 @@ PRIOR_TURN_NOTICE = (
 )
 
 
-def _is_user_turn(message: ModelMessage) -> bool:
-    """Whether this message is a user turn rather than tool output.
-
-    Content attached to a ``ToolReturn`` (page images) arrives as its own
-    ``UserPromptPart`` in the same ``ModelRequest`` as the ``ToolReturnPart``,
-    so a bare ``UserPromptPart`` check reads tool output as a new turn.
-    """
-    if not isinstance(message, ModelRequest):
-        return False
-    return any(isinstance(part, UserPromptPart) for part in message.parts) and not any(
-        isinstance(part, ToolReturnPart) for part in message.parts
-    )
-
-
 def _compact_old_tool_returns(
-    messages: list[ModelMessage], tool_names: frozenset[str]
+    messages: list[ModelMessage],
+    tool_names: frozenset[str],
+    *,
+    turn_start: int,
 ) -> list[ModelMessage]:
     """Remove bulky earlier-question evidence while retaining the current one.
 
@@ -109,17 +97,19 @@ def _compact_old_tool_returns(
     they accumulate — but a follow-up about a figure already shown ("what
     colour is that box?") carries no terms that could retrieve it again, so
     removing the image turns an answerable question into a refusal.
-    """
-    latest_user_message = -1
-    for index, message in enumerate(messages):
-        if _is_user_turn(message):
-            latest_user_message = index
 
-    if latest_user_message < 0:
+    ``turn_start`` is how many messages existed when the current question
+    arrived, so everything below it belongs to an earlier one. The run reports
+    it rather than this function deriving it from message shape: a
+    ``UserPromptPart`` mid-question is as likely to be page images on a tool
+    return, or a notice a capability injected, and reading either as the next
+    question strips evidence the model is still answering from.
+    """
+    if turn_start <= 0:
         return messages
 
     compacted = list(messages)
-    for index, message in enumerate(messages[:latest_user_message]):
+    for index, message in enumerate(messages[:turn_start]):
         if not isinstance(message, ModelRequest):
             continue
         parts = [
@@ -162,6 +152,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
     search_count: int = field(default=0, repr=False)
     request_count: int = field(default=0, repr=False)
     grace_requests_used: int = field(default=0, repr=False)
+    turn_start: int = field(default=0, repr=False)
 
     async def for_run(self, ctx: RunContext[Any]) -> "RAGCapabilityBase[StateT]":
         outer = getattr(ctx.deps, "state", None)
@@ -179,6 +170,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
             search_count=0,
             request_count=0,
             grace_requests_used=0,
+            turn_start=len(ctx.messages),
         )
         run_capability._sync_state()
         return run_capability
@@ -202,7 +194,9 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         destroy the host's record of what was retrieved.
         """
         request_context.messages = _compact_old_tool_returns(
-            request_context.messages, self.tool_names
+            request_context.messages,
+            self.tool_names - {self._cite_tool_name},
+            turn_start=self.turn_start,
         )
         return await handler(request_context)
 

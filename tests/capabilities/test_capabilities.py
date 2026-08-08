@@ -803,7 +803,9 @@ def test_prior_turn_tool_results_are_compacted_but_current_evidence_is_kept():
         ),
     ]
 
-    compacted = _compact_old_tool_returns(messages, frozenset({"rag_search"}))
+    compacted = _compact_old_tool_returns(
+        messages, frozenset({"rag_search"}), turn_start=3
+    )
 
     old_return = compacted[2].parts[0]
     current_return = compacted[5].parts[0]
@@ -813,7 +815,7 @@ def test_prior_turn_tool_results_are_compacted_but_current_evidence_is_kept():
     assert current_return.content == "current evidence"
 
 
-def test_tool_results_are_unchanged_when_history_has_no_user_prompt():
+def test_nothing_is_compacted_on_the_first_question():
     messages = [
         ModelResponse(parts=[ToolCallPart("rag_search", {}, "current-call")]),
         ModelRequest(
@@ -821,7 +823,9 @@ def test_tool_results_are_unchanged_when_history_has_no_user_prompt():
         ),
     ]
 
-    compacted = _compact_old_tool_returns(messages, frozenset({"rag_search"}))
+    compacted = _compact_old_tool_returns(
+        messages, frozenset({"rag_search"}), turn_start=0
+    )
 
     assert compacted is messages
     current_return = compacted[1].parts[0]
@@ -847,18 +851,33 @@ def _search_exchange(call_id: str, evidence: str, *, images: bool):
     ]
 
 
-def test_image_bearing_tool_return_does_not_end_the_current_turn():
+@pytest.mark.parametrize(
+    ("label", "trailing"),
+    [
+        ("page images on a tool return", [UserPromptPart(content=[PAGE_IMAGE])]),
+        ("a notice injected mid-run", [UserPromptPart("You answered without citing")]),
+    ],
+)
+def test_current_turn_evidence_survives_later_user_prompt_parts(label, trailing):
+    """Nothing that arrives mid-question may be read as the next question.
+
+    Page images on a tool return and a notice this capability injects both
+    appear as a ``UserPromptPart`` after the question, so deriving the turn from
+    message shape stripped evidence the model was still answering from.
+    """
     messages = [
         ModelRequest(parts=[UserPromptPart("current question")]),
         *_search_exchange("first-call", "first evidence", images=False),
-        *_search_exchange("second-call", "second evidence", images=True),
+        ModelRequest(parts=trailing),
     ]
 
-    compacted = _compact_old_tool_returns(messages, frozenset({"rag_search"}))
+    compacted = _compact_old_tool_returns(
+        messages, frozenset({"rag_search"}), turn_start=0
+    )
 
     first_return = compacted[2].parts[0]
     assert isinstance(first_return, ToolReturnPart)
-    assert first_return.content == "first evidence"
+    assert first_return.content == "first evidence", label
 
 
 def test_prior_turn_images_outlive_their_tool_return():
@@ -874,7 +893,9 @@ def test_prior_turn_images_outlive_their_tool_return():
         ModelRequest(parts=[UserPromptPart("current question")]),
     ]
 
-    compacted = _compact_old_tool_returns(messages, frozenset({"rag_search"}))
+    compacted = _compact_old_tool_returns(
+        messages, frozenset({"rag_search"}), turn_start=4
+    )
 
     old_return = compacted[2].parts[0]
     assert isinstance(old_return, ToolReturnPart)
@@ -886,7 +907,7 @@ def test_prior_turn_images_outlive_their_tool_return():
     )
 
 
-def test_user_attached_image_starts_a_turn_and_is_never_dropped():
+def test_user_attached_image_is_never_dropped():
     messages = [
         ModelRequest(parts=[UserPromptPart("old question")]),
         *_search_exchange("old-call", "old evidence", images=False),
@@ -894,7 +915,9 @@ def test_user_attached_image_starts_a_turn_and_is_never_dropped():
         ModelRequest(parts=[UserPromptPart(content=[PAGE_IMAGE, "what is this?"])]),
     ]
 
-    compacted = _compact_old_tool_returns(messages, frozenset({"rag_search"}))
+    compacted = _compact_old_tool_returns(
+        messages, frozenset({"rag_search"}), turn_start=4
+    )
 
     old_return = compacted[2].parts[0]
     assert isinstance(old_return, ToolReturnPart)
@@ -940,3 +963,56 @@ async def test_compaction_never_reaches_the_stored_message_history(temp_db_path)
     ]
     assert "REAL EVIDENCE" in returns
     assert PRIOR_TURN_NOTICE not in returns
+
+
+@pytest.mark.asyncio
+async def test_prior_turn_search_is_compacted_but_its_cite_receipt_is_not(temp_db_path):
+    """Only evidence is compacted, and the boundary comes from the run.
+
+    A cite acknowledgement is a receipt, not evidence: replacing it lengthened
+    the request and erased the record that citations had been registered.
+    """
+    capability = create_rag(
+        db_path=temp_db_path, config=AppConfig(), defer_loading=False
+    )
+    turns = iter(
+        [
+            ModelResponse(parts=[ToolCallPart("rag_search", {"query": "q"}, "call-1")]),
+            ModelResponse(
+                parts=[ToolCallPart("rag_cite", {"chunk_ids": ["chunk-1"]}, "call-2")]
+            ),
+            ModelResponse(parts=[TextPart("first answer")]),
+            ModelResponse(parts=[TextPart("second answer")]),
+        ]
+    )
+    wire: list[list[Any]] = []
+
+    async def model(messages, _info):
+        wire.append(list(messages))
+        return next(turns)
+
+    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[capability])
+    deps = Deps(state={"rag": RAGState().model_dump(mode="json")})
+
+    async def search(self, query: str, _limit: int | None) -> str:
+        """Record a result the way the real search does, so citing resolves."""
+        cast(Any, self.state).searches[query] = [
+            SearchResult(content="evidence", score=1.0, chunk_id="chunk-1")
+        ]
+        return "REAL EVIDENCE"
+
+    with patch.object(RAGCapability, "_search", search):
+        first = await agent.run("old question", deps=deps)
+        await agent.run(
+            "current question", deps=deps, message_history=first.all_messages()
+        )
+
+    prior = {
+        part.tool_name: str(part.content)
+        for message in wire[-1]
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    }
+    assert prior["rag_search"] == PRIOR_TURN_NOTICE
+    assert prior["rag_cite"] != PRIOR_TURN_NOTICE
