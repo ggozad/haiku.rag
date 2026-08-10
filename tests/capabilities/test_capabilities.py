@@ -988,7 +988,39 @@ def _wire_returns(sent: list[Any]) -> list[str]:
 
 @pytest.mark.asyncio
 async def test_a_new_question_compacts_the_previous_one(temp_db_path):
-    """The baseline the resume cases are contrasted against."""
+    """The baseline the resume cases are contrasted against.
+
+    A settled history — the previous question answered — is what a genuinely new
+    question follows. An unfinished tail is ambiguous instead, and treated as a
+    continuation.
+    """
+    capability = create_rag(
+        db_path=temp_db_path, config=AppConfig(), defer_loading=False
+    )
+    wire: list[list[Any]] = []
+
+    async def model(messages, _info):
+        wire.append(list(messages))
+        return ModelResponse(parts=[TextPart("answer")])
+
+    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[capability])
+    settled = [*_in_flight_history(), ModelResponse(parts=[TextPart("first answer")])]
+
+    await agent.run("a different question", deps=Deps(), message_history=settled)
+
+    assert _wire_returns(wire[-1]) == [PRIOR_TURN_NOTICE]
+
+
+@pytest.mark.asyncio
+async def test_a_prompt_on_an_unanswered_tail_is_treated_as_a_continuation(
+    temp_db_path,
+):
+    """Ambiguous shape, resolved the safe way.
+
+    A history ending in a request the model never answered, plus a new prompt,
+    could be a fresh question or a continuation. Compacting would cost the answer
+    if it is a continuation; not compacting only costs a larger request.
+    """
     capability = create_rag(
         db_path=temp_db_path, config=AppConfig(), defer_loading=False
     )
@@ -1004,7 +1036,41 @@ async def test_a_new_question_compacts_the_previous_one(temp_db_path):
         "a different question", deps=Deps(), message_history=_in_flight_history()
     )
 
-    assert _wire_returns(wire[-1]) == [PRIOR_TURN_NOTICE]
+    assert _wire_returns(wire[-1]) == ["EVIDENCE FOR THE LIVE TURN"]
+
+
+@pytest.mark.asyncio
+async def test_a_resume_carrying_a_prompt_keeps_the_active_evidence(temp_db_path):
+    """Deferred results may arrive with a prompt, and that is still a continuation.
+
+    ``ctx.prompt`` is non-null here, so the absence of a prompt cannot be the only
+    signal: the history tail is unfinished — a response whose tool call has no
+    return yet — and the question it belongs to is still being answered.
+    """
+    capability = create_rag(
+        db_path=temp_db_path, config=AppConfig(), defer_loading=False
+    )
+    wire: list[list[Any]] = []
+
+    async def model(messages, _info):
+        wire.append(list(messages))
+        return ModelResponse(parts=[TextPart("answer")])
+
+    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[capability])
+    history = [
+        *_in_flight_history(),
+        ModelResponse(parts=[ToolCallPart("external_tool", {}, "call-2")]),
+    ]
+
+    await agent.run(
+        "carry on",
+        deferred_tool_results=DeferredToolResults(calls={"call-2": "external result"}),
+        message_history=history,
+        deps=Deps(),
+    )
+
+    assert "EVIDENCE FOR THE LIVE TURN" in _wire_returns(wire[-1])
+    assert PRIOR_TURN_NOTICE not in _wire_returns(wire[-1])
 
 
 @pytest.mark.asyncio

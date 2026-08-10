@@ -123,6 +123,31 @@ def _compact_old_tool_returns(
     return compacted
 
 
+def _is_resumption(prompt: Any, messages: list[ModelMessage]) -> bool:
+    """Whether this run continues a question rather than asking a new one.
+
+    Two signals, either of which is enough, because getting this wrong hands the
+    model a notice where its own evidence should be:
+
+    - no prompt: how pydantic-ai resumes for interruptions and suspensions.
+    - an unfinished tail: the history ends with a request the model has not
+      answered, or with a response whose tool calls have no returns yet. Deferred
+      tool results may arrive *with* a prompt, so the prompt alone is not enough.
+
+    A settled history ends with the previous answer, so a genuinely new question
+    is not mistaken for a continuation. The framework's own first-new-message
+    index would be better than either signal, but it is not public here.
+    """
+    if prompt is None:
+        return True
+    if not messages:
+        return False
+    last = messages[-1]
+    if isinstance(last, ModelRequest):
+        return True
+    return any(isinstance(part, ToolCallPart) for part in last.parts)
+
+
 def _called_own_tool(messages: list[ModelMessage], tool_names: frozenset[str]) -> bool:
     """Whether the model's most recent response called one of these tools."""
     for message in reversed(messages):
@@ -157,14 +182,11 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
     async def for_run(self, ctx: RunContext[Any]) -> "RAGCapabilityBase[StateT]":
         """Start a run's own copy, and decide what counts as an earlier question.
 
-        A run carrying no prompt is continuing a question rather than asking one:
-        pydantic-ai resumes that way for deferred tool results, interruptions and
-        suspended responses. ``len(ctx.messages)`` would then count the live
-        question's own messages and hand the model a notice where its search
-        result should be, so compaction is switched off for the whole run
-        (``turn_start=0``). The absence of a prompt is the signal — the three
-        resume shapes differ in message layout, and reading the layout is what
-        broke this in the first place.
+        On a resumption (see ``_is_resumption``) compaction is switched off for the
+        whole run: ``len(ctx.messages)`` would count the live question's own
+        messages and replace its evidence with the earlier-question notice, leaving
+        the model to answer with the evidence taken away. Failing this way costs a
+        larger request; failing the other way costs the answer.
         """
         outer = getattr(ctx.deps, "state", None)
         outer_state = outer if isinstance(outer, dict) else None
@@ -181,7 +203,9 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
             search_count=0,
             request_count=0,
             grace_requests_used=0,
-            turn_start=0 if ctx.prompt is None else len(ctx.messages),
+            turn_start=(
+                0 if _is_resumption(ctx.prompt, ctx.messages) else len(ctx.messages)
+            ),
         )
         run_capability._sync_state()
         return run_capability
