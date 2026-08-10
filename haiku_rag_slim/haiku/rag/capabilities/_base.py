@@ -23,6 +23,7 @@ from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import AgentToolset
 
 from haiku.rag.capabilities._tools import CodeExecutionEntry, search_corpus
+from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord, EvidenceRef
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models.chunk import SearchResult
@@ -178,6 +179,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
     request_count: int = field(default=0, repr=False)
     grace_requests_used: int = field(default=0, repr=False)
     turn_start: int = field(default=0, repr=False)
+    epoch: int = field(default=0, repr=False)
 
     async def for_run(self, ctx: RunContext[Any]) -> "RAGCapabilityBase[StateT]":
         """Start a run's own copy, and decide what counts as an earlier question.
@@ -187,12 +189,31 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         messages and replace its evidence with the earlier-question notice, leaving
         the model to answer with the evidence taken away. Failing this way costs a
         larger request; failing the other way costs the answer.
+
+        A new question takes the message count as its identity, which every
+        participant derives identically from the same history. A resumption keeps
+        the identity already recorded: the question is the one in progress, and
+        adopting the current count would relabel it as a new one and judge its
+        declarations against the wrong question. A resumption with no recorded
+        identity is a state this design does not produce, so it is reported rather
+        than guessed at — unless there is no history at all, where an absent prompt
+        means an instructions-only first question and nothing is in progress.
         """
         outer = getattr(ctx.deps, "state", None)
         outer_state = outer if isinstance(outer, dict) else None
         raw_state = outer_state.get(self.state_namespace) if outer_state else None
+        resuming = _is_resumption(ctx.prompt, ctx.messages)
+        if resuming and ctx.messages and not (raw_state or {}).get("evidence"):
+            raise RuntimeError(
+                f"The {self.state_namespace} capability is resuming a question with "
+                "no stored question identity. Capabilities cannot be added, removed "
+                "or migrated while a question is unfinished, and the run's state "
+                "must be carried between its runs."
+            )
         state = self.state_type.model_validate(raw_state or {})
         _clear_invocation_state(state)
+        if not resuming:
+            cast(Any, state).evidence.question = len(ctx.messages)
         run_capability = replace(
             self,
             state=state,
@@ -203,9 +224,8 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
             search_count=0,
             request_count=0,
             grace_requests_used=0,
-            turn_start=(
-                0 if _is_resumption(ctx.prompt, ctx.messages) else len(ctx.messages)
-            ),
+            epoch=0,
+            turn_start=0 if resuming else len(ctx.messages),
         )
         run_capability._sync_state()
         return run_capability
@@ -238,6 +258,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
     async def before_model_request(
         self, ctx: RunContext[Any], request_context: ModelRequestContext
     ) -> ModelRequestContext:
+        self.epoch = len(ctx.messages)
         if instruction := self._budget_notice():
             current_request = request_context.messages[-1]
             if isinstance(current_request, ModelRequest):
@@ -390,6 +411,41 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         finally:
             self._sync_state()
 
+    def _evidence_record(self) -> CapabilityEvidenceRecord:
+        assert self.state is not None
+        return cast(CapabilityEvidenceRecord, cast(Any, self.state).evidence)
+
+    def _note_evidence(self) -> None:
+        """Record an outcome the model can ground an answer on.
+
+        Includes an empty search result and a failed execution that still printed
+        output: negative evidence grounds a refusal. Excludes a spent budget, which
+        yields nothing to ground anything on.
+        """
+        self._evidence_record().note_evidence(self.epoch)
+
+    def _declare(self, citations: list[Citation]) -> None:
+        """Record what the model cited, once the ids have resolved.
+
+        Declaring earlier would let a call naming only unresolvable ids read as a
+        grounded answer.
+        """
+        state = cast(Any, self.state)
+        retrieved = {
+            result.chunk_id
+            for results in state.searches.values()
+            for result in results
+            if result.chunk_id
+        }
+        self._evidence_record().declare(
+            [
+                EvidenceRef(capability=self.state_namespace, chunk_id=c.chunk_id)
+                for c in citations
+            ],
+            epoch=self.epoch,
+            retrieved_now=retrieved,
+        )
+
     async def _search(self, query: str, limit: int | None) -> str | ToolReturn:
         assert self.state is not None
         self.search_count += 1
@@ -407,6 +463,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
             )
         state = cast(Any, self.state)
         state.searches[query] = results
+        self._note_evidence()
         if self.vision and (parts := build_image_content_from_results(results)):
             return ToolReturn(return_value=formatted, content=parts)
         return formatted
@@ -454,6 +511,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
                 "Copy chunk_ids verbatim from search results."
             )
         self._register_citations(citations)
+        self._declare(citations)
         resolved = {citation.chunk_id for citation in citations}
         unresolved = [cid for cid in missing if cid not in resolved]
         if unresolved:

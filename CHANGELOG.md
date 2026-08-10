@@ -1,6 +1,14 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- `RAGState.evidence` / `AnalysisState.evidence` (`CapabilityEvidenceRecord`): which evidence a capability retrieved and cited, per question, keyed by message-count question identities and epochs. `haiku.rag.capabilities.ledger.citation_status(records, question=...)` derives `missing` / `grounded` / `ungrounded` across capabilities.
+
+### Changed
+
+- Resuming a run (no prompt, deferred tool results, an unfinished history tail) raises `RuntimeError` unless the host carries the capability state from the run being resumed.
+
 ### Fixed
 
 - `cross-encoder` reranking no longer ties the scores of strongly-relevant candidates, which left their order to the sort. Scores remain 0-1.

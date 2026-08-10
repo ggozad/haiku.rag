@@ -13,6 +13,7 @@ from haiku.rag.capabilities._base import (
     RAGCapabilityBase,
     resolve_db_path,
 )
+from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
 from haiku.rag.config.models import AppConfig
 from haiku.rag.sandbox import AnalysisContext, Sandbox
 from haiku.rag.store.models.chunk import SearchResult
@@ -29,6 +30,7 @@ class AnalysisState(BaseModel):
     executions: list[CodeExecutionEntry] = Field(default_factory=list)
     citation_index: dict[str, Citation] = Field(default_factory=dict)
     citations: list[str] = Field(default_factory=list)
+    evidence: CapabilityEvidenceRecord = Field(default_factory=CapabilityEvidenceRecord)
     searches: dict[str, list[SearchResult]] = Field(default_factory=dict)
 
 
@@ -107,6 +109,7 @@ class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
             )
         sandbox = await self._ensure_sandbox()
         result = await sandbox.execute(code)
+        self._note_evidence()
         if sandbox._search_results:
             existing = self.state.searches.get("_sandbox", [])
             seen = {item.chunk_id for item in existing}
