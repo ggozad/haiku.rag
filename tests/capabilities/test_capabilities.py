@@ -4,7 +4,7 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from pydantic_ai import Agent, ModelRetry, RunContext, ToolFailed
+from pydantic_ai import Agent, DeferredToolResults, ModelRetry, RunContext, ToolFailed
 from pydantic_ai.messages import (
     BinaryContent,
     ModelRequest,
@@ -963,6 +963,85 @@ async def test_compaction_never_reaches_the_stored_message_history(temp_db_path)
     ]
     assert "REAL EVIDENCE" in returns
     assert PRIOR_TURN_NOTICE not in returns
+
+
+def _in_flight_history() -> list[Any]:
+    """A question already asked and searched, still awaiting its answer."""
+    return [
+        ModelRequest(parts=[UserPromptPart("what does the supervisor do?")]),
+        ModelResponse(parts=[ToolCallPart("rag_search", {"query": "s"}, "call-1")]),
+        ModelRequest(
+            parts=[ToolReturnPart("rag_search", "EVIDENCE FOR THE LIVE TURN", "call-1")]
+        ),
+    ]
+
+
+def _wire_returns(sent: list[Any]) -> list[str]:
+    return [
+        str(part.content)
+        for message in sent
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_new_question_compacts_the_previous_one(temp_db_path):
+    """The baseline the resume cases are contrasted against."""
+    capability = create_rag(
+        db_path=temp_db_path, config=AppConfig(), defer_loading=False
+    )
+    wire: list[list[Any]] = []
+
+    async def model(messages, _info):
+        wire.append(list(messages))
+        return ModelResponse(parts=[TextPart("answer")])
+
+    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[capability])
+
+    await agent.run(
+        "a different question", deps=Deps(), message_history=_in_flight_history()
+    )
+
+    assert _wire_returns(wire[-1]) == [PRIOR_TURN_NOTICE]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "resume_kwargs",
+    [
+        pytest.param({}, id="no prompt"),
+        pytest.param(
+            {"deferred_tool_results": DeferredToolResults()}, id="deferred results"
+        ),
+    ],
+)
+async def test_a_resumed_run_keeps_the_active_questions_evidence(
+    temp_db_path, resume_kwargs
+):
+    """A run without a prompt continues a question; nothing in it is prior.
+
+    ``len(ctx.messages)`` cannot tell the two apart — on a resumption it counts
+    the live question's own messages and marks its evidence as earlier-question
+    evidence, leaving the model to answer with a notice where its search result
+    used to be. Deferred, interrupted and suspended resumes all differ in shape,
+    so the absence of a prompt is the signal rather than the message layout.
+    """
+    capability = create_rag(
+        db_path=temp_db_path, config=AppConfig(), defer_loading=False
+    )
+    wire: list[list[Any]] = []
+
+    async def model(messages, _info):
+        wire.append(list(messages))
+        return ModelResponse(parts=[TextPart("answer")])
+
+    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[capability])
+
+    await agent.run(deps=Deps(), message_history=_in_flight_history(), **resume_kwargs)
+
+    assert _wire_returns(wire[-1]) == ["EVIDENCE FOR THE LIVE TURN"]
 
 
 @pytest.mark.asyncio

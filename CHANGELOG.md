@@ -10,6 +10,7 @@
 - Each page image attached to a search result is preceded by a line giving its position and the chunk id it came from. `build_binary_parts_from_results` is now `build_image_content_from_results` and returns those labels interleaved with the pictures.
 - Prior-question tool output is trimmed from the model request only; `all_messages()` retains what the run gathered.
 - Evidence retrieved for the current question is no longer trimmed mid-question, whether or not it carries page images.
+- A run resumed without a prompt (deferred tool results, interruption, suspension) no longer has the active question's evidence trimmed as if it belonged to an earlier one.
 - `rag_cite` / `analysis_cite` returns are no longer replaced by the prior-question notice.
 
 ## [0.73.0] - 2026-08-06

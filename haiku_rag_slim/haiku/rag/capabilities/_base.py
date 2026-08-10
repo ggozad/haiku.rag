@@ -155,6 +155,17 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
     turn_start: int = field(default=0, repr=False)
 
     async def for_run(self, ctx: RunContext[Any]) -> "RAGCapabilityBase[StateT]":
+        """Start a run's own copy, and decide what counts as an earlier question.
+
+        A run carrying no prompt is continuing a question rather than asking one:
+        pydantic-ai resumes that way for deferred tool results, interruptions and
+        suspended responses. ``len(ctx.messages)`` would then count the live
+        question's own messages and hand the model a notice where its search
+        result should be, so compaction is switched off for the whole run
+        (``turn_start=0``). The absence of a prompt is the signal — the three
+        resume shapes differ in message layout, and reading the layout is what
+        broke this in the first place.
+        """
         outer = getattr(ctx.deps, "state", None)
         outer_state = outer if isinstance(outer, dict) else None
         raw_state = outer_state.get(self.state_namespace) if outer_state else None
@@ -170,7 +181,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
             search_count=0,
             request_count=0,
             grace_requests_used=0,
-            turn_start=len(ctx.messages),
+            turn_start=0 if ctx.prompt is None else len(ctx.messages),
         )
         run_capability._sync_state()
         return run_capability
