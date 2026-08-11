@@ -109,7 +109,8 @@ class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
             )
         sandbox = await self._ensure_sandbox()
         result = await sandbox.execute(code)
-        self._note_evidence()
+        if result.success or result.stdout:
+            self._note_evidence()
         if sandbox._search_results:
             existing = self.state.searches.get("_sandbox", [])
             seen = {item.chunk_id for item in existing}

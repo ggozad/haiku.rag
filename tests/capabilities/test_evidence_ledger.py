@@ -1,3 +1,5 @@
+import pytest
+
 from haiku.rag.capabilities.ledger import (
     CapabilityEvidenceRecord,
     CitationDeclaration,
@@ -34,10 +36,10 @@ def test_no_declaration_reads_as_missing():
 
 
 def test_refs_make_it_grounded_and_no_refs_make_it_ungrounded():
-    grounded = CapabilityEvidenceRecord()
+    grounded = CapabilityEvidenceRecord(question=0)
     grounded.declare([rag_ref()], epoch=1)
 
-    ungrounded = CapabilityEvidenceRecord()
+    ungrounded = CapabilityEvidenceRecord(question=0)
     ungrounded.declare([], epoch=1)
 
     assert citation_status([grounded], question=0) == "grounded"
@@ -50,7 +52,7 @@ def test_an_earlier_questions_declaration_is_never_current():
     record.declare([rag_ref()], epoch=3)
     assert citation_status([record], question=2) == "grounded"
 
-    record.question = 8
+    record.begin_question(8)
 
     assert record.declaration is not None
     assert citation_status([record], question=8) == "missing"
@@ -58,7 +60,7 @@ def test_an_earlier_questions_declaration_is_never_current():
 
 def test_a_citation_in_the_same_request_as_the_evidence_is_not_current():
     """Citing must follow seeing: equal epochs mean one request."""
-    record = CapabilityEvidenceRecord()
+    record = CapabilityEvidenceRecord(question=0)
     record.note_evidence(5)
     record.declare([rag_ref()], epoch=5)
 
@@ -71,10 +73,10 @@ def test_a_citation_in_the_same_request_as_the_evidence_is_not_current():
 
 def test_evidence_from_another_capability_after_citing_makes_it_uncited():
     """Currency spans capabilities, which only works because epochs are global."""
-    cited = CapabilityEvidenceRecord()
+    cited = CapabilityEvidenceRecord(question=0)
     cited.note_evidence(3)
     cited.declare([rag_ref()], epoch=5)
-    searched_after = CapabilityEvidenceRecord()
+    searched_after = CapabilityEvidenceRecord(question=0)
     searched_after.note_evidence(7)
 
     assert citation_status([cited], question=0) == "grounded"
@@ -82,7 +84,7 @@ def test_evidence_from_another_capability_after_citing_makes_it_uncited():
 
 
 def test_declarations_at_the_same_epoch_merge():
-    record = CapabilityEvidenceRecord()
+    record = CapabilityEvidenceRecord(question=0)
     record.declare([rag_ref("c1")], epoch=3)
     record.declare([rag_ref("c2")], epoch=3)
 
@@ -91,7 +93,7 @@ def test_declarations_at_the_same_epoch_merge():
 
 
 def test_repeating_a_ref_at_the_same_epoch_does_not_duplicate_it():
-    record = CapabilityEvidenceRecord()
+    record = CapabilityEvidenceRecord(question=0)
     record.declare([rag_ref()], epoch=3)
     record.declare([rag_ref()], epoch=3)
 
@@ -100,11 +102,11 @@ def test_repeating_a_ref_at_the_same_epoch_does_not_duplicate_it():
 
 
 def test_neither_cite_order_downgrades_a_grounded_declaration():
-    grounded_then_empty = CapabilityEvidenceRecord()
+    grounded_then_empty = CapabilityEvidenceRecord(question=0)
     grounded_then_empty.declare([rag_ref()], epoch=3)
     grounded_then_empty.declare([], epoch=3)
 
-    empty_then_grounded = CapabilityEvidenceRecord()
+    empty_then_grounded = CapabilityEvidenceRecord(question=0)
     empty_then_grounded.declare([], epoch=3)
     empty_then_grounded.declare([rag_ref()], epoch=3)
 
@@ -113,27 +115,19 @@ def test_neither_cite_order_downgrades_a_grounded_declaration():
 
 
 def test_the_same_chunk_id_under_two_capabilities_stays_separate():
-    rag = CapabilityEvidenceRecord()
+    rag = CapabilityEvidenceRecord(question=0)
     rag.declare([EvidenceRef(capability="rag", chunk_id="shared")], epoch=3)
-    analysis = CapabilityEvidenceRecord()
+    analysis = CapabilityEvidenceRecord(question=0)
     analysis.declare([EvidenceRef(capability="analysis", chunk_id="shared")], epoch=3)
 
     assert rag.occurrences["shared"].capability == "rag"
     assert analysis.occurrences["shared"].capability == "analysis"
 
 
-def test_an_evidence_epoch_never_moves_backwards():
-    record = CapabilityEvidenceRecord()
-    record.note_evidence(9)
-    record.note_evidence(4)
-
-    assert record.latest_evidence_epoch == 9
-
-
 def test_citing_the_same_chunk_in_two_questions_records_both():
     record = CapabilityEvidenceRecord(question=2)
     record.declare([rag_ref()], epoch=3, retrieved_now={"c1"})
-    record.question = 8
+    record.begin_question(8)
     record.declare([rag_ref()], epoch=9)
 
     occurrence = record.occurrences["c1"]
@@ -148,3 +142,60 @@ def test_a_declaration_records_the_question_and_epoch_it_was_made_at():
     assert record.declaration == CitationDeclaration(
         question=6, epoch=11, refs=[rag_ref()]
     )
+
+
+def test_a_fresh_record_has_no_question_identity():
+    """The identity is established by the run, and its absence must be detectable.
+
+    A default record is truthy, so its mere presence cannot stand in for having
+    been through ``for_run``: a host that seeds one would otherwise pass the
+    resumption check with a fabricated identity of zero.
+    """
+    assert CapabilityEvidenceRecord().question is None
+
+
+def test_evidence_cannot_move_backwards_in_the_conversation():
+    """Epochs are message counts, and currency depends on them only growing.
+
+    Silently keeping the newer value would leave every later declaration stale
+    for the rest of the conversation, permanently and invisibly.
+    """
+    record = CapabilityEvidenceRecord(question=0)
+    record.note_evidence(9)
+
+    with pytest.raises(ValueError, match="append-only"):
+        record.note_evidence(4)
+
+
+def test_citing_before_a_run_establishes_the_question_is_refused():
+    with pytest.raises(ValueError, match="question identity"):
+        CapabilityEvidenceRecord().declare([rag_ref()], epoch=3)
+
+
+def test_a_declaration_cannot_move_backwards():
+    """Otherwise a stale citation replaces a newer one and revives the answer."""
+    record = CapabilityEvidenceRecord(question=0)
+    record.declare([rag_ref("newer")], epoch=5)
+
+    with pytest.raises(ValueError, match="append-only"):
+        record.declare([rag_ref("older")], epoch=3)
+
+    assert record.declaration is not None
+    assert [ref.chunk_id for ref in record.declaration.refs] == ["newer"]
+
+
+def test_evidence_cannot_predate_a_recorded_declaration():
+    """The declaration's epoch is a recorded message count like any other."""
+    record = CapabilityEvidenceRecord(question=0)
+    record.declare([rag_ref()], epoch=5)
+
+    with pytest.raises(ValueError, match="append-only"):
+        record.note_evidence(3)
+
+
+def test_a_question_cannot_start_before_what_is_already_recorded():
+    record = CapabilityEvidenceRecord(question=0)
+    record.note_evidence(9)
+
+    with pytest.raises(ValueError, match="append-only"):
+        record.begin_question(4)

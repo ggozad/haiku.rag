@@ -314,7 +314,7 @@ async def test_search_and_empty_citation_limits(temp_db_path):
 @pytest.mark.asyncio
 async def test_cite_resolves_direct_chunk_ids_and_reuses_document_lookup(temp_db_path):
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
-    capability.state = RAGState()
+    capability.state = RAGState(evidence=CapabilityEvidenceRecord(question=0))
     client = AsyncMock()
     client.get_chunk_by_id.side_effect = [
         Chunk(id="chunk-1", document_id="doc-1", content="first"),
@@ -340,7 +340,7 @@ async def test_cite_resolves_direct_chunk_ids_and_reuses_document_lookup(temp_db
 @pytest.mark.asyncio
 async def test_cite_reports_unresolved_ids_on_partial_success(temp_db_path):
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
-    capability.state = RAGState()
+    capability.state = RAGState(evidence=CapabilityEvidenceRecord(question=0))
     client = AsyncMock()
     client.get_chunk_by_id.side_effect = [
         Chunk(id="chunk-1", document_id="doc-1", content="first"),
@@ -370,6 +370,7 @@ async def test_cite_repairs_chunk_ids_damaged_in_transcription(temp_db_path):
     unrelated = "9c2cd07e-5a3f-45a6-968d-cbd6f06ab57b"
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
     capability.state = RAGState(
+        evidence=CapabilityEvidenceRecord(question=0),
         searches={
             "q": [
                 SearchResult(
@@ -380,7 +381,7 @@ async def test_cite_repairs_chunk_ids_damaged_in_transcription(temp_db_path):
                     document_uri="test://document",
                 )
             ]
-        }
+        },
     )
     client = AsyncMock()
     client.get_chunk_by_id.return_value = None
@@ -482,17 +483,31 @@ async def test_a_spent_execution_budget_is_not_evidence(temp_db_path):
     assert capability.state.evidence.latest_evidence_epoch == 0
 
 
-@pytest.mark.parametrize("success", [True, False])
+@pytest.mark.parametrize(
+    ("success", "stdout", "expected_epoch"),
+    [
+        pytest.param(True, "42", 5, id="succeeded"),
+        pytest.param(True, "", 5, id="succeeded without output"),
+        pytest.param(False, "42", 5, id="failed after printing"),
+        pytest.param(False, "", 0, id="failed without printing"),
+    ],
+)
 @pytest.mark.asyncio
-async def test_a_code_execution_is_evidence_even_when_it_fails(temp_db_path, success):
-    """Output the model can read grounds an answer, whether the code raised or not."""
+async def test_only_a_code_execution_the_model_can_read_is_evidence(
+    temp_db_path, success, stdout, expected_epoch
+):
+    """A raised error with nothing printed grounds nothing, so it is not evidence.
+
+    A failure that printed first does ground an answer, and so does a successful
+    run whose outcome is that it printed nothing.
+    """
     capability = create_analysis(db_path=temp_db_path, config=AppConfig())
-    capability.state = AnalysisState()
+    capability.state = AnalysisState(evidence=CapabilityEvidenceRecord(question=0))
     capability.epoch = 5
     sandbox = AsyncMock(spec=Sandbox)
     sandbox._search_results = []
     sandbox.execute.return_value = SandboxResult(
-        stdout="42", stderr="" if success else "boom", success=success
+        stdout=stdout, stderr="" if success else "boom", success=success
     )
     capability.sandbox = sandbox
 
@@ -502,7 +517,7 @@ async def test_a_code_execution_is_evidence_even_when_it_fails(temp_db_path, suc
         with pytest.raises(ToolFailed):
             await capability._execute_code("print(42)")
 
-    assert capability.state.evidence.latest_evidence_epoch == 5
+    assert capability.state.evidence.latest_evidence_epoch == expected_epoch
 
 
 @pytest.mark.asyncio
@@ -790,7 +805,9 @@ async def test_native_agent_composition_initializes_host_state(temp_db_path):
     result = await agent.run("Hello", deps=deps)
 
     assert result.output == "success (no tool calls)"
-    assert deps.state["rag"] == RAGState().model_dump(mode="json")
+    assert deps.state["rag"] == RAGState(
+        evidence=CapabilityEvidenceRecord(question=0)
+    ).model_dump(mode="json")
 
 
 @pytest.mark.asyncio
@@ -1257,10 +1274,11 @@ async def test_a_question_takes_its_own_identity_and_both_capabilities_agree(
     first = await agent.run("first question", deps=deps)
     first_identity = _record(deps, "rag").question
     await agent.run("second question", deps=deps, message_history=first.all_messages())
+    second_identity = _record(deps, "rag").question
 
     assert first_identity == 0
-    assert _record(deps, "rag").question > first_identity
-    assert _record(deps, "analysis").question == _record(deps, "rag").question
+    assert second_identity is not None and second_identity > 0
+    assert _record(deps, "analysis").question == second_identity
 
 
 @pytest.mark.asyncio
@@ -1348,10 +1366,12 @@ async def test_citing_after_searching_grounds_the_question(temp_db_path):
         await agent.run("what does the supervisor do?", deps=deps)
 
     record = _record(deps, "rag")
+    question = record.question
+    assert question is not None
     assert record.declaration is not None
     assert [ref.chunk_id for ref in record.declaration.refs] == ["chunk-1"]
-    assert record.occurrences["chunk-1"].retrieved_in_questions == [record.question]
-    assert citation_status([record], question=record.question) == "grounded"
+    assert record.occurrences["chunk-1"].retrieved_in_questions == [question]
+    assert citation_status([record], question=question) == "grounded"
 
 
 @pytest.mark.asyncio
@@ -1376,8 +1396,10 @@ async def test_searching_after_citing_leaves_the_question_uncited(temp_db_path):
         await agent.run("what does the supervisor do?", deps=deps)
 
     record = _record(deps, "rag")
+    question = record.question
+    assert question is not None
     assert record.declaration is not None
-    assert citation_status([record], question=record.question) == "missing"
+    assert citation_status([record], question=question) == "missing"
 
 
 @pytest.mark.asyncio
@@ -1406,9 +1428,11 @@ async def test_a_citation_in_the_same_request_as_its_search_is_not_current(
         await agent.run("what does the supervisor do?", deps=deps)
 
     record = _record(deps, "rag")
+    question = record.question
+    assert question is not None
     assert record.declaration is not None
     assert record.declaration.epoch == record.latest_evidence_epoch
-    assert citation_status([record], question=record.question) == "missing"
+    assert citation_status([record], question=question) == "missing"
 
 
 @pytest.mark.asyncio
@@ -1444,6 +1468,7 @@ async def test_evidence_cited_in_two_questions_keeps_both_in_the_record(temp_db_
         first_question,
         record.question,
     ]
+    assert record.question != first_question
 
 
 @pytest.mark.asyncio
@@ -1496,8 +1521,78 @@ async def test_citing_without_searching_grounds_the_question(temp_db_path):
         await agent.run("cite chunk-1", deps=deps)
 
     record = _record(deps, "rag")
+    question = record.question
+    assert question is not None
     assert record.latest_evidence_epoch == 0
     assert record.declaration is not None
     assert record.declaration.epoch > 0
     assert record.occurrences["chunk-1"].retrieved_in_questions == []
-    assert citation_status([record], question=record.question) == "grounded"
+    assert citation_status([record], question=question) == "grounded"
+
+
+@pytest.mark.asyncio
+async def test_a_host_seeded_record_does_not_pass_for_a_resumption(temp_db_path):
+    """A default record is truthy, so its presence cannot stand in for identity.
+
+    Seeding one is what a host does when it has no state to send, and taking it
+    at face value would silently answer as question zero.
+    """
+    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+
+    async def model(_messages, _info):  # pragma: no cover - never reached
+        return ModelResponse(parts=[TextPart("answer")])
+
+    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[rag])
+
+    with pytest.raises(RuntimeError, match="no stored question identity"):
+        await agent.run(
+            "carry on",
+            message_history=_in_flight_history(),
+            deps=Deps(state={"rag": RAGState().model_dump(mode="json")}),
+        )
+
+
+@pytest.mark.asyncio
+async def test_a_resumption_keeps_the_evidence_the_question_already_gathered(
+    temp_db_path,
+):
+    """Clearing it would lose the results the model is still answering from.
+
+    A citation after the resumption then records no provenance, and cannot resolve
+    against the expanded search result the model actually saw.
+    """
+    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    calls = iter(
+        [
+            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
+            [TextPart("partial answer")],
+            [ToolCallPart("rag_cite", {"chunk_ids": ["chunk-1"]}, "call-3")],
+            [TextPart("answer")],
+        ]
+    )
+
+    async def model(_messages, _info):
+        return ModelResponse(parts=next(calls))
+
+    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[rag])
+    deps = Deps()
+
+    with patch.object(RAGCapability, "_search", _stub_search):
+        interrupted = await agent.run("what does the supervisor do?", deps=deps)
+        identity = _record(deps, "rag").question
+        assert identity is not None
+        await agent.run(
+            deferred_tool_results=DeferredToolResults(
+                calls={"call-2": "external result"}
+            ),
+            message_history=[
+                *interrupted.all_messages(),
+                ModelResponse(parts=[ToolCallPart("external_tool", {}, "call-2")]),
+            ],
+            deps=deps,
+        )
+
+    record = _record(deps, "rag")
+    assert record.question == identity
+    assert record.occurrences["chunk-1"].retrieved_in_questions == [identity]
+    assert citation_status([record], question=identity) == "grounded"

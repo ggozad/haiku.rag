@@ -70,6 +70,13 @@ def resolve_db_path(db_path: Path | None, config: AppConfig) -> Path:
 
 
 def _clear_invocation_state(state: BaseModel) -> None:
+    """Drop the working evidence of the previous question.
+
+    Only ever called when a new question starts. A resumption keeps it: the
+    results belong to the question still being answered, and dropping them leaves
+    a later citation unable to resolve against the expanded result the model saw,
+    recording no provenance for it.
+    """
     for field_name in ("citations", "searches", "executions"):
         value = getattr(state, field_name, None)
         if hasattr(value, "clear"):
@@ -196,24 +203,27 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         adopting the current count would relabel it as a new one and judge its
         declarations against the wrong question. A resumption with no recorded
         identity is a state this design does not produce, so it is reported rather
-        than guessed at — unless there is no history at all, where an absent prompt
-        means an instructions-only first question and nothing is in progress.
+        than guessed at. With no history at all there is nothing in progress: an
+        absent prompt is then an instructions-only first question, which takes an
+        identity like any other.
         """
         outer = getattr(ctx.deps, "state", None)
         outer_state = outer if isinstance(outer, dict) else None
         raw_state = outer_state.get(self.state_namespace) if outer_state else None
         resuming = _is_resumption(ctx.prompt, ctx.messages)
-        if resuming and ctx.messages and not (raw_state or {}).get("evidence"):
+        continuing = resuming and bool(ctx.messages)
+        state = self.state_type.model_validate(raw_state or {})
+        record = cast(CapabilityEvidenceRecord, cast(Any, state).evidence)
+        if continuing and record.question is None:
             raise RuntimeError(
                 f"The {self.state_namespace} capability is resuming a question with "
                 "no stored question identity. Capabilities cannot be added, removed "
                 "or migrated while a question is unfinished, and the run's state "
                 "must be carried between its runs."
             )
-        state = self.state_type.model_validate(raw_state or {})
-        _clear_invocation_state(state)
-        if not resuming:
-            cast(Any, state).evidence.question = len(ctx.messages)
+        if not continuing:
+            _clear_invocation_state(state)
+            record.begin_question(len(ctx.messages))
         run_capability = replace(
             self,
             state=state,
