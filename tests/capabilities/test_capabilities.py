@@ -872,20 +872,6 @@ def _in_flight_history() -> list[Any]:
     ]
 
 
-@pytest.mark.asyncio
-@pytest.mark.asyncio
-@pytest.mark.asyncio
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "resume_kwargs",
-    [
-        pytest.param({}, id="no prompt"),
-        pytest.param(
-            {"deferred_tool_results": DeferredToolResults()}, id="deferred results"
-        ),
-    ],
-)
-@pytest.mark.asyncio
 def _record(deps: Deps, namespace: str) -> CapabilityEvidenceRecord:
     return CapabilityEvidenceRecord.model_validate(deps.state[namespace]["evidence"])
 

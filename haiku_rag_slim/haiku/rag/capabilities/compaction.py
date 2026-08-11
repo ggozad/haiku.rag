@@ -253,16 +253,17 @@ def compact_history(
         if not isinstance(message, ModelRequest):
             continue
         parts: list[Any] = []
-        for part in message.parts:
+        for position, part in enumerate(message.parts):
             if isinstance(part, ToolReturnPart) and part.tool_name in owned_tools:
-                body = capsule_text or RECEIPT if index == carrier else RECEIPT
+                carries = (index, position) == carrier
+                body = capsule_text or RECEIPT if carries else RECEIPT
                 parts.append(replace(part, content=body))
             elif isinstance(part, UserPromptPart):
                 if (kept := _strip_our_pictures(part)) is not None:
                     parts.append(kept)
             else:
                 parts.append(part)
-        if index == carrier and capsule_images:
+        if carrier is not None and index == carrier[0] and capsule_images:
             parts.append(UserPromptPart(content=list(capsule_images)))
         if not parts:
             # A request with no parts is not a message; whatever emptied it was not
@@ -275,15 +276,21 @@ def compact_history(
 
 def _newest_owned_return(
     messages: list[ModelMessage], boundary: int, owned_tools: frozenset[str]
-) -> int | None:
-    """Index of the last earlier request holding one of our evidence returns."""
+) -> tuple[int, int] | None:
+    """Where the last of our evidence returns is, as message and part.
+
+    The part matters: a model can call search twice in one response, so one request
+    can hold several of our returns, and giving the capsule to each duplicates the
+    whole of it.
+    """
     for index in range(min(boundary, len(messages)) - 1, -1, -1):
         message = messages[index]
-        if isinstance(message, ModelRequest) and any(
-            isinstance(part, ToolReturnPart) and part.tool_name in owned_tools
-            for part in message.parts
-        ):
-            return index
+        if not isinstance(message, ModelRequest):
+            continue
+        for position in range(len(message.parts) - 1, -1, -1):
+            part = message.parts[position]
+            if isinstance(part, ToolReturnPart) and part.tool_name in owned_tools:
+                return index, position
     return None
 
 

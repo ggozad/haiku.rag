@@ -1,6 +1,7 @@
 import asyncio
 import uuid
 from collections.abc import Iterable, Sequence
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -208,7 +209,12 @@ class ChatApp(App):
         await chat_history.show_thinking()
 
         message = None
-        deps = ChatDeps(state=self._state)
+        # The run gets a copy: state and message history have to advance together.
+        # A cancelled or failed run discards its messages, and state that advanced
+        # anyway would leave the next question deriving its identity from a shorter
+        # history than the evidence already recorded — refused as non-append-only,
+        # with the conversation stuck until it is cleared.
+        deps = ChatDeps(state=deepcopy(self._state))
 
         try:
             async with self._agent.run_stream_events(

@@ -1,3 +1,4 @@
+from copy import deepcopy
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -412,3 +413,55 @@ async def test_chat_app_open_failure_surfaces_real_error(tmp_path: Path):
     with pytest.raises(FileNotFoundError):
         async with app.run_test():
             pass
+
+
+@pytest.mark.asyncio
+async def test_a_cancelled_run_does_not_advance_persisted_state(temp_db_path: Path):
+    """State and message history have to move together, or the thread bricks.
+
+    A cancelled run keeps whatever the tools wrote but discards the run's messages.
+    If the state advanced, the next question derives its identity from the shorter
+    history, lands behind the recorded evidence epoch, and is refused as
+    non-append-only — leaving the conversation unusable until cleared.
+    """
+    import asyncio
+
+    app, mock_client = _make_app(temp_db_path)
+
+    class CancellingRun:
+        """A run that writes evidence through the tools, then is cancelled."""
+
+        def __init__(self, deps):
+            self._deps = deps
+
+        async def __aenter__(self):
+            self._deps.state["rag"] = {
+                "evidence": {"question": 0, "latest_evidence_epoch": 7}
+            }
+            return self
+
+        async def __aexit__(self, *_):
+            return False
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise asyncio.CancelledError
+
+    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+        async with app.run_test():
+            app._state = {
+                "rag": {"evidence": {"question": 0, "latest_evidence_epoch": 0}}
+            }
+            before = deepcopy(app._state)
+
+            class Agent:
+                def run_stream_events(self, *_, deps, **__):
+                    return CancellingRun(deps)
+
+            app._agent = Agent()  # type: ignore[assignment]
+            await app._run_agent("a question")
+
+            assert app._state == before
+            assert app._messages == []

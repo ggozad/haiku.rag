@@ -4,7 +4,7 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent, DeferredToolResults, RunContext
 from pydantic_ai.messages import (
     BinaryContent,
     ModelRequest,
@@ -346,9 +346,18 @@ async def test_with_the_compactor_a_new_question_compacts_the_previous_one(
     assert returns_of(wire[-1]) == [RECEIPT]
 
 
+@pytest.mark.parametrize(
+    "resume_kwargs",
+    [
+        pytest.param({}, id="no prompt"),
+        pytest.param(
+            {"deferred_tool_results": DeferredToolResults()}, id="deferred results"
+        ),
+    ],
+)
 @pytest.mark.asyncio
 async def test_a_resumed_question_keeps_the_evidence_it_is_answering_from(
-    temp_db_path,
+    temp_db_path, resume_kwargs
 ):
     """The boundary is the stored identity of the question in progress.
 
@@ -370,7 +379,9 @@ async def test_a_resumed_question_keeps_the_evidence_it_is_answering_from(
         *in_flight_history(),
     ]
 
-    await agent.run(deps=resuming_deps(question=4), message_history=history)
+    await agent.run(
+        deps=resuming_deps(question=4), message_history=history, **resume_kwargs
+    )
 
     assert returns_of(wire[-1]) == [RECEIPT, "EVIDENCE FOR THE LIVE TURN"]
 
@@ -653,3 +664,66 @@ def test_a_request_is_never_left_with_no_parts():
 
     assert all(message.parts for message in compacted)
     assert compacted[0] is ours_alone
+
+
+def test_two_owned_returns_in_one_request_yield_one_capsule():
+    """A model can search twice in one response, so a request can hold two returns.
+
+    Identifying the carrier by message alone gave every return in it the capsule,
+    which duplicates the whole thing — and it is unbounded.
+    """
+    messages = [
+        ModelRequest(parts=[UserPromptPart("first")]),
+        ModelResponse(
+            parts=[
+                ToolCallPart("rag_search", {"query": "a"}, "call-1"),
+                ToolCallPart("rag_search", {"query": "b"}, "call-2"),
+            ]
+        ),
+        ModelRequest(
+            parts=[
+                ToolReturnPart("rag_search", "FIRST EVIDENCE", "call-1"),
+                ToolReturnPart("rag_search", "SECOND EVIDENCE", "call-2"),
+            ]
+        ),
+        ModelResponse(parts=[TextPart("an answer")]),
+        ModelRequest(parts=[UserPromptPart("second")]),
+    ]
+
+    compacted = compact_history(
+        messages, boundary=4, owned_tools=OWNED, capsule_text="CAPSULE"
+    )
+
+    assert returns_of(compacted) == [RECEIPT, "CAPSULE"]
+
+
+def test_the_capsule_is_attached_beside_the_newest_return_of_that_request():
+    messages = [
+        ModelRequest(parts=[UserPromptPart("first")]),
+        ModelResponse(
+            parts=[
+                ToolCallPart("rag_search", {"query": "a"}, "call-1"),
+                ToolCallPart("rag_search", {"query": "b"}, "call-2"),
+            ]
+        ),
+        ModelRequest(
+            parts=[
+                ToolReturnPart("rag_search", "FIRST", "call-1"),
+                ToolReturnPart("rag_search", "SECOND", "call-2"),
+            ]
+        ),
+        ModelResponse(parts=[TextPart("an answer")]),
+        ModelRequest(parts=[UserPromptPart("second")]),
+    ]
+    fresh = BinaryContent(data=b"cited-bytes", media_type="image/png")
+
+    compacted = compact_history(
+        messages,
+        boundary=4,
+        owned_tools=OWNED,
+        capsule_text="CAPSULE",
+        capsule_images=[picture_label("cited", "#/pictures/1"), fresh],
+    )
+
+    assert images_of(compacted) == [fresh]
+    assert returns_of(compacted) == [RECEIPT, "CAPSULE"]
