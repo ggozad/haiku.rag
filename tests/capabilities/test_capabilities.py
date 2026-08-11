@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pydantic_ai import Agent, DeferredToolResults, ModelRetry, RunContext, ToolFailed
 from pydantic_ai.messages import (
-    BinaryContent,
     ModelRequest,
     ModelResponse,
     TextPart,
@@ -20,9 +19,7 @@ from pydantic_ai.usage import RunUsage
 
 from haiku.rag.capabilities._base import (
     CITATION_GRACE_REQUESTS,
-    PRIOR_TURN_NOTICE,
     _called_own_tool,
-    _compact_old_tool_returns,
 )
 from haiku.rag.capabilities.analysis import AnalysisCapability, AnalysisState
 from haiku.rag.capabilities.analysis import create_capability as create_analysis
@@ -848,182 +845,6 @@ async def test_deferred_capability_loads_native_tools(temp_db_path):
     assert "rag_search" in loaded_payloads[0]
 
 
-def test_prior_turn_tool_results_are_compacted_but_current_evidence_is_kept():
-    messages = [
-        ModelRequest(parts=[UserPromptPart("old question")]),
-        ModelResponse(parts=[ToolCallPart("rag_search", {}, "old-call")]),
-        ModelRequest(
-            parts=[ToolReturnPart("rag_search", "large old evidence", "old-call")]
-        ),
-        ModelRequest(parts=[UserPromptPart("current question")]),
-        ModelResponse(parts=[ToolCallPart("rag_search", {}, "current-call")]),
-        ModelRequest(
-            parts=[ToolReturnPart("rag_search", "current evidence", "current-call")]
-        ),
-    ]
-
-    compacted = _compact_old_tool_returns(
-        messages, frozenset({"rag_search"}), turn_start=3
-    )
-
-    old_return = compacted[2].parts[0]
-    current_return = compacted[5].parts[0]
-    assert isinstance(old_return, ToolReturnPart)
-    assert old_return.content == PRIOR_TURN_NOTICE
-    assert isinstance(current_return, ToolReturnPart)
-    assert current_return.content == "current evidence"
-
-
-def test_nothing_is_compacted_on_the_first_question():
-    messages = [
-        ModelResponse(parts=[ToolCallPart("rag_search", {}, "current-call")]),
-        ModelRequest(
-            parts=[ToolReturnPart("rag_search", "current evidence", "current-call")]
-        ),
-    ]
-
-    compacted = _compact_old_tool_returns(
-        messages, frozenset({"rag_search"}), turn_start=0
-    )
-
-    assert compacted is messages
-    current_return = compacted[1].parts[0]
-    assert isinstance(current_return, ToolReturnPart)
-    assert current_return.content == "current evidence"
-
-
-PAGE_IMAGE = BinaryContent(data=b"\x89PNG" + b"\x00" * 64, media_type="image/png")
-
-
-def _search_exchange(call_id: str, evidence: str, *, images: bool):
-    """One search round-trip in the shape pydantic-ai produces.
-
-    Images on a ``ToolReturn`` arrive as a separate ``UserPromptPart`` appended
-    to the same ``ModelRequest`` as the ``ToolReturnPart``.
-    """
-    parts: list[Any] = [ToolReturnPart("rag_search", evidence, call_id)]
-    if images:
-        parts.append(UserPromptPart(content=[PAGE_IMAGE]))
-    return [
-        ModelResponse(parts=[ToolCallPart("rag_search", {}, call_id)]),
-        ModelRequest(parts=parts),
-    ]
-
-
-@pytest.mark.parametrize(
-    ("label", "trailing"),
-    [
-        ("page images on a tool return", [UserPromptPart(content=[PAGE_IMAGE])]),
-        ("a notice injected mid-run", [UserPromptPart("You answered without citing")]),
-    ],
-)
-def test_current_turn_evidence_survives_later_user_prompt_parts(label, trailing):
-    """Nothing that arrives mid-question may be read as the next question.
-
-    Page images on a tool return and a notice this capability injects both
-    appear as a ``UserPromptPart`` after the question, so deriving the turn from
-    message shape stripped evidence the model was still answering from.
-    """
-    messages = [
-        ModelRequest(parts=[UserPromptPart("current question")]),
-        *_search_exchange("first-call", "first evidence", images=False),
-        ModelRequest(parts=trailing),
-    ]
-
-    compacted = _compact_old_tool_returns(
-        messages, frozenset({"rag_search"}), turn_start=0
-    )
-
-    first_return = compacted[2].parts[0]
-    assert isinstance(first_return, ToolReturnPart)
-    assert first_return.content == "first evidence", label
-
-
-def test_prior_turn_images_outlive_their_tool_return():
-    """A follow-up about a figure cannot retrieve it again, so keep the image.
-
-    "What colour is that box?" has no terms the search can use, so dropping the
-    image with its text turns an answerable question into a refusal.
-    """
-    messages = [
-        ModelRequest(parts=[UserPromptPart("old question")]),
-        *_search_exchange("old-call", "old evidence", images=True),
-        ModelResponse(parts=[TextPart("an answer")]),
-        ModelRequest(parts=[UserPromptPart("current question")]),
-    ]
-
-    compacted = _compact_old_tool_returns(
-        messages, frozenset({"rag_search"}), turn_start=4
-    )
-
-    old_return = compacted[2].parts[0]
-    assert isinstance(old_return, ToolReturnPart)
-    assert old_return.content == PRIOR_TURN_NOTICE
-    assert any(
-        isinstance(part, UserPromptPart) and not isinstance(part.content, str)
-        for message in compacted
-        for part in message.parts
-    )
-
-
-def test_user_attached_image_is_never_dropped():
-    messages = [
-        ModelRequest(parts=[UserPromptPart("old question")]),
-        *_search_exchange("old-call", "old evidence", images=False),
-        ModelResponse(parts=[TextPart("an answer")]),
-        ModelRequest(parts=[UserPromptPart(content=[PAGE_IMAGE, "what is this?"])]),
-    ]
-
-    compacted = _compact_old_tool_returns(
-        messages, frozenset({"rag_search"}), turn_start=4
-    )
-
-    old_return = compacted[2].parts[0]
-    assert isinstance(old_return, ToolReturnPart)
-    assert old_return.content == PRIOR_TURN_NOTICE
-    attached = compacted[-1].parts[0]
-    assert isinstance(attached, UserPromptPart)
-    assert attached.content == [PAGE_IMAGE, "what is this?"]
-
-
-async def test_compaction_never_reaches_the_stored_message_history(temp_db_path):
-    """Trimming is for the wire; hosts keep the evidence they gathered."""
-    capability = create_rag(
-        db_path=temp_db_path, config=AppConfig(), defer_loading=False
-    )
-    turns = iter(
-        [
-            ModelResponse(parts=[ToolCallPart("rag_search", {"query": "q"}, "call-1")]),
-            ModelResponse(parts=[TextPart("first answer")]),
-            ModelResponse(parts=[TextPart("second answer")]),
-        ]
-    )
-
-    async def model(_messages, _info):
-        return next(turns)
-
-    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[capability])
-    deps = Deps(state={"rag": RAGState().model_dump(mode="json")})
-
-    with patch.object(
-        RAGCapability, "_search", AsyncMock(return_value="REAL EVIDENCE")
-    ):
-        first = await agent.run("old question", deps=deps)
-        second = await agent.run(
-            "current question", deps=deps, message_history=first.all_messages()
-        )
-
-    returns = [
-        str(part.content)
-        for message in second.all_messages()
-        if isinstance(message, ModelRequest)
-        for part in message.parts
-        if isinstance(part, ToolReturnPart)
-    ]
-    assert "REAL EVIDENCE" in returns
-    assert PRIOR_TURN_NOTICE not in returns
-
-
 def _resuming_deps() -> Deps:
     """State as a resumption always finds it: the question already identified.
 
@@ -1051,105 +872,9 @@ def _in_flight_history() -> list[Any]:
     ]
 
 
-def _wire_returns(sent: list[Any]) -> list[str]:
-    return [
-        str(part.content)
-        for message in sent
-        if isinstance(message, ModelRequest)
-        for part in message.parts
-        if isinstance(part, ToolReturnPart)
-    ]
-
-
 @pytest.mark.asyncio
-async def test_a_new_question_compacts_the_previous_one(temp_db_path):
-    """The baseline the resume cases are contrasted against.
-
-    A settled history — the previous question answered — is what a genuinely new
-    question follows. An unfinished tail is ambiguous instead, and treated as a
-    continuation.
-    """
-    capability = create_rag(
-        db_path=temp_db_path, config=AppConfig(), defer_loading=False
-    )
-    wire: list[list[Any]] = []
-
-    async def model(messages, _info):
-        wire.append(list(messages))
-        return ModelResponse(parts=[TextPart("answer")])
-
-    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[capability])
-    settled = [*_in_flight_history(), ModelResponse(parts=[TextPart("first answer")])]
-
-    await agent.run("a different question", deps=Deps(), message_history=settled)
-
-    assert _wire_returns(wire[-1]) == [PRIOR_TURN_NOTICE]
-
-
 @pytest.mark.asyncio
-async def test_a_prompt_on_an_unanswered_tail_is_treated_as_a_continuation(
-    temp_db_path,
-):
-    """Ambiguous shape, resolved the safe way.
-
-    A history ending in a request the model never answered, plus a new prompt,
-    could be a fresh question or a continuation. Compacting would cost the answer
-    if it is a continuation; not compacting only costs a larger request.
-    """
-    capability = create_rag(
-        db_path=temp_db_path, config=AppConfig(), defer_loading=False
-    )
-    wire: list[list[Any]] = []
-
-    async def model(messages, _info):
-        wire.append(list(messages))
-        return ModelResponse(parts=[TextPart("answer")])
-
-    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[capability])
-
-    await agent.run(
-        "a different question",
-        deps=_resuming_deps(),
-        message_history=_in_flight_history(),
-    )
-
-    assert _wire_returns(wire[-1]) == ["EVIDENCE FOR THE LIVE TURN"]
-
-
 @pytest.mark.asyncio
-async def test_a_resume_carrying_a_prompt_keeps_the_active_evidence(temp_db_path):
-    """Deferred results may arrive with a prompt, and that is still a continuation.
-
-    ``ctx.prompt`` is non-null here, so the absence of a prompt cannot be the only
-    signal: the history tail is unfinished — a response whose tool call has no
-    return yet — and the question it belongs to is still being answered.
-    """
-    capability = create_rag(
-        db_path=temp_db_path, config=AppConfig(), defer_loading=False
-    )
-    wire: list[list[Any]] = []
-
-    async def model(messages, _info):
-        wire.append(list(messages))
-        return ModelResponse(parts=[TextPart("answer")])
-
-    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[capability])
-    history = [
-        *_in_flight_history(),
-        ModelResponse(parts=[ToolCallPart("external_tool", {}, "call-2")]),
-    ]
-
-    await agent.run(
-        "carry on",
-        deferred_tool_results=DeferredToolResults(calls={"call-2": "external result"}),
-        message_history=history,
-        deps=_resuming_deps(),
-    )
-
-    assert "EVIDENCE FOR THE LIVE TURN" in _wire_returns(wire[-1])
-    assert PRIOR_TURN_NOTICE not in _wire_returns(wire[-1])
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "resume_kwargs",
@@ -1160,88 +885,7 @@ async def test_a_resume_carrying_a_prompt_keeps_the_active_evidence(temp_db_path
         ),
     ],
 )
-async def test_a_resumed_run_keeps_the_active_questions_evidence(
-    temp_db_path, resume_kwargs
-):
-    """A run without a prompt continues a question; nothing in it is prior.
-
-    ``len(ctx.messages)`` cannot tell the two apart — on a resumption it counts
-    the live question's own messages and marks its evidence as earlier-question
-    evidence, leaving the model to answer with a notice where its search result
-    used to be. Deferred, interrupted and suspended resumes all differ in shape,
-    so the absence of a prompt is the signal rather than the message layout.
-    """
-    capability = create_rag(
-        db_path=temp_db_path, config=AppConfig(), defer_loading=False
-    )
-    wire: list[list[Any]] = []
-
-    async def model(messages, _info):
-        wire.append(list(messages))
-        return ModelResponse(parts=[TextPart("answer")])
-
-    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[capability])
-
-    await agent.run(
-        deps=_resuming_deps(), message_history=_in_flight_history(), **resume_kwargs
-    )
-
-    assert _wire_returns(wire[-1]) == ["EVIDENCE FOR THE LIVE TURN"]
-
-
 @pytest.mark.asyncio
-async def test_prior_turn_search_is_compacted_but_its_cite_receipt_is_not(temp_db_path):
-    """Only evidence is compacted, and the boundary comes from the run.
-
-    A cite acknowledgement is a receipt, not evidence: replacing it lengthened
-    the request and erased the record that citations had been registered.
-    """
-    capability = create_rag(
-        db_path=temp_db_path, config=AppConfig(), defer_loading=False
-    )
-    turns = iter(
-        [
-            ModelResponse(parts=[ToolCallPart("rag_search", {"query": "q"}, "call-1")]),
-            ModelResponse(
-                parts=[ToolCallPart("rag_cite", {"chunk_ids": ["chunk-1"]}, "call-2")]
-            ),
-            ModelResponse(parts=[TextPart("first answer")]),
-            ModelResponse(parts=[TextPart("second answer")]),
-        ]
-    )
-    wire: list[list[Any]] = []
-
-    async def model(messages, _info):
-        wire.append(list(messages))
-        return next(turns)
-
-    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[capability])
-    deps = Deps(state={"rag": RAGState().model_dump(mode="json")})
-
-    async def search(self, query: str, _limit: int | None) -> str:
-        """Record a result the way the real search does, so citing resolves."""
-        cast(Any, self.state).searches[query] = [
-            SearchResult(content="evidence", score=1.0, chunk_id="chunk-1")
-        ]
-        return "REAL EVIDENCE"
-
-    with patch.object(RAGCapability, "_search", search):
-        first = await agent.run("old question", deps=deps)
-        await agent.run(
-            "current question", deps=deps, message_history=first.all_messages()
-        )
-
-    prior = {
-        part.tool_name: str(part.content)
-        for message in wire[-1]
-        if isinstance(message, ModelRequest)
-        for part in message.parts
-        if isinstance(part, ToolReturnPart)
-    }
-    assert prior["rag_search"] == PRIOR_TURN_NOTICE
-    assert prior["rag_cite"] != PRIOR_TURN_NOTICE
-
-
 def _record(deps: Deps, namespace: str) -> CapabilityEvidenceRecord:
     return CapabilityEvidenceRecord.model_validate(deps.state[namespace]["evidence"])
 
@@ -1596,3 +1240,19 @@ async def test_a_resumption_keeps_the_evidence_the_question_already_gathered(
     assert record.question == identity
     assert record.occurrences["chunk-1"].retrieved_in_questions == [identity]
     assert citation_status([record], question=identity) == "grounded"
+
+
+@pytest.mark.asyncio
+async def test_a_capability_fetches_its_own_evidences_pictures(temp_db_path):
+    """Compaction rehydrates through the owner, which already holds the connection."""
+    capability = create_rag(db_path=temp_db_path, config=AppConfig())
+    client = AsyncMock()
+    client.document_item_repository.get_picture_bytes.return_value = b"picture-bytes"
+    capability.rag = client
+
+    data = await capability.get_picture_bytes("doc-1", "#/pictures/0")
+
+    assert data == b"picture-bytes"
+    client.document_item_repository.get_picture_bytes.assert_awaited_once_with(
+        "doc-1", "#/pictures/0"
+    )

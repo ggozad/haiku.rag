@@ -7,7 +7,7 @@ from typing import Any, cast
 
 from pydantic import BaseModel
 from pydantic_ai import ModelRetry, RunContext, ToolFailed
-from pydantic_ai.capabilities import AbstractCapability, WrapModelRequestHandler
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import (
     InstructionPart,
     ModelMessage,
@@ -15,7 +15,6 @@ from pydantic_ai.messages import (
     ModelResponse,
     ToolCallPart,
     ToolReturn,
-    ToolReturnPart,
 )
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.run import AgentRunResult
@@ -83,54 +82,6 @@ def _clear_invocation_state(state: BaseModel) -> None:
             value.clear()
 
 
-PRIOR_TURN_NOTICE = (
-    "[Evidence retrieved for an earlier question, no longer shown. It does not "
-    "count as cited for the current question.]"
-)
-
-
-def _compact_old_tool_returns(
-    messages: list[ModelMessage],
-    tool_names: frozenset[str],
-    *,
-    turn_start: int,
-) -> list[ModelMessage]:
-    """Remove bulky earlier-question evidence while retaining the current one.
-
-    Tool call and return parts remain paired; only the old return payload is
-    replaced.
-
-    Page images attached to a replaced return are deliberately left in place.
-    Dropping them alongside their text is tempting — they are the bulk, and
-    they accumulate — but a follow-up about a figure already shown ("what
-    colour is that box?") carries no terms that could retrieve it again, so
-    removing the image turns an answerable question into a refusal.
-
-    ``turn_start`` is how many messages existed when the current question
-    arrived, so everything below it belongs to an earlier one. The run reports
-    it rather than this function deriving it from message shape: a
-    ``UserPromptPart`` mid-question is as likely to be page images on a tool
-    return, or a notice a capability injected, and reading either as the next
-    question strips evidence the model is still answering from.
-    """
-    if turn_start <= 0:
-        return messages
-
-    compacted = list(messages)
-    for index, message in enumerate(messages[:turn_start]):
-        if not isinstance(message, ModelRequest):
-            continue
-        parts = [
-            replace(part, content=PRIOR_TURN_NOTICE)
-            if isinstance(part, ToolReturnPart) and part.tool_name in tool_names
-            else part
-            for part in message.parts
-        ]
-        if parts != message.parts:
-            compacted[index] = replace(message, parts=parts)
-    return compacted
-
-
 def _is_resumption(prompt: Any, messages: list[ModelMessage]) -> bool:
     """Whether this run continues a question rather than asking a new one.
 
@@ -185,17 +136,10 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
     search_count: int = field(default=0, repr=False)
     request_count: int = field(default=0, repr=False)
     grace_requests_used: int = field(default=0, repr=False)
-    turn_start: int = field(default=0, repr=False)
     epoch: int = field(default=0, repr=False)
 
     async def for_run(self, ctx: RunContext[Any]) -> "RAGCapabilityBase[StateT]":
-        """Start a run's own copy, and decide what counts as an earlier question.
-
-        On a resumption (see ``_is_resumption``) compaction is switched off for the
-        whole run: ``len(ctx.messages)`` would count the live question's own
-        messages and replace its evidence with the earlier-question notice, leaving
-        the model to answer with the evidence taken away. Failing this way costs a
-        larger request; failing the other way costs the answer.
+        """Start a run's own copy, and settle which question it is answering.
 
         A new question takes the message count as its identity, which every
         participant derives identically from the same history. A resumption keeps
@@ -235,7 +179,6 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
             request_count=0,
             grace_requests_used=0,
             epoch=0,
-            turn_start=0 if resuming else len(ctx.messages),
         )
         run_capability._sync_state()
         return run_capability
@@ -244,26 +187,6 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         if self.config.prompts.domain_preamble:
             return f"{self.config.prompts.domain_preamble}\n\n{self.instruction_text}"
         return self.instruction_text
-
-    async def wrap_model_request(
-        self,
-        ctx: RunContext[Any],
-        *,
-        request_context: ModelRequestContext,
-        handler: WrapModelRequestHandler,
-    ) -> ModelResponse:
-        """Trim earlier-question evidence off the wire only.
-
-        Deliberately not ``before_model_request``: that hook's result is
-        assigned back onto the run's message history, so trimming there would
-        destroy the host's record of what was retrieved.
-        """
-        request_context.messages = _compact_old_tool_returns(
-            request_context.messages,
-            self.tool_names - {self._cite_tool_name},
-            turn_start=self.turn_start,
-        )
-        return await handler(request_context)
 
     async def before_model_request(
         self, ctx: RunContext[Any], request_context: ModelRequestContext
@@ -405,6 +328,18 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
                     await rag.__aenter__()
                     self.rag = rag
         return self.rag
+
+    async def get_picture_bytes(self, document_id: str, self_ref: str) -> bytes | None:
+        """Fetch a picture of this capability's evidence, for whoever re-attaches it.
+
+        Public because compaction rehydrates cited pictures and this capability
+        already holds the connection they came from; bytes are never kept in state.
+        """
+        async with self.rag_lock:
+            rag = await self._ensure_rag()
+            return await rag.document_item_repository.get_picture_bytes(
+                document_id, self_ref
+            )
 
     async def _close(self) -> None:
         if self.rag is not None:

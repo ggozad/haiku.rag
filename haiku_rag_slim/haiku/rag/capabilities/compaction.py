@@ -1,13 +1,23 @@
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from typing import Any, cast
 
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.capabilities import AbstractCapability, WrapModelRequestHandler
+from pydantic_ai.messages import (
+    BinaryContent,
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    ToolReturnPart,
+    UserPromptPart,
+)
+from pydantic_ai.models import ModelRequestContext
 
 from haiku.rag.capabilities._base import RAGCapabilityBase
 from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
 from haiku.rag.store.models.citation import Citation
+from haiku.rag.tools.search import RETRIEVED_IMAGE_TAG, decode_picture
 
 CAPABILITY_ID = "haiku-rag-evidence-compaction"
 
@@ -38,7 +48,7 @@ def group_label(position: int) -> str:
 def picture_label(chunk_id: str, self_ref: str) -> str:
     return (
         f"Page image retrieved from the knowledge base for cited evidence "
-        f"[{chunk_id}] ({self_ref}). Not provided by the user."
+        f"[{chunk_id}] ({self_ref}). Not provided by the user. {RETRIEVED_IMAGE_TAG}"
     )
 
 
@@ -181,6 +191,102 @@ def build_capsule(evidence: Sequence[DiscoveredEvidence]) -> Capsule:
     return Capsule(text=ENTRY_SEPARATOR.join(lines), pictures=tuple(pictures))
 
 
+def _strip_our_pictures(part: UserPromptPart) -> UserPromptPart | None:
+    """Drop the pictures we attached, together with the labels describing them.
+
+    Ours is a label carrying the machine tag immediately followed by an image —
+    both halves required. Position alone is not ownership, since several tools'
+    results can arrive in one request; prose alone is not either, because a user can
+    write any phrase, and treating one as proof removed a user's own picture along
+    with their text. A label is only ever dropped with its picture: left behind it
+    would tell the model a figure is present when it is gone.
+    """
+    if isinstance(part.content, str):
+        return part
+    items = list(part.content)
+    kept: list[Any] = []
+    index = 0
+    while index < len(items):
+        item = items[index]
+        following = items[index + 1] if index + 1 < len(items) else None
+        is_ours = (
+            isinstance(item, str)
+            and RETRIEVED_IMAGE_TAG in item
+            and isinstance(following, BinaryContent)
+        )
+        if is_ours:
+            index += 2
+            continue
+        kept.append(item)
+        index += 1
+    return replace(part, content=kept) if kept else None
+
+
+def compact_history(
+    messages: list[ModelMessage],
+    *,
+    boundary: int,
+    owned_tools: frozenset[str],
+    capsule_text: str,
+    capsule_images: Sequence[str | BinaryContent] = (),
+) -> list[ModelMessage]:
+    """Replace earlier questions' evidence with the capsule, on a copy.
+
+    ``boundary`` is how many messages existed when the current question arrived, so
+    everything below it belongs to an earlier one. It comes from the recorded
+    question identity rather than from message shape: mid-question a user-role part
+    is as likely to be page images or an injected notice, and reading either as the
+    next question strips evidence the model is still answering from.
+
+    The newest earlier return carries the capsule and every other becomes a receipt,
+    so exactly one capsule exists by construction. Returns are never removed, only
+    rewritten, which keeps each one paired with its call. Nothing outside this
+    capability's evidence tools is touched — not a cite acknowledgement, not another
+    capability's output, not a picture the user attached.
+    """
+    if boundary <= 0:
+        return messages
+
+    carrier = _newest_owned_return(messages, boundary, owned_tools)
+    compacted = list(messages)
+    for index, message in enumerate(messages[:boundary]):
+        if not isinstance(message, ModelRequest):
+            continue
+        parts: list[Any] = []
+        for part in message.parts:
+            if isinstance(part, ToolReturnPart) and part.tool_name in owned_tools:
+                body = capsule_text or RECEIPT if index == carrier else RECEIPT
+                parts.append(replace(part, content=body))
+            elif isinstance(part, UserPromptPart):
+                if (kept := _strip_our_pictures(part)) is not None:
+                    parts.append(kept)
+            else:
+                parts.append(part)
+        if index == carrier and capsule_images:
+            parts.append(UserPromptPart(content=list(capsule_images)))
+        if not parts:
+            # A request with no parts is not a message; whatever emptied it was not
+            # ours to remove after all.
+            continue
+        if parts != message.parts:
+            compacted[index] = replace(message, parts=parts)
+    return compacted
+
+
+def _newest_owned_return(
+    messages: list[ModelMessage], boundary: int, owned_tools: frozenset[str]
+) -> int | None:
+    """Index of the last earlier request holding one of our evidence returns."""
+    for index in range(min(boundary, len(messages)) - 1, -1, -1):
+        message = messages[index]
+        if isinstance(message, ModelRequest) and any(
+            isinstance(part, ToolReturnPart) and part.tool_name in owned_tools
+            for part in message.parts
+        ):
+            return index
+    return None
+
+
 @dataclass
 class EvidenceCompactionCapability(AbstractCapability[Any]):
     """Rewrites the history from what the evidence capabilities recorded.
@@ -193,6 +299,94 @@ class EvidenceCompactionCapability(AbstractCapability[Any]):
     Registering two is rejected by pydantic-ai before the run starts, since they
     would share this capability's id.
     """
+
+    built_for: tuple[str | None, int] | None = field(default=None, repr=False)
+    capsule: Capsule = field(default_factory=Capsule, repr=False)
+    images: tuple[str | BinaryContent, ...] = field(default=(), repr=False)
+
+    async def for_run(self, ctx: RunContext[Any]) -> "EvidenceCompactionCapability":
+        """Give the run its own build cache, so concurrent runs cannot share one."""
+        return replace(self, built_for=None, capsule=Capsule(), images=())
+
+    async def wrap_model_request(
+        self,
+        ctx: RunContext[Any],
+        *,
+        request_context: ModelRequestContext,
+        handler: WrapModelRequestHandler,
+    ) -> ModelResponse:
+        """Rewrite the request, never the stored history.
+
+        Deliberately not ``before_model_request``: that hook's result is assigned
+        back onto the run's message history, which would destroy the host's record
+        of what was retrieved and break the message counts that question identities
+        and epochs are derived from.
+        """
+        evidence = self.discover(ctx)
+        boundary = max((found.record.question or 0 for found in evidence), default=0)
+        if boundary > 0:
+            await self._build_once(ctx, evidence)
+            request_context.messages = compact_history(
+                request_context.messages,
+                boundary=boundary,
+                owned_tools=frozenset().union(
+                    *(found.tool_names for found in evidence)
+                ),
+                capsule_text=self.capsule.text,
+                capsule_images=self.images,
+            )
+        return await handler(request_context)
+
+    async def _build_once(
+        self, ctx: RunContext[Any], evidence: Sequence[DiscoveredEvidence]
+    ) -> None:
+        """Build the capsule once per model request, however often the hook runs.
+
+        Keyed on the run and its step rather than persisted: a stored key would
+        freeze one question's capsule across the next.
+        """
+        key = (ctx.run_id, ctx.run_step)
+        if key == self.built_for:
+            return
+        self.capsule = build_capsule(evidence)
+        self.images = await self._rehydrate(ctx)
+        self.built_for = key
+
+    async def _rehydrate(self, ctx: RunContext[Any]) -> tuple[str | BinaryContent, ...]:
+        """Fetch the cited pictures through the capability that retrieved them.
+
+        Bytes are never stored in state, and the owner already holds an open
+        connection. A picture that cannot be fetched, for any reason, or that will
+        not decode, is emitted with neither its image nor its label: a label can
+        never outlive what it describes, and a figure the model has already been
+        given in text is not worth failing a question over.
+        """
+        owners = {
+            capability.state_namespace: capability
+            for capability in ctx.capabilities.values()
+            if isinstance(capability, RAGCapabilityBase)
+        }
+        content: list[str | BinaryContent] = []
+        for retained in self.capsule.pictures:
+            # Indexed, not looked up defensively: the capsule was built from these
+            # same capabilities in this same call, so a missing owner is a broken
+            # invariant rather than a picture to skip.
+            owner = owners[retained.capability]
+            try:
+                data = await owner.get_picture_bytes(
+                    retained.document_id, retained.self_ref
+                )
+            except Exception:
+                # A read that fails costs this picture, not the answer.
+                continue
+            if data is None:
+                continue
+            picture = decode_picture(data, retained.self_ref)
+            if picture is None:
+                continue
+            content.append(retained.label)
+            content.append(picture)
+        return tuple(content)
 
     def discover(self, ctx: RunContext[Any]) -> list[DiscoveredEvidence]:
         """Read what each evidence capability recorded, without writing anything.
@@ -237,6 +431,7 @@ __all__ = [
     "EvidenceCompactionCapability",
     "RetainedPicture",
     "build_capsule",
+    "compact_history",
     "create_capability",
     "group_label",
     "picture_label",

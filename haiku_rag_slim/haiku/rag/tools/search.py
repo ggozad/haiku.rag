@@ -10,6 +10,30 @@ from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models import SearchResult
 from haiku.rag.tools.context import RAGDeps
 
+RETRIEVED_IMAGE_TAG = "[haiku.rag/retrieved-image]"
+"""Tag every label we attach to a retrieved picture ends with.
+
+Identifies our own pictures on the wire without inferring ownership from position,
+which is wrong as soon as two tools' results arrive in one request. Deliberately not
+a phrase: a user writing "retrieved from the knowledge base for my report" above
+their own picture had it removed, along with their text.
+"""
+
+
+def decode_picture(data: bytes, self_ref: str) -> BinaryContent | None:
+    """Wrap picture bytes for the wire, or return nothing if they will not decode.
+
+    The model adapter renders one vision placeholder per ``BinaryContent``, so
+    emitting one for an image the server cannot decode leaves the processor with an
+    off-by-one count.
+    """
+    try:
+        with Image.open(BytesIO(data)) as image:
+            image.verify()
+    except Exception:
+        return None
+    return BinaryContent(data=data, media_type="image/png", identifier=self_ref)
+
 
 def build_image_content_from_results(
     results: list[SearchResult],
@@ -33,7 +57,7 @@ def build_image_content_from_results(
     ``BinaryContent.identifier`` cannot do — it does not survive serialization
     to the vision API.
     """
-    collected: list[tuple[str | None, str, bytes]] = []
+    collected: list[tuple[str | None, str, BinaryContent]] = []
     seen: set[tuple[str | None, str]] = set()
     for result in results:
         if not result.image_data:
@@ -42,26 +66,21 @@ def build_image_content_from_results(
             key = (result.document_id, self_ref)
             if key in seen:
                 continue
-            data = base64.b64decode(b64)
-            try:
-                with Image.open(BytesIO(data)) as img:
-                    img.verify()
-            except Exception:
+            picture = decode_picture(base64.b64decode(b64), self_ref)
+            if picture is None:
                 continue
-            collected.append((result.chunk_id, self_ref, data))
+            collected.append((result.chunk_id, self_ref, picture))
             seen.add(key)
 
     content: list[str | BinaryContent] = []
     total = len(collected)
-    for position, (chunk_id, self_ref, data) in enumerate(collected, 1):
+    for position, (chunk_id, self_ref, picture) in enumerate(collected, 1):
         content.append(
-            f"Page image {position} of {total}, retrieved from the knowledge "
-            f"base for search result [{chunk_id}] ({self_ref}). "
-            "Not provided by the user."
+            f"Page image {position} of {total}, retrieved from the knowledge base "
+            f"for search result [{chunk_id}] ({self_ref}). "
+            f"Not provided by the user. {RETRIEVED_IMAGE_TAG}"
         )
-        content.append(
-            BinaryContent(data=data, media_type="image/png", identifier=self_ref)
-        )
+        content.append(picture)
     return content
 
 
