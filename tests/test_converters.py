@@ -1,7 +1,11 @@
 """Tests for document converters."""
 
+import asyncio
 import tempfile
+import threading
+import time
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
@@ -10,7 +14,7 @@ from docling_core.types.doc.document import DoclingDocument
 
 from haiku.rag.config import AppConfig
 from haiku.rag.config.models import ModelConfig
-from haiku.rag.converters import get_converter
+from haiku.rag.converters import docling_local, get_converter
 from haiku.rag.converters.base import vlm_api_url
 from haiku.rag.converters.docling_local import DoclingLocalConverter
 from haiku.rag.converters.docling_serve import DoclingServeConverter
@@ -1005,6 +1009,156 @@ class TestDoclingLocalConverter:
         assert pictures_with_descriptions, (
             "At least one picture should have a VLM description"
         )
+
+
+class TestSharedDoclingConverter:
+    """Reuse of the docling converter across documents. CSV inputs resolve to
+    SimplePipeline, so no models load here.
+    """
+
+    @pytest.fixture
+    def config(self):
+        return AppConfig()
+
+    @pytest.fixture(autouse=True)
+    def clear_cache(self):
+        """A cached converter is an instance of the patched subclass below, so
+        it must not outlive the test that cached it."""
+        docling_local._CONVERTERS.clear()
+        yield
+        docling_local._CONVERTERS.clear()
+
+    @pytest.fixture
+    def docling_calls(self, monkeypatch):
+        """Count converter constructions and overlapping conversions."""
+        from docling.document_converter import DocumentConverter
+
+        record = SimpleNamespace(constructions=0, format_options=[], overlaps=0)
+        depth = 0
+        depth_lock = threading.Lock()
+
+        class RecordingConverter(DocumentConverter):
+            def __init__(self, *args, format_options=None, **kwargs):
+                super().__init__(*args, format_options=format_options, **kwargs)
+                record.constructions += 1
+                record.format_options.append(format_options)
+
+            def convert(self, *args, **kwargs):
+                nonlocal depth
+                with depth_lock:
+                    depth += 1
+                    if depth > 1:
+                        record.overlaps += 1
+                try:
+                    time.sleep(0.05)
+                    return super().convert(*args, **kwargs)
+                finally:
+                    with depth_lock:
+                        depth -= 1
+
+        monkeypatch.setattr(
+            "docling.document_converter.DocumentConverter", RecordingConverter
+        )
+        return record
+
+    @pytest.fixture
+    def csv_file(self, tmp_path):
+        source = tmp_path / "rows.csv"
+        source.write_text("a,b\n1,2\n")
+        return source
+
+    @pytest.mark.asyncio
+    async def test_converter_is_reused_across_documents(
+        self, config, csv_file, docling_calls
+    ):
+        """A converter per ingested document must not mean a docling converter
+        per document, which is what reloads the models."""
+        for _ in range(2):
+            doc = await DoclingLocalConverter(config).convert_file(
+                csv_file, source_uri=csv_file.as_uri()
+            )
+            assert isinstance(doc, DoclingDocument)
+
+        assert docling_calls.constructions == 1
+
+    @pytest.mark.asyncio
+    async def test_concurrent_conversions_do_not_overlap(
+        self, config, csv_file, docling_calls
+    ):
+        """StandardPdfPipeline keeps per-run state on the instance, so two
+        conversions may never share one converter at the same time."""
+        await asyncio.gather(
+            *(
+                DoclingLocalConverter(config).convert_file(
+                    csv_file, source_uri=csv_file.as_uri()
+                )
+                for _ in range(2)
+            )
+        )
+
+        assert docling_calls.constructions == 1
+        assert docling_calls.overlaps == 0
+
+    @pytest.mark.asyncio
+    async def test_markup_conversion_keeps_its_own_source_uri(
+        self, config, tmp_path, docling_calls
+    ):
+        """HTML and Markdown backends resolve relative image references from
+        `source_uri`, so each conversion gets a converter carrying its own."""
+        from docling.datamodel.base_models import InputFormat
+
+        for name in ("one.md", "two.md"):
+            source = tmp_path / name
+            source.write_text("# heading\n\ntext\n")
+            await DoclingLocalConverter(config).convert_file(
+                source, source_uri=source.as_uri()
+            )
+
+        assert docling_calls.constructions == 2
+        uris = [
+            str(options[InputFormat.MD].backend_options.source_uri)
+            for options in docling_calls.format_options
+        ]
+        assert uris[0].endswith("one.md")
+        assert uris[1].endswith("two.md")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode", ["fast", "accurate"])
+    async def test_differing_pipeline_options_get_their_own_converter(
+        self, config, csv_file, docling_calls, mode
+    ):
+        """`table_mode` lives in a nested option model, which pydantic renders
+        as `{}` unless serialized with `serialize_as_any`."""
+        config.processing.conversion_options.table_mode = mode
+        other = config.model_copy(deep=True)
+        other.processing.conversion_options.table_mode = (
+            "accurate" if mode == "fast" else "fast"
+        )
+
+        for cfg in (config, other):
+            await DoclingLocalConverter(cfg).convert_file(
+                csv_file, source_uri=csv_file.as_uri()
+            )
+
+        assert docling_calls.constructions == 2
+
+    @pytest.mark.asyncio
+    async def test_config_differences_outside_the_pipeline_still_reuse(
+        self, config, csv_file, docling_calls, tmp_path
+    ):
+        """Settings the pipeline never sees must not strand a second set of
+        models."""
+        other = config.model_copy(deep=True)
+        other.storage.data_dir = tmp_path / "elsewhere"
+        other.qa.model.name = "some-other-model"
+        other.qa.max_searches = config.qa.max_searches + 3
+
+        for cfg in (config, other):
+            await DoclingLocalConverter(cfg).convert_file(
+                csv_file, source_uri=csv_file.as_uri()
+            )
+
+        assert docling_calls.constructions == 1
 
 
 class TestDoclingServeConverter:

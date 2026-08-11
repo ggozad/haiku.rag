@@ -6,6 +6,7 @@
 - `cross-encoder` reranking no longer ties the scores of strongly-relevant candidates, which left their order to the sort. Scores remain 0-1.
 - `haiku-rag` and `haiku-ingester` CLI startup no longer imports `lancedb`, `pyarrow` and `pydantic_ai`.
 - `haiku.rag.store` no longer re-exports `Store`; import it from `haiku.rag.store.engine`.
+- `docling-local` reuses one docling `DocumentConverter` per set of conversion options instead of building one per document, so local layout, table and OCR models are no longer loaded per document. Conversions through a shared converter are serialized.
 
 ## [0.73.0] - 2026-08-06
 
