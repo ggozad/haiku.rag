@@ -312,7 +312,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
             )
         if spent := self._spent_tool_names():
             names = ", ".join(sorted(spent))
-            if remaining := sorted(self._evidence_tool_names() - spent):
+            if remaining := sorted(self.evidence_tool_names() - spent):
                 return (
                     f"The {self.state_namespace} capability has spent its budget "
                     f"for {names}; further calls to them fail. Gather any further "
@@ -350,8 +350,13 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
             if tool.capability_id != self.id or tool.name == self._cite_tool_name
         ]
 
-    def _evidence_tool_names(self) -> set[str]:
-        """Tools that can bring new evidence into the run."""
+    def evidence_tool_names(self) -> set[str]:
+        """Tools that can bring new evidence into the run.
+
+        Public because compaction needs to know whose output on the wire is
+        evidence: a cite acknowledgement is a receipt of the model's own action and
+        must survive, while a code execution that reached the corpus is evidence.
+        """
         return {f"{self.state_namespace}_search"}
 
     def _spent_tool_names(self) -> set[str]:

@@ -614,7 +614,7 @@ async def test_spent_search_notice_points_at_code_while_it_has_budget(temp_db_pa
     notice = capability._budget_notice()
     assert notice is not None
     assert "analysis_execute_code" in notice
-    assert capability._evidence_tool_names() <= capability._spent_tool_names()
+    assert capability.evidence_tool_names() <= capability._spent_tool_names()
 
 
 @pytest.mark.asyncio
@@ -629,7 +629,7 @@ async def test_spent_search_notice_tells_rag_to_answer(temp_db_path):
 
     assert notice is not None
     assert "rag_search" in notice
-    assert capability._evidence_tool_names() == {"rag_search"}
+    assert capability.evidence_tool_names() == {"rag_search"}
 
 
 @pytest.mark.asyncio
