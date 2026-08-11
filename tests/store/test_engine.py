@@ -1,6 +1,6 @@
 import pytest
 
-from haiku.rag.store import Store
+from haiku.rag.store.engine import Store
 from haiku.rag.store.engine import get_database_stats
 
 
