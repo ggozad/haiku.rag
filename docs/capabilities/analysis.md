@@ -46,6 +46,8 @@ async with HaikuRAG("my.lancedb") as client:
 
 ## State
 
-When dependencies expose a state dictionary, `AnalysisState` is stored under `"analysis"`. It contains the document filter, code execution log, searches, and citations. Per-run searches and executions reset automatically; the filter and citation index persist.
+When dependencies expose a state dictionary, `AnalysisState` is stored under `"analysis"`. It contains the document filter, code execution log, searches, citations, and the `evidence` record of what was retrieved and cited per question. Searches and executions are cleared when a new question starts, and a resumed question keeps them; the filter, citation index and evidence record persist.
+
+This capability does not alter the message history either. Register the [compaction capability](index.md#multi-turn-conversations) to compact earlier questions.
 
 The capability lazily opens both LanceDB and the sandbox only after it is loaded and a tool requires them. Resources close at the end of the agent run.
