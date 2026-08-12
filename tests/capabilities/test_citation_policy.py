@@ -3,6 +3,7 @@ from typing import Any, cast
 from unittest.mock import patch
 
 import pytest
+from pydantic import BaseModel
 from pydantic_ai import Agent, DeferredToolResults
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
@@ -412,3 +413,85 @@ async def test_a_user_quoting_the_redirect_does_not_suppress_enforcement(temp_db
         )
 
     assert [p for p in prompts_of(sent[-1]) if CITATION_REDIRECT_TAG in p]
+
+
+class Answer(BaseModel):
+    """A structured output, which the model returns through an output tool."""
+
+    text: str
+
+
+@pytest.mark.asyncio
+async def test_a_structured_output_answer_does_not_escape_enforcement(temp_db_path):
+    """An output tool call is a `ToolCallPart` too, and it ends the run.
+
+    Treating every tool call as intermediate let a model search, skip citing, emit
+    its structured answer and finish with neither a redirect nor a violation.
+    """
+    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    turns = iter(
+        [
+            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
+            [
+                ToolCallPart(
+                    "final_result", {"text": "uncited structured answer"}, "out"
+                )
+            ],
+            [
+                ToolCallPart(
+                    "final_result", {"text": "uncited structured answer"}, "out"
+                )
+            ],
+        ]
+    )
+    sent: list[list[Any]] = []
+
+    async def model(messages, _info):
+        sent.append(list(messages))
+        return ModelResponse(parts=next(turns))
+
+    agent = Agent(
+        FunctionModel(model),
+        deps_type=Deps,
+        output_type=Answer,
+        capabilities=[rag, create_policy()],
+    )
+    deps = Deps()
+
+    with patch.object(RAGCapability, "_search", stub_search):
+        await agent.run("what does the supervisor do?", deps=deps)
+
+    redirected = [p for p in prompts_of(sent[-1]) if CITATION_REDIRECT_TAG in p]
+    violations = deps.state.get("citation_policy", {}).get("violations", [])
+    assert redirected or violations
+
+
+@pytest.mark.asyncio
+async def test_a_question_asked_once_and_still_undeclared_is_recorded(temp_db_path):
+    """Being asked is not an outcome; the question still ended undeclared.
+
+    Returning early on the redirect marker meant a question that was asked, ignored,
+    and then finished — with the cite tool possibly gone by that point — was neither
+    redirected again nor recorded anywhere.
+    """
+    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    turns = iter(
+        [
+            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
+            [TextPart("uncited")],
+            [TextPart("still uncited after being asked")],
+        ]
+    )
+
+    async def model(_messages, _info):
+        return ModelResponse(parts=next(turns))
+
+    agent = Agent(
+        FunctionModel(model), deps_type=Deps, capabilities=[rag, create_policy()]
+    )
+    deps = Deps()
+
+    with patch.object(RAGCapability, "_search", stub_search):
+        await agent.run("what does the supervisor do?", deps=deps)
+
+    assert deps.state["citation_policy"]["violations"] == [0]

@@ -11,6 +11,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.models import ModelRequestContext
+from pydantic_ai.run import AgentRunResult
 
 from haiku.rag.capabilities.evidence import (
     DiscoveredEvidence,
@@ -80,12 +81,17 @@ class CitationPolicyCapability(AbstractCapability[Any]):
     ) -> ModelResponse:
         """Decide once, at the last moment a question can still be redirected.
 
-        A response carrying no tool calls ends the question, so there is no later
-        opportunity. Citing is unconditional, so an undeclared answer is a protocol
-        breach whether the model answered or refused, and this never has to guess
-        which it was.
+        A response that ends the question is the last opportunity: one carrying no
+        tool calls, or one whose call is an output tool, which is how a structured
+        answer arrives and which finishes the run just the same. Citing is
+        unconditional, so an undeclared answer is a protocol breach whether the model
+        answered or refused, and this never has to guess which it was.
+
+        Endings this cannot see — a host running ``end_strategy="early"`` can finish
+        on text beside a function call — are caught by ``after_run``, which can still
+        record the outcome even though it can no longer ask for a citation.
         """
-        if any(isinstance(part, ToolCallPart) for part in response.parts):
+        if not _ends_the_question(response, request_context):
             return response
         evidence = discover_evidence(ctx)
         question = question_in_progress(evidence)
@@ -117,6 +123,25 @@ class CitationPolicyCapability(AbstractCapability[Any]):
             state.violations.append(question)
         outer[STATE_NAMESPACE] = state.model_dump(mode="json")
 
+    async def after_run(
+        self, ctx: RunContext[Any], *, result: AgentRunResult[Any]
+    ) -> AgentRunResult[Any]:
+        """Record a question that finished undeclared, whatever ended it.
+
+        The backstop for an ending ``after_model_request`` cannot recognise. Nothing
+        can be asked of the model now, so this only records: a question that reached
+        the end of its run without a declaration is a violation, and one that was
+        asked but never answered is the same.
+        """
+        evidence = discover_evidence(ctx)
+        question = question_in_progress(evidence)
+        if not _has_evidence_to_declare(evidence):
+            return result
+        records = [found.record for found in evidence]
+        if citation_status(records, question=question) == "missing":
+            self._record_violation(ctx, question)
+        return result
+
     async def before_run(self, ctx: RunContext[Any]) -> None:
         """Publish an empty outcome, so a host can tell "none" from "not running"."""
         outer = getattr(ctx.deps, "state", None)
@@ -124,6 +149,24 @@ class CitationPolicyCapability(AbstractCapability[Any]):
             outer.setdefault(
                 STATE_NAMESPACE, CitationPolicyState().model_dump(mode="json")
             )
+
+
+def _ends_the_question(
+    response: ModelResponse, request_context: ModelRequestContext
+) -> bool:
+    """Whether this response finishes the question rather than continuing it.
+
+    An output tool call is a ``ToolCallPart`` like any other, but it carries the
+    final answer and ends the run, so treating every tool call as intermediate let a
+    structured answer finish undeclared.
+    """
+    calls = [part for part in response.parts if isinstance(part, ToolCallPart)]
+    if not calls:
+        return True
+    output_tools = {
+        tool.name for tool in request_context.model_request_parameters.output_tools
+    }
+    return any(call.tool_name in output_tools for call in calls)
 
 
 def _already_asked(messages: list[ModelMessage], question: int) -> bool:

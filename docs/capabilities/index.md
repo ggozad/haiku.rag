@@ -90,10 +90,18 @@ a declaration possible without forcing the model to invent grounding.
 
 When a question ends undeclared, the model is asked once to record what grounded the
 answer it already gave. It is not asked to change the answer. If the cite tool is no
-longer available by then, the question is recorded as a violation in
-`CitationPolicyState` under `"citation_policy"` instead, since pointing a model at a
-tool that is gone costs it retries. A question that gathered no evidence at all — a
-greeting, an aside — is left alone.
+longer available by then, or the question finishes undeclared anyway, it is recorded as
+a violation in `CitationPolicyState` under `"citation_policy"`, since pointing a model
+at a tool that is gone costs it retries.
+
+What gets enforced is every answer in a conversation that has something to declare:
+either this question retrieved evidence, or the conversation has already cited
+something, which stays available to later answers. So a follow-up about evidence cited
+earlier is enforced even though it searched nothing — that case is the reason the
+capability exists. It also means that once anything has been cited, later turns are
+enforced too, a greeting included; the model satisfies the policy by citing an empty
+list, at the cost of one extra request. A conversation that has never cited anything is
+not enforced at all.
 
 Exactly one policy capability makes the decision, however many evidence capabilities
 are registered, so two of them cannot each demand a citation for one answer.
