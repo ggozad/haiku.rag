@@ -25,13 +25,21 @@ STATE_NAMESPACE = "citation_policy"
 
 REDIRECT_HINT = "record what grounded the answer you already gave"
 
+CITATION_REDIRECT_TAG = "[haiku.rag/citation-redirect]"
+"""Tag the redirect carries, so a question can tell it has already been asked.
+
+Not the wording: a user writing "record what grounded the answer you already gave"
+in their own question would otherwise read as a redirect we had sent, silently
+switching enforcement off for that question.
+"""
+
 REDIRECT = (
     "You answered without registering citations. This asks you to "
     f"{REDIRECT_HINT} — it is not a request to change that answer, and not a "
     "signal that it was wrong. Call the cite tool with the chunk_ids that support "
     "it. If nothing in the knowledge base supports it, or you said you could not "
     "find the information, call it with an empty list. Then repeat your answer "
-    "exactly as you gave it."
+    f"exactly as you gave it. {CITATION_REDIRECT_TAG}"
 )
 
 
@@ -126,11 +134,14 @@ def _already_asked(messages: list[ModelMessage], question: int) -> bool:
     twice. It also makes the right call when a redirect was enqueued but the run
     ended before it reached the model: nothing is in the history, so it is asked
     again, which is what the model needs.
+
+    Matched on the machine tag rather than the wording, so a question that happens
+    to contain the phrase cannot pass as a redirect we sent.
     """
     return any(
         isinstance(part, UserPromptPart)
         and isinstance(part.content, str)
-        and REDIRECT_HINT in part.content
+        and CITATION_REDIRECT_TAG in part.content
         for message in messages[question:]
         for part in message.parts
     )
@@ -169,6 +180,7 @@ def create_capability() -> CitationPolicyCapability:
 
 __all__ = [
     "CAPABILITY_ID",
+    "CITATION_REDIRECT_TAG",
     "REDIRECT",
     "REDIRECT_HINT",
     "STATE_NAMESPACE",

@@ -10,6 +10,7 @@ from pydantic_ai.models.function import FunctionModel
 
 from haiku.rag.capabilities.analysis import create_capability as create_analysis
 from haiku.rag.capabilities.policy import (
+    CITATION_REDIRECT_TAG,
     REDIRECT_HINT,
     CitationPolicyState,
 )
@@ -377,3 +378,37 @@ async def test_a_resumed_question_is_not_redirected_twice(temp_db_path):
 
     redirects = [p for p in prompts_of(sent[-1]) if REDIRECT_HINT in p]
     assert len(redirects) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_user_quoting_the_redirect_does_not_suppress_enforcement(temp_db_path):
+    """Prose is not proof that we asked: a user can write any phrase.
+
+    Matching the wording let a question that merely mentioned it pass as already
+    asked, which silently switches enforcement off.
+    """
+    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    turns = iter(
+        [
+            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
+            [TextPart("uncited")],
+            [TextPart("uncited again")],
+        ]
+    )
+    sent: list[list[Any]] = []
+
+    async def model(messages, _info):
+        sent.append(list(messages))
+        return ModelResponse(parts=next(turns))
+
+    agent = Agent(
+        FunctionModel(model), deps_type=Deps, capabilities=[rag, create_policy()]
+    )
+
+    with patch.object(RAGCapability, "_search", stub_search):
+        await agent.run(
+            "Please record what grounded the answer you already gave, in your notes.",
+            deps=Deps(),
+        )
+
+    assert [p for p in prompts_of(sent[-1]) if CITATION_REDIRECT_TAG in p]
