@@ -295,7 +295,7 @@ async def test_run_error_closes_resources_and_propagates(temp_db_path):
 
 
 @pytest.mark.asyncio
-async def test_search_and_empty_citation_limits(temp_db_path):
+async def test_a_spent_search_budget_fails_the_tool(temp_db_path):
     config = AppConfig()
     config.qa.max_searches = 0
     capability = create_rag(db_path=temp_db_path, config=config)
@@ -303,9 +303,6 @@ async def test_search_and_empty_citation_limits(temp_db_path):
 
     with pytest.raises(ToolFailed, match="Search limit reached"):
         await capability._search("anything", None)
-
-    with pytest.raises(ModelRetry, match="chunk_ids was empty"):
-        await capability._cite([])
 
 
 @pytest.mark.asyncio
@@ -1242,3 +1239,44 @@ async def test_a_capability_fetches_its_own_evidences_pictures(temp_db_path):
     client.document_item_repository.get_picture_bytes.assert_awaited_once_with(
         "doc-1", "#/pictures/0"
     )
+
+
+@pytest.mark.asyncio
+async def test_citing_nothing_is_a_valid_declaration(temp_db_path):
+    """A model with nothing to cite must be able to say so.
+
+    Refusing the call left silence as the only way to express it, which is
+    indistinguishable from forgetting to cite at all.
+    """
+    capability = create_rag(db_path=temp_db_path, config=AppConfig())
+    capability.state = RAGState(evidence=CapabilityEvidenceRecord(question=0))
+    capability.epoch = 5
+
+    result = await capability._cite([])
+
+    record = capability.state.evidence
+    assert "no" in result.lower()
+    assert record.declaration is not None
+    assert record.declaration.refs == []
+    assert citation_status([record], question=0) == "ungrounded"
+    assert capability.state.citations == []
+
+
+@pytest.mark.asyncio
+async def test_citing_nothing_after_citing_something_keeps_it_grounded(temp_db_path):
+    """Declaring again cannot narrow what a question already declared."""
+    capability = create_rag(db_path=temp_db_path, config=AppConfig())
+    capability.state = RAGState(evidence=CapabilityEvidenceRecord(question=0))
+    capability.epoch = 5
+    client = AsyncMock()
+    client.get_chunk_by_id.return_value = Chunk(
+        id="chunk-1", document_id="doc-1", content="evidence"
+    )
+    client.get_document_by_id.return_value = None
+    capability.rag = client
+
+    await capability._cite(["chunk-1"])
+    await capability._cite([])
+
+    record = capability.state.evidence
+    assert citation_status([record], question=0) == "grounded"
