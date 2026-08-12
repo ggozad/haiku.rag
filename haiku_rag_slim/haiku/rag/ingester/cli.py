@@ -4,6 +4,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 import yaml
@@ -28,11 +29,6 @@ from haiku.rag.config import (  # noqa: E402
     load_yaml_config,
     set_config,
 )
-from haiku.rag.ingester.app import (  # noqa: E402
-    BatchProgress,
-    BatchProgressCallback,
-    IngesterApp,
-)
 from haiku.rag.ingester.batch import BatchManifest  # noqa: E402
 from haiku.rag.ingester.queue.migrations import open_queue  # noqa: E402
 from haiku.rag.logging import configure_cli_logging  # noqa: E402
@@ -40,6 +36,9 @@ from haiku.rag.store.exceptions import (  # noqa: E402
     MigrationRequiredError,
     ReadOnlyError,
 )
+
+if TYPE_CHECKING:
+    from haiku.rag.ingester.app import BatchProgress, BatchProgressCallback
 
 _cli = typer.Typer(
     name="haiku-ingester",
@@ -167,7 +166,7 @@ def _write_manifest(manifest: BatchManifest, path: Path) -> None:
 @contextmanager
 def _batch_progress(
     description: str,
-) -> Iterator[BatchProgressCallback | None]:  # pragma: no cover
+) -> "Iterator[BatchProgressCallback | None]":  # pragma: no cover
     console = Console(file=sys.stdout)
     if not console.is_terminal:
         yield None
@@ -184,7 +183,7 @@ def _batch_progress(
     )
     task_id = None
 
-    def _update(snapshot: BatchProgress) -> None:
+    def _update(snapshot: "BatchProgress") -> None:
         nonlocal task_id
         task_description = (
             f"{description} ({snapshot.succeeded} ok, {snapshot.dead} dead)"
@@ -244,6 +243,8 @@ def serve(
 ) -> None:
     """Run the production ingester: pollers + workers (and the HTTP API
     unless --no-api is set). Blocks until SIGINT/SIGTERM."""
+    from haiku.rag.ingester.app import IngesterApp
+
     app_config = get_config()
     if host is not None:
         app_config.ingester.api.host = host
@@ -309,6 +310,8 @@ async def _run_batch(
     output: Path | None = None,
     manifest_path: Path | None = None,
 ) -> None:
+    from haiku.rag.ingester.app import IngesterApp
+
     db = _resolve_db_path(app_config, db_path)
     app = IngesterApp(config=app_config, db_path=db)
     if dry_run:

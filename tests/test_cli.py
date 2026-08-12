@@ -1,3 +1,5 @@
+import subprocess
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -10,6 +12,22 @@ from haiku.rag.cli import cli as cli_wrapper
 from haiku.rag.store.exceptions import MigrationRequiredError
 
 runner = CliRunner()
+
+
+def test_importing_cli_does_not_load_lancedb():
+    """Test that lancedb is not imported automatically by the cli. Doing so is
+     expensive. Must be run in a subprocess because lancedb might be imported by
+    other tests in the same session."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import haiku.rag.cli, sys; assert 'lancedb' not in sys.modules",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 class TestParseMetaOptions:
