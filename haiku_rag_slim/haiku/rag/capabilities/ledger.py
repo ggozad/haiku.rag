@@ -133,10 +133,11 @@ class CapabilityEvidenceRecord(BaseModel):
     ) -> None:
         """Record validated citations for the current question.
 
-        Repeated calls at the same epoch merge, so citing again cannot narrow what
-        was already declared: an empty call after a grounded one leaves it
-        grounded. A call at a later epoch declares afresh, because evidence the
-        model saw in between may be what it is now citing.
+        Citing again cannot narrow what a question already declared: calls merge
+        while no evidence outcome has followed the standing declaration, whatever
+        epoch they arrive at, so an empty second thought leaves a grounded question
+        grounded. Only genuinely newer evidence starts a declaration afresh, since
+        what the model saw in between may be what it is now citing.
         """
         if self.question is None:
             raise ValueError(
@@ -145,14 +146,16 @@ class CapabilityEvidenceRecord(BaseModel):
             )
         self._reject_regression(epoch, "A declaration")
         current = self.declaration
-        if current is not None and (current.question, current.epoch) == (
-            self.question,
-            epoch,
+        if (
+            current is not None
+            and current.question == self.question
+            and self.latest_evidence_epoch <= current.epoch
         ):
             known = {(ref.capability, ref.chunk_id) for ref in current.refs}
             current.refs.extend(
                 ref for ref in refs if (ref.capability, ref.chunk_id) not in known
             )
+            current.epoch = max(current.epoch, epoch)
         else:
             self.declaration = CitationDeclaration(
                 question=self.question, epoch=epoch, refs=list(refs)

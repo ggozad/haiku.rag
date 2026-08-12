@@ -1,10 +1,15 @@
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel, Field
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
-from pydantic_ai.messages import ModelResponse, ToolCallPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelResponse,
+    ToolCallPart,
+    UserPromptPart,
+)
 from pydantic_ai.models import ModelRequestContext
 
 from haiku.rag.capabilities.evidence import (
@@ -58,12 +63,6 @@ class CitationPolicyCapability(AbstractCapability[Any]):
     would share this capability's id.
     """
 
-    redirected: set[int] = field(default_factory=set, repr=False)
-
-    async def for_run(self, ctx: RunContext[Any]) -> "CitationPolicyCapability":
-        """Give the run its own record of what it has already asked for."""
-        return replace(self, redirected=set())
-
     async def after_model_request(
         self,
         ctx: RunContext[Any],
@@ -82,13 +81,14 @@ class CitationPolicyCapability(AbstractCapability[Any]):
             return response
         evidence = discover_evidence(ctx)
         question = question_in_progress(evidence)
-        if question in self.redirected or not _gathered_evidence(evidence):
+        if not _has_evidence_to_declare(evidence):
             return response
         records = [found.record for found in evidence]
         if citation_status(records, question=question) != "missing":
             return response
+        if _already_asked(ctx.messages, question):
+            return response
 
-        self.redirected.add(question)
         if any(found.cite_available for found in evidence):
             ctx.enqueue(REDIRECT, priority="when_idle")
         else:
@@ -96,12 +96,17 @@ class CitationPolicyCapability(AbstractCapability[Any]):
         return response
 
     def _record_violation(self, ctx: RunContext[Any], question: int) -> None:
-        """Note a question that could not be asked to cite, the tool being gone."""
+        """Note a question that could not be asked to cite, the tool being gone.
+
+        Recorded once per question: a resumption of the same question decides
+        again, and one question is one outcome.
+        """
         outer = getattr(ctx.deps, "state", None)
         if not isinstance(outer, dict):
             return
         state = CitationPolicyState.model_validate(outer.get(STATE_NAMESPACE) or {})
-        state.violations.append(question)
+        if question not in state.violations:
+            state.violations.append(question)
         outer[STATE_NAMESPACE] = state.model_dump(mode="json")
 
     async def before_run(self, ctx: RunContext[Any]) -> None:
@@ -113,16 +118,42 @@ class CitationPolicyCapability(AbstractCapability[Any]):
             )
 
 
-def _gathered_evidence(evidence: list[DiscoveredEvidence]) -> bool:
-    """Whether this question produced anything an answer could be grounded on.
+def _already_asked(messages: list[ModelMessage], question: int) -> bool:
+    """Whether this question has already been asked to declare its grounding.
 
-    A question with no evidence outcome has nothing to declare — a greeting, or a
-    conversational aside. Read from the ledger rather than from ``state.searches``,
-    which a new question clears, so an answer grounded on code execution or on a
-    document read counts as well.
+    Read from the history rather than remembered on the instance, which a
+    resumption's ``for_run`` would forget — the same question would then be asked
+    twice. It also makes the right call when a redirect was enqueued but the run
+    ended before it reached the model: nothing is in the history, so it is asked
+    again, which is what the model needs.
+    """
+    return any(
+        isinstance(part, UserPromptPart)
+        and isinstance(part.content, str)
+        and REDIRECT_HINT in part.content
+        for message in messages[question:]
+        for part in message.parts
+    )
+
+
+def _has_evidence_to_declare(evidence: list[DiscoveredEvidence]) -> bool:
+    """Whether anything exists that this answer could have been grounded on.
+
+    Either this question produced an evidence outcome, or the conversation has
+    already cited something — which stays available to a later answer, in a capsule
+    if a compactor is registered and in full if not. Requiring a fresh outcome
+    exempted exactly the follow-up that reuses earlier evidence, which is the case
+    enforcement exists for.
+
+    A conversation that has neither has nothing to declare: a greeting, an aside.
+    Read from the ledger rather than from ``state.searches``, which a new question
+    clears, so an answer grounded on code execution or a document read counts too.
     """
     question = question_in_progress(evidence)
-    return any(found.record.latest_evidence_epoch > question for found in evidence)
+    return any(
+        found.record.latest_evidence_epoch > question or found.record.occurrences
+        for found in evidence
+    )
 
 
 def create_capability() -> CitationPolicyCapability:

@@ -3,7 +3,7 @@ from typing import Any, cast
 from unittest.mock import patch
 
 import pytest
-from pydantic_ai import Agent
+from pydantic_ai import Agent, DeferredToolResults
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import FunctionModel
@@ -280,3 +280,100 @@ async def test_a_violation_with_nowhere_to_record_it_does_not_fail_the_run(
         result = await agent.run("what does the supervisor do?", deps=StatelessDeps())
 
     assert result.output == "an answer with no citation"
+
+
+@pytest.mark.asyncio
+async def test_a_follow_up_answered_from_retained_evidence_is_enforced(temp_db_path):
+    """The multi-turn case is the one enforcement exists for.
+
+    A follow-up about something already cited needs no new search — the evidence is
+    still on the wire, whether in a capsule or in full — so requiring a fresh
+    evidence outcome let exactly those answers through undeclared.
+    """
+    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    turns = iter(
+        [
+            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("rag_cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
+            [TextPart("first answer")],
+            [TextPart("a follow-up answered from what is already here")],
+            [TextPart("a follow-up answered from what is already here")],
+        ]
+    )
+    sent: list[list[Any]] = []
+
+    async def model(messages, _info):
+        sent.append(list(messages))
+        return ModelResponse(parts=next(turns))
+
+    agent = Agent(
+        FunctionModel(model), deps_type=Deps, capabilities=[rag, create_policy()]
+    )
+    deps = Deps()
+
+    with patch.object(RAGCapability, "_search", stub_search):
+        first = await agent.run("what does the supervisor do?", deps=deps)
+        await agent.run(
+            "and what colour is the box in it?",
+            deps=deps,
+            message_history=first.all_messages(),
+        )
+
+    assert [p for p in prompts_of(sent[-1]) if REDIRECT_HINT in p]
+
+
+@pytest.mark.asyncio
+async def test_a_conversation_that_never_cited_anything_is_still_left_alone(
+    temp_db_path,
+):
+    """A greeting has nothing to declare, and no evidence exists to declare from."""
+    _, _, sent = await run_with_policy(temp_db_path, [[TextPart("hello back")]])
+
+    assert not [p for p in prompts_of(sent[-1]) if REDIRECT_HINT in p]
+
+
+@pytest.mark.asyncio
+async def test_a_resumed_question_is_not_redirected_twice(temp_db_path):
+    """Once per question has to mean once, across every run of that question.
+
+    Tracking it on the run instance forgot it at the next `for_run`, so resuming an
+    interrupted question asked for the citation again.
+    """
+    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    turns = iter(
+        [
+            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
+            [TextPart("uncited")],
+            [TextPart("uncited again")],
+            [TextPart("uncited a third time")],
+            [TextPart("uncited a fourth time")],
+            [TextPart("uncited a fifth time")],
+        ]
+    )
+    sent: list[list[Any]] = []
+
+    async def model(messages, _info):
+        sent.append(list(messages))
+        return ModelResponse(parts=next(turns))
+
+    agent = Agent(
+        FunctionModel(model), deps_type=Deps, capabilities=[rag, create_policy()]
+    )
+    deps = Deps()
+
+    with patch.object(RAGCapability, "_search", stub_search):
+        first = await agent.run("what does the supervisor do?", deps=deps)
+        # The same question again, continued rather than asked anew.
+        await agent.run(
+            deps=deps,
+            message_history=[
+                *first.all_messages(),
+                ModelResponse(parts=[ToolCallPart("external_tool", {}, "call-9")]),
+            ],
+            deferred_tool_results=DeferredToolResults(
+                calls={"call-9": "external result"}
+            ),
+        )
+
+    redirects = [p for p in prompts_of(sent[-1]) if REDIRECT_HINT in p]
+    assert len(redirects) == 1
