@@ -461,9 +461,9 @@ async def test_a_structured_output_answer_does_not_escape_enforcement(temp_db_pa
     with patch.object(RAGCapability, "_search", stub_search):
         await agent.run("what does the supervisor do?", deps=deps)
 
-    redirected = [p for p in prompts_of(sent[-1]) if CITATION_REDIRECT_TAG in p]
-    violations = deps.state.get("citation_policy", {}).get("violations", [])
-    assert redirected or violations
+    # The cite tool is available here, so the redirect is what must happen; the
+    # backstop recording a violation would pass an `or` even with detection broken.
+    assert [p for p in prompts_of(sent[-1]) if CITATION_REDIRECT_TAG in p]
 
 
 @pytest.mark.asyncio

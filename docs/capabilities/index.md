@@ -100,8 +100,8 @@ something, which stays available to later answers. So a follow-up about evidence
 earlier is enforced even though it searched nothing — that case is the reason the
 capability exists. It also means that once anything has been cited, later turns are
 enforced too, a greeting included; the model satisfies the policy by citing an empty
-list, at the cost of one extra request. A conversation that has never cited anything is
-not enforced at all.
+list, at the cost of one extra request. A conversation with neither a current-question
+evidence outcome nor any earlier citation is not enforced.
 
 Exactly one policy capability makes the decision, however many evidence capabilities
 are registered, so two of them cannot each demand a citation for one answer.
