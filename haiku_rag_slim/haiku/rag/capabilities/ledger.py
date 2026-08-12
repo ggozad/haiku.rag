@@ -65,14 +65,15 @@ class CapabilityEvidenceRecord(BaseModel):
     declaration: CitationDeclaration | None = None
 
     def _reject_regression(self, count: int, what: str) -> None:
-        """Refuse a message count below one already recorded.
+        """Refuse a message count below one already recorded in this question.
 
         Identities and epochs are both message counts, and every comparison
-        between them assumes the conversation only grows. One capability
-        truncating or reordering the history breaks that, and each way of
-        recording it has to refuse the same way: an unchecked evidence outcome
-        freezes every later declaration as stale, while an unchecked declaration
-        replaces a newer one with an older one and revives the answer it grounded.
+        between them assumes the conversation only grows while a question is
+        being answered. One capability truncating or reordering the history
+        breaks that, and each way of recording it has to refuse the same way: an
+        unchecked evidence outcome freezes every later declaration as stale, while
+        an unchecked declaration replaces a newer one with an older one and
+        revives the answer it grounded.
         """
         recorded = max(
             self.question or 0,
@@ -87,9 +88,30 @@ class CapabilityEvidenceRecord(BaseModel):
             )
 
     def begin_question(self, identity: int) -> None:
-        """Take the identity of a question that has just arrived."""
-        self._reject_regression(identity, "A question")
+        """Take the identity of a question that has just arrived.
+
+        The evidence epoch and the declaration describe the question that has
+        just ended, and outlive their meaning the moment the next one begins:
+        kept, they let the last question's citations ground this one, and hold a
+        horizon this question's own declarations cannot pass. Clearing them
+        confines those comparisons to one question, so a host whose stored
+        history shifted between two of them is answered rather than refused.
+
+        Identities themselves must still separate one question from the next.
+        Occurrences outlive the question that recorded them and carry the
+        identities that cited them, which compaction groups and orders the capsule
+        by: a reused identity merges two questions into one group, and a lower one
+        renders later evidence as though it were cited earlier.
+        """
+        if self.question is not None and identity <= self.question:
+            raise ValueError(
+                f"A question at message count {identity} is not past question "
+                f"{self.question}, which is already answered: identities separate "
+                "one question from the next and are compared as recency."
+            )
         self.question = identity
+        self.latest_evidence_epoch = 0
+        self.declaration = None
 
     def note_evidence(self, epoch: int) -> None:
         """Record that the model has seen an evidence outcome.

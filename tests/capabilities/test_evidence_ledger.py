@@ -47,14 +47,13 @@ def test_refs_make_it_grounded_and_no_refs_make_it_ungrounded():
 
 
 def test_an_earlier_questions_declaration_is_never_current():
-    """Epochs outlive a question, so the epoch alone would inherit it."""
+    """A later question inherits nothing: it has declared nothing yet."""
     record = CapabilityEvidenceRecord(question=2)
     record.declare([rag_ref()], epoch=3)
     assert citation_status([record], question=2) == "grounded"
 
     record.begin_question(8)
 
-    assert record.declaration is not None
     assert citation_status([record], question=8) == "missing"
 
 
@@ -193,9 +192,51 @@ def test_evidence_cannot_predate_a_recorded_declaration():
         record.note_evidence(3)
 
 
-def test_a_question_cannot_start_before_what_is_already_recorded():
+def test_a_question_starts_behind_the_epochs_of_the_one_before_it():
+    """A question's identity is the history it arrives on, not a continuation.
+
+    Epochs are compared only within the question that recorded them, so a host
+    whose stored history shifted between two questions is answered rather than
+    refused.
+    """
     record = CapabilityEvidenceRecord(question=0)
     record.note_evidence(9)
 
-    with pytest.raises(ValueError, match="append-only"):
+    record.begin_question(4)
+
+    assert record.question == 4
+
+
+def test_a_question_cannot_reuse_the_identity_of_the_one_before_it():
+    """Occurrences outlive their question and are ordered by identity.
+
+    Two questions sharing one identity merge into a single capsule group, and a
+    lower one is rendered as though its evidence were cited earlier.
+    """
+    record = CapabilityEvidenceRecord(question=4)
+
+    with pytest.raises(ValueError, match="already answered"):
         record.begin_question(4)
+
+    with pytest.raises(ValueError, match="already answered"):
+        record.begin_question(3)
+
+    assert record.question == 4
+
+
+def test_a_question_starts_clear_of_the_one_before_it():
+    """Evidence and declarations describe a single question and end with it.
+
+    Carrying either into the next question makes it answerable by the last
+    question's citations, and freezes its own declarations behind an epoch no
+    message in it can reach.
+    """
+    record = CapabilityEvidenceRecord(question=4)
+    record.note_evidence(6)
+    record.declare([rag_ref()], epoch=7)
+
+    record.begin_question(9)
+
+    assert record.latest_evidence_epoch == 0
+    assert record.declaration is None
+    assert citation_status([record], question=9) == "missing"
