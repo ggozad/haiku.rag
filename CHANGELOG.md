@@ -3,6 +3,8 @@
 
 ### Added
 
+- `CitationPolicyCapability` (`haiku.rag.capabilities.policy.create_capability`): registering it requires every answer to declare its grounding. A question that ends undeclared is sent back once to record what grounded the answer already given; when the cite tool is no longer available the question is recorded in `CitationPolicyState.violations` instead. A question that gathered no evidence is left alone.
+- `haiku.rag.capabilities.evidence.discover_evidence()` and `DiscoveredEvidence`, moved out of `compaction` so both optional capabilities share them. `RAGCapabilityBase.cite_available`.
 - `EvidenceCompactionCapability` (`haiku.rag.capabilities.compaction.create_capability`): registering it replaces earlier questions' evidence on the model request with the evidence that was cited, grouped by the question that cited it, cited page images re-attached, other earlier evidence returns reduced to a receipt. Requests only; `all_messages()` is untouched. No configuration.
 - `RAGState.evidence` / `AnalysisState.evidence` (`CapabilityEvidenceRecord`): which evidence a capability retrieved and cited, per question, keyed by message-count question identities and epochs. `haiku.rag.capabilities.ledger.citation_status(records, question=...)` derives `missing` / `grounded` / `ungrounded` across capabilities.
 - `RAGCapabilityBase.evidence_tool_names()` and `get_picture_bytes()`.
@@ -10,6 +12,7 @@
 
 ### Changed
 
+- `rag_cite` / `analysis_cite` accept an empty `chunk_ids`, recording the answer as ungrounded rather than failing the call, and the instructions no longer exempt a refusal or a corpus-level computation from citing.
 - `RAGCapability` and `AnalysisCapability` no longer rewrite the model request. Register `create_capability()` from `haiku.rag.capabilities.compaction` alongside them to keep earlier questions compacted.
 - Resuming a run (no prompt, deferred tool results, an unfinished history tail) raises `RuntimeError` unless the host carries the capability state from the run being resumed.
 

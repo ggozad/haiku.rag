@@ -11,12 +11,12 @@ from pydantic_ai.models.function import FunctionModel
 from haiku.rag.capabilities.analysis import create_capability as create_analysis
 from haiku.rag.capabilities.compaction import (
     CAPSULE_HEADER,
-    DiscoveredEvidence,
     EvidenceCompactionCapability,
     build_capsule,
     group_label,
 )
 from haiku.rag.capabilities.compaction import create_capability as create_compaction
+from haiku.rag.capabilities.evidence import DiscoveredEvidence, discover_evidence
 from haiku.rag.capabilities.ledger import (
     CapabilityEvidenceRecord,
     EvidenceOccurrence,
@@ -77,6 +77,7 @@ def discovered(
             for chunk_id in cited
         },
         tool_names=frozenset({f"{capability}_search"}),
+        cite_available=True,
     )
 
 
@@ -279,7 +280,7 @@ def _spy_discovery(found: list[list[DiscoveredEvidence]]):
 
     async def spy(self, ctx):
         await original(self, ctx)
-        found.append(self.discover(ctx))
+        found.append(discover_evidence(ctx))
 
     return patch.object(EvidenceCompactionCapability, "before_run", spy)
 
