@@ -26,15 +26,17 @@ from haiku.rag.ingester.queue.models import JobOp
 runner = CliRunner()
 
 
-def test_importing_ingester_cli_does_not_load_lancedb():
-    """Test that lancedb is not imported automatically by the cli. Doing so is
-     expensive. Must be run in a subprocess because lancedb might be imported by
-    other tests in the same session."""
+def test_importing_ingester_cli_does_not_load_heavy_dependencies():
+    """Importing the CLI must not pull the heavy runtime dependencies; they cost
+    seconds of startup. Runs in a subprocess because another test in the same
+    session may already have imported them."""
     result = subprocess.run(
         [
             sys.executable,
             "-c",
-            "import haiku.rag.ingester.cli, sys; assert 'lancedb' not in sys.modules",
+            "import haiku.rag.ingester.cli, sys; "
+            "loaded = {'lancedb', 'pyarrow', 'pydantic_ai'} & sys.modules.keys(); "
+            "assert not loaded, loaded",
         ],
         capture_output=True,
         text=True,

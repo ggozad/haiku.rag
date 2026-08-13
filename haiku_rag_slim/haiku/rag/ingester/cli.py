@@ -59,15 +59,15 @@ def main(
 ) -> None:
     """Top-level callback so every subcommand inherits --config without
     each one redeclaring it. Mirrors haiku-rag's CLI shape."""
+    from haiku.rag.telemetry import configure as configure_telemetry
+
     _load_config_with_override(config)
+    configure_cli_logging()
+    configure_telemetry(service_name="haiku-ingester")
 
 
 def cli() -> None:
     """Entry point that translates store-state errors into a clean exit."""
-    from haiku.rag.telemetry import configure as configure_telemetry
-
-    configure_cli_logging()
-    configure_telemetry(service_name="haiku-ingester")
     try:
         _cli()
     except (MigrationRequiredError, ReadOnlyError) as e:

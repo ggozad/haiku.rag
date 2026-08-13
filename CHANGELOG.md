@@ -4,7 +4,7 @@
 ### Fixed
 
 - `cross-encoder` reranking no longer ties the scores of strongly-relevant candidates, which left their order to the sort. Scores remain 0-1.
-- haiku-rag CLI startup no longer imports `lancedb`, `pyarrow` and `pydantic_ai`.
+- `haiku-rag` and `haiku-ingester` CLI startup no longer imports `lancedb`, `pyarrow` and `pydantic_ai`.
 - `haiku.rag.store` no longer re-exports `Store`; import it from `haiku.rag.store.engine`.
 
 ## [0.73.0] - 2026-08-06
