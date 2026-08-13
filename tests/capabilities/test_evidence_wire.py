@@ -19,6 +19,7 @@ from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
 
+from haiku.rag.capabilities.analysis import create_capability as create_analysis
 from haiku.rag.capabilities.compaction import (
     RECEIPT,
     Capsule,
@@ -287,6 +288,17 @@ def rag_and_compactor(temp_db_path):
     )
 
 
+def settled_deps(question: int = 0) -> Deps:
+    """State as a host carrying it has it: an earlier question, answered."""
+    return Deps(
+        state={
+            "rag": RAGState(
+                evidence=CapabilityEvidenceRecord(question=question, in_progress=False)
+            ).model_dump(mode="json")
+        }
+    )
+
+
 def in_flight_history() -> list[Any]:
     """A question already asked and searched, still awaiting its answer."""
     return [
@@ -299,11 +311,11 @@ def in_flight_history() -> list[Any]:
 
 
 def resuming_deps(question: int = 0) -> Deps:
-    """State as a resumption always finds it: the question already identified."""
+    """State as a resumption always finds it: the question identified and unfinished."""
     return Deps(
         state={
             "rag": RAGState(
-                evidence=CapabilityEvidenceRecord(question=question)
+                evidence=CapabilityEvidenceRecord(question=question, in_progress=True)
             ).model_dump(mode="json")
         }
     )
@@ -322,7 +334,9 @@ async def test_without_the_compactor_the_history_is_untouched(temp_db_path):
     agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[rag])
     settled = [*in_flight_history(), ModelResponse(parts=[TextPart("first answer")])]
 
-    await agent.run("a different question", deps=Deps(), message_history=settled)
+    await agent.run(
+        "a different question", deps=settled_deps(), message_history=settled
+    )
 
     assert returns_of(wire[-1]) == ["EVIDENCE FOR THE LIVE TURN"]
 
@@ -341,7 +355,9 @@ async def test_with_the_compactor_a_new_question_compacts_the_previous_one(
     agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[rag, compactor])
     settled = [*in_flight_history(), ModelResponse(parts=[TextPart("first answer")])]
 
-    await agent.run("a different question", deps=Deps(), message_history=settled)
+    await agent.run(
+        "a different question", deps=settled_deps(), message_history=settled
+    )
 
     assert returns_of(wire[-1]) == [RECEIPT]
 
@@ -509,7 +525,8 @@ async def test_the_capsule_is_built_once_per_request_and_again_for_the_next(
     ctx = RunContext(
         deps=deps, model=TestModel(), usage=RunUsage(), run_id="run-1", run_step=1
     )
-    run_rag = await rag.for_run(ctx)
+    # A host carrying state, which is what compaction requires of one.
+    run_rag = replace(await rag.for_run(ctx), state_carried=True)
     run_compactor = await compactor.for_run(ctx)
     cast(Any, run_rag.state).evidence.begin_question(4)
     ctx = replace(ctx, capabilities={"rag": run_rag, "compaction": run_compactor})
@@ -727,3 +744,136 @@ def test_the_capsule_is_attached_beside_the_newest_return_of_that_request():
 
     assert images_of(compacted) == [fresh]
     assert returns_of(compacted) == [RECEIPT, "CAPSULE"]
+
+
+@pytest.mark.asyncio
+async def test_compaction_refuses_to_strip_evidence_it_cannot_replace(temp_db_path):
+    """A host that does not carry state has no record to build a capsule from.
+
+    Compacting anyway replaces the earlier evidence with receipts and retains
+    nothing, so the model loses what it cited and the loss is invisible: the
+    citations the host already displayed are still there.
+    """
+    rag, compactor = rag_and_compactor(temp_db_path)
+
+    async def model(_messages, _info):  # pragma: no cover - never reached
+        return ModelResponse(parts=[TextPart("answer")])
+
+    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[rag, compactor])
+    history = answered_question("an earlier question", evidence="EVIDENCE TO LOSE")
+
+    with pytest.raises(RuntimeError, match="carry the capability state"):
+        await agent.run("a follow-up", deps=Deps(), message_history=history)
+
+
+@pytest.mark.asyncio
+async def test_compaction_proceeds_for_a_host_that_carries_state(temp_db_path):
+    """The same history, with the record the earlier question left behind."""
+    rag, compactor = rag_and_compactor(temp_db_path)
+    wire: list[list[Any]] = []
+
+    async def model(messages, _info):
+        wire.append(list(messages))
+        return ModelResponse(parts=[TextPart("answer")])
+
+    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[rag, compactor])
+    history = answered_question("an earlier question", evidence="EVIDENCE TO LOSE")
+
+    carried = Deps(
+        state={
+            "rag": RAGState(
+                evidence=CapabilityEvidenceRecord(question=0, in_progress=False)
+            ).model_dump(mode="json")
+        }
+    )
+
+    await agent.run("a follow-up", deps=carried, message_history=history)
+
+    assert returns_of(wire[-1]) == [RECEIPT]
+
+
+@pytest.mark.asyncio
+async def test_compaction_refuses_when_one_capability_of_two_lost_its_record(
+    temp_db_path,
+):
+    """One carried record does not vouch for the other capability's evidence.
+
+    A host retaining only the RAG namespace leaves the analysis record empty, and
+    its earlier evidence would be replaced by receipts retaining nothing while the
+    RAG record made the loss look accounted for.
+    """
+    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    analysis = create_analysis(
+        db_path=temp_db_path, config=AppConfig(), defer_loading=False
+    )
+    compactor = create_compaction()
+
+    async def model(_messages, _info):  # pragma: no cover - never reached
+        return ModelResponse(parts=[TextPart("answer")])
+
+    agent = Agent(
+        FunctionModel(model),
+        deps_type=Deps,
+        capabilities=[rag, analysis, compactor],
+    )
+    history: list[Any] = [
+        ModelRequest(parts=[UserPromptPart("an earlier question")]),
+        ModelResponse(
+            parts=[ToolCallPart("analysis_search", {"query": "q"}, "call-1")]
+        ),
+        ModelRequest(
+            parts=[ToolReturnPart("analysis_search", "ANALYSIS EVIDENCE", "call-1")]
+        ),
+        ModelResponse(parts=[TextPart("an answer")]),
+    ]
+    # Only the RAG namespace comes back, as a host whitelisting fields would send.
+    rag_only = Deps(
+        state={
+            "rag": RAGState(
+                evidence=CapabilityEvidenceRecord(question=0, in_progress=False)
+            ).model_dump(mode="json")
+        }
+    )
+
+    with pytest.raises(RuntimeError, match="analysis"):
+        await agent.run("a follow-up", deps=rag_only, message_history=history)
+
+
+@pytest.mark.asyncio
+async def test_compaction_proceeds_when_the_capability_without_a_record_has_no_evidence(
+    temp_db_path,
+):
+    """A capability the earlier question never used has nothing to lose.
+
+    Refusing whenever any record is missing would stop a host that registers both
+    capabilities and only ever uses one, which is the composition the docs
+    recommend against but hosts still have.
+    """
+    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    analysis = create_analysis(
+        db_path=temp_db_path, config=AppConfig(), defer_loading=False
+    )
+    compactor = create_compaction()
+    wire: list[list[Any]] = []
+
+    async def model(messages, _info):
+        wire.append(list(messages))
+        return ModelResponse(parts=[TextPart("answer")])
+
+    agent = Agent(
+        FunctionModel(model),
+        deps_type=Deps,
+        capabilities=[rag, analysis, compactor],
+    )
+    history = answered_question("an earlier question", evidence="RAG EVIDENCE")
+    rag_only = Deps(
+        state={
+            "rag": RAGState(
+                evidence=CapabilityEvidenceRecord(question=0, in_progress=False)
+            ).model_dump(mode="json")
+        }
+    )
+
+    await agent.run("a follow-up", deps=rag_only, message_history=history)
+
+    assert returns_of(wire[-1]) == [RECEIPT]

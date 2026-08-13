@@ -68,6 +68,7 @@ def discovered(
     return DiscoveredEvidence(
         capability=capability,
         record=record,
+        state_carried=True,
         citations={
             chunk_id: citation(
                 chunk_id,

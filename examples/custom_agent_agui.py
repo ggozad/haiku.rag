@@ -26,6 +26,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
+from haiku.rag.capabilities.compaction import create_capability as compaction
+from haiku.rag.capabilities.policy import create_capability as citation_policy
 from haiku.rag.capabilities.rag import RAGState, create_capability
 
 db_path = os.environ.get("DB_PATH")
@@ -45,7 +47,9 @@ class AppDeps:
 
 agent = Agent(
     "anthropic:claude-haiku-4-5-20251001",
-    capabilities=[capability],
+    # The client returns the state snapshot with every run, so earlier questions are
+    # reduced to the evidence they cited and every answer declares its grounding.
+    capabilities=[capability, compaction(), citation_policy()],
     deps_type=AppDeps,
 )
 

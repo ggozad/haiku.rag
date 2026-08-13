@@ -27,7 +27,7 @@ The chat TUI is one way to interact with the database. `haiku-rag ask` and `haik
 
 **Search.** Hybrid retrieval (vector + full-text with reciprocal rank fusion), optional cross-encoder reranking, structure-aware context expansion. Image-as-query and cross-modal retrieval when configured with a multimodal embedder.
 
-**Answer.** RAG capability with citations including page numbers, section headings, and visual grounding. Vision-capable models receive figure bytes alongside chunk text. Analysis capability with a sandboxed Python interpreter for aggregation and computation across documents.
+**Answer.** RAG capability with citations including page numbers, section headings, and visual grounding. Vision-capable models receive figure bytes alongside chunk text. Analysis capability with a sandboxed Python interpreter for aggregation and computation across documents. Optional capabilities compact a long conversation down to the evidence it cited, and require every answer to declare its grounding.
 
 **Integrate.** Use it from Python, the CLI, the [MCP server](mcp.md), or through composable native Pydantic AI [capabilities](capabilities/index.md).
 

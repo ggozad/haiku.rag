@@ -6,105 +6,76 @@ haiku.rag provides native [Pydantic AI capabilities](https://ai.pydantic.dev/cap
 |---|---|
 | [`RAGCapability`](rag.md) | Grounded document search and citations. |
 | [`AnalysisCapability`](analysis.md) | Corpus computation and structural analysis with sandboxed Python. |
-| `EvidenceCompactionCapability` | Optional. Shrinking a conversation's history to the evidence that was cited. |
-| `CitationPolicyCapability` | Optional. Requiring every answer to declare what grounds it. |
+| [`EvidenceCompactionCapability`](compaction.md) | Optional. Shrinking a conversation's history to the evidence that was cited. |
+| [`CitationPolicyCapability`](policy.md) | Optional. Requiring every answer to declare what grounds it. |
 
 The two evidence capabilities are deferred by default. An agent initially sees only their descriptions and the standard `load_capability` tool. Instructions and tools enter the model context only when the model loads a capability.
 
 ## Compose an agent
 
+Pick one evidence capability, and add both optional capabilities to it:
+
 ```python
+from dataclasses import dataclass, field
+from typing import Any
+
 from pydantic_ai import Agent
-from haiku.rag.capabilities.rag import create_capability
+from pydantic_ai.messages import ModelMessage
 
-rag = create_capability(db_path="my.lancedb")
-agent = Agent("openai:gpt-5", capabilities=[rag])
-
-result = await agent.run("What does the knowledge base say about X?")
-print(result.output)
-```
-
-Attach both capabilities when an agent should choose between retrieval and computation:
-
-```python
-from haiku.rag.capabilities.analysis import create_capability as analysis
-from haiku.rag.capabilities.rag import create_capability as rag
-
-agent = Agent(
-    "openai:gpt-5",
-    capabilities=[rag(db_path="my.lancedb"), analysis(db_path="my.lancedb")],
-)
-```
-
-## Multi-turn conversations
-
-Every question adds its search results to the history, so requests grow turn after
-turn, and can degrade answers or exceed a provider's limits as they do. Register the
-compaction capability to replace earlier questions' evidence with the evidence that
-was actually cited:
-
-```python
 from haiku.rag.capabilities.compaction import create_capability as compaction
-from haiku.rag.capabilities.rag import create_capability as rag
-
-agent = Agent(
-    "openai:gpt-5",
-    capabilities=[rag(db_path="my.lancedb"), compaction()],
-)
-```
-
-Cited text and cited page images are kept in full, grouped by the question that
-cited them, and stay citable by the same chunk ids. Everything else earlier becomes a
-short receipt. Registering the capability is the only switch: leave it out and the
-transcript reaches the model untouched. There is nothing to configure.
-
-Compaction rewrites the request, never the stored history, so `all_messages()` still
-holds everything the run gathered. Retained evidence still grows with the
-conversation — this reduces what a request carries, it does not bound it. A host that
-needs more aggressive pruning can compact its own requests further, on the wire only.
-
-Resuming a question (deferred tool results, an interruption, a suspension) requires
-the host to carry the capability state from the run being resumed, alongside the
-message history. Without it the identity of the question in progress is unknowable
-and the run fails rather than silently treating it as a new question.
-
-## Requiring citations
-
-Citing is always available and always recorded, but nothing requires it. Register the
-citation policy capability to make every answer declare its grounding:
-
-```python
 from haiku.rag.capabilities.policy import create_capability as citation_policy
 from haiku.rag.capabilities.rag import create_capability as rag
 
+
+@dataclass
+class Deps:
+    state: dict[str, Any] = field(default_factory=dict)
+
+
 agent = Agent(
     "openai:gpt-5",
-    capabilities=[rag(db_path="my.lancedb"), citation_policy()],
+    capabilities=[
+        rag(db_path="my.lancedb"),
+        compaction(),
+        citation_policy(),
+    ],
+    deps_type=Deps,
 )
+
+# One Deps and one history for the conversation: the capabilities read both.
+deps = Deps()
+history: list[ModelMessage] = []
+
+result = await agent.run("What does the knowledge base say about X?", deps=deps, message_history=history)
+history = list(result.all_messages())
+print(result.output)
 ```
 
-An empty citation is a valid declaration: a model that finds nothing relevant calls
-the cite tool with an empty list, which records the answer as *ungrounded* — distinct
-from an answer that declared nothing at all. That distinction is what makes requiring
-a declaration possible without forcing the model to invent grounding.
+!!! warning "Both optional capabilities need the host to carry state"
 
-When a question ends undeclared, the model is asked once to record what grounded the
-answer it already gave. It is not asked to change the answer. If the cite tool is no
-longer available by then, or the question finishes undeclared anyway, it is recorded as
-a violation in `CitationPolicyState` under `"citation_policy"`, since pointing a model
-at a tool that is gone costs it retries.
+    They read what earlier questions retrieved and cited from the capability's
+    state, so the host must expose a `state` dict on its agent dependencies and
+    hand the same dict back on every run of a conversation, alongside the message
+    history. With only the message history, every run starts from an empty record:
+    compaction refuses rather than replace evidence it cannot retain, and the
+    citation policy cannot enforce a follow-up about evidence cited earlier.
 
-What gets enforced is every answer in a conversation that has something to declare:
-either this question retrieved evidence, or the conversation has already cited
-something, which stays available to later answers. So a follow-up about evidence cited
-earlier is enforced even though it searched nothing — that case is the reason the
-capability exists. It also means that once anything has been cited, later turns are
-enforced too, a greeting included; the model satisfies the policy by citing an empty
-list, at the cost of one extra request. A conversation with neither a current-question
-evidence outcome nor any earlier citation is not enforced.
+Swap `rag` for `analysis` for an analysis agent. Both optional capabilities work the
+same way with either one, and neither exposes tools or takes configuration.
 
-Exactly one policy capability makes the decision, however many evidence capabilities
-are registered, so two of them cannot each demand a citation for one answer.
+!!! note "Register one evidence capability, not both"
+
+    `RAGCapability` and `AnalysisCapability` overlap. Both search the same corpus and
+    both register citations, so an agent holding both must choose between two
+    near-identical search tools, and its citations land in whichever capability it
+    happened to call. Each also carries its own request limit and its own search
+    budget, so registering both doubles what a question may spend.
+
+    Choose by what the questions need. `RAGCapability` answers questions from retrieved
+    passages. `AnalysisCapability` adds a Python sandbox and a document filesystem, for
+    questions that compute over many documents or read their structure, and it can
+    search too. If you need computation, register the analysis capability alone rather
+    than adding it to the RAG one.
 
 ## State
 

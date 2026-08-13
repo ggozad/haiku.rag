@@ -22,6 +22,7 @@ class DiscoveredEvidence:
     citations: Mapping[str, Citation]
     tool_names: frozenset[str]
     cite_available: bool
+    state_carried: bool
 
 
 def discover_evidence(ctx: RunContext[Any]) -> list[DiscoveredEvidence]:
@@ -40,6 +41,7 @@ def discover_evidence(ctx: RunContext[Any]) -> list[DiscoveredEvidence]:
             citations=cast(Any, capability.state).citation_index,
             tool_names=frozenset(capability.evidence_tool_names()),
             cite_available=capability.cite_available,
+            state_carried=capability.state_carried,
         )
         for capability in ctx.capabilities.values()
         if isinstance(capability, RAGCapabilityBase)

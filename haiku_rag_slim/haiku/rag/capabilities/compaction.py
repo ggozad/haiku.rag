@@ -264,6 +264,32 @@ def compact_history(
     return compacted
 
 
+def _require_a_record_of_what_was_cited(
+    evidence: Sequence[DiscoveredEvidence],
+    messages: list[ModelMessage],
+    boundary: int,
+) -> None:
+    """Refuse to compact a capability's evidence when its record was not carried.
+
+    Judged per capability, and only for one whose own evidence is actually at
+    stake: another capability's carried record says nothing about this one's, and a
+    capability the model never used has nothing to lose. Without the record there
+    is no capsule to put in the evidence's place, so compacting would drop it and
+    leave the citations the host already displayed as the only trace.
+    """
+    for found in evidence:
+        if found.state_carried:
+            continue
+        if _newest_owned_return(messages, boundary, found.tool_names) is None:
+            continue
+        raise RuntimeError(
+            f"Evidence compaction found {found.capability} evidence from an earlier "
+            "question but no record of what it cited, so replacing it would retain "
+            "nothing. The host must carry the capability state between runs, "
+            f"alongside the message history: {found.capability} state was missing."
+        )
+
+
 def _newest_owned_return(
     messages: list[ModelMessage], boundary: int, owned_tools: frozenset[str]
 ) -> tuple[int, int] | None:
@@ -321,14 +347,17 @@ class EvidenceCompactionCapability(AbstractCapability[Any]):
         """
         evidence = discover_evidence(ctx)
         boundary = question_in_progress(evidence)
+        owned_tools = frozenset().union(*(found.tool_names for found in evidence))
+        if boundary > 0:
+            _require_a_record_of_what_was_cited(
+                evidence, request_context.messages, boundary
+            )
         if boundary > 0:
             await self._build_once(ctx, evidence)
             request_context.messages = compact_history(
                 request_context.messages,
                 boundary=boundary,
-                owned_tools=frozenset().union(
-                    *(found.tool_names for found in evidence)
-                ),
+                owned_tools=owned_tools,
                 capsule_text=self.capsule.text,
                 capsule_images=self.images,
             )

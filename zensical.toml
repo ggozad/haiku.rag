@@ -23,6 +23,8 @@ nav = [
         "capabilities/index.md",
         { "RAG capability" = "capabilities/rag.md" },
         { "Analysis capability" = "capabilities/analysis.md" },
+        { "Evidence compaction" = "capabilities/compaction.md" },
+        { "Citation policy" = "capabilities/policy.md" },
     ] },
     { Configure = [
         "configuration/index.md",
