@@ -2,7 +2,7 @@ from importlib import metadata
 
 import pytest
 
-from haiku.rag.store import Store
+from haiku.rag.store.engine import Store
 from haiku.rag.store.exceptions import MigrationRequiredError
 
 

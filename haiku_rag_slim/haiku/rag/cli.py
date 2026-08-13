@@ -4,7 +4,7 @@ import sys
 import warnings
 from importlib.metadata import version
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 from dotenv import find_dotenv, load_dotenv
@@ -13,7 +13,6 @@ from dotenv import find_dotenv, load_dotenv
 # Env loading needs to be before config import; usecwd=True searches from cwd, not this .py file's location
 load_dotenv(find_dotenv(usecwd=True))
 
-from haiku.rag.app import HaikuRAGApp  # noqa: E402
 from haiku.rag.config import (  # noqa: E402
     AppConfig,
     find_config_file,
@@ -28,6 +27,9 @@ from haiku.rag.store.exceptions import (  # noqa: E402
 )
 from haiku.rag.store.models.chunk import SearchType  # noqa: E402
 from haiku.rag.utils import is_up_to_date  # noqa: E402
+
+if TYPE_CHECKING:
+    from haiku.rag.app import HaikuRAGApp
 
 _cli = typer.Typer(
     context_settings={"help_option_names": ["-h", "--help"]},
@@ -48,7 +50,7 @@ def cli():
 _read_only: bool = False
 
 
-def create_app(db: Path | None = None) -> HaikuRAGApp:  # pragma: no cover
+def create_app(db: Path | None = None) -> "HaikuRAGApp":  # pragma: no cover
     """Create HaikuRAGApp with loaded config and resolved database path.
 
     Args:
@@ -57,6 +59,8 @@ def create_app(db: Path | None = None) -> HaikuRAGApp:  # pragma: no cover
     Returns:
         HaikuRAGApp instance with proper config and db path.
     """
+    from haiku.rag.app import HaikuRAGApp
+
     config = get_config()
     db_path = db if db else config.storage.data_dir / "haiku.rag.lancedb"
     return HaikuRAGApp(db_path=db_path, config=config, read_only=_read_only)
@@ -402,6 +406,8 @@ def analyze(  # pragma: no cover
 
 @_cli.command("settings", help="Display current configuration settings")
 def settings():  # pragma: no cover
+    from haiku.rag.app import HaikuRAGApp
+
     config = get_config()
     app = HaikuRAGApp(db_path=Path(), config=config, read_only=True)
     app.show_settings()
@@ -719,6 +725,8 @@ def tag_restore(  # pragma: no cover
 
 @_cli.command("download-models", help="Download Docling and Ollama models per config")
 def download_models_cmd():  # pragma: no cover
+    from haiku.rag.app import HaikuRAGApp
+
     app = HaikuRAGApp(db_path=Path(), config=get_config(), read_only=True)
     try:
         asyncio.run(app.download_models())

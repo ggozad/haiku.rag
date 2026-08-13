@@ -3,7 +3,8 @@ from pathlib import Path
 import pytest
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.store import ReadOnlyError, Store
+from haiku.rag.store import ReadOnlyError
+from haiku.rag.store.engine import Store
 from haiku.rag.store.models import Chunk, Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository

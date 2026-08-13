@@ -3,8 +3,8 @@ import re
 import pytest
 from lancedb.table import AsyncTable, AsyncTags
 
-from haiku.rag.store import ReadOnlyError, Store
-from haiku.rag.store.engine import RESTORE_TABLE_ORDER
+from haiku.rag.store import ReadOnlyError
+from haiku.rag.store.engine import RESTORE_TABLE_ORDER, Store
 from haiku.rag.store.models import Document
 from haiku.rag.store.repositories.document import DocumentRepository
 

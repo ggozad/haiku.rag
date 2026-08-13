@@ -1,6 +1,8 @@
 """haiku-ingester CLI: exercises every subcommand via CliRunner with
 IngesterApp / open_queue patched out so no real ingestion runs."""
 
+import subprocess
+import sys
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
@@ -24,6 +26,22 @@ from haiku.rag.ingester.queue.models import JobOp
 runner = CliRunner()
 
 
+def test_importing_ingester_cli_does_not_load_lancedb():
+    """Test that lancedb is not imported automatically by the cli. Doing so is
+     expensive. Must be run in a subprocess because lancedb might be imported by
+    other tests in the same session."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import haiku.rag.ingester.cli, sys; assert 'lancedb' not in sys.modules",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 # --- helpers ---
 
 
@@ -41,7 +59,7 @@ def _config_with_queue(queue: QueueConfig):
 def _fake_app(report: BatchReport, monkeypatch) -> AsyncMock:
     fake = AsyncMock()
     fake.run_batch.return_value = report
-    monkeypatch.setattr("haiku.rag.ingester.cli.IngesterApp", lambda **_: fake)
+    monkeypatch.setattr("haiku.rag.ingester.app.IngesterApp", lambda **_: fake)
     return fake
 
 
@@ -78,14 +96,14 @@ def _manifest() -> BatchManifest:
 def _fake_dry_run_app(report: BatchDryRunReport, monkeypatch) -> AsyncMock:
     fake = AsyncMock()
     fake.run_batch_dry_run.return_value = report
-    monkeypatch.setattr("haiku.rag.ingester.cli.IngesterApp", lambda **_: fake)
+    monkeypatch.setattr("haiku.rag.ingester.app.IngesterApp", lambda **_: fake)
     return fake
 
 
 def _fake_manifest_app(report: BatchReport, monkeypatch) -> AsyncMock:
     fake = AsyncMock()
     fake.run_batch_from_manifest.return_value = report
-    monkeypatch.setattr("haiku.rag.ingester.cli.IngesterApp", lambda **_: fake)
+    monkeypatch.setattr("haiku.rag.ingester.app.IngesterApp", lambda **_: fake)
     return fake
 
 
@@ -111,7 +129,7 @@ def test_run_batch_passes_progress_callback_when_enabled(monkeypatch):
         return BatchReport(succeeded=1, dead=0)
 
     fake.run_batch.side_effect = _run_batch
-    monkeypatch.setattr("haiku.rag.ingester.cli.IngesterApp", lambda **_: fake)
+    monkeypatch.setattr("haiku.rag.ingester.app.IngesterApp", lambda **_: fake)
     monkeypatch.setattr(
         "haiku.rag.ingester.cli._batch_progress",
         lambda _: _progress_context(lambda snapshot: None),
@@ -227,7 +245,7 @@ def test_run_batch_manifest_passes_progress_callback(monkeypatch, tmp_path):
         return BatchReport(succeeded=1, dead=0)
 
     fake.run_batch_from_manifest.side_effect = _run_manifest
-    monkeypatch.setattr("haiku.rag.ingester.cli.IngesterApp", lambda **_: fake)
+    monkeypatch.setattr("haiku.rag.ingester.app.IngesterApp", lambda **_: fake)
     monkeypatch.setattr(
         "haiku.rag.ingester.cli._batch_progress",
         lambda _: _progress_context(lambda snapshot: None),
@@ -256,7 +274,7 @@ def test_run_batch_manifest_reports_validation_error(monkeypatch, tmp_path):
     _write_manifest(manifest_path)
     fake = AsyncMock()
     fake.run_batch_from_manifest.side_effect = ValueError("bad manifest")
-    monkeypatch.setattr("haiku.rag.ingester.cli.IngesterApp", lambda **_: fake)
+    monkeypatch.setattr("haiku.rag.ingester.app.IngesterApp", lambda **_: fake)
 
     result = runner.invoke(cli, ["run-batch", "--manifest", str(manifest_path)])
 
@@ -322,7 +340,7 @@ def test_resolve_queue_config_keeps_dburi_when_path_override_present(tmp_path):
 
 def test_serve_invokes_app(monkeypatch):
     fake = AsyncMock()
-    monkeypatch.setattr("haiku.rag.ingester.cli.IngesterApp", lambda **_: fake)
+    monkeypatch.setattr("haiku.rag.ingester.app.IngesterApp", lambda **_: fake)
 
     result = runner.invoke(cli, ["serve", "--db", "x.lancedb", "--no-api"])
 
@@ -338,7 +356,7 @@ def test_serve_passes_host_and_port(monkeypatch):
         captured.update(kwargs)
         return fake
 
-    monkeypatch.setattr("haiku.rag.ingester.cli.IngesterApp", _capture)
+    monkeypatch.setattr("haiku.rag.ingester.app.IngesterApp", _capture)
 
     result = runner.invoke(
         cli, ["serve", "--db", "x.lancedb", "--host", "0.0.0.0", "--port", "9999"]
@@ -357,7 +375,7 @@ def test_serve_passes_root_path(monkeypatch):
         captured.update(kwargs)
         return fake
 
-    monkeypatch.setattr("haiku.rag.ingester.cli.IngesterApp", _capture)
+    monkeypatch.setattr("haiku.rag.ingester.app.IngesterApp", _capture)
 
     result = runner.invoke(
         cli, ["serve", "--db", "x.lancedb", "--root-path", "/ingester/"]
