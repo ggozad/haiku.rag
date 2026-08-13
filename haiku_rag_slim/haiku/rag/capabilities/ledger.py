@@ -51,6 +51,11 @@ class CapabilityEvidenceRecord(BaseModel):
     overwritten by whichever of them synced its state last; merging happens in the
     transient views built by ``citation_status`` and the optional capabilities.
 
+    ``in_progress`` is whether the question this record names is still being
+    answered. It is the only authority on that: a transcript ending in a tool
+    return is a settled structured answer and a question awaiting its model
+    equally, so the shape of the history cannot decide it.
+
     ``question`` is the number of messages that existed when the question arrived,
     and ``epoch`` the number when an outcome occurred. Both are derived from the
     conversation rather than counted locally, so every participant computes the
@@ -61,6 +66,7 @@ class CapabilityEvidenceRecord(BaseModel):
 
     occurrences: dict[str, EvidenceOccurrence] = Field(default_factory=dict)
     question: int | None = None
+    in_progress: bool = False
     latest_evidence_epoch: int = 0
     declaration: CitationDeclaration | None = None
 
@@ -110,8 +116,13 @@ class CapabilityEvidenceRecord(BaseModel):
                 "one question from the next and are compared as recency."
             )
         self.question = identity
+        self.in_progress = True
         self.latest_evidence_epoch = 0
         self.declaration = None
+
+    def end_question(self) -> None:
+        """Mark the question answered, so the next run knows it is a new one."""
+        self.in_progress = False
 
     def note_evidence(self, epoch: int) -> None:
         """Record that the model has seen an evidence outcome.

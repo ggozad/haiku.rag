@@ -4,7 +4,16 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from pydantic_ai import Agent, DeferredToolResults, ModelRetry, RunContext, ToolFailed
+from pydantic import BaseModel
+from pydantic_ai import (
+    Agent,
+    CallDeferred,
+    DeferredToolRequests,
+    DeferredToolResults,
+    ModelRetry,
+    RunContext,
+    ToolFailed,
+)
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
@@ -920,9 +929,9 @@ async def test_a_resumption_keeps_the_identity_of_the_question_in_progress(
     agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[rag])
     deps = Deps(
         state={
-            "rag": RAGState(evidence=CapabilityEvidenceRecord(question=7)).model_dump(
-                mode="json"
-            )
+            "rag": RAGState(
+                evidence=CapabilityEvidenceRecord(question=7, in_progress=True)
+            ).model_dump(mode="json")
         }
     )
     history = [
@@ -1159,10 +1168,12 @@ async def test_citing_without_searching_grounds_the_question(temp_db_path):
 
 @pytest.mark.asyncio
 async def test_a_host_seeded_record_does_not_pass_for_a_resumption(temp_db_path):
-    """A default record is truthy, so its presence cannot stand in for identity.
+    """A seeded record says nothing about a question, so the history has to.
 
-    Seeding one is what a host does when it has no state to send, and taking it
-    at face value would silently answer as question zero.
+    Seeding one is what a host does when it has no state to send. Its flag is
+    unset, so a history that unmistakably awaits the model means the host dropped
+    the state of a question in progress, and answering as question zero would
+    silently relabel it.
     """
     rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
 
@@ -1174,7 +1185,10 @@ async def test_a_host_seeded_record_does_not_pass_for_a_resumption(temp_db_path)
     with pytest.raises(RuntimeError, match="no stored question identity"):
         await agent.run(
             "carry on",
-            message_history=_in_flight_history(),
+            message_history=[
+                *_in_flight_history(),
+                ModelResponse(parts=[ToolCallPart("external_tool", {}, "call-2")]),
+            ],
             deps=Deps(state={"rag": RAGState().model_dump(mode="json")}),
         )
 
@@ -1208,6 +1222,9 @@ async def test_a_resumption_keeps_the_evidence_the_question_already_gathered(
         interrupted = await agent.run("what does the supervisor do?", deps=deps)
         identity = _record(deps, "rag").question
         assert identity is not None
+        # A run that ends awaiting external work leaves the question in progress,
+        # which is what the resumption claims. See the deferred-request test.
+        deps.state["rag"]["evidence"]["in_progress"] = True
         await agent.run(
             deferred_tool_results=DeferredToolResults(
                 calls={"call-2": "external result"}
@@ -1280,3 +1297,147 @@ async def test_citing_nothing_after_citing_something_keeps_it_grounded(temp_db_p
 
     record = capability.state.evidence
     assert citation_status([record], question=0) == "grounded"
+
+
+@pytest.mark.asyncio
+async def test_a_promptless_run_on_a_settled_history_is_a_new_question(temp_db_path):
+    """AG-UI hosts never pass a prompt: the client's message is the history.
+
+    Pydantic AI's UI adapter builds `message_history` from the frontend messages
+    and calls the agent without a prompt, so the run has no prompt *and* the
+    history ends with the user's own request. Reading either as a continuation
+    fails every AG-UI host on its first message.
+    """
+    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+
+    async def model(_messages, _info):
+        return ModelResponse(parts=[TextPart("answer")])
+
+    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[rag])
+    deps = Deps(state={"rag": RAGState().model_dump(mode="json")})
+    history: list[Any] = [
+        ModelRequest(parts=[UserPromptPart("what does the manual say about masks?")])
+    ]
+
+    await agent.run(message_history=history, deps=deps)
+
+    assert _record(deps, "rag").question == len(history)
+
+
+@pytest.mark.asyncio
+async def test_a_promptless_run_on_an_unfinished_tail_is_still_a_continuation(
+    temp_db_path,
+):
+    """A suspended run resumes without a prompt, and must keep its question."""
+    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+
+    async def model(_messages, _info):
+        return ModelResponse(parts=[TextPart("answer")])
+
+    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[rag])
+    deps = Deps(
+        state={
+            "rag": RAGState(
+                evidence=CapabilityEvidenceRecord(question=3, in_progress=True)
+            ).model_dump(mode="json")
+        }
+    )
+
+    await agent.run(message_history=_in_flight_history(), deps=deps)
+
+    assert _record(deps, "rag").question == 3
+
+
+@pytest.mark.asyncio
+async def test_a_structured_answer_does_not_leave_the_question_in_progress(
+    temp_db_path,
+):
+    """A settled run ends with a tool return, which says nothing about progress.
+
+    Pydantic AI answers a structured `output_type` by calling an output tool, so the
+    history ends with a request carrying that tool's return. Reading the transcript
+    shape alone, that is indistinguishable from tool results delivered to a question
+    still being answered, and every following question inherited the first one's
+    identity.
+    """
+
+    class Answer(BaseModel):
+        text: str
+
+    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+
+    async def model(_messages, info):
+        return ModelResponse(
+            parts=[ToolCallPart(info.output_tools[0].name, {"text": "answer"})]
+        )
+
+    agent = Agent(
+        FunctionModel(model),
+        deps_type=Deps,
+        capabilities=[rag],
+        output_type=Answer,
+    )
+    deps = Deps()
+
+    first = await agent.run("first question", deps=deps)
+    first_identity = _record(deps, "rag").question
+    assert _record(deps, "rag").in_progress is False
+
+    await agent.run(
+        "second question", deps=deps, message_history=list(first.all_messages())
+    )
+
+    second_identity = _record(deps, "rag").question
+    assert first_identity == 0
+    assert second_identity is not None and second_identity > 0
+
+
+@pytest.mark.asyncio
+async def test_a_run_pausing_for_deferred_work_leaves_the_question_in_progress(
+    temp_db_path,
+):
+    """The question is unfinished, so its resumption must find it claimable.
+
+    A deferred tool call ends the run with `DeferredToolRequests` rather than an
+    answer. Closing the question here would let the resumption relabel it.
+    """
+    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+
+    async def model(_messages, _info):
+        return ModelResponse(parts=[ToolCallPart("external_tool", {})])
+
+    agent = Agent(
+        FunctionModel(model),
+        deps_type=Deps,
+        capabilities=[rag],
+        output_type=[str, DeferredToolRequests],
+    )
+
+    @agent.tool_plain
+    def external_tool() -> str:
+        raise CallDeferred
+
+    deps = Deps()
+
+    result = await agent.run("a question needing external work", deps=deps)
+
+    assert isinstance(result.output, DeferredToolRequests)
+    assert _record(deps, "rag").in_progress is True
+
+
+@pytest.mark.asyncio
+async def test_an_answered_question_is_no_longer_in_progress(temp_db_path):
+    """The flag is what tells the next run it is asking something new."""
+    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+
+    async def model(_messages, _info):
+        return ModelResponse(parts=[TextPart("answer")])
+
+    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[rag])
+    deps = Deps()
+
+    await agent.run("a question", deps=deps)
+
+    record = _record(deps, "rag")
+    assert record.question == 0
+    assert record.in_progress is False

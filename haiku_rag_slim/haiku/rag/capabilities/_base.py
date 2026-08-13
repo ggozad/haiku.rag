@@ -6,13 +6,19 @@ from pathlib import Path
 from typing import Any, cast
 
 from pydantic import BaseModel
-from pydantic_ai import ModelRetry, RunContext, ToolFailed
+from pydantic_ai import (
+    DeferredToolRequests,
+    ModelRetry,
+    RunContext,
+    ToolFailed,
+)
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import (
     InstructionPart,
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    RetryPromptPart,
     ToolCallPart,
     ToolReturn,
 )
@@ -82,29 +88,21 @@ def _clear_invocation_state(state: BaseModel) -> None:
             value.clear()
 
 
-def _is_resumption(prompt: Any, messages: list[ModelMessage]) -> bool:
-    """Whether this run continues a question rather than asking a new one.
+def _awaits_the_model(messages: list[ModelMessage]) -> bool:
+    """Whether the history unmistakably leaves the model something to answer.
 
-    Two signals, either of which is enough, because getting this wrong hands the
-    model a notice where its own evidence should be:
-
-    - no prompt: how pydantic-ai resumes for interruptions and suspensions.
-    - an unfinished tail: the history ends with a request the model has not
-      answered, or with a response whose tool calls have no returns yet. Deferred
-      tool results may arrive *with* a prompt, so the prompt alone is not enough.
-
-    A settled history ends with the previous answer, so a genuinely new question
-    is not mistaken for a continuation. The framework's own first-new-message
-    index would be better than either signal, but it is not public here.
+    Used to validate what the record already says, never to decide it. Only two
+    shapes are unambiguous: a response whose tool calls have no returns, and a
+    retry the model has not answered. A trailing tool return is not one of them,
+    being both how a settled structured answer ends and how results reach a
+    question still in progress.
     """
-    if prompt is None:
-        return True
     if not messages:
         return False
     last = messages[-1]
-    if isinstance(last, ModelRequest):
-        return True
-    return any(isinstance(part, ToolCallPart) for part in last.parts)
+    if isinstance(last, ModelResponse):
+        return any(isinstance(part, ToolCallPart) for part in last.parts)
+    return any(isinstance(part, RetryPromptPart) for part in last.parts)
 
 
 def _called_own_tool(messages: list[ModelMessage], tool_names: frozenset[str]) -> bool:
@@ -154,11 +152,10 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         outer = getattr(ctx.deps, "state", None)
         outer_state = outer if isinstance(outer, dict) else None
         raw_state = outer_state.get(self.state_namespace) if outer_state else None
-        resuming = _is_resumption(ctx.prompt, ctx.messages)
-        continuing = resuming and bool(ctx.messages)
         state = self.state_type.model_validate(raw_state or {})
         record = cast(CapabilityEvidenceRecord, cast(Any, state).evidence)
-        if continuing and record.question is None:
+        continuing = record.in_progress
+        if not continuing and _awaits_the_model(ctx.messages):
             raise RuntimeError(
                 f"The {self.state_namespace} capability is resuming a question with "
                 "no stored question identity. Capabilities cannot be added, removed "
@@ -321,6 +318,16 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
     async def after_run(
         self, ctx: RunContext[Any], *, result: AgentRunResult[Any]
     ) -> AgentRunResult[Any]:
+        """Close the question, unless the run is only pausing for deferred results.
+
+        A run that raised never arrives here, which is what leaves an interrupted
+        question in progress for the resumption to claim.
+        """
+        if self.state is not None and not isinstance(
+            result.output, DeferredToolRequests
+        ):
+            self._evidence_record().end_question()
+            self._sync_state()
         await self._close()
         return result
 

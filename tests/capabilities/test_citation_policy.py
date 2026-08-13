@@ -365,7 +365,9 @@ async def test_a_resumed_question_is_not_redirected_twice(temp_db_path):
 
     with patch.object(RAGCapability, "_search", stub_search):
         first = await agent.run("what does the supervisor do?", deps=deps)
-        # The same question again, continued rather than asked anew.
+        # The same question again, continued rather than asked anew: a run that
+        # ends awaiting external work leaves the question in progress.
+        deps.state["rag"]["evidence"]["in_progress"] = True
         await agent.run(
             deps=deps,
             message_history=[

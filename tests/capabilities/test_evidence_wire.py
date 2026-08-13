@@ -299,11 +299,11 @@ def in_flight_history() -> list[Any]:
 
 
 def resuming_deps(question: int = 0) -> Deps:
-    """State as a resumption always finds it: the question already identified."""
+    """State as a resumption always finds it: the question identified and unfinished."""
     return Deps(
         state={
             "rag": RAGState(
-                evidence=CapabilityEvidenceRecord(question=question)
+                evidence=CapabilityEvidenceRecord(question=question, in_progress=True)
             ).model_dump(mode="json")
         }
     )
