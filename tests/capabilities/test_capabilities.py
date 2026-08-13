@@ -362,7 +362,9 @@ async def test_cite_reports_unresolved_ids_on_partial_success(temp_db_path):
     assert "Registered 1 citation(s)" in result
     assert "6.43" in result
     assert "6.51.2" in result
-    assert "verbatim" in result
+    # Never ask for another call here: something did register, and a model that
+    # keeps mangling ids obeys the ask until the run dies on output retries.
+    assert "again" not in result
     assert capability.state.citations == ["chunk-1"]
 
 

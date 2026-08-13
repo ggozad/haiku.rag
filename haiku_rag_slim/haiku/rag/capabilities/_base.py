@@ -487,11 +487,14 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         resolved = {citation.chunk_id for citation in citations}
         unresolved = [cid for cid in missing if cid not in resolved]
         if unresolved:
+            # States the outcome without asking for another call. Reaching here
+            # means something registered, so the answer already has grounding: a
+            # model that keeps mangling ids would obey an invitation to retry
+            # until the run dies on output retries.
             return (
                 f"Registered {len(citations)} citation(s); "
                 f"ignored {len(unresolved)} unresolvable id(s): "
-                f"{unresolved}. Copy chunk_ids verbatim from search "
-                "results and cite again."
+                f"{unresolved}, which were not verbatim from search results."
             )
         return f"Registered {len(citations)} citation(s)."
 

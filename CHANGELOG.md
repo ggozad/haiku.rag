@@ -22,6 +22,7 @@
 
 ### Fixed
 
+- `rag_cite` and `analysis_cite` no longer ask for another call when a call resolved some ids and not others.
 - `cross-encoder` reranking no longer ties the scores of strongly-relevant candidates, which left their order to the sort. Scores remain 0-1.
 - `haiku-rag` and `haiku-ingester` CLI startup no longer imports `lancedb`, `pyarrow` and `pydantic_ai`.
 - `haiku.rag.store` no longer re-exports `Store`; import it from `haiku.rag.store.engine`.
