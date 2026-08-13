@@ -19,6 +19,7 @@ from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
 
+from haiku.rag.capabilities.analysis import create_capability as create_analysis
 from haiku.rag.capabilities.compaction import (
     RECEIPT,
     Capsule,
@@ -787,5 +788,92 @@ async def test_compaction_proceeds_for_a_host_that_carries_state(temp_db_path):
     )
 
     await agent.run("a follow-up", deps=carried, message_history=history)
+
+    assert returns_of(wire[-1]) == [RECEIPT]
+
+
+@pytest.mark.asyncio
+async def test_compaction_refuses_when_one_capability_of_two_lost_its_record(
+    temp_db_path,
+):
+    """One carried record does not vouch for the other capability's evidence.
+
+    A host retaining only the RAG namespace leaves the analysis record empty, and
+    its earlier evidence would be replaced by receipts retaining nothing while the
+    RAG record made the loss look accounted for.
+    """
+    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    analysis = create_analysis(
+        db_path=temp_db_path, config=AppConfig(), defer_loading=False
+    )
+    compactor = create_compaction()
+
+    async def model(_messages, _info):  # pragma: no cover - never reached
+        return ModelResponse(parts=[TextPart("answer")])
+
+    agent = Agent(
+        FunctionModel(model),
+        deps_type=Deps,
+        capabilities=[rag, analysis, compactor],
+    )
+    history: list[Any] = [
+        ModelRequest(parts=[UserPromptPart("an earlier question")]),
+        ModelResponse(
+            parts=[ToolCallPart("analysis_search", {"query": "q"}, "call-1")]
+        ),
+        ModelRequest(
+            parts=[ToolReturnPart("analysis_search", "ANALYSIS EVIDENCE", "call-1")]
+        ),
+        ModelResponse(parts=[TextPart("an answer")]),
+    ]
+    # Only the RAG namespace comes back, as a host whitelisting fields would send.
+    rag_only = Deps(
+        state={
+            "rag": RAGState(
+                evidence=CapabilityEvidenceRecord(question=0, in_progress=False)
+            ).model_dump(mode="json")
+        }
+    )
+
+    with pytest.raises(RuntimeError, match="analysis"):
+        await agent.run("a follow-up", deps=rag_only, message_history=history)
+
+
+@pytest.mark.asyncio
+async def test_compaction_proceeds_when_the_capability_without_a_record_has_no_evidence(
+    temp_db_path,
+):
+    """A capability the earlier question never used has nothing to lose.
+
+    Refusing whenever any record is missing would stop a host that registers both
+    capabilities and only ever uses one, which is the composition the docs
+    recommend against but hosts still have.
+    """
+    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    analysis = create_analysis(
+        db_path=temp_db_path, config=AppConfig(), defer_loading=False
+    )
+    compactor = create_compaction()
+    wire: list[list[Any]] = []
+
+    async def model(messages, _info):
+        wire.append(list(messages))
+        return ModelResponse(parts=[TextPart("answer")])
+
+    agent = Agent(
+        FunctionModel(model),
+        deps_type=Deps,
+        capabilities=[rag, analysis, compactor],
+    )
+    history = answered_question("an earlier question", evidence="RAG EVIDENCE")
+    rag_only = Deps(
+        state={
+            "rag": RAGState(
+                evidence=CapabilityEvidenceRecord(question=0, in_progress=False)
+            ).model_dump(mode="json")
+        }
+    )
+
+    await agent.run("a follow-up", deps=rag_only, message_history=history)
 
     assert returns_of(wire[-1]) == [RECEIPT]
