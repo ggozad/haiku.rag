@@ -16,8 +16,12 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models import Model
 
+from pydantic_ai.capabilities import AbstractCapability
+
 from evaluations.config import Turn
 from haiku.rag.capabilities import RAGCapabilityBase
+from haiku.rag.capabilities.compaction import create_capability as create_compaction
+from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord, citation_status
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.citation import Citation
@@ -40,6 +44,7 @@ class _RagLikeState(Protocol):
     document_filter: str | None
     citation_index: dict[str, Citation]
     citations: list[str]
+    evidence: CapabilityEvidenceRecord
     searches: dict[str, list[SearchResult]]
 
 
@@ -55,6 +60,7 @@ class CapabilityRunResult:
     n_rejected_searches: int = 0
     n_failed_tools: int = 0
     n_requests: int = 0
+    citation_status: str | None = None
 
 
 class ToolTraffic(NamedTuple):
@@ -129,6 +135,7 @@ def _prepare_agent(
     capability_model: str | Model,
     document_filter: str | None,
     request_limit: int | None,
+    compaction: bool = False,
 ) -> tuple[RAGCapabilityBase[Any], _EvalDeps, Agent[_EvalDeps, str]]:
     capability = capability_factory(
         db_path=db_path,
@@ -142,11 +149,14 @@ def _prepare_agent(
     if document_filter is not None:
         typed.document_filter = document_filter
 
+    capabilities: list[AbstractCapability] = [capability]
+    if compaction:
+        capabilities.append(create_compaction())
     deps = _EvalDeps(state={capability.state_namespace: state.model_dump(mode="json")})
     agent = Agent(
         capability_model,
         deps_type=_EvalDeps,
-        capabilities=[capability],
+        capabilities=capabilities,
     )
     return capability, deps, agent
 
@@ -203,13 +213,16 @@ async def run_capability_conversation(
     capability_model: str | Model,
     document_filter: str | None = None,
     request_limit: int | None = None,
+    compaction: bool = False,
 ) -> list[CapabilityRunResult]:
     """Run a conversation's user turns sequentially through one capability.
 
     Each turn runs with the previous turn's full ``all_messages()`` as history
-    (tool calls and returns included), so prior-turn compaction operates on
-    real evidence. Per-invocation state (citations, searches) is cleared by the
-    capability on every run, so each returned result reflects only its turn.
+    (tool calls and returns included) and the same state dict, which is what
+    lets ``EvidenceCompactionCapability`` (registered when ``compaction`` is
+    True) replace earlier questions' evidence on the request. Per-invocation
+    state (citations, searches) is cleared by the capability on every run, so
+    each returned result reflects only its turn.
     """
     capability, deps, agent = _prepare_agent(
         capability_factory,
@@ -218,6 +231,7 @@ async def run_capability_conversation(
         capability_model,
         document_filter,
         request_limit,
+        compaction=compaction,
     )
     history: list[ModelMessage] | None = None
     results: list[CapabilityRunResult] = []
@@ -263,6 +277,13 @@ def _result_from_run(
     executions = getattr(typed, "executions", None)
     n_executions = len(executions) if executions is not None else 0
 
+    record = typed.evidence
+    status = (
+        citation_status([record], question=record.question)
+        if record.question is not None
+        else None
+    )
+
     return CapabilityRunResult(
         answer=answer,
         cited_uris=cited_uris,
@@ -278,4 +299,5 @@ def _result_from_run(
         n_rejected_searches=traffic.n_rejected_searches,
         n_failed_tools=traffic.n_failed_tools,
         n_requests=traffic.n_requests,
+        citation_status=status,
     )

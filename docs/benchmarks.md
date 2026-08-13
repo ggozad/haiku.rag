@@ -37,7 +37,7 @@ Active datasets:
 | `orb_multimodal_nemotron` — OpenRAG Bench, multimodal embedder (`nvidia/llama-nemotron-embed-vl-1b-v2`), the embedder behind the published headline results | ~16 GB |
 | `t2_finqa` — T²-RAGBench (FinQA) financial QA, text embedder (`qwen3-embedding:4b`); scored by exact numeric match, run with `--target analysis-capability` | ~2 GB |
 | `hotpotqa` — HotpotQA multi-hop QA over Wikipedia paragraphs, text embedder (`qwen3-embedding:4b`) | ~1.5 GB |
-| `mtrag_clapnq` — MTRAG multi-turn RAG, ClapNQ (Wikipedia) passages, text embedder (`qwen3-embedding:4b`); also serves the `mtrag_clapnq_rewrite` and `mtrag_clapnq_live` keys | ~2.8 GB |
+| `mtrag_clapnq` — MTRAG multi-turn RAG, ClapNQ (Wikipedia) passages, text embedder (`qwen3-embedding:4b`); also serves the `mtrag_clapnq_rewrite`, `mtrag_clapnq_live` and `mtrag_clapnq_live_uncompacted` keys | ~2.8 GB |
 
 After downloading, run benchmarks with `--skip-db`. Each database is built with a specific embedder, so pass its reference config from `evaluations/configs/` (a database only opens against a config whose embedder matches):
 
@@ -231,7 +231,7 @@ The reranker's contribution is larger here than on the single-doc datasets: hybr
 
 [MTRAG](https://github.com/IBM/mt-rag-benchmark) is IBM's multi-turn RAG benchmark (TACL 2025, SemEval-2026 Task 8): human-authored conversations with per-turn answerability labels and binary relevance judgments. We evaluate the ClapNQ (Wikipedia) domain: 183,408 passages, 29 conversations, 224 turns, 208 retrieval queries.
 
-Three dataset keys share one database. `mtrag_clapnq` retrieves with the raw last user turn and runs QA by replaying each task's reference conversation prefix as message history. `mtrag_clapnq_rewrite` retrieves with the human standalone rewrites. `mtrag_clapnq_live` replays whole conversations through a single capability session, carrying the model's own answers and tool history across turns.
+Four dataset keys share one database. `mtrag_clapnq` retrieves with the raw last user turn and runs QA by replaying each task's reference conversation prefix as message history. `mtrag_clapnq_rewrite` retrieves with the human standalone rewrites. `mtrag_clapnq_live` replays whole conversations through a single capability session, carrying the model's own answers, tool history and capability state across turns, with `EvidenceCompactionCapability` registered. `mtrag_clapnq_live_uncompacted` is the same replay without compaction, isolating what compaction contributes. This is the only multi-turn evaluation, so it is the only one where compaction acts at all.
 
 ##### Retrieval (Recall@k / nDCG@k)
 
@@ -251,4 +251,4 @@ Directly comparable with [IBM's published results](https://github.com/IBM/mt-rag
 | Gold-prefix (`mtrag_clapnq`) | `vllm:Gemma-4-26B-A4B-NVFP4` | 223 | 0.68 | 0.35 |
 | Live (`mtrag_clapnq_live`) | `vllm:Gemma-4-26B-A4B-NVFP4` | 195/224 scored | 0.72 micro / 0.73 macro | 0.35 |
 
-*Measured on haiku.rag v0.67.1 with `qwen3-embedding:4b` (vLLM, dim 2560) and `Qwen3-Reranker-4B`, stock capability instructions, judged by `vllm:Qwen3.6-35B-A3B-NVFP4` at temperature 0. The judge sampling has since been re-pinned repo-wide (0.6 with thinking), so future runs re-baseline. QA numbers are internal (our judge and rubric) and not comparable with IBM's published generation metrics. Live mode additionally reports refusal precision/recall against the per-turn answerability labels and per-turn pass rates; pass rate declines with conversation depth (93% at turn 1 to 38% at turn 9). The dataset is text-only (ClapNQ passages), so it exercises no multimodal paths.*
+*Measured on haiku.rag v0.67.1 with `qwen3-embedding:4b` (vLLM, dim 2560) and `Qwen3-Reranker-4B`, stock capability instructions, judged by `vllm:Qwen3.6-35B-A3B-NVFP4` at temperature 0. Two changes since re-baseline these numbers: the judge sampling was re-pinned repo-wide (0.6 with thinking), and 0.74.0 rewrote the citation instructions (refusals now declare an empty citation list instead of being exempt). Retrieval is unaffected by both and remains the control. QA numbers are internal (our judge and rubric) and not comparable with IBM's published generation metrics. Live mode additionally reports refusal precision/recall against the per-turn answerability labels and per-turn pass rates; pass rate declines with conversation depth (93% at turn 1 to 38% at turn 9). The dataset is text-only (ClapNQ passages), so it exercises no multimodal paths.*

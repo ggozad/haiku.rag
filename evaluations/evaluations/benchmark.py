@@ -630,6 +630,7 @@ async def run_qa_benchmark(
         set_eval_attribute("n_failed_tools", result.n_failed_tools)
         set_eval_attribute("n_executions", result.n_executions)
         set_eval_attribute("n_requests", result.n_requests)
+        set_eval_attribute("citation_status", result.citation_status)
         return result.answer
 
     report = await _evaluate(answer_question)
@@ -778,6 +779,7 @@ async def run_live_qa_benchmark(
             config=config,
             questions=list(questions),
             capability_model=resolved_capability_model,
+            compaction=spec.compaction,
         )
         set_eval_attribute("turn_cited_uris", [r.cited_uris for r in results])
         set_eval_attribute("turn_n_search_calls", [r.n_search_calls for r in results])
@@ -786,6 +788,7 @@ async def run_live_qa_benchmark(
         )
         set_eval_attribute("turn_n_failed_tools", [r.n_failed_tools for r in results])
         set_eval_attribute("turn_n_requests", [r.n_requests for r in results])
+        set_eval_attribute("turn_citation_status", [r.citation_status for r in results])
         return [r.answer for r in results]
 
     report = await evaluation_dataset.evaluate(

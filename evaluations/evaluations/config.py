@@ -82,6 +82,7 @@ class DatasetSpec:
     ingest_batch_size: int | None = None
     evaluate_refusal: bool = False
     live: bool = False
+    compaction: bool = False
     experiment_metadata: dict[str, Any] | None = None
 
     def db_path(self, override_path: Path | None = None) -> Path:

@@ -3,6 +3,7 @@ from evaluations.config import DatasetSpec
 from .hotpotqa import HOTPOTQA_SPEC
 from .mtrag import (
     MTRAG_CLAPNQ_LIVE_SPEC,
+    MTRAG_CLAPNQ_LIVE_UNCOMPACTED_SPEC,
     MTRAG_CLAPNQ_REWRITE_SPEC,
     MTRAG_CLAPNQ_SPEC,
 )
@@ -20,6 +21,7 @@ DATASETS: dict[str, DatasetSpec] = {
         MTRAG_CLAPNQ_SPEC,
         MTRAG_CLAPNQ_REWRITE_SPEC,
         MTRAG_CLAPNQ_LIVE_SPEC,
+        MTRAG_CLAPNQ_LIVE_UNCOMPACTED_SPEC,
         ORB_TEXT_SPEC,
         ORB_MULTIMODAL_SPEC,
         ORB_MULTIMODAL_NEMOTRON_SPEC,

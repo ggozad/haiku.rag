@@ -188,6 +188,52 @@ class TestConversationInputDispatch:
         assert history[0].parts[0].content == "q1"
         assert history[1].parts[0].content == "a1"
 
+    @pytest.mark.asyncio
+    async def test_records_citation_status_attribute(self, tmp_path: Path) -> None:
+        from dataclasses import dataclass
+
+        from pydantic_evals import Case
+        from pydantic_evals.evaluators import Evaluator, EvaluatorContext
+
+        from evaluations.capability_runner import CapabilityRunResult
+
+        @dataclass
+        class AlwaysOne(Evaluator):
+            def evaluate(self, ctx: EvaluatorContext) -> float:
+                return 1.0
+
+        def build_case(idx: int, doc) -> Case:
+            return Case(name="c1", inputs="q1", expected_output="ref")
+
+        spec = DatasetSpec(
+            key="test",
+            db_filename="test.lancedb",
+            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            document_mapper=lambda doc: None,
+            qa_loader=lambda: [{"id": "t1"}],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            qa_case_builder=build_case,
+            qa_evaluator=AlwaysOne(),
+        )
+
+        recorded: dict[str, object] = {}
+        with (
+            patch("evaluations.benchmark.get_model", return_value="fake-model"),
+            patch(
+                "evaluations.benchmark.set_eval_attribute",
+                side_effect=lambda key, value: recorded.__setitem__(key, value),
+            ),
+            patch(
+                "evaluations.benchmark.run_capability_question",
+                new_callable=AsyncMock,
+                return_value=CapabilityRunResult(
+                    answer="answer", citation_status="ungrounded"
+                ),
+            ),
+        ):
+            await run_qa_benchmark(spec, AppConfig(), db_path=tmp_path / "test.lancedb")
+
+        assert recorded["citation_status"] == "ungrounded"
+
 
 class TestRefusalMetrics:
     def _case(self, label: str | None, refused: bool | None) -> MagicMock:
@@ -371,6 +417,7 @@ class TestLiveConversationDispatch:
             qa_loader=lambda: [{"id": "conv1"}],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
             qa_case_builder=build_case,
             live=True,
+            compaction=True,
         )
 
         turn_results = [
@@ -401,6 +448,7 @@ class TestLiveConversationDispatch:
 
         assert run_conversation.await_args is not None
         assert run_conversation.await_args.kwargs["questions"] == ["q1", "q2"]
+        assert run_conversation.await_args.kwargs["compaction"] is True
 
     @pytest.mark.asyncio
     async def test_live_records_per_turn_traffic_arrays(self, tmp_path: Path) -> None:
@@ -442,6 +490,7 @@ class TestLiveConversationDispatch:
                 n_rejected_searches=1,
                 n_failed_tools=1,
                 n_requests=4,
+                citation_status="grounded",
             ),
             CapabilityRunResult(answer="a2"),
         ]
@@ -477,6 +526,7 @@ class TestLiveConversationDispatch:
         assert recorded["turn_n_rejected_searches"] == [1, 0]
         assert recorded["turn_n_failed_tools"] == [1, 0]
         assert recorded["turn_n_requests"] == [4, 0]
+        assert recorded["turn_citation_status"] == ["grounded", None]
         questions = 2
         for key, value in recorded.items():
             if key.startswith("turn_"):

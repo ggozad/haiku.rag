@@ -285,14 +285,23 @@ def _mtrag_spec(key: str, variant: str) -> DatasetSpec:
 MTRAG_CLAPNQ_SPEC = _mtrag_spec("mtrag_clapnq", "lastturn")
 MTRAG_CLAPNQ_REWRITE_SPEC = _mtrag_spec("mtrag_clapnq_rewrite", "rewrite")
 
-MTRAG_CLAPNQ_LIVE_SPEC = DatasetSpec(
-    key="mtrag_clapnq_live",
-    db_filename="mtrag_clapnq.lancedb",
-    document_loader=load_clapnq_corpus,
-    document_mapper=map_mtrag_document,
-    qa_loader=load_clapnq_conversations,
-    qa_case_builder=build_mtrag_live_case,
-    ingest_batch_size=512,
-    live=True,
-    experiment_metadata={"mtrag_mode": "live_session"},
+
+def _mtrag_live_spec(key: str, compaction: bool) -> DatasetSpec:
+    return DatasetSpec(
+        key=key,
+        db_filename="mtrag_clapnq.lancedb",
+        document_loader=load_clapnq_corpus,
+        document_mapper=map_mtrag_document,
+        qa_loader=load_clapnq_conversations,
+        qa_case_builder=build_mtrag_live_case,
+        ingest_batch_size=512,
+        live=True,
+        compaction=compaction,
+        experiment_metadata={"mtrag_mode": "live_session", "compaction": compaction},
+    )
+
+
+MTRAG_CLAPNQ_LIVE_SPEC = _mtrag_live_spec("mtrag_clapnq_live", compaction=True)
+MTRAG_CLAPNQ_LIVE_UNCOMPACTED_SPEC = _mtrag_live_spec(
+    "mtrag_clapnq_live_uncompacted", compaction=False
 )

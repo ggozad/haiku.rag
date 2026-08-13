@@ -263,6 +263,19 @@ class TestLiveConversations:
         assert MTRAG_CLAPNQ_LIVE_SPEC.live is True
         assert MTRAG_CLAPNQ_LIVE_SPEC.retrieval_loader is None
         assert MTRAG_CLAPNQ_LIVE_SPEC.experiment_metadata == {
-            "mtrag_mode": "live_session"
+            "mtrag_mode": "live_session",
+            "compaction": True,
         }
         assert MTRAG_CLAPNQ_SPEC.experiment_metadata == {"mtrag_mode": "gold_prefix"}
+
+    def test_live_compaction_arms(self) -> None:
+        assert MTRAG_CLAPNQ_LIVE_SPEC.compaction is True
+        uncompacted = DATASETS["mtrag_clapnq_live_uncompacted"]
+        assert uncompacted.compaction is False
+        assert uncompacted.live is True
+        assert uncompacted.db_filename == MTRAG_CLAPNQ_LIVE_SPEC.db_filename
+        assert uncompacted.qa_case_builder is MTRAG_CLAPNQ_LIVE_SPEC.qa_case_builder
+        assert uncompacted.experiment_metadata == {
+            "mtrag_mode": "live_session",
+            "compaction": False,
+        }
