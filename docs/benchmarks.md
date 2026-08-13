@@ -133,21 +133,21 @@ Two approaches are benchmarked separately:
 | Embedding Model                          | Reranker                                             | Cases | MAP    |
 |------------------------------------------|------------------------------------------------------|------:|-------:|
 | `Qwen/Qwen3-VL-Embedding-8B`             | none                                                 |  3045 | 0.9774 |
-| `nvidia/llama-nemotron-embed-vl-1b-v2`   | none                                                 |  3045 | 0.9709 |
+| `nvidia/llama-nemotron-embed-vl-1b-v2`   | none                                                 |  3045 | 0.9798 |
 | `nvidia/llama-nemotron-embed-vl-1b-v2`   | `nvidia/llama-nemotron-rerank-vl-1b-v2` (multimodal) |  3045 | 0.9913 |
 
-*The reranked row uses `reranking.multimodal: true`: picture chunks reach the vision reranker as images alongside their description text. Measured on haiku.rag main post-v0.67.3 (multimodal reranking ships in the next release).*
+*The nemotron row without a reranker is measured on this release. The reranked row uses `reranking.multimodal: true`: picture chunks reach the vision reranker as images alongside their description text, measured on haiku.rag main post-v0.67.3.*
 
 ##### QA accuracy + citation retrieval
 
 | Embedding Model                          | Target          | Capability model                       | Cases | QA accuracy | Mean `cited_map` |
 |------------------------------------------|-----------------|-----------------------------------|------:|-------------|------------------|
 | `Qwen/Qwen3-VL-Embedding-8B`             | `rag-capability`     | `vllm:Gemma-4-26B-A4B-NVFP4`      |  1409 | 0.89        | —                |
-| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `rag-capability`     | `vllm:Gemma-4-26B-A4B-NVFP4`      |  3045 | 0.92        | 0.93             |
-| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `analysis-capability`| `vllm:Gemma-4-26B-A4B-NVFP4`      |  3045 | 0.94        | 0.78             |
+| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `rag-capability`     | `vllm:Gemma-4-26B-A4B-NVFP4`      |  3039 | 0.9263      | 0.9761           |
+| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `analysis-capability`| `vllm:Gemma-4-26B-A4B-NVFP4`      |  3040 | 0.9362      | 0.9343           |
 | `nvidia/llama-nemotron-embed-vl-1b-v2`   | `analysis-capability`| `vllm:Qwen3.6-35B-A3B-NVFP4`      |  3045 | 0.95        | 0.93             |
 
-*Measured on haiku.rag v0.52.0, no reranker, judged by `vllm:Qwen3.6-35B-A3B-NVFP4`. Qwen3-VL covered 1409 / 3045 cases.*
+*Both nemotron `Gemma-4` rows are measured on this release, no reranker, judged by `vllm:Qwen3.6-35B-A3B-NVFP4` with thinking on, and exclude the cases that errored (6 of 3045 for `rag-capability`, 5 for `analysis-capability`). The `rag-capability` row cites at 99.64% with a mean of 1.08 citations per case, at a median 4.7s per case against 5.0s for `analysis-capability`. Citation coverage is what moved on this release: 4.9% of analysis cases register no citation, against 26.3% before, at unchanged searches and code executions per case. The remaining rows are from haiku.rag v0.52.0, where Qwen3-VL covered 1409 / 3045 cases.*
 
 #### Text embedder + VLM picture descriptions
 
