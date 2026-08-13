@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.74.0] - 2026-08-13
+
 ### Added
 
 - `CitationPolicyCapability` (`haiku.rag.capabilities.policy.create_capability`): registering it requires every answer to declare its grounding, in any conversation that has something to declare — this question retrieved evidence, or something was cited earlier. A question that ends undeclared is sent back once to record what grounded the answer already given, and is recorded in `CitationPolicyState.violations` if it finishes undeclared regardless. A conversation with neither a current-question evidence outcome nor any earlier citation is not enforced.
@@ -2127,7 +2129,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.73.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.74.0...HEAD
+[0.74.0]: https://github.com/ggozad/haiku.rag/compare/0.73.0...0.74.0
 [0.73.0]: https://github.com/ggozad/haiku.rag/compare/0.72.1...0.73.0
 [0.72.1]: https://github.com/ggozad/haiku.rag/compare/0.72.0...0.72.1
 [0.72.0]: https://github.com/ggozad/haiku.rag/compare/0.71.0...0.72.0
