@@ -1,6 +1,10 @@
 """Local docling converter implementation."""
 
 import asyncio
+import hashlib
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
@@ -10,10 +14,23 @@ from haiku.rag.converters.text_utils import TextFileHandler, docling_safe_name
 
 if TYPE_CHECKING:
     from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import PdfPipelineOptions
+    from docling.document_converter import DocumentConverter as DoclingDocConverter
     from docling.document_converter import FormatOption
     from docling_core.types.doc.document import DoclingDocument
 
     from haiku.rag.config.models import ConversionOptions
+
+# Docling builds its layout, table and OCR models per DocumentConverter and
+# caches pipelines per instance, so a converter per document reloads every model
+# per document. StandardPdfPipeline also keeps per-run state on the instance, so
+# the lock spans the conversion, not just the lookup.
+_CONVERTER_LOCK = threading.Lock()
+_CONVERTERS: dict[str, "DoclingDocConverter"] = {}
+
+# HTML and Markdown backend options carry the per-document source_uri. Both run
+# SimplePipeline, which loads no models, so they get a converter per call.
+_URI_AWARE_EXTENSIONS = frozenset({".html", ".xhtml", ".md", ".qmd", ".rmd"})
 
 
 class DoclingLocalConverter(DocumentConverter):
@@ -142,7 +159,9 @@ class DoclingLocalConverter(DocumentConverter):
         return pipeline_options
 
     def _build_format_options(
-        self, source_uri: str | None = None
+        self,
+        source_uri: str | None = None,
+        pipeline_options: "PdfPipelineOptions | None" = None,
     ) -> "dict[InputFormat, FormatOption]":
         """Per-format options shared between file and text conversion paths.
 
@@ -155,6 +174,8 @@ class DoclingLocalConverter(DocumentConverter):
             source_uri: Origin URI used by the HTML and Markdown backends to
                 resolve relative `<img src="/path">` references (e.g. when
                 ingesting a downloaded HTML page).
+            pipeline_options: Wired into every format option; built from
+                configuration when omitted.
         """
         from docling.backend.docling_parse_backend import DoclingParseDocumentBackend
         from docling.datamodel.backend_options import (
@@ -173,7 +194,8 @@ class DoclingLocalConverter(DocumentConverter):
         from pydantic import AnyUrl
 
         opts = self.config.processing.conversion_options
-        pipeline_options = self._build_pipeline_options()
+        if pipeline_options is None:
+            pipeline_options = self._build_pipeline_options()
         fetch = opts.fetch_remote_images
         source_url = AnyUrl(source_uri) if source_uri else None
 
@@ -203,19 +225,51 @@ class DoclingLocalConverter(DocumentConverter):
             InputFormat.PPTX: PowerpointFormatOption(pipeline_options=pipeline_options),
         }
 
-    def _sync_convert_docling_file(
-        self, path: Path, source_uri: str | None = None
-    ) -> "DoclingDocument":
-        """Synchronous conversion of docling-supported files."""
+    @contextmanager
+    def _shared_converter(self) -> Iterator["DoclingDocConverter"]:
+        """Yield the converter shared by every conversion with these pipeline
+        options, holding the lock for the caller's conversion.
+
+        `serialize_as_any` is required for the key: without it pydantic
+        serializes the nested option models as their declared type, rendering
+        them as `{}` and hiding `table_mode` and the OCR engine.
+        """
         from docling.document_converter import (
             DocumentConverter as DoclingDocConverter,
         )
 
-        converter = DoclingDocConverter(
-            format_options=self._build_format_options(source_uri=source_uri)
-        )
-        result = converter.convert(path)
-        return result.document
+        pipeline_options = self._build_pipeline_options()
+        key = hashlib.md5(
+            pipeline_options.model_dump_json(serialize_as_any=True).encode("utf-8"),
+            usedforsecurity=False,
+        ).hexdigest()
+
+        with _CONVERTER_LOCK:
+            converter = _CONVERTERS.get(key)
+            if converter is None:
+                converter = _CONVERTERS[key] = DoclingDocConverter(
+                    format_options=self._build_format_options(
+                        pipeline_options=pipeline_options
+                    )
+                )
+            yield converter
+
+    def _sync_convert_docling_file(
+        self, path: Path, source_uri: str | None = None
+    ) -> "DoclingDocument":
+        """Synchronous conversion of docling-supported files."""
+        if path.suffix.lower() in _URI_AWARE_EXTENSIONS:
+            from docling.document_converter import (
+                DocumentConverter as DoclingDocConverter,
+            )
+
+            converter = DoclingDocConverter(
+                format_options=self._build_format_options(source_uri=source_uri)
+            )
+            return converter.convert(path).document
+
+        with self._shared_converter() as converter:
+            return converter.convert(path).document
 
     async def convert_file(
         self, path: Path, source_uri: str | None = None
