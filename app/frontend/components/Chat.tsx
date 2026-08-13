@@ -20,6 +20,8 @@ import {
 import { FilterIcon } from "../lib/icons";
 import type { RAGState } from "../lib/sessionStorage";
 import {
+	AGUI_STATE_KEY,
+	agentStateOf,
 	createSession,
 	getActiveSessionId,
 	getLatestCitations,
@@ -32,10 +34,7 @@ import DbInfo from "./DbInfo";
 import DocumentFilter from "./DocumentFilter";
 import SessionManager from "./SessionManager";
 
-// Must match RAGCapability.state_namespace.
-const AGUI_STATE_KEY = "rag";
-
-// AG-UI state is namespaced under AGUI_STATE_KEY
+// AG-UI state is namespaced under AGUI_STATE_KEY (see sessionStorage).
 interface AgentState {
 	[AGUI_STATE_KEY]?: RAGState;
 }
@@ -319,11 +318,10 @@ function ChatContentInner({
 	useEffect(() => {
 		if (agent.messages.length > 0) return;
 		const session = getSession(sessionId);
-		// Seed state for the capability; the backend replaces it after each run.
-		agent.setState({
-			...agent.state,
-			[AGUI_STATE_KEY]: normalizeRAGState(session?.ragState),
-		});
+		// Seed state for the capabilities; the backend replaces it after each run.
+		// The whole namespace map goes back, not just the fields this UI reads:
+		// compaction and the citation policy read what earlier questions recorded.
+		agent.setState({ ...agent.state, ...agentStateOf(session ?? undefined) });
 		if (session && session.messages.length > 0) {
 			// biome-ignore lint/suspicious/noExplicitAny: AG-UI Message type is a broad union
 			agent.setMessages(session.messages as any[]);
@@ -336,13 +334,10 @@ function ChatContentInner({
 	// biome-ignore lint/correctness/useExhaustiveDependencies: JSON.stringify tracks content changes
 	useEffect(() => {
 		if (sessionId && agent.messages.length > 0) {
-			const currentRagState = normalizeRAGState(
-				(agent.state as AgentState)?.[AGUI_STATE_KEY],
-			);
 			updateSessionMessages(
 				sessionId,
 				serializeMessages(agent.messages),
-				currentRagState,
+				(agent.state ?? {}) as Record<string, unknown>,
 			);
 		}
 	}, [JSON.stringify(agent.messages), ragState, sessionId]);

@@ -321,14 +321,23 @@ class EvidenceCompactionCapability(AbstractCapability[Any]):
         """
         evidence = discover_evidence(ctx)
         boundary = question_in_progress(evidence)
+        owned_tools = frozenset().union(*(found.tool_names for found in evidence))
+        if boundary > 0 and _newest_owned_return(
+            request_context.messages, boundary, owned_tools
+        ):
+            if not any(found.state_carried for found in evidence):
+                raise RuntimeError(
+                    "Evidence compaction found evidence from an earlier question but "
+                    "no record of what it cited, so replacing it would retain "
+                    "nothing. The host must carry the capability state between runs, "
+                    "alongside the message history, for this capability to work."
+                )
         if boundary > 0:
             await self._build_once(ctx, evidence)
             request_context.messages = compact_history(
                 request_context.messages,
                 boundary=boundary,
-                owned_tools=frozenset().union(
-                    *(found.tool_names for found in evidence)
-                ),
+                owned_tools=owned_tools,
                 capsule_text=self.capsule.text,
                 capsule_images=self.images,
             )

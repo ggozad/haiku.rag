@@ -135,6 +135,13 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
     request_count: int = field(default=0, repr=False)
     grace_requests_used: int = field(default=0, repr=False)
     epoch: int = field(default=0, repr=False)
+    state_carried: bool = field(default=False, repr=False)
+    """Whether the host handed back a record a previous question had stamped.
+
+    False on a first question, and equally on every question of a host that does
+    not carry state between runs. Capabilities that need the record to mean
+    anything across questions read it to refuse rather than act on nothing.
+    """
 
     async def for_run(self, ctx: RunContext[Any]) -> "RAGCapabilityBase[StateT]":
         """Start a run's own copy, and settle which question it is answering.
@@ -155,6 +162,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         state = self.state_type.model_validate(raw_state or {})
         record = cast(CapabilityEvidenceRecord, cast(Any, state).evidence)
         continuing = record.in_progress
+        state_carried = record.question is not None
         if not continuing and _awaits_the_model(ctx.messages):
             raise RuntimeError(
                 f"The {self.state_namespace} capability is resuming a question with "
@@ -176,6 +184,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
             request_count=0,
             grace_requests_used=0,
             epoch=0,
+            state_carried=state_carried,
         )
         run_capability._sync_state()
         return run_capability

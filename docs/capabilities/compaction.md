@@ -21,6 +21,12 @@ agent = Agent(
 It exposes no tools and takes no configuration. Registering it is the only switch:
 leave it out and the transcript reaches the model untouched.
 
+The host must carry the capability state between runs, alongside the message
+history: the capsule is built from what earlier questions recorded there. Given
+only a message history, every run starts from an empty record, and compaction
+refuses rather than replace evidence it cannot retain. See
+[Compose an agent](index.md#compose-an-agent) for the shape.
+
 ## What it does
 
 On each request, evidence from earlier questions is replaced by the evidence those

@@ -34,9 +34,30 @@ export interface StoredSession {
 	id: string;
 	title: string;
 	messages: StoredMessage[];
-	ragState: RAGState;
+	// The whole AG-UI state. The rag namespace is not the only one a capability
+	// writes: the citation policy records violations beside it.
+	agentState: AgentState;
+	// Sessions stored before agentState existed.
+	ragState?: RAGState;
 	createdAt: string;
 	updatedAt: string;
+}
+
+export const AGUI_STATE_KEY = "rag";
+
+export type AgentState = Record<string, unknown>;
+
+// Reads the rag namespace out of a stored session, whichever way it was stored.
+export function ragStateOf(session?: StoredSession): RAGState {
+	const namespaced = session?.agentState?.[AGUI_STATE_KEY] as
+		| Partial<RAGState>
+		| undefined;
+	return normalizeRAGState(namespaced ?? session?.ragState);
+}
+
+// The state to seed an agent with when a session is resumed.
+export function agentStateOf(session?: StoredSession): AgentState {
+	return session?.agentState ?? { [AGUI_STATE_KEY]: ragStateOf(session) };
 }
 
 const SESSIONS_KEY = "haiku.rag.sessions";
@@ -86,7 +107,7 @@ export function createSession(): StoredSession {
 		id: crypto.randomUUID(),
 		title: "New Session",
 		messages: [],
-		ragState: normalizeRAGState(),
+		agentState: { [AGUI_STATE_KEY]: normalizeRAGState() },
 		createdAt: now,
 		updatedAt: now,
 	};
@@ -111,7 +132,7 @@ export function saveSession(session: StoredSession): void {
 export function updateSessionMessages(
 	id: string,
 	messages: StoredMessage[],
-	ragState: RAGState,
+	agentState: AgentState,
 ): void {
 	const sessions = getAllSessions();
 	const idx = sessions.findIndex((s) => s.id === id);
@@ -119,7 +140,7 @@ export function updateSessionMessages(
 
 	const session = sessions[idx];
 	session.messages = messages;
-	session.ragState = ragState;
+	session.agentState = agentState;
 	session.updatedAt = new Date().toISOString();
 
 	// Derive title from first user message

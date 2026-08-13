@@ -287,6 +287,17 @@ def rag_and_compactor(temp_db_path):
     )
 
 
+def settled_deps(question: int = 0) -> Deps:
+    """State as a host carrying it has it: an earlier question, answered."""
+    return Deps(
+        state={
+            "rag": RAGState(
+                evidence=CapabilityEvidenceRecord(question=question, in_progress=False)
+            ).model_dump(mode="json")
+        }
+    )
+
+
 def in_flight_history() -> list[Any]:
     """A question already asked and searched, still awaiting its answer."""
     return [
@@ -322,7 +333,9 @@ async def test_without_the_compactor_the_history_is_untouched(temp_db_path):
     agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[rag])
     settled = [*in_flight_history(), ModelResponse(parts=[TextPart("first answer")])]
 
-    await agent.run("a different question", deps=Deps(), message_history=settled)
+    await agent.run(
+        "a different question", deps=settled_deps(), message_history=settled
+    )
 
     assert returns_of(wire[-1]) == ["EVIDENCE FOR THE LIVE TURN"]
 
@@ -341,7 +354,9 @@ async def test_with_the_compactor_a_new_question_compacts_the_previous_one(
     agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[rag, compactor])
     settled = [*in_flight_history(), ModelResponse(parts=[TextPart("first answer")])]
 
-    await agent.run("a different question", deps=Deps(), message_history=settled)
+    await agent.run(
+        "a different question", deps=settled_deps(), message_history=settled
+    )
 
     assert returns_of(wire[-1]) == [RECEIPT]
 
@@ -509,7 +524,8 @@ async def test_the_capsule_is_built_once_per_request_and_again_for_the_next(
     ctx = RunContext(
         deps=deps, model=TestModel(), usage=RunUsage(), run_id="run-1", run_step=1
     )
-    run_rag = await rag.for_run(ctx)
+    # A host carrying state, which is what compaction requires of one.
+    run_rag = replace(await rag.for_run(ctx), state_carried=True)
     run_compactor = await compactor.for_run(ctx)
     cast(Any, run_rag.state).evidence.begin_question(4)
     ctx = replace(ctx, capabilities={"rag": run_rag, "compaction": run_compactor})
@@ -727,3 +743,49 @@ def test_the_capsule_is_attached_beside_the_newest_return_of_that_request():
 
     assert images_of(compacted) == [fresh]
     assert returns_of(compacted) == [RECEIPT, "CAPSULE"]
+
+
+@pytest.mark.asyncio
+async def test_compaction_refuses_to_strip_evidence_it_cannot_replace(temp_db_path):
+    """A host that does not carry state has no record to build a capsule from.
+
+    Compacting anyway replaces the earlier evidence with receipts and retains
+    nothing, so the model loses what it cited and the loss is invisible: the
+    citations the host already displayed are still there.
+    """
+    rag, compactor = rag_and_compactor(temp_db_path)
+
+    async def model(_messages, _info):  # pragma: no cover - never reached
+        return ModelResponse(parts=[TextPart("answer")])
+
+    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[rag, compactor])
+    history = answered_question("an earlier question", evidence="EVIDENCE TO LOSE")
+
+    with pytest.raises(RuntimeError, match="carry the capability state"):
+        await agent.run("a follow-up", deps=Deps(), message_history=history)
+
+
+@pytest.mark.asyncio
+async def test_compaction_proceeds_for_a_host_that_carries_state(temp_db_path):
+    """The same history, with the record the earlier question left behind."""
+    rag, compactor = rag_and_compactor(temp_db_path)
+    wire: list[list[Any]] = []
+
+    async def model(messages, _info):
+        wire.append(list(messages))
+        return ModelResponse(parts=[TextPart("answer")])
+
+    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[rag, compactor])
+    history = answered_question("an earlier question", evidence="EVIDENCE TO LOSE")
+
+    carried = Deps(
+        state={
+            "rag": RAGState(
+                evidence=CapabilityEvidenceRecord(question=0, in_progress=False)
+            ).model_dump(mode="json")
+        }
+    )
+
+    await agent.run("a follow-up", deps=carried, message_history=history)
+
+    assert returns_of(wire[-1]) == [RECEIPT]

@@ -16,10 +16,21 @@ The two evidence capabilities are deferred by default. An agent initially sees o
 Pick one evidence capability, and add both optional capabilities to it:
 
 ```python
+from dataclasses import dataclass, field
+from typing import Any
+
 from pydantic_ai import Agent
+from pydantic_ai.messages import ModelMessage
+
 from haiku.rag.capabilities.compaction import create_capability as compaction
 from haiku.rag.capabilities.policy import create_capability as citation_policy
 from haiku.rag.capabilities.rag import create_capability as rag
+
+
+@dataclass
+class Deps:
+    state: dict[str, Any] = field(default_factory=dict)
+
 
 agent = Agent(
     "openai:gpt-5",
@@ -28,11 +39,26 @@ agent = Agent(
         compaction(),
         citation_policy(),
     ],
+    deps_type=Deps,
 )
 
-result = await agent.run("What does the knowledge base say about X?")
+# One Deps and one history for the conversation: the capabilities read both.
+deps = Deps()
+history: list[ModelMessage] = []
+
+result = await agent.run("What does the knowledge base say about X?", deps=deps, message_history=history)
+history = list(result.all_messages())
 print(result.output)
 ```
+
+!!! warning "Both optional capabilities need the host to carry state"
+
+    They read what earlier questions retrieved and cited from the capability's
+    state, so the host must expose a `state` dict on its agent dependencies and
+    hand the same dict back on every run of a conversation, alongside the message
+    history. With only the message history, every run starts from an empty record:
+    compaction refuses rather than replace evidence it cannot retain, and the
+    citation policy cannot enforce a follow-up about evidence cited earlier.
 
 Swap `rag` for `analysis` for an analysis agent. Both optional capabilities work the
 same way with either one, and neither exposes tools or takes configuration.
