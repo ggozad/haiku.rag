@@ -18,18 +18,24 @@ When `qa.max_searches` or `analysis.max_executions` runs out, the exhausted tool
 
 The sandbox exposes documents under `/documents/{document_id}/` with `metadata.json`, `content.txt`, `items.jsonl`, and `toc.json`.
 
-## Compose with RAG
+## Compose an agent
+
+Register it on its own, not alongside `RAGCapability`: it already searches and cites,
+and the two together give the model duplicate tools and separate budgets. See
+[Capabilities](index.md#compose-an-agent).
 
 ```python
 from pydantic_ai import Agent
 from haiku.rag.capabilities.analysis import create_capability as analysis
-from haiku.rag.capabilities.rag import create_capability as rag
+from haiku.rag.capabilities.compaction import create_capability as compaction
+from haiku.rag.capabilities.policy import create_capability as citation_policy
 
 agent = Agent(
     "openai:gpt-5",
     capabilities=[
-        rag(db_path="my.lancedb"),
         analysis(db_path="my.lancedb"),
+        compaction(),
+        citation_policy(),
     ],
 )
 ```
@@ -48,6 +54,6 @@ async with HaikuRAG("my.lancedb") as client:
 
 When dependencies expose a state dictionary, `AnalysisState` is stored under `"analysis"`. It contains the document filter, code execution log, searches, citations, and the `evidence` record of what was retrieved and cited per question. Searches and executions are cleared when a new question starts, and a resumed question keeps them; the filter, citation index and evidence record persist.
 
-This capability does not alter the message history either. Register the [compaction capability](index.md#multi-turn-conversations) to compact earlier questions.
+This capability does not alter the message history either. Register the [compaction capability](compaction.md) to compact earlier questions.
 
 The capability lazily opens both LanceDB and the sandbox only after it is loaded and a tool requires them. Resources close at the end of the agent run.

@@ -13,12 +13,23 @@ The distinct `rag_` prefix lets this capability coexist with analysis and other 
 
 ## Create and compose
 
+Register it on its own rather than alongside `AnalysisCapability`, which searches and
+cites as well. See [Capabilities](index.md#compose-an-agent).
+
 ```python
 from pydantic_ai import Agent
-from haiku.rag.capabilities.rag import create_capability
+from haiku.rag.capabilities.compaction import create_capability as compaction
+from haiku.rag.capabilities.policy import create_capability as citation_policy
+from haiku.rag.capabilities.rag import create_capability as rag
 
-rag = create_capability(db_path="my.lancedb")
-agent = Agent("openai:gpt-5", capabilities=[rag])
+agent = Agent(
+    "openai:gpt-5",
+    capabilities=[
+        rag(db_path="my.lancedb"),
+        compaction(),
+        citation_policy(),
+    ],
+)
 
 result = await agent.run("What safety equipment does the manual require?")
 print(result.output)
@@ -49,7 +60,7 @@ State is ordinary application state; the capability does not depend on AG-UI. An
 
 ## Context management
 
-This capability does not alter the message history. To stop long conversations resending old retrieved content, register the [compaction capability](index.md#multi-turn-conversations) alongside it.
+This capability does not alter the message history. To stop long conversations resending old retrieved content, register the [compaction capability](compaction.md) alongside it.
 
 ## Domain context and vision
 

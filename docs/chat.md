@@ -61,12 +61,15 @@ Retrieval stays text-based; the images are sent to the model alongside your mess
 The default capability is `rag`. Enable `analysis` when the question needs computation, aggregation, comparison across documents, or section-scoped reading that a single search can't deliver:
 
 ```bash
-# both capabilities (the agent routes between them)
-haiku-rag chat -c rag -c analysis
-
-# analysis only
+# analysis instead of rag
 haiku-rag chat -c analysis
+
+# both, which gives the model duplicate search and cite tools
+haiku-rag chat -c rag -c analysis
 ```
+
+Prefer one. `analysis` searches and cites as well as computing, so pairing it with `rag`
+duplicates tools and budgets. See [Capabilities](capabilities/index.md#compose-an-agent).
 
 The `analysis` capability mounts every document as a virtual filesystem at `/documents/{id}/` (with `metadata.json`, `content.txt`, `items.jsonl`, and `toc.json`) and runs Python in a sandboxed interpreter with `search` and `list_documents` as awaitable functions. It's the right choice for questions like:
 
