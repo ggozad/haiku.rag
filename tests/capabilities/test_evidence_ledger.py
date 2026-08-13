@@ -240,3 +240,38 @@ def test_a_question_starts_clear_of_the_one_before_it():
     assert record.latest_evidence_epoch == 0
     assert record.declaration is None
     assert citation_status([record], question=9) == "missing"
+
+
+def test_an_empty_citation_after_a_grounded_one_cannot_narrow_it():
+    """Citing again must not weaken a declaration, at any epoch.
+
+    Merging only within one epoch meant a second thought a request later replaced
+    the refs with nothing and reported the question ungrounded.
+    """
+    record = CapabilityEvidenceRecord(question=0)
+    record.declare([rag_ref()], epoch=3)
+    record.declare([], epoch=5)
+
+    assert record.declaration is not None
+    assert [ref.chunk_id for ref in record.declaration.refs] == ["c1"]
+    assert citation_status([record], question=0) == "grounded"
+
+
+def test_a_declaration_after_newer_evidence_starts_afresh():
+    """Evidence the model has since seen may be what it is now citing."""
+    record = CapabilityEvidenceRecord(question=0)
+    record.declare([rag_ref("first")], epoch=3)
+    record.note_evidence(4)
+    record.declare([rag_ref("second")], epoch=5)
+
+    assert record.declaration is not None
+    assert [ref.chunk_id for ref in record.declaration.refs] == ["second"]
+
+
+def test_an_empty_citation_after_newer_evidence_is_ungrounded():
+    record = CapabilityEvidenceRecord(question=0)
+    record.declare([rag_ref()], epoch=3)
+    record.note_evidence(4)
+    record.declare([], epoch=5)
+
+    assert citation_status([record], question=0) == "ungrounded"

@@ -273,6 +273,16 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
             if tool.capability_id != self.id or tool.name == self._cite_tool_name
         ]
 
+    @property
+    def cite_available(self) -> bool:
+        """Whether this capability's cite tool is still declared to the model.
+
+        Public because the citation policy has to know whether asking for a
+        citation is even possible: past the grace window the tool is gone, and
+        pointing the model at it would cost the agent's unknown-tool retries.
+        """
+        return not self._citation_grace_expired
+
     def evidence_tool_names(self) -> set[str]:
         """Tools that can bring new evidence into the run.
 
@@ -419,12 +429,17 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         return formatted
 
     async def _cite(self, chunk_ids: list[str]) -> str:
+        """Register the evidence behind this answer, or declare there is none.
+
+        An empty list is a valid answer to "what grounds this?", and the only way
+        the model can say "nothing" other than staying silent — which is
+        indistinguishable from forgetting to cite at all. It declares the question
+        ungrounded, which is not the same as leaving it undeclared.
+        """
         assert self.state is not None
         if not chunk_ids:
-            raise ModelRetry(
-                "No citations registered: chunk_ids was empty. Pass the chunk_ids "
-                "you want to cite, copied verbatim from search results."
-            )
+            self._declare([])
+            return "Recorded: this answer cites no knowledge-base evidence."
 
         all_results: list[SearchResult] = []
         state = cast(Any, self.state)

@@ -7,6 +7,7 @@ haiku.rag provides native [Pydantic AI capabilities](https://ai.pydantic.dev/cap
 | [`RAGCapability`](rag.md) | Grounded document search and citations. |
 | [`AnalysisCapability`](analysis.md) | Corpus computation and structural analysis with sandboxed Python. |
 | `EvidenceCompactionCapability` | Optional. Shrinking a conversation's history to the evidence that was cited. |
+| `CitationPolicyCapability` | Optional. Requiring every answer to declare what grounds it. |
 
 The two evidence capabilities are deferred by default. An agent initially sees only their descriptions and the standard `load_capability` tool. Instructions and tools enter the model context only when the model loads a capability.
 
@@ -66,6 +67,44 @@ Resuming a question (deferred tool results, an interruption, a suspension) requi
 the host to carry the capability state from the run being resumed, alongside the
 message history. Without it the identity of the question in progress is unknowable
 and the run fails rather than silently treating it as a new question.
+
+## Requiring citations
+
+Citing is always available and always recorded, but nothing requires it. Register the
+citation policy capability to make every answer declare its grounding:
+
+```python
+from haiku.rag.capabilities.policy import create_capability as citation_policy
+from haiku.rag.capabilities.rag import create_capability as rag
+
+agent = Agent(
+    "openai:gpt-5",
+    capabilities=[rag(db_path="my.lancedb"), citation_policy()],
+)
+```
+
+An empty citation is a valid declaration: a model that finds nothing relevant calls
+the cite tool with an empty list, which records the answer as *ungrounded* — distinct
+from an answer that declared nothing at all. That distinction is what makes requiring
+a declaration possible without forcing the model to invent grounding.
+
+When a question ends undeclared, the model is asked once to record what grounded the
+answer it already gave. It is not asked to change the answer. If the cite tool is no
+longer available by then, or the question finishes undeclared anyway, it is recorded as
+a violation in `CitationPolicyState` under `"citation_policy"`, since pointing a model
+at a tool that is gone costs it retries.
+
+What gets enforced is every answer in a conversation that has something to declare:
+either this question retrieved evidence, or the conversation has already cited
+something, which stays available to later answers. So a follow-up about evidence cited
+earlier is enforced even though it searched nothing — that case is the reason the
+capability exists. It also means that once anything has been cited, later turns are
+enforced too, a greeting included; the model satisfies the policy by citing an empty
+list, at the cost of one extra request. A conversation with neither a current-question
+evidence outcome nor any earlier citation is not enforced.
+
+Exactly one policy capability makes the decision, however many evidence capabilities
+are registered, so two of them cannot each demand a citation for one answer.
 
 ## State
 

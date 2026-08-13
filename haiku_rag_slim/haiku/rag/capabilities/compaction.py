@@ -1,6 +1,6 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any, cast
+from typing import Any
 
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, WrapModelRequestHandler
@@ -15,7 +15,11 @@ from pydantic_ai.messages import (
 from pydantic_ai.models import ModelRequestContext
 
 from haiku.rag.capabilities._base import RAGCapabilityBase
-from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
+from haiku.rag.capabilities.evidence import (
+    DiscoveredEvidence,
+    discover_evidence,
+    question_in_progress,
+)
 from haiku.rag.store.models.citation import Citation
 from haiku.rag.tools.search import RETRIEVED_IMAGE_TAG, decode_picture
 
@@ -50,20 +54,6 @@ def picture_label(chunk_id: str, self_ref: str) -> str:
         f"Page image retrieved from the knowledge base for cited evidence "
         f"[{chunk_id}] ({self_ref}). Not provided by the user. {RETRIEVED_IMAGE_TAG}"
     )
-
-
-@dataclass(frozen=True)
-class DiscoveredEvidence:
-    """One evidence capability's records, as the compactor found them.
-
-    Read-only and rebuilt per request: the compactor merges these into a view and
-    persists nothing about evidence itself.
-    """
-
-    capability: str
-    record: CapabilityEvidenceRecord
-    citations: Mapping[str, Citation]
-    tool_names: frozenset[str]
 
 
 @dataclass(frozen=True)
@@ -329,8 +319,8 @@ class EvidenceCompactionCapability(AbstractCapability[Any]):
         of what was retrieved and break the message counts that question identities
         and epochs are derived from.
         """
-        evidence = self.discover(ctx)
-        boundary = max((found.record.question or 0 for found in evidence), default=0)
+        evidence = discover_evidence(ctx)
+        boundary = question_in_progress(evidence)
         if boundary > 0:
             await self._build_once(ctx, evidence)
             request_context.messages = compact_history(
@@ -395,28 +385,6 @@ class EvidenceCompactionCapability(AbstractCapability[Any]):
             content.append(picture)
         return tuple(content)
 
-    def discover(self, ctx: RunContext[Any]) -> list[DiscoveredEvidence]:
-        """Read what each evidence capability recorded, without writing anything.
-
-        The registry holds the per-run instances, which are the ones carrying
-        state; the registered objects never do. That includes a deferred capability
-        the model has not loaded, whose record is simply empty.
-        """
-        discovered = []
-        for capability in ctx.capabilities.values():
-            if not isinstance(capability, RAGCapabilityBase):
-                continue
-            state = capability.state
-            discovered.append(
-                DiscoveredEvidence(
-                    capability=capability.state_namespace,
-                    record=cast(CapabilityEvidenceRecord, cast(Any, state).evidence),
-                    citations=cast(Any, state).citation_index,
-                    tool_names=frozenset(capability.evidence_tool_names()),
-                )
-            )
-        return sorted(discovered, key=lambda evidence: evidence.capability)
-
 
 def create_capability() -> EvidenceCompactionCapability:
     """Create the capability that compacts history from recorded evidence."""
@@ -434,7 +402,6 @@ __all__ = [
     "CAPSULE_HEADER",
     "RECEIPT",
     "Capsule",
-    "DiscoveredEvidence",
     "EvidenceCompactionCapability",
     "RetainedPicture",
     "build_capsule",
