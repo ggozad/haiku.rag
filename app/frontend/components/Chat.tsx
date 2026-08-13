@@ -321,6 +321,7 @@ function ChatContentInner({
 		const session = getSession(sessionId);
 		// Seed state for the capability; the backend replaces it after each run.
 		agent.setState({
+			...agent.state,
 			[AGUI_STATE_KEY]: normalizeRAGState(session?.ragState),
 		});
 		if (session && session.messages.length > 0) {

@@ -11,12 +11,16 @@ export interface Citation {
 	doc_item_refs?: string[];
 }
 
-// Matches RAGState from the backend capability.
+// Matches RAGState from the backend capability. The fields named here are the
+// ones this UI reads; the capability owns the rest of its namespace, including
+// the evidence record that compaction builds its capsule from, so the state has
+// to round-trip whole rather than be rebuilt from known keys.
 export interface RAGState {
 	citation_index: Record<string, Citation>;
 	citations: string[];
 	document_filter: string | null;
 	searches: Record<string, unknown[]>;
+	[key: string]: unknown;
 }
 
 export interface StoredMessage {
@@ -40,6 +44,7 @@ const ACTIVE_SESSION_KEY = "haiku.rag.activeSession";
 
 export function normalizeRAGState(state?: Partial<RAGState>): RAGState {
 	return {
+		...state,
 		citation_index: state?.citation_index ?? {},
 		citations: state?.citations ?? [],
 		document_filter: state?.document_filter ?? null,
