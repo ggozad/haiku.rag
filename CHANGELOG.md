@@ -1,12 +1,30 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- `EvidenceCompactionCapability` (`haiku.rag.capabilities.compaction.create_capability`): registering it replaces earlier questions' evidence on the model request with the evidence that was cited, grouped by the question that cited it, cited page images re-attached, other earlier evidence returns reduced to a receipt. Requests only; `all_messages()` is untouched. No configuration.
+- `RAGState.evidence` / `AnalysisState.evidence` (`CapabilityEvidenceRecord`): which evidence a capability retrieved and cited, per question, keyed by message-count question identities and epochs. `haiku.rag.capabilities.ledger.citation_status(records, question=...)` derives `missing` / `grounded` / `ungrounded` across capabilities.
+- `RAGCapabilityBase.evidence_tool_names()` and `get_picture_bytes()`.
+- `haiku.rag.tools.search.decode_picture()`.
+
+### Changed
+
+- `RAGCapability` and `AnalysisCapability` no longer rewrite the model request. Register `create_capability()` from `haiku.rag.capabilities.compaction` alongside them to keep earlier questions compacted.
+- Resuming a run (no prompt, deferred tool results, an unfinished history tail) raises `RuntimeError` unless the host carries the capability state from the run being resumed.
+
+### Removed
+
+- `PRIOR_TURN_NOTICE` and `_compact_old_tool_returns` from `haiku.rag.capabilities._base`, and `RAGCapabilityBase.turn_start`.
+
 ### Fixed
 
 - `cross-encoder` reranking no longer ties the scores of strongly-relevant candidates, which left their order to the sort. Scores remain 0-1.
 - `haiku-rag` and `haiku-ingester` CLI startup no longer imports `lancedb`, `pyarrow` and `pydantic_ai`.
 - `haiku.rag.store` no longer re-exports `Store`; import it from `haiku.rag.store.engine`.
 - `docling-local` reuses one docling `DocumentConverter` per set of conversion options instead of building one per document, so local layout, table and OCR models are no longer loaded per document. Conversions through a shared converter are serialized.
+- A resumed run keeps the searches, citations and executions of the question in progress instead of clearing them.
+- Each page image attached to a search result is preceded by a line giving its position and the chunk id it came from. `build_binary_parts_from_results` is now `build_image_content_from_results` and returns those labels interleaved with the pictures.
 
 ## [0.73.0] - 2026-08-06
 

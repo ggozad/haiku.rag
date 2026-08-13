@@ -18,6 +18,9 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
+from haiku.rag.capabilities.compaction import (
+    create_capability as create_compaction,
+)
 from haiku.rag.capabilities.rag import AGENT_PREAMBLE, RAGState, create_capability
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import load_yaml_config
@@ -81,7 +84,9 @@ capability = create_capability(db_path=db_path, config=Config, defer_loading=Fal
 agent = Agent(
     get_model(Config.qa.model, Config),
     instructions=AGENT_PREAMBLE,
-    capabilities=[capability],
+    # Conversations here are multi-turn, so earlier questions are reduced to the
+    # evidence they cited rather than carried whole.
+    capabilities=[capability, create_compaction()],
     deps_type=AppDeps,
 )
 

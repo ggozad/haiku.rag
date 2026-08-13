@@ -15,8 +15,6 @@ from pydantic_ai.messages import (
     ModelResponse,
     ToolCallPart,
     ToolReturn,
-    ToolReturnPart,
-    UserPromptPart,
 )
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.run import AgentRunResult
@@ -24,11 +22,12 @@ from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import AgentToolset
 
 from haiku.rag.capabilities._tools import CodeExecutionEntry, search_corpus
+from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord, EvidenceRef
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.citation import Citation, resolve_citations
-from haiku.rag.tools.search import build_binary_parts_from_results
+from haiku.rag.tools.search import build_image_content_from_results
 
 CITATION_GRACE_REQUESTS = 2
 """Requests calling this capability's tools that its cite tool outlives the rest by.
@@ -70,47 +69,42 @@ def resolve_db_path(db_path: Path | None, config: AppConfig) -> Path:
 
 
 def _clear_invocation_state(state: BaseModel) -> None:
+    """Drop the working evidence of the previous question.
+
+    Only ever called when a new question starts. A resumption keeps it: the
+    results belong to the question still being answered, and dropping them leaves
+    a later citation unable to resolve against the expanded result the model saw,
+    recording no provenance for it.
+    """
     for field_name in ("citations", "searches", "executions"):
         value = getattr(state, field_name, None)
         if hasattr(value, "clear"):
             value.clear()
 
 
-def _compact_old_tool_returns(
-    messages: list[ModelMessage], tool_names: frozenset[str]
-) -> list[ModelMessage]:
-    """Remove bulky prior-turn evidence while retaining the current turn.
+def _is_resumption(prompt: Any, messages: list[ModelMessage]) -> bool:
+    """Whether this run continues a question rather than asking a new one.
 
-    Tool call and return parts remain paired; only the old return payload is
-    replaced. This keeps provider histories valid and preserves all evidence
-    gathered since the most recent user prompt.
+    Two signals, either of which is enough, because getting this wrong hands the
+    model a notice where its own evidence should be:
+
+    - no prompt: how pydantic-ai resumes for interruptions and suspensions.
+    - an unfinished tail: the history ends with a request the model has not
+      answered, or with a response whose tool calls have no returns yet. Deferred
+      tool results may arrive *with* a prompt, so the prompt alone is not enough.
+
+    A settled history ends with the previous answer, so a genuinely new question
+    is not mistaken for a continuation. The framework's own first-new-message
+    index would be better than either signal, but it is not public here.
     """
-    latest_user_message = -1
-    for index, message in enumerate(messages):
-        if isinstance(message, ModelRequest) and any(
-            isinstance(part, UserPromptPart) for part in message.parts
-        ):
-            latest_user_message = index
-
-    if latest_user_message < 0:
-        return messages
-
-    compacted = list(messages)
-    for index, message in enumerate(messages[:latest_user_message]):
-        if not isinstance(message, ModelRequest):
-            continue
-        parts = [
-            replace(
-                part,
-                content="[Prior-turn RAG tool output removed; citations remain in state.]",
-            )
-            if isinstance(part, ToolReturnPart) and part.tool_name in tool_names
-            else part
-            for part in message.parts
-        ]
-        if parts != message.parts:
-            compacted[index] = replace(message, parts=parts)
-    return compacted
+    if prompt is None:
+        return True
+    if not messages:
+        return False
+    last = messages[-1]
+    if isinstance(last, ModelRequest):
+        return True
+    return any(isinstance(part, ToolCallPart) for part in last.parts)
 
 
 def _called_own_tool(messages: list[ModelMessage], tool_names: frozenset[str]) -> bool:
@@ -142,13 +136,38 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
     search_count: int = field(default=0, repr=False)
     request_count: int = field(default=0, repr=False)
     grace_requests_used: int = field(default=0, repr=False)
+    epoch: int = field(default=0, repr=False)
 
     async def for_run(self, ctx: RunContext[Any]) -> "RAGCapabilityBase[StateT]":
+        """Start a run's own copy, and settle which question it is answering.
+
+        A new question takes the message count as its identity, which every
+        participant derives identically from the same history. A resumption keeps
+        the identity already recorded: the question is the one in progress, and
+        adopting the current count would relabel it as a new one and judge its
+        declarations against the wrong question. A resumption with no recorded
+        identity is a state this design does not produce, so it is reported rather
+        than guessed at. With no history at all there is nothing in progress: an
+        absent prompt is then an instructions-only first question, which takes an
+        identity like any other.
+        """
         outer = getattr(ctx.deps, "state", None)
         outer_state = outer if isinstance(outer, dict) else None
         raw_state = outer_state.get(self.state_namespace) if outer_state else None
+        resuming = _is_resumption(ctx.prompt, ctx.messages)
+        continuing = resuming and bool(ctx.messages)
         state = self.state_type.model_validate(raw_state or {})
-        _clear_invocation_state(state)
+        record = cast(CapabilityEvidenceRecord, cast(Any, state).evidence)
+        if continuing and record.question is None:
+            raise RuntimeError(
+                f"The {self.state_namespace} capability is resuming a question with "
+                "no stored question identity. Capabilities cannot be added, removed "
+                "or migrated while a question is unfinished, and the run's state "
+                "must be carried between its runs."
+            )
+        if not continuing:
+            _clear_invocation_state(state)
+            record.begin_question(len(ctx.messages))
         run_capability = replace(
             self,
             state=state,
@@ -159,6 +178,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
             search_count=0,
             request_count=0,
             grace_requests_used=0,
+            epoch=0,
         )
         run_capability._sync_state()
         return run_capability
@@ -171,9 +191,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
     async def before_model_request(
         self, ctx: RunContext[Any], request_context: ModelRequestContext
     ) -> ModelRequestContext:
-        request_context.messages = _compact_old_tool_returns(
-            request_context.messages, self.tool_names
-        )
+        self.epoch = len(ctx.messages)
         if instruction := self._budget_notice():
             current_request = request_context.messages[-1]
             if isinstance(current_request, ModelRequest):
@@ -217,7 +235,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
             )
         if spent := self._spent_tool_names():
             names = ", ".join(sorted(spent))
-            if remaining := sorted(self._evidence_tool_names() - spent):
+            if remaining := sorted(self.evidence_tool_names() - spent):
                 return (
                     f"The {self.state_namespace} capability has spent its budget "
                     f"for {names}; further calls to them fail. Gather any further "
@@ -255,8 +273,13 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
             if tool.capability_id != self.id or tool.name == self._cite_tool_name
         ]
 
-    def _evidence_tool_names(self) -> set[str]:
-        """Tools that can bring new evidence into the run."""
+    def evidence_tool_names(self) -> set[str]:
+        """Tools that can bring new evidence into the run.
+
+        Public because compaction needs to know whose output on the wire is
+        evidence: a cite acknowledgement is a receipt of the model's own action and
+        must survive, while a code execution that reached the corpus is evidence.
+        """
         return {f"{self.state_namespace}_search"}
 
     def _spent_tool_names(self) -> set[str]:
@@ -306,6 +329,18 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
                     self.rag = rag
         return self.rag
 
+    async def get_picture_bytes(self, document_id: str, self_ref: str) -> bytes | None:
+        """Fetch a picture of this capability's evidence, for whoever re-attaches it.
+
+        Public because compaction rehydrates cited pictures and this capability
+        already holds the connection they came from; bytes are never kept in state.
+        """
+        async with self.rag_lock:
+            rag = await self._ensure_rag()
+            return await rag.document_item_repository.get_picture_bytes(
+                document_id, self_ref
+            )
+
     async def _close(self) -> None:
         if self.rag is not None:
             await self.rag.__aexit__(None, None, None)
@@ -326,6 +361,41 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         finally:
             self._sync_state()
 
+    def _evidence_record(self) -> CapabilityEvidenceRecord:
+        assert self.state is not None
+        return cast(CapabilityEvidenceRecord, cast(Any, self.state).evidence)
+
+    def _note_evidence(self) -> None:
+        """Record an outcome the model can ground an answer on.
+
+        Includes an empty search result and a failed execution that still printed
+        output: negative evidence grounds a refusal. Excludes a spent budget, which
+        yields nothing to ground anything on.
+        """
+        self._evidence_record().note_evidence(self.epoch)
+
+    def _declare(self, citations: list[Citation]) -> None:
+        """Record what the model cited, once the ids have resolved.
+
+        Declaring earlier would let a call naming only unresolvable ids read as a
+        grounded answer.
+        """
+        state = cast(Any, self.state)
+        retrieved = {
+            result.chunk_id
+            for results in state.searches.values()
+            for result in results
+            if result.chunk_id
+        }
+        self._evidence_record().declare(
+            [
+                EvidenceRef(capability=self.state_namespace, chunk_id=c.chunk_id)
+                for c in citations
+            ],
+            epoch=self.epoch,
+            retrieved_now=retrieved,
+        )
+
     async def _search(self, query: str, limit: int | None) -> str | ToolReturn:
         assert self.state is not None
         self.search_count += 1
@@ -343,7 +413,8 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
             )
         state = cast(Any, self.state)
         state.searches[query] = results
-        if self.vision and (parts := build_binary_parts_from_results(results)):
+        self._note_evidence()
+        if self.vision and (parts := build_image_content_from_results(results)):
             return ToolReturn(return_value=formatted, content=parts)
         return formatted
 
@@ -390,6 +461,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
                 "Copy chunk_ids verbatim from search results."
             )
         self._register_citations(citations)
+        self._declare(citations)
         resolved = {citation.chunk_id for citation in citations}
         unresolved = [cid for cid in missing if cid not in resolved]
         if unresolved:

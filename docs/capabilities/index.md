@@ -1,13 +1,14 @@
 # Capabilities
 
-haiku.rag provides two native [Pydantic AI capabilities](https://ai.pydantic.dev/capabilities/):
+haiku.rag provides native [Pydantic AI capabilities](https://ai.pydantic.dev/capabilities/):
 
 | Capability | Use it for |
 |---|---|
 | [`RAGCapability`](rag.md) | Grounded document search and citations. |
 | [`AnalysisCapability`](analysis.md) | Corpus computation and structural analysis with sandboxed Python. |
+| `EvidenceCompactionCapability` | Optional. Shrinking a conversation's history to the evidence that was cited. |
 
-Both capabilities are deferred by default. An agent initially sees only their descriptions and the standard `load_capability` tool. Instructions and tools enter the model context only when the model loads a capability.
+The two evidence capabilities are deferred by default. An agent initially sees only their descriptions and the standard `load_capability` tool. Instructions and tools enter the model context only when the model loads a capability.
 
 ## Compose an agent
 
@@ -33,6 +34,38 @@ agent = Agent(
     capabilities=[rag(db_path="my.lancedb"), analysis(db_path="my.lancedb")],
 )
 ```
+
+## Multi-turn conversations
+
+Every question adds its search results to the history, so requests grow turn after
+turn, and can degrade answers or exceed a provider's limits as they do. Register the
+compaction capability to replace earlier questions' evidence with the evidence that
+was actually cited:
+
+```python
+from haiku.rag.capabilities.compaction import create_capability as compaction
+from haiku.rag.capabilities.rag import create_capability as rag
+
+agent = Agent(
+    "openai:gpt-5",
+    capabilities=[rag(db_path="my.lancedb"), compaction()],
+)
+```
+
+Cited text and cited page images are kept in full, grouped by the question that
+cited them, and stay citable by the same chunk ids. Everything else earlier becomes a
+short receipt. Registering the capability is the only switch: leave it out and the
+transcript reaches the model untouched. There is nothing to configure.
+
+Compaction rewrites the request, never the stored history, so `all_messages()` still
+holds everything the run gathered. Retained evidence still grows with the
+conversation — this reduces what a request carries, it does not bound it. A host that
+needs more aggressive pruning can compact its own requests further, on the wire only.
+
+Resuming a question (deferred tool results, an interruption, a suspension) requires
+the host to carry the capability state from the run being resumed, alongside the
+message history. Without it the identity of the question in progress is unknowable
+and the run fails rather than silently treating it as a new question.
 
 ## State
 

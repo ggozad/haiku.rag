@@ -1,6 +1,7 @@
 import asyncio
 import uuid
 from collections.abc import Iterable, Sequence
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -25,6 +26,7 @@ from textual.worker import Worker
 
 from haiku.rag.capabilities._base import RAGCapabilityBase
 from haiku.rag.capabilities.analysis import AnalysisState
+from haiku.rag.capabilities.compaction import create_capability as create_compaction
 from haiku.rag.capabilities.rag import AGENT_PREAMBLE, RAGState
 from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
 from haiku.rag.chat.widgets.image_select import ImageAdded
@@ -153,7 +155,9 @@ class ChatApp(App):
             self._model,
             deps_type=ChatDeps,
             instructions=AGENT_PREAMBLE,
-            capabilities=self._capabilities,
+            # A chat is multi-turn by definition, so earlier questions are reduced
+            # to the evidence they cited rather than carried whole.
+            capabilities=[*self._capabilities, create_compaction()],
         )
         self._state = {}
         for capability in self._capabilities:
@@ -205,7 +209,12 @@ class ChatApp(App):
         await chat_history.show_thinking()
 
         message = None
-        deps = ChatDeps(state=self._state)
+        # The run gets a copy: state and message history have to advance together.
+        # A cancelled or failed run discards its messages, and state that advanced
+        # anyway would leave the next question deriving its identity from a shorter
+        # history than the evidence already recorded — refused as non-append-only,
+        # with the conversation stuck until it is cleared.
+        deps = ChatDeps(state=deepcopy(self._state))
 
         try:
             async with self._agent.run_stream_events(

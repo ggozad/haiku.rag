@@ -37,16 +37,19 @@ class RAGState(BaseModel):
     citation_index: dict[str, Citation]
     citations: list[str]
     document_filter: str | None
+    evidence: CapabilityEvidenceRecord
     searches: dict[str, list[SearchResult]]
 ```
 
-`document_filter` persists between runs. Current citations and searches reset for each run, while the citation index remains available to the host application.
+`document_filter`, `citation_index` and `evidence` persist across runs. Citations and searches are cleared when a new question starts; a run that resumes a question keeps the evidence it is still answering from.
+
+`evidence` records which chunks this capability retrieved and cited, and in which question. `haiku.rag.capabilities.ledger.citation_status(records, question=...)` derives `missing`, `grounded` or `ungrounded` from it, across capabilities.
 
 State is ordinary application state; the capability does not depend on AG-UI. An AG-UI application can expose it using Pydantic AI's standard adapter.
 
 ## Context management
 
-Large RAG tool results from earlier user turns are replaced with a short marker before model requests. Tool-call pairing and current-turn evidence are retained. This prevents long conversations from repeatedly sending old retrieved content.
+This capability does not alter the message history. To stop long conversations resending old retrieved content, register the [compaction capability](index.md#multi-turn-conversations) alongside it.
 
 ## Domain context and vision
 

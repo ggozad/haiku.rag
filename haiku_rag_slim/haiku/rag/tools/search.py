@@ -10,11 +10,35 @@ from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models import SearchResult
 from haiku.rag.tools.context import RAGDeps
 
+RETRIEVED_IMAGE_TAG = "[haiku.rag/retrieved-image]"
+"""Tag every label we attach to a retrieved picture ends with.
 
-def build_binary_parts_from_results(
+Identifies our own pictures on the wire without inferring ownership from position,
+which is wrong as soon as two tools' results arrive in one request. Deliberately not
+a phrase: a user writing "retrieved from the knowledge base for my report" above
+their own picture had it removed, along with their text.
+"""
+
+
+def decode_picture(data: bytes, self_ref: str) -> BinaryContent | None:
+    """Wrap picture bytes for the wire, or return nothing if they will not decode.
+
+    The model adapter renders one vision placeholder per ``BinaryContent``, so
+    emitting one for an image the server cannot decode leaves the processor with an
+    off-by-one count.
+    """
+    try:
+        with Image.open(BytesIO(data)) as image:
+            image.verify()
+    except Exception:
+        return None
+    return BinaryContent(data=data, media_type="image/png", identifier=self_ref)
+
+
+def build_image_content_from_results(
     results: list[SearchResult],
-) -> list[BinaryContent]:
-    """Decode and validate picture bytes attached to search results.
+) -> list[str | BinaryContent]:
+    """Decode and validate picture bytes attached to search results, labelled.
 
     Dedup keyed on ``(document_id, self_ref)`` so the same picture in
     different chunks is sent once. Pictures that fail
@@ -22,8 +46,18 @@ def build_binary_parts_from_results(
     vision placeholder per ``BinaryContent``, so emitting one for an
     image the server can't decode leaves the processor with an
     off-by-one count.
+
+    Every picture is preceded by a line naming the result it belongs to.
+    ``ToolReturn.content`` reaches the model as a user-role message, so
+    retrieved pictures are otherwise indistinguishable from ones the user
+    attached, and models narrate them as part of the question: unlabelled,
+    gemma4-26b answered about a figure from an unrelated document, and with a
+    single note ahead of the batch it still called them "images in the prompt".
+    The label also names the chunk to cite for a figure, which
+    ``BinaryContent.identifier`` cannot do — it does not survive serialization
+    to the vision API.
     """
-    parts: list[BinaryContent] = []
+    collected: list[tuple[str | None, str, BinaryContent]] = []
     seen: set[tuple[str | None, str]] = set()
     for result in results:
         if not result.image_data:
@@ -32,21 +66,22 @@ def build_binary_parts_from_results(
             key = (result.document_id, self_ref)
             if key in seen:
                 continue
-            data = base64.b64decode(b64)
-            try:
-                with Image.open(BytesIO(data)) as img:
-                    img.verify()
-            except Exception:
+            picture = decode_picture(base64.b64decode(b64), self_ref)
+            if picture is None:
                 continue
-            parts.append(
-                BinaryContent(
-                    data=data,
-                    media_type="image/png",
-                    identifier=self_ref,
-                )
-            )
+            collected.append((result.chunk_id, self_ref, picture))
             seen.add(key)
-    return parts
+
+    content: list[str | BinaryContent] = []
+    total = len(collected)
+    for position, (chunk_id, self_ref, picture) in enumerate(collected, 1):
+        content.append(
+            f"Page image {position} of {total}, retrieved from the knowledge base "
+            f"for search result [{chunk_id}] ({self_ref}). "
+            f"Not provided by the user. {RETRIEVED_IMAGE_TAG}"
+        )
+        content.append(picture)
+    return content
 
 
 def create_search_toolset(
@@ -134,9 +169,9 @@ def create_search_toolset(
         if not config.qa.model.vision:
             return text
 
-        binary_parts = build_binary_parts_from_results(results_list)
-        if binary_parts:
-            return ToolReturn(return_value=text, content=binary_parts)
+        image_content = build_image_content_from_results(results_list)
+        if image_content:
+            return ToolReturn(return_value=text, content=image_content)
         return text
 
     toolset: FunctionToolset[RAGDeps] = FunctionToolset()
