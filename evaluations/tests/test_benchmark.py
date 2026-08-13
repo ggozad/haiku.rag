@@ -581,6 +581,178 @@ class TestRetrievalTarget:
         assert result["map"] == 0.5
 
 
+class TestResolveSearchFilter:
+    def test_dataset_filter_used_when_no_override(self) -> None:
+        from evaluations.benchmark import resolve_search_filter
+
+        spec = _stub_spec(search_filter="db_source in ('dataset')")
+        assert resolve_search_filter(spec, None) == "db_source in ('dataset')"
+
+    def test_override_wins(self) -> None:
+        from evaluations.benchmark import resolve_search_filter
+
+        spec = _stub_spec(search_filter="db_source in ('dataset')")
+        assert resolve_search_filter(spec, "uri LIKE '%.pdf'") == "uri LIKE '%.pdf'"
+
+    def test_empty_override_clears_dataset_filter(self) -> None:
+        """`--filter ""` runs a filtered dataset against the whole database."""
+        from evaluations.benchmark import resolve_search_filter
+
+        spec = _stub_spec(search_filter="db_source in ('dataset')")
+        assert resolve_search_filter(spec, "") is None
+
+    def test_none_when_neither_is_set(self) -> None:
+        from evaluations.benchmark import resolve_search_filter
+
+        assert resolve_search_filter(_stub_spec(), None) is None
+
+
+class TestSearchFilterThreading:
+    """The resolved filter must reach both benchmark phases, so retrieval and
+    QA score the same subset of the database."""
+
+    def test_metadata_records_filter(self) -> None:
+        result = build_experiment_metadata(
+            dataset_key="test",
+            test_cases=1,
+            config=AppConfig(),
+            search_filter="db_source in ('dataset')",
+        )
+        assert result["search_filter"] == "db_source in ('dataset')"
+
+    def test_metadata_filter_is_none_when_unset(self) -> None:
+        result = build_experiment_metadata(
+            dataset_key="test", test_cases=1, config=AppConfig()
+        )
+        assert result["search_filter"] is None
+
+    @pytest.mark.asyncio
+    async def test_retrieval_search_receives_filter(self, tmp_path: Path) -> None:
+        from haiku.rag.store.models.chunk import SearchResult
+
+        from evaluations.benchmark import run_retrieval_benchmark
+        from evaluations.config import RetrievalSample
+        from evaluations.evaluators import MAPEvaluator
+
+        searches: list[dict] = []
+
+        class FakeRag:
+            async def search(self, **kwargs) -> list[SearchResult]:
+                searches.append(kwargs)
+                return [SearchResult(content="x", score=1.0, document_uri="uri-x")]
+
+        spec = _stub_spec(
+            retrieval_loader=lambda: [{"q": "What is X?", "uris": ("uri-x",)}],
+            retrieval_mapper=lambda d: RetrievalSample(
+                question=d["q"], expected_uris=d["uris"]
+            ),
+            retrieval_evaluator=MAPEvaluator(),
+        )
+
+        with patch("evaluations.benchmark.HaikuRAG") as mock_haiku:
+            mock_haiku.return_value.__aenter__.return_value = FakeRag()
+            await run_retrieval_benchmark(
+                spec,
+                AppConfig(),
+                db_path=tmp_path / "test.lancedb",
+                search_filter="db_source in ('dataset')",
+            )
+
+        assert searches[0]["filter"] == "db_source in ('dataset')"
+
+    @pytest.mark.asyncio
+    async def test_qa_capability_run_receives_filter(self, tmp_path: Path) -> None:
+        from pydantic_evals import Case
+
+        from evaluations.capability_runner import CapabilityRunResult
+        from evaluations.evaluators import NumberMatchEvaluator
+
+        # A deterministic evaluator, so no judge model is constructed.
+        spec = DatasetSpec(
+            key="test",
+            db_filename="test.lancedb",
+            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            document_mapper=lambda doc: None,
+            qa_loader=lambda: [{"question": "What is X?", "answer": "42"}],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            qa_case_builder=lambda idx, doc: Case(
+                name=f"case-{idx}",
+                inputs=doc["question"],
+                expected_output=doc["answer"],
+            ),
+            qa_evaluator=NumberMatchEvaluator(),
+        )
+
+        with patch(
+            "evaluations.benchmark.run_capability_question",
+            new_callable=AsyncMock,
+            return_value=CapabilityRunResult(answer="ANSWER: 42"),
+        ) as mock_run:
+            await run_qa_benchmark(
+                spec,
+                AppConfig(),
+                db_path=tmp_path / "test.lancedb",
+                search_filter="db_source in ('dataset')",
+            )
+
+        mock_run.assert_awaited_once()
+        assert mock_run.await_args[1]["document_filter"] == "db_source in ('dataset')"
+
+    @pytest.mark.asyncio
+    async def test_evaluate_dataset_resolves_once_for_both_phases(self) -> None:
+        """The dataset's own filter reaches retrieval and QA without a flag."""
+        spec = _stub_spec(search_filter="db_source in ('dataset','other')")
+
+        with (
+            patch(
+                "evaluations.benchmark.run_retrieval_benchmark", new_callable=AsyncMock
+            ) as mock_retrieval,
+            patch(
+                "evaluations.benchmark.run_qa_benchmark", new_callable=AsyncMock
+            ) as mock_qa,
+        ):
+            await evaluate_dataset(
+                spec=spec,
+                config=AppConfig(),
+                skip_db=True,
+                skip_retrieval=False,
+                skip_qa=False,
+                limit=None,
+                name=None,
+                db_path=None,
+            )
+
+        expected = "db_source in ('dataset','other')"
+        assert mock_retrieval.call_args[1]["search_filter"] == expected
+        assert mock_qa.call_args[1]["search_filter"] == expected
+
+    @pytest.mark.asyncio
+    async def test_evaluate_dataset_override_reaches_both_phases(self) -> None:
+        spec = _stub_spec(search_filter="db_source in ('dataset','other')")
+
+        with (
+            patch(
+                "evaluations.benchmark.run_retrieval_benchmark", new_callable=AsyncMock
+            ) as mock_retrieval,
+            patch(
+                "evaluations.benchmark.run_qa_benchmark", new_callable=AsyncMock
+            ) as mock_qa,
+        ):
+            await evaluate_dataset(
+                spec=spec,
+                config=AppConfig(),
+                skip_db=True,
+                skip_retrieval=False,
+                skip_qa=False,
+                limit=None,
+                name=None,
+                db_path=None,
+                search_filter="db_source in ('other')",
+            )
+
+        assert mock_retrieval.call_args[1]["search_filter"] == "db_source in ('other')"
+        assert mock_qa.call_args[1]["search_filter"] == "db_source in ('other')"
+
+
 class TestEvaluateDatasetCaseIds:
     def _spec(self) -> DatasetSpec:
         return _stub_spec()

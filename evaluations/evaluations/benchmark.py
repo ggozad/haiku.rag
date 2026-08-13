@@ -57,6 +57,16 @@ configure_telemetry(service_name="evals", scrubbing=False)
 configure_cli_logging()
 console = Console()
 
+def resolve_search_filter(spec: DatasetSpec, override: str | None) -> str | None:
+    """Pick the document filter for a run: `--filter` wins over the dataset's.
+
+    An empty `--filter ""` is honoured as "no filter", so a dataset that
+    declares one can still be run against the whole database.
+    """
+    if override is None:
+        return spec.search_filter
+    return override or None
+
 
 def build_experiment_metadata(
     dataset_key: str,
@@ -65,6 +75,7 @@ def build_experiment_metadata(
     judge_config: ModelConfig | None = None,
     target: Target = "rag-capability",
     capability_config: ModelConfig | None = None,
+    search_filter: str | None = None,
 ) -> dict[str, Any]:
     """Build experiment metadata for Logfire tracking."""
     metadata: dict[str, Any] = {
@@ -88,6 +99,7 @@ def build_experiment_metadata(
         "qa_enable_thinking": config.qa.model.enable_thinking,
         "qa_extra_body": config.qa.model.extra_body,
         "qa_max_searches": config.qa.max_searches,
+        "search_filter": search_filter,
     }
     if judge_config is not None:
         metadata.update(
@@ -191,6 +203,7 @@ async def run_retrieval_benchmark(
     name: str | None = None,
     db_path: Path | None = None,
     multimodal_only: bool = False,
+    search_filter: str | None = None,
 ) -> dict[str, float] | None:
     if spec.retrieval_loader is None or spec.retrieval_mapper is None:
         console.print("Skipping retrieval benchmark; no retrieval config.")
@@ -246,7 +259,9 @@ async def run_retrieval_benchmark(
     async with HaikuRAG(db, config=config, read_only=True) as rag:
 
         async def retrieval_target(question: str) -> list[str]:
-            chunks = await rag.search(query=question, limit=5, include_images=False)
+            chunks = await rag.search(
+                query=question, limit=5, include_images=False, filter=search_filter
+            )
 
             seen = set()
             identifiers = []
@@ -264,6 +279,7 @@ async def run_retrieval_benchmark(
             dataset_key=spec.key,
             test_cases=len(cases),
             config=config,
+            search_filter=search_filter,
         )
 
         report = await dataset.evaluate(
@@ -364,6 +380,7 @@ async def run_qa_benchmark(
     target: Target = "rag-capability",
     capability_model: ModelConfig | None = None,
     case_ids: set[str] | None = None,
+    search_filter: str | None = None,
 ) -> ReportCaseFailure[str, str, dict[str, str]] | None:
     corpus = spec.qa_loader()
     corpus = _filter_qa_corpus(corpus, case_ids)
@@ -419,6 +436,7 @@ async def run_qa_benchmark(
         judge_config=judge_config,
         target=target,
         capability_config=capability_config,
+        search_filter=search_filter,
     )
 
     async def _evaluate(answer_fn: Callable[[str], Awaitable[str]]):
@@ -440,6 +458,7 @@ async def run_qa_benchmark(
             config=config,
             question=question,
             capability_model=resolved_capability_model,
+            document_filter=search_filter,
         )
         set_eval_attribute("cited_uris", result.cited_uris)
         set_eval_attribute("cited_chunk_ids", result.cited_chunk_ids)
@@ -530,7 +549,13 @@ async def evaluate_dataset(
     target: Target = "rag-capability",
     capability_model: ModelConfig | None = None,
     case_ids: set[str] | None = None,
+    search_filter: str | None = None,
 ) -> None:
+    # Resolved once so both phases score the same subset of the database.
+    resolved_filter = resolve_search_filter(spec, search_filter)
+    if resolved_filter is not None:
+        console.print(f"Document filter: {resolved_filter}", style="dim")
+
     if not skip_db:
         console.print(f"Using dataset: {spec.key}", style="bold magenta")
         await populate_db(
@@ -546,6 +571,7 @@ async def evaluate_dataset(
             name=name,
             db_path=db_path,
             multimodal_only=multimodal_only,
+            search_filter=resolved_filter,
         )
 
     if not skip_qa:
@@ -562,6 +588,7 @@ async def evaluate_dataset(
             target=target,
             capability_model=capability_model,
             case_ids=case_ids,
+            search_filter=resolved_filter,
         )
 
 
@@ -651,6 +678,17 @@ def run(
             "analysis.model when --target is analysis-capability) from the config."
         ),
     ),
+    search_filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help=(
+            "SQL WHERE clause over document columns (id, uri, title, metadata, "
+            "db_source, ...) restricting every benchmark search, e.g. "
+            "\"db_source in ('dataset')\". Overrides the dataset's own "
+            "filter; pass an empty string to search the whole database."
+        ),
+    ),
     filter_ids: Path | None = typer.Option(
         None,
         "--filter-ids",
@@ -688,6 +726,7 @@ def run(
             target=target_value,
             capability_model=capability_model_config,
             case_ids=_load_case_ids(filter_ids),
+            search_filter=search_filter,
         )
     )
 
