@@ -11,6 +11,7 @@ from lancedb.rerankers import RRFReranker
 
 from haiku.rag.store.engine import Store, query_to_pydantic
 from haiku.rag.store.models.chunk import Chunk, SearchType
+from haiku.rag.telemetry import logfire
 from haiku.rag.utils import escape_sql_string
 
 logger = logging.getLogger(__name__)
@@ -205,6 +206,23 @@ class ChunkRepository:
         await self.store.chunks_table.delete(f"document_id = '{document_id}'")
         return True
 
+    async def _embed_query(self, query: str) -> list[float]:
+        """Embed a search query, timed as its own stage.
+
+        Instrumented here rather than in ``EmbedderWrapper.embed_query``
+        because the multimodal embedders (vllm, cohere, voyageai) override
+        that method — the very providers whose embedding is a remote round
+        trip. Wrapping the call site covers every embedder uniformly.
+        """
+        with logfire.span(
+            "search.embed",
+            provider=self.store._config.embeddings.model.provider,
+            model=self.store._config.embeddings.model.name,
+        ) as span:
+            embedding = await self.embedder.embed_query(query)
+            span.set_attribute("dim", len(embedding))
+            return embedding
+
     async def search(
         self,
         query: str = "",
@@ -255,7 +273,7 @@ class ChunkRepository:
                 .refine_factor(self.store._config.search.vector_refine_factor)
             )
         elif search_type == "vector":
-            query_embedding = await self.embedder.embed_query(query)
+            query_embedding = await self._embed_query(query)
             results = (
                 self.store.chunks_table.query()
                 .nearest_to(query_embedding)
@@ -267,7 +285,7 @@ class ChunkRepository:
                 query, columns="content_fts"
             )
         else:  # hybrid (default)
-            query_embedding = await self.embedder.embed_query(query)
+            query_embedding = await self._embed_query(query)
             reranker = RRFReranker()
             results = (
                 self.store.chunks_table.query()
@@ -402,55 +420,70 @@ class ChunkRepository:
             else:
                 raise ValueError("Unknown search result format, cannot extract scores")
 
-        df = await query_result.to_pandas()
+        # The query builder is lazy — `nearest_to`/`nearest_to_text`/`rerank`
+        # only describe the query. This await is where LanceDB actually runs
+        # the ANN and FTS passes, so it is the stage worth timing.
+        with logfire.span("search.execute") as span:
+            df = await query_result.to_pandas()
+            span.set_attribute("rows", len(df))
 
-        # Extract scores
-        scores = extract_scores(df)
+        # Turning the frame into Chunks costs one more LanceDB read (the
+        # document metadata batch) plus a per-row json.loads — at the
+        # limit*10 candidate fan-out a reranked search uses, that is not
+        # free. Timed apart from `search.execute` so a slow search can be
+        # blamed on LanceDB or on this, but not ambiguously on both.
+        with logfire.span("search.hydrate") as span:
+            # Extract scores
+            scores = extract_scores(df)
 
-        # Convert DataFrame rows to ChunkRecords
-        pydantic_results = [
-            self.store.ChunkRecord(
-                id=str(row["id"]),
-                document_id=str(row["document_id"]),
-                content=str(row["content"]),
-                content_fts=str(row.get("content_fts", "")),
-                metadata=str(row["metadata"]),
-                order=int(row["order"]) if "order" in row else 0,
-            )
-            for _, row in df.iterrows()
-        ]
+            # Convert DataFrame rows to ChunkRecords
+            pydantic_results = [
+                self.store.ChunkRecord(
+                    id=str(row["id"]),
+                    document_id=str(row["document_id"]),
+                    content=str(row["content"]),
+                    content_fts=str(row.get("content_fts", "")),
+                    metadata=str(row["metadata"]),
+                    order=int(row["order"]) if "order" in row else 0,
+                )
+                for _, row in df.iterrows()
+            ]
 
-        # Collect all unique document IDs for batch lookup
-        document_ids = list(set(chunk.document_id for chunk in pydantic_results))
+            # Collect all unique document IDs for batch lookup
+            document_ids = list(set(chunk.document_id for chunk in pydantic_results))
+            span.set_attribute("documents", len(document_ids))
 
-        # Batch fetch document metadata (skip content/docling blobs)
-        documents_map: dict[str, dict] = {}
-        if document_ids:
-            id_list = "', '".join(document_ids)
-            where_clause = f"id IN ('{id_list}')"
-            doc_rows = await (
-                self.store.document_meta_table.query()
-                .select(["id", "uri", "title", "metadata"])
-                .where(where_clause)
-                .to_list()
-            )
-            documents_map = {str(row["id"]): row for row in doc_rows}
+            # Batch fetch document metadata (skip content/docling blobs)
+            documents_map: dict[str, dict] = {}
+            if document_ids:
+                id_list = "', '".join(document_ids)
+                where_clause = f"id IN ('{id_list}')"
+                doc_rows = await (
+                    self.store.document_meta_table.query()
+                    .select(["id", "uri", "title", "metadata"])
+                    .where(where_clause)
+                    .to_list()
+                )
+                documents_map = {str(row["id"]): row for row in doc_rows}
 
-        # Build final results with document info
-        chunks_with_scores = []
-        for i, chunk_record in enumerate(pydantic_results):
-            doc = documents_map.get(chunk_record.document_id)
-            chunk = Chunk(
-                id=chunk_record.id,
-                document_id=chunk_record.document_id,
-                content=chunk_record.content,
-                metadata=json.loads(chunk_record.metadata),
-                order=chunk_record.order,
-                document_uri=doc["uri"] if doc else None,
-                document_title=doc["title"] if doc else None,
-                document_meta=json.loads(doc.get("metadata", "{}") if doc else "{}"),
-            )
-            score = scores[i] if i < len(scores) else 1.0
-            chunks_with_scores.append((chunk, score))
+            # Build final results with document info
+            chunks_with_scores = []
+            for i, chunk_record in enumerate(pydantic_results):
+                doc = documents_map.get(chunk_record.document_id)
+                chunk = Chunk(
+                    id=chunk_record.id,
+                    document_id=chunk_record.document_id,
+                    content=chunk_record.content,
+                    metadata=json.loads(chunk_record.metadata),
+                    order=chunk_record.order,
+                    document_uri=doc["uri"] if doc else None,
+                    document_title=doc["title"] if doc else None,
+                    document_meta=json.loads(
+                        doc.get("metadata", "{}") if doc else "{}"
+                    ),
+                )
+                score = scores[i] if i < len(scores) else 1.0
+                chunks_with_scores.append((chunk, score))
 
-        return chunks_with_scores
+            span.set_attribute("chunks", len(chunks_with_scores))
+            return chunks_with_scores

@@ -4,11 +4,34 @@ from typing import TYPE_CHECKING
 
 from haiku.rag.store.models.chunk import Chunk, SearchResult, SearchType
 from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX
+from haiku.rag.telemetry import logfire
 
 if TYPE_CHECKING:
     from PIL import Image as PILImage
 
     from haiku.rag.client import HaikuRAG
+    from haiku.rag.reranking.base import RerankerBase
+
+
+def _get_reranker(client: "HaikuRAG") -> "RerankerBase | None":
+    """Materialize the client's reranker, timing the first touch.
+
+    ``HaikuRAG.reranker`` is a ``cached_property``, and the local rerankers
+    load model weights in their constructor — seconds of synchronous work on
+    the event loop that otherwise lands unattributed inside whichever search
+    happened to be first. Every later search hits the cache and emits
+    nothing, so a ``search.reranker.load`` span in a trace means a cold
+    process, not a slow reranker.
+    """
+    if "reranker" in client.__dict__:
+        return client.reranker
+    model = client._config.reranking.model
+    with logfire.span(
+        "search.reranker.load",
+        provider=model.provider if model else None,
+        model=model.name if model else None,
+    ):
+        return client.reranker
 
 
 async def search(
@@ -42,7 +65,7 @@ async def search(
         if search_type is None:
             search_type = "hybrid"
 
-        reranker = client.reranker
+        reranker = _get_reranker(client)
 
         if reranker is None:
             chunk_results = await client.chunk_repository.search(
@@ -149,51 +172,64 @@ async def _populate_image_data(client: "HaikuRAG", results: list[SearchResult]) 
         if r.document_id and r.doc_item_refs:
             by_doc.setdefault(r.document_id, []).append(r)
 
-    for doc_id, doc_results in by_doc.items():
-        all_refs = {ref for r in doc_results for ref in r.doc_item_refs}
-        caption_to_picture = await repo.get_caption_picture_refs(doc_id, list(all_refs))
+    # Up to three reads per document plus base64 encoding of every blob, so
+    # `documents` is the round-trip multiplier and `bytes` the encoding load.
+    # Both are counted raw (pre-base64); the encoded payload is ~4/3 of it.
+    with logfire.span("search.images", documents=len(by_doc)) as span:
+        picture_count = 0
+        picture_bytes = 0
+        for doc_id, doc_results in by_doc.items():
+            all_refs = {ref for r in doc_results for ref in r.doc_item_refs}
+            caption_to_picture = await repo.get_caption_picture_refs(
+                doc_id, list(all_refs)
+            )
 
-        result_pictures: list[tuple[SearchResult, list[str]]] = []
-        wanted: list[str] = []
-        seen: set[str] = set()
-        for r in doc_results:
-            pictures: list[str] = []
-            for ref in r.doc_item_refs:
-                picture = (
-                    ref
-                    if ref.startswith(PICTURE_REF_PREFIX)
-                    else caption_to_picture.get(ref)
-                )
-                if picture and picture not in pictures:
-                    pictures.append(picture)
-            if pictures:
-                result_pictures.append((r, pictures))
-                for picture in pictures:
-                    if picture not in seen:
-                        wanted.append(picture)
-                        seen.add(picture)
-        if not wanted:
-            continue
-        bytes_by_ref = await repo.get_pictures_for_chunk(doc_id, wanted)
-        if not bytes_by_ref:
-            continue
-        captions_by_ref = await repo.get_text_for_refs(
-            doc_id, list(bytes_by_ref.keys())
-        )
-        for r, pictures in result_pictures:
-            attached: dict[str, str] = {}
-            captions: dict[str, str] = {}
-            for ref in pictures:
-                blob = bytes_by_ref.get(ref)
-                if blob:
-                    attached[ref] = base64.b64encode(blob).decode("ascii")
-                    caption = captions_by_ref.get(ref)
-                    if caption:
-                        captions[ref] = caption
-            if attached:
-                r.image_data = attached
-            if captions:
-                r.picture_captions = captions
+            result_pictures: list[tuple[SearchResult, list[str]]] = []
+            wanted: list[str] = []
+            seen: set[str] = set()
+            for r in doc_results:
+                pictures: list[str] = []
+                for ref in r.doc_item_refs:
+                    picture = (
+                        ref
+                        if ref.startswith(PICTURE_REF_PREFIX)
+                        else caption_to_picture.get(ref)
+                    )
+                    if picture and picture not in pictures:
+                        pictures.append(picture)
+                if pictures:
+                    result_pictures.append((r, pictures))
+                    for picture in pictures:
+                        if picture not in seen:
+                            wanted.append(picture)
+                            seen.add(picture)
+            if not wanted:
+                continue
+            bytes_by_ref = await repo.get_pictures_for_chunk(doc_id, wanted)
+            if not bytes_by_ref:
+                continue
+            captions_by_ref = await repo.get_text_for_refs(
+                doc_id, list(bytes_by_ref.keys())
+            )
+            for r, pictures in result_pictures:
+                attached: dict[str, str] = {}
+                captions: dict[str, str] = {}
+                for ref in pictures:
+                    blob = bytes_by_ref.get(ref)
+                    if blob:
+                        attached[ref] = base64.b64encode(blob).decode("ascii")
+                        picture_count += 1
+                        picture_bytes += len(blob)
+                        caption = captions_by_ref.get(ref)
+                        if caption:
+                            captions[ref] = caption
+                if attached:
+                    r.image_data = attached
+                if captions:
+                    r.picture_captions = captions
+
+        span.set_attribute("pictures", picture_count)
+        span.set_attribute("bytes", picture_bytes)
 
 
 async def expand_context(
@@ -223,23 +259,38 @@ async def expand_context(
 
     expanded_results = []
 
-    for doc_id, doc_results in document_groups.items():
-        if doc_id is None:
-            expanded_results.extend(doc_results)
-            continue
+    # Each expanded document costs two round trips (resolve_refs, then
+    # get_items_in_range), so `documents` is the multiplier on this stage.
+    # `context_chars` is the payload the model is about to be handed, which
+    # ties retrieval time to the next request's prompt size.
+    with logfire.span(
+        "search.expand",
+        documents=len(document_groups),
+        max_chars=max_chars,
+        results_in=len(search_results),
+    ) as span:
+        for doc_id, doc_results in document_groups.items():
+            if doc_id is None:
+                expanded_results.extend(doc_results)
+                continue
 
-        has_refs = any(r.doc_item_refs for r in doc_results)
-        if not has_refs:
-            expanded_results.extend(doc_results)
-            continue
+            has_refs = any(r.doc_item_refs for r in doc_results)
+            if not has_refs:
+                expanded_results.extend(doc_results)
+                continue
 
-        expanded = await expand_with_items(
-            client.document_item_repository,
-            doc_id,
-            doc_results,
-            max_chars,
+            expanded = await expand_with_items(
+                client.document_item_repository,
+                doc_id,
+                doc_results,
+                max_chars,
+            )
+            expanded_results.extend(expanded)
+
+        span.set_attribute("results_out", len(expanded_results))
+        span.set_attribute(
+            "context_chars", sum(len(r.content) for r in expanded_results)
         )
-        expanded_results.extend(expanded)
 
     expanded_results.sort(key=lambda r: r.score, reverse=True)
     # image_data and picture_captions are preserved through expansion by

@@ -33,6 +33,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.citation import Citation, resolve_citations
+from haiku.rag.telemetry import logfire
 from haiku.rag.tools.search import build_image_content_from_results
 
 CITATION_GRACE_REQUESTS = 2
@@ -350,9 +351,13 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         if self.rag is None:
             async with self.resource_lock:
                 if self.rag is None:
-                    rag = HaikuRAG(self.db_path, config=self.config, read_only=True)
-                    await rag.__aenter__()
-                    self.rag = rag
+                    # Opening the store is lazy, so the run's first tool call
+                    # pays it. Spanned separately or it reads as "the first
+                    # search was slow" with nothing to point at.
+                    with logfire.span("rag.client.open", db_path=str(self.db_path)):
+                        rag = HaikuRAG(self.db_path, config=self.config, read_only=True)
+                        await rag.__aenter__()
+                        self.rag = rag
         return self.rag
 
     async def get_picture_bytes(self, document_id: str, self_ref: str) -> bytes | None:
@@ -430,19 +435,34 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
                 "Search limit reached. Answer the question using "
                 "the results you already have."
             )
-        async with self.rag_lock:
-            formatted, results = await search_corpus(
-                await self._ensure_rag(),
-                query,
-                limit=limit,
-                document_filter=getattr(self.state, "document_filter", None),
-            )
-        state = cast(Any, self.state)
-        state.searches[query] = results
-        self._note_evidence()
-        if self.vision and (parts := build_image_content_from_results(results)):
-            return ToolReturn(return_value=formatted, content=parts)
-        return formatted
+        # Opened after the budget check so the span means "a search ran" —
+        # a refused call is already visible as the tool span's exception.
+        # `search_index` is what shows whether cost grows across a run or
+        # one search was pathological; the tool span alone cannot tell them
+        # apart, and the first search also carries the one-off store open.
+        with logfire.span(
+            "ask.tool.search",
+            namespace=self.state_namespace,
+            search_index=self.search_count,
+            max_searches=self._max_searches,
+            limit=limit,
+        ) as span:
+            async with self.rag_lock:
+                formatted, results = await search_corpus(
+                    await self._ensure_rag(),
+                    query,
+                    limit=limit,
+                    document_filter=getattr(self.state, "document_filter", None),
+                )
+            span.set_attribute("results", len(results))
+            span.set_attribute("formatted_chars", len(formatted))
+            state = cast(Any, self.state)
+            state.searches[query] = results
+            self._note_evidence()
+            if self.vision and (parts := build_image_content_from_results(results)):
+                span.set_attribute("image_parts", len(parts))
+                return ToolReturn(return_value=formatted, content=parts)
+            return formatted
 
     async def _cite(self, chunk_ids: list[str]) -> str:
         """Register the evidence behind this answer, or declare there is none.
