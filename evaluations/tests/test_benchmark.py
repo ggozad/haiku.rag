@@ -585,20 +585,20 @@ class TestResolveSearchFilter:
     def test_dataset_filter_used_when_no_override(self) -> None:
         from evaluations.benchmark import resolve_search_filter
 
-        spec = _stub_spec(search_filter="db_source in ('dataset')")
-        assert resolve_search_filter(spec, None) == "db_source in ('dataset')"
+        spec = _stub_spec(search_filter="uri LIKE '%arxiv%'")
+        assert resolve_search_filter(spec, None) == "uri LIKE '%arxiv%'"
 
     def test_override_wins(self) -> None:
         from evaluations.benchmark import resolve_search_filter
 
-        spec = _stub_spec(search_filter="db_source in ('dataset')")
+        spec = _stub_spec(search_filter="uri LIKE '%arxiv%'")
         assert resolve_search_filter(spec, "uri LIKE '%.pdf'") == "uri LIKE '%.pdf'"
 
     def test_empty_override_clears_dataset_filter(self) -> None:
         """`--filter ""` runs a filtered dataset against the whole database."""
         from evaluations.benchmark import resolve_search_filter
 
-        spec = _stub_spec(search_filter="db_source in ('dataset')")
+        spec = _stub_spec(search_filter="uri LIKE '%arxiv%'")
         assert resolve_search_filter(spec, "") is None
 
     def test_none_when_neither_is_set(self) -> None:
@@ -616,9 +616,9 @@ class TestSearchFilterThreading:
             dataset_key="test",
             test_cases=1,
             config=AppConfig(),
-            search_filter="db_source in ('dataset')",
+            search_filter="uri LIKE '%arxiv%'",
         )
-        assert result["search_filter"] == "db_source in ('dataset')"
+        assert result["search_filter"] == "uri LIKE '%arxiv%'"
 
     def test_metadata_filter_is_none_when_unset(self) -> None:
         result = build_experiment_metadata(
@@ -655,10 +655,10 @@ class TestSearchFilterThreading:
                 spec,
                 AppConfig(),
                 db_path=tmp_path / "test.lancedb",
-                search_filter="db_source in ('dataset')",
+                search_filter="uri LIKE '%arxiv%'",
             )
 
-        assert searches[0]["filter"] == "db_source in ('dataset')"
+        assert searches[0]["filter"] == "uri LIKE '%arxiv%'"
 
     @pytest.mark.asyncio
     async def test_qa_capability_run_receives_filter(self, tmp_path: Path) -> None:
@@ -691,16 +691,16 @@ class TestSearchFilterThreading:
                 spec,
                 AppConfig(),
                 db_path=tmp_path / "test.lancedb",
-                search_filter="db_source in ('dataset')",
+                search_filter="uri LIKE '%arxiv%'",
             )
 
         mock_run.assert_awaited_once()
-        assert mock_run.await_args[1]["document_filter"] == "db_source in ('dataset')"
+        assert mock_run.await_args[1]["document_filter"] == "uri LIKE '%arxiv%'"
 
     @pytest.mark.asyncio
     async def test_evaluate_dataset_resolves_once_for_both_phases(self) -> None:
         """The dataset's own filter reaches retrieval and QA without a flag."""
-        spec = _stub_spec(search_filter="db_source in ('dataset','other')")
+        spec = _stub_spec(search_filter="""metadata LIKE '%"corpus": "orb_text"%'""")
 
         with (
             patch(
@@ -721,13 +721,13 @@ class TestSearchFilterThreading:
                 db_path=None,
             )
 
-        expected = "db_source in ('dataset','other')"
+        expected = """metadata LIKE '%"corpus": "orb_text"%'"""
         assert mock_retrieval.call_args[1]["search_filter"] == expected
         assert mock_qa.call_args[1]["search_filter"] == expected
 
     @pytest.mark.asyncio
     async def test_evaluate_dataset_override_reaches_both_phases(self) -> None:
-        spec = _stub_spec(search_filter="db_source in ('dataset','other')")
+        spec = _stub_spec(search_filter="""metadata LIKE '%"corpus": "orb_text"%'""")
 
         with (
             patch(
@@ -746,11 +746,11 @@ class TestSearchFilterThreading:
                 limit=None,
                 name=None,
                 db_path=None,
-                search_filter="db_source in ('other')",
+                search_filter="title LIKE '%paper%'",
             )
 
-        assert mock_retrieval.call_args[1]["search_filter"] == "db_source in ('other')"
-        assert mock_qa.call_args[1]["search_filter"] == "db_source in ('other')"
+        assert mock_retrieval.call_args[1]["search_filter"] == "title LIKE '%paper%'"
+        assert mock_qa.call_args[1]["search_filter"] == "title LIKE '%paper%'"
 
 
 class TestEvaluateDatasetCaseIds:

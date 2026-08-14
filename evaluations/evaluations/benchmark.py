@@ -57,6 +57,7 @@ configure_telemetry(service_name="evals", scrubbing=False)
 configure_cli_logging()
 console = Console()
 
+
 def resolve_search_filter(spec: DatasetSpec, override: str | None) -> str | None:
     """Pick the document filter for a run: `--filter` wins over the dataset's.
 
@@ -683,9 +684,10 @@ def run(
         "--filter",
         "-f",
         help=(
-            "SQL WHERE clause over document columns (id, uri, title, metadata, "
-            "db_source, ...) restricting every benchmark search, e.g. "
-            "\"db_source in ('dataset')\". Overrides the dataset's own "
+            "SQL WHERE clause over document columns (id, uri, title, "
+            "created_at, updated_at, metadata) restricting every benchmark "
+            "search, e.g. \"uri LIKE '%arxiv%'\". metadata is stored as a "
+            "string, so match it with LIKE. Overrides the dataset's own "
             "filter; pass an empty string to search the whole database."
         ),
     ),

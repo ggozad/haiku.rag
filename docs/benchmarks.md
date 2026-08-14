@@ -89,11 +89,17 @@ evaluations:
 
 ### Restricting the corpus
 
-When a database holds documents from several corpora — only some of which a dataset's questions are drawn from — `--filter` restricts every benchmark search to a subset. It takes the same SQL `WHERE` clause as `haiku-rag search --filter`, over document columns (`id`, `uri`, `title`, `created_at`, `updated_at`, `metadata`, `db_source`):
+When a database holds documents from several corpora — only some of which a dataset's questions are drawn from — `--filter` restricts every benchmark search to a subset. It takes the same SQL `WHERE` clause as `haiku-rag search --filter`, over document columns (`id`, `uri`, `title`, `created_at`, `updated_at`, `metadata`):
 
 ```bash
-evaluations run mqf --skip-db --config haiku.rag.s3.yaml \
-  --filter "db_source in ('dataset')"
+evaluations run orb_text --skip-db --config haiku.rag.s3.yaml \
+  --filter "uri LIKE '%arxiv%'"
+```
+
+If the corpora are distinguished by a tag rather than by URI, attach it at ingest time as document metadata and match it with `LIKE`. `metadata` is stored as a `json.dumps` string, so there is no JSON subfield access — match the serialized key/value, including the space after the colon:
+
+```bash
+evaluations run orb_text --skip-db --filter "metadata LIKE '%\"corpus\": \"orb_text\"%'"
 ```
 
 The clause applies to both benchmark phases — the retrieval benchmark's searches and every search the capability runs during QA — so the two score the same subset. It is recorded as `search_filter` in the run's experiment metadata, so a filtered run is never mistaken for an unfiltered one when comparing results.
@@ -101,10 +107,10 @@ The clause applies to both benchmark phases — the retrieval benchmark's search
 A dataset can declare its own default in its `DatasetSpec`, so runs need no flag:
 
 ```python
-MQF_SPEC = DatasetSpec(
-    key="mqf",
+ORB_TEXT_SPEC = DatasetSpec(
+    key="orb_text",
     ...
-    search_filter="db_source in ('dataset')",
+    search_filter="uri LIKE '%arxiv%'",
 )
 ```
 
