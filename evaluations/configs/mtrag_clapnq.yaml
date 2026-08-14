@@ -1,6 +1,7 @@
 # Reference config for the `mtrag_clapnq` pre-built evaluation database.
 # IBM MTRAG, ClapNQ (Wikipedia) domain: multi-turn retrieval and QA over
-# 183,408 passages. Also serves mtrag_clapnq_rewrite and mtrag_clapnq_live.
+# 183,408 passages. Also serves mtrag_clapnq_rewrite, mtrag_clapnq_live and
+# mtrag_clapnq_live_uncompacted.
 # Run: evaluations run mtrag_clapnq --config configs/mtrag_clapnq.yaml
 # base_url uses the `vllm` host serving each model over an OpenAI-compatible API.
 # The corpus is text-only: no multimodal embedder, no vision paths. This eval
@@ -27,11 +28,18 @@ reranking:
 qa:
   model:
     provider: openai
-    name: gemma4-26b
-    base_url: http://vllm:11432/v1
+    name: RedHatAI/Muse-Glimmer-30B-NVFP4
+    base_url: http://vllm:11450/v1
     # vLLM enforces input + max_tokens <= max_model_len, so a large output
     # budget silently shrinks the input budget. MTRAG answers are sentences.
     max_tokens: 8192
+    extra_body:
+      chat_template_kwargs:
+        # Part of the measured baseline. vLLM's reasoning parser consumes
+        # enable_thinking before the chat template sees it; reasoning_strength
+        # is the knob Muse Glimmer templates honour, and a template that
+        # defaults it to low silently changes search behavior.
+        reasoning_strength: high
 
 evaluations:
   judge:
