@@ -1,13 +1,13 @@
 # Benchmarks
 
-We evaluate `haiku.rag` on a small set of datasets that exercise different parts of the pipeline. OpenRAG Bench (ORB), T²-RAGBench, HotpotQA, and Wix are the datasets we currently track. Retrieval, QA accuracy, and citation retrieval are scored end-to-end through the RAG and analysis capabilities.
+We evaluate `haiku.rag` on a small set of datasets that exercise different parts of the pipeline. OpenRAG Bench (ORB), T²-RAGBench, and HotpotQA are the datasets we currently track. Retrieval, QA accuracy, and citation retrieval are scored end-to-end through the RAG and analysis capabilities.
 
 ## Running Evaluations
 
 You can run evaluations with the `evaluations` CLI:
 
 ```bash
-evaluations run wix
+evaluations run hotpotqa
 evaluations run orb_text
 ```
 
@@ -19,20 +19,19 @@ Building evaluation databases from scratch can take a long time, especially for 
 
 ```bash
 # Download a specific dataset
-evaluations download wix
+evaluations download hotpotqa
 
 # Download all datasets
 evaluations download all
 
 # Force re-download (overwrite existing)
-evaluations download wix --force
+evaluations download hotpotqa --force
 ```
 
 Active datasets:
 
 | Dataset | Size |
 |---------|------|
-| `wix` | ~511MB |
 | `orb_text` — OpenRAG Bench, text embedder (`qwen3-embedding:4b`) with VLM picture descriptions baked into chunk content | ~18 GB |
 | `orb_multimodal` — OpenRAG Bench, multimodal embedder (`qwen3-vl-embedding-8b`); picture vectors live in the same space as text for cross-modal retrieval | ~16 GB |
 | `orb_multimodal_nemotron` — OpenRAG Bench, multimodal embedder (`nvidia/llama-nemotron-embed-vl-1b-v2`), the embedder behind the published headline results | ~16 GB |
@@ -52,7 +51,7 @@ The configs use `vllm` as the model host. Point `base_url` at your own OpenAI-co
 The benchmark script accepts several options:
 
 ```bash
-evaluations run wix --config /path/to/haiku.rag.yaml --db /path/to/custom.lancedb
+evaluations run hotpotqa --config /path/to/haiku.rag.yaml --db /path/to/custom.lancedb
 ```
 
 **Options:**
@@ -202,15 +201,3 @@ The reranker's contribution is larger here than on the single-doc datasets: hybr
 | `vllm:Gemma-4-26B-A4B-NVFP4` | none                | 0.83        | 0.75             |
 
 *Measured on haiku.rag v0.66.0 with `qwen3-embedding:4b` (vLLM, dim 2560), judged by `vllm:Qwen3.6-35B-A3B-NVFP4`, 7,405 cases. The reranker lifts QA accuracy +2.7pts and `cited_map` +4.6pts. Without a reranker, `cited_map` (0.75) still exceeds the no-reranker retrieval MAP (0.70): the skill reformulates queries across search calls, partially recovering second-hop documents that a single query misses.*
-
-### Wix
-
-[WixQA](https://huggingface.co/datasets/Wix/WixQA) is real customer support questions paired with curated answers. 200 cases.
-
-`evaluations run wix --target rag-capability` runs the RAG capability end-to-end and produces both QA accuracy and a citation retrieval metric (`cited_map`) computed from the URIs the capability registered via the `cite` tool against the gold `expected_uris`.
-
-| Capability model                  | Reranker               | QA accuracy | Mean `cited_map` |
-|------------------------------|------------------------|-------------|------------------|
-| `vllm:Gemma-4-26B-A4B-NVFP4` | `mxbai-rerank-base-v2` | 0.87        | 0.38             |
-
-*Measured on haiku.rag v0.48.0 with `qwen3-embedding:4b` (vLLM, dim 2560), `chunk_size=256`, `search.limit=5`. Judged by `vllm:Qwen3.6-35B-A3B-NVFP4` (qwen3.6 family, NVFP4 quant served via vLLM rather than the default Ollama). 172 / 198 completed cases (2 errored).*

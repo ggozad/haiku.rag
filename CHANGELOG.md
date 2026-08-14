@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+### Removed
+
+- `wix` evaluation dataset and its reference config `evaluations/configs/wix.yaml`.
+
 ## [0.74.0] - 2026-08-13
 
 ### Added

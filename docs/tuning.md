@@ -12,7 +12,7 @@ Documents flow through: **chunking → embedding → hybrid search (vector + FTS
 
 ### Chunking
 
-`chunk_size` controls the granularity of retrieval. Smaller chunks match queries more precisely but carry less context each. Larger chunks provide more surrounding information but dilute relevance signals. On the Wix benchmark, increasing from 256 to 512 tokens raised MAP from 0.43 to 0.45 on plain text, a modest gain that also increases token cost per result. See [Processing](configuration/processing.md#chunk-size) for configuration.
+`chunk_size` controls the granularity of retrieval. Smaller chunks match queries more precisely but carry less context each. Larger chunks provide more surrounding information but dilute relevance signals. See [Processing](configuration/processing.md#chunk-size) for configuration.
 
 `chunker_type` selects between `hybrid` (default) and `hierarchical` chunking. Hierarchical chunking preserves the document's heading structure and works better for deeply nested or structured content. See [Chunking Strategies](configuration/processing.md#chunking-strategies).
 
@@ -22,7 +22,7 @@ Larger embedding models produce better representations at the cost of slower ind
 
 ### Reranking
 
-When configured, a cross-encoder reranker re-scores 10x the requested candidates and returns the top results. This adds latency but improves precision. On the Wix benchmark, adding `mxbai-rerank-base-v2` raised MAP from 0.34 to 0.39 on HTML content. See [Search Settings](configuration/qa.md#search-settings) for how reranking integrates with search.
+When configured, a cross-encoder reranker re-scores 10x the requested candidates and returns the top results. This adds latency but improves precision. See [Search Settings](configuration/qa.md#search-settings) for how reranking integrates with search.
 
 ### Search Settings
 
