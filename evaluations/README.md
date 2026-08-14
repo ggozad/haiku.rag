@@ -8,7 +8,6 @@ This package is not published to PyPI and is only used for development and testi
 
 Contains evaluation scripts for benchmarking RAG retrieval and QA performance. Available datasets:
 
-- WiX (`wix`)
 - HotpotQA (`hotpotqa`) — multi-hop QA over Wikipedia paragraphs (distractor validation split, 7,405 questions, two gold documents per question)
 - OpenRAG Bench, two variants:
   - `orb_text` — text embedder (`qwen3-embedding:4b`, 2560-dim) with VLM picture descriptions baked into chunk content at ingest. Use for text-only retrieval/QA against figure-rich corpora.
@@ -20,24 +19,24 @@ After installing the package, you can run evaluations using the `evaluations` co
 
 ```bash
 # Run retrieval + QA benchmarks
-evaluations run wix
+evaluations run hotpotqa
 evaluations run orb_text
 
 # Use a custom config file
-evaluations run wix --config /path/to/haiku.rag.yaml
+evaluations run hotpotqa --config /path/to/haiku.rag.yaml
 
 # Override the database path
-evaluations run wix --db /path/to/custom.lancedb
+evaluations run hotpotqa --db /path/to/custom.lancedb
 
 # Skip database population and run only benchmarks
-evaluations run wix --skip-db
+evaluations run hotpotqa --skip-db
 
 # Skip specific benchmarks
-evaluations run wix --skip-retrieval
-evaluations run wix --skip-qa
+evaluations run hotpotqa --skip-retrieval
+evaluations run hotpotqa --skip-qa
 
 # Limit the number of test cases
-evaluations run wix --limit 100
+evaluations run hotpotqa --limit 100
 ```
 
 ### Choosing the target
@@ -47,8 +46,8 @@ evaluations run wix --limit 100
 datasets and judge:
 
 ```bash
-evaluations run wix --target rag-capability
-evaluations run wix --target analysis-capability --capability-model ollama:gpt-oss
+evaluations run hotpotqa --target rag-capability
+evaluations run hotpotqa --target analysis-capability --capability-model ollama:gpt-oss
 ```
 
 `--capability-model "provider:name"` overrides the capability model independently from
@@ -68,15 +67,15 @@ cases) for use from Claude Code.
 Download pre-built evaluation databases from HuggingFace:
 
 ```bash
-evaluations download wix
+evaluations download hotpotqa
 evaluations download all
-evaluations download wix --force
+evaluations download hotpotqa --force
 ```
 
 Upload databases (maintainer only):
 
 ```bash
-evaluations upload wix
+evaluations upload hotpotqa
 evaluations upload all
 ```
 

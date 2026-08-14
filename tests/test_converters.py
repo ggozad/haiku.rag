@@ -658,9 +658,9 @@ class TestDoclingLocalConverter:
     async def test_convert_text_html_mixed_img_sources(self, config, monkeypatch):
         """End-to-end: HTML with a mix of remote http, data:, broken http, and
         file:// `<img>` sources. Remote and data: URIs land as picture bytes;
-        broken URLs and file:// stay as placeholder pictures. Models the
-        wix-style ingest where most images are remote URLs with a handful of
-        broken or local-only references mixed in."""
+        broken URLs and file:// stay as placeholder pictures. Models a
+        knowledge-base ingest where most images are remote URLs with a handful
+        of broken or local-only references mixed in."""
         import base64
 
         from docling.backend import html_backend as html_backend_module
