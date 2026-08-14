@@ -352,16 +352,10 @@ async def ensure_chunks_embedded(
 
     embedded = await embed_chunks(chunks_to_embed, embedder, config)
 
-    # Build result maintaining original order
-    embedded_map = {(c.content, c.order): c for c in embedded}
-    result = []
-    for ch in chunks:
-        if ch.embedding is not None:
-            result.append(ch)
-        else:
-            result.append(embedded_map[(ch.content, ch.order)])
-
-    return result
+    # embed_chunks preserves input order; fill positionally, since duplicate
+    # chunk texts across documents make a content-keyed lookup ambiguous.
+    filled = iter(embedded)
+    return [ch if ch.embedding is not None else next(filled) for ch in chunks]
 
 
 def get_extension_from_content_type_or_url(url: str, content_type: str) -> str:

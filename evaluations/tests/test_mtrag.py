@@ -139,9 +139,6 @@ class TestSpecs:
             }
             assert isinstance(spec.citation_evaluator, CitationMAPEvaluator)
 
-    def test_refusal_evaluation_enabled(self) -> None:
-        assert MTRAG_CLAPNQ_SPEC.evaluate_refusal is True
-
 
 class TestGenerationTasks:
     def test_task_to_record(self) -> None:
@@ -255,7 +252,7 @@ class TestLiveConversations:
         }
         other_case = build_mtrag_live_case(2, conversations[1])
         assert other_case.metadata is not None
-        assert "relevant_uris" not in other_case.metadata["turns"][0]
+        assert other_case.metadata["turns"][0]["relevant_uris"] == []
 
     def test_live_spec(self) -> None:
         assert DATASETS["mtrag_clapnq_live"] is MTRAG_CLAPNQ_LIVE_SPEC

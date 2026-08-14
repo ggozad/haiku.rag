@@ -1,8 +1,8 @@
 import asyncio
 import shutil
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal, NamedTuple, cast
 
 import typer
 from dotenv import find_dotenv, load_dotenv
@@ -17,6 +17,7 @@ from evaluations.config import ConversationInput, DatasetSpec
 from evaluations.datasets import DATASETS
 from evaluations.evaluators import (
     ANSWER_EQUIVALENCE_RUBRIC,
+    REFUSAL_ELIGIBLE_LABELS,
     REFUSAL_RUBRIC,
     ConversationEvaluator,
     RefusalJudge,
@@ -394,6 +395,8 @@ def _attach_relevant_uris(
     """
     if spec.retrieval_loader is None or spec.retrieval_mapper is None:
         return
+    if not any(isinstance(case.inputs, str) for case in cases):
+        return
     corpus = spec.retrieval_loader()
     if limit is not None:
         corpus = corpus.select(range(min(limit, len(corpus))))
@@ -424,7 +427,7 @@ def _resolve_capability_config(
     return capability_model or config.qa.model
 
 
-def _live_summary(report_cases, report_failures=()) -> dict[str, float | int] | None:
+def _live_summary(report_cases, report_failures) -> dict[str, float | int] | None:
     """Aggregate ConversationEvaluator scores across conversations.
 
     Micro rates weight every turn equally (sums across conversations); macro
@@ -447,7 +450,7 @@ def _live_summary(report_cases, report_failures=()) -> dict[str, float | int] | 
         for failure in report_failures
     )
     turns_total = sum(_score(case, "turns_total") for case in scored)
-    turns_judged = sum(_score(case, "turns_judged") or 0 for case in scored)
+    turns_judged = sum(_score(case, "turns_judged") for case in scored)
     turns_passed = sum(_score(case, "turns_passed") for case in scored)
     summary: dict[str, float | int] = {
         "conversations": len(scored),
@@ -475,9 +478,9 @@ def _live_summary(report_cases, report_failures=()) -> dict[str, float | int] | 
             _score(case, "cited_map") for case in cited
         ) / len(cited)
 
-    true_refusals = sum(_score(case, "true_refusals") or 0 for case in scored)
-    false_refusals = sum(_score(case, "false_refusals") or 0 for case in scored)
-    unanswerable = sum(_score(case, "unanswerable_turns") or 0 for case in scored)
+    true_refusals = sum(_score(case, "true_refusals") for case in scored)
+    false_refusals = sum(_score(case, "false_refusals") for case in scored)
+    unanswerable = sum(_score(case, "unanswerable_turns") for case in scored)
     refusals = true_refusals + false_refusals
     summary["unanswerable_turns"] = unanswerable
     summary["refusals"] = refusals
@@ -497,7 +500,7 @@ def _refusal_metrics(report_cases) -> tuple[float, float, int, int] | None:
     for case in report_cases:
         refused = case.assertions.get("refused")
         label = (case.metadata or {}).get("answerability")
-        if refused is None or label not in ("ANSWERABLE", "UNANSWERABLE"):
+        if refused is None or label not in REFUSAL_ELIGIBLE_LABELS:
             continue
         outcomes.append((label, bool(refused.value)))
     if not outcomes:
@@ -520,18 +523,29 @@ def _filter_qa_corpus(corpus, case_ids: set[str] | None):
     return corpus.filter(lambda row: row.get("id") in case_ids)
 
 
-async def run_qa_benchmark(
+class _QARun(NamedTuple):
+    cases: list[Case[Any, Any, dict[str, Any]]]
+    db: Path
+    judge_config: ModelConfig
+    eval_name: str
+    experiment_metadata: dict[str, Any]
+    capability_factory: CapabilityFactory
+    capability_model: Any
+
+
+def _prepare_qa_run(
     spec: DatasetSpec,
     config: AppConfig,
-    limit: int | None = None,
-    name: str | None = None,
-    db_path: Path | None = None,
-    judge_model: ModelConfig | None = None,
-    target: Target = "rag-capability",
-    capability_model: ModelConfig | None = None,
-    case_ids: set[str] | None = None,
-    document_filter: str | None = None,
-) -> ReportCaseFailure[str, str, dict[str, str]] | None:
+    limit: int | None,
+    name: str | None,
+    db_path: Path | None,
+    judge_model: ModelConfig | None,
+    target: Target,
+    capability_model: ModelConfig | None,
+    case_ids: set[str] | None,
+    document_filter: str | None,
+) -> _QARun:
+    """Shared setup for the QA runners: cases, models, name and metadata."""
     corpus = spec.qa_loader()
     corpus = _filter_qa_corpus(corpus, case_ids)
     if limit is not None:
@@ -544,7 +558,74 @@ async def run_qa_benchmark(
 
     judge_config = judge_model or DEFAULT_JUDGE_MODEL
     capability_config = _resolve_capability_config(target, config, capability_model)
-    db = spec.db_path(db_path)
+
+    eval_name = name if name is not None else f"{spec.key}_qa_evaluation"
+    experiment_metadata = build_experiment_metadata(
+        dataset_key=spec.key,
+        test_cases=len(cases),
+        config=config,
+        judge_config=judge_config,
+        target=target,
+        capability_config=capability_config,
+        document_filter=document_filter,
+    )
+    experiment_metadata.update(spec.experiment_metadata or {})
+
+    return _QARun(
+        cases=cases,
+        db=spec.db_path(db_path),
+        judge_config=judge_config,
+        eval_name=eval_name,
+        experiment_metadata=experiment_metadata,
+        capability_factory=_capability_factory_for_target(target),
+        capability_model=get_model(capability_config, config),
+    )
+
+
+def _print_mean_task_time(report_cases, unit: str = "case") -> None:
+    if not report_cases:
+        return
+    mean = sum(case.task_duration for case in report_cases) / len(report_cases)
+    console.print(f"Avg task time per {unit}: {mean:.2f}s")
+
+
+def _print_failures(failures, show_question: bool = False) -> None:
+    if not failures:
+        return
+    console.print("[red]\nSummary of failures:[/red]")
+    for failure in failures:
+        console.print(f"Case: {failure.name}")
+        if show_question:
+            console.print(f"Question: {failure.inputs}")
+        console.print(f"Error: {failure.error_message}")
+        console.print("")
+
+
+async def run_qa_benchmark(
+    spec: DatasetSpec,
+    config: AppConfig,
+    limit: int | None = None,
+    name: str | None = None,
+    db_path: Path | None = None,
+    judge_model: ModelConfig | None = None,
+    target: Target = "rag-capability",
+    capability_model: ModelConfig | None = None,
+    case_ids: set[str] | None = None,
+    document_filter: str | None = None,
+) -> ReportCaseFailure[str, str, dict[str, str]] | None:
+    run = _prepare_qa_run(
+        spec,
+        config,
+        limit,
+        name,
+        db_path,
+        judge_model,
+        target,
+        capability_model,
+        case_ids,
+        document_filter,
+    )
+    cases, judge_config = run.cases, run.judge_config
 
     _attach_relevant_uris(cases, spec, limit)
     citation_evaluator = spec.citation_evaluator
@@ -568,42 +649,19 @@ async def run_qa_benchmark(
         ]
     if citation_evaluator is not None:
         evaluators.append(citation_evaluator)
-    if spec.evaluate_refusal:
-        evaluators.append(
-            RefusalJudge(
-                rubric=REFUSAL_RUBRIC,
-                model=get_model(judge_config, config),
-                assertion={"evaluation_name": "refused", "include_reason": False},
-            )
+    # RefusalJudge scores only cases whose metadata carries an answerability
+    # label; on unlabeled datasets it returns no score without a judge call.
+    evaluators.append(
+        RefusalJudge(
+            rubric=REFUSAL_RUBRIC,
+            model=get_model(judge_config, config),
+            assertion={"evaluation_name": "refused", "include_reason": False},
         )
+    )
 
     evaluation_dataset = EvalDataset[Any, str, dict[str, Any]](
         name=spec.key, cases=cases, evaluators=evaluators
     )
-
-    eval_name = name if name is not None else f"{spec.key}_qa_evaluation"
-    experiment_metadata = build_experiment_metadata(
-        dataset_key=spec.key,
-        test_cases=len(cases),
-        config=config,
-        judge_config=judge_config,
-        target=target,
-        capability_config=capability_config,
-        document_filter=document_filter,
-    )
-    experiment_metadata.update(spec.experiment_metadata or {})
-
-    async def _evaluate(answer_fn: Callable[[Any], Awaitable[str]]):
-        return await evaluation_dataset.evaluate(
-            answer_fn,
-            name=eval_name,
-            max_concurrency=1,
-            progress=True,
-            metadata=experiment_metadata,
-        )
-
-    capability_factory = _capability_factory_for_target(target)
-    resolved_capability_model = get_model(capability_config, config)
 
     async def answer_question(inputs: str | ConversationInput) -> str:
         if isinstance(inputs, ConversationInput):
@@ -613,11 +671,11 @@ async def run_qa_benchmark(
             question = inputs
             message_history = None
         result = await run_capability_question(
-            capability_factory=capability_factory,
-            db_path=db,
+            capability_factory=run.capability_factory,
+            db_path=run.db,
             config=config,
             question=question,
-            capability_model=resolved_capability_model,
+            capability_model=run.capability_model,
             document_filter=document_filter,
             message_history=message_history,
         )
@@ -633,7 +691,13 @@ async def run_qa_benchmark(
         set_eval_attribute("citation_status", result.citation_status)
         return result.answer
 
-    report = await _evaluate(answer_question)
+    report = await evaluation_dataset.evaluate(
+        answer_question,
+        name=run.eval_name,
+        max_concurrency=1,
+        progress=True,
+        metadata=run.experiment_metadata,
+    )
 
     total_processed = len(report.cases)
     failures = report.failures
@@ -660,11 +724,7 @@ async def run_qa_benchmark(
     console.print(f"Total questions: {total_processed}")
     console.print(f"Correct answers: {passing_cases}")
     console.print(f"QA Accuracy: {accuracy:.4f} ({accuracy * 100:.2f}%)")
-    if report.cases:
-        mean_task_time = sum(case.task_duration for case in report.cases) / len(
-            report.cases
-        )
-        console.print(f"Avg task time per case: {mean_task_time:.2f}s")
+    _print_mean_task_time(report.cases)
 
     if citation_evaluator is not None:
         score_key = citation_evaluator.get_default_evaluation_name()
@@ -693,26 +753,16 @@ async def run_qa_benchmark(
             )
             console.print(f"Mean citations per case: {mean_citations:.2f}")
 
-    if spec.evaluate_refusal:
-        metrics = _refusal_metrics(report.cases)
-        if metrics is not None:
-            precision, recall, unanswerable, refusals = metrics
-            console.print(
-                "\n=== Refusal vs answerability labels ===", style="bold cyan"
-            )
-            console.print(f"Refusal precision: {precision:.2%} | recall: {recall:.2%}")
-            console.print(
-                f"UNANSWERABLE turns: {unanswerable} | refusals: {refusals} "
-                "(PARTIAL excluded)"
-            )
+    if (metrics := _refusal_metrics(report.cases)) is not None:
+        precision, recall, unanswerable, refusals = metrics
+        console.print("\n=== Refusal vs answerability labels ===", style="bold cyan")
+        console.print(f"Refusal precision: {precision:.2%} | recall: {recall:.2%}")
+        console.print(
+            f"UNANSWERABLE turns: {unanswerable} | refusals: {refusals} "
+            "(PARTIAL excluded)"
+        )
 
-    if failures:
-        console.print("[red]\nSummary of failures:[/red]")
-        for failure in failures:
-            console.print(f"Case: {failure.name}")
-            console.print(f"Question: {failure.inputs}")
-            console.print(f"Error: {failure.error_message}")
-            console.print("")
+    _print_failures(failures, show_question=True)
 
     return failures[0] if failures else None
 
@@ -727,58 +777,44 @@ async def run_live_qa_benchmark(
     target: Target = "rag-capability",
     capability_model: ModelConfig | None = None,
     case_ids: set[str] | None = None,
+    document_filter: str | None = None,
 ) -> None:
     """Replay conversations turn by turn through one capability session.
 
     One case per conversation; ``limit`` counts conversations. Answers carry
     forward as real message history, so prior-turn compaction is exercised.
     """
-    corpus = spec.qa_loader()
-    corpus = _filter_qa_corpus(corpus, case_ids)
-    if limit is not None:
-        corpus = corpus.select(range(min(limit, len(corpus))))
-
-    cases = [
-        spec.qa_case_builder(index, cast(Mapping[str, Any], doc))
-        for index, doc in enumerate(corpus, start=1)
-    ]
-
-    judge_config = judge_model or DEFAULT_JUDGE_MODEL
-    capability_config = _resolve_capability_config(target, config, capability_model)
-    db = spec.db_path(db_path)
+    run = _prepare_qa_run(
+        spec,
+        config,
+        limit,
+        name,
+        db_path,
+        judge_model,
+        target,
+        capability_model,
+        case_ids,
+        document_filter,
+    )
 
     evaluation_dataset = EvalDataset[Any, Any, dict[str, Any]](
         name=spec.key,
-        cases=cases,
+        cases=run.cases,
         evaluators=[
             ConversationEvaluator(
                 rubric=ANSWER_EQUIVALENCE_RUBRIC,
-                model=get_model(judge_config, config),
+                model=get_model(run.judge_config, config),
             )
         ],
     )
 
-    eval_name = name if name is not None else f"{spec.key}_qa_evaluation"
-    experiment_metadata = build_experiment_metadata(
-        dataset_key=spec.key,
-        test_cases=len(cases),
-        config=config,
-        judge_config=judge_config,
-        target=target,
-        capability_config=capability_config,
-    )
-    experiment_metadata.update(spec.experiment_metadata or {})
-
-    capability_factory = _capability_factory_for_target(target)
-    resolved_capability_model = get_model(capability_config, config)
-
     async def answer_conversation(questions: list[str]) -> list[str]:
         results = await run_capability_conversation(
-            capability_factory=capability_factory,
-            db_path=db,
+            capability_factory=run.capability_factory,
+            db_path=run.db,
             config=config,
             questions=list(questions),
-            capability_model=resolved_capability_model,
+            capability_model=run.capability_model,
             compaction=spec.compaction,
         )
         set_eval_attribute("turn_cited_uris", [r.cited_uris for r in results])
@@ -793,10 +829,10 @@ async def run_live_qa_benchmark(
 
     report = await evaluation_dataset.evaluate(
         answer_conversation,
-        name=eval_name,
+        name=run.eval_name,
         max_concurrency=1,
         progress=True,
-        metadata=experiment_metadata,
+        metadata=run.experiment_metadata,
     )
 
     summary = _live_summary(report.cases, report.failures)
@@ -849,12 +885,7 @@ async def run_live_qa_benchmark(
             f"{per_turn:.2f}s per turn"
         )
 
-    if report.failures:
-        console.print("[red]\nSummary of failures:[/red]")
-        for failure in report.failures:
-            console.print(f"Case: {failure.name}")
-            console.print(f"Error: {failure.error_message}")
-            console.print("")
+    _print_failures(report.failures)
 
 
 async def evaluate_dataset(

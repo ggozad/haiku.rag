@@ -332,7 +332,7 @@ class TestLiveSummary:
     def test_none_without_scored_cases(self) -> None:
         from evaluations.benchmark import _live_summary
 
-        assert _live_summary([self._case({})]) is None
+        assert _live_summary([self._case({})], []) is None
 
     def test_micro_rate_uses_judged_turns(self) -> None:
         from evaluations.benchmark import _live_summary
@@ -352,7 +352,7 @@ class TestLiveSummary:
             )
         ]
 
-        summary = _live_summary(cases)
+        summary = _live_summary(cases, [])
 
         assert summary is not None
         assert summary["micro_pass_rate"] == 1.0
@@ -784,8 +784,9 @@ class TestRunQaBenchmarkCapabilityTarget:
         # (the capability manages its own client via lifespan).
         mock_haiku.assert_not_called()
         # capability model defaults to qa.model when not provided
-        capability_call = mock_get_model.call_args_list[-1]
-        assert capability_call[0][0] == AppConfig().qa.model
+        assert any(
+            call[0][0] == AppConfig().qa.model for call in mock_get_model.call_args_list
+        )
         assert mock_run_capability is capability_run
 
     @pytest.mark.asyncio

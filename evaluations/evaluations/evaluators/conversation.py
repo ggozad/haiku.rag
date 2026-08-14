@@ -9,9 +9,7 @@ from pydantic_evals.evaluators.llm_as_a_judge import (
 )
 
 from evaluations.evaluators.citation import average_precision
-from evaluations.evaluators.refusal import REFUSAL_RUBRIC
-
-_REFUSAL_LABELS = ("ANSWERABLE", "UNANSWERABLE")
+from evaluations.evaluators.refusal import REFUSAL_ELIGIBLE_LABELS, REFUSAL_RUBRIC
 
 
 @dataclass
@@ -81,7 +79,7 @@ class ConversationEvaluator(Evaluator):
                 )
 
             label = turn.get("answerability")
-            if label in _REFUSAL_LABELS:
+            if label in REFUSAL_ELIGIBLE_LABELS:
                 try:
                     refused = (
                         await judge_output(answer, REFUSAL_RUBRIC, self.model)

@@ -299,21 +299,16 @@ async def _store_documents_with_chunks(
     Embeds any chunks that lack embeddings, then writes the documents, chunks,
     and document_items tables once apiece. Restores all tables on any failure.
     """
-    missing = [
-        chunk
-        for _, chunks, _ in prepared
-        for chunk in chunks
-        if chunk.embedding is None
-    ]
-    if missing:
-        from haiku.rag.embeddings import embed_chunks
-
-        embedded_flat = await embed_chunks(missing, client.embedder, client._config)
-        # Assign positionally: duplicate chunk texts across documents make a
-        # content-keyed lookup ambiguous.
-        for chunk, with_embedding in zip(missing, embedded_flat):
-            chunk.embedding = with_embedding.embedding
-    embedded: list[list[Chunk]] = [chunks for _, chunks, _ in prepared]
+    flat = await ensure_chunks_embedded(
+        client._config,
+        [chunk for _, chunks, _ in prepared for chunk in chunks],
+        client.embedder,
+    )
+    embedded: list[list[Chunk]] = []
+    position = 0
+    for _, chunks, _ in prepared:
+        embedded.append(flat[position : position + len(chunks)])
+        position += len(chunks)
 
     def _extract_all_items():
         return [extract_items("", d) for _, _, d in prepared]

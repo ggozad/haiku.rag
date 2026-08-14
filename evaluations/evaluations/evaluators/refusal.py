@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Final
 
 from pydantic_evals.evaluators import EvaluatorContext, LLMJudge
 from pydantic_evals.evaluators.evaluator import EvaluatorOutput
@@ -9,7 +10,7 @@ REFUSAL_RUBRIC = (
     "substantive answer."
 )
 
-_ELIGIBLE_LABELS = ("ANSWERABLE", "UNANSWERABLE")
+REFUSAL_ELIGIBLE_LABELS: Final = ("ANSWERABLE", "UNANSWERABLE")
 
 
 @dataclass
@@ -23,6 +24,6 @@ class RefusalJudge(LLMJudge):
 
     async def evaluate(self, ctx: EvaluatorContext) -> EvaluatorOutput:
         label = (ctx.metadata or {}).get("answerability")
-        if label not in _ELIGIBLE_LABELS:
+        if label not in REFUSAL_ELIGIBLE_LABELS:
             return {}
         return await super().evaluate(ctx)

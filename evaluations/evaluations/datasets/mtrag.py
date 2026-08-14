@@ -165,7 +165,7 @@ def _task_to_record(
     }
 
 
-def load_clapnq_qa() -> Dataset:
+def _qa_records() -> list[dict[str, Any]]:
     path = _download(_GEN_TASKS_FILE)
     qrels = _load_qrels()
     records = []
@@ -175,7 +175,11 @@ def load_clapnq_qa() -> Dataset:
         record = _task_to_record(json.loads(line), qrels)
         if record is not None:
             records.append(record)
-    return Dataset.from_list(records)
+    return records
+
+
+def load_clapnq_qa() -> Dataset:
+    return Dataset.from_list(_qa_records())
 
 
 def build_mtrag_case(
@@ -225,17 +229,15 @@ def _group_conversations(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "answerability": task["answerability"],
                 "multi_turn_type": task["multi_turn_type"],
                 "question_type": list(task["question_type"]),
+                "relevant_uris": list(task["relevant_uris"] or []),
             }
-            if task["relevant_uris"]:
-                turn["relevant_uris"] = list(task["relevant_uris"])
             turns.append(turn)
         conversations.append({"id": conversation_id, "turns": turns})
     return conversations
 
 
 def load_clapnq_conversations() -> Dataset:
-    corpus = load_clapnq_qa()
-    return Dataset.from_list(_group_conversations([dict(row) for row in corpus]))
+    return Dataset.from_list(_group_conversations(_qa_records()))
 
 
 def build_mtrag_live_case(
@@ -243,11 +245,7 @@ def build_mtrag_live_case(
 ) -> Case[list[str], list[str], dict[str, Any]]:
     questions = [turn["question"] for turn in doc["turns"]]
     metadata_turns = [
-        {
-            key: value
-            for key, value in turn.items()
-            if key != "question" and value is not None
-        }
+        {key: value for key, value in turn.items() if key != "question"}
         for turn in doc["turns"]
     ]
     return Case(
@@ -277,7 +275,6 @@ def _mtrag_spec(key: str, variant: str) -> DatasetSpec:
         citation_evaluator=CitationMAPEvaluator(),
         retrieval_limit=10,
         ingest_batch_size=512,
-        evaluate_refusal=True,
         experiment_metadata={"mtrag_mode": "gold_prefix"},
     )
 

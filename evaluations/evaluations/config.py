@@ -60,7 +60,6 @@ DocumentLoader = Callable[[], Dataset]
 DocumentMapper = Callable[[Mapping[str, Any]], DocumentPayload | None]
 RetrievalLoader = Callable[[], Dataset]
 RetrievalMapper = Callable[[Mapping[str, Any]], RetrievalSample | None]
-QAInput = str | ConversationInput
 CaseBuilder = Callable[[int, Mapping[str, Any]], Case[Any, Any, dict[str, Any]]]
 
 
@@ -80,7 +79,6 @@ class DatasetSpec:
     document_limit: int | None = None
     retrieval_limit: int = 5
     ingest_batch_size: int | None = None
-    evaluate_refusal: bool = False
     live: bool = False
     compaction: bool = False
     experiment_metadata: dict[str, Any] | None = None

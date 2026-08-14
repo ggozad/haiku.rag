@@ -211,8 +211,6 @@ async def run_capability_conversation(
     config: AppConfig,
     questions: list[str],
     capability_model: str | Model,
-    document_filter: str | None = None,
-    request_limit: int | None = None,
     compaction: bool = False,
 ) -> list[CapabilityRunResult]:
     """Run a conversation's user turns sequentially through one capability.
@@ -229,8 +227,8 @@ async def run_capability_conversation(
         db_path,
         config,
         capability_model,
-        document_filter,
-        request_limit,
+        document_filter=None,
+        request_limit=None,
         compaction=compaction,
     )
     history: list[ModelMessage] | None = None
