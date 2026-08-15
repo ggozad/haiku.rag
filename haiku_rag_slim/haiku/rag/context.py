@@ -408,6 +408,7 @@ def _build_result(
         score=max(r.score for r in original_results),
         chunk_id=first.chunk_id,
         chunk_ids=chunk_ids,
+        chunk_meta=first.chunk_meta,
         document_id=first.document_id,
         document_uri=first.document_uri,
         document_title=first.document_title,

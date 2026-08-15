@@ -105,6 +105,8 @@ for chunk in chunks:
     print(f"Headings: {meta.headings}")
     print(f"Page numbers: {meta.page_numbers}")
     print(f"Labels: {meta.labels}")
+    # Access raw metadata (including headings, page_numbers and labels)
+    print(f"Raw metadata: {chunk.metadata}")
 ```
 
 Chunks are returned with:
@@ -114,6 +116,10 @@ Chunks are returned with:
 - `metadata` - Dict with `doc_item_refs`, `headings`, `labels`, `page_numbers`
 - `embedding` - `None` (not yet embedded)
 - `document_id` - `None` (not yet stored)
+
+A custom `DocumentChunker` can provide other keys and values in `metadata`. They will 
+be stored with the chunk and are accessible when it is returned in a search result or citation, within 
+`SearchResult.chunk_meta` / `Citation.chunk_meta`.
 
 ## Embed
 

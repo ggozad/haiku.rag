@@ -9,6 +9,7 @@
 ### Changed
 
 - `import_documents` embeds chunks across the whole batch in one pass instead of per document.
+- Raw chunk metadata is now exposed to search and citation results, through `SearchResult.chunk_meta` and `Citation.chunk_meta`. For context-expanded results, the metadata is that of the anchor chunk.
 
 ### Removed
 

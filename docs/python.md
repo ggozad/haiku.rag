@@ -348,7 +348,7 @@ answer, citations = await client.ask(
 
 Images are passed to the model alongside the question. Retrieval stays text-based. The QA model must have `vision: true` in its configuration.
 
-`client.ask` runs the [RAG capability](capabilities/rag.md) and returns `(answer_text, list[Citation])`. Citations include page numbers, section headings, document references, and the document's metadata (`document_meta`), so UIs can render metadata keys such as a public source URL alongside the citation.
+`client.ask` runs the [RAG capability](capabilities/rag.md) and returns `(answer_text, list[Citation])`. Citations include page numbers, section headings, document references, the document's metadata (`document_meta`), and the cited chunk's raw, unparsed metadata (`chunk_meta`), so UIs can render metadata keys such as a public source URL alongside the citation.
 
 The QA provider and model are configured in `haiku.rag.yaml` or can be passed directly to the client (see [Configuration](configuration/index.md)).
 

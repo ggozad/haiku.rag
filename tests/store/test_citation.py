@@ -6,6 +6,7 @@ def _result(
     chunk_id: str,
     chunk_ids: list[str] | None = None,
     document_meta: dict | None = None,
+    chunk_meta: dict | None = None,
 ) -> SearchResult:
     return SearchResult(
         content="content",
@@ -15,6 +16,7 @@ def _result(
         document_id="doc-1",
         document_uri="test://doc",
         document_meta=document_meta or {},
+        chunk_meta=chunk_meta or {},
     )
 
 
@@ -54,3 +56,9 @@ def test_resolve_citations_copies_document_meta():
     assert citations[0].document_meta == {
         "source_url": "https://example.org/report/view"
     }
+
+
+def test_resolve_citations_copies_chunk_meta():
+    result = _result("c1", chunk_meta={"para_no": "12", "speaker": "MR SMITH"})
+    citations = resolve_citations(["c1"], [result])
+    assert citations[0].chunk_meta == {"para_no": "12", "speaker": "MR SMITH"}
