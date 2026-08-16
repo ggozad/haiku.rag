@@ -145,6 +145,10 @@ Two approaches are benchmarked separately:
 | `nvidia/llama-nemotron-embed-vl-1b-v2`   | `rag-capability`     | `vllm:Gemma-4-26B-A4B-NVFP4`      |  3039 | 0.9263      | 0.9761           |
 | `nvidia/llama-nemotron-embed-vl-1b-v2`   | `analysis-capability`| `vllm:Gemma-4-26B-A4B-NVFP4`      |  3040 | 0.9362      | 0.9343           |
 | `nvidia/llama-nemotron-embed-vl-1b-v2`   | `analysis-capability`| `vllm:Qwen3.6-35B-A3B-NVFP4`      |  3045 | 0.95        | 0.93             |
+| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `rag-capability`     | `vllm:Muse-Glimmer-30B-NVFP4`     |  3045 | 0.9494      | 0.9771           |
+| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `analysis-capability`| `vllm:Muse-Glimmer-30B-NVFP4`     |  3017 | 0.9718      | 0.9837           |
+
+*The `Muse-Glimmer-30B` rows run at `chat_template_kwargs.reasoning_strength: high`, no reranker, same judge. `analysis-capability` registers a citation on every case (0 of 3017 uncited, 12 ungrounded) at 3.53 searches and 1.03 code executions per case, and the 432 cases that execute code score 0.9074 against 0.9721 for the rest. Its case count excludes 28 turns lost to a judge outage and 12 to provider 400s (image cap, context length).*
 
 *Both nemotron `Gemma-4` rows are measured on this release, no reranker, judged by `vllm:Qwen3.6-35B-A3B-NVFP4` with thinking on, and exclude the cases that errored (6 of 3045 for `rag-capability`, 5 for `analysis-capability`). The `rag-capability` row cites at 99.64% with a mean of 1.08 citations per case, at a median 4.7s per case against 5.0s for `analysis-capability`. Citation coverage is what moved on this release: 4.9% of analysis cases register no citation, against 26.3% before, at unchanged searches and code executions per case. The remaining rows are from haiku.rag v0.52.0, where Qwen3-VL covered 1409 / 3045 cases.*
 
