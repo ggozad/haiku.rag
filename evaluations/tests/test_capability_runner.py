@@ -319,6 +319,32 @@ async def test_conversation_threads_own_messages_across_turns(tmp_path):
     assert histories == [None, ["history after q1"], ["history after q2"]]
 
 
+async def test_conversation_applies_document_filter(tmp_path):
+    """The filter must reach the capability state so every search in the
+    conversation is restricted, same as the single-question runner."""
+    from evaluations.capability_runner import run_capability_conversation
+
+    deps_seen = []
+
+    async def _run(question, deps=None, message_history=None):
+        deps_seen.append(deps)
+        return SimpleNamespace(
+            output="a", all_messages=lambda: [], new_messages=lambda: []
+        )
+
+    with patch("evaluations.capability_runner.Agent.run", side_effect=_run):
+        await run_capability_conversation(
+            create_rag,
+            tmp_path / "rag.lancedb",
+            AppConfig(),
+            ["q1"],
+            TestModel(call_tools=[]),
+            document_filter="uri = 'manual.pdf'",
+        )
+
+    assert deps_seen[0].state["rag"]["document_filter"] == "uri = 'manual.pdf'"
+
+
 async def test_conversation_carries_one_state_dict_across_turns(tmp_path):
     """Capabilities read and write state through the deps dict; carrying the
     same dict across turns is what lets compaction see earlier questions'

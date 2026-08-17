@@ -443,12 +443,19 @@ class TestLiveConversationDispatch:
             ),
         ):
             await run_live_qa_benchmark(
-                spec, AppConfig(), db_path=tmp_path / "test.lancedb"
+                spec,
+                AppConfig(),
+                db_path=tmp_path / "test.lancedb",
+                document_filter="uri = 'manual.pdf'",
             )
 
         assert run_conversation.await_args is not None
         assert run_conversation.await_args.kwargs["questions"] == ["q1", "q2"]
         assert run_conversation.await_args.kwargs["compaction"] is True
+        assert (
+            run_conversation.await_args.kwargs["document_filter"]
+            == "uri = 'manual.pdf'"
+        )
 
     @pytest.mark.asyncio
     async def test_live_records_per_turn_traffic_arrays(self, tmp_path: Path) -> None:
@@ -1143,7 +1150,7 @@ class TestDocumentFilterThreading:
             retrieval_mapper=lambda d: RetrievalSample(
                 question=d["q"], expected_uris=d["uris"]
             ),
-            retrieval_evaluator=MAPEvaluator(),
+            retrieval_evaluators=[MAPEvaluator()],
         )
 
         with patch("evaluations.benchmark.HaikuRAG") as mock_haiku:

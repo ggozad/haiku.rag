@@ -815,6 +815,7 @@ async def run_live_qa_benchmark(
             config=config,
             questions=list(questions),
             capability_model=run.capability_model,
+            document_filter=document_filter,
             compaction=spec.compaction,
         )
         set_eval_attribute("turn_cited_uris", [r.cited_uris for r in results])
