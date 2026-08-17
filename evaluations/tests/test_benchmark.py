@@ -17,16 +17,16 @@ from haiku.rag.config.models import AppConfig, ModelConfig
 
 def _stub_spec(**overrides) -> DatasetSpec:
     """A DatasetSpec whose loaders/mappers are inert, for tests that only
-    exercise the surrounding plumbing."""
-    return DatasetSpec(
-        key="test",
-        db_filename="test.lancedb",
-        document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        document_mapper=lambda doc: None,
-        qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        **overrides,
-    )
+    exercise the surrounding plumbing. Any field can be overridden."""
+    fields: dict = {
+        "key": "test",
+        "db_filename": "test.lancedb",
+        "document_loader": lambda: None,
+        "document_mapper": lambda doc: None,
+        "qa_loader": lambda: [],
+        "qa_case_builder": lambda idx, doc: None,
+    }
+    return DatasetSpec(**{**fields, **overrides})
 
 
 class TestBuildExperimentMetadata:
@@ -581,50 +581,24 @@ class TestRetrievalTarget:
         assert result["map"] == 0.5
 
 
-class TestResolveSearchFilter:
-    def test_dataset_filter_used_when_no_override(self) -> None:
-        from evaluations.benchmark import resolve_search_filter
-
-        spec = _stub_spec(search_filter="uri LIKE '%arxiv%'")
-        assert resolve_search_filter(spec, None) == "uri LIKE '%arxiv%'"
-
-    def test_override_wins(self) -> None:
-        from evaluations.benchmark import resolve_search_filter
-
-        spec = _stub_spec(search_filter="uri LIKE '%arxiv%'")
-        assert resolve_search_filter(spec, "uri LIKE '%.pdf'") == "uri LIKE '%.pdf'"
-
-    def test_empty_override_clears_dataset_filter(self) -> None:
-        """`--filter ""` runs a filtered dataset against the whole database."""
-        from evaluations.benchmark import resolve_search_filter
-
-        spec = _stub_spec(search_filter="uri LIKE '%arxiv%'")
-        assert resolve_search_filter(spec, "") is None
-
-    def test_none_when_neither_is_set(self) -> None:
-        from evaluations.benchmark import resolve_search_filter
-
-        assert resolve_search_filter(_stub_spec(), None) is None
-
-
-class TestSearchFilterThreading:
-    """The resolved filter must reach both benchmark phases, so retrieval and
-    QA score the same subset of the database."""
+class TestDocumentFilterThreading:
+    """The filter must reach both benchmark phases, so retrieval and QA score
+    the same subset of the database."""
 
     def test_metadata_records_filter(self) -> None:
         result = build_experiment_metadata(
             dataset_key="test",
             test_cases=1,
             config=AppConfig(),
-            search_filter="uri LIKE '%arxiv%'",
+            document_filter="uri LIKE '%arxiv%'",
         )
-        assert result["search_filter"] == "uri LIKE '%arxiv%'"
+        assert result["document_filter"] == "uri LIKE '%arxiv%'"
 
     def test_metadata_filter_is_none_when_unset(self) -> None:
         result = build_experiment_metadata(
             dataset_key="test", test_cases=1, config=AppConfig()
         )
-        assert result["search_filter"] is None
+        assert result["document_filter"] is None
 
     @pytest.mark.asyncio
     async def test_retrieval_search_receives_filter(self, tmp_path: Path) -> None:
@@ -655,7 +629,7 @@ class TestSearchFilterThreading:
                 spec,
                 AppConfig(),
                 db_path=tmp_path / "test.lancedb",
-                search_filter="uri LIKE '%arxiv%'",
+                document_filter="uri LIKE '%arxiv%'",
             )
 
         assert searches[0]["filter"] == "uri LIKE '%arxiv%'"
@@ -668,12 +642,8 @@ class TestSearchFilterThreading:
         from evaluations.evaluators import NumberMatchEvaluator
 
         # A deterministic evaluator, so no judge model is constructed.
-        spec = DatasetSpec(
-            key="test",
-            db_filename="test.lancedb",
-            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            document_mapper=lambda doc: None,
-            qa_loader=lambda: [{"question": "What is X?", "answer": "42"}],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        spec = _stub_spec(
+            qa_loader=lambda: [{"question": "What is X?", "answer": "42"}],
             qa_case_builder=lambda idx, doc: Case(
                 name=f"case-{idx}",
                 inputs=doc["question"],
@@ -691,43 +661,15 @@ class TestSearchFilterThreading:
                 spec,
                 AppConfig(),
                 db_path=tmp_path / "test.lancedb",
-                search_filter="uri LIKE '%arxiv%'",
+                document_filter="uri LIKE '%arxiv%'",
             )
 
         mock_run.assert_awaited_once()
         assert mock_run.call_args[1]["document_filter"] == "uri LIKE '%arxiv%'"
 
     @pytest.mark.asyncio
-    async def test_evaluate_dataset_resolves_once_for_both_phases(self) -> None:
-        """The dataset's own filter reaches retrieval and QA without a flag."""
-        spec = _stub_spec(search_filter="""metadata LIKE '%"corpus": "orb_text"%'""")
-
-        with (
-            patch(
-                "evaluations.benchmark.run_retrieval_benchmark", new_callable=AsyncMock
-            ) as mock_retrieval,
-            patch(
-                "evaluations.benchmark.run_qa_benchmark", new_callable=AsyncMock
-            ) as mock_qa,
-        ):
-            await evaluate_dataset(
-                spec=spec,
-                config=AppConfig(),
-                skip_db=True,
-                skip_retrieval=False,
-                skip_qa=False,
-                limit=None,
-                name=None,
-                db_path=None,
-            )
-
+    async def test_evaluate_dataset_passes_filter_to_both_phases(self) -> None:
         expected = """metadata LIKE '%"corpus": "orb_text"%'"""
-        assert mock_retrieval.call_args[1]["search_filter"] == expected
-        assert mock_qa.call_args[1]["search_filter"] == expected
-
-    @pytest.mark.asyncio
-    async def test_evaluate_dataset_override_reaches_both_phases(self) -> None:
-        spec = _stub_spec(search_filter="""metadata LIKE '%"corpus": "orb_text"%'""")
 
         with (
             patch(
@@ -738,7 +680,7 @@ class TestSearchFilterThreading:
             ) as mock_qa,
         ):
             await evaluate_dataset(
-                spec=spec,
+                spec=_stub_spec(),
                 config=AppConfig(),
                 skip_db=True,
                 skip_retrieval=False,
@@ -746,11 +688,11 @@ class TestSearchFilterThreading:
                 limit=None,
                 name=None,
                 db_path=None,
-                search_filter="title LIKE '%paper%'",
+                document_filter=expected,
             )
 
-        assert mock_retrieval.call_args[1]["search_filter"] == "title LIKE '%paper%'"
-        assert mock_qa.call_args[1]["search_filter"] == "title LIKE '%paper%'"
+        assert mock_retrieval.call_args[1]["document_filter"] == expected
+        assert mock_qa.call_args[1]["document_filter"] == expected
 
 
 class TestEvaluateDatasetCaseIds:

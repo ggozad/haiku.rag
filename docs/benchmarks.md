@@ -102,19 +102,7 @@ If the corpora are distinguished by a tag rather than by URI, attach it at inges
 evaluations run orb_text --skip-db --filter "metadata LIKE '%\"corpus\": \"orb_text\"%'"
 ```
 
-The clause applies to both benchmark phases — the retrieval benchmark's searches and every search the capability runs during QA — so the two score the same subset. It is recorded as `search_filter` in the run's experiment metadata, so a filtered run is never mistaken for an unfiltered one when comparing results.
-
-A dataset can declare its own default in its `DatasetSpec`, so runs need no flag:
-
-```python
-ORB_TEXT_SPEC = DatasetSpec(
-    key="orb_text",
-    ...
-    search_filter="metadata LIKE '%\"corpus\": \"orb_text\"%'",
-)
-```
-
-`--filter` overrides that default; passing an empty string (`--filter ""`) clears it and searches the whole database.
+The clause applies to both benchmark phases — the retrieval benchmark's searches and every search the capability runs during QA — so the two score the same subset. It is recorded as `document_filter` in the run's experiment metadata, so a filtered run is never mistaken for an unfiltered one when comparing results.
 
 Filtering affects searches only — a run without `--skip-db` still populates the database with the dataset's full corpus.
 

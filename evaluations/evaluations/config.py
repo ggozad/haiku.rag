@@ -46,7 +46,6 @@ class DatasetSpec:
     retrieval_evaluator: Evaluator | None = None
     qa_evaluator: Evaluator | None = None
     document_limit: int | None = None
-    search_filter: str | None = None
 
     def db_path(self, override_path: Path | None = None) -> Path:
         """Get the database path.
