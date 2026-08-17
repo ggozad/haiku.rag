@@ -93,6 +93,10 @@ class DetailView(VerticalScroll):
         chunk_meta = chunk.get_chunk_metadata()
         content_parts.extend(self._format_provenance(chunk_meta))
 
+        if chunk.metadata:
+            metadata_str = "\n".join(f"  - {k}: {v}" for k, v in chunk.metadata.items())
+            content_parts.append(f"**Metadata:**\n{metadata_str}")
+
         if chunk.embedding:
             content_parts.append(f"**Embedding:** {len(chunk.embedding)} dimensions")
 
@@ -120,6 +124,12 @@ class DetailView(VerticalScroll):
         content_parts.append(f"**Score:** {search_result.score:.4f}")
 
         content_parts.extend(self._format_provenance(search_result))
+
+        if search_result.chunk_meta:
+            metadata_str = "\n".join(
+                f"  - {k}: {v}" for k, v in search_result.chunk_meta.items()
+            )
+            content_parts.append(f"**Metadata:**\n{metadata_str}")
 
         if chunk.embedding:
             content_parts.append(f"**Embedding:** {len(chunk.embedding)} dimensions")

@@ -166,6 +166,63 @@ async def test_document_list_tracks_has_more():
 
 
 @pytest.mark.asyncio
+async def test_detail_view_shows_chunk_metadata():
+    """show_chunk renders the raw chunk.metadata dict verbatim, not just the
+    typed provenance fields _format_provenance already covers."""
+    from textual.app import App
+
+    from haiku.rag.inspector.widgets.detail_view import DetailView
+
+    chunk = Chunk(
+        id="chunk-1",
+        document_id="doc-1",
+        content="raw chunk text",
+        metadata={"headings": ["Chapter 1"], "para_no": "12"},
+    )
+
+    class TestApp(App):
+        def compose(self):
+            yield DetailView(id="detail")
+
+    app = TestApp()
+    async with app.run_test():
+        detail_view = app.query_one(DetailView)
+        await detail_view.show_chunk(chunk)
+        source = detail_view.content_widget.source
+        assert "**Metadata:**" in source
+        assert "para_no: 12" in source
+
+
+@pytest.mark.asyncio
+async def test_detail_view_shows_search_result_chunk_meta():
+    """show_search_result renders SearchResult.chunk_meta, the anchor
+    chunk's raw metadata carried through search/expansion."""
+    from textual.app import App
+
+    from haiku.rag.inspector.widgets.detail_view import DetailView
+
+    chunk = Chunk(id="chunk-1", document_id="doc-1", content="raw chunk text")
+    search_result = SearchResult(
+        content="raw chunk text",
+        score=0.5,
+        chunk_id="chunk-1",
+        chunk_meta={"para_no": "12"},
+    )
+
+    class TestApp(App):
+        def compose(self):
+            yield DetailView(id="detail")
+
+    app = TestApp()
+    async with app.run_test():
+        detail_view = app.query_one(DetailView)
+        await detail_view.show_search_result(chunk, search_result)
+        source = detail_view.content_widget.source
+        assert "**Metadata:**" in source
+        assert "para_no: 12" in source
+
+
+@pytest.mark.asyncio
 async def test_context_modal_renders_pictures_when_vision_enabled():
     """ContextModal must mount one TextualImage per attached picture
     when qa.model.vision is True — that's what the LLM actually sees."""
