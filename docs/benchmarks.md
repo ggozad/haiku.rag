@@ -65,6 +65,7 @@ evaluations run hotpotqa --config /path/to/haiku.rag.yaml --db /path/to/custom.l
 - `--name NAME` - Override the evaluation name
 - `--target {rag-capability,analysis-capability}` - Choose which [capability](capabilities/index.md) to benchmark end-to-end (default: `rag-capability`). The target names remain stable dataset identifiers.
 - `--capability-model PROVIDER:NAME` - Override the capability model independently from the judge (default: `config.qa.model`, or `config.analysis.model` when set for `--target analysis-capability`).
+- `--filter CLAUSE` / `-f CLAUSE` - Restrict every benchmark search to a subset of the database (see [Restricting the corpus](#restricting-the-corpus)).
 
 If no config file is specified, the script searches standard locations: `./haiku.rag.yaml`, user config directory, then falls back to defaults.
 
@@ -85,6 +86,25 @@ evaluations:
       chat_template_kwargs:
         enable_thinking: true
 ```
+
+### Restricting the corpus
+
+When a database holds documents from several corpora — only some of which a dataset's questions are drawn from — `--filter` restricts every benchmark search to a subset. It takes the same SQL `WHERE` clause as `haiku-rag search --filter`, over document columns (`id`, `uri`, `title`, `created_at`, `updated_at`, `metadata`). Each dataset writes its own URIs: `orb_text` uses bare arXiv ids such as `2407.01528v3`, `hotpotqa` uses page titles.
+
+```bash
+evaluations run orb_text --skip-db --config haiku.rag.s3.yaml \
+  --filter "uri LIKE '2407%'"
+```
+
+If the corpora are distinguished by a tag rather than by URI, attach it at ingest time as document metadata and match it with `LIKE`. `metadata` is stored as a `json.dumps` string, so there is no JSON subfield access — match the serialized key/value, including the space after the colon:
+
+```bash
+evaluations run orb_text --skip-db --filter "metadata LIKE '%\"corpus\": \"orb_text\"%'"
+```
+
+The clause applies to both benchmark phases — the retrieval benchmark's searches and every search the capability runs during QA — so the two score the same subset. It is recorded as `document_filter` in the run's experiment metadata, so a filtered run is never mistaken for an unfiltered one when comparing results.
+
+Filtering affects searches only — a run without `--skip-db` still populates the database with the dataset's full corpus.
 
 ## Methodology
 

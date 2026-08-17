@@ -17,16 +17,16 @@ from haiku.rag.config.models import AppConfig, ModelConfig
 
 def _stub_spec(**overrides) -> DatasetSpec:
     """A DatasetSpec whose loaders/mappers are inert, for tests that only
-    exercise the surrounding plumbing."""
-    return DatasetSpec(
-        key="test",
-        db_filename="test.lancedb",
-        document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        document_mapper=lambda doc: None,
-        qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        **overrides,
-    )
+    exercise the surrounding plumbing. Any field can be overridden."""
+    fields: dict = {
+        "key": "test",
+        "db_filename": "test.lancedb",
+        "document_loader": lambda: None,
+        "document_mapper": lambda doc: None,
+        "qa_loader": lambda: [],
+        "qa_case_builder": lambda idx, doc: None,
+    }
+    return DatasetSpec(**{**fields, **overrides})
 
 
 class TestBuildExperimentMetadata:
@@ -579,6 +579,120 @@ class TestRetrievalTarget:
         # uri-x is the only relevant document and ranks second of two
         assert result is not None
         assert result["map"] == 0.5
+
+
+class TestDocumentFilterThreading:
+    """The filter must reach both benchmark phases, so retrieval and QA score
+    the same subset of the database."""
+
+    def test_metadata_records_filter(self) -> None:
+        result = build_experiment_metadata(
+            dataset_key="test",
+            test_cases=1,
+            config=AppConfig(),
+            document_filter="uri LIKE '%arxiv%'",
+        )
+        assert result["document_filter"] == "uri LIKE '%arxiv%'"
+
+    def test_metadata_filter_is_none_when_unset(self) -> None:
+        result = build_experiment_metadata(
+            dataset_key="test", test_cases=1, config=AppConfig()
+        )
+        assert result["document_filter"] is None
+
+    @pytest.mark.asyncio
+    async def test_retrieval_search_receives_filter(self, tmp_path: Path) -> None:
+        from haiku.rag.store.models.chunk import SearchResult
+
+        from evaluations.benchmark import run_retrieval_benchmark
+        from evaluations.config import RetrievalSample
+        from evaluations.evaluators import MAPEvaluator
+
+        searches: list[dict] = []
+
+        class FakeRag:
+            async def search(self, **kwargs) -> list[SearchResult]:
+                searches.append(kwargs)
+                return [SearchResult(content="x", score=1.0, document_uri="uri-x")]
+
+        spec = _stub_spec(
+            retrieval_loader=lambda: [{"q": "What is X?", "uris": ("uri-x",)}],
+            retrieval_mapper=lambda d: RetrievalSample(
+                question=d["q"], expected_uris=d["uris"]
+            ),
+            retrieval_evaluator=MAPEvaluator(),
+        )
+
+        with patch("evaluations.benchmark.HaikuRAG") as mock_haiku:
+            mock_haiku.return_value.__aenter__.return_value = FakeRag()
+            await run_retrieval_benchmark(
+                spec,
+                AppConfig(),
+                db_path=tmp_path / "test.lancedb",
+                document_filter="uri LIKE '%arxiv%'",
+            )
+
+        assert searches[0]["filter"] == "uri LIKE '%arxiv%'"
+
+    @pytest.mark.asyncio
+    async def test_qa_capability_run_receives_filter(self, tmp_path: Path) -> None:
+        from pydantic_evals import Case
+
+        from evaluations.capability_runner import CapabilityRunResult
+        from evaluations.evaluators import NumberMatchEvaluator
+
+        # A deterministic evaluator, so no judge model is constructed.
+        spec = _stub_spec(
+            qa_loader=lambda: [{"question": "What is X?", "answer": "42"}],
+            qa_case_builder=lambda idx, doc: Case(
+                name=f"case-{idx}",
+                inputs=doc["question"],
+                expected_output=doc["answer"],
+            ),
+            qa_evaluator=NumberMatchEvaluator(),
+        )
+
+        with patch(
+            "evaluations.benchmark.run_capability_question",
+            new_callable=AsyncMock,
+            return_value=CapabilityRunResult(answer="ANSWER: 42"),
+        ) as mock_run:
+            await run_qa_benchmark(
+                spec,
+                AppConfig(),
+                db_path=tmp_path / "test.lancedb",
+                document_filter="uri LIKE '%arxiv%'",
+            )
+
+        mock_run.assert_awaited_once()
+        assert mock_run.call_args[1]["document_filter"] == "uri LIKE '%arxiv%'"
+
+    @pytest.mark.asyncio
+    async def test_evaluate_dataset_passes_filter_to_both_phases(self) -> None:
+        expected = """metadata LIKE '%"corpus": "orb_text"%'"""
+
+        with (
+            patch(
+                "evaluations.benchmark.run_retrieval_benchmark", new_callable=AsyncMock
+            ) as mock_retrieval,
+            patch(
+                "evaluations.benchmark.run_qa_benchmark", new_callable=AsyncMock
+            ) as mock_qa,
+        ):
+            await evaluate_dataset(
+                spec=_stub_spec(),
+                config=AppConfig(),
+                skip_db=True,
+                skip_retrieval=False,
+                skip_qa=False,
+                limit=None,
+                name=None,
+                db_path=None,
+                document_filter=expected,
+            )
+
+        assert mock_retrieval.call_args[1]["document_filter"] == expected
+        assert mock_qa.call_args[1]["document_filter"] == expected
 
 
 class TestEvaluateDatasetCaseIds:
