@@ -1,27 +1,36 @@
 import asyncio
 import shutil
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal, NamedTuple, cast
 
 import typer
 from dotenv import find_dotenv, load_dotenv
 from huggingface_hub import HfApi, snapshot_download
 from pydantic_evals import Case, Dataset as EvalDataset, set_eval_attribute
-from pydantic_evals.evaluators import Evaluator, LLMJudge
+from pydantic_evals.evaluators import Evaluator
 from pydantic_evals.reporting import ReportCaseFailure
 from rich.console import Console
 from rich.progress import Progress
 
-from evaluations.config import DatasetSpec
+from evaluations.config import ConversationInput, DatasetSpec
 from evaluations.datasets import DATASETS
 from evaluations.evaluators import (
     ANSWER_EQUIVALENCE_RUBRIC,
-    CitationMAPEvaluator,
-    MAPEvaluator,
+    REFUSAL_ELIGIBLE_LABELS,
+    REFUSAL_RUBRIC,
+    ConversationEvaluator,
+    RefusalJudge,
+    TranscriptLLMJudge,
 )
-from evaluations.capability_runner import CapabilityFactory, run_capability_question
+from evaluations.capability_runner import (
+    CapabilityFactory,
+    prefix_to_messages,
+    run_capability_conversation,
+    run_capability_question,
+)
 from haiku.rag.client import HaikuRAG
+from haiku.rag.client.documents import DocumentImport
 from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.logging import configure_cli_logging
@@ -118,6 +127,59 @@ def build_experiment_metadata(
     return metadata
 
 
+async def _ingest_batched(
+    rag: HaikuRAG,
+    spec: DatasetSpec,
+    corpus,
+    batch_size: int,
+    on_document: Callable[[], None] = lambda: None,
+) -> None:
+    """Ingest inline-content documents via `import_documents` batches.
+
+    Each batch writes the documents/chunks/document_items tables once and
+    embeds every chunk in one batched pass. A URI is skipped on resume only
+    when its document has chunks; a chunkless document (crash between the
+    document and chunk writes) is deleted and re-imported.
+    """
+    uri_rows = await (
+        rag.store.document_meta_table.query().select(["id", "uri"]).to_list()
+    )
+    chunk_rows = await rag.store.chunks_table.query().select(["document_id"]).to_list()
+    chunked_ids = {row["document_id"] for row in chunk_rows}
+    complete = {row["uri"] for row in uri_rows if row["id"] in chunked_ids}
+    chunkless = {
+        row["uri"]: row["id"] for row in uri_rows if row["id"] not in chunked_ids
+    }
+
+    batch: list[DocumentImport] = []
+    for doc in corpus:
+        payload = spec.document_mapper(cast(Mapping[str, Any], doc))
+        if payload is None or payload.uri in complete:
+            on_document()
+            continue
+        if payload.uri in chunkless:
+            await rag.delete_document(chunkless[payload.uri])
+        assert payload.content is not None, "batched ingest requires inline content"
+        docling_document = await rag.convert(payload.content, format=payload.format)
+        chunks = await rag.chunk(docling_document)
+        batch.append(
+            DocumentImport(
+                docling_document=docling_document,
+                chunks=chunks,
+                uri=payload.uri,
+                title=payload.title,
+                metadata=payload.metadata or {},
+            )
+        )
+        if len(batch) >= batch_size:
+            await rag.import_documents(batch)
+            batch = []
+        on_document()
+
+    if batch:
+        await rag.import_documents(batch)
+
+
 async def populate_db(
     spec: DatasetSpec,
     config: AppConfig,
@@ -136,6 +198,17 @@ async def populate_db(
     with Progress() as progress:
         task = progress.add_task("[green]Populating database...", total=len(corpus))
         async with HaikuRAG(db, config=config, create=True) as rag:
+            if spec.ingest_batch_size is not None:
+                await _ingest_batched(
+                    rag,
+                    spec,
+                    corpus,
+                    batch_size=spec.ingest_batch_size,
+                    on_document=lambda: progress.advance(task),
+                )
+                await rag.store.vacuum(retention_seconds=0)
+                return
+
             docs_since_vacuum = 0
             for doc in corpus:
                 doc_mapping = cast(Mapping[str, Any], doc)
@@ -233,16 +306,13 @@ async def run_retrieval_benchmark(
         console.print("No retrieval cases to evaluate.")
         return None
 
-    if spec.retrieval_evaluator is None:
-        raise ValueError(f"No retrieval evaluator configured for dataset: {spec.key}")
-
-    evaluator = spec.retrieval_evaluator
-    metric_name = evaluator.__class__.__name__.replace("Evaluator", "").upper()
+    if not spec.retrieval_evaluators:
+        raise ValueError(f"No retrieval evaluators configured for dataset: {spec.key}")
 
     dataset = EvalDataset(
         name=f"{spec.key}-retrieval",
         cases=cases,
-        evaluators=[evaluator],
+        evaluators=list(spec.retrieval_evaluators),
     )
 
     db = spec.db_path(db_path)
@@ -250,7 +320,10 @@ async def run_retrieval_benchmark(
 
         async def retrieval_target(question: str) -> list[str]:
             chunks = await rag.search(
-                query=question, limit=5, include_images=False, filter=document_filter
+                query=question,
+                limit=spec.retrieval_limit,
+                include_images=False,
+                filter=document_filter,
             )
 
             seen = set()
@@ -280,25 +353,22 @@ async def run_retrieval_benchmark(
             metadata=experiment_metadata,
         )
 
-    total_score = 0.0
-    total_cases = 0
+    per_metric: dict[str, list[float]] = {}
     for case in report.cases:
-        if case.scores:
-            for score_result in case.scores.values():
-                total_score += score_result.value
-                total_cases += 1
-
-    mean_score = total_score / total_cases if total_cases > 0 else 0.0
+        for key, score_result in case.scores.items():
+            per_metric.setdefault(key, []).append(score_result.value)
 
     console.print("\n=== Retrieval Benchmark Results ===", style="bold cyan")
     console.print(f"Dataset: {spec.key}")
     console.print(f"Total queries: {len(cases)}")
-    console.print(f"{metric_name}: {mean_score:.4f}")
+    results: dict[str, float] = {"queries": len(cases)}
+    for key, values in per_metric.items():
+        mean_score = sum(values) / len(values)
+        metric_name = key.replace("Evaluator", "").upper()
+        console.print(f"{metric_name}: {mean_score:.4f}")
+        results[metric_name.lower()] = mean_score
 
-    return {
-        metric_name.lower(): mean_score,
-        "queries": len(cases),
-    }
+    return results
 
 
 def _capability_factory_for_target(target: Target) -> CapabilityFactory:
@@ -313,13 +383,6 @@ def _capability_factory_for_target(target: Target) -> CapabilityFactory:
     raise ValueError(f"target {target!r} is not a capability target")
 
 
-def _citation_evaluator_for(retrieval_evaluator: Evaluator | None) -> Evaluator | None:
-    """Return the citation-scoring twin of the dataset's retrieval evaluator."""
-    if isinstance(retrieval_evaluator, MAPEvaluator):
-        return CitationMAPEvaluator()
-    return None
-
-
 def _attach_relevant_uris(
     cases: list[Case[str, str, dict[str, Any]]],
     spec: DatasetSpec,
@@ -332,6 +395,8 @@ def _attach_relevant_uris(
     """
     if spec.retrieval_loader is None or spec.retrieval_mapper is None:
         return
+    if not any(isinstance(case.inputs, str) for case in cases):
+        return
     corpus = spec.retrieval_loader()
     if limit is not None:
         corpus = corpus.select(range(min(limit, len(corpus))))
@@ -342,12 +407,116 @@ def _attach_relevant_uris(
             continue
         expected_by_question[sample.question] = sample.expected_uris
     for case in cases:
+        if not isinstance(case.inputs, str):
+            continue
         uris = expected_by_question.get(case.inputs)
         if uris is None:
             continue
         metadata = case.metadata if case.metadata is not None else {}
         metadata["relevant_uris"] = list(uris)
         case.metadata = metadata
+
+
+def _resolve_capability_config(
+    target: Target, config: AppConfig, capability_model: ModelConfig | None
+) -> ModelConfig:
+    if target == "analysis-capability":
+        # Mirror the capability-code resolver: explicit analysis.model wins,
+        # else fall back to qa.model.
+        return capability_model or config.analysis.model or config.qa.model
+    return capability_model or config.qa.model
+
+
+def _live_summary(report_cases, report_failures) -> dict[str, float | int] | None:
+    """Aggregate ConversationEvaluator scores across conversations.
+
+    Micro rates weight every turn equally (sums across conversations); macro
+    rates average per-conversation means, so short conversations don't get
+    overweighted by micro nor long ones by macro. Failed conversations are
+    operational exclusions: they count toward the attempted coverage figures
+    but never toward the rates.
+    """
+
+    def _score(case, key: str):
+        result = case.scores.get(key)
+        return result.value if result is not None else None
+
+    scored = [case for case in report_cases if _score(case, "turns_total") is not None]
+    if not scored:
+        return None
+
+    failed_turns = sum(
+        len(failure.inputs) if isinstance(failure.inputs, list) else 0
+        for failure in report_failures
+    )
+    turns_total = sum(_score(case, "turns_total") for case in scored)
+    turns_judged = sum(_score(case, "turns_judged") for case in scored)
+    turns_passed = sum(_score(case, "turns_passed") for case in scored)
+    # A conversation with zero judged turns (its judge calls all failed)
+    # reports turn_pass_rate 0.0; averaging that in would count a judge
+    # outage as a failed conversation, against the exclusion policy.
+    judged = [case for case in scored if _score(case, "turns_judged")]
+    summary: dict[str, float | int] = {
+        "conversations": len(scored),
+        "conversations_attempted": len(report_cases) + len(report_failures),
+        "turns_total": turns_total,
+        "turns_judged": turns_judged,
+        "turns_attempted": turns_total + failed_turns,
+        "micro_pass_rate": turns_passed / turns_judged if turns_judged else 0.0,
+        "macro_pass_rate": sum(_score(case, "turn_pass_rate") for case in judged)
+        / len(judged)
+        if judged
+        else 0.0,
+    }
+
+    cited = [case for case in scored if _score(case, "cited_map") is not None]
+    eligible = sum(_score(case, "cited_eligible") for case in scored)
+    if cited and eligible:
+        summary["cited_eligible"] = eligible
+        summary["cited_map_micro"] = (
+            sum(
+                _score(case, "cited_map") * _score(case, "cited_eligible")
+                for case in cited
+            )
+            / eligible
+        )
+        summary["cited_map_macro"] = sum(
+            _score(case, "cited_map") for case in cited
+        ) / len(cited)
+
+    true_refusals = sum(_score(case, "true_refusals") for case in scored)
+    false_refusals = sum(_score(case, "false_refusals") for case in scored)
+    unanswerable = sum(_score(case, "unanswerable_turns") for case in scored)
+    refusals = true_refusals + false_refusals
+    summary["unanswerable_turns"] = unanswerable
+    summary["refusals"] = refusals
+    summary["refusal_precision"] = true_refusals / refusals if refusals else 0.0
+    summary["refusal_recall"] = true_refusals / unanswerable if unanswerable else 0.0
+    return summary
+
+
+def _refusal_metrics(report_cases) -> tuple[float, float, int, int] | None:
+    """Refusal precision/recall against answerability labels.
+
+    Uses cases the refusal judge scored (ANSWERABLE/UNANSWERABLE turns).
+    Returns (precision, recall, unanswerable_count, refusal_count), or None
+    when no case was judged.
+    """
+    outcomes: list[tuple[str, bool]] = []
+    for case in report_cases:
+        refused = case.assertions.get("refused")
+        label = (case.metadata or {}).get("answerability")
+        if refused is None or label not in REFUSAL_ELIGIBLE_LABELS:
+            continue
+        outcomes.append((label, bool(refused.value)))
+    if not outcomes:
+        return None
+    refusals = [(label, r) for label, r in outcomes if r]
+    true_refusals = sum(1 for label, _ in refusals if label == "UNANSWERABLE")
+    unanswerable = sum(1 for label, _ in outcomes if label == "UNANSWERABLE")
+    precision = true_refusals / len(refusals) if refusals else 0.0
+    recall = true_refusals / unanswerable if unanswerable else 0.0
+    return precision, recall, unanswerable, len(refusals)
 
 
 def _filter_qa_corpus(corpus, case_ids: set[str] | None):
@@ -358,6 +527,84 @@ def _filter_qa_corpus(corpus, case_ids: set[str] | None):
     if case_ids is None:
         return corpus
     return corpus.filter(lambda row: row.get("id") in case_ids)
+
+
+class _QARun(NamedTuple):
+    cases: list[Case[Any, Any, dict[str, Any]]]
+    db: Path
+    judge_config: ModelConfig
+    eval_name: str
+    experiment_metadata: dict[str, Any]
+    capability_factory: CapabilityFactory
+    capability_model: Any
+
+
+def _prepare_qa_run(
+    spec: DatasetSpec,
+    config: AppConfig,
+    limit: int | None,
+    name: str | None,
+    db_path: Path | None,
+    judge_model: ModelConfig | None,
+    target: Target,
+    capability_model: ModelConfig | None,
+    case_ids: set[str] | None,
+    document_filter: str | None,
+) -> _QARun:
+    """Shared setup for the QA runners: cases, models, name and metadata."""
+    corpus = spec.qa_loader()
+    corpus = _filter_qa_corpus(corpus, case_ids)
+    if limit is not None:
+        corpus = corpus.select(range(min(limit, len(corpus))))
+
+    cases = [
+        spec.qa_case_builder(index, cast(Mapping[str, Any], doc))
+        for index, doc in enumerate(corpus, start=1)
+    ]
+
+    judge_config = judge_model or DEFAULT_JUDGE_MODEL
+    capability_config = _resolve_capability_config(target, config, capability_model)
+
+    eval_name = name if name is not None else f"{spec.key}_qa_evaluation"
+    experiment_metadata = build_experiment_metadata(
+        dataset_key=spec.key,
+        test_cases=len(cases),
+        config=config,
+        judge_config=judge_config,
+        target=target,
+        capability_config=capability_config,
+        document_filter=document_filter,
+    )
+    experiment_metadata.update(spec.experiment_metadata or {})
+
+    return _QARun(
+        cases=cases,
+        db=spec.db_path(db_path),
+        judge_config=judge_config,
+        eval_name=eval_name,
+        experiment_metadata=experiment_metadata,
+        capability_factory=_capability_factory_for_target(target),
+        capability_model=get_model(capability_config, config),
+    )
+
+
+def _print_mean_task_time(report_cases, unit: str = "case") -> None:
+    if not report_cases:
+        return
+    mean = sum(case.task_duration for case in report_cases) / len(report_cases)
+    console.print(f"Avg task time per {unit}: {mean:.2f}s")
+
+
+def _print_failures(failures, show_question: bool = False) -> None:
+    if not failures:
+        return
+    console.print("[red]\nSummary of failures:[/red]")
+    for failure in failures:
+        console.print(f"Case: {failure.name}")
+        if show_question:
+            console.print(f"Question: {failure.inputs}")
+        console.print(f"Error: {failure.error_message}")
+        console.print("")
 
 
 async def run_qa_benchmark(
@@ -372,27 +619,22 @@ async def run_qa_benchmark(
     case_ids: set[str] | None = None,
     document_filter: str | None = None,
 ) -> ReportCaseFailure[str, str, dict[str, str]] | None:
-    corpus = spec.qa_loader()
-    corpus = _filter_qa_corpus(corpus, case_ids)
-    if limit is not None:
-        corpus = corpus.select(range(min(limit, len(corpus))))
-
-    cases = [
-        spec.qa_case_builder(index, cast(Mapping[str, Any], doc))
-        for index, doc in enumerate(corpus, start=1)
-    ]
-
-    judge_config = judge_model or DEFAULT_JUDGE_MODEL
-    if target == "analysis-capability":
-        # Mirror the capability-code resolver: explicit analysis.model wins,
-        # else fall back to qa.model.
-        capability_config = capability_model or config.analysis.model or config.qa.model
-    else:
-        capability_config = capability_model or config.qa.model
-    db = spec.db_path(db_path)
+    run = _prepare_qa_run(
+        spec,
+        config,
+        limit,
+        name,
+        db_path,
+        judge_model,
+        target,
+        capability_model,
+        case_ids,
+        document_filter,
+    )
+    cases, judge_config = run.cases, run.judge_config
 
     _attach_relevant_uris(cases, spec, limit)
-    citation_evaluator = _citation_evaluator_for(spec.retrieval_evaluator)
+    citation_evaluator = spec.citation_evaluator
 
     qa_evaluator = spec.qa_evaluator
     evaluators: list[Evaluator]
@@ -400,7 +642,7 @@ async def run_qa_benchmark(
         evaluators = [qa_evaluator]
     else:
         evaluators = [
-            LLMJudge(
+            TranscriptLLMJudge(
                 rubric=ANSWER_EQUIVALENCE_RUBRIC,
                 include_input=True,
                 include_expected_output=True,
@@ -413,42 +655,35 @@ async def run_qa_benchmark(
         ]
     if citation_evaluator is not None:
         evaluators.append(citation_evaluator)
+    # RefusalJudge scores only cases whose metadata carries an answerability
+    # label; on unlabeled datasets it returns no score without a judge call.
+    evaluators.append(
+        RefusalJudge(
+            rubric=REFUSAL_RUBRIC,
+            model=get_model(judge_config, config),
+            assertion={"evaluation_name": "refused", "include_reason": False},
+        )
+    )
 
-    evaluation_dataset = EvalDataset[str, str, dict[str, str]](
+    evaluation_dataset = EvalDataset[Any, str, dict[str, Any]](
         name=spec.key, cases=cases, evaluators=evaluators
     )
 
-    eval_name = name if name is not None else f"{spec.key}_qa_evaluation"
-    experiment_metadata = build_experiment_metadata(
-        dataset_key=spec.key,
-        test_cases=len(cases),
-        config=config,
-        judge_config=judge_config,
-        target=target,
-        capability_config=capability_config,
-        document_filter=document_filter,
-    )
-
-    async def _evaluate(answer_fn: Callable[[str], Awaitable[str]]):
-        return await evaluation_dataset.evaluate(
-            answer_fn,
-            name=eval_name,
-            max_concurrency=1,
-            progress=True,
-            metadata=experiment_metadata,
-        )
-
-    capability_factory = _capability_factory_for_target(target)
-    resolved_capability_model = get_model(capability_config, config)
-
-    async def answer_question(question: str) -> str:
+    async def answer_question(inputs: str | ConversationInput) -> str:
+        if isinstance(inputs, ConversationInput):
+            question = inputs.question
+            message_history = prefix_to_messages(inputs.prefix)
+        else:
+            question = inputs
+            message_history = None
         result = await run_capability_question(
-            capability_factory=capability_factory,
-            db_path=db,
+            capability_factory=run.capability_factory,
+            db_path=run.db,
             config=config,
             question=question,
-            capability_model=resolved_capability_model,
+            capability_model=run.capability_model,
             document_filter=document_filter,
+            message_history=message_history,
         )
         set_eval_attribute("cited_uris", result.cited_uris)
         set_eval_attribute("cited_chunk_ids", result.cited_chunk_ids)
@@ -459,9 +694,16 @@ async def run_qa_benchmark(
         set_eval_attribute("n_failed_tools", result.n_failed_tools)
         set_eval_attribute("n_executions", result.n_executions)
         set_eval_attribute("n_requests", result.n_requests)
+        set_eval_attribute("citation_status", result.citation_status)
         return result.answer
 
-    report = await _evaluate(answer_question)
+    report = await evaluation_dataset.evaluate(
+        answer_question,
+        name=run.eval_name,
+        max_concurrency=1,
+        progress=True,
+        metadata=run.experiment_metadata,
+    )
 
     total_processed = len(report.cases)
     failures = report.failures
@@ -488,6 +730,7 @@ async def run_qa_benchmark(
     console.print(f"Total questions: {total_processed}")
     console.print(f"Correct answers: {passing_cases}")
     console.print(f"QA Accuracy: {accuracy:.4f} ({accuracy * 100:.2f}%)")
+    _print_mean_task_time(report.cases)
 
     if citation_evaluator is not None:
         score_key = citation_evaluator.get_default_evaluation_name()
@@ -509,19 +752,147 @@ async def run_qa_benchmark(
             )
             console.print(f"Mean {score_key}: {mean_score:.4f}")
             console.print(
+                f"Eligible cases (gold passages known): {len(scores)}/{len(report.cases)}"
+            )
+            console.print(
                 f"Cite rate (≥1 citation): {cited_count / len(report.cases):.2%}"
             )
             console.print(f"Mean citations per case: {mean_citations:.2f}")
 
-    if failures:
-        console.print("[red]\nSummary of failures:[/red]")
-        for failure in failures:
-            console.print(f"Case: {failure.name}")
-            console.print(f"Question: {failure.inputs}")
-            console.print(f"Error: {failure.error_message}")
-            console.print("")
+    if (metrics := _refusal_metrics(report.cases)) is not None:
+        precision, recall, unanswerable, refusals = metrics
+        console.print("\n=== Refusal vs answerability labels ===", style="bold cyan")
+        console.print(f"Refusal precision: {precision:.2%} | recall: {recall:.2%}")
+        console.print(
+            f"UNANSWERABLE turns: {unanswerable} | refusals: {refusals} "
+            "(PARTIAL excluded)"
+        )
+
+    _print_failures(failures, show_question=True)
 
     return failures[0] if failures else None
+
+
+async def run_live_qa_benchmark(
+    spec: DatasetSpec,
+    config: AppConfig,
+    limit: int | None = None,
+    name: str | None = None,
+    db_path: Path | None = None,
+    judge_model: ModelConfig | None = None,
+    target: Target = "rag-capability",
+    capability_model: ModelConfig | None = None,
+    case_ids: set[str] | None = None,
+    document_filter: str | None = None,
+) -> None:
+    """Replay conversations turn by turn through one capability session.
+
+    One case per conversation; ``limit`` counts conversations. Answers carry
+    forward as real message history, so prior-turn compaction is exercised.
+    """
+    run = _prepare_qa_run(
+        spec,
+        config,
+        limit,
+        name,
+        db_path,
+        judge_model,
+        target,
+        capability_model,
+        case_ids,
+        document_filter,
+    )
+
+    evaluation_dataset = EvalDataset[Any, Any, dict[str, Any]](
+        name=spec.key,
+        cases=run.cases,
+        evaluators=[
+            ConversationEvaluator(
+                rubric=ANSWER_EQUIVALENCE_RUBRIC,
+                model=get_model(run.judge_config, config),
+            )
+        ],
+    )
+
+    async def answer_conversation(questions: list[str]) -> list[str]:
+        results = await run_capability_conversation(
+            capability_factory=run.capability_factory,
+            db_path=run.db,
+            config=config,
+            questions=list(questions),
+            capability_model=run.capability_model,
+            document_filter=document_filter,
+            compaction=spec.compaction,
+        )
+        set_eval_attribute("turn_cited_uris", [r.cited_uris for r in results])
+        set_eval_attribute("turn_n_search_calls", [r.n_search_calls for r in results])
+        set_eval_attribute(
+            "turn_n_rejected_searches", [r.n_rejected_searches for r in results]
+        )
+        set_eval_attribute("turn_n_failed_tools", [r.n_failed_tools for r in results])
+        set_eval_attribute("turn_n_requests", [r.n_requests for r in results])
+        set_eval_attribute("turn_citation_status", [r.citation_status for r in results])
+        return [r.answer for r in results]
+
+    report = await evaluation_dataset.evaluate(
+        answer_conversation,
+        name=run.eval_name,
+        max_concurrency=1,
+        progress=True,
+        metadata=run.experiment_metadata,
+    )
+
+    summary = _live_summary(report.cases, report.failures)
+    console.print("\n=== Live Conversation Results ===", style="bold cyan")
+    if summary is None:
+        attempted = len(report.cases) + len(report.failures)
+        console.print(f"No conversations were scored ({attempted} attempted).")
+    else:
+        console.print(
+            f"Conversations scored: {summary['conversations']}"
+            f"/{summary['conversations_attempted']} | turns scored: "
+            f"{summary['turns_total']}/{summary['turns_attempted']}"
+        )
+        if summary["turns_judged"] < summary["turns_total"]:
+            console.print(
+                f"Turns judged: {summary['turns_judged']}/{summary['turns_total']} "
+                "(per-turn judge errors excluded from rates)"
+            )
+        if report.failures:
+            console.print(
+                "Failed conversations are operational exclusions — "
+                "not counted as wrong answers."
+            )
+        console.print(
+            f"Answer pass rate — micro (per turn): {summary['micro_pass_rate']:.4f} | "
+            f"macro (per conversation): {summary['macro_pass_rate']:.4f}"
+        )
+        if "cited_map_micro" in summary:
+            console.print(
+                f"cited_map — micro: {summary['cited_map_micro']:.4f} | "
+                f"macro: {summary['cited_map_macro']:.4f} "
+                f"(eligible turns: {summary['cited_eligible']})"
+            )
+        console.print(
+            f"Refusal precision: {summary['refusal_precision']:.2%} | "
+            f"recall: {summary['refusal_recall']:.2%} "
+            f"(UNANSWERABLE turns: {summary['unanswerable_turns']}, "
+            f"refusals: {summary['refusals']})"
+        )
+    if report.cases:
+        mean_task_time = sum(case.task_duration for case in report.cases) / len(
+            report.cases
+        )
+        turns = sum(len(case.output or []) for case in report.cases)
+        per_turn = (
+            sum(case.task_duration for case in report.cases) / turns if turns else 0.0
+        )
+        console.print(
+            f"Avg task time: {mean_task_time:.2f}s per conversation | "
+            f"{per_turn:.2f}s per turn"
+        )
+
+    _print_failures(report.failures)
 
 
 async def evaluate_dataset(
@@ -566,7 +937,8 @@ async def evaluate_dataset(
         console.print(
             f"\nRunning QA benchmarks (target={target})...", style="bold yellow"
         )
-        await run_qa_benchmark(
+        qa_benchmark = run_live_qa_benchmark if spec.live else run_qa_benchmark
+        await qa_benchmark(
             spec,
             config,
             limit=limit,
@@ -621,9 +993,20 @@ def _resolve_dataset(dataset: str) -> DatasetSpec:
 
 
 def _resolve_datasets(dataset: str) -> list[DatasetSpec]:
-    """Resolve 'all' or a single dataset key to a list of DatasetSpecs."""
+    """Resolve 'all' or a single dataset key to a list of DatasetSpecs.
+
+    'all' yields one spec per database: query variants sharing a db_filename
+    would otherwise be downloaded/uploaded twice.
+    """
     if dataset.lower() == "all":
-        return list(DATASETS.values())
+        seen: set[str] = set()
+        specs: list[DatasetSpec] = []
+        for spec in DATASETS.values():
+            if spec.db_filename in seen:
+                continue
+            seen.add(spec.db_filename)
+            specs.append(spec)
+        return specs
     return [_resolve_dataset(dataset)]
 
 

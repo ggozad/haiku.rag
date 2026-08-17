@@ -1,6 +1,6 @@
 # Benchmarks
 
-We evaluate `haiku.rag` on a small set of datasets that exercise different parts of the pipeline. OpenRAG Bench (ORB), T²-RAGBench, and HotpotQA are the datasets we currently track. Retrieval, QA accuracy, and citation retrieval are scored end-to-end through the RAG and analysis capabilities.
+We evaluate `haiku.rag` on a small set of datasets that exercise different parts of the pipeline. OpenRAG Bench (ORB), T²-RAGBench, HotpotQA, and MTRAG are the datasets we currently track. Retrieval, QA accuracy, and citation retrieval are scored end-to-end through the RAG and analysis capabilities.
 
 ## Running Evaluations
 
@@ -37,6 +37,7 @@ Active datasets:
 | `orb_multimodal_nemotron` — OpenRAG Bench, multimodal embedder (`nvidia/llama-nemotron-embed-vl-1b-v2`), the embedder behind the published headline results | ~16 GB |
 | `t2_finqa` — T²-RAGBench (FinQA) financial QA, text embedder (`qwen3-embedding:4b`); scored by exact numeric match, run with `--target analysis-capability` | ~2 GB |
 | `hotpotqa` — HotpotQA multi-hop QA over Wikipedia paragraphs, text embedder (`qwen3-embedding:4b`) | ~1.5 GB |
+| `mtrag_clapnq` — MTRAG multi-turn RAG, ClapNQ (Wikipedia) passages, text embedder (`qwen3-embedding:4b`); also serves the `mtrag_clapnq_rewrite`, `mtrag_clapnq_live` and `mtrag_clapnq_live_uncompacted` keys | ~2.8 GB |
 
 After downloading, run benchmarks with `--skip-db`. Each database is built with a specific embedder, so pass its reference config from `evaluations/configs/` (a database only opens against a config whose embedder matches):
 
@@ -225,3 +226,37 @@ The reranker's contribution is larger here than on the single-doc datasets: hybr
 | `vllm:Gemma-4-26B-A4B-NVFP4` | none                | 0.83        | 0.75             |
 
 *Measured on haiku.rag v0.66.0 with `qwen3-embedding:4b` (vLLM, dim 2560), judged by `vllm:Qwen3.6-35B-A3B-NVFP4`, 7,405 cases. The reranker lifts QA accuracy +2.7pts and `cited_map` +4.6pts. Without a reranker, `cited_map` (0.75) still exceeds the no-reranker retrieval MAP (0.70): the skill reformulates queries across search calls, partially recovering second-hop documents that a single query misses.*
+
+### MTRAG (ClapNQ)
+
+[MTRAG](https://github.com/IBM/mt-rag-benchmark) is IBM's multi-turn RAG benchmark (TACL 2025, SemEval-2026 Task 8): human-authored conversations with per-turn answerability labels and binary relevance judgments. We evaluate the ClapNQ (Wikipedia) domain: 183,408 passages, 29 conversations, 224 turns, 208 retrieval queries.
+
+Four dataset keys share one database. `mtrag_clapnq` retrieves with the raw last user turn and runs QA by replaying each task's reference conversation prefix as message history. `mtrag_clapnq_rewrite` retrieves with the human standalone rewrites. `mtrag_clapnq_live` replays whole conversations through a single capability session, carrying the model's own answers, tool history and capability state across turns, with `EvidenceCompactionCapability` registered. `mtrag_clapnq_live_uncompacted` is the same replay without compaction, isolating what compaction contributes. This is the only multi-turn evaluation, so it is the only one where compaction acts at all.
+
+##### Retrieval (Recall@k / nDCG@k)
+
+Directly comparable with [IBM's published results](https://github.com/IBM/mt-rag-benchmark/tree/main/mtrag-human/retrieval_tasks). Elser is IBM's strongest reported retriever.
+
+| Retriever | Queries | R@5 | R@10 | nDCG@5 | nDCG@10 |
+|-----------|---------|----:|-----:|-------:|--------:|
+| Elser (IBM) | lastturn | 0.49 | 0.58 | 0.45 | 0.49 |
+| `haiku.rag` | lastturn | 0.501 | 0.600 | 0.455 | 0.497 |
+| Elser (IBM) | rewrite | 0.52 | 0.64 | 0.48 | 0.54 |
+| `haiku.rag` | rewrite | 0.548 | 0.668 | 0.503 | 0.556 |
+
+##### QA accuracy + citation retrieval
+
+| Mode | Capability model | Turns | QA accuracy | Mean `cited_map` |
+|------|------------------|------:|-------------|------------------|
+| Gold-prefix (`mtrag_clapnq`) | `vllm:Muse-Glimmer-30B-NVFP4` | 224 | 0.76 | 0.35 |
+| Live compacted (`mtrag_clapnq_live`) | `vllm:Muse-Glimmer-30B-NVFP4` | 224/224 scored | 0.83 micro / 0.84 macro | 0.42 |
+| Live uncompacted (`mtrag_clapnq_live_uncompacted`) | `vllm:Muse-Glimmer-30B-NVFP4` | 224/224 scored | 0.78 micro / 0.79 macro | 0.42 |
+
+*Measured on haiku.rag v0.74.0 with `qwen3-embedding:4b` (vLLM, dim 2560), `Qwen3-Reranker-4B`, stock capability instructions with `reasoning_strength: high`, judged by the pinned `vllm:Qwen3.6-35B-A3B-NVFP4` (temperature 0.6, thinking). QA numbers are internal (our judge and rubric) and not comparable with IBM's published generation metrics. Gold-prefix and live rates answer different judge questions and are not comparable with each other. The dataset is text-only (ClapNQ passages), so it exercises no multimodal paths.*
+
+The two live arms replay the same 29 conversations (224 turns) and differ only in registering `EvidenceCompactionCapability`, so they are compared as paired observations:
+
+- Input tokens per model request, computed as total input tokens divided by model requests across the whole arm: 7,461 compacted (5,207,627 tokens over 698 requests) vs 13,539 uncompacted (9,707,530 over 717 requests). The uncompacted arm used 1.81x as many tokens per request, a 44.9% reduction under compaction.
+- Answer pass rate: 185/224 vs 175/224 turns. Of the 18 turns where the arms disagree, 14 pass only compacted and 4 only uncompacted. McNemar exact two-sided p = 0.031. The paired difference is +4.5pp with a Wald 95% CI of +0.8 to +8.1pp, so the honest claim is an improvement of roughly 1 to 8 points, not the point estimate.
+- Citation MAP, macro-averaged over conversations with 208 of 224 turns eligible (turns with gold passages) in each arm: 0.4174 compacted vs 0.4230 uncompacted. The gold-prefix 0.35 is over 208 of 224 eligible cases.
+- Refusal precision and recall against the answerability labels (16 UNANSWERABLE turns per arm): compacted 0.33 precision and 0.44 recall (21 refusals), uncompacted 0.23 and 0.31 (22 refusals). Gold-prefix: 0.24 and 0.44 (29 refusals).

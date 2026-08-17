@@ -299,10 +299,16 @@ async def _store_documents_with_chunks(
     Embeds any chunks that lack embeddings, then writes the documents, chunks,
     and document_items tables once apiece. Restores all tables on any failure.
     """
-    embedded: list[list[Chunk]] = [
-        await ensure_chunks_embedded(client._config, chunks, client.embedder)
-        for _, chunks, _ in prepared
-    ]
+    flat = await ensure_chunks_embedded(
+        client._config,
+        [chunk for _, chunks, _ in prepared for chunk in chunks],
+        client.embedder,
+    )
+    embedded: list[list[Chunk]] = []
+    position = 0
+    for _, chunks, _ in prepared:
+        embedded.append(flat[position : position + len(chunks)])
+        position += len(chunks)
 
     def _extract_all_items():
         return [extract_items("", d) for _, _, d in prepared]

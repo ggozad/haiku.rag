@@ -1,5 +1,5 @@
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import typer
@@ -11,7 +11,7 @@ from evaluations.benchmark import (
     evaluate_dataset,
     run_qa_benchmark,
 )
-from evaluations.config import DatasetSpec
+from evaluations.config import DatasetSpec, DocumentPayload
 from haiku.rag.config.models import AppConfig, ModelConfig
 
 
@@ -127,6 +127,476 @@ class TestResolveDataset:
     def test_error_lists_valid_datasets(self) -> None:
         with pytest.raises(typer.BadParameter, match="hotpotqa"):
             _resolve_dataset("nonexistent")
+
+
+class TestConversationInputDispatch:
+    @pytest.mark.asyncio
+    async def test_prefix_rides_as_message_history(self, tmp_path: Path) -> None:
+        """A ConversationInput case reaches the capability as final question
+        plus the prefix converted to message history."""
+        from dataclasses import dataclass
+
+        from pydantic_evals import Case
+        from pydantic_evals.evaluators import Evaluator, EvaluatorContext
+
+        from evaluations.capability_runner import CapabilityRunResult
+        from evaluations.config import ConversationInput, Turn
+
+        @dataclass
+        class AlwaysOne(Evaluator):
+            def evaluate(self, ctx: EvaluatorContext) -> float:
+                return 1.0
+
+        def build_case(idx: int, doc) -> Case:
+            return Case(
+                name="c1",
+                inputs=ConversationInput(
+                    turns=[
+                        Turn(speaker="user", text="q1"),
+                        Turn(speaker="agent", text="a1"),
+                        Turn(speaker="user", text="q2"),
+                    ]
+                ),
+                expected_output="ref",
+            )
+
+        spec = DatasetSpec(
+            key="test",
+            db_filename="test.lancedb",
+            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            document_mapper=lambda doc: None,
+            qa_loader=lambda: [{"id": "t1"}],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            qa_case_builder=build_case,
+            qa_evaluator=AlwaysOne(),
+        )
+
+        with (
+            patch("evaluations.benchmark.get_model", return_value="fake-model"),
+            patch(
+                "evaluations.benchmark.run_capability_question",
+                new_callable=AsyncMock,
+                return_value=CapabilityRunResult(answer="answer"),
+            ) as run_question,
+        ):
+            await run_qa_benchmark(spec, AppConfig(), db_path=tmp_path / "test.lancedb")
+
+        assert run_question.await_args is not None
+        kwargs = run_question.await_args.kwargs
+        assert kwargs["question"] == "q2"
+        history = kwargs["message_history"]
+        assert len(history) == 2
+        assert history[0].parts[0].content == "q1"
+        assert history[1].parts[0].content == "a1"
+
+    @pytest.mark.asyncio
+    async def test_records_citation_status_attribute(self, tmp_path: Path) -> None:
+        from dataclasses import dataclass
+
+        from pydantic_evals import Case
+        from pydantic_evals.evaluators import Evaluator, EvaluatorContext
+
+        from evaluations.capability_runner import CapabilityRunResult
+
+        @dataclass
+        class AlwaysOne(Evaluator):
+            def evaluate(self, ctx: EvaluatorContext) -> float:
+                return 1.0
+
+        def build_case(idx: int, doc) -> Case:
+            return Case(name="c1", inputs="q1", expected_output="ref")
+
+        spec = DatasetSpec(
+            key="test",
+            db_filename="test.lancedb",
+            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            document_mapper=lambda doc: None,
+            qa_loader=lambda: [{"id": "t1"}],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            qa_case_builder=build_case,
+            qa_evaluator=AlwaysOne(),
+        )
+
+        recorded: dict[str, object] = {}
+        with (
+            patch("evaluations.benchmark.get_model", return_value="fake-model"),
+            patch(
+                "evaluations.benchmark.set_eval_attribute",
+                side_effect=lambda key, value: recorded.__setitem__(key, value),
+            ),
+            patch(
+                "evaluations.benchmark.run_capability_question",
+                new_callable=AsyncMock,
+                return_value=CapabilityRunResult(
+                    answer="answer", citation_status="ungrounded"
+                ),
+            ),
+        ):
+            await run_qa_benchmark(spec, AppConfig(), db_path=tmp_path / "test.lancedb")
+
+        assert recorded["citation_status"] == "ungrounded"
+
+
+class TestRefusalMetrics:
+    def _case(self, label: str | None, refused: bool | None) -> MagicMock:
+        case = MagicMock()
+        case.metadata = {"answerability": label} if label is not None else {}
+        case.assertions = (
+            {"refused": MagicMock(value=refused)} if refused is not None else {}
+        )
+        return case
+
+    def test_precision_and_recall(self) -> None:
+        from evaluations.benchmark import _refusal_metrics
+
+        cases = [
+            self._case("UNANSWERABLE", True),  # true refusal
+            self._case("UNANSWERABLE", False),  # missed refusal
+            self._case("ANSWERABLE", True),  # false refusal
+            self._case("ANSWERABLE", False),  # answered correctly
+            self._case("PARTIAL", None),  # skipped by the judge, no assertion
+            self._case(None, None),  # no label
+        ]
+
+        metrics = _refusal_metrics(cases)
+
+        assert metrics is not None
+        precision, recall, unanswerable, refusals = metrics
+        assert precision == 0.5  # 1 true refusal of 2 refusals
+        assert recall == 0.5  # 1 of 2 unanswerable turns refused
+        assert unanswerable == 2
+        assert refusals == 2
+
+    def test_none_when_no_judged_cases(self) -> None:
+        from evaluations.benchmark import _refusal_metrics
+
+        assert _refusal_metrics([self._case("PARTIAL", None)]) is None
+
+
+class TestLiveSummary:
+    def _case(self, scores: dict[str, float | int]) -> MagicMock:
+        case = MagicMock()
+        case.scores = {key: MagicMock(value=value) for key, value in scores.items()}
+        return case
+
+    def test_micro_and_macro_aggregation(self) -> None:
+        from evaluations.benchmark import _live_summary
+
+        # Conversation A: 1/4 turns pass; B: 2/2 pass. Micro weights turns
+        # (3/6); macro averages conversations ((0.25 + 1.0) / 2).
+        cases = [
+            self._case(
+                {
+                    "turn_pass_rate": 0.25,
+                    "turns_passed": 1,
+                    "turns_judged": 4,
+                    "turns_total": 4,
+                    "cited_map": 0.5,
+                    "cited_eligible": 3,
+                    "true_refusals": 1,
+                    "false_refusals": 1,
+                    "unanswerable_turns": 2,
+                }
+            ),
+            self._case(
+                {
+                    "turn_pass_rate": 1.0,
+                    "turns_passed": 2,
+                    "turns_judged": 2,
+                    "turns_total": 2,
+                    "cited_map": 1.0,
+                    "cited_eligible": 1,
+                    "true_refusals": 0,
+                    "false_refusals": 0,
+                    "unanswerable_turns": 0,
+                }
+            ),
+        ]
+
+        failure = MagicMock()
+        failure.inputs = ["fq1", "fq2", "fq3"]
+        summary = _live_summary(cases, [failure])
+
+        assert summary is not None
+        assert summary["conversations"] == 2
+        assert summary["conversations_attempted"] == 3
+        assert summary["turns_total"] == 6
+        assert summary["turns_judged"] == 6
+        assert summary["turns_attempted"] == 9
+        assert summary["micro_pass_rate"] == pytest.approx(0.5)
+        assert summary["macro_pass_rate"] == pytest.approx(0.625)
+        assert summary["cited_eligible"] == 4
+        assert summary["cited_map_micro"] == pytest.approx((0.5 * 3 + 1.0 * 1) / 4)
+        assert summary["cited_map_macro"] == pytest.approx(0.75)
+        assert summary["refusal_precision"] == pytest.approx(0.5)
+        assert summary["refusal_recall"] == pytest.approx(0.5)
+
+    def test_none_without_scored_cases(self) -> None:
+        from evaluations.benchmark import _live_summary
+
+        assert _live_summary([self._case({})], []) is None
+
+    def test_micro_rate_uses_judged_turns(self) -> None:
+        from evaluations.benchmark import _live_summary
+
+        cases = [
+            self._case(
+                {
+                    "turn_pass_rate": 1.0,
+                    "turns_passed": 3,
+                    "turns_judged": 3,
+                    "turns_total": 4,  # one turn's judge errored
+                    "cited_eligible": 0,
+                    "true_refusals": 0,
+                    "false_refusals": 0,
+                    "unanswerable_turns": 0,
+                }
+            )
+        ]
+
+        summary = _live_summary(cases, [])
+
+        assert summary is not None
+        assert summary["micro_pass_rate"] == 1.0
+        assert summary["turns_judged"] == 3
+        assert summary["turns_total"] == 4
+
+    def test_macro_rate_excludes_fully_unjudged_conversations(self) -> None:
+        """A conversation whose every turn lost its judge reports
+        turn_pass_rate 0.0; treating that as a failed conversation would
+        contradict the exclusion policy. It must not enter the macro average."""
+        from evaluations.benchmark import _live_summary
+
+        cases = [
+            self._case(
+                {
+                    "turn_pass_rate": 1.0,
+                    "turns_passed": 2,
+                    "turns_judged": 2,
+                    "turns_total": 2,
+                    "cited_eligible": 0,
+                    "true_refusals": 0,
+                    "false_refusals": 0,
+                    "unanswerable_turns": 0,
+                }
+            ),
+            self._case(
+                {
+                    "turn_pass_rate": 0.0,
+                    "turns_passed": 0,
+                    "turns_judged": 0,  # total judge outage for this conversation
+                    "turns_total": 8,
+                    "cited_eligible": 0,
+                    "true_refusals": 0,
+                    "false_refusals": 0,
+                    "unanswerable_turns": 0,
+                }
+            ),
+        ]
+
+        summary = _live_summary(cases, [])
+
+        assert summary is not None
+        assert summary["macro_pass_rate"] == pytest.approx(1.0)
+        assert summary["micro_pass_rate"] == pytest.approx(1.0)
+        assert summary["turns_judged"] == 2
+        assert summary["turns_total"] == 10
+
+    def test_failed_conversations_do_not_affect_rates(self) -> None:
+        from evaluations.benchmark import _live_summary
+
+        cases = [
+            self._case(
+                {
+                    "turn_pass_rate": 1.0,
+                    "turns_passed": 2,
+                    "turns_judged": 2,
+                    "turns_total": 2,
+                    "cited_eligible": 0,
+                    "true_refusals": 0,
+                    "false_refusals": 0,
+                    "unanswerable_turns": 0,
+                }
+            )
+        ]
+        failure = MagicMock()
+        failure.inputs = ["fq1", "fq2"]
+
+        summary = _live_summary(cases, [failure])
+
+        assert summary is not None
+        assert summary["micro_pass_rate"] == 1.0
+        assert summary["macro_pass_rate"] == 1.0
+        assert summary["conversations_attempted"] == 2
+        assert summary["turns_attempted"] == 4
+
+
+class TestLiveConversationDispatch:
+    @pytest.mark.asyncio
+    async def test_live_spec_replays_conversation(self, tmp_path: Path) -> None:
+        from pydantic_evals import Case
+
+        from evaluations.benchmark import run_live_qa_benchmark
+        from evaluations.capability_runner import CapabilityRunResult
+
+        def build_case(idx: int, doc) -> Case:
+            return Case(
+                name="conv1",
+                inputs=["q1", "q2"],
+                metadata={
+                    "conversation_id": "conv1",
+                    "turns": [
+                        {"reference": "r1", "answerability": "ANSWERABLE"},
+                        {"reference": "r2", "answerability": "ANSWERABLE"},
+                    ],
+                },
+            )
+
+        spec = DatasetSpec(
+            key="test_live",
+            db_filename="test.lancedb",
+            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            document_mapper=lambda doc: None,
+            qa_loader=lambda: [{"id": "conv1"}],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            qa_case_builder=build_case,
+            live=True,
+            compaction=True,
+        )
+
+        turn_results = [
+            CapabilityRunResult(answer="a1", cited_uris=["u1"]),
+            CapabilityRunResult(answer="a2", cited_uris=[]),
+        ]
+        with (
+            patch("evaluations.benchmark.get_model", return_value="fake-model"),
+            patch(
+                "evaluations.benchmark.run_capability_conversation",
+                new_callable=AsyncMock,
+                return_value=turn_results,
+            ) as run_conversation,
+            patch(
+                "evaluations.evaluators.conversation.judge_input_output_expected",
+                new_callable=AsyncMock,
+                return_value=MagicMock(score=None, pass_=True, reason=None),
+            ),
+            patch(
+                "evaluations.evaluators.conversation.judge_output",
+                new_callable=AsyncMock,
+                return_value=MagicMock(score=None, pass_=False, reason=None),
+            ),
+        ):
+            await run_live_qa_benchmark(
+                spec,
+                AppConfig(),
+                db_path=tmp_path / "test.lancedb",
+                document_filter="uri = 'manual.pdf'",
+            )
+
+        assert run_conversation.await_args is not None
+        assert run_conversation.await_args.kwargs["questions"] == ["q1", "q2"]
+        assert run_conversation.await_args.kwargs["compaction"] is True
+        assert (
+            run_conversation.await_args.kwargs["document_filter"]
+            == "uri = 'manual.pdf'"
+        )
+
+    @pytest.mark.asyncio
+    async def test_live_records_per_turn_traffic_arrays(self, tmp_path: Path) -> None:
+        """Per-turn tool traffic is recorded as question-length arrays, in the
+        same list-indexed-by-turn shape as turn_cited_uris."""
+        from pydantic_evals import Case
+
+        from evaluations.benchmark import run_live_qa_benchmark
+        from evaluations.capability_runner import CapabilityRunResult
+
+        def build_case(idx: int, doc) -> Case:
+            return Case(
+                name="conv1",
+                inputs=["q1", "q2"],
+                metadata={
+                    "conversation_id": "conv1",
+                    "turns": [
+                        {"reference": "r1", "answerability": "ANSWERABLE"},
+                        {"reference": "r2", "answerability": "ANSWERABLE"},
+                    ],
+                },
+            )
+
+        spec = DatasetSpec(
+            key="test_live",
+            db_filename="test.lancedb",
+            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            document_mapper=lambda doc: None,
+            qa_loader=lambda: [{"id": "conv1"}],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            qa_case_builder=build_case,
+            live=True,
+        )
+
+        turn_results = [
+            CapabilityRunResult(
+                answer="a1",
+                cited_uris=["u1"],
+                n_search_calls=2,
+                n_rejected_searches=1,
+                n_failed_tools=1,
+                n_requests=4,
+                citation_status="grounded",
+            ),
+            CapabilityRunResult(answer="a2"),
+        ]
+        recorded: dict[str, object] = {}
+
+        with (
+            patch("evaluations.benchmark.get_model", return_value="fake-model"),
+            patch(
+                "evaluations.benchmark.set_eval_attribute",
+                side_effect=lambda key, value: recorded.__setitem__(key, value),
+            ),
+            patch(
+                "evaluations.benchmark.run_capability_conversation",
+                new_callable=AsyncMock,
+                return_value=turn_results,
+            ),
+            patch(
+                "evaluations.evaluators.conversation.judge_input_output_expected",
+                new_callable=AsyncMock,
+                return_value=MagicMock(score=None, pass_=True, reason=None),
+            ),
+            patch(
+                "evaluations.evaluators.conversation.judge_output",
+                new_callable=AsyncMock,
+                return_value=MagicMock(score=None, pass_=False, reason=None),
+            ),
+        ):
+            await run_live_qa_benchmark(
+                spec, AppConfig(), db_path=tmp_path / "test.lancedb"
+            )
+
+        assert recorded["turn_n_search_calls"] == [2, 0]
+        assert recorded["turn_n_rejected_searches"] == [1, 0]
+        assert recorded["turn_n_failed_tools"] == [1, 0]
+        assert recorded["turn_n_requests"] == [4, 0]
+        assert recorded["turn_citation_status"] == ["grounded", None]
+        questions = 2
+        for key, value in recorded.items():
+            if key.startswith("turn_"):
+                assert isinstance(value, list) and len(value) == questions, key
+
+
+class TestResolveDatasets:
+    def test_all_dedupes_shared_databases(self) -> None:
+        """Specs sharing a db_filename (mtrag query variants) appear once, so
+        `download all`/`upload all` do not process the same DB twice."""
+        from evaluations.benchmark import _resolve_datasets
+
+        specs = _resolve_datasets("all")
+        filenames = [spec.db_filename for spec in specs]
+        assert len(filenames) == len(set(filenames))
+        assert "mtrag_clapnq.lancedb" in filenames
+
+    def test_single_key_not_deduped(self) -> None:
+        from evaluations.benchmark import _resolve_datasets
+
+        specs = _resolve_datasets("mtrag_clapnq_rewrite")
+        assert [spec.key for spec in specs] == ["mtrag_clapnq_rewrite"]
 
 
 class TestLoadConfig:
@@ -362,8 +832,9 @@ class TestRunQaBenchmarkCapabilityTarget:
         # (the capability manages its own client via lifespan).
         mock_haiku.assert_not_called()
         # capability model defaults to qa.model when not provided
-        capability_call = mock_get_model.call_args_list[-1]
-        assert capability_call[0][0] == AppConfig().qa.model
+        assert any(
+            call[0][0] == AppConfig().qa.model for call in mock_get_model.call_args_list
+        )
         assert mock_run_capability is capability_run
 
     @pytest.mark.asyncio
@@ -383,17 +854,117 @@ class TestRunQaBenchmarkCapabilityTarget:
 
 
 class TestCitationEvaluatorWiring:
-    def test_returns_map_twin_for_map_evaluator(self) -> None:
-        from evaluations.benchmark import _citation_evaluator_for
-        from evaluations.evaluators import CitationMAPEvaluator, MAPEvaluator
+    def test_specs_with_retrieval_declare_citation_evaluator(self) -> None:
+        """Citation scoring is declared per spec, not inferred: every dataset
+        that scores retrieval also scores citations."""
+        from evaluations.datasets import DATASETS
+        from evaluations.evaluators import CitationMAPEvaluator
 
-        result = _citation_evaluator_for(MAPEvaluator())
-        assert isinstance(result, CitationMAPEvaluator)
+        for spec in DATASETS.values():
+            if spec.retrieval_evaluators:
+                assert isinstance(spec.citation_evaluator, CitationMAPEvaluator), (
+                    spec.key
+                )
 
-    def test_returns_none_for_no_evaluator(self) -> None:
-        from evaluations.benchmark import _citation_evaluator_for
 
-        assert _citation_evaluator_for(None) is None
+class TestBatchedIngest:
+    def _rag(
+        self,
+        complete_uris: list[str] | None = None,
+        chunkless_uris: list[str] | None = None,
+    ) -> MagicMock:
+        complete_uris = complete_uris or []
+        chunkless_uris = chunkless_uris or []
+
+        def _table(rows: list[dict]) -> MagicMock:
+            table = MagicMock()
+            table.query.return_value.select.return_value.to_list = AsyncMock(
+                return_value=rows
+            )
+            return table
+
+        rag = MagicMock()
+        rag.store.document_meta_table = _table(
+            [{"id": f"id-{uri}", "uri": uri} for uri in complete_uris + chunkless_uris]
+        )
+        rag.store.chunks_table = _table(
+            [{"document_id": f"id-{uri}"} for uri in complete_uris]
+        )
+        rag.convert = AsyncMock(side_effect=lambda content, **kw: f"docling:{content}")
+        rag.chunk = AsyncMock(return_value=[])
+        rag.import_documents = AsyncMock()
+        rag.delete_document = AsyncMock()
+        return rag
+
+    def _spec(self) -> DatasetSpec:
+        return DatasetSpec(
+            key="test",
+            db_filename="test.lancedb",
+            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            document_mapper=lambda doc: (
+                None
+                if doc["uri"] == "bad"
+                else DocumentPayload(uri=doc["uri"], content=f"text {doc['uri']}")
+            ),
+            qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        )
+
+    @pytest.mark.asyncio
+    async def test_imports_in_bounded_batches(self) -> None:
+        from evaluations.benchmark import _ingest_batched
+
+        rag = self._rag()
+        corpus = [{"uri": f"u{i}"} for i in range(5)]
+
+        await _ingest_batched(rag, self._spec(), corpus, batch_size=2)
+
+        batch_uris = [
+            [imp.uri for imp in call.args[0]]
+            for call in rag.import_documents.call_args_list
+        ]
+        assert batch_uris == [["u0", "u1"], ["u2", "u3"], ["u4"]]
+
+    @pytest.mark.asyncio
+    async def test_resume_skips_complete_uris(self) -> None:
+        from evaluations.benchmark import _ingest_batched
+
+        rag = self._rag(complete_uris=["u0", "u2"])
+        corpus = [{"uri": f"u{i}"} for i in range(4)]
+
+        await _ingest_batched(rag, self._spec(), corpus, batch_size=10)
+
+        (batch,), _ = rag.import_documents.call_args
+        assert [imp.uri for imp in batch] == ["u1", "u3"]
+        assert rag.convert.await_count == 2
+        rag.delete_document.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_resume_reimports_chunkless_documents(self) -> None:
+        """A crash between the document and chunk writes leaves a document
+        without chunks; resume must delete and re-import it, not skip it."""
+        from evaluations.benchmark import _ingest_batched
+
+        rag = self._rag(complete_uris=["u0"], chunkless_uris=["u1"])
+        corpus = [{"uri": "u0"}, {"uri": "u1"}]
+
+        await _ingest_batched(rag, self._spec(), corpus, batch_size=10)
+
+        rag.delete_document.assert_awaited_once_with("id-u1")
+        (batch,), _ = rag.import_documents.call_args
+        assert [imp.uri for imp in batch] == ["u1"]
+
+    @pytest.mark.asyncio
+    async def test_unmapped_documents_skipped(self) -> None:
+        from evaluations.benchmark import _ingest_batched
+
+        rag = self._rag()
+        corpus = [{"uri": "u0"}, {"uri": "bad"}, {"uri": "u1"}]
+
+        await _ingest_batched(rag, self._spec(), corpus, batch_size=10)
+
+        (batch,), _ = rag.import_documents.call_args
+        assert [imp.uri for imp in batch] == ["u0", "u1"]
 
 
 class TestAttachRelevantUris:
@@ -433,7 +1004,7 @@ class TestAttachRelevantUris:
             retrieval_mapper=lambda d: RetrievalSample(
                 question=d["q"], expected_uris=d["uris"]
             ),
-            retrieval_evaluator=MAPEvaluator(),
+            retrieval_evaluators=[MAPEvaluator()],
         )
 
         _attach_relevant_uris(cases, spec, limit=None)
@@ -511,7 +1082,7 @@ class TestRetrievalTarget:
             retrieval_mapper=lambda d: RetrievalSample(
                 question=d["q"], expected_uris=d["uris"]
             ),
-            retrieval_evaluator=MAPEvaluator(),
+            retrieval_evaluators=[MAPEvaluator()],
         )
 
     @pytest.mark.asyncio
@@ -620,7 +1191,7 @@ class TestDocumentFilterThreading:
             retrieval_mapper=lambda d: RetrievalSample(
                 question=d["q"], expected_uris=d["uris"]
             ),
-            retrieval_evaluator=MAPEvaluator(),
+            retrieval_evaluators=[MAPEvaluator()],
         )
 
         with patch("evaluations.benchmark.HaikuRAG") as mock_haiku:

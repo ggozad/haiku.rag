@@ -2,6 +2,8 @@ from dataclasses import dataclass
 
 from pydantic_evals.evaluators import Evaluator, EvaluatorContext
 
+from evaluations.evaluators.citation import average_precision
+
 
 @dataclass
 class MAPEvaluator(Evaluator):
@@ -28,22 +30,6 @@ class MAPEvaluator(Evaluator):
         if ctx.metadata is None:
             return 0.0
         relevant_uris = set(ctx.metadata.get("relevant_uris", []))
-        retrieved_uris = ctx.output
-
         if not relevant_uris:
             return 0.0
-
-        num_relevant = len(relevant_uris)
-        precisions = []
-        num_relevant_found = 0
-
-        for rank, uri in enumerate(retrieved_uris, start=1):
-            if uri in relevant_uris:
-                num_relevant_found += 1
-                precision_at_k = num_relevant_found / rank
-                precisions.append(precision_at_k)
-
-        if not precisions:
-            return 0.0
-
-        return sum(precisions) / num_relevant
+        return average_precision(list(ctx.output), relevant_uris)
