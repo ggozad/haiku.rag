@@ -3,12 +3,12 @@ from datetime import datetime
 from typing import overload
 from uuid import uuid4
 
-from lancedb.index import BTree
-
 from haiku.rag.store.engine import (
     DocumentMetaRecord,
     DocumentRecord,
     Store,
+    ensure_indexes,
+    get_document_items_arrow_schema,
     get_documents_arrow_schema,
     query_to_pydantic,
 )
@@ -407,23 +407,14 @@ class DocumentRepository:
     async def delete_all(self) -> None:
         """Delete all documents from the database."""
         self.store._assert_writable()
-        from haiku.rag.store.engine import DocumentItemRecord
 
         # Delete all chunks and items first
         await self.chunk_repository.delete_all()
         await self.store.db.drop_table("document_items")
         self.store.document_items_table = await self.store.db.create_table(
-            "document_items", schema=DocumentItemRecord
+            "document_items", schema=get_document_items_arrow_schema()
         )
-        await self.store.document_items_table.create_index(
-            "document_id", config=BTree(), replace=True
-        )
-        await self.store.document_items_table.create_index(
-            "position", config=BTree(), replace=True
-        )
-        await self.store.document_items_table.create_index(
-            "self_ref", config=BTree(), replace=True
-        )
+        await ensure_indexes(self.store.document_items_table, "document_items")
 
         # Get count before deletion
         count = len(
@@ -437,13 +428,9 @@ class DocumentRepository:
             self.store.documents_table = await self.store.db.create_table(
                 "documents", schema=get_documents_arrow_schema()
             )
+            await ensure_indexes(self.store.documents_table, "documents")
             await self.store.db.drop_table("document_meta")
             self.store.document_meta_table = await self.store.db.create_table(
                 "document_meta", schema=DocumentMetaRecord
             )
-            await self.store.document_meta_table.create_index(
-                "id", config=BTree(), replace=True
-            )
-            await self.store.document_meta_table.create_index(
-                "uri", config=BTree(), replace=True
-            )
+            await ensure_indexes(self.store.document_meta_table, "document_meta")

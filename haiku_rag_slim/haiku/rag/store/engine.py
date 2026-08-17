@@ -12,7 +12,7 @@ from uuid import uuid4
 
 import lancedb
 import pyarrow as pa
-from lancedb.index import FTS, BTree, IvfPq
+from lancedb.index import FTS, Bitmap, BTree, IvfPq
 from lancedb.pydantic import LanceModel, Vector
 from packaging.version import parse
 from pydantic import BaseModel, Field
@@ -174,6 +174,66 @@ def get_document_items_arrow_schema() -> pa.Schema:
         else:
             fields.append(field)
     return pa.schema(fields)
+
+
+def index_specs(table_name: str) -> list[tuple[str, Bitmap | BTree | FTS]]:
+    """The index set a haiku.rag table is expected to carry.
+
+    Single source of truth for every path that creates a table: initialization,
+    migration, and the drop-and-recreate paths in the repositories.
+
+    `label` gets a Bitmap rather than a BTree because it holds around ten
+    distinct values across every item of every document, and Bitmap is the
+    low-cardinality equality case. The FTS options are load-bearing:
+    `with_position` enables phrase queries and keeping stop words lets them match.
+    """
+    match table_name:
+        case "documents":
+            return [("id", BTree())]
+        case "document_meta":
+            return [("id", BTree()), ("uri", BTree())]
+        case "chunks":
+            return [
+                ("content_fts", FTS(with_position=True, remove_stop_words=False)),
+                ("id", BTree()),
+                ("document_id", BTree()),
+            ]
+        case "document_items":
+            return [
+                ("document_id", BTree()),
+                ("position", BTree()),
+                ("self_ref", BTree()),
+                ("label", Bitmap()),
+            ]
+        case _:
+            return []
+
+
+async def ensure_indexes(table: lancedb.AsyncTable, table_name: str) -> None:
+    """Create the table's declared indexes, skipping those already correct.
+
+    Correct means the column is indexed *and* carries the declared index type.
+    Matching on the column alone would let a wrong-typed index stand: a BTree on
+    `label` covers the column while losing the low-cardinality equality lookup a
+    Bitmap gives, and no amount of column coverage reveals that.
+
+    Skipping matters as much as creating: `create_index(replace=True)` rebuilds
+    an identical index, writing a fresh index and a new table version rather
+    than no-oping, and leaves the previous index behind until the next vacuum.
+    On a large table over object storage that is a full column sort per pass.
+
+    Columns not declared for the table are left untouched, so an externally
+    added index (a vector index on `chunks`, say) survives.
+    """
+    indexed = {
+        column: index.index_type
+        for index in await table.list_indices()
+        for column in index.columns
+    }
+    for column, config in index_specs(table_name):
+        if indexed.get(column) == type(config).__name__:
+            continue
+        await table.create_index(column, config=config, replace=True)
 
 
 class SettingsRecord(LanceModel):
@@ -697,22 +757,17 @@ class Store:
             self.documents_table = await self.db.create_table(
                 "documents", schema=get_documents_arrow_schema()
             )
+            await ensure_indexes(self.documents_table, "documents")
 
         # Create or open document_meta table (mutable attributes kept out of the
-        # blob-bearing documents row). Indexed by document_id and uri — both are
-        # hot look-up keys (get_by_id, get_by_uri).
+        # blob-bearing documents row).
         if "document_meta" in existing_tables:
             self.document_meta_table = await self.db.open_table("document_meta")
         else:
             self.document_meta_table = await self.db.create_table(
                 "document_meta", schema=DocumentMetaRecord
             )
-            await self.document_meta_table.create_index(
-                "id", config=BTree(), replace=True
-            )
-            await self.document_meta_table.create_index(
-                "uri", config=BTree(), replace=True
-            )
+            await ensure_indexes(self.document_meta_table, "document_meta")
 
         # Create or open chunks table
         if "chunks" in existing_tables:
@@ -721,12 +776,7 @@ class Store:
             self.chunks_table = await self.db.create_table(
                 "chunks", schema=self.ChunkRecord
             )
-            # Create FTS index on content_fts (contextualized content) for better search
-            await self.chunks_table.create_index(
-                "content_fts",
-                config=FTS(with_position=True, remove_stop_words=False),
-                replace=True,
-            )
+            await ensure_indexes(self.chunks_table, "chunks")
 
         # Create or open document_items table
         if "document_items" in existing_tables:
@@ -735,15 +785,7 @@ class Store:
             self.document_items_table = await self.db.create_table(
                 "document_items", schema=get_document_items_arrow_schema()
             )
-            await self.document_items_table.create_index(
-                "document_id", config=BTree(), replace=True
-            )
-            await self.document_items_table.create_index(
-                "position", config=BTree(), replace=True
-            )
-            await self.document_items_table.create_index(
-                "self_ref", config=BTree(), replace=True
-            )
+            await ensure_indexes(self.document_items_table, "document_items")
 
         # Create or open settings table
         if "settings" in existing_tables:
@@ -872,13 +914,7 @@ class Store:
         self.chunks_table = await self.db.create_table(
             "chunks", schema=self.ChunkRecord
         )
-
-        # Create FTS index on content_fts (contextualized content) for better search
-        await self.chunks_table.create_index(
-            "content_fts",
-            config=FTS(with_position=True, remove_stop_words=False),
-            replace=True,
-        )
+        await ensure_indexes(self.chunks_table, "chunks")
 
     def close(self):
         """Close the database connection."""
