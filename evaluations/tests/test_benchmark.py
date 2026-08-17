@@ -695,7 +695,7 @@ class TestSearchFilterThreading:
             )
 
         mock_run.assert_awaited_once()
-        assert mock_run.await_args[1]["document_filter"] == "uri LIKE '%arxiv%'"
+        assert mock_run.call_args[1]["document_filter"] == "uri LIKE '%arxiv%'"
 
     @pytest.mark.asyncio
     async def test_evaluate_dataset_resolves_once_for_both_phases(self) -> None:

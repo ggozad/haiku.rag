@@ -89,11 +89,11 @@ evaluations:
 
 ### Restricting the corpus
 
-When a database holds documents from several corpora — only some of which a dataset's questions are drawn from — `--filter` restricts every benchmark search to a subset. It takes the same SQL `WHERE` clause as `haiku-rag search --filter`, over document columns (`id`, `uri`, `title`, `created_at`, `updated_at`, `metadata`):
+When a database holds documents from several corpora — only some of which a dataset's questions are drawn from — `--filter` restricts every benchmark search to a subset. It takes the same SQL `WHERE` clause as `haiku-rag search --filter`, over document columns (`id`, `uri`, `title`, `created_at`, `updated_at`, `metadata`). Each dataset writes its own URIs: `orb_text` uses bare arXiv ids such as `2407.01528v3`, `hotpotqa` uses page titles.
 
 ```bash
 evaluations run orb_text --skip-db --config haiku.rag.s3.yaml \
-  --filter "uri LIKE '%arxiv%'"
+  --filter "uri LIKE '2407%'"
 ```
 
 If the corpora are distinguished by a tag rather than by URI, attach it at ingest time as document metadata and match it with `LIKE`. `metadata` is stored as a `json.dumps` string, so there is no JSON subfield access — match the serialized key/value, including the space after the colon:
@@ -110,7 +110,7 @@ A dataset can declare its own default in its `DatasetSpec`, so runs need no flag
 ORB_TEXT_SPEC = DatasetSpec(
     key="orb_text",
     ...
-    search_filter="uri LIKE '%arxiv%'",
+    search_filter="metadata LIKE '%\"corpus\": \"orb_text\"%'",
 )
 ```
 
