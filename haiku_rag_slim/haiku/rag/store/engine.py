@@ -209,31 +209,48 @@ def index_specs(table_name: str) -> list[tuple[str, Bitmap | BTree | FTS]]:
             return []
 
 
-async def ensure_indexes(table: lancedb.AsyncTable, table_name: str) -> None:
-    """Create the table's declared indexes, skipping those already correct.
+async def ensure_indexes(table: lancedb.AsyncTable, table_name: str) -> list[str]:
+    """Ensure an index of the declared type covers each declared column.
 
-    Correct means the column is indexed *and* carries the declared index type.
-    Matching on the column alone would let a wrong-typed index stand: a BTree on
-    `label` covers the column while losing the low-cardinality equality lookup a
-    Bitmap gives, and no amount of column coverage reveals that.
+    Returns the columns it indexed, so callers can report what changed.
 
-    Skipping matters as much as creating: `create_index(replace=True)` rebuilds
-    an identical index, writing a fresh index and a new table version rather
-    than no-oping, and leaves the previous index behind until the next vacuum.
-    On a large table over object storage that is a full column sort per pass.
+    The condition is the presence of the declared *type*, not that the column's
+    index happens to be that type. Checking coverage alone would let a wrong-typed
+    index satisfy the check: a BTree on `label` covers the column while losing the
+    low-cardinality equality lookup a Bitmap gives.
 
-    Columns not declared for the table are left untouched, so an externally
-    added index (a vector index on `chunks`, say) survives.
+    Nothing is ever dropped or converted away from. Two index types over one
+    column can be deliberate, since they serve different query shapes (BTree for
+    equality and range, `Fm` for `contains`), so an index this function did not
+    declare is left in place even on a column it does. Undeclared columns are
+    untouched entirely, so a vector index on `chunks` survives. The one thing it
+    will overwrite is an index at LanceDB's default name for a declared column,
+    `{column}_idx`, which is the name this function itself creates.
+
+    Skipping matters as much as creating: `create_index(replace=True)` rebuilds an
+    identical index, writing a fresh index and a new table version rather than
+    no-oping, and leaves the previous index behind until the next vacuum. On a
+    large table over object storage that is a full column sort per pass.
     """
-    indexed = {
-        column: index.index_type
-        for index in await table.list_indices()
-        for column in index.columns
-    }
+    covering: dict[str, set[str]] = {}
+    for index in await table.list_indices():
+        for column in index.columns:
+            covering.setdefault(column, set()).add(index.index_type)
+
+    applied: list[str] = []
     for column, config in index_specs(table_name):
-        if indexed.get(column) == type(config).__name__:
+        declared = type(config).__name__
+        present = covering.get(column, set())
+        if declared in present:
             continue
+        if present:
+            logger.info(
+                f"Adding {declared} index on {table_name}.{column}, which carries "
+                f"{', '.join(sorted(present))}"
+            )
         await table.create_index(column, config=config, replace=True)
+        applied.append(column)
+    return applied
 
 
 class SettingsRecord(LanceModel):

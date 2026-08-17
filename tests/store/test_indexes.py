@@ -25,6 +25,15 @@ async def _index_type(table, column: str) -> str | None:
     return None
 
 
+async def _covering(table, column: str) -> list[tuple[str, str]]:
+    """Every index over `column`, as (name, index_type)."""
+    return [
+        (index.name, index.index_type)
+        for index in await table.list_indices()
+        if column in index.columns
+    ]
+
+
 @pytest.mark.asyncio
 async def test_fresh_database_indexes_every_hot_lookup_key(temp_db_path):
     """A new database carries the full index set, not a subset."""
@@ -65,6 +74,44 @@ async def test_ensure_indexes_corrects_an_index_of_the_wrong_type(temp_db_path):
         assert (
             await _indexed_columns(table) == EXPECTED_INDEXED_COLUMNS["document_items"]
         )
+
+
+@pytest.mark.asyncio
+async def test_ensure_indexes_adds_the_declared_type_beside_a_custom_index(
+    temp_db_path,
+):
+    """A wrong-typed index under a custom name must neither satisfy the check nor
+    be destroyed. `replace=True` replaces by name and the default name is derived
+    from the column, so a custom-named index is invisible to it either way.
+    """
+    async with Store(temp_db_path, create=True) as store:
+        table = store.document_items_table
+        await table.drop_index("label_idx")
+        await table.create_index("label", config=BTree(), name="operator_label")
+
+        await ensure_indexes(table, "document_items")
+
+        covering = dict(await _covering(table, "label"))
+        assert covering["operator_label"] == "BTree"
+        assert "Bitmap" in covering.values()
+
+
+@pytest.mark.asyncio
+async def test_ensure_indexes_keeps_an_operator_index_on_a_declared_column(
+    temp_db_path,
+):
+    """Two index types over one column can be deliberate, serving different query
+    shapes. An index this function did not declare is left alone even on a column
+    it does, so a migration never deletes an operator's index.
+    """
+    async with Store(temp_db_path, create=True) as store:
+        table = store.document_items_table
+        await table.create_index("label", config=BTree(), name="operator_label")
+
+        await ensure_indexes(table, "document_items")
+
+        covering = dict(await _covering(table, "label"))
+        assert covering == {"label_idx": "Bitmap", "operator_label": "BTree"}
 
 
 @pytest.mark.asyncio

@@ -993,10 +993,16 @@ async def test_client_import_documents_mixed_embeddings(temp_db_path):
 async def test_client_update_document_replaces_rows_with_bounded_versions(
     temp_db_path,
 ):
-    """Updating one document should replace stale rows with bounded versions."""
-    dim = Config.embeddings.model.vector_dim
+    """Updating one document should replace stale rows with bounded versions.
 
-    async with HaikuRAG(temp_db_path, create=True) as client:
+    auto_vacuum is off: a background vacuum optimizes every table, which writes
+    versions of its own and would land inside the window being measured.
+    """
+    dim = Config.embeddings.model.vector_dim
+    config = Config.model_copy(deep=True)
+    config.storage.auto_vacuum = False
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         created = await client.import_document(
             _docling_doc("original", "Original body"),
             [Chunk(content="Original body", embedding=[0.1] * dim, order=0)],

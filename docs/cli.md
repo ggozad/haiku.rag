@@ -359,6 +359,9 @@ Migration completed successfully.
 !!! tip
     Back up your database before running migrations. While migrations are designed to be safe, having a backup provides peace of mind for production databases.
 
+!!! note "Upgrading to 0.75.0"
+    The 0.75.0 migration adds scalar indexes: BTree on `documents.id`, `chunks.id` and `chunks.document_id`, and Bitmap on `document_items.label`. It rewrites no table data, so it is far cheaper than the earlier data migrations, but building an index reads the whole column it indexes. On a large database, and particularly on object storage, budget for reading `chunks.id` and `chunks.document_id` in full. Indexes already present with the expected type are left alone, so a database that already carries the full set migrates instantly.
+
 ### Download Models
 
 Download required runtime models:
