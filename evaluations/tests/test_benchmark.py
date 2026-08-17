@@ -359,6 +359,47 @@ class TestLiveSummary:
         assert summary["turns_judged"] == 3
         assert summary["turns_total"] == 4
 
+    def test_macro_rate_excludes_fully_unjudged_conversations(self) -> None:
+        """A conversation whose every turn lost its judge reports
+        turn_pass_rate 0.0; treating that as a failed conversation would
+        contradict the exclusion policy. It must not enter the macro average."""
+        from evaluations.benchmark import _live_summary
+
+        cases = [
+            self._case(
+                {
+                    "turn_pass_rate": 1.0,
+                    "turns_passed": 2,
+                    "turns_judged": 2,
+                    "turns_total": 2,
+                    "cited_eligible": 0,
+                    "true_refusals": 0,
+                    "false_refusals": 0,
+                    "unanswerable_turns": 0,
+                }
+            ),
+            self._case(
+                {
+                    "turn_pass_rate": 0.0,
+                    "turns_passed": 0,
+                    "turns_judged": 0,  # total judge outage for this conversation
+                    "turns_total": 8,
+                    "cited_eligible": 0,
+                    "true_refusals": 0,
+                    "false_refusals": 0,
+                    "unanswerable_turns": 0,
+                }
+            ),
+        ]
+
+        summary = _live_summary(cases, [])
+
+        assert summary is not None
+        assert summary["macro_pass_rate"] == pytest.approx(1.0)
+        assert summary["micro_pass_rate"] == pytest.approx(1.0)
+        assert summary["turns_judged"] == 2
+        assert summary["turns_total"] == 10
+
     def test_failed_conversations_do_not_affect_rates(self) -> None:
         from evaluations.benchmark import _live_summary
 

@@ -452,6 +452,10 @@ def _live_summary(report_cases, report_failures) -> dict[str, float | int] | Non
     turns_total = sum(_score(case, "turns_total") for case in scored)
     turns_judged = sum(_score(case, "turns_judged") for case in scored)
     turns_passed = sum(_score(case, "turns_passed") for case in scored)
+    # A conversation with zero judged turns (its judge calls all failed)
+    # reports turn_pass_rate 0.0; averaging that in would count a judge
+    # outage as a failed conversation, against the exclusion policy.
+    judged = [case for case in scored if _score(case, "turns_judged")]
     summary: dict[str, float | int] = {
         "conversations": len(scored),
         "conversations_attempted": len(report_cases) + len(report_failures),
@@ -459,8 +463,10 @@ def _live_summary(report_cases, report_failures) -> dict[str, float | int] | Non
         "turns_judged": turns_judged,
         "turns_attempted": turns_total + failed_turns,
         "micro_pass_rate": turns_passed / turns_judged if turns_judged else 0.0,
-        "macro_pass_rate": sum(_score(case, "turn_pass_rate") for case in scored)
-        / len(scored),
+        "macro_pass_rate": sum(_score(case, "turn_pass_rate") for case in judged)
+        / len(judged)
+        if judged
+        else 0.0,
     }
 
     cited = [case for case in scored if _score(case, "cited_map") is not None]
