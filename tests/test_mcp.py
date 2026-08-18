@@ -70,6 +70,7 @@ class TestMCPReadTools:
         assert len(results) == 1
 
     @pytest.mark.asyncio
+    @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
     async def test_search_documents_preserves_chunk_meta_through_serialization(
         self, mcp_db
     ):
