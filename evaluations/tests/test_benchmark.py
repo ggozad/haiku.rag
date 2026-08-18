@@ -677,6 +677,7 @@ class TestRunQaBenchmarkJudgeModel:
         from evaluations.benchmark import DEFAULT_JUDGE_MODEL
 
         assert DEFAULT_JUDGE_MODEL.temperature == 0.6
+        assert DEFAULT_JUDGE_MODEL.name == "qwen3.8"
         assert DEFAULT_JUDGE_MODEL.max_tokens == 16384
         assert DEFAULT_JUDGE_MODEL.extra_body == {"top_p": 0.95}
 

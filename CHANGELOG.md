@@ -10,6 +10,7 @@
 
 ### Changed
 
+- Eval judge pinned to `qwen3.8`: `DEFAULT_JUDGE_MODEL` is `ollama:qwen3.8`, and the reference configs use `Inferact/Qwen3.8-27B-NVFP4` with `extra_body.chat_template_kwargs.reasoning_effort: low`. Results in `docs/benchmarks.md` were judged by `Qwen3.6-35B-A3B-NVFP4` and are not re-judged.
 - `import_documents` embeds chunks across the whole batch in one pass instead of per document.
 
 ### Fixed
