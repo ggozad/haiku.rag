@@ -2,8 +2,8 @@ import lancedb
 import pytest
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.client.search import _populate_image_data
-from haiku.rag.store.models import DocumentItem, SearchResult
+from haiku.rag.client.search import _attach_picture_data, _populate_image_data
+from haiku.rag.store.models import Chunk, DocumentItem, SearchResult
 
 
 def _picture_result(document_id: str, ref: str) -> SearchResult:
@@ -210,3 +210,44 @@ async def test_expansion_widens_each_document_with_its_own_items(temp_db_path):
     assert "doc-b" not in by_doc["doc-a"]
     assert "neighbouring body of doc-b" in by_doc["doc-b"]
     assert "doc-a" not in by_doc["doc-b"]
+
+
+def _picture_chunk(document_id: str) -> Chunk:
+    return Chunk(
+        id=f"{document_id}-pic",
+        document_id=document_id,
+        content="a figure",
+        metadata={"doc_item_refs": ["#/pictures/0"], "labels": ["picture"]},
+    )
+
+
+@pytest.mark.asyncio
+async def test_reranker_blob_fetch_is_one_query_for_any_document_count(
+    temp_db_path, item_queries
+):
+    """This path runs over `limit * 10` candidates, so per-document fetching
+    costs the most here."""
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        await _seed(rag, [f"doc-{i}" for i in range(10)])
+
+        counts = []
+        for n in (1, 10):
+            chunks = [_picture_chunk(f"doc-{i}") for i in range(n)]
+            item_queries["n"] = 0
+            await _attach_picture_data(rag, chunks)
+            counts.append(item_queries["n"])
+            assert all(c._picture_data for c in chunks)
+
+    assert counts == [1, 1], counts
+
+
+@pytest.mark.asyncio
+async def test_reranker_gives_each_chunk_its_own_document_picture(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        await _seed(rag, ["doc-a", "doc-b"])
+
+        chunks = [_picture_chunk("doc-a"), _picture_chunk("doc-b")]
+        await _attach_picture_data(rag, chunks)
+
+    assert chunks[0]._picture_data == b"bytes-doc-a"
+    assert chunks[1]._picture_data == b"bytes-doc-b"

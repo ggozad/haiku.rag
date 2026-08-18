@@ -16,7 +16,7 @@ from haiku.rag.capabilities.rag import RAGState, create_capability
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.search import _populate_image_data
 from haiku.rag.config import AppConfig, Config
-from haiku.rag.store.models.chunk import SearchResult
+from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document_item import DocumentItem
 from haiku.rag.tools.search import create_search_toolset
 from tests.test_context import _fetch_and_expand
@@ -138,20 +138,34 @@ async def test_client_search_include_images_false_skips_lookup(temp_db_path):
             ],
         )
         # Spy that we never reach the picture-bytes accessor
-        rag.document_item_repository.get_pictures_for_chunk = AsyncMock(  # type: ignore[method-assign]
-            wraps=rag.document_item_repository.get_pictures_for_chunk
+        rag.document_item_repository.get_pictures_grouped = AsyncMock(  # type: ignore[method-assign]
+            wraps=rag.document_item_repository.get_pictures_grouped
         )
 
         from haiku.rag.client.search import search
 
-        # Stub the chunk-search results so we don't depend on embeddings/FTS
+        # A real picture-carrying result, so not fetching is the assertion
+        # rather than there being nothing to fetch.
         async def fake_chunk_search(*args, **kwargs):
-            return []
+            return [
+                (
+                    Chunk(
+                        id="chunk-1",
+                        document_id="doc-1",
+                        content="body",
+                        metadata={"doc_item_refs": ["#/pictures/0"]},
+                    ),
+                    0.9,
+                )
+            ]
 
         rag.chunk_repository.search = fake_chunk_search  # type: ignore[method-assign]
 
-        await search(rag, "anything", include_images=False)
-        rag.document_item_repository.get_pictures_for_chunk.assert_not_called()
+        results = await search(rag, "anything", include_images=False)
+
+        assert len(results) == 1
+        assert results[0].image_data is None
+        rag.document_item_repository.get_pictures_grouped.assert_not_called()
 
 
 @pytest.mark.asyncio

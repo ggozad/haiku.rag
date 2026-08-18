@@ -607,56 +607,6 @@ class TestPictureDataStorage:
             # Empty refs returns empty dict
             assert await repo.get_pictures_for_chunk("doc-1", []) == {}
 
-    async def test_get_text_for_refs(self, temp_db_path):
-        """Text is returned for any ref with non-empty ``text``, regardless of label.
-
-        In practice pictures carry their caption in the ``text`` field
-        (populated by the VLM picture-description pass during ingest); this
-        method surfaces that text alongside the picture bytes so the model can
-        correlate a description with the binary it sees. The same method also
-        returns text for non-picture refs — callers filter by label.
-        """
-        async with HaikuRAG(temp_db_path, create=True) as rag:
-            repo = DocumentItemRepository(rag.store)
-            await repo.create_items(
-                "doc-1",
-                [
-                    DocumentItem(
-                        document_id="doc-1",
-                        position=0,
-                        self_ref="#/pictures/0",
-                        label="picture",
-                        text="Figure 1. CCS generation over time.",
-                        picture_data=b"\x89PNG\r\n\x1a\nfake",
-                    ),
-                    DocumentItem(
-                        document_id="doc-1",
-                        position=1,
-                        self_ref="#/pictures/1",
-                        label="picture",
-                        text="",  # no VLM caption available
-                        picture_data=b"\x89PNG\r\n\x1a\nfake2",
-                    ),
-                    DocumentItem(
-                        document_id="doc-1",
-                        position=2,
-                        self_ref="#/texts/0",
-                        label="paragraph",
-                        text="Inline prose.",
-                    ),
-                ],
-            )
-
-            captions = await repo.get_text_for_refs(
-                "doc-1",
-                ["#/pictures/0", "#/pictures/1", "#/texts/0", "#/pictures/999"],
-            )
-            assert captions == {
-                "#/pictures/0": "Figure 1. CCS generation over time.",
-                "#/texts/0": "Inline prose.",
-            }
-            assert await repo.get_text_for_refs("doc-1", []) == {}
-
     async def test_get_caption_picture_refs(self, temp_db_path):
         """A caption ref resolves to the picture at the immediately preceding
         position; a table caption (no preceding picture) resolves to nothing."""

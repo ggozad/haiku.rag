@@ -85,7 +85,11 @@ async def search(
 async def _attach_picture_data(client: "HaikuRAG", chunks: list[Chunk]) -> None:
     """Attach picture bytes to synthetic picture chunks in-place, so a
     multimodal reranker can score the pixels instead of just the chunk's
-    description text. Batches one picture-bytes lookup per document."""
+    description text.
+
+    One query however many documents the candidates span, which matters here
+    more than anywhere: reranking fetches `limit * 10` candidates.
+    """
     by_doc: dict[str, list[tuple[Chunk, str]]] = {}
     for chunk in chunks:
         if chunk.document_id is None:
@@ -94,11 +98,11 @@ async def _attach_picture_data(client: "HaikuRAG", chunks: list[Chunk]) -> None:
         if len(refs) == 1 and refs[0].startswith(PICTURE_REF_PREFIX):
             by_doc.setdefault(chunk.document_id, []).append((chunk, refs[0]))
 
+    bytes_by_document, _ = await client.document_item_repository.get_pictures_grouped(
+        {doc_id: [ref for _, ref in pairs] for doc_id, pairs in by_doc.items()}
+    )
     for doc_id, doc_chunks in by_doc.items():
-        refs = [ref for _, ref in doc_chunks]
-        bytes_by_ref = await client.document_item_repository.get_pictures_for_chunk(
-            doc_id, refs
-        )
+        bytes_by_ref = bytes_by_document.get(doc_id, {})
         for chunk, ref in doc_chunks:
             data = bytes_by_ref.get(ref)
             if data:
