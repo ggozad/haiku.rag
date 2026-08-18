@@ -129,6 +129,9 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
     state: StateT | None = field(default=None, repr=False)
     outer_state: dict[str, Any] | None = field(default=None, repr=False)
     rag: HaikuRAG | None = field(default=None, repr=False)
+    """A connection this capability opened, and must close."""
+    borrowed_rag: HaikuRAG | None = field(default=None, repr=False)
+    """A caller's connection, reused and never closed here."""
     rag_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     resource_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     search_count: int = field(default=0, repr=False)
@@ -347,6 +350,8 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         raise error
 
     async def _ensure_rag(self) -> HaikuRAG:
+        if self.borrowed_rag is not None:
+            return self.borrowed_rag
         if self.rag is None:
             async with self.resource_lock:
                 if self.rag is None:
