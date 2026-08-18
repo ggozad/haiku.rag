@@ -1,4 +1,4 @@
-# Haiku RAG - Evaluations
+# haiku.rag - Evaluations
 
 Internal benchmarking and evaluation scripts for haiku.rag.
 

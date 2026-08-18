@@ -122,6 +122,18 @@ The `storage_options` keys are case-insensitive and passed directly to the under
 
 **Note:** Table optimization is automatically handled by LanceDB Cloud (`db://` URIs) and is disabled for better performance. For object storage backends (S3, Azure, GCS), optimization and vector indexing are still performed normally.
 
+### Caching and Read Consistency
+
+```yaml
+lancedb:
+  read_consistency_interval_seconds: 30   # null to never re-check
+  index_cache_size_bytes: 536870912       # null for the LanceDB default
+  metadata_cache_size_bytes: 268435456
+```
+
+- **read_consistency_interval_seconds**: how often a connection checks for writes from another process. `null` never checks, so a long-lived reader never sees the ingester's writes. `0` checks on every read.
+- **index_cache_size_bytes** / **metadata_cache_size_bytes**: sizes for the caches held by the LanceDB session, which is shared across every connection in the process. The first vector query loads the index into it, so on object storage the cache is what stops the next connection refetching it. Size it for the total set of indexes a process keeps warm, against the memory available to it.
+
 ### Deployment Pattern: One Writer, Many Readers
 
 LanceDB on S3 supports **exactly one writer + N readers** per database URI. Multiple writers against the same URI can race on the manifest commit and corrupt state. This is a LanceDB property, not something `haiku.rag` enforces.

@@ -63,6 +63,7 @@ async def ask(
     capability = create_capability(
         db_path=client.store.db_path,
         config=client._config,
+        rag=client,
         defer_loading=False,
     )
     deps = _AgentDeps(
@@ -115,6 +116,7 @@ async def analyze(
     capability = create_capability(
         db_path=client.store.db_path,
         config=client._config,
+        rag=client,
         defer_loading=False,
     )
     deps = _AgentDeps(

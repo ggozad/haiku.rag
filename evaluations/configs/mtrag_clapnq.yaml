@@ -44,8 +44,8 @@ qa:
 evaluations:
   judge:
     provider: openai
-    name: RedHatAI/Qwen3.6-35B-A3B-NVFP4
-    base_url: http://vllm:11430/v1
+    name: Inferact/Qwen3.8-27B-NVFP4
+    base_url: http://vllm:11439/v1
     temperature: 0.6
     max_tokens: 16384
     extra_body:
@@ -53,4 +53,4 @@ evaluations:
       top_k: 20
       min_p: 0
       chat_template_kwargs:
-        enable_thinking: true
+        reasoning_effort: low

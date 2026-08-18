@@ -3,7 +3,7 @@
 {% block extrahead %}
 <meta property="og:type" content="website">
 <meta property="og:title" content="{% if page.title and page.title != config.site_name %}{{ page.title }} – {{ config.site_name }}{% else %}{{ config.site_name }}{% endif %}">
-<meta property="og:description" content="{{ config.site_description }}">
+<meta property="og:description" content="{% if page.meta and page.meta.description %}{{ page.meta.description }}{% else %}{{ config.site_description }}{% endif %}">
 <meta property="og:url" content="{{ page.canonical_url }}">
 <meta property="og:image" content="{{ config.site_url }}img/chat-qa.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -17,7 +17,7 @@
     <div class="haiku-rag-hero__inner">
       <div class="haiku-rag-hero__text">
         <h1 class="haiku-rag-hero__title">haiku.rag</h1>
-        <p class="haiku-rag-hero__tagline">Opinionated agentic RAG powered by <a href="https://lancedb.com/">LanceDB</a>, <a href="https://ai.pydantic.dev/">Pydantic AI</a>, and <a href="https://docling-project.github.io/docling/">Docling</a>. Runs locally, scales to production.</p>
+        <p class="haiku-rag-hero__tagline">Ask questions about your own documents and get answers that cite their sources. Agentic RAG on <a href="https://lancedb.com/">LanceDB</a>, <a href="https://ai.pydantic.dev/">Pydantic AI</a>, and <a href="https://docling-project.github.io/docling/">Docling</a>. Runs locally, scales to production.</p>
         <div class="haiku-rag-hero__actions">
           <a class="md-button md-button--primary" href="tutorial/">Get started</a>
           <a class="md-button" href="overview/">Learn more</a>

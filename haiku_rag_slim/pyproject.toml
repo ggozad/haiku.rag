@@ -1,13 +1,28 @@
 [project]
 
 name = "haiku.rag-slim"
-description = "Opinionated agentic RAG powered by LanceDB, Pydantic AI, and Docling - Minimal dependencies"
-version = "0.74.0"
+description = "Local-first agentic RAG with citations - hybrid search, reranking and multimodal retrieval over your own documents, no database server required - Minimal dependencies"
+version = "0.75.0"
 authors = [{ name = "Yiorgis Gozadinos", email = "ggozadinos@gmail.com" }]
 license = { text = "MIT" }
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.12"
-keywords = ["RAG", "lancedb", "vector-database", "ml", "mcp"]
+keywords = [
+    "RAG",
+    "agentic-rag",
+    "lancedb",
+    "vector-database",
+    "hybrid-search",
+    "reranking",
+    "multimodal-rag",
+    "embeddings",
+    "citations",
+    "document-ingestion",
+    "mcp",
+    "mcp-server",
+    "pydantic-ai",
+    "docling",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
@@ -40,6 +55,13 @@ dependencies = [
     "watchfiles>=1.1.1",
     "zstandard>=0.23.0; python_version<'3.14'",
 ]
+
+[project.urls]
+Homepage = "https://ggozad.github.io/haiku.rag/"
+Documentation = "https://ggozad.github.io/haiku.rag/"
+Repository = "https://github.com/ggozad/haiku.rag"
+Issues = "https://github.com/ggozad/haiku.rag/issues"
+Changelog = "https://ggozad.github.io/haiku.rag/changelog/"
 
 [project.optional-dependencies]
 # Document processing

@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 from lancedb.index import FTS
 from lancedb.rerankers import RRFReranker
 
-from haiku.rag.store.engine import Store, query_to_pydantic
+from haiku.rag.store.engine import Store, ensure_indexes, query_to_pydantic
 from haiku.rag.store.models.chunk import Chunk, SearchType
 from haiku.rag.utils import escape_sql_string
 
@@ -187,12 +187,7 @@ class ChunkRepository:
         self.store.chunks_table = await self.store.db.create_table(
             "chunks", schema=self.store.ChunkRecord
         )
-        # Create FTS index on content_fts (contextualized content) for better search
-        await self.store.chunks_table.create_index(
-            "content_fts",
-            config=FTS(with_position=True, remove_stop_words=False),
-            replace=True,
-        )
+        await ensure_indexes(self.store.chunks_table, "chunks")
 
     async def delete_by_document_id(self, document_id: str) -> bool:
         """Delete all chunks for a document."""

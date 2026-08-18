@@ -1,18 +1,25 @@
 [project]
 
 name = "haiku.rag"
-description = "Opinionated agentic RAG powered by LanceDB, Pydantic AI, and Docling"
-version = "0.74.0"
+description = "Local-first agentic RAG with citations - hybrid search, reranking and multimodal retrieval over your own documents, no database server required"
+version = "0.75.0"
 authors = [{ name = "Yiorgis Gozadinos", email = "ggozadinos@gmail.com" }]
 license = { text = "MIT" }
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.12"
 keywords = [
     "RAG",
+    "agentic-rag",
     "lancedb",
     "vector-database",
-    "ml",
+    "hybrid-search",
+    "reranking",
+    "multimodal-rag",
+    "embeddings",
+    "citations",
+    "document-ingestion",
     "mcp",
+    "mcp-server",
     "pydantic-ai",
     "docling",
 ]
@@ -30,17 +37,24 @@ classifiers = [
 ]
 
 dependencies = [
-    "haiku.rag-slim[docling,voyageai,cohere,zeroentropy,tui,cross-encoder]==0.74.0",
+    "haiku.rag-slim[docling,voyageai,cohere,zeroentropy,tui,cross-encoder]==0.75.0",
 ]
+
+[project.urls]
+Homepage = "https://ggozad.github.io/haiku.rag/"
+Documentation = "https://ggozad.github.io/haiku.rag/"
+Repository = "https://github.com/ggozad/haiku.rag"
+Issues = "https://github.com/ggozad/haiku.rag/issues"
+Changelog = "https://ggozad.github.io/haiku.rag/changelog/"
 
 [project.scripts]
 haiku-rag = "haiku.rag.cli:cli"
 
 [project.optional-dependencies]
 tui = ["textual>=8.2.4"]
-s3 = ["haiku.rag-slim[s3]==0.74.0"]
-cross-encoder = ["haiku.rag-slim[cross-encoder]==0.74.0"]
-ingester = ["haiku.rag-slim[ingester]==0.74.0"]
+s3 = ["haiku.rag-slim[s3]==0.75.0"]
+cross-encoder = ["haiku.rag-slim[cross-encoder]==0.75.0"]
+ingester = ["haiku.rag-slim[ingester]==0.75.0"]
 
 [build-system]
 requires = ["hatchling"]

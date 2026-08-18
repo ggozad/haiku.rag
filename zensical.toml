@@ -1,6 +1,6 @@
 [project]
 site_name = "haiku.rag"
-site_description = "Opinionated agentic RAG powered by LanceDB, Pydantic AI, and Docling."
+site_description = "Local-first agentic RAG. Index your documents, then ask questions and get answers cited to page numbers and section headings. Hybrid search, reranking, and multimodal retrieval on embedded LanceDB."
 site_url = "https://ggozad.github.io/haiku.rag/"
 repo_url = "https://github.com/ggozad/haiku.rag"
 repo_name = "ggozad/haiku.rag"
@@ -46,8 +46,8 @@ nav = [
         { Toolsets = "tools.md" },
         { "Web app" = "apps.md" },
     ] },
+    { Benchmarks = "benchmarks.md" },
     { Reference = [
-        { Benchmarks = "benchmarks.md" },
         { Development = "development.md" },
         { Changelog = "changelog.md" },
     ] },

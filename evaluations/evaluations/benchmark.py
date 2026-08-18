@@ -47,10 +47,11 @@ TARGETS: tuple[Target, ...] = ("rag-capability", "analysis-capability")
 # Sampling follows Qwen's recommendation for thinking mode; its model cards
 # forbid greedy decoding. Only the keys ollama honours are set: it silently
 # ignores `top_k`, `min_p` and `chat_template_kwargs`. The vLLM reference
-# configs under `evaluations/configs/` carry those too.
+# configs under `evaluations/configs/` carry those too, plus
+# `reasoning_effort`, which qwen3.8 reads from `chat_template_kwargs`.
 DEFAULT_JUDGE_MODEL = ModelConfig(
     provider="ollama",
-    name="qwen3.6",
+    name="qwen3.8",
     temperature=0.6,
     max_tokens=16384,
     extra_body={"top_p": 0.95},

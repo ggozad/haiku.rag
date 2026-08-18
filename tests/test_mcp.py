@@ -516,3 +516,147 @@ class TestMCPToolsDegradeOnError:
         assert "AI Overview" in with_cite
 
         assert await ask(question="q", cite=False) == "the answer"
+
+
+class TestMCPClientLifetime:
+    @pytest.mark.asyncio
+    async def test_tool_calls_share_one_database_open(self, mcp_db, monkeypatch):
+        from haiku.rag.store.engine import Store
+
+        opens = 0
+        initialize = Store._initialize
+
+        async def counted(self):
+            nonlocal opens
+            opens += 1
+            return await initialize(self)
+
+        monkeypatch.setattr(Store, "_initialize", counted)
+
+        mcp = create_mcp_server(mcp_db, read_only=True)
+        search = await _get_tool(mcp, "search_documents")
+        list_docs = await _get_tool(mcp, "list_documents")
+        await search(query="artificial intelligence")
+        await list_docs()
+        await search(query="machine learning")
+
+        assert opens == 1
+
+    @pytest.mark.asyncio
+    async def test_concurrent_reads_share_one_open(self, mcp_db, monkeypatch):
+        import asyncio
+
+        from haiku.rag.store.engine import Store
+
+        opens = 0
+        initialize = Store._initialize
+
+        async def counted(self):
+            nonlocal opens
+            opens += 1
+            return await initialize(self)
+
+        monkeypatch.setattr(Store, "_initialize", counted)
+
+        mcp = create_mcp_server(mcp_db, read_only=True)
+        list_docs = await _get_tool(mcp, "list_documents")
+
+        results = await asyncio.gather(*(list_docs() for _ in range(5)))
+
+        assert opens == 1
+        assert all(len(r) == 2 for r in results)
+
+    @pytest.mark.asyncio
+    async def test_a_write_is_visible_to_the_next_read(self, mcp_db):
+        """One connection sees its own writes, whatever the consistency interval."""
+        mcp = create_mcp_server(mcp_db, read_only=False)
+        list_docs = await _get_tool(mcp, "list_documents")
+        delete_doc = await _get_tool(mcp, "delete_document")
+
+        docs = await list_docs()
+        assert await delete_doc(document_id=docs[0].id) is True
+
+        assert len(await list_docs()) == len(docs) - 1
+
+    @pytest.mark.asyncio
+    async def test_lifespan_opens_and_closes_once(self, mcp_db, monkeypatch):
+        from haiku.rag.store.engine import Store
+
+        opens = 0
+        initialize = Store._initialize
+
+        async def counted(self):
+            nonlocal opens
+            opens += 1
+            return await initialize(self)
+
+        monkeypatch.setattr(Store, "_initialize", counted)
+
+        mcp = create_mcp_server(mcp_db, read_only=True)
+        # _lifespan_manager is what every transport enters; the public
+        # lifespan() combines provider lifespans only.
+        async with mcp._lifespan_manager():
+            assert opens == 1, "startup should open the database, not the first call"
+            search = await _get_tool(mcp, "search_documents")
+            await search(query="artificial intelligence")
+            assert opens == 1
+
+        assert opens == 1
+
+    @pytest.mark.asyncio
+    async def test_startup_fails_when_the_database_cannot_open(self, tmp_path):
+        mcp = create_mcp_server(tmp_path / "does-not-exist.lancedb", read_only=True)
+
+        with pytest.raises(FileNotFoundError):
+            async with mcp._lifespan_manager():
+                pass
+
+    @pytest.mark.asyncio
+    async def test_a_second_lifespan_cycle_opens_a_fresh_client(
+        self, mcp_db, monkeypatch
+    ):
+        from haiku.rag.store.engine import Store
+
+        opens = 0
+        initialize = Store._initialize
+
+        async def counted(self):
+            nonlocal opens
+            opens += 1
+            return await initialize(self)
+
+        monkeypatch.setattr(Store, "_initialize", counted)
+
+        mcp = create_mcp_server(mcp_db, read_only=True)
+        search = await _get_tool(mcp, "search_documents")
+
+        async with mcp._lifespan_manager():
+            await search(query="artificial intelligence")
+        assert opens == 1
+
+        async with mcp._lifespan_manager():
+            results = await search(query="artificial intelligence")
+        assert opens == 2
+        assert len(results) > 0
+
+    @pytest.mark.asyncio
+    async def test_same_dim_drift_starts_read_only_but_not_writable(self, mcp_db):
+        """Validation is unchanged: same-dimension identity drift warns in
+        read-only mode and raises in writable mode. The MCP server no longer
+        opts out of it for deletion."""
+        from haiku.rag.config import Config
+        from haiku.rag.store.repositories.settings import ConfigMismatchError
+
+        drifted = Config.model_copy(deep=True)
+        drifted.embeddings.model.name = "a-different-model"
+
+        async with create_mcp_server(
+            mcp_db, config=drifted, read_only=True
+        )._lifespan_manager():
+            pass
+
+        with pytest.raises(ConfigMismatchError):
+            async with create_mcp_server(
+                mcp_db, config=drifted, read_only=False
+            )._lifespan_manager():
+                pass

@@ -15,7 +15,7 @@ PINNED_JUDGE_SAMPLING = {
         "top_p": 0.95,
         "top_k": 20,
         "min_p": 0,
-        "chat_template_kwargs": {"enable_thinking": True},
+        "chat_template_kwargs": {"reasoning_effort": "low"},
     },
 }
 
