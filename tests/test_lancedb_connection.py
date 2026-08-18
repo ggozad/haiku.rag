@@ -276,7 +276,7 @@ class TestInitFailureCleanup:
         async def fake_connect(*args, **kwargs):
             return mock_conn
 
-        async def failing_init_tables(self, is_new_db):
+        async def failing_init_tables(self, *args):
             raise RuntimeError("simulated table init failure")
 
         monkeypatch.setattr("haiku.rag.store.engine.connect_lancedb", fake_connect)
@@ -390,7 +390,7 @@ class TestStoreMiscellany:
                 {"settings": "not json at all"}, where="id = 'settings'"
             )
 
-            assert await store._get_stored_vector_dim() is None
+            assert await store._read_stored_settings() == {}
 
     @pytest.mark.asyncio
     async def test_vacuum_skips_when_already_running(self, temp_db_path):
