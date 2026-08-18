@@ -99,6 +99,9 @@ from haiku.rag.store.upgrades.v0_58_0 import (
 from haiku.rag.store.upgrades.v0_64_0 import (
     upgrade_rename_document_meta_id as upgrade_0_64_0_rename_document_meta_id,
 )
+from haiku.rag.store.upgrades.v0_75_0 import (
+    upgrade_index_hot_lookup_keys as upgrade_0_75_0_index_hot_lookup_keys,
+)
 
 upgrades.append(upgrade_0_20_0_docling)
 upgrades.append(upgrade_0_23_1_contextualize)
@@ -110,3 +113,4 @@ upgrades.append(upgrade_0_48_0_heading_hierarchy)
 upgrades.append(upgrade_0_50_0_canonical_metadata_keys)
 upgrades.append(upgrade_0_58_0_split_document_meta)
 upgrades.append(upgrade_0_64_0_rename_document_meta_id)
+upgrades.append(upgrade_0_75_0_index_hot_lookup_keys)
