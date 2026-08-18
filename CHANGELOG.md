@@ -5,6 +5,7 @@
 
 - `evaluations run --filter/-f CLAUSE`: SQL `WHERE` clause over document columns, applied to the retrieval benchmark's searches and to every capability search during QA. Recorded as `document_filter` in experiment metadata.
 - `mtrag_clapnq` / `mtrag_clapnq_rewrite` / `mtrag_clapnq_live` / `mtrag_clapnq_live_uncompacted` evaluation datasets: multi-turn QA with gold-prefix and live-session conversation replay, live arms with and without `EvidenceCompactionCapability`, Recall@k/nDCG@k retrieval metrics, eligibility-aware citation scoring, refusal precision/recall, per-turn tool-traffic attributes, and `citation_status` / `turn_citation_status` eval attributes.
+- Raw chunk metadata is now exposed to search and citation results, through `SearchResult.chunk_meta` and `Citation.chunk_meta`. For context-expanded results, the metadata is that of the anchor chunk.
 - BTree indexes on `chunks.id`, `chunks.document_id` and `documents.id`, and a Bitmap index on `document_items.label`. Existing databases need `haiku-rag migrate`.
 - `lancedb.read_consistency_interval_seconds` (default 30), `lancedb.index_cache_size_bytes` and `lancedb.metadata_cache_size_bytes`. The LanceDB session is shared across connections in a process, so its index and metadata caches survive a connection being closed.
 

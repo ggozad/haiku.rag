@@ -132,12 +132,17 @@ class SearchResult(BaseModel):
 
     ``document_meta`` carries the parent document's metadata for citation
     consumers (UIs). Never part of ``format_for_agent`` output.
+
+    ``chunk_meta`` is the anchor chunk's unparsed ``Chunk.metadata`` and does not
+    include the metadata of any other chunks merged with it. Never part of
+    ``format_for_agent`` output.
     """
 
     content: str
     score: float
     chunk_id: str | None = None
     chunk_ids: list[str] = []
+    chunk_meta: dict = {}
     document_id: str | None = None
     document_uri: str | None = None
     document_title: str | None = None
@@ -172,6 +177,7 @@ class SearchResult(BaseModel):
             page_numbers=meta.page_numbers,
             headings=meta.headings,
             labels=meta.labels,
+            chunk_meta=chunk.metadata,
             image_data=image_data,
         )
 

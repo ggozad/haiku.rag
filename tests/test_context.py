@@ -799,6 +799,46 @@ class TestExpandWithItems:
                 "source_url": "https://example.org/report/view"
             }
 
+    async def test_expanded_result_carries_anchor_chunk_meta(self, temp_db_path):
+        """chunk_meta belongs only to the anchor chunk (ie whichever constituent chunk earned the result its rank)"""
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=i,
+                    self_ref=f"#/texts/{i}",
+                    label="text",
+                    text=f"Paragraph {i}. " * 10,
+                )
+                for i in range(5)
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            r1 = SearchResult(
+                content="Paragraph 1.",
+                score=0.9,
+                chunk_id="c1",
+                document_id="doc-1",
+                doc_item_refs=["#/texts/1"],
+                chunk_meta={"para_no": "12"},
+            )
+            r2 = SearchResult(
+                content="Paragraph 3.",
+                score=0.85,
+                chunk_id="c2",
+                document_id="doc-1",
+                doc_item_refs=["#/texts/3"],
+                chunk_meta={"para_no": "14"},
+            )
+            expanded = await expand_with_items(
+                rag.document_item_repository, "doc-1", [r1, r2], 5000
+            )
+            assert len(expanded) == 1
+            assert expanded[0].chunk_id == "c1"
+            assert expanded[0].chunk_meta == {"para_no": "12"}
+
     async def test_merged_anchor_is_highest_scoring_constituent(self, temp_db_path):
         """A merged result's chunk_id anchors on the best-scoring constituent,
         not whichever chunk sits earliest in the document."""

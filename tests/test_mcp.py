@@ -2,7 +2,7 @@ import pytest
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.mcp import create_mcp_server
-from haiku.rag.store.models import Document, SearchResult
+from haiku.rag.store.models import Chunk, Document, SearchResult
 from haiku.rag.tools.document import DocumentInfo
 
 
@@ -68,6 +68,41 @@ class TestMCPReadTools:
 
         results = await search(query="artificial intelligence", limit=1)
         assert len(results) == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
+    async def test_search_documents_preserves_chunk_meta_through_serialization(
+        self, mcp_db
+    ):
+        """Chunk_meta must survive FastMCP's actual wire serialization.
+
+        Calling the tool function directly bypasses that serialization step entirely."""
+        from fastmcp import Client
+
+        async with HaikuRAG(mcp_db, create=True) as rag:
+            doc = await rag.get_document_by_uri("test://ai-overview")
+            embedding = (await rag.embedder.embed_documents(["x"]))[0]
+            await rag.chunk_repository.create(
+                Chunk(
+                    document_id=doc.id,
+                    content="Artificial intelligence is transforming industries worldwide.",
+                    metadata={"fake-metadata-for-testing": "42"},
+                    embedding=embedding,
+                )
+            )
+            await rag.chunk_repository._ensure_fts_index()
+
+        mcp = create_mcp_server(mcp_db, read_only=True)
+        async with Client(mcp) as client:
+            result = await client.call_tool(
+                "search_documents", {"query": "artificial intelligence"}
+            )
+
+        results = result.structured_content["result"]
+        assert results
+        assert any(
+            r["chunk_meta"] == {"fake-metadata-for-testing": "42"} for r in results
+        )
 
     @pytest.mark.asyncio
     async def test_get_document(self, mcp_db):

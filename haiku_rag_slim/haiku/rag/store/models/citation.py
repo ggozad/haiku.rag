@@ -28,12 +28,18 @@ class Citation(BaseModel):
     ``picture_refs`` is the picture-labeled subset.
 
     ``document_meta`` carries the cited document's metadata for UIs.
+
+    ``chunk_meta`` is the cited chunk's raw, unparsed ``Chunk.metadata``
+    dict — lossless and independent of the typed fields above, so a
+    third-party chunker's own fields survive here even as this schema
+    evolves.
     """
 
     index: int | None = None
     document_id: str
     chunk_id: str
     chunk_ids: list[str] = Field(default_factory=list)
+    chunk_meta: dict = Field(default_factory=dict)
     document_uri: str
     document_title: str | None = None
     document_meta: dict = Field(default_factory=dict)
@@ -65,6 +71,7 @@ def resolve_citations(
                 document_id=r.document_id or "",
                 chunk_id=chunk_id,
                 chunk_ids=r.chunk_ids or [chunk_id],
+                chunk_meta=r.chunk_meta,
                 document_uri=r.document_uri or "",
                 document_title=r.document_title,
                 document_meta=r.document_meta,

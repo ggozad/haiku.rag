@@ -4,7 +4,7 @@ from textual.app import ComposeResult
 from textual.containers import VerticalScroll
 from textual.widgets import Markdown, Static
 
-from haiku.rag.store.models import Chunk, Document, SearchResult
+from haiku.rag.store.models import Chunk, ChunkMetadata, Document, SearchResult
 
 
 class ProvenanceData(Protocol):
@@ -50,6 +50,21 @@ class DetailView(VerticalScroll):
             parts.append(f"**DocItem Refs:** `{refs_str}`")
         return parts
 
+    def _format_extra_metadata(self, metadata: dict) -> list[str]:
+        """Format raw metadata keys not already shown by `_format_provenance`.
+
+        `ChunkMetadata`'s own fields (page_numbers, headings, labels,
+        doc_item_refs) are excluded here since `_format_provenance` already
+        renders them, with its own truncation for long ref lists.
+        """
+        extra = {
+            k: v for k, v in metadata.items() if k not in ChunkMetadata.model_fields
+        }
+        if not extra:
+            return []
+        metadata_str = "\n".join(f"  - {k}: {v}" for k, v in extra.items())
+        return [f"**Metadata:**\n{metadata_str}"]
+
     async def show_document(self, document: Document) -> None:
         """Display document details."""
         title = document.title or document.uri or "Untitled Document"
@@ -92,6 +107,7 @@ class DetailView(VerticalScroll):
 
         chunk_meta = chunk.get_chunk_metadata()
         content_parts.extend(self._format_provenance(chunk_meta))
+        content_parts.extend(self._format_extra_metadata(chunk.metadata))
 
         if chunk.embedding:
             content_parts.append(f"**Embedding:** {len(chunk.embedding)} dimensions")
@@ -120,6 +136,7 @@ class DetailView(VerticalScroll):
         content_parts.append(f"**Score:** {search_result.score:.4f}")
 
         content_parts.extend(self._format_provenance(search_result))
+        content_parts.extend(self._format_extra_metadata(search_result.chunk_meta))
 
         if chunk.embedding:
             content_parts.append(f"**Embedding:** {len(chunk.embedding)} dimensions")

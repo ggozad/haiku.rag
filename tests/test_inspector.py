@@ -166,6 +166,100 @@ async def test_document_list_tracks_has_more():
 
 
 @pytest.mark.asyncio
+async def test_detail_view_shows_chunk_metadata():
+    """show_chunk renders metadata keys _format_provenance doesn't already
+    cover, but not a duplicate of the standard fields it does (headings,
+    page_numbers, labels, doc_item_refs)."""
+    from textual.app import App
+
+    from haiku.rag.inspector.widgets.detail_view import DetailView
+
+    chunk = Chunk(
+        id="chunk-1",
+        document_id="doc-1",
+        content="raw chunk text",
+        metadata={"headings": ["Chapter 1"], "para_no": "12"},
+    )
+
+    class TestApp(App):
+        def compose(self):
+            yield DetailView(id="detail")
+
+    app = TestApp()
+    async with app.run_test():
+        detail_view = app.query_one(DetailView)
+        await detail_view.show_chunk(chunk)
+        source = detail_view.content_widget.source
+        assert "**Metadata:**" in source
+        assert "para_no: 12" in source
+        assert "headings:" not in source  # already shown as **Section:**
+
+
+@pytest.mark.asyncio
+async def test_detail_view_omits_metadata_block_when_only_standard_fields():
+    """No **Metadata:** block at all when chunk.metadata holds nothing
+    beyond what _format_provenance already renders."""
+    from textual.app import App
+
+    from haiku.rag.inspector.widgets.detail_view import DetailView
+
+    chunk = Chunk(
+        id="chunk-1",
+        document_id="doc-1",
+        content="raw chunk text",
+        metadata={"headings": ["Chapter 1"], "page_numbers": [1]},
+    )
+
+    class TestApp(App):
+        def compose(self):
+            yield DetailView(id="detail")
+
+    app = TestApp()
+    async with app.run_test():
+        detail_view = app.query_one(DetailView)
+        await detail_view.show_chunk(chunk)
+        source = detail_view.content_widget.source
+        assert "**Metadata:**" not in source
+
+
+@pytest.mark.asyncio
+async def test_detail_view_shows_search_result_chunk_meta():
+    """show_search_result renders SearchResult.chunk_meta's non-standard
+    keys, the anchor chunk's own metadata carried through search/expansion."""
+    from textual.app import App
+
+    from haiku.rag.inspector.widgets.detail_view import DetailView
+
+    chunk = Chunk(id="chunk-1", document_id="doc-1", content="raw chunk text")
+    search_result = SearchResult(
+        content="raw chunk text",
+        score=0.5,
+        chunk_id="chunk-1",
+        doc_item_refs=[f"#/texts/{i}" for i in range(7)],
+        chunk_meta={
+            "para_no": "12",
+            "doc_item_refs": [f"#/texts/{i}" for i in range(7)],
+        },
+    )
+
+    class TestApp(App):
+        def compose(self):
+            yield DetailView(id="detail")
+
+    app = TestApp()
+    async with app.run_test():
+        detail_view = app.query_one(DetailView)
+        await detail_view.show_search_result(chunk, search_result)
+        source = detail_view.content_widget.source
+        assert "**Metadata:**" in source
+        assert "para_no: 12" in source
+        # _format_provenance's own 5-item truncation for doc_item_refs is
+        # untouched by the filtered-out duplicate in chunk_meta.
+        assert "+2 more" in source
+        assert "doc_item_refs:" not in source
+
+
+@pytest.mark.asyncio
 async def test_context_modal_renders_pictures_when_vision_enabled():
     """ContextModal must mount one TextualImage per attached picture
     when qa.model.vision is True — that's what the LLM actually sees."""

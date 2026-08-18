@@ -222,6 +222,42 @@ def test_search_result_from_chunk_preserves_document_meta():
     assert result.document_meta == {"source_url": "https://example.org/report/view"}
 
 
+def test_search_result_from_chunk_preserves_chunk_meta():
+    """Test flow through of unparsed chunk metadata from Chunk to SearchResult"""
+    chunk = Chunk(
+        id="chunk-1",
+        document_id="doc-1",
+        content="Some content.",
+        metadata={
+            "headings": ["Chapter 1"],
+            "para_no": "12",
+            "speaker": "MR SMITH",
+        },
+    )
+
+    result = SearchResult.from_chunk(chunk, score=0.9)
+
+    assert result.chunk_meta == {
+        "headings": ["Chapter 1"],
+        "para_no": "12",
+        "speaker": "MR SMITH",
+    }
+
+
+def test_search_result_format_for_agent_omits_chunk_meta():
+    """Test that chunk_meta is never shown to the model"""
+    result = SearchResult(
+        content="Some content.",
+        score=0.9,
+        chunk_id="chunk-1",
+        chunk_meta={"para_no": "12"},
+    )
+
+    formatted = result.format_for_agent(rank=1, total=1)
+
+    assert "para_no" not in formatted
+
+
 def test_search_result_format_for_agent_omits_document_meta():
     """Document metadata is UI plumbing, never shown to the model."""
     result = SearchResult(
