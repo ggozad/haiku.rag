@@ -34,7 +34,6 @@ In both cases:
 
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.document_item import DocumentItem
-from haiku.rag.store.repositories.document_item import DocumentItemRepository
 
 _NOISE_LABELS = {"footnote", "page_header", "page_footer", "document_index"}
 _SECTION_BOUNDARY_LABELS = {"section_header", "title"}
@@ -425,33 +424,28 @@ def _build_result(
 _WINDOW_MARGIN = 100
 
 
-async def expand_with_items(
-    document_item_repository: DocumentItemRepository,
-    document_id: str,
+def window_for(ref_positions: dict[str, int]) -> tuple[int, int]:
+    """The inclusive position range to fetch around a document's matches.
+
+    The margin must be wide enough to find section boundaries: the nearest
+    section_header or title above and below the match.
+    """
+    positions = sorted(ref_positions.values())
+    return max(0, positions[0] - _WINDOW_MARGIN), positions[-1] + _WINDOW_MARGIN
+
+
+def expand_with_items(
     results: list[SearchResult],
     max_chars: int,
+    ref_positions: dict[str, int],
+    window_items: list[DocumentItem],
 ) -> list[SearchResult]:
-    """Expand results using the document_items table."""
-    all_refs = []
-    for result in results:
-        all_refs.extend(result.doc_item_refs)
+    """Expand results from items already fetched.
 
-    ref_positions = await document_item_repository.resolve_refs(document_id, all_refs)
-    if not ref_positions:
-        return results
-
-    # Fetch a window of items around matched positions. The margin must be
-    # wide enough to find section boundaries (the nearest section_header/title
-    # above and below the match).
-    all_positions = sorted(ref_positions.values())
-    window_margin = _WINDOW_MARGIN
-    window_start = max(0, min(all_positions) - window_margin)
-    window_end = max(all_positions) + window_margin
-    window_items = await document_item_repository.get_items_in_range(
-        document_id, window_start, window_end
-    )
-
-    if not window_items:
+    Fetching is the caller's, so one query can serve every document in a result
+    set rather than one per document.
+    """
+    if not ref_positions or not window_items:
         return results
 
     has_sections = any(item.label in _SECTION_BOUNDARY_LABELS for item in window_items)

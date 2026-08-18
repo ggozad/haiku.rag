@@ -167,6 +167,58 @@ class DocumentItemRepository:
         )
         return {row["self_ref"]: row["position"] for row in rows}
 
+    async def resolve_refs_grouped(
+        self, refs_by_document: "Mapping[str, Sequence[str]]"
+    ) -> dict[str, dict[str, int]]:
+        """`resolve_refs` across documents in one query."""
+        predicate = self._per_document_predicate(refs_by_document, "self_ref")
+        if predicate is None:
+            return {}
+        rows = await (
+            self.store.document_items_table.query()
+            .select(["document_id", "self_ref", "position"])
+            .where(predicate)
+            .to_list()
+        )
+        grouped: dict[str, dict[str, int]] = {}
+        for row in rows:
+            grouped.setdefault(row["document_id"], {})[row["self_ref"]] = row[
+                "position"
+            ]
+        return grouped
+
+    async def get_items_in_ranges(
+        self, ranges_by_document: "Mapping[str, tuple[int, int]]"
+    ) -> dict[str, list[DocumentItem]]:
+        """`get_items_in_range` across documents in one query.
+
+        Each document keeps its own inclusive range. Positions repeat across
+        documents, so a shared range would splice one document's items into
+        another's context.
+        """
+        clauses = []
+        for document_id, (start, end) in ranges_by_document.items():
+            safe_id = escape_sql_string(document_id)
+            clauses.append(
+                f"(document_id = '{safe_id}' "
+                f"AND position >= {start} AND position <= {end})"
+            )
+        if not clauses:
+            return {}
+        rows = await (
+            self.store.document_items_table.query()
+            .select(_METADATA_COLUMNS)
+            .where(" OR ".join(clauses))
+            .to_list()
+        )
+        grouped: dict[str, list[DocumentItem]] = {}
+        for row in rows:
+            item = self._record_to_item(row)
+            grouped.setdefault(item.document_id, []).append(item)
+        for items in grouped.values():
+            items.sort(key=lambda x: x.position)
+        return grouped
+
     async def get_item_count(self, document_id: str) -> int:
         """Count items for a document."""
         safe_id = escape_sql_string(document_id)

@@ -132,3 +132,81 @@ async def test_caption_ranked_results_take_at_most_four_queries(
             assert all(r.image_data for r in results)
 
     assert counts == [3, 3], counts
+
+
+async def _seed_expandable(rag: HaikuRAG, document_ids: list[str]) -> None:
+    """A section header and two text items, so expansion has something to widen
+    into. Positions and self_refs repeat across documents."""
+    for document_id in document_ids:
+        await rag.document_item_repository.create_items(
+            document_id,
+            [
+                DocumentItem(
+                    document_id=document_id,
+                    position=0,
+                    self_ref="#/texts/0",
+                    label="section_header",
+                    text=f"Section of {document_id}",
+                ),
+                DocumentItem(
+                    document_id=document_id,
+                    position=1,
+                    self_ref="#/texts/1",
+                    label="text",
+                    text=f"anchor body of {document_id}",
+                ),
+                DocumentItem(
+                    document_id=document_id,
+                    position=2,
+                    self_ref="#/texts/2",
+                    label="text",
+                    text=f"neighbouring body of {document_id}",
+                ),
+            ],
+        )
+
+
+def _text_result(document_id: str) -> SearchResult:
+    return SearchResult(
+        chunk_id=f"{document_id}-anchor",
+        document_id=document_id,
+        content=f"anchor body of {document_id}",
+        score=0.9,
+        doc_item_refs=["#/texts/1"],
+    )
+
+
+@pytest.mark.asyncio
+async def test_expansion_query_count_is_flat_in_document_count(
+    temp_db_path, item_queries
+):
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        await _seed_expandable(rag, [f"doc-{i}" for i in range(5)])
+
+        counts = []
+        for n in (1, 5):
+            results = [_text_result(f"doc-{i}") for i in range(n)]
+            item_queries["n"] = 0
+            expanded = await rag.expand_context(results)
+            counts.append(item_queries["n"])
+            assert len(expanded) == n
+
+    assert counts == [2, 2], counts
+
+
+@pytest.mark.asyncio
+async def test_expansion_widens_each_document_with_its_own_items(temp_db_path):
+    """Positions repeat across documents, so a batched window fetch keyed on
+    position alone would splice one document's text into another's context."""
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        await _seed_expandable(rag, ["doc-a", "doc-b"])
+
+        expanded = await rag.expand_context(
+            [_text_result("doc-a"), _text_result("doc-b")]
+        )
+
+    by_doc = {r.document_id: r.content for r in expanded}
+    assert "neighbouring body of doc-a" in by_doc["doc-a"]
+    assert "doc-b" not in by_doc["doc-a"]
+    assert "neighbouring body of doc-b" in by_doc["doc-b"]
+    assert "doc-a" not in by_doc["doc-b"]

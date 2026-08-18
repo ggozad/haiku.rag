@@ -11,7 +11,7 @@
 
 ### Changed
 
-- Search enrichment issues a fixed number of `document_items` queries regardless of how many documents a result set spans, instead of one set per document.
+- Search enrichment and context expansion each issue a fixed number of `document_items` queries regardless of how many documents a result set spans, instead of one set per document. `expand_with_items` takes the items to expand from rather than fetching them, and `DocumentItemRepository` gains `resolve_refs_grouped`, `get_items_in_ranges`, `get_pictures_grouped` and `get_caption_picture_refs_grouped`.
 - Eval judge pinned to `qwen3.8`: `DEFAULT_JUDGE_MODEL` is `ollama:qwen3.8`, and the reference configs use `Inferact/Qwen3.8-27B-NVFP4` with `extra_body.chat_template_kwargs.reasoning_effort: low`. Results in `docs/benchmarks.md` were judged by `Qwen3.6-35B-A3B-NVFP4` and are not re-judged.
 - `create_capability(rag=...)` lends a capability an open client rather than having it open its own; `client.ask`/`client.analyze` now pass theirs.
 - The MCP server opens one database client for its lifetime instead of one per tool call, and fails at startup if the database cannot be opened. `delete_document` no longer opens its own connection with `skip_validation=True`, so the server no longer opts out of embedding-config validation: drift that validation rejects (any `vector_dim` mismatch, or identity drift on a writable server) now fails MCP startup instead of serving a delete-only server. Use the CLI to delete under drift.

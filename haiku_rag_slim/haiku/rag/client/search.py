@@ -215,7 +215,7 @@ async def expand_context(
     chunks were created without docling metadata (e.g., custom chunks passed
     to import_document).
     """
-    from haiku.rag.context import expand_with_items
+    from haiku.rag.context import expand_with_items, window_for
 
     max_chars = client._config.search.max_context_chars
 
@@ -228,24 +228,38 @@ async def expand_context(
         document_groups[doc_id].append(result)
 
     expanded_results = []
-
+    expandable = {
+        doc_id: doc_results
+        for doc_id, doc_results in document_groups.items()
+        if doc_id is not None and any(r.doc_item_refs for r in doc_results)
+    }
     for doc_id, doc_results in document_groups.items():
-        if doc_id is None:
+        if doc_id not in expandable:
             expanded_results.extend(doc_results)
-            continue
 
-        has_refs = any(r.doc_item_refs for r in doc_results)
-        if not has_refs:
-            expanded_results.extend(doc_results)
-            continue
+    repo = client.document_item_repository
+    positions_by_document = await repo.resolve_refs_grouped(
+        {
+            doc_id: [ref for r in doc_results for ref in r.doc_item_refs]
+            for doc_id, doc_results in expandable.items()
+        }
+    )
+    windows = {
+        doc_id: window_for(positions)
+        for doc_id, positions in positions_by_document.items()
+        if positions
+    }
+    items_by_document = await repo.get_items_in_ranges(windows)
 
-        expanded = await expand_with_items(
-            client.document_item_repository,
-            doc_id,
-            doc_results,
-            max_chars,
+    for doc_id, doc_results in expandable.items():
+        expanded_results.extend(
+            expand_with_items(
+                doc_results,
+                max_chars,
+                positions_by_document.get(doc_id, {}),
+                items_by_document.get(doc_id, []),
+            )
         )
-        expanded_results.extend(expanded)
 
     expanded_results.sort(key=lambda r: r.score, reverse=True)
     # image_data and picture_captions are preserved through expansion by

@@ -16,10 +16,10 @@ from haiku.rag.capabilities.rag import RAGState, create_capability
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.search import _populate_image_data
 from haiku.rag.config import AppConfig, Config
-from haiku.rag.context import expand_with_items
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.document_item import DocumentItem
 from haiku.rag.tools.search import create_search_toolset
+from tests.test_context import _fetch_and_expand
 
 
 def _make_png(color: str = "red", size: tuple[int, int] = (4, 4)) -> bytes:
@@ -205,11 +205,8 @@ async def test_expand_context_preserves_picture_refs_with_empty_text(temp_db_pat
             doc_item_refs=["#/texts/1"],
             labels=["paragraph"],
         )
-        expanded = await expand_with_items(
-            rag.document_item_repository,
-            "doc-1",
-            [seed],
-            max_chars=10_000,
+        expanded = await _fetch_and_expand(
+            rag.document_item_repository, "doc-1", [seed], 10_000
         )
         assert len(expanded) == 1
         out = expanded[0]
