@@ -46,8 +46,8 @@ nav = [
         { Toolsets = "tools.md" },
         { "Web app" = "apps.md" },
     ] },
+    { Benchmarks = "benchmarks.md" },
     { Reference = [
-        { Benchmarks = "benchmarks.md" },
         { Development = "development.md" },
         { Changelog = "changelog.md" },
     ] },
