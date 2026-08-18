@@ -55,25 +55,56 @@ class ConnectionMode(Enum):
         return ConnectionMode.OBJECT_STORAGE
 
 
+_sessions: dict[tuple[int | None, int | None], lancedb.Session] = {}
+
+
+def _session(config: AppConfig) -> lancedb.Session:
+    """The process's session for these cache sizes.
+
+    Sessions hold the index and metadata caches. Sharing one across connections
+    is what keeps a cached index from being refetched per connection, which on
+    object storage is the dominant cost of the first query.
+    """
+    key = (
+        config.lancedb.index_cache_size_bytes,
+        config.lancedb.metadata_cache_size_bytes,
+    )
+    if key not in _sessions:
+        kwargs = {}
+        if key[0] is not None:
+            kwargs["index_cache_size_bytes"] = key[0]
+        if key[1] is not None:
+            kwargs["metadata_cache_size_bytes"] = key[1]
+        _sessions[key] = lancedb.Session(**kwargs)
+    return _sessions[key]
+
+
 async def connect_lancedb(
     config: AppConfig, db_path: Path | None = None
 ) -> lancedb.AsyncConnection:
+    interval = config.lancedb.read_consistency_interval_seconds
+    kwargs: dict[str, Any] = {
+        "session": _session(config),
+        "read_consistency_interval": (
+            timedelta(seconds=interval) if interval is not None else None
+        ),
+    }
     mode = ConnectionMode.from_config(config)
     if mode == ConnectionMode.CLOUD:
         return await lancedb.connect_async(
             uri=config.lancedb.uri,
             api_key=config.lancedb.api_key,
             region=config.lancedb.region,
+            **kwargs,
         )
     elif mode == ConnectionMode.OBJECT_STORAGE:
-        kwargs: dict[str, Any] = {"uri": config.lancedb.uri}
         if config.lancedb.storage_options:
             kwargs["storage_options"] = config.lancedb.storage_options
-        return await lancedb.connect_async(**kwargs)
+        return await lancedb.connect_async(uri=config.lancedb.uri, **kwargs)
     else:
         if db_path is None:
             raise ValueError("No lancedb.uri configured and no db_path provided")
-        return await lancedb.connect_async(db_path.absolute())
+        return await lancedb.connect_async(db_path.absolute(), **kwargs)
 
 
 class DocumentRecord(LanceModel):
