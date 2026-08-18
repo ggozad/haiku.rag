@@ -177,16 +177,7 @@ def get_document_items_arrow_schema() -> pa.Schema:
 
 
 def index_specs(table_name: str) -> list[tuple[str, Bitmap | BTree | FTS]]:
-    """The index set a haiku.rag table is expected to carry.
-
-    Single source of truth for every path that creates a table: initialization,
-    migration, and the drop-and-recreate paths in the repositories.
-
-    `label` gets a Bitmap rather than a BTree because it holds around ten
-    distinct values across every item of every document, and Bitmap is the
-    low-cardinality equality case. The FTS options are load-bearing:
-    `with_position` enables phrase queries and keeping stop words lets them match.
-    """
+    """The index set each table carries."""
     match table_name:
         case "documents":
             return [("id", BTree())]
@@ -194,6 +185,7 @@ def index_specs(table_name: str) -> list[tuple[str, Bitmap | BTree | FTS]]:
             return [("id", BTree()), ("uri", BTree())]
         case "chunks":
             return [
+                # Positions and stop words are required for phrase queries.
                 ("content_fts", FTS(with_position=True, remove_stop_words=False)),
                 ("id", BTree()),
                 ("document_id", BTree()),
@@ -210,27 +202,11 @@ def index_specs(table_name: str) -> list[tuple[str, Bitmap | BTree | FTS]]:
 
 
 async def ensure_indexes(table: lancedb.AsyncTable, table_name: str) -> list[str]:
-    """Ensure an index of the declared type covers each declared column.
+    """Create any declared index missing from a column. Returns the columns indexed.
 
-    Returns the columns it indexed, so callers can report what changed.
-
-    The condition is the presence of the declared *type*, not that the column's
-    index happens to be that type. Checking coverage alone would let a wrong-typed
-    index satisfy the check: a BTree on `label` covers the column while losing the
-    low-cardinality equality lookup a Bitmap gives.
-
-    Nothing is ever dropped or converted away from. Two index types over one
-    column can be deliberate, since they serve different query shapes (BTree for
-    equality and range, `Fm` for `contains`), so an index this function did not
-    declare is left in place even on a column it does. Undeclared columns are
-    untouched entirely, so a vector index on `chunks` survives. The one thing it
-    will overwrite is an index at LanceDB's default name for a declared column,
-    `{column}_idx`, which is the name this function itself creates.
-
-    Skipping matters as much as creating: `create_index(replace=True)` rebuilds an
-    identical index, writing a fresh index and a new table version rather than
-    no-oping, and leaves the previous index behind until the next vacuum. On a
-    large table over object storage that is a full column sort per pass.
+    Matches on index type, not column coverage, so a BTree does not satisfy a
+    declared Bitmap. Never drops or converts an index it did not declare.
+    Re-creating is not free: `create_index(replace=True)` rebuilds.
     """
     covering: dict[str, set[str]] = {}
     for index in await table.list_indices():

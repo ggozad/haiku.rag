@@ -36,7 +36,7 @@ async def _covering(table, column: str) -> list[tuple[str, str]]:
 
 @pytest.mark.asyncio
 async def test_fresh_database_indexes_every_hot_lookup_key(temp_db_path):
-    """A new database carries the full index set, not a subset."""
+    """A new database carries the full index set."""
     async with Store(temp_db_path, create=True) as store:
         for name, table in store._tables().items():
             expected = EXPECTED_INDEXED_COLUMNS.get(name, set())
@@ -45,8 +45,7 @@ async def test_fresh_database_indexes_every_hot_lookup_key(temp_db_path):
 
 @pytest.mark.asyncio
 async def test_ensure_indexes_skips_existing_instead_of_rebuilding(temp_db_path):
-    """`create_index(replace=True)` rebuilds an identical index and writes a new
-    table version, so a second pass must skip rather than replace."""
+    """A second pass must not rebuild: replace=True writes a new version."""
     async with Store(temp_db_path, create=True) as store:
         table = store.chunks_table
         version_before = await table.version()
@@ -59,10 +58,7 @@ async def test_ensure_indexes_skips_existing_instead_of_rebuilding(temp_db_path)
 
 @pytest.mark.asyncio
 async def test_ensure_indexes_corrects_an_index_of_the_wrong_type(temp_db_path):
-    """A column indexed with the wrong type must be re-indexed. `label` is the
-    live case: a BTree over ~ten distinct values loses the low-cardinality
-    equality lookup a Bitmap gives, and column coverage alone cannot see it.
-    """
+    """A wrong-typed index does not satisfy the declared one."""
     async with Store(temp_db_path, create=True) as store:
         table = store.document_items_table
         await table.create_index("label", config=BTree(), replace=True)
@@ -80,10 +76,7 @@ async def test_ensure_indexes_corrects_an_index_of_the_wrong_type(temp_db_path):
 async def test_ensure_indexes_adds_the_declared_type_beside_a_custom_index(
     temp_db_path,
 ):
-    """A wrong-typed index under a custom name must neither satisfy the check nor
-    be destroyed. `replace=True` replaces by name and the default name is derived
-    from the column, so a custom-named index is invisible to it either way.
-    """
+    """A custom-named index neither satisfies the check nor is destroyed."""
     async with Store(temp_db_path, create=True) as store:
         table = store.document_items_table
         await table.drop_index("label_idx")
@@ -100,10 +93,7 @@ async def test_ensure_indexes_adds_the_declared_type_beside_a_custom_index(
 async def test_ensure_indexes_keeps_an_operator_index_on_a_declared_column(
     temp_db_path,
 ):
-    """Two index types over one column can be deliberate, serving different query
-    shapes. An index this function did not declare is left alone even on a column
-    it does, so a migration never deletes an operator's index.
-    """
+    """An index we did not declare survives, even on a declared column."""
     async with Store(temp_db_path, create=True) as store:
         table = store.document_items_table
         await table.create_index("label", config=BTree(), name="operator_label")
@@ -116,8 +106,7 @@ async def test_ensure_indexes_keeps_an_operator_index_on_a_declared_column(
 
 @pytest.mark.asyncio
 async def test_delete_all_restores_the_full_index_set(temp_db_path):
-    """delete_all drops and recreates tables; the recreated tables must come
-    back with the same indexes a fresh database gets."""
+    """Recreated tables come back with the full index set."""
     async with Store(temp_db_path, create=True) as store:
         repo = DocumentRepository(store)
         await repo.create(Document(content="A document"))
@@ -131,10 +120,7 @@ async def test_delete_all_restores_the_full_index_set(temp_db_path):
 
 @pytest.mark.asyncio
 async def test_delete_all_keeps_picture_data_as_large_binary(temp_db_path):
-    """document_items must be recreated from the Arrow schema, which declares
-    picture_data as large_binary. The 32-bit `binary` type overflows its offsets
-    once a fragment holds enough embedded pictures.
-    """
+    """picture_data must survive delete_all as large_binary, not binary."""
     async with Store(temp_db_path, create=True) as store:
         repo = DocumentRepository(store)
         await repo.create(Document(content="A document"))

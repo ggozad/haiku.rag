@@ -995,8 +995,7 @@ async def test_client_update_document_replaces_rows_with_bounded_versions(
 ):
     """Updating one document should replace stale rows with bounded versions.
 
-    auto_vacuum is off: a background vacuum optimizes every table, which writes
-    versions of its own and would land inside the window being measured.
+    auto_vacuum is off: its writes would land inside the measured window.
     """
     dim = Config.embeddings.model.vector_dim
     config = Config.model_copy(deep=True)
