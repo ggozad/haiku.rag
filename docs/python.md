@@ -196,7 +196,7 @@ for result in results:
     print(f"Document ID: {result.document_id}")
 ```
 
-Each result carries the parent document's metadata in `result.document_meta`. It is not shown to the model during QA.
+Each result carries the parent document's metadata in `result.document_meta` and the relevant chunk's verbatim metadata in `result.chunk_meta`. Neither is shown to the model during QA.
 
 Search with different search types:
 ```python

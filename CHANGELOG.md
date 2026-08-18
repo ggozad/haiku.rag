@@ -5,11 +5,12 @@
 
 - `evaluations run --filter/-f CLAUSE`: SQL `WHERE` clause over document columns, applied to the retrieval benchmark's searches and to every capability search during QA. Recorded as `document_filter` in experiment metadata.
 - `mtrag_clapnq` / `mtrag_clapnq_rewrite` / `mtrag_clapnq_live` / `mtrag_clapnq_live_uncompacted` evaluation datasets: multi-turn QA with gold-prefix and live-session conversation replay, live arms with and without `EvidenceCompactionCapability`, Recall@k/nDCG@k retrieval metrics, eligibility-aware citation scoring, refusal precision/recall, per-turn tool-traffic attributes, and `citation_status` / `turn_citation_status` eval attributes.
+- Raw chunk metadata is now exposed to search and citation results, through `SearchResult.chunk_meta` and `Citation.chunk_meta`. For context-expanded results, the metadata is that of the anchor chunk.
+
 
 ### Changed
 
 - `import_documents` embeds chunks across the whole batch in one pass instead of per document.
-- Raw chunk metadata is now exposed to search and citation results, through `SearchResult.chunk_meta` and `Citation.chunk_meta`. For context-expanded results, the metadata is that of the anchor chunk.
 
 ### Removed
 

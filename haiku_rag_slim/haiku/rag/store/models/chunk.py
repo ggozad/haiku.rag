@@ -133,7 +133,7 @@ class SearchResult(BaseModel):
     ``document_meta`` carries the parent document's metadata for citation
     consumers (UIs). Never part of ``format_for_agent`` output.
 
-    ``chunk_meta``is the anchor chunk's unparsed ``Chunk.metadata`` and does not
+    ``chunk_meta`` is the anchor chunk's unparsed ``Chunk.metadata`` and does not
     include the metadata of any other chunks merged with it. Never part of
     ``format_for_agent`` output.
     """

@@ -117,9 +117,7 @@ Chunks are returned with:
 - `embedding` - `None` (not yet embedded)
 - `document_id` - `None` (not yet stored)
 
-A custom `DocumentChunker` can provide other keys and values in `metadata`. They will 
-be stored with the chunk and are accessible when it is returned in a search result or citation, within 
-`SearchResult.chunk_meta` / `Citation.chunk_meta`.
+A custom `DocumentChunker` can provide other keys and values in `metadata`. They will be stored with the chunk and are accessible when it is returned in a search result or citation, within `SearchResult.chunk_meta` / `Citation.chunk_meta`.
 
 ## Embed
 
