@@ -12,14 +12,17 @@
 
 - Eval judge pinned to `qwen3.8`: `DEFAULT_JUDGE_MODEL` is `ollama:qwen3.8`, and the reference configs use `Inferact/Qwen3.8-27B-NVFP4` with `extra_body.chat_template_kwargs.reasoning_effort: low`. Results in `docs/benchmarks.md` were judged by `Qwen3.6-35B-A3B-NVFP4` and are not re-judged.
 - `import_documents` embeds chunks across the whole batch in one pass instead of per document.
-
-### Fixed
-
-- `DocumentRepository.delete_all` recreated `document_items` from `DocumentItemRecord` instead of `get_document_items_arrow_schema()`, returning `picture_data` as `binary` rather than `large_binary`.
+- `haiku.rag` and `haiku.rag-slim` summaries and keywords; both packages now publish `[project.urls]`.
+- `server.json` declares `title` and `websiteUrl`, and drops the `keywords` and `license` keys, which are not in the server schema.
 
 ### Removed
 
 - `wix` evaluation dataset and its reference config `evaluations/configs/wix.yaml`.
+
+### Fixed
+
+- `DocumentRepository.delete_all` recreated `document_items` from `DocumentItemRecord` instead of `get_document_items_arrow_schema()`, returning `picture_data` as `binary` rather than `large_binary`.
+- `server.json` runtime arguments are `mcp --stdio`, was `serve --mcp`.
 
 ## [0.74.0] - 2026-08-13
 

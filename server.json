@@ -1,24 +1,14 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.ggozad/haiku-rag",
+  "title": "haiku.rag",
+  "description": "Local-first agentic RAG with citations - hybrid search, reranking, multimodal document retrieval",
   "version": "{{VERSION}}",
-  "description": "Opinionated agentic RAG powered by LanceDB, Pydantic AI, and Docling",
+  "websiteUrl": "https://ggozad.github.io/haiku.rag/",
   "repository": {
     "url": "https://github.com/ggozad/haiku.rag",
     "source": "github"
   },
-  "license": "MIT",
-  "keywords": [
-    "rag",
-    "lancedb",
-    "vector-database",
-    "embeddings",
-    "search",
-    "qa",
-    "research",
-    "docling",
-    "pydantic-ai"
-  ],
   "packages": [
     {
       "registryType": "pypi",
@@ -29,11 +19,11 @@
       "runtimeArguments": [
         {
           "type": "positional",
-          "value": "serve"
+          "value": "mcp"
         },
         {
           "type": "named",
-          "name": "--mcp"
+          "name": "--stdio"
         }
       ],
       "transport": {
