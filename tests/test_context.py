@@ -1462,10 +1462,10 @@ class TestExpandWithItemsWindowEdges:
             )
 
             async def no_window(*_args, **_kwargs):
-                return []
+                return {}
 
             monkeypatch.setattr(
-                rag.document_item_repository, "get_items_in_range", no_window
+                rag.document_item_repository, "get_items_in_ranges", no_window
             )
 
             result = SearchResult(

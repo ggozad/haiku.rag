@@ -322,7 +322,9 @@ async def test_expand_context_single_item_document(temp_db_path):
         assert doc.id is not None
 
         # Create a search result with a doc_item_ref pointing to the item
-        items = await client.document_item_repository.get_items_in_range(doc.id, 0, 10)
+        items = (
+            await client.document_item_repository.get_items_in_ranges({doc.id: (0, 10)})
+        ).get(doc.id, [])
         assert len(items) > 0
 
         search_results = [
