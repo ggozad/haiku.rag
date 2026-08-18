@@ -1,4 +1,5 @@
 import lancedb
+import lancedb.query
 import pytest
 
 from haiku.rag.client import HaikuRAG
@@ -33,6 +34,21 @@ async def _seed(rag: HaikuRAG, document_ids: list[str]) -> None:
                 ),
             ],
         )
+
+
+@pytest.fixture
+def item_projections(monkeypatch):
+    """Columns each document_items query projects."""
+    projections: list[list[str]] = []
+    select = lancedb.query.AsyncQuery.select
+
+    def recording(self, columns):
+        if isinstance(columns, list):
+            projections.append([str(c) for c in columns])
+        return select(self, columns)
+
+    monkeypatch.setattr(lancedb.query.AsyncQuery, "select", recording)
+    return projections
 
 
 @pytest.fixture
@@ -223,7 +239,7 @@ def _picture_chunk(document_id: str) -> Chunk:
 
 @pytest.mark.asyncio
 async def test_reranker_blob_fetch_is_one_query_for_any_document_count(
-    temp_db_path, item_queries
+    temp_db_path, item_queries, item_projections
 ):
     """This path runs over `limit * 10` candidates, so per-document fetching
     costs the most here."""
@@ -239,6 +255,10 @@ async def test_reranker_blob_fetch_is_one_query_for_any_document_count(
             assert all(c._picture_data for c in chunks)
 
     assert counts == [1, 1], counts
+    # The reranker scores pixels, so `text` has no business in the projection.
+    picture_projections = [p for p in item_projections if "picture_data" in p]
+    assert picture_projections, "no picture query observed"
+    assert all("text" not in p for p in picture_projections), picture_projections
 
 
 @pytest.mark.asyncio

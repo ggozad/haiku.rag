@@ -184,7 +184,9 @@ async def _populate_image_data(client: "HaikuRAG", results: list[SearchResult]) 
     if not wanted:
         return
 
-    bytes_by_document, captions_by_document = await repo.get_pictures_grouped(wanted)
+    bytes_by_document, captions_by_document = await repo.get_pictures_grouped(
+        wanted, with_text=True
+    )
     if not bytes_by_document:
         return
 

@@ -260,21 +260,28 @@ class DocumentItemRepository:
         return " OR ".join(clauses) if clauses else None
 
     async def get_pictures_grouped(
-        self, refs_by_document: "Mapping[str, list[str]]"
+        self,
+        refs_by_document: "Mapping[str, list[str]]",
+        *,
+        with_text: bool = False,
     ) -> tuple[dict[str, dict[str, bytes]], dict[str, dict[str, str]]]:
-        """Picture bytes and their text, across documents, in one query.
+        """Picture bytes across documents in one query.
 
         Returns `(bytes_by_document, text_by_document)`, each
         `{document_id: {self_ref: value}}` and each omitting refs whose value is
-        empty. The text comes from the same rows as the bytes, so asking for it
-        separately would be a second read of rows already in hand.
+        empty. `with_text` adds each picture's text to the projection, which is
+        free in queries because it is on the same rows, but not in bytes: the
+        text column is dead weight for a caller that only scores pixels.
         """
         predicate = self._per_document_predicate(refs_by_document, "self_ref")
         if predicate is None:
             return {}, {}
+        columns = ["document_id", "self_ref", "picture_data"]
+        if with_text:
+            columns.append("text")
         rows = await (
             self.store.document_items_table.query()
-            .select(["document_id", "self_ref", "picture_data", "text"])
+            .select(columns)
             .where(predicate)
             .to_list()
         )

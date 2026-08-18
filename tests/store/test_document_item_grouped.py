@@ -54,7 +54,7 @@ async def test_pictures_grouped_keeps_documents_apart(temp_db_path, item_queries
 
         item_queries["n"] = 0
         blobs, texts = await repo.get_pictures_grouped(
-            {"doc-a": ["#/pictures/0"], "doc-b": ["#/pictures/0"]}
+            {"doc-a": ["#/pictures/0"], "doc-b": ["#/pictures/0"]}, with_text=True
         )
 
         assert item_queries["n"] == 1
@@ -156,3 +156,18 @@ async def test_caption_picture_refs_grouped_ignores_non_picture_predecessors(
         )
 
         assert got == {}
+
+
+@pytest.mark.asyncio
+async def test_pictures_grouped_omits_text_unless_asked(temp_db_path, item_queries):
+    """Text is dead weight for a caller that only scores pixels."""
+    async with Store(temp_db_path, create=True) as store:
+        repo = DocumentItemRepository(store)
+        await _seed(repo, "doc-a")
+
+        item_queries["n"] = 0
+        blobs, texts = await repo.get_pictures_grouped({"doc-a": ["#/pictures/0"]})
+
+        assert item_queries["n"] == 1
+        assert blobs == {"doc-a": {"#/pictures/0": b"bytes-doc-a"}}
+        assert texts == {}
