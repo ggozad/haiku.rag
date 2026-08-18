@@ -1,0 +1,23 @@
+storage:
+  vacuum_retention_seconds: 0
+
+embeddings:
+  model:
+    provider: ollama
+    name: qwen3-embedding:4b
+
+processing:
+  conversion_options:
+    do_ocr: false
+
+ingester:
+  queue:
+    path: ingester.db
+  workers:
+    # One worker: the runner's single CPU-bound Ollama serialises embeds, so
+    # concurrent workers thrash rather than parallelise.
+    worker_count: 1
+  sources:
+    - type: fs
+      id: docs
+      root: docs
