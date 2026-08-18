@@ -1,3 +1,6 @@
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +31,42 @@ def create_mcp_server(
         config: Configuration to use.
         read_only: If True, write tools (add_document_*, delete_document) are not registered.
     """
-    mcp = FastMCP("haiku-rag")
+    client: HaikuRAG | None = None
+    stack = AsyncExitStack()
+    client_lock = asyncio.Lock()
+
+    async def _client() -> HaikuRAG:
+        """The server's client, opened once.
+
+        Opening cost is per connection, and on object storage the first vector
+        query loads the index into the session cache, so a client per tool call
+        pays that repeatedly.
+        """
+        nonlocal client
+        async with client_lock:
+            if client is None:
+                client = await stack.enter_async_context(
+                    HaikuRAG(db_path, config=config, read_only=read_only)
+                )
+        return client
+
+    @asynccontextmanager
+    async def lifespan(_server: FastMCP) -> AsyncIterator[None]:
+        # Open eagerly so an unopenable database fails startup rather than
+        # every tool call.
+        nonlocal client
+        await _client()
+        try:
+            yield
+        finally:
+            # The lifespan can be re-entered; without the reset the next cycle
+            # hands out the closed client, including when aclose itself fails.
+            try:
+                await stack.aclose()
+            finally:
+                client = None
+
+    mcp = FastMCP("haiku-rag", lifespan=lifespan)
 
     # Write tools - only registered when not in read-only mode
     if not read_only:
@@ -41,14 +79,14 @@ def create_mcp_server(
         ) -> str | None:
             """Add a document to the RAG system from a file path."""
             try:
-                async with HaikuRAG(db_path, config=config) as rag:
-                    result = await rag.create_document_from_source(
-                        Path(file_path), title=title, metadata=metadata or {}
-                    )
-                    # Handle both single document and list of documents (directories)
-                    if isinstance(result, list):
-                        return result[0].id if result else None
-                    return result.id
+                rag = await _client()
+                result = await rag.create_document_from_source(
+                    Path(file_path), title=title, metadata=metadata or {}
+                )
+                # Handle both single document and list of documents (directories)
+                if isinstance(result, list):
+                    return result[0].id if result else None
+                return result.id
             except Exception:
                 return None
 
@@ -58,14 +96,14 @@ def create_mcp_server(
         ) -> str | None:
             """Add a document to the RAG system from a URL."""
             try:
-                async with HaikuRAG(db_path, config=config) as rag:
-                    result = await rag.create_document_from_source(
-                        url, title=title, metadata=metadata or {}
-                    )
-                    # Handle both single document and list of documents
-                    if isinstance(result, list):
-                        return result[0].id if result else None
-                    return result.id
+                rag = await _client()
+                result = await rag.create_document_from_source(
+                    url, title=title, metadata=metadata or {}
+                )
+                # Handle both single document and list of documents
+                if isinstance(result, list):
+                    return result[0].id if result else None
+                return result.id
             except Exception:
                 return None
 
@@ -78,11 +116,11 @@ def create_mcp_server(
         ) -> str | None:
             """Add a document to the RAG system from text content."""
             try:
-                async with HaikuRAG(db_path, config=config) as rag:
-                    document = await rag.create_document(
-                        content, uri, title=title, metadata=metadata or {}
-                    )
-                    return document.id
+                rag = await _client()
+                document = await rag.create_document(
+                    content, uri, title=title, metadata=metadata or {}
+                )
+                return document.id
             except Exception:
                 return None
 
@@ -90,10 +128,8 @@ def create_mcp_server(
         async def delete_document(document_id: str) -> bool:
             """Delete a document by its ID."""
             try:
-                async with HaikuRAG(
-                    db_path, config=config, skip_validation=True
-                ) as rag:
-                    return await rag.delete_document(document_id)
+                rag = await _client()
+                return await rag.delete_document(document_id)
             except Exception:
                 return False
 
@@ -110,10 +146,8 @@ def create_mcp_server(
         response (smaller JSON payload for plain-text consumers).
         """
         try:
-            async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
-                return await rag.search(
-                    query, limit=limit, include_images=include_images
-                )
+            rag = await _client()
+            return await rag.search(query, limit=limit, include_images=include_images)
         except Exception:
             return []
 
@@ -145,10 +179,8 @@ def create_mcp_server(
             except Exception:
                 return []
             try:
-                async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
-                    return await rag.search(
-                        raw, limit=limit, include_images=include_images
-                    )
+                rag = await _client()
+                return await rag.search(raw, limit=limit, include_images=include_images)
             except Exception:
                 return []
 
@@ -156,8 +188,8 @@ def create_mcp_server(
     async def get_document(document_id: str) -> Document | None:
         """Get a document by its ID."""
         try:
-            async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
-                return await rag.get_document_by_id(document_id)
+            rag = await _client()
+            return await rag.get_document_by_id(document_id)
         except Exception:
             return None
 
@@ -175,18 +207,18 @@ def create_mcp_server(
             filter: Optional SQL WHERE clause to filter documents.
         """
         try:
-            async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
-                documents = await rag.list_documents(limit, offset, filter)
+            rag = await _client()
+            documents = await rag.list_documents(limit, offset, filter)
 
-                return [
-                    DocumentInfo(
-                        id=doc.id,
-                        title=doc.title or "Untitled",
-                        uri=doc.uri or "",
-                        created=doc.created_at.strftime("%Y-%m-%d"),
-                    )
-                    for doc in documents
-                ]
+            return [
+                DocumentInfo(
+                    id=doc.id,
+                    title=doc.title or "Untitled",
+                    uri=doc.uri or "",
+                    created=doc.created_at.strftime("%Y-%m-%d"),
+                )
+                for doc in documents
+            ]
         except Exception:
             return []
 
@@ -209,11 +241,11 @@ def create_mcp_server(
         """
         try:
             images = _decode_images(images_base64)
-            async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
-                answer, citations = await rag.ask(question, images=images)
-                if cite and citations:
-                    answer += "\n\n" + format_citations(citations)
-                return answer
+            rag = await _client()
+            answer, citations = await rag.ask(question, images=images)
+            if cite and citations:
+                answer += "\n\n" + format_citations(citations)
+            return answer
         except Exception as e:
             return f"Error answering question: {e!s}"
 
@@ -240,9 +272,9 @@ def create_mcp_server(
         """
         try:
             images = _decode_images(images_base64)
-            async with HaikuRAG(db_path, config=config, read_only=read_only) as rag:
-                result = await rag.analyze(question, filter=filter, images=images)
-                return result.answer
+            rag = await _client()
+            result = await rag.analyze(question, filter=filter, images=images)
+            return result.answer
         except Exception as e:
             return f"Error running analysis capability: {e!s}"
 

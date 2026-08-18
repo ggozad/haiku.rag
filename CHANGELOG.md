@@ -11,6 +11,7 @@
 ### Changed
 
 - Eval judge pinned to `qwen3.8`: `DEFAULT_JUDGE_MODEL` is `ollama:qwen3.8`, and the reference configs use `Inferact/Qwen3.8-27B-NVFP4` with `extra_body.chat_template_kwargs.reasoning_effort: low`. Results in `docs/benchmarks.md` were judged by `Qwen3.6-35B-A3B-NVFP4` and are not re-judged.
+- The MCP server opens one database client for its lifetime instead of one per tool call, and fails at startup if the database cannot be opened. `delete_document` no longer opens its own connection with `skip_validation=True`, so the server no longer opts out of embedding-config validation: drift that validation rejects (any `vector_dim` mismatch, or identity drift on a writable server) now fails MCP startup instead of serving a delete-only server. Use the CLI to delete under drift.
 - `import_documents` embeds chunks across the whole batch in one pass instead of per document.
 - `haiku.rag` and `haiku.rag-slim` summaries and keywords; both packages now publish `[project.urls]`.
 - `server.json` declares `title` and `websiteUrl`, and drops the `keywords` and `license` keys, which are not in the server schema.
