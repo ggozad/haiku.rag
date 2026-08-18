@@ -60,7 +60,9 @@ class SettingsRepository:
             )
             await self.store.settings_table.add([settings_record])
 
-    async def validate_config_compatibility(self) -> None:
+    async def validate_config_compatibility(
+        self, stored_settings: dict | None = None
+    ) -> None:
         """Validate the current configuration against stored settings without writing.
 
         Opening a database never modifies it. ``vector_dim`` mismatches raise —
@@ -72,7 +74,8 @@ class SettingsRepository:
         while a read-only open continues. Stored settings are reconciled
         explicitly via ``haiku-rag rebuild --set-embedder``, never on open.
         """
-        stored_settings = await self.get_current_settings()
+        if stored_settings is None:
+            stored_settings = await self.get_current_settings()
 
         # Nothing stored to validate against — never write on open.
         if not stored_settings:

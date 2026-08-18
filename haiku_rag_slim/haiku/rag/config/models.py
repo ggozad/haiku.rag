@@ -62,10 +62,21 @@ class StorageConfig(BaseModel):
 
 
 class LanceDBConfig(BaseModel):
+    """LanceDB connection settings.
+
+    read_consistency_interval_seconds bounds how stale a reader may be. None
+    never re-checks, so a long-lived reader never sees another process's writes.
+    The cache sizes are per process, since the session is shared across
+    connections.
+    """
+
     uri: str = ""
     api_key: str = ""
     region: str = ""
     storage_options: dict[str, str] = Field(default_factory=dict)
+    read_consistency_interval_seconds: float | None = Field(default=30, ge=0)
+    index_cache_size_bytes: int | None = Field(default=None, ge=0)
+    metadata_cache_size_bytes: int | None = Field(default=None, ge=0)
 
 
 class EmbeddingsConfig(BaseModel):

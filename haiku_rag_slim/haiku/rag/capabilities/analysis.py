@@ -1,12 +1,15 @@
 from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 from pydantic_ai import RunContext, ToolFailed
 from pydantic_ai.messages import ToolReturn
 from pydantic_ai.toolsets import FunctionToolset
+
+if TYPE_CHECKING:
+    from haiku.rag.client import HaikuRAG
 
 from haiku.rag.capabilities._base import (
     CodeExecutionEntry,
@@ -162,6 +165,7 @@ def create_capability(
     config: AppConfig | None = None,
     *,
     defer_loading: bool = True,
+    rag: "HaikuRAG | None" = None,
     request_limit: int | None = 30,
     vision: bool | None = None,
 ) -> AnalysisCapability:
@@ -180,6 +184,7 @@ def create_capability(
     return AnalysisCapability(
         db_path=resolve_db_path(db_path, config),
         config=config,
+        borrowed_rag=rag,
         state_type=AnalysisState,
         state_namespace=STATE_NAMESPACE,
         instruction_text=instructions(),

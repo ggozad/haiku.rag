@@ -5,12 +5,14 @@
 
 - `evaluations run --filter/-f CLAUSE`: SQL `WHERE` clause over document columns, applied to the retrieval benchmark's searches and to every capability search during QA. Recorded as `document_filter` in experiment metadata.
 - `mtrag_clapnq` / `mtrag_clapnq_rewrite` / `mtrag_clapnq_live` / `mtrag_clapnq_live_uncompacted` evaluation datasets: multi-turn QA with gold-prefix and live-session conversation replay, live arms with and without `EvidenceCompactionCapability`, Recall@k/nDCG@k retrieval metrics, eligibility-aware citation scoring, refusal precision/recall, per-turn tool-traffic attributes, and `citation_status` / `turn_citation_status` eval attributes.
-
 - BTree indexes on `chunks.id`, `chunks.document_id` and `documents.id`, and a Bitmap index on `document_items.label`. Existing databases need `haiku-rag migrate`.
+- `lancedb.read_consistency_interval_seconds` (default 30), `lancedb.index_cache_size_bytes` and `lancedb.metadata_cache_size_bytes`. The LanceDB session is shared across connections in a process, so its index and metadata caches survive a connection being closed.
 
 ### Changed
 
 - Eval judge pinned to `qwen3.8`: `DEFAULT_JUDGE_MODEL` is `ollama:qwen3.8`, and the reference configs use `Inferact/Qwen3.8-27B-NVFP4` with `extra_body.chat_template_kwargs.reasoning_effort: low`. Results in `docs/benchmarks.md` were judged by `Qwen3.6-35B-A3B-NVFP4` and are not re-judged.
+- `create_capability(rag=...)` lends a capability an open client rather than having it open its own; `client.ask`/`client.analyze` now pass theirs.
+- The MCP server opens one database client for its lifetime instead of one per tool call, and fails at startup if the database cannot be opened. `delete_document` no longer opens its own connection with `skip_validation=True`, so the server no longer opts out of embedding-config validation: drift that validation rejects (any `vector_dim` mismatch, or identity drift on a writable server) now fails MCP startup instead of serving a delete-only server. Use the CLI to delete under drift.
 - `import_documents` embeds chunks across the whole batch in one pass instead of per document.
 - `haiku.rag` and `haiku.rag-slim` summaries and keywords; both packages now publish `[project.urls]`.
 - `server.json` declares `title` and `websiteUrl`, and drops the `keywords` and `license` keys, which are not in the server schema.

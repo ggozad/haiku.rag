@@ -55,25 +55,56 @@ class ConnectionMode(Enum):
         return ConnectionMode.OBJECT_STORAGE
 
 
+_sessions: dict[tuple[int | None, int | None], lancedb.Session] = {}
+
+
+def _session(config: AppConfig) -> lancedb.Session:
+    """The process's session for these cache sizes.
+
+    Sessions hold the index and metadata caches. Sharing one across connections
+    is what keeps a cached index from being refetched per connection, which on
+    object storage is the dominant cost of the first query.
+    """
+    key = (
+        config.lancedb.index_cache_size_bytes,
+        config.lancedb.metadata_cache_size_bytes,
+    )
+    if key not in _sessions:
+        kwargs = {}
+        if key[0] is not None:
+            kwargs["index_cache_size_bytes"] = key[0]
+        if key[1] is not None:
+            kwargs["metadata_cache_size_bytes"] = key[1]
+        _sessions[key] = lancedb.Session(**kwargs)
+    return _sessions[key]
+
+
 async def connect_lancedb(
     config: AppConfig, db_path: Path | None = None
 ) -> lancedb.AsyncConnection:
+    interval = config.lancedb.read_consistency_interval_seconds
+    kwargs: dict[str, Any] = {
+        "session": _session(config),
+        "read_consistency_interval": (
+            timedelta(seconds=interval) if interval is not None else None
+        ),
+    }
     mode = ConnectionMode.from_config(config)
     if mode == ConnectionMode.CLOUD:
         return await lancedb.connect_async(
             uri=config.lancedb.uri,
             api_key=config.lancedb.api_key,
             region=config.lancedb.region,
+            **kwargs,
         )
     elif mode == ConnectionMode.OBJECT_STORAGE:
-        kwargs: dict[str, Any] = {"uri": config.lancedb.uri}
         if config.lancedb.storage_options:
             kwargs["storage_options"] = config.lancedb.storage_options
-        return await lancedb.connect_async(**kwargs)
+        return await lancedb.connect_async(uri=config.lancedb.uri, **kwargs)
     else:
         if db_path is None:
             raise ValueError("No lancedb.uri configured and no db_path provided")
-        return await lancedb.connect_async(db_path.absolute())
+        return await lancedb.connect_async(db_path.absolute(), **kwargs)
 
 
 class DocumentRecord(LanceModel):
@@ -174,6 +205,11 @@ def get_document_items_arrow_schema() -> pa.Schema:
         else:
             fields.append(field)
     return pa.schema(fields)
+
+
+def _stored_vector_dim(settings: dict) -> int | None:
+    """The vector dimension a database's chunks were written at."""
+    return settings.get("embeddings", {}).get("model", {}).get("vector_dim")
 
 
 def index_specs(table_name: str) -> list[tuple[str, Bitmap | BTree | FTS]]:
@@ -502,29 +538,27 @@ class Store:
             self._config, self.db_path
         )
 
-        # For remote stores (and as a safety net for local paths that exist but
-        # have no tables — e.g. a previously failed init), detect new DB by
-        # checking whether any tables exist.
-        is_new_db = self._is_new_db
-        if not is_new_db:
-            existing_tables = (await self.db.list_tables()).tables
-            if not existing_tables:
-                is_new_db = True
+        # Read once and thread onward: on object storage each of these is a
+        # round trip. A local path that exists with no tables is a failed init,
+        # so treat it as new.
+        existing_tables = (await self.db.list_tables()).tables
+        is_new_db = self._is_new_db or not existing_tables
 
-        # For existing databases, read stored vector dimension to create ChunkRecord
-        # that can read existing chunks. For new databases, use config's dimension.
-        stored_vector_dim = None
-        if not is_new_db:
-            stored_vector_dim = await self._get_stored_vector_dim()
+        stored_settings: dict = {}
+        if not is_new_db and "settings" in existing_tables:
+            self.settings_table = await self.db.open_table("settings")
+            stored_settings = await self._read_stored_settings()
 
-        # Create ChunkRecord with stored dimension (for reading) or config dimension (for new DB)
+        # An existing database's chunks can only be read with the dimension they
+        # were written at.
+        stored_vector_dim = _stored_vector_dim(stored_settings)
         chunk_vector_dim = stored_vector_dim or self.embedder._vector_dim
         self.ChunkRecord: type[ChunkRecordBase] = create_chunk_model(chunk_vector_dim)
 
         # Initialize tables (creates them if they don't exist). For an existing
         # DB this raises MigrationRequiredError up front when migrations are
         # pending, before creating any newly-introduced table.
-        await self._init_tables(is_new_db)
+        await self._init_tables(is_new_db, existing_tables, stored_settings)
 
         # Set version for new databases.
         if is_new_db and not self._read_only:
@@ -532,7 +566,7 @@ class Store:
 
         # Validate config compatibility after connection is established
         if not self._skip_validation:
-            await self._validate_configuration()
+            await self._validate_configuration(stored_settings)
 
     async def __aenter__(self):
         # If _initialize connects to LanceDB but then fails (e.g. migration
@@ -554,33 +588,26 @@ class Store:
         """Whether the store is in read-only mode."""
         return self._read_only
 
-    async def _get_stored_vector_dim(self) -> int | None:
-        """Read the stored vector dimension from the settings table.
+    async def _read_stored_settings(self) -> dict:
+        """The stored settings blob, or {} if it is absent or not a JSON object.
 
-        Returns:
-            The stored vector dimension, or None if not found.
+        Only decoding failures are tolerated. A storage failure must propagate:
+        read as empty settings it would look like version 0.0.0, and the
+        migration check would declare every migration pending.
         """
+        rows = (
+            await self.settings_table.query()
+            .where("id = 'settings'")
+            .limit(1)
+            .to_arrow()
+        ).to_pylist()
+        if not rows or not rows[0].get("settings"):
+            return {}
         try:
-            existing_tables = (await self.db.list_tables()).tables
-            if "settings" not in existing_tables:
-                return None
-
-            settings_table = await self.db.open_table("settings")
-            rows = (
-                await settings_table.query()
-                .where("id = 'settings'")
-                .limit(1)
-                .to_arrow()
-            ).to_pylist()
-            if not rows or not rows[0].get("settings"):
-                return None
-
-            settings = json.loads(rows[0]["settings"])
-            embeddings = settings.get("embeddings", {})
-            model = embeddings.get("model", {})
-            return model.get("vector_dim")
-        except Exception:
-            return None
+            decoded = json.loads(rows[0]["settings"])
+        except (json.JSONDecodeError, TypeError):
+            return {}
+        return decoded if isinstance(decoded, dict) else {}
 
     def _assert_writable(self) -> None:
         """Raise ReadOnlyError if the store is in read-only mode."""
@@ -711,16 +738,19 @@ class Store:
         except Exception as e:
             logger.warning(f"Could not create vector index: {e}")
 
-    async def _validate_configuration(self) -> None:
+    async def _validate_configuration(
+        self, stored_settings: dict | None = None
+    ) -> None:
         """Validate that the configuration is compatible with the database."""
         from haiku.rag.store.repositories.settings import SettingsRepository
 
         settings_repo = SettingsRepository(self)
-        await settings_repo.validate_config_compatibility()
+        await settings_repo.validate_config_compatibility(stored_settings)
 
-    async def _init_tables(self, is_new_db: bool):
+    async def _init_tables(
+        self, is_new_db: bool, existing_tables: list[str], stored_settings: dict
+    ):
         """Initialize database tables (create if they don't exist)."""
-        existing_tables = (await self.db.list_tables()).tables
 
         # Surface pending migrations BEFORE creating any newly-introduced table.
         # Otherwise opening a legacy DB would either mutate it (creating an empty
@@ -732,8 +762,7 @@ class Store:
             and not self._skip_migration_check
             and "settings" in existing_tables
         ):
-            self.settings_table = await self.db.open_table("settings")
-            await self._check_migrations()
+            await self._check_migrations(stored_settings.get("version", "0.0.0"))
 
         missing_tables = set(REQUIRED_TABLES) - set(existing_tables)
 
@@ -780,10 +809,8 @@ class Store:
             )
             await ensure_indexes(self.document_items_table, "document_items")
 
-        # Create or open settings table
-        if "settings" in existing_tables:
-            self.settings_table = await self.db.open_table("settings")
-        else:
+        # _initialize opened the settings table when the database had one.
+        if "settings" not in existing_tables:
             self.settings_table = await self.db.create_table(
                 "settings", schema=SettingsRecord
             )
@@ -797,7 +824,7 @@ class Store:
         """Set the initial version for a new database."""
         await self.set_haiku_version(metadata.version("haiku.rag-slim"))
 
-    async def _check_migrations(self) -> None:
+    async def _check_migrations(self, db_version: str) -> None:
         """Raise if migrations are pending. Opening never writes the version.
 
         Raises:
@@ -806,7 +833,6 @@ class Store:
         from haiku.rag.store.upgrades import get_pending_upgrades
 
         current_version = metadata.version("haiku.rag-slim")
-        db_version = await self.get_haiku_version()
 
         pending = get_pending_upgrades(db_version)
 
