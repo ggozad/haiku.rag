@@ -2,139 +2,6 @@
 
 We evaluate `haiku.rag` on a small set of datasets that exercise different parts of the pipeline. OpenRAG Bench (ORB), T²-RAGBench, HotpotQA, and MTRAG are the datasets we currently track. Retrieval, QA accuracy, and citation retrieval are scored end-to-end through the RAG and analysis capabilities.
 
-## Running Evaluations
-
-You can run evaluations with the `evaluations` CLI:
-
-```bash
-evaluations run hotpotqa
-evaluations run orb_text
-```
-
-The evaluation flow is orchestrated with [`pydantic-evals`](https://github.com/pydantic/pydantic-ai/tree/main/libs/pydantic-evals), which we leverage for dataset management, scoring, and report generation.
-
-### Pre-built Databases
-
-Building evaluation databases from scratch can take a long time, especially for large datasets like OpenRAG Bench. Pre-built databases are available on HuggingFace:
-
-```bash
-# Download a specific dataset
-evaluations download hotpotqa
-
-# Download all datasets
-evaluations download all
-
-# Force re-download (overwrite existing)
-evaluations download hotpotqa --force
-```
-
-Active datasets:
-
-| Dataset | Size |
-|---------|------|
-| `orb_text` — OpenRAG Bench, text embedder (`qwen3-embedding:4b`) with VLM picture descriptions baked into chunk content | ~18 GB |
-| `orb_multimodal` — OpenRAG Bench, multimodal embedder (`qwen3-vl-embedding-8b`); picture vectors live in the same space as text for cross-modal retrieval | ~16 GB |
-| `orb_multimodal_nemotron` — OpenRAG Bench, multimodal embedder (`nvidia/llama-nemotron-embed-vl-1b-v2`), the embedder behind the published headline results | ~16 GB |
-| `t2_finqa` — T²-RAGBench (FinQA) financial QA, text embedder (`qwen3-embedding:4b`); scored by exact numeric match, run with `--target analysis-capability` | ~2 GB |
-| `hotpotqa` — HotpotQA multi-hop QA over Wikipedia paragraphs, text embedder (`qwen3-embedding:4b`) | ~1.5 GB |
-| `mtrag_clapnq` — MTRAG multi-turn RAG, ClapNQ (Wikipedia) passages, text embedder (`qwen3-embedding:4b`); also serves the `mtrag_clapnq_rewrite`, `mtrag_clapnq_live` and `mtrag_clapnq_live_uncompacted` keys | ~2.8 GB |
-
-After downloading, run benchmarks with `--skip-db`. Each database is built with a specific embedder, so pass its reference config from `evaluations/configs/` (a database only opens against a config whose embedder matches):
-
-```bash
-evaluations run orb_multimodal_nemotron --skip-db --config configs/orb_multimodal_nemotron.yaml
-```
-
-The configs use `vllm` as the model host. Point `base_url` at your own OpenAI-compatible endpoints to reproduce the numbers.
-
-### Configuration
-
-The benchmark script accepts several options:
-
-```bash
-evaluations run hotpotqa --config /path/to/haiku.rag.yaml --db /path/to/custom.lancedb
-```
-
-**Options:**
-
-- `--config PATH` - Specify a custom `haiku.rag.yaml` configuration file
-- `--db PATH` - Override the database path (default: platform-specific user data directory)
-- `--skip-db` - Skip updating the evaluation database
-- `--skip-retrieval` - Skip retrieval benchmark
-- `--skip-qa` - Skip QA benchmark
-- `--limit N` - Limit number of test cases
-- `--name NAME` - Override the evaluation name
-- `--target {rag-capability,analysis-capability}` - Choose which [capability](capabilities/index.md) to benchmark end-to-end (default: `rag-capability`). The target names remain stable dataset identifiers.
-- `--capability-model PROVIDER:NAME` - Override the capability model independently from the judge (default: `config.qa.model`, or `config.analysis.model` when set for `--target analysis-capability`).
-- `--filter CLAUSE` / `-f CLAUSE` - Restrict every benchmark search to a subset of the database (see [Restricting the corpus](#restricting-the-corpus)).
-
-If no config file is specified, the script searches standard locations: `./haiku.rag.yaml`, user config directory, then falls back to defaults.
-
-To pin the LLM judge in YAML (rather than the default `ollama:qwen3.8`). These are the recommended settings:
-
-```yaml
-evaluations:
-  judge:
-    provider: openai
-    name: Inferact/Qwen3.8-27B-NVFP4
-    base_url: http://localhost:8000/v1   # optional, for OpenAI-compatible servers (vLLM, LM Studio, etc.)
-    temperature: 0.6
-    max_tokens: 16384
-    extra_body:
-      top_p: 0.95
-      top_k: 20
-      min_p: 0
-      chat_template_kwargs:
-        reasoning_effort: low   # qwen3.8: low | medium | xhigh (default)
-```
-
-### Restricting the corpus
-
-When a database holds documents from several corpora — only some of which a dataset's questions are drawn from — `--filter` restricts every benchmark search to a subset. It takes the same SQL `WHERE` clause as `haiku-rag search --filter`, over document columns (`id`, `uri`, `title`, `created_at`, `updated_at`, `metadata`). Each dataset writes its own URIs: `orb_text` uses bare arXiv ids such as `2407.01528v3`, `hotpotqa` uses page titles.
-
-```bash
-evaluations run orb_text --skip-db --config haiku.rag.s3.yaml \
-  --filter "uri LIKE '2407%'"
-```
-
-If the corpora are distinguished by a tag rather than by URI, attach it at ingest time as document metadata and match it with `LIKE`. `metadata` is stored as a `json.dumps` string, so there is no JSON subfield access — match the serialized key/value, including the space after the colon:
-
-```bash
-evaluations run orb_text --skip-db --filter "metadata LIKE '%\"corpus\": \"orb_text\"%'"
-```
-
-The clause applies to both benchmark phases — the retrieval benchmark's searches and every search the capability runs during QA — so the two score the same subset. It is recorded as `document_filter` in the run's experiment metadata, so a filtered run is never mistaken for an unfiltered one when comparing results.
-
-Filtering affects searches only — a run without `--skip-db` still populates the database with the dataset's full corpus.
-
-## Methodology
-
-### Retrieval Metrics
-
-**Mean Average Precision (MAP)** scores ranked retrieval results against the gold `expected_uris`.
-
-- For each relevant document at position k, calculate precision@k = (relevant docs in top k) / k
-- Average Precision (AP) = sum of these precision values / total relevant documents
-- MAP is the mean of AP scores across all queries
-- Range: 0 to 1. Rewards ranking relevant documents higher
-- For single-doc queries this collapses to `1/rank` (i.e. reciprocal rank)
-
-### QA Accuracy
-
-`pydantic-evals` coordinates an LLM judge to determine whether the capability's answer is correct. The default judge is `ollama:qwen3.8`, pinned so changes to the capability model don't change the judge underneath. Set `evaluations.judge` in `haiku.rag.yaml` to override (including a custom `base_url` for any OpenAI-compatible endpoint). Accuracy is the fraction of correctly answered questions.
-
-A dataset that brings its own deterministic evaluator is scored by that evaluator instead, and no judge runs. T²-RAGBench is the only such dataset today, scored by `NumberMatchEvaluator`.
-
-`qwen3.8` replaced `qwen3.6` after a 120-case calibration on ORB, stratified 60 pass / 60 fail: agreement 0.950, Cohen's κ 0.900, and in all 6 disagreements it matched or beat `qwen3.6` (4 were `qwen3.6` failing answers that were equivalent in different notation). It emits no reasoning content, so it avoids the thinking spirals that made `qwen3.6` exceed its output budget and drop verdicts. `reasoning_effort` changes its verdicts in 1 case per 120, so the cheaper `low` is pinned.
-
-Before that, we picked `qwen3.6` over the previously-pinned `gpt-oss` after a 4-cell calibration (gpt-oss / qwen3.6 as both answerer and judge, with Claude Opus 4.7 as a reference). `qwen3.6` had κ ≥ 0.66 vs the reference on both same-family and cross-family answerers (vs ~0.39–0.55 for `gpt-oss`) and showed no measurable self-preference bias, while `gpt-oss` was ~10 pp more lenient on its own outputs.
-
-### Citation Retrieval
-
-Alongside QA accuracy, a second metric scores the URIs the capability registered via the `cite` tool against each dataset's gold `expected_uris`, using the same MAP math as raw retrieval. The score key is `cited_map`. Console output also includes the cite rate (% of cases with at least one citation) and the mean number of citations per case.
-
-This is computed alongside QA accuracy from the same capability run, no extra invocations. The signal complements raw retrieval: where raw retrieval measures whether the retriever surfaced the gold document at any rank, citation retrieval measures whether the capability grounded its answer on it.
-
 ## Current results
 
 Numbers below were measured under `Qwen3.6-35B-A3B-NVFP4` as judge, on a recent `haiku.rag` version. The pinned judge is now `qwen3.8`; rows are not re-judged, so compare rows to each other rather than to runs judged by `qwen3.8`.
@@ -262,3 +129,136 @@ The two live arms replay the same 29 conversations (224 turns) and differ only i
 - Answer pass rate: 185/224 vs 175/224 turns. Of the 18 turns where the arms disagree, 14 pass only compacted and 4 only uncompacted. McNemar exact two-sided p = 0.031. The paired difference is +4.5pp with a Wald 95% CI of +0.8 to +8.1pp, so the honest claim is an improvement of roughly 1 to 8 points, not the point estimate.
 - Citation MAP, macro-averaged over conversations with 208 of 224 turns eligible (turns with gold passages) in each arm: 0.4174 compacted vs 0.4230 uncompacted. The gold-prefix 0.35 is over 208 of 224 eligible cases.
 - Refusal precision and recall against the answerability labels (16 UNANSWERABLE turns per arm): compacted 0.33 precision and 0.44 recall (21 refusals), uncompacted 0.23 and 0.31 (22 refusals). Gold-prefix: 0.24 and 0.44 (29 refusals).
+
+## Methodology
+
+### Retrieval Metrics
+
+**Mean Average Precision (MAP)** scores ranked retrieval results against the gold `expected_uris`.
+
+- For each relevant document at position k, calculate precision@k = (relevant docs in top k) / k
+- Average Precision (AP) = sum of these precision values / total relevant documents
+- MAP is the mean of AP scores across all queries
+- Range: 0 to 1. Rewards ranking relevant documents higher
+- For single-doc queries this collapses to `1/rank` (i.e. reciprocal rank)
+
+### QA Accuracy
+
+`pydantic-evals` coordinates an LLM judge to determine whether the capability's answer is correct. The default judge is `ollama:qwen3.8`, pinned so changes to the capability model don't change the judge underneath. Set `evaluations.judge` in `haiku.rag.yaml` to override (including a custom `base_url` for any OpenAI-compatible endpoint). Accuracy is the fraction of correctly answered questions.
+
+A dataset that brings its own deterministic evaluator is scored by that evaluator instead, and no judge runs. T²-RAGBench is the only such dataset today, scored by `NumberMatchEvaluator`.
+
+`qwen3.8` replaced `qwen3.6` after a 120-case calibration on ORB, stratified 60 pass / 60 fail: agreement 0.950, Cohen's κ 0.900, and in all 6 disagreements it matched or beat `qwen3.6` (4 were `qwen3.6` failing answers that were equivalent in different notation). It emits no reasoning content, so it avoids the thinking spirals that made `qwen3.6` exceed its output budget and drop verdicts. `reasoning_effort` changes its verdicts in 1 case per 120, so the cheaper `low` is pinned.
+
+Before that, we picked `qwen3.6` over the previously-pinned `gpt-oss` after a 4-cell calibration (gpt-oss / qwen3.6 as both answerer and judge, with Claude Opus 4.7 as a reference). `qwen3.6` had κ ≥ 0.66 vs the reference on both same-family and cross-family answerers (vs ~0.39–0.55 for `gpt-oss`) and showed no measurable self-preference bias, while `gpt-oss` was ~10 pp more lenient on its own outputs.
+
+### Citation Retrieval
+
+Alongside QA accuracy, a second metric scores the URIs the capability registered via the `cite` tool against each dataset's gold `expected_uris`, using the same MAP math as raw retrieval. The score key is `cited_map`. Console output also includes the cite rate (% of cases with at least one citation) and the mean number of citations per case.
+
+This is computed alongside QA accuracy from the same capability run, no extra invocations. The signal complements raw retrieval: where raw retrieval measures whether the retriever surfaced the gold document at any rank, citation retrieval measures whether the capability grounded its answer on it.
+
+## Running Evaluations
+
+You can run evaluations with the `evaluations` CLI:
+
+```bash
+evaluations run hotpotqa
+evaluations run orb_text
+```
+
+The evaluation flow is orchestrated with [`pydantic-evals`](https://github.com/pydantic/pydantic-ai/tree/main/libs/pydantic-evals), which we leverage for dataset management, scoring, and report generation.
+
+### Pre-built Databases
+
+Building evaluation databases from scratch can take a long time, especially for large datasets like OpenRAG Bench. Pre-built databases are available on HuggingFace:
+
+```bash
+# Download a specific dataset
+evaluations download hotpotqa
+
+# Download all datasets
+evaluations download all
+
+# Force re-download (overwrite existing)
+evaluations download hotpotqa --force
+```
+
+Active datasets:
+
+| Dataset | Size |
+|---------|------|
+| `orb_text` — OpenRAG Bench, text embedder (`qwen3-embedding:4b`) with VLM picture descriptions baked into chunk content | ~18 GB |
+| `orb_multimodal` — OpenRAG Bench, multimodal embedder (`qwen3-vl-embedding-8b`); picture vectors live in the same space as text for cross-modal retrieval | ~16 GB |
+| `orb_multimodal_nemotron` — OpenRAG Bench, multimodal embedder (`nvidia/llama-nemotron-embed-vl-1b-v2`), the embedder behind the published headline results | ~16 GB |
+| `t2_finqa` — T²-RAGBench (FinQA) financial QA, text embedder (`qwen3-embedding:4b`); scored by exact numeric match, run with `--target analysis-capability` | ~2 GB |
+| `hotpotqa` — HotpotQA multi-hop QA over Wikipedia paragraphs, text embedder (`qwen3-embedding:4b`) | ~1.5 GB |
+| `mtrag_clapnq` — MTRAG multi-turn RAG, ClapNQ (Wikipedia) passages, text embedder (`qwen3-embedding:4b`); also serves the `mtrag_clapnq_rewrite`, `mtrag_clapnq_live` and `mtrag_clapnq_live_uncompacted` keys | ~2.8 GB |
+
+After downloading, run benchmarks with `--skip-db`. Each database is built with a specific embedder, so pass its reference config from `evaluations/configs/` (a database only opens against a config whose embedder matches):
+
+```bash
+evaluations run orb_multimodal_nemotron --skip-db --config configs/orb_multimodal_nemotron.yaml
+```
+
+The configs use `vllm` as the model host. Point `base_url` at your own OpenAI-compatible endpoints to reproduce the numbers.
+
+### Configuration
+
+The benchmark script accepts several options:
+
+```bash
+evaluations run hotpotqa --config /path/to/haiku.rag.yaml --db /path/to/custom.lancedb
+```
+
+**Options:**
+
+- `--config PATH` - Specify a custom `haiku.rag.yaml` configuration file
+- `--db PATH` - Override the database path (default: platform-specific user data directory)
+- `--skip-db` - Skip updating the evaluation database
+- `--skip-retrieval` - Skip retrieval benchmark
+- `--skip-qa` - Skip QA benchmark
+- `--limit N` - Limit number of test cases
+- `--name NAME` - Override the evaluation name
+- `--target {rag-capability,analysis-capability}` - Choose which [capability](capabilities/index.md) to benchmark end-to-end (default: `rag-capability`). The target names remain stable dataset identifiers.
+- `--capability-model PROVIDER:NAME` - Override the capability model independently from the judge (default: `config.qa.model`, or `config.analysis.model` when set for `--target analysis-capability`).
+- `--filter CLAUSE` / `-f CLAUSE` - Restrict every benchmark search to a subset of the database (see [Restricting the corpus](#restricting-the-corpus)).
+
+If no config file is specified, the script searches standard locations: `./haiku.rag.yaml`, user config directory, then falls back to defaults.
+
+To pin the LLM judge in YAML (rather than the default `ollama:qwen3.8`). These are the recommended settings:
+
+```yaml
+evaluations:
+  judge:
+    provider: openai
+    name: Inferact/Qwen3.8-27B-NVFP4
+    base_url: http://localhost:8000/v1   # optional, for OpenAI-compatible servers (vLLM, LM Studio, etc.)
+    temperature: 0.6
+    max_tokens: 16384
+    extra_body:
+      top_p: 0.95
+      top_k: 20
+      min_p: 0
+      chat_template_kwargs:
+        reasoning_effort: low   # qwen3.8: low | medium | xhigh (default)
+```
+
+### Restricting the corpus
+
+When a database holds documents from several corpora — only some of which a dataset's questions are drawn from — `--filter` restricts every benchmark search to a subset. It takes the same SQL `WHERE` clause as `haiku-rag search --filter`, over document columns (`id`, `uri`, `title`, `created_at`, `updated_at`, `metadata`). Each dataset writes its own URIs: `orb_text` uses bare arXiv ids such as `2407.01528v3`, `hotpotqa` uses page titles.
+
+```bash
+evaluations run orb_text --skip-db --config haiku.rag.s3.yaml \
+  --filter "uri LIKE '2407%'"
+```
+
+If the corpora are distinguished by a tag rather than by URI, attach it at ingest time as document metadata and match it with `LIKE`. `metadata` is stored as a `json.dumps` string, so there is no JSON subfield access — match the serialized key/value, including the space after the colon:
+
+```bash
+evaluations run orb_text --skip-db --filter "metadata LIKE '%\"corpus\": \"orb_text\"%'"
+```
+
+The clause applies to both benchmark phases — the retrieval benchmark's searches and every search the capability runs during QA — so the two score the same subset. It is recorded as `document_filter` in the run's experiment metadata, so a filtered run is never mistaken for an unfiltered one when comparing results.
+
+Filtering affects searches only — a run without `--skip-db` still populates the database with the dataset's full corpus.

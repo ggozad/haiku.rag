@@ -1,9 +1,15 @@
-# Haiku RAG
+# haiku.rag
 
+[![PyPI](https://img.shields.io/pypi/v/haiku.rag)](https://pypi.org/project/haiku.rag/)
+[![Python](https://img.shields.io/pypi/pyversions/haiku.rag)](https://pypi.org/project/haiku.rag/)
+[![Downloads](https://static.pepy.tech/badge/haiku-rag-slim/month)](https://pepy.tech/projects/haiku-rag-slim)
+[![Docs](https://img.shields.io/badge/docs-ggozad.github.io-blue)](https://ggozad.github.io/haiku.rag/)
 [![Tests](https://github.com/ggozad/haiku.rag/actions/workflows/test.yml/badge.svg)](https://github.com/ggozad/haiku.rag/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/ggozad/haiku.rag/graph/badge.svg)](https://codecov.io/gh/ggozad/haiku.rag)
 
-Agentic RAG built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.pydantic.dev/), and [Docling](https://docling-project.github.io/docling/).
+Agentic RAG that answers questions about your own documents with citations to page numbers and section headings. Runs locally on an embedded database, no server required.
+
+Built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.pydantic.dev/), and [Docling](https://docling-project.github.io/docling/). Full documentation at [ggozad.github.io/haiku.rag](https://ggozad.github.io/haiku.rag/).
 
 > **New: vision and multimodal search.** Picture-aware ingestion captures embedded figure bytes; vision-capable QA models receive them alongside text. Multimodal embedders put picture vectors in the same space as text, enabling text-as-query → figure hits and image-as-query retrieval.
 
