@@ -237,10 +237,6 @@ async def expand_context(
         for doc_id, doc_results in document_groups.items()
         if doc_id is not None and any(r.doc_item_refs for r in doc_results)
     }
-    for doc_id, doc_results in document_groups.items():
-        if doc_id not in expandable:
-            expanded_results.extend(doc_results)
-
     repo = client.document_item_repository
     positions_by_document = await repo.resolve_refs_grouped(
         {
@@ -255,7 +251,13 @@ async def expand_context(
     }
     items_by_document = await repo.get_items_in_ranges(windows)
 
-    for doc_id, doc_results in expandable.items():
+    # In document_groups order: the score sort below is stable, so assembling
+    # expandable and passthrough documents in separate passes would reorder
+    # equal-scored results.
+    for doc_id, doc_results in document_groups.items():
+        if doc_id not in expandable:
+            expanded_results.extend(doc_results)
+            continue
         expanded_results.extend(
             expand_with_items(
                 doc_results,

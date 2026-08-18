@@ -114,3 +114,45 @@ async def test_grouped_calls_with_nothing_asked_for_do_not_query(
         assert await repo.get_caption_picture_refs_grouped({}) == {}
 
         assert item_queries["n"] == 0
+
+
+@pytest.mark.asyncio
+async def test_caption_picture_refs_grouped_ignores_non_picture_predecessors(
+    temp_db_path,
+):
+    """A caption maps to a picture only. A table's caption, and an ordinary text
+    reference, map to nothing."""
+    async with Store(temp_db_path, create=True) as store:
+        repo = DocumentItemRepository(store)
+        await repo.create_items(
+            "doc-1",
+            [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/tables/0",
+                    label="table",
+                    text="a table",
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=1,
+                    self_ref="#/texts/table-caption",
+                    label="caption",
+                    text="Table 1",
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=2,
+                    self_ref="#/texts/plain",
+                    label="text",
+                    text="ordinary prose",
+                ),
+            ],
+        )
+
+        got = await repo.get_caption_picture_refs_grouped(
+            {"doc-1": ["#/texts/table-caption", "#/texts/plain"]}
+        )
+
+        assert got == {}

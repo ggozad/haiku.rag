@@ -251,3 +251,25 @@ async def test_reranker_gives_each_chunk_its_own_document_picture(temp_db_path):
 
     assert chunks[0]._picture_data == b"bytes-doc-a"
     assert chunks[1]._picture_data == b"bytes-doc-b"
+
+
+@pytest.mark.asyncio
+async def test_expansion_keeps_document_order_for_tied_scores(temp_db_path):
+    """The score sort is stable, so equal-scored results must come back in the
+    order they arrived, whether or not their document expands."""
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        await _seed_expandable(rag, ["doc-expandable"])
+
+        passthrough = SearchResult(
+            chunk_id="doc-plain-anchor",
+            document_id="doc-plain",
+            content="plain body",
+            score=0.5,
+            doc_item_refs=[],
+        )
+        expandable = _text_result("doc-expandable")
+        expandable.score = 0.5
+
+        for order in ([passthrough, expandable], [expandable, passthrough]):
+            expanded = await rag.expand_context(list(order))
+            assert [r.chunk_id for r in expanded] == [r.chunk_id for r in order]
