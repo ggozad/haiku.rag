@@ -136,10 +136,15 @@ class SearchResult(BaseModel):
     ``chunk_meta`` is the anchor chunk's unparsed ``Chunk.metadata`` and does not
     include the metadata of any other chunks merged with it. Never part of
     ``format_for_agent`` output.
+
+    ``source`` names the configured database a result came from, and is None when
+    only one is configured. It is the name from ``lancedb.databases``, never a
+    path or URI, so a location cannot travel in a result, a citation or a log.
     """
 
     content: str
     score: float
+    source: str | None = None
     chunk_id: str | None = None
     chunk_ids: list[str] = []
     chunk_meta: dict = {}
