@@ -1,4 +1,14 @@
-from .exceptions import MigrationRequiredError, ReadOnlyError
+from .exceptions import (
+    MigrationRequiredError,
+    ReadOnlyError,
+    SourceUnavailableError,
+)
 from .models import Chunk, Document
 
-__all__ = ["Chunk", "Document", "MigrationRequiredError", "ReadOnlyError"]
+__all__ = [
+    "Chunk",
+    "Document",
+    "MigrationRequiredError",
+    "ReadOnlyError",
+    "SourceUnavailableError",
+]

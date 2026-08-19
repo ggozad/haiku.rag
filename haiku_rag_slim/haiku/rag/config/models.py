@@ -101,15 +101,29 @@ class LanceDBConfig(ConfigModel):
     never re-checks, so a long-lived reader never sees another process's writes.
     The cache sizes are per process, since the session is shared across
     connections.
+
+    `databases` maps a name to a location, for searching several at once. The
+    name is what results and citations carry, so a location never leaves the
+    configuration. Mutually exclusive with `uri`.
     """
 
     uri: str = ""
     api_key: str = ""
     region: str = ""
     storage_options: dict[str, str] = Field(default_factory=dict)
+    databases: dict[str, str] = Field(default_factory=dict)
     read_consistency_interval_seconds: float | None = Field(default=30, ge=0)
     index_cache_size_bytes: int | None = Field(default=None, ge=0)
     metadata_cache_size_bytes: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def _one_way_of_naming_databases(self) -> "LanceDBConfig":
+        if self.uri and self.databases:
+            raise ValueError(
+                "lancedb.uri and lancedb.databases are mutually exclusive: "
+                "use uri for one database, databases for several"
+            )
+        return self
 
 
 class EmbeddingsConfig(ConfigModel):

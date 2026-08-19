@@ -19,6 +19,7 @@ from haiku.rag.config import AppConfig, get_config
 from haiku.rag.converters import get_converter
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import Store
+from haiku.rag.store.exceptions import SourceUnavailableError
 from haiku.rag.store.models.chunk import Chunk, SearchResult, SearchType
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import extract_items
@@ -71,6 +72,7 @@ class HaikuRAG:
         skip_validation: bool = False,
         create: bool = False,
         read_only: bool = False,
+        sources: list[str] | None = None,
     ):
         """Initialize the RAG client with a database path.
 
@@ -81,6 +83,9 @@ class HaikuRAG:
             skip_validation: Whether to skip configuration validation on database load.
             create: Whether to create the database if it doesn't exist.
             read_only: Whether to open the database in read-only mode.
+            sources: Names from ``config.lancedb.databases`` this client covers.
+                None means all of them. Ignored when a single ``uri`` is
+                configured.
         """
         self._config = config if config is not None else get_config()
         if db_path is None:
@@ -93,6 +98,11 @@ class HaikuRAG:
         self._vacuum_tasks: set[asyncio.Task] = set()
         self._last_vacuum_at: float | None = None
         self._vacuum_dirty = False
+        self._requested_sources = sources
+        self._clients: dict[str, HaikuRAG] = {}
+        self._federated: dict[str, str] = {}
+        self._clients_lock = asyncio.Lock()
+        self._source: str | None = None
 
     @property
     def is_read_only(self) -> bool:
@@ -113,30 +123,157 @@ class HaikuRAG:
         """
         return get_reranker(config=self._config)
 
-    async def __aenter__(self):
-        """Async context manager entry — initializes store and repositories."""
-        self.store = Store(
-            self._db_path,
-            config=self._config,
-            skip_validation=self._skip_validation,
-            create=self._create,
-            read_only=self._read_only,
+    @staticmethod
+    def _locate(location: str) -> tuple[str, "Path | None"]:
+        """Split a configured location into (uri, db_path).
+
+        A value with a scheme is a `lancedb.uri`; anything else is a local path.
+        Routing a local path through `uri` would have `ConnectionMode` classify it
+        as object storage, which opens it without the existence check a local
+        database gets.
+        """
+        if "://" in location:
+            return location, None
+        return "", Path(location)
+
+    def _selected(self) -> dict[str, str]:
+        """The configured databases this client covers, name to location."""
+        declared = self._config.lancedb.databases
+        if not declared:
+            return {}
+        if self._requested_sources is not None and not self._requested_sources:
+            raise ValueError(
+                "sources=[] selects no database; pass None for all of them"
+            )
+        names = (
+            list(declared)
+            if self._requested_sources is None
+            else list(self._requested_sources)
         )
-        # If _initialize fails mid-way (e.g. migration check raises after
-        # connect), close the store so we don't leak the LanceDB connection —
-        # __aexit__ won't run because the `async with` never entered.
+        missing = [n for n in names if n not in declared]
+        if missing:
+            raise KeyError(
+                f"unknown database(s) {', '.join(sorted(missing))}; "
+                f"configured: {', '.join(sorted(declared))}"
+            )
+        return {n: declared[n] for n in names}
+
+    async def __aenter__(self):
+        """Async context manager entry — initializes store and repositories.
+
+        A client covering several databases opens none of them here: which are
+        searched is a per-query choice, so they open on first use. `store` and the
+        repositories stay unset in that case, since they have no unambiguous
+        meaning across a set.
+        """
+        selected = self._selected()
+        if len(selected) > 1:
+            self._federated = selected
+            return self
+        if selected:
+            [(self._source, location)] = selected.items()
+            uri, db_path = self._locate(location)
+            self._config = self._config.model_copy(deep=True)
+            self._config.lancedb.databases = {}
+            self._config.lancedb.uri = uri
+            if db_path is not None:
+                self._db_path = db_path
+
+        failure: str | None = None
         try:
-            await self.store._initialize()
-        except BaseException:
-            self.store.close()
-            raise
+            self.store = Store(
+                self._db_path,
+                config=self._config,
+                skip_validation=self._skip_validation,
+                create=self._create,
+                read_only=self._read_only,
+            )
+            # If _initialize fails mid-way (e.g. migration check raises after
+            # connect), close the store so we don't leak the LanceDB connection —
+            # __aexit__ won't run because the `async with` never entered.
+            try:
+                await self.store._initialize()
+            except BaseException:
+                self.store.close()
+                raise
+        except Exception as error:
+            # A legacy `uri` or `db_path` client has no name to report instead, so
+            # its error passes through as it always has.
+            if self._source is None:
+                raise
+            failure = type(error).__name__
+        if failure is not None:
+            # Raised outside the except block on purpose. A database named in
+            # config is reported by name, and the original spells out the path or
+            # the bucket: `from None` would only stop it being *printed*, leaving
+            # it on `__context__` for anything that walks the chain.
+            raise SourceUnavailableError(
+                f"database {self._source!r} could not be opened: {failure}"
+            )
         self.document_repository = DocumentRepository(self.store)
         self.chunk_repository = ChunkRepository(self.store)
         self.document_item_repository = DocumentItemRepository(self.store)
         return self
 
+    async def clients_for(self, names: list[str]) -> list["HaikuRAG"]:
+        """The clients for these databases, opening any not yet open.
+
+        Opening is per query rather than at entry: a set of 25 configured
+        databases is typically queried a few at a time, and a database nobody
+        asked for must not be able to fail a query, or be opened for nothing.
+        """
+        unknown = [n for n in names if n not in self._federated]
+        if unknown:
+            raise KeyError(
+                f"unknown database(s) {', '.join(sorted(unknown))}; configured: "
+                f"{', '.join(sorted(self._federated))}"
+            )
+        async with self._clients_lock:
+            for name in names:
+                if name not in self._clients:
+                    self._clients[name] = await self._open_client(
+                        name, self._federated[name]
+                    )
+        return [self._clients[n] for n in names]
+
+    async def _open_client(self, name: str, location: str) -> "HaikuRAG":
+        uri, db_path = self._locate(location)
+        config = self._config.model_copy(deep=True)
+        config.lancedb.databases = {}
+        config.lancedb.uri = uri
+        client = HaikuRAG(
+            db_path,
+            config=config,
+            skip_validation=self._skip_validation,
+            read_only=self._read_only,
+        )
+        client._source = name
+        return await client.__aenter__()
+
+    async def _close_clients(self) -> None:
+        for client in self._clients.values():
+            try:
+                await client.__aexit__(None, None, None)
+            except Exception:
+                logger.debug("Closing a database failed on teardown", exc_info=True)
+        self._clients.clear()
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):  # noqa: ARG002
         """Async context manager exit."""
+        # Branch on what this client covers, not on what it happened to open:
+        # a federating client that answered no query has nothing open and no
+        # store either.
+        if self._federated:
+            await self._close_clients()
+            # The set shares one reranker, this client's, so this is the only
+            # place it is closed — and only if a text query ever built it.
+            reranker = self.__dict__.get("reranker")
+            if reranker is not None:
+                try:
+                    await reranker.aclose()
+                except Exception:
+                    logger.debug("Closing the reranker failed", exc_info=True)
+            return False
         await self._await_vacuum_tasks()
         # Best-effort: __aexit__ may run during exception unwinding, and a
         # raising close must not mask the original exception. The reranker is
@@ -463,10 +600,27 @@ class HaikuRAG:
         search_type: SearchType | None = None,
         filter: str | None = None,
         include_images: bool = True,
+        sources: list[str] | None = None,
     ) -> list[SearchResult]:
-        from haiku.rag.client.search import search
+        from haiku.rag.client.search import search, search_sources
 
-        return await search(self, query, limit, search_type, filter, include_images)
+        if self._federated:
+            return await search_sources(
+                self, query, limit, search_type, filter, include_images, sources
+            )
+        if sources is not None and not sources:
+            return []
+        if sources is not None and sources != [self._source]:
+            raise KeyError(
+                f"unknown database(s) {', '.join(sources) or '(none)'}; this "
+                f"client covers {self._source or 'a single unnamed database'}"
+            )
+        results = await search(self, query, limit, search_type, filter, include_images)
+        # A database named in config keeps its name even when it is the only one
+        # this client covers. Only a legacy single `uri` leaves source unset.
+        for result in results:
+            result.source = self._source
+        return results
 
     async def expand_context(
         self,
