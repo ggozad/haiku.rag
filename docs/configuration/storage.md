@@ -37,34 +37,42 @@ storage:
   data_dir: /path/to/data  # Empty = use default platform location
   auto_vacuum: true  # Enable automatic vacuuming after operations
   vacuum_retention_seconds: 86400  # Cleanup threshold in seconds
+  compaction_target_bytes: 2147483648  # Target size for a compacted fragment
 ```
 
 - **data_dir**: Directory for local database storage. When empty, uses platform-specific default locations
 - **auto_vacuum**: When enabled (default), automatically runs vacuum after document create/update/delete operations and database rebuilds. Background vacuums are throttled to at most one every 5 minutes, so sustained ingestion does not trigger continuous compaction, and a final vacuum runs when the client closes. Set to `false` to disable automatic vacuuming and rely on manual `haiku-rag vacuum` commands only. Disabling can help avoid potential crashes in high-concurrency scenarios
 - **vacuum_retention_seconds**: When vacuum runs, old table versions older than this threshold are removed. Default: 86400 seconds (1 day). Set to 0 for aggressive cleanup (removes all old versions immediately)
+- **compaction_target_bytes**: Target size for the fragments compaction writes on the tables that store docling blobs. Default: 2 GiB. Advisory rather than a cap, see [Vacuum Memory](#vacuum-memory) below
 
 !!! warning "Vacuum Retention Threshold"
     The `vacuum_retention_seconds` value should be larger than the typical time it takes to process and write a document. If a concurrent operation is in progress while vacuum runs, setting this value too low can cause race conditions where vacuum removes table versions that an in-flight operation still needs. The default of 86400 seconds (1 day) is conservative and safe for most use cases.
 
-### Vacuum Memory Requirements
+### Vacuum Memory
 
-Vacuum compacts small data files into larger ones. LanceDB targets roughly one million rows per fragment, which a `documents` table holding multi-megabyte docling blobs never reaches, so each vacuum that follows new documents re-merges the whole existing fragment rather than only the new ones. Peak memory therefore scales with the total size of the `documents` table, not with how much was added.
+Vacuum compacts small data files into larger ones. LanceDB targets roughly one million rows per fragment, which a `documents` table holding multi-megabyte docling blobs never reaches, so an unsized pass re-merges the whole existing fragment rather than only the new rows, and peak memory scales with the table rather than with what was added.
 
-Measured peak resident memory is about 5x the size of the `documents` table's data files. An 8.8 GB table peaked at 48.7 GB. Plan for **6x the size of `documents/` on disk** as available RAM, or the vacuum will be killed by the OOM killer partway through.
+The `documents` and `document_items` tables are therefore compacted with an explicit fragment target derived from `compaction_target_bytes`. The target is sized from the widest fragment's bytes per row, taken from table metadata without reading any payload, so a handful of very large documents shrinks it for the whole table. The remaining tables use LanceDB's own optimize, which is already bounded for them because their rows are small.
 
-Check the current size with:
+!!! warning "The target is not a memory cap"
+    `compaction_target_bytes` sizes the fragments compaction **writes**. It cannot shrink a fragment that is already larger, and LanceDB rewrites such a fragment in one piece, costing roughly its own size no matter how low the target is set.
 
-```bash
-du -sh /path/to/database.lancedb/documents.lance
-```
+    Oversized fragments come from two places: a single large ingest batch, since each write becomes one fragment, and any database vacuumed before this release. In both cases the cost is paid once per fragment, the first time deletions within it pass LanceDB's 10% threshold, after which it is split to the target and stays there.
 
-If that number times six exceeds available RAM, use one of:
+    So the practical peak is the larger of `compaction_target_bytes` and your biggest existing fragment. To lower the first, reduce it; to lower the second, ingest in smaller batches.
+
+A row larger than the target cannot be sized at all: the target floors at one row and the pass costs roughly that row's size. A 300-page PDF at `images_scale: 2.0` produces a row of around 445 MB. To reduce row size rather than raise the target:
 
 - Reduce `images_scale` (see [Image Settings](processing.md#image-settings)). Rendered page rasters dominate the size of `documents`, and their byte cost falls with the square of the scale factor.
 - Set `generate_page_images: false` if visual grounding through `visualize_chunk()` is not needed. This removes page rasters entirely.
-- Set `auto_vacuum: false` and run `haiku-rag vacuum` manually when the machine is otherwise idle, so the peak does not land alongside ingestion.
 
-This is an upstream limitation rather than a `haiku.rag` setting. Compaction bounds itself by row count instead of bytes, and LanceDB's async API exposes no batch size or fragment target to override it. Tracked at [lancedb/lancedb#2325](https://github.com/lancedb/lancedb/issues/2325). The requirement above will drop once compaction batches by bytes.
+If fragment sizes are missing from the table metadata, which can happen for databases written by much older versions, compaction is skipped for that table and a warning is logged. Old versions are still pruned.
+
+#### The first vacuum after upgrading
+
+A database written before this release may contain one large fragment built by unsized compaction. It is left alone until deletions within it pass the 10% threshold, so early vacuums are cheap but its superseded payload is not yet reclaimed and disk usage can sit above the live data size. The pass that crosses the threshold rewrites it once, splitting it to the target, after which the table stays at the target and disk returns to normal.
+
+Compaction options are not exposed by LanceDB's async API ([lancedb/lancedb#2325](https://github.com/lancedb/lancedb/issues/2325)), so these tables are compacted through `lance` directly.
 
 ## Database Creation
 
