@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 from pydantic_ai import RunContext
 
@@ -34,18 +34,20 @@ def discover_evidence(ctx: RunContext[Any]) -> list[DiscoveredEvidence]:
     carrying state; the registered objects never do. That includes a deferred
     capability the model has not loaded, whose record is simply empty.
     """
-    discovered = [
-        DiscoveredEvidence(
-            capability=capability.state_namespace,
-            record=cast(CapabilityEvidenceRecord, cast(Any, capability.state).evidence),
-            citations=cast(Any, capability.state).citation_index,
-            tool_names=frozenset(capability.evidence_tool_names()),
-            cite_available=capability.cite_available,
-            state_carried=capability.state_carried,
+    discovered = []
+    for capability in ctx.capabilities.values():
+        if not isinstance(capability, RAGCapabilityBase):
+            continue
+        discovered.append(
+            DiscoveredEvidence(
+                capability=capability.state_namespace,
+                record=capability.evidence_record(),
+                citations=capability.citation_index(),
+                tool_names=frozenset(capability.evidence_tool_names()),
+                cite_available=capability.cite_available,
+                state_carried=capability.state_carried,
+            )
         )
-        for capability in ctx.capabilities.values()
-        if isinstance(capability, RAGCapabilityBase)
-    ]
     return sorted(discovered, key=lambda evidence: evidence.capability)
 
 

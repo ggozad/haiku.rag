@@ -286,11 +286,9 @@ class ChatApp(App):
                 continue
             state_type = RAGState if namespace == RAG_STATE_NAMESPACE else AnalysisState
             state = state_type.model_validate(state_data)
-            cited_ids = getattr(state, "citations", [])
-            citation_index = getattr(state, "citation_index", {})
-            for cid in cited_ids:
-                if cid in citation_index:
-                    citations.append(citation_index[cid])
+            for cid in state.citations:
+                if cid in state.citation_index:
+                    citations.append(state.citation_index[cid])
         if not citations:
             return
 
@@ -314,8 +312,7 @@ class ChatApp(App):
 
         if analysis_data := self._state.get(ANALYSIS_STATE_NAMESPACE):
             analysis_state = AnalysisState.model_validate(analysis_data)
-            executions = getattr(analysis_state, "executions", [])
-            successful = [e for e in executions if e.success]
+            successful = [e for e in analysis_state.executions if e.success]
             if successful:
                 await chat_history.add_program(successful[-1].code)
 

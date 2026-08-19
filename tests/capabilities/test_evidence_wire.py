@@ -877,3 +877,165 @@ async def test_compaction_proceeds_when_the_capability_without_a_record_has_no_e
     await agent.run("a follow-up", deps=rag_only, message_history=history)
 
     assert returns_of(wire[-1]) == [RECEIPT]
+
+
+# The exact JSON a 0.75.0 host stored or sent over AG-UI. Capability state is
+# dumped and re-validated at four carry points, one of them a snapshot the
+# browser client sends back on the next turn, so this layout is a wire format.
+_STORED_RAG_STATE = {
+    "citation_index": {},
+    "citations": [],
+    "document_filter": None,
+    "evidence": {
+        "declaration": None,
+        "in_progress": False,
+        "latest_evidence_epoch": 0,
+        "occurrences": {},
+        "question": None,
+    },
+    "searches": {},
+}
+
+
+def test_stored_state_shape_is_unchanged():
+    """A dict stored by an older version still loads, and dumps to the same keys.
+
+    Compatibility here is semantic JSON-object equivalence: the same keys, the
+    same nesting, the same values. Key *order* is not part of the contract —
+    deriving both states from a shared base reordered `AnalysisState`'s fields,
+    and nothing serializes, hashes or string-compares this state; every carry
+    point re-validates it by key.
+    """
+    from haiku.rag.capabilities.rag import RAGState
+
+    state = RAGState.model_validate(_STORED_RAG_STATE)
+
+    assert state.model_dump(mode="json") == _STORED_RAG_STATE
+
+
+def _populated(state_type):
+    """A state with every field carrying real nested data."""
+    from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
+    from haiku.rag.store.models.chunk import SearchResult
+    from haiku.rag.store.models.citation import Citation
+
+    return state_type(
+        document_filter="uri LIKE 'test://%'",
+        citations=["chunk-1"],
+        citation_index={
+            "chunk-1": Citation(
+                chunk_id="chunk-1",
+                document_id="doc-1",
+                document_uri="test://doc",
+                content="cited text",
+                index=1,
+            )
+        },
+        searches={
+            "a query": [SearchResult(content="evidence", score=0.9, chunk_id="chunk-1")]
+        },
+        evidence=CapabilityEvidenceRecord(question=3, in_progress=True),
+    )
+
+
+@pytest.mark.parametrize("namespace", ["rag", "analysis"])
+def test_populated_state_round_trips(namespace):
+    """Dump, reload, dump again: a host hands this dict back on the next turn,
+    so the second dump has to equal the first, nested values included."""
+    from haiku.rag.capabilities.analysis import AnalysisState
+    from haiku.rag.capabilities.rag import RAGState
+
+    state_type = RAGState if namespace == "rag" else AnalysisState
+    state = _populated(state_type)
+
+    first = state.model_dump(mode="json")
+    second = state_type.model_validate(first).model_dump(mode="json")
+
+    assert second == first
+    assert second["searches"]["a query"][0]["chunk_id"] == "chunk-1"
+    assert second["citation_index"]["chunk-1"]["document_uri"] == "test://doc"
+    assert second["evidence"]["question"] == 3
+
+
+def test_analysis_state_loads_the_old_field_order():
+    """A dict written before AnalysisState derived from the shared base lists its
+    keys in a different order and omits nothing; it still loads."""
+    from haiku.rag.capabilities.analysis import AnalysisState, CodeExecutionEntry
+
+    populated = _populated(AnalysisState)
+    populated.executions.append(CodeExecutionEntry(code="print(1)", stdout="1"))
+    dumped = populated.model_dump(mode="json")
+
+    old_order = {
+        key: dumped[key]
+        for key in (
+            "document_filter",
+            "executions",
+            "citation_index",
+            "citations",
+            "evidence",
+            "searches",
+        )
+    }
+
+    reloaded = AnalysisState.model_validate(old_order)
+
+    assert reloaded == populated
+    assert reloaded.model_dump(mode="json") == dumped
+
+
+def test_both_states_are_evidence_states():
+    from haiku.rag.capabilities._base import EvidenceState
+    from haiku.rag.capabilities.analysis import AnalysisState
+    from haiku.rag.capabilities.rag import RAGState
+
+    assert issubclass(RAGState, EvidenceState)
+    assert issubclass(AnalysisState, EvidenceState)
+
+
+def test_begin_invocation_drops_the_previous_question_working_set():
+    """A new question starts from no citations and no results, while the evidence
+    record — which carries question identity — survives."""
+    from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
+    from haiku.rag.capabilities.rag import RAGState
+    from haiku.rag.store.models.citation import Citation
+
+    citation = Citation(
+        chunk_id="chunk-a",
+        document_id="doc-1",
+        document_uri="test://doc",
+        content="cited text",
+        index=1,
+    )
+    state = RAGState(
+        citations=["chunk-a"],
+        citation_index={"chunk-a": citation},
+        searches={"query": []},
+        document_filter="uri LIKE 'x%'",
+        evidence=CapabilityEvidenceRecord(question=7),
+    )
+
+    state.begin_invocation()
+
+    assert state.citations == []
+    assert state.searches == {}
+    # Kept: the filter scopes the whole conversation, the record carries question
+    # identity, and citation_index keeps citation numbering continuous across
+    # questions.
+    assert state.document_filter == "uri LIKE 'x%'"
+    assert state.evidence.question == 7
+    assert state.citation_index == {"chunk-a": citation}
+
+
+def test_begin_invocation_also_drops_analysis_executions():
+    from haiku.rag.capabilities.analysis import AnalysisState, CodeExecutionEntry
+
+    state = AnalysisState(
+        citations=["chunk-a"],
+        executions=[CodeExecutionEntry(code="print(1)", stdout="1")],
+    )
+
+    state.begin_invocation()
+
+    assert state.executions == []
+    assert state.citations == []
