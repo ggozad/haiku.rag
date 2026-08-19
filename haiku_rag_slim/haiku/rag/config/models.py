@@ -70,6 +70,19 @@ class StorageConfig(ConfigModel):
     auto_vacuum: bool = True
     vacuum_retention_seconds: int = Field(default=86400, ge=0)
 
+    @field_validator("data_dir", mode="before")
+    @classmethod
+    def _platform_default_when_empty(cls, value: Any) -> Any:
+        """An empty data_dir means the platform default directory.
+
+        Without this it coerces to Path("") — the working directory — so a
+        config carrying `data_dir: ""` would put the database wherever the
+        process happened to start.
+        """
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return get_default_data_dir()
+        return value
+
 
 class LanceDBConfig(ConfigModel):
     """LanceDB connection settings.

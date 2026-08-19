@@ -35,6 +35,10 @@
 
 ### Fixed
 
+- `storage.data_dir: ""` resolves to the platform data directory, as documented; it coerced to `Path("")`, so the database was created in the process's working directory. Set `data_dir: .` to keep the old placement.
+- Documented `search.limit` default is 5, was stated as 10.
+- The documented way to disable reranking is omitting `reranking.model` or setting it to `null`; the previous `provider: ""` example raised `Unknown reranking provider`.
+- `prompts.picture_description: null` is not valid; the documented example sets a string or omits the key.
 - `create_document_from_source` closes the source adapter it builds for the call; adapters passed in through `sources` are left to their owner.
 - Directory ingestion skips symlinked files resolving outside the given directory, matching `FSSource.discover`.
 - A FULL rebuild no longer deletes a source-backed document before re-ingesting it: it refreshes the document in place, so the document id is preserved and a failed fetch or conversion falls back to rebuilding from stored content instead of losing the document.

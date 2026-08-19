@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import pytest
@@ -206,27 +207,34 @@ def test_generate_default_config_completeness():
     assert config.reranking.model is None
 
 
-def test_init_config_creates_valid_yaml(tmp_path):
-    """Test that generated config can be written to YAML and loaded back."""
+def test_init_config_writes_a_loadable_config(tmp_path):
+    """`haiku-rag init-config` output has to load back as an AppConfig."""
+    from typer.testing import CliRunner
+
+    from haiku.rag.cli import _cli as cli
+
     config_file = tmp_path / "test-config.yaml"
+    result = CliRunner().invoke(cli, ["init-config", str(config_file)])
 
-    # Generate and write config
-    config_data = generate_default_config()
-
-    with open(config_file, "w") as f:
-        f.write("# haiku.rag configuration file\n")
-        f.write(
-            "# See https://ggozad.github.io/haiku.rag/configuration/ for details\n\n"
-        )
-        yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
-
-    # Load it back
-    with open(config_file) as f:
-        loaded_data = yaml.safe_load(f)
-
-    # Validate it
-    config = AppConfig.model_validate(loaded_data)
+    assert result.exit_code == 0, result.output
+    config = AppConfig.model_validate(yaml.safe_load(config_file.read_text()))
     assert config.environment == "production"
+
+
+def test_init_config_refuses_to_overwrite(tmp_path):
+    """Overwriting a config in place would lose an operator's settings."""
+    from typer.testing import CliRunner
+
+    from haiku.rag.cli import _cli as cli
+
+    config_file = tmp_path / "test-config.yaml"
+    config_file.write_text("environment: development\n")
+
+    result = CliRunner().invoke(cli, ["init-config", str(config_file)])
+
+    assert result.exit_code == 1
+    assert "already exists" in result.output
+    assert config_file.read_text() == "environment: development\n"
 
 
 def _write(tmp_path, body: str):
@@ -693,3 +701,101 @@ def test_finite_switches_reject_unknown_values(data):
 def test_out_of_range_numbers_are_rejected(data):
     with pytest.raises(ValidationError):
         AppConfig.model_validate(data)
+
+
+_DOCS_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _documented_config_blocks() -> list[tuple[str, int, str]]:
+    """Every fenced yaml block in the docs that looks like an AppConfig fragment."""
+    known = set(AppConfig.model_fields)
+    blocks = []
+    sources = sorted(_DOCS_ROOT.glob("docs/**/*.md")) + [
+        _DOCS_ROOT / "README.md",
+        _DOCS_ROOT / "haiku_rag_slim" / "README.md",
+    ]
+    for path in sources:
+        if not path.exists():
+            continue
+        text = path.read_text()
+        for match in re.finditer(r"```yaml\n(.*?)```", text, re.S):
+            data = yaml.safe_load(match.group(1))
+            if not isinstance(data, dict) or not (set(data) & known):
+                continue
+            line = text[: match.start()].count("\n") + 1
+            blocks.append((str(path.relative_to(_DOCS_ROOT)), line, match.group(1)))
+    return blocks
+
+
+def test_documented_config_blocks_found():
+    """Guard against the regex silently matching nothing."""
+    assert len(_documented_config_blocks()) > 20
+
+
+@pytest.mark.parametrize(
+    "rel_path, line, block",
+    _documented_config_blocks(),
+    ids=[f"{rel}:{line}" for rel, line, _ in _documented_config_blocks()],
+)
+def test_documented_config_block_validates(rel_path, line, block):
+    """A config example a reader can copy has to load. Unknown keys, wrong types
+    and removed settings all fail here rather than on their first run."""
+    AppConfig.model_validate(yaml.safe_load(block))
+
+
+def test_documented_search_limit_matches_the_default():
+    """Prose that states a default drifts silently; pin the ones that are stated."""
+    qa_doc = (_DOCS_ROOT / "docs" / "configuration" / "qa.md").read_text()
+    assert f"Default: {AppConfig().search.limit}" in qa_doc
+
+
+@pytest.mark.parametrize("value", ["", " "])
+def test_empty_data_dir_means_the_platform_default(value):
+    """Both doc pages promise this, and soliplex's example config relies on it.
+    Without it the value coerces to Path("") and the database lands in whatever
+    directory the process started from."""
+    from haiku.rag.utils import get_default_data_dir
+
+    config = AppConfig.model_validate({"storage": {"data_dir": value}})
+
+    assert config.storage.data_dir == get_default_data_dir()
+
+
+def test_explicit_relative_data_dir_is_kept():
+    """`.` is a deliberate choice and must not be rewritten."""
+    config = AppConfig.model_validate({"storage": {"data_dir": "."}})
+
+    assert config.storage.data_dir == Path(".")
+
+
+# Values the complete example shows deliberately rather than as defaults.
+_EXAMPLE_DEVIATIONS = {"storage.data_dir", "ingester.sources"}
+
+
+def _flatten(data: dict, prefix: str = "") -> dict:
+    flat = {}
+    for key, value in (data or {}).items():
+        path = f"{prefix}{key}"
+        if isinstance(value, dict):
+            flat.update(_flatten(value, path + "."))
+        else:
+            flat[path] = value
+    return flat
+
+
+def test_complete_example_matches_the_defaults():
+    """The complete configuration example doubles as the default reference, so
+    every value in it either is the default or is listed as a deliberate
+    deviation. This is what catches `limit: 10` when the default is 5."""
+    text = (_DOCS_ROOT / "docs" / "configuration" / "index.md").read_text()
+    blocks = re.findall(r"```yaml\n(.*?)```", text, re.S)
+    documented = _flatten(yaml.safe_load(max(blocks, key=len)))
+    defaults = _flatten(AppConfig().model_dump(mode="json"))
+
+    drifted = {
+        key: (value, defaults[key])
+        for key, value in documented.items()
+        if key in defaults and defaults[key] != value and key not in _EXAMPLE_DEVIATIONS
+    }
+
+    assert not drifted, f"documented value != default: {drifted}"

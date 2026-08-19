@@ -96,9 +96,10 @@ embeddings:
     vector_dim: 2560
 
 reranking:
+  # Omit this section, or set `model: null`, to disable reranking.
   model:
-    provider: ""  # Empty to disable, or cross-encoder, cohere, zeroentropy, vllm
-    name: ""
+    provider: cross-encoder  # cross-encoder, cohere, zeroentropy, vllm, jina, jina-local
+    name: cross-encoder/ms-marco-MiniLM-L-6-v2
   multimodal: false  # vllm only: send picture chunks to the reranker as images
 
 qa:
@@ -110,7 +111,7 @@ qa:
   max_searches: 5
 
 search:
-  limit: 10                    # Default number of results to return
+  limit: 5                     # Default number of results to return
   max_context_chars: 5000     # Maximum characters in expanded context
   vector_index_metric: cosine  # cosine, l2, or dot
   vector_refine_factor: 30

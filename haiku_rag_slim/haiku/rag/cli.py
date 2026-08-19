@@ -414,7 +414,7 @@ def settings():  # pragma: no cover
 
 
 @_cli.command("init-config", help="Generate a YAML configuration file")
-def init_config(  # pragma: no cover
+def init_config(
     output: Path = typer.Argument(
         Path("haiku.rag.yaml"),
         help="Output path for the config file",
