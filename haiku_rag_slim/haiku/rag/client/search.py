@@ -85,7 +85,11 @@ async def search(
 async def _attach_picture_data(client: "HaikuRAG", chunks: list[Chunk]) -> None:
     """Attach picture bytes to synthetic picture chunks in-place, so a
     multimodal reranker can score the pixels instead of just the chunk's
-    description text. Batches one picture-bytes lookup per document."""
+    description text.
+
+    One query however many documents the candidates span, which matters here
+    more than anywhere: reranking fetches `limit * 10` candidates.
+    """
     by_doc: dict[str, list[tuple[Chunk, str]]] = {}
     for chunk in chunks:
         if chunk.document_id is None:
@@ -94,11 +98,11 @@ async def _attach_picture_data(client: "HaikuRAG", chunks: list[Chunk]) -> None:
         if len(refs) == 1 and refs[0].startswith(PICTURE_REF_PREFIX):
             by_doc.setdefault(chunk.document_id, []).append((chunk, refs[0]))
 
+    bytes_by_document, _ = await client.document_item_repository.get_pictures_grouped(
+        {doc_id: [ref for _, ref in pairs] for doc_id, pairs in by_doc.items()}
+    )
     for doc_id, doc_chunks in by_doc.items():
-        refs = [ref for _, ref in doc_chunks]
-        bytes_by_ref = await client.document_item_repository.get_pictures_for_chunk(
-            doc_id, refs
-        )
+        bytes_by_ref = bytes_by_document.get(doc_id, {})
         for chunk, ref in doc_chunks:
             data = bytes_by_ref.get(ref)
             if data:
@@ -139,22 +143,27 @@ async def _populate_image_data(client: "HaikuRAG", results: list[SearchResult]) 
     A result carries a picture when its refs include the picture directly, or
     when they include the picture's caption — the common case where a prose
     chunk carrying a figure's caption ranks while the picture is its own chunk.
-    Groups results by document_id and batches one picture-bytes lookup per
-    document so a result set spanning N documents costs N reads, not one per
-    picture.
+    Costs a fixed number of reads however many documents the result set spans.
     """
     repo = client.document_item_repository
     by_doc: dict[str, list[SearchResult]] = {}
     for r in results:
         if r.document_id and r.doc_item_refs:
             by_doc.setdefault(r.document_id, []).append(r)
+    if not by_doc:
+        return
 
+    refs_by_document = {
+        doc_id: list({ref for r in doc_results for ref in r.doc_item_refs})
+        for doc_id, doc_results in by_doc.items()
+    }
+    captions_to_pictures = await repo.get_caption_picture_refs_grouped(refs_by_document)
+
+    # Which pictures each result wants, and which to fetch per document.
+    result_pictures: list[tuple[SearchResult, list[str]]] = []
+    wanted: dict[str, list[str]] = {}
     for doc_id, doc_results in by_doc.items():
-        all_refs = {ref for r in doc_results for ref in r.doc_item_refs}
-        caption_to_picture = await repo.get_caption_picture_refs(doc_id, list(all_refs))
-
-        result_pictures: list[tuple[SearchResult, list[str]]] = []
-        wanted: list[str] = []
+        caption_to_picture = captions_to_pictures.get(doc_id, {})
         seen: set[str] = set()
         for r in doc_results:
             pictures: list[str] = []
@@ -170,30 +179,33 @@ async def _populate_image_data(client: "HaikuRAG", results: list[SearchResult]) 
                 result_pictures.append((r, pictures))
                 for picture in pictures:
                     if picture not in seen:
-                        wanted.append(picture)
+                        wanted.setdefault(doc_id, []).append(picture)
                         seen.add(picture)
-        if not wanted:
-            continue
-        bytes_by_ref = await repo.get_pictures_for_chunk(doc_id, wanted)
-        if not bytes_by_ref:
-            continue
-        captions_by_ref = await repo.get_text_for_refs(
-            doc_id, list(bytes_by_ref.keys())
-        )
-        for r, pictures in result_pictures:
-            attached: dict[str, str] = {}
-            captions: dict[str, str] = {}
-            for ref in pictures:
-                blob = bytes_by_ref.get(ref)
-                if blob:
-                    attached[ref] = base64.b64encode(blob).decode("ascii")
-                    caption = captions_by_ref.get(ref)
-                    if caption:
-                        captions[ref] = caption
-            if attached:
-                r.image_data = attached
-            if captions:
-                r.picture_captions = captions
+    if not wanted:
+        return
+
+    bytes_by_document, captions_by_document = await repo.get_pictures_grouped(
+        wanted, with_text=True
+    )
+    if not bytes_by_document:
+        return
+
+    for r, pictures in result_pictures:
+        bytes_by_ref = bytes_by_document.get(r.document_id or "", {})
+        captions_by_ref = captions_by_document.get(r.document_id or "", {})
+        attached: dict[str, str] = {}
+        captions: dict[str, str] = {}
+        for ref in pictures:
+            blob = bytes_by_ref.get(ref)
+            if blob:
+                attached[ref] = base64.b64encode(blob).decode("ascii")
+                caption = captions_by_ref.get(ref)
+                if caption:
+                    captions[ref] = caption
+        if attached:
+            r.image_data = attached
+        if captions:
+            r.picture_captions = captions
 
 
 async def expand_context(
@@ -209,7 +221,7 @@ async def expand_context(
     chunks were created without docling metadata (e.g., custom chunks passed
     to import_document).
     """
-    from haiku.rag.context import expand_with_items
+    from haiku.rag.context import expand_with_items, window_for
 
     max_chars = client._config.search.max_context_chars
 
@@ -222,24 +234,40 @@ async def expand_context(
         document_groups[doc_id].append(result)
 
     expanded_results = []
+    expandable = {
+        doc_id: doc_results
+        for doc_id, doc_results in document_groups.items()
+        if doc_id is not None and any(r.doc_item_refs for r in doc_results)
+    }
+    repo = client.document_item_repository
+    positions_by_document = await repo.resolve_refs_grouped(
+        {
+            doc_id: [ref for r in doc_results for ref in r.doc_item_refs]
+            for doc_id, doc_results in expandable.items()
+        }
+    )
+    windows = {
+        doc_id: window_for(positions)
+        for doc_id, positions in positions_by_document.items()
+        if positions
+    }
+    items_by_document = await repo.get_items_in_ranges(windows)
 
+    # In document_groups order: the score sort below is stable, so assembling
+    # expandable and passthrough documents in separate passes would reorder
+    # equal-scored results.
     for doc_id, doc_results in document_groups.items():
-        if doc_id is None:
+        if doc_id not in expandable:
             expanded_results.extend(doc_results)
             continue
-
-        has_refs = any(r.doc_item_refs for r in doc_results)
-        if not has_refs:
-            expanded_results.extend(doc_results)
-            continue
-
-        expanded = await expand_with_items(
-            client.document_item_repository,
-            doc_id,
-            doc_results,
-            max_chars,
+        expanded_results.extend(
+            expand_with_items(
+                doc_results,
+                max_chars,
+                positions_by_document.get(doc_id, {}),
+                items_by_document.get(doc_id, []),
+            )
         )
-        expanded_results.extend(expanded)
 
     expanded_results.sort(key=lambda r: r.score, reverse=True)
     # image_data and picture_captions are preserved through expansion by

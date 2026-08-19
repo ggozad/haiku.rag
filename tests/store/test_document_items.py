@@ -265,32 +265,13 @@ class TestDocumentItemRepository:
             ]
             await repo.create_items("doc-1", items)
 
-            result = await repo.get_items_in_range("doc-1", 3, 7)
+            result = (await repo.get_items_in_ranges({"doc-1": (3, 7)})).get(
+                "doc-1", []
+            )
             assert len(result) == 5
             assert result[0].position == 3
             assert result[-1].position == 7
             assert result[0].text == "Item 3"
-
-    async def test_resolve_refs(self, temp_db_path):
-        async with HaikuRAG(temp_db_path, create=True) as rag:
-            repo = DocumentItemRepository(rag.store)
-
-            items = [
-                DocumentItem(
-                    document_id="doc-1",
-                    position=i,
-                    self_ref=f"#/texts/{i}",
-                    label="paragraph",
-                    text=f"Item {i}",
-                )
-                for i in range(10)
-            ]
-            await repo.create_items("doc-1", items)
-
-            refs = await repo.resolve_refs(
-                "doc-1", ["#/texts/2", "#/texts/7", "#/texts/999"]
-            )
-            assert refs == {"#/texts/2": 2, "#/texts/7": 7}
 
     async def test_get_item_count(self, temp_db_path):
         async with HaikuRAG(temp_db_path, create=True) as rag:
@@ -376,24 +357,23 @@ class TestDocumentItemRepository:
                 (0, 2),
             ]
 
-            in_range = await repo.get_items_in_range("doc-1", 0, 2)
+            in_range = (await repo.get_items_in_ranges({"doc-1": (0, 2)})).get(
+                "doc-1", []
+            )
             assert [(i.heading_level, i.tree_depth) for i in in_range] == [
                 (1, 1),
                 (2, 2),
                 (0, 2),
             ]
 
-            grouped = await repo.get_all_items_grouped(["doc-1"])
-            assert [(i.heading_level, i.tree_depth) for i in grouped["doc-1"]] == [
+            assert [
+                (i.heading_level, i.tree_depth)
+                for i in await repo.get_all_items("doc-1")
+            ] == [
                 (1, 1),
                 (2, 2),
                 (0, 2),
             ]
-
-    async def test_empty_refs_returns_empty(self, temp_db_path):
-        async with HaikuRAG(temp_db_path, create=True) as rag:
-            repo = DocumentItemRepository(rag.store)
-            assert await repo.resolve_refs("doc-1", []) == {}
 
     async def test_items_sorted_by_position(self, temp_db_path):
         async with HaikuRAG(temp_db_path, create=True) as rag:
@@ -412,7 +392,9 @@ class TestDocumentItemRepository:
             ]
             await repo.create_items("doc-1", items)
 
-            result = await repo.get_items_in_range("doc-1", 0, 9)
+            result = (await repo.get_items_in_ranges({"doc-1": (0, 9)})).get(
+                "doc-1", []
+            )
             positions = [item.position for item in result]
             assert positions == sorted(positions)
 
@@ -440,9 +422,11 @@ class TestDocumentItemPopulation:
             count = await rag.document_item_repository.get_item_count(created.id)
             assert count == 6
 
-            items = await rag.document_item_repository.get_items_in_range(
-                created.id, 0, count
-            )
+            items = (
+                await rag.document_item_repository.get_items_in_ranges(
+                    {created.id: (0, count)}
+                )
+            ).get(created.id, [])
             assert items[0].label == "section_header"
             assert items[0].text == "Introduction"
             assert items[1].label == "paragraph"
@@ -607,112 +591,6 @@ class TestPictureDataStorage:
             # Empty refs returns empty dict
             assert await repo.get_pictures_for_chunk("doc-1", []) == {}
 
-    async def test_get_text_for_refs(self, temp_db_path):
-        """Text is returned for any ref with non-empty ``text``, regardless of label.
-
-        In practice pictures carry their caption in the ``text`` field
-        (populated by the VLM picture-description pass during ingest); this
-        method surfaces that text alongside the picture bytes so the model can
-        correlate a description with the binary it sees. The same method also
-        returns text for non-picture refs — callers filter by label.
-        """
-        async with HaikuRAG(temp_db_path, create=True) as rag:
-            repo = DocumentItemRepository(rag.store)
-            await repo.create_items(
-                "doc-1",
-                [
-                    DocumentItem(
-                        document_id="doc-1",
-                        position=0,
-                        self_ref="#/pictures/0",
-                        label="picture",
-                        text="Figure 1. CCS generation over time.",
-                        picture_data=b"\x89PNG\r\n\x1a\nfake",
-                    ),
-                    DocumentItem(
-                        document_id="doc-1",
-                        position=1,
-                        self_ref="#/pictures/1",
-                        label="picture",
-                        text="",  # no VLM caption available
-                        picture_data=b"\x89PNG\r\n\x1a\nfake2",
-                    ),
-                    DocumentItem(
-                        document_id="doc-1",
-                        position=2,
-                        self_ref="#/texts/0",
-                        label="paragraph",
-                        text="Inline prose.",
-                    ),
-                ],
-            )
-
-            captions = await repo.get_text_for_refs(
-                "doc-1",
-                ["#/pictures/0", "#/pictures/1", "#/texts/0", "#/pictures/999"],
-            )
-            assert captions == {
-                "#/pictures/0": "Figure 1. CCS generation over time.",
-                "#/texts/0": "Inline prose.",
-            }
-            assert await repo.get_text_for_refs("doc-1", []) == {}
-
-    async def test_get_caption_picture_refs(self, temp_db_path):
-        """A caption ref resolves to the picture at the immediately preceding
-        position; a table caption (no preceding picture) resolves to nothing."""
-        async with HaikuRAG(temp_db_path, create=True) as rag:
-            repo = DocumentItemRepository(rag.store)
-            await repo.create_items(
-                "doc-1",
-                [
-                    DocumentItem(
-                        document_id="doc-1",
-                        position=0,
-                        self_ref="#/pictures/0",
-                        label="picture",
-                        picture_data=b"\x89PNG\r\n\x1a\nfake",
-                    ),
-                    DocumentItem(
-                        document_id="doc-1",
-                        position=1,
-                        self_ref="#/texts/0",
-                        label="caption",
-                        text="Figure 1. A figure caption.",
-                    ),
-                    DocumentItem(
-                        document_id="doc-1",
-                        position=2,
-                        self_ref="#/texts/1",
-                        label="paragraph",
-                        text="Body prose.",
-                    ),
-                    DocumentItem(
-                        document_id="doc-1",
-                        position=3,
-                        self_ref="#/tables/0",
-                        label="table",
-                        text="| a | b |",
-                    ),
-                    DocumentItem(
-                        document_id="doc-1",
-                        position=4,
-                        self_ref="#/texts/2",
-                        label="caption",
-                        text="Table 1. A table caption.",
-                    ),
-                ],
-            )
-
-            # Figure caption resolves to its picture; table caption does not.
-            got = await repo.get_caption_picture_refs(
-                "doc-1", ["#/texts/0", "#/texts/1", "#/texts/2"]
-            )
-            assert got == {"#/texts/0": "#/pictures/0"}
-
-            # A non-caption ref alone yields nothing.
-            assert await repo.get_caption_picture_refs("doc-1", ["#/texts/1"]) == {}
-            assert await repo.get_caption_picture_refs("doc-1", []) == {}
-
     async def test_hot_paths_exclude_picture_data(self, temp_db_path):
         """Light read paths must NOT pull picture_data into memory."""
         async with HaikuRAG(temp_db_path, create=True) as rag:
@@ -735,10 +613,9 @@ class TestPictureDataStorage:
 
             for item in await repo.get_all_items("doc-1"):
                 assert item.picture_data is None
-            for item in await repo.get_items_in_range("doc-1", 0, 10):
-                assert item.picture_data is None
-            grouped = await repo.get_all_items_grouped(["doc-1"])
-            for item in grouped["doc-1"]:
+            for item in (await repo.get_items_in_ranges({"doc-1": (0, 10)})).get(
+                "doc-1", []
+            ):
                 assert item.picture_data is None
 
             # But the picture-byte accessors still work

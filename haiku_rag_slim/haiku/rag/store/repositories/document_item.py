@@ -1,4 +1,5 @@
 import json
+from collections.abc import Mapping, Sequence
 
 from haiku.rag.store.engine import DocumentItemRecord, Store
 from haiku.rag.store.models.document_item import DocumentItem
@@ -107,24 +108,50 @@ class DocumentItemRepository:
         items.sort(key=lambda x: x.position)
         return items
 
-    async def get_all_items_grouped(
-        self, document_ids: list[str] | None = None
+    async def resolve_refs_grouped(
+        self, refs_by_document: "Mapping[str, Sequence[str]]"
+    ) -> dict[str, dict[str, int]]:
+        """Resolve self_refs to positions, across documents, in one query."""
+        predicate = self._per_document_predicate(refs_by_document, "self_ref")
+        if predicate is None:
+            return {}
+        rows = await (
+            self.store.document_items_table.query()
+            .select(["document_id", "self_ref", "position"])
+            .where(predicate)
+            .to_list()
+        )
+        grouped: dict[str, dict[str, int]] = {}
+        for row in rows:
+            grouped.setdefault(row["document_id"], {})[row["self_ref"]] = row[
+                "position"
+            ]
+        return grouped
+
+    async def get_items_in_ranges(
+        self, ranges_by_document: "Mapping[str, tuple[int, int]]"
     ) -> dict[str, list[DocumentItem]]:
-        """Get all items grouped by document_id in a single query.
+        """Items within a position range per document, in one query.
 
-        Args:
-            document_ids: If provided, only fetch items for these documents.
-                If None, fetches all items.
-
-        Returns:
-            Dict mapping document_id to sorted list of DocumentItem.
+        Each document keeps its own inclusive range. Positions repeat across
+        documents, so a shared range would splice one document's items into
+        another's context.
         """
-        query = self.store.document_items_table.query().select(_METADATA_COLUMNS)
-        if document_ids is not None:
-            safe_ids = ", ".join(f"'{escape_sql_string(did)}'" for did in document_ids)
-            query = query.where(f"document_id IN ({safe_ids})")
-        rows = await query.to_list()
-
+        clauses = []
+        for document_id, (start, end) in ranges_by_document.items():
+            safe_id = escape_sql_string(document_id)
+            clauses.append(
+                f"(document_id = '{safe_id}' "
+                f"AND position >= {start} AND position <= {end})"
+            )
+        if not clauses:
+            return {}
+        rows = await (
+            self.store.document_items_table.query()
+            .select(_METADATA_COLUMNS)
+            .where(" OR ".join(clauses))
+            .to_list()
+        )
         grouped: dict[str, list[DocumentItem]] = {}
         for row in rows:
             item = self._record_to_item(row)
@@ -132,39 +159,6 @@ class DocumentItemRepository:
         for items in grouped.values():
             items.sort(key=lambda x: x.position)
         return grouped
-
-    async def get_items_in_range(
-        self, document_id: str, start: int, end: int
-    ) -> list[DocumentItem]:
-        """Get items for a document within a position range (inclusive)."""
-        safe_id = escape_sql_string(document_id)
-        rows = await (
-            self.store.document_items_table.query()
-            .select(_METADATA_COLUMNS)
-            .where(
-                f"document_id = '{safe_id}' "
-                f"AND position >= {start} AND position <= {end}"
-            )
-            .to_list()
-        )
-        items = [self._record_to_item(row) for row in rows]
-        items.sort(key=lambda x: x.position)
-        return items
-
-    async def resolve_refs(self, document_id: str, refs: list[str]) -> dict[str, int]:
-        """Resolve self_refs to positions. Returns {self_ref: position}."""
-        if not refs:
-            return {}
-
-        safe_id = escape_sql_string(document_id)
-        refs_sql = ", ".join(f"'{escape_sql_string(r)}'" for r in refs)
-        rows = await (
-            self.store.document_items_table.query()
-            .select(["self_ref", "position"])
-            .where(f"document_id = '{safe_id}' AND self_ref IN ({refs_sql})")
-            .to_list()
-        )
-        return {row["self_ref"]: row["position"] for row in rows}
 
     async def get_item_count(self, document_id: str) -> int:
         """Count items for a document."""
@@ -242,76 +236,108 @@ class DocumentItemRepository:
                 result[row["self_ref"]] = data
         return result
 
-    async def get_text_for_refs(
-        self, document_id: str, refs: list[str]
-    ) -> dict[str, str]:
-        """Fetch the ``text`` field for multiple self_refs within a single document.
+    @staticmethod
+    def _per_document_predicate(
+        refs_by_document: "Mapping[str, Sequence[str | int]]", column: str
+    ) -> str | None:
+        """`(document_id = 'a' AND col IN (...)) OR (document_id = 'b' AND ...)`.
 
-        Returns ``{self_ref: text}`` for refs whose text is non-empty. Used
-        alongside ``get_pictures_for_chunk`` to label figures in agent-facing
-        search results: picture items carry their VLM-generated caption in
-        the ``text`` field, and the OpenAI vision message format has no
-        identifier on binary parts, so the caption text is the only signal a
-        model can use to correlate a description with the picture it sees.
+        Per-document rather than `col IN (union)`: self_ref and position values
+        repeat across documents, so a union predicate would return other
+        documents' rows, which for picture_data means fetching blobs nobody asked
+        for. Returns None when nothing is asked for.
         """
-        if not refs:
-            return {}
+        clauses = []
+        for document_id, refs in refs_by_document.items():
+            if not refs:
+                continue
+            safe_id = escape_sql_string(document_id)
+            values = ", ".join(
+                str(r) if isinstance(r, int) else f"'{escape_sql_string(r)}'"
+                for r in refs
+            )
+            clauses.append(f"(document_id = '{safe_id}' AND {column} IN ({values}))")
+        return " OR ".join(clauses) if clauses else None
 
-        safe_id = escape_sql_string(document_id)
-        refs_sql = ", ".join(f"'{escape_sql_string(r)}'" for r in refs)
+    async def get_pictures_grouped(
+        self,
+        refs_by_document: "Mapping[str, list[str]]",
+        *,
+        with_text: bool = False,
+    ) -> tuple[dict[str, dict[str, bytes]], dict[str, dict[str, str]]]:
+        """Picture bytes across documents in one query.
+
+        Returns `(bytes_by_document, text_by_document)`, each
+        `{document_id: {self_ref: value}}` and each omitting refs whose value is
+        empty. `with_text` adds each picture's text to the projection, which is
+        free in queries because it is on the same rows, but not in bytes: the
+        text column is dead weight for a caller that only scores pixels.
+        """
+        predicate = self._per_document_predicate(refs_by_document, "self_ref")
+        if predicate is None:
+            return {}, {}
+        columns = ["document_id", "self_ref", "picture_data"]
+        if with_text:
+            columns.append("text")
         rows = await (
             self.store.document_items_table.query()
-            .select(["self_ref", "text"])
-            .where(f"document_id = '{safe_id}' AND self_ref IN ({refs_sql})")
+            .select(columns)
+            .where(predicate)
             .to_list()
         )
-        result: dict[str, str] = {}
+        blobs: dict[str, dict[str, bytes]] = {}
+        texts: dict[str, dict[str, str]] = {}
         for row in rows:
-            text = row.get("text") or ""
+            data = row.get("picture_data")
+            if not data:
+                continue
+            blobs.setdefault(row["document_id"], {})[row["self_ref"]] = data
+            text = row.get("text")
             if text:
-                result[row["self_ref"]] = text
-        return result
+                texts.setdefault(row["document_id"], {})[row["self_ref"]] = text
+        return blobs, texts
 
-    async def get_caption_picture_refs(
-        self, document_id: str, refs: list[str]
-    ) -> dict[str, str]:
-        """Map caption refs to the picture item immediately preceding them.
+    async def get_caption_picture_refs_grouped(
+        self, refs_by_document: "Mapping[str, list[str]]"
+    ) -> dict[str, dict[str, str]]:
+        """Map caption refs to the picture preceding them, in two queries.
 
-        Docling emits a figure's caption at the position right after its
-        picture, so a caption's picture is the picture item at
-        ``position - 1``. Returns ``{caption_ref: picture_ref}`` for the
-        caption refs among ``refs`` that have a picture predecessor. Non-caption
-        refs, and captions whose predecessor is not a picture (table captions),
-        map to nothing.
+        Two rather than one because the stages are dependent: a caption's
+        picture is the item at `position - 1`, which the first query is what
+        establishes.
         """
-        if not refs:
+        predicate = self._per_document_predicate(refs_by_document, "self_ref")
+        if predicate is None:
             return {}
-
-        safe_id = escape_sql_string(document_id)
-        refs_sql = ", ".join(f"'{escape_sql_string(r)}'" for r in refs)
         caption_rows = await (
             self.store.document_items_table.query()
-            .select(["self_ref", "position"])
-            .where(
-                f"document_id = '{safe_id}' AND label = 'caption' "
-                f"AND self_ref IN ({refs_sql})"
-            )
+            .select(["document_id", "self_ref", "position"])
+            .where(f"label = 'caption' AND ({predicate})")
             .to_list()
         )
         if not caption_rows:
             return {}
 
-        prev_to_caption = {row["position"] - 1: row["self_ref"] for row in caption_rows}
-        positions_sql = ", ".join(str(p) for p in prev_to_caption)
+        prev_to_caption: dict[str, dict[int, str]] = {}
+        for row in caption_rows:
+            prev_to_caption.setdefault(row["document_id"], {})[row["position"] - 1] = (
+                row["self_ref"]
+            )
+
+        # Non-empty: every caption row contributed a position.
+        picture_predicate = self._per_document_predicate(
+            {did: list(positions) for did, positions in prev_to_caption.items()},
+            "position",
+        )
         picture_rows = await (
             self.store.document_items_table.query()
-            .select(["self_ref", "position"])
-            .where(
-                f"document_id = '{safe_id}' AND label = 'picture' "
-                f"AND position IN ({positions_sql})"
-            )
+            .select(["document_id", "self_ref", "position"])
+            .where(f"label = 'picture' AND ({picture_predicate})")
             .to_list()
         )
-        return {
-            prev_to_caption[row["position"]]: row["self_ref"] for row in picture_rows
-        }
+        grouped: dict[str, dict[str, str]] = {}
+        for row in picture_rows:
+            caption = prev_to_caption.get(row["document_id"], {}).get(row["position"])
+            if caption:
+                grouped.setdefault(row["document_id"], {})[caption] = row["self_ref"]
+        return grouped
