@@ -35,7 +35,7 @@ from haiku.rag.capabilities._tools import (
 from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord, EvidenceRef
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
-from haiku.rag.store.models.chunk import SearchResult
+from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.citation import Citation, resolve_citations
 from haiku.rag.tools.search import build_image_content_from_results
 
@@ -91,6 +91,7 @@ class EvidenceState(BaseModel):
     citations: list[str] = Field(default_factory=list)
     evidence: CapabilityEvidenceRecord = Field(default_factory=CapabilityEvidenceRecord)
     document_filter: str | None = None
+    sources: list[str] | None = None
     searches: dict[str, list[SearchResult]] = Field(default_factory=dict)
 
     def begin_invocation(self) -> None:
@@ -101,8 +102,8 @@ class EvidenceState(BaseModel):
         leaves a later citation unable to resolve against the expanded result the
         model saw, recording no provenance for it.
 
-        `document_filter` scopes the conversation, and `evidence` carries question
-        identity, so neither is working evidence.
+        `document_filter` and `sources` scope the conversation, and `evidence`
+        carries question identity, so none of them is working evidence.
         """
         self.citations.clear()
         self.searches.clear()
@@ -134,6 +135,21 @@ def _called_own_tool(messages: list[ModelMessage], tool_names: frozenset[str]) -
                 for part in message.parts
             )
     return False
+
+
+async def _first_holding(
+    clients: "list[HaikuRAG]", chunk_id: str
+) -> "tuple[HaikuRAG, Chunk] | None":
+    """The first client holding this chunk, and the chunk.
+
+    A chunk id says nothing about which database holds it, so the only way to
+    place one is to ask. Returns None when none of them has it.
+    """
+    for client in clients:
+        chunk = await client.get_chunk_by_id(chunk_id)
+        if chunk is not None:
+            return client, chunk
+    return None
 
 
 @dataclass
@@ -468,6 +484,7 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
                 query,
                 limit=limit,
                 document_filter=self.state.document_filter,
+                sources=self.state.sources,
             )
         state = self.state
         # A model can search the same query twice with different limits, and the
@@ -504,20 +521,35 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
         if missing:
             async with self.rag_lock:
                 rag = await self._ensure_rag()
+                # A chunk id says nothing about which database holds it, so a
+                # federating client looks through the ones it covers.
+                if rag._federated:
+                    lookups = await rag.clients_for(
+                        getattr(self.state, "sources", None) or list(rag._federated)
+                    )
+                else:
+                    lookups = [rag]
                 synthetic: list[SearchResult] = []
-                documents: dict[str, Any] = {}
+                documents: dict[tuple[str | None, str], Any] = {}
                 for chunk_id in missing:
-                    chunk = await rag.get_chunk_by_id(chunk_id)
-                    if chunk is None or not chunk.document_id:
+                    found = await _first_holding(lookups, chunk_id)
+                    if found is None:
                         continue
-                    document = documents.get(chunk.document_id)
-                    if chunk.document_id not in documents:
-                        document = await rag.get_document_by_id(chunk.document_id)
-                        documents[chunk.document_id] = document
+                    owner, chunk = found
+                    if not chunk.document_id:
+                        continue
+                    key = (owner._source, chunk.document_id)
+                    if key not in documents:
+                        documents[key] = await owner.get_document_by_id(
+                            chunk.document_id
+                        )
+                    document = documents[key]
                     chunk.document_uri = document.uri if document else None
                     chunk.document_title = document.title if document else None
                     chunk.document_meta = document.metadata if document else {}
-                    synthetic.append(SearchResult.from_chunk(chunk, score=1.0))
+                    result = SearchResult.from_chunk(chunk, score=1.0)
+                    result.source = owner._source
+                    synthetic.append(result)
                 citations.extend(resolve_citations(missing, synthetic))
 
         if not citations:
