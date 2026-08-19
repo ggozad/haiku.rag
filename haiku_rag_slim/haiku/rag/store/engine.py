@@ -18,7 +18,7 @@ from lancedb.pydantic import LanceModel, Vector
 from packaging.version import parse
 from pydantic import BaseModel, Field
 
-from haiku.rag.config import AppConfig, Config
+from haiku.rag.config import AppConfig, get_config
 from haiku.rag.embeddings import get_embedder
 from haiku.rag.store.exceptions import MigrationRequiredError, ReadOnlyError
 
@@ -497,14 +497,14 @@ class Store:
     def __init__(
         self,
         db_path: Path,
-        config: AppConfig = Config,
+        config: AppConfig | None = None,
         skip_validation: bool = False,
         create: bool = False,
         read_only: bool = False,
         skip_migration_check: bool = False,
     ):
         self.db_path: Path = db_path
-        self._config = config
+        self._config = config if config is not None else get_config()
         self._read_only = read_only
         self._create = create
         self._skip_validation = skip_validation

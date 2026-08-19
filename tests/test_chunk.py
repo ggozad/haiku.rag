@@ -1,7 +1,7 @@
 import pytest
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.config import Config
+from haiku.rag.config import get_config
 from haiku.rag.store.models.chunk import Chunk, ChunkMetadata, SearchResult
 from tests.conftest import capture_logs
 
@@ -11,7 +11,9 @@ async def test_chunk_repository_operations(
     qa_corpus: list[dict[str, str]], temp_db_path
 ):
     """Test ChunkRepository operations."""
-    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+    async with HaikuRAG(
+        db_path=temp_db_path, config=get_config(), create=True
+    ) as client:
         # Get the first document from the corpus
         first_doc = qa_corpus[0]
         document_text = first_doc["document_extracted"]
@@ -52,7 +54,9 @@ async def test_chunk_repository_pagination(
     qa_corpus: list[dict[str, str]], temp_db_path
 ):
     """Test ChunkRepository pagination with get_by_document_id and count_by_document_id."""
-    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+    async with HaikuRAG(
+        db_path=temp_db_path, config=get_config(), create=True
+    ) as client:
         # Get the first document from the corpus (should produce multiple chunks)
         first_doc = qa_corpus[0]
         document_text = first_doc["document_extracted"]
@@ -443,7 +447,9 @@ async def test_chunk_content_fts(temp_db_path, metadata, content, expected_conte
     """content_fts holds the contextualized content while content stays raw."""
     from haiku.rag.embeddings import get_embedder
 
-    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+    async with HaikuRAG(
+        db_path=temp_db_path, config=get_config(), create=True
+    ) as client:
         chunk = Chunk(
             document_id="test-doc",
             content=content,
@@ -451,7 +457,7 @@ async def test_chunk_content_fts(temp_db_path, metadata, content, expected_conte
             order=0,
         )
 
-        embedder = get_embedder(Config)
+        embedder = get_embedder(get_config())
         embedding = (await embedder.embed_documents([chunk.content]))[0]
         chunk.embedding = embedding
 
@@ -477,7 +483,9 @@ async def test_ensure_fts_index_warns_on_failure(temp_db_path):
 
     from haiku.rag.store.repositories import chunk as chunk_module
 
-    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+    async with HaikuRAG(
+        db_path=temp_db_path, config=get_config(), create=True
+    ) as client:
         repo = client.chunk_repository
 
         async def _boom(*_args, **_kwargs):
@@ -497,7 +505,9 @@ async def test_chunk_repository_get_by_id_and_list_all_pagination(
     qa_corpus: list[dict[str, str]], temp_db_path
 ):
     """get_by_id resolves a stored chunk; list_all honours limit and offset."""
-    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+    async with HaikuRAG(
+        db_path=temp_db_path, config=get_config(), create=True
+    ) as client:
         # A corpus document is long enough to chunk more than once, which is
         # what makes the offset assertion below meaningful.
         doc = await client.create_document(content=qa_corpus[0]["document_extracted"])
@@ -531,7 +541,9 @@ async def test_chunk_repository_get_by_id_and_list_all_pagination(
 @pytest.mark.vcr()
 async def test_chunk_search_returns_empty_for_blank_query(temp_db_path):
     """A blank query with no precomputed vector short-circuits before searching."""
-    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+    async with HaikuRAG(
+        db_path=temp_db_path, config=get_config(), create=True
+    ) as client:
         await client.create_document(content="Searchable body about elections.")
 
         # Positive control: the corpus is non-empty, so [] is a real decision
@@ -543,7 +555,9 @@ async def test_chunk_search_returns_empty_for_blank_query(temp_db_path):
 @pytest.mark.vcr()
 async def test_chunk_search_with_precomputed_vector_skips_text_query(temp_db_path):
     """The image-as-query path searches vector-only using a stored embedding."""
-    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+    async with HaikuRAG(
+        db_path=temp_db_path, config=get_config(), create=True
+    ) as client:
         doc = await client.create_document(content="Vector-only search target.")
         assert doc.id is not None
 
@@ -557,7 +571,9 @@ async def test_chunk_search_with_precomputed_vector_skips_text_query(temp_db_pat
 
 
 async def test_get_chunk_ids_by_self_ref_grouped_without_documents(temp_db_path):
-    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+    async with HaikuRAG(
+        db_path=temp_db_path, config=get_config(), create=True
+    ) as client:
         assert await client.chunk_repository.get_chunk_ids_by_self_ref_grouped([]) == {}
 
 
@@ -565,7 +581,9 @@ async def test_process_search_results_rejects_unknown_score_column(temp_db_path)
     """A result frame with no recognised score column is a programming error."""
     import pandas as pd
 
-    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+    async with HaikuRAG(
+        db_path=temp_db_path, config=get_config(), create=True
+    ) as client:
 
         class _Frame:
             async def to_pandas(self):

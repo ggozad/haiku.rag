@@ -7,7 +7,7 @@ from typing import Any
 from fastmcp import FastMCP
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.config import AppConfig, Config
+from haiku.rag.config import AppConfig, get_config
 from haiku.rag.store.models import Document, SearchResult
 from haiku.rag.tools.document import DocumentInfo
 from haiku.rag.utils import format_citations
@@ -22,7 +22,7 @@ def _decode_images(images_base64: list[str] | None) -> list[bytes] | None:
 
 
 def create_mcp_server(
-    db_path: Path, config: AppConfig = Config, read_only: bool = False
+    db_path: Path, config: AppConfig | None = None, read_only: bool = False
 ) -> FastMCP:
     """Create an MCP server with the specified database path.
 
@@ -31,6 +31,7 @@ def create_mcp_server(
         config: Configuration to use.
         read_only: If True, write tools (add_document_*, delete_document) are not registered.
     """
+    config = config if config is not None else get_config()
     client: HaikuRAG | None = None
     stack = AsyncExitStack()
     client_lock = asyncio.Lock()

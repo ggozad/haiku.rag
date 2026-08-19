@@ -15,7 +15,7 @@ from pydantic_ai.usage import RunUsage
 from haiku.rag.capabilities.rag import RAGState, create_capability
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.search import _populate_image_data
-from haiku.rag.config import AppConfig, Config
+from haiku.rag.config import AppConfig, get_config
 from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document_item import DocumentItem
 from haiku.rag.tools.search import create_search_toolset
@@ -980,7 +980,7 @@ async def test_search_tool_returns_plain_string_when_no_pictures():
     fake_client.search = AsyncMock(return_value=[text_result])
     fake_client.expand_context = AsyncMock(return_value=[text_result])
 
-    toolset = create_search_toolset(Config, expand_context=False)
+    toolset = create_search_toolset(get_config(), expand_context=False)
     func = toolset.tools["search"].function
 
     ctx = RunContext(

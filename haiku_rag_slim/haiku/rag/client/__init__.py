@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 import httpx
 
 from haiku.rag.client.documents import DocumentImport
-from haiku.rag.config import AppConfig, Config
+from haiku.rag.config import AppConfig, get_config
 from haiku.rag.converters import get_converter
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import Store
@@ -67,7 +67,7 @@ class HaikuRAG:
     def __init__(
         self,
         db_path: Path | None = None,
-        config: AppConfig = Config,
+        config: AppConfig | None = None,
         skip_validation: bool = False,
         create: bool = False,
         read_only: bool = False,
@@ -76,12 +76,12 @@ class HaikuRAG:
 
         Args:
             db_path: Path to the database file. If None, uses config.storage.data_dir.
-            config: Configuration to use. Defaults to global Config.
+            config: Configuration to use. Defaults to the current global config.
             skip_validation: Whether to skip configuration validation on database load.
             create: Whether to create the database if it doesn't exist.
             read_only: Whether to open the database in read-only mode.
         """
-        self._config = config
+        self._config = config if config is not None else get_config()
         if db_path is None:
             db_path = self._config.storage.data_dir / "haiku.rag.lancedb"
 

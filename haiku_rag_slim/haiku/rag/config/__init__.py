@@ -36,7 +36,6 @@ from haiku.rag.config.models import (
 )
 
 __all__ = [
-    "Config",
     "APIConfig",
     "AppConfig",
     "CircuitBreakerConfig",
@@ -78,7 +77,7 @@ _config: AppConfig | None = None
 
 
 def _load_default_config() -> AppConfig:
-    """Load config from default locations (used at import time)."""
+    """Load config from the default locations."""
     config_path = find_config_file(None)
     if config_path:
         yaml_data = load_yaml_config(config_path)
@@ -93,12 +92,8 @@ def set_config(config: AppConfig) -> None:
 
 
 def get_config() -> AppConfig:
-    """Get the current config instance."""
+    """Get the current config instance, loading it on first use."""
     global _config
     if _config is None:
         _config = _load_default_config()
     return _config
-
-
-# Legacy compatibility - Config is the default instance
-Config = _load_default_config()

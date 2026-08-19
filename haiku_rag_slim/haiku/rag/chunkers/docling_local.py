@@ -3,7 +3,7 @@ from functools import cache
 from typing import TYPE_CHECKING, cast
 
 from haiku.rag.chunkers.base import DocumentChunker
-from haiku.rag.config import AppConfig, Config
+from haiku.rag.config import AppConfig, get_config
 from haiku.rag.store.models.chunk import Chunk, ChunkMetadata
 
 if TYPE_CHECKING:
@@ -68,7 +68,7 @@ class DoclingLocalChunker(DocumentChunker):
         config: Application configuration.
     """
 
-    def __init__(self, config: AppConfig = Config):
+    def __init__(self, config: AppConfig | None = None):
         from docling_core.transforms.chunker.hierarchical_chunker import (
             HierarchicalChunker,
         )
@@ -77,10 +77,10 @@ class DoclingLocalChunker(DocumentChunker):
             HuggingFaceTokenizer,
         )
 
-        self.config = config
-        self.chunk_size = config.processing.chunk_size
-        self.chunker_type = config.processing.chunker_type
-        self.tokenizer_name = config.processing.chunking_tokenizer
+        self.config = config if config is not None else get_config()
+        self.chunk_size = self.config.processing.chunk_size
+        self.chunker_type = self.config.processing.chunker_type
+        self.tokenizer_name = self.config.processing.chunking_tokenizer
 
         if self.chunker_type == "hybrid":
             hf_tokenizer = _get_tokenizer(self.tokenizer_name)
@@ -88,16 +88,16 @@ class DoclingLocalChunker(DocumentChunker):
                 tokenizer=hf_tokenizer, max_tokens=self.chunk_size
             )
             serializer_provider = _create_markdown_serializer_provider(
-                use_markdown_tables=config.processing.chunking_use_markdown_tables
+                use_markdown_tables=self.config.processing.chunking_use_markdown_tables
             )
             self.chunker = HybridChunker(
                 tokenizer=tokenizer,
-                merge_peers=config.processing.chunking_merge_peers,
+                merge_peers=self.config.processing.chunking_merge_peers,
                 serializer_provider=serializer_provider,
             )
         elif self.chunker_type == "hierarchical":
             serializer_provider = _create_markdown_serializer_provider(
-                use_markdown_tables=config.processing.chunking_use_markdown_tables
+                use_markdown_tables=self.config.processing.chunking_use_markdown_tables
             )
             self.chunker = HierarchicalChunker(serializer_provider=serializer_provider)
         else:

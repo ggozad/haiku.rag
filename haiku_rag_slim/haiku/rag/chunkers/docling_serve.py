@@ -4,7 +4,7 @@ from io import BytesIO
 from typing import TYPE_CHECKING
 
 from haiku.rag.chunkers.base import DocumentChunker
-from haiku.rag.config import AppConfig, Config
+from haiku.rag.config import AppConfig, get_config
 from haiku.rag.providers.docling_serve import DoclingServeClient
 from haiku.rag.store.models.chunk import Chunk, ChunkMetadata
 
@@ -54,10 +54,12 @@ class DoclingServeChunker(DocumentChunker):
         config: Application configuration containing docling-serve settings.
     """
 
-    def __init__(self, config: AppConfig = Config):
-        self.config = config
-        self.client = DoclingServeClient.from_config(config.providers.docling_serve)
-        self.chunker_type = config.processing.chunker_type
+    def __init__(self, config: AppConfig | None = None):
+        self.config = config if config is not None else get_config()
+        self.client = DoclingServeClient.from_config(
+            self.config.providers.docling_serve
+        )
+        self.chunker_type = self.config.processing.chunker_type
 
     def _build_chunking_data(self) -> dict[str, str | list[str]]:
         """Build form data for chunking request."""

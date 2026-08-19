@@ -238,6 +238,6 @@ async def doc_client(temp_db_path):
 @pytest.fixture
 def doc_config():
     """Default AppConfig for document tests."""
-    from haiku.rag.config import Config
+    from haiku.rag.config import get_config
 
-    return Config
+    return get_config()

@@ -6,7 +6,7 @@ from typing import TypedDict
 import pytest
 
 from haiku.rag.client import HaikuRAG, RebuildMode
-from haiku.rag.config import Config
+from haiku.rag.config import get_config
 from tests.conftest import capture_logs
 
 
@@ -194,7 +194,7 @@ async def test_rebuild_resumes_phase2_from_staging_after_crash(
     # crash, where no background vacuum would be in flight. Leaving it on lets
     # create_document's scheduled optimize race the raw drop_table ("Directory
     # not empty").
-    config = Config.model_copy(deep=True)
+    config = get_config().model_copy(deep=True)
     config.storage.auto_vacuum = False
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
@@ -1093,7 +1093,7 @@ async def test_rebuild_blocks_tag_operations(temp_db_path, monkeypatch):
 
     monkeypatch.setattr(EmbedderWrapper, "embed_documents", fake_embed_documents)
 
-    dim = Config.embeddings.model.vector_dim
+    dim = get_config().embeddings.model.vector_dim
     docling_doc = DoclingDocument(name="d")
     docling_doc.add_text(label=DocItemLabel.TEXT, text="body")
 

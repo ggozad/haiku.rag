@@ -69,7 +69,7 @@ def create_code_document() -> DoclingDocument:
     # Multiple adjacent code blocks - type-aware expansion should group them
     doc.add_text(label=DocItemLabel.CODE, text="# Part 1: Setup\nimport os\nimport sys")
     doc.add_text(
-        label=DocItemLabel.CODE, text='# Part 2: Config\nCONFIG = {"debug": True}'
+        label=DocItemLabel.CODE, text='# Part 2: get_config()\nCONFIG = {"debug": True}'
     )
     doc.add_text(
         label=DocItemLabel.CODE, text="# Part 3: Main\ndef main():\n    print(CONFIG)"
@@ -81,7 +81,7 @@ def create_code_document() -> DoclingDocument:
 
 @pytest.fixture
 def small_chunk_config() -> AppConfig:
-    """Config with small chunk size to force splitting."""
+    """get_config() with small chunk size to force splitting."""
     config = AppConfig()
     config.processing.chunk_size = 32
     config.search.max_context_chars = 10000

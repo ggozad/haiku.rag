@@ -119,7 +119,7 @@ def get_model(
 
     Args:
         model_config: ModelConfig with provider, model, and settings
-        app_config: AppConfig for provider base URLs (defaults to global Config)
+        app_config: AppConfig for provider base URLs (defaults to the current global config)
 
     Returns:
         A configured model instance
@@ -129,9 +129,9 @@ def get_model(
     from pydantic_ai.providers.openai import OpenAIProvider
 
     if app_config is None:
-        from haiku.rag.config import Config
+        from haiku.rag.config import get_config
 
-        app_config = Config
+        app_config = get_config()
 
     provider = model_config.provider
     model = model_config.name

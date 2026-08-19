@@ -38,11 +38,9 @@ chunks = [
 
 @pytest.mark.asyncio
 async def test_reranker_base():
-    from haiku.rag.config import Config
-
     reranker = RerankerBase()
-    expected_model = Config.reranking.model.name if Config.reranking.model else None
-    assert reranker._model == expected_model
+    # The base carries no model: each reranker takes its own from the factory.
+    assert reranker._model is None
 
     # Empty input short-circuits in the base class without dispatching to _rerank.
     assert await reranker.rerank("query", []) == []
@@ -156,12 +154,12 @@ class TestGetReranker:
         [
             (
                 "cohere",
-                "rerank-v3.5",
+                "rerank-english-v3.0",
                 "haiku.rag.reranking.cohere",
                 "CohereReranker",
                 {},
-                {},
-                {},
+                {"_model": "rerank-english-v3.0"},
+                {"CO_API_KEY": "test-api-key"},
             ),
             (
                 "vllm",

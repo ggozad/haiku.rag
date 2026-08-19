@@ -16,7 +16,7 @@ from rich.progress import (
 )
 
 from haiku.rag.client import HaikuRAG, RebuildMode
-from haiku.rag.config import AppConfig, Config
+from haiku.rag.config import AppConfig, get_config
 from haiku.rag.mcp import create_mcp_server
 from haiku.rag.store.models.chunk import SearchType
 from haiku.rag.store.models.document import Document
@@ -33,11 +33,11 @@ class HaikuRAGApp:  # pragma: no cover
     def __init__(
         self,
         db_path: Path,
-        config: AppConfig = Config,
+        config: AppConfig | None = None,
         read_only: bool = False,
     ):
         self.db_path = db_path
-        self.config = config
+        self.config = config if config is not None else get_config()
         self.read_only = read_only
         self.console = Console()
 

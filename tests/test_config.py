@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from haiku.rag.config import AppConfig
+from haiku.rag.config import AppConfig, set_config
 from haiku.rag.config.loader import (
     find_config_file,
     generate_default_config,
@@ -577,3 +577,48 @@ def test_example_configs_are_present():
 )
 def test_example_config_validates(path: Path):
     AppConfig.model_validate(yaml.safe_load(path.read_text()) or {})
+
+
+def _use_config(monkeypatch, cfg):
+    """Install cfg as the global config, restored by monkeypatch teardown."""
+    import haiku.rag.config as config_module
+
+    monkeypatch.setattr(config_module, "_config", None)
+    set_config(cfg)
+
+
+def test_set_config_reaches_the_factories(monkeypatch, tmp_path):
+    """A config installed after import must reach every factory and
+    constructor that resolves the global config itself."""
+    from haiku.rag.chunkers import get_chunker
+    from haiku.rag.chunkers.docling_serve import DoclingServeChunker
+    from haiku.rag.client import HaikuRAG
+    from haiku.rag.config.models import ModelConfig, RerankingConfig
+    from haiku.rag.converters import get_converter
+    from haiku.rag.converters.docling_serve import DoclingServeConverter
+    from haiku.rag.embeddings import get_embedder
+    from haiku.rag.reranking import get_reranker
+    from haiku.rag.reranking.vllm import VLLMReranker
+    from haiku.rag.store.engine import Store
+
+    cfg = AppConfig()
+    cfg.processing.converter = "docling-serve"
+    cfg.processing.chunker = "docling-serve"
+    cfg.embeddings.model.vector_dim = 7
+    cfg.reranking.model = ModelConfig(
+        provider="vllm", name="reranker-x", base_url="http://localhost:9/v1"
+    )
+    assert isinstance(cfg.reranking, RerankingConfig)
+
+    _use_config(monkeypatch, cfg)
+
+    assert isinstance(get_converter(), DoclingServeConverter)
+    assert isinstance(get_chunker(), DoclingServeChunker)
+    assert get_embedder().vector_dim == 7
+
+    reranker = get_reranker()
+    assert isinstance(reranker, VLLMReranker)
+    assert reranker._model == "reranker-x"
+
+    assert HaikuRAG(tmp_path / "db")._config is cfg
+    assert Store(tmp_path / "db", create=True)._config is cfg
