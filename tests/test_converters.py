@@ -245,7 +245,8 @@ class TestConverterFactory:
     def test_invalid_converter_raises_error(self):
         """Test that invalid converter name raises ValueError."""
         config = AppConfig()
-        config.processing.converter = "invalid-converter"
+        # Deliberately past validation: pins the factory's defensive raise.
+        config.processing.converter = "invalid-converter"  # ty: ignore[invalid-assignment]
         with pytest.raises(ValueError, match="Unsupported converter provider"):
             get_converter(config)
 

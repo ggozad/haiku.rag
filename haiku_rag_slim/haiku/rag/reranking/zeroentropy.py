@@ -1,4 +1,9 @@
-from zeroentropy import AsyncZeroEntropy
+from haiku.rag.utils import raise_missing_extra
+
+try:
+    from zeroentropy import AsyncZeroEntropy
+except ModuleNotFoundError as e:  # pragma: no cover
+    raise_missing_extra("zeroentropy", "zeroentropy", e)
 
 from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk

@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from haiku.rag.config import AppConfig, set_config
 from haiku.rag.config.loader import (
@@ -622,3 +623,73 @@ def test_set_config_reaches_the_factories(monkeypatch, tmp_path):
 
     assert HaikuRAG(tmp_path / "db")._config is cfg
     assert Store(tmp_path / "db", create=True)._config is cfg
+
+
+@pytest.mark.parametrize(
+    "data, bad_key",
+    [
+        ({"bogus": 1}, "bogus"),
+        ({"search": {"bogus": 1}}, "search.bogus"),
+        (
+            {"processing": {"conversion_options": {"bogus": 1}}},
+            "processing.conversion_options.bogus",
+        ),
+        (
+            {"providers": {"docling_serve": {"bogus": 1}}},
+            "providers.docling_serve.bogus",
+        ),
+        ({"qa": {"model": {"bogus": 1}}}, "qa.model.bogus"),
+        ({"ingester": {"queue": {"bogus": 1}}}, "ingester.queue.bogus"),
+        (
+            {"ingester": {"sources": [{"type": "fs", "root": "/tmp", "bogus": 1}]}},
+            "ingester.sources.0.fs.bogus",
+        ),
+    ],
+)
+def test_unknown_keys_are_rejected(data, bad_key):
+    with pytest.raises(ValidationError) as excinfo:
+        AppConfig.model_validate(data)
+
+    errors = excinfo.value.errors()
+    assert any(err["type"] == "extra_forbidden" for err in errors)
+    locations = {".".join(str(part) for part in err["loc"]) for err in errors}
+    assert bad_key in locations
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"processing": {"converter": "docling-loca"}},
+        {"processing": {"chunker": "docling-remote"}},
+        {"processing": {"chunker_type": "semantic"}},
+    ],
+)
+def test_finite_switches_reject_unknown_values(data):
+    with pytest.raises(ValidationError):
+        AppConfig.model_validate(data)
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"search": {"limit": 0}},
+        {"search": {"max_context_chars": 0}},
+        {"embeddings": {"batch_size": 0}},
+        {"embeddings": {"model": {"vector_dim": 0}}},
+        {"processing": {"chunk_size": 0}},
+        {"storage": {"vacuum_retention_seconds": -1}},
+        {"analysis": {"code_timeout": 0}},
+        {"doctor": {"duplicates": {"similarity_threshold": 1.5}}},
+        {"ingester": {"workers": {"worker_count": -1}}},
+        {"ingester": {"api": {"port": 70000}}},
+        {"ingester": {"queue": {"retention_days": -1}}},
+        {"ingester": {"sources": [{"type": "fs", "root": "/tmp", "max_file_size": 0}]}},
+        {"qa": {"model": {"max_tokens": 0}}},
+        {"providers": {"docling_serve": {"max_attempts": 0}}},
+        {"providers": {"docling_serve": {"circuit_breaker": {"failure_threshold": 0}}}},
+        {"providers": {"docling_serve": {"circuit_breaker": {"cooldown_s": -1}}}},
+    ],
+)
+def test_out_of_range_numbers_are_rejected(data):
+    with pytest.raises(ValidationError):
+        AppConfig.model_validate(data)

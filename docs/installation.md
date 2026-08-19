@@ -10,7 +10,7 @@
 uv pip install haiku.rag
 ```
 
-The full package pulls the `docling`, `voyageai`, `cohere`, `zeroentropy`, `cross-encoder` and `tui` extras:
+The full package pulls the `docling`, `voyageai`, `cohere`, `zeroentropy`, `cross-encoder`, `jina` and `tui` extras:
 - **Document processing** (Docling) - PDF, DOCX, PPTX, images, and 40+ file formats
 - **Embedding providers** - VoyageAI and Cohere
 - **Rerankers** - local cross-encoders, local Jina, Cohere, Zero Entropy

@@ -37,7 +37,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "haiku.rag-slim[docling,voyageai,cohere,zeroentropy,tui,cross-encoder]==0.75.0",
+    "haiku.rag-slim[docling,voyageai,cohere,zeroentropy,tui,cross-encoder,jina]==0.75.0",
 ]
 
 [project.urls]

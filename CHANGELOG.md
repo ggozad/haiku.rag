@@ -5,6 +5,7 @@
 
 ### Added
 
+- The `haiku.rag` package declares the `jina` extra, so `provider: jina-local` is supported by declaration rather than through `cross-encoder`'s transitive `transformers` and `torch`. Raises the full package's torch floor to 2.0.
 - `providers.docling_serve.timeout` (default 300 seconds), forwarded to the docling-serve client's per-request timeout.
 - `evaluations run --filter/-f CLAUSE`: SQL `WHERE` clause over document columns, applied to the retrieval benchmark's searches and to every capability search during QA. Recorded as `document_filter` in experiment metadata.
 - `mtrag_clapnq` / `mtrag_clapnq_rewrite` / `mtrag_clapnq_live` / `mtrag_clapnq_live_uncompacted` evaluation datasets: multi-turn QA with gold-prefix and live-session conversation replay, live arms with and without `EvidenceCompactionCapability`, Recall@k/nDCG@k retrieval metrics, eligibility-aware citation scoring, refusal precision/recall, per-turn tool-traffic attributes, and `citation_status` / `turn_citation_status` eval attributes.
@@ -14,6 +15,10 @@
 
 ### Changed
 
+- Configuration sections reject unknown keys. A typo or a setting that has been renamed or removed now fails validation with its path (`providers.docling_serve.bogus: Extra inputs are not permitted`) instead of being silently ignored.
+- `processing.converter`, `processing.chunker` and `processing.chunker_type` are constrained to their supported values, so an unsupported one fails at load rather than at first use.
+- Numeric settings carry bounds: sizes, limits, dimensions, token budgets, attempt counts, breaker thresholds and `min_chunks` must be positive; retention, delays, intervals and cooldowns non-negative; `doctor.duplicates.similarity_threshold` within 0-1; `ingester.api.port` within 0-65535 (0 keeps its OS-assigned meaning); `ingester.workers.worker_count` allows 0 for an API-and-reaper-only process.
+- A configured reranker whose optional dependency is missing raises instead of silently disabling reranking, and names the extra to install (`uv pip install 'haiku.rag-slim[cohere]'`). A failure raised from inside an installed dependency propagates untouched rather than being reported as a missing package.
 - Multi-table writes (document create, update, batch import, cascade delete) go through `Store.write_transaction()`. Rollback restores in `RESTORE_TABLE_ORDER` and is shielded from cancellation, so a cancelled write rolls back instead of committing part of itself. `Store.restore_table_versions()` is removed.
 - Search enrichment, the multimodal reranker's picture fetch, and context expansion each issue a fixed number of `document_items` queries regardless of how many documents a result set spans, instead of one set per document. `expand_with_items` takes the items to expand from rather than fetching them, and `DocumentItemRepository` gains `resolve_refs_grouped`, `get_items_in_ranges`, `get_pictures_grouped` and `get_caption_picture_refs_grouped`. The superseded methods are removed: `resolve_refs`, `get_items_in_range`, `get_caption_picture_refs`, `get_text_for_refs` and `get_all_items_grouped`. `get_pictures_grouped` returns each picture's text alongside its bytes under `with_text`, off by default so the reranker's blob fetch does not read a column it discards.
 - Eval judge pinned to `qwen3.8`: `DEFAULT_JUDGE_MODEL` is `ollama:qwen3.8`, and the reference configs use `Inferact/Qwen3.8-27B-NVFP4` with `extra_body.chat_template_kwargs.reasoning_effort: low`. Results in `docs/benchmarks.md` were judged by `Qwen3.6-35B-A3B-NVFP4` and are not re-judged.

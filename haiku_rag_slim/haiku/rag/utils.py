@@ -2,7 +2,7 @@ import math
 import sys
 from importlib import metadata
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 from packaging.version import Version, parse
 
@@ -428,6 +428,21 @@ async def _render_picture(
     except Exception:
         return None
     return RichImage(pil)
+
+
+def raise_missing_extra(module: str, extra: str, exc: ModuleNotFoundError) -> NoReturn:
+    """Report `module` as a missing optional dependency, naming its extra.
+
+    Re-raises `exc` untouched when the failure came from inside an installed
+    package rather than from `module` itself, so a broken transitive import is
+    not misreported as "not installed".
+    """
+    if exc.name != module:
+        raise exc
+    raise ImportError(
+        f"{module} is not installed. Install it with "
+        f"`uv pip install 'haiku.rag-slim[{extra}]'`."
+    ) from exc
 
 
 def get_default_data_dir() -> Path:
