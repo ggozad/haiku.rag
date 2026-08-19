@@ -19,6 +19,7 @@ from haiku.rag.client.documents import (
 )
 from haiku.rag.config import Config
 from haiku.rag.embeddings import EmbedderWrapper
+from haiku.rag.ingester.sources.base import FetchResult
 from haiku.rag.store.compression import decompress_json
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
@@ -442,6 +443,32 @@ async def test_client_create_document_from_directory(temp_db_path):
             assert any("doc2.md" in uri for uri in uris)
             assert any("doc3.py" in uri for uri in uris)
             assert not any("unsupported.xyz" in uri for uri in uris)
+
+
+@pytest.mark.vcr()
+async def test_directory_ingest_skips_symlinks_escaping_the_tree(temp_db_path):
+    """A symlinked file resolving outside the named directory is not ingested;
+    one resolving inside it is. Matches FSSource.discover."""
+    import os
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "tree"
+            outside = Path(temp_dir) / "outside"
+            root.mkdir()
+            outside.mkdir()
+
+            (root / "real.txt").write_text("Inside the tree.")
+            (outside / "secret.txt").write_text("Outside the tree.")
+            os.symlink(outside / "secret.txt", root / "escape.txt")
+            os.symlink(root / "real.txt", root / "inside_link.txt")
+
+            result = await client.create_document_from_source(root)
+
+            assert isinstance(result, list)
+            uris = sorted(uri for doc in result if (uri := doc.uri))
+            assert not any("secret" in uri or "escape" in uri for uri in uris)
+            assert any("real.txt" in uri for uri in uris)
 
 
 @pytest.mark.vcr()
@@ -2406,6 +2433,74 @@ def test_check_source_accessible_file_uri(tmp_path):
 
     assert check_source_accessible(existing.as_uri()) is True
     assert check_source_accessible((tmp_path / "gone.txt").as_uri()) is False
+
+
+class _CountingSource:
+    """A real Source over one in-memory document that counts its closes."""
+
+    def __init__(self, uri: str, body: bytes) -> None:
+        self.source_id = "counting"
+        self.supported_extensions = None
+        self.max_file_size = None
+        self._uri = uri
+        self._body = body
+        self.closes = 0
+
+    def supports(self, uri: str) -> bool:
+        return uri == self._uri
+
+    async def head(self, uri: str) -> str | None:
+        return "v1"
+
+    async def aclose(self) -> None:
+        self.closes += 1
+
+    async def fetch(self, uri: str) -> "FetchResult":
+        import hashlib
+
+        return FetchResult(
+            uri=uri,
+            body=self._body,
+            content_type="text/markdown",
+            content_hash=hashlib.md5(self._body).hexdigest(),
+            revision="v1",
+        )
+
+    def discover(self, since=None, *, known_uris=None):
+        raise NotImplementedError
+
+
+@pytest.mark.vcr()
+async def test_adhoc_source_is_closed_after_ingest(temp_db_path, monkeypatch):
+    """An ad-hoc fetcher is built for this one call, so this call has to close
+    it — HTTP and WebDAV adapters hold an httpx connection pool."""
+    from haiku.rag.ingester import sources as sources_module
+
+    uri = "https://example.com/counting.md"
+    fetcher = _CountingSource(uri, b"# Counting\n\nAd-hoc fetched body.")
+    monkeypatch.setattr(
+        sources_module, "resolve_adhoc_fetcher", lambda *a, **kw: fetcher
+    )
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document_from_source(uri)
+        assert not isinstance(doc, list)
+
+    assert fetcher.closes == 1
+
+
+@pytest.mark.vcr()
+async def test_configured_source_is_not_closed_after_ingest(temp_db_path):
+    """A source handed in by the caller (the ingester's long-lived pool) is not
+    ours to close: closing it would tear down the pool mid-run."""
+    uri = "https://example.com/configured.md"
+    fetcher = _CountingSource(uri, b"# Configured\n\nCaller-owned body.")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document_from_source(uri, sources=[fetcher])
+        assert not isinstance(doc, list)
+
+    assert fetcher.closes == 0
 
 
 def _bbox_doc(*, with_page_image: bool, pages: tuple[int, ...] = (1,)):

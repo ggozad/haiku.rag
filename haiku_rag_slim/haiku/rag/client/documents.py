@@ -726,6 +726,14 @@ async def create_document_from_source(
             documents: list[Document] = []
             filter = FileFilter()
             for child in local_path.rglob("*"):
+                # rglob does not recurse into symlinked directories, but it does
+                # yield symlinked files. Skip the ones resolving outside the
+                # directory the caller named, as FSSource.discover does.
+                if child.is_symlink():
+                    resolved = child.resolve(strict=False)
+                    if not resolved.is_relative_to(local_path.resolve()):
+                        continue
+                    child = resolved
                 if child.is_file() and filter.include_file(str(child)):
                     doc = await create_document_from_source(
                         client,
@@ -768,80 +776,91 @@ async def create_document_from_source(
             source_str, sources=sources, storage_options=storage_options
         )
 
-    # The stored URI is what we look up + persist by. For an explicit uri
-    # override, use it as-is. For a file:// input the source string is
-    # already canonical (URL-encoded); round-tripping via Path.as_uri()
-    # would double-encode any escapes like %5B. For bare paths, canonicalize.
-    if uri is not None:
-        stored_uri = uri
-    elif parsed_url.scheme == "file":
-        stored_uri = source_str
-    elif parsed_url.scheme == "":
-        stored_uri = Path(source_str).absolute().as_uri()
-    else:
-        stored_uri = source_str
+    # A fetcher built for this call holds its own httpx pool (HTTP, WebDAV) and
+    # has to be closed here. One handed in through `sources` belongs to the
+    # caller: the ingester keeps its sources open across jobs.
+    owns_fetcher = all(fetcher is not configured for configured in sources or ())
 
-    existing_doc = await client.get_document_by_uri(stored_uri)
+    try:
+        # The stored URI is what we look up + persist by. For an explicit uri
+        # override, use it as-is. For a file:// input the source string is
+        # already canonical (URL-encoded); round-tripping via Path.as_uri()
+        # would double-encode any escapes like %5B. For bare paths, canonicalize.
+        if uri is not None:
+            stored_uri = uri
+        elif parsed_url.scheme == "file":
+            stored_uri = source_str
+        elif parsed_url.scheme == "":
+            stored_uri = Path(source_str).absolute().as_uri()
+        else:
+            stored_uri = source_str
 
-    # Cheap revision-based short-circuit: only worth a HEAD when we have a
-    # stored revision to compare against. All sources persist their native
-    # revision (mtime_ns for FS, ETag for S3, ETag/Last-Modified for HTTP)
-    # under the canonical "source_revision" metadata key.
-    stored_revision = (
-        (existing_doc.metadata or {}).get("source_revision") if existing_doc else None
-    )
-    if existing_doc and stored_revision and not force:
-        current_revision = await fetcher.head(source_str)
-        if current_revision == stored_revision:
+        existing_doc = await client.get_document_by_uri(stored_uri)
+
+        # Cheap revision-based short-circuit: only worth a HEAD when we have a
+        # stored revision to compare against. All sources persist their native
+        # revision (mtime_ns for FS, ETag for S3, ETag/Last-Modified for HTTP)
+        # under the canonical "source_revision" metadata key.
+        stored_revision = (
+            (existing_doc.metadata or {}).get("source_revision")
+            if existing_doc
+            else None
+        )
+        if existing_doc and stored_revision and not force:
+            current_revision = await fetcher.head(source_str)
+            if current_revision == stored_revision:
+                return await _refresh_doc_metadata(
+                    client,
+                    existing_doc,
+                    title=title,
+                    user_metadata=metadata,
+                    source_metadata=None,
+                )
+
+        with logfire.span("document.fetch", uri=source_str) as fetch_span:
+            result = await fetcher.fetch(source_str)
+            fetch_span.set_attribute("bytes", len(result.body))
+            fetch_span.set_attribute("content_hash", result.content_hash)
+
+        provider_metadata = await _provider_metadata(
+            metadata_provider, source_id or fetcher.source_id, source_str, result
+        )
+        user_metadata = {**metadata, **provider_metadata}
+
+        # MD5 short-circuit: the bytes are unchanged even if the revision wasn't.
+        # Refresh the source-derived metadata (revision may have rolled) but skip
+        # convert/embed/store entirely.
+        if (
+            existing_doc
+            and not force
+            and existing_doc.metadata.get("md5") == result.content_hash
+        ):
+            source_meta: dict = {
+                "content_type": result.content_type,
+                "md5": result.content_hash,
+                **result.extra_metadata,
+            }
+            if result.revision is not None:
+                source_meta["source_revision"] = result.revision
             return await _refresh_doc_metadata(
                 client,
                 existing_doc,
                 title=title,
-                user_metadata=metadata,
-                source_metadata=None,
+                user_metadata=user_metadata,
+                source_metadata=source_meta,
             )
 
-    with logfire.span("document.fetch", uri=source_str) as fetch_span:
-        result = await fetcher.fetch(source_str)
-        fetch_span.set_attribute("bytes", len(result.body))
-        fetch_span.set_attribute("content_hash", result.content_hash)
-
-    provider_metadata = await _provider_metadata(
-        metadata_provider, source_id or fetcher.source_id, source_str, result
-    )
-    user_metadata = {**metadata, **provider_metadata}
-
-    # MD5 short-circuit: the bytes are unchanged even if the revision wasn't.
-    # Refresh the source-derived metadata (revision may have rolled) but skip
-    # convert/embed/store entirely.
-    if (
-        existing_doc
-        and not force
-        and existing_doc.metadata.get("md5") == result.content_hash
-    ):
-        source_meta: dict = {
-            "content_type": result.content_type,
-            "md5": result.content_hash,
-            **result.extra_metadata,
-        }
-        if result.revision is not None:
-            source_meta["source_revision"] = result.revision
-        return await _refresh_doc_metadata(
+        return await _ingest_fetch_result(
             client,
-            existing_doc,
+            result,
             title=title,
             user_metadata=user_metadata,
-            source_metadata=source_meta,
+            stored_uri=stored_uri,
+            existing_doc=existing_doc,
         )
-
-    return await _ingest_fetch_result(
-        client,
-        result,
-        title=title,
-        user_metadata=user_metadata,
-        stored_uri=stored_uri,
-        existing_doc=existing_doc,
-    )
+    finally:
+        if owns_fetcher:
+            await fetcher.aclose()
 
 
 async def update_document(
