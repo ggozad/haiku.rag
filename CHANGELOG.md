@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.75.0] - 2026-08-19
+
 ### Added
 
 - `evaluations run --filter/-f CLAUSE`: SQL `WHERE` clause over document columns, applied to the retrieval benchmark's searches and to every capability search during QA. Recorded as `document_filter` in experiment metadata.
@@ -2156,7 +2158,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.74.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.75.0...HEAD
+[0.75.0]: https://github.com/ggozad/haiku.rag/compare/0.74.0...0.75.0
 [0.74.0]: https://github.com/ggozad/haiku.rag/compare/0.73.0...0.74.0
 [0.73.0]: https://github.com/ggozad/haiku.rag/compare/0.72.1...0.73.0
 [0.72.1]: https://github.com/ggozad/haiku.rag/compare/0.72.0...0.72.1
