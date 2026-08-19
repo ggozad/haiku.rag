@@ -44,16 +44,16 @@ logger = logging.getLogger(__name__)
 config_path = Path("/app/haiku.rag.yaml")
 if config_path.exists():
     yaml_data = load_yaml_config(config_path)
-    Config = AppConfig.model_validate(yaml_data)
+    config = AppConfig.model_validate(yaml_data)
 else:
-    Config = AppConfig()
+    config = AppConfig()
 
 # Get DB path from environment
 db_path_str = os.getenv("DB_PATH", "haiku_rag.lancedb")
 db_path = Path(db_path_str)
 
 logger.info(f"Database path: {db_path}")
-logger.info(f"QA Provider: {Config.qa.model.provider}, Model: {Config.qa.model.name}")
+logger.info(f"QA Provider: {config.qa.model.provider}, Model: {config.qa.model.name}")
 
 # Only HaikuRAG client is a singleton (expensive to create)
 _client: HaikuRAG | None = None
@@ -71,7 +71,7 @@ async def get_client() -> HaikuRAG:
     if _client is None:
         async with _client_lock:
             if _client is None:
-                client = HaikuRAG(db_path=db_path, config=Config, create=True)
+                client = HaikuRAG(db_path=db_path, config=config, create=True)
                 await client.__aenter__()
                 _client = client
     return _client
@@ -82,10 +82,10 @@ class AppDeps:
     state: dict[str, Any] = field(default_factory=dict)
 
 
-capability = create_capability(db_path=db_path, config=Config, defer_loading=False)
+capability = create_capability(db_path=db_path, config=config, defer_loading=False)
 
 agent = Agent(
-    get_model(Config.qa.model, Config),
+    get_model(config.qa.model, config),
     instructions=AGENT_PREAMBLE,
     # Conversations here are multi-turn, so earlier questions are reduced to the
     # evidence they cited rather than carried whole, and every answer declares
@@ -136,8 +136,8 @@ async def health_check(_: Request) -> JSONResponse:
     return JSONResponse(
         {
             "status": "healthy",
-            "qa_provider": Config.qa.model.provider,
-            "qa_model": Config.qa.model.name,
+            "qa_provider": config.qa.model.provider,
+            "qa_model": config.qa.model.name,
             "db_path": str(db_path),
             "db_exists": db_path.exists(),
         }

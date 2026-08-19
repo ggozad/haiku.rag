@@ -1,10 +1,11 @@
-from haiku.rag.config import AppConfig, Config
+from haiku.rag.config import AppConfig, get_config
 from haiku.rag.reranking.base import RerankerBase
 
 
-def get_reranker(config: AppConfig = Config) -> RerankerBase | None:
+def get_reranker(config: AppConfig | None = None) -> RerankerBase | None:
     """Build the configured reranker, or None if reranking is disabled or its
     optional dependency is not installed."""
+    config = config if config is not None else get_config()
     model = config.reranking.model
     if model is None:
         return None
@@ -16,7 +17,7 @@ def get_reranker(config: AppConfig = Config) -> RerankerBase | None:
         if model.provider == "cohere":
             from haiku.rag.reranking.cohere import CohereReranker
 
-            return CohereReranker()
+            return CohereReranker(model.name)
 
         if model.provider == "vllm":
             if not model.base_url:

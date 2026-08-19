@@ -644,10 +644,10 @@ class TestMCPClientLifetime:
         """Validation is unchanged: same-dimension identity drift warns in
         read-only mode and raises in writable mode. The MCP server no longer
         opts out of it for deletion."""
-        from haiku.rag.config import Config
+        from haiku.rag.config import get_config
         from haiku.rag.store.repositories.settings import ConfigMismatchError
 
-        drifted = Config.model_copy(deep=True)
+        drifted = get_config().model_copy(deep=True)
         drifted.embeddings.model.name = "a-different-model"
 
         async with create_mcp_server(

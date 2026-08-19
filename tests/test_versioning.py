@@ -271,10 +271,10 @@ async def test_vacuum_with_retention_threshold(temp_db_path):
 @pytest.mark.vcr()
 async def test_vacuum_completes_before_context_exit(temp_db_path, monkeypatch):
     """Test that background vacuum completes when context manager exits."""
-    from haiku.rag.config import Config
+    from haiku.rag.config import get_config
 
     # Set aggressive vacuum retention for this test
-    monkeypatch.setattr(Config.storage, "vacuum_retention_seconds", 0)
+    monkeypatch.setattr(get_config().storage, "vacuum_retention_seconds", 0)
 
     async with HaikuRAG(db_path=temp_db_path, create=True) as client:
         # Create multiple documents - each creation triggers automatic vacuum with retention=0
@@ -302,9 +302,9 @@ async def test_aexit_awaits_background_vacuum(temp_db_path, monkeypatch):
     it yet when __aexit__ runs. Simply acquiring the vacuum lock (which is free until
     the task actually starts) would let close() proceed before vacuum runs.
     """
-    from haiku.rag.config import Config
+    from haiku.rag.config import get_config
 
-    monkeypatch.setattr(Config.storage, "auto_vacuum", True)
+    monkeypatch.setattr(get_config().storage, "auto_vacuum", True)
 
     vacuum_started = asyncio.Event()
     vacuum_completed = asyncio.Event()
@@ -339,9 +339,9 @@ async def test_aexit_awaits_all_background_vacuums(temp_db_path, monkeypatch):
     __aexit__ awaits the fast no-op B and closes the connection while Task A
     is still running.
     """
-    from haiku.rag.config import Config
+    from haiku.rag.config import get_config
 
-    monkeypatch.setattr(Config.storage, "auto_vacuum", True)
+    monkeypatch.setattr(get_config().storage, "auto_vacuum", True)
 
     first_vacuum_completed = asyncio.Event()
 
@@ -378,10 +378,10 @@ async def test_aexit_awaits_all_background_vacuums(temp_db_path, monkeypatch):
 @pytest.mark.vcr()
 async def test_auto_vacuum_disabled_skips_vacuum(temp_db_path, monkeypatch):
     """Test that auto_vacuum=False prevents automatic vacuum after operations."""
-    from haiku.rag.config import Config
+    from haiku.rag.config import get_config
 
     # Disable auto-vacuum
-    monkeypatch.setattr(Config.storage, "auto_vacuum", False)
+    monkeypatch.setattr(get_config().storage, "auto_vacuum", False)
 
     async with HaikuRAG(db_path=temp_db_path, create=True) as client:
         # Create multiple documents
@@ -404,11 +404,11 @@ async def test_auto_vacuum_disabled_skips_vacuum(temp_db_path, monkeypatch):
 @pytest.mark.vcr()
 async def test_auto_vacuum_enabled_triggers_vacuum(temp_db_path, monkeypatch):
     """Test that auto_vacuum=True (default) triggers vacuum after operations."""
-    from haiku.rag.config import Config
+    from haiku.rag.config import get_config
 
     # Enable auto-vacuum with aggressive retention
-    monkeypatch.setattr(Config.storage, "auto_vacuum", True)
-    monkeypatch.setattr(Config.storage, "vacuum_retention_seconds", 0)
+    monkeypatch.setattr(get_config().storage, "auto_vacuum", True)
+    monkeypatch.setattr(get_config().storage, "vacuum_retention_seconds", 0)
 
     async with HaikuRAG(db_path=temp_db_path, create=True) as client:
         # Create multiple documents

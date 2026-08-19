@@ -5,7 +5,7 @@ import httpx
 import pytest
 
 from haiku.rag.client.downloads import download_models
-from haiku.rag.config import Config
+from haiku.rag.config import get_config
 from haiku.rag.config.models import ModelConfig
 
 
@@ -39,7 +39,7 @@ async def test_download_models_ollama_connect_error(mock_to_thread):
         with pytest.raises(
             ConnectionError, match="Cannot connect to Ollama"
         ) as exc_info:
-            async for _ in download_models(Config):
+            async for _ in download_models(get_config()):
                 pass
 
         assert "ollama serve" in str(exc_info.value)
@@ -74,7 +74,7 @@ async def test_download_models_ollama_pulls_models(mock_to_thread):
         return_value=_mock_httpx_client(mock_stream),
     ):
         events = []
-        async for progress in download_models(Config):
+        async for progress in download_models(get_config()):
             events.append(progress)
 
     # Default config has embeddings=qwen3-embedding:4b, qa=gpt-oss

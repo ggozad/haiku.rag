@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pydantic import ValidationError
 
-from haiku.rag.config import Config
+from haiku.rag.config import get_config
 from haiku.rag.config.models import AppConfig, LanceDBConfig
 from haiku.rag.store.engine import ConnectionMode, Store, connect_lancedb
 
@@ -139,16 +139,16 @@ class TestStoreConnectionMode:
     async def test_store_connection_mode_cloud(self, temp_db_path):
         async with Store(temp_db_path, create=True) as store:
             with (
-                patch.object(Config.lancedb, "uri", "db://test-database"),
-                patch.object(Config.lancedb, "api_key", "test-api-key"),
-                patch.object(Config.lancedb, "region", "us-east-1"),
+                patch.object(get_config().lancedb, "uri", "db://test-database"),
+                patch.object(get_config().lancedb, "api_key", "test-api-key"),
+                patch.object(get_config().lancedb, "region", "us-east-1"),
             ):
                 assert store._connection_mode == ConnectionMode.CLOUD
 
     @pytest.mark.asyncio
     async def test_store_connection_mode_object_storage(self, temp_db_path):
         async with Store(temp_db_path, create=True) as store:
-            with patch.object(Config.lancedb, "uri", "s3://bucket/path"):
+            with patch.object(get_config().lancedb, "uri", "s3://bucket/path"):
                 assert store._connection_mode == ConnectionMode.OBJECT_STORAGE
 
 
@@ -157,9 +157,9 @@ class TestVacuumByConnectionMode:
     async def test_cloud_skips_vacuum(self, temp_db_path):
         async with Store(temp_db_path, create=True) as store:
             with (
-                patch.object(Config.lancedb, "uri", "db://test-database"),
-                patch.object(Config.lancedb, "api_key", "test-api-key"),
-                patch.object(Config.lancedb, "region", "us-east-1"),
+                patch.object(get_config().lancedb, "uri", "db://test-database"),
+                patch.object(get_config().lancedb, "api_key", "test-api-key"),
+                patch.object(get_config().lancedb, "region", "us-east-1"),
             ):
                 with patch.object(
                     store.chunks_table, "optimize", new_callable=AsyncMock
@@ -170,7 +170,7 @@ class TestVacuumByConnectionMode:
     @pytest.mark.asyncio
     async def test_object_storage_runs_vacuum(self, temp_db_path):
         async with Store(temp_db_path, create=True) as store:
-            with patch.object(Config.lancedb, "uri", "s3://bucket/path"):
+            with patch.object(get_config().lancedb, "uri", "s3://bucket/path"):
                 with patch.object(
                     store.chunks_table, "optimize", new_callable=AsyncMock
                 ) as mock_optimize:
@@ -180,7 +180,7 @@ class TestVacuumByConnectionMode:
     @pytest.mark.asyncio
     async def test_local_runs_vacuum(self, temp_db_path):
         async with Store(temp_db_path, create=True) as store:
-            with patch.object(Config.lancedb, "uri", ""):
+            with patch.object(get_config().lancedb, "uri", ""):
                 with patch.object(
                     store.chunks_table, "optimize", new_callable=AsyncMock
                 ) as mock_optimize:
@@ -193,9 +193,9 @@ class TestVectorIndexByConnectionMode:
     async def test_cloud_skips_index_creation(self, temp_db_path):
         async with Store(temp_db_path, create=True) as store:
             with (
-                patch.object(Config.lancedb, "uri", "db://test-database"),
-                patch.object(Config.lancedb, "api_key", "test-api-key"),
-                patch.object(Config.lancedb, "region", "us-east-1"),
+                patch.object(get_config().lancedb, "uri", "db://test-database"),
+                patch.object(get_config().lancedb, "api_key", "test-api-key"),
+                patch.object(get_config().lancedb, "region", "us-east-1"),
             ):
                 with patch.object(
                     store.chunks_table, "count_rows", new_callable=AsyncMock
@@ -206,7 +206,7 @@ class TestVectorIndexByConnectionMode:
     @pytest.mark.asyncio
     async def test_object_storage_runs_index_creation(self, temp_db_path):
         async with Store(temp_db_path, create=True) as store:
-            with patch.object(Config.lancedb, "uri", "s3://bucket/path"):
+            with patch.object(get_config().lancedb, "uri", "s3://bucket/path"):
                 with patch.object(
                     store.chunks_table,
                     "count_rows",

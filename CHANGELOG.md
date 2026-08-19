@@ -25,6 +25,7 @@
 
 ### Removed
 
+- `haiku.rag.config.Config`, the eagerly loaded configuration instance. Use `get_config()` for the current global config, or pass an `AppConfig`. Every internal default (`get_embedder`, `get_converter`, `get_chunker`, `get_reranker`, `embed_chunks`, `HaikuRAG`, `Store`, `HaikuRAGApp`, `create_mcp_server`) now takes `config: AppConfig | None = None` and resolves it per call, so `set_config()` reaches them. `RerankerBase._model` no longer defaults to the configured reranker name; `CohereReranker` takes its model name as an argument.
 - `wix` evaluation dataset and its reference config `evaluations/configs/wix.yaml`.
 
 ### Fixed

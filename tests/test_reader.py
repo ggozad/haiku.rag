@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from haiku.rag.config import Config
+from haiku.rag.config import get_config
 from haiku.rag.converters import get_converter
 
 
@@ -19,7 +19,7 @@ async def test_code_file_wrapped_in_code_block():
         f.flush()
         temp_path = Path(f.name)
 
-        converter = get_converter(Config)
+        converter = get_converter(get_config())
         document = await converter.convert_file(temp_path)
         result = document.export_to_markdown()
 

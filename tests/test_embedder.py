@@ -5,9 +5,9 @@ import pytest
 
 from haiku.rag.config import (
     AppConfig,
-    Config,
     EmbeddingModelConfig,
     EmbeddingsConfig,
+    get_config,
 )
 from haiku.rag.embeddings import (
     EmbedderWrapper,
@@ -197,7 +197,7 @@ async def test_embed_chunks_basic(allow_model_requests):
         ),
     ]
 
-    embedded_chunks = await embed_chunks(chunks, get_embedder(Config))
+    embedded_chunks = await embed_chunks(chunks, get_embedder(get_config()))
 
     assert len(embedded_chunks) == 2
     # Check that all original fields are preserved
@@ -216,7 +216,7 @@ async def test_embed_chunks_basic(allow_model_requests):
 async def test_embed_chunks_returns_new_objects(allow_model_requests):
     """Test that embed_chunks returns new Chunk objects (immutable pattern)."""
     original = Chunk(id="orig", content="Test content.")
-    embedded = await embed_chunks([original], get_embedder(Config))
+    embedded = await embed_chunks([original], get_embedder(get_config()))
 
     # Original should be unchanged
     assert original.embedding is None
@@ -302,7 +302,7 @@ async def test_embed_chunks_preserves_all_fields(allow_model_requests):
         document_meta={"author": "Test"},
     )
 
-    embedded = await embed_chunks([chunk], get_embedder(Config))
+    embedded = await embed_chunks([chunk], get_embedder(get_config()))
 
     assert embedded[0].id == "test-id"
     assert embedded[0].document_id == "doc-id"

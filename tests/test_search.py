@@ -1,14 +1,16 @@
 import pytest
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.config import Config
+from haiku.rag.config import get_config
 from haiku.rag.store.models import SearchResult
 
 
 @pytest.mark.vcr()
 async def test_search_qa_corpus(qa_corpus: list[dict[str, str]], temp_db_path):
     """Test that documents can be found by searching with their associated questions."""
-    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+    async with HaikuRAG(
+        db_path=temp_db_path, config=get_config(), create=True
+    ) as client:
         # Load unique documents (limited to 10)
         seen_documents = set()
         documents = []
@@ -57,7 +59,9 @@ async def test_search_qa_corpus(qa_corpus: list[dict[str, str]], temp_db_path):
 @pytest.mark.vcr()
 async def test_search_chunk_includes_document_provenance(temp_db_path):
     """Test that raw chunk search results include document URI, metadata, and ID."""
-    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+    async with HaikuRAG(
+        db_path=temp_db_path, config=get_config(), create=True
+    ) as client:
         # Create a document with URI and metadata but no title
         created_document = await client.create_document(
             content="This is a test document with some content for searching.",
@@ -92,7 +96,9 @@ async def test_search_chunk_includes_document_provenance(temp_db_path):
 @pytest.mark.vcr()
 async def test_search_score_types(temp_db_path):
     """Test that different search types return appropriate score ranges."""
-    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+    async with HaikuRAG(
+        db_path=temp_db_path, config=get_config(), create=True
+    ) as client:
         # Create multiple documents with different content
         documents_content = [
             "Machine learning algorithms are powerful tools for data analysis and pattern recognition.",
@@ -159,7 +165,9 @@ async def test_search_score_types(temp_db_path):
 @pytest.mark.vcr()
 async def test_search_returns_search_result(temp_db_path):
     """Test that client.search() returns SearchResult with provenance info."""
-    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+    async with HaikuRAG(
+        db_path=temp_db_path, config=get_config(), create=True
+    ) as client:
         await client.create_document(
             content="Machine learning models can classify images with high accuracy.",
             uri="https://example.com/ml.html",
@@ -188,7 +196,9 @@ async def test_search_graceful_degradation(temp_db_path):
     """Test search works when docling data is unavailable."""
     from haiku.rag.store.models import Chunk
 
-    async with HaikuRAG(db_path=temp_db_path, config=Config, create=True) as client:
+    async with HaikuRAG(
+        db_path=temp_db_path, config=get_config(), create=True
+    ) as client:
         # Import document with custom chunks (no docling document)
         custom_chunks = [
             Chunk(content="Custom chunk without docling metadata", metadata={}),

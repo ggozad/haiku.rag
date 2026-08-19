@@ -205,9 +205,9 @@ async def search_client(temp_db_path):
 @pytest.fixture
 def search_config():
     """Default AppConfig for search tests."""
-    from haiku.rag.config import Config
+    from haiku.rag.config import get_config
 
-    return Config
+    return get_config()
 
 
 def _png_b64():

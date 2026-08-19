@@ -17,7 +17,7 @@ from haiku.rag.client.documents import (
     _write_fetch_body,
     check_source_accessible,
 )
-from haiku.rag.config import Config
+from haiku.rag.config import get_config
 from haiku.rag.embeddings import EmbedderWrapper
 from haiku.rag.ingester.sources.base import FetchResult
 from haiku.rag.store.compression import decompress_json
@@ -813,7 +813,7 @@ async def test_client_import_document_with_custom_chunks(temp_db_path):
             Chunk(
                 content="This is the second chunk",
                 metadata={"custom": "metadata2"},
-                embedding=[0.1] * Config.embeddings.model.vector_dim,
+                embedding=[0.1] * get_config().embeddings.model.vector_dim,
                 order=1,
             ),  # With embedding
             Chunk(
@@ -856,7 +856,7 @@ def _docling_doc(name: str, text: str):
 
 def _import(name: str, text: str, **overrides) -> "DocumentImport":
     """Build a DocumentImport with one pre-embedded chunk (no embedder call)."""
-    dim = Config.embeddings.model.vector_dim
+    dim = get_config().embeddings.model.vector_dim
     chunk = Chunk(content=text, embedding=[0.1] * dim, order=0)
     return DocumentImport(
         docling_document=_docling_doc(name, text),
@@ -868,7 +868,7 @@ def _import(name: str, text: str, **overrides) -> "DocumentImport":
 async def test_client_import_documents_single_version_per_table(temp_db_path):
     """import_documents writes documents/chunks/document_items once for the
     whole batch (issue #287)."""
-    config = Config.model_copy(deep=True)
+    config = get_config().model_copy(deep=True)
     config.storage.auto_vacuum = False
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
@@ -902,7 +902,7 @@ async def test_client_import_documents_single_version_per_table(temp_db_path):
 
 async def test_client_import_documents_rolls_back_on_failure(temp_db_path):
     """A failure mid-batch restores all tables: nothing is persisted."""
-    dim = Config.embeddings.model.vector_dim
+    dim = get_config().embeddings.model.vector_dim
 
     async with HaikuRAG(temp_db_path, create=True) as client:
         good = _import("good", "Good document body", uri="mem://good")
@@ -943,7 +943,7 @@ async def test_client_import_documents_batches_embeddings(temp_db_path):
     """Chunks missing embeddings are embedded in one pass across the whole
     batch, not one embedder call per document. Duplicate chunk texts across
     documents keep their per-document embeddings."""
-    dim = Config.embeddings.model.vector_dim
+    dim = get_config().embeddings.model.vector_dim
     embedder = _CountingEmbedder(dim)
 
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -977,7 +977,7 @@ async def test_client_import_documents_batches_embeddings(temp_db_path):
 async def test_client_import_documents_mixed_embeddings(temp_db_path):
     """Pre-embedded chunks keep their vectors; only the unembedded ones go
     through the embedder, in one batch."""
-    dim = Config.embeddings.model.vector_dim
+    dim = get_config().embeddings.model.vector_dim
     embedder = _CountingEmbedder(dim)
 
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -1024,8 +1024,8 @@ async def test_client_update_document_replaces_rows_with_bounded_versions(
 
     auto_vacuum is off: its writes would land inside the measured window.
     """
-    dim = Config.embeddings.model.vector_dim
-    config = Config.model_copy(deep=True)
+    dim = get_config().embeddings.model.vector_dim
+    config = get_config().model_copy(deep=True)
     config.storage.auto_vacuum = False
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
@@ -1076,8 +1076,8 @@ async def test_metadata_only_update_does_not_advance_documents_table(temp_db_pat
     live in document_meta, so the documents table version must stay frozen while
     only metadata/title change — and reads must still hydrate the full Document.
     """
-    dim = Config.embeddings.model.vector_dim
-    config = Config.model_copy(deep=True)
+    dim = get_config().embeddings.model.vector_dim
+    config = get_config().model_copy(deep=True)
     config.storage.auto_vacuum = False
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
@@ -1121,7 +1121,7 @@ async def test_metadata_only_update_does_not_advance_documents_table(temp_db_pat
 async def test_delete_marks_vacuum_dirty(temp_db_path):
     """A delete adds tombstone/table versions, so it must enter the auto-vacuum
     lifecycle — otherwise a delete-only run closes without a final vacuum."""
-    dim = Config.embeddings.model.vector_dim
+    dim = get_config().embeddings.model.vector_dim
     async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.import_document(
             _docling_doc("d", "body"),
@@ -1138,8 +1138,8 @@ async def test_delete_marks_vacuum_dirty(temp_db_path):
 async def test_delete_rolls_back_on_partial_failure(temp_db_path, monkeypatch):
     """A multi-table delete is atomic: if a later table delete fails, the write
     lock + version restore bring every table back, leaving no orphaned rows."""
-    dim = Config.embeddings.model.vector_dim
-    config = Config.model_copy(deep=True)
+    dim = get_config().embeddings.model.vector_dim
+    config = get_config().model_copy(deep=True)
     config.storage.auto_vacuum = False
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
@@ -1175,8 +1175,8 @@ async def test_cascade_delete_is_atomic(temp_db_path, monkeypatch):
     """Deleting a parent cascades to children under one lock + snapshot. If any
     delete in the subtree fails, the whole subtree is restored — a child isn't
     left deleted while its parent survives."""
-    dim = Config.embeddings.model.vector_dim
-    config = Config.model_copy(deep=True)
+    dim = get_config().embeddings.model.vector_dim
+    config = get_config().model_copy(deep=True)
     config.storage.auto_vacuum = False
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
@@ -2390,7 +2390,7 @@ async def test_metadata_only_update_waits_for_write_lock(temp_db_path):
     create_tag's version snapshot and its per-table tag creation)."""
     import asyncio
 
-    dim = Config.embeddings.model.vector_dim
+    dim = get_config().embeddings.model.vector_dim
     docling_doc = DoclingDocument(name="d")
     docling_doc.add_text(label=DocItemLabel.TEXT, text="body")
 

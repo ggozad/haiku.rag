@@ -3,7 +3,7 @@ import importlib.util
 import pytest
 from pydantic_ai.models.openai import OpenAIChatModel
 
-from haiku.rag.config import Config
+from haiku.rag.config import get_config
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.converters import get_converter
 from haiku.rag.utils import get_model
@@ -20,7 +20,7 @@ async def test_text_to_docling_document():
     """Test text to DoclingDocument conversion."""
     # Test basic text conversion
     simple_text = "This is a simple text document."
-    converter = get_converter(Config)
+    converter = get_converter(get_config())
     doc = await converter.convert_text(simple_text)
 
     # Verify it returns a DoclingDocument
@@ -44,7 +44,7 @@ def hello():
     return True
 ```"""
 
-    converter = get_converter(Config)
+    converter = get_converter(get_config())
     doc = await converter.convert_text(code_text, name="hello.md")
 
     # Verify it's a valid DoclingDocument
@@ -77,7 +77,7 @@ def test():
 
 **Bold text** and *italic text*."""
 
-    converter = get_converter(Config)
+    converter = get_converter(get_config())
     doc = await converter.convert_text(markdown_text, name="test.md")
 
     # Verify it's a DoclingDocument
@@ -95,7 +95,7 @@ def test():
 @pytest.mark.asyncio
 async def test_text_to_docling_document_empty_content():
     """Test text to DoclingDocument conversion with empty content."""
-    converter = get_converter(Config)
+    converter = get_converter(get_config())
     doc = await converter.convert_text("")
 
     # Should still create a valid DoclingDocument
@@ -124,7 +124,7 @@ function saludar() {
 
 Emoji test: 🚀 ✅ 📝"""
 
-    converter = get_converter(Config)
+    converter = get_converter(get_config())
     doc = await converter.convert_text(unicode_text, name="unicode.md")
 
     # Verify it's a DoclingDocument

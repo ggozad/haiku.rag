@@ -10,7 +10,8 @@ except ImportError as e:  # pragma: no cover
 
 
 class CohereReranker(RerankerBase):  # pragma: no cover
-    def __init__(self):
+    def __init__(self, model: str | None = None):
+        self._model = model
         # Cohere SDK reads CO_API_KEY from environment by default
         self._client = cohere.AsyncClientV2()
 

@@ -7,7 +7,7 @@ from pydantic_ai.embeddings.openai import OpenAIEmbeddingModel
 from pydantic_ai.providers.ollama import OllamaProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from haiku.rag.config import AppConfig, Config
+from haiku.rag.config import AppConfig, get_config
 
 if TYPE_CHECKING:
     from PIL import Image as PILImage
@@ -118,7 +118,9 @@ def contextualize(chunks: list["Chunk"]) -> list[str]:
 
 
 async def embed_chunks(
-    chunks: list["Chunk"], embedder: "EmbedderWrapper", config: AppConfig = Config
+    chunks: list["Chunk"],
+    embedder: "EmbedderWrapper",
+    config: AppConfig | None = None,
 ) -> list["Chunk"]:
     """Generate embeddings for chunks, dispatching text vs picture variants.
 
@@ -127,6 +129,7 @@ async def embed_chunks(
     are routed through ``embed_images`` and require a multimodal embedder.
     Vectors land in the original chunk order.
     """
+    config = config if config is not None else get_config()
     if not chunks:
         return []
 
@@ -181,15 +184,16 @@ async def embed_chunks(
     ]
 
 
-def get_embedder(config: AppConfig = Config) -> EmbedderWrapper:
+def get_embedder(config: AppConfig | None = None) -> EmbedderWrapper:
     """Factory function to get the appropriate embedder based on the configuration.
 
     Args:
-        config: Configuration to use. Defaults to global Config.
+        config: Configuration to use. Defaults to the current global config.
 
     Returns:
         An embedder instance configured according to the config.
     """
+    config = config if config is not None else get_config()
     embedding_model = config.embeddings.model
     provider = embedding_model.provider
     model_name = embedding_model.name

@@ -7,7 +7,7 @@ from transformers import AutoTokenizer
 from haiku.rag.chunkers import get_chunker
 from haiku.rag.chunkers.docling_local import DoclingLocalChunker
 from haiku.rag.chunkers.docling_serve import DoclingServeChunker
-from haiku.rag.config import AppConfig, Config
+from haiku.rag.config import AppConfig, get_config
 from haiku.rag.converters import get_converter
 
 
@@ -23,7 +23,7 @@ async def test_local_chunker(qa_corpus: list[dict[str, str]]):
     doc_text = qa_corpus[0]["document_extracted"]
 
     # Convert text to DoclingDocument
-    converter = get_converter(Config)
+    converter = get_converter(get_config())
     doc = await converter.convert_text(doc_text, name="test.md")
 
     chunks = await chunker.chunk(doc)
@@ -79,7 +79,7 @@ async def test_local_chunker_runs_off_event_loop_thread():
         called_from.append(threading.current_thread())
         return original(document)
 
-    converter = get_converter(Config)
+    converter = get_converter(get_config())
     doc = await converter.convert_text("# Hello\n\nWorld", name="test.md")
 
     with patch.object(DoclingLocalChunker, "_chunk_sync", recording_chunk_sync):
@@ -149,7 +149,7 @@ async def test_local_chunker_hierarchical(qa_corpus: list[dict[str, str]]):
     chunker = DoclingLocalChunker(config)
 
     doc_text = qa_corpus[0]["document_extracted"]
-    converter = get_converter(Config)
+    converter = get_converter(get_config())
     doc = await converter.convert_text(doc_text, name="test.md")
 
     chunks = await chunker.chunk(doc)
@@ -180,7 +180,7 @@ async def test_local_chunker_markdown_tables():
 | Value D  | Value E  |
 """
 
-    converter = get_converter(Config)
+    converter = get_converter(get_config())
     doc = await converter.convert_text(markdown_with_table, name="test.md")
 
     # Test with markdown tables enabled
@@ -222,7 +222,7 @@ Second paragraph.
 
 Third paragraph.
 """
-    converter = get_converter(Config)
+    converter = get_converter(get_config())
     doc = await converter.convert_text(sample_md, name="test.md")
 
     chunker = DoclingLocalChunker()
@@ -249,7 +249,7 @@ Here is some background information.
 |----------|----------|
 | Value 1  | Value 2  |
 """
-    converter = get_converter(Config)
+    converter = get_converter(get_config())
     doc = await converter.convert_text(sample_md, name="test.md")
 
     chunker = DoclingLocalChunker()
@@ -347,7 +347,7 @@ class TestDoclingServeChunker:
         mock_client_class.return_value.__aenter__.return_value = mock_client
 
         # Create a simple document
-        converter = get_converter(Config)
+        converter = get_converter(get_config())
         doc = await converter.convert_text("# Test\n\nContent", name="test.md")
 
         chunks = await chunker.chunk(doc)
@@ -371,7 +371,7 @@ class TestDoclingServeChunker:
         mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
         mock_client_class.return_value.__aenter__.return_value = mock_client
 
-        converter = get_converter(Config)
+        converter = get_converter(get_config())
         doc = await converter.convert_text("# Test", name="test.md")
         await chunker.chunk(doc)
 
@@ -394,7 +394,7 @@ class TestDoclingServeChunker:
         mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
         mock_client_class.return_value.__aenter__.return_value = mock_client
 
-        converter = get_converter(Config)
+        converter = get_converter(get_config())
         doc = await converter.convert_text("# Test", name="test.md")
         await chunker.chunk(doc)
 
@@ -422,7 +422,7 @@ class TestDoclingServeChunker:
         mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
         mock_client_class.return_value.__aenter__.return_value = mock_client
 
-        converter = get_converter(Config)
+        converter = get_converter(get_config())
         doc = await converter.convert_text("# Test", name="test.md")
         await chunker.chunk(doc)
 
@@ -453,7 +453,7 @@ class TestDoclingServeChunker:
         mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
         mock_client_class.return_value.__aenter__.return_value = mock_client
 
-        converter = get_converter(Config)
+        converter = get_converter(get_config())
         doc = await converter.convert_text("# Test", name="test.md")
         await chunker.chunk(doc)
 
@@ -476,7 +476,7 @@ class TestDoclingServeChunker:
         mock_client.post.side_effect = httpx.ConnectError("Connection failed")
         mock_client_class.return_value.__aenter__.return_value = mock_client
 
-        converter = get_converter(Config)
+        converter = get_converter(get_config())
         doc = await converter.convert_text("# Test", name="test.md")
 
         with pytest.raises(httpx.ConnectError):
@@ -492,7 +492,7 @@ class TestDoclingServeChunker:
         mock_client.post.side_effect = httpx.TimeoutException("Timeout")
         mock_client_class.return_value.__aenter__.return_value = mock_client
 
-        converter = get_converter(Config)
+        converter = get_converter(get_config())
         doc = await converter.convert_text("# Test", name="test.md")
 
         with pytest.raises(httpx.TimeoutException):
@@ -517,7 +517,7 @@ class TestDoclingServeChunker:
         mock_client.post.return_value = mock_response
         mock_client_class.return_value.__aenter__.return_value = mock_client
 
-        converter = get_converter(Config)
+        converter = get_converter(get_config())
         doc = await converter.convert_text("# Test", name="test.md")
 
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
@@ -545,7 +545,7 @@ class TestDoclingServeChunker:
         mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
         mock_client_class.return_value.__aenter__.return_value = mock_client
 
-        converter = get_converter(Config)
+        converter = get_converter(get_config())
         doc = await converter.convert_text("# Test", name="test.md")
 
         with pytest.raises(ValueError, match="Chunking failed"):
@@ -574,7 +574,7 @@ class TestDoclingServeChunker:
         mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
         mock_client_class.return_value.__aenter__.return_value = mock_client
 
-        converter = get_converter(Config)
+        converter = get_converter(get_config())
         doc = await converter.convert_text("# Test", name="test.md")
 
         chunks = await chunker.chunk(doc)
@@ -612,7 +612,7 @@ class TestDoclingServeChunker:
         mock_client_class.return_value.__aenter__.return_value = mock_client
 
         # Create a document with texts and tables that match the mocked refs
-        converter = get_converter(Config)
+        converter = get_converter(get_config())
         doc = await converter.convert_text(
             """# Chapter 1
 
@@ -700,7 +700,7 @@ async def test_local_and_serve_chunkers_produce_same_output(doclaynet_first_page
     from haiku.rag.converters.docling_serve import DoclingServeConverter
 
     # Use docling-serve to convert the PDF (ensures same conversion for both chunkers)
-    converter = DoclingServeConverter(Config)
+    converter = DoclingServeConverter(get_config())
     pdf_path = doclaynet_first_page_pdf
     doc = await converter.convert_file(pdf_path)
 

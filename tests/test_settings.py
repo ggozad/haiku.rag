@@ -2,7 +2,7 @@ import logging
 
 import pytest
 
-from haiku.rag.config import AppConfig, Config
+from haiku.rag.config import AppConfig, get_config
 from haiku.rag.store.repositories.settings import ConfigMismatchError
 
 
@@ -16,7 +16,7 @@ async def test_settings_table_populated_on_store_init(temp_db_path):
         settings_repo = SettingsRepository(store)
 
         db_settings = await settings_repo.get_current_settings()
-        config_dict = Config.model_dump(mode="json")
+        config_dict = get_config().model_dump(mode="json")
 
         # Remove version from db_settings since it's added automatically
         db_settings_without_version = {
@@ -34,14 +34,14 @@ async def test_settings_save_and_retrieve(temp_db_path):
     async with Store(temp_db_path, create=True) as store:
         settings_repo = SettingsRepository(store)
 
-        original_chunk_size = Config.processing.chunk_size
-        Config.processing.chunk_size = 2 * original_chunk_size
+        original_chunk_size = get_config().processing.chunk_size
+        get_config().processing.chunk_size = 2 * original_chunk_size
 
         await settings_repo.save_current_settings()
         retrieved_settings = await settings_repo.get_current_settings()
         assert retrieved_settings["processing"]["chunk_size"] == 2 * original_chunk_size
 
-        Config.processing.chunk_size = original_chunk_size
+        get_config().processing.chunk_size = original_chunk_size
 
 
 @pytest.mark.asyncio
@@ -52,7 +52,7 @@ async def test_set_haiku_version_recreates_row_from_store_config(temp_db_path):
     from haiku.rag.store.repositories.settings import SettingsRepository
 
     config = AppConfig()
-    config.processing.chunk_size = Config.processing.chunk_size + 512
+    config.processing.chunk_size = get_config().processing.chunk_size + 512
 
     async with Store(temp_db_path, config=config, create=True) as store:
         settings_repo = SettingsRepository(store)

@@ -5,7 +5,7 @@ import pytest
 import haiku.rag.client as client_mod
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.documents import _refresh_doc_metadata
-from haiku.rag.config import Config
+from haiku.rag.config import get_config
 from haiku.rag.store.models.chunk import Chunk
 
 
@@ -73,7 +73,7 @@ async def test_metadata_refresh_sweep_schedules_vacuum(temp_db_path):
     """A source re-sweep that only rolls source_revision (MD5/revision
     short-circuit) writes document_meta and must still schedule the (debounced)
     vacuum, so that tiny churn gets reclaimed instead of accumulating."""
-    dim = Config.embeddings.model.vector_dim
+    dim = get_config().embeddings.model.vector_dim
     async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.import_document(
             _docling_doc("d", "body"),
@@ -99,7 +99,7 @@ async def test_metadata_refresh_waits_for_write_lock(temp_db_path):
     """The revision/MD5 short-circuit write serializes with other writers so
     it cannot land inside another writer's critical section (e.g. between
     create_tag's version snapshot and its per-table tag creation)."""
-    dim = Config.embeddings.model.vector_dim
+    dim = get_config().embeddings.model.vector_dim
     async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.import_document(
             _docling_doc("d", "body"),
