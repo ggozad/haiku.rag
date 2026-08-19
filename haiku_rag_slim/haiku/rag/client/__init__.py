@@ -635,10 +635,11 @@ class HaikuRAG:
         question: str,
         filter: str | None = None,
         images: Sequence[bytes] | None = None,
+        sources: list[str] | None = None,
     ) -> "tuple[str, list[Citation]]":
         from haiku.rag.client.agents import ask
 
-        return await ask(self, question, filter, images)
+        return await ask(self, question, filter, images, sources)
 
     async def analyze(
         self,

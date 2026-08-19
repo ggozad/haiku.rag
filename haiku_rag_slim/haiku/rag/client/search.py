@@ -378,6 +378,28 @@ async def expand_context(
     chunks were created without docling metadata (e.g., custom chunks passed
     to import_document).
     """
+    # A federating client has no repositories of its own, so each result expands
+    # through the database it came from.
+    if client._federated:
+        by_source: dict[str, list[SearchResult]] = {}
+        unsourced: list[SearchResult] = []
+        for result in search_results:
+            if result.source:
+                by_source.setdefault(result.source, []).append(result)
+            else:
+                unsourced.append(result)
+        owners = await client.clients_for(list(by_source))
+        expanded_groups = await asyncio.gather(
+            *(
+                expand_context(owner, by_source[owner._source])
+                for owner in owners
+                if owner._source
+            )
+        )
+        merged = unsourced + [r for group in expanded_groups for r in group]
+        merged.sort(key=lambda r: r.score, reverse=True)
+        return merged
+
     from haiku.rag.context import expand_with_items, window_for
 
     max_chars = client._config.search.max_context_chars

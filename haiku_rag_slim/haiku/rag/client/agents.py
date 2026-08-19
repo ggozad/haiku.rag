@@ -40,6 +40,7 @@ async def ask(
     question: str,
     filter: str | None = None,
     images: Sequence[bytes] | None = None,
+    sources: list[str] | None = None,
 ) -> "tuple[str, list[Citation]]":
     """Ask a question against the knowledge base via the RAG capability.
 
@@ -61,13 +62,17 @@ async def ask(
     from haiku.rag.utils import get_model
 
     capability = create_capability(
-        db_path=client.store.db_path,
+        db_path=None if client._federated else client.store.db_path,
         config=client._config,
         rag=client,
         defer_loading=False,
     )
     deps = _AgentDeps(
-        state={"rag": RAGState(document_filter=filter).model_dump(mode="json")}
+        state={
+            "rag": RAGState(document_filter=filter, sources=sources).model_dump(
+                mode="json"
+            )
+        }
     )
     user_prompt = _build_user_prompt(question, images, client._config.qa.model)
     model = get_model(client._config.qa.model, client._config)
