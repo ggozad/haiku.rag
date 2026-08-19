@@ -523,7 +523,10 @@ async def test_rebuild_full_with_accessible_source(temp_db_path):
     """FULL rebuild re-ingests from source when the URI is accessible.
 
     Covers the main path in _rebuild_full (source-accessible branch): the
-    document is deleted and re-created from its URI, producing a new ID.
+    document is refreshed in place, keeping its ID. The source bytes are
+    unchanged since ingestion, so this also pins that the refresh bypasses the
+    revision and MD5 short-circuits instead of returning the document
+    untouched.
     """
     async with HaikuRAG(temp_db_path, create=True) as client:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -540,15 +543,17 @@ async def test_rebuild_full_with_accessible_source(temp_db_path):
                 async for doc_id in client.rebuild_database(mode=RebuildMode.FULL)
             ]
 
-            # Original doc was deleted and a new one created; the old ID
-            # must not appear, and exactly one new ID must have been yielded.
-            assert original_id not in processed_ids
-            assert len(processed_ids) == 1
+            assert processed_ids == [original_id]
 
-            new_doc = await client.get_document_by_id(processed_ids[0])
-            assert new_doc is not None
-            assert new_doc.uri == source_path.as_uri()
-            assert "Fresh content" in new_doc.content
+            refreshed = await client.get_document_by_id(original_id)
+            assert refreshed is not None
+            assert refreshed.uri == source_path.as_uri()
+            assert "Fresh content" in refreshed.content
+
+            # The chunks table is recreated at the top of FULL, so the refresh
+            # must have written new chunks for the document to stay searchable.
+            chunks = await client.chunk_repository.get_by_document_id(original_id)
+            assert chunks
 
 
 async def test_rebuild_title_only_reads_structural_title(temp_db_path):
@@ -622,14 +627,14 @@ async def test_rebuild_title_only_handles_llm_failure(temp_db_path, monkeypatch)
 
 
 @pytest.mark.vcr()
-async def test_rebuild_full_source_failure_is_logged_and_skipped(
+async def test_rebuild_full_source_failure_falls_back_to_stored_content(
     temp_db_path, monkeypatch
 ):
-    """FULL rebuild logs-and-continues when re-ingesting from source fails.
+    """A failed source refresh must never cost the document.
 
-    Covers _rebuild_full's `except Exception` branch: when
-    create_document_from_source raises, the doc is skipped (no yield) and
-    the error is logged. Regression guard against silent failures.
+    Covers _rebuild_full's `except Exception` branch: when the refresh raises,
+    the document keeps its stored row and is rebuilt from stored content, so it
+    is still readable and still searchable afterwards.
     """
     import logging
 
@@ -644,22 +649,31 @@ async def test_rebuild_full_source_failure_is_logged_and_skipped(
             assert not isinstance(original, list)
             assert original.id is not None
 
-            # Force the source rebuild branch to raise.
-            async def failing_create(*args, **kwargs):
+            # Force the source refresh to raise.
+            async def failing_refresh(*args, **kwargs):
                 raise RuntimeError("simulated ingestion failure")
 
-            monkeypatch.setattr(client, "create_document_from_source", failing_create)
+            monkeypatch.setattr(
+                rebuild_module, "create_document_from_source", failing_refresh
+            )
 
-            with capture_logs(rebuild_module.logger, logging.ERROR) as records:
+            with capture_logs(rebuild_module.logger, logging.WARNING) as records:
                 processed_ids = [
                     doc_id
                     async for doc_id in client.rebuild_database(mode=RebuildMode.FULL)
                 ]
 
-            assert processed_ids == []
+            assert processed_ids == [original.id]
+
+            survivor = await client.get_document_by_id(original.id)
+            assert survivor is not None
+            assert "Content that will vanish" in survivor.content
+
+            chunks = await client.chunk_repository.get_by_document_id(original.id)
+            assert chunks
+
             assert any(
-                "Error recreating document from source" in rec.getMessage()
-                for rec in records
+                "falling back to stored content" in rec.getMessage() for rec in records
             )
 
 
@@ -1412,12 +1426,10 @@ async def test_rebuild_full_flushes_pending_before_source_rebuild(temp_db_path):
                 async for doc_id in client.rebuild_database(mode=RebuildMode.FULL)
             ]
 
-            # The content-path document keeps its id and must survive the
-            # flush that precedes the source re-ingest; the source document
-            # is replaced by a freshly ingested one with a new id.
-            assert content_doc.id in processed
-            assert source_doc.id not in processed
-            assert len(processed) == 2
+            # Both documents keep their ids: the content-path one must survive
+            # the flush that precedes the source refresh, and the source one is
+            # refreshed in place.
+            assert sorted(processed) == sorted([content_doc.id, source_doc.id])
             assert await client.store.documents_table.count_rows() == 2
 
 

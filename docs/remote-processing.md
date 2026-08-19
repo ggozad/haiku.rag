@@ -64,6 +64,7 @@ providers:
   docling_serve:
     base_url: http://localhost:5001
     api_key: ""  # Optional API key for authentication
+    timeout: 300  # Per-request timeout in seconds
 ```
 
 For converter / chunker config options (chunking strategy, tokenizer,

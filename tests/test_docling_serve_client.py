@@ -474,11 +474,13 @@ def test_from_config_wires_retry_and_breaker():
     ds = config.providers.docling_serve
     ds.base_url = "http://cfg-n:5001"
     ds.max_attempts = 7
+    ds.timeout = 42.0
     ds.circuit_breaker = CircuitBreakerConfig(failure_threshold=9, cooldown_s=90.0)
 
     for component in (DoclingServeConverter(config), DoclingServeChunker(config)):
         client = component.client
         assert client._max_attempts == 7
+        assert client.timeout == 42.0
         assert client._breaker_config.failure_threshold == 9
         assert client._breaker_config.cooldown_s == 90.0
 

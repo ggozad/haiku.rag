@@ -97,6 +97,7 @@ class DoclingServeClient:
         return cls(
             base_urls=config.base_urls,
             api_key=config.api_key,
+            timeout=config.timeout,
             circuit_breaker=config.circuit_breaker,
             max_attempts=config.max_attempts,
         )

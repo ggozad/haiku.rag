@@ -60,7 +60,8 @@ class ChunkRepository:
         """Create one or more chunks in the database.
 
         Chunks must have embeddings set before calling this method.
-        Use client._ensure_chunks_embedded() to embed chunks if needed.
+        Use haiku.rag.client.processing.ensure_chunks_embedded() to embed
+        chunks if needed.
         """
         self.store._assert_writable()
         # Handle single chunk

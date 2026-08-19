@@ -5,6 +5,7 @@
 
 ### Added
 
+- `providers.docling_serve.timeout` (default 300 seconds), forwarded to the docling-serve client's per-request timeout.
 - `evaluations run --filter/-f CLAUSE`: SQL `WHERE` clause over document columns, applied to the retrieval benchmark's searches and to every capability search during QA. Recorded as `document_filter` in experiment metadata.
 - `mtrag_clapnq` / `mtrag_clapnq_rewrite` / `mtrag_clapnq_live` / `mtrag_clapnq_live_uncompacted` evaluation datasets: multi-turn QA with gold-prefix and live-session conversation replay, live arms with and without `EvidenceCompactionCapability`, Recall@k/nDCG@k retrieval metrics, eligibility-aware citation scoring, refusal precision/recall, per-turn tool-traffic attributes, and `citation_status` / `turn_citation_status` eval attributes.
 - Raw chunk metadata is now exposed to search and citation results, through `SearchResult.chunk_meta` and `Citation.chunk_meta`. For context-expanded results, the metadata is that of the anchor chunk.
@@ -27,6 +28,9 @@
 
 ### Fixed
 
+- `create_document_from_source` closes the source adapter it builds for the call; adapters passed in through `sources` are left to their owner.
+- Directory ingestion skips symlinked files resolving outside the given directory, matching `FSSource.discover`.
+- A FULL rebuild no longer deletes a source-backed document before re-ingesting it: it refreshes the document in place, so the document id is preserved and a failed fetch or conversion falls back to rebuilding from stored content instead of losing the document.
 - `DocumentRepository.delete_all` recreated `document_items` from `DocumentItemRecord` instead of `get_document_items_arrow_schema()`, returning `picture_data` as `binary` rather than `large_binary`.
 - `server.json` runtime arguments are `mcp --stdio`, was `serve --mcp`.
 
