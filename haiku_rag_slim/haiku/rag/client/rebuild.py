@@ -8,7 +8,10 @@ from typing import TYPE_CHECKING
 from docling_core.types.doc.document import DescriptionMetaField, PictureMeta
 from lancedb.pydantic import LanceModel
 
-from haiku.rag.client.documents import check_source_accessible
+from haiku.rag.client.documents import (
+    check_source_accessible,
+    create_document_from_source,
+)
 from haiku.rag.converters import get_converter
 from haiku.rag.store.compression import compress_docling_split
 from haiku.rag.store.engine import ChunkRecordBase
@@ -807,28 +810,38 @@ async def _rebuild_full(
         # Try to rebuild from source if available — uses the light listing
         # directly, no need to load the stored content/blobs first.
         if light_doc.uri and check_source_accessible(light_doc.uri):
-            try:
-                # Flush pending batch before source rebuild (creates new doc)
-                if pending_docs:
-                    await _flush_rebuild_batch(client, pending_docs, pending_chunks)
-                    pending_chunks = []
-                    pending_docs = []
+            # The refresh writes through the client, not the batch buffer, so
+            # anything pending has to land first.
+            if pending_docs:
+                await _flush_rebuild_batch(client, pending_docs, pending_chunks)
+                pending_chunks = []
+                pending_docs = []
 
-                await client.delete_document(light_doc.id)
-                new_doc = await client.create_document_from_source(
-                    source=light_doc.uri, metadata=light_doc.metadata or {}
+            try:
+                # force=True: the source bytes are usually unchanged, and the
+                # point of a FULL rebuild is to re-convert them anyway. Updates
+                # in place, so a failure here cannot cost the document.
+                refreshed = await create_document_from_source(
+                    client,
+                    source=light_doc.uri,
+                    metadata=light_doc.metadata or {},
+                    force=True,
                 )
-                assert isinstance(new_doc, Document)
-                assert new_doc.id is not None
-                yield new_doc.id
+                assert isinstance(refreshed, Document)
+                assert refreshed.id is not None
+                yield refreshed.id
                 continue
             except Exception as e:
-                logger.error(
-                    "Error recreating document from source %s: %s",
+                logger.warning(
+                    "Rebuilding %s from source failed (%s), "
+                    "falling back to stored content",
                     light_doc.uri,
                     e,
                 )
-                continue
+        elif light_doc.uri:
+            logger.warning(
+                "Source missing for %s, re-embedding from content", light_doc.uri
+            )
 
         # Fallback: rebuild from stored content. Now we need the full
         # record (content + docling_pages for the round-trip write).
@@ -838,8 +851,6 @@ async def _rebuild_full(
         if doc is None:
             continue
         assert doc.id is not None
-        if doc.uri:
-            logger.warning("Source missing for %s, re-embedding from content", doc.uri)
 
         docling_document = await converter.convert_text(doc.content, format="md")
         chunks = await client.chunk(docling_document)

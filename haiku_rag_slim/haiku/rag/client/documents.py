@@ -677,6 +677,7 @@ async def create_document_from_source(
     sources: "list[Source] | None" = None,
     source_id: str | None = None,
     metadata_provider: "MetadataProvider | None" = None,
+    force: bool = False,
 ) -> Document | list[Document]:
     """Create or update document(s) from a file path, directory, or URL.
 
@@ -684,6 +685,10 @@ async def create_document_from_source(
     - If MD5 is unchanged, returns existing document
     - If MD5 changed, updates the document
     - If no document exists, creates a new one
+
+    ``force`` skips both freshness checks so an unchanged source is re-converted,
+    re-chunked and re-embedded into the existing document. Internal: rebuild uses
+    it to refresh a document in place instead of deleting and recreating it.
 
     If ``uri`` is provided, it overrides the URI auto-derived from the source
     (which is normally ``file://`` for local files or the URL for remote
@@ -730,6 +735,7 @@ async def create_document_from_source(
                         sources=sources,
                         source_id=source_id,
                         metadata_provider=metadata_provider,
+                        force=force,
                     )
                     assert isinstance(doc, Document)
                     documents.append(doc)
@@ -784,7 +790,7 @@ async def create_document_from_source(
     stored_revision = (
         (existing_doc.metadata or {}).get("source_revision") if existing_doc else None
     )
-    if existing_doc and stored_revision:
+    if existing_doc and stored_revision and not force:
         current_revision = await fetcher.head(source_str)
         if current_revision == stored_revision:
             return await _refresh_doc_metadata(
@@ -808,7 +814,11 @@ async def create_document_from_source(
     # MD5 short-circuit: the bytes are unchanged even if the revision wasn't.
     # Refresh the source-derived metadata (revision may have rolled) but skip
     # convert/embed/store entirely.
-    if existing_doc and existing_doc.metadata.get("md5") == result.content_hash:
+    if (
+        existing_doc
+        and not force
+        and existing_doc.metadata.get("md5") == result.content_hash
+    ):
         source_meta: dict = {
             "content_type": result.content_type,
             "md5": result.content_hash,

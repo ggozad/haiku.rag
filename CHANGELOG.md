@@ -25,6 +25,7 @@
 
 ### Fixed
 
+- A FULL rebuild no longer deletes a source-backed document before re-ingesting it: it refreshes the document in place, so the document id is preserved and a failed fetch or conversion falls back to rebuilding from stored content instead of losing the document.
 - `DocumentRepository.delete_all` recreated `document_items` from `DocumentItemRecord` instead of `get_document_items_arrow_schema()`, returning `picture_data` as `binary` rather than `large_binary`.
 - `server.json` runtime arguments are `mcp --stdio`, was `serve --mcp`.
 
