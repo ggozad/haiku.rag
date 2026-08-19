@@ -391,7 +391,7 @@ class HaikuRAG:
         """
         from haiku.rag.client.documents import parent_uri_filter
 
-        async with self.store._write_lock:
+        async with self.store.write_transaction():
             # Resolve existence and collect the subtree under the lock so two
             # concurrent deletes of the same id can't both proceed, and children
             # can't appear or move between collection and deletion. parent_uri
@@ -414,13 +414,8 @@ class HaikuRAG:
             if not ids_to_delete:
                 return False
 
-            versions = await self.store.current_table_versions()
-            try:
-                for doc_id in ids_to_delete:
-                    await self.document_repository.delete(doc_id)
-            except Exception:
-                await self.store.restore_table_versions(versions)
-                raise
+            for doc_id in ids_to_delete:
+                await self.document_repository.delete(doc_id)
 
         if self._config.storage.auto_vacuum:
             self._schedule_vacuum()
