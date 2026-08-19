@@ -1,12 +1,12 @@
-from haiku.rag.reranking.base import RerankerBase
-from haiku.rag.store.models.chunk import Chunk
+from haiku.rag.utils import raise_missing_extra
 
 try:
     import cohere
-except ImportError as e:  # pragma: no cover
-    raise ImportError(
-        "cohere is not installed. Please install it with `pip install cohere` or use the cohere optional dependency."
-    ) from e
+except ModuleNotFoundError as e:  # pragma: no cover
+    raise_missing_extra("cohere", "cohere", e)
+
+from haiku.rag.reranking.base import RerankerBase
+from haiku.rag.store.models.chunk import Chunk
 
 
 class CohereReranker(RerankerBase):  # pragma: no cover

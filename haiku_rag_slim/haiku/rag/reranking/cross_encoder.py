@@ -1,14 +1,15 @@
 import asyncio
 import math
 
+from haiku.rag.utils import raise_missing_extra
+
 try:
     import torch
     from sentence_transformers import CrossEncoder
-except ImportError as e:  # pragma: no cover
-    raise ImportError(
-        "sentence-transformers is not installed. Install it with "
-        "`pip install sentence-transformers` or use the cross-encoder optional dependency."
-    ) from e
+except ModuleNotFoundError as e:  # pragma: no cover
+    if e.name not in ("torch", "sentence_transformers"):
+        raise
+    raise_missing_extra(e.name, "cross-encoder", e)
 
 from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk

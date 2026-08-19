@@ -6,7 +6,17 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from haiku.rag.utils import get_default_data_dir
 
 
-class ModelConfig(BaseModel):
+class ConfigModel(BaseModel):
+    """Base for every configuration section.
+
+    Unknown keys are rejected so a typo or a setting that has been renamed or
+    removed fails at load instead of being silently ignored.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ModelConfig(ConfigModel):
     """Configuration for a language model.
 
     Attributes:
@@ -30,12 +40,12 @@ class ModelConfig(BaseModel):
 
     enable_thinking: bool | None = None
     temperature: float | None = None
-    max_tokens: int | None = None
+    max_tokens: int | None = Field(default=None, gt=0)
     vision: bool = False
     extra_body: dict | None = None
 
 
-class EmbeddingModelConfig(BaseModel):
+class EmbeddingModelConfig(ConfigModel):
     """Configuration for an embedding model.
 
     Attributes:
@@ -50,18 +60,18 @@ class EmbeddingModelConfig(BaseModel):
 
     provider: str = "ollama"
     name: str = "qwen3-embedding:4b"
-    vector_dim: int = 2560
+    vector_dim: int = Field(default=2560, gt=0)
     base_url: str | None = None
     multimodal: bool = False
 
 
-class StorageConfig(BaseModel):
+class StorageConfig(ConfigModel):
     data_dir: Path = Field(default_factory=get_default_data_dir)
     auto_vacuum: bool = True
-    vacuum_retention_seconds: int = 86400
+    vacuum_retention_seconds: int = Field(default=86400, ge=0)
 
 
-class LanceDBConfig(BaseModel):
+class LanceDBConfig(ConfigModel):
     """LanceDB connection settings.
 
     read_consistency_interval_seconds bounds how stale a reader may be. None
@@ -79,12 +89,12 @@ class LanceDBConfig(BaseModel):
     metadata_cache_size_bytes: int | None = Field(default=None, ge=0)
 
 
-class EmbeddingsConfig(BaseModel):
+class EmbeddingsConfig(ConfigModel):
     model: EmbeddingModelConfig = Field(default_factory=EmbeddingModelConfig)
-    batch_size: int = 512
+    batch_size: int = Field(default=512, gt=0)
 
 
-class RerankingConfig(BaseModel):
+class RerankingConfig(ConfigModel):
     """Configuration for reranking search results.
 
     Attributes:
@@ -97,7 +107,7 @@ class RerankingConfig(BaseModel):
     multimodal: bool = False
 
 
-class QAConfig(BaseModel):
+class QAConfig(ConfigModel):
     model: ModelConfig = Field(
         default_factory=lambda: ModelConfig(
             provider="ollama",
@@ -106,10 +116,10 @@ class QAConfig(BaseModel):
             temperature=0.3,
         )
     )
-    max_searches: int = 5
+    max_searches: int = Field(default=5, ge=0)
 
 
-class AnalysisConfig(BaseModel):
+class AnalysisConfig(ConfigModel):
     """Driving model and sandbox limits for the analysis capability.
 
     ``model`` defaults to ``None``, meaning "no override — use ``qa.model``."
@@ -118,12 +128,12 @@ class AnalysisConfig(BaseModel):
     (e.g. a stronger model for computational tasks)."""
 
     model: ModelConfig | None = None
-    code_timeout: float = 60.0
-    max_output_chars: int = 50_000
-    max_executions: int = 15
+    code_timeout: float = Field(default=60.0, gt=0)
+    max_output_chars: int = Field(default=50_000, gt=0)
+    max_executions: int = Field(default=15, ge=0)
 
 
-class DuplicateDetectionConfig(BaseModel):
+class DuplicateDetectionConfig(ConfigModel):
     """Thresholds for doctor's near-duplicate document detection.
 
     Detection clusters whole documents whose embedding centroids are nearly
@@ -132,17 +142,17 @@ class DuplicateDetectionConfig(BaseModel):
     documents too small to compare meaningfully.
     """
 
-    similarity_threshold: float = 0.97
-    min_chunks: int = 3
+    similarity_threshold: float = Field(default=0.97, ge=0.0, le=1.0)
+    min_chunks: int = Field(default=3, gt=0)
 
 
-class DoctorConfig(BaseModel):
+class DoctorConfig(ConfigModel):
     duplicates: DuplicateDetectionConfig = Field(
         default_factory=DuplicateDetectionConfig
     )
 
 
-class PictureDescriptionConfig(BaseModel):
+class PictureDescriptionConfig(ConfigModel):
     """How the VLM runs over each picture when it runs at all.
 
     Activation lives on ``ProcessingConfig.pictures`` — these fields only
@@ -156,11 +166,11 @@ class PictureDescriptionConfig(BaseModel):
             temperature=0.0,
         )
     )
-    timeout: int = 90
-    max_tokens: int = 200
+    timeout: int = Field(default=90, gt=0)
+    max_tokens: int = Field(default=200, gt=0)
 
 
-class ConversionOptions(BaseModel):
+class ConversionOptions(ConfigModel):
     """Options for document conversion."""
 
     # OCR options
@@ -177,7 +187,7 @@ class ConversionOptions(BaseModel):
     table_cell_matching: bool = True
 
     # Image options
-    images_scale: float = 2.0
+    images_scale: float = Field(default=2.0, gt=0)
     generate_page_images: bool = True
 
     # Fetch images referenced by URL in HTML and Markdown inputs.
@@ -192,11 +202,11 @@ class ConversionOptions(BaseModel):
 PicturesMode = Literal["none", "description", "image"]
 
 
-class ProcessingConfig(BaseModel):
-    chunk_size: int = 256
-    converter: str = "docling-local"
-    chunker: str = "docling-local"
-    chunker_type: str = "hybrid"
+class ProcessingConfig(ConfigModel):
+    chunk_size: int = Field(default=256, gt=0)
+    converter: Literal["docling-local", "docling-serve"] = "docling-local"
+    chunker: Literal["docling-local", "docling-serve"] = "docling-local"
+    chunker_type: Literal["hybrid", "hierarchical"] = "hybrid"
     chunking_tokenizer: str = "Qwen/Qwen3-Embedding-0.6B"
     chunking_merge_peers: bool = True
     chunking_use_markdown_tables: bool = False
@@ -226,7 +236,7 @@ class ProcessingConfig(BaseModel):
     - ``"image"``: docling generates picture images and stores them in
       ``document_items.picture_data``; no VLM runs at ingest.
     """
-    min_picture_size: int = 64
+    min_picture_size: int = Field(default=64, ge=0)
     """Minimum pixel size (smaller side) for a picture to become a picture
     chunk. Smaller pictures — icons, bullets, decorative graphics — are not
     embedded or indexed; their bytes stay in ``document_items`` for context
@@ -247,14 +257,14 @@ class ProcessingConfig(BaseModel):
     )
 
 
-class SearchConfig(BaseModel):
-    limit: int = 5
-    max_context_chars: int = 5000
+class SearchConfig(ConfigModel):
+    limit: int = Field(default=5, gt=0)
+    max_context_chars: int = Field(default=5000, gt=0)
     vector_index_metric: Literal["cosine", "l2", "dot"] = "cosine"
-    vector_refine_factor: int = 30
+    vector_refine_factor: int = Field(default=30, gt=0)
 
 
-class OllamaConfig(BaseModel):
+class OllamaConfig(ConfigModel):
     base_url: str = Field(
         default_factory=lambda: __import__("os").environ.get(
             "OLLAMA_BASE_URL", "http://localhost:11434"
@@ -262,21 +272,22 @@ class OllamaConfig(BaseModel):
     )
 
 
-class CircuitBreakerConfig(BaseModel):
+class CircuitBreakerConfig(ConfigModel):
     """Breaker over repeated failures of a single target. Stops callers from
     hammering a target that's persistently failing (an ingester source, a
     docling-serve instance)."""
 
     failure_threshold: int = Field(
-        default=5, description="Consecutive failures before the breaker opens."
+        default=5, gt=0, description="Consecutive failures before the breaker opens."
     )
     cooldown_s: float = Field(
         default=600.0,
+        ge=0,
         description="How long the breaker stays open before allowing a probe.",
     )
 
 
-class DoclingServeConfig(BaseModel):
+class DoclingServeConfig(ConfigModel):
     """docling-serve endpoints. Accepts a single URL or a list — when a list is
     given, the client round-robins jobs across the URLs, fails a request over to
     another instance when one crashes or returns 5xx, and trips a per-instance
@@ -292,6 +303,7 @@ class DoclingServeConfig(BaseModel):
     api_key: str = ""
     max_attempts: int = Field(
         default=3,
+        gt=0,
         description="Max attempts per request across the fleet before giving up; "
         "each retry fails over to another instance.",
     )
@@ -314,12 +326,12 @@ class DoclingServeConfig(BaseModel):
         return list(self.base_url) or ["http://localhost:5001"]
 
 
-class ProvidersConfig(BaseModel):
+class ProvidersConfig(ConfigModel):
     ollama: OllamaConfig = Field(default_factory=OllamaConfig)
     docling_serve: DoclingServeConfig = Field(default_factory=DoclingServeConfig)
 
 
-class PromptsConfig(BaseModel):
+class PromptsConfig(ConfigModel):
     domain_preamble: str = ""
     picture_description: str = (
         "Describe this image for a blind user. "
@@ -329,7 +341,7 @@ class PromptsConfig(BaseModel):
     )
 
 
-class EvaluationsConfig(BaseModel):
+class EvaluationsConfig(ConfigModel):
     """Settings consumed only by the `evaluations` package."""
 
     judge: ModelConfig | None = Field(
@@ -342,7 +354,7 @@ class EvaluationsConfig(BaseModel):
     )
 
 
-class QueueConfig(BaseModel):
+class QueueConfig(ConfigModel):
     """Job queue for the production ingester. Defaults to a filesystem SQLite
     file; set `dburi` to point it at a database server instead."""
 
@@ -357,29 +369,31 @@ class QueueConfig(BaseModel):
     )
     retention_days: int | None = Field(
         default=30,
+        ge=0,
         description="Delete succeeded/dead jobs whose completed_at is older "
         "than this many days. The reaper enforces it on reaper_interval_s. "
         "None disables pruning (keep all terminal rows).",
     )
 
 
-class RetryPolicyConfig(BaseModel):
+class RetryPolicyConfig(ConfigModel):
     """Per-job retry policy. Per-source override is allowed under
     SourceConfig.retry so a flaky source doesn't drag the rest of the queue."""
 
-    max_attempts: int = 5
-    base_delay_s: float = 2.0
-    max_delay_s: float = 300.0
+    max_attempts: int = Field(default=5, gt=0)
+    base_delay_s: float = Field(default=2.0, ge=0)
+    max_delay_s: float = Field(default=300.0, ge=0)
     jitter: float = Field(default=0.25, ge=0.0, le=1.0)
 
 
-class WorkerConfig(BaseModel):
+class WorkerConfig(ConfigModel):
     # Reject unknown keys so a renamed/removed setting (e.g. the former
     # claim_timeout_s) fails loudly instead of being silently ignored.
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
     worker_count: int = Field(
         default=4,
+        ge=0,
         description="Number of async worker tasks pulling from the queue. "
         "Each worker holds at most one job at a time, so worker_count is "
         "also the maximum number of concurrent in-flight jobs. Size to the "
@@ -388,6 +402,7 @@ class WorkerConfig(BaseModel):
     )
     poll_idle_interval_s: float = Field(
         default=1.0,
+        gt=0,
         description="How long an idle worker waits between empty claim_next "
         "polls. Lower = lower latency picking up new jobs, higher = less "
         "queue churn when the queue is usually empty.",
@@ -411,12 +426,14 @@ class WorkerConfig(BaseModel):
     )
     reaper_interval_s: int = Field(
         default=60,
+        gt=0,
         description="How often the reaper scans for stale claims. Shorter "
         "lowers the worst-case recovery time after a worker crash.",
     )
     retry: RetryPolicyConfig = Field(default_factory=RetryPolicyConfig)
     shutdown_grace_s: float = Field(
         default=60.0,
+        ge=0,
         description="On SIGINT/SIGTERM, how long to wait for in-flight jobs to "
         "finish before forcing cancellation. Cancelled jobs are released back "
         "to `queued` for immediate re-claim.",
@@ -432,7 +449,7 @@ class WorkerConfig(BaseModel):
         return self
 
 
-class APIConfig(BaseModel):
+class APIConfig(ConfigModel):
     """HTTP control plane settings for the ingester."""
 
     # Validate on assignment so CLI overrides (e.g. --root-path) run the same
@@ -441,7 +458,7 @@ class APIConfig(BaseModel):
 
     enabled: bool = True
     host: str = "127.0.0.1"
-    port: int = 8765
+    port: int = Field(default=8765, ge=0, le=65535)
     auth_token: str | None = None
     root_path: str = Field(
         default="",
@@ -465,7 +482,7 @@ class APIConfig(BaseModel):
         return trimmed
 
 
-class _SourceBase(BaseModel):
+class _SourceBase(ConfigModel):
     """Fields common to every source. `id` is optional; if omitted the source
     derives a deterministic id from its target (root path / bucket+prefix /
     user-supplied tag)."""
@@ -474,6 +491,7 @@ class _SourceBase(BaseModel):
     delete_orphans: bool = True
     poll_interval_s: float = Field(
         default=300.0,
+        gt=0,
         description="How often discover() runs. FS additionally uses watchfiles "
         "for push events between sweeps.",
     )
@@ -485,6 +503,7 @@ class _SourceBase(BaseModel):
     circuit_breaker: CircuitBreakerConfig = Field(default_factory=CircuitBreakerConfig)
     max_file_size: int | None = Field(
         default=None,
+        gt=0,
         description="Maximum file size in bytes to fetch. Files larger than "
         "this are rejected with a PermanentError. None = no limit.",
     )
@@ -562,7 +581,7 @@ SourceConfig = Annotated[
 ]
 
 
-class IngesterConfig(BaseModel):
+class IngesterConfig(ConfigModel):
     """Production ingester settings."""
 
     sources: list[SourceConfig] = []
@@ -571,7 +590,7 @@ class IngesterConfig(BaseModel):
     api: APIConfig = Field(default_factory=APIConfig)
 
 
-class AppConfig(BaseModel):
+class AppConfig(ConfigModel):
     environment: str = "production"
     storage: StorageConfig = Field(default_factory=StorageConfig)
     lancedb: LanceDBConfig = Field(default_factory=LanceDBConfig)

@@ -115,7 +115,8 @@ def test_get_chunker_docling_local():
 def test_get_chunker_invalid():
     """Test factory raises error for invalid chunker."""
     config = AppConfig()
-    config.processing.chunker = "invalid-chunker"
+    # Deliberately past validation: pins the factory's defensive raise.
+    config.processing.chunker = "invalid-chunker"  # ty: ignore[invalid-assignment]
     with pytest.raises(ValueError, match="Unsupported chunker"):
         get_chunker(config)
 
@@ -164,7 +165,7 @@ async def test_local_chunker_hierarchical(qa_corpus: list[dict[str, str]]):
 def test_local_chunker_invalid_type():
     """Test DoclingLocalChunker raises error for invalid chunker_type."""
     config = AppConfig()
-    config.processing.chunker_type = "invalid-type"
+    config.processing.chunker_type = "invalid-type"  # ty: ignore[invalid-assignment]
     with pytest.raises(ValueError, match="Unsupported chunker_type"):
         DoclingLocalChunker(config)
 

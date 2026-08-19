@@ -1,12 +1,13 @@
 import asyncio
 
+from haiku.rag.utils import raise_missing_extra
+
 try:
     from transformers import AutoModel
-except ImportError as e:  # pragma: no cover
-    raise ImportError(
-        "transformers is not installed. Please install it with `pip install transformers torch` "
-        "or use the jina optional dependency."
-    ) from e
+except ModuleNotFoundError as e:  # pragma: no cover
+    if e.name not in ("torch", "transformers"):
+        raise
+    raise_missing_extra(e.name, "jina", e)
 
 from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk

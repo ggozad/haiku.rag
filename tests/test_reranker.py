@@ -7,6 +7,7 @@ from haiku.rag.config.models import AppConfig, ModelConfig, RerankingConfig
 from haiku.rag.reranking import get_reranker
 from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk
+from haiku.rag.utils import raise_missing_extra
 
 # Providers whose constructor loads a model in-process. Factory-routing tests
 # patch the loader so they assert dispatch without paying the model load.
@@ -547,3 +548,51 @@ async def test_cross_encoder_reranks_via_model_ranking(monkeypatch):
     stub_logit = 1.0 - last_index / 10
     assert reranked[0][1] == pytest.approx(1.0 / (1.0 + math.exp(-stub_logit)))
     assert isinstance(reranker._reranker.activation_fn, torch.nn.Identity)
+
+
+def test_missing_reranker_dependency_raises(monkeypatch):
+    """A configured reranker whose extra is not installed must fail, not
+    silently disable reranking."""
+    import sys
+
+    monkeypatch.setitem(sys.modules, "haiku.rag.reranking.zeroentropy", None)
+
+    config = AppConfig(
+        reranking=RerankingConfig(
+            model=ModelConfig(provider="zeroentropy", name="zerank-1")
+        )
+    )
+
+    with pytest.raises(ImportError):
+        get_reranker(config)
+
+
+def test_missing_extra_names_the_install_command():
+    """The error tells the operator exactly what to install."""
+    exc = ModuleNotFoundError("No module named 'cohere'", name="cohere")
+
+    with pytest.raises(ImportError) as excinfo:
+        raise_missing_extra("cohere", "cohere", exc)
+
+    message = str(excinfo.value)
+    assert "haiku.rag-slim[cohere]" in message
+    assert excinfo.value.__cause__ is exc
+
+
+def test_failure_inside_an_installed_package_is_not_reported_as_missing():
+    """A broken transitive import must propagate untouched instead of claiming
+    the package is not installed."""
+    exc = ModuleNotFoundError("No module named 'torch._C'", name="torch._C")
+
+    with pytest.raises(ModuleNotFoundError) as excinfo:
+        raise_missing_extra("sentence_transformers", "cross-encoder", exc)
+
+    assert excinfo.value is exc
+
+
+def test_installed_reranker_extra_is_importable():
+    """The guard must not fire for a dependency that is installed: the module
+    imports and the reranker is constructible."""
+    import haiku.rag.reranking.cohere as cohere_module
+
+    assert cohere_module.CohereReranker is not None
