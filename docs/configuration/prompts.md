@@ -12,8 +12,10 @@ prompts:
     system, including installation manuals, maintenance procedures, and safety guidelines.
     Questions about "the system" or unqualified specs refer to the Helios panel.
 
-  # VLM prompt for image description during conversion (optional)
-  picture_description: null  # Uses default prompt
+  # VLM prompt for image description during conversion.
+  # Omit the key to use the built-in prompt.
+  picture_description: |
+    Describe this figure in two sentences, naming any axis labels and units.
 ```
 
 ## Domain Preamble

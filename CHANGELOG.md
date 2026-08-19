@@ -1,17 +1,10 @@
 # Changelog
 ## [Unreleased]
 
-## [0.75.0] - 2026-08-19
-
 ### Added
 
 - The `haiku.rag` package declares the `jina` extra, so `provider: jina-local` is supported by declaration rather than through `cross-encoder`'s transitive `transformers` and `torch`. Raises the full package's torch floor to 2.0.
 - `providers.docling_serve.timeout` (default 300 seconds), forwarded to the docling-serve client's per-request timeout.
-- `evaluations run --filter/-f CLAUSE`: SQL `WHERE` clause over document columns, applied to the retrieval benchmark's searches and to every capability search during QA. Recorded as `document_filter` in experiment metadata.
-- `mtrag_clapnq` / `mtrag_clapnq_rewrite` / `mtrag_clapnq_live` / `mtrag_clapnq_live_uncompacted` evaluation datasets: multi-turn QA with gold-prefix and live-session conversation replay, live arms with and without `EvidenceCompactionCapability`, Recall@k/nDCG@k retrieval metrics, eligibility-aware citation scoring, refusal precision/recall, per-turn tool-traffic attributes, and `citation_status` / `turn_citation_status` eval attributes.
-- Raw chunk metadata is now exposed to search and citation results, through `SearchResult.chunk_meta` and `Citation.chunk_meta`. For context-expanded results, the metadata is that of the anchor chunk.
-- BTree indexes on `chunks.id`, `chunks.document_id` and `documents.id`, and a Bitmap index on `document_items.label`. Existing databases need `haiku-rag migrate`.
-- `lancedb.read_consistency_interval_seconds` (default 30), `lancedb.index_cache_size_bytes` and `lancedb.metadata_cache_size_bytes`. The LanceDB session is shared across connections in a process, so its index and metadata caches survive a connection being closed.
 
 ### Changed
 
@@ -20,6 +13,33 @@
 - Numeric settings carry bounds: sizes, limits, dimensions, token budgets, attempt counts, breaker thresholds and `min_chunks` must be positive; retention, delays, intervals and cooldowns non-negative; `doctor.duplicates.similarity_threshold` within 0-1; `ingester.api.port` within 0-65535 (0 keeps its OS-assigned meaning); `ingester.workers.worker_count` allows 0 for an API-and-reaper-only process.
 - A configured reranker whose optional dependency is missing raises instead of silently disabling reranking, and names the extra to install (`uv pip install 'haiku.rag-slim[cohere]'`). A failure raised from inside an installed dependency propagates untouched rather than being reported as a missing package.
 - Multi-table writes (document create, update, batch import, cascade delete) go through `Store.write_transaction()`. Rollback restores in `RESTORE_TABLE_ORDER` and is shielded from cancellation, so a cancelled write rolls back instead of committing part of itself. `Store.restore_table_versions()` is removed.
+
+### Removed
+
+- `haiku.rag.config.Config`, the eagerly loaded configuration instance. Use `get_config()` for the current global config, or pass an `AppConfig`. Every internal default (`get_embedder`, `get_converter`, `get_chunker`, `get_reranker`, `embed_chunks`, `HaikuRAG`, `Store`, `HaikuRAGApp`, `create_mcp_server`) now takes `config: AppConfig | None = None` and resolves it per call, so `set_config()` reaches them. `RerankerBase._model` no longer defaults to the configured reranker name; `CohereReranker` takes its model name as an argument.
+
+### Fixed
+
+- `storage.data_dir: ""` resolves to the platform data directory, as documented; it coerced to `Path("")`, so the database was created in the process's working directory. Set `data_dir: .` to keep the old placement.
+- Documented `search.limit` default is 5, was stated as 10.
+- The documented way to disable reranking is omitting `reranking.model` or setting it to `null`; the previous `provider: ""` example raised `Unknown reranking provider`.
+- `prompts.picture_description: null` is not valid; the documented example sets a string or omits the key.
+- `create_document_from_source` closes the source adapter it builds for the call; adapters passed in through `sources` are left to their owner.
+- Directory ingestion skips symlinked files resolving outside the given directory, matching `FSSource.discover`.
+- A FULL rebuild no longer deletes a source-backed document before re-ingesting it: it refreshes the document in place, so the document id is preserved and a failed fetch or conversion falls back to rebuilding from stored content instead of losing the document.
+
+## [0.75.0] - 2026-08-19
+
+### Added
+
+- `evaluations run --filter/-f CLAUSE`: SQL `WHERE` clause over document columns, applied to the retrieval benchmark's searches and to every capability search during QA. Recorded as `document_filter` in experiment metadata.
+- `mtrag_clapnq` / `mtrag_clapnq_rewrite` / `mtrag_clapnq_live` / `mtrag_clapnq_live_uncompacted` evaluation datasets: multi-turn QA with gold-prefix and live-session conversation replay, live arms with and without `EvidenceCompactionCapability`, Recall@k/nDCG@k retrieval metrics, eligibility-aware citation scoring, refusal precision/recall, per-turn tool-traffic attributes, and `citation_status` / `turn_citation_status` eval attributes.
+- Raw chunk metadata is now exposed to search and citation results, through `SearchResult.chunk_meta` and `Citation.chunk_meta`. For context-expanded results, the metadata is that of the anchor chunk.
+- BTree indexes on `chunks.id`, `chunks.document_id` and `documents.id`, and a Bitmap index on `document_items.label`. Existing databases need `haiku-rag migrate`.
+- `lancedb.read_consistency_interval_seconds` (default 30), `lancedb.index_cache_size_bytes` and `lancedb.metadata_cache_size_bytes`. The LanceDB session is shared across connections in a process, so its index and metadata caches survive a connection being closed.
+
+### Changed
+
 - Search enrichment, the multimodal reranker's picture fetch, and context expansion each issue a fixed number of `document_items` queries regardless of how many documents a result set spans, instead of one set per document. `expand_with_items` takes the items to expand from rather than fetching them, and `DocumentItemRepository` gains `resolve_refs_grouped`, `get_items_in_ranges`, `get_pictures_grouped` and `get_caption_picture_refs_grouped`. The superseded methods are removed: `resolve_refs`, `get_items_in_range`, `get_caption_picture_refs`, `get_text_for_refs` and `get_all_items_grouped`. `get_pictures_grouped` returns each picture's text alongside its bytes under `with_text`, off by default so the reranker's blob fetch does not read a column it discards.
 - Eval judge pinned to `qwen3.8`: `DEFAULT_JUDGE_MODEL` is `ollama:qwen3.8`, and the reference configs use `Inferact/Qwen3.8-27B-NVFP4` with `extra_body.chat_template_kwargs.reasoning_effort: low`. Results in `docs/benchmarks.md` were judged by `Qwen3.6-35B-A3B-NVFP4` and are not re-judged.
 - `create_capability(rag=...)` lends a capability an open client rather than having it open its own; `client.ask`/`client.analyze` now pass theirs.
@@ -30,14 +50,10 @@
 
 ### Removed
 
-- `haiku.rag.config.Config`, the eagerly loaded configuration instance. Use `get_config()` for the current global config, or pass an `AppConfig`. Every internal default (`get_embedder`, `get_converter`, `get_chunker`, `get_reranker`, `embed_chunks`, `HaikuRAG`, `Store`, `HaikuRAGApp`, `create_mcp_server`) now takes `config: AppConfig | None = None` and resolves it per call, so `set_config()` reaches them. `RerankerBase._model` no longer defaults to the configured reranker name; `CohereReranker` takes its model name as an argument.
 - `wix` evaluation dataset and its reference config `evaluations/configs/wix.yaml`.
 
 ### Fixed
 
-- `create_document_from_source` closes the source adapter it builds for the call; adapters passed in through `sources` are left to their owner.
-- Directory ingestion skips symlinked files resolving outside the given directory, matching `FSSource.discover`.
-- A FULL rebuild no longer deletes a source-backed document before re-ingesting it: it refreshes the document in place, so the document id is preserved and a failed fetch or conversion falls back to rebuilding from stored content instead of losing the document.
 - `DocumentRepository.delete_all` recreated `document_items` from `DocumentItemRecord` instead of `get_document_items_arrow_schema()`, returning `picture_data` as `binary` rather than `large_binary`.
 - `server.json` runtime arguments are `mcp --stdio`, was `serve --mcp`.
 
