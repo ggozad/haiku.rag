@@ -295,6 +295,11 @@ class DoclingServeConfig(BaseModel):
         description="Max attempts per request across the fleet before giving up; "
         "each retry fails over to another instance.",
     )
+    timeout: float = Field(
+        default=300,
+        gt=0,
+        description="Per-request timeout in seconds for submit, poll and result calls.",
+    )
     circuit_breaker: CircuitBreakerConfig = Field(
         default_factory=lambda: CircuitBreakerConfig(
             failure_threshold=3, cooldown_s=30.0

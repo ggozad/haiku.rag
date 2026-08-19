@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 import yaml
 
@@ -557,3 +559,21 @@ def test_get_config_initialises_lazily_then_reuses(monkeypatch):
     first = config_module.get_config()
     assert isinstance(first, AppConfig)
     assert config_module.get_config() is first
+
+
+# Every YAML config shipped in the repo has to load. These are what users copy.
+_EXAMPLE_CONFIGS = sorted(
+    (Path(__file__).resolve().parent.parent).glob("**/*.yaml.example")
+)
+
+
+def test_example_configs_are_present():
+    """Guard against the glob silently matching nothing."""
+    assert _EXAMPLE_CONFIGS
+
+
+@pytest.mark.parametrize(
+    "path", _EXAMPLE_CONFIGS, ids=lambda p: p.parent.name + "/" + p.name
+)
+def test_example_config_validates(path: Path):
+    AppConfig.model_validate(yaml.safe_load(path.read_text()) or {})
