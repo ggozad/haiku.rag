@@ -21,6 +21,7 @@
 - Numeric settings carry bounds: sizes, limits, dimensions, token budgets, attempt counts, breaker thresholds and `min_chunks` must be positive; retention, delays, intervals and cooldowns non-negative; `doctor.duplicates.similarity_threshold` within 0-1; `ingester.api.port` within 0-65535 (0 keeps its OS-assigned meaning); `ingester.workers.worker_count` allows 0 for an API-and-reaper-only process.
 - A configured reranker whose optional dependency is missing raises instead of silently disabling reranking, and names the extra to install (`uv pip install 'haiku.rag-slim[cohere]'`). A failure raised from inside an installed dependency propagates untouched rather than being reported as a missing package.
 - Multi-table writes (document create, update, batch import, cascade delete) go through `Store.write_transaction()`. Rollback restores in `RESTORE_TABLE_ORDER` and is shielded from cancellation, so a cancelled write rolls back instead of committing part of itself. `Store.restore_table_versions()` is removed.
+- `lancedb` pinned to 0.37.1 (lance core 10.0.0), was 0.34.0. An invalid `filter` passed to search now raises `ValueError` instead of `RuntimeError`.
 
 ### Removed
 
