@@ -120,9 +120,7 @@ async def _store_document_with_chunks(
     chunks = await ensure_chunks_embedded(client._config, chunks, client.embedder)
     items = await asyncio.to_thread(extract_items, "", docling_document)
 
-    async with client.store._write_lock:
-        versions = await client.store.current_table_versions()
-
+    async with client.store.write_transaction():
         # A concurrent ingestion of the same URI may have created the document
         # while this one was converting/embedding outside the lock. LanceDB has
         # no unique constraint on `uri`, so re-check under the lock and update in
@@ -133,41 +131,33 @@ async def _store_document_with_chunks(
             else None
         )
 
-        try:
-            if existing is not None:
-                document.id = existing.id
-                document.created_at = existing.created_at
-                stored_doc = await client.document_repository.update(document)
-            else:
-                stored_doc = await client.document_repository.create(document)
+        if existing is not None:
+            document.id = existing.id
+            document.created_at = existing.created_at
+            stored_doc = await client.document_repository.update(document)
+        else:
+            stored_doc = await client.document_repository.create(document)
 
-            assert stored_doc.id is not None, (
-                "Document ID should not be None after storing"
+        assert stored_doc.id is not None, "Document ID should not be None after storing"
+        for order, chunk in enumerate(chunks):
+            chunk.document_id = stored_doc.id
+            chunk.order = order
+        for item in items:
+            item.document_id = stored_doc.id
+
+        if existing is not None:
+            await client.chunk_repository.replace_for_document(stored_doc.id, chunks)
+            await client.document_item_repository.replace_for_document(
+                stored_doc.id, items
             )
-            for order, chunk in enumerate(chunks):
-                chunk.document_id = stored_doc.id
-                chunk.order = order
-            for item in items:
-                item.document_id = stored_doc.id
+        else:
+            await client.chunk_repository.create(chunks)
+            await client.document_item_repository.create_items(stored_doc.id, items)
 
-            if existing is not None:
-                await client.chunk_repository.replace_for_document(
-                    stored_doc.id, chunks
-                )
-                await client.document_item_repository.replace_for_document(
-                    stored_doc.id, items
-                )
-            else:
-                await client.chunk_repository.create(chunks)
-                await client.document_item_repository.create_items(stored_doc.id, items)
+    if client._config.storage.auto_vacuum:
+        client._schedule_vacuum()
 
-            if client._config.storage.auto_vacuum:
-                client._schedule_vacuum()
-
-            return stored_doc
-        except Exception:
-            await client.store.restore_table_versions(versions)
-            raise
+    return stored_doc
 
 
 async def _update_document_with_chunks(
@@ -200,31 +190,25 @@ async def _update_document_with_chunks(
             extract_items, document.id, docling_document, existing_picture_data
         )
 
-    async with client.store._write_lock:
-        versions = await client.store.current_table_versions()
+    async with client.store.write_transaction():
+        updated_doc = await client.document_repository.update(document)
 
-        try:
-            updated_doc = await client.document_repository.update(document)
+        assert updated_doc.id is not None
+        for order, chunk in enumerate(chunks):
+            chunk.document_id = updated_doc.id
+            chunk.order = order
 
-            assert updated_doc.id is not None
-            for order, chunk in enumerate(chunks):
-                chunk.document_id = updated_doc.id
-                chunk.order = order
+        await client.chunk_repository.replace_for_document(updated_doc.id, chunks)
 
-            await client.chunk_repository.replace_for_document(updated_doc.id, chunks)
+        if items is not None:
+            await client.document_item_repository.replace_for_document(
+                updated_doc.id, items
+            )
 
-            if items is not None:
-                await client.document_item_repository.replace_for_document(
-                    updated_doc.id, items
-                )
+    if client._config.storage.auto_vacuum:
+        client._schedule_vacuum()
 
-            if client._config.storage.auto_vacuum:
-                client._schedule_vacuum()
-
-            return updated_doc
-        except Exception:
-            await client.store.restore_table_versions(versions)
-            raise
+    return updated_doc
 
 
 async def create_document(
@@ -315,36 +299,30 @@ async def _store_documents_with_chunks(
 
     all_item_lists = await asyncio.to_thread(_extract_all_items)
 
-    async with client.store._write_lock:
-        versions = await client.store.current_table_versions()
-
+    async with client.store.write_transaction():
         created = await client.document_repository.create(
             [doc for doc, _, _ in prepared]
         )
 
-        try:
-            all_chunks: list[Chunk] = []
-            all_items = []
-            for doc, doc_chunks, item_list in zip(created, embedded, all_item_lists):
-                assert doc.id is not None
-                for order, chunk in enumerate(doc_chunks):
-                    chunk.document_id = doc.id
-                    chunk.order = order
-                all_chunks.extend(doc_chunks)
-                for item in item_list:
-                    item.document_id = doc.id
-                all_items.extend(item_list)
+        all_chunks: list[Chunk] = []
+        all_items = []
+        for doc, doc_chunks, item_list in zip(created, embedded, all_item_lists):
+            assert doc.id is not None
+            for order, chunk in enumerate(doc_chunks):
+                chunk.document_id = doc.id
+                chunk.order = order
+            all_chunks.extend(doc_chunks)
+            for item in item_list:
+                item.document_id = doc.id
+            all_items.extend(item_list)
 
-            await client.chunk_repository.create(all_chunks)
-            await client.document_item_repository.create_all(all_items)
+        await client.chunk_repository.create(all_chunks)
+        await client.document_item_repository.create_all(all_items)
 
-            if client._config.storage.auto_vacuum:
-                client._schedule_vacuum()
+    if client._config.storage.auto_vacuum:
+        client._schedule_vacuum()
 
-            return created
-        except Exception:
-            await client.store.restore_table_versions(versions)
-            raise
+    return created
 
 
 async def import_documents(

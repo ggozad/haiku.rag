@@ -62,6 +62,109 @@ async def test_version_rollback_on_update_failure(temp_db_path):
         assert len(original_chunks) > 0
 
 
+@pytest.mark.vcr()
+async def test_cancellation_mid_write_rolls_back(temp_db_path):
+    """A cancellation between two table writes must roll back, not leave the
+    chunks write committed without its document."""
+    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
+        orig_create = client.chunk_repository.create
+
+        async def succeed_then_cancel(chunks):
+            await orig_create(chunks)
+            raise asyncio.CancelledError()
+
+        client.chunk_repository.create = succeed_then_cancel
+
+        with pytest.raises(asyncio.CancelledError):
+            await client.create_document(content="cancelled mid-write")
+
+        assert await client.list_documents() == []
+        assert await client.chunk_repository.list_all() == []
+
+
+@pytest.mark.vcr()
+async def test_rollback_failure_keeps_the_original_cause(temp_db_path):
+    """A failed rollback must not hide what failed first."""
+    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
+
+        async def failing_restore(versions, *, best_effort=False):
+            return [("chunks", RuntimeError("restore refused"))]
+
+        client.store._restore_tables = failing_restore
+
+        async def boom(chunks):
+            raise RuntimeError("original failure")
+
+        client.chunk_repository.create = boom
+
+        with pytest.raises(RuntimeError, match="rollback failed on: chunks") as excinfo:
+            await client.create_document(content="doomed")
+
+        assert isinstance(excinfo.value.__cause__, RuntimeError)
+        assert str(excinfo.value.__cause__) == "original failure"
+
+
+@pytest.mark.vcr()
+async def test_cancellation_during_rollback_is_redelivered(temp_db_path):
+    """A cancellation arriving while rollback runs cannot cut it short, and is
+    delivered to the caller once the restore has completed."""
+    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
+        rollback_started = asyncio.Event()
+        rollback_finished = asyncio.Event()
+
+        async def slow_restore(versions, *, best_effort=False):
+            rollback_started.set()
+            await asyncio.sleep(0.05)
+            rollback_finished.set()
+            return []
+
+        client.store._restore_tables = slow_restore
+
+        async def boom(chunks):
+            raise RuntimeError("first failure")
+
+        client.chunk_repository.create = boom
+
+        task = asyncio.create_task(client.create_document(content="cancel in rollback"))
+        await rollback_started.wait()
+        task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert rollback_finished.is_set()
+
+
+@pytest.mark.vcr()
+async def test_batch_import_rolls_back_the_documents_write(temp_db_path):
+    """The batch document write is inside the guarded body, so a failure after
+    it lands restores the documents table too."""
+    from haiku.rag.client.documents import DocumentImport
+    from tests.store.test_document_items import _docling_doc_with_picture
+
+    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
+        orig_create = client.document_repository.create
+
+        async def succeed_then_fail(documents):
+            await orig_create(documents)
+            raise RuntimeError("after the documents write")
+
+        client.document_repository.create = succeed_then_fail
+
+        with pytest.raises(RuntimeError, match="after the documents write"):
+            await client.import_documents(
+                [
+                    DocumentImport(
+                        docling_document=_docling_doc_with_picture(),
+                        chunks=[],
+                        uri="test://batch-rollback",
+                    )
+                ]
+            )
+
+        assert await client.store.documents_table.count_rows() == 0
+
+
 async def test_new_database_does_not_run_upgrades(monkeypatch, temp_db_path):
     def fail_if_called(*_args, **_kwargs):
         raise AssertionError("run_pending_upgrades should not be called for new DB")

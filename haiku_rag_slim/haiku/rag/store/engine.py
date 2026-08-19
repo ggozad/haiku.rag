@@ -1,7 +1,8 @@
 import asyncio
 import json
 import logging
-from collections.abc import Coroutine
+from collections.abc import AsyncIterator, Coroutine
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -955,16 +956,37 @@ class Store:
         """Capture current versions of key tables for rollback using LanceDB's API."""
         return {name: await table.version() for name, table in self._tables().items()}
 
-    async def restore_table_versions(self, versions: dict[str, int]) -> bool:
-        """Restore tables to the provided versions using LanceDB's API.
+    @asynccontextmanager
+    async def write_transaction(self) -> AsyncIterator[None]:
+        """Hold the write lock for a multi-table mutation, restoring every table
+        to its pre-mutation version if the mutation fails.
+
+        Rollback follows RESTORE_TABLE_ORDER and a cancellation cannot interrupt
+        it; a cancellation absorbed during rollback is re-delivered. A rollback
+        that itself fails raises with the original failure as its cause.
+
+        In-process coordination only: a writer in another process can commit
+        between the version snapshot and the mutation.
 
         Raises:
             ReadOnlyError: If the store is in read-only mode.
         """
         self._assert_writable()
-        for name, table in self._tables().items():
-            await table.restore(int(versions[name]))
-        return True
+        async with self._write_lock:
+            versions = await self.current_table_versions()
+            try:
+                yield
+            except BaseException as exc:
+                failures, cancelled = await self._rollback_to_snapshot(versions)
+                if failures:
+                    raise RuntimeError(
+                        f"Write failed ({exc!r}) and rollback failed on: "
+                        f"{', '.join(name for name, _ in failures)}. Tables may "
+                        "be left inconsistent."
+                    ) from exc
+                if cancelled and not isinstance(exc, asyncio.CancelledError):
+                    raise asyncio.CancelledError()
+                raise
 
     async def create_tag(self, name: str) -> None:
         """Tag the current version of every table with the given name.

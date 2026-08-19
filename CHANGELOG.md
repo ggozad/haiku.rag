@@ -14,6 +14,7 @@
 
 ### Changed
 
+- Multi-table writes (document create, update, batch import, cascade delete) go through `Store.write_transaction()`. Rollback restores in `RESTORE_TABLE_ORDER` and is shielded from cancellation, so a cancelled write rolls back instead of committing part of itself. `Store.restore_table_versions()` is removed.
 - Search enrichment, the multimodal reranker's picture fetch, and context expansion each issue a fixed number of `document_items` queries regardless of how many documents a result set spans, instead of one set per document. `expand_with_items` takes the items to expand from rather than fetching them, and `DocumentItemRepository` gains `resolve_refs_grouped`, `get_items_in_ranges`, `get_pictures_grouped` and `get_caption_picture_refs_grouped`. The superseded methods are removed: `resolve_refs`, `get_items_in_range`, `get_caption_picture_refs`, `get_text_for_refs` and `get_all_items_grouped`. `get_pictures_grouped` returns each picture's text alongside its bytes under `with_text`, off by default so the reranker's blob fetch does not read a column it discards.
 - Eval judge pinned to `qwen3.8`: `DEFAULT_JUDGE_MODEL` is `ollama:qwen3.8`, and the reference configs use `Inferact/Qwen3.8-27B-NVFP4` with `extra_body.chat_template_kwargs.reasoning_effort: low`. Results in `docs/benchmarks.md` were judged by `Qwen3.6-35B-A3B-NVFP4` and are not re-judged.
 - `create_capability(rag=...)` lends a capability an open client rather than having it open its own; `client.ask`/`client.analyze` now pass theirs.

@@ -110,14 +110,15 @@ class TestStoreReadOnly:
                 await store.recreate_embeddings_table()
 
     @pytest.mark.asyncio
-    async def test_restore_table_versions_raises_when_read_only(self, temp_db_path):
-        """restore_table_versions() raises ReadOnlyError when read_only=True."""
-        async with Store(temp_db_path, create=True) as store:
-            versions = await store.current_table_versions()
+    async def test_write_transaction_raises_when_read_only(self, temp_db_path):
+        """write_transaction() raises ReadOnlyError when read_only=True."""
+        async with Store(temp_db_path, create=True):
+            pass
 
         async with Store(temp_db_path, read_only=True) as store:
             with pytest.raises(ReadOnlyError):
-                await store.restore_table_versions(versions)
+                async with store.write_transaction():
+                    pass  # pragma: no cover - entering already raised
 
 
 class TestDocumentRepositoryReadOnly:
