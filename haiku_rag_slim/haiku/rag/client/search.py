@@ -38,40 +38,8 @@ async def search(
     if limit is None:
         limit = client._config.search.limit
 
-    if isinstance(query, str):
-        if search_type is None:
-            search_type = "hybrid"
-
-        reranker = client.reranker
-
-        if reranker is None:
-            chunk_results = await client.chunk_repository.search(
-                query, limit, search_type, filter
-            )
-        else:
-            search_limit = limit * 10
-            raw_results = await client.chunk_repository.search(
-                query, search_limit, search_type, filter
-            )
-            chunks = [chunk for chunk, _ in raw_results]
-            if client._config.reranking.multimodal:
-                await _attach_picture_data(client, chunks)
-            chunk_results = await reranker.rerank(query, chunks, top_n=limit)
-    else:
-        embedder = client.embedder
-        if not embedder.supports_images:
-            raise ValueError(
-                "Image queries require a multimodal embedder. Set "
-                "embeddings.model.multimodal: true on a vllm, voyageai, or cohere "
-                "model."
-            )
-        query_vector = await embedder.embed_image(query)
-        chunk_results = await client.chunk_repository.search(
-            query="",
-            limit=limit,
-            filter=filter,
-            query_vector=query_vector,
-        )
+    candidates = await _fetch(client, query, limit, search_type, filter)
+    chunk_results = await _rank(client, query, candidates, limit)
 
     results = [SearchResult.from_chunk(chunk, score) for chunk, score in chunk_results]
     results = _dedup_picture_chunks(results)
@@ -80,6 +48,73 @@ async def search(
         await _populate_image_data(client, results)
 
     return results
+
+
+# Candidates per requested result when a reranker will re-order them.
+_RERANK_OVERFETCH = 10
+
+
+async def _fetch(
+    client: "HaikuRAG",
+    query: "str | bytes | PILImage.Image",
+    limit: int,
+    search_type: SearchType | None,
+    filter: str | None,
+) -> list[tuple[Chunk, float]]:
+    """Candidates from one database, ranked by that database.
+
+    Over-fetches when a reranker will re-order them. Separate from `_rank` so a
+    caller searching several databases can fuse their candidates before anything
+    is ranked or enriched.
+    """
+    if isinstance(query, str):
+        if search_type is None:
+            search_type = "hybrid"
+        fetch_limit = limit * _RERANK_OVERFETCH if client.reranker else limit
+        return await client.chunk_repository.search(
+            query, fetch_limit, search_type, filter
+        )
+
+    embedder = client.embedder
+    if not embedder.supports_images:
+        raise ValueError(
+            "Image queries require a multimodal embedder. Set "
+            "embeddings.model.multimodal: true on a vllm, voyageai, or cohere "
+            "model."
+        )
+    query_vector = await embedder.embed_image(query)
+    return await client.chunk_repository.search(
+        query="",
+        limit=limit,
+        filter=filter,
+        query_vector=query_vector,
+    )
+
+
+async def _rank(
+    client: "HaikuRAG",
+    query: "str | bytes | PILImage.Image",
+    candidates: list[tuple[Chunk, float]],
+    limit: int,
+) -> list[tuple[Chunk, float]]:
+    """Order candidates and cut them to `limit`.
+
+    An image query carries no text for a reranker to score against, so its
+    candidates keep the vector ranking. Its type is checked before
+    `client.reranker`, which builds the reranker on first access and loads model
+    weights for a local one.
+    """
+    if not isinstance(query, str):
+        return candidates[:limit]
+
+    reranker = client.reranker
+    if reranker is None:
+        return candidates[:limit]
+
+    chunks = [chunk for chunk, _ in candidates]
+    if client._config.reranking.multimodal:
+        await _attach_picture_data(client, chunks)
+    return await reranker.rerank(query, chunks, top_n=limit)
 
 
 async def _attach_picture_data(client: "HaikuRAG", chunks: list[Chunk]) -> None:
