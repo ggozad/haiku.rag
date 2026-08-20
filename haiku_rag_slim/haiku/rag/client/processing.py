@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-import httpx
+import logfire
 
 from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.config import AppConfig
@@ -54,6 +54,19 @@ def _warn_if_descriptions_missing(
             model.base_url or "<provider default>",
             model.name,
         )
+
+
+def _write_fetch_body_sync(body: bytes, suffix: str) -> Path:
+    with tempfile.NamedTemporaryFile(
+        mode="wb", suffix=suffix, delete=False
+    ) as temp_file:
+        temp_file.write(body)
+        temp_file.flush()
+        return Path(temp_file.name)
+
+
+async def _write_fetch_body(body: bytes, suffix: str) -> Path:
+    return await asyncio.to_thread(_write_fetch_body_sync, body, suffix)
 
 
 async def convert(
@@ -117,35 +130,31 @@ async def convert(
     parsed = urlparse(source)
 
     if parsed.scheme in ("http", "https"):
-        # URL - download and convert
-        async with httpx.AsyncClient() as http:
-            response = await http.get(source)
-            response.raise_for_status()
+        # One HTTP acquisition path: the same adapter the ingester fetches with.
+        from haiku.rag.ingester.sources.http import HTTPSource
 
-            content_type = response.headers.get("content-type", "").lower()
-            file_extension = get_extension_from_content_type_or_url(
-                source, content_type
+        fetcher = HTTPSource(source_id="convert")
+        try:
+            result = await fetcher.fetch(source)
+        finally:
+            await fetcher.aclose()
+
+        file_extension = get_extension_from_content_type_or_url(
+            source, result.content_type
+        )
+        if file_extension not in converter.supported_extensions:
+            raise UnsupportedSourceError(
+                f"Unsupported content type/extension: "
+                f"{result.content_type}/{file_extension}"
             )
 
-            if file_extension not in converter.supported_extensions:
-                raise UnsupportedSourceError(
-                    f"Unsupported content type/extension: {content_type}/{file_extension}"
-                )
-
-            with tempfile.NamedTemporaryFile(
-                mode="wb", suffix=file_extension, delete=False
-            ) as temp_file:
-                temp_file.write(response.content)
-                temp_file.flush()
-                temp_path = Path(temp_file.name)
-
-            try:
-                effective_uri = source_uri or source
-                doc = await _convert_file(temp_path, effective_uri)
-                _warn_if_descriptions_missing(config, doc, source)
-                return doc
-            finally:
-                temp_path.unlink(missing_ok=True)
+        temp_path = await _write_fetch_body(result.body, file_extension)
+        try:
+            doc = await _convert_file(temp_path, source_uri or source)
+            _warn_if_descriptions_missing(config, doc, source)
+            return doc
+        finally:
+            temp_path.unlink(missing_ok=True)
 
     elif parsed.scheme == "file":
         # file:// URI
@@ -350,7 +359,8 @@ async def ensure_chunks_embedded(
     if not chunks_to_embed:
         return chunks
 
-    embedded = await embed_chunks(chunks_to_embed, embedder, config)
+    with logfire.span("document.embed", chunks=len(chunks_to_embed)):
+        embedded = await embed_chunks(chunks_to_embed, embedder, config)
 
     # embed_chunks preserves input order; fill positionally, since duplicate
     # chunk texts across documents make a content-keyed lookup ambiguous.

@@ -9,6 +9,9 @@
 
 ### Changed
 
+- `HaikuRAG.convert(url)` fetches through `HTTPSource`, the same adapter the ingester uses, instead of its own httpx client. `_write_fetch_body` moved from `client.documents` to `client.processing`.
+- Chunk embedding is owned by the persistence funnels: `create_document`, `update_document` and source ingestion no longer embed eagerly before handing chunks to a check that would embed them anyway. The `document.embed` span moved onto `ensure_chunks_embedded`, so every path is instrumented rather than only ingest.
+- One-shot directory ingestion and `FSSource.discover` share `walk_files`, so the symlink-escape guard lives in one place.
 - Configuration sections reject unknown keys. A typo or a setting that has been renamed or removed now fails validation with its path (`providers.docling_serve.bogus: Extra inputs are not permitted`) instead of being silently ignored.
 - `processing.converter`, `processing.chunker` and `processing.chunker_type` are constrained to their supported values, so an unsupported one fails at load rather than at first use.
 - Numeric settings carry bounds: sizes, limits, dimensions, token budgets, attempt counts, breaker thresholds and `min_chunks` must be positive; retention, delays, intervals and cooldowns non-negative; `doctor.duplicates.similarity_threshold` within 0-1; `ingester.api.port` within 0-65535 (0 keeps its OS-assigned meaning); `ingester.workers.worker_count` allows 0 for an API-and-reaper-only process.

@@ -14,9 +14,9 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.client.documents import (
     DocumentImport,
     _prepare_document_from_docling,
-    _write_fetch_body,
     check_source_accessible,
 )
+from haiku.rag.client.processing import _write_fetch_body
 from haiku.rag.config import get_config
 from haiku.rag.embeddings import EmbedderWrapper
 from haiku.rag.ingester.sources.base import FetchResult
@@ -62,17 +62,17 @@ async def test_prepare_document_from_docling_runs_off_event_loop_thread(monkeypa
 
 @pytest.mark.asyncio
 async def test_write_fetch_body_runs_off_event_loop_thread(monkeypatch):
-    import haiku.rag.client.documents as documents
+    import haiku.rag.client.processing as processing
 
     event_loop_thread = threading.current_thread()
     called_from: list[threading.Thread] = []
-    original = documents._write_fetch_body_sync
+    original = processing._write_fetch_body_sync
 
     def spy(body, suffix):
         called_from.append(threading.current_thread())
         return original(body, suffix)
 
-    monkeypatch.setattr(documents, "_write_fetch_body_sync", spy)
+    monkeypatch.setattr(processing, "_write_fetch_body_sync", spy)
 
     path = await _write_fetch_body(b"payload", ".bin")
     try:
@@ -972,6 +972,64 @@ async def test_client_import_documents_batches_embeddings(temp_db_path):
         )
         assert {row["document_id"] for row in rows} == {doc.id for doc in docs}
         assert all(len(row["vector"]) == dim for row in rows)
+
+
+async def test_single_and_batch_import_store_the_same_document(temp_db_path):
+    """import_document and import_documents share preparation and persistence, so
+    the same input has to land as the same stored document."""
+    dim = get_config().embeddings.model.vector_dim
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client.store.embedder = _CountingEmbedder(dim)
+
+        single = await client.import_document(
+            _docling_doc("a", "Alpha document body"),
+            [Chunk(content="Alpha document body", order=0)],
+            uri="mem://single",
+        )
+        [batched] = await client.import_documents(
+            [
+                DocumentImport(
+                    docling_document=_docling_doc("a", "Alpha document body"),
+                    chunks=[Chunk(content="Alpha document body", order=0)],
+                    uri="mem://batch",
+                )
+            ]
+        )
+
+        assert single.title == batched.title
+        assert single.content == batched.content
+
+        for doc in (single, batched):
+            chunks = await client.chunk_repository.get_by_document_id(doc.id)
+            assert [c.content for c in chunks] == ["Alpha document body"]
+
+        # get_by_document_id does not project the vector, so read it directly.
+        rows = await (
+            client.store.chunks_table.query()
+            .select(["document_id", "vector"])
+            .to_list()
+        )
+        vectors = {row["document_id"]: row["vector"] for row in rows}
+        assert set(vectors) == {single.id, batched.id}
+        assert all(len(vector) == dim for vector in vectors.values())
+
+        single_items = await client.document_item_repository.get_item_count(single.id)
+        batched_items = await client.document_item_repository.get_item_count(batched.id)
+        assert single_items == batched_items > 0
+
+
+async def test_create_document_embeds_in_one_pass(temp_db_path):
+    """Embedding is owned by the persistence funnel, so an operation makes one
+    embedder pass — no eager embed followed by a check that could embed again."""
+    dim = get_config().embeddings.model.vector_dim
+    embedder = _CountingEmbedder(dim)
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client.store.embedder = embedder
+        await client.create_document("Alpha document body")
+
+    assert len(embedder.batches) == 1
 
 
 async def test_client_import_documents_mixed_embeddings(temp_db_path):

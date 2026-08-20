@@ -373,3 +373,22 @@ async def test_discover_skips_symlink_to_missing_in_root_target(tmp_path):
     events = [e async for e in src.discover()]
 
     assert {e.uri for e in events} == {(tmp_path / "real.md").as_uri()}
+
+
+def test_walk_files_drops_links_escaping_the_root(tmp_path):
+    import os
+
+    from haiku.rag.ingester.sources.fs import walk_files
+
+    tree = tmp_path / "tree"
+    outside = tmp_path / "outside"
+    tree.mkdir()
+    outside.mkdir()
+    (tree / "real.txt").write_text("in tree")
+    (outside / "secret.txt").write_text("out of tree")
+    os.symlink(outside / "secret.txt", tree / "escape.txt")
+    os.symlink(outside, tree / "escape_dir")
+
+    found = {path.name for path in walk_files(tree)}
+
+    assert found == {"real.txt"}

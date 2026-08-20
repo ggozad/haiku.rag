@@ -29,6 +29,32 @@ def _uri_to_path(uri: str) -> Path:
     raise ValueError(f"Unsupported URI scheme for FSSource: {uri}")
 
 
+def walk_files(root: Path) -> list[Path]:
+    """Every file under ``root``, sorted, with symlink escapes dropped.
+
+    Directory symlinks are never followed. A symlinked file is resolved and kept
+    only when its target is inside ``root``, so a link cannot pull in a file from
+    outside the tree the caller named. Comparison is against the resolved root, so
+    a root reached through a symlink (macOS ``/tmp``) compares like any other.
+    """
+    resolved_root = root.resolve()
+    candidates: list[Path] = []
+    for dirpath, _dirnames, filenames in os.walk(root, followlinks=False):
+        for filename in filenames:
+            path = Path(dirpath) / filename
+            if path.is_symlink():
+                try:
+                    target = path.resolve(strict=False)
+                except OSError:  # pragma: no cover - strict=False absorbs these
+                    continue
+                if not target.is_relative_to(resolved_root):
+                    continue
+                path = target
+            candidates.append(path)
+    candidates.sort()
+    return candidates
+
+
 class FSSource:
     def __init__(
         self,
@@ -136,22 +162,7 @@ class FSSource:
         # supports/head/fetch's resolve-then-check behaviour. Out-of-root
         # targets stay skipped so a stray link can't exfiltrate data the
         # operator didn't intend to expose.
-        candidates: list[Path] = []
-        for dirpath, _dirnames, filenames in os.walk(self.root, followlinks=False):
-            for filename in filenames:
-                path = Path(dirpath) / filename
-                if path.is_symlink():
-                    try:
-                        resolved = path.resolve(strict=False)
-                    except OSError:  # pragma: no cover - strict=False absorbs these
-                        continue
-                    if not resolved.is_relative_to(self.root):
-                        continue
-                    path = resolved
-                candidates.append(path)
-        candidates.sort()
-
-        for path in candidates:
+        for path in walk_files(self.root):
             if not path.is_file():
                 continue
             if not self.filter.include_file(str(path)):
