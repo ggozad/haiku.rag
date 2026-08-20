@@ -103,7 +103,7 @@ class TestV0_58_0MigrationEdgeCases:
     async def test_resume_skips_already_migrated_rows(self, temp_db_path):
         """A half-finished prior run leaves some document_meta rows; re-running
         migrates only the rest and never duplicates."""
-        from haiku.rag.store.engine import DocumentMetaRecord
+        from haiku.rag.store.schema import DocumentMetaRecord
 
         async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
             await seed_legacy_documents(

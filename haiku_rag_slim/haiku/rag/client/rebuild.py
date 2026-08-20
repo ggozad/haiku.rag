@@ -14,11 +14,11 @@ from haiku.rag.client.documents import (
 )
 from haiku.rag.converters import get_converter
 from haiku.rag.store.compression import compress_docling_split
-from haiku.rag.store.engine import ChunkRecordBase
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import extract_items
 from haiku.rag.store.repositories.settings import SettingsRepository
+from haiku.rag.store.schema import ChunkRecordBase
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
@@ -519,7 +519,7 @@ async def _flush_rebuild_batch(
     document. Used by RECHUNK and FULL modes after the chunks table has been
     cleared.
     """
-    from haiku.rag.store.engine import DocumentMetaRecord, DocumentRecord
+    from haiku.rag.store.schema import DocumentMetaRecord, DocumentRecord
 
     if not documents:
         return

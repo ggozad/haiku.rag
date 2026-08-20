@@ -261,7 +261,7 @@ def test_staging_chunk_record_mirrors_chunk_record_schema():
     column on every crash-recovery cycle. This test fails loudly instead.
     """
     from haiku.rag.client.rebuild import _StagingChunkRecord
-    from haiku.rag.store.engine import ChunkRecordBase
+    from haiku.rag.store.schema import ChunkRecordBase
 
     expected = set(ChunkRecordBase.model_fields) - {"content_fts", "vector"}
     assert set(_StagingChunkRecord.model_fields) == expected

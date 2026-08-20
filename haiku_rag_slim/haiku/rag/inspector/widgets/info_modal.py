@@ -64,11 +64,8 @@ class InfoModal(ModalScreen):
 
     async def on_mount(self) -> None:
         """Load and display database info."""
-        from haiku.rag.store.engine import (
-            ConnectionMode,
-            connect_lancedb,
-            get_database_stats,
-        )
+        from haiku.rag.store.engine import ConnectionMode, connect_lancedb
+        from haiku.rag.store.info import get_database_stats
 
         lines: list[str] = []
 

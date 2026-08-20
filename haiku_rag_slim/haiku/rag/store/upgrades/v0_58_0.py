@@ -1,7 +1,8 @@
 import logging
 import shutil
 
-from haiku.rag.store.engine import DocumentMetaRecord, Store
+from haiku.rag.store.engine import Store
+from haiku.rag.store.schema import DocumentMetaRecord
 from haiku.rag.store.upgrades import Upgrade
 
 logger = logging.getLogger(__name__)

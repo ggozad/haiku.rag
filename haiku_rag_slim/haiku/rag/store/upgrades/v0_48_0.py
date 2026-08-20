@@ -3,7 +3,8 @@ import logging
 import pyarrow as pa
 from lancedb.index import BTree
 
-from haiku.rag.store.engine import DocumentItemRecord, Store
+from haiku.rag.store.engine import Store
+from haiku.rag.store.schema import DocumentItemRecord
 from haiku.rag.store.upgrades import Upgrade
 from haiku.rag.utils import escape_sql_string
 

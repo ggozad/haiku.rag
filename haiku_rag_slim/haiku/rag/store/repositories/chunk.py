@@ -9,8 +9,9 @@ if TYPE_CHECKING:
 from lancedb.index import FTS
 from lancedb.rerankers import RRFReranker
 
-from haiku.rag.store.engine import Store, ensure_indexes, query_to_pydantic
+from haiku.rag.store.engine import Store
 from haiku.rag.store.models.chunk import Chunk, SearchType
+from haiku.rag.store.schema import ensure_indexes, query_to_pydantic
 from haiku.rag.utils import escape_sql_string
 
 logger = logging.getLogger(__name__)

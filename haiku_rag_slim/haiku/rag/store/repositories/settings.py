@@ -1,7 +1,8 @@
 import json
 import logging
 
-from haiku.rag.store.engine import SettingsRecord, Store, query_to_pydantic
+from haiku.rag.store.engine import Store
+from haiku.rag.store.schema import SettingsRecord, query_to_pydantic
 
 logger = logging.getLogger(__name__)
 

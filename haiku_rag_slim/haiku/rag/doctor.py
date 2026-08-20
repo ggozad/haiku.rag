@@ -11,13 +11,10 @@ from pydantic import BaseModel, Field
 
 from haiku.rag.config import AppConfig
 from haiku.rag.config.models import DuplicateDetectionConfig
-from haiku.rag.store.engine import (
-    REQUIRED_TABLES,
-    Store,
-    connect_lancedb,
-    get_database_stats,
-)
+from haiku.rag.store.engine import Store, connect_lancedb
+from haiku.rag.store.info import get_database_stats
 from haiku.rag.store.repositories.settings import SettingsRepository
+from haiku.rag.store.schema import REQUIRED_TABLES
 from haiku.rag.store.upgrades import get_pending_upgrades
 
 # Cap how many offending ids we collect per check; doctor is a summary, not a dump.

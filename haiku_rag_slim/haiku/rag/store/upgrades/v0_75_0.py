@@ -1,6 +1,7 @@
 import logging
 
-from haiku.rag.store.engine import Store, ensure_indexes
+from haiku.rag.store.engine import Store
+from haiku.rag.store.schema import ensure_indexes
 from haiku.rag.store.upgrades import Upgrade
 
 logger = logging.getLogger(__name__)

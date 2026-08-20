@@ -5,7 +5,7 @@ import pytest
 
 from haiku.rag.app import HaikuRAGApp
 from haiku.rag.config.models import AppConfig, LanceDBConfig
-from haiku.rag.store.engine import DocumentItemRecord
+from haiku.rag.store.schema import DocumentItemRecord
 
 
 @pytest.mark.asyncio
@@ -176,7 +176,7 @@ async def test_app_info_uses_connect_lancedb_for_remote(tmp_path):
     app = HaikuRAGApp(db_path=nonexistent, config=config)
 
     with patch(
-        "haiku.rag.store.engine.connect_lancedb", new_callable=AsyncMock
+        "haiku.rag.store.info.connect_lancedb", new_callable=AsyncMock
     ) as mock_connect:
         # Empty DB triggers the early-return path - enough to prove connect_lancedb was used
         mock_db = mock_connect.return_value

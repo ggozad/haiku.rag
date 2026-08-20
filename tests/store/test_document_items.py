@@ -483,7 +483,7 @@ class TestDocumentItemMigration:
     async def test_migration_populates_items_for_existing_documents(self, temp_db_path):
         """Test that the v0.40.0 migration populates items for pre-existing documents."""
         from haiku.rag.store.compression import compress_docling_split
-        from haiku.rag.store.engine import DocumentRecord
+        from haiku.rag.store.schema import DocumentRecord
         from haiku.rag.store.upgrades.v0_40_0 import _apply_populate_document_items
 
         docling_doc = _make_docling_doc()
@@ -529,7 +529,7 @@ class TestDocumentItemMigration:
 
     async def test_migration_skips_documents_without_docling(self, temp_db_path):
         """Test that migration handles documents without docling data."""
-        from haiku.rag.store.engine import DocumentRecord
+        from haiku.rag.store.schema import DocumentRecord
         from haiku.rag.store.upgrades.v0_40_0 import _apply_populate_document_items
 
         async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
@@ -742,7 +742,7 @@ class TestPictureDataMigrationBackfill:
         import json
 
         from haiku.rag.store.compression import compress_json, decompress_json
-        from haiku.rag.store.engine import DocumentItemRecord, DocumentRecord
+        from haiku.rag.store.schema import DocumentItemRecord, DocumentRecord
         from haiku.rag.store.upgrades.v0_45_0 import _apply_extract_picture_bytes
 
         fake_png = b"\x89PNG\r\n\x1a\nlegacy-picture-bytes-for-test"

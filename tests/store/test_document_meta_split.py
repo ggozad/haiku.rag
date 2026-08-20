@@ -151,7 +151,7 @@ async def test_batch_create_rolls_back_meta_on_failure(temp_db_path, monkeypatch
 async def test_get_by_uri_with_orphan_meta_returns_none(temp_db_path):
     """Defensive: a document_meta row whose documents row is missing (an
     invariant violation) resolves to None, not a half-hydrated document."""
-    from haiku.rag.store.engine import DocumentMetaRecord
+    from haiku.rag.store.schema import DocumentMetaRecord
 
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
         repo = DocumentRepository(store)

@@ -2,9 +2,10 @@ import pyarrow as pa
 import pytest
 from lancedb.index import BTree
 
-from haiku.rag.store.engine import Store, ensure_indexes
+from haiku.rag.store.engine import Store
 from haiku.rag.store.models import Document
 from haiku.rag.store.repositories.document import DocumentRepository
+from haiku.rag.store.schema import ensure_indexes
 
 EXPECTED_INDEXED_COLUMNS = {
     "documents": {"id"},

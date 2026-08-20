@@ -3,7 +3,8 @@ import json
 import pytest
 
 from haiku.rag.store.compression import compress_docling_split
-from haiku.rag.store.engine import DocumentItemRecord, DocumentRecord, Store
+from haiku.rag.store.engine import Store
+from haiku.rag.store.schema import DocumentItemRecord, DocumentRecord
 from haiku.rag.store.upgrades.v0_48_0 import _apply_backfill_heading_hierarchy
 
 
