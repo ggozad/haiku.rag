@@ -115,7 +115,6 @@ async def convert(
             )
         return await converter.convert_file(file_path, source_uri=effective_uri)
 
-    # Path object - convert file directly
     if isinstance(source, Path):
         if not source.exists():
             raise UnsupportedSourceError(f"File does not exist: {source}")
@@ -126,7 +125,6 @@ async def convert(
         _warn_if_descriptions_missing(config, doc, str(source))
         return doc
 
-    # String - check if URL or text
     parsed = urlparse(source)
 
     if parsed.scheme in ("http", "https"):
@@ -157,7 +155,6 @@ async def convert(
             temp_path.unlink(missing_ok=True)
 
     elif parsed.scheme == "file":
-        # file:// URI
         file_path = Path(parsed.path)
         if not file_path.exists():
             raise UnsupportedSourceError(f"File does not exist: {file_path}")

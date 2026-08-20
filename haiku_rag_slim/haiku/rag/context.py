@@ -466,7 +466,6 @@ def expand_with_items(
     merged = _merge_ranges(ranges)
     constituent_range = {id(result): (lo, hi) for lo, hi, result in ranges}
 
-    # Build results from the window items
     pos_to_item = {item.position: item for item in window_items}
     final_results: list[SearchResult] = []
     for range_start, range_end, group in merged:

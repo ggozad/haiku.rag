@@ -127,13 +127,10 @@ class DoclingLocalChunker(DocumentChunker):
             meta = cast("DocMeta | None", chunk.meta)
             if meta and meta.doc_items:
                 for doc_item in meta.doc_items:
-                    # Get JSON pointer reference
                     if doc_item.self_ref:
                         doc_item_refs.append(doc_item.self_ref)
-                    # Get label
                     if doc_item.label:
                         labels.append(doc_item.label)
-                    # Get page numbers from provenance
                     if doc_item.prov:
                         for prov in doc_item.prov:
                             if (
@@ -142,7 +139,6 @@ class DoclingLocalChunker(DocumentChunker):
                             ):
                                 page_numbers.append(prov.page_no)
 
-            # Get headings from chunk metadata
             if meta and meta.headings:
                 headings = list(meta.headings)
 

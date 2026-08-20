@@ -111,7 +111,6 @@ async def _rebuild_locked(
     # destructive phase and are fine.
     await client._await_vacuum_tasks()
 
-    # Update settings to current config
     settings_repo = SettingsRepository(client.store)
     await settings_repo.save_current_settings()
 
@@ -503,7 +502,6 @@ async def _rebuild_embed_only(
     # rebuild discards harmlessly.
     await _drop_staging_tables(client)
 
-    # Yield docs with no chunks
     for doc in documents:
         if doc.id and doc.id not in yielded_docs:
             yield doc.id
@@ -622,7 +620,6 @@ async def _rebuild_rechunk(
         )
         embedded_chunks = await embed_chunks(chunks, embedder, client._config)
 
-        # Prepare chunks with document_id and order
         for order, chunk in enumerate(embedded_chunks):
             chunk.document_id = doc.id
             chunk.order = order
@@ -636,13 +633,11 @@ async def _rebuild_rechunk(
         # consistent with the rebuild already being non-atomic.
         yield doc.id
 
-        # Flush batch when size reached
         if len(pending_docs) >= _REBUILD_BATCH_SIZE:
             await _flush_rebuild_batch(client, pending_docs, pending_chunks)
             pending_chunks = []
             pending_docs = []
 
-    # Flush remaining
     if pending_docs:
         await _flush_rebuild_batch(client, pending_docs, pending_chunks)
 
@@ -858,7 +853,6 @@ async def _rebuild_full(
 
         doc.set_docling(docling_document)
 
-        # Prepare chunks with document_id and order
         for order, chunk in enumerate(embedded_chunks):
             chunk.document_id = doc.id
             chunk.order = order
@@ -867,12 +861,10 @@ async def _rebuild_full(
         pending_docs.append(doc)
         yield doc.id
 
-        # Flush batch when size reached
         if len(pending_docs) >= _REBUILD_BATCH_SIZE:
             await _flush_rebuild_batch(client, pending_docs, pending_chunks)
             pending_chunks = []
             pending_docs = []
 
-    # Flush remaining
     if pending_docs:
         await _flush_rebuild_batch(client, pending_docs, pending_chunks)

@@ -108,11 +108,9 @@ class DocumentFilterModal(ModalScreen):
         """Load all documents from the client."""
         docs = await self.client.list_documents()
 
-        # Remove loading indicator
         loading = self.query_one("#loading-indicator", Static)
         loading.remove()
 
-        # Add checkboxes for all documents
         filter_list = self.query_one("#filter-list", VerticalScroll)
         for doc in docs:
             display_name = doc.title or doc.uri or str(doc.id)

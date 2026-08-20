@@ -379,7 +379,6 @@ async def visualize_chunk(
         return []
     page_images = pages_doc.get_page_images(list(boxes_by_page.keys()))
 
-    # Render each page with its bounding boxes
     images = []
     for page_no in sorted(boxes_by_page.keys()):
         if page_no not in page_images:

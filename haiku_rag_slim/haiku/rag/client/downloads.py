@@ -31,7 +31,6 @@ async def download_models(
     - HuggingFace reranker models (cross-encoder, jina-local)
     - Ollama models
     """
-    # Docling models
     try:
         from docling.utils.model_downloader import download_models
 

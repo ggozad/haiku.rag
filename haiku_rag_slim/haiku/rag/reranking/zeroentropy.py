@@ -25,10 +25,8 @@ class ZeroEntropyReranker(RerankerBase):  # pragma: no cover
     async def _rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10
     ) -> list[tuple[Chunk, float]]:
-        # Prepare documents for Zero Entropy API
         documents = [chunk.content for chunk in chunks]
 
-        # Call Zero Entropy reranking API
         model_name = self._model or "zerank-1"
         response = await self._client.models.rerank(
             model=model_name,

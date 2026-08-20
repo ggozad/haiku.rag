@@ -55,7 +55,6 @@ class HaikuRAGApp:
             )
             return
 
-        # Create the database
         async with HaikuRAG(db_path=self.db_path, config=self.config, create=True):
             pass
         self.console.print(
@@ -161,7 +160,6 @@ class HaikuRAGApp:
                 f"{tables['chunks'].num_versions}"
             )
 
-        # Migration status
         self.console.rule()
         if info.pending_migrations:
             self.console.print(
@@ -747,7 +745,6 @@ class HaikuRAGApp:
                 )
                 return
 
-            # Check if index already exists
             indices = await client.store.chunks_table.list_indices()
             has_vector_index = any("vector" in str(idx).lower() for idx in indices)
 

@@ -307,7 +307,6 @@ class DocumentRepository:
         """Delete a document by its ID."""
         self.store._assert_writable()
 
-        # Check if document exists
         doc = await self.get_by_id(entity_id)
         if doc is None:
             return False
@@ -416,7 +415,6 @@ class DocumentRepository:
         )
         await ensure_indexes(self.store.document_items_table, "document_items")
 
-        # Get count before deletion
         count = len(
             await query_to_pydantic(
                 self.store.documents_table.query().limit(1), DocumentRecord

@@ -190,7 +190,6 @@ class Store:
         self._rebuild_lock = asyncio.Lock()
         self._is_new_db = False
 
-        # Check if database exists (for local filesystem only)
         if self._connection_mode == ConnectionMode.LOCAL:
             if not db_path.exists():
                 if not create:
@@ -208,7 +207,6 @@ class Store:
 
     async def _initialize(self):
         """Perform async initialization: connect to LanceDB, init tables, validate."""
-        # Connect to LanceDB
         self.db: lancedb.AsyncConnection = await connect_lancedb(
             self._config, self.db_path
         )
@@ -489,7 +487,6 @@ class Store:
             self.settings_table = await self.db.create_table(
                 "settings", schema=SettingsRecord
             )
-            # Save current settings to the new database
             settings_data = self._config.model_dump(mode="json")
             await self.settings_table.add(
                 [SettingsRecord(id="settings", settings=json.dumps(settings_data))]
@@ -582,7 +579,6 @@ class Store:
                     where="id = 'settings'",
                 )
         else:
-            # Create new settings record
             settings_data = self._config.model_dump(mode="json")
             settings_data["version"] = version
             await self.settings_table.add(
@@ -603,7 +599,6 @@ class Store:
         if "chunks" in (await self.db.list_tables()).tables:
             await self.db.drop_table("chunks")
 
-        # Update the ChunkRecord model with new vector dimension
         self.ChunkRecord = create_chunk_model(self.embedder._vector_dim)
         self.chunks_table = await self.db.create_table(
             "chunks", schema=self.ChunkRecord
