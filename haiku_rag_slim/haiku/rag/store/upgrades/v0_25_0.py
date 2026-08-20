@@ -131,7 +131,6 @@ async def _apply_compress_docling_document(store: Store) -> None:  # pragma: no 
                     if records:
                         await store.documents_table.add(records)
                         logger.info("Recovered batch %d/%d", batch_num, total_batches)
-                # Cleanup staging
                 await store.db.drop_table("documents_v4_staging")
                 logger.info("Recovery complete")
                 return

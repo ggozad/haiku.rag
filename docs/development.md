@@ -109,8 +109,15 @@ uv run ty check
 
 Tests automatically set mock API keys for providers that require them during client initialization. When running with VCR playback, these mock keys are sufficient since no real API calls are made.
 
-When recording new cassettes, set real API keys via environment variables:
+Recording reaches the real service, so the recording command needs network
+access and the keys that service reads. Name the exact test and pass `-n0`:
+a module-wide `--record-mode=rewrite` re-records every cassette in it,
+including ones whose service you do not have running.
 
 ```bash
-ANTHROPIC_API_KEY=sk-ant-... uv run pytest tests/test_qa.py::test_qa_anthropic --record-mode=rewrite
+# Ollama-backed cassettes need no key, only a running Ollama
+uv run pytest tests/test_embedder.py::test_ollama_embedder -n0 --record-mode=rewrite
+
+# A keyed provider reads its own variable. Cohere's SDK reads CO_API_KEY
+CO_API_KEY=... uv run pytest tests/test_reranker.py::test_cohere_reranker -n0 --record-mode=rewrite
 ```

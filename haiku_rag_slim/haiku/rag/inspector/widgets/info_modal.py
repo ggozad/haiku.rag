@@ -69,7 +69,6 @@ class InfoModal(ModalScreen):
 
         lines: list[str] = []
 
-        # Path
         lines.append(f"[bold $accent]path[/bold $accent]: {self.db_path}")
 
         is_local = self.client.store._connection_mode == ConnectionMode.LOCAL
@@ -88,10 +87,8 @@ class InfoModal(ModalScreen):
             self._content_widget.update("\n".join(lines))
             return
 
-        # Get versions
         versions = get_package_versions()
 
-        # Read settings
         stored_version = "unknown"
         embed_provider: str | None = None
         embed_model: str | None = None
@@ -130,7 +127,6 @@ class InfoModal(ModalScreen):
         doc_versions = stats["documents"].get("num_versions", 0)
         chunk_versions = stats["chunks"].get("num_versions", 0)
 
-        # Build output
         lines.append(
             f"[bold $accent]haiku.rag version (db)[/bold $accent]: {stored_version}"
         )
@@ -156,7 +152,6 @@ class InfoModal(ModalScreen):
             f"[bold $accent]chunks[/bold $accent]: {num_chunks} ({format_bytes(chunk_bytes)})"
         )
 
-        # Vector index info
         if has_vector_index:
             lines.append("[bold $accent]vector index[/bold $accent]: ✓ exists")
             lines.append(

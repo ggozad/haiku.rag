@@ -52,13 +52,11 @@ class VLLMReranker(RerankerBase):
 
         result = response.json()
 
-        # Extract scores and pair with chunks
         scored_chunks = []
         for item in result.get("results", []):
             index = item["index"]
             score = item["relevance_score"]
             scored_chunks.append((chunks[index], score))
 
-        # Sort by score (descending) and return top_n
         scored_chunks.sort(key=lambda x: x[1], reverse=True)
         return scored_chunks[:top_n]

@@ -93,7 +93,6 @@ class InspectorApp(App):
         await client.__aenter__()
         self.client = client
 
-        # Load initial documents
         doc_list = self.query_one(DocumentList)
         await doc_list.load_documents(self.client)
 
@@ -150,7 +149,6 @@ class InspectorApp(App):
                 doc_list = self.query_one(DocumentList)
                 chunk_list = self.query_one(ChunkList)
 
-                # Find and select the document
                 for idx, d in enumerate(doc_list.documents):
                     if d.id == chunk.document_id:
                         doc_list.list_view.index = idx
@@ -175,7 +173,6 @@ class InspectorApp(App):
         if not self.client:
             return
 
-        # Show document details
         detail_view = self.query_one(DetailView)
         await detail_view.show_document(message.document)
 
@@ -192,7 +189,6 @@ class InspectorApp(App):
         Args:
             message: Message containing selected chunk
         """
-        # Show chunk details
         detail_view = self.query_one(DetailView)
         await detail_view.show_chunk(message.chunk)
 

@@ -101,10 +101,8 @@ class SearchModal(Screen):
         status_label.update("Searching...")
 
         try:
-            # Perform search using client API
             self.search_results = await self.client.search(query=query, limit=50)
 
-            # Get chunks for the results
             self.chunks = []
             for result in self.search_results:
                 if result.chunk_id:
@@ -112,7 +110,6 @@ class SearchModal(Screen):
                     if chunk:
                         self.chunks.append(chunk)
 
-            # Clear and populate results
             await list_view.clear()
             for result in self.search_results:
                 first_line = result.content.split("\n")[0][:60]
@@ -125,7 +122,6 @@ class SearchModal(Screen):
                 item = ListItem(Static(f"[{score_str}]{page_info} {first_line}"))
                 await list_view.append(item)
 
-            # Update status
             status_label.update(f"Found {len(self.chunks)} results")
 
             # Select first result, show in detail view, and focus list

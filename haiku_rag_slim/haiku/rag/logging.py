@@ -47,7 +47,6 @@ def configure_cli_logging(level: int = logging.INFO) -> logging.Logger:
         logging.getLogger(noisy).setLevel(logging.ERROR)
         logging.getLogger(noisy).propagate = False
 
-    # Configure and return our app logger
     logger = get_logger()
     logger.setLevel(level)
     logger.propagate = False

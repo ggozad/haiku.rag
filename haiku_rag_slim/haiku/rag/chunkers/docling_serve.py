@@ -179,10 +179,8 @@ class DoclingServeChunker(DocumentChunker):
                     if "label" in item:
                         labels.append(item["label"])
 
-            # Get headings directly from chunk
             headings = chunk.get("headings")
 
-            # Get page numbers directly from chunk
             page_numbers = chunk.get("page_numbers", [])
 
             chunk_metadata = ChunkMetadata(

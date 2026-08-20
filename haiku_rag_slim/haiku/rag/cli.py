@@ -113,7 +113,6 @@ def main(
         loaded_config = AppConfig.model_validate(yaml_data)
         set_config(loaded_config)
 
-    # Configure logging for CLI context
     configure_cli_logging()
 
     from haiku.rag.telemetry import configure as configure_telemetry

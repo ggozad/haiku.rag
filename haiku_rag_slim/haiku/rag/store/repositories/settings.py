@@ -36,7 +36,6 @@ class SettingsRepository:
         self.store._assert_writable()
         current_config = self.store._config.model_dump(mode="json")
 
-        # Check if settings exist
         existing = await query_to_pydantic(
             self.store.settings_table.query().where("id = 'settings'").limit(1),
             SettingsRecord,
@@ -48,14 +47,12 @@ class SettingsRepository:
             if "version" in existing_settings:
                 current_config["version"] = existing_settings["version"]
 
-            # Update existing settings
             if existing_settings != current_config:
                 await self.store.settings_table.update(
                     {"settings": json.dumps(current_config)},
                     where="id = 'settings'",
                 )
         else:
-            # Create new settings
             settings_record = SettingsRecord(
                 id="settings", settings=json.dumps(current_config)
             )

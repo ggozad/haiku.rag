@@ -65,7 +65,6 @@ class ChunkRepository:
         chunks if needed.
         """
         self.store._assert_writable()
-        # Handle single chunk
         if isinstance(entity, Chunk):
             assert entity.document_id, "Chunk must have a document_id to be created"
             assert entity.embedding is not None, "Chunk must have an embedding"
@@ -78,7 +77,6 @@ class ChunkRepository:
             entity.id = chunk_id
             return entity
 
-        # Handle batch of chunks
         chunks = entity
         if not chunks:
             return []
@@ -88,7 +86,6 @@ class ChunkRepository:
             assert chunk.document_id, "All chunks must have a document_id to be created"
             assert chunk.embedding is not None, "All chunks must have embeddings"
 
-        # Prepare all chunk records
         chunk_records = []
         for chunk in chunks:
             chunk_id = str(uuid4())
@@ -97,7 +94,6 @@ class ChunkRepository:
             chunk_records.append(chunk_record)
             chunk.id = chunk_id
 
-        # Single batch insert for all chunks
         await self.store.chunks_table.add(chunk_records)
 
         return chunks
@@ -305,7 +301,6 @@ class ChunkRepository:
 
         results = await query_to_pydantic(query, self.store.ChunkRecord)
 
-        # Get document info from the mutable attributes table
         doc_rows = await (
             self.store.document_meta_table.query()
             .select(["id", "uri", "title", "metadata"])
@@ -401,10 +396,8 @@ class ChunkRepository:
 
         df = await query_result.to_pandas()
 
-        # Extract scores
         scores = extract_scores(df)
 
-        # Convert DataFrame rows to ChunkRecords
         pydantic_results = [
             self.store.ChunkRecord(
                 id=str(row["id"]),
@@ -433,7 +426,6 @@ class ChunkRepository:
             )
             documents_map = {str(row["id"]): row for row in doc_rows}
 
-        # Build final results with document info
         chunks_with_scores = []
         for i, chunk_record in enumerate(pydantic_results):
             doc = documents_map.get(chunk_record.document_id)
