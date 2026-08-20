@@ -24,12 +24,13 @@ from haiku.rag.store.models.document import Document
 if TYPE_CHECKING:
     from haiku.rag.store.engine import Store
     from haiku.rag.store.models import SearchResult
+from haiku.rag.config import redact_secrets
 from haiku.rag.utils import format_bytes, format_citations_rich
 
 logger = logging.getLogger(__name__)
 
 
-class HaikuRAGApp:  # pragma: no cover
+class HaikuRAGApp:
     def __init__(
         self,
         db_path: Path,
@@ -822,21 +823,11 @@ class HaikuRAGApp:  # pragma: no cover
         self.console.print("[bold]haiku.rag configuration[/bold]")
         self.console.print()
 
-        # Get all config fields dynamically
-        for field_name, field_value in self.config.model_dump().items():
-            # Format the display value
-            if isinstance(field_value, str) and (
-                "key" in field_name.lower()
-                or "password" in field_name.lower()
-                or "token" in field_name.lower()
-            ):
-                # Hide sensitive values but show if they're set
-                display_value = "✓ Set" if field_value else "✗ Not set"
-            else:
-                display_value = field_value
-
+        # redact_secrets walks the whole dump: masking only top-level names left
+        # nested api keys, tokens and source passwords printed in full.
+        for field_name, field_value in redact_secrets(self.config.model_dump()).items():
             self.console.print(
-                f"  [repr.attrib_name]{field_name}[/repr.attrib_name]: {display_value}"
+                f"  [repr.attrib_name]{field_name}[/repr.attrib_name]: {field_value}"
             )
 
     def _rich_print_document(self, doc: Document, truncate: bool = False):
