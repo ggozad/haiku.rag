@@ -11,9 +11,9 @@ extra_css = ["stylesheets/extra.css"]
 nav = [
     { "Get started" = [
         "index.md",
-        { Overview = "overview.md" },
         { Quickstart = "tutorial.md" },
         { Installation = "installation.md" },
+        { Architecture = "overview.md" },
     ] },
     { "Use it" = [
         { CLI = "cli.md" },

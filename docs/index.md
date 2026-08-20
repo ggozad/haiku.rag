@@ -28,7 +28,8 @@ haiku-rag ask "what does it conclude?"
 ## Start here
 
 - [Quickstart](tutorial.md): install, index, chat.
-- [Overview](overview.md): what haiku.rag does, end to end.
+- [Installation](installation.md): packages and extras.
+- [Architecture](overview.md): how a document becomes a cited answer.
 - [Capabilities](capabilities/index.md): native RAG and analysis capabilities for Pydantic AI agents.
 - [Python API](python.md): use haiku.rag from code.
 - [MCP server](mcp.md): expose haiku.rag to Claude Desktop or other AI assistants.

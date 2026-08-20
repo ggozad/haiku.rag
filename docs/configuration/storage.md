@@ -1,5 +1,33 @@
 # Database and Storage
 
+## Operational constraints
+
+Four things to know before deploying.
+
+**Run one writer per database.** This is a haiku.rag constraint, not a LanceDB
+one. A write that spans several tables is serialized by an in-process lock and
+rolled back by restoring each table to the version it had when the write started.
+Both are process-local: a second writing process can commit between that snapshot
+and the mutation, and a rollback would then revert its work along with ours. Run
+a single writer, either the [`haiku-ingester`](../ingester.md) service or your own
+application. Read-only consumers are unrestricted.
+
+**Readers lag by an interval.** A connection always sees its own writes. It sees
+another process's writes after `lancedb.read_consistency_interval_seconds`
+(default 30).
+
+**Migrate after an upgrade that changes the schema.** `haiku-rag migrate` applies
+pending migrations in place, and `haiku-rag info` lists what is pending. A
+release that needs it says so in the [changelog](../changelog.md).
+
+**The embedding dimension is fixed per database.** Every chunk vector has the
+dimension the database was created with. Changing `embeddings.model.vector_dim`
+raises `ConfigMismatchError` on open, because stored vectors cannot be compared
+against new ones. Changing the provider or model name while keeping the dimension
+warns on a read-only open and raises on a writable one. `haiku-rag rebuild
+--set-embedder` adopts the new identity without re-embedding, and `haiku-rag
+rebuild --embed-only` re-embeds against the new model.
+
 ## Local Storage
 
 By default, `haiku.rag` uses a local LanceDB database:
@@ -136,7 +164,8 @@ lancedb:
 
 ### Deployment Pattern: One Writer, Many Readers
 
-LanceDB on S3 supports **exactly one writer + N readers** per database URI. Multiple writers against the same URI can race on the manifest commit and corrupt state. This is a LanceDB property, not something `haiku.rag` enforces.
+The [one-writer constraint](#operational-constraints) shapes the deployment: one
+writing process per database URI, any number of read-only consumers.
 
 The recommended layout for production is "different buckets, same account, separate IAM roles per process":
 

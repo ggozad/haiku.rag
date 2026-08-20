@@ -1,47 +1,89 @@
-# Overview
+# Architecture
 
-haiku.rag is an agentic RAG that runs locally and scales to production. Index PDFs, web pages, or whole directories. Ask questions and get cited answers. Build agents, capabilities, and MCP integrations on top.
+haiku.rag ingests documents, retrieves from them with hybrid search, and answers
+with citations. This page follows the data through the system. For a working
+setup, start with the [Quickstart](tutorial.md).
 
-haiku.rag is open-source first. The defaults run open models through [Ollama](https://ollama.com/) so the full pipeline works without external API keys. Any provider Pydantic AI supports works in its place.
+## Ingestion
 
-Built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.pydantic.dev/), and [Docling](https://docling-project.github.io/docling/). Embedded database, no servers required.
-
-## See it work
-
-```bash
-uv pip install haiku.rag
-
-ollama pull qwen3-embedding:4b
-ollama pull gpt-oss
-
-haiku-rag init
-haiku-rag add-src ~/Documents/some-paper.pdf
-haiku-rag chat
+```text
+source adapter -> converter -> chunker -> embedder -> LanceDB
 ```
 
-The chat TUI is one way to interact with the database. `haiku-rag ask` and `haiku-rag search` cover one-shot CLI usage. Python integrations, capabilities, and the MCP server work against the same database.
+A **source adapter** owns the I/O and the identity of a document: it fetches
+bytes, reports the backend's revision (mtime for a file, ETag for S3 or HTTP),
+and computes the content hash. The same adapters serve one-shot ingestion
+(`haiku-rag add-src`, `HaikuRAG.create_document_from_source`) and the continuous
+[`haiku-ingester`](ingester.md) service, so both agree on what a document is and
+when it has changed.
 
-## What it does
+The **converter** turns those bytes into a `DoclingDocument`, the structured form
+that carries headings, tables, pictures and page provenance. It runs in-process
+with the `docling` extra, or against a [docling-serve](remote-processing.md)
+fleet.
 
-**Ingest.** PDFs, DOCX, HTML, images, and 40+ formats via Docling. Add files, URLs, or whole directories with `haiku-rag add-src`, or run the [`haiku-ingester`](ingester.md) service for continuous, queue-backed ingestion from filesystem, HTTP, S3, or WebDAV sources.
+The **chunker** splits that structure into chunks, each keeping the headings it
+sits under, the page numbers it came from, and references to the document items
+it covers. With a multimodal embedder, pictures become chunks of their own.
 
-**Search.** Hybrid retrieval (vector + full-text with reciprocal rank fusion), optional cross-encoder reranking, structure-aware context expansion. Image-as-query and cross-modal retrieval when configured with a multimodal embedder.
+The **embedder** vectorizes them in batches. The document, its mutable metadata,
+its chunks and its structural items are written under one process-local
+transaction: it takes a version snapshot, and on failure restores each table to
+it. A rollback that cannot complete raises rather than reporting success, and the
+snapshot is only meaningful while this process is the only writer.
 
-**Answer.** RAG capability with citations including page numbers, section headings, and visual grounding. Vision-capable models receive figure bytes alongside chunk text. Analysis capability with a sandboxed Python interpreter for aggregation and computation across documents. Optional capabilities compact a long conversation down to the evidence it cited, and require every answer to declare its grounding.
+## Storage
 
-**Integrate.** Use it from Python, the CLI, the [MCP server](mcp.md), or through composable native Pydantic AI [capabilities](capabilities/index.md).
+LanceDB is embedded, so there is no server. The same code runs against a local
+directory, S3, GCS, Azure or LanceDB Cloud by changing `lancedb.uri`.
 
-**Operate.** Embedded LanceDB by default. Also runs on S3, GCS, Azure, or LanceDB Cloud. Time-travel queries via LanceDB versioning. The [`haiku-ingester`](ingester.md) service runs continuously for production deployments.
+Tables are versioned. Vacuum collapses old versions on a retention window, and
+[tags](cli.md) name a state across all tables so a database can be restored to
+it later.
 
-## Where to go next
+One process writes at a time. Reads are unrestricted, and a reader sees another
+process's writes after `lancedb.read_consistency_interval_seconds`.
 
-- [Quickstart](tutorial.md): install, index, chat.
-- [Capabilities](capabilities/index.md): native RAG and analysis capabilities for Pydantic AI agents.
-- [Python API](python.md): use haiku.rag from code.
-- [MCP server](mcp.md): expose haiku.rag to Claude Desktop or other AI assistants.
-- [Tuning](tuning.md): improve retrieval quality.
-- [Configuration](configuration/index.md): every setting.
+## Retrieval
 
-## License
+```text
+query -> vector + full-text search -> fusion -> rerank -> context expansion
+```
 
-MIT. Source on [GitHub](https://github.com/ggozad/haiku.rag).
+Search runs a vector query and a full-text query and fuses the rankings. With a
+reranker configured, it retrieves ten times the requested limit and reranks down
+to it, so quality improves without changing the caller's limit.
+
+Results then expand: a chunk is returned with the section it belongs to, bounded
+by `search.max_context_chars`. Sections that fit come back whole, larger ones
+grow outward from the match, and small ones grow across boundaries. Every result
+carries its page numbers and headings, which is what makes a citation checkable.
+
+## Answering
+
+Two [capabilities](capabilities/index.md) sit on top, both native Pydantic AI
+capabilities you can attach to your own agent:
+
+- The **RAG capability** searches and cites. Its citations carry page numbers and
+  headings, and `haiku-rag visualize` draws the cited chunk on the page image.
+- The **analysis capability** adds a sandboxed Python interpreter with the
+  documents mounted as a filesystem, for questions that need computation across
+  documents rather than retrieval.
+
+Two optional capabilities compose with them: evidence compaction replaces older
+turns' evidence with what was actually cited, and citation policy requires every
+answer to declare what grounds it.
+
+The same database is reachable from [Python](python.md), the [CLI](cli.md), and
+the [MCP server](mcp.md).
+
+## Running it
+
+A laptop needs nothing but the package and Ollama. Production adds the
+[`haiku-ingester`](ingester.md) service, which polls its sources, queues work in
+SQLite or Postgres, and retries with a circuit breaker per source.
+
+Before deploying, read the operational constraints in
+[Storage](configuration/storage.md): one writer per database, `haiku-rag migrate`
+after an upgrade that changes the schema, and a fixed embedding dimension per
+database.
