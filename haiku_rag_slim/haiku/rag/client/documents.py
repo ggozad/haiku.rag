@@ -3,7 +3,6 @@ import hashlib
 import json
 import logging
 import mimetypes
-import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -11,6 +10,7 @@ from urllib.parse import quote, unquote, urlparse
 
 from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.client.processing import (
+    _write_fetch_body,
     ensure_chunks_embedded,
     get_extension_from_content_type_or_url,
 )
@@ -84,17 +84,20 @@ async def _prepare_document_from_docling(
     )
 
 
-def _write_fetch_body_sync(body: bytes, suffix: str) -> Path:
-    with tempfile.NamedTemporaryFile(
-        mode="wb", suffix=suffix, delete=False
-    ) as temp_file:
-        temp_file.write(body)
-        temp_file.flush()
-        return Path(temp_file.name)
+async def _prepare_and_title(
+    client: "HaikuRAG", document: Document, docling_document: "DoclingDocument"
+) -> None:
+    """Fill the document from its converted form and title it if it has none.
 
-
-async def _write_fetch_body(body: bytes, suffix: str) -> Path:
-    return await asyncio.to_thread(_write_fetch_body_sync, body, suffix)
+    A caller-supplied title always wins: set it on the document before calling.
+    Update paths that must keep an existing empty title call
+    ``_prepare_document_from_docling`` directly instead.
+    """
+    stored_content = await _prepare_document_from_docling(document, docling_document)
+    if document.title is None:
+        document.title = await resolve_title(
+            client._config, docling_document, stored_content
+        )
 
 
 def parent_uri_filter(parent_uri: str) -> str:
@@ -223,12 +226,9 @@ async def create_document(
 
     Converts the content, chunks it, and generates embeddings.
     """
-    from haiku.rag.embeddings import embed_chunks
-
     converter = get_converter(client._config)
     docling_document = await converter.convert_text(content, format=format)
     chunks = await client.chunk(docling_document)
-    embedded_chunks = await embed_chunks(chunks, client.embedder, client._config)
 
     document = Document(
         content="",
@@ -236,16 +236,9 @@ async def create_document(
         title=title,
         metadata=metadata or {},
     )
-    stored_content = await _prepare_document_from_docling(document, docling_document)
+    await _prepare_and_title(client, document, docling_document)
 
-    if title is None:
-        document.title = await resolve_title(
-            client._config, docling_document, stored_content
-        )
-
-    return await _store_document_with_chunks(
-        client, document, embedded_chunks, docling_document
-    )
+    return await _store_document_with_chunks(client, document, chunks, docling_document)
 
 
 async def import_document(
@@ -267,9 +260,7 @@ async def import_document(
         title=title,
         metadata=metadata or {},
     )
-    content = await _prepare_document_from_docling(document, docling_document)
-    if title is None:
-        document.title = await resolve_title(client._config, docling_document, content)
+    await _prepare_and_title(client, document, docling_document)
 
     return await _store_document_with_chunks(client, document, chunks, docling_document)
 
@@ -346,11 +337,7 @@ async def import_documents(
             title=item.title,
             metadata=item.metadata or {},
         )
-        content = await _prepare_document_from_docling(document, item.docling_document)
-        if document.title is None:
-            document.title = await resolve_title(
-                client._config, item.docling_document, content
-            )
+        await _prepare_and_title(client, document, item.docling_document)
         prepared.append((document, item.chunks, item.docling_document))
 
     return await _store_documents_with_chunks(client, prepared)
@@ -428,7 +415,6 @@ async def _ingest_fetch_result(
     extension (and thus the docling format), overriding the URI/content-type
     fallback. Callers pass it when ``result.uri`` cannot yield the right
     extension, e.g. embedded attachments whose name lives in a URI fragment."""
-    from haiku.rag.embeddings import embed_chunks
 
     converter = get_converter(client._config)
     if filename is not None:
@@ -463,10 +449,6 @@ async def _ingest_fetch_result(
         with logfire.span("document.chunk", uri=result.uri) as chunk_span:
             chunks = await client.chunk(docling_document)
             chunk_span.set_attribute("chunks_created", len(chunks))
-        with logfire.span("document.embed", uri=result.uri):
-            embedded_chunks = await embed_chunks(
-                chunks, client.embedder, client._config
-            )
     finally:
         if cleanup_path is not None:
             cleanup_path.unlink(missing_ok=True)
@@ -475,18 +457,12 @@ async def _ingest_fetch_result(
 
     if existing_doc:
         existing_doc.metadata = final_metadata
-        stored_content = await _prepare_document_from_docling(
-            existing_doc, docling_document
-        )
         if title is not None:
             existing_doc.title = title
-        elif existing_doc.title is None:
-            existing_doc.title = await resolve_title(
-                client._config, docling_document, stored_content
-            )
+        await _prepare_and_title(client, existing_doc, docling_document)
         with logfire.span("document.store", uri=result.uri, op="update") as store_span:
             updated = await _update_document_with_chunks(
-                client, existing_doc, embedded_chunks, docling_document
+                client, existing_doc, chunks, docling_document
             )
             store_span.set_attribute("document_id", updated.id)
         await _reconcile_pdf_attachments(client, updated, result.body, depth=depth)
@@ -498,14 +474,10 @@ async def _ingest_fetch_result(
         title=title,
         metadata=final_metadata,
     )
-    stored_content = await _prepare_document_from_docling(document, docling_document)
-    if document.title is None:
-        document.title = await resolve_title(
-            client._config, docling_document, stored_content
-        )
+    await _prepare_and_title(client, document, docling_document)
     with logfire.span("document.store", uri=result.uri, op="create") as store_span:
         created = await _store_document_with_chunks(
-            client, document, embedded_chunks, docling_document
+            client, document, chunks, docling_document
         )
         store_span.set_attribute("document_id", created.id)
     await _reconcile_pdf_attachments(client, created, result.body, depth=depth)
@@ -697,21 +669,14 @@ async def create_document_from_source(
                     "produces its own document with its own auto-derived URI."
                 )
             from haiku.rag.ingester.sources.filter import FileFilter
+            from haiku.rag.ingester.sources.fs import walk_files
 
             # One-shot CLI directory ingest uses the converter's supported
             # extensions but no include/ignore patterns. For pattern-based
             # filtering use `haiku-ingester serve` with an FS source.
             documents: list[Document] = []
             filter = FileFilter()
-            for child in local_path.rglob("*"):
-                # rglob does not recurse into symlinked directories, but it does
-                # yield symlinked files. Skip the ones resolving outside the
-                # directory the caller named, as FSSource.discover does.
-                if child.is_symlink():
-                    resolved = child.resolve(strict=False)
-                    if not resolved.is_relative_to(local_path.resolve()):
-                        continue
-                    child = resolved
+            for child in walk_files(local_path):
                 if child.is_file() and filter.include_file(str(child)):
                     doc = await create_document_from_source(
                         client,
@@ -861,7 +826,6 @@ async def update_document(
         ValueError: If document not found, or if both content and
             docling_document are provided.
     """
-    from haiku.rag.embeddings import embed_chunks
 
     if content is not None and docling_document is not None:
         raise ValueError(
@@ -905,11 +869,8 @@ async def update_document(
         await _prepare_document_from_docling(existing_doc, docling_document)
 
         new_chunks = await client.chunk(docling_document)
-        embedded_chunks = await embed_chunks(
-            new_chunks, client.embedder, client._config
-        )
         return await _update_document_with_chunks(
-            client, existing_doc, embedded_chunks, docling_document
+            client, existing_doc, new_chunks, docling_document
         )
 
     assert content is not None
@@ -919,9 +880,8 @@ async def update_document(
     await _prepare_document_from_docling(existing_doc, converted_docling)
 
     new_chunks = await client.chunk(converted_docling)
-    embedded_chunks = await embed_chunks(new_chunks, client.embedder, client._config)
     return await _update_document_with_chunks(
-        client, existing_doc, embedded_chunks, converted_docling
+        client, existing_doc, new_chunks, converted_docling
     )
 
 
