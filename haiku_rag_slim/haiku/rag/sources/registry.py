@@ -3,10 +3,10 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from haiku.rag.client.exceptions import UnsupportedSourceError
-from haiku.rag.ingester.sources.base import Source
-from haiku.rag.ingester.sources.fs import FSSource
-from haiku.rag.ingester.sources.http import HTTPSource
-from haiku.rag.ingester.sources.s3 import S3Source
+from haiku.rag.sources.base import Source
+from haiku.rag.sources.fs import FSSource
+from haiku.rag.sources.http import HTTPSource
+from haiku.rag.sources.s3 import S3Source
 
 
 def resolve_configured_source(

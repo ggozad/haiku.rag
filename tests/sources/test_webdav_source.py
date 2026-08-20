@@ -3,8 +3,8 @@ import hashlib
 import httpx
 import pytest
 
-from haiku.rag.ingester.sources.base import FileTooLargeError, SourceEventKind
-from haiku.rag.ingester.sources.webdav import WebDAVSource, _strip_etag
+from haiku.rag.sources.base import FileTooLargeError, SourceEventKind
+from haiku.rag.sources.webdav import WebDAVSource, _strip_etag
 
 
 @pytest.mark.parametrize(
@@ -716,7 +716,7 @@ async def test_head_returns_none_for_empty_multistatus():
 def test_entry_with_status_but_no_prop_has_no_revision():
     """A 200 propstat carrying no <prop> still yields an entry, without a
     revision — distinct from the malformed bodies that yield no entry at all."""
-    from haiku.rag.ingester.sources.webdav import _parse_multistatus
+    from haiku.rag.sources.webdav import _parse_multistatus
 
     entries = _parse_multistatus(_raw_multistatus(_STATUS_WITHOUT_PROP))
 

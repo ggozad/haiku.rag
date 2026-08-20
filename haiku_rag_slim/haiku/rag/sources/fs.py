@@ -8,14 +8,14 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from haiku.rag.client.exceptions import UnsupportedSourceError
-from haiku.rag.ingester.sources.base import (
+from haiku.rag.sources.base import (
     FetchResult,
     RevisionSnapshot,
     SourceEvent,
     SourceEventKind,
     check_file_size,
 )
-from haiku.rag.ingester.sources.filter import (
+from haiku.rag.sources.filter import (
     FileFilter,
     _default_supported_extensions,
 )

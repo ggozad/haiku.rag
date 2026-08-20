@@ -15,8 +15,8 @@ from obstore.exceptions import (
 from haiku.rag.client import HaikuRAG
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
 from haiku.rag.ingester.queue.models import Job, JobOp, JobStatus
-from haiku.rag.ingester.sources.base import FetchResult, FileTooLargeError, Source
 from haiku.rag.ingester.workers.pipeline import run_job
+from haiku.rag.sources.base import FetchResult, FileTooLargeError, Source
 from haiku.rag.store.models.document import Document
 
 
@@ -80,7 +80,7 @@ async def test_upsert_calls_create_document_from_source_and_returns_metadata():
 async def test_upsert_threads_configured_sources_to_client():
     """The list of configured Source adapters reaches the client so
     resolve_fetcher can pick the right one by source_id."""
-    from haiku.rag.ingester.sources.http import HTTPSource
+    from haiku.rag.sources.http import HTTPSource
 
     client = _mock_client()
     client.create_document_from_source.return_value = Document(

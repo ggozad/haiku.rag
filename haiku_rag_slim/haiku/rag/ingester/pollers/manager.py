@@ -14,7 +14,7 @@ from haiku.rag.ingester.pollers.periodic import PeriodicPoller
 
 if TYPE_CHECKING:
     from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
-    from haiku.rag.ingester.sources.base import Source
+    from haiku.rag.sources.base import Source
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ class PollerManager:
         source = build_source(cfg, supported_extensions=self._supported_extensions)
         breaker = CircuitBreaker(cfg.circuit_breaker)
         if isinstance(cfg, FSSourceConfig):
-            from haiku.rag.ingester.sources.fs import FSSource
+            from haiku.rag.sources.fs import FSSource
 
             assert isinstance(source, FSSource)
             return FSPoller(

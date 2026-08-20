@@ -14,8 +14,8 @@ from pydantic import BaseModel
 from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
 from haiku.rag.ingester.queue.models import Job, JobOp
-from haiku.rag.ingester.sources.base import FileTooLargeError
-from haiku.rag.ingester.sources.registry import resolve_configured_source
+from haiku.rag.sources.base import FileTooLargeError
+from haiku.rag.sources.registry import resolve_configured_source
 from haiku.rag.telemetry import attach_context, logfire
 
 if TYPE_CHECKING:
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
     from haiku.rag.client import HaikuRAG
     from haiku.rag.ingester.metadata import MetadataProvider
-    from haiku.rag.ingester.sources.base import Source
+    from haiku.rag.sources.base import Source
 
 
 class JobResult(BaseModel):

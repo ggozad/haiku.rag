@@ -240,9 +240,7 @@ async def test_run_batch_reports_failed_sweep(
         raise RuntimeError("discover blew up")
         yield  # unreachable; makes this an async generator
 
-    monkeypatch.setattr(
-        "haiku.rag.ingester.sources.fs.FSSource.discover", _failing_discover
-    )
+    monkeypatch.setattr("haiku.rag.sources.fs.FSSource.discover", _failing_discover)
 
     with caplog.at_level("ERROR", logger="haiku.rag.ingester.pollers.base"):
         report = await IngesterApp(

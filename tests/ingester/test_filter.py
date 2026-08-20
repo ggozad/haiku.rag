@@ -1,6 +1,6 @@
 from watchfiles import Change
 
-from haiku.rag.ingester.sources.filter import FileFilter, _default_supported_extensions
+from haiku.rag.sources.filter import FileFilter, _default_supported_extensions
 
 
 def test_default_supported_extensions_returns_nonempty_list():

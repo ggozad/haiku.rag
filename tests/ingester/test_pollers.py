@@ -15,7 +15,7 @@ from haiku.rag.config import (
 from haiku.rag.ingester.pollers.manager import PollerManager
 from haiku.rag.ingester.pollers.periodic import PeriodicPoller
 from haiku.rag.ingester.queue.models import JobOp, JobStatus
-from haiku.rag.ingester.sources.base import (
+from haiku.rag.sources.base import (
     FetchResult,
     SourceEvent,
     SourceEventKind,
@@ -416,7 +416,7 @@ async def test_manager_sources_available_at_construction(tmp_path, jobs, sync):
     """PollerManager builds Sources eagerly so callers (WorkerPool) can
     receive them by plain construction order."""
     from haiku.rag.config import SourceConfig
-    from haiku.rag.ingester.sources.http import HTTPSource
+    from haiku.rag.sources.http import HTTPSource
 
     configs: list[SourceConfig] = [
         FSSourceConfig(type="fs", id="docs", root=tmp_path),
@@ -491,7 +491,7 @@ def _fs_poller(tmp_path, jobs, sync):
     """Construct an FSPoller for unit-testing the watch-change handler.
     Doesn't start the watch loop — tests call `_handle_watch_change` directly."""
     from haiku.rag.ingester.pollers.fs import FSPoller
-    from haiku.rag.ingester.sources.fs import FSSource
+    from haiku.rag.sources.fs import FSSource
 
     cfg = FSSourceConfig(
         type="fs",
@@ -713,7 +713,7 @@ async def test_watch_deleted_skipped_when_delete_orphans_false(tmp_path, jobs, s
     from watchfiles import Change
 
     from haiku.rag.ingester.pollers.fs import FSPoller
-    from haiku.rag.ingester.sources.fs import FSSource
+    from haiku.rag.sources.fs import FSSource
 
     cfg = FSSourceConfig(
         type="fs",

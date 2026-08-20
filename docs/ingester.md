@@ -206,7 +206,7 @@ so a class is its own factory:
 # example_pkg/__init__.py
 from urllib.parse import urlparse
 
-from haiku.rag.ingester.sources import FetchResult
+from haiku.rag.sources import FetchResult
 
 
 class Provider:
@@ -306,7 +306,7 @@ class Source(Protocol):
 ```
 
 `FetchResult`, `SourceEvent`, `SourceEventKind`, and `RevisionSnapshot`
-live in `haiku.rag.ingester.sources`.
+live in `haiku.rag.sources`.
 
 ```toml
 # in the source package's pyproject.toml

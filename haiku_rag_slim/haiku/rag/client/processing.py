@@ -131,7 +131,7 @@ async def convert(
 
     if parsed.scheme in ("http", "https"):
         # One HTTP acquisition path: the same adapter the ingester fetches with.
-        from haiku.rag.ingester.sources.http import HTTPSource
+        from haiku.rag.sources.http import HTTPSource
 
         fetcher = HTTPSource(source_id="convert")
         try:

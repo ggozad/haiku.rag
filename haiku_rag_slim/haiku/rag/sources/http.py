@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from haiku.rag.ingester.sources.base import (
+from haiku.rag.sources.base import (
     FetchResult,
     RevisionSnapshot,
     SourceEvent,

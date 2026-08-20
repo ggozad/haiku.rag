@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from haiku.rag.ingester.sources.base import (
+from haiku.rag.sources.base import (
     FetchResult,
     Source,
     SourceEvent,

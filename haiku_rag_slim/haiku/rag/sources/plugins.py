@@ -1,7 +1,7 @@
 from importlib.metadata import entry_points
 from typing import Any, Protocol, runtime_checkable
 
-from haiku.rag.ingester.sources.base import Source
+from haiku.rag.sources.base import Source
 
 
 @runtime_checkable
