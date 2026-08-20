@@ -1,5 +1,6 @@
 import logging
 from collections.abc import AsyncGenerator, Callable, Coroutine, Sequence
+from contextlib import AsyncExitStack
 from enum import Enum
 from functools import cached_property
 from itertools import zip_longest
@@ -15,7 +16,13 @@ from haiku.rag.client.session import (
 )
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.embeddings import get_embedder
-from haiku.rag.hooks import DeleteEvent, build_hooks, load_hooks, notify
+from haiku.rag.hooks import (
+    DeleteEvent,
+    build_hooks,
+    enter_lifespans,
+    load_hooks,
+    notify,
+)
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import Store
 from haiku.rag.store.exceptions import (
@@ -149,6 +156,7 @@ class HaikuRAG:
         self._session: SingleDatabaseSession | FederatedSession | None = None
         self._owns_session = True
         self._closed = False
+        self._stack: AsyncExitStack | None = None
         self._hooks = (
             build_hooks(self._configured.hooks, load_hooks())
             if self._configured.hooks
@@ -331,6 +339,7 @@ class HaikuRAG:
                 skip_validation=self._skip_validation,
                 read_only=self._read_only,
             )
+            await self._enter_lifespans()
             return self
 
         [ref] = scope.databases
@@ -341,6 +350,7 @@ class HaikuRAG:
             create=self._create,
             read_only=self._read_only,
         ).open()
+        await self._enter_lifespans()
         return self
 
     async def clients_for(self, names: list[str]) -> list["HaikuRAG"]:
@@ -443,6 +453,8 @@ class HaikuRAG:
         """
         if self._session is None or self._closed:
             return False
+        if self._owns_session:
+            await self._exit_lifespans(exc_type, exc_val, exc_tb)
         # Branch on what this client covers, not on what it happened to open:
         # a federating client that answered no query has nothing open and no
         # store either.
@@ -470,6 +482,37 @@ class HaikuRAG:
         await self._session.aclose()
         self._closed = True
         return False
+
+    async def _enter_lifespans(self) -> None:
+        """Start hook lifespans, in configured order, now that the session
+        exists. An activated hook that cannot start is a startup failure:
+        entry fails, the hooks already started are unwound with the failure,
+        and the session this entry opened is closed, since ``__aexit__`` never
+        runs for an ``async with`` that did not enter."""
+        if not self._hooks:
+            return
+        stack = AsyncExitStack()
+        try:
+            await enter_lifespans(stack, self._hooks, self)
+        except BaseException as exc:
+            await stack.__aexit__(type(exc), exc, exc.__traceback__)
+            assert self._session is not None
+            await self._session.aclose()
+            self._closed = True
+            raise
+        self._stack = stack
+
+    async def _exit_lifespans(self, exc_type, exc_val, exc_tb) -> None:
+        """Unwind hook lifespans in reverse order, before anything else closes,
+        so a hook's teardown still has the session, embedder and reranker.
+
+        The exception being unwound is forwarded so a hook can tell a clean
+        shutdown from a failing one. Suppressing it is not theirs to decide,
+        so the result is discarded.
+        """
+        stack, self._stack = self._stack, None
+        if stack is not None:
+            await stack.__aexit__(exc_type, exc_val, exc_tb)
 
     async def _release_own(self) -> None:
         """Release what this client built, leaving the database to its owner.
@@ -937,23 +980,32 @@ class HaikuRAG:
         include_images: bool = True,
         sources: list[str] | None = None,
     ) -> list[SearchResult]:
-        from haiku.rag.client.search import search, search_sources
+        from haiku.rag.client.search import (
+            _resolved_search_type,
+            search,
+            search_sources,
+        )
         from haiku.rag.hooks import SearchRequest
 
         if limit is None:
             limit = self._config.search.limit
         request = SearchRequest(
-            query=query, filter=filter, search_type=search_type, limit=limit
+            query=query,
+            filter=filter,
+            search_type=_resolved_search_type(query, search_type),
+            limit=limit,
         )
         if isinstance(query, str):
-            if request.search_type is None:
-                request.search_type = "hybrid"
             for hook in self._hooks:
                 request = await hook.before_search(self, request)
             query = request.query
             assert isinstance(query, str), "before_search must keep text queries text"
             filter = request.filter
             limit = request.limit
+            # A hook may have cleared it on the way through. after_search reads
+            # the same request, so it has to end up carrying what retrieval ran
+            # with.
+            request.search_type = request.search_type or "hybrid"
             search_type = request.search_type
 
         if self.covers_multiple:
