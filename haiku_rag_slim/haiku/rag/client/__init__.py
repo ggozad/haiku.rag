@@ -93,7 +93,9 @@ class HaikuRAG:
         self._vacuum_tasks: set[asyncio.Task] = set()
         self._last_vacuum_at: float | None = None
         self._vacuum_dirty = False
-        self._hooks = build_hooks(config.hooks, load_hooks()) if config.hooks else []
+        self._hooks = (
+            build_hooks(self._config.hooks, load_hooks()) if self._config.hooks else []
+        )
 
     @property
     def is_read_only(self) -> bool:
