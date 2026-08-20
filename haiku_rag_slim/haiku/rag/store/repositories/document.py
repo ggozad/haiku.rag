@@ -3,16 +3,16 @@ from datetime import datetime
 from typing import overload
 from uuid import uuid4
 
-from haiku.rag.store.engine import (
+from haiku.rag.store.engine import Store
+from haiku.rag.store.models.document import Document
+from haiku.rag.store.schema import (
     DocumentMetaRecord,
     DocumentRecord,
-    Store,
     ensure_indexes,
     get_document_items_arrow_schema,
     get_documents_arrow_schema,
     query_to_pydantic,
 )
-from haiku.rag.store.models.document import Document
 from haiku.rag.utils import escape_sql_string
 
 # Ids per `id IN (...)` content lookup. Keeps the filter string bounded on an

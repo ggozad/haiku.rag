@@ -9,7 +9,8 @@ introduced by later migrations (``picture_data`` in v0.45.0,
 import pytest
 
 from haiku.rag.store.compression import compress_docling_split
-from haiku.rag.store.engine import DocumentRecord, Store
+from haiku.rag.store.engine import Store
+from haiku.rag.store.schema import DocumentRecord
 from haiku.rag.store.upgrades.v0_40_0 import _apply_populate_document_items
 
 

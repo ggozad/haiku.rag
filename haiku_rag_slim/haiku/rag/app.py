@@ -64,7 +64,7 @@ class HaikuRAGApp:  # pragma: no cover
     async def info(self):
         """Display read-only information about the database without modifying it."""
 
-        from haiku.rag.store.engine import gather_database_info
+        from haiku.rag.store.info import gather_database_info
 
         # Basic: show path/URI
         self.console.print("[bold]haiku.rag database info[/bold]")

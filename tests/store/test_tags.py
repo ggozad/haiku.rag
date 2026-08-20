@@ -4,9 +4,10 @@ import pytest
 from lancedb.table import AsyncTags
 
 from haiku.rag.store import ReadOnlyError
-from haiku.rag.store.engine import REQUIRED_TABLES, Store
+from haiku.rag.store.engine import Store
 from haiku.rag.store.models import Document
 from haiku.rag.store.repositories.document import DocumentRepository
+from haiku.rag.store.schema import REQUIRED_TABLES
 
 
 @pytest.mark.asyncio

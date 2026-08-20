@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from haiku.rag.ingester.api.server import APIState, get_state
-from haiku.rag.store.engine import DatabaseInfo, gather_database_info
+from haiku.rag.store.info import DatabaseInfo, gather_database_info
 
 router = APIRouter(tags=["database"])
 

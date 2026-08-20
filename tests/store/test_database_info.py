@@ -5,7 +5,8 @@ from lancedb.pydantic import LanceModel, Vector
 from pydantic import Field
 
 from haiku.rag.config.models import AppConfig
-from haiku.rag.store.engine import DocumentItemRecord, gather_database_info
+from haiku.rag.store.info import gather_database_info
+from haiku.rag.store.schema import DocumentItemRecord
 
 
 class _SettingsRecord(LanceModel):

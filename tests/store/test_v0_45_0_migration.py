@@ -13,7 +13,8 @@ import pyarrow as pa
 import pytest
 
 from haiku.rag.store.compression import compress_json, decompress_json
-from haiku.rag.store.engine import DocumentItemRecord, DocumentRecord, Store
+from haiku.rag.store.engine import Store
+from haiku.rag.store.schema import DocumentItemRecord, DocumentRecord
 from haiku.rag.store.upgrades.v0_45_0 import _apply_extract_picture_bytes
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\nfake-picture-bytes"

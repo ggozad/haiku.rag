@@ -8,37 +8,28 @@ from datetime import UTC, datetime, timedelta
 from enum import Enum
 from importlib import metadata
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
-from uuid import uuid4
+from typing import Any
 
 import lancedb
-import pyarrow as pa
-from lancedb.index import FTS, Bitmap, BTree, IvfPq
-from lancedb.pydantic import LanceModel, Vector
+from lancedb.index import IvfPq
 from packaging.version import parse
-from pydantic import BaseModel, Field
 
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.embeddings import get_embedder
 from haiku.rag.store.exceptions import MigrationRequiredError, ReadOnlyError
-
-if TYPE_CHECKING:
-    from lancedb.query import AsyncQueryBase
+from haiku.rag.store.schema import (
+    REQUIRED_TABLES,
+    ChunkRecordBase,
+    DocumentMetaRecord,
+    SettingsRecord,
+    create_chunk_model,
+    ensure_indexes,
+    get_document_items_arrow_schema,
+    get_documents_arrow_schema,
+    query_to_pydantic,
+)
 
 logger = logging.getLogger(__name__)
-
-
-async def query_to_pydantic[T: LanceModel](
-    query: "AsyncQueryBase", model: type[T]
-) -> list[T]:
-    """Typed wrapper around AsyncQueryBase.to_pydantic.
-
-    The upstream stub annotates `.to_pydantic()` as returning `list[LanceModel]`
-    regardless of the concrete model passed in. This helper narrows the return
-    type to the concrete model so attribute access on the results type-checks
-    at call sites without needing per-line cast / ignore comments.
-    """
-    return cast("list[T]", await query.to_pydantic(model))
 
 
 class ConnectionMode(Enum):
@@ -108,176 +99,10 @@ async def connect_lancedb(
         return await lancedb.connect_async(db_path.absolute(), **kwargs)
 
 
-class DocumentRecord(LanceModel):
-    id: str = Field(default_factory=lambda: str(uuid4()))
-    content: str
-    docling_document: bytes | None = None
-    docling_pages: bytes | None = None
-    docling_version: str | None = None
-
-
-class DocumentMetaRecord(LanceModel):
-    """Mutable, lightweight document attributes, kept separate from the
-    write-once content/blobs in `documents`. Updating these (metadata, title,
-    source_revision) must not rewrite the multi-MB docling row."""
-
-    id: str
-    uri: str | None = None
-    title: str | None = None
-    metadata: str = Field(default="{}")
-    created_at: str = Field(default_factory=lambda: "")
-    updated_at: str = Field(default_factory=lambda: "")
-
-
-def get_documents_arrow_schema() -> pa.Schema:
-    """Generate Arrow schema for documents table with large_binary for docling_document.
-
-    LanceDB maps Python `bytes` to Arrow's `binary` type, which uses 32-bit offsets
-    and is limited to ~2GB per column in a fragment. When many large documents
-    (with embedded page images) are grouped in a single fragment, this limit is
-    exceeded, causing "byte array offset overflow" panics.
-
-    This function overrides the default mapping to use `large_binary` instead,
-    which has 64-bit offsets and no practical size limit.
-    """
-    base_schema = DocumentRecord.to_arrow_schema()
-    large_binary_columns = {"docling_document", "docling_pages"}
-    fields = []
-    for field in base_schema:
-        if field.name in large_binary_columns:
-            fields.append(pa.field(field.name, pa.large_binary()))
-        else:
-            fields.append(field)
-    return pa.schema(fields)
-
-
-class ChunkRecordBase(LanceModel):
-    """Static base for ChunkRecord — declares the fields so attribute access
-    and constructor calls type-check. The concrete `vector` field is overridden
-    by create_chunk_model() with a Vector(dim) whose fixed-size-list dimension
-    is only known at runtime.
-    """
-
-    id: str = Field(default_factory=lambda: str(uuid4()))
-    document_id: str
-    content: str
-    content_fts: str = Field(default="")
-    metadata: str = Field(default="{}")
-    order: int = Field(default=0)
-    vector: list[float] = Field(default_factory=list)
-
-
-def create_chunk_model(vector_dim: int) -> type[ChunkRecordBase]:
-    """Create a ChunkRecord model with the specified vector dimension."""
-
-    class ChunkRecord(ChunkRecordBase):
-        vector: Vector(vector_dim) = Field(default_factory=lambda: [0.0] * vector_dim)  # type: ignore
-
-    return ChunkRecord
-
-
-class DocumentItemRecord(LanceModel):
-    document_id: str
-    position: int
-    self_ref: str
-    label: str = Field(default="")
-    text: str = Field(default="")
-    page_numbers: str = Field(default="[]")
-    picture_data: bytes | None = None
-    heading_level: int = Field(default=0)
-    tree_depth: int = Field(default=0)
-
-
-def get_document_items_arrow_schema() -> pa.Schema:
-    """Generate Arrow schema for document_items with large_binary for picture_data.
-
-    LanceDB maps Python `bytes` to Arrow's `binary` type, which uses 32-bit offsets
-    and is limited to ~2GB per column in a fragment. Many embedded picture PNGs in
-    one fragment can exceed that limit. `large_binary` uses 64-bit offsets and has
-    no practical size limit — same reasoning as `docling_document` on the
-    documents table.
-    """
-    base_schema = DocumentItemRecord.to_arrow_schema()
-    large_binary_columns = {"picture_data"}
-    fields = []
-    for field in base_schema:
-        if field.name in large_binary_columns:
-            fields.append(pa.field(field.name, pa.large_binary()))
-        else:
-            fields.append(field)
-    return pa.schema(fields)
-
-
 def _stored_vector_dim(settings: dict) -> int | None:
     """The vector dimension a database's chunks were written at."""
     return settings.get("embeddings", {}).get("model", {}).get("vector_dim")
 
-
-def index_specs(table_name: str) -> list[tuple[str, Bitmap | BTree | FTS]]:
-    """The index set each table carries."""
-    match table_name:
-        case "documents":
-            return [("id", BTree())]
-        case "document_meta":
-            return [("id", BTree()), ("uri", BTree())]
-        case "chunks":
-            return [
-                # Positions and stop words are required for phrase queries.
-                ("content_fts", FTS(with_position=True, remove_stop_words=False)),
-                ("id", BTree()),
-                ("document_id", BTree()),
-            ]
-        case "document_items":
-            return [
-                ("document_id", BTree()),
-                ("position", BTree()),
-                ("self_ref", BTree()),
-                ("label", Bitmap()),
-            ]
-        case _:
-            return []
-
-
-async def ensure_indexes(table: lancedb.AsyncTable, table_name: str) -> list[str]:
-    """Create any declared index missing from a column. Returns the columns indexed.
-
-    Matches on index type, not column coverage, so a BTree does not satisfy a
-    declared Bitmap. Never drops or converts an index it did not declare.
-    Re-creating is not free: `create_index(replace=True)` rebuilds.
-    """
-    covering: dict[str, set[str]] = {}
-    for index in await table.list_indices():
-        for column in index.columns:
-            covering.setdefault(column, set()).add(index.index_type)
-
-    applied: list[str] = []
-    for column, config in index_specs(table_name):
-        declared = type(config).__name__
-        present = covering.get(column, set())
-        if declared in present:
-            continue
-        if present:
-            logger.info(
-                f"Adding {declared} index on {table_name}.{column}, which carries "
-                f"{', '.join(sorted(present))}"
-            )
-        await table.create_index(column, config=config, replace=True)
-        applied.append(column)
-    return applied
-
-
-class SettingsRecord(LanceModel):
-    id: str = Field(default="settings")
-    settings: str = Field(default="{}")
-
-
-REQUIRED_TABLES: tuple[str, ...] = (
-    "documents",
-    "document_meta",
-    "chunks",
-    "document_items",
-    "settings",
-)
 
 # Keeps the vacuum cleanup cutoff safely older than the oldest tagged
 # version; guards against timestamp precision at the boundary.
@@ -340,157 +165,6 @@ class TagInfo:
     @property
     def complete(self) -> bool:
         return not self.missing_tables
-
-
-async def get_database_stats(db: lancedb.AsyncConnection) -> dict:
-    """Collect stats for every haiku.rag table on the connection.
-
-    Missing tables return ``{"exists": False}``. Present tables include
-    ``num_rows``, ``total_bytes``, and ``num_versions``. The ``chunks``
-    entry additionally reports vector index status and, when an index
-    exists, ``num_indexed_rows`` and ``num_unindexed_rows``.
-    """
-    existing = set((await db.list_tables()).tables)
-    stats: dict = {}
-    tables: dict = {}
-
-    for name in REQUIRED_TABLES:
-        if name not in existing:
-            stats[name] = {"exists": False}
-            continue
-        tbl = await db.open_table(name)
-        tables[name] = tbl
-        # lancedb's .stats() stub claims TableStatistics but returns a plain dict at runtime.
-        tbl_stats: dict = await tbl.stats()  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
-        stats[name] = {
-            "exists": True,
-            "num_rows": tbl_stats.get("num_rows", 0),
-            "total_bytes": tbl_stats.get("total_bytes", 0),
-            "num_versions": len(await tbl.list_versions()),
-        }
-
-    if stats["chunks"]["exists"]:
-        chunks_tbl = tables["chunks"]
-        indices = await chunks_tbl.list_indices()
-        has_vector_index = any("vector" in str(idx).lower() for idx in indices)
-        stats["chunks"]["has_vector_index"] = has_vector_index
-        if has_vector_index:
-            index_stats = await chunks_tbl.index_stats("vector_idx")
-            if index_stats is not None:
-                stats["chunks"]["num_indexed_rows"] = index_stats.num_indexed_rows
-                stats["chunks"]["num_unindexed_rows"] = index_stats.num_unindexed_rows
-
-    return stats
-
-
-class EmbeddingsInfo(BaseModel):
-    provider: str = "unknown"
-    name: str = "unknown"
-    vector_dim: int | None = None
-
-
-class TableInfo(BaseModel):
-    name: str
-    exists: bool
-    num_rows: int = 0
-    total_bytes: int = 0
-    num_versions: int = 0
-
-
-class VectorIndexInfo(BaseModel):
-    exists: bool = False
-    indexed_rows: int = 0
-    unindexed_rows: int = 0
-
-
-class PendingMigration(BaseModel):
-    version: str
-    description: str = ""
-
-
-class DatabaseInfo(BaseModel):
-    """Structured snapshot of a haiku.rag database, shared by the `info` CLI
-    command and the ingester control plane. Read-only; gathered without
-    opening a Store."""
-
-    path: str
-    exists: bool
-    stored_version: str = "unknown"
-    embeddings: EmbeddingsInfo = Field(default_factory=EmbeddingsInfo)
-    tables: list[TableInfo] = Field(default_factory=list)
-    vector_index: VectorIndexInfo = Field(default_factory=VectorIndexInfo)
-    pending_migrations: list[PendingMigration] = Field(default_factory=list)
-    packages: dict[str, str] = Field(default_factory=dict)
-
-
-async def gather_database_info(config: AppConfig, db_path: Path) -> DatabaseInfo:
-    """Collect read-only database state without going through Store, so a
-    database missing tables (e.g. pre-migration) still reports what it can."""
-    from haiku.rag.store.upgrades import get_pending_upgrades
-    from haiku.rag.utils import get_package_versions
-
-    display_path = config.lancedb.uri or str(db_path)
-
-    db = await connect_lancedb(config, db_path)
-    stats = await get_database_stats(db)
-
-    if not any(entry["exists"] for entry in stats.values()):
-        return DatabaseInfo(path=display_path, exists=False)
-
-    stored_version = "unknown"
-    embeddings = EmbeddingsInfo()
-    if stats["settings"]["exists"]:
-        settings_tbl = await db.open_table("settings")
-        rows = (
-            await settings_tbl.query().where("id = 'settings'").limit(1).to_arrow()
-        ).to_pylist()
-        if rows:
-            raw = rows[0].get("settings") or "{}"
-            data = json.loads(raw) if isinstance(raw, str) else (raw or {})
-            stored_version = str(data.get("version", "unknown"))
-            model = data.get("embeddings", {}).get("model", {})
-            embeddings = EmbeddingsInfo(
-                provider=model.get("provider", "unknown"),
-                name=model.get("name", "unknown"),
-                vector_dim=model.get("vector_dim"),
-            )
-
-    tables = [
-        TableInfo(
-            name=name,
-            exists=stats[name]["exists"],
-            num_rows=stats[name].get("num_rows", 0),
-            total_bytes=stats[name].get("total_bytes", 0),
-            num_versions=stats[name].get("num_versions", 0),
-        )
-        for name in ("documents", "document_meta", "chunks", "document_items")
-    ]
-
-    vector_index = VectorIndexInfo()
-    if stats["chunks"]["exists"] and stats["chunks"].get("has_vector_index"):
-        vector_index = VectorIndexInfo(
-            exists=True,
-            indexed_rows=stats["chunks"].get("num_indexed_rows", 0),
-            unindexed_rows=stats["chunks"].get("num_unindexed_rows", 0),
-        )
-
-    pending = (
-        get_pending_upgrades(stored_version) if stored_version != "unknown" else []
-    )
-
-    return DatabaseInfo(
-        path=display_path,
-        exists=True,
-        stored_version=stored_version,
-        embeddings=embeddings,
-        tables=tables,
-        vector_index=vector_index,
-        pending_migrations=[
-            PendingMigration(version=step.version, description=step.description or "")
-            for step in pending
-        ],
-        packages=get_package_versions(),
-    )
 
 
 class Store:

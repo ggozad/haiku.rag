@@ -172,7 +172,7 @@ async def db_info(_: Request) -> JSONResponse:
             }
         )
 
-    from haiku.rag.store.engine import get_database_stats
+    from haiku.rag.store.info import get_database_stats
 
     client = await get_client()
     stats = await get_database_stats(client.store.db)

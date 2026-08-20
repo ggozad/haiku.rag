@@ -40,7 +40,7 @@ from haiku.rag.doctor import (
     run_doctor,
     run_provider_checks,
 )
-from haiku.rag.store.engine import (
+from haiku.rag.store.schema import (
     DocumentItemRecord,
     DocumentMetaRecord,
     DocumentRecord,

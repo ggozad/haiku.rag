@@ -9,6 +9,7 @@
 
 ### Changed
 
+- `haiku.rag.store.engine` split: table records, Arrow schemas, `index_specs`, `ensure_indexes`, `REQUIRED_TABLES` and `query_to_pydantic` are in `haiku.rag.store.schema`; `gather_database_info`, `get_database_stats`, `DatabaseInfo` and its result models are in `haiku.rag.store.info`. `Store` keeps lifecycle, locks, migration coordination, vacuuming and tags. Update imports.
 - Source adapters moved from `haiku.rag.ingester.sources` to `haiku.rag.sources`: `FetchResult`, `SourceEvent`, `SourceEventKind`, `RevisionSnapshot`, `Source` and the `FSSource`/`HTTPSource`/`S3Source`/`WebDAVSource` adapters. One-shot client ingestion uses them too, so they were never ingester-only. Update imports; the `haiku.rag.sources` plugin entry-point group is unchanged.
 - `HaikuRAG.convert(url)` fetches through `HTTPSource`, the same adapter the ingester uses, instead of its own httpx client. `_write_fetch_body` moved from `client.documents` to `client.processing`.
 - Chunk embedding is owned by the persistence funnels: `create_document`, `update_document` and source ingestion no longer embed eagerly before handing chunks to a check that would embed them anyway. The `document.embed` span moved onto `ensure_chunks_embedded`, so every path is instrumented rather than only ingest.
