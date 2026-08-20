@@ -4,7 +4,7 @@ We evaluate `haiku.rag` on a small set of datasets that exercise different parts
 
 ## Current results
 
-Numbers below were measured under `Qwen3.6-35B-A3B-NVFP4` as judge, on a recent `haiku.rag` version. The pinned judge is now `qwen3.8`; rows are not re-judged, so compare rows to each other rather than to runs judged by `qwen3.8`.
+Numbers below were measured on a recent `haiku.rag` version. Most rows were judged by `Qwen3.6-35B-A3B-NVFP4`; the `Qwen3.8-27B` rows were judged by the currently pinned `qwen3.8`, as their footnote states. Rows are not re-judged when the pinned judge changes, so compare rows judged by the same judge and treat cross-judge differences as unmeasured.
 
 ### OpenRAG Bench (ORB)
 
@@ -37,8 +37,12 @@ Two approaches are benchmarked separately:
 | `nvidia/llama-nemotron-embed-vl-1b-v2`   | `analysis-capability`| `vllm:Qwen3.6-35B-A3B-NVFP4`      |  3045 | 0.95        | 0.93             |
 | `nvidia/llama-nemotron-embed-vl-1b-v2`   | `rag-capability`     | `vllm:Muse-Glimmer-30B-NVFP4`     |  3045 | 0.9494      | 0.9771           |
 | `nvidia/llama-nemotron-embed-vl-1b-v2`   | `analysis-capability`| `vllm:Muse-Glimmer-30B-NVFP4`     |  3017 | 0.9718      | 0.9837           |
+| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `rag-capability`     | `vllm:Qwen3.8-27B-NVFP4`          |  3045 | 0.9514      | 0.9817           |
+| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `analysis-capability`| `vllm:Qwen3.8-27B-NVFP4`          |  3042 | 0.9629      | 0.9835           |
 
 *The `Muse-Glimmer-30B` rows run at `chat_template_kwargs.reasoning_strength: high`, no reranker, same judge.*
+
+*The `Qwen3.8-27B` rows run at `chat_template_kwargs.reasoning_effort: low`, no reranker, and are **judged by `Qwen3.8-27B` itself** — the pinned judge, and the same model that produced the answers. A 120-case cross-check by an independent judge agreed on 95% and was never stricter, but the incumbent `Qwen3.6` judge is no longer hosted, so the older rows cannot be re-judged for a like-for-like comparison. `rag-capability` cites on 99.34% of cases with 1.09 citations each; `analysis-capability` on 99.70% with 1.12, at 0.13 code executions per case. Case counts exclude 0 and 3 provider errors respectively.*
 
 *Both nemotron `Gemma-4` rows are measured on this release, no reranker, judged by `vllm:Qwen3.6-35B-A3B-NVFP4` with thinking on, and exclude the cases that errored (6 of 3045 for `rag-capability`, 5 for `analysis-capability`). The `rag-capability` row cites at 99.64% with a mean of 1.08 citations per case, at a median 4.7s per case against 5.0s for `analysis-capability`. Citation coverage is what moved on this release: 4.9% of analysis cases register no citation, against 26.3% before, at unchanged searches and code executions per case. The remaining rows are from haiku.rag v0.52.0, where Qwen3-VL covered 1409 / 3045 cases.*
 
