@@ -769,6 +769,52 @@ async def test_format_citations_rich_header_and_footer():
     assert "chunk: chunk-uuid-1" in output
 
 
+async def test_format_citations_rich_names_the_database_when_federating():
+    """Across databases, a citation has to say which one it came from."""
+    from unittest.mock import AsyncMock
+
+    from haiku.rag.store.models.citation import Citation
+    from haiku.rag.utils import format_citations_rich
+
+    citation = Citation(
+        document_id="doc-uuid-1",
+        chunk_id="chunk-uuid-1",
+        document_uri="test://doc",
+        document_title="Test Doc",
+        content="Body",
+        source="medic",
+    )
+    client = AsyncMock()
+    client._federated = {"medic": "/data/medic.lancedb", "st": "/data/st.lancedb"}
+
+    output = _render_rich(await format_citations_rich([citation], client))
+
+    assert "medic" in output
+
+
+async def test_format_citations_rich_omits_the_database_for_one_database():
+    """A single database is not worth naming on every citation."""
+    from unittest.mock import AsyncMock
+
+    from haiku.rag.store.models.citation import Citation
+    from haiku.rag.utils import format_citations_rich
+
+    citation = Citation(
+        document_id="doc-uuid-1",
+        chunk_id="chunk-uuid-1",
+        document_uri="test://doc",
+        document_title="Test Doc",
+        content="Body",
+        source="medic",
+    )
+    client = AsyncMock()
+    client._federated = {}
+
+    output = _render_rich(await format_citations_rich([citation], client))
+
+    assert "medic" not in output
+
+
 async def test_format_citations_rich_truncates_long_content():
     from haiku.rag.store.models.citation import Citation
     from haiku.rag.utils import CITATION_PREVIEW_CHARS, format_citations_rich
@@ -937,7 +983,7 @@ async def test_render_picture_handles_stored_bytes(stored, renders):
         stored = buf.getvalue()
 
     client = AsyncMock()
-    client.document_item_repository.get_picture_bytes = AsyncMock(return_value=stored)
+    client.get_picture_bytes = AsyncMock(return_value=stored)
 
     result = await _render_picture(client, "doc1", "#/pictures/0")
 

@@ -1,4 +1,5 @@
 from .exceptions import (
+    AmbiguousDatabaseError,
     MigrationRequiredError,
     ReadOnlyError,
     SourceUnavailableError,
@@ -10,5 +11,6 @@ __all__ = [
     "Document",
     "MigrationRequiredError",
     "ReadOnlyError",
+    "AmbiguousDatabaseError",
     "SourceUnavailableError",
 ]

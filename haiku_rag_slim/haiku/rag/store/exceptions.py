@@ -10,6 +10,10 @@ class MigrationRequiredError(Exception):
     pass
 
 
+class AmbiguousDatabaseError(Exception):
+    """A command that works on one database was run against a configured set."""
+
+
 class SourceUnavailableError(Exception):
     """A configured database could not be opened.
 

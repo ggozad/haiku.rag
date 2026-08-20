@@ -82,6 +82,21 @@ def discovered(
     )
 
 
+def test_a_retained_picture_carries_the_source_it_came_from():
+    """Compaction re-fetches cited pictures later, so the capsule has to remember
+    which database each came from."""
+    found = discovered(cited={"c1": [2]}, pictures={"c1": ["#/pictures/0"]})
+    found = replace(
+        found,
+        citations={"c1": replace_citation(found.citations["c1"], source="beta")},
+    )
+
+    capsule = build_capsule([found])
+
+    [picture] = capsule.pictures
+    assert picture.source == "beta"
+
+
 def test_nothing_cited_produces_no_capsule():
     capsule = build_capsule([discovered()])
 

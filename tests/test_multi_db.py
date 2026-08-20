@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from docling_core.types.doc.document import DoclingDocument
 from docling_core.types.doc.labels import DocItemLabel
@@ -8,6 +10,7 @@ from haiku.rag.config import get_config
 from haiku.rag.config.models import AppConfig, LanceDBConfig
 from haiku.rag.store.exceptions import SourceUnavailableError
 from haiku.rag.store.models import Chunk, DocumentItem
+from haiku.rag.utils import locate_database
 
 
 class TestConfig:
@@ -46,6 +49,112 @@ async def _seed(config, name, contents):
                 [Chunk(content=content, embedding=[0.1] * dim, order=0)],
                 uri=f"test://{name}/{content}",
             )
+
+
+class TestNamingADatabaseDirectly:
+    @pytest.mark.asyncio
+    async def test_an_explicit_db_path_wins_over_the_configured_set(
+        self, tmp_path, temp_db_path
+    ):
+        """A caller that names a path means that database, not the configured
+        set: the CLI resolves `--db` to one and must not fan out instead."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+
+        async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
+            assert rag._federated == {}
+            assert rag._source is None
+            assert rag.store.db_path == temp_db_path
+
+    @pytest.mark.asyncio
+    async def test_one_configured_database_is_opened_by_name(self, tmp_path):
+        """A set of one is not federated, and the client resolves it."""
+        config = _config(tmp_path, ["alpha"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+
+        async with HaikuRAG(config=config) as rag:
+            assert rag._federated == {}
+            assert rag._source == "alpha"
+            results = await rag.search("cats", search_type="fts", limit=10)
+
+        assert [r.source for r in results] == ["alpha"]
+
+
+class TestOpeningDatabases:
+    @pytest.mark.asyncio
+    async def test_missing_databases_open_together(self, tmp_path):
+        """A cold fan-out costs one open, not their sum. On object storage a
+        serial loop is the difference between one round trip and N."""
+        names = ["alpha", "beta", "gamma"]
+        config = _config(tmp_path, names)
+        for name in names:
+            await _seed(config, name, [f"{name} document about cats"])
+
+        async with HaikuRAG(config=config) as rag:
+            barrier = asyncio.Barrier(len(names))
+            open_one = rag._open_client
+
+            async def gated(name: str, location: str):
+                # Every open has to be in flight before any of them finishes, so
+                # a serial loop cannot get past this and the wait times out.
+                await barrier.wait()
+                return await open_one(name, location)
+
+            rag._open_client = gated
+            clients = await asyncio.wait_for(rag.clients_for(names), timeout=15)
+
+        assert {client._source for client in clients} == set(names)
+
+    @pytest.mark.asyncio
+    async def test_a_failed_open_does_not_leak_the_ones_that_worked(self, tmp_path):
+        """Opening together means a failure has siblings already open. They are
+        tracked before it is reported, so closing the set closes them."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        config.lancedb.databases["beta"] = str(tmp_path / "absent.lancedb")
+
+        async with HaikuRAG(config=config) as rag:
+            with pytest.raises(SourceUnavailableError, match="beta"):
+                await rag.clients_for(["alpha", "beta"])
+
+            assert set(rag._clients) == {"alpha"}
+
+    @pytest.mark.asyncio
+    async def test_a_database_named_twice_is_opened_once(self, tmp_path):
+        """Fusion would count a repeated database as two rank lists."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        async with HaikuRAG(config=config) as rag:
+            clients = await rag.clients_for(["alpha", "alpha", "beta"])
+
+        assert [client._source for client in clients] == ["alpha", "beta"]
+
+    @pytest.mark.asyncio
+    async def test_a_database_named_twice_returns_each_result_once(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        async with HaikuRAG(config=config) as rag:
+            results = await rag.search(
+                "cats", limit=10, search_type="fts", sources=["alpha", "alpha"]
+            )
+
+        assert [r.source for r in results] == ["alpha"]
+
+    @pytest.mark.asyncio
+    async def test_one_database_named_twice_is_still_that_database(self, tmp_path):
+        """A client covering a single named database compares the selection
+        against its own name, so repeats have to collapse first."""
+        config = _config(tmp_path, ["alpha"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+
+        async with HaikuRAG(config=config) as rag:
+            covering = await rag.clients_covering(["alpha", "alpha"])
+
+        assert [client._source for client in covering] == ["alpha"]
 
 
 class TestFederatedSearch:
@@ -120,13 +229,13 @@ class TestSingleDatabaseUnchanged:
 
 class TestLocate:
     def test_a_scheme_is_a_uri(self):
-        assert HaikuRAG._locate("s3://bucket/one.lancedb") == (
+        assert locate_database("s3://bucket/one.lancedb") == (
             "s3://bucket/one.lancedb",
             None,
         )
 
     def test_anything_else_is_a_local_path(self):
-        uri, db_path = HaikuRAG._locate("/data/one.lancedb")
+        uri, db_path = locate_database("/data/one.lancedb")
         assert uri == ""
         assert db_path is not None and str(db_path) == "/data/one.lancedb"
 
