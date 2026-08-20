@@ -141,6 +141,20 @@ def test_domain_preamble_is_added_to_capability_instructions(temp_db_path):
     )
 
 
+def _single_database_client() -> AsyncMock:
+    """A stand-in for a client covering one unnamed database.
+
+    A bare AsyncMock answers every attribute with a truthy Mock, so `_federated`
+    would read as a set of databases, `_source` would reach a validated field, and
+    `clients_covering` would return a Mock where the code iterates clients.
+    """
+    client = AsyncMock()
+    client._federated = {}
+    client._source = None
+    client.clients_covering.return_value = [client]
+    return client
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("factory", "agent_instructions", "heading"),
@@ -315,11 +329,7 @@ async def test_capability_isolated_per_run_and_round_trips_state(temp_db_path):
 @pytest.mark.asyncio
 async def test_run_error_closes_resources_and_propagates(temp_db_path):
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
-    client = AsyncMock()
-    # Stands in for a single-database client: a bare AsyncMock's auto
-    # attributes are truthy Mocks, and `_source` reaches a validated field.
-    client._federated = {}
-    client._source = None
+    client = _single_database_client()
     capability.rag = client
     error = RuntimeError("model failed")
 
@@ -388,11 +398,7 @@ async def test_a_narrower_repeat_keeps_what_the_wider_search_returned(temp_db_pa
 async def test_cite_resolves_direct_chunk_ids_and_reuses_document_lookup(temp_db_path):
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
     capability.state = RAGState(evidence=CapabilityEvidenceRecord(question=0))
-    client = AsyncMock()
-    # Stands in for a single-database client: a bare AsyncMock's auto
-    # attributes are truthy Mocks, and `_source` reaches a validated field.
-    client._federated = {}
-    client._source = None
+    client = _single_database_client()
     client.get_chunk_by_id.side_effect = [
         Chunk(id="chunk-1", document_id="doc-1", content="first"),
         Chunk(id="chunk-2", document_id="doc-1", content="second"),
@@ -418,11 +424,7 @@ async def test_cite_resolves_direct_chunk_ids_and_reuses_document_lookup(temp_db
 async def test_cite_reports_unresolved_ids_on_partial_success(temp_db_path):
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
     capability.state = RAGState(evidence=CapabilityEvidenceRecord(question=0))
-    client = AsyncMock()
-    # Stands in for a single-database client: a bare AsyncMock's auto
-    # attributes are truthy Mocks, and `_source` reaches a validated field.
-    client._federated = {}
-    client._source = None
+    client = _single_database_client()
     client.get_chunk_by_id.side_effect = [
         Chunk(id="chunk-1", document_id="doc-1", content="first"),
         None,
@@ -466,11 +468,7 @@ async def test_cite_repairs_chunk_ids_damaged_in_transcription(temp_db_path):
             ]
         },
     )
-    client = AsyncMock()
-    # Stands in for a single-database client: a bare AsyncMock's auto
-    # attributes are truthy Mocks, and `_source` reaches a validated field.
-    client._federated = {}
-    client._source = None
+    client = _single_database_client()
     client.get_chunk_by_id.return_value = None
     capability.rag = client
 
@@ -1229,11 +1227,7 @@ async def test_citing_without_searching_grounds_the_question(temp_db_path):
     async def model(_messages, _info):
         return ModelResponse(parts=next(calls))
 
-    client = AsyncMock()
-    # Stands in for a single-database client: a bare AsyncMock's auto
-    # attributes are truthy Mocks, and `_source` reaches a validated field.
-    client._federated = {}
-    client._source = None
+    client = _single_database_client()
     client.get_chunk_by_id.return_value = Chunk(
         id="chunk-1", document_id="doc-1", content="evidence"
     )
@@ -1335,19 +1329,13 @@ async def test_a_capability_fetches_its_own_evidences_pictures(temp_db_path):
     """Compaction rehydrates through the owner, which already holds the connection."""
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
     client = AsyncMock()
-    # Stands in for a single-database client: a bare AsyncMock's auto
-    # attributes are truthy Mocks, and `_source` reaches a validated field.
-    client._federated = {}
-    client._source = None
-    client.document_item_repository.get_picture_bytes.return_value = b"picture-bytes"
+    client.get_picture_bytes.return_value = b"picture-bytes"
     capability.rag = client
 
-    data = await capability.get_picture_bytes("doc-1", "#/pictures/0")
+    data = await capability.get_picture_bytes("doc-1", "#/pictures/0", "beta")
 
     assert data == b"picture-bytes"
-    client.document_item_repository.get_picture_bytes.assert_awaited_once_with(
-        "doc-1", "#/pictures/0"
-    )
+    client.get_picture_bytes.assert_awaited_once_with("doc-1", "#/pictures/0", "beta")
 
 
 @pytest.mark.asyncio
@@ -1377,11 +1365,7 @@ async def test_citing_nothing_after_citing_something_keeps_it_grounded(temp_db_p
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
     capability.state = RAGState(evidence=CapabilityEvidenceRecord(question=0))
     capability.epoch = 5
-    client = AsyncMock()
-    # Stands in for a single-database client: a bare AsyncMock's auto
-    # attributes are truthy Mocks, and `_source` reaches a validated field.
-    client._federated = {}
-    client._source = None
+    client = _single_database_client()
     client.get_chunk_by_id.return_value = Chunk(
         id="chunk-1", document_id="doc-1", content="evidence"
     )

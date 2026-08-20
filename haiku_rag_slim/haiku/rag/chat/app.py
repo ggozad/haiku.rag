@@ -300,8 +300,8 @@ class ChatApp(App):
                     continue
                 blobs: list[bytes] = []
                 for ref in refs:
-                    data = await self.client.document_item_repository.get_picture_bytes(
-                        citation.document_id, ref
+                    data = await self.client.get_picture_bytes(
+                        citation.document_id, ref, citation.source
                     )
                     if data:
                         blobs.append(data)

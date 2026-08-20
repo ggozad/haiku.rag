@@ -16,15 +16,15 @@ class Citation(BaseModel):
 
     ``picture_refs`` lists the ``self_ref`` values of picture items in the
     cited chunk. Empty for text-only citations. UIs can fetch the picture
-    bytes via ``DocumentItemRepository.get_picture_bytes(document_id, ref)``
-    and render them alongside the text content.
+    bytes via ``HaikuRAG.get_picture_bytes(document_id, ref, source)`` and
+    render them alongside the text content.
 
     ``chunk_ids`` lists the ids of all chunks whose expansion ranges merged
     into the cited result (always includes ``chunk_id``).
 
-    ``source`` names the configured database the cited chunk came from, and is
-    None when only one is configured. It is the name from ``lancedb.databases``,
-    never a path or URI.
+    ``source`` names the configured database the cited chunk came from: the name
+    from ``lancedb.databases``, never a path or URI. It is None only where no
+    database is named, as with the single ``lancedb.uri``.
 
     ``doc_item_refs`` are the ``self_ref`` values of every item in the cited
     content — the exact items the model saw. Visual grounding resolves bounding

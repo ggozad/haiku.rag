@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- `lancedb.databases`: a name-to-location mapping for searching several databases at once, mutually exclusive with `lancedb.uri`. `client.search(..., sources=[...])` selects which to search, `sources=None` searches all of them, and `SearchResult.source` carries the configured name a result came from. Candidates are fused by the configured reranker over the union, or by reciprocal rank fusion when none is configured. `SearchResult.format_for_agent` names the database, so the model can attribute evidence to one while it answers. `haiku-rag search`, `ask` and `analyze` cover the configured set and label each result and citation with its database; every other command works on one, named with `--database NAME` or `--db PATH`.
+- `client.ask(..., sources=[...])` asks across the selected databases, and `Citation.source` names the one a cited chunk came from. The cite fallback for an id absent from the run's results looks only in the selected databases, so a question scoped to some cannot cite another.
+- `client.analyze(..., sources=[...])` analyzes across the selected databases: the sandbox mounts their documents under one flat `/documents/{id}/` namespace, resolving each id to the database holding it, and in-code `search()` covers the same selection.
+
 ## [0.77.0] - 2026-08-21
 
 ## [0.77.0] - 2026-08-21
@@ -29,8 +35,6 @@
 - `haiku.rag.capabilities.EvidenceState`: the state base `RAGState` and `AnalysisState` derive from, with `begin_invocation()` for the per-question reset. `RAGCapabilityBase.evidence_record()` and `citation_index()` expose what a capability recorded, so a host reads it without reaching into `capability.state`.
 - The `haiku.rag` package declares the `jina` extra, so `provider: jina-local` is supported by declaration rather than through `cross-encoder`'s transitive `transformers` and `torch`. Raises the full package's torch floor to 2.0.
 - `providers.docling_serve.timeout` (default 300 seconds), forwarded to the docling-serve client's per-request timeout.
-- `lancedb.databases`: a name-to-location mapping for searching several databases at once, mutually exclusive with `lancedb.uri`. `client.search(..., sources=[...])` selects which to search, `sources=None` searches all of them, and `SearchResult.source` carries the configured name a result came from. Candidates are fused by the configured reranker over the union, or by reciprocal rank fusion when none is configured.
-- `client.ask(..., sources=[...])` asks across the selected databases, and `Citation.source` names the one a cited chunk came from. The cite fallback for an id absent from the run's results looks only in the selected databases, so a question scoped to some cannot cite another.
 
 ### Changed
 

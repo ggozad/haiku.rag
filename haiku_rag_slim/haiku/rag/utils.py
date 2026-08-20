@@ -367,6 +367,8 @@ async def format_citations_rich(
         idx = c.index if c.index is not None else (i + 1)
 
         header_parts: list[str] = [f"[{idx}] {_citation_label(c)}"]
+        if c.source and client is not None and client._federated:
+            header_parts.append(c.source)
         pages = _citation_pages(c)
         if pages:
             header_parts.append(pages)
@@ -377,7 +379,9 @@ async def format_citations_rich(
 
         body: list[RenderableType] = []
         for ref in c.picture_refs:
-            image_renderable = await _render_picture(client, c.document_id, ref)
+            image_renderable = await _render_picture(
+                client, c.document_id, ref, c.source
+            )
             body.append(
                 image_renderable
                 if image_renderable
@@ -409,7 +413,7 @@ async def format_citations_rich(
 
 
 async def _render_picture(
-    client: "HaikuRAG | None", document_id: str, ref: str
+    client: "HaikuRAG | None", document_id: str, ref: str, source: str | None = None
 ) -> "RenderableType | None":
     """Fetch a picture and return a Rich renderable, or None on failure/no client."""
     if client is None:
@@ -419,7 +423,7 @@ async def _render_picture(
     from PIL import Image as PILImage
     from textual_image.renderable import Image as RichImage
 
-    data = await client.document_item_repository.get_picture_bytes(document_id, ref)
+    data = await client.get_picture_bytes(document_id, ref, source)
     if not data:
         return None
     try:
@@ -443,6 +447,19 @@ def raise_missing_extra(module: str, extra: str, exc: ModuleNotFoundError) -> No
         f"{module} is not installed. Install it with "
         f"`uv pip install 'haiku.rag-slim[{extra}]'`."
     ) from exc
+
+
+def locate_database(location: str) -> tuple[str, Path | None]:
+    """Split a configured location into (uri, db_path).
+
+    A value with a scheme is a `lancedb.uri`; anything else is a local path.
+    Routing a local path through `uri` would have `ConnectionMode` classify it as
+    object storage, which opens it without the existence check a local database
+    gets.
+    """
+    if "://" in location:
+        return location, None
+    return "", Path(location)
 
 
 def get_default_data_dir() -> Path:

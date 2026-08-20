@@ -76,7 +76,10 @@ class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
             self.sandbox = Sandbox(
                 db_path=self.db_path,
                 config=self.config,
-                context=AnalysisContext(filter=self.state.document_filter),
+                context=AnalysisContext(
+                    filter=self.state.document_filter,
+                    sources=self.state.sources,
+                ),
                 rag=rag,
                 lock=self.rag_lock,
             )

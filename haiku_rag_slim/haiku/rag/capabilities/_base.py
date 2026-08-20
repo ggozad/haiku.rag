@@ -70,11 +70,19 @@ def _nearest_known_id(chunk_id: str, known_ids: list[str]) -> str:
     return match[0] if match else chunk_id
 
 
-def resolve_db_path(db_path: Path | str | None, config: AppConfig) -> Path:
+def resolve_db_path(db_path: Path | str | None, config: AppConfig) -> Path | None:
+    """The database a capability opens for itself, or None to let the client decide.
+
+    None where `lancedb.databases` names the databases: a path would name one of
+    them instead, and a capability nobody handed a client would search a single
+    database where the configuration says several.
+    """
     if db_path is not None:
         return Path(db_path)
     if env_db := os.environ.get("HAIKU_RAG_DB"):
         return Path(env_db).expanduser()
+    if config.lancedb.databases:
+        return None
     return config.storage.data_dir / "haiku.rag.lancedb"
 
 
@@ -154,7 +162,7 @@ async def _first_holding(
 
 @dataclass
 class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
-    db_path: Path
+    db_path: Path | None
     config: AppConfig
     state_type: type[StateT]
     state_namespace: str
@@ -396,7 +404,9 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
                     self.rag = rag
         return self.rag
 
-    async def get_picture_bytes(self, document_id: str, self_ref: str) -> bytes | None:
+    async def get_picture_bytes(
+        self, document_id: str, self_ref: str, source: str | None = None
+    ) -> bytes | None:
         """Fetch a picture of this capability's evidence, for whoever re-attaches it.
 
         Public because compaction rehydrates cited pictures and this capability
@@ -404,9 +414,7 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
         """
         async with self.rag_lock:
             rag = await self._ensure_rag()
-            return await rag.document_item_repository.get_picture_bytes(
-                document_id, self_ref
-            )
+            return await rag.get_picture_bytes(document_id, self_ref, source)
 
     async def _close(self) -> None:
         if self.rag is not None:
@@ -521,14 +529,10 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
         if missing:
             async with self.rag_lock:
                 rag = await self._ensure_rag()
-                # A chunk id says nothing about which database holds it, so a
-                # federating client looks through the ones it covers.
-                if rag._federated:
-                    lookups = await rag.clients_for(
-                        getattr(self.state, "sources", None) or list(rag._federated)
-                    )
-                else:
-                    lookups = [rag]
+                # A chunk id says nothing about which database holds it, so the
+                # fallback looks through everything the question covers — and
+                # nothing it does not.
+                lookups = await rag.clients_covering(self.state.sources)
                 synthetic: list[SearchResult] = []
                 documents: dict[tuple[str | None, str], Any] = {}
                 for chunk_id in missing:

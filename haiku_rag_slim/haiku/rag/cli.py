@@ -22,14 +22,17 @@ from haiku.rag.config import (  # noqa: E402
 )
 from haiku.rag.logging import configure_cli_logging  # noqa: E402
 from haiku.rag.store.exceptions import (  # noqa: E402
+    AmbiguousDatabaseError,
     MigrationRequiredError,
     ReadOnlyError,
+    SourceUnavailableError,
 )
 from haiku.rag.store.models.chunk import SearchType  # noqa: E402
 from haiku.rag.utils import is_up_to_date  # noqa: E402
 
 if TYPE_CHECKING:
     from haiku.rag.app import HaikuRAGApp
+    from haiku.rag.config.models import AppConfig
 
 _cli = typer.Typer(
     context_settings={"help_option_names": ["-h", "--help"]},
@@ -41,29 +44,97 @@ _cli = typer.Typer(
 def cli():
     try:
         _cli()
-    except (MigrationRequiredError, ReadOnlyError) as e:
+    except (
+        AmbiguousDatabaseError,
+        MigrationRequiredError,
+        ReadOnlyError,
+        SourceUnavailableError,
+    ) as e:
         typer.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
 
 # Module-level flags set by callback
 _read_only: bool = False
+_database: str | None = None
+_database_path: Path | None = None
 
 
-def create_app(db: Path | None = None) -> "HaikuRAGApp":
+def create_app(db: Path | None = None, *, federated: bool = False) -> "HaikuRAGApp":
     """Create HaikuRAGApp with loaded config and resolved database path.
 
     Args:
-        db: Optional database path. If None, uses path from config.
+        db: Optional database path. If None, uses `--database`, then the path
+            from config.
+        federated: Whether this command works across `lancedb.databases`.
 
     Returns:
         HaikuRAGApp instance with proper config and db path.
+
+    Raises:
+        AmbiguousDatabaseError: Several databases are configured and this
+            command works on one, without `--db` or `--database` naming which.
     """
     from haiku.rag.app import HaikuRAGApp
 
+    db_path = resolve_db_path(db, federated=federated)
+    return HaikuRAGApp(
+        db_path=db_path,
+        config=get_config(),
+        read_only=_read_only,
+        federated=federated and db is None and _database is None,
+    )
+
+
+def resolve_db_path(db: Path | None = None, *, federated: bool = False) -> Path:
+    """The database a command works on, from `--db`, `--database`, or config."""
+    if db is not None and _database is not None:
+        raise AmbiguousDatabaseError(
+            "pass --db or --database, not both: they name the same thing"
+        )
+    require_one_database(get_config(), db, federated=federated)
+    if db is not None:
+        return db
+    if _database_path is not None:
+        return _database_path
+    return get_config().storage.data_dir / "haiku.rag.lancedb"
+
+
+def require_one_database(
+    config: "AppConfig", db: Path | None, *, federated: bool
+) -> None:
+    """Refuse a one-database command that cannot tell which one to use."""
+    databases = config.lancedb.databases
+    if federated or db is not None or not databases:
+        return
+    raise AmbiguousDatabaseError(
+        f"lancedb.databases names {', '.join(sorted(databases))}; this command "
+        "works on a single database: pass --database NAME, or --db PATH."
+    )
+
+
+def select_database(name: str) -> Path | None:
+    """Point the configuration at one database from `lancedb.databases`.
+
+    Returns its local path, or None where it lives behind a URI. Rewriting the
+    configuration is what lets every command, the TUIs included, work on the
+    selected database without knowing the set exists.
+    """
+    from haiku.rag.utils import locate_database
+
     config = get_config()
-    db_path = db if db else config.storage.data_dir / "haiku.rag.lancedb"
-    return HaikuRAGApp(db_path=db_path, config=config, read_only=_read_only)
+    databases = config.lancedb.databases
+    if name not in databases:
+        raise AmbiguousDatabaseError(
+            f"unknown database {name!r}; lancedb.databases names "
+            f"{', '.join(sorted(databases)) or 'nothing'}"
+        )
+    uri, db_path = locate_database(databases[name])
+    selected = config.model_copy(deep=True)
+    selected.lancedb.databases = {}
+    selected.lancedb.uri = uri
+    set_config(selected)
+    return db_path
 
 
 async def check_version():
@@ -102,16 +173,27 @@ def main(
         "--read-only",
         help="Open database in read-only mode",
     ),
+    database: str | None = typer.Option(
+        None,
+        "--database",
+        help="Name of a database from lancedb.databases to work on",
+    ),
 ):
     """haiku.rag CLI - Vector database RAG system"""
-    global _read_only
+    global _read_only, _database, _database_path
     _read_only = read_only
+    _database = database
+    _database_path = None
     # Load config from --config, local folder, or default directory
     config_path = find_config_file(cli_path=config)
     if config_path:
         yaml_data = load_yaml_config(config_path)
-        loaded_config = AppConfig.model_validate(yaml_data)
-        set_config(loaded_config)
+        set_config(AppConfig.model_validate(yaml_data))
+    else:
+        set_config(AppConfig())
+
+    if database is not None:
+        _database_path = select_database(database)
 
     configure_cli_logging()
 
@@ -307,7 +389,7 @@ def search(
         help="Path to the LanceDB database file",
     ),
 ):
-    app = create_app(db)
+    app = create_app(db, federated=True)
     asyncio.run(
         app.search(
             query=query,
@@ -361,7 +443,7 @@ def ask(
         help="Path to an image to attach to the question (repeatable; requires a vision-capable model)",
     ),
 ):
-    app = create_app(db)
+    app = create_app(db, federated=True)
     asyncio.run(
         app.ask(
             question=question,
@@ -393,7 +475,7 @@ def analyze(
         help="Path to an image to attach to the question (repeatable; requires a vision-capable model)",
     ),
 ):
-    app = create_app(db)
+    app = create_app(db, federated=True)
     asyncio.run(
         app.analyze(
             question=question,
@@ -749,8 +831,7 @@ def inspect(
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1) from e
 
-    db_path = db if db else get_config().storage.data_dir / "haiku.rag.lancedb"
-    run_inspector(db_path, read_only=True)
+    run_inspector(resolve_db_path(db), read_only=True)
 
 
 @_cli.command("chat", help="Launch interactive chat TUI for conversational RAG")
@@ -775,7 +856,7 @@ def chat(
     """Launch the chat TUI for conversational RAG."""
     from haiku.rag.chat import run_chat
 
-    db_path = db if db else get_config().storage.data_dir / "haiku.rag.lancedb"
+    db_path = resolve_db_path(db)
     capabilities = capability if capability else ["rag"]
 
     try:

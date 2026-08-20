@@ -269,6 +269,9 @@ async def _attach_picture_data(client: "HaikuRAG", chunks: list[Chunk]) -> None:
 def _dedup_picture_chunks(results: list[SearchResult]) -> list[SearchResult]:
     """Collapse duplicate picture-only chunks to one result per ``self_ref``.
 
+    Keyed by database as well, since a database copied from another holds the same
+    document id: collapsing across them would drop one of two real results.
+
     A single picture can produce two chunks for the same self_ref: one whose
     vector is the text embedding of the picture's description, and one whose
     vector is the image embedding of the picture's bytes. Both can rank for
@@ -276,13 +279,13 @@ def _dedup_picture_chunks(results: list[SearchResult]) -> list[SearchResult]:
     their only ref, keep the higher-scoring one. Wider chunks that span the
     picture plus surrounding items pass through untouched.
     """
-    seen: dict[tuple[str | None, str], int] = {}
+    seen: dict[tuple[str | None, str | None, str], int] = {}
     keep: list[bool] = [True] * len(results)
     for i, r in enumerate(results):
         if len(r.doc_item_refs) == 1 and r.doc_item_refs[0].startswith(
             PICTURE_REF_PREFIX
         ):
-            key = (r.document_id, r.doc_item_refs[0])
+            key = (r.source, r.document_id, r.doc_item_refs[0])
             prior = seen.get(key)
             if prior is None:
                 seen[key] = i
@@ -397,7 +400,25 @@ async def expand_context(
             )
         )
         merged = unsourced + [r for group in expanded_groups for r in group]
-        merged.sort(key=lambda r: r.score, reverse=True)
+        # Grouping by database must not become the tiebreak: fused scores tie
+        # often, so equal scores keep the order they were fused in.
+        arrival = {
+            result.chunk_id: rank
+            for rank, result in enumerate(search_results)
+            if result.chunk_id
+        }
+
+        def fused_rank(result: SearchResult) -> int:
+            return min(
+                (
+                    arrival[cid]
+                    for cid in (result.chunk_id, *result.chunk_ids)
+                    if cid in arrival
+                ),
+                default=len(arrival),
+            )
+
+        merged.sort(key=lambda r: (-r.score, fused_rank(r)))
         return merged
 
     from haiku.rag.context import expand_with_items, window_for

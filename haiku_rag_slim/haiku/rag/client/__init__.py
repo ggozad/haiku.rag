@@ -19,15 +19,22 @@ from haiku.rag.config import AppConfig, get_config
 from haiku.rag.converters import get_converter
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import Store
-from haiku.rag.store.exceptions import SourceUnavailableError
+from haiku.rag.store.exceptions import (
+    MigrationRequiredError,
+    ReadOnlyError,
+    SourceUnavailableError,
+)
 from haiku.rag.store.models.chunk import Chunk, SearchResult, SearchType
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import extract_items
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.repositories.document_item import DocumentItemRepository
-from haiku.rag.store.repositories.settings import SettingsRepository
-from haiku.rag.utils import escape_sql_string
+from haiku.rag.store.repositories.settings import (
+    ConfigMismatchError,
+    SettingsRepository,
+)
+from haiku.rag.utils import escape_sql_string, locate_database
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
@@ -47,6 +54,20 @@ logger = logging.getLogger(__name__)
 # that churn the blob-bearing documents table. Fire at most one per interval; a
 # final vacuum on close collapses anything throttled here.
 _VACUUM_MIN_INTERVAL_S = 300.0
+
+
+# Failures whose message names the remedy and never the location, so the failing
+# database is named alongside it instead of in place of it.
+_NAMEABLE_FAILURES = (MigrationRequiredError, ConfigMismatchError, ReadOnlyError)
+
+
+def _without_repeats(names: list[str]) -> list[str]:
+    """`names` in order, without repeats.
+
+    A database named twice would be searched twice and fused as two rank lists,
+    which counts it double.
+    """
+    return list(dict.fromkeys(names))
 
 
 class RebuildMode(Enum):
@@ -84,10 +105,11 @@ class HaikuRAG:
             create: Whether to create the database if it doesn't exist.
             read_only: Whether to open the database in read-only mode.
             sources: Names from ``config.lancedb.databases`` this client covers.
-                None means all of them. Ignored when a single ``uri`` is
-                configured.
+                None means all of them. Ignored when a single ``uri`` or an
+                explicit ``db_path`` is given.
         """
         self._config = config if config is not None else get_config()
+        self._db_path_given = db_path is not None
         if db_path is None:
             db_path = self._config.storage.data_dir / "haiku.rag.lancedb"
 
@@ -123,23 +145,14 @@ class HaikuRAG:
         """
         return get_reranker(config=self._config)
 
-    @staticmethod
-    def _locate(location: str) -> tuple[str, "Path | None"]:
-        """Split a configured location into (uri, db_path).
-
-        A value with a scheme is a `lancedb.uri`; anything else is a local path.
-        Routing a local path through `uri` would have `ConnectionMode` classify it
-        as object storage, which opens it without the existence check a local
-        database gets.
-        """
-        if "://" in location:
-            return location, None
-        return "", Path(location)
-
     def _selected(self) -> dict[str, str]:
-        """The configured databases this client covers, name to location."""
+        """The configured databases this client covers, name to location.
+
+        Empty when the caller named a database itself: an explicit `db_path` says
+        which one to open, so it is not overridden by a configured set.
+        """
         declared = self._config.lancedb.databases
-        if not declared:
+        if not declared or self._db_path_given:
             return {}
         if self._requested_sources is not None and not self._requested_sources:
             raise ValueError(
@@ -172,7 +185,7 @@ class HaikuRAG:
             return self
         if selected:
             [(self._source, location)] = selected.items()
-            uri, db_path = self._locate(location)
+            uri, db_path = locate_database(location)
             self._config = self._config.model_copy(deep=True)
             self._config.lancedb.databases = {}
             self._config.lancedb.uri = uri
@@ -196,6 +209,13 @@ class HaikuRAG:
             except BaseException:
                 self.store.close()
                 raise
+        except _NAMEABLE_FAILURES as error:
+            # These say what to run and never where the database is, so the name
+            # is added to the message rather than replacing it: the operator needs
+            # both which database failed and what to do about it.
+            if self._source is None:
+                raise
+            raise type(error)(f"database {self._source!r}: {error}") from error
         except Exception as error:
             # A legacy `uri` or `db_path` client has no name to report instead, so
             # its error passes through as it always has.
@@ -221,7 +241,11 @@ class HaikuRAG:
         Opening is per query rather than at entry: a set of 25 configured
         databases is typically queried a few at a time, and a database nobody
         asked for must not be able to fail a query, or be opened for nothing.
+
+        Missing ones open together: on object storage a serial loop makes the
+        first query cost the sum of the opens.
         """
+        names = _without_repeats(names)
         unknown = [n for n in names if n not in self._federated]
         if unknown:
             raise KeyError(
@@ -229,15 +253,27 @@ class HaikuRAG:
                 f"{', '.join(sorted(self._federated))}"
             )
         async with self._clients_lock:
-            for name in names:
-                if name not in self._clients:
-                    self._clients[name] = await self._open_client(
-                        name, self._federated[name]
-                    )
+            missing = [n for n in names if n not in self._clients]
+            if missing:
+                opened = await asyncio.gather(
+                    *(self._open_client(n, self._federated[n]) for n in missing),
+                    return_exceptions=True,
+                )
+                # Whatever opened is tracked before the failure is reported, so
+                # `__aexit__` closes it: `gather` does not cancel the siblings of
+                # the one that raised, and an untracked connection leaks.
+                failure: BaseException | None = None
+                for name, result in zip(missing, opened, strict=True):
+                    if isinstance(result, BaseException):
+                        failure = failure or result
+                    else:
+                        self._clients[name] = result
+                if failure is not None:
+                    raise failure
         return [self._clients[n] for n in names]
 
     async def _open_client(self, name: str, location: str) -> "HaikuRAG":
-        uri, db_path = self._locate(location)
+        uri, db_path = locate_database(location)
         config = self._config.model_copy(deep=True)
         config.lancedb.databases = {}
         config.lancedb.uri = uri
@@ -483,6 +519,32 @@ class HaikuRAG:
         """
         return await self.chunk_repository.get_by_id(chunk_id)
 
+    async def get_picture_bytes(
+        self, document_id: str, self_ref: str, source: str | None = None
+    ) -> bytes | None:
+        """Get a picture's bytes, from the database named by `source`.
+
+        Args:
+            document_id: The document holding the picture.
+            self_ref: The picture's `self_ref`.
+            source: The database it came from. Required when federating.
+
+        Returns:
+            The picture bytes if found, None otherwise.
+        """
+        if not self._federated:
+            return await self.document_item_repository.get_picture_bytes(
+                document_id, self_ref
+            )
+        if source is None:
+            raise ValueError(
+                "a picture lookup across databases needs the source it came from"
+            )
+        (owner,) = await self.clients_for([source])
+        return await owner.document_item_repository.get_picture_bytes(
+            document_id, self_ref
+        )
+
     async def get_document_by_uri(self, uri: str) -> Document | None:
         """Get a document by its URI.
 
@@ -593,6 +655,32 @@ class HaikuRAG:
         """
         return await self.document_repository.count(filter=filter)
 
+    async def clients_covering(
+        self, sources: list[str] | None = None
+    ) -> list["HaikuRAG"]:
+        """The clients covering this selection.
+
+        The named subset for a client covering a set, or this one where it covers
+        a single database. Empty for a selection of none, which is not the same as
+        `None` for all of them. Every read honouring `sources` decides through
+        this, so the rule cannot differ between one operation and another.
+        """
+        if self._federated:
+            return await self.clients_for(
+                list(self._federated) if sources is None else sources
+            )
+        if sources is None:
+            return [self]
+        sources = _without_repeats(sources)
+        if not sources:
+            return []
+        if sources != [self._source]:
+            raise KeyError(
+                f"unknown database(s) {', '.join(sources) or '(none)'}; this "
+                f"client covers {self._source or 'a single unnamed database'}"
+            )
+        return [self]
+
     async def search(
         self,
         query: "str | bytes | PILImage.Image",
@@ -608,13 +696,8 @@ class HaikuRAG:
             return await search_sources(
                 self, query, limit, search_type, filter, include_images, sources
             )
-        if sources is not None and not sources:
+        if not await self.clients_covering(sources):
             return []
-        if sources is not None and sources != [self._source]:
-            raise KeyError(
-                f"unknown database(s) {', '.join(sources) or '(none)'}; this "
-                f"client covers {self._source or 'a single unnamed database'}"
-            )
         results = await search(self, query, limit, search_type, filter, include_images)
         # A database named in config keeps its name even when it is the only one
         # this client covers. Only a legacy single `uri` leaves source unset.
@@ -646,10 +729,11 @@ class HaikuRAG:
         question: str,
         filter: str | None = None,
         images: Sequence[bytes] | None = None,
+        sources: list[str] | None = None,
     ) -> "AnalysisResult":
         from haiku.rag.client.agents import analyze
 
-        return await analyze(self, question, filter, images)
+        return await analyze(self, question, filter, images, sources)
 
     async def visualize_chunk(
         self,
