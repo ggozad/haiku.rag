@@ -5,6 +5,7 @@ import logging
 import mimetypes
 import tempfile
 from collections.abc import AsyncGenerator, Sequence
+from contextlib import AsyncExitStack
 from enum import Enum
 from functools import cached_property
 from pathlib import Path
@@ -17,7 +18,13 @@ import httpx
 from haiku.rag.client.documents import DocumentImport
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.converters import get_converter
-from haiku.rag.hooks import DeleteEvent, build_hooks, load_hooks, notify
+from haiku.rag.hooks import (
+    DeleteEvent,
+    build_hooks,
+    enter_lifespans,
+    load_hooks,
+    notify,
+)
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.chunk import Chunk, SearchResult, SearchType
@@ -117,33 +124,54 @@ class HaikuRAG:
         return get_reranker(config=self._config)
 
     async def __aenter__(self):
-        """Async context manager entry — initializes store and repositories."""
-        self.store = Store(
-            self._db_path,
-            config=self._config,
-            skip_validation=self._skip_validation,
-            create=self._create,
-            read_only=self._read_only,
-        )
-        # If _initialize fails mid-way (e.g. migration check raises after
-        # connect), close the store so we don't leak the LanceDB connection —
-        # __aexit__ won't run because the `async with` never entered.
+        """Async context manager entry — opens the store, the repositories and
+        the hook lifespans on one stack, so a failure anywhere along the way
+        unwinds whatever is already open. ``__aexit__`` won't run when the
+        `async with` never entered, so entry unwinds its own stack."""
+        stack = AsyncExitStack()
         try:
+            self.store = Store(
+                self._db_path,
+                config=self._config,
+                skip_validation=self._skip_validation,
+                create=self._create,
+                read_only=self._read_only,
+            )
+            stack.callback(self.close)
             await self.store._initialize()
-        except BaseException:
-            self.store.close()
+            self.document_repository = DocumentRepository(self.store)
+            self.chunk_repository = ChunkRepository(self.store)
+            self.document_item_repository = DocumentItemRepository(self.store)
+            stack.push_async_callback(self._close_models)
+            stack.push_async_callback(self._await_vacuum_tasks)
+            await enter_lifespans(stack, self._hooks, self)
+        except BaseException as exc:
+            # Forwarded, not aclose()'d: a hook that fails to start is an
+            # unwind like any other, and the lifespans already running are
+            # entitled to know what it was.
+            await stack.__aexit__(type(exc), exc, exc.__traceback__)
             raise
-        self.document_repository = DocumentRepository(self.store)
-        self.chunk_repository = ChunkRepository(self.store)
-        self.document_item_repository = DocumentItemRepository(self.store)
+        self._stack = stack
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):  # noqa: ARG002
-        """Async context manager exit."""
-        await self._await_vacuum_tasks()
-        # Best-effort: __aexit__ may run during exception unwinding, and a
-        # raising close must not mask the original exception. The reranker is
-        # a cached_property — close it only if it was materialized.
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit — unwinds hook lifespans in reverse
+        order, then the embedder and reranker, then the store.
+
+        The exception being unwound is forwarded to the lifespans so a hook can
+        tell a clean shutdown from a failing one. Suppressing it is not theirs
+        to decide, so the result is discarded.
+        """
+        await self._stack.__aexit__(exc_type, exc_val, exc_tb)
+        return False
+
+    async def _close_models(self) -> None:
+        """Close the embedder and the reranker.
+
+        Best-effort: teardown may run during exception unwinding, and a raising
+        close must not mask the original exception. The reranker is a
+        cached_property — close it only if it was materialized.
+        """
         try:
             await self.embedder.aclose()
             reranker = self.__dict__.get("reranker")
@@ -151,8 +179,6 @@ class HaikuRAG:
                 await reranker.aclose()
         except Exception:
             logger.debug("Closing embedder/reranker failed on teardown", exc_info=True)
-        self.close()
-        return False
 
     async def _await_vacuum_tasks(self) -> None:
         """Drain background vacuum work and run a final collapse before teardown.

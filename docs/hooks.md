@@ -14,8 +14,9 @@ Subclass `haiku.rag.hooks.Hook` and override any subset:
 | `after_delete(client, event)` | Documents were deleted | Cleaning up derived state |
 | `before_search(client, request)` | Before retrieval, text queries only | Query expansion, filter injection |
 | `after_search(client, request, results)` | After retrieval, reranking, and deduplication | Annotating, reordering, or filtering results |
+| `lifespan(client)` | Around the whole client lifetime | Owning connections, clients, background tasks |
 
-Events are batch shaped. `IngestEvent` carries `documents` (a batch import arrives as one event with the whole batch) and `operation` (`"create"` or `"update"`). `DeleteEvent` carries the deleted `documents` in their last-known state, since the rows are already gone; a cascade arrives as one event. `SearchRequest` carries `query`, `filter`, `search_type`, and `limit`. `before_search` returns the request to search with, and may modify any of its fields. The query feeds both the vector and the full-text side. `after_search` returns the result list. Hooks run in the order listed in config, each receiving the previous hook's output.
+Events are batch shaped. `IngestEvent` carries `documents` (a batch import arrives as one event with the whole batch) and `operation` (`"create"` or `"update"`). `DeleteEvent` carries the deleted `documents` in their last-known state, since the rows are already gone; a cascade arrives as one event. `SearchRequest` carries `query`, `filter`, `search_type`, and `limit`. `before_search` returns the request to search with, and may modify any of its fields. The query feeds both the vector and the full-text side. `after_search` returns the result list, and reads a request whose `search_type` is the one retrieval actually used: `hybrid` where a text search left it unset, `vector` for an image query. Hooks run in the order listed in config, each receiving the previous hook's output.
 
 Hooks receive the `HaikuRAG` client, so they can search, read repositories, and store their own state.
 
@@ -53,6 +54,46 @@ hooks:
 ```
 
 An unknown name in `hooks:` raises `ValueError` when the client is constructed, so misconfiguration fails at startup. Entry points load lazily. Only the hooks the config references are imported.
+
+## Owning resources
+
+Factories are called during client construction, before the database is open, so they must not acquire resources. Acquire them in `lifespan` instead, an async context manager around the client's lifetime:
+
+```python
+from contextlib import asynccontextmanager
+
+import httpx
+
+from haiku.rag.hooks import Hook
+
+class GlossaryHook(Hook):
+    @asynccontextmanager
+    async def lifespan(self, client):
+        async with httpx.AsyncClient() as http:
+            self.http = http
+            yield
+```
+
+Lifespans are entered in the order listed in config, once the store is open, and exited in reverse order while the store, embedder and reranker are all still usable.
+
+Failing on entry fails `async with HaikuRAG(...)` and unwinds the lifespans already started: an activated hook that cannot start is a startup failure, not something to run degraded. Failing on exit is logged and swallowed, so one hook's teardown cannot strand another's. A hook is told which exception is being unwound, whether it came from the client's caller or from a later hook failing to start, but cannot suppress it.
+
+## Background work
+
+A hook that runs a background task owns stopping it. Cancel it on the way out, before anything awaits it:
+
+```python
+@asynccontextmanager
+async def lifespan(self, client):
+    async with asyncio.TaskGroup() as tg:
+        task = tg.create_task(self.refresh_periodically(client))
+        try:
+            yield
+        finally:
+            task.cancel()
+```
+
+The `task.cancel()` is not optional. A `TaskGroup` that exits cleanly waits for its children instead of cancelling them, so an endless loop parked in one never returns and client shutdown hangs.
 
 ## Result annotations
 
