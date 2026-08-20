@@ -28,31 +28,18 @@ Adds support for 40+ file formats including PDF, DOCX, HTML, and more.
 
 ### Available Extras
 
-**Document Processing:**
-- `docling` - PDF, DOCX, HTML, and 40+ file formats
+`docling`, `tui`, `voyageai`, `cohere`, `zeroentropy`, `cross-encoder`, `jina`,
+`s3`, `ingester`, and one per model provider: `anthropic`, `google`, `groq`,
+`mistral`, `bedrock`, `vertexai`. Ollama and any OpenAI-compatible endpoint need
+no extra.
 
-**Embedding Providers:**
-- `voyageai` - VoyageAI embeddings
-
-**Rerankers:**
-- `cross-encoder` - Local reranking via sentence-transformers
-- `cohere` - Cohere
-- `zeroentropy` - Zero Entropy
-
-**Model Providers:**
-- OpenAI/Ollama - included in core (OpenAI-compatible APIs)
-- `anthropic` - Anthropic Claude
-- `groq` - Groq
-- `google` - Google Gemini
-- `mistral` - Mistral AI
-- `bedrock` - AWS Bedrock
-- `vertexai` - Google Vertex AI
-
+What each provides, and which ones the full `haiku.rag` package already
+includes: [Installation](https://ggozad.github.io/haiku.rag/installation/).
 
 ```bash
 # Common combinations
-uv pip install haiku.rag-slim[docling,anthropic,cross-encoder]
-uv pip install haiku.rag-slim[docling,groq]
+uv pip install 'haiku.rag-slim[docling,anthropic,cross-encoder]'
+uv pip install 'haiku.rag-slim[docling,groq]'
 ```
 
 ## Usage

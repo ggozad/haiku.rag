@@ -10,12 +10,8 @@
 uv pip install haiku.rag
 ```
 
-The full package pulls the `docling`, `voyageai`, `cohere`, `zeroentropy`, `cross-encoder`, `jina` and `tui` extras:
-- **Document processing** (Docling) - PDF, DOCX, PPTX, images, and 40+ file formats
-- **Embedding providers** - VoyageAI and Cohere
-- **Rerankers** - local cross-encoders, local Jina, Cohere, Zero Entropy
-
-It does not include the `s3` or `ingester` extras:
+The full package pulls the `docling`, `voyageai`, `cohere`, `zeroentropy`,
+`cross-encoder`, `jina` and `tui` extras. It does not include `s3` or `ingester`:
 
 ```bash
 uv pip install 'haiku.rag[ingester]'   # the haiku-ingester service
@@ -25,27 +21,35 @@ uv pip install 'haiku.rag[s3]'         # S3 and object storage
 ### Slim Package (Minimal Dependencies)
 
 ```bash
-# Minimal installation (no document processing)
 uv pip install haiku.rag-slim
-
-# With document processing
-uv pip install haiku.rag-slim[docling]
-
-# With specific providers
-uv pip install haiku.rag-slim[docling,voyageai,cross-encoder]
+uv pip install 'haiku.rag-slim[docling]'
+uv pip install 'haiku.rag-slim[docling,voyageai,cross-encoder]'
 ```
 
-The slim package has minimal dependencies and lets you install only what you need:
+### Extras
 
-- `docling` - PDF, DOCX, PPTX, images, and other document formats
-- `voyageai` - VoyageAI embeddings
-- `cross-encoder` - Local reranking via sentence-transformers
-- `jina` - Local Jina reranking (`provider: jina-local`). Needs transformers and torch, which `cross-encoder` also pulls
-- `cohere` - Cohere embeddings and reranking
-- `zeroentropy` - Zero Entropy reranking
-- `s3` - S3 and object-storage access
-- `ingester` - The `haiku-ingester` service (also pulls `s3`)
-- `tui` - Terminal UI for `chat` and `inspect` commands
+Every extra `haiku.rag-slim` defines. The right-hand column marks the ones the
+full `haiku.rag` package already includes.
+
+| Extra | Provides | In `haiku.rag` |
+|---|---|---|
+| `docling` | PDF, DOCX, PPTX, images and 40+ formats, converted locally | yes |
+| `tui` | Terminal UI for `chat` and `inspect` | yes |
+| `voyageai` | VoyageAI embeddings | yes |
+| `cohere` | Cohere embeddings and reranking | yes |
+| `zeroentropy` | Zero Entropy reranking | yes |
+| `cross-encoder` | Local reranking via sentence-transformers | yes |
+| `jina` | Local Jina reranking (`provider: jina-local`) | yes |
+| `s3` | S3 and object-storage access | no |
+| `ingester` | The `haiku-ingester` service (also pulls `s3`) | no |
+| `anthropic` | Anthropic Claude models | no |
+| `google` | Google Gemini models | no |
+| `groq` | Groq models | no |
+| `mistral` | Mistral models | no |
+| `bedrock` | AWS Bedrock models | no |
+| `vertexai` | Google Vertex AI models | no |
+
+Ollama and any OpenAI-compatible endpoint work with no extra at all.
 
 **Built-in providers** (no extras needed):
 - **Ollama** (default embedding provider)
@@ -53,7 +57,7 @@ The slim package has minimal dependencies and lets you install only what you nee
 - **vLLM** and other OpenAI-compatible endpoints (embeddings, QA, reranking)
 - **Jina** reranking via `provider: jina`, which calls the Jina HTTP API
 
-Other Pydantic AI providers need their own Pydantic AI extra. For Claude models, install `pydantic-ai-slim[anthropic]`.
+Other providers come from the extras above, which pull the matching Pydantic AI extra. For Claude models, `uv pip install 'haiku.rag-slim[anthropic]'`.
 
 See [Configuration](configuration/index.md) for configuring providers including advanced options like vLLM.
 

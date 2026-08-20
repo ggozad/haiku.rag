@@ -437,7 +437,9 @@ server, then pollers, then in-flight workers.
 
 ### Single-writer constraint
 
-LanceDB supports exactly one writer + N readers per database URI. Run
+haiku.rag serializes multi-table writes with a process-local lock and rolls
+them back by restoring table versions, so a second writing process can
+commit inside another's transaction and be reverted by its rollback. Run
 exactly one `haiku-ingester serve` against a given LanceDB. Multiple
 MCP servers or read-only consumers against the same DB are fine. Sharing
 the Postgres queue across processes is safe (the claim/lease lifecycle is
