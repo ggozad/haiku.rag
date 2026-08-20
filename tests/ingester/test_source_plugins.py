@@ -7,15 +7,15 @@ from haiku.rag.config import PluginSourceConfig
 from haiku.rag.ingester.pollers.factory import build_source
 from haiku.rag.ingester.pollers.periodic import PeriodicPoller
 from haiku.rag.ingester.queue.models import JobOp
-from haiku.rag.ingester.sources import plugins as plugins_module
-from haiku.rag.ingester.sources import resolve_configured_source
-from haiku.rag.ingester.sources.base import (
+from haiku.rag.sources import plugins as plugins_module
+from haiku.rag.sources import resolve_configured_source
+from haiku.rag.sources.base import (
     FetchResult,
     Source,
     SourceEvent,
     SourceEventKind,
 )
-from haiku.rag.ingester.sources.plugins import (
+from haiku.rag.sources.plugins import (
     ENTRY_POINT_GROUP,
     load_source_factories,
 )

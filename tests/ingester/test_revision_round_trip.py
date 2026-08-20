@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.ingester.sources.base import FetchResult, SourceEventKind
-from haiku.rag.ingester.sources.fs import FSSource
+from haiku.rag.sources.base import FetchResult, SourceEventKind
+from haiku.rag.sources.fs import FSSource
 
 
 @pytest.fixture(scope="module")

@@ -3,7 +3,7 @@ from importlib.metadata import entry_points
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from haiku.rag.ingester.sources.base import FetchResult
+    from haiku.rag.sources.base import FetchResult
 
 ENTRY_POINT_GROUP = "haiku.rag.metadata_providers"
 

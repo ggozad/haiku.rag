@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 
 from haiku.rag.client.exceptions import UnsupportedSourceError
-from haiku.rag.ingester.sources.base import FileTooLargeError, SourceEventKind
-from haiku.rag.ingester.sources.fs import FSSource
+from haiku.rag.sources.base import FileTooLargeError, SourceEventKind
+from haiku.rag.sources.fs import FSSource
 
 
 @pytest.fixture
@@ -378,7 +378,7 @@ async def test_discover_skips_symlink_to_missing_in_root_target(tmp_path):
 def test_walk_files_drops_links_escaping_the_root(tmp_path):
     import os
 
-    from haiku.rag.ingester.sources.fs import walk_files
+    from haiku.rag.sources.fs import walk_files
 
     tree = tmp_path / "tree"
     outside = tmp_path / "outside"

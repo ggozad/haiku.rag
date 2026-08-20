@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
     from haiku.rag.client import HaikuRAG
     from haiku.rag.ingester.metadata import MetadataProvider
-    from haiku.rag.ingester.sources.base import FetchResult, Source
+    from haiku.rag.sources.base import FetchResult, Source
 
 logger = logging.getLogger(__name__)
 
@@ -582,7 +582,7 @@ async def _reconcile_pdf_attachments(
         ):
             continue
 
-        from haiku.rag.ingester.sources.base import FetchResult
+        from haiku.rag.sources.base import FetchResult
 
         child_fr = FetchResult(
             uri=child_uri,
@@ -668,8 +668,8 @@ async def create_document_from_source(
                     "uri override is not supported for directory sources; each file "
                     "produces its own document with its own auto-derived URI."
                 )
-            from haiku.rag.ingester.sources.filter import FileFilter
-            from haiku.rag.ingester.sources.fs import walk_files
+            from haiku.rag.sources.filter import FileFilter
+            from haiku.rag.sources.fs import walk_files
 
             # One-shot CLI directory ingest uses the converter's supported
             # extensions but no include/ignore patterns. For pattern-based
@@ -707,7 +707,7 @@ async def create_document_from_source(
     # renamed/removed source surfaces as a DLQ instead of silently dropping
     # credentials. Ad-hoc CLI calls (no source_id) fall back to scheme-based
     # adapters when no configured source matches.
-    from haiku.rag.ingester.sources import (
+    from haiku.rag.sources import (
         resolve_adhoc_fetcher,
         resolve_configured_source,
     )

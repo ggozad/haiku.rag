@@ -9,6 +9,7 @@
 
 ### Changed
 
+- Source adapters moved from `haiku.rag.ingester.sources` to `haiku.rag.sources`: `FetchResult`, `SourceEvent`, `SourceEventKind`, `RevisionSnapshot`, `Source` and the `FSSource`/`HTTPSource`/`S3Source`/`WebDAVSource` adapters. One-shot client ingestion uses them too, so they were never ingester-only. Update imports; the `haiku.rag.sources` plugin entry-point group is unchanged.
 - `HaikuRAG.convert(url)` fetches through `HTTPSource`, the same adapter the ingester uses, instead of its own httpx client. `_write_fetch_body` moved from `client.documents` to `client.processing`.
 - Chunk embedding is owned by the persistence funnels: `create_document`, `update_document` and source ingestion no longer embed eagerly before handing chunks to a check that would embed them anyway. The `document.embed` span moved onto `ensure_chunks_embedded`, so every path is instrumented rather than only ingest.
 - One-shot directory ingestion and `FSSource.discover` share `walk_files`, so the symlink-escape guard lives in one place.

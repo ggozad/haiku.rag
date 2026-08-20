@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from haiku.rag.ingester.sources.base import FileTooLargeError, SourceEventKind
-from haiku.rag.ingester.sources.s3 import S3Source
+from haiku.rag.sources.base import FileTooLargeError, SourceEventKind
+from haiku.rag.sources.s3 import S3Source
 
 
 @pytest.fixture

@@ -10,7 +10,7 @@ from haiku.rag.client.documents import (
     _reconcile_pdf_attachments,
     parent_uri_filter,
 )
-from haiku.rag.ingester.sources import FetchResult
+from haiku.rag.sources import FetchResult
 from haiku.rag.store.models.document import Document
 
 

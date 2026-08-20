@@ -325,7 +325,7 @@ async def test_drain_passes_configured_sources_to_client(client, jobs, sync):
     """The pool's `sources` list flows through run_job to
     client.create_document_from_source so resolve_fetcher can pick the
     configured authenticated source over an adhoc adapter."""
-    from haiku.rag.ingester.sources.http import HTTPSource
+    from haiku.rag.sources.http import HTTPSource
 
     client.create_document_from_source.return_value = Document(
         id="d", content="x", uri="u", metadata={"md5": "m", "source_revision": "r"}

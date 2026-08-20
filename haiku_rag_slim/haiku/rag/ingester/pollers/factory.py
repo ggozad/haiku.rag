@@ -6,14 +6,14 @@ from haiku.rag.config import (
     SourceConfig,
     WebDAVSourceConfig,
 )
-from haiku.rag.ingester.sources import (
+from haiku.rag.sources import (
     FSSource,
     HTTPSource,
     S3Source,
     Source,
     WebDAVSource,
 )
-from haiku.rag.ingester.sources.plugins import (
+from haiku.rag.sources.plugins import (
     ENTRY_POINT_GROUP,
     load_source_factories,
 )

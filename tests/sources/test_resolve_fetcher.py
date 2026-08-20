@@ -2,13 +2,13 @@ from pathlib import Path
 
 import pytest
 
-from haiku.rag.ingester.sources import (
+from haiku.rag.sources import (
     resolve_adhoc_fetcher,
     resolve_configured_source,
 )
-from haiku.rag.ingester.sources.fs import FSSource
-from haiku.rag.ingester.sources.http import HTTPSource
-from haiku.rag.ingester.sources.s3 import S3Source
+from haiku.rag.sources.fs import FSSource
+from haiku.rag.sources.http import HTTPSource
+from haiku.rag.sources.s3 import S3Source
 
 # --- resolve_adhoc_fetcher ---
 

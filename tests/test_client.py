@@ -19,7 +19,7 @@ from haiku.rag.client.documents import (
 from haiku.rag.client.processing import _write_fetch_body
 from haiku.rag.config import get_config
 from haiku.rag.embeddings import EmbedderWrapper
-from haiku.rag.ingester.sources.base import FetchResult
+from haiku.rag.sources.base import FetchResult
 from haiku.rag.store.compression import decompress_json
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
@@ -2532,7 +2532,7 @@ class _CountingSource:
 async def test_adhoc_source_is_closed_after_ingest(temp_db_path, monkeypatch):
     """An ad-hoc fetcher is built for this one call, so this call has to close
     it — HTTP and WebDAV adapters hold an httpx connection pool."""
-    from haiku.rag.ingester import sources as sources_module
+    from haiku.rag import sources as sources_module
 
     uri = "https://example.com/counting.md"
     fetcher = _CountingSource(uri, b"# Counting\n\nAd-hoc fetched body.")

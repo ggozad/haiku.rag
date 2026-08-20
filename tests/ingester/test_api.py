@@ -7,7 +7,7 @@ from httpx import ASGITransport
 from haiku.rag.config import AppConfig
 from haiku.rag.ingester.api.server import APIState, build_app
 from haiku.rag.ingester.queue.models import JobOp, JobStatus
-from haiku.rag.ingester.sources.base import (
+from haiku.rag.sources.base import (
     FetchResult,
     SourceEvent,
     SourceEventKind,

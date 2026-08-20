@@ -7,7 +7,7 @@ from haiku.rag.ingester.metadata import (
     build_providers,
     load_metadata_providers,
 )
-from haiku.rag.ingester.sources.base import FetchResult
+from haiku.rag.sources.base import FetchResult
 
 
 class _Provider:

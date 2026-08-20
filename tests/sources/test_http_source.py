@@ -3,8 +3,8 @@ import hashlib
 import httpx
 import pytest
 
-from haiku.rag.ingester.sources.base import FileTooLargeError, SourceEventKind
-from haiku.rag.ingester.sources.http import HTTPSource
+from haiku.rag.sources.base import FileTooLargeError, SourceEventKind
+from haiku.rag.sources.http import HTTPSource
 
 
 def _transport(routes: dict[tuple[str, str], httpx.Response]) -> httpx.MockTransport:

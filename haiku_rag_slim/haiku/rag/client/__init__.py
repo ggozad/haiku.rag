@@ -34,9 +34,9 @@ if TYPE_CHECKING:
 
     from haiku.rag.embeddings import EmbedderWrapper
     from haiku.rag.ingester.metadata import MetadataProvider
-    from haiku.rag.ingester.sources.base import Source
     from haiku.rag.reranking.base import RerankerBase
     from haiku.rag.sandbox import AnalysisResult
+    from haiku.rag.sources.base import Source
     from haiku.rag.store.models.citation import Citation
 
 logger = logging.getLogger(__name__)

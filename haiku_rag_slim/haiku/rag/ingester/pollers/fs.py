@@ -7,13 +7,13 @@ from watchfiles import Change, awatch
 
 from haiku.rag.ingester.pollers.base import BasePoller, _enqueue_extra
 from haiku.rag.ingester.queue.models import JobOp
-from haiku.rag.ingester.sources.filter import FileFilter
+from haiku.rag.sources.filter import FileFilter
 from haiku.rag.telemetry import logfire
 
 if TYPE_CHECKING:
     from haiku.rag.circuit_breaker import CircuitBreaker
     from haiku.rag.config import FSSourceConfig
-    from haiku.rag.ingester.sources.fs import FSSource
+    from haiku.rag.sources.fs import FSSource
 
 logger = logging.getLogger(__name__)
 

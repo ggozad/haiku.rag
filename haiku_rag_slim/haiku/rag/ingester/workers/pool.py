@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
     from haiku.rag.client import HaikuRAG
     from haiku.rag.ingester.metadata import MetadataProvider
-    from haiku.rag.ingester.sources.base import Source
+    from haiku.rag.sources.base import Source
 
 logger = logging.getLogger(__name__)
 

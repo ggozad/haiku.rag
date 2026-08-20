@@ -9,8 +9,8 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import FSSourceConfig, HTTPSourceConfig
 from haiku.rag.ingester.pollers.manager import PollerManager
 from haiku.rag.ingester.queue.models import JobOp
-from haiku.rag.ingester.sources.http import HTTPSource
 from haiku.rag.ingester.workers.pool import WorkerPool
+from haiku.rag.sources.http import HTTPSource
 from haiku.rag.store.models.document import Document
 
 
