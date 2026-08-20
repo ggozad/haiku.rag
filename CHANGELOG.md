@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.76.0] - 2026-08-20
+
 ### Added
 
 - `haiku.rag.capabilities.EvidenceState`: the state base `RAGState` and `AnalysisState` derive from, with `begin_invocation()` for the per-question reset. `RAGCapabilityBase.evidence_record()` and `citation_index()` expose what a capability recorded, so a host reads it without reaching into `capability.state`.
@@ -2193,7 +2195,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.75.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.76.0...HEAD
+[0.76.0]: https://github.com/ggozad/haiku.rag/compare/0.75.0...0.76.0
 [0.75.0]: https://github.com/ggozad/haiku.rag/compare/0.74.0...0.75.0
 [0.74.0]: https://github.com/ggozad/haiku.rag/compare/0.73.0...0.74.0
 [0.73.0]: https://github.com/ggozad/haiku.rag/compare/0.72.1...0.73.0
