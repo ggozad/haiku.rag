@@ -7,10 +7,10 @@ import typer
 from evaluations.benchmark import (
     _load_config,
     _resolve_dataset,
-    build_experiment_metadata,
     evaluate_dataset,
-    run_qa_benchmark,
 )
+from evaluations.experiment import build_experiment_metadata
+from evaluations.qa import run_qa_benchmark
 from evaluations.config import DatasetSpec, DocumentPayload
 from haiku.rag.config.models import AppConfig, ModelConfig
 
@@ -171,9 +171,9 @@ class TestConversationInputDispatch:
         )
 
         with (
-            patch("evaluations.benchmark.get_model", return_value="fake-model"),
+            patch("evaluations.qa.get_model", return_value="fake-model"),
             patch(
-                "evaluations.benchmark.run_capability_question",
+                "evaluations.qa.run_capability_question",
                 new_callable=AsyncMock,
                 return_value=CapabilityRunResult(answer="answer"),
             ) as run_question,
@@ -217,13 +217,13 @@ class TestConversationInputDispatch:
 
         recorded: dict[str, object] = {}
         with (
-            patch("evaluations.benchmark.get_model", return_value="fake-model"),
+            patch("evaluations.qa.get_model", return_value="fake-model"),
             patch(
-                "evaluations.benchmark.set_eval_attribute",
+                "evaluations.qa.set_eval_attribute",
                 side_effect=lambda key, value: recorded.__setitem__(key, value),
             ),
             patch(
-                "evaluations.benchmark.run_capability_question",
+                "evaluations.qa.run_capability_question",
                 new_callable=AsyncMock,
                 return_value=CapabilityRunResult(
                     answer="answer", citation_status="ungrounded"
@@ -245,7 +245,7 @@ class TestRefusalMetrics:
         return case
 
     def test_precision_and_recall(self) -> None:
-        from evaluations.benchmark import _refusal_metrics
+        from evaluations.qa import _refusal_metrics
 
         cases = [
             self._case("UNANSWERABLE", True),  # true refusal
@@ -266,7 +266,7 @@ class TestRefusalMetrics:
         assert refusals == 2
 
     def test_none_when_no_judged_cases(self) -> None:
-        from evaluations.benchmark import _refusal_metrics
+        from evaluations.qa import _refusal_metrics
 
         assert _refusal_metrics([self._case("PARTIAL", None)]) is None
 
@@ -278,7 +278,7 @@ class TestLiveSummary:
         return case
 
     def test_micro_and_macro_aggregation(self) -> None:
-        from evaluations.benchmark import _live_summary
+        from evaluations.qa import _live_summary
 
         # Conversation A: 1/4 turns pass; B: 2/2 pass. Micro weights turns
         # (3/6); macro averages conversations ((0.25 + 1.0) / 2).
@@ -330,12 +330,12 @@ class TestLiveSummary:
         assert summary["refusal_recall"] == pytest.approx(0.5)
 
     def test_none_without_scored_cases(self) -> None:
-        from evaluations.benchmark import _live_summary
+        from evaluations.qa import _live_summary
 
         assert _live_summary([self._case({})], []) is None
 
     def test_micro_rate_uses_judged_turns(self) -> None:
-        from evaluations.benchmark import _live_summary
+        from evaluations.qa import _live_summary
 
         cases = [
             self._case(
@@ -363,7 +363,7 @@ class TestLiveSummary:
         """A conversation whose every turn lost its judge reports
         turn_pass_rate 0.0; treating that as a failed conversation would
         contradict the exclusion policy. It must not enter the macro average."""
-        from evaluations.benchmark import _live_summary
+        from evaluations.qa import _live_summary
 
         cases = [
             self._case(
@@ -401,7 +401,7 @@ class TestLiveSummary:
         assert summary["turns_total"] == 10
 
     def test_failed_conversations_do_not_affect_rates(self) -> None:
-        from evaluations.benchmark import _live_summary
+        from evaluations.qa import _live_summary
 
         cases = [
             self._case(
@@ -466,9 +466,9 @@ class TestLiveConversationDispatch:
             CapabilityRunResult(answer="a2", cited_uris=[]),
         ]
         with (
-            patch("evaluations.benchmark.get_model", return_value="fake-model"),
+            patch("evaluations.qa.get_model", return_value="fake-model"),
             patch(
-                "evaluations.benchmark.run_capability_conversation",
+                "evaluations.qa.run_capability_conversation",
                 new_callable=AsyncMock,
                 return_value=turn_results,
             ) as run_conversation,
@@ -545,13 +545,13 @@ class TestLiveConversationDispatch:
         recorded: dict[str, object] = {}
 
         with (
-            patch("evaluations.benchmark.get_model", return_value="fake-model"),
+            patch("evaluations.qa.get_model", return_value="fake-model"),
             patch(
-                "evaluations.benchmark.set_eval_attribute",
+                "evaluations.qa.set_eval_attribute",
                 side_effect=lambda key, value: recorded.__setitem__(key, value),
             ),
             patch(
-                "evaluations.benchmark.run_capability_conversation",
+                "evaluations.qa.run_capability_conversation",
                 new_callable=AsyncMock,
                 return_value=turn_results,
             ),
@@ -639,10 +639,8 @@ class TestRunQaBenchmarkJudgeModel:
         custom_judge = ModelConfig(provider="openai", name="gpt-4o")
 
         with (
-            patch("evaluations.benchmark.get_model") as mock_get_model,
-            patch(
-                "evaluations.benchmark.run_capability_question", new_callable=AsyncMock
-            ),
+            patch("evaluations.qa.get_model") as mock_get_model,
+            patch("evaluations.qa.run_capability_question", new_callable=AsyncMock),
         ):
             mock_get_model.return_value = "fake-model"
             await run_qa_benchmark(
@@ -656,13 +654,11 @@ class TestRunQaBenchmarkJudgeModel:
 
     @pytest.mark.asyncio
     async def test_defaults_to_pinned_judge_model(self, tmp_path: Path) -> None:
-        from evaluations.benchmark import DEFAULT_JUDGE_MODEL
+        from evaluations.experiment import DEFAULT_JUDGE_MODEL
 
         with (
-            patch("evaluations.benchmark.get_model") as mock_get_model,
-            patch(
-                "evaluations.benchmark.run_capability_question", new_callable=AsyncMock
-            ),
+            patch("evaluations.qa.get_model") as mock_get_model,
+            patch("evaluations.qa.run_capability_question", new_callable=AsyncMock),
         ):
             mock_get_model.return_value = "fake-model"
             await run_qa_benchmark(
@@ -674,7 +670,7 @@ class TestRunQaBenchmarkJudgeModel:
         mock_get_model.assert_any_call(DEFAULT_JUDGE_MODEL, AppConfig())
 
     def test_pinned_judge_avoids_greedy_decoding(self) -> None:
-        from evaluations.benchmark import DEFAULT_JUDGE_MODEL
+        from evaluations.experiment import DEFAULT_JUDGE_MODEL
 
         assert DEFAULT_JUDGE_MODEL.temperature == 0.6
         assert DEFAULT_JUDGE_MODEL.name == "qwen3.8"
@@ -815,11 +811,10 @@ class TestRunQaBenchmarkCapabilityTarget:
             return_value=CapabilityRunResult(answer="from capability")
         )
         with (
-            patch("evaluations.benchmark.get_model") as mock_get_model,
+            patch("evaluations.qa.get_model") as mock_get_model,
             patch(
-                "evaluations.benchmark.run_capability_question", new=capability_run
+                "evaluations.qa.run_capability_question", new=capability_run
             ) as mock_run_capability,
-            patch("evaluations.benchmark.HaikuRAG") as mock_haiku,
         ):
             mock_get_model.return_value = "fake-model"
             await run_qa_benchmark(
@@ -829,9 +824,11 @@ class TestRunQaBenchmarkCapabilityTarget:
                 target="rag-capability",
             )
 
-        # When target is rag-capability, HaikuRAG context manager is NOT entered
-        # (the capability manages its own client via lifespan).
-        mock_haiku.assert_not_called()
+        # The capability manages its own client, so the QA runner never opens
+        # one — it has no HaikuRAG reference to open.
+        import evaluations.qa as qa_module
+
+        assert not hasattr(qa_module, "HaikuRAG")
         # capability model defaults to qa.model when not provided
         assert any(
             call[0][0] == AppConfig().qa.model for call in mock_get_model.call_args_list
@@ -842,7 +839,7 @@ class TestRunQaBenchmarkCapabilityTarget:
     async def test_analysis_capability_target_resolves_factory(
         self, tmp_path: Path
     ) -> None:
-        from evaluations.benchmark import _capability_factory_for_target
+        from evaluations.qa import _capability_factory_for_target
         from haiku.rag.capabilities.analysis import (
             create_capability as analysis_factory,
         )
@@ -913,7 +910,7 @@ class TestBatchedIngest:
 
     @pytest.mark.asyncio
     async def test_imports_in_bounded_batches(self) -> None:
-        from evaluations.benchmark import _ingest_batched
+        from evaluations.population import _ingest_batched
 
         rag = self._rag()
         corpus = [{"uri": f"u{i}"} for i in range(5)]
@@ -928,7 +925,7 @@ class TestBatchedIngest:
 
     @pytest.mark.asyncio
     async def test_resume_skips_complete_uris(self) -> None:
-        from evaluations.benchmark import _ingest_batched
+        from evaluations.population import _ingest_batched
 
         rag = self._rag(complete_uris=["u0", "u2"])
         corpus = [{"uri": f"u{i}"} for i in range(4)]
@@ -944,7 +941,7 @@ class TestBatchedIngest:
     async def test_resume_reimports_chunkless_documents(self) -> None:
         """A crash between the document and chunk writes leaves a document
         without chunks; resume must delete and re-import it, not skip it."""
-        from evaluations.benchmark import _ingest_batched
+        from evaluations.population import _ingest_batched
 
         rag = self._rag(complete_uris=["u0"], chunkless_uris=["u1"])
         corpus = [{"uri": "u0"}, {"uri": "u1"}]
@@ -957,7 +954,7 @@ class TestBatchedIngest:
 
     @pytest.mark.asyncio
     async def test_unmapped_documents_skipped(self) -> None:
-        from evaluations.benchmark import _ingest_batched
+        from evaluations.population import _ingest_batched
 
         rag = self._rag()
         corpus = [{"uri": "u0"}, {"uri": "bad"}, {"uri": "u1"}]
@@ -972,7 +969,7 @@ class TestAttachRelevantUris:
     def test_joins_by_question(self) -> None:
         from pydantic_evals import Case
 
-        from evaluations.benchmark import _attach_relevant_uris
+        from evaluations.qa import _attach_relevant_uris
         from evaluations.config import RetrievalSample
         from evaluations.evaluators import MAPEvaluator
 
@@ -1021,7 +1018,7 @@ class TestAttachRelevantUris:
     def test_no_op_without_retrieval_loader(self) -> None:
         from pydantic_evals import Case
 
-        from evaluations.benchmark import _attach_relevant_uris
+        from evaluations.qa import _attach_relevant_uris
 
         cases: list[Case[str, str, dict]] = [
             Case(name="c1", inputs="q", expected_output="a"),
@@ -1042,7 +1039,7 @@ class TestFilterQaCorpus:
     def test_keeps_only_matching_ids(self) -> None:
         from datasets import Dataset
 
-        from evaluations.benchmark import _filter_qa_corpus
+        from evaluations.qa import _filter_qa_corpus
 
         corpus = Dataset.from_list(
             [{"id": "a", "q": 1}, {"id": "b", "q": 2}, {"id": "c", "q": 3}]
@@ -1053,7 +1050,7 @@ class TestFilterQaCorpus:
     def test_none_returns_corpus_unchanged(self) -> None:
         from datasets import Dataset
 
-        from evaluations.benchmark import _filter_qa_corpus
+        from evaluations.qa import _filter_qa_corpus
 
         corpus = Dataset.from_list([{"id": "a"}])
         assert _filter_qa_corpus(corpus, None) is corpus
@@ -1114,7 +1111,7 @@ class TestRetrievalTarget:
                 )
 
         fake = FakeRag()
-        with patch("evaluations.benchmark.HaikuRAG") as mock_haiku:
+        with patch("evaluations.retrieval.HaikuRAG") as mock_haiku:
             mock_haiku.return_value.__aenter__.return_value = fake
             result = await run_retrieval_benchmark(
                 self._spec(), AppConfig(), db_path=tmp_path / "test.lancedb"
@@ -1142,7 +1139,7 @@ class TestRetrievalTarget:
                     _result("uri-x", 0.7),
                 ]
 
-        with patch("evaluations.benchmark.HaikuRAG") as mock_haiku:
+        with patch("evaluations.retrieval.HaikuRAG") as mock_haiku:
             mock_haiku.return_value.__aenter__.return_value = FakeRag()
             result = await run_retrieval_benchmark(
                 self._spec(), AppConfig(), db_path=tmp_path / "test.lancedb"
@@ -1195,7 +1192,7 @@ class TestDocumentFilterThreading:
             retrieval_evaluators=[MAPEvaluator()],
         )
 
-        with patch("evaluations.benchmark.HaikuRAG") as mock_haiku:
+        with patch("evaluations.retrieval.HaikuRAG") as mock_haiku:
             mock_haiku.return_value.__aenter__.return_value = FakeRag()
             await run_retrieval_benchmark(
                 spec,
@@ -1225,7 +1222,7 @@ class TestDocumentFilterThreading:
         )
 
         with patch(
-            "evaluations.benchmark.run_capability_question",
+            "evaluations.qa.run_capability_question",
             new_callable=AsyncMock,
             return_value=CapabilityRunResult(answer="ANSWER: 42"),
         ) as mock_run:
