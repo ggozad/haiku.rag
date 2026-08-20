@@ -1,15 +1,17 @@
 import asyncio
 import json
 import logging
-from collections.abc import AsyncIterator, Coroutine
+from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from importlib import metadata
 from pathlib import Path
-from typing import Any
+from time import monotonic
+from typing import Any, cast
 
+import lance
 import lancedb
 from lancedb.index import IvfPq
 from packaging.version import parse
@@ -26,6 +28,7 @@ from haiku.rag.store.schema import (
     ensure_indexes,
     get_document_items_arrow_schema,
     get_documents_arrow_schema,
+    has_payload_columns,
     query_to_pydantic,
 )
 
@@ -108,6 +111,37 @@ def _stored_vector_dim(settings: dict) -> int | None:
 # version; guards against timestamp precision at the boundary.
 TAG_RETENTION_MARGIN = timedelta(seconds=1)
 
+
+def compaction_target_rows(
+    dataset: "lance.LanceDataset", target_bytes: int
+) -> int | None:
+    """Rows per fragment sized so one compaction task reads about `target_bytes`.
+
+    Taken from the widest fragment's bytes per row rather than the table
+    average: document payloads span kilobytes to hundreds of megabytes, so an
+    average lets a task pick up many outsized rows. Sizes come from the
+    manifest, so no payload is read.
+
+    This sizes fragments compaction *writes*; it does not shrink fragments that
+    are already larger, which lance rewrites whole. Returns None when any
+    fragment cannot be measured, which means leave the table alone rather than
+    fall back to lance's unbounded default: sizing from the fragments that do
+    carry metadata would still hand an unmeasured one to compaction whole.
+    """
+    widest = 0.0
+    for fragment in dataset.get_fragments():
+        rows = fragment.physical_rows
+        if not rows:
+            continue
+        sizes = [f.file_size_bytes for f in fragment.data_files()]
+        if not all(sizes):
+            return None
+        widest = max(widest, sum(cast(list[int], sizes)) / rows)
+    if widest <= 0:
+        return None
+    return max(1, int(target_bytes // widest))
+
+
 # Restore order for multi-table restore and its rollback. documents restores
 # last: writes land in it last on the ingest path, making it the closest
 # available database commit point.
@@ -117,10 +151,12 @@ RESTORE_TABLE_ORDER: tuple[str, ...] = tuple(
 
 
 async def _wait_protected[T](coro: Coroutine[Any, Any, T]) -> tuple[T, bool]:
-    """Await a recovery coroutine that a cancellation cannot interrupt.
+    """Await a coroutine that a cancellation cannot interrupt.
 
     Runs the coroutine as a task and keeps waiting for it even if this
-    coroutine is cancelled, so a Ctrl-C cannot leave recovery half applied.
+    coroutine is cancelled, so a Ctrl-C cannot leave half-applied state behind.
+    Used for rollback, which is bounded, and for lance maintenance, which is
+    not: a shielded compaction can hold its caller for minutes.
     Returns the result and whether a cancellation was absorbed; the caller
     must re-deliver an absorbed cancellation.
     """
@@ -327,16 +363,93 @@ class Store:
                 # Perform maintenance per table using optimize() with configurable retention
                 retention = timedelta(seconds=retention_seconds)
                 for table in self._tables().values():
-                    await table.optimize(
-                        cleanup_older_than=await self._tag_safe_retention(
-                            table, retention
-                        )
-                    )
+                    cutoff = await self._tag_safe_retention(table, retention)
+                    if has_payload_columns(await table.schema()):
+                        await self._compact_to_target(table, cutoff)
+                    else:
+                        await table.optimize(cleanup_older_than=cutoff)
             except OSError as e:
                 # Resource errors (e.g. disk pressure) skip the pass; lance
                 # errors surface as RuntimeError and must not be swallowed —
                 # a silently skipped cleanup hides tag-interaction bugs.
                 logger.debug(f"Vacuum skipped due to resource constraints: {e}")
+
+    async def _run_lance_maintenance(
+        self, table: lancedb.AsyncTable, step: "Callable[[lance.LanceDataset], Any]"
+    ) -> bool:
+        """Run one lance maintenance step against `table`, then refresh it.
+
+        The step mutates the dataset behind the open handle, so the refresh has
+        to happen whether or not it succeeded: a step that commits and then
+        fails would otherwise leave the handle on a superseded version. The
+        dataset comes from `to_lance()` so object-storage credentials travel
+        with it, and it is re-obtained per step because each commit supersedes
+        the version the previous one pinned.
+
+        A worker thread cannot be cancelled, so the step and the refresh that
+        follows it are shielded as one unit and awaited to completion rather
+        than abandoned while they still hold `_write_lock`. Protecting only the
+        thread would leave a cancellation arriving after the commit but before
+        the refresh with a stale handle. Returns whether a cancellation was
+        absorbed.
+        """
+
+        async def step_and_refresh() -> None:
+            dataset = await table.to_lance()
+            try:
+                await asyncio.to_thread(step, dataset)
+            finally:
+                await table.checkout_latest()
+
+        _, cancelled = await _wait_protected(step_and_refresh())
+        return cancelled
+
+    async def _compact_to_target(
+        self, table: lancedb.AsyncTable, cutoff: timedelta
+    ) -> None:
+        """Compact a table of inline payloads to an explicit fragment target.
+
+        `AsyncTable.optimize` exposes no compaction options, and its default row
+        target is never reached by a table of multi-megabyte rows, so every pass
+        re-merges the whole table and its peak memory tracks the table rather
+        than the delta. Going through lance directly is the only way to size it.
+        """
+        dataset = await table.to_lance()
+        target = compaction_target_rows(
+            dataset, self._config.storage.compaction_target_bytes
+        )
+        if target is None:
+            if dataset.get_fragments():
+                logger.warning(
+                    f"{table.name}: fragment sizes are absent from the manifest, "
+                    "so compaction cannot be sized and is skipped; old versions "
+                    "are still pruned"
+                )
+        else:
+            # A compaction cannot be cancelled once it reaches the worker
+            # thread, so a close waits it out. Say what is running, or an
+            # operator cannot tell a long pass from a wedge.
+            logger.info(
+                f"{table.name}: compacting to {target} rows per fragment "
+                f"({len(dataset.get_fragments())} fragments)"
+            )
+            started = monotonic()
+            if await self._run_lance_maintenance(
+                table,
+                lambda ds: ds.optimize.compact_files(target_rows_per_fragment=target),
+            ):
+                raise asyncio.CancelledError
+            logger.info(f"{table.name}: compacted in {monotonic() - started:.1f}s")
+            # compact_files leaves indices covering the pre-compaction
+            # fragments and never prunes; optimize() did both.
+            if await self._run_lance_maintenance(
+                table, lambda ds: ds.optimize.optimize_indices()
+            ):
+                raise asyncio.CancelledError
+        if await self._run_lance_maintenance(
+            table, lambda ds: ds.cleanup_old_versions(older_than=cutoff)
+        ):
+            raise asyncio.CancelledError
 
     async def _tag_safe_retention(
         self, table: lancedb.AsyncTable, retention: timedelta

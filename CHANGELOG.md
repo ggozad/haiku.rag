@@ -1,6 +1,15 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- `storage.compaction_target_bytes` (default 2 GiB): target size for the fragments compaction writes on the tables holding docling blobs.
+
+### Changed
+
+- `lancedb` pinned to 0.37.1 (lance core 10.0.0), was 0.34.0. An invalid `filter` passed to search now raises `ValueError` instead of `RuntimeError`.
+- `Store.vacuum` compacts `documents` and `document_items` through `lance` with a fragment target derived from `compaction_target_bytes`, instead of `AsyncTable.optimize`. The other tables are unchanged. New dependency: `pylance`.
+
 ## [0.76.0] - 2026-08-20
 
 ### Added

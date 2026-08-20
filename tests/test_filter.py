@@ -157,8 +157,7 @@ async def test_search_with_invalid_filter(temp_db_path):
             title="Test Document",
         )
 
-        # Invalid filter should raise RuntimeError
-        with pytest.raises(RuntimeError, match="No field named invalid"):
+        with pytest.raises(ValueError, match="No field named invalid"):
             await client.search("test", limit=5, filter="invalid = 'value'")
 
 
