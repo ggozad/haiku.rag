@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 
 import pytest
 
@@ -35,6 +36,21 @@ class FilterHook(Hook):
     async def before_search(self, client, request):
         request.filter = "uri = 'mem://hooked'"
         return request
+
+
+class ClearSearchTypeHook(Hook):
+    async def before_search(self, client, request):
+        request.search_type = None
+        return request
+
+
+class SpyAfterSearchHook(Hook):
+    def __init__(self):
+        self.search_types: list[str | None] = []
+
+    async def after_search(self, client, request, results):
+        self.search_types.append(request.search_type)
+        return results
 
 
 class ReverseResultsHook(Hook):
@@ -108,6 +124,7 @@ async def _capture_repo_search(client):
     async def fake_search(query, limit, search_type=None, filter=None, **kwargs):
         captured["query"] = query
         captured["filter"] = filter
+        captured["search_type"] = search_type
         return []
 
     client.chunk_repository.search = fake_search
@@ -462,3 +479,239 @@ async def test_delete_missing_document_fires_nothing(temp_db_path):
         client._hooks = [spy]
         assert await client.delete_document("does-not-exist") is False
         assert spy.events == []
+
+
+class LifespanHook(Hook):
+    """Records lifespan transitions into a shared log, so ordering across
+    several hooks is observable."""
+
+    def __init__(self, name: str, log: list[str]):
+        self.name = name
+        self.log = log
+
+    @asynccontextmanager
+    async def lifespan(self, client):
+        self.log.append(f"enter {self.name}")
+        try:
+            yield
+        finally:
+            self.log.append(f"exit {self.name}")
+
+
+class ExceptionRecordingHook(Hook):
+    """Records whatever exception its lifespan exit was told about, then lets
+    it continue on its way."""
+
+    def __init__(self, seen: list[str]):
+        self.seen = seen
+
+    @asynccontextmanager
+    async def lifespan(self, client):
+        try:
+            yield
+        except Exception as exc:
+            self.seen.append(str(exc))
+            raise
+
+
+@pytest.mark.asyncio
+async def test_lifespans_enter_in_order_and_exit_in_reverse(temp_db_path):
+    log: list[str] = []
+    client = HaikuRAG(temp_db_path, create=True)
+    client._hooks = [LifespanHook("a", log), LifespanHook("b", log)]
+
+    async with client:
+        assert log == ["enter a", "enter b"]
+
+    assert log == ["enter a", "enter b", "exit b", "exit a"]
+
+
+@pytest.mark.asyncio
+async def test_lifespan_can_use_the_store_on_entry_and_exit(temp_db_path):
+    counts: list[int] = []
+
+    class _StoreUsingHook(Hook):
+        @asynccontextmanager
+        async def lifespan(self, client):
+            counts.append(len(await client.list_documents()))
+            try:
+                yield
+            finally:
+                counts.append(len(await client.list_documents()))
+
+    client = HaikuRAG(temp_db_path, create=True)
+    client._hooks = [_StoreUsingHook()]
+    dim = get_config().embeddings.model.vector_dim
+
+    async with client:
+        await client.import_document(
+            _docling_doc("a", "Alpha body"),
+            [Chunk(content="Alpha body", embedding=[0.1] * dim, order=0)],
+            uri="mem://lifespan",
+            title="Alpha",
+        )
+
+    assert counts == [0, 1]
+
+
+@pytest.mark.asyncio
+async def test_lifespan_startup_failure_unwinds_started_hooks(temp_db_path):
+    log: list[str] = []
+
+    class _FailingStartHook(Hook):
+        @asynccontextmanager
+        async def lifespan(self, client):
+            raise RuntimeError("cannot start")
+            yield  # unreachable; asynccontextmanager needs a generator
+
+    client = HaikuRAG(temp_db_path, create=True)
+    client._hooks = [LifespanHook("a", log), _FailingStartHook()]
+
+    with pytest.raises(RuntimeError, match="cannot start"):
+        async with client:
+            pass
+
+    assert log == ["enter a", "exit a"]
+    assert not client.store.db.is_open()
+
+
+@pytest.mark.asyncio
+async def test_lifespan_teardown_failure_is_logged_and_suppressed(temp_db_path, caplog):
+    log: list[str] = []
+
+    class _FailingExitHook(Hook):
+        @asynccontextmanager
+        async def lifespan(self, client):
+            yield
+            raise RuntimeError("cannot stop")
+
+    client = HaikuRAG(temp_db_path, create=True)
+    client._hooks = [LifespanHook("a", log), _FailingExitHook()]
+
+    with caplog.at_level(logging.ERROR, logger="haiku.rag.hooks"):
+        async with client:
+            pass
+
+    # The surviving hook still exits, and teardown does not raise.
+    assert log == ["enter a", "exit a"]
+    assert any("lifespan" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_lifespans_see_the_exception_being_unwound(temp_db_path):
+    seen: list[str] = []
+
+    client = HaikuRAG(temp_db_path, create=True)
+    client._hooks = [ExceptionRecordingHook(seen)]
+
+    with pytest.raises(ValueError, match="from the body"):
+        async with client:
+            raise ValueError("from the body")
+
+    assert seen == ["from the body"]
+
+
+@pytest.mark.asyncio
+async def test_a_swallowing_lifespan_hides_nothing_from_anyone(temp_db_path):
+    """A hook that eats the exception in its own teardown must neither
+    suppress it for the caller nor make the hooks unwound after it believe
+    the shutdown was clean."""
+    seen: list[str] = []
+
+    class _SwallowingHook(Hook):
+        @asynccontextmanager
+        async def lifespan(self, client):
+            try:
+                yield
+            except Exception:
+                pass
+
+    client = HaikuRAG(temp_db_path, create=True)
+    # The swallowing hook is entered last, so it unwinds first.
+    client._hooks = [ExceptionRecordingHook(seen), _SwallowingHook()]
+
+    with pytest.raises(ValueError, match="from the body"):
+        async with client:
+            raise ValueError("from the body")
+
+    assert seen == ["from the body"]
+
+
+@pytest.mark.asyncio
+async def test_default_lifespan_is_a_noop(temp_db_path):
+    spy = RecordingHook()
+    client = HaikuRAG(temp_db_path, create=True)
+    client._hooks = [spy]
+    dim = get_config().embeddings.model.vector_dim
+
+    async with client:
+        doc = await client.import_document(
+            _docling_doc("a", "Alpha body"),
+            [Chunk(content="Alpha body", embedding=[0.1] * dim, order=0)],
+            uri="mem://default-lifespan",
+            title="Alpha",
+        )
+
+    # A hook that overrides no lifespan still reaches its other hook points.
+    assert spy.events == [("ingest", "create", ((doc.id, "mem://default-lifespan"),))]
+
+
+@pytest.mark.asyncio
+async def test_startup_failure_is_forwarded_to_started_lifespans(temp_db_path):
+    """A hook that fails to start is an unwind like any other: the lifespans
+    already running are told what went wrong, not handed a clean shutdown."""
+    seen: list[str] = []
+
+    class _FailingStartHook(Hook):
+        @asynccontextmanager
+        async def lifespan(self, client):
+            raise RuntimeError("cannot start")
+            yield  # unreachable; asynccontextmanager needs a generator
+
+    client = HaikuRAG(temp_db_path, create=True)
+    client._hooks = [ExceptionRecordingHook(seen), _FailingStartHook()]
+
+    with pytest.raises(RuntimeError, match="cannot start"):
+        async with client:
+            pass
+
+    assert seen == ["cannot start"]
+
+
+@pytest.mark.asyncio
+async def test_after_search_sees_the_search_type_that_ran(temp_db_path):
+    """A before_search hook may leave search_type unset. Retrieval falls back
+    to hybrid, so the request after_search reads must say hybrid too."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        spy = SpyAfterSearchHook()
+        client._hooks = [ClearSearchTypeHook(), spy]
+        captured = await _capture_repo_search(client)
+
+        await client.search("alpha", include_images=False)
+
+        assert captured["search_type"] == "hybrid"
+        assert spy.search_types == ["hybrid"]
+
+
+@pytest.mark.asyncio
+async def test_after_search_reports_vector_for_image_queries(temp_db_path):
+    """Image queries run vector-only whatever the caller asked for, so the
+    request must not still be advertising the caller's choice."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        spy = SpyAfterSearchHook()
+        client._hooks = [spy]
+
+        async def fake_search(query, limit, search_type=None, filter=None, **kwargs):
+            return []
+
+        client.chunk_repository.search = fake_search
+
+        async def fake_embed_image(image):
+            return [0.1] * get_config().embeddings.model.vector_dim
+
+        client.store.embedder.embed_image = fake_embed_image
+        client.store.embedder.supports_images = True
+
+        await client.search(b"image-bytes", search_type="fts", include_images=False)
+
+        assert spy.search_types == ["vector"]

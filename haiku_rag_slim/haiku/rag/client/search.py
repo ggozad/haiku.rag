@@ -55,7 +55,10 @@ async def search(
         assert isinstance(query, str), "before_search must keep text queries text"
         filter = request.filter
         limit = request.limit
-        search_type = request.search_type or "hybrid"
+        # A hook may have cleared it on the way through. after_search reads the
+        # same request, so it has to end up carrying what retrieval ran with.
+        request.search_type = request.search_type or "hybrid"
+        search_type = request.search_type
 
         reranker = client.reranker
 
@@ -73,6 +76,8 @@ async def search(
                 await _attach_picture_data(client, chunks)
             chunk_results = await reranker.rerank(query, chunks, top_n=limit)
     else:
+        # Image queries are vector-only whatever the caller asked for.
+        request.search_type = "vector"
         embedder = client.embedder
         if not embedder.supports_images:
             raise ValueError(
