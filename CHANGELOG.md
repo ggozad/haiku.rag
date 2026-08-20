@@ -6,6 +6,9 @@
 - `haiku.rag.capabilities.EvidenceState`: the state base `RAGState` and `AnalysisState` derive from, with `begin_invocation()` for the per-question reset. `RAGCapabilityBase.evidence_record()` and `citation_index()` expose what a capability recorded, so a host reads it without reaching into `capability.state`.
 - The `haiku.rag` package declares the `jina` extra, so `provider: jina-local` is supported by declaration rather than through `cross-encoder`'s transitive `transformers` and `torch`. Raises the full package's torch floor to 2.0.
 - `providers.docling_serve.timeout` (default 300 seconds), forwarded to the docling-serve client's per-request timeout.
+- Client lifecycle hooks (`after_ingest`, `after_delete`, `before_search`, `after_search`) registered under the `haiku.rag.hooks` entry-point group and activated via the `hooks:` config list. Post-commit observer hooks are best-effort; failures are logged and do not change the completed operation's result.
+- `SearchResult.annotations` carries notes attached by `after_search` hooks, preserved through context expansion and rendered in agent-facing output.
+- `Hook.lifespan`, an async context manager around the client's lifetime for hooks that own resources. Entered in configured order once the store is open, exited in reverse order while the store, embedder and reranker are still usable.
 
 ### Changed
 
