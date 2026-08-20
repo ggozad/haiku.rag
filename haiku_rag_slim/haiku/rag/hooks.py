@@ -1,7 +1,9 @@
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from importlib.metadata import entry_points
+from types import TracebackType
 from typing import TYPE_CHECKING, Literal, Protocol, overload, runtime_checkable
 
 from haiku.rag.store.models.chunk import SearchResult, SearchType
@@ -59,6 +61,24 @@ class Hook:
     prefix to stay clear of core tables and migrations).
     """
 
+    @asynccontextmanager
+    async def lifespan(self, client: "HaikuRAG") -> AsyncIterator[None]:
+        """Hold whatever resources the hook needs for as long as the client is
+        open. Factories stay resource-free; acquire here instead.
+
+        Entered once the store is open, in configured order, and exited in
+        reverse order while the store, embedder and reranker are still usable.
+        Raising on entry fails client entry and unwinds the hooks already
+        started. Raising on exit is logged and swallowed, and a hook can never
+        suppress an exception raised by the client's caller.
+
+        A hook running background work owns stopping it. Cancel or signal the
+        tasks before whatever awaits them: a clean ``asyncio.TaskGroup`` exit
+        waits for its children without cancelling them, so an endless task
+        parked in one hangs shutdown instead of ending it.
+        """
+        yield
+
     async def after_ingest(self, client: "HaikuRAG", event: IngestEvent) -> None:
         """Content was written for ``event.documents``. ``event.operation``
         is ``"create"`` for new documents and ``"update"`` when an existing
@@ -94,8 +114,43 @@ class Hook:
         results: list[SearchResult],
     ) -> list[SearchResult]:
         """Transform or annotate search results before they are returned.
-        ``request`` reflects any ``before_search`` transformations."""
+        ``request`` reflects any ``before_search`` transformations, and its
+        ``search_type`` is the one retrieval ran with: ``"hybrid"`` where a
+        text search was left unset, ``"vector"`` for an image query."""
         return results
+
+
+def _lifespan_exit(hook: Hook, lifespan: AbstractAsyncContextManager[None]):
+    """Wrap a started lifespan's exit so a teardown failure is logged rather
+    than raised, and so the hook cannot suppress the caller's exception."""
+
+    async def _exit(
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool:
+        try:
+            await lifespan.__aexit__(exc_type, exc, tb)
+        except Exception:
+            cls = type(hook)
+            logger.exception(
+                "%s.%s lifespan teardown failed", cls.__module__, cls.__qualname__
+            )
+        return False
+
+    return _exit
+
+
+async def enter_lifespans(
+    stack: AsyncExitStack, hooks: Sequence[Hook], client: "HaikuRAG"
+) -> None:
+    """Start each hook's lifespan on ``stack`` in order. A hook that fails to
+    start propagates, leaving the earlier hooks registered on the stack for the
+    caller to unwind."""
+    for hook in hooks:
+        lifespan = hook.lifespan(client)
+        await lifespan.__aenter__()
+        stack.push_async_exit(_lifespan_exit(hook, lifespan))
 
 
 @overload
