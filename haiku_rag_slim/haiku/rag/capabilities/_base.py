@@ -3,9 +3,9 @@ import os
 from dataclasses import dataclass, field, replace
 from difflib import get_close_matches
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_ai import (
     DeferredToolRequests,
     ModelRetry,
@@ -74,18 +74,34 @@ def resolve_db_path(db_path: Path | None, config: AppConfig) -> Path:
     return config.storage.data_dir / "haiku.rag.lancedb"
 
 
-def _clear_invocation_state(state: BaseModel) -> None:
-    """Drop the working evidence of the previous question.
+class EvidenceState(BaseModel):
+    """What a capability accumulates while answering, carried between its runs.
 
-    Only ever called when a new question starts. A resumption keeps it: the
-    results belong to the question still being answered, and dropping them leaves
-    a later citation unable to resolve against the expanded result the model saw,
-    recording no provenance for it.
+    Hosts dump this to JSON and hand it back on the next turn, including over
+    AG-UI, so the field names and their nesting are a compatibility surface: keep
+    it flat and don't rename. Key order is not part of it — every carry point
+    re-validates by key.
     """
-    for field_name in ("citations", "searches", "executions"):
-        value = getattr(state, field_name, None)
-        if hasattr(value, "clear"):
-            value.clear()
+
+    citation_index: dict[str, Citation] = Field(default_factory=dict)
+    citations: list[str] = Field(default_factory=list)
+    evidence: CapabilityEvidenceRecord = Field(default_factory=CapabilityEvidenceRecord)
+    document_filter: str | None = None
+    searches: dict[str, list[SearchResult]] = Field(default_factory=dict)
+
+    def begin_invocation(self) -> None:
+        """Drop the working evidence of the previous question.
+
+        Only ever called when a new question starts. A resumption keeps it: the
+        results belong to the question still being answered, and dropping them
+        leaves a later citation unable to resolve against the expanded result the
+        model saw, recording no provenance for it.
+
+        `document_filter` scopes the conversation, and `evidence` carries question
+        identity, so neither is working evidence.
+        """
+        self.citations.clear()
+        self.searches.clear()
 
 
 def _awaits_the_model(messages: list[ModelMessage]) -> bool:
@@ -117,7 +133,7 @@ def _called_own_tool(messages: list[ModelMessage], tool_names: frozenset[str]) -
 
 
 @dataclass
-class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
+class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
     db_path: Path
     config: AppConfig
     state_type: type[StateT]
@@ -163,7 +179,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         outer_state = outer if isinstance(outer, dict) else None
         raw_state = outer_state.get(self.state_namespace) if outer_state else None
         state = self.state_type.model_validate(raw_state or {})
-        record = cast(CapabilityEvidenceRecord, cast(Any, state).evidence)
+        record = state.evidence
         continuing = record.in_progress
         state_carried = record.question is not None
         if not continuing and _awaits_the_model(ctx.messages):
@@ -174,7 +190,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
                 "must be carried between its runs."
             )
         if not continuing:
-            _clear_invocation_state(state)
+            state.begin_invocation()
             record.begin_question(len(ctx.messages))
         run_capability = replace(
             self,
@@ -338,7 +354,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         if self.state is not None and not isinstance(
             result.output, DeferredToolRequests
         ):
-            self._evidence_record().end_question()
+            self.evidence_record().end_question()
             self._sync_state()
         await self._close()
         return result
@@ -392,9 +408,15 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         finally:
             self._sync_state()
 
-    def _evidence_record(self) -> CapabilityEvidenceRecord:
+    def evidence_record(self) -> CapabilityEvidenceRecord:
+        """What this capability has retrieved and cited, per question."""
         assert self.state is not None
-        return cast(CapabilityEvidenceRecord, cast(Any, self.state).evidence)
+        return self.state.evidence
+
+    def citation_index(self) -> dict[str, Citation]:
+        """Citations registered so far, by chunk id."""
+        assert self.state is not None
+        return self.state.citation_index
 
     def _note_evidence(self) -> None:
         """Record an outcome the model can ground an answer on.
@@ -403,7 +425,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         output: negative evidence grounds a refusal. Excludes a spent budget, which
         yields nothing to ground anything on.
         """
-        self._evidence_record().note_evidence(self.epoch)
+        self.evidence_record().note_evidence(self.epoch)
 
     def _declare(self, citations: list[Citation]) -> None:
         """Record what the model cited, once the ids have resolved.
@@ -411,14 +433,15 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         Declaring earlier would let a call naming only unresolvable ids read as a
         grounded answer.
         """
-        state = cast(Any, self.state)
+        assert self.state is not None
+        state = self.state
         retrieved = {
             result.chunk_id
             for results in state.searches.values()
             for result in results
             if result.chunk_id
         }
-        self._evidence_record().declare(
+        self.evidence_record().declare(
             [
                 EvidenceRef(capability=self.state_namespace, chunk_id=c.chunk_id)
                 for c in citations
@@ -440,9 +463,9 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
                 await self._ensure_rag(),
                 query,
                 limit=limit,
-                document_filter=getattr(self.state, "document_filter", None),
+                document_filter=self.state.document_filter,
             )
-        state = cast(Any, self.state)
+        state = self.state
         state.searches[query] = results
         self._note_evidence()
         if self.vision and (parts := build_image_content_from_results(results)):
@@ -463,7 +486,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
             return "Recorded: this answer cites no knowledge-base evidence."
 
         all_results: list[SearchResult] = []
-        state = cast(Any, self.state)
+        state = self.state
         for results in state.searches.values():
             all_results.extend(results)
         known_ids = [result.chunk_id for result in all_results if result.chunk_id]
@@ -514,7 +537,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
 
     def _register_citations(self, citations: list[Citation]) -> None:
         assert self.state is not None
-        state = cast(Any, self.state)
+        state = self.state
         next_index = len(state.citation_index) + 1
         for citation in citations:
             if citation.chunk_id not in state.citation_index:

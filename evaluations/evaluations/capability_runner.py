@@ -1,7 +1,7 @@
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, NamedTuple, Protocol, cast
+from typing import Any, NamedTuple
 
 from pydantic_ai import Agent
 from pydantic_ai.messages import (
@@ -19,12 +19,10 @@ from pydantic_ai.models import Model
 from pydantic_ai.capabilities import AbstractCapability
 
 from evaluations.config import Turn
-from haiku.rag.capabilities import RAGCapabilityBase
+from haiku.rag.capabilities import EvidenceState, RAGCapabilityBase
 from haiku.rag.capabilities.compaction import create_capability as create_compaction
-from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord, citation_status
+from haiku.rag.capabilities.ledger import citation_status
 from haiku.rag.config.models import AppConfig
-from haiku.rag.store.models.chunk import SearchResult
-from haiku.rag.store.models.citation import Citation
 
 CapabilityFactory = Callable[..., RAGCapabilityBase[Any]]
 
@@ -38,14 +36,6 @@ def prefix_to_messages(turns: Iterable[Turn]) -> list[ModelMessage]:
         else:
             messages.append(ModelResponse(parts=[TextPart(content=turn.text)]))
     return messages
-
-
-class _RagLikeState(Protocol):
-    document_filter: str | None
-    citation_index: dict[str, Citation]
-    citations: list[str]
-    evidence: CapabilityEvidenceRecord
-    searches: dict[str, list[SearchResult]]
 
 
 @dataclass
@@ -145,9 +135,8 @@ def _prepare_agent(
     if request_limit is not None:
         capability.request_limit = request_limit
     state = capability.state_type()
-    typed = cast(_RagLikeState, state)
     if document_filter is not None:
-        typed.document_filter = document_filter
+        state.document_filter = document_filter
 
     capabilities: list[AbstractCapability] = [capability]
     if compaction:
@@ -163,9 +152,8 @@ def _prepare_agent(
 
 def _state_after_run(
     capability: RAGCapabilityBase[Any], deps: _EvalDeps
-) -> _RagLikeState:
-    state = capability.state_type.model_validate(deps.state[capability.state_namespace])
-    return cast(_RagLikeState, state)
+) -> EvidenceState:
+    return capability.state_type.model_validate(deps.state[capability.state_namespace])
 
 
 async def run_capability_question(
@@ -251,7 +239,7 @@ async def run_capability_conversation(
 
 
 def _result_from_run(
-    answer: str, typed: _RagLikeState, traffic: ToolTraffic
+    answer: str, typed: EvidenceState, traffic: ToolTraffic
 ) -> CapabilityRunResult:
     cited_chunk_ids: list[str] = list(typed.citations)
     seen_cited: set[str] = set()
