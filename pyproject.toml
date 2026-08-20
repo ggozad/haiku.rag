@@ -153,6 +153,8 @@ source = ["haiku_rag_slim"]
 # flow via a greenlet + worker thread; track both so that code isn't reported
 # as uncovered.
 concurrency = ["greenlet", "thread"]
+# Textual TUIs only: driving a terminal UI is not what this gate is for.
+# Everything else, the CLI application layer included, is measured.
 omit = [
     "haiku_rag_slim/haiku/rag/chat/*",
     "haiku_rag_slim/haiku/rag/inspector/*",

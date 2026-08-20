@@ -50,7 +50,7 @@ def cli():
 _read_only: bool = False
 
 
-def create_app(db: Path | None = None) -> "HaikuRAGApp":  # pragma: no cover
+def create_app(db: Path | None = None) -> "HaikuRAGApp":
     """Create HaikuRAGApp with loaded config and resolved database path.
 
     Args:
@@ -66,7 +66,7 @@ def create_app(db: Path | None = None) -> "HaikuRAGApp":  # pragma: no cover
     return HaikuRAGApp(db_path=db_path, config=config, read_only=_read_only)
 
 
-async def check_version():  # pragma: no cover
+async def check_version():
     """Check if haiku.rag is up to date and show warning if not."""
     up_to_date, current_version, latest_version = await is_up_to_date()
     if not up_to_date:
@@ -76,7 +76,7 @@ async def check_version():  # pragma: no cover
         typer.echo("Please update.")
 
 
-def version_callback(value: bool):  # pragma: no cover
+def version_callback(value: bool):
     if value:
         v = version("haiku.rag-slim")
         typer.echo(f"haiku.rag version {v}")
@@ -130,13 +130,13 @@ def main(
     # Run version check before any command
     try:
         asyncio.run(check_version())
-    except Exception:  # pragma: no cover
+    except Exception:
         # Do not block CLI on version check issues
         pass
 
 
 @_cli.command("list", help="List all stored documents")
-def list_documents(  # pragma: no cover
+def list_documents(
     db: Path | None = typer.Option(
         None,
         "--db",
@@ -178,7 +178,7 @@ def _parse_meta_options(meta: list[str] | None) -> dict[str, Any]:
 
 
 @_cli.command("add", help="Add a document from text input")
-def add_document_text(  # pragma: no cover
+def add_document_text(
     text: str = typer.Argument(
         help="The text content of the document to add",
     ),
@@ -207,7 +207,7 @@ def add_document_text(  # pragma: no cover
 
 
 @_cli.command("add-src", help="Add a document from a file path, directory, or URL")
-def add_document_src(  # pragma: no cover
+def add_document_src(
     source: str = typer.Argument(
         help="The file path, directory, or URL of the document(s) to add",
     ),
@@ -238,7 +238,7 @@ def add_document_src(  # pragma: no cover
 
 
 @_cli.command("get", help="Get and display a document by its ID")
-def get_document(  # pragma: no cover
+def get_document(
     doc_id: str = typer.Argument(
         help="The ID of the document to get",
     ),
@@ -253,7 +253,7 @@ def get_document(  # pragma: no cover
 
 
 @_cli.command("delete", help="Delete a document by its ID")
-def delete_document(  # pragma: no cover
+def delete_document(
     doc_id: str = typer.Argument(
         help="The ID of the document to delete",
     ),
@@ -274,7 +274,7 @@ _cli.command("rm", help="Alias for delete: remove a document by its ID")(
 
 
 @_cli.command("search", help="Search for documents by a query")
-def search(  # pragma: no cover
+def search(
     query: str | None = typer.Argument(
         None,
         help="The search query (omit when using --image)",
@@ -321,7 +321,7 @@ def search(  # pragma: no cover
 
 
 @_cli.command("visualize", help="Show visual grounding for a chunk")
-def visualize(  # pragma: no cover
+def visualize(
     chunk_id: str = typer.Argument(
         help="The ID of the chunk to visualize",
     ),
@@ -341,7 +341,7 @@ def visualize(  # pragma: no cover
 
 
 @_cli.command("ask", help="Ask a question using the QA agent")
-def ask(  # pragma: no cover
+def ask(
     question: str = typer.Argument(
         help="The question to ask",
     ),
@@ -373,7 +373,7 @@ def ask(  # pragma: no cover
 
 
 @_cli.command("analyze", help="Answer questions using the analysis capability")
-def analyze(  # pragma: no cover
+def analyze(
     question: str = typer.Argument(
         help="The question to answer",
     ),
@@ -405,7 +405,7 @@ def analyze(  # pragma: no cover
 
 
 @_cli.command("settings", help="Display current configuration settings")
-def settings():  # pragma: no cover
+def settings():
     from haiku.rag.app import HaikuRAGApp
 
     config = get_config()
@@ -499,25 +499,25 @@ def rebuild(
         )
         raise typer.Exit(1)
 
-    if embed_only:  # pragma: no cover
+    if embed_only:
         mode = RebuildMode.EMBED_ONLY
-    elif rechunk:  # pragma: no cover
+    elif rechunk:
         mode = RebuildMode.RECHUNK
-    elif title_only:  # pragma: no cover
+    elif title_only:
         mode = RebuildMode.TITLE_ONLY
-    elif descriptions:  # pragma: no cover
+    elif descriptions:
         mode = RebuildMode.DESCRIPTIONS
-    elif set_embedder:  # pragma: no cover
+    elif set_embedder:
         mode = RebuildMode.SET_EMBEDDER
-    else:  # pragma: no cover
+    else:
         mode = RebuildMode.FULL
 
-    app = create_app(db)  # pragma: no cover
-    asyncio.run(app.rebuild(mode=mode))  # pragma: no cover
+    app = create_app(db)
+    asyncio.run(app.rebuild(mode=mode))
 
 
 @_cli.command("vacuum", help="Optimize and clean up all tables to reduce disk usage")
-def vacuum(  # pragma: no cover
+def vacuum(
     db: Path | None = typer.Option(
         None,
         "--db",
@@ -529,7 +529,7 @@ def vacuum(  # pragma: no cover
 
 
 @_cli.command("migrate", help="Run pending database migrations")
-def migrate(  # pragma: no cover
+def migrate(
     db: Path | None = typer.Option(
         None,
         "--db",
@@ -554,7 +554,7 @@ def migrate(  # pragma: no cover
 @_cli.command(
     "create-index", help="Create vector index for efficient similarity search"
 )
-def create_index(  # pragma: no cover
+def create_index(
     db: Path | None = typer.Option(
         None,
         "--db",
@@ -566,7 +566,7 @@ def create_index(  # pragma: no cover
 
 
 @_cli.command("init", help="Initialize a new database")
-def init_db(  # pragma: no cover
+def init_db(
     db: Path | None = typer.Option(
         None,
         "--db",
@@ -578,7 +578,7 @@ def init_db(  # pragma: no cover
 
 
 @_cli.command("info", help="Show database info")
-def info(  # pragma: no cover
+def info(
     db: Path | None = typer.Option(
         None,
         "--db",
@@ -590,7 +590,7 @@ def info(  # pragma: no cover
 
 
 @_cli.command("doctor", help="Check database and provider health")
-def doctor(  # pragma: no cover
+def doctor(
     db: Path | None = typer.Option(
         None,
         "--db",
@@ -608,7 +608,7 @@ def doctor(  # pragma: no cover
 
 
 @_cli.command("history", help="Show version history for database tables")
-def history(  # pragma: no cover
+def history(
     db: Path | None = typer.Option(
         None,
         "--db",
@@ -639,7 +639,7 @@ _cli.add_typer(tag_cli, name="tag")
 
 
 @tag_cli.command("create", help="Tag the current database state")
-def tag_create(  # pragma: no cover
+def tag_create(
     name: str = typer.Argument(help="Name of the tag to create"),
     db: Path | None = typer.Option(
         None,
@@ -656,7 +656,7 @@ def tag_create(  # pragma: no cover
 
 
 @tag_cli.command("list", help="List database tags")
-def tag_list(  # pragma: no cover
+def tag_list(
     db: Path | None = typer.Option(
         None,
         "--db",
@@ -672,7 +672,7 @@ def tag_list(  # pragma: no cover
 
 
 @tag_cli.command("delete", help="Delete a tag")
-def tag_delete(  # pragma: no cover
+def tag_delete(
     name: str = typer.Argument(help="Name of the tag to delete"),
     db: Path | None = typer.Option(
         None,
@@ -689,7 +689,7 @@ def tag_delete(  # pragma: no cover
 
 
 @tag_cli.command("restore", help="Restore the database to a tagged state")
-def tag_restore(  # pragma: no cover
+def tag_restore(
     name: str = typer.Argument(help="Name of the tag to restore"),
     yes: bool = typer.Option(
         False,
@@ -724,7 +724,7 @@ def tag_restore(  # pragma: no cover
 
 
 @_cli.command("download-models", help="Download Docling and Ollama models per config")
-def download_models_cmd():  # pragma: no cover
+def download_models_cmd():
     from haiku.rag.app import HaikuRAGApp
 
     app = HaikuRAGApp(db_path=Path(), config=get_config(), read_only=True)
@@ -736,7 +736,7 @@ def download_models_cmd():  # pragma: no cover
 
 
 @_cli.command("inspect", help="Launch interactive TUI to inspect database contents")
-def inspect(  # pragma: no cover
+def inspect(
     db: Path | None = typer.Option(
         None,
         "--db",
@@ -755,7 +755,7 @@ def inspect(  # pragma: no cover
 
 
 @_cli.command("chat", help="Launch interactive chat TUI for conversational RAG")
-def chat(  # pragma: no cover
+def chat(
     db: Path | None = typer.Option(
         None,
         "--db",
@@ -779,12 +779,16 @@ def chat(  # pragma: no cover
     db_path = db if db else get_config().storage.data_dir / "haiku.rag.lancedb"
     capabilities = capability if capability else ["rag"]
 
-    run_chat(
-        db_path,
-        read_only=True,
-        model=model,
-        capabilities=capabilities,
-    )
+    try:
+        run_chat(
+            db_path,
+            read_only=True,
+            model=model,
+            capabilities=capabilities,
+        )
+    except ImportError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1) from e
 
 
 @_cli.command(
@@ -814,14 +818,12 @@ def mcp(
     ),
 ) -> None:
     """Run the MCP server."""
-    app = create_app(db)  # pragma: no cover
+    app = create_app(db)
 
-    transport = "stdio" if stdio else None  # pragma: no cover
+    transport = "stdio" if stdio else None
 
-    asyncio.run(  # pragma: no cover
-        app.run_mcp(transport=transport, host=host, port=port)
-    )
+    asyncio.run(app.run_mcp(transport=transport, host=host, port=port))
 
 
-if __name__ == "__main__":  # pragma: no cover
-    cli()
+if __name__ == "__main__":
+    cli()  # pragma: no cover - module-as-script entry, never imported by tests

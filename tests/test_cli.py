@@ -1,6 +1,6 @@
 import subprocess
 import sys
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from click.exceptions import BadParameter
@@ -349,3 +349,306 @@ class TestAskAnalyzeImageOption:
             await app.ask("q", images=[img_path])
 
         assert mock_ask.call_args.kwargs["images"] == [buffer.getvalue()]
+
+
+@pytest.fixture
+def app_stub(monkeypatch, tmp_path):
+    """Stand in for HaikuRAGApp so a command's wiring can be checked without a
+    database or a model. These tests pin argument parsing and dispatch, not what
+    the application layer renders."""
+    # AsyncMock so every command's `asyncio.run(app.x(...))` gets a coroutine.
+    stub = AsyncMock()
+    monkeypatch.setattr("haiku.rag.cli.create_app", lambda db=None: stub)
+    return stub
+
+
+DB_ARGS = ["--db", "/tmp/test.lancedb"]
+
+
+@pytest.mark.parametrize(
+    "argv, method, expected",
+    [
+        (["list"], "list_documents", {"filter": None}),
+        (
+            ["list", "--filter", "uri LIKE 'x%'"],
+            "list_documents",
+            {"filter": "uri LIKE 'x%'"},
+        ),
+        (
+            ["add", "some text", "--title", "T"],
+            "add_document_from_text",
+            {"text": "some text", "title": "T", "metadata": None},
+        ),
+        (
+            ["add-src", "/tmp/doc.md"],
+            "add_document_from_source",
+            {"source": "/tmp/doc.md", "title": None, "metadata": None},
+        ),
+        (["get", "doc-1"], "get_document", {"doc_id": "doc-1"}),
+        (["delete", "doc-1"], "delete_document", {"doc_id": "doc-1"}),
+        (
+            ["visualize", "chunk-1"],
+            "visualize_chunk",
+            {"chunk_id": "chunk-1", "expand": True},
+        ),
+        (
+            ["visualize", "chunk-1", "--no-expand"],
+            "visualize_chunk",
+            {"chunk_id": "chunk-1", "expand": False},
+        ),
+        (["vacuum"], "vacuum", {}),
+        (["create-index"], "create_index", {}),
+        (["init"], "init", {}),
+        (["info"], "info", {}),
+        # limit/search_type default to None: the app layer resolves the config
+        # default, so the CLI must not invent one.
+        (["history"], "history", {"table": None, "limit": None}),
+        (
+            ["history", "--table", "chunks", "--limit", "5"],
+            "history",
+            {"table": "chunks", "limit": 5},
+        ),
+    ],
+)
+def test_command_dispatches_to_the_app(app_stub, argv, method, expected):
+    result = runner.invoke(cli, argv + DB_ARGS)
+
+    assert result.exit_code == 0, result.output
+    getattr(app_stub, method).assert_called_once_with(**expected)
+
+
+@pytest.mark.parametrize(
+    "argv, expected",
+    [
+        (
+            ["search", "q"],
+            {
+                "query": "q",
+                "limit": None,
+                "filter": None,
+                "search_type": None,
+                "image": None,
+            },
+        ),
+        (
+            ["search", "q", "--limit", "3", "--search-type", "vector"],
+            {
+                "query": "q",
+                "limit": 3,
+                "filter": None,
+                "search_type": "vector",
+                "image": None,
+            },
+        ),
+    ],
+)
+def test_search_dispatch(app_stub, argv, expected):
+    result = runner.invoke(cli, argv + DB_ARGS)
+
+    assert result.exit_code == 0, result.output
+    app_stub.search.assert_called_once_with(**expected)
+
+
+@pytest.mark.parametrize("command, method", [("ask", "ask"), ("analyze", "analyze")])
+def test_question_commands_dispatch(app_stub, command, method):
+    result = runner.invoke(cli, [command, "why?"] + DB_ARGS)
+
+    assert result.exit_code == 0, result.output
+    getattr(app_stub, method).assert_called_once_with(
+        question="why?", filter=None, images=None
+    )
+
+
+@pytest.mark.parametrize(
+    "flag, mode_name",
+    [
+        (None, "FULL"),
+        ("--embed-only", "EMBED_ONLY"),
+        ("--rechunk", "RECHUNK"),
+        ("--title-only", "TITLE_ONLY"),
+        ("--descriptions", "DESCRIPTIONS"),
+        ("--set-embedder", "SET_EMBEDDER"),
+    ],
+)
+def test_rebuild_flag_selects_the_mode(app_stub, flag, mode_name):
+    """Each flag picks one rebuild mode, and no flag means a full rebuild."""
+    result = runner.invoke(cli, ["rebuild"] + ([flag] if flag else []) + DB_ARGS)
+
+    assert result.exit_code == 0, result.output
+    (_, kwargs) = app_stub.rebuild.call_args
+    assert kwargs["mode"].name == mode_name
+
+
+def test_migrate_reports_applied_migrations(app_stub):
+    app_stub.migrate.return_value = ["v0_40_0: add document_items"]
+
+    result = runner.invoke(cli, ["migrate"] + DB_ARGS)
+
+    assert result.exit_code == 0, result.output
+    assert "Applied 1 migration(s)" in result.output
+    assert "add document_items" in result.output
+
+
+def test_migrate_reports_an_up_to_date_database(app_stub):
+    app_stub.migrate.return_value = []
+
+    result = runner.invoke(cli, ["migrate"] + DB_ARGS)
+
+    assert result.exit_code == 0, result.output
+    assert "No migrations pending" in result.output
+
+
+def test_migrate_exits_nonzero_on_failure(app_stub):
+    app_stub.migrate.side_effect = RuntimeError("schema is from the future")
+
+    result = runner.invoke(cli, ["migrate"] + DB_ARGS)
+
+    assert result.exit_code == 1
+    assert "Migration failed: schema is from the future" in result.output
+
+
+def test_mcp_stdio_selects_the_transport(app_stub):
+    result = runner.invoke(cli, ["mcp", "--stdio"] + DB_ARGS)
+
+    assert result.exit_code == 0, result.output
+    app_stub.run_mcp.assert_called_once()
+    kwargs = app_stub.run_mcp.call_args.kwargs
+    assert kwargs["transport"] == "stdio"
+
+
+def test_mcp_without_stdio_leaves_the_transport_unset(app_stub):
+    result = runner.invoke(cli, ["mcp"] + DB_ARGS)
+
+    assert result.exit_code == 0, result.output
+    assert app_stub.run_mcp.call_args.kwargs["transport"] is None
+
+
+def test_version_flag_prints_the_version():
+    result = runner.invoke(cli, ["--version"])
+
+    assert result.exit_code == 0, result.output
+    assert "haiku.rag version" in result.output
+
+
+def test_outdated_install_warns(app_stub, monkeypatch):
+    """The startup check warns but does not block the command."""
+
+    async def outdated():
+        return False, "0.1.0", "9.9.9"
+
+    monkeypatch.setattr("haiku.rag.cli.is_up_to_date", outdated)
+
+    result = runner.invoke(cli, ["list"] + DB_ARGS)
+
+    assert result.exit_code == 0, result.output
+    assert "haiku.rag is outdated" in result.output
+    assert "Current: 0.1.0, Latest: 9.9.9" in result.output
+    app_stub.list_documents.assert_called_once()
+
+
+def test_up_to_date_install_says_nothing(app_stub, monkeypatch):
+    async def current():
+        return True, "9.9.9", "9.9.9"
+
+    monkeypatch.setattr("haiku.rag.cli.is_up_to_date", current)
+
+    result = runner.invoke(cli, ["list"] + DB_ARGS)
+
+    assert result.exit_code == 0, result.output
+    assert "outdated" not in result.output
+
+
+def test_a_failing_version_check_does_not_block_the_cli(app_stub, monkeypatch):
+    """PyPI being unreachable must not stop a command from running."""
+
+    async def boom():
+        raise RuntimeError("no network")
+
+    monkeypatch.setattr("haiku.rag.cli.is_up_to_date", boom)
+
+    result = runner.invoke(cli, ["list"] + DB_ARGS)
+
+    assert result.exit_code == 0, result.output
+    app_stub.list_documents.assert_called_once()
+
+
+def test_settings_command_shows_the_configuration(monkeypatch):
+    shown = []
+
+    class StubApp:
+        def __init__(self, **kwargs):
+            shown.append(kwargs)
+
+        def show_settings(self):
+            shown.append("shown")
+
+    monkeypatch.setattr("haiku.rag.app.HaikuRAGApp", StubApp)
+
+    result = runner.invoke(cli, ["settings"])
+
+    assert result.exit_code == 0, result.output
+    assert "shown" in shown
+    assert shown[0]["read_only"] is True
+
+
+def test_download_models_reports_failure(monkeypatch):
+    class StubApp:
+        def __init__(self, **kwargs):
+            pass
+
+        async def download_models(self):
+            raise RuntimeError("hub unreachable")
+
+    monkeypatch.setattr("haiku.rag.app.HaikuRAGApp", StubApp)
+
+    result = runner.invoke(cli, ["download-models"])
+
+    assert result.exit_code == 1
+    assert "Error downloading models: hub unreachable" in result.output
+
+
+def test_download_models_succeeds(monkeypatch):
+    calls = []
+
+    class StubApp:
+        def __init__(self, **kwargs):
+            pass
+
+        async def download_models(self):
+            calls.append("downloaded")
+
+    monkeypatch.setattr("haiku.rag.app.HaikuRAGApp", StubApp)
+
+    result = runner.invoke(cli, ["download-models"])
+
+    assert result.exit_code == 0, result.output
+    assert calls == ["downloaded"]
+
+
+def test_chat_reports_a_missing_tui_extra(monkeypatch):
+    """run_chat imports the Textual app itself, so a missing tui extra surfaces
+    from the call, not from importing haiku.rag.chat. The CLI must report it and
+    exit nonzero rather than traceback."""
+    import sys
+
+    monkeypatch.setitem(sys.modules, "haiku.rag.chat.app", None)
+
+    result = runner.invoke(cli, ["chat"])
+
+    assert result.exit_code == 1
+    assert "textual is not installed" in result.output
+    assert "haiku.rag-slim[tui]" in result.output
+
+
+def test_inspect_reports_a_missing_tui_extra(monkeypatch):
+    """run_inspector raises at import instead, so the guard sits on the import."""
+    import sys
+
+    monkeypatch.delitem(sys.modules, "haiku.rag.inspector", raising=False)
+    monkeypatch.setitem(sys.modules, "haiku.rag.inspector.app", None)
+
+    result = runner.invoke(cli, ["inspect"])
+
+    assert result.exit_code == 1
+    assert "textual is not installed" in result.output
+    assert "haiku.rag-slim[tui]" in result.output

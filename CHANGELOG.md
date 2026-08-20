@@ -26,6 +26,8 @@
 
 ### Fixed
 
+- `haiku-rag settings` masked only top-level secret-named fields, printing nested ones in full (`lancedb.api_key`, `providers.docling_serve.api_key`, WebDAV source passwords). It redacts the whole dump.
+- `haiku-rag chat` reports a missing `tui` extra instead of raising `ImportError`, matching `haiku-rag inspect`.
 - `storage.data_dir: ""` resolves to the platform data directory, as documented; it coerced to `Path("")`, so the database was created in the process's working directory. Set `data_dir: .` to keep the old placement.
 - Documented `search.limit` default is 5, was stated as 10.
 - The documented way to disable reranking is omitting `reranking.model` or setting it to `null`; the previous `provider: ""` example raised `Unknown reranking provider`.
