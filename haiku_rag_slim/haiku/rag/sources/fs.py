@@ -5,7 +5,6 @@ import os
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import unquote, urlparse
 
 from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.sources.base import (
@@ -19,14 +18,7 @@ from haiku.rag.sources.filter import (
     FileFilter,
     _default_supported_extensions,
 )
-
-
-def _uri_to_path(uri: str) -> Path:
-    parsed = urlparse(uri)
-    if parsed.scheme in ("", "file"):
-        path = parsed.path if parsed.scheme == "file" else uri
-        return Path(unquote(path))
-    raise ValueError(f"Unsupported URI scheme for FSSource: {uri}")
+from haiku.rag.uri import is_local_uri, uri_to_path
 
 
 def walk_files(root: Path) -> list[Path]:
@@ -92,7 +84,7 @@ class FSSource:
         returns None, `fetch()` raises ``UnsupportedSourceError``.
         """
         try:
-            path = _uri_to_path(uri).resolve(strict=False)
+            path = uri_to_path(uri).resolve(strict=False)
         except (ValueError, OSError):
             return None
         if not path.is_relative_to(self.root):
@@ -100,8 +92,7 @@ class FSSource:
         return path
 
     def supports(self, uri: str) -> bool:
-        scheme = urlparse(uri).scheme
-        if scheme not in ("", "file"):
+        if not is_local_uri(uri):
             return False
         return self._resolve_within_root(uri) is not None
 

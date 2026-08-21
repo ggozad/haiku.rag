@@ -45,6 +45,25 @@ jobs:
         working-directory: app/frontend
         run: pnpm run check
 
+  test-uri-platforms:
+    name: URI paths (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v9.0.0
+      # --noconftest: tests/conftest.py imports the project's dependencies,
+      # which this job deliberately does not install. test_uri.py is stdlib-only.
+      - name: Test platform URI paths
+        env:
+          PYTHONPATH: haiku_rag_slim
+        run: >
+          uv run --no-project --python ${{ matrix.python }} --with pytest
+          pytest tests/test_uri.py -q --noconftest -o addopts=
+
   test:
     needs: [lint, lint-frontend]
     runs-on: ubuntu-latest
