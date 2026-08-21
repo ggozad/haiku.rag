@@ -328,6 +328,22 @@ class TestResolvingTheDatabasePath:
             resolve_db_path(Path("/data/other.lancedb"))
 
 
+class TestCliConfigMismatchError:
+    def test_a_config_mismatch_exits_with_its_remedy(self):
+        """The message says which database and what to run, so it is worth more
+        than a traceback."""
+        from haiku.rag.store.repositories.settings import ConfigMismatchError
+
+        with patch("haiku.rag.cli._cli") as mock_cli:
+            mock_cli.side_effect = ConfigMismatchError(
+                "database 'nemotron': vector dimension 2048 -> 2560"
+            )
+
+            with pytest.raises(SystemExit) as exc_info:
+                cli_wrapper()
+            assert exc_info.value.code == 1
+
+
 class TestCliMigrationError:
     def test_catches_migration_required_error(self):
         with patch("haiku.rag.cli._cli") as mock_cli:

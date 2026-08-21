@@ -42,10 +42,15 @@ _cli = typer.Typer(
 
 
 def cli():
+    # Imported here rather than at module scope: the settings module pulls in
+    # lancedb, and the CLI's startup must not pay for it.
+    from haiku.rag.store.repositories.settings import ConfigMismatchError
+
     try:
         _cli()
     except (
         AmbiguousDatabaseError,
+        ConfigMismatchError,
         MigrationRequiredError,
         ReadOnlyError,
         SourceUnavailableError,

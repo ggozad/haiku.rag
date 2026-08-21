@@ -8,6 +8,10 @@
 - `client.ask(..., sources=[...])` asks across the selected databases, and `Citation.source` names the one a cited chunk came from. The cite fallback for an id absent from the run's results looks only in the selected databases, so a question scoped to some cannot cite another.
 - `client.analyze(..., sources=[...])` analyzes across the selected databases: the sandbox mounts their documents under one flat `/documents/{id}/` namespace, resolving each id to the database holding it, and in-code `search()` covers the same selection.
 
+### Fixed
+
+- `haiku-rag` prints the message and exits when the configured embedder does not match the database, instead of raising a traceback.
+
 ## [0.77.0] - 2026-08-21
 
 ## [0.77.0] - 2026-08-21
