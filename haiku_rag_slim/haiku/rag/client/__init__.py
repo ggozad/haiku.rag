@@ -66,7 +66,7 @@ class HaikuRAG:
 
     def __init__(
         self,
-        db_path: Path | None = None,
+        db_path: Path | str | None = None,
         config: AppConfig | None = None,
         skip_validation: bool = False,
         create: bool = False,
@@ -75,7 +75,8 @@ class HaikuRAG:
         """Initialize the RAG client with a database path.
 
         Args:
-            db_path: Path to the database file. If None, uses config.storage.data_dir.
+            db_path: Path or string path to the database file. If None, uses
+                config.storage.data_dir.
             config: Configuration to use. Defaults to the current global config.
             skip_validation: Whether to skip configuration validation on database load.
             create: Whether to create the database if it doesn't exist.

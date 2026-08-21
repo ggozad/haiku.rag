@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
@@ -102,9 +103,31 @@ def test_capability_factories_resolve_environment_and_defaults(
         config.storage.data_dir / "haiku.rag.lancedb"
     )
 
+    for factory in (create_rag, create_analysis):
+        db_path = factory(db_path=str(temp_db_path), config=config).db_path
+        assert db_path == temp_db_path
+        assert isinstance(db_path, Path)
+
     with patch("haiku.rag.config.get_config", return_value=config):
         assert create_rag().config is config
         assert create_analysis().config is config
+
+
+@pytest.mark.asyncio
+async def test_a_string_db_path_opens_a_store(temp_db_path):
+    """Store calls `absolute()` and `exists()` on db_path, which a str lacks."""
+    from haiku.rag.client import HaikuRAG
+
+    config = AppConfig()
+    async with HaikuRAG(temp_db_path, config, create=True):
+        pass
+
+    capability = create_rag(db_path=str(temp_db_path), config=config)
+    try:
+        rag = await capability._ensure_rag()
+        assert rag.store.db_path == temp_db_path
+    finally:
+        await capability._close()
 
 
 def test_domain_preamble_is_added_to_capability_instructions(temp_db_path):

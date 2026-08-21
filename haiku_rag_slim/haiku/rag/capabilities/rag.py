@@ -44,6 +44,29 @@ def instructions() -> str:
 class RAGCapability(RAGCapabilityBase[RAGState]):
     """Deferred, native Pydantic AI capability for grounded RAG queries."""
 
+    @classmethod
+    def from_spec(
+        cls,
+        db_path: Path | None = None,
+        config: AppConfig | None = None,
+        *,
+        defer_loading: bool = True,
+        request_limit: int | None = 20,
+        vision: bool | None = None,
+    ) -> "RAGCapability":
+        """Build from an agent spec, mirroring the factory's serializable arguments.
+
+        A live ``HaikuRAG`` client cannot be written in a spec, so ``rag`` is
+        absent here. ``config`` arrives as a mapping and is validated.
+        """
+        return create_capability(
+            db_path,
+            AppConfig.model_validate(config) if config is not None else None,
+            defer_loading=defer_loading,
+            request_limit=request_limit,
+            vision=vision,
+        )
+
     def get_toolset(self) -> FunctionToolset[Any]:
         async def rag_search(
             ctx: RunContext[Any], query: str, limit: int | None = None
@@ -64,7 +87,7 @@ class RAGCapability(RAGCapabilityBase[RAGState]):
 
 
 def create_capability(
-    db_path: Path | None = None,
+    db_path: Path | str | None = None,
     config: AppConfig | None = None,
     *,
     defer_loading: bool = True,
