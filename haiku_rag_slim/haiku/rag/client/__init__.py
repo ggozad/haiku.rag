@@ -7,6 +7,7 @@ import tempfile
 from collections.abc import AsyncGenerator, Sequence
 from enum import Enum
 from functools import cached_property
+from itertools import zip_longest
 from pathlib import Path
 from time import monotonic
 from typing import TYPE_CHECKING, overload
@@ -651,7 +652,11 @@ class HaikuRAG:
                     for owner in await self.clients_covering()
                 )
             )
-            merged = [doc for group in groups for doc in group]
+            # Round-robin, so a window shows every database. Concatenating lets
+            # the first one fill the whole page and hide the rest.
+            merged = [
+                doc for row in zip_longest(*groups) for doc in row if doc is not None
+            ]
             start = offset or 0
             return merged[start:] if limit is None else merged[start : start + limit]
         return await self.document_repository.list_all(
