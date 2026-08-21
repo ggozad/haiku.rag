@@ -120,7 +120,7 @@ class _EvalDeps:
 
 def _prepare_agent(
     capability_factory: CapabilityFactory,
-    db_path: Path,
+    db_path: Path | None,
     config: AppConfig,
     capability_model: str | Model,
     document_filter: str | None,
@@ -158,7 +158,7 @@ def _state_after_run(
 
 async def run_capability_question(
     capability_factory: CapabilityFactory,
-    db_path: Path,
+    db_path: Path | None,
     config: AppConfig,
     question: str,
     capability_model: str | Model,
@@ -195,7 +195,7 @@ async def run_capability_question(
 
 async def run_capability_conversation(
     capability_factory: CapabilityFactory,
-    db_path: Path,
+    db_path: Path | None,
     config: AppConfig,
     questions: list[str],
     capability_model: str | Model,

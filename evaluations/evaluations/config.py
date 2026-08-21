@@ -83,6 +83,14 @@ class DatasetSpec:
     compaction: bool = False
     experiment_metadata: dict[str, Any] | None = None
 
+    def covers_a_set(self, config) -> bool:
+        """Whether `lancedb.databases` names the databases to evaluate over.
+
+        A path names one database and wins over the configured set, so a run over
+        a set has to pass none — the client resolves it.
+        """
+        return bool(config.lancedb.databases)
+
     def db_path(self, override_path: Path | None = None) -> Path:
         """Get the database path.
 

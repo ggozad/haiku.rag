@@ -145,3 +145,29 @@ class TestRetrievalSample:
         )
         assert sample.skip is True
         assert sample.source_type == "image"
+
+
+class TestCoversASet:
+    """A run over `lancedb.databases` must pass no path, since a path names one
+    database and wins over the configured set."""
+
+    def test_a_configured_set_is_covered(self):
+        from haiku.rag.config.models import AppConfig, LanceDBConfig
+
+        from evaluations.datasets import DATASETS
+
+        spec = next(iter(DATASETS.values()))
+        config = AppConfig(
+            lancedb=LanceDBConfig(databases={"a": "/a.lancedb", "b": "/b.lancedb"})
+        )
+
+        assert spec.covers_a_set(config) is True
+
+    def test_one_database_is_not_a_set(self):
+        from haiku.rag.config.models import AppConfig
+
+        from evaluations.datasets import DATASETS
+
+        spec = next(iter(DATASETS.values()))
+
+        assert spec.covers_a_set(AppConfig()) is False
