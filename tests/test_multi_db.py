@@ -157,6 +157,58 @@ class TestOpeningDatabases:
         assert [client._source for client in covering] == ["alpha"]
 
 
+class TestListingAcrossDatabases:
+    """The chat TUI's document filter lists documents through the client, and a
+    client covering a set has no repositories of its own."""
+
+    @pytest.mark.asyncio
+    async def test_listing_covers_every_database(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one", "alpha two"])
+        await _seed(config, "beta", ["beta one"])
+
+        async with HaikuRAG(config=config) as rag:
+            docs = await rag.list_documents()
+
+        assert {d.uri for d in docs} == {
+            "test://alpha/alpha one",
+            "test://alpha/alpha two",
+            "test://beta/beta one",
+        }
+
+    @pytest.mark.asyncio
+    async def test_counting_covers_every_database(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one", "alpha two"])
+        await _seed(config, "beta", ["beta one"])
+
+        async with HaikuRAG(config=config) as rag:
+            assert await rag.count_documents() == 3
+
+    @pytest.mark.asyncio
+    async def test_a_limit_bounds_the_merged_listing(self, tmp_path):
+        """A limit is that many documents in total, not that many per database."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one", "alpha two"])
+        await _seed(config, "beta", ["beta one", "beta two"])
+
+        async with HaikuRAG(config=config) as rag:
+            assert len(await rag.list_documents(limit=3)) == 3
+            assert len(await rag.list_documents(limit=2, offset=2)) == 2
+            assert len(await rag.list_documents(offset=3)) == 1
+
+    @pytest.mark.asyncio
+    async def test_a_filter_reaches_every_database(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+
+        async with HaikuRAG(config=config) as rag:
+            docs = await rag.list_documents(filter="uri LIKE 'test://beta/%'")
+
+        assert [d.uri for d in docs] == ["test://beta/beta one"]
+
+
 class TestFederatedSearch:
     @pytest.mark.asyncio
     async def test_results_carry_their_source(self, tmp_path):

@@ -86,7 +86,7 @@ class ChatApp(App):
 
     def __init__(
         self,
-        db_path: Path,
+        db_path: Path | None,
         capabilities: Sequence[RAGCapabilityBase[Any]],
         read_only: bool = False,
         model: str | None = None,
@@ -356,10 +356,17 @@ class ChatApp(App):
             return
 
         citation = selected_widgets[0].citation
+        # Chunks, pages and bounding boxes all come from the database holding the
+        # cited chunk. A client covering a set has no repositories of its own.
+        client = self.client
+        if client._federated:
+            if citation.source is None:
+                return
+            (client,) = await client.clients_for([citation.source])
         chunk_ids = citation.chunk_ids or [citation.chunk_id]
         chunks = []
         for cid in chunk_ids:
-            chunk = await self.client.get_chunk_by_id(cid)
+            chunk = await client.get_chunk_by_id(cid)
             if chunk:
                 chunks.append(chunk)
         if not chunks:
@@ -370,7 +377,7 @@ class ChatApp(App):
         await self.push_screen(
             VisualGroundingModal(
                 chunk=chunks,
-                client=self.client,
+                client=client,
                 refs=citation.doc_item_refs or None,
             )
         )

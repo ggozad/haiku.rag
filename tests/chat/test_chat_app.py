@@ -35,6 +35,32 @@ def test_run_chat_creates_app_and_runs(temp_db_path: Path):
     assert attached[0].defer_loading is False
 
 
+def test_run_chat_covers_a_configured_set(tmp_path, monkeypatch):
+    """A configured set has no single path to fall back to: the app is handed
+    None so the client opens the set."""
+    import haiku.rag.config as config_module
+    from haiku.rag.config import AppConfig, set_config
+    from haiku.rag.config.models import LanceDBConfig
+
+    monkeypatch.setattr(config_module, "_config", None)
+    set_config(
+        AppConfig(
+            lancedb=LanceDBConfig(
+                databases={
+                    "a": str(tmp_path / "a.lancedb"),
+                    "b": str(tmp_path / "b.lancedb"),
+                }
+            )
+        )
+    )
+    with patch("haiku.rag.chat.app.ChatApp") as app:
+        from haiku.rag.chat import run_chat
+
+        run_chat(db_path=None)
+
+    assert app.call_args.args[0] is None
+
+
 def test_run_chat_defers_multiple_capabilities(temp_db_path: Path):
     """Test chat only defers capabilities when routing between multiple choices."""
     with patch("haiku.rag.chat.app.ChatApp") as mock_app:
@@ -92,6 +118,10 @@ def _make_mock_client():
     mock_client = AsyncMock()
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
+    # Covers one database: a bare AsyncMock answers `_federated` with a truthy
+    # Mock, which would send every read down the covering-a-set branch.
+    mock_client._federated = {}
+    mock_client._source = None
     return mock_client
 
 
@@ -465,3 +495,47 @@ async def test_a_cancelled_run_does_not_advance_persisted_state(temp_db_path: Pa
 
             assert app._state == before
             assert app._messages == []
+
+
+async def test_visual_grounding_uses_the_database_holding_the_citation(tmp_path):
+    """Chunks, pages and boxes come from one database. Covering a set, the
+    citation's source says which, and a covering client has no repositories."""
+    from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
+    from haiku.rag.store.models import Chunk
+    from haiku.rag.store.models.citation import Citation
+
+    owner = _make_mock_client()
+    owner._source = "beta"
+    owner.get_chunk_by_id.return_value = Chunk(
+        id="c1", document_id="d1", content="cited body"
+    )
+
+    covering = _make_mock_client()
+    covering._federated = {"alpha": "/a.lancedb", "beta": "/b.lancedb"}
+    covering.clients_for = AsyncMock(return_value=[owner])
+
+    app, _ = _make_app(tmp_path / "unused.lancedb", covering)
+    with patch("haiku.rag.chat.app.HaikuRAG", return_value=covering):
+        async with app.run_test():
+            history = app.query_one(ChatHistory)
+            await history.add_citations(
+                [
+                    Citation(
+                        chunk_id="c1",
+                        document_id="d1",
+                        document_uri="test://beta/one",
+                        content="cited body",
+                        source="beta",
+                    )
+                ]
+            )
+            widget = next(iter(app.query(CitationWidget)))
+            widget.add_class("selected")
+
+            with patch.object(app, "push_screen", new=AsyncMock()) as push:
+                await app.action_show_visual()
+
+    covering.clients_for.assert_awaited_once_with(["beta"])
+    owner.get_chunk_by_id.assert_awaited_once_with("c1")
+    assert push.await_args is not None
+    assert push.await_args.args[0].client is owner

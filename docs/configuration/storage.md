@@ -219,8 +219,9 @@ from a complete one.
 
 ### Commands that work on one database
 
-`haiku-rag search`, `ask` and `analyze` cover the configured set. Every other
-command works on a single database, named with the global `--database` option:
+`haiku-rag search`, `ask`, `analyze` and `chat` cover the configured set. Every
+other command works on a single database, named with the global `--database`
+option:
 
 ```bash
 haiku-rag search "query"                  # every configured database

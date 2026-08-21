@@ -24,8 +24,8 @@ The `haiku-rag` CLI provides complete document management functionality.
     haiku-rag add -h
     ```
 
-    With `lancedb.databases` configured, `search`, `ask` and `analyze` cover
-    every database in it. Every other command works on one, named with
+    With `lancedb.databases` configured, `search`, `ask`, `analyze` and `chat`
+    cover every database in it. Every other command works on one, named with
     `--database` or `--db`. See
     [Several Databases](configuration/storage.md#several-databases).
 

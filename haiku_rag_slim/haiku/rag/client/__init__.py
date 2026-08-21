@@ -638,6 +638,22 @@ class HaikuRAG:
         Returns:
             List of Document instances matching the criteria.
         """
+        if self._federated:
+            # Each database is asked for enough rows to satisfy the window, and
+            # the window is applied to the merged listing: a limit means that
+            # many documents in total, not that many per database.
+            wanted = None if limit is None else limit + (offset or 0)
+            groups = await asyncio.gather(
+                *(
+                    owner.list_documents(
+                        limit=wanted, filter=filter, include_content=include_content
+                    )
+                    for owner in await self.clients_covering()
+                )
+            )
+            merged = [doc for group in groups for doc in group]
+            start = offset or 0
+            return merged[start:] if limit is None else merged[start : start + limit]
         return await self.document_repository.list_all(
             limit=limit, offset=offset, filter=filter, include_content=include_content
         )
@@ -651,6 +667,14 @@ class HaikuRAG:
         Returns:
             Number of documents matching the criteria.
         """
+        if self._federated:
+            counts = await asyncio.gather(
+                *(
+                    owner.count_documents(filter=filter)
+                    for owner in await self.clients_covering()
+                )
+            )
+            return sum(counts)
         return await self.document_repository.count(filter=filter)
 
     async def clients_covering(

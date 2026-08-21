@@ -102,6 +102,17 @@ def resolve_db_path(db: Path | None = None, *, federated: bool = False) -> Path:
     return get_config().storage.data_dir / "haiku.rag.lancedb"
 
 
+def resolve_database_set(db: Path | None = None) -> Path | None:
+    """The database a set-covering command opens, or None to cover the set.
+
+    None where `lancedb.databases` names the databases and the caller named none
+    of them, so the client resolves the set itself.
+    """
+    if db is None and _database is None and get_config().lancedb.databases:
+        return None
+    return resolve_db_path(db, federated=True)
+
+
 def require_one_database(
     config: "AppConfig", db: Path | None, *, federated: bool
 ) -> None:
@@ -858,7 +869,7 @@ def chat(
     """Launch the chat TUI for conversational RAG."""
     from haiku.rag.chat import run_chat
 
-    db_path = resolve_db_path(db)
+    db_path = resolve_database_set(db)
     capabilities = capability if capability else ["rag"]
 
     try:
