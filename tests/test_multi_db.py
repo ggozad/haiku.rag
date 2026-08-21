@@ -198,6 +198,20 @@ class TestListingAcrossDatabases:
             assert len(await rag.list_documents(offset=3)) == 1
 
     @pytest.mark.asyncio
+    async def test_a_page_shows_every_database(self, tmp_path):
+        """A window is taken across the databases, not filled from the first one:
+        concatenating hides every database after whichever was listed first."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", [f"alpha {i}" for i in range(5)])
+        await _seed(config, "beta", ["beta one"])
+
+        async with HaikuRAG(config=config) as rag:
+            page = await rag.list_documents(limit=3)
+
+        assert len(page) == 3
+        assert {(d.uri or "").split("/")[2] for d in page} == {"alpha", "beta"}
+
+    @pytest.mark.asyncio
     async def test_a_filter_reaches_every_database(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha one"])

@@ -539,3 +539,52 @@ async def test_visual_grounding_uses_the_database_holding_the_citation(tmp_path)
     owner.get_chunk_by_id.assert_awaited_once_with("c1")
     assert push.await_args is not None
     assert push.await_args.args[0].client is owner
+
+
+class TestDocumentSearchFilter:
+    """The filter modal shows one page and asks the database for the rest, so the
+    typed term reaches SQL."""
+
+    def test_no_term_means_no_filter(self):
+        from haiku.rag.chat.widgets.document_filter_modal import search_filter
+
+        assert search_filter("   ") is None
+
+    def test_a_term_matches_titles_and_uris(self):
+        from haiku.rag.chat.widgets.document_filter_modal import search_filter
+
+        built = search_filter("Nobel")
+
+        assert built == (
+            "LOWER(title) LIKE '%nobel%' ESCAPE '\\' "
+            "OR LOWER(uri) LIKE '%nobel%' ESCAPE '\\'"
+        )
+
+    def test_the_search_is_case_insensitive(self):
+        """LIKE is case-sensitive, so both sides are lowered."""
+        from haiku.rag.chat.widgets.document_filter_modal import search_filter
+
+        built = search_filter("NoBeL")
+
+        assert built is not None
+        assert "LOWER(title) LIKE '%nobel%'" in built
+        assert "LOWER(uri) LIKE '%nobel%'" in built
+
+    def test_like_wildcards_in_the_term_are_literal(self):
+        """A term is text to find, not a pattern: `_` matches any character."""
+        from haiku.rag.chat.widgets.document_filter_modal import search_filter
+
+        built = search_filter("100%_raw")
+
+        assert built is not None
+        assert "100\\%\\_raw" in built
+        assert "ESCAPE '\\'" in built
+
+    def test_a_quote_in_the_term_is_escaped(self):
+        """Whatever was typed is data, not syntax."""
+        from haiku.rag.chat.widgets.document_filter_modal import search_filter
+
+        built = search_filter("O'Brien")
+
+        assert built is not None
+        assert "o''brien" in built
