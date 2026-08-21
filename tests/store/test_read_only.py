@@ -394,7 +394,7 @@ class TestAppReadVerbsDoNotWrite:
         """A write CLI verb opens writable: drift raises before any write."""
         from haiku.rag.app import HaikuRAGApp
         from haiku.rag.config import AppConfig
-        from haiku.rag.store.repositories.settings import ConfigMismatchError
+        from haiku.rag.store.exceptions import ConfigMismatchError
 
         async with Store(temp_db_path, create=True) as store:
             stored_name_before = (

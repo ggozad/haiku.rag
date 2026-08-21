@@ -3,7 +3,7 @@ import logging
 import pytest
 
 from haiku.rag.config import AppConfig, get_config
-from haiku.rag.store.repositories.settings import ConfigMismatchError
+from haiku.rag.store.exceptions import ConfigMismatchError
 
 
 @pytest.mark.asyncio

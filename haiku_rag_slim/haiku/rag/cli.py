@@ -23,6 +23,7 @@ from haiku.rag.config import (  # noqa: E402
 from haiku.rag.logging import configure_cli_logging  # noqa: E402
 from haiku.rag.store.exceptions import (  # noqa: E402
     AmbiguousDatabaseError,
+    ConfigMismatchError,
     MigrationRequiredError,
     ReadOnlyError,
     SourceUnavailableError,
@@ -42,10 +43,6 @@ _cli = typer.Typer(
 
 
 def cli():
-    # Imported here rather than at module scope: the settings module pulls in
-    # lancedb, and the CLI's startup must not pay for it.
-    from haiku.rag.store.repositories.settings import ConfigMismatchError
-
     try:
         _cli()
     except (

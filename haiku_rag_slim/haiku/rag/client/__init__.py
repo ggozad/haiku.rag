@@ -20,6 +20,7 @@ from haiku.rag.converters import get_converter
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import Store
 from haiku.rag.store.exceptions import (
+    ConfigMismatchError,
     MigrationRequiredError,
     ReadOnlyError,
     SourceUnavailableError,
@@ -30,10 +31,7 @@ from haiku.rag.store.models.document_item import extract_items
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.repositories.document_item import DocumentItemRepository
-from haiku.rag.store.repositories.settings import (
-    ConfigMismatchError,
-    SettingsRepository,
-)
+from haiku.rag.store.repositories.settings import SettingsRepository
 from haiku.rag.utils import escape_sql_string, locate_database
 
 if TYPE_CHECKING:

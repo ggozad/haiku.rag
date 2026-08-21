@@ -161,7 +161,7 @@ async def _set_embedder(client: "HaikuRAG") -> None:
     usable, so just the recorded provider/name are updated. A changed dimension
     requires regenerating every embedding via a full rebuild.
     """
-    from haiku.rag.store.repositories.settings import ConfigMismatchError
+    from haiku.rag.store.exceptions import ConfigMismatchError
 
     settings_repo = SettingsRepository(client.store)
     stored = await settings_repo.get_current_settings()
