@@ -452,3 +452,62 @@ async def test_gold_prefix_run_answers_with_history(tmp_path):
     )
 
     assert result.answer == "success (no tool calls)"
+
+
+def test_records_the_database_each_citation_came_from():
+    """A run over several databases has to record which one grounded the answer:
+    the distribution cannot be recovered from the report afterwards."""
+    from haiku.rag.capabilities._base import EvidenceState
+    from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
+    from haiku.rag.store.models.citation import Citation
+
+    from evaluations.capability_runner import ToolTraffic, _result_from_run
+
+    def cited(chunk_id: str, source: str | None) -> Citation:
+        return Citation(
+            chunk_id=chunk_id,
+            document_id=f"doc-{chunk_id}",
+            document_uri=f"test://{chunk_id}",
+            content="body",
+            source=source,
+        )
+
+    state = EvidenceState(
+        citations=["a1", "b1", "a2"],
+        citation_index={
+            "a1": cited("a1", "alpha"),
+            "b1": cited("b1", "beta"),
+            "a2": cited("a2", "alpha"),
+        },
+        evidence=CapabilityEvidenceRecord(question=1),
+    )
+
+    result = _result_from_run("answer", state, ToolTraffic(0, 0, 0, 0))
+
+    assert result.cited_sources == ["alpha", "beta", "alpha"]
+
+
+def test_an_unnamed_database_records_no_source():
+    """One database names nothing, so the field stays empty rather than absent."""
+    from haiku.rag.capabilities._base import EvidenceState
+    from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
+    from haiku.rag.store.models.citation import Citation
+
+    from evaluations.capability_runner import ToolTraffic, _result_from_run
+
+    state = EvidenceState(
+        citations=["c1"],
+        citation_index={
+            "c1": Citation(
+                chunk_id="c1",
+                document_id="d1",
+                document_uri="test://one",
+                content="body",
+            )
+        },
+        evidence=CapabilityEvidenceRecord(question=1),
+    )
+
+    result = _result_from_run("answer", state, ToolTraffic(0, 0, 0, 0))
+
+    assert result.cited_sources == [""]
