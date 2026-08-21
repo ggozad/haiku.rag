@@ -195,7 +195,7 @@ def _filter_qa_corpus(corpus, case_ids: set[str] | None):
 
 class _QARun(NamedTuple):
     cases: list[Case[Any, Any, dict[str, Any]]]
-    db: Path
+    db: Path | None
     judge_config: ModelConfig
     eval_name: str
     experiment_metadata: dict[str, Any]
@@ -243,7 +243,7 @@ def _prepare_qa_run(
 
     return _QARun(
         cases=cases,
-        db=spec.db_path(db_path),
+        db=None if spec.covers_a_set(config) else spec.db_path(db_path),
         judge_config=judge_config,
         eval_name=eval_name,
         experiment_metadata=experiment_metadata,

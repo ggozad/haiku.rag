@@ -72,7 +72,7 @@ async def run_retrieval_benchmark(
         evaluators=list(spec.retrieval_evaluators),
     )
 
-    db = spec.db_path(db_path)
+    db = None if spec.covers_a_set(config) else spec.db_path(db_path)
     async with HaikuRAG(db, config=config, read_only=True) as rag:
 
         async def retrieval_target(question: str) -> list[str]:
