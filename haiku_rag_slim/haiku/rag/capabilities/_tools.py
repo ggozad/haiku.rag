@@ -1,3 +1,5 @@
+from collections.abc import Iterable
+
 from pydantic import BaseModel
 
 from haiku.rag.client import HaikuRAG
@@ -24,10 +26,26 @@ async def search_corpus(
         result.format_for_agent(rank=index + 1, total=len(results))
         for index, result in enumerate(results)
     )
-    return formatted, list(results)
+    return formatted or "No results found.", list(results)
+
+
+def merge_results(
+    existing: list[SearchResult], incoming: Iterable[SearchResult]
+) -> None:
+    """Add the results not already held.
+
+    Identity is the chunk id, which every stored chunk carries; results built by
+    hand without one cannot be told apart and collapse to the first.
+    """
+    seen = {result.chunk_id for result in existing}
+    for result in incoming:
+        if result.chunk_id not in seen:
+            existing.append(result)
+            seen.add(result.chunk_id)
 
 
 __all__ = [
     "CodeExecutionEntry",
+    "merge_results",
     "search_corpus",
 ]

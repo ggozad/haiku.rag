@@ -1,6 +1,11 @@
 # Changelog
 ## [Unreleased]
 
+### Fixed
+
+- A capability search that matches nothing returns `No results found.` instead of an empty string.
+- Repeating a search query within a question accumulates the results of both calls instead of replacing the earlier ones.
+
 ## [0.76.0] - 2026-08-20
 
 ### Added
