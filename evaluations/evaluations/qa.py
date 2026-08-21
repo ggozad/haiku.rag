@@ -351,6 +351,7 @@ async def run_qa_benchmark(
         )
         set_eval_attribute("cited_uris", result.cited_uris)
         set_eval_attribute("cited_chunk_ids", result.cited_chunk_ids)
+        set_eval_attribute("cited_sources", result.cited_sources)
         set_eval_attribute("searched_uris", result.searched_uris)
         set_eval_attribute("n_searches", result.n_searches)
         set_eval_attribute("n_search_calls", result.n_search_calls)
