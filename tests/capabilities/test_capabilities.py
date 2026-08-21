@@ -1521,3 +1521,87 @@ async def test_an_answered_question_is_no_longer_in_progress(temp_db_path):
     record = _record(deps, "rag")
     assert record.question == 0
     assert record.in_progress is False
+
+
+class TestSeveralDatabasesInstructions:
+    """The note follows what a capability opens, not what the configuration
+    names, so a single database is instructed exactly as it was before databases
+    could be named."""
+
+    @staticmethod
+    def _config(**databases):
+        from haiku.rag.config.models import LanceDBConfig
+
+        return AppConfig(lancedb=LanceDBConfig(databases=databases))
+
+    @staticmethod
+    def _client(federated):
+        client = AsyncMock()
+        client._federated = federated
+        return client
+
+    def test_one_database_is_instructed_as_before(self):
+        from haiku.rag.capabilities.analysis import instructions as analysis_text
+        from haiku.rag.capabilities.rag import instructions as rag_text
+
+        for factory, baseline in (
+            (create_rag, rag_text),
+            (create_analysis, analysis_text),
+        ):
+            for config in (AppConfig(), self._config(alpha="/a.lancedb")):
+                capability = factory(db_path=Path("/tmp/x.lancedb"), config=config)
+                assert capability.instruction_text == baseline()
+
+    def test_an_explicit_path_opens_one_database(self):
+        """A path names one database, whatever the configuration names."""
+        from haiku.rag.capabilities.analysis import instructions as analysis_text
+        from haiku.rag.capabilities.rag import instructions as rag_text
+
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
+        for factory, baseline in (
+            (create_rag, rag_text),
+            (create_analysis, analysis_text),
+        ):
+            capability = factory(db_path=Path("/tmp/one.lancedb"), config=config)
+            assert capability.instruction_text == baseline()
+
+    def test_a_lent_client_covering_one_database_is_instructed_as_before(self):
+        from haiku.rag.capabilities.analysis import instructions as analysis_text
+        from haiku.rag.capabilities.rag import instructions as rag_text
+
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
+        for factory, baseline in (
+            (create_rag, rag_text),
+            (create_analysis, analysis_text),
+        ):
+            capability = factory(config=config, rag=self._client({}))
+            assert capability.instruction_text == baseline()
+
+    def test_a_lent_client_covering_a_set_is_told_about_it(self):
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
+        covering = self._client({"alpha": "/a.lancedb", "beta": "/b.lancedb"})
+
+        for factory in (create_rag, create_analysis):
+            capability = factory(config=config, rag=covering)
+            assert "source" in capability.instruction_text or (
+                "Database:" in capability.instruction_text
+            )
+
+    def test_the_rag_note_names_the_line_a_result_carries(self):
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
+
+        text = create_rag(config=config).instruction_text
+
+        assert "Database:" in text
+
+    def test_the_analysis_note_separates_the_interfaces(self):
+        """The three interfaces name a database differently, and the mounted
+        files do not name it at all."""
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
+
+        text = create_analysis(config=config).instruction_text
+
+        assert "Database:" in text  # analysis_search results
+        assert "source" in text  # in-code search / list_documents
+        assert "metadata.json" in text  # the mounted files, which lack it
+        assert "list_documents" in text  # how to map ids to databases
