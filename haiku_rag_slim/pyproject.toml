@@ -2,7 +2,7 @@
 
 name = "haiku.rag-slim"
 description = "Local-first agentic RAG with citations - hybrid search, reranking and multimodal retrieval over your own documents, no database server required - Minimal dependencies"
-version = "0.76.0"
+version = "0.77.0"
 authors = [{ name = "Yiorgis Gozadinos", email = "ggozadinos@gmail.com" }]
 license = { text = "MIT" }
 readme = { file = "README.md", content-type = "text/markdown" }

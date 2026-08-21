@@ -1,6 +1,10 @@
 # Changelog
 ## [Unreleased]
 
+## [0.77.0] - 2026-08-21
+
+## [0.77.0] - 2026-08-21
+
 ### Added
 
 - The four capabilities support Pydantic AI agent specs via `from_spec`, registered with
@@ -2211,7 +2215,9 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.76.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.77.0...HEAD
+[0.77.0]: https://github.com/ggozad/haiku.rag/compare/0.77.0...0.77.0
+[0.77.0]: https://github.com/ggozad/haiku.rag/compare/0.76.0...0.77.0
 [0.76.0]: https://github.com/ggozad/haiku.rag/compare/0.75.0...0.76.0
 [0.75.0]: https://github.com/ggozad/haiku.rag/compare/0.74.0...0.75.0
 [0.74.0]: https://github.com/ggozad/haiku.rag/compare/0.73.0...0.74.0
