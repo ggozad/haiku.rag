@@ -2,15 +2,10 @@ import json
 import logging
 
 from haiku.rag.store.engine import Store
+from haiku.rag.store.exceptions import ConfigMismatchError
 from haiku.rag.store.schema import SettingsRecord, query_to_pydantic
 
 logger = logging.getLogger(__name__)
-
-
-class ConfigMismatchError(Exception):
-    """Raised when stored config doesn't match current config."""
-
-    pass
 
 
 class SettingsRepository:

@@ -4,6 +4,12 @@ class ReadOnlyError(Exception):
     pass
 
 
+class ConfigMismatchError(Exception):
+    """Raised when stored config doesn't match current config."""
+
+    pass
+
+
 class MigrationRequiredError(Exception):
     """Database requires migration. Run 'haiku-rag migrate' to upgrade."""
 

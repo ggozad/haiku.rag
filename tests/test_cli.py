@@ -332,7 +332,7 @@ class TestCliConfigMismatchError:
     def test_a_config_mismatch_exits_with_its_remedy(self):
         """The message says which database and what to run, so it is worth more
         than a traceback."""
-        from haiku.rag.store.repositories.settings import ConfigMismatchError
+        from haiku.rag.store.exceptions import ConfigMismatchError
 
         with patch("haiku.rag.cli._cli") as mock_cli:
             mock_cli.side_effect = ConfigMismatchError(
