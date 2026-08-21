@@ -27,7 +27,11 @@ from pydantic_ai.run import AgentRunResult
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import AgentToolset
 
-from haiku.rag.capabilities._tools import CodeExecutionEntry, search_corpus
+from haiku.rag.capabilities._tools import (
+    CodeExecutionEntry,
+    merge_results,
+    search_corpus,
+)
 from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord, EvidenceRef
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
@@ -466,7 +470,9 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
                 document_filter=self.state.document_filter,
             )
         state = self.state
-        state.searches[query] = results
+        # A model can search the same query twice with different limits, and the
+        # narrower return must not drop what the wider one already showed it.
+        merge_results(state.searches.setdefault(query, []), results)
         self._note_evidence()
         if self.vision and (parts := build_image_content_from_results(results)):
             return ToolReturn(return_value=formatted, content=parts)

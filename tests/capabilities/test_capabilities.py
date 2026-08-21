@@ -314,6 +314,49 @@ async def test_a_spent_search_budget_fails_the_tool(temp_db_path):
         await capability._search("anything", None)
 
 
+def _stub_client(*batches: list[SearchResult]) -> AsyncMock:
+    """A client whose successive searches return the given result batches."""
+    client = AsyncMock()
+    client.search.side_effect = list(batches)
+    client.expand_context.side_effect = lambda results: results
+    return client
+
+
+@pytest.mark.asyncio
+async def test_a_fruitless_search_says_so(temp_db_path):
+    """A blank tool return reads as a broken tool, not as an empty corpus."""
+    capability = create_rag(db_path=temp_db_path, config=AppConfig())
+    capability.state = RAGState()
+    capability.borrowed_rag = _stub_client([])
+
+    assert await capability._search("nothing about this", None) == "No results found."
+
+
+@pytest.mark.asyncio
+async def test_a_narrower_repeat_keeps_what_the_wider_search_returned(temp_db_path):
+    """One query, two limits: the model can still cite the results it was shown."""
+    capability = create_rag(db_path=temp_db_path, config=AppConfig())
+    capability.state = RAGState()
+    capability.borrowed_rag = _stub_client(
+        [
+            SearchResult(content="first", score=1.0, chunk_id="chunk-1"),
+            SearchResult(content="second", score=0.9, chunk_id="chunk-2"),
+            SearchResult(content="third", score=0.8, chunk_id="chunk-3"),
+        ],
+        [SearchResult(content="first", score=1.0, chunk_id="chunk-1")],
+    )
+
+    await capability._search("Figure 3-1", 20)
+    await capability._search("Figure 3-1", None)
+
+    stored = capability.state.searches["Figure 3-1"]
+    assert [result.chunk_id for result in stored] == [
+        "chunk-1",
+        "chunk-2",
+        "chunk-3",
+    ]
+
+
 @pytest.mark.asyncio
 async def test_cite_resolves_direct_chunk_ids_and_reuses_document_lookup(temp_db_path):
     capability = create_rag(db_path=temp_db_path, config=AppConfig())

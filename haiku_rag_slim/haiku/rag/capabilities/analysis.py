@@ -17,6 +17,7 @@ from haiku.rag.capabilities._base import (
     RAGCapabilityBase,
     resolve_db_path,
 )
+from haiku.rag.capabilities._tools import merge_results
 from haiku.rag.config.models import AppConfig
 from haiku.rag.sandbox import AnalysisContext, Sandbox
 
@@ -112,13 +113,10 @@ class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
         if result.success or result.stdout:
             self._note_evidence()
         if sandbox._search_results:
-            existing = self.state.searches.get("_sandbox", [])
-            seen = {item.chunk_id for item in existing}
-            for item in sandbox._search_results:
-                if item.chunk_id not in seen:
-                    existing.append(item)
-                    seen.add(item.chunk_id)
-            self.state.searches["_sandbox"] = existing
+            merge_results(
+                self.state.searches.setdefault("_sandbox", []),
+                sandbox._search_results,
+            )
         self.state.executions.append(
             CodeExecutionEntry(
                 code=code,
