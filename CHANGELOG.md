@@ -13,6 +13,7 @@
 
 - `doctor`'s docling-serve probe sends `X-Api-Key`, so an instance requiring a key is reported reachable rather than unreachable.
 - The picture-description request to the public OpenAI endpoint sends `OPENAI_API_KEY`; it carried no authorization header.
+- `haiku-rag` prints the message and exits when the configured embedder does not match the database, instead of raising a traceback.
 
 ## [0.77.0] - 2026-08-21
 
