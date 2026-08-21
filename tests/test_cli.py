@@ -601,6 +601,77 @@ class TestAskAnalyzeImageOption:
         assert mock_ask.call_args.kwargs["images"] == [buffer.getvalue()]
 
 
+class TestChatCoversTheSet:
+    """Chat is a read verb: it answers with the same capabilities `ask` uses, so
+    it covers the configured set rather than demanding one database."""
+
+    @staticmethod
+    def _config_file(tmp_path):
+        config_file = tmp_path / "haiku.rag.yaml"
+        config_file.write_text(
+            f"lancedb:\n  databases:\n    arxiv: {tmp_path / 'a.lancedb'}\n"
+            f"    wiki: {tmp_path / 'w.lancedb'}\n"
+        )
+        return config_file
+
+    def test_a_configured_set_is_covered_rather_than_refused(
+        self, tmp_path, monkeypatch
+    ):
+        import haiku.rag.cli as cli_module
+        import haiku.rag.config as config_module
+
+        monkeypatch.setattr(config_module, "_config", None)
+        monkeypatch.setattr(cli_module, "_database", None)
+        monkeypatch.setattr(cli_module, "_database_path", None)
+
+        with patch("haiku.rag.chat.run_chat") as run_chat:
+            result = runner.invoke(
+                cli, ["--config", str(self._config_file(tmp_path)), "chat"]
+            )
+
+        assert result.exit_code == 0, result.output
+        # None is what makes the client resolve the set for itself.
+        assert run_chat.call_args.args[0] is None
+
+    def test_naming_one_database_opens_that_one(self, tmp_path, monkeypatch):
+        import haiku.rag.cli as cli_module
+        import haiku.rag.config as config_module
+
+        monkeypatch.setattr(config_module, "_config", None)
+        monkeypatch.setattr(cli_module, "_database", None)
+        monkeypatch.setattr(cli_module, "_database_path", None)
+
+        with patch("haiku.rag.chat.run_chat") as run_chat:
+            result = runner.invoke(
+                cli,
+                [
+                    "--config",
+                    str(self._config_file(tmp_path)),
+                    "--database",
+                    "wiki",
+                    "chat",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert run_chat.call_args.args[0] == tmp_path / "w.lancedb"
+
+    def test_a_single_database_setup_is_unchanged(self, tmp_path, monkeypatch):
+        """Without a configured set, chat opens the path it always did."""
+        import haiku.rag.cli as cli_module
+        import haiku.rag.config as config_module
+
+        monkeypatch.setattr(config_module, "_config", None)
+        monkeypatch.setattr(cli_module, "_database", None)
+        monkeypatch.setattr(cli_module, "_database_path", None)
+
+        with patch("haiku.rag.chat.run_chat") as run_chat:
+            result = runner.invoke(cli, ["chat", "--db", str(tmp_path / "one.lancedb")])
+
+        assert result.exit_code == 0, result.output
+        assert run_chat.call_args.args[0] == tmp_path / "one.lancedb"
+
+
 class TestRenderingTheDatabase:
     """Across databases a result has to say which one it came from. One database
     needs no such label, so single-database output is unchanged."""
