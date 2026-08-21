@@ -13,6 +13,7 @@ from haiku.rag.config import AppConfig
 from haiku.rag.converters import get_converter
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document_item import _picture_description_text
+from haiku.rag.uri import is_local_uri, uri_to_path
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument, PictureItem
@@ -154,8 +155,10 @@ async def convert(
         finally:
             temp_path.unlink(missing_ok=True)
 
-    elif parsed.scheme == "file":
-        file_path = Path(parsed.path)
+    elif parsed.scheme and is_local_uri(source):
+        # A file:// URI, or a Windows path whose drive letter urlparse read as
+        # the scheme. A bare path with no scheme is raw text.
+        file_path = uri_to_path(source)
         if not file_path.exists():
             raise UnsupportedSourceError(f"File does not exist: {file_path}")
         if file_path.suffix.lower() not in converter.supported_extensions:

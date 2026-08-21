@@ -23,6 +23,12 @@ def test_adhoc_resolves_fs_for_bare_path():
     assert isinstance(src, FSSource)
 
 
+def test_adhoc_resolves_fs_for_windows_path():
+    """urlparse reads the drive letter as a scheme; it is still a local path."""
+    src = resolve_adhoc_fetcher("C:/docs/sample.md")
+    assert isinstance(src, FSSource)
+
+
 def test_adhoc_resolves_http():
     src = resolve_adhoc_fetcher("https://example.com/x.pdf")
     assert isinstance(src, HTTPSource)

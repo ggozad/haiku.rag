@@ -264,3 +264,14 @@ async def test_convert_rejects_bad_file_uris(tmp_path, make_source, match):
 
     with pytest.raises(UnsupportedSourceError, match=match):
         await convert(AppConfig(), make_source(tmp_path))
+
+
+@pytest.mark.asyncio
+async def test_convert_percent_encoded_file_uri(tmp_path):
+    """`Path.as_uri()` encodes brackets and spaces; convert must decode them."""
+    target = tmp_path / "a[b] c.md"
+    target.write_text("# Heading")
+
+    doc = await convert(AppConfig(), target.as_uri())
+
+    assert "Heading" in doc.export_to_markdown()

@@ -7,6 +7,7 @@ from haiku.rag.sources.base import Source
 from haiku.rag.sources.fs import FSSource
 from haiku.rag.sources.http import HTTPSource
 from haiku.rag.sources.s3 import S3Source
+from haiku.rag.uri import is_local_uri, uri_to_path
 
 
 def resolve_configured_source(
@@ -49,11 +50,13 @@ def resolve_adhoc_fetcher(
             if src.supports(uri):
                 return src
 
-    scheme = urlparse(uri).scheme
-    if scheme in ("", "file"):
+    if is_local_uri(uri):
         # Root only matters for discover(); fetch() needs an absolute path
-        # that already encodes the location, so any root is correct.
-        return FSSource(root=Path("/"))
+        # that already encodes the location, so the path's own anchor is
+        # enough. On Windows "/" is only the current drive.
+        return FSSource(root=Path(uri_to_path(uri).anchor or "/"))
+
+    scheme = urlparse(uri).scheme
     if scheme in ("http", "https"):
         return HTTPSource(source_id="http:adhoc")
     if scheme == "s3":

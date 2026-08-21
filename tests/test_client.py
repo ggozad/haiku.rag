@@ -2493,6 +2493,13 @@ def test_check_source_accessible_file_uri(tmp_path):
     assert check_source_accessible((tmp_path / "gone.txt").as_uri()) is False
 
 
+def test_check_source_accessible_percent_encoded_file_uri(tmp_path):
+    existing = tmp_path / "a[b] c.txt"
+    existing.write_text("x")
+
+    assert check_source_accessible(existing.as_uri()) is True
+
+
 class _CountingSource:
     """A real Source over one in-memory document that counts its closes."""
 

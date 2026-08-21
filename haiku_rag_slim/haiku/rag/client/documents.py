@@ -6,7 +6,7 @@ import mimetypes
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import quote, urlparse
 
 from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.client.processing import (
@@ -20,6 +20,7 @@ from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import DocumentItem, extract_items
 from haiku.rag.telemetry import logfire
+from haiku.rag.uri import is_local_uri, uri_to_path
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
@@ -654,14 +655,8 @@ async def create_document_from_source(
 
     # Directory case: recurse with the existing FS filter and produce one
     # document per file. Remote schemes (http/s3) never hit this branch.
-    if parsed_url.scheme in ("", "file"):
-        # file:// URIs URL-encode special characters ([, ], spaces, etc.);
-        # unquote to get the real filesystem path before any stat/rglob.
-        local_path = (
-            Path(unquote(parsed_url.path))
-            if parsed_url.scheme == "file"
-            else (Path(source) if isinstance(source, str) else source)
-        )
+    if is_local_uri(source_str):
+        local_path = uri_to_path(source_str) if isinstance(source, str) else source
         if local_path.is_dir():
             if uri is not None:
                 raise UnsupportedSourceError(
@@ -733,7 +728,7 @@ async def create_document_from_source(
             stored_uri = uri
         elif parsed_url.scheme == "file":
             stored_uri = source_str
-        elif parsed_url.scheme == "":
+        elif is_local_uri(source_str):
             stored_uri = Path(source_str).absolute().as_uri()
         else:
             stored_uri = source_str
@@ -896,7 +891,7 @@ def check_source_accessible(uri: str) -> bool:
     try:
         parsed_url = urlparse(uri)
         if parsed_url.scheme == "file":
-            return Path(parsed_url.path).exists()
+            return uri_to_path(uri).exists()
         elif parsed_url.scheme in ("http", "https", "s3"):
             return True
         return False
