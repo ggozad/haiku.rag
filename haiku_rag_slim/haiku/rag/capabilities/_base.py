@@ -117,6 +117,20 @@ class EvidenceState(BaseModel):
         self.searches.clear()
 
 
+def covers_several_databases(
+    db_path: Path | None, config: AppConfig, rag: "HaikuRAG | None"
+) -> bool:
+    """Whether the capability will read from more than one database.
+
+    What the configuration names is not what a capability opens: an explicit
+    `db_path` opens that one database, and a lent client already knows what it
+    covers. Instructions follow coverage, not configuration.
+    """
+    if rag is not None:
+        return bool(rag._federated)
+    return db_path is None and len(config.lancedb.databases) > 1
+
+
 def _awaits_the_model(messages: list[ModelMessage]) -> bool:
     """Whether the history unmistakably leaves the model something to answer.
 
@@ -596,5 +610,6 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
 __all__ = [
     "CodeExecutionEntry",
     "RAGCapabilityBase",
+    "covers_several_databases",
     "resolve_db_path",
 ]
