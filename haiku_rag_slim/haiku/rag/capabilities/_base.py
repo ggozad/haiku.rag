@@ -70,9 +70,9 @@ def _nearest_known_id(chunk_id: str, known_ids: list[str]) -> str:
     return match[0] if match else chunk_id
 
 
-def resolve_db_path(db_path: Path | None, config: AppConfig) -> Path:
+def resolve_db_path(db_path: Path | str | None, config: AppConfig) -> Path:
     if db_path is not None:
-        return db_path
+        return Path(db_path)
     if env_db := os.environ.get("HAIKU_RAG_DB"):
         return Path(env_db).expanduser()
     return config.storage.data_dir / "haiku.rag.lancedb"

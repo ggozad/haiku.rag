@@ -170,14 +170,14 @@ class TagInfo:
 class Store:
     def __init__(
         self,
-        db_path: Path,
+        db_path: Path | str,
         config: AppConfig | None = None,
         skip_validation: bool = False,
         create: bool = False,
         read_only: bool = False,
         skip_migration_check: bool = False,
     ):
-        self.db_path: Path = db_path
+        self.db_path: Path = Path(db_path)
         self._config = config if config is not None else get_config()
         self._read_only = read_only
         self._create = create
@@ -191,7 +191,7 @@ class Store:
         self._is_new_db = False
 
         if self._connection_mode == ConnectionMode.LOCAL:
-            if not db_path.exists():
+            if not self.db_path.exists():
                 if not create:
                     raise FileNotFoundError(
                         f"Database does not exist at {self.db_path.absolute()}. "
@@ -199,8 +199,8 @@ class Store:
                     )
                 self._is_new_db = True
                 # Ensure parent directories exist for new databases
-                if not db_path.parent.exists():
-                    Path.mkdir(db_path.parent, parents=True)
+                if not self.db_path.parent.exists():
+                    Path.mkdir(self.db_path.parent, parents=True)
 
         # Create embedder (sync — no LanceDB needed)
         self.embedder = get_embedder(config=self._config)

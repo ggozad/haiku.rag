@@ -3,6 +3,8 @@
 
 ### Fixed
 
+- `Store`, `HaikuRAG` and `create_capability` coerce a string `db_path` to `Path`, as the documented
+  `HaikuRAG("knowledge.lancedb")` and `rag(db_path="my.lancedb")` forms require.
 - A capability search that matches nothing returns `No results found.` instead of an empty string.
 - Repeating a search query within a question accumulates the results of both calls instead of replacing the earlier ones.
 - `file://` URIs resolve to a Windows path through `url2pathname`: `file:///C:/docs/a.pdf` was read as `\C:\docs\a.pdf`, so ingestion reported `File does not exist` for every discovered file. A URI authority is kept as a UNC server/share (`file://server/share/a.pdf`) except `localhost`, which is dropped.

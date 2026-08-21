@@ -31,6 +31,15 @@ def vcr_cassette_dir():
 
 
 @pytest.mark.asyncio
+async def test_a_string_db_path_is_accepted(temp_db_path):
+    """The documented `HaikuRAG("knowledge.lancedb")` form: Store calls
+    `exists()` and `absolute()` on db_path, which a str lacks."""
+    async with HaikuRAG(str(temp_db_path), create=True) as client:
+        assert client.store.db_path == temp_db_path
+        assert isinstance(client.store.db_path, Path)
+
+
+@pytest.mark.asyncio
 async def test_prepare_document_from_docling_runs_off_event_loop_thread(monkeypatch):
     import haiku.rag.client.documents as documents
 

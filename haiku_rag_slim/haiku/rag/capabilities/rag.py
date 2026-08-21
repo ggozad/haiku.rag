@@ -64,7 +64,7 @@ class RAGCapability(RAGCapabilityBase[RAGState]):
 
 
 def create_capability(
-    db_path: Path | None = None,
+    db_path: Path | str | None = None,
     config: AppConfig | None = None,
     *,
     defer_loading: bool = True,
