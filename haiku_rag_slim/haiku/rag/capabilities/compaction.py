@@ -327,6 +327,12 @@ class EvidenceCompactionCapability(AbstractCapability[Any]):
     capsule: Capsule = field(default_factory=Capsule, repr=False)
     images: tuple[str | BinaryContent, ...] = field(default=(), repr=False)
 
+    @classmethod
+    def from_spec(cls) -> "EvidenceCompactionCapability":
+        """Build from an agent spec. The factory takes no configuration, so
+        neither does the spec surface."""
+        return create_capability()
+
     async def for_run(self, ctx: RunContext[Any]) -> "EvidenceCompactionCapability":
         """Give the run its own build cache, so concurrent runs cannot share one."""
         return replace(self, built_for=None, capsule=Capsule(), images=())

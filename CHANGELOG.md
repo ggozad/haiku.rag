@@ -1,6 +1,12 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- The four capabilities support Pydantic AI agent specs via `from_spec`, registered with
+  `Agent.from_spec(..., custom_capability_types=[...])`. `RAGCapability` and `AnalysisCapability` take
+  `db_path`, `config`, `defer_loading`, `request_limit` and `vision`.
+
 ### Fixed
 
 - `Store`, `HaikuRAG` and `create_capability` coerce a string `db_path` to `Path`, as the documented

@@ -132,6 +132,29 @@ class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
             )
         return result.stdout or "No output."
 
+    @classmethod
+    def from_spec(
+        cls,
+        db_path: Path | None = None,
+        config: AppConfig | None = None,
+        *,
+        defer_loading: bool = True,
+        request_limit: int | None = 30,
+        vision: bool | None = None,
+    ) -> "AnalysisCapability":
+        """Build from an agent spec, mirroring the factory's serializable arguments.
+
+        A live ``HaikuRAG`` client cannot be written in a spec, so ``rag`` is
+        absent here. ``config`` arrives as a mapping and is validated.
+        """
+        return create_capability(
+            db_path,
+            AppConfig.model_validate(config) if config is not None else None,
+            defer_loading=defer_loading,
+            request_limit=request_limit,
+            vision=vision,
+        )
+
     def get_toolset(self) -> FunctionToolset[Any]:
         async def analysis_search(
             ctx: RunContext[Any], query: str, limit: int | None = None

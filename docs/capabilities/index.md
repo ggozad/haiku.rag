@@ -77,6 +77,66 @@ same way with either one, and neither exposes tools or takes configuration.
     search too. If you need computation, register the analysis capability alone rather
     than adding it to the RAG one.
 
+## Agent specs
+
+The capabilities can be declared in a Pydantic AI [agent spec](https://ai.pydantic.dev/agent-spec/):
+
+```yaml title="agent.yaml"
+model: openai:gpt-5
+instructions: You are a research assistant with access to a document knowledge base.
+capabilities:
+  - RAGCapability:
+      db_path: /data/kb.lancedb
+      defer_loading: false
+  - EvidenceCompactionCapability
+  - CitationPolicyCapability
+```
+
+Pydantic AI does not discover third-party capabilities, so the caller names the classes:
+
+```python
+from pydantic_ai import Agent
+
+from haiku.rag.capabilities.compaction import EvidenceCompactionCapability
+from haiku.rag.capabilities.policy import CitationPolicyCapability
+from haiku.rag.capabilities.rag import RAGCapability
+
+agent = Agent.from_file(
+    "agent.yaml",
+    deps_type=Deps,
+    custom_capability_types=[
+        RAGCapability,
+        EvidenceCompactionCapability,
+        CitationPolicyCapability,
+    ],
+)
+```
+
+`deps_type` stays a Python argument, since the capabilities read and write their state
+through `deps.state` (see [State](#state)). `Agent.from_file` reads YAML, which needs
+`pydantic-ai-slim[spec]`; `Agent.from_spec` takes a dict and needs no YAML parser.
+
+Set `defer_loading: false` when the agent registers a single evidence capability, so its
+tools are visible immediately. Leave it at the default when the model should route among
+multiple capabilities.
+
+A `config:` block accepts a whole `AppConfig`, for agents in one process that need
+different databases or embedding models:
+
+```yaml
+capabilities:
+  - RAGCapability:
+      db_path: /data/kb.lancedb
+      config:
+        embeddings:
+          model: {provider: ollama, name: embeddinggemma, vector_dim: 2048}
+```
+
+The block is read like a `haiku.rag.yaml` file: keys it omits take `AppConfig` defaults
+rather than values from the configuration file on disk. The embedding model must match the
+database; a mismatch may prevent opening it or produce invalid retrieval. Write the block in
+full or omit it and let the [configuration file](../configuration/index.md) apply.
+
 ## State
 
 Capabilities use a plain `state: dict[str, Any]` attribute on agent dependencies when one is available. RAG state lives under `"rag"`; analysis state lives under `"analysis"`. This keeps state independent of any transport or UI protocol.

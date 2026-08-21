@@ -72,6 +72,12 @@ class CitationPolicyCapability(AbstractCapability[Any]):
     would share this capability's id.
     """
 
+    @classmethod
+    def from_spec(cls) -> "CitationPolicyCapability":
+        """Build from an agent spec. The factory takes no configuration, so
+        neither does the spec surface."""
+        return create_capability()
+
     async def after_model_request(
         self,
         ctx: RunContext[Any],
