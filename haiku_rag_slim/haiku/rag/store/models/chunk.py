@@ -136,10 +136,16 @@ class SearchResult(BaseModel):
     ``chunk_meta`` is the anchor chunk's unparsed ``Chunk.metadata`` and does not
     include the metadata of any other chunks merged with it. Never part of
     ``format_for_agent`` output.
+
+    ``source`` names the configured database a result came from: the name from
+    ``lancedb.databases``, never a path or URI, so a location cannot travel in a
+    result, a citation or a log. It is None only where no database is named, as
+    with the single ``lancedb.uri``.
     """
 
     content: str
     score: float
+    source: str | None = None
     chunk_id: str | None = None
     chunk_ids: list[str] = []
     chunk_meta: dict = {}
@@ -193,6 +199,9 @@ class SearchResult(BaseModel):
         Produces a structured format with metadata that helps LLMs understand
         the source and nature of the content. When rank is provided, shows
         position instead of raw score to avoid confusing LLMs with low RRF scores.
+
+        The database is named only where one is named at all, so a single
+        unnamed database renders exactly as before.
         """
         if rank is not None and total is not None:
             parts = [f"[{self.chunk_id}] [rank {rank} of {total}]"]
@@ -200,6 +209,9 @@ class SearchResult(BaseModel):
             parts = [f"[{self.chunk_id}] [rank {rank}]"]
         else:
             parts = [f"[{self.chunk_id}] (score: {self.score:.2f})"]
+
+        if self.source:
+            parts.append(f"Database: {self.source}")
 
         # Document source info
         source_parts = []

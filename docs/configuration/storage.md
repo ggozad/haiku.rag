@@ -174,6 +174,82 @@ The recommended layout for production is "different buckets, same account, separ
 
 Each process picks up its own credentials from the AWS default chain (env vars, IAM instance role, AWS profile), so no credentials are hard-coded in the configuration files.
 
+## Several Databases
+
+`lancedb.databases` maps a name to a location, for searching several databases at
+once:
+
+```yaml
+lancedb:
+  databases:
+    medic: s3://my-bucket/medic.lancedb
+    st: s3://my-bucket/st.lancedb
+    local: /data/notes.lancedb
+```
+
+A location is a URI or a local path. `databases` and `uri` are mutually
+exclusive, and setting both fails validation.
+
+The name is the only identity that leaves the configuration. Results, citations
+and error messages carry it, so a path or a bucket never reaches a log, a trace
+or a model.
+
+Every database in the set is opened with the same embedding configuration, so
+they have to agree on it. One whose stored settings differ raises
+`ConfigMismatchError` when it is opened.
+
+### Searching a set
+
+`search`, `ask` and `analyze` cover the whole set, or the subset named by
+`sources`:
+
+```python
+results = await client.search("query")                     # every database
+results = await client.search("query", sources=["medic"])   # one of them
+```
+
+Candidates from each database are fused into one ranked list, by the configured
+reranker where there is one and by reciprocal rank fusion otherwise. Each result
+carries `source`, the name of the database it came from, and so does each
+citation.
+
+**Configure a reranker when searching several databases.** Reciprocal rank fusion
+compares ranks, not scores, so every database contributes its own best matches
+whether or not they are relevant to the question, and results from databases
+holding nothing relevant displace better ones. A reranker scores the whole union
+instead, which removes the effect. Measured on one corpus split three ways, with
+the same queries: retrieval MAP 0.9914 with a reranker against 0.9918 for the
+same corpus in a single database, and 0.6044 without one against 0.9798. The cost
+is that a reranker scores candidates in proportion to the number of databases.
+
+A database that cannot be opened fails the whole query and is named in the error.
+A result set silently missing one of the databases asked for cannot be told apart
+from a complete one.
+
+### Commands that work on one database
+
+`haiku-rag search`, `ask`, `analyze` and `chat` cover the configured set. Every
+other command works on a single database, named with the global `--database`
+option:
+
+```bash
+haiku-rag search "query"                  # every configured database
+haiku-rag --database medic list           # one of them
+haiku-rag --database medic migrate
+```
+
+`--database` takes a name from `lancedb.databases`, which is how a database
+behind a URI is reached. `--db` takes a path, and overrides the configured set
+with that one database. A command that works on one database and is given
+neither fails rather than choosing for you.
+
+Each database is created, migrated and vacuumed on its own:
+
+```bash
+haiku-rag --database medic init
+haiku-rag --database st init
+```
+
 ## Vector Indexing
 
 Configure vector search settings:

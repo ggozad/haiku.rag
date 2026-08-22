@@ -897,20 +897,28 @@ _STORED_RAG_STATE = {
 }
 
 
+# Fields declared since `_STORED_RAG_STATE` was captured, with the value an
+# older dict loads as. A field may be added here; renaming or re-nesting one of
+# the stored keys is what this test exists to catch.
+_ADDED_SINCE = {"sources": None}
+
+
 def test_stored_state_shape_is_unchanged():
-    """A dict stored by an older version still loads, and dumps to the same keys.
+    """A dict stored by an older version still loads, and keeps every stored key.
 
     Compatibility here is semantic JSON-object equivalence: the same keys, the
-    same nesting, the same values. Key *order* is not part of the contract —
-    deriving both states from a shared base reordered `AnalysisState`'s fields,
-    and nothing serializes, hashes or string-compares this state; every carry
-    point re-validates it by key.
+    same nesting, the same values, plus whatever optional fields were added since.
+    Key *order* is not part of the contract — deriving both states from a shared
+    base reordered `AnalysisState`'s fields, and nothing serializes, hashes or
+    string-compares this state; every carry point re-validates it by key.
     """
     from haiku.rag.capabilities.rag import RAGState
 
     state = RAGState.model_validate(_STORED_RAG_STATE)
 
-    assert state.model_dump(mode="json") == _STORED_RAG_STATE
+    dumped = state.model_dump(mode="json")
+    assert dumped == _STORED_RAG_STATE | _ADDED_SINCE
+    assert {k: dumped[k] for k in _STORED_RAG_STATE} == _STORED_RAG_STATE
 
 
 def _populated(state_type):

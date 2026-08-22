@@ -43,6 +43,10 @@ class CapabilityRunResult:
     answer: str
     cited_uris: list[str] = field(default_factory=list)
     cited_chunk_ids: list[str] = field(default_factory=list)
+    # The database each cited chunk came from, in the order they were cited, so a
+    # run over several databases records which one grounded the answer. Empty
+    # strings where the database is unnamed, since one database names nothing.
+    cited_sources: list[str] = field(default_factory=list)
     searched_uris: list[str] = field(default_factory=list)
     n_searches: int = 0
     n_executions: int = 0
@@ -120,7 +124,7 @@ class _EvalDeps:
 
 def _prepare_agent(
     capability_factory: CapabilityFactory,
-    db_path: Path,
+    db_path: Path | None,
     config: AppConfig,
     capability_model: str | Model,
     document_filter: str | None,
@@ -158,7 +162,7 @@ def _state_after_run(
 
 async def run_capability_question(
     capability_factory: CapabilityFactory,
-    db_path: Path,
+    db_path: Path | None,
     config: AppConfig,
     question: str,
     capability_model: str | Model,
@@ -195,7 +199,7 @@ async def run_capability_question(
 
 async def run_capability_conversation(
     capability_factory: CapabilityFactory,
-    db_path: Path,
+    db_path: Path | None,
     config: AppConfig,
     questions: list[str],
     capability_model: str | Model,
@@ -244,10 +248,12 @@ def _result_from_run(
     cited_chunk_ids: list[str] = list(typed.citations)
     seen_cited: set[str] = set()
     cited_uris: list[str] = []
+    cited_sources: list[str] = []
     for chunk_id in cited_chunk_ids:
         citation = typed.citation_index.get(chunk_id)
         if citation is None:
             continue
+        cited_sources.append(citation.source or "")
         if citation.document_uri not in seen_cited:
             seen_cited.add(citation.document_uri)
             cited_uris.append(citation.document_uri)
@@ -275,6 +281,7 @@ def _result_from_run(
         answer=answer,
         cited_uris=cited_uris,
         cited_chunk_ids=cited_chunk_ids,
+        cited_sources=cited_sources,
         searched_uris=searched_uris,
         # Distinct search keys, not searches. Analysis files every in-code
         # `search()` under one "_sandbox" key, so twenty sandbox searches read

@@ -4,6 +4,7 @@ import os
 from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
+from itertools import zip_longest
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -137,10 +138,11 @@ class Sandbox:
     each read opens an ephemeral read-only connection.
     """
 
-    _db_path: Path
+    _db_path: Path | None
     _config: AppConfig
     _context: AnalysisContext
     _rag: "HaikuRAG | None"
+    _owners: dict[str, "HaikuRAG"]
     _lock: "asyncio.Lock | None"
     _search_results: "list[SearchResult]"
     _doc_items: dict[str, list["DocumentItem"]]
@@ -155,7 +157,7 @@ class Sandbox:
 
     def __init__(
         self,
-        db_path: Path,
+        db_path: Path | None,
         config: AppConfig,
         context: AnalysisContext,
         rag: "HaikuRAG | None" = None,
@@ -165,6 +167,7 @@ class Sandbox:
         self._config = config
         self._context = context
         self._rag = rag
+        self._owners = {}
         self._lock = lock
         self._search_results = []
         self._doc_items = {}
@@ -178,21 +181,81 @@ class Sandbox:
         self._deadline = None
 
     @asynccontextmanager
-    async def _connection(self) -> "AsyncIterator[HaikuRAG]":
+    async def _connection(
+        self, owner: "HaikuRAG | None" = None
+    ) -> "AsyncIterator[HaikuRAG]":
         """Yield the shared connection (serialized by the lock), or an ephemeral
         read-only one. The lock guards the whole block so a read's awaits cannot
-        interleave with another task's operation on the same connection."""
-        if self._rag is not None:
+        interleave with another task's operation on the same connection.
+
+        `owner` is the client holding one document, for the reads addressed to a
+        single document. The shared connection covers a set of databases and has
+        no repositories of its own, so those reads have to name their owner.
+        """
+        connection = owner if owner is not None else self._rag
+        if connection is not None:
             if self._lock is not None:
                 async with self._lock:
-                    yield self._rag
+                    yield connection
             else:
-                yield self._rag
+                yield connection
             return
         from haiku.rag.client import HaikuRAG
 
         async with HaikuRAG(self._db_path, config=self._config, read_only=True) as rag:
             yield rag
+
+    async def _documents(self) -> "tuple[list[Any], dict[str, HaikuRAG]]":
+        """Every document in scope, and the client holding each of them.
+
+        The owners are empty where one connection serves every read: a single
+        database, or the ephemeral connection opened per read when no client was
+        supplied. The selection is resolved the same way a search resolves it, so
+        a database the question excluded cannot be mounted.
+        """
+        async with self._connection() as rag:
+            if not rag._federated:
+                if not await rag.clients_covering(self._context.sources):
+                    return [], {}
+                docs = await rag.list_documents(filter=self._context.filter)
+                return docs, {}
+            owners = await rag.clients_covering(self._context.sources)
+        groups = await asyncio.gather(
+            *(owner.list_documents(filter=self._context.filter) for owner in owners)
+        )
+        # Interleaved, not concatenated: code that prints the listing is read
+        # through a truncated output, and concatenating shows one database's
+        # documents until the truncation, hiding that there are others.
+        docs = [doc for row in zip_longest(*groups) for doc in row if doc is not None]
+        return docs, self._holders(owners, groups)
+
+    @staticmethod
+    def _holders(
+        owners: "list[HaikuRAG]", groups: "list[list[Any]]"
+    ) -> "dict[str, HaikuRAG]":
+        """Map each document id to the database holding it.
+
+        Document ids are UUID4, so the flat `/documents/{id}/` namespace is
+        unambiguous for databases that were filled independently — but not for one
+        copied from another, where the same id is in both. Duplicate results are
+        merely redundant in a search; here they would be two documents claiming one
+        path, and whichever arrived last would answer for both. Rejected rather
+        than resolved, since either answer would be wrong half the time.
+        """
+        holders: dict[str, HaikuRAG] = {}
+        held_by: dict[str, str | None] = {}
+        for owner, group in zip(owners, groups, strict=True):
+            for doc in group:
+                if not doc.id:  # pragma: no cover - stored rows always carry an id
+                    continue
+                if doc.id in holders:
+                    raise ValueError(
+                        f"document {doc.id} is in databases {held_by[doc.id]!r} and "
+                        f"{owner._source!r}; analysis mounts one document per id"
+                    )
+                holders[doc.id] = owner
+                held_by[doc.id] = owner._source
+        return holders
 
     def _run_on_loop(self, coro: Coroutine[Any, Any, Any]) -> Any:
         """Run a coroutine on the execute() loop from a synchronous callback.
@@ -252,7 +315,12 @@ class Sandbox:
             # gets figures through the top-level `search` tool when the
             # question is visual; in-code search is for structural work.
             async with self._connection() as rag:
-                results = await rag.search(query, limit=limit, filter=context.filter)
+                results = await rag.search(
+                    query,
+                    limit=limit,
+                    filter=context.filter,
+                    sources=context.sources,
+                )
                 expanded = await rag.expand_context(results)
             self._search_results.extend(expanded)
             out: list[dict[str, Any]] = []
@@ -264,6 +332,7 @@ class Sandbox:
                     {
                         "chunk_id": r.chunk_id,
                         "content": r.content,
+                        "source": r.source,
                         "document_id": r.document_id,
                         "document_title": r.document_title,
                         "document_uri": r.document_uri,
@@ -278,14 +347,14 @@ class Sandbox:
             return out
 
         async def list_documents() -> list[dict[str, Any]]:
-            async with self._connection() as rag:
-                docs = await rag.list_documents(filter=context.filter)
+            docs, owners = await self._documents()
             return [
                 {
                     "id": d.id,
                     "title": d.title,
                     "uri": d.uri,
                     "created_at": str(d.created_at),
+                    "source": owners[d.id]._source if d.id in owners else None,
                 }
                 for d in docs
             ]
@@ -309,8 +378,7 @@ class Sandbox:
         def _deny_write(_path: "PurePosixPath", _content: str | bytes) -> None:
             raise PermissionError(f"Document files are read-only: {_path}")
 
-        async with self._connection() as rag:
-            docs = await rag.list_documents(filter=self._context.filter)
+        docs, self._owners = await self._documents()
 
         doc_titles = {doc.id: doc.title for doc in docs if doc.id}
 
@@ -323,7 +391,7 @@ class Sandbox:
                 return cached
 
             async def _fetch() -> list[DocumentItem]:
-                async with sandbox._connection() as rag:
+                async with sandbox._connection(sandbox._owners.get(did)) as rag:
                     return await rag.document_item_repository.get_all_items(did)
 
             items = sandbox._run_on_loop(_fetch())
@@ -337,7 +405,7 @@ class Sandbox:
                 return cached
 
             async def _fetch() -> dict[str, list[str]]:
-                async with sandbox._connection() as rag:
+                async with sandbox._connection(sandbox._owners.get(did)) as rag:
                     index = (
                         await rag.chunk_repository.get_chunk_ids_by_self_ref_grouped(
                             [did]
@@ -430,7 +498,7 @@ class Sandbox:
             ) -> Callable[["PurePosixPath"], str]:
                 def read_content(_path: "PurePosixPath") -> str:
                     async def _fetch() -> str:
-                        async with sandbox._connection() as rag:
+                        async with sandbox._connection(sandbox._owners.get(did)) as rag:
                             content = await rag.document_repository.get_content(did)
                             return content or ""
 

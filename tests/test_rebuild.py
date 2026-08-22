@@ -1059,7 +1059,7 @@ async def test_rebuild_set_embedder_works_on_empty_database(temp_db_path):
 async def test_rebuild_set_embedder_raises_on_vector_dim_mismatch(temp_db_path):
     """SET_EMBEDDER refuses when the vector dimension changed — a full rebuild is needed."""
     from haiku.rag.config import AppConfig
-    from haiku.rag.store.repositories.settings import ConfigMismatchError
+    from haiku.rag.store.exceptions import ConfigMismatchError
 
     async with HaikuRAG(temp_db_path, create=True):
         pass

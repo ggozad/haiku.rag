@@ -6,6 +6,32 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, Input, Static
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.utils import escape_sql_string
+
+# One page of documents. A corpus is not a list to scroll: mounting a checkbox
+# per document wedges the modal at tens of thousands, so the list is a page and
+# the search box asks the database for the rest.
+DOCUMENT_PAGE = 200
+
+
+def search_filter(term: str) -> str | None:
+    """A document filter matching `term` in a title or URI, or None for no term.
+
+    The term is text to find, not a pattern: `LIKE` is case-sensitive and reads
+    `%` and `_` as wildcards, so both sides are lowered and the term's own
+    wildcards are escaped.
+    """
+    term = term.strip()
+    if not term:
+        return None
+    literal = term.lower()
+    for wildcard in ("\\", "%", "_"):
+        literal = literal.replace(wildcard, f"\\{wildcard}")
+    escaped = escape_sql_string(f"%{literal}%")
+    return (
+        f"LOWER(title) LIKE '{escaped}' ESCAPE '\\' "
+        f"OR LOWER(uri) LIKE '{escaped}' ESCAPE '\\'"
+    )
 
 
 class DocumentFilterModal(ModalScreen):
@@ -88,6 +114,8 @@ class DocumentFilterModal(ModalScreen):
         self.client = client
         self.initial_selected = selected or []
         self._selected: set[str] = set(self.initial_selected)
+        self._shown = 0
+        self._matching = 0
 
     def compose(self) -> ComposeResult:
         with Vertical(id="filter-container"):
@@ -101,38 +129,59 @@ class DocumentFilterModal(ModalScreen):
                 yield Button("Apply", id="apply-btn", variant="primary")
 
     async def on_mount(self) -> None:
-        """Load documents when mounted."""
+        """Load the first page of documents when mounted."""
         await self._load_documents()
 
-    async def _load_documents(self) -> None:
-        """Load all documents from the client."""
-        docs = await self.client.list_documents()
+    async def _load_documents(self, search: str = "") -> None:
+        """Show one page of documents, narrowed by `search` when given."""
+        document_filter = search_filter(search)
+        docs = await self.client.list_documents(
+            limit=DOCUMENT_PAGE, filter=document_filter
+        )
+        self._matching = await self.client.count_documents(filter=document_filter)
 
         loading = self.query_one("#loading-indicator", Static)
-        loading.remove()
+        if loading.parent is not None:
+            loading.remove()
 
         filter_list = self.query_one("#filter-list", VerticalScroll)
-        for doc in docs:
-            display_name = doc.title or doc.uri or str(doc.id)
+        await filter_list.remove_children()
+
+        # The page is picked to represent every database; sorting is so it reads
+        # like a list rather than in whatever order the tables returned.
+        names = sorted(doc.title or doc.uri or str(doc.id) for doc in docs)
+
+        boxes = []
+        for position, display_name in enumerate(names):
             checkbox = Checkbox(
                 display_name,
                 value=display_name in self._selected,
-                id=f"doc-{hash(display_name)}",
+                # Positional, because titles repeat and a repeated id is an error.
+                id=f"doc-{position}",
                 classes="doc-checkbox",
             )
             checkbox._doc_id = display_name  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
-            await filter_list.mount(checkbox)
+            boxes.append(checkbox)
+        if boxes:
+            await filter_list.mount_all(boxes)
 
+        self._shown = len(boxes)
         self._update_footer()
 
     def _update_footer(self) -> None:
-        """Update the footer with selection count."""
+        """Update the footer with the selection and how much of the corpus is shown."""
         footer = self.query_one("#filter-footer", Static)
         count = len(self._selected)
         if count == 0:
-            footer.update("[dim]No filter (all documents)[/dim]")
+            state = "[dim]No filter (all documents)[/dim]"
         else:
-            footer.update(f"[bold]{count}[/bold] document(s) selected")
+            state = f"[bold]{count}[/bold] document(s) selected"
+        if self._matching > self._shown:
+            state += (
+                f" [dim]— showing {self._shown} of {self._matching};"
+                " type and press enter to search[/dim]"
+            )
+        footer.update(state)
 
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         """Handle checkbox state changes."""
@@ -148,8 +197,12 @@ class DocumentFilterModal(ModalScreen):
 
         self._update_footer()
 
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Ask the database for documents matching the search."""
+        await self._load_documents(event.value)
+
     def on_input_changed(self, event: Input.Changed) -> None:
-        """Filter document list based on search input."""
+        """Narrow the page already shown, for feedback while typing."""
         search_term = event.value.lower().strip()
         filter_list = self.query_one("#filter-list", VerticalScroll)
 

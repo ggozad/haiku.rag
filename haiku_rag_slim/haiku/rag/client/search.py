@@ -1,3 +1,4 @@
+import asyncio
 import base64
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
@@ -38,40 +39,10 @@ async def search(
     if limit is None:
         limit = client._config.search.limit
 
-    if isinstance(query, str):
-        if search_type is None:
-            search_type = "hybrid"
-
-        reranker = client.reranker
-
-        if reranker is None:
-            chunk_results = await client.chunk_repository.search(
-                query, limit, search_type, filter
-            )
-        else:
-            search_limit = limit * 10
-            raw_results = await client.chunk_repository.search(
-                query, search_limit, search_type, filter
-            )
-            chunks = [chunk for chunk, _ in raw_results]
-            if client._config.reranking.multimodal:
-                await _attach_picture_data(client, chunks)
-            chunk_results = await reranker.rerank(query, chunks, top_n=limit)
-    else:
-        embedder = client.embedder
-        if not embedder.supports_images:
-            raise ValueError(
-                "Image queries require a multimodal embedder. Set "
-                "embeddings.model.multimodal: true on a vllm, voyageai, or cohere "
-                "model."
-            )
-        query_vector = await embedder.embed_image(query)
-        chunk_results = await client.chunk_repository.search(
-            query="",
-            limit=limit,
-            filter=filter,
-            query_vector=query_vector,
-        )
+    candidates = await _fetch(
+        client, query, _fetch_limit(client, query, limit), search_type, filter
+    )
+    chunk_results = await _rank(client, query, candidates, limit)
 
     results = [SearchResult.from_chunk(chunk, score) for chunk, score in chunk_results]
     results = _dedup_picture_chunks(results)
@@ -80,6 +51,192 @@ async def search(
         await _populate_image_data(client, results)
 
     return results
+
+
+async def search_sources(
+    client: "HaikuRAG",
+    query: "str | bytes | PILImage.Image",
+    limit: int | None = None,
+    search_type: SearchType | None = None,
+    filter: str | None = None,
+    include_images: bool = True,
+    sources: list[str] | None = None,
+) -> list[SearchResult]:
+    """Search several databases and fuse their results into one ranked list.
+
+    Fetch, fuse, truncate, then enrich: enrichment runs on the survivors through
+    the database each came from, so it costs the same as a single-database search
+    rather than multiplying by the number searched.
+    """
+    if limit is None:
+        limit = client._config.search.limit
+
+    names = list(client._federated) if sources is None else list(sources)
+    if not names:
+        return []
+    selected = await client.clients_for(names)
+
+    # One over-fetch decision, and one reranker, for the whole set.
+    fetch_limit = _fetch_limit(client, query, limit)
+    per_source = await asyncio.gather(
+        *(_fetch(c, query, fetch_limit, search_type, filter) for c in selected)
+    )
+
+    ranked = await _fuse(client, selected, query, per_source, limit)
+
+    results: list[SearchResult] = []
+    for owner, chunk, score in ranked:
+        result = SearchResult.from_chunk(chunk, score)
+        result.source = owner._source
+        results.append(result)
+    results = _dedup_picture_chunks(results)
+
+    if include_images:
+        by_owner: dict[str, list[SearchResult]] = {}
+        for result in results:
+            if result.source:
+                by_owner.setdefault(result.source, []).append(result)
+        await asyncio.gather(
+            *(
+                _populate_image_data(client._clients[name], owned)
+                for name, owned in by_owner.items()
+            )
+        )
+
+    return results
+
+
+async def _fuse(
+    federator: "HaikuRAG",
+    clients: list["HaikuRAG"],
+    query: "str | bytes | PILImage.Image",
+    per_source: list[list[tuple[Chunk, float]]],
+    limit: int,
+) -> list[tuple["HaikuRAG", Chunk, float]]:
+    """One ranked list from several, keeping each candidate's owner.
+
+    A configured reranker scores the union directly, which is what makes ranking
+    across databases tractable: it compares query against document and does not
+    care where a candidate came from. Without one, reciprocal rank fusion over the
+    per-database rankings, since scores from separate indexes are not comparable.
+    """
+    owned = [
+        (client, chunk, score)
+        for client, candidates in zip(clients, per_source, strict=True)
+        for chunk, score in candidates
+    ]
+    if not owned:
+        return []
+
+    # An image query has no text for a reranker to score against, and the check
+    # precedes `reranker`, which builds the reranker on first access.
+    if isinstance(query, str):
+        reranker = federator.reranker
+        if reranker is not None:
+            chunks = [chunk for _, chunk, _ in owned]
+            if federator._config.reranking.multimodal:
+                await asyncio.gather(
+                    *(
+                        _attach_picture_data(
+                            c, [chunk for owner, chunk, _ in owned if owner is c]
+                        )
+                        for c in clients
+                    )
+                )
+            reranked = await reranker.rerank(query, chunks, top_n=limit)
+            owner_of = {id(chunk): client for client, chunk, _ in owned}
+            return [(owner_of[id(chunk)], chunk, score) for chunk, score in reranked]
+
+    scored: list[tuple[float, HaikuRAG, Chunk]] = []
+    for client, candidates in zip(clients, per_source, strict=True):
+        for rank, (chunk, _) in enumerate(candidates):
+            scored.append((1.0 / (_RRF_K + rank + 1), client, chunk))
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return [(client, chunk, score) for score, client, chunk in scored[:limit]]
+
+
+# Reciprocal rank fusion's smoothing constant, the value the literature uses.
+_RRF_K = 60
+
+
+# Candidates per requested result when a reranker will re-order them.
+_RERANK_OVERFETCH = 10
+
+
+def _fetch_limit(
+    client: "HaikuRAG",
+    query: "str | bytes | PILImage.Image",
+    limit: int,
+) -> int:
+    """How many candidates to fetch per database.
+
+    Only a text query with a reranker over-fetches: an image query keeps its
+    vector ranking, and the type is checked before `reranker`, which loads model
+    weights for a local one on first access.
+    """
+    if not isinstance(query, str):
+        return limit
+    return limit * _RERANK_OVERFETCH if client.reranker else limit
+
+
+async def _fetch(
+    client: "HaikuRAG",
+    query: "str | bytes | PILImage.Image",
+    limit: int,
+    search_type: SearchType | None,
+    filter: str | None,
+) -> list[tuple[Chunk, float]]:
+    """Candidates from one database, ranked by that database.
+
+    `limit` is how many to fetch, already including any over-fetch the caller
+    wants. Deciding that here would have each database consult its own reranker,
+    and a local reranker loads model weights per instance.
+    """
+    if isinstance(query, str):
+        if search_type is None:
+            search_type = "hybrid"
+        return await client.chunk_repository.search(query, limit, search_type, filter)
+
+    embedder = client.embedder
+    if not embedder.supports_images:
+        raise ValueError(
+            "Image queries require a multimodal embedder. Set "
+            "embeddings.model.multimodal: true on a vllm, voyageai, or cohere "
+            "model."
+        )
+    query_vector = await embedder.embed_image(query)
+    return await client.chunk_repository.search(
+        query="",
+        limit=limit,
+        filter=filter,
+        query_vector=query_vector,
+    )
+
+
+async def _rank(
+    client: "HaikuRAG",
+    query: "str | bytes | PILImage.Image",
+    candidates: list[tuple[Chunk, float]],
+    limit: int,
+) -> list[tuple[Chunk, float]]:
+    """Order candidates and cut them to `limit`.
+
+    An image query carries no text for a reranker to score against, so its
+    candidates keep the vector ranking. Its type is checked before
+    `client.reranker`, which builds the reranker on first access and loads model
+    weights for a local one.
+    """
+    if not isinstance(query, str):
+        return candidates[:limit]
+
+    reranker = client.reranker
+    if reranker is None:
+        return candidates[:limit]
+
+    chunks = [chunk for chunk, _ in candidates]
+    if client._config.reranking.multimodal:
+        await _attach_picture_data(client, chunks)
+    return await reranker.rerank(query, chunks, top_n=limit)
 
 
 async def _attach_picture_data(client: "HaikuRAG", chunks: list[Chunk]) -> None:
@@ -112,6 +269,9 @@ async def _attach_picture_data(client: "HaikuRAG", chunks: list[Chunk]) -> None:
 def _dedup_picture_chunks(results: list[SearchResult]) -> list[SearchResult]:
     """Collapse duplicate picture-only chunks to one result per ``self_ref``.
 
+    Keyed by database as well, since a database copied from another holds the same
+    document id: collapsing across them would drop one of two real results.
+
     A single picture can produce two chunks for the same self_ref: one whose
     vector is the text embedding of the picture's description, and one whose
     vector is the image embedding of the picture's bytes. Both can rank for
@@ -119,13 +279,13 @@ def _dedup_picture_chunks(results: list[SearchResult]) -> list[SearchResult]:
     their only ref, keep the higher-scoring one. Wider chunks that span the
     picture plus surrounding items pass through untouched.
     """
-    seen: dict[tuple[str | None, str], int] = {}
+    seen: dict[tuple[str | None, str | None, str], int] = {}
     keep: list[bool] = [True] * len(results)
     for i, r in enumerate(results):
         if len(r.doc_item_refs) == 1 and r.doc_item_refs[0].startswith(
             PICTURE_REF_PREFIX
         ):
-            key = (r.document_id, r.doc_item_refs[0])
+            key = (r.source, r.document_id, r.doc_item_refs[0])
             prior = seen.get(key)
             if prior is None:
                 seen[key] = i
@@ -221,6 +381,46 @@ async def expand_context(
     chunks were created without docling metadata (e.g., custom chunks passed
     to import_document).
     """
+    # A federating client has no repositories of its own, so each result expands
+    # through the database it came from.
+    if client._federated:
+        by_source: dict[str, list[SearchResult]] = {}
+        unsourced: list[SearchResult] = []
+        for result in search_results:
+            if result.source:
+                by_source.setdefault(result.source, []).append(result)
+            else:
+                unsourced.append(result)
+        owners = await client.clients_for(list(by_source))
+        expanded_groups = await asyncio.gather(
+            *(
+                expand_context(owner, by_source[owner._source])
+                for owner in owners
+                if owner._source
+            )
+        )
+        merged = unsourced + [r for group in expanded_groups for r in group]
+        # Grouping by database must not become the tiebreak: fused scores tie
+        # often, so equal scores keep the order they were fused in.
+        arrival = {
+            result.chunk_id: rank
+            for rank, result in enumerate(search_results)
+            if result.chunk_id
+        }
+
+        def fused_rank(result: SearchResult) -> int:
+            return min(
+                (
+                    arrival[cid]
+                    for cid in (result.chunk_id, *result.chunk_ids)
+                    if cid in arrival
+                ),
+                default=len(arrival),
+            )
+
+        merged.sort(key=lambda r: (-r.score, fused_rank(r)))
+        return merged
+
     from haiku.rag.context import expand_with_items, window_for
 
     max_chars = client._config.search.max_context_chars

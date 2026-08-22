@@ -16,11 +16,15 @@ class Citation(BaseModel):
 
     ``picture_refs`` lists the ``self_ref`` values of picture items in the
     cited chunk. Empty for text-only citations. UIs can fetch the picture
-    bytes via ``DocumentItemRepository.get_picture_bytes(document_id, ref)``
-    and render them alongside the text content.
+    bytes via ``HaikuRAG.get_picture_bytes(document_id, ref, source)`` and
+    render them alongside the text content.
 
     ``chunk_ids`` lists the ids of all chunks whose expansion ranges merged
     into the cited result (always includes ``chunk_id``).
+
+    ``source`` names the configured database the cited chunk came from: the name
+    from ``lancedb.databases``, never a path or URI. It is None only where no
+    database is named, as with the single ``lancedb.uri``.
 
     ``doc_item_refs`` are the ``self_ref`` values of every item in the cited
     content — the exact items the model saw. Visual grounding resolves bounding
@@ -37,6 +41,7 @@ class Citation(BaseModel):
 
     index: int | None = None
     document_id: str
+    source: str | None = None
     chunk_id: str
     chunk_ids: list[str] = Field(default_factory=list)
     chunk_meta: dict = Field(default_factory=dict)
@@ -69,6 +74,7 @@ def resolve_citations(
         citations.append(
             Citation(
                 document_id=r.document_id or "",
+                source=r.source,
                 chunk_id=chunk_id,
                 chunk_ids=r.chunk_ids or [chunk_id],
                 chunk_meta=r.chunk_meta,

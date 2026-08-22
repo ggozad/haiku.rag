@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 from haiku.rag.capabilities._base import (
     EvidenceState,
     RAGCapabilityBase,
+    covers_several_databases,
     resolve_db_path,
 )
 from haiku.rag.config.models import AppConfig
@@ -29,6 +30,9 @@ STATE_NAMESPACE = "rag"
 _CAPABILITY_ID = "haiku-rag"
 _TOOL_NAMES = frozenset({"rag_search", "rag_cite"})
 _instructions_path = Path(__file__).parent / "instructions" / "rag.md"
+_several_databases_path = (
+    Path(__file__).parent / "instructions" / "rag_several_databases.md"
+)
 
 
 class RAGState(EvidenceState):
@@ -38,6 +42,13 @@ class RAGState(EvidenceState):
 @cache
 def instructions() -> str:
     return _instructions_path.read_text().strip()
+
+
+@cache
+def several_databases_instructions() -> str:
+    """Appended only where the capability covers several databases, so a single
+    database is instructed exactly as it was before they could be named."""
+    return _several_databases_path.read_text().rstrip()
 
 
 @dataclass
@@ -105,13 +116,17 @@ def create_capability(
         from haiku.rag.config import get_config
 
         config = get_config()
+    resolved_db_path = resolve_db_path(db_path, config)
+    instruction_text = instructions()
+    if covers_several_databases(resolved_db_path, config, rag):
+        instruction_text += several_databases_instructions()
     return RAGCapability(
-        db_path=resolve_db_path(db_path, config),
+        db_path=resolved_db_path,
         config=config,
         borrowed_rag=rag,
         state_type=RAGState,
         state_namespace=STATE_NAMESPACE,
-        instruction_text=instructions(),
+        instruction_text=instruction_text,
         vision=config.qa.model.vision if vision is None else vision,
         tool_names=_TOOL_NAMES,
         request_limit=request_limit,

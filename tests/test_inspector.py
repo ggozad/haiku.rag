@@ -1,5 +1,6 @@
 import base64
 from io import BytesIO
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -329,3 +330,61 @@ async def test_inspector_open_failure_surfaces_real_error(tmp_path):
     with pytest.raises(FileNotFoundError):
         async with app.run_test():
             pass
+
+
+class TestReportedDatabase:
+    """`db_path=None` means the client chose, and a client handed one named
+    database opens it rather than covering a set."""
+
+    @staticmethod
+    def _client(federated, store_path=None):
+        client = MagicMock()
+        client._federated = federated
+        client.store.db_path = store_path
+        return client
+
+    def test_a_covered_set_reports_no_single_database(self):
+        from haiku.rag.inspector.widgets.info_modal import reported_database
+
+        client = self._client({"a": "/a.lancedb", "b": "/b.lancedb"})
+
+        assert reported_database(client, None) is None
+
+    def test_one_named_database_reports_the_path_it_opened(self):
+        """The path is None because the client resolved the name, not because
+        there is a set to cover."""
+        from haiku.rag.inspector.widgets.info_modal import reported_database
+
+        client = self._client({}, store_path=Path("/data/alpha.lancedb"))
+
+        assert reported_database(client, None) == Path("/data/alpha.lancedb")
+
+    def test_an_explicit_path_is_reported_as_given(self):
+        from haiku.rag.inspector.widgets.info_modal import reported_database
+
+        client = self._client({}, store_path=Path("/data/other.lancedb"))
+
+        assert reported_database(client, Path("/data/given.lancedb")) == Path(
+            "/data/given.lancedb"
+        )
+
+
+class TestReportingEachDatabase:
+    @pytest.mark.asyncio
+    async def test_a_database_that_cannot_be_opened_reports_itself(self):
+        """One unreachable database must not cost the report on the others."""
+        from haiku.rag.inspector.widgets.info_modal import InfoModal
+        from haiku.rag.store.exceptions import SourceUnavailableError
+
+        modal = InfoModal.__new__(InfoModal)
+        client = AsyncMock()
+        client.clients_for.side_effect = SourceUnavailableError(
+            "database 'beta' could not be opened: OSError"
+        )
+        modal.client = client
+        modal.db_path = None
+
+        lines = await modal._report("beta")
+
+        assert lines[0] == "[bold]beta[/bold]"
+        assert "could not be opened" in lines[1]

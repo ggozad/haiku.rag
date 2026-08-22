@@ -15,6 +15,7 @@ from haiku.rag.capabilities._base import (
     CodeExecutionEntry,
     EvidenceState,
     RAGCapabilityBase,
+    covers_several_databases,
     resolve_db_path,
 )
 from haiku.rag.capabilities._tools import merge_results
@@ -25,6 +26,9 @@ STATE_NAMESPACE = "analysis"
 _CAPABILITY_ID = "haiku-rag-analysis"
 _TOOL_NAMES = frozenset({"analysis_search", "analysis_execute_code", "analysis_cite"})
 _instructions_path = Path(__file__).parent / "instructions" / "analysis.md"
+_several_databases_path = (
+    Path(__file__).parent / "instructions" / "analysis_several_databases.md"
+)
 
 
 class AnalysisState(EvidenceState):
@@ -38,6 +42,13 @@ class AnalysisState(EvidenceState):
 @cache
 def instructions() -> str:
     return _instructions_path.read_text().strip()
+
+
+@cache
+def several_databases_instructions() -> str:
+    """Appended only where the capability covers several databases, so a single
+    database is instructed exactly as it was before they could be named."""
+    return _several_databases_path.read_text().rstrip()
 
 
 def _recovery_hint(stderr: str) -> str:
@@ -76,7 +87,10 @@ class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
             self.sandbox = Sandbox(
                 db_path=self.db_path,
                 config=self.config,
-                context=AnalysisContext(filter=self.state.document_filter),
+                context=AnalysisContext(
+                    filter=self.state.document_filter,
+                    sources=self.state.sources,
+                ),
                 rag=rag,
                 lock=self.rag_lock,
             )
@@ -199,13 +213,17 @@ def create_capability(
 
         config = get_config()
     analysis_model = config.analysis.model or config.qa.model
+    resolved_db_path = resolve_db_path(db_path, config)
+    instruction_text = instructions()
+    if covers_several_databases(resolved_db_path, config, rag):
+        instruction_text += several_databases_instructions()
     return AnalysisCapability(
-        db_path=resolve_db_path(db_path, config),
+        db_path=resolved_db_path,
         config=config,
         borrowed_rag=rag,
         state_type=AnalysisState,
         state_namespace=STATE_NAMESPACE,
-        instruction_text=instructions(),
+        instruction_text=instruction_text,
         vision=analysis_model.vision if vision is None else vision,
         tool_names=_TOOL_NAMES,
         request_limit=request_limit,

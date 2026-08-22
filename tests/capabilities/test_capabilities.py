@@ -141,6 +141,20 @@ def test_domain_preamble_is_added_to_capability_instructions(temp_db_path):
     )
 
 
+def _single_database_client() -> AsyncMock:
+    """A stand-in for a client covering one unnamed database.
+
+    A bare AsyncMock answers every attribute with a truthy Mock, so `_federated`
+    would read as a set of databases, `_source` would reach a validated field, and
+    `clients_covering` would return a Mock where the code iterates clients.
+    """
+    client = AsyncMock()
+    client._federated = {}
+    client._source = None
+    client.clients_covering.return_value = [client]
+    return client
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("factory", "agent_instructions", "heading"),
@@ -315,7 +329,7 @@ async def test_capability_isolated_per_run_and_round_trips_state(temp_db_path):
 @pytest.mark.asyncio
 async def test_run_error_closes_resources_and_propagates(temp_db_path):
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
-    client = AsyncMock()
+    client = _single_database_client()
     capability.rag = client
     error = RuntimeError("model failed")
 
@@ -384,7 +398,7 @@ async def test_a_narrower_repeat_keeps_what_the_wider_search_returned(temp_db_pa
 async def test_cite_resolves_direct_chunk_ids_and_reuses_document_lookup(temp_db_path):
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
     capability.state = RAGState(evidence=CapabilityEvidenceRecord(question=0))
-    client = AsyncMock()
+    client = _single_database_client()
     client.get_chunk_by_id.side_effect = [
         Chunk(id="chunk-1", document_id="doc-1", content="first"),
         Chunk(id="chunk-2", document_id="doc-1", content="second"),
@@ -410,7 +424,7 @@ async def test_cite_resolves_direct_chunk_ids_and_reuses_document_lookup(temp_db
 async def test_cite_reports_unresolved_ids_on_partial_success(temp_db_path):
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
     capability.state = RAGState(evidence=CapabilityEvidenceRecord(question=0))
-    client = AsyncMock()
+    client = _single_database_client()
     client.get_chunk_by_id.side_effect = [
         Chunk(id="chunk-1", document_id="doc-1", content="first"),
         None,
@@ -454,7 +468,7 @@ async def test_cite_repairs_chunk_ids_damaged_in_transcription(temp_db_path):
             ]
         },
     )
-    client = AsyncMock()
+    client = _single_database_client()
     client.get_chunk_by_id.return_value = None
     capability.rag = client
 
@@ -1213,7 +1227,7 @@ async def test_citing_without_searching_grounds_the_question(temp_db_path):
     async def model(_messages, _info):
         return ModelResponse(parts=next(calls))
 
-    client = AsyncMock()
+    client = _single_database_client()
     client.get_chunk_by_id.return_value = Chunk(
         id="chunk-1", document_id="doc-1", content="evidence"
     )
@@ -1315,15 +1329,13 @@ async def test_a_capability_fetches_its_own_evidences_pictures(temp_db_path):
     """Compaction rehydrates through the owner, which already holds the connection."""
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
     client = AsyncMock()
-    client.document_item_repository.get_picture_bytes.return_value = b"picture-bytes"
+    client.get_picture_bytes.return_value = b"picture-bytes"
     capability.rag = client
 
-    data = await capability.get_picture_bytes("doc-1", "#/pictures/0")
+    data = await capability.get_picture_bytes("doc-1", "#/pictures/0", "beta")
 
     assert data == b"picture-bytes"
-    client.document_item_repository.get_picture_bytes.assert_awaited_once_with(
-        "doc-1", "#/pictures/0"
-    )
+    client.get_picture_bytes.assert_awaited_once_with("doc-1", "#/pictures/0", "beta")
 
 
 @pytest.mark.asyncio
@@ -1353,7 +1365,7 @@ async def test_citing_nothing_after_citing_something_keeps_it_grounded(temp_db_p
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
     capability.state = RAGState(evidence=CapabilityEvidenceRecord(question=0))
     capability.epoch = 5
-    client = AsyncMock()
+    client = _single_database_client()
     client.get_chunk_by_id.return_value = Chunk(
         id="chunk-1", document_id="doc-1", content="evidence"
     )
@@ -1509,3 +1521,87 @@ async def test_an_answered_question_is_no_longer_in_progress(temp_db_path):
     record = _record(deps, "rag")
     assert record.question == 0
     assert record.in_progress is False
+
+
+class TestSeveralDatabasesInstructions:
+    """The note follows what a capability opens, not what the configuration
+    names, so a single database is instructed exactly as it was before databases
+    could be named."""
+
+    @staticmethod
+    def _config(**databases):
+        from haiku.rag.config.models import LanceDBConfig
+
+        return AppConfig(lancedb=LanceDBConfig(databases=databases))
+
+    @staticmethod
+    def _client(federated):
+        client = AsyncMock()
+        client._federated = federated
+        return client
+
+    def test_one_database_is_instructed_as_before(self):
+        from haiku.rag.capabilities.analysis import instructions as analysis_text
+        from haiku.rag.capabilities.rag import instructions as rag_text
+
+        for factory, baseline in (
+            (create_rag, rag_text),
+            (create_analysis, analysis_text),
+        ):
+            for config in (AppConfig(), self._config(alpha="/a.lancedb")):
+                capability = factory(db_path=Path("/tmp/x.lancedb"), config=config)
+                assert capability.instruction_text == baseline()
+
+    def test_an_explicit_path_opens_one_database(self):
+        """A path names one database, whatever the configuration names."""
+        from haiku.rag.capabilities.analysis import instructions as analysis_text
+        from haiku.rag.capabilities.rag import instructions as rag_text
+
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
+        for factory, baseline in (
+            (create_rag, rag_text),
+            (create_analysis, analysis_text),
+        ):
+            capability = factory(db_path=Path("/tmp/one.lancedb"), config=config)
+            assert capability.instruction_text == baseline()
+
+    def test_a_lent_client_covering_one_database_is_instructed_as_before(self):
+        from haiku.rag.capabilities.analysis import instructions as analysis_text
+        from haiku.rag.capabilities.rag import instructions as rag_text
+
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
+        for factory, baseline in (
+            (create_rag, rag_text),
+            (create_analysis, analysis_text),
+        ):
+            capability = factory(config=config, rag=self._client({}))
+            assert capability.instruction_text == baseline()
+
+    def test_a_lent_client_covering_a_set_is_told_about_it(self):
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
+        covering = self._client({"alpha": "/a.lancedb", "beta": "/b.lancedb"})
+
+        for factory in (create_rag, create_analysis):
+            capability = factory(config=config, rag=covering)
+            assert "source" in capability.instruction_text or (
+                "Database:" in capability.instruction_text
+            )
+
+    def test_the_rag_note_names_the_line_a_result_carries(self):
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
+
+        text = create_rag(config=config).instruction_text
+
+        assert "Database:" in text
+
+    def test_the_analysis_note_separates_the_interfaces(self):
+        """The three interfaces name a database differently, and the mounted
+        files do not name it at all."""
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
+
+        text = create_analysis(config=config).instruction_text
+
+        assert "Database:" in text  # analysis_search results
+        assert "source" in text  # in-code search / list_documents
+        assert "metadata.json" in text  # the mounted files, which lack it
+        assert "list_documents" in text  # how to map ids to databases

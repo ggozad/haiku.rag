@@ -195,7 +195,7 @@ def _filter_qa_corpus(corpus, case_ids: set[str] | None):
 
 class _QARun(NamedTuple):
     cases: list[Case[Any, Any, dict[str, Any]]]
-    db: Path
+    db: Path | None
     judge_config: ModelConfig
     eval_name: str
     experiment_metadata: dict[str, Any]
@@ -243,7 +243,7 @@ def _prepare_qa_run(
 
     return _QARun(
         cases=cases,
-        db=spec.db_path(db_path),
+        db=None if spec.covers_a_set(config) else spec.db_path(db_path),
         judge_config=judge_config,
         eval_name=eval_name,
         experiment_metadata=experiment_metadata,
@@ -351,6 +351,7 @@ async def run_qa_benchmark(
         )
         set_eval_attribute("cited_uris", result.cited_uris)
         set_eval_attribute("cited_chunk_ids", result.cited_chunk_ids)
+        set_eval_attribute("cited_sources", result.cited_sources)
         set_eval_attribute("searched_uris", result.searched_uris)
         set_eval_attribute("n_searches", result.n_searches)
         set_eval_attribute("n_search_calls", result.n_search_calls)

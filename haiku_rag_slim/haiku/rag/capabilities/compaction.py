@@ -70,6 +70,7 @@ class RetainedPicture:
     document_id: str
     self_ref: str
     label: str
+    source: str | None = None
 
 
 @dataclass(frozen=True)
@@ -176,6 +177,7 @@ def build_capsule(evidence: Sequence[DiscoveredEvidence]) -> Capsule:
                     document_id=entry.citation.document_id,
                     self_ref=self_ref,
                     label=picture_label(entry.chunk_id, self_ref),
+                    source=entry.citation.source,
                 )
             )
     return Capsule(text=ENTRY_SEPARATOR.join(lines), pictures=tuple(pictures))
@@ -406,7 +408,7 @@ class EvidenceCompactionCapability(AbstractCapability[Any]):
             owner = owners[retained.capability]
             try:
                 data = await owner.get_picture_bytes(
-                    retained.document_id, retained.self_ref
+                    retained.document_id, retained.self_ref, retained.source
                 )
             except Exception:
                 # A read that fails costs this picture, not the answer.

@@ -26,7 +26,7 @@ def run_chat(
     from haiku.rag.utils import get_model, parse_model_option
 
     config = get_config()
-    if db_path is None:
+    if db_path is None and not config.lancedb.databases:
         db_path = config.storage.data_dir / "haiku.rag.lancedb"
 
     if model:

@@ -35,7 +35,7 @@ from haiku.rag.capabilities._tools import (
 from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord, EvidenceRef
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
-from haiku.rag.store.models.chunk import SearchResult
+from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.citation import Citation, resolve_citations
 from haiku.rag.tools.search import build_image_content_from_results
 
@@ -70,11 +70,19 @@ def _nearest_known_id(chunk_id: str, known_ids: list[str]) -> str:
     return match[0] if match else chunk_id
 
 
-def resolve_db_path(db_path: Path | str | None, config: AppConfig) -> Path:
+def resolve_db_path(db_path: Path | str | None, config: AppConfig) -> Path | None:
+    """The database a capability opens for itself, or None to let the client decide.
+
+    None where `lancedb.databases` names the databases: a path would name one of
+    them instead, and a capability nobody handed a client would search a single
+    database where the configuration says several.
+    """
     if db_path is not None:
         return Path(db_path)
     if env_db := os.environ.get("HAIKU_RAG_DB"):
         return Path(env_db).expanduser()
+    if config.lancedb.databases:
+        return None
     return config.storage.data_dir / "haiku.rag.lancedb"
 
 
@@ -91,6 +99,7 @@ class EvidenceState(BaseModel):
     citations: list[str] = Field(default_factory=list)
     evidence: CapabilityEvidenceRecord = Field(default_factory=CapabilityEvidenceRecord)
     document_filter: str | None = None
+    sources: list[str] | None = None
     searches: dict[str, list[SearchResult]] = Field(default_factory=dict)
 
     def begin_invocation(self) -> None:
@@ -101,11 +110,25 @@ class EvidenceState(BaseModel):
         leaves a later citation unable to resolve against the expanded result the
         model saw, recording no provenance for it.
 
-        `document_filter` scopes the conversation, and `evidence` carries question
-        identity, so neither is working evidence.
+        `document_filter` and `sources` scope the conversation, and `evidence`
+        carries question identity, so none of them is working evidence.
         """
         self.citations.clear()
         self.searches.clear()
+
+
+def covers_several_databases(
+    db_path: Path | None, config: AppConfig, rag: "HaikuRAG | None"
+) -> bool:
+    """Whether the capability will read from more than one database.
+
+    What the configuration names is not what a capability opens: an explicit
+    `db_path` opens that one database, and a lent client already knows what it
+    covers. Instructions follow coverage, not configuration.
+    """
+    if rag is not None:
+        return bool(rag._federated)
+    return db_path is None and len(config.lancedb.databases) > 1
 
 
 def _awaits_the_model(messages: list[ModelMessage]) -> bool:
@@ -136,9 +159,24 @@ def _called_own_tool(messages: list[ModelMessage], tool_names: frozenset[str]) -
     return False
 
 
+async def _first_holding(
+    clients: "list[HaikuRAG]", chunk_id: str
+) -> "tuple[HaikuRAG, Chunk] | None":
+    """The first client holding this chunk, and the chunk.
+
+    A chunk id says nothing about which database holds it, so the only way to
+    place one is to ask. Returns None when none of them has it.
+    """
+    for client in clients:
+        chunk = await client.get_chunk_by_id(chunk_id)
+        if chunk is not None:
+            return client, chunk
+    return None
+
+
 @dataclass
 class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
-    db_path: Path
+    db_path: Path | None
     config: AppConfig
     state_type: type[StateT]
     state_namespace: str
@@ -380,7 +418,9 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
                     self.rag = rag
         return self.rag
 
-    async def get_picture_bytes(self, document_id: str, self_ref: str) -> bytes | None:
+    async def get_picture_bytes(
+        self, document_id: str, self_ref: str, source: str | None = None
+    ) -> bytes | None:
         """Fetch a picture of this capability's evidence, for whoever re-attaches it.
 
         Public because compaction rehydrates cited pictures and this capability
@@ -388,9 +428,7 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
         """
         async with self.rag_lock:
             rag = await self._ensure_rag()
-            return await rag.document_item_repository.get_picture_bytes(
-                document_id, self_ref
-            )
+            return await rag.get_picture_bytes(document_id, self_ref, source)
 
     async def _close(self) -> None:
         if self.rag is not None:
@@ -468,6 +506,7 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
                 query,
                 limit=limit,
                 document_filter=self.state.document_filter,
+                sources=self.state.sources,
             )
         state = self.state
         # A model can search the same query twice with different limits, and the
@@ -504,20 +543,31 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
         if missing:
             async with self.rag_lock:
                 rag = await self._ensure_rag()
+                # A chunk id says nothing about which database holds it, so the
+                # fallback looks through everything the question covers — and
+                # nothing it does not.
+                lookups = await rag.clients_covering(self.state.sources)
                 synthetic: list[SearchResult] = []
-                documents: dict[str, Any] = {}
+                documents: dict[tuple[str | None, str], Any] = {}
                 for chunk_id in missing:
-                    chunk = await rag.get_chunk_by_id(chunk_id)
-                    if chunk is None or not chunk.document_id:
+                    found = await _first_holding(lookups, chunk_id)
+                    if found is None:
                         continue
-                    document = documents.get(chunk.document_id)
-                    if chunk.document_id not in documents:
-                        document = await rag.get_document_by_id(chunk.document_id)
-                        documents[chunk.document_id] = document
+                    owner, chunk = found
+                    if not chunk.document_id:
+                        continue
+                    key = (owner._source, chunk.document_id)
+                    if key not in documents:
+                        documents[key] = await owner.get_document_by_id(
+                            chunk.document_id
+                        )
+                    document = documents[key]
                     chunk.document_uri = document.uri if document else None
                     chunk.document_title = document.title if document else None
                     chunk.document_meta = document.metadata if document else {}
-                    synthetic.append(SearchResult.from_chunk(chunk, score=1.0))
+                    result = SearchResult.from_chunk(chunk, score=1.0)
+                    result.source = owner._source
+                    synthetic.append(result)
                 citations.extend(resolve_citations(missing, synthetic))
 
         if not citations:
@@ -560,5 +610,6 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
 __all__ = [
     "CodeExecutionEntry",
     "RAGCapabilityBase",
+    "covers_several_databases",
     "resolve_db_path",
 ]

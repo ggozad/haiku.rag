@@ -36,16 +36,24 @@ class HaikuRAGApp:
         db_path: Path,
         config: AppConfig | None = None,
         read_only: bool = False,
+        federated: bool = False,
     ):
         self.db_path = db_path
         self.config = config if config is not None else get_config()
         self.read_only = read_only
+        self.federated = federated
         self.console = Console()
 
         from haiku.rag.store.engine import ConnectionMode
 
         self._is_local = ConnectionMode.from_config(self.config) == ConnectionMode.LOCAL
         self._display_path = self.db_path if self._is_local else self.config.lancedb.uri
+
+    @property
+    def _client_db_path(self) -> "Path | None":
+        """None where the command covers `lancedb.databases`, so the client
+        opens the configured set rather than one path."""
+        return None if self.federated else self.db_path
 
     async def init(self):
         """Initialize a new database."""
@@ -534,7 +542,7 @@ class HaikuRAGApp:
             search_input = query
 
         async with HaikuRAG(
-            db_path=self.db_path,
+            db_path=self._client_db_path,
             config=self.config,
             read_only=True,
         ) as self.client:
@@ -601,7 +609,7 @@ class HaikuRAGApp:
             images: Paths of images to attach to the question
         """
         async with HaikuRAG(
-            db_path=self.db_path,
+            db_path=self._client_db_path,
             config=self.config,
             read_only=True,
         ) as self.client:
@@ -634,7 +642,7 @@ class HaikuRAGApp:
             images: Paths of images to attach to the question
         """
         async with HaikuRAG(
-            db_path=self.db_path,
+            db_path=self._client_db_path,
             config=self.config,
             read_only=True,
         ) as self.client:
@@ -863,6 +871,10 @@ class HaikuRAGApp:
             f"[repr.attrib_name]chunk_id[/repr.attrib_name]: {result.chunk_id} "
             f"[repr.attrib_name]score[/repr.attrib_name]: {result.score:.4f}"
         )
+        if result.source and len(self.config.lancedb.databases) > 1:
+            self.console.print(
+                f"[repr.attrib_name]database[/repr.attrib_name]: {result.source}"
+            )
         if result.document_uri:
             self.console.print(
                 f"[repr.attrib_name]document uri[/repr.attrib_name]: {result.document_uri}"

@@ -230,6 +230,34 @@ for result in results:
     print(f"Document Title: {result.document_title}")  # when available
 ```
 
+### Searching Several Databases
+
+With [`lancedb.databases`](configuration/storage.md#several-databases)
+configured, a client covers every database in it. `sources` narrows a call to
+some of them, and each result names the database it came from:
+
+```python
+results = await client.search("machine learning")                    # all of them
+results = await client.search("machine learning", sources=["medic"])  # one of them
+
+for result in results:
+    print(f"{result.source}: {result.content}")
+```
+
+`ask` and `analyze` take `sources` too, and every citation carries the database
+it was drawn from:
+
+```python
+answer, citations = await client.ask("What changed?", sources=["medic", "st"])
+for cite in citations:
+    print(f"[{cite.source}] {cite.document_title or cite.document_uri}")
+
+result = await client.analyze("How many documents mention it?", sources=["medic"])
+```
+
+A question scoped to some databases can only cite those, and the analysis
+sandbox mounts only their documents.
+
 ### Filtering Search Results
 
 Filter search results to only include chunks from documents matching specific criteria:

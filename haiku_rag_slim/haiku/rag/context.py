@@ -405,6 +405,7 @@ def _build_result(
     return SearchResult(
         content=expanded_content,
         score=max(r.score for r in original_results),
+        source=first.source,
         chunk_id=first.chunk_id,
         chunk_ids=chunk_ids,
         chunk_meta=first.chunk_meta,
