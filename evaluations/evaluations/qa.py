@@ -186,11 +186,20 @@ def _refusal_metrics(report_cases) -> tuple[float, float, int, int] | None:
 def _filter_qa_corpus(corpus, case_ids: set[str] | None):
     """Keep only rows whose ``id`` is in ``case_ids`` (failure-subset reruns).
 
-    Returns the corpus unchanged when ``case_ids`` is None.
+    Returns the corpus unchanged when ``case_ids`` is None. Matching nothing
+    raises: a dataset keying its rows by another name leaves every case filtered
+    out, and a run of no cases otherwise reports 0.0000 as though it were a score.
     """
     if case_ids is None:
         return corpus
-    return corpus.filter(lambda row: row.get("id") in case_ids)
+    filtered = corpus.filter(lambda row: row.get("id") in case_ids)
+    if len(filtered) == 0:
+        raise ValueError(
+            f"--filter-ids matched none of the {len(corpus)} cases. "
+            "Check that the ids belong to this dataset and that its rows are "
+            "keyed by `id`."
+        )
+    return filtered
 
 
 class _QARun(NamedTuple):
@@ -243,7 +252,7 @@ def _prepare_qa_run(
 
     return _QARun(
         cases=cases,
-        db=None if spec.covers_a_set(config) else spec.db_path(db_path),
+        db=None if spec.covers_a_set(config, db_path) else spec.db_path(db_path),
         judge_config=judge_config,
         eval_name=eval_name,
         experiment_metadata=experiment_metadata,

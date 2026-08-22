@@ -163,6 +163,22 @@ class TestCoversASet:
 
         assert spec.covers_a_set(config) is True
 
+    def test_a_named_path_overrides_the_set(self):
+        """`--db` is documented as an override, so it names the one database to
+        evaluate even when the configuration names several."""
+        from pathlib import Path as _Path
+
+        from haiku.rag.config.models import AppConfig, LanceDBConfig
+
+        from evaluations.datasets import DATASETS
+
+        spec = next(iter(DATASETS.values()))
+        config = AppConfig(
+            lancedb=LanceDBConfig(databases={"a": "/a.lancedb", "b": "/b.lancedb"})
+        )
+
+        assert spec.covers_a_set(config, _Path("/chosen.lancedb")) is False
+
     def test_one_database_is_not_a_set(self):
         from haiku.rag.config.models import AppConfig
 

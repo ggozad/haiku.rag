@@ -4,13 +4,13 @@ import json
 import logging
 import mimetypes
 import tempfile
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Callable, Coroutine, Sequence
 from enum import Enum
 from functools import cached_property
 from itertools import zip_longest
 from pathlib import Path
 from time import monotonic
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, Any, overload
 from urllib.parse import urlparse
 
 import httpx
@@ -505,6 +505,10 @@ class HaikuRAG:
         Returns:
             The Document instance if found, None otherwise.
         """
+        if self._federated:
+            return await self._from_any_covered(
+                lambda owner: owner.get_document_by_id(document_id)
+            )
         return await self.document_repository.get_by_id(document_id)
 
     async def get_chunk_by_id(self, chunk_id: str) -> Chunk | None:
@@ -516,6 +520,10 @@ class HaikuRAG:
         Returns:
             The Chunk instance if found, None otherwise.
         """
+        if self._federated:
+            return await self._from_any_covered(
+                lambda owner: owner.get_chunk_by_id(chunk_id)
+            )
         return await self.chunk_repository.get_by_id(chunk_id)
 
     async def get_picture_bytes(
@@ -553,6 +561,10 @@ class HaikuRAG:
         Returns:
             The Document instance if found, None otherwise.
         """
+        if self._federated:
+            return await self._from_any_covered(
+                lambda owner: owner.get_document_by_uri(uri)
+            )
         return await self.document_repository.get_by_uri(uri)
 
     async def resolve_document(self, id_or_title: str) -> Document | None:
@@ -681,6 +693,22 @@ class HaikuRAG:
             )
             return sum(counts)
         return await self.document_repository.count(filter=filter)
+
+    async def _from_any_covered(
+        self, lookup: "Callable[[HaikuRAG], Coroutine[Any, Any, Any]]"
+    ) -> Any:
+        """The first result `lookup` finds in the databases this client covers.
+
+        An id or a URI says nothing about which database holds it, so every
+        database is asked at once and the first that has it, in configured order,
+        answers. Asking in turn would cost a round trip per database for an
+        identifier that is missing or held by the last of them.
+        """
+        owners = await self.clients_covering()
+        for found in await asyncio.gather(*(lookup(owner) for owner in owners)):
+            if found is not None:
+                return found
+        return None
 
     async def clients_covering(
         self, sources: list[str] | None = None

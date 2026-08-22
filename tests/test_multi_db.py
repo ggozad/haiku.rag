@@ -223,6 +223,62 @@ class TestListingAcrossDatabases:
         assert [d.uri for d in docs] == ["test://beta/beta one"]
 
 
+class TestLookupByIdentifier:
+    """An id or a URI says nothing about which database holds it, and a client
+    covering a set has no repositories of its own."""
+
+    @pytest.mark.asyncio
+    async def test_a_document_is_found_in_whichever_database_holds_it(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+
+        async with HaikuRAG(config=config) as rag:
+            beta = (await rag.clients_for(["beta"]))[0]
+            [target] = await beta.document_repository.list_all(limit=1)
+            assert target.id is not None
+
+            found = await rag.get_document_by_id(target.id)
+            by_uri = await rag.get_document_by_uri("test://alpha/alpha one")
+            resolved = await rag.resolve_document(target.id)
+
+        assert found is not None and found.uri == "test://beta/beta one"
+        assert by_uri is not None and by_uri.uri == "test://alpha/alpha one"
+        assert resolved is not None and resolved.uri == "test://beta/beta one"
+
+    @pytest.mark.asyncio
+    async def test_a_chunk_is_found_in_whichever_database_holds_it(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+
+        async with HaikuRAG(config=config) as rag:
+            beta = (await rag.clients_for(["beta"]))[0]
+            [chunk] = await beta.chunk_repository.list_all(limit=1)
+            assert chunk.id is not None
+
+            found = await rag.get_chunk_by_id(chunk.id)
+
+        assert found is not None and found.content == "beta one"
+
+    @pytest.mark.asyncio
+    async def test_an_unknown_identifier_is_absent_rather_than_an_error(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+
+        async with HaikuRAG(config=config) as rag:
+            assert (
+                await rag.get_document_by_id("00000000-0000-4000-8000-000000000000")
+                is None
+            )
+            assert (
+                await rag.get_chunk_by_id("00000000-0000-4000-8000-000000000000")
+                is None
+            )
+            assert await rag.get_document_by_uri("test://nowhere") is None
+
+
 class TestFederatedSearch:
     @pytest.mark.asyncio
     async def test_results_carry_their_source(self, tmp_path):
