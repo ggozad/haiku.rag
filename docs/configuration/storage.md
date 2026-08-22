@@ -213,6 +213,15 @@ reranker where there is one and by reciprocal rank fusion otherwise. Each result
 carries `source`, the name of the database it came from, and so does each
 citation.
 
+**Configure a reranker when searching several databases.** Reciprocal rank fusion
+compares ranks, not scores, so every database contributes its own best matches
+whether or not they are relevant to the question, and results from databases
+holding nothing relevant displace better ones. A reranker scores the whole union
+instead, which removes the effect. Measured on one corpus split three ways, with
+the same queries: retrieval MAP 0.9914 with a reranker against 0.9918 for the
+same corpus in a single database, and 0.6044 without one against 0.9798. The cost
+is that a reranker scores candidates in proportion to the number of databases.
+
 A database that cannot be opened fails the whole query and is named in the error.
 A result set silently missing one of the databases asked for cannot be told apart
 from a complete one.
