@@ -1,5 +1,6 @@
 """Base class for document converters."""
 
+import os
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -23,6 +24,22 @@ def vlm_api_url(config: "AppConfig", model: "ModelConfig") -> str:
         return "https://api.openai.com/v1/chat/completions"
 
     raise ValueError(f"Unsupported VLM provider: {model.provider}")
+
+
+def vlm_api_headers(model: "ModelConfig") -> dict[str, str]:
+    """Auth headers for the picture-description VLM endpoint. Docling posts to
+    it directly, so the key travels as a header rather than through an SDK.
+
+    The public OpenAI endpoint falls back to ``OPENAI_API_KEY``. A custom
+    ``base_url`` never does: that key belongs to api.openai.com, not to
+    whatever self-hosted server the model points at.
+    """
+    key = model.api_key
+    if not key and model.provider == "openai" and not model.base_url:
+        key = os.environ.get("OPENAI_API_KEY")
+    if key:
+        return {"Authorization": f"Bearer {key}"}
+    return {}
 
 
 class DocumentConverter(ABC):

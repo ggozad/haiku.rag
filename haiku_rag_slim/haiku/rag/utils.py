@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from rich.console import RenderableType
 
     from haiku.rag.client import HaikuRAG
-    from haiku.rag.config.models import AppConfig, ModelConfig
+    from haiku.rag.config.models import AppConfig, EmbeddingModelConfig, ModelConfig
     from haiku.rag.store.models.citation import Citation
 
 
@@ -26,6 +26,22 @@ def parse_model_option(value: str) -> "ModelConfig":
             f"Invalid model format '{value}'. Expected 'provider:name' (e.g. 'ollama:gpt-oss')."
         )
     return ModelConfig(provider=parts[0], name=parts[1])
+
+
+def check_api_key_supported(
+    model_config: "ModelConfig | EmbeddingModelConfig", supported: set[str]
+) -> None:
+    """Reject a configured api_key on a provider whose client we never build.
+
+    Those providers reach their vendor SDK by name and read their own
+    environment variable, so a key in the config would be dropped silently.
+    """
+    if model_config.api_key and model_config.provider not in supported:
+        raise ValueError(
+            f"api_key is not supported on the '{model_config.provider}' provider "
+            f"(supported: {', '.join(sorted(supported))}). Set that provider's "
+            "own API key environment variable instead."
+        )
 
 
 def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
@@ -135,6 +151,7 @@ def get_model(
 
     provider = model_config.provider
     model = model_config.name
+    check_api_key_supported(model_config, {"openai", "ollama"})
 
     if provider == "ollama":
         model_settings = None
@@ -158,7 +175,7 @@ def get_model(
 
         return OpenAIChatModel(
             model_name=model,
-            provider=OllamaProvider(base_url=base_url),
+            provider=OllamaProvider(base_url=base_url, api_key=model_config.api_key),
             settings=model_settings,
             profile=_OPENAI_COMPAT_PROFILE,
         )
@@ -188,12 +205,22 @@ def get_model(
         if model_config.base_url:
             return OpenAIChatModel(
                 model_name=model,
-                provider=OpenAIProvider(base_url=model_config.base_url),
+                provider=OpenAIProvider(
+                    base_url=model_config.base_url, api_key=model_config.api_key
+                ),
                 settings=openai_settings,
                 profile=_OPENAI_COMPAT_PROFILE,
             )
 
-        return OpenAIChatModel(model_name=model, settings=openai_settings)
+        return OpenAIChatModel(
+            model_name=model,
+            provider=(
+                OpenAIProvider(api_key=model_config.api_key)
+                if model_config.api_key
+                else "openai"
+            ),
+            settings=openai_settings,
+        )
 
     elif provider == "anthropic":
         from anthropic.types.beta import BetaThinkingConfigDisabledParam

@@ -9,7 +9,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 from haiku.rag.config import AppConfig
-from haiku.rag.converters.base import DocumentConverter, vlm_api_url
+from haiku.rag.converters.base import (
+    DocumentConverter,
+    vlm_api_headers,
+    vlm_api_url,
+)
 from haiku.rag.converters.text_utils import TextFileHandler, docling_safe_name
 
 if TYPE_CHECKING:
@@ -148,6 +152,7 @@ class DoclingLocalConverter(DocumentConverter):
             pipeline_options.enable_remote_services = True
             pipeline_options.picture_description_options = PictureDescriptionApiOptions(
                 url=AnyUrl(vlm_api_url(self.config, pic_desc.model)),
+                headers=vlm_api_headers(pic_desc.model),
                 params=dict(
                     model=pic_desc.model.name,
                     max_completion_tokens=pic_desc.max_tokens,

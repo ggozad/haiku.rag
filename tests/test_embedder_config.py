@@ -195,3 +195,74 @@ def test_voyageai_to_pil_rejects_unsupported_type():
 
     with pytest.raises(TypeError, match="Unsupported image type"):
         _to_pil("not an image")  # ty: ignore[invalid-argument-type]
+
+
+def test_openai_embedder_api_key_from_config():
+    """A config-supplied api_key reaches the embedding client."""
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="openai",
+                name="some-local-model",
+                vector_dim=768,
+                base_url="http://localhost:8000/v1",
+                api_key="sk-vendor-a",
+            ),
+        ),
+    )
+
+    embedder = get_embedder(config)
+
+    assert embedder._embedder.model._client.api_key == "sk-vendor-a"  # ty: ignore[unresolved-attribute]
+
+
+def test_ollama_embedder_api_key_from_config():
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="ollama",
+                name="qwen3-embedding:4b",
+                vector_dim=512,
+                api_key="sk-proxy",
+            ),
+        ),
+    )
+
+    embedder = get_embedder(config)
+
+    assert embedder._embedder.model._client.api_key == "sk-proxy"  # ty: ignore[unresolved-attribute]
+
+
+@pytest.mark.parametrize("multimodal", [False, True])
+def test_vllm_embedder_api_key_from_config(multimodal):
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="vllm",
+                name="Qwen/Qwen3-VL-Embedding-8B",
+                vector_dim=1024,
+                base_url="http://vllm:8000/v1",
+                api_key="sk-vllm",
+                multimodal=multimodal,
+            ),
+        ),
+    )
+
+    embedder = get_embedder(config)
+
+    assert embedder._headers()["Authorization"] == "Bearer sk-vllm"  # ty: ignore[unresolved-attribute]
+
+
+def test_embedder_api_key_rejected_on_unplumbed_provider():
+    """Providers whose client we never build read their own vendor variable;
+    an api_key there would be silently dropped."""
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="voyageai", name="voyage-3", vector_dim=1024, api_key="sk-x"
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="api_key is not supported"):
+        get_embedder(config)

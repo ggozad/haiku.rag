@@ -6,7 +6,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 from haiku.rag.config import AppConfig
-from haiku.rag.converters.base import DocumentConverter, vlm_api_url
+from haiku.rag.converters.base import (
+    DocumentConverter,
+    vlm_api_headers,
+    vlm_api_url,
+)
 from haiku.rag.converters.text_utils import TextFileHandler, docling_safe_name
 from haiku.rag.providers.docling_serve import DoclingServeClient
 
@@ -105,6 +109,7 @@ class DoclingServeConverter(DocumentConverter):
             prompt = self.config.prompts.picture_description
             picture_description_api = {
                 "url": vlm_api_url(self.config, pic_desc.model),
+                "headers": vlm_api_headers(pic_desc.model),
                 "params": {
                     "model": pic_desc.model.name,
                     "max_completion_tokens": pic_desc.max_tokens,

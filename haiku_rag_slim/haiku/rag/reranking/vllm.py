@@ -24,9 +24,15 @@ def _document(chunk: Chunk) -> str | dict:
 
 
 class VLLMReranker(RerankerBase):
-    def __init__(self, model: str, base_url: str):
+    def __init__(self, model: str, base_url: str, api_key: str | None = None):
         self._model = model
         self._base_url = base_url
+        self._headers = {
+            "accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        if api_key:
+            self._headers["Authorization"] = f"Bearer {api_key}"
         # One client reused across rerank calls (connection kept alive).
         # Multimodal document batches can take far longer than httpx's 5s
         # default timeout to score.
@@ -43,10 +49,7 @@ class VLLMReranker(RerankerBase):
         response = await self._client.post(
             f"{self._base_url}/v1/rerank",
             json={"model": self._model, "query": query, "documents": documents},
-            headers={
-                "accept": "application/json",
-                "Content-Type": "application/json",
-            },
+            headers=self._headers,
         )
         response.raise_for_status()
 

@@ -8,6 +8,7 @@ from pydantic_ai.providers.ollama import OllamaProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from haiku.rag.config import AppConfig, get_config
+from haiku.rag.utils import check_api_key_supported
 
 if TYPE_CHECKING:
     from PIL import Image as PILImage
@@ -198,6 +199,7 @@ def get_embedder(config: AppConfig | None = None) -> EmbedderWrapper:
     provider = embedding_model.provider
     model_name = embedding_model.name
     vector_dim = embedding_model.vector_dim
+    check_api_key_supported(embedding_model, {"openai", "ollama", "vllm"})
 
     if embedding_model.multimodal:
         return _get_multimodal_embedder(embedding_model)
@@ -209,15 +211,18 @@ def get_embedder(config: AppConfig | None = None) -> EmbedderWrapper:
             base_url = base_url.rstrip("/") + "/v1"
         model = OpenAIEmbeddingModel(
             model_name,
-            provider=OllamaProvider(base_url=base_url),
+            provider=OllamaProvider(base_url=base_url, api_key=embedding_model.api_key),
         )
         return EmbedderWrapper(Embedder(model), vector_dim)
 
     if provider == "openai":
-        if embedding_model.base_url:
+        if embedding_model.base_url or embedding_model.api_key:
             model = OpenAIEmbeddingModel(
                 model_name,
-                provider=OpenAIProvider(base_url=embedding_model.base_url),
+                provider=OpenAIProvider(
+                    base_url=embedding_model.base_url,
+                    api_key=embedding_model.api_key,
+                ),
             )
             return EmbedderWrapper(Embedder(model), vector_dim)
         return EmbedderWrapper(Embedder(f"openai:{model_name}"), vector_dim)
@@ -238,7 +243,11 @@ def get_embedder(config: AppConfig | None = None) -> EmbedderWrapper:
 
         base_url = _vllm_base_url(embedding_model.base_url)
         return VLLMMultimodalEmbedder(
-            model_name, vector_dim, base_url=base_url, supports_images=False
+            model_name,
+            vector_dim,
+            base_url=base_url,
+            api_key=embedding_model.api_key,
+            supports_images=False,
         )
 
     raise ValueError(f"Unsupported embedding provider: {provider}")
@@ -268,7 +277,11 @@ def _get_multimodal_embedder(
 
         base_url = _vllm_base_url(embedding_model.base_url)
         return VLLMMultimodalEmbedder(
-            model_name, vector_dim, base_url=base_url, supports_images=True
+            model_name,
+            vector_dim,
+            base_url=base_url,
+            api_key=embedding_model.api_key,
+            supports_images=True,
         )
 
     if provider == "voyageai":

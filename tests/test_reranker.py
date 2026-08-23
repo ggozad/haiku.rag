@@ -134,6 +134,33 @@ class TestGetReranker:
         with pytest.raises(ValueError, match="multimodal"):
             get_reranker(config)
 
+    def test_vllm_provider_api_key_from_config(self):
+        pytest.importorskip("haiku.rag.reranking.vllm")
+
+        config = AppConfig(
+            reranking=RerankingConfig(
+                model=ModelConfig(
+                    provider="vllm",
+                    name="BAAI/bge-reranker-v2-m3",
+                    base_url="http://vllm:8000",
+                    api_key="sk-rerank",
+                )
+            )
+        )
+        reranker = get_reranker(config)
+        assert reranker._headers["Authorization"] == "Bearer sk-rerank"  # ty: ignore[unresolved-attribute]
+
+    def test_api_key_rejected_on_unplumbed_provider(self):
+        """Providers whose client we never build read their own vendor
+        variable; an api_key there would be silently dropped."""
+        config = AppConfig(
+            reranking=RerankingConfig(
+                model=ModelConfig(provider="cohere", name="rerank-v3.5", api_key="sk-x")
+            )
+        )
+        with pytest.raises(ValueError, match="api_key is not supported"):
+            get_reranker(config)
+
     def test_multimodal_vllm_provider_builds_reranker(self):
         pytest.importorskip("haiku.rag.reranking.vllm")
         from haiku.rag.reranking.vllm import VLLMReranker
