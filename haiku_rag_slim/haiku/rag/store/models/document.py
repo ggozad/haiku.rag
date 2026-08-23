@@ -13,12 +13,18 @@ if TYPE_CHECKING:
 class Document(BaseModel):
     """
     Represents a document with an ID, content, and metadata.
+
+    ``source`` names the configured database a document came from: the name
+    from ``lancedb.databases``, never a path or URI. It is None where no
+    database is named, as with the single ``lancedb.uri``, and is never
+    persisted.
     """
 
     id: str | None = None
     content: str
     uri: str | None = None
     title: str | None = None
+    source: str | None = None
     metadata: dict = {}
     docling_document: bytes | None = Field(default=None, exclude=True)
     docling_pages: bytes | None = Field(default=None, exclude=True)

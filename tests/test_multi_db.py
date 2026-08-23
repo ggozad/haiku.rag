@@ -279,6 +279,81 @@ class TestLookupByIdentifier:
             assert await rag.get_document_by_uri("test://nowhere") is None
 
 
+class TestDocumentsNameTheirDatabase:
+    """A listing that spans databases is unreadable when the documents do not
+    say which one they came from, the same reason a search result carries one."""
+
+    @pytest.mark.asyncio
+    async def test_a_listing_names_each_document_s_database(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one", "alpha two"])
+        await _seed(config, "beta", ["beta one"])
+
+        async with HaikuRAG(config=config) as rag:
+            docs = await rag.list_documents()
+
+        assert {d.uri: d.source for d in docs} == {
+            "test://alpha/alpha one": "alpha",
+            "test://alpha/alpha two": "alpha",
+            "test://beta/beta one": "beta",
+        }
+
+    @pytest.mark.asyncio
+    async def test_a_looked_up_document_names_its_database(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+
+        async with HaikuRAG(config=config) as rag:
+            beta = (await rag.clients_for(["beta"]))[0]
+            [target] = await beta.document_repository.list_all(limit=1)
+            assert target.id is not None
+
+            by_id = await rag.get_document_by_id(target.id)
+            by_uri = await rag.get_document_by_uri("test://alpha/alpha one")
+            resolved = await rag.resolve_document(target.id)
+
+        assert by_id is not None and by_id.source == "beta"
+        assert by_uri is not None and by_uri.source == "alpha"
+        assert resolved is not None and resolved.source == "beta"
+
+    @pytest.mark.asyncio
+    async def test_one_named_database_still_names_itself(self, tmp_path):
+        """`haiku-rag --database alpha list` opens one database, and its name is
+        the whole reason the option exists."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+
+        async with HaikuRAG(config=config, sources=["alpha"]) as rag:
+            [listed] = await rag.list_documents()
+            assert listed.id is not None
+            by_id = await rag.get_document_by_id(listed.id)
+            by_uri = await rag.get_document_by_uri("test://alpha/alpha one")
+
+        assert listed.source == "alpha"
+        assert by_id is not None and by_id.source == "alpha"
+        assert by_uri is not None and by_uri.source == "alpha"
+
+    @pytest.mark.asyncio
+    async def test_one_database_leaves_the_source_unset(self, tmp_path, temp_db_path):
+        """Nothing names the database when there is only one to name."""
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            dim = get_config().embeddings.model.vector_dim
+            doc = DoclingDocument(name="solo")
+            doc.add_text(label=DocItemLabel.TEXT, text="solo")
+            await rag.import_document(
+                doc,
+                [Chunk(content="solo", embedding=[0.1] * dim, order=0)],
+                uri="test://solo",
+            )
+
+            [listed] = await rag.list_documents()
+            assert listed.source is None
+            assert listed.id is not None
+            assert (await rag.get_document_by_id(listed.id)).source is None
+
+
 class TestFederatedSearch:
     @pytest.mark.asyncio
     async def test_results_carry_their_source(self, tmp_path):

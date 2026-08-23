@@ -509,7 +509,7 @@ class HaikuRAG:
             return await self._from_any_covered(
                 lambda owner: owner.get_document_by_id(document_id)
             )
-        return await self.document_repository.get_by_id(document_id)
+        return self._name(await self.document_repository.get_by_id(document_id))
 
     async def get_chunk_by_id(self, chunk_id: str) -> Chunk | None:
         """Get a chunk by its ID.
@@ -565,7 +565,7 @@ class HaikuRAG:
             return await self._from_any_covered(
                 lambda owner: owner.get_document_by_uri(uri)
             )
-        return await self.document_repository.get_by_uri(uri)
+        return self._name(await self.document_repository.get_by_uri(uri))
 
     async def resolve_document(self, id_or_title: str) -> Document | None:
         """Resolve a document by ID, title, or URI (in that order).
@@ -671,9 +671,12 @@ class HaikuRAG:
             ]
             start = offset or 0
             return merged[start:] if limit is None else merged[start : start + limit]
-        return await self.document_repository.list_all(
+        documents = await self.document_repository.list_all(
             limit=limit, offset=offset, filter=filter, include_content=include_content
         )
+        for document in documents:
+            document.source = self._source
+        return documents
 
     async def count_documents(self, filter: str | None = None) -> int:
         """Count documents with optional filtering.
@@ -693,6 +696,15 @@ class HaikuRAG:
             )
             return sum(counts)
         return await self.document_repository.count(filter=filter)
+
+    def _name(self, document: Document | None) -> Document | None:
+        """`document`, told which configured database it came from.
+
+        None where no database is named, as with a single ``lancedb.uri``.
+        """
+        if document is not None:
+            document.source = self._source
+        return document
 
     async def _from_any_covered(
         self, lookup: "Callable[[HaikuRAG], Coroutine[Any, Any, Any]]"

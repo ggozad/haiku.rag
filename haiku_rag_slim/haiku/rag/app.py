@@ -850,10 +850,16 @@ class HaikuRAGApp:
             if doc.title
             else ""
         )
+        database_part = (
+            f" [repr.attrib_name]database[/repr.attrib_name]: {doc.source}"
+            if doc.source
+            else ""
+        )
         self.console.print(
             f"[repr.attrib_name]id[/repr.attrib_name]: {doc.id} "
             f"[repr.attrib_name]uri[/repr.attrib_name]: {doc.uri}"
             + title_part
+            + database_part
             + f" [repr.attrib_name]meta[/repr.attrib_name]: {doc.metadata}"
         )
         self.console.print(
