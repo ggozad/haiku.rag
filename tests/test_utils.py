@@ -970,3 +970,45 @@ def test_get_package_versions_reports_missing_docling(monkeypatch):
     monkeypatch.setattr(importlib_metadata, "version", fake_version)
 
     assert get_package_versions()["docling"] == "not installed"
+
+
+def test_get_model_openai_api_key_from_config():
+    """A config-supplied api_key reaches the client, so several
+    openai-compatible endpoints can each carry their own key."""
+    result = get_model(
+        ModelConfig(
+            provider="openai",
+            name="qwen3.6",
+            base_url="http://vllm:8000/v1",
+            api_key="sk-vendor-a",
+        )
+    )
+    assert result.client.api_key == "sk-vendor-a"
+
+
+def test_get_model_openai_api_key_without_base_url_overrides_env():
+    result = get_model(
+        ModelConfig(provider="openai", name="gpt-4o", api_key="sk-vendor-b")
+    )
+    assert result.client.api_key == "sk-vendor-b"
+
+
+def test_get_model_ollama_api_key_from_config():
+    result = get_model(
+        ModelConfig(
+            provider="ollama",
+            name="gpt-oss",
+            base_url="http://remote-ollama:11434/v1",
+            api_key="sk-proxy",
+        )
+    )
+    assert result.client.api_key == "sk-proxy"
+
+
+def test_get_model_api_key_rejected_on_unplumbed_provider():
+    """Providers whose client we never build read their own vendor variable;
+    an api_key there would be silently dropped."""
+    with pytest.raises(ValueError, match="api_key is not supported"):
+        get_model(
+            ModelConfig(provider="anthropic", name="claude-sonnet-4-5", api_key="sk-x")
+        )

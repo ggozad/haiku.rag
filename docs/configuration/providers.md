@@ -29,7 +29,31 @@ qa:
 - **max_tokens**: Maximum tokens in response. Default: unset (provider default), except title generation (100).
 - **enable_thinking**: Control reasoning behavior (see below)
 - **base_url**: Custom endpoint for OpenAI-compatible servers (vLLM, LM Studio, etc.)
+- **api_key**: Key for this endpoint, overriding the provider's environment variable (see [Per-endpoint API keys](#per-endpoint-api-keys))
 - **extra_body**: Raw dict forwarded to the model SDK (see [Raw Provider Pass-through](#raw-provider-pass-through))
+
+### Per-endpoint API keys
+
+The `openai` provider reads `OPENAI_API_KEY`, so several `openai`-compatible endpoints in one config would otherwise share a single key. Set `api_key` per model to give each its own, and keep the secret in the environment with [variable expansion](index.md#environment-variables):
+
+```yaml
+qa:
+  model:
+    provider: openai
+    name: some-model
+    base_url: https://vendor-a.example/v1
+    api_key: ${VENDOR_A_KEY}
+
+embeddings:
+  model:
+    provider: openai
+    name: some-embedding-model
+    vector_dim: 1024
+    base_url: https://vendor-b.example/v1
+    api_key: ${VENDOR_B_KEY}
+```
+
+`api_key` is honored on the `openai` and `ollama` providers, on `vllm` embedders and rerankers, and on the picture-description VLM endpoint (which otherwise falls back to `OPENAI_API_KEY` only for the public OpenAI endpoint, never for a custom `base_url`). Other providers (`anthropic`, `cohere`, `voyageai`, …) reach their vendor SDK by name and read their own environment variable; setting `api_key` there raises rather than being dropped silently.
 
 ### Thinking Control
 
@@ -107,7 +131,7 @@ Same mechanism, opposite direction. Without `extra_body` the Gemma-4 chat templa
 
 ## Embedding Providers
 
-Embedding models require three settings: `provider`, `name`, and `vector_dim`. Optionally, use `base_url` for OpenAI-compatible servers.
+Embedding models require three settings: `provider`, `name`, and `vector_dim`. Optionally, use `base_url` for OpenAI-compatible servers and [`api_key`](#per-endpoint-api-keys) for the key that endpoint expects.
 
 ### Batch Size
 

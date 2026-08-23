@@ -147,7 +147,7 @@ def _stub_provider_probe(monkeypatch):
     so database-integrity tests don't depend on a live Ollama. Provider tests
     re-patch this with their own behavior."""
 
-    async def probe(_client, _url):
+    async def probe(_client, _url, _headers):
         return (
             True,
             None,
@@ -693,14 +693,27 @@ def test_api_key_required_for_openai_without_base_url():
     assert any("OPENAI_API_KEY" in d for d in result.details)
 
 
+def test_api_key_not_required_when_config_supplies_it():
+    """A key in the config is the point of the field; doctor must not demand
+    the environment variable as well."""
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="openai", name="x", vector_dim=4, api_key="sk-inline"
+            )
+        )
+    )
+    assert _check_api_keys(config, {}).severity is Severity.OK
+
+
 def test_active_models_includes_picture_description_when_enabled():
     config = AppConfig(processing=ProcessingConfig(pictures="description"))
-    names = [name for _p, name, _b in _active_models(config)]
+    names = [model.name for model in _active_models(config)]
     assert "ministral-3" in names
 
 
 def test_active_models_excludes_picture_description_by_default():
-    names = [name for _p, name, _b in _active_models(AppConfig())]
+    names = [model.name for model in _active_models(AppConfig())]
     assert "ministral-3" not in names
 
 
@@ -804,6 +817,37 @@ def test_provider_targets_includes_docling_serve():
     assert targets["http://docling:5001/health"]["kind"] == "docling-serve"
 
 
+def test_provider_targets_carries_model_api_key():
+    """A secured endpoint answers the probe only with its key."""
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="openai",
+                name="x",
+                vector_dim=4,
+                base_url="http://vllm:8000/v1",
+                api_key="sk-probe",
+            )
+        )
+    )
+    targets, _ = _provider_targets(config)
+    entry = targets["http://vllm:8000/v1/models"]
+    assert entry["headers"] == {"Authorization": "Bearer sk-probe"}
+
+
+def test_provider_targets_carries_docling_serve_api_key():
+    config = AppConfig(
+        processing=ProcessingConfig(converter="docling-serve"),
+        providers=ProvidersConfig(
+            docling_serve=DoclingServeConfig(
+                base_url="http://docling:5001", api_key="ds-key"
+            )
+        ),
+    )
+    targets, _ = _provider_targets(config)
+    assert targets["http://docling:5001/health"]["headers"] == {"X-Api-Key": "ds-key"}
+
+
 def test_provider_targets_collects_local_providers():
     config = AppConfig(
         embeddings=EmbeddingsConfig(
@@ -817,7 +861,7 @@ def test_provider_targets_collects_local_providers():
 
 
 def _fake_probe(result):
-    async def probe(_client, _url):
+    async def probe(_client, _url, _headers):
         return result
 
     return probe
@@ -901,12 +945,12 @@ async def test_run_doctor_includes_provider_results(temp_db_path, monkeypatch):
     assert not report.failed
 
 
-async def _probe_with_handler(handler):
+async def _probe_with_handler(handler, headers: dict[str, str] | None = None):
     import httpx
 
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(transport=transport) as client:
-        return await _probe_endpoint(client, "http://x")
+        return await _probe_endpoint(client, "http://x", headers or {})
 
 
 @pytest.mark.asyncio
@@ -938,6 +982,22 @@ async def test_probe_endpoint_http_error_status():
     )
     assert not reachable
     assert error is not None and "503" in error
+
+
+@pytest.mark.asyncio
+async def test_probe_endpoint_sends_headers():
+    """A secured endpoint needs its key on the probe request too."""
+    import httpx
+
+    seen: dict[str, str] = {}
+
+    def handler(request):
+        seen.update(request.headers)
+        return httpx.Response(200, json={})
+
+    await _probe_with_handler(handler, {"Authorization": "Bearer sk-probe"})
+
+    assert seen["authorization"] == "Bearer sk-probe"
 
 
 @pytest.mark.asyncio

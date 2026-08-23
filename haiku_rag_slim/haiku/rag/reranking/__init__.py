@@ -1,5 +1,6 @@
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.reranking.base import RerankerBase
+from haiku.rag.utils import check_api_key_supported
 
 
 def get_reranker(config: AppConfig | None = None) -> RerankerBase | None:
@@ -14,6 +15,8 @@ def get_reranker(config: AppConfig | None = None) -> RerankerBase | None:
     if model is None:
         return None
 
+    check_api_key_supported(model, {"vllm"})
+
     if config.reranking.multimodal and model.provider != "vllm":
         raise ValueError("reranking.multimodal is only supported on the vllm provider")
 
@@ -27,7 +30,7 @@ def get_reranker(config: AppConfig | None = None) -> RerankerBase | None:
             raise ValueError("vLLM reranker requires base_url in reranking.model")
         from haiku.rag.reranking.vllm import VLLMReranker
 
-        return VLLMReranker(model.name, model.base_url)
+        return VLLMReranker(model.name, model.base_url, api_key=model.api_key)
 
     if model.provider == "zeroentropy":
         from haiku.rag.reranking.zeroentropy import ZeroEntropyReranker

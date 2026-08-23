@@ -10,7 +10,11 @@ import yaml
 from pydantic import BaseModel, Field
 
 from haiku.rag.config import AppConfig
-from haiku.rag.config.models import DuplicateDetectionConfig
+from haiku.rag.config.models import (
+    DuplicateDetectionConfig,
+    EmbeddingModelConfig,
+    ModelConfig,
+)
 from haiku.rag.store.engine import Store, connect_lancedb
 from haiku.rag.store.info import get_database_stats
 from haiku.rag.store.repositories.settings import SettingsRepository
@@ -83,42 +87,37 @@ def _sample(ids: list[str]) -> list[str]:
     return [*ids[:_SAMPLE_LIMIT], f"... (+{extra} more)"]
 
 
-def _active_models(config: AppConfig) -> list[tuple[str, str, str | None]]:
-    """(provider, name, base_url) for every model role the config activates.
+def _active_models(config: AppConfig) -> list[ModelConfig | EmbeddingModelConfig]:
+    """Every model role the config activates.
 
     Picture-description and title models are only included when their feature
     is enabled (``processing.pictures == "description"`` / ``auto_title``), so
     doctor checks exactly the providers the next ingest will use.
     """
-    models = [
-        (
-            config.embeddings.model.provider,
-            config.embeddings.model.name,
-            config.embeddings.model.base_url,
-        )
-    ]
+    models: list[ModelConfig | EmbeddingModelConfig] = [config.embeddings.model]
     for model in (config.reranking.model, config.qa.model, config.analysis.model):
         if model is not None:
-            models.append((model.provider, model.name, model.base_url))
+            models.append(model)
 
     proc = config.processing
     if proc.pictures == "description":
-        pd = proc.conversion_options.picture_description.model
-        models.append((pd.provider, pd.name, pd.base_url))
+        models.append(proc.conversion_options.picture_description.model)
     if proc.auto_title:
-        tm = proc.title_model
-        models.append((tm.provider, tm.name, tm.base_url))
+        models.append(proc.title_model)
     return models
 
 
 def _check_api_keys(config: AppConfig, environ: dict[str, str]) -> CheckResult:
     # A custom base_url points at a self-hosted OpenAI-compatible endpoint that
     # uses a placeholder key, so the SaaS key is only required when a provider
-    # is used without one. Reachability of custom endpoints is the probe's job.
+    # is used without one, and without a key in the config. Reachability of
+    # custom endpoints is the probe's job.
     need_key = {
-        provider
-        for provider, _name, base_url in _active_models(config)
-        if not base_url and provider in _PROVIDER_ENV_VARS
+        model.provider
+        for model in _active_models(config)
+        if not model.base_url
+        and not model.api_key
+        and model.provider in _PROVIDER_ENV_VARS
     }
     missing = [
         f"{provider} ({_PROVIDER_ENV_VARS[provider]})"
@@ -896,31 +895,43 @@ def _provider_targets(
     local: set[str] = set()
     ollama_base = config.providers.ollama.base_url
 
-    def add_model(provider: str, name: str, base_url: str | None) -> None:
-        resolved = _resolve_endpoint(provider, base_url, ollama_base)
+    def add_model(model: ModelConfig | EmbeddingModelConfig) -> None:
+        resolved = _resolve_endpoint(model.provider, model.base_url, ollama_base)
         if resolved is None:
             return
         if resolved == "local":
-            local.add(provider)
+            local.add(model.provider)
             return
         probe_url, kind, display = resolved
         entry = targets.setdefault(
-            probe_url, {"kind": kind, "display": display, "models": set()}
+            probe_url,
+            {"kind": kind, "display": display, "models": set(), "headers": {}},
         )
-        if name:
-            entry["models"].add(name)
+        # A secured endpoint answers the probe only with its key. Models sharing
+        # a probe URL share the endpoint, so the first key configured for it wins.
+        if model.api_key and not entry["headers"]:
+            entry["headers"] = {"Authorization": f"Bearer {model.api_key}"}
+        if model.name:
+            entry["models"].add(model.name)
 
     proc = config.processing
     if proc.converter == "docling-serve" or proc.chunker == "docling-serve":
+        docling_key = config.providers.docling_serve.api_key
+        headers = {"X-Api-Key": docling_key} if docling_key else {}
         for url in config.providers.docling_serve.base_urls:
             base = url.rstrip("/")
             targets.setdefault(
                 f"{base}/health",
-                {"kind": "docling-serve", "display": base, "models": set()},
+                {
+                    "kind": "docling-serve",
+                    "display": base,
+                    "models": set(),
+                    "headers": headers,
+                },
             )
 
-    for provider, name, base_url in _active_models(config):
-        add_model(provider, name, base_url)
+    for model in _active_models(config):
+        add_model(model)
 
     return targets, local
 
@@ -934,10 +945,10 @@ def _model_present(expected: str, available: set[str]) -> bool:
 
 
 async def _probe_endpoint(
-    client: httpx.AsyncClient, url: str
+    client: httpx.AsyncClient, url: str, headers: dict[str, str]
 ) -> tuple[bool, str | None, dict | None]:
     try:
-        response = await client.get(url)
+        response = await client.get(url, headers=headers)
     except httpx.HTTPError as exc:
         return False, str(exc), None
     if not response.is_success:
@@ -996,7 +1007,10 @@ async def run_provider_checks(
             on_progress("Probing provider endpoints")
         async with httpx.AsyncClient(timeout=_PROBE_TIMEOUT_S) as client:
             probes = await asyncio.gather(
-                *(_probe_endpoint(client, url) for url in targets)
+                *(
+                    _probe_endpoint(client, url, targets[url]["headers"])
+                    for url in targets
+                )
             )
         for url, (reachable, error, payload) in zip(targets, probes):
             results.append(_endpoint_result(targets[url], reachable, error, payload))

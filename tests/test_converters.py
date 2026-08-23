@@ -15,7 +15,7 @@ from docling_core.types.doc.document import DoclingDocument
 from haiku.rag.config import AppConfig
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.converters import docling_local, get_converter
-from haiku.rag.converters.base import vlm_api_url
+from haiku.rag.converters.base import vlm_api_headers, vlm_api_url
 from haiku.rag.converters.docling_local import DoclingLocalConverter
 from haiku.rag.converters.docling_serve import DoclingServeConverter
 from haiku.rag.converters.text_utils import TextFileHandler, docling_safe_name
@@ -48,6 +48,41 @@ class TestVlmApiUrl:
     def test_unsupported_provider_raises(self):
         with pytest.raises(ValueError, match="Unsupported VLM provider"):
             vlm_api_url(AppConfig(), ModelConfig(provider="unsupported", name="test"))
+
+
+class TestVlmApiHeaders:
+    """Auth headers for picture-description VLM models."""
+
+    def test_no_headers_without_api_key(self):
+        assert vlm_api_headers(ModelConfig(provider="ollama", name="ministral-3")) == {}
+
+    def test_public_openai_falls_back_to_environment(self, monkeypatch):
+        """doctor accepts OPENAI_API_KEY for a keyless openai model, so the
+        request must use it."""
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
+        headers = vlm_api_headers(ModelConfig(provider="openai", name="gpt-4-vision"))
+        assert headers == {"Authorization": "Bearer sk-env"}
+
+    def test_custom_base_url_never_gets_the_openai_environment_key(self, monkeypatch):
+        """A self-hosted endpoint must not receive the public OpenAI key."""
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
+        headers = vlm_api_headers(
+            ModelConfig(
+                provider="openai", name="qwen-vl", base_url="http://my-vllm:8000"
+            )
+        )
+        assert headers == {}
+
+    def test_api_key_becomes_bearer_header(self):
+        headers = vlm_api_headers(
+            ModelConfig(
+                provider="openai",
+                name="gpt-4-vision",
+                base_url="http://my-vllm:8000",
+                api_key="sk-vlm",
+            )
+        )
+        assert headers == {"Authorization": "Bearer sk-vlm"}
 
 
 @pytest.fixture(scope="module")
@@ -970,6 +1005,21 @@ class TestDoclingLocalConverter:
         pic_desc = converter.config.processing.conversion_options.picture_description
         assert pic_desc.timeout == 120
 
+    def test_picture_description_api_key_becomes_auth_header(self, config):
+        """The VLM endpoint is reached over plain HTTP, so its key travels as
+        an Authorization header on the picture-description options."""
+        config.processing.pictures = "description"
+        config.processing.conversion_options.picture_description.model.api_key = (
+            "sk-vlm"
+        )
+        converter = DoclingLocalConverter(config)
+
+        opts = converter._build_pipeline_options()
+
+        assert opts.picture_description_options.headers == {
+            "Authorization": "Bearer sk-vlm"
+        }
+
     @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_picture_description_end_to_end(
@@ -1551,6 +1601,9 @@ class TestDoclingServeConverterPictureDescription:
         )
         config.processing.conversion_options.picture_description.timeout = 120
         config.processing.conversion_options.picture_description.max_tokens = 300
+        config.processing.conversion_options.picture_description.model.api_key = (
+            "sk-vlm"
+        )
         config.prompts.picture_description = "Test prompt for picture description"
         converter = DoclingServeConverter(config)
 
@@ -1583,6 +1636,7 @@ class TestDoclingServeConverterPictureDescription:
             assert api_config["params"]["max_completion_tokens"] == 300
             assert api_config["prompt"] == "Test prompt for picture description"
             assert api_config["timeout"] == 120
+            assert api_config["headers"] == {"Authorization": "Bearer sk-vlm"}
 
     @pytest.mark.asyncio
     async def test_picture_description_disabled_by_default(self, config):

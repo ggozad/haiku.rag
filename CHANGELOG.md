@@ -1,6 +1,15 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- `api_key` on model and embedding-model config, overriding the provider's environment variable. Honored on the `openai` and `ollama` providers, `vllm` embedders and rerankers, the picture-description VLM endpoint, and `doctor`'s endpoint probes; other providers raise.
+
+### Fixed
+
+- `doctor`'s docling-serve probe sends `X-Api-Key`, so an instance requiring a key is reported reachable rather than unreachable.
+- The picture-description request to the public OpenAI endpoint sends `OPENAI_API_KEY`; it carried no authorization header.
+
 ## [0.77.0] - 2026-08-21
 
 ## [0.77.0] - 2026-08-21

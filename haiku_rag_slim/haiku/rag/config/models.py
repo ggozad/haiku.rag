@@ -23,6 +23,11 @@ class ModelConfig(ConfigModel):
         provider: Model provider (ollama, openai, anthropic, etc.)
         name: Model name/identifier
         base_url: Optional base URL for OpenAI-compatible servers (vLLM, LM Studio, etc.)
+        api_key: Key sent to the endpoint, overriding the provider's own
+            environment variable. Lets several openai-compatible endpoints each
+            carry their own key; typically written as `${VENDOR_KEY}`. Honored
+            on the openai and ollama providers, and on the picture-description
+            VLM endpoint.
         enable_thinking: Control reasoning behavior (true/false/None for default)
         temperature: Sampling temperature (0.0 to 1.0+)
         max_tokens: Maximum tokens to generate
@@ -37,6 +42,7 @@ class ModelConfig(ConfigModel):
     provider: str = "ollama"
     name: str = "gpt-oss"
     base_url: str | None = None
+    api_key: str | None = None
 
     enable_thinking: bool | None = None
     temperature: float | None = None
@@ -53,6 +59,9 @@ class EmbeddingModelConfig(ConfigModel):
         name: Model name/identifier
         vector_dim: Vector dimensions produced by the model
         base_url: Optional base URL for OpenAI-compatible servers (vLLM, LM Studio, etc.)
+        api_key: Key sent to the endpoint, overriding the provider's own
+            environment variable. Honored on the openai, ollama and vllm
+            providers.
         multimodal: Whether the model embeds images into the same vector space as
             text. Supported on the vllm, voyageai, and cohere providers; other
             providers raise when this is set.
@@ -62,6 +71,7 @@ class EmbeddingModelConfig(ConfigModel):
     name: str = "qwen3-embedding:4b"
     vector_dim: int = Field(default=2560, gt=0)
     base_url: str | None = None
+    api_key: str | None = None
     multimodal: bool = False
 
 
