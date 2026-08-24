@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
 from haiku.rag.config.models import AppConfig, LanceDBConfig
-from haiku.rag.store.exceptions import SourceUnavailableError
+from haiku.rag.store.exceptions import ConfigMismatchError, SourceUnavailableError
 from haiku.rag.store.models import Chunk, DocumentItem
 from haiku.rag.utils import locate_database
 
@@ -66,6 +66,48 @@ async def _seed(config, name, contents):
                 [Chunk(content=content, embedding=[0.1] * dim, order=0)],
                 uri=f"test://{name}/{content}",
             )
+
+
+@pytest.fixture
+def query_embedding(monkeypatch):
+    """Vector search with no embedder behind it, recording the queries embedded.
+
+    These tests are about which databases are asked and how often, not about
+    retrieval quality, and CI has no embedding endpoint.
+    """
+    from haiku.rag.embeddings import EmbedderWrapper
+
+    embedded: list[str] = []
+
+    async def embed_query(self, text):
+        embedded.append(text)
+        return [0.1] * get_config().embeddings.model.vector_dim
+
+    monkeypatch.setattr(EmbedderWrapper, "embed_query", embed_query)
+    return embedded
+
+
+async def _restore_embedder(config, name, *, provider=None, model_name=None):
+    """Rewrite what one database records about the embedder that wrote it,
+    standing in for a database built elsewhere with another model."""
+    import json
+
+    import lancedb
+
+    _, db_path = locate_database(config.lancedb.databases[name])
+    assert db_path is not None
+    db = await lancedb.connect_async(str(db_path.resolve()))
+    table = await db.open_table("settings")
+    rows = (
+        await table.query().where("id = 'settings'").limit(1).to_arrow()
+    ).to_pylist()
+    stored = json.loads(rows[0]["settings"])
+    model = stored["embeddings"]["model"]
+    if provider is not None:
+        model["provider"] = provider
+    if model_name is not None:
+        model["name"] = model_name
+    await table.update({"settings": json.dumps(stored)}, where="id = 'settings'")
 
 
 class TestNamingADatabaseDirectly:
@@ -294,6 +336,49 @@ class TestLookupByIdentifier:
                 is None
             )
             assert await rag.get_document_by_uri("test://nowhere") is None
+
+
+class TestOneEmbedderAcrossTheSet:
+    """A set is searched with one query vector, so a database written with
+    another model would answer from a different space."""
+
+    @pytest.mark.asyncio
+    async def test_disagreeing_databases_cannot_be_searched_together(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+        await _restore_embedder(config, "beta", model_name="some-other-model")
+
+        async with HaikuRAG(config=config, read_only=True) as rag:
+            with pytest.raises(ConfigMismatchError, match="different embedders"):
+                await rag.search("one")
+
+    @pytest.mark.asyncio
+    async def test_a_database_asked_for_alone_is_never_compared(
+        self, tmp_path, query_embedding
+    ):
+        """Only databases searched together have to agree."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+        await _restore_embedder(config, "beta", model_name="some-other-model")
+
+        async with HaikuRAG(config=config, read_only=True) as rag:
+            assert await rag.search("one", sources=["alpha"]) is not None
+            assert await rag.count_documents(filter=None) is not None
+
+    @pytest.mark.asyncio
+    async def test_agreeing_databases_search_together(self, tmp_path, query_embedding):
+        """The databases agree with each other; that they were written by a
+        differently-spelled provider than the config is the soft case."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+        await _restore_embedder(config, "alpha", provider="openai")
+        await _restore_embedder(config, "beta", provider="openai")
+
+        async with HaikuRAG(config=config, read_only=True) as rag:
+            assert len(await rag.search("one")) > 0
 
 
 class TestReadOnlyMode:

@@ -60,6 +60,12 @@ _VACUUM_MIN_INTERVAL_S = 300.0
 _NAMEABLE_FAILURES = (MigrationRequiredError, ConfigMismatchError, ReadOnlyError)
 
 
+def _spell(embedding: tuple[str | None, str | None, int | None]) -> str:
+    """An embedder identity, for an error message."""
+    provider, name, vector_dim = embedding
+    return f"{provider}/{name} at {vector_dim} dimensions"
+
+
 def _without_repeats(names: list[str]) -> list[str]:
     """`names` in order, without repeats.
 
@@ -274,6 +280,35 @@ class HaikuRAG:
                 if failure is not None:
                     raise failure
         return [self._clients[n] for n in names]
+
+    def _require_one_embedder(self, clients: "list[HaikuRAG]") -> None:
+        """Fail when two of these databases were written with different embedders.
+
+        Searching a set embeds the query once, so a database written with another
+        model answers from a different vector space: its candidates are noise, and
+        rank fusion gives them slots anyway. Only databases searched together have
+        to agree, so this is a property of the selection rather than of the set.
+
+        Drift between a database and the *config* is a separate, softer matter —
+        the same model served by another stack is spelled differently — which
+        `SettingsRepository` reports on open.
+        """
+        recorded = [
+            (client._source, client.store.stored_embedding)
+            for client in clients
+            if client.store.stored_embedding is not None
+        ]
+        if len(recorded) < 2:
+            return
+        (first_name, first), *rest = recorded
+        for name, embedding in rest:
+            if embedding != first:
+                raise ConfigMismatchError(
+                    f"databases '{first_name}' and '{name}' were written with "
+                    f"different embedders ({_spell(first)} and "
+                    f"{_spell(embedding)}); searching them together embeds the "
+                    "query once, so their vectors are not comparable"
+                )
 
     async def _open_client(self, name: str, location: str) -> "HaikuRAG":
         uri, db_path = locate_database(location)

@@ -104,6 +104,16 @@ def _stored_vector_dim(settings: dict) -> int | None:
     return settings.get("embeddings", {}).get("model", {}).get("vector_dim")
 
 
+def _stored_embedding(
+    settings: dict,
+) -> tuple[str | None, str | None, int | None] | None:
+    """The embedder a database's chunks were written with, or None if unrecorded."""
+    model = settings.get("embeddings", {}).get("model", {})
+    if not model:
+        return None
+    return model.get("provider"), model.get("name"), model.get("vector_dim")
+
+
 # Keeps the vacuum cleanup cutoff safely older than the oldest tagged
 # version; guards against timestamp precision at the boundary.
 TAG_RETENTION_MARGIN = timedelta(seconds=1)
@@ -204,6 +214,7 @@ class Store:
 
         # Create embedder (sync — no LanceDB needed)
         self.embedder = get_embedder(config=self._config)
+        self.stored_embedding: tuple[str | None, str | None, int | None] | None = None
 
     async def _initialize(self):
         """Perform async initialization: connect to LanceDB, init tables, validate."""
@@ -225,6 +236,7 @@ class Store:
         # An existing database's chunks can only be read with the dimension they
         # were written at.
         stored_vector_dim = _stored_vector_dim(stored_settings)
+        self.stored_embedding = _stored_embedding(stored_settings)
         chunk_vector_dim = stored_vector_dim or self.embedder._vector_dim
         self.ChunkRecord: type[ChunkRecordBase] = create_chunk_model(chunk_vector_dim)
 

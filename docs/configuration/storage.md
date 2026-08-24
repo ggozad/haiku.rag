@@ -194,9 +194,16 @@ The name is the only identity that leaves the configuration. Results, citations
 and error messages carry it, so a path or a bucket never reaches a log, a trace
 or a model.
 
-Every database in the set is opened with the same embedding configuration, so
-they have to agree on it. One whose stored settings differ raises
-`ConfigMismatchError` when it is opened.
+Every database in the set is opened with the same embedding configuration. A
+different `vector_dim` raises `ConfigMismatchError` on open. A different provider
+or model name at the same dimension is a warning on a read-only open, since the
+same model served by another stack is spelled differently, and raises on a
+writable one.
+
+Searching embeds the query once for the whole selection, so the databases
+searched together must have been written with the same embedder. Two that
+disagree with each other raise `ConfigMismatchError` naming both, whatever the
+configuration says.
 
 ### Searching a set
 

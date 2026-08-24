@@ -75,6 +75,7 @@ async def search_sources(
     if not names:
         return []
     selected = await client.clients_for(names)
+    client._require_one_embedder(selected)
 
     # One over-fetch decision, and one reranker, for the whole set.
     fetch_limit = _fetch_limit(client, query, limit)
