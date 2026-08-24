@@ -386,7 +386,7 @@ async def test_reranker_built_once_across_searches(temp_db_path, monkeypatch):
 
     monkeypatch.setattr("haiku.rag.client.get_reranker", fake_get_reranker)
 
-    async def fake_chunk_search(query, limit, search_type, filter):
+    async def fake_chunk_search(query, limit, search_type, filter, query_vector):
         return [(Chunk(content="x", metadata={}), 0.5)]
 
     async with HaikuRAG(temp_db_path, create=True) as rag:
@@ -434,7 +434,7 @@ async def test_search_attaches_picture_bytes_for_multimodal_reranker(
         metadata={"doc_item_refs": ["#/pictures/1"], "labels": ["picture"]},
     )
 
-    async def fake_chunk_search(query, limit, search_type, filter):
+    async def fake_chunk_search(query, limit, search_type, filter, query_vector):
         return [(text_chunk, 0.9), (picture_chunk, 0.8), (detached_chunk, 0.7)]
 
     async with HaikuRAG(temp_db_path, create=True) as rag:

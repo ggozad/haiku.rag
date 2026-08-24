@@ -338,6 +338,23 @@ class TestLookupByIdentifier:
             assert await rag.get_document_by_uri("test://nowhere") is None
 
 
+class TestOneQueryVector:
+    @pytest.mark.asyncio
+    async def test_a_search_embeds_the_query_once_for_the_whole_set(
+        self, tmp_path, query_embedding
+    ):
+        """Each database owns an embedder, so embedding per database costs a
+        round trip each on a remote endpoint."""
+        config = _config(tmp_path, ["alpha", "beta", "gamma"])
+        for name in ("alpha", "beta", "gamma"):
+            await _seed(config, name, [f"{name} one"])
+
+        async with HaikuRAG(config=config, read_only=True) as rag:
+            await rag.search("one")
+
+        assert query_embedding == ["one"]
+
+
 class TestOneEmbedderAcrossTheSet:
     """A set is searched with one query vector, so a database written with
     another model would answer from a different space."""

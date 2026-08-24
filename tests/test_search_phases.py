@@ -1,7 +1,7 @@
 import pytest
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.client.search import _fetch, _rank
+from haiku.rag.client.search import _rank
 from haiku.rag.store.models import Chunk
 
 
@@ -54,7 +54,7 @@ async def test_image_fetch_never_builds_the_reranker(
             type(rag.embedder), "supports_images", property(lambda self: True)
         )
 
-        await _fetch(rag, b"image-bytes", 5, None, None)
+        await rag.search(b"image-bytes", limit=5)
 
         # No over-fetch: nothing will re-rank these.
         assert seen["limit"] == 5

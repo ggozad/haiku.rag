@@ -39,8 +39,19 @@ async def search(
     if limit is None:
         limit = client._config.search.limit
 
+    resolved = search_type or ("hybrid" if isinstance(query, str) else "vector")
+    # One database embeds inside the repository, which returns early for a filter
+    # that matches nothing, so a text query that finds no documents never embeds.
+    query_vector = (
+        None if isinstance(query, str) else await _embed_query(client, query, resolved)
+    )
     candidates = await _fetch(
-        client, query, _fetch_limit(client, query, limit), search_type, filter
+        client,
+        query,
+        _fetch_limit(client, query, limit),
+        resolved,
+        filter,
+        query_vector,
     )
     chunk_results = await _rank(client, query, candidates, limit)
 
@@ -77,10 +88,17 @@ async def search_sources(
     selected = await client.clients_for(names)
     client._require_one_embedder(selected)
 
-    # One over-fetch decision, and one reranker, for the whole set.
+    # One over-fetch decision, one query vector, and one reranker, for the whole
+    # set. The databases in a selection share an embedder, so the vector is the
+    # same wherever it is computed.
     fetch_limit = _fetch_limit(client, query, limit)
+    resolved = search_type or ("hybrid" if isinstance(query, str) else "vector")
+    query_vector = await _embed_query(selected[0], query, resolved)
     per_source = await asyncio.gather(
-        *(_fetch(c, query, fetch_limit, search_type, filter) for c in selected)
+        *(
+            _fetch(c, query, fetch_limit, resolved, filter, query_vector)
+            for c in selected
+        )
     )
 
     ranked = await _fuse(client, selected, query, per_source, limit)
@@ -180,23 +198,19 @@ def _fetch_limit(
     return limit * _RERANK_OVERFETCH if client.reranker else limit
 
 
-async def _fetch(
-    client: "HaikuRAG",
-    query: "str | bytes | PILImage.Image",
-    limit: int,
-    search_type: SearchType | None,
-    filter: str | None,
-) -> list[tuple[Chunk, float]]:
-    """Candidates from one database, ranked by that database.
+async def _embed_query(
+    client: "HaikuRAG", query: "str | bytes | PILImage.Image", search_type: SearchType
+) -> list[float] | None:
+    """The query as a vector, or None when the search needs no vector.
 
-    `limit` is how many to fetch, already including any over-fetch the caller
-    wants. Deciding that here would have each database consult its own reranker,
-    and a local reranker loads model weights per instance.
+    Computed by the caller so that searching several databases embeds once: the
+    databases in a selection share an embedder, and embedding per database costs
+    a round trip each on a remote endpoint.
     """
+    if search_type == "fts":
+        return None
     if isinstance(query, str):
-        if search_type is None:
-            search_type = "hybrid"
-        return await client.chunk_repository.search(query, limit, search_type, filter)
+        return await client.embedder.embed_query(query)
 
     embedder = client.embedder
     if not embedder.supports_images:
@@ -205,10 +219,27 @@ async def _fetch(
             "embeddings.model.multimodal: true on a vllm, voyageai, or cohere "
             "model."
         )
-    query_vector = await embedder.embed_image(query)
+    return await embedder.embed_image(query)
+
+
+async def _fetch(
+    client: "HaikuRAG",
+    query: "str | bytes | PILImage.Image",
+    limit: int,
+    search_type: SearchType,
+    filter: str | None,
+    query_vector: list[float] | None,
+) -> list[tuple[Chunk, float]]:
+    """Candidates from one database, ranked by that database.
+
+    `limit` is how many to fetch, already including any over-fetch the caller
+    wants. Deciding that here would have each database consult its own reranker,
+    and a local reranker loads model weights per instance.
+    """
     return await client.chunk_repository.search(
-        query="",
+        query=query if isinstance(query, str) else "",
         limit=limit,
+        search_type=search_type,
         filter=filter,
         query_vector=query_vector,
     )
