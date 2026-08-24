@@ -39,7 +39,7 @@ async def search(
     if limit is None:
         limit = client._config.search.limit
 
-    resolved = search_type or ("hybrid" if isinstance(query, str) else "vector")
+    resolved = _resolved_search_type(query, search_type)
     # One database embeds inside the repository, which returns early for a filter
     # that matches nothing, so a text query that finds no documents never embeds.
     query_vector = (
@@ -86,13 +86,14 @@ async def search_sources(
     if not names:
         return []
     selected = await client.clients_for(names)
-    client._require_one_embedder(selected)
+    resolved = _resolved_search_type(query, search_type)
+    if resolved != "fts":
+        client._require_one_embedder(selected)
 
     # One over-fetch decision, one query vector, and one reranker, for the whole
     # set. The databases in a selection share an embedder, so the vector is the
     # same wherever it is computed.
     fetch_limit = _fetch_limit(client, query, limit)
-    resolved = search_type or ("hybrid" if isinstance(query, str) else "vector")
     query_vector = await _embed_query(selected[0], query, resolved)
     per_source = await asyncio.gather(
         *(
@@ -198,6 +199,19 @@ def _fetch_limit(
     return limit * _RERANK_OVERFETCH if client.reranker else limit
 
 
+def _resolved_search_type(
+    query: "str | bytes | PILImage.Image", search_type: SearchType | None
+) -> SearchType:
+    """The search actually run for this query.
+
+    An image query has no text to match against, so it is vector-only whatever
+    the caller asked for; a text query defaults to hybrid.
+    """
+    if not isinstance(query, str):
+        return "vector"
+    return search_type or "hybrid"
+
+
 async def _embed_query(
     client: "HaikuRAG", query: "str | bytes | PILImage.Image", search_type: SearchType
 ) -> list[float] | None:
@@ -205,7 +219,8 @@ async def _embed_query(
 
     Computed by the caller so that searching several databases embeds once: the
     databases in a selection share an embedder, and embedding per database costs
-    a round trip each on a remote endpoint.
+    a round trip each on a remote endpoint. `search_type` is the resolved one, so
+    only a text query ever reaches this as full-text.
     """
     if search_type == "fts":
         return None

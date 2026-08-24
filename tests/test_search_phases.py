@@ -58,3 +58,31 @@ async def test_image_fetch_never_builds_the_reranker(
 
         # No over-fetch: nothing will re-rank these.
         assert seen["limit"] == 5
+
+
+@pytest.mark.asyncio
+async def test_an_image_query_ignores_a_full_text_search_type(
+    temp_db_path, monkeypatch
+):
+    """An image has no text to match, so it searches by vector whatever the
+    caller asked for."""
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        seen = {}
+
+        async def fake_search(query, limit, search_type, filter, query_vector):
+            seen.update({"search_type": search_type, "query_vector": query_vector})
+            return []
+
+        async def fake_embed_image(self, image):
+            return [0.1] * 8
+
+        monkeypatch.setattr(rag.chunk_repository, "search", fake_search)
+        monkeypatch.setattr(type(rag.embedder), "embed_image", fake_embed_image)
+        monkeypatch.setattr(
+            type(rag.embedder), "supports_images", property(lambda self: True)
+        )
+
+        await rag.search(b"image-bytes", search_type="fts")
+
+        assert seen["search_type"] == "vector"
+        assert seen["query_vector"] == [0.1] * 8

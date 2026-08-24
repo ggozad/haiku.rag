@@ -385,6 +385,20 @@ class TestOneEmbedderAcrossTheSet:
             assert await rag.count_documents(filter=None) is not None
 
     @pytest.mark.asyncio
+    async def test_full_text_search_needs_no_agreement(self, tmp_path):
+        """Full-text search embeds nothing, so which model wrote each database
+        does not come into it."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+        await _restore_embedder(config, "beta", model_name="some-other-model")
+
+        async with HaikuRAG(config=config, read_only=True) as rag:
+            results = await rag.search("one", search_type="fts")
+
+        assert {r.source for r in results} == {"alpha", "beta"}
+
+    @pytest.mark.asyncio
     async def test_agreeing_databases_search_together(self, tmp_path, query_embedding):
         """The databases agree with each other; that they were written by a
         differently-spelled provider than the config is the soft case."""
