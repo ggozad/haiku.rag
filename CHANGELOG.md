@@ -1,6 +1,8 @@
 # Changelog
 ## [Unreleased]
 
+## [0.78.0] - 2026-08-24
+
 ### Added
 
 - `api_key` on model and embedding-model config, overriding the provider's environment variable. Honored on the `openai` and `ollama` providers, `vllm` embedders and rerankers, the picture-description VLM endpoint, and `doctor`'s endpoint probes; other providers raise.
@@ -9,8 +11,6 @@
 
 - `doctor`'s docling-serve probe sends `X-Api-Key`, so an instance requiring a key is reported reachable rather than unreachable.
 - The picture-description request to the public OpenAI endpoint sends `OPENAI_API_KEY`; it carried no authorization header.
-
-## [0.77.0] - 2026-08-21
 
 ## [0.77.0] - 2026-08-21
 
@@ -71,7 +71,6 @@
 
 ### Added
 
-- `frames` evaluation dataset.
 - `evaluations run --filter/-f CLAUSE`: SQL `WHERE` clause over document columns, applied to the retrieval benchmark's searches and to every capability search during QA. Recorded as `document_filter` in experiment metadata.
 - `mtrag_clapnq` / `mtrag_clapnq_rewrite` / `mtrag_clapnq_live` / `mtrag_clapnq_live_uncompacted` evaluation datasets: multi-turn QA with gold-prefix and live-session conversation replay, live arms with and without `EvidenceCompactionCapability`, Recall@k/nDCG@k retrieval metrics, eligibility-aware citation scoring, refusal precision/recall, per-turn tool-traffic attributes, and `citation_status` / `turn_citation_status` eval attributes.
 - Raw chunk metadata is now exposed to search and citation results, through `SearchResult.chunk_meta` and `Citation.chunk_meta`. For context-expanded results, the metadata is that of the anchor chunk.
@@ -2225,7 +2224,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.77.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.78.0...HEAD
+[0.78.0]: https://github.com/ggozad/haiku.rag/compare/0.77.0...0.78.0
 [0.77.0]: https://github.com/ggozad/haiku.rag/compare/0.77.0...0.77.0
 [0.77.0]: https://github.com/ggozad/haiku.rag/compare/0.76.0...0.77.0
 [0.76.0]: https://github.com/ggozad/haiku.rag/compare/0.75.0...0.76.0
