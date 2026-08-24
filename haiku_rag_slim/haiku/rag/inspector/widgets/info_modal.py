@@ -27,23 +27,26 @@ def reported_database(client: "HaikuRAG", db_path: "Path | None") -> "Path | Non
     return db_path if db_path is not None else client.store.db_path
 
 
-async def database_lines(client: "HaikuRAG", db_path: Path) -> list[str]:
+async def database_lines(client: "HaikuRAG") -> list[str]:
     """What one database reports about itself, without naming its location.
+
+    Reported through the connection the client already holds: a second one to the
+    same database would be a second open for the same statistics.
 
     A failure is reported as a line rather than raised, so one unreachable
     database does not cost the report on the others.
     """
-    from haiku.rag.store.engine import ConnectionMode, connect_lancedb
+    from haiku.rag.store.engine import ConnectionMode
     from haiku.rag.store.info import get_database_stats
 
     lines: list[str] = []
-    config = client.store._config
+    db_path = client.store.db_path
 
     if client.store._connection_mode == ConnectionMode.LOCAL and not db_path.exists():
         return ["[red]Database path does not exist.[/red]"]
 
     try:
-        db = await connect_lancedb(config, db_path)
+        db = client.store.db
         stats = await get_database_stats(db)
     except Exception as e:
         return [f"[red]Failed to open database: {e}[/red]"]
@@ -197,7 +200,7 @@ class InfoModal(ModalScreen):
                 lines.extend(block)
         else:
             lines.append(f"[bold $accent]path[/bold $accent]: {db_path}")
-            lines.extend(await database_lines(self.client, db_path))
+            lines.extend(await database_lines(self.client))
 
         lines.append("[bold]Versions[/bold]")
         versions = get_package_versions()
@@ -223,7 +226,7 @@ class InfoModal(ModalScreen):
             # The client names a configured database by name and never by
             # location, so its message is safe to show.
             return [*lines, f"[red]{e}[/red]", ""]
-        return [*lines, *await database_lines(owner, owner.store.db_path)]
+        return [*lines, *await database_lines(owner)]
 
     async def action_dismiss(self, result=None) -> None:
         self.app.pop_screen()

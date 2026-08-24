@@ -60,6 +60,24 @@ _VACUUM_MIN_INTERVAL_S = 300.0
 _NAMEABLE_FAILURES = (MigrationRequiredError, ConfigMismatchError, ReadOnlyError)
 
 
+async def first_found(
+    clients: "list[HaikuRAG]",
+    lookup: "Callable[[HaikuRAG], Coroutine[Any, Any, Any]]",
+) -> "tuple[HaikuRAG, Any] | None":
+    """The first of `clients` for which `lookup` finds something, and what it found.
+
+    An id or a URI says nothing about which database holds it, so every one is
+    asked at once and the first that has it, in the order given, answers. Asking
+    in turn would cost a round trip per database for an identifier that is
+    missing or held by the last of them.
+    """
+    found_by_client = await asyncio.gather(*(lookup(client) for client in clients))
+    for client, found in zip(clients, found_by_client, strict=True):
+        if found is not None:
+            return client, found
+    return None
+
+
 def _spell(embedding: tuple[str | None, str | None, int | None]) -> str:
     """An embedder identity, for an error message."""
     provider, name, vector_dim = embedding
@@ -748,18 +766,9 @@ class HaikuRAG:
     async def _from_any_covered(
         self, lookup: "Callable[[HaikuRAG], Coroutine[Any, Any, Any]]"
     ) -> Any:
-        """The first result `lookup` finds in the databases this client covers.
-
-        An id or a URI says nothing about which database holds it, so every
-        database is asked at once and the first that has it, in configured order,
-        answers. Asking in turn would cost a round trip per database for an
-        identifier that is missing or held by the last of them.
-        """
-        owners = await self.clients_covering()
-        for found in await asyncio.gather(*(lookup(owner) for owner in owners)):
-            if found is not None:
-                return found
-        return None
+        """The first result `lookup` finds in the databases this client covers."""
+        found = await first_found(await self.clients_covering(), lookup)
+        return None if found is None else found[1]
 
     async def clients_covering(
         self, sources: list[str] | None = None

@@ -33,9 +33,9 @@ from haiku.rag.capabilities._tools import (
     search_corpus,
 )
 from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord, EvidenceRef
-from haiku.rag.client import HaikuRAG
+from haiku.rag.client import HaikuRAG, first_found
 from haiku.rag.config.models import AppConfig
-from haiku.rag.store.models.chunk import Chunk, SearchResult
+from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.citation import Citation, resolve_citations
 from haiku.rag.tools.search import build_image_content_from_results
 
@@ -157,21 +157,6 @@ def _called_own_tool(messages: list[ModelMessage], tool_names: frozenset[str]) -
                 for part in message.parts
             )
     return False
-
-
-async def _first_holding(
-    clients: "list[HaikuRAG]", chunk_id: str
-) -> "tuple[HaikuRAG, Chunk] | None":
-    """The first client holding this chunk, and the chunk.
-
-    A chunk id says nothing about which database holds it, so the only way to
-    place one is to ask. Returns None when none of them has it.
-    """
-    for client in clients:
-        chunk = await client.get_chunk_by_id(chunk_id)
-        if chunk is not None:
-            return client, chunk
-    return None
 
 
 @dataclass
@@ -550,7 +535,9 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
                 synthetic: list[SearchResult] = []
                 documents: dict[tuple[str | None, str], Any] = {}
                 for chunk_id in missing:
-                    found = await _first_holding(lookups, chunk_id)
+                    found = await first_found(
+                        lookups, lambda owner: owner.get_chunk_by_id(chunk_id)
+                    )
                     if found is None:
                         continue
                     owner, chunk = found

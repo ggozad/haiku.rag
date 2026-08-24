@@ -369,6 +369,46 @@ class TestReportedDatabase:
         )
 
 
+class TestReportingReusesTheConnection:
+    @pytest.mark.asyncio
+    async def test_statistics_come_from_the_open_connection(
+        self, tmp_path, monkeypatch
+    ):
+        """The client already holds a connection to the database being reported,
+        so opening a second one would be an open for the same statistics."""
+        from haiku.rag.inspector.widgets.info_modal import database_lines
+        from haiku.rag.store.engine import ConnectionMode
+
+        def explode(*args, **kwargs):
+            raise AssertionError("opened a second connection to report statistics")
+
+        monkeypatch.setattr("haiku.rag.store.engine.connect_lancedb", explode)
+
+        asked: list[object] = []
+
+        async def fake_stats(db):
+            asked.append(db)
+            return {
+                "settings": {"exists": False},
+                "documents": {"num_rows": 1},
+                "document_meta": {"num_rows": 1},
+                "chunks": {"num_rows": 1},
+            }
+
+        monkeypatch.setattr("haiku.rag.store.info.get_database_stats", fake_stats)
+
+        connection = object()
+        client = MagicMock()
+        client.store.db = connection
+        client.store.db_path = tmp_path
+        client.store._connection_mode = ConnectionMode.LOCAL
+
+        lines = await database_lines(client)
+
+        assert asked == [connection]
+        assert any("documents" in line for line in lines)
+
+
 class TestReportingEachDatabase:
     @pytest.mark.asyncio
     async def test_a_database_that_cannot_be_opened_reports_itself(self):
