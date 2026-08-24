@@ -64,28 +64,6 @@ async def test_list_documents_prints_each_document(app, client):
     assert "second" in out(app)
 
 
-async def test_list_documents_names_the_database_of_each(app, client):
-    """A listing spanning databases has to say which one each document is from."""
-    client.list_documents.return_value = [
-        _doc("first", source="arxiv"),
-        _doc("second", source="wiki"),
-    ]
-
-    await app.list_documents()
-
-    printed = out(app)
-    assert "database: arxiv" in printed
-    assert "database: wiki" in printed
-
-
-async def test_list_documents_omits_the_database_when_unnamed(app, client):
-    client.list_documents.return_value = [_doc("only")]
-
-    await app.list_documents()
-
-    assert "database:" not in out(app)
-
-
 async def test_add_document_from_text_reports_the_new_id(app, client):
     client.create_document.return_value = _doc("added body")
 

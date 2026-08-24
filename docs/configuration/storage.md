@@ -219,8 +219,9 @@ Candidates from each database are fused into one ranked list, by the configured
 reranker where there is one and by reciprocal rank fusion otherwise. Each result
 carries `source`, the name of the database it came from, and so does each
 citation. A document from `list_documents`, `get_document_by_id`,
-`get_document_by_uri` or `resolve_document` carries it too, whether it came from
-a set or from one database named in `lancedb.databases`.
+`get_document_by_uri` or `resolve_document` carries it too. Naming one database
+on the command line points the configuration at it, so commands that work on one
+database report no name.
 
 **Configure a reranker when searching several databases.** Reciprocal rank fusion
 compares ranks, not scores, so every database contributes its own best matches
