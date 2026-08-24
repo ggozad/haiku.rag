@@ -1,0 +1,52 @@
+# Reference config for the `frames` evaluation database.
+# FRAMES (google/frames-benchmark): 824 multi-hop questions over a corpus of
+# the ~2.5k Wikipedia articles linked per question, fetched at current
+# revision (revid + fetch date recorded in the article cache).
+# Run: evaluations run frames --config configs/frames.yaml
+# base_url uses the `vllm` host serving each model over an OpenAI-compatible API.
+
+environment: development
+
+storage:
+  auto_vacuum: false
+
+embeddings:
+  model:
+    provider: openai
+    name: qwen3-embedding-4b
+    vector_dim: 2560
+    base_url: http://vllm:11431/v1
+
+reranking:
+  model:
+    provider: vllm
+    name: Qwen/Qwen3-Reranker-4B
+    base_url: http://vllm:11455
+
+analysis:
+  # Bounds per-execution sandbox output so accumulated code returns cannot
+  # outgrow the model's input budget.
+  max_output_chars: 20000
+
+qa:
+  model:
+    provider: openai
+    name: gemma4-26b
+    base_url: http://vllm:11432/v1
+    # vLLM reserves max_tokens out of max_model_len; a large value starves
+    # the input budget and 400s long agentic contexts.
+    max_tokens: 8192
+
+evaluations:
+  judge:
+    provider: openai
+    name: Inferact/Qwen3.8-27B-NVFP4
+    base_url: http://vllm:11439/v1
+    temperature: 0.6
+    max_tokens: 16384
+    extra_body:
+      top_p: 0.95
+      top_k: 20
+      min_p: 0
+      chat_template_kwargs:
+        reasoning_effort: low

@@ -1,6 +1,6 @@
 # Benchmarks
 
-We evaluate `haiku.rag` on a small set of datasets that exercise different parts of the pipeline. OpenRAG Bench (ORB), T²-RAGBench, HotpotQA, and MTRAG are the datasets we currently track. Retrieval, QA accuracy, and citation retrieval are scored end-to-end through the RAG and analysis capabilities.
+We evaluate `haiku.rag` on a small set of datasets that exercise different parts of the pipeline. OpenRAG Bench (ORB), T²-RAGBench, HotpotQA, FRAMES, and MTRAG are the datasets we currently track. Retrieval, QA accuracy, and citation retrieval are scored end-to-end through the RAG and analysis capabilities.
 
 ## Current results
 
@@ -99,6 +99,27 @@ The reranker's contribution is larger here than on the single-doc datasets: hybr
 | `vllm:Gemma-4-26B-A4B-NVFP4` | none                | 0.83        | 0.75             |
 
 *Measured on haiku.rag v0.66.0 with `qwen3-embedding:4b` (vLLM, dim 2560), judged by `vllm:Qwen3.6-35B-A3B-NVFP4`, 7,405 cases. The reranker lifts QA accuracy +2.7pts and `cited_map` +4.6pts. Without a reranker, `cited_map` (0.75) still exceeds the no-reranker retrieval MAP (0.70): the skill reformulates queries across search calls, partially recovering second-hop documents that a single query misses.*
+
+### FRAMES
+
+[FRAMES](https://huggingface.co/datasets/google/frames-benchmark) is Google's multi-hop QA benchmark: 824 questions, each grounded in 2–23 Wikipedia articles, exercising temporal, numerical, and tabular reasoning across documents. We evaluate 822 questions (2 excluded: a linked article was deleted from Wikipedia) over a fixed corpus of the 2,521 linked articles fetched at current revision. There is no official FRAMES evaluation setup; our protocol — fixed corpus, agentic retrieval, judged accuracy — corresponds to the paper's *multi-step retrieval* setting, where [the paper](https://arxiv.org/abs/2409.12941) reports 0.66 with Gemini-Pro-1.5 (0.729 in its oracle setting, with gold articles provided). Answers were authored against ~2024 revisions and may have drifted with article content.
+
+##### Retrieval (MAP)
+
+| Embedding Model      | Reranker            | Cases | MAP    |
+|----------------------|---------------------|------:|-------:|
+| `qwen3-embedding:4b` | `Qwen3-Reranker-4B` |   822 | 0.5631 |
+
+*Single-query retrieval is capped by FRAMES' indirection: in the zero-MAP queries the gold article's subject is never named in the question ("the year the Titanic sank" → `1912_Summer_Olympics`). The agentic targets recover these through iterative search, passing 55% of the very cases single-shot retrieval scores zero on.*
+
+##### QA accuracy + citation retrieval
+
+| Capability model | Target | QA accuracy | Mean `cited_map` |
+|------------------|--------|-------------|------------------|
+| `vllm:Muse-Glimmer-30B-NVFP4` | `analysis-capability` | 0.7506 | 0.5852 |
+| `vllm:Qwen3.8-27B-NVFP4` | `analysis-capability` | 0.8095 | 0.6847 |
+
+*Both rows use `qwen3-embedding:4b` (vLLM, dim 2560), `Qwen3-Reranker-4B`, and are judged by `Qwen3.8-27B`. QA accuracy is over judged cases; counting unanswered cases as failures, the floors are 0.7397 (`Muse-Glimmer`, 1.5% lost to provider errors) and 0.7701 (`Qwen3.8`, 4.87% lost to answers truncated at `max_tokens: 16384`). The `Qwen3.8` row is self-judged — a 100-case paired cross-judge (Glimmer as judge, difference-in-differences) measured the self-preference at +1.0pp with 99% judge agreement. Cite rates are 90.1% (`Muse-Glimmer`) and 99.3% (`Qwen3.8`); `cited_map` is structurally capped below 1 on FRAMES because gold sets span 2–23 articles while answering typically uses a subset. `Qwen3.8` reaches its score on substantially less tool traffic than `Muse-Glimmer` (4.0 searches and 3.9 code executions per case vs 7.0 and 9.5, measured identically from tool spans).*
 
 ### MTRAG (ClapNQ)
 

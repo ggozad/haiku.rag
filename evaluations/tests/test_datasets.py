@@ -1,5 +1,19 @@
 from pathlib import Path
 
+import pytest
+
+from evaluations.datasets.frames import (
+    FETCH_ATTEMPTS,
+    build_frames_case,
+    fetch_article,
+    map_frames_document,
+    map_frames_retrieval,
+    normalize_wiki_url,
+    parse_revid,
+    parse_wiki_links,
+    question_is_answerable,
+    strip_navigation,
+)
 from evaluations.datasets.hotpotqa import (
     build_hotpotqa_case,
     extract_unique_documents,
@@ -320,3 +334,389 @@ class TestT2RAGBench:
 
         assert len(corpus) == 2
         assert {r["context_id"] for r in corpus} == {"ctx_a", "ctx_b"}
+
+
+class TestFrames:
+    def test_parse_wiki_links_plain(self) -> None:
+        raw = (
+            "['https://en.wikipedia.org/wiki/James_Buchanan', "
+            "'https://en.wikipedia.org/wiki/Harriet_Lane']"
+        )
+        assert parse_wiki_links(raw) == [
+            "https://en.wikipedia.org/wiki/James_Buchanan",
+            "https://en.wikipedia.org/wiki/Harriet_Lane",
+        ]
+
+    def test_parse_wiki_links_splits_comma_joined_urls(self) -> None:
+        raw = (
+            "['https://en.wikipedia.org/wiki/Tim_Salmon, "
+            "https://en.wikipedia.org/wiki/Troy_Glaus, ']"
+        )
+        assert parse_wiki_links(raw) == [
+            "https://en.wikipedia.org/wiki/Tim_Salmon",
+            "https://en.wikipedia.org/wiki/Troy_Glaus",
+        ]
+
+    def test_parse_wiki_links_keeps_commas_inside_titles(self) -> None:
+        raw = (
+            "['https://en.wikipedia.org/wiki/Lincoln,_Nebraska', "
+            "'https://en.wikipedia.org/wiki/Key_West#:~:text=The%20southernmost,"
+            "apart%20at%20their%20closest%20points.']"
+        )
+        assert parse_wiki_links(raw) == [
+            "https://en.wikipedia.org/wiki/Lincoln,_Nebraska",
+            "https://en.wikipedia.org/wiki/Key_West#:~:text=The%20southernmost,"
+            "apart%20at%20their%20closest%20points.",
+        ]
+
+    def test_parse_wiki_links_strips_trailing_annotation(self) -> None:
+        raw = "['https://en.wikipedia.org/wiki/Pok%C3%A9mon (NOT REQUIRED, BUT HELPFUL) ']"
+        assert parse_wiki_links(raw) == ["https://en.wikipedia.org/wiki/Pok%C3%A9mon"]
+
+    def test_normalize_strips_fragment_and_mobile_host(self) -> None:
+        assert (
+            normalize_wiki_url("https://en.m.wikipedia.org/wiki/World_War_I#Aftermath")
+            == "https://en.wikipedia.org/wiki/World_War_I"
+        )
+
+    def test_normalize_decodes_and_canonicalizes_title(self) -> None:
+        assert (
+            normalize_wiki_url("https://en.wikipedia.org/wiki/pain %26 Gain")
+            == "https://en.wikipedia.org/wiki/Pain_&_Gain"
+        )
+
+    def test_normalize_schemeless(self) -> None:
+        assert (
+            normalize_wiki_url("en.wikipedia.org/wiki/Grazia_Deledda")
+            == "https://en.wikipedia.org/wiki/Grazia_Deledda"
+        )
+
+    def test_normalize_index_php_title(self) -> None:
+        assert (
+            normalize_wiki_url(
+                "https://en.wikipedia.org/w/index.php?title=Bronco&redirect=no"
+            )
+            == "https://en.wikipedia.org/wiki/Bronco"
+        )
+
+    def test_normalize_search_url(self) -> None:
+        url = (
+            "https://en.wikipedia.org/w/index.php?search=Polytrichum+piliferum"
+            "&title=Special:Search&profile=advanced&fulltext=1&ns0=1"
+        )
+        assert (
+            normalize_wiki_url(url)
+            == "https://en.wikipedia.org/wiki/Polytrichum_piliferum"
+        )
+
+    def test_normalize_shortlink_passthrough(self) -> None:
+        assert normalize_wiki_url("https://w.wiki/ASFv") == "https://w.wiki/ASFv"
+
+    def test_normalize_rejects_non_article(self) -> None:
+        assert normalize_wiki_url("") is None
+        assert normalize_wiki_url("https://en.wikipedia.org/foo") is None
+
+    def test_parse_revid(self) -> None:
+        assert parse_revid('W/"1364811104/52cd04f4-864c-11f1"') == "1364811104"
+        assert parse_revid('"1234/abc"') == "1234"
+        assert parse_revid(None) is None
+        assert parse_revid("") is None
+
+    def test_strip_navigation_removes_navboxes_keeps_infobox(self) -> None:
+        html = (
+            "<html><body>"
+            '<table class="infobox"><tbody><tr><td>Born April 23, 1791</td></tr></tbody></table>'
+            "<p>Some prose.</p>"
+            '<div role="navigation"><table><tbody><tr><td>v t e Presidents</td></tr></tbody></table></div>'
+            "</body></html>"
+        )
+        stripped = strip_navigation(html)
+        assert "Born April 23, 1791" in stripped
+        assert "Some prose." in stripped
+        assert "v t e Presidents" not in stripped
+
+    def test_map_retrieval_normalizes_and_dedupes(self) -> None:
+        row = {
+            "Prompt": "Who was the 15th president?",
+            "wiki_links": (
+                "['https://en.wikipedia.org/wiki/James_Buchanan#Presidency', "
+                "'https://en.m.wikipedia.org/wiki/James_Buchanan', "
+                "'https://en.wikipedia.org/wiki/Harriet_Lane']"
+            ),
+        }
+        sample = map_frames_retrieval(row)
+        assert sample is not None
+        assert sample.question == "Who was the 15th president?"
+        assert sample.expected_uris == (
+            "https://en.wikipedia.org/wiki/James_Buchanan",
+            "https://en.wikipedia.org/wiki/Harriet_Lane",
+        )
+
+    def test_map_retrieval_empty_links(self) -> None:
+        assert map_frames_retrieval({"Prompt": "Q", "wiki_links": "[]"}) is None
+
+    def test_map_document_html_strips_navigation(self, tmp_path: Path) -> None:
+        page = tmp_path / "article.html"
+        page.write_text(
+            "<html><body><p>Buchanan was a president.</p>"
+            '<div role="navigation">v t e spam</div></body></html>'
+        )
+        row = {
+            "uri": "https://en.wikipedia.org/wiki/James_Buchanan",
+            "title": "James Buchanan",
+            "path": str(page),
+            "format": "html",
+            "revid": "1364811104",
+            "fetched_at": "2026-07-23",
+        }
+        payload = map_frames_document(row)
+        assert payload.uri == "https://en.wikipedia.org/wiki/James_Buchanan"
+        assert payload.title == "James Buchanan"
+        assert payload.format == "html"
+        assert "Buchanan was a president." in (payload.content or "")
+        assert "v t e spam" not in (payload.content or "")
+        assert payload.metadata == {
+            "revid": "1364811104",
+            "fetched_at": "2026-07-23",
+        }
+
+    def test_map_document_markdown_passthrough(self, tmp_path: Path) -> None:
+        page = tmp_path / "category.md"
+        page.write_text(
+            "Pages in Category:Summer Olympics in London:\n- 1908 Summer Olympics\n"
+        )
+        row = {
+            "uri": "https://en.wikipedia.org/wiki/Category:Summer_Olympics_in_London",
+            "title": "Category:Summer Olympics in London",
+            "path": str(page),
+            "format": "md",
+            "revid": None,
+            "fetched_at": "2026-07-23",
+        }
+        payload = map_frames_document(row)
+        assert payload.format == "md"
+        assert "1908 Summer Olympics" in (payload.content or "")
+        assert payload.metadata == {"fetched_at": "2026-07-23"}
+
+    def test_build_case(self) -> None:
+        row = {
+            "id": "7",
+            "Prompt": "Who was the 15th president?",
+            "Answer": "James Buchanan",
+            "reasoning_types": "Multiple constraints | Temporal reasoning",
+        }
+        case = build_frames_case(3, row)
+        assert case.name == "3_7"
+        assert case.inputs == "Who was the 15th president?"
+        assert case.expected_output == "James Buchanan"
+        assert case.metadata == {
+            "question_id": "7",
+            "reasoning_types": "Multiple constraints | Temporal reasoning",
+            "case_index": "3",
+        }
+
+    def test_fetch_article_cache_hit_needs_no_network(self, tmp_path: Path) -> None:
+        uri = "https://en.wikipedia.org/wiki/James_Buchanan"
+        from urllib.parse import quote
+
+        base = quote(uri, safe="")
+        (tmp_path / f"{base}.html").write_text("<html><body>cached</body></html>")
+        (tmp_path / f"{base}.json").write_text(
+            '{"uri": "https://en.wikipedia.org/wiki/James_Buchanan",'
+            ' "title": "James Buchanan", "format": "html",'
+            ' "revid": "123", "fetched_at": "2026-07-23"}'
+        )
+        row = fetch_article(uri, tmp_path, client=None)
+        assert row is not None
+        assert row["uri"] == uri
+        assert row["revid"] == "123"
+        assert row["format"] == "html"
+        assert Path(row["path"]).read_text().startswith("<html>")
+
+    def test_fetch_article_category_synthesizes_members(self, tmp_path: Path) -> None:
+        class StubResponse:
+            def __init__(self, payload: dict) -> None:
+                self._payload = payload
+
+            def raise_for_status(self) -> None:
+                pass
+
+            def json(self) -> dict:
+                return self._payload
+
+        class StubClient:
+            def get(self, url: str, params: dict | None = None) -> StubResponse:
+                assert params is not None
+                assert params["list"] == "categorymembers"
+                return StubResponse(
+                    {
+                        "query": {
+                            "categorymembers": [
+                                {"title": "1908 Summer Olympics"},
+                                {"title": "2012 Summer Olympics"},
+                            ]
+                        }
+                    }
+                )
+
+        uri = "https://en.wikipedia.org/wiki/Category:Summer_Olympics_in_London"
+        row = fetch_article(
+            uri,
+            tmp_path,
+            client=StubClient(),  # ty: ignore[invalid-argument-type]
+        )
+        assert row is not None
+        assert row["format"] == "md"
+        content = Path(row["path"]).read_text()
+        assert "1908 Summer Olympics" in content
+        assert "2012 Summer Olympics" in content
+
+    def test_fetch_article_retries_transient_failures(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        sleeps: list[float] = []
+        monkeypatch.setattr(
+            "evaluations.datasets.frames.time.sleep", lambda s: sleeps.append(s)
+        )
+
+        class FlakyResponse:
+            text = "<html><body>ok</body></html>"
+            headers = {"etag": 'W/"42/uuid"'}
+
+            def raise_for_status(self) -> None:
+                pass
+
+        class FlakyClient:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def get(self, url: str, params: dict | None = None) -> FlakyResponse:
+                self.calls += 1
+                if self.calls < 3:
+                    raise OSError("connection reset")
+                return FlakyResponse()
+
+        client = FlakyClient()
+        row = fetch_article(
+            "https://en.wikipedia.org/wiki/Capybara",
+            tmp_path,
+            client=client,  # ty: ignore[invalid-argument-type]
+        )
+        assert row is not None
+        assert row["revid"] == "42"
+        assert client.calls == 3
+        # One throttle sleep before fetching plus one backoff per failure.
+        assert len(sleeps) == 3
+
+    def test_fetch_article_honors_retry_after_on_rate_limit(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        import httpx
+
+        sleeps: list[float] = []
+        monkeypatch.setattr(
+            "evaluations.datasets.frames.time.sleep", lambda s: sleeps.append(s)
+        )
+        request = httpx.Request("GET", "https://en.wikipedia.org/x")
+
+        class OkResponse:
+            text = "<html><body>ok</body></html>"
+            headers = {"etag": 'W/"42/uuid"'}
+
+            def raise_for_status(self) -> None:
+                pass
+
+        class RateLimitedClient:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def get(self, url: str, params: dict | None = None) -> OkResponse:
+                self.calls += 1
+                if self.calls == 1:
+                    raise httpx.HTTPStatusError(
+                        "429 too many requests",
+                        request=request,
+                        response=httpx.Response(
+                            429, headers={"retry-after": "13"}, request=request
+                        ),
+                    )
+                return OkResponse()
+
+        row = fetch_article(
+            "https://en.wikipedia.org/wiki/Capybara",
+            tmp_path,
+            client=RateLimitedClient(),  # ty: ignore[invalid-argument-type]
+        )
+        assert row is not None
+        assert 13.0 in sleeps
+
+    def test_fetch_article_gives_up_after_max_attempts(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        monkeypatch.setattr("evaluations.datasets.frames.time.sleep", lambda s: None)
+
+        class DeadClient:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def get(self, url: str, params: dict | None = None):
+                self.calls += 1
+                raise OSError("connection reset")
+
+        client = DeadClient()
+        row = fetch_article(
+            "https://en.wikipedia.org/wiki/Capybara",
+            tmp_path,
+            client=client,  # ty: ignore[invalid-argument-type]
+        )
+        assert row is None
+        assert client.calls == FETCH_ATTEMPTS
+
+    def test_load_corpus_raises_on_partial_fetch(self, monkeypatch) -> None:
+        import evaluations.datasets.frames as frames
+
+        monkeypatch.setattr(frames, "_cached_corpus", None)
+        monkeypatch.setattr(
+            frames,
+            "load_frames_questions",
+            lambda: [
+                {
+                    "wiki_links": "['https://en.wikipedia.org/wiki/A', "
+                    "'https://en.wikipedia.org/wiki/B']"
+                }
+            ],
+        )
+        monkeypatch.setattr(
+            frames, "fetch_article", lambda uri, cache_dir, client: None
+        )
+        with pytest.raises(RuntimeError, match="0/2"):
+            frames.load_frames_corpus()
+
+    def test_question_with_deleted_article_is_excluded(self) -> None:
+        gone = {
+            "wiki_links": "['https://en.wikipedia.org/wiki/Jack_Vance_(tennis)', "
+            "'https://en.wikipedia.org/wiki/Capybara']"
+        }
+        kept = {"wiki_links": "['https://en.wikipedia.org/wiki/Capybara']"}
+        assert question_is_answerable(gone) is False
+        assert question_is_answerable(kept) is True
+
+    def test_questions_carry_stable_ids(self, monkeypatch) -> None:
+        import evaluations.datasets.frames as frames
+        from datasets import Dataset
+
+        rows = Dataset.from_list(
+            [
+                {
+                    "Unnamed: 0": 7,
+                    "wiki_links": "['https://en.wikipedia.org/wiki/Capybara']",
+                },
+                {
+                    "Unnamed: 0": 8,
+                    "wiki_links": "['https://en.wikipedia.org/wiki/Jack_Vance_(tennis)']",
+                },
+            ]
+        )
+        monkeypatch.setattr(frames, "load_frames_test", lambda: rows)
+        questions = frames.load_frames_questions()
+        assert [row["id"] for row in questions] == ["7"]
