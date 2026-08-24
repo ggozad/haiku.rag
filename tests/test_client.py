@@ -1196,10 +1196,10 @@ async def test_delete_marks_vacuum_dirty(temp_db_path):
             uri="mem://del",
         )
         assert doc.id is not None
-        client._vacuum_dirty = False  # isolate the delete
+        client._session._vacuum_dirty = False  # isolate the delete
 
         assert await client.delete_document(doc.id) is True
-        assert client._vacuum_dirty is True
+        assert client._session._vacuum_dirty is True
 
 
 async def test_delete_rolls_back_on_partial_failure(temp_db_path, monkeypatch):
@@ -1284,9 +1284,9 @@ async def test_delete_missing_id_returns_false_without_vacuum(temp_db_path):
     """Deleting an id that doesn't exist returns False and owes no vacuum (the
     existence check is inside the lock, so a no-op delete stays a no-op)."""
     async with HaikuRAG(temp_db_path, create=True) as client:
-        client._vacuum_dirty = False
+        client._session._vacuum_dirty = False
         assert await client.delete_document("does-not-exist") is False
-        assert client._vacuum_dirty is False
+        assert client._session._vacuum_dirty is False
 
 
 @pytest.mark.vcr()
@@ -2843,7 +2843,7 @@ async def test_import_documents_schedules_vacuum_per_config(temp_db_path, auto_v
                     )
                 ]
             )
-            await asyncio.gather(*client._vacuum_tasks)
+            await asyncio.gather(*client._session._vacuum_tasks)
 
             assert vacuum.await_count == (1 if auto_vacuum else 0)
 

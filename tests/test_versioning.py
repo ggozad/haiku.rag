@@ -205,7 +205,7 @@ async def test_existing_database_checks_migrations(monkeypatch, temp_db_path):
 
 async def _wait_for_background_vacuum(client):
     """Wait for any in-flight background vacuum tasks to complete."""
-    await client._await_vacuum_tasks()
+    await client._session.drain_vacuum()
 
 
 @pytest.mark.vcr()
@@ -438,7 +438,8 @@ async def test_close_suppresses_failing_drain_vacuum(temp_db_path, monkeypatch):
         raise RuntimeError("vacuum boom")
 
     # Writes happened, so close owes a final vacuum — force that drain branch.
-    client._vacuum_dirty = True
+    assert client._session is not None
+    client._session._vacuum_dirty = True
     monkeypatch.setattr(client.store, "vacuum", boom)
 
     # Must not raise despite the drain vacuum erroring.

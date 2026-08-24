@@ -486,6 +486,23 @@ class TestOperationsThatNeedOneDatabase:
                 await rag.vacuum()
 
     @pytest.mark.asyncio
+    async def test_a_set_has_no_store_of_its_own(self, tmp_path):
+        """A store and its repositories belong to one database. `clients_for`
+        reaches the one holding a given database."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+
+        async with HaikuRAG(config=config) as rag:
+            for name in (
+                "store",
+                "document_repository",
+                "chunk_repository",
+                "document_item_repository",
+            ):
+                with pytest.raises(AttributeError, match=name):
+                    getattr(rag, name)
+
+    @pytest.mark.asyncio
     async def test_a_selected_database_is_still_writable(self, tmp_path):
         """Naming one of the set is how a write picks its database."""
         config = _config(tmp_path, ["alpha", "beta"])
