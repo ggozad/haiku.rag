@@ -127,8 +127,12 @@ class HaikuRAG:
 
     @property
     def is_read_only(self) -> bool:
-        """Whether the client is in read-only mode."""
-        return self.store.is_read_only
+        """Whether the client is in read-only mode.
+
+        The mode the client was opened with, which is the mode every database it
+        covers is opened with. A client covering a set has no store to ask.
+        """
+        return self._read_only
 
     @property
     def embedder(self) -> "EmbedderWrapper":

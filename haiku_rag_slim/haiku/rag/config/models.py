@@ -123,6 +123,13 @@ class LanceDBConfig(ConfigModel):
                 "lancedb.uri and lancedb.databases are mutually exclusive: "
                 "use uri for one database, databases for several"
             )
+        for name, location in self.databases.items():
+            # A blank name is falsy, so source routing reads it as absent; a
+            # blank location resolves to the working directory.
+            if not name.strip():
+                raise ValueError("lancedb.databases has an entry with no name")
+            if not location.strip():
+                raise ValueError(f"lancedb.databases[{name}] has no location")
         return self
 
 

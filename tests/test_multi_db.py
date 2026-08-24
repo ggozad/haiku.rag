@@ -28,6 +28,23 @@ class TestConfig:
         assert LanceDBConfig(uri="s3://b/one.lancedb").databases == {}
 
 
+class TestNamingIsRequired:
+    def test_a_blank_name_is_rejected(self):
+        """An unnamed database is unreachable: every source check reads the
+        empty name as no name at all."""
+        with pytest.raises(ValidationError, match="entry with no name"):
+            LanceDBConfig(databases={"": "/tmp/a.lancedb"})
+        with pytest.raises(ValidationError, match="entry with no name"):
+            LanceDBConfig(databases={"   ": "/tmp/a.lancedb"})
+
+    def test_a_blank_location_is_rejected(self):
+        """A blank location resolves to the working directory."""
+        with pytest.raises(
+            ValidationError, match=r"databases\[alpha\] has no location"
+        ):
+            LanceDBConfig(databases={"alpha": ""})
+
+
 def _config(tmp_path, names) -> AppConfig:
     return AppConfig(
         lancedb=LanceDBConfig(
@@ -277,6 +294,20 @@ class TestLookupByIdentifier:
                 is None
             )
             assert await rag.get_document_by_uri("test://nowhere") is None
+
+
+class TestReadOnlyMode:
+    @pytest.mark.asyncio
+    async def test_a_client_covering_a_set_reports_its_mode(self, tmp_path):
+        """A client covering a set has no store of its own to ask."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+
+        async with HaikuRAG(config=config, read_only=True) as rag:
+            assert rag.is_read_only is True
+        async with HaikuRAG(config=config) as rag:
+            assert rag.is_read_only is False
 
 
 class TestDocumentsNameTheirDatabase:
