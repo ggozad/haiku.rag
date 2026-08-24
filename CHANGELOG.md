@@ -1,6 +1,12 @@
 # Changelog
 ## [Unreleased]
 
+### Added
+
+- Client lifecycle hooks (`after_ingest`, `after_delete`, `before_search`, `after_search`) registered under the `haiku.rag.hooks` entry-point group and activated via the `hooks:` config list. Post-commit observer hooks are best-effort; failures are logged and do not change the completed operation's result.
+- `SearchResult.annotations` carries notes attached by `after_search` hooks, preserved through context expansion and rendered in agent-facing output.
+- `Hook.lifespan`, an async context manager around the client's lifetime for hooks that own resources. Entered in configured order once the store is open, exited in reverse order while the store, embedder and reranker are still usable.
+
 ## [0.78.0] - 2026-08-24
 
 ### Added

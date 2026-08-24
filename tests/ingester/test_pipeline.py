@@ -1,4 +1,6 @@
+import logging
 from datetime import UTC, datetime
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import httpx
@@ -13,10 +15,12 @@ from obstore.exceptions import (
 )
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.hooks import Hook
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
 from haiku.rag.ingester.queue.models import Job, JobOp, JobStatus
 from haiku.rag.ingester.workers.pipeline import run_job
 from haiku.rag.sources.base import FetchResult, FileTooLargeError, Source
+from haiku.rag.sources.fs import FSSource
 from haiku.rag.store.models.document import Document
 
 
@@ -580,3 +584,37 @@ async def test_other_obstore_errors_classified_transient(exc_class):
     client.create_document_from_source.side_effect = exc_class("upstream hiccup")
     with pytest.raises(TransientError):
         await run_job(client, _job())
+
+
+@pytest.fixture(scope="module")
+def vcr_cassette_dir():
+    return str(Path(__file__).parent.parent / "cassettes" / "test_pipeline")
+
+
+class _ThrowingIngestHook(Hook):
+    async def after_ingest(self, client, event):
+        raise RuntimeError("ingest hook boom")
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_after_ingest_hook_failure_does_not_fail_job(
+    temp_db_path, tmp_path, caplog
+):
+    """A throwing post-commit hook must not turn a committed ingest into a
+    failed job: run_job returns a successful JobResult instead of raising
+    into _classify."""
+    file_path = tmp_path / "doc.md"
+    file_path.write_text("hello")
+
+    fs = FSSource(root=tmp_path, source_id="src")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [_ThrowingIngestHook()]
+
+        with caplog.at_level(logging.ERROR, logger="haiku.rag.hooks"):
+            result = await run_job(client, _job(uri=str(file_path)), sources=[fs])
+
+        assert result.document_id is not None
+        assert result.deleted is False
+        assert any("after_ingest" in r.message for r in caplog.records)
