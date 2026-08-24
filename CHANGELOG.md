@@ -11,6 +11,7 @@
 
 ### Fixed
 
+- The chat TUI's document filter selects documents by id and names each document's database, instead of matching the displayed title or URI as a substring across every database.
 - `doctor`'s docling-serve probe sends `X-Api-Key`, so an instance requiring a key is reported reachable rather than unreachable.
 - The picture-description request to the public OpenAI endpoint sends `OPENAI_API_KEY`; it carried no authorization header.
 - `haiku-rag` prints the message and exits when the configured embedder does not match the database, instead of raising a traceback.

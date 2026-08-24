@@ -386,22 +386,27 @@ async def test_document_filter_updates_rag_state(temp_db_path: Path):
     """Test that selecting document filters updates RAGState.document_filter."""
     from haiku.rag.chat.app import RAG_STATE_NAMESPACE
     from haiku.rag.chat.widgets.document_filter_modal import DocumentFilterModal
-    from haiku.rag.tools.filters import build_multi_document_filter
+    from haiku.rag.tools.filters import build_document_id_filter
 
     app, mock_client = _make_app_with_state(temp_db_path)
 
     with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
         async with app.run_test():
-            # Simulate the FilterChanged message
-            selected = ["AI Overview", "ML Basics"]
+            # The selection is document ids, so a repeated title cannot widen it.
+            selected = [
+                "6f1c2d4e-0000-4000-8000-000000000001",
+                "6f1c2d4e-0000-4000-8000-000000000002",
+            ]
             app.on_document_filter_modal_filter_changed(
                 DocumentFilterModal.FilterChanged(selected)
             )
 
             # RAGState.document_filter should be set
             rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
-            expected_filter = build_multi_document_filter(selected)
+            expected_filter = build_document_id_filter(selected)
             assert rag_state.document_filter == expected_filter
+            assert rag_state.document_filter is not None
+            assert "LIKE" not in rag_state.document_filter
 
             # The state snapshot should also reflect the change
             assert app._state["rag"]["document_filter"] == expected_filter
@@ -539,6 +544,44 @@ async def test_visual_grounding_uses_the_database_holding_the_citation(tmp_path)
     owner.get_chunk_by_id.assert_awaited_once_with("c1")
     assert push.await_args is not None
     assert push.await_args.args[0].client is owner
+
+
+class TestDocumentSelectionIdentity:
+    """Two documents can share a title, within a corpus and across databases, so
+    the selection is by id and the label says which database."""
+
+    @pytest.mark.asyncio
+    async def test_a_repeated_title_selects_one_document(self, temp_db_path: Path):
+        from textual.widgets import Checkbox
+
+        from haiku.rag.chat.widgets.document_filter_modal import DocumentFilterModal
+        from haiku.rag.store.models.document import Document
+
+        client = AsyncMock()
+        client._federated = {"arxiv": "a", "wiki": "b"}
+        client.list_documents.return_value = [
+            Document(id="id-one", content="", title="Capital region", source="arxiv"),
+            Document(id="id-two", content="", title="Capital region", source="wiki"),
+        ]
+        client.count_documents.return_value = 2
+
+        modal = DocumentFilterModal(client=client)
+        app, _ = _make_app(temp_db_path, client)
+        with patch("haiku.rag.chat.app.HaikuRAG", return_value=client):
+            async with app.run_test() as pilot:
+                await app.push_screen(modal)
+                await pilot.pause()
+
+                boxes = list(modal.query(Checkbox))
+                selected_ids = [getattr(box, "_doc_id", None) for box in boxes]
+                assert selected_ids == ["id-one", "id-two"]
+                labels = [str(b.label) for b in boxes]
+                assert "Capital region  (arxiv)" in labels
+                assert "Capital region  (wiki)" in labels
+
+                boxes[0].value = True
+                await pilot.pause()
+                assert modal._selected == {"id-one"}
 
 
 class TestDocumentSearchFilter:

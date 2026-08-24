@@ -416,11 +416,11 @@ class ChatApp(App):
 
     def on_document_filter_modal_filter_changed(self, event: Any) -> None:
         """Handle document filter changes from modal."""
-        from haiku.rag.tools.filters import build_multi_document_filter
+        from haiku.rag.tools.filters import build_document_id_filter
 
         self._document_filter = event.selected
 
-        doc_filter = build_multi_document_filter(self._document_filter)
+        doc_filter = build_document_id_filter(self._document_filter)
         for namespace, state_type in (
             (RAG_STATE_NAMESPACE, RAGState),
             (ANALYSIS_STATE_NAMESPACE, AnalysisState),

@@ -148,19 +148,37 @@ class DocumentFilterModal(ModalScreen):
         await filter_list.remove_children()
 
         # The page is picked to represent every database; sorting is so it reads
-        # like a list rather than in whatever order the tables returned.
-        names = sorted(doc.title or doc.uri or str(doc.id) for doc in docs)
+        # like a list rather than in whatever order the tables returned. The label
+        # names the database, since a title alone does not say which one it is in.
+        labelled = sorted(
+            (
+                (
+                    f"{doc.title or doc.uri or doc.id}"
+                    + (f"  ({doc.source})" if doc.source else ""),
+                    doc.id,
+                )
+                for doc in docs
+                if doc.id is not None
+            ),
+            key=lambda pair: pair[0],
+        )
 
         boxes = []
-        for position, display_name in enumerate(names):
+        for position, (label, doc_id) in enumerate(labelled):
             checkbox = Checkbox(
-                display_name,
-                value=display_name in self._selected,
-                # Positional, because titles repeat and a repeated id is an error.
+                label,
+                value=doc_id in self._selected,
+                # Positional, because a label is not unique and a repeated
+                # widget id is an error.
                 id=f"doc-{position}",
                 classes="doc-checkbox",
             )
-            checkbox._doc_id = display_name  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            # The selection is the document id: a title repeats within a corpus
+            # and across databases, so selecting by name widens to documents the
+            # user did not pick.
+            checkbox._doc_id = doc_id  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            # Not `_label`: Textual's ToggleButton owns that name.
+            checkbox._search_text = label  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
             boxes.append(checkbox)
         if boxes:
             await filter_list.mount_all(boxes)
@@ -207,8 +225,8 @@ class DocumentFilterModal(ModalScreen):
         filter_list = self.query_one("#filter-list", VerticalScroll)
 
         for checkbox in filter_list.query(Checkbox):
-            doc_id = getattr(checkbox, "_doc_id", "")
-            if search_term == "" or search_term in doc_id.lower():
+            label = getattr(checkbox, "_search_text", "")
+            if search_term == "" or search_term in label.lower():
                 checkbox.display = True
             else:
                 checkbox.display = False
