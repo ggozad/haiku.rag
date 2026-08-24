@@ -232,6 +232,10 @@ the same queries: retrieval MAP 0.9914 with a reranker against 0.9918 for the
 same corpus in a single database, and 0.6044 without one against 0.9798. The cost
 is that a reranker scores candidates in proportion to the number of databases.
 
+Creating names a database: `create=True` on a client covering the set raises
+`AmbiguousDatabaseError`, and `HaikuRAG(config=config, create=True,
+sources=["name"])` creates that one.
+
 Converting, chunking and title generation are functions of the configuration
 rather than of a database, so they work on a client covering the set. Writing,
 rebuilding and vacuuming name one database: asking a set-covering client raises

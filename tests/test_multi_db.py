@@ -437,6 +437,39 @@ class TestDatabaseIndependentWork:
             assert rag.embedder is rag.store.embedder
 
 
+class TestCreatingNeedsOneDatabase:
+    """Creating names a database. Covering a set, the flag had nothing to act on
+    and was accepted anyway, leaving the first query to fail on whichever
+    database turned out to be missing."""
+
+    @pytest.mark.asyncio
+    async def test_creating_a_set_is_refused(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+
+        with pytest.raises(AmbiguousDatabaseError, match="alpha, beta"):
+            async with HaikuRAG(config=config, create=True):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_naming_one_of_the_set_creates_it(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+
+        async with HaikuRAG(config=config, create=True, sources=["alpha"]) as rag:
+            assert await rag.count_documents() == 0
+
+        assert (tmp_path / "alpha.lancedb").exists()
+        assert not (tmp_path / "beta.lancedb").exists()
+
+    @pytest.mark.asyncio
+    async def test_covering_a_set_without_creating_is_unaffected(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+
+        async with HaikuRAG(config=config) as rag:
+            assert await rag.count_documents() == 2
+
+
 class TestOperationsThatNeedOneDatabase:
     @pytest.mark.asyncio
     async def test_writing_names_the_databases_it_covers(self, tmp_path):

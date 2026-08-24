@@ -230,6 +230,12 @@ class HaikuRAG:
         """
         selected = self._selected()
         if len(selected) > 1:
+            if self._create:
+                raise AmbiguousDatabaseError(
+                    "create=True creates one database, and this client covers "
+                    f"{', '.join(sorted(selected))}; name the one to create with "
+                    "sources=[name]"
+                )
             self._federated = selected
             return self
         if selected:
