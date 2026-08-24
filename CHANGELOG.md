@@ -11,6 +11,7 @@
 
 ### Fixed
 
+- `client.chunk()` and `client.embedder` work on a client covering `lancedb.databases`: an embedder is a function of configuration, so the client builds one on first use and closes it on teardown. Operations that need one database (`create_document`, `import_document(s)`, `create_document_from_source`, `update_document`, `delete_document`, `rebuild_database`, `vacuum`, `visualize_chunk`, `close`) raise `AmbiguousDatabaseError` naming the databases covered, instead of `AttributeError`.
 - The chat TUI's document filter selects documents by id and names each document's database, instead of matching the displayed title or URI as a substring across every database.
 - `doctor`'s docling-serve probe sends `X-Api-Key`, so an instance requiring a key is reported reachable rather than unreachable.
 - The picture-description request to the public OpenAI endpoint sends `OPENAI_API_KEY`; it carried no authorization header.

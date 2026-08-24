@@ -18,9 +18,11 @@ import httpx
 from haiku.rag.client.documents import DocumentImport
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.converters import get_converter
+from haiku.rag.embeddings import get_embedder
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import Store
 from haiku.rag.store.exceptions import (
+    AmbiguousDatabaseError,
     ConfigMismatchError,
     MigrationRequiredError,
     ReadOnlyError,
@@ -76,6 +78,18 @@ async def first_found(
         if found is not None:
             return client, found
     return None
+
+
+async def _aclose_quietly(closeable: Any, what: str) -> None:
+    """Close, reporting failure to the log rather than raising.
+
+    Teardown can run while an exception unwinds, so a raising close must
+    neither mask that exception nor stop a sibling from being closed.
+    """
+    try:
+        await closeable.aclose()
+    except Exception:
+        logger.debug("Closing the %s failed on teardown", what, exc_info=True)
 
 
 def _spell(embedding: tuple[str | None, str | None, int | None]) -> str:
@@ -158,9 +172,17 @@ class HaikuRAG:
         """
         return self._read_only
 
-    @property
+    @cached_property
     def embedder(self) -> "EmbedderWrapper":
-        """The embedder owned by the Store, reused across all operations."""
+        """The embedder for the databases this client covers.
+
+        An embedder is a function of configuration rather than of a database,
+        and the databases in a selection are required to share one, so a client
+        covering a set has an unambiguous embedder without opening any of them.
+        Built on first use and owned by this client, which closes it.
+        """
+        if self._federated:
+            return get_embedder(config=self._config)
         return self.store.embedder
 
     @cached_property
@@ -357,28 +379,29 @@ class HaikuRAG:
         # store either.
         if self._federated:
             await self._close_clients()
-            # The set shares one reranker, this client's, so this is the only
-            # place it is closed — and only if a text query ever built it.
-            reranker = self.__dict__.get("reranker")
-            if reranker is not None:
-                try:
-                    await reranker.aclose()
-                except Exception:
-                    logger.debug("Closing the reranker failed", exc_info=True)
+            # The set shares this client's embedder and reranker, so this is the
+            # only place they are closed — and only if anything built them.
+            await self._aclose_cached("embedder")
+            await self._aclose_cached("reranker")
             return False
         await self._await_vacuum_tasks()
-        # Best-effort: __aexit__ may run during exception unwinding, and a
-        # raising close must not mask the original exception. The reranker is
-        # a cached_property — close it only if it was materialized.
-        try:
-            await self.embedder.aclose()
-            reranker = self.__dict__.get("reranker")
-            if reranker is not None:
-                await reranker.aclose()
-        except Exception:
-            logger.debug("Closing embedder/reranker failed on teardown", exc_info=True)
+        # Accessed so the store's embedder is closed even where nothing used it;
+        # `cached_property` stores it, which is what `_aclose_cached` discards.
+        _ = self.embedder
+        await self._aclose_cached("embedder")
+        await self._aclose_cached("reranker")
         self.close()
         return False
+
+    async def _aclose_cached(self, name: str) -> None:
+        """Close a cached_property this client materialized, and discard it.
+
+        Discarded rather than left in place so that re-entering the client
+        builds a fresh one instead of reusing something already closed.
+        """
+        cached = self.__dict__.pop(name, None)
+        if cached is not None:
+            await _aclose_quietly(cached, name)
 
     async def _await_vacuum_tasks(self) -> None:
         """Drain background vacuum work and run a final collapse before teardown.
@@ -481,6 +504,8 @@ class HaikuRAG:
     ) -> Document:
         from haiku.rag.client.documents import create_document
 
+        self._require_one_database("create_document")
+
         return await create_document(self, content, uri, title, metadata, format)
 
     async def import_document(
@@ -493,6 +518,8 @@ class HaikuRAG:
     ) -> Document:
         from haiku.rag.client.documents import import_document
 
+        self._require_one_database("import_document")
+
         return await import_document(
             self, docling_document, chunks, uri, title, metadata
         )
@@ -502,6 +529,8 @@ class HaikuRAG:
         imports: "list[DocumentImport]",
     ) -> list[Document]:
         from haiku.rag.client.documents import import_documents
+
+        self._require_one_database("import_documents")
 
         return await import_documents(self, imports)
 
@@ -517,6 +546,8 @@ class HaikuRAG:
         metadata_provider: "MetadataProvider | None" = None,
     ) -> Document | list[Document]:
         from haiku.rag.client.documents import create_document_from_source
+
+        self._require_one_database("create_document_from_source")
 
         return await create_document_from_source(
             self,
@@ -541,6 +572,8 @@ class HaikuRAG:
         uri: str | None = None,
     ) -> Document:
         from haiku.rag.client.documents import update_document
+
+        self._require_one_database("update_document")
 
         return await update_document(
             self,
@@ -659,6 +692,8 @@ class HaikuRAG:
         """
         from haiku.rag.client.documents import parent_uri_filter
 
+        self._require_one_database("delete_document")
+
         async with self.store.write_transaction():
             # Resolve existence and collect the subtree under the lock so two
             # concurrent deletes of the same id can't both proceed, and children
@@ -753,6 +788,20 @@ class HaikuRAG:
             )
             return sum(counts)
         return await self.document_repository.count(filter=filter)
+
+    def _require_one_database(self, operation: str) -> None:
+        """Refuse an operation that has no meaning across a set of databases.
+
+        Writing, rebuilding and vacuuming all have to name a database. Raised as
+        a domain error rather than surfacing the missing repository, so a caller
+        can tell an unsupported selection from a bug.
+        """
+        if self._federated:
+            raise AmbiguousDatabaseError(
+                f"{operation} works on one database, and this client covers "
+                f"{', '.join(sorted(self._federated))}; select one with "
+                "clients_for([name])"
+            )
 
     def _name(self, document: Document | None) -> Document | None:
         """`document`, told which configured database it came from.
@@ -858,6 +907,8 @@ class HaikuRAG:
     ) -> list:
         from haiku.rag.client.search import visualize_chunk
 
+        self._require_one_database("visualize_chunk")
+
         return await visualize_chunk(self, chunk, refs, expand)
 
     async def rebuild_database(
@@ -865,13 +916,17 @@ class HaikuRAG:
     ) -> AsyncGenerator[str, None]:
         from haiku.rag.client.rebuild import rebuild_database
 
+        self._require_one_database("rebuild_database")
+
         async for doc_id in rebuild_database(self, mode):
             yield doc_id
 
     async def vacuum(self) -> None:
         """Optimize and clean up old versions across all tables."""
+        self._require_one_database("vacuum")
         await self.store.vacuum()
 
     def close(self):
         """Close the underlying store connection."""
+        self._require_one_database("close")
         self.store.close()

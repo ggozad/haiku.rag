@@ -17,7 +17,11 @@ class MigrationRequiredError(Exception):
 
 
 class AmbiguousDatabaseError(Exception):
-    """A command that works on one database was run against a configured set."""
+    """An operation that works on one database was asked of a configured set.
+
+    Raised by the CLI for a command that cannot tell which database to use, and
+    by the client for a method that has no meaning across several.
+    """
 
 
 class SourceUnavailableError(Exception):

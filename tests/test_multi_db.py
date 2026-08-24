@@ -8,7 +8,11 @@ from pydantic import ValidationError
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
 from haiku.rag.config.models import AppConfig, LanceDBConfig
-from haiku.rag.store.exceptions import ConfigMismatchError, SourceUnavailableError
+from haiku.rag.store.exceptions import (
+    AmbiguousDatabaseError,
+    ConfigMismatchError,
+    SourceUnavailableError,
+)
 from haiku.rag.store.models import Chunk, DocumentItem
 from haiku.rag.utils import locate_database
 
@@ -336,6 +340,140 @@ class TestLookupByIdentifier:
                 is None
             )
             assert await rag.get_document_by_uri("test://nowhere") is None
+
+
+class TestDatabaseIndependentWork:
+    """Converting, chunking and titling are functions of the configuration, not
+    of a database, so covering a set does not stop them."""
+
+    @pytest.mark.asyncio
+    async def test_chunking_opens_no_database(self, tmp_path, monkeypatch):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+
+        opened: list[str] = []
+
+        async def refuse(self, name, location):
+            opened.append(name)
+            raise AssertionError("opened a database to chunk a document")
+
+        monkeypatch.setattr(HaikuRAG, "_open_client", refuse)
+
+        doc = DoclingDocument(name="note")
+        doc.add_text(
+            label=DocItemLabel.TEXT, text="Boltzmann machines are energy based."
+        )
+
+        async with HaikuRAG(config=config, read_only=True) as rag:
+            chunks = await rag.chunk(doc)
+
+        assert opened == []
+        assert [c.content for c in chunks]
+
+    @pytest.mark.asyncio
+    async def test_the_embedder_is_built_once_and_closed_once(
+        self, tmp_path, monkeypatch
+    ):
+        """The parent owns the embedder it built, so leaving the context closes
+        it, once."""
+        from haiku.rag.embeddings import EmbedderWrapper
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+
+        closed: list[object] = []
+        original = EmbedderWrapper.aclose
+
+        async def counting(self):
+            closed.append(self)
+            return await original(self)
+
+        monkeypatch.setattr(EmbedderWrapper, "aclose", counting)
+
+        rag = HaikuRAG(config=config, read_only=True)
+        async with rag:
+            built = rag.embedder
+            assert rag.embedder is built
+
+        assert closed == [built]
+
+    @pytest.mark.asyncio
+    async def test_re_entering_a_set_builds_a_fresh_embedder(self, tmp_path):
+        """Teardown closes the embedder, so keeping it would hand the next
+        context one that is already closed."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+
+        rag = HaikuRAG(config=config, read_only=True)
+        async with rag:
+            first = rag.embedder
+        async with rag:
+            assert rag.embedder is not first
+
+    @pytest.mark.asyncio
+    async def test_re_entering_one_database_builds_a_fresh_embedder(self, temp_db_path):
+        """One database opens a new store on re-entry, and the embedder is that
+        store's."""
+        rag = HaikuRAG(temp_db_path, create=True)
+        async with rag:
+            first = rag.embedder
+        async with rag:
+            assert rag.embedder is rag.store.embedder
+            assert rag.embedder is not first
+
+    @pytest.mark.asyncio
+    async def test_a_set_nobody_asked_anything_of_builds_no_embedder(self, tmp_path):
+        """Built on first use, so a client that answered nothing holds nothing."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+
+        async with HaikuRAG(config=config, read_only=True) as rag:
+            assert "embedder" not in rag.__dict__
+
+    @pytest.mark.asyncio
+    async def test_one_database_still_uses_its_store_s_embedder(self, temp_db_path):
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            assert rag.embedder is rag.store.embedder
+
+
+class TestOperationsThatNeedOneDatabase:
+    @pytest.mark.asyncio
+    async def test_writing_names_the_databases_it_covers(self, tmp_path):
+        """A domain error, so a caller can tell an unsupported selection from a
+        missing attribute."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+
+        async with HaikuRAG(config=config) as rag:
+            with pytest.raises(AmbiguousDatabaseError, match="alpha, beta"):
+                await rag.create_document("orphan")
+            with pytest.raises(AmbiguousDatabaseError, match="clients_for"):
+                await rag.vacuum()
+
+    @pytest.mark.asyncio
+    async def test_a_selected_database_is_still_writable(self, tmp_path):
+        """Naming one of the set is how a write picks its database."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+
+        dim = get_config().embeddings.model.vector_dim
+        written = DoclingDocument(name="written")
+        written.add_text(label=DocItemLabel.TEXT, text="written")
+
+        async with HaikuRAG(config=config) as rag:
+            alpha = (await rag.clients_for(["alpha"]))[0]
+            assert alpha.is_read_only is False
+            document = await alpha.import_document(
+                written,
+                [Chunk(content="written", embedding=[0.1] * dim, order=0)],
+                uri="test://alpha/written",
+            )
+            assert await alpha.count_documents() == 2
+
+        assert document.id is not None
 
 
 class TestOneQueryVector:

@@ -232,6 +232,12 @@ the same queries: retrieval MAP 0.9914 with a reranker against 0.9918 for the
 same corpus in a single database, and 0.6044 without one against 0.9798. The cost
 is that a reranker scores candidates in proportion to the number of databases.
 
+Converting, chunking and title generation are functions of the configuration
+rather than of a database, so they work on a client covering the set. Writing,
+rebuilding and vacuuming name one database: asking a set-covering client raises
+`AmbiguousDatabaseError`, and `client.clients_for(["name"])` returns a client for
+one of them, writable when the covering client is.
+
 A database that cannot be opened fails the whole query and is named in the error.
 A result set silently missing one of the databases asked for cannot be told apart
 from a complete one.
