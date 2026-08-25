@@ -127,6 +127,25 @@ class DatabaseScope:
 
         return cls((DatabaseRef.at(config.storage.data_dir / "haiku.rag.lancedb"),))
 
+    def select(self, names: list[str]) -> "DatabaseScope":
+        """The databases in this scope named by `names`, in the order given.
+
+        Repeats collapse: a database named twice would be searched twice and
+        fused as two rank lists, which counts it double.
+        """
+        if not names:
+            raise ValueError(
+                "sources=[] selects no database; pass None for all of them"
+            )
+        by_name = {ref.name: ref for ref in self.databases if ref.name is not None}
+        missing = [name for name in names if name not in by_name]
+        if missing:
+            raise KeyError(
+                f"unknown database(s) {', '.join(sorted(missing))}; "
+                f"configured: {', '.join(sorted(by_name))}"
+            )
+        return DatabaseScope(tuple(by_name[name] for name in dict.fromkeys(names)))
+
     @property
     def covers_multiple(self) -> bool:
         """Whether this scope covers more than one database."""

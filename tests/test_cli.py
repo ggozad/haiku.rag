@@ -8,19 +8,15 @@ from click.exceptions import BadParameter
 from typer.testing import CliRunner
 
 from haiku.rag.cli import _cli as cli
-from haiku.rag.cli import (
-    _parse_meta_options,
-    require_one_database,
-    resolve_db_path,
-    select_database,
-)
+from haiku.rag.cli import _parse_meta_options, resolve_scope
 from haiku.rag.cli import cli as cli_wrapper
 from haiku.rag.config import get_config, set_config
-from haiku.rag.config.models import AppConfig, LanceDBConfig
+from haiku.rag.config.models import AppConfig, LanceDBConfig, StorageConfig
 from haiku.rag.store.exceptions import (
     AmbiguousDatabaseError,
     MigrationRequiredError,
 )
+from tests.conftest import for_path
 
 runner = CliRunner()
 
@@ -109,47 +105,62 @@ class TestOneDatabaseCommands:
     """`lancedb.databases` names a set; most commands work on one database."""
 
     @staticmethod
-    def _config(**databases):
-        return AppConfig(lancedb=LanceDBConfig(databases=databases))
+    def _install(monkeypatch, **databases):
+        import haiku.rag.config as config_module
 
-    def test_a_configured_set_refuses_a_one_database_command(self):
+        monkeypatch.setattr(config_module, "_config", None)
+        monkeypatch.setattr("haiku.rag.cli._database", None)
+        set_config(AppConfig(lancedb=LanceDBConfig(databases=databases)))
+
+    def test_a_configured_set_refuses_a_one_database_command(self, monkeypatch):
+        self._install(monkeypatch, alpha="/db/a.lancedb", beta="/db/b.lancedb")
+
         with pytest.raises(AmbiguousDatabaseError, match="alpha, beta"):
-            require_one_database(
-                self._config(alpha="/db/a.lancedb", beta="/db/b.lancedb"),
-                None,
-                federated=False,
-            )
+            resolve_scope(None)
 
-    def test_the_refusal_names_the_databases_and_not_their_locations(self):
+    def test_the_refusal_names_the_databases_and_not_their_locations(self, monkeypatch):
         """A location in an error message travels into logs and terminals; the
         names exist so it does not have to."""
+        self._install(
+            monkeypatch,
+            alpha="s3://bucket/prefix/a.lancedb",
+            beta="s3://bucket/prefix/b.lancedb",
+        )
+
         with pytest.raises(AmbiguousDatabaseError) as raised:
-            require_one_database(
-                self._config(alpha="s3://bucket/prefix/a.lancedb"),
-                None,
-                federated=False,
-            )
+            resolve_scope(None)
 
         assert "alpha" in str(raised.value)
         assert "s3://bucket/prefix/a.lancedb" not in str(raised.value)
         assert "bucket" not in str(raised.value)
 
-    def test_a_command_covering_the_set_is_allowed(self):
-        require_one_database(
-            self._config(alpha="/db/a.lancedb", beta="/db/b.lancedb"),
-            None,
-            federated=True,
-        )
+    def test_a_configured_set_of_one_needs_no_choosing(self, monkeypatch):
+        """Nothing is ambiguous about a set with one database in it, and it keeps
+        its name rather than being refused."""
+        self._install(monkeypatch, alpha="/db/a.lancedb")
 
-    def test_naming_a_path_is_allowed(self):
-        require_one_database(
-            self._config(alpha="/db/a.lancedb"),
-            Path("/db/other.lancedb"),
-            federated=False,
-        )
+        assert resolve_scope(None).names == ("alpha",)
 
-    def test_no_configured_databases_is_allowed(self):
-        require_one_database(AppConfig(), None, federated=False)
+    def test_a_command_covering_the_set_is_allowed(self, monkeypatch):
+        self._install(monkeypatch, alpha="/db/a.lancedb", beta="/db/b.lancedb")
+
+        assert resolve_scope(None, covers_set=True).names == ("alpha", "beta")
+
+    def test_naming_a_path_is_allowed(self, monkeypatch):
+        self._install(monkeypatch, alpha="/db/a.lancedb")
+
+        [ref] = resolve_scope(Path("/db/other.lancedb")).databases
+        assert ref.db_path == Path("/db/other.lancedb")
+
+    def test_no_configured_databases_is_allowed(self, monkeypatch, tmp_path):
+        import haiku.rag.config as config_module
+
+        monkeypatch.setattr(config_module, "_config", None)
+        monkeypatch.setattr("haiku.rag.cli._database", None)
+        set_config(AppConfig(storage=StorageConfig(data_dir=tmp_path)))
+
+        [ref] = resolve_scope(None).databases
+        assert ref.db_path == tmp_path / "haiku.rag.lancedb"
 
     def test_the_refusal_exits_with_an_error(self):
         with patch("haiku.rag.cli._cli") as mock_cli:
@@ -171,46 +182,49 @@ class TestSelectingADatabaseByName:
         monkeypatch.setattr(config_module, "_config", None)
         set_config(AppConfig(lancedb=LanceDBConfig(databases=databases)))
 
-    def test_a_uri_location_becomes_the_configured_uri(self, monkeypatch):
+    def test_a_named_database_is_passed_on_by_name(self, monkeypatch):
+        """Not resolved to a path: the name is what results and citations carry,
+        and rewriting the configuration is what used to lose it."""
         self._install(monkeypatch, medic="s3://bucket/prefix/medic.lancedb")
+        monkeypatch.setattr("haiku.rag.cli._database", "medic")
 
-        db_path = select_database("medic")
+        assert resolve_scope(None).names == ("medic",)
 
-        assert db_path is None
+    def test_naming_a_database_leaves_the_configuration_alone(self, monkeypatch):
+        self._install(monkeypatch, st="/data/st.lancedb", other="/data/o.lancedb")
+        monkeypatch.setattr("haiku.rag.cli._database", "st")
+
+        resolve_scope(None)
+
         config = get_config()
-        assert config.lancedb.uri == "s3://bucket/prefix/medic.lancedb"
-        assert config.lancedb.databases == {}
-
-    def test_a_local_location_becomes_the_database_path(self, monkeypatch):
-        self._install(monkeypatch, st="/data/st.lancedb")
-
-        db_path = select_database("st")
-
-        assert db_path == Path("/data/st.lancedb")
-        assert get_config().lancedb.uri == ""
+        assert config.lancedb.databases == {
+            "st": "/data/st.lancedb",
+            "other": "/data/o.lancedb",
+        }
+        assert config.lancedb.uri == ""
 
     def test_an_unknown_name_names_the_configured_ones(self, monkeypatch):
         self._install(monkeypatch, alpha="/data/a.lancedb", beta="/data/b.lancedb")
+        monkeypatch.setattr("haiku.rag.cli._database", "gamma")
 
         with pytest.raises(AmbiguousDatabaseError, match="alpha, beta"):
-            select_database("gamma")
+            resolve_scope(None)
 
     def test_an_unknown_name_does_not_leak_locations(self, monkeypatch):
         self._install(monkeypatch, medic="s3://bucket/prefix/medic.lancedb")
+        monkeypatch.setattr("haiku.rag.cli._database", "gamma")
 
         with pytest.raises(AmbiguousDatabaseError) as raised:
-            select_database("gamma")
+            resolve_scope(None)
 
         assert "bucket" not in str(raised.value)
 
     def test_selecting_nothing_reports_an_empty_mapping(self, monkeypatch):
-        import haiku.rag.config as config_module
-
-        monkeypatch.setattr(config_module, "_config", None)
-        set_config(AppConfig())
+        self._install(monkeypatch)
+        monkeypatch.setattr("haiku.rag.cli._database", "medic")
 
         with pytest.raises(AmbiguousDatabaseError, match="nothing"):
-            select_database("medic")
+            resolve_scope(None)
 
     def test_the_callback_selects_before_a_command_runs(self, tmp_path, monkeypatch):
         """`--database` is resolved once the config is loaded, so every command
@@ -237,7 +251,6 @@ class TestSelectingADatabaseByName:
 
         monkeypatch.setattr(config_module, "_config", None)
         monkeypatch.setattr(cli_module, "_database", None)
-        monkeypatch.setattr(cli_module, "_database_path", None)
         config_file = tmp_path / "haiku.rag.yaml"
         selected = tmp_path / "alpha.lancedb"
         config_file.write_text(f"lancedb:\n  databases:\n    alpha: {selected}\n")
@@ -245,24 +258,22 @@ class TestSelectingADatabaseByName:
         runner.invoke(
             cli, ["--config", str(config_file), "--database", "alpha", "info"]
         )
-        assert cli_module._database_path == selected
+        assert cli_module._database == "alpha"
 
         runner.invoke(cli, ["--config", str(config_file), "settings"])
 
-        assert cli_module._database_path is None
         assert cli_module._database is None
 
     def test_a_selection_does_not_outlive_its_invocation_in_process(
         self, tmp_path, monkeypatch
     ):
-        """Selecting rewrites the configuration, so a second invocation has to
-        start from a freshly loaded one rather than inherit the rewrite."""
+        """The selection is per invocation, so a second one starts from a
+        freshly loaded configuration rather than inheriting the first."""
         import haiku.rag.cli as cli_module
         import haiku.rag.config as config_module
 
         monkeypatch.setattr(config_module, "_config", None)
         monkeypatch.setattr(cli_module, "_database", None)
-        monkeypatch.setattr(cli_module, "_database_path", None)
         config_file = tmp_path / "haiku.rag.yaml"
         config_file.write_text(
             f"lancedb:\n  databases:\n    alpha: {tmp_path / 'alpha.lancedb'}\n"
@@ -272,24 +283,25 @@ class TestSelectingADatabaseByName:
         runner.invoke(
             cli, ["--config", str(config_file), "--database", "alpha", "settings"]
         )
+        # Naming one leaves the configuration naming both.
         assert get_config().lancedb.uri == ""
-        assert get_config().lancedb.databases == {}
+        assert set(get_config().lancedb.databases) == {"alpha", "beta"}
 
         runner.invoke(cli, ["--config", str(config_file), "settings"])
 
         assert set(get_config().lancedb.databases) == {"alpha", "beta"}
+        assert cli_module._database is None
 
     def test_a_selection_does_not_outlive_an_invocation_without_a_config_file(
         self, tmp_path, monkeypatch
     ):
-        """No config file is still a load: the previous invocation's selected URI
+        """No config file is still a load: the previous invocation's database
         must not be what the next one talks to."""
         import haiku.rag.cli as cli_module
         import haiku.rag.config as config_module
 
         monkeypatch.setattr(config_module, "_config", None)
         monkeypatch.setattr(cli_module, "_database", None)
-        monkeypatch.setattr(cli_module, "_database_path", None)
         monkeypatch.delenv("HAIKU_RAG_CONFIG_PATH", raising=False)
         monkeypatch.chdir(tmp_path)
         config_file = tmp_path / "selected.yaml"
@@ -300,32 +312,26 @@ class TestSelectingADatabaseByName:
         runner.invoke(
             cli, ["--config", str(config_file), "--database", "medic", "settings"]
         )
-        assert get_config().lancedb.uri == "s3://bucket/medic.lancedb"
+        assert get_config().lancedb.databases == {"medic": "s3://bucket/medic.lancedb"}
 
         runner.invoke(cli, ["settings"])
 
-        assert get_config().lancedb.uri == ""
+        assert get_config().lancedb.databases == {}
+        assert cli_module._database is None
 
 
 class TestResolvingTheDatabasePath:
     def test_a_path_wins_when_nothing_is_selected(self, monkeypatch):
         monkeypatch.setattr("haiku.rag.cli._database", None)
-        monkeypatch.setattr("haiku.rag.cli._database_path", None)
 
-        assert resolve_db_path(Path("/data/one.lancedb")) == Path("/data/one.lancedb")
-
-    def test_the_selected_database_is_used_without_a_path(self, monkeypatch):
-        monkeypatch.setattr("haiku.rag.cli._database", "st")
-        monkeypatch.setattr("haiku.rag.cli._database_path", Path("/data/st.lancedb"))
-
-        assert resolve_db_path(None) == Path("/data/st.lancedb")
+        [ref] = resolve_scope(Path("/data/one.lancedb")).databases
+        assert ref.db_path == Path("/data/one.lancedb")
 
     def test_naming_a_database_twice_is_refused(self, monkeypatch):
         monkeypatch.setattr("haiku.rag.cli._database", "st")
-        monkeypatch.setattr("haiku.rag.cli._database_path", Path("/data/st.lancedb"))
 
         with pytest.raises(AmbiguousDatabaseError, match="not both"):
-            resolve_db_path(Path("/data/other.lancedb"))
+            resolve_scope(Path("/data/other.lancedb"))
 
 
 class TestCliConfigMismatchError:
@@ -595,7 +601,7 @@ class TestAskAnalyzeImageOption:
         with patch.object(
             HaikuRAG, "ask", new_callable=AsyncMock, return_value=("answer", [])
         ) as mock_ask:
-            app = HaikuRAGApp(db_path=temp_db_path)
+            app = HaikuRAGApp(scope=for_path(temp_db_path))
             await app.ask("q", images=[img_path])
 
         assert mock_ask.call_args.kwargs["images"] == [buffer.getvalue()]
@@ -622,7 +628,6 @@ class TestChatCoversTheSet:
 
         monkeypatch.setattr(config_module, "_config", None)
         monkeypatch.setattr(cli_module, "_database", None)
-        monkeypatch.setattr(cli_module, "_database_path", None)
 
         with patch("haiku.rag.chat.run_chat") as run_chat:
             result = runner.invoke(
@@ -630,8 +635,8 @@ class TestChatCoversTheSet:
             )
 
         assert result.exit_code == 0, result.output
-        # None is what makes the client resolve the set for itself.
-        assert run_chat.call_args.args[0] is None
+        # The scope covers both, which is what makes chat read the set.
+        assert run_chat.call_args.kwargs["scope"].names == ("arxiv", "wiki")
 
     def test_naming_one_database_opens_that_one(self, tmp_path, monkeypatch):
         import haiku.rag.cli as cli_module
@@ -639,7 +644,6 @@ class TestChatCoversTheSet:
 
         monkeypatch.setattr(config_module, "_config", None)
         monkeypatch.setattr(cli_module, "_database", None)
-        monkeypatch.setattr(cli_module, "_database_path", None)
 
         with patch("haiku.rag.chat.run_chat") as run_chat:
             result = runner.invoke(
@@ -654,7 +658,8 @@ class TestChatCoversTheSet:
             )
 
         assert result.exit_code == 0, result.output
-        assert run_chat.call_args.args[0] == tmp_path / "w.lancedb"
+        # Passed on by name, so the database it opens keeps its identity.
+        assert run_chat.call_args.kwargs["scope"].names == ("wiki",)
 
     def test_a_single_database_setup_is_unchanged(self, tmp_path, monkeypatch):
         """Without a configured set, chat opens the path it always did."""
@@ -663,13 +668,13 @@ class TestChatCoversTheSet:
 
         monkeypatch.setattr(config_module, "_config", None)
         monkeypatch.setattr(cli_module, "_database", None)
-        monkeypatch.setattr(cli_module, "_database_path", None)
 
         with patch("haiku.rag.chat.run_chat") as run_chat:
             result = runner.invoke(cli, ["chat", "--db", str(tmp_path / "one.lancedb")])
 
         assert result.exit_code == 0, result.output
-        assert run_chat.call_args.args[0] == tmp_path / "one.lancedb"
+        [ref] = run_chat.call_args.kwargs["scope"].databases
+        assert ref.db_path == tmp_path / "one.lancedb"
 
 
 class TestRenderingTheDatabase:
@@ -681,7 +686,7 @@ class TestRenderingTheDatabase:
         from haiku.rag.app import HaikuRAGApp
 
         return HaikuRAGApp(
-            db_path=tmp_path / "unused",
+            scope=for_path(tmp_path / "unused"),
             config=AppConfig(lancedb=LanceDBConfig(databases=databases)),
         )
 
@@ -730,7 +735,7 @@ def app_stub(monkeypatch, tmp_path):
     stub = AsyncMock()
     monkeypatch.setattr(
         "haiku.rag.cli.create_app",
-        lambda db=None, *, federated=False: stub,
+        lambda db=None, *, covers_set=False: stub,
     )
     return stub
 

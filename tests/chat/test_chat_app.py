@@ -7,6 +7,7 @@ from typer.testing import CliRunner
 
 from haiku.rag.capabilities.rag import RAGState, create_capability
 from haiku.rag.cli import _cli as cli
+from tests.conftest import _covering_returns, for_path
 
 runner = CliRunner()
 
@@ -58,7 +59,41 @@ def test_run_chat_covers_a_configured_set(tmp_path, monkeypatch):
 
         run_chat(db_path=None)
 
-    assert app.call_args.args[0] is None
+    assert app.call_args.kwargs["scope"].names == ("a", "b")
+
+
+def test_chat_capabilities_read_the_named_database(tmp_path, monkeypatch):
+    """`--db PATH` and `--database NAME` have to reach the capabilities too, or
+    they answer from the default database or the whole set."""
+    import haiku.rag.config as config_module
+    from haiku.rag.client.scope import DatabaseScope
+    from haiku.rag.config import set_config
+    from haiku.rag.config.models import AppConfig, LanceDBConfig
+
+    monkeypatch.setattr(config_module, "_config", None)
+    config = AppConfig(
+        lancedb=LanceDBConfig(
+            databases={
+                "a": str(tmp_path / "a.lancedb"),
+                "b": str(tmp_path / "b.lancedb"),
+            }
+        )
+    )
+    set_config(config)
+
+    with patch("haiku.rag.chat.app.ChatApp") as chat_app:
+        from haiku.rag.chat import run_chat
+
+        run_chat(scope=DatabaseScope.resolve(config, database_name="b"))
+        [named] = chat_app.call_args.kwargs["capabilities"]
+
+        run_chat(scope=DatabaseScope.resolve(config))
+        [covering] = chat_app.call_args.kwargs["capabilities"]
+
+    assert named.db_path == tmp_path / "b.lancedb"
+    assert named.config.lancedb.databases == {}
+    assert covering.db_path is None
+    assert set(covering.config.lancedb.databases) == {"a", "b"}
 
 
 def test_run_chat_defers_multiple_capabilities(temp_db_path: Path):
@@ -134,7 +169,7 @@ def _make_app(db_path: Path, mock_client: AsyncMock | None = None):
         mock_client = _make_mock_client()
 
     return ChatApp(
-        db_path=db_path,
+        scope=for_path(db_path),
         capabilities=[create_capability(db_path=db_path)],
         read_only=True,
     ), mock_client
@@ -148,7 +183,7 @@ def _make_app_with_state(db_path: Path, mock_client: AsyncMock | None = None):
         mock_client = _make_mock_client()
 
     return ChatApp(
-        db_path=db_path,
+        scope=for_path(db_path),
         capabilities=[create_capability(db_path=db_path)],
         read_only=True,
     ), mock_client
@@ -161,7 +196,10 @@ async def test_chat_app_has_required_widgets(temp_db_path: Path):
 
     app, mock_client = _make_app(temp_db_path)
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test():
             chat_history = app.query_one(ChatHistory)
             assert chat_history is not None
@@ -177,7 +215,10 @@ async def test_chat_app_quit_binding(temp_db_path: Path):
     """Test that pressing ctrl+q quits the app."""
     app, mock_client = _make_app(temp_db_path)
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test() as pilot:
             assert app.is_running
             await pilot.press("ctrl+q")
@@ -191,7 +232,10 @@ async def test_chat_history_can_add_message(temp_db_path: Path):
 
     app, mock_client = _make_app(temp_db_path)
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test():
             chat_history = app.query_one(ChatHistory)
 
@@ -210,7 +254,10 @@ async def test_chat_history_can_add_tool_calls(temp_db_path: Path):
 
     app, mock_client = _make_app(temp_db_path)
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test():
             chat_history = app.query_one(ChatHistory)
 
@@ -232,7 +279,10 @@ async def test_chat_history_can_add_citations(temp_db_path: Path):
 
     app, mock_client = _make_app(temp_db_path)
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test():
             chat_history = app.query_one(ChatHistory)
 
@@ -272,7 +322,10 @@ async def test_chat_history_thinking_indicator(temp_db_path: Path):
 
     app, mock_client = _make_app(temp_db_path)
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test() as pilot:
             chat_history = app.query_one(ChatHistory)
 
@@ -293,7 +346,10 @@ async def test_clear_chat_resets_state(temp_db_path: Path):
 
     app, mock_client = _make_app(temp_db_path)
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test() as pilot:
             chat_history = app.query_one(ChatHistory)
 
@@ -317,7 +373,10 @@ async def test_citation_expand_collapse_with_enter(temp_db_path: Path):
 
     app, mock_client = _make_app(temp_db_path)
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test() as pilot:
             chat_history = app.query_one(ChatHistory)
 
@@ -356,7 +415,10 @@ async def test_show_citations_renders_from_flat_state(temp_db_path: Path):
 
     app, mock_client = _make_app_with_state(temp_db_path)
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test() as pilot:
             rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
 
@@ -391,7 +453,10 @@ async def test_document_filter_updates_rag_state(temp_db_path: Path):
 
     app, mock_client = _make_app_with_state(temp_db_path)
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test():
             # The selection is document ids, so a repeated title cannot widen it.
             selected = [
@@ -421,7 +486,10 @@ async def test_document_filter_cleared_when_empty(temp_db_path: Path):
 
     app, mock_client = _make_app_with_state(temp_db_path)
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test():
             # First set a filter
             app.on_document_filter_modal_filter_changed(
@@ -445,7 +513,7 @@ async def test_chat_app_open_failure_surfaces_real_error(tmp_path: Path):
     AttributeError from tearing down a client that never opened."""
     from haiku.rag.chat.app import ChatApp
 
-    app = ChatApp(db_path=tmp_path / "missing.lancedb", capabilities=[])
+    app = ChatApp(scope=for_path(tmp_path / "missing.lancedb"), capabilities=[])
     with pytest.raises(FileNotFoundError):
         async with app.run_test():
             pass
@@ -485,7 +553,10 @@ async def test_a_cancelled_run_does_not_advance_persisted_state(temp_db_path: Pa
         async def __anext__(self):
             raise asyncio.CancelledError
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test():
             app._state = {
                 "rag": {"evidence": {"question": 0, "latest_evidence_epoch": 0}}
@@ -522,7 +593,10 @@ async def test_visual_grounding_uses_the_database_holding_the_citation(tmp_path)
     covering.reader_for = AsyncMock(return_value=owner)
 
     app, _ = _make_app(tmp_path / "unused.lancedb", covering)
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=covering):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, covering),
+    ):
         async with app.run_test():
             history = app.query_one(ChatHistory)
             await history.add_citations(
@@ -570,7 +644,10 @@ class TestDocumentSelectionIdentity:
 
         modal = DocumentFilterModal(client=client)
         app, _ = _make_app(temp_db_path, client)
-        with patch("haiku.rag.chat.app.HaikuRAG", return_value=client):
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+            _covering_returns(_stub_rag, client),
+        ):
             async with app.run_test() as pilot:
                 await app.push_screen(modal)
                 await pilot.pause()

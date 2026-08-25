@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 from haiku.rag.cli import _cli as cli
 from haiku.rag.store.models import Chunk, Document, SearchResult
+from tests.conftest import for_path
 
 runner = CliRunner()
 
@@ -326,7 +327,7 @@ async def test_inspector_open_failure_surfaces_real_error(tmp_path):
     AttributeError from tearing down a client that never opened."""
     from haiku.rag.inspector.app import InspectorApp
 
-    app = InspectorApp(db_path=tmp_path / "missing.lancedb", read_only=True)
+    app = InspectorApp(scope=for_path(tmp_path / "missing.lancedb"), read_only=True)
     with pytest.raises(FileNotFoundError):
         async with app.run_test():
             pass

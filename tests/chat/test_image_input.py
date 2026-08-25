@@ -16,6 +16,7 @@ from haiku.rag.chat.widgets.prompt import (
     PostableTextArea,
     build_user_prompt,
 )
+from tests.conftest import for_path
 
 
 def make_image_bytes(fmt: str = "PNG") -> bytes:
@@ -131,7 +132,7 @@ class TestChatAppImageAttach:
         async with HaikuRAG(temp_db_path, create=True):
             pass
 
-        app = ChatApp(db_path=temp_db_path, capabilities=[])
+        app = ChatApp(scope=for_path(temp_db_path), capabilities=[])
         async with app.run_test() as pilot:
             data = make_image_bytes()
             app.post_message(ImageAdded(Path("img.png"), data))
@@ -150,7 +151,7 @@ class TestChatAppLayout:
         async with HaikuRAG(temp_db_path, create=True):
             pass
 
-        app = ChatApp(db_path=temp_db_path, capabilities=[])
+        app = ChatApp(scope=for_path(temp_db_path), capabilities=[])
         async with app.run_test() as pilot:
             await pilot.pause()
             prompt = app.query_one(FlexibleInput)

@@ -63,8 +63,9 @@ async def ask(
     )
     from haiku.rag.utils import get_model
 
+    # No `db_path`: the lent client is what the capability reads through, and it
+    # already knows which databases that is.
     capability = create_capability(
-        db_path=None if client.covers_multiple else client.store.db_path,
         config=client._config,
         rag=client,
         defer_loading=False,
@@ -123,8 +124,9 @@ async def analyze(
     from haiku.rag.sandbox import AnalysisResult
     from haiku.rag.utils import get_model
 
+    # No `db_path`: the lent client is what the capability reads through, and it
+    # already knows which databases that is.
     capability = create_capability(
-        db_path=None if client.covers_multiple else client.store.db_path,
         config=client._config,
         rag=client,
         defer_loading=False,

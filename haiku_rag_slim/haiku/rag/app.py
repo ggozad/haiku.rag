@@ -1,4 +1,5 @@
 import logging
+from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -22,6 +23,7 @@ from haiku.rag.store.models.chunk import SearchType
 from haiku.rag.store.models.document import Document
 
 if TYPE_CHECKING:
+    from haiku.rag.client.scope import DatabaseRef, DatabaseScope
     from haiku.rag.store.engine import Store
     from haiku.rag.store.models import SearchResult
 from haiku.rag.config import redact_secrets
@@ -33,37 +35,82 @@ logger = logging.getLogger(__name__)
 class HaikuRAGApp:
     def __init__(
         self,
-        db_path: Path,
+        scope: "DatabaseScope",
         config: AppConfig | None = None,
         read_only: bool = False,
-        federated: bool = False,
     ):
-        self.db_path = db_path
+        """The databases this command works on, resolved by whoever built it.
+
+        One selector, not three: a command that took a path and a name and a
+        scope would have to decide between them, which is the deciding this
+        layer exists to have already done.
+        """
+        self.scope = scope
         self.config = config if config is not None else get_config()
         self.read_only = read_only
-        self.federated = federated
         self.console = Console()
 
-        from haiku.rag.store.engine import ConnectionMode
+    @property
+    def _one(self) -> "DatabaseRef":
+        """The one database this command works on.
 
-        self._is_local = ConnectionMode.from_config(self.config) == ConnectionMode.LOCAL
-        self._display_path = self.db_path if self._is_local else self.config.lancedb.uri
+        Commands that cover a set never reach here: they read through the client
+        instead.
+        """
+        [ref] = self.scope.databases
+        return ref
+
+    @cached_property
+    def _connection(self) -> "tuple[AppConfig, Path]":
+        """How to open the one database this command works on, directly.
+
+        The configuration a command was given names a *set*; the one it opens
+        needs its own, or a named database behind a URI is opened as the local
+        path that stands in for it.
+        """
+        from haiku.rag.client.session import default_db_path
+
+        config, db_path = self._one.connection(self.config)
+        return config, db_path or default_db_path(config)
 
     @property
-    def _client_db_path(self) -> "Path | None":
-        """None where the command covers `lancedb.databases`, so the client
-        opens the configured set rather than one path."""
-        return None if self.federated else self.db_path
+    def _store_config(self) -> AppConfig:
+        """The configuration for opening the one database directly."""
+        return self._connection[0]
+
+    @property
+    def _is_local(self) -> bool:
+        """Whether the database is a local path rather than a URI.
+
+        Read from the database this command resolved to, not from the
+        configuration: a database named in `lancedb.databases` can sit behind a
+        URI while the configuration's own `uri` is empty.
+        """
+        return self._one.db_path is not None
+
+    @property
+    def _path(self) -> Path:
+        """The path of the one database this command works on.
+
+        A database behind a URI has none of its own, and the default stands in:
+        the URI in `_store_config` is what decides where it connects.
+        """
+        return self._connection[1]
+
+    @property
+    def _display_path(self) -> "Path | str":
+        """What a one-database command calls the database it opened."""
+        return self._one.db_path or self._one.uri
 
     async def init(self):
         """Initialize a new database."""
-        if self._is_local and self.db_path.exists():
+        if self._is_local and self._path.exists():
             self.console.print(
-                f"[yellow]Database already exists at {self.db_path}[/yellow]"
+                f"[yellow]Database already exists at {self._path}[/yellow]"
             )
             return
 
-        async with HaikuRAG(db_path=self.db_path, config=self.config, create=True):
+        async with HaikuRAG._covering(self.scope, self.config, create=True):
             pass
         self.console.print(
             f"[bold green]Database initialized at {self._display_path}[/bold green]"
@@ -80,11 +127,11 @@ class HaikuRAGApp:
             f"  [repr.attrib_name]path[/repr.attrib_name]: {self._display_path}"
         )
 
-        if self._is_local and not self.db_path.exists():
+        if self._is_local and not self._path.exists():
             self.console.print("[red]Database path does not exist.[/red]")
             return
 
-        info = await gather_database_info(self.config, self.db_path)
+        info = await gather_database_info(self._store_config, self._path)
 
         if not info.exists:
             self.console.print(
@@ -211,7 +258,7 @@ class HaikuRAGApp:
             f"  [repr.attrib_name]path[/repr.attrib_name]: {self._display_path}"
         )
 
-        if self._is_local and not self.db_path.exists():
+        if self._is_local and not self._path.exists():
             self.console.print("[red]Database path does not exist.[/red]")
             return True
 
@@ -226,8 +273,8 @@ class HaikuRAGApp:
         cm = status if status is not None else nullcontext()
         with cm:
             report = await run_doctor(
-                self.config,
-                self.db_path,
+                self._store_config,
+                self._path,
                 dict(os.environ),
                 duplicates_out=duplicates_out,
                 on_progress=on_progress,
@@ -279,13 +326,13 @@ class HaikuRAGApp:
         """
         from haiku.rag.store.engine import Store
 
-        if self._is_local and not self.db_path.exists():
+        if self._is_local and not self._path.exists():
             self.console.print("[red]Database path does not exist.[/red]")
             return
 
         async with Store(
-            self.db_path,
-            config=self.config,
+            self._path,
+            config=self._store_config,
             skip_validation=True,
             read_only=True,
             skip_migration_check=True,
@@ -359,15 +406,15 @@ class HaikuRAGApp:
         """
         from haiku.rag.store.engine import Store
 
-        return Store(self.db_path, config=self.config, read_only=self.read_only)
+        return Store(self._path, config=self._store_config, read_only=self.read_only)
 
     def _tag_read_store(self) -> "Store":
         """Read-only store for tag inspection; works on old or drifted DBs."""
         from haiku.rag.store.engine import Store
 
         return Store(
-            self.db_path,
-            config=self.config,
+            self._path,
+            config=self._store_config,
             skip_validation=True,
             skip_migration_check=True,
             read_only=True,
@@ -375,16 +422,16 @@ class HaikuRAGApp:
 
     async def create_tag(self, name: str):
         """Tag the current version of every table."""
-        if self._is_local and not self.db_path.exists():
-            raise ValueError(f"Database path does not exist: {self.db_path}")
+        if self._is_local and not self._path.exists():
+            raise ValueError(f"Database path does not exist: {self._path}")
         async with self._tag_write_store() as store:
             await store.create_tag(name)
         self.console.print(f"[green]Created tag '{escape(name)}'[/green]")
 
     async def list_tags(self):
         """List database tags, flagging partial ones."""
-        if self._is_local and not self.db_path.exists():
-            raise ValueError(f"Database path does not exist: {self.db_path}")
+        if self._is_local and not self._path.exists():
+            raise ValueError(f"Database path does not exist: {self._path}")
         async with self._tag_read_store() as store:
             tags = await store.list_tags()
 
@@ -404,8 +451,8 @@ class HaikuRAGApp:
 
     async def delete_tag(self, name: str):
         """Delete a tag from every table that has it."""
-        if self._is_local and not self.db_path.exists():
-            raise ValueError(f"Database path does not exist: {self.db_path}")
+        if self._is_local and not self._path.exists():
+            raise ValueError(f"Database path does not exist: {self._path}")
         async with self._tag_write_store() as store:
             await store.delete_tag(name)
         self.console.print(f"[green]Deleted tag '{escape(name)}'[/green]")
@@ -419,8 +466,8 @@ class HaikuRAGApp:
         Raises:
             ValueError: If the database path does not exist.
         """
-        if self._is_local and not self.db_path.exists():
-            raise ValueError(f"Database path does not exist: {self.db_path}")
+        if self._is_local and not self._path.exists():
+            raise ValueError(f"Database path does not exist: {self._path}")
         async with self._tag_write_store() as store:
             safety_tag = await store.restore_tag(name)
         self.console.print(f"[green]Restored database to tag '{escape(name)}'.[/green]")
@@ -434,11 +481,8 @@ class HaikuRAGApp:
         )
 
     async def list_documents(self, filter: str | None = None):
-        async with HaikuRAG(
-            db_path=self.db_path,
-            config=self.config,
-            read_only=True,
-            skip_validation=True,
+        async with HaikuRAG._covering(
+            self.scope, self.config, read_only=True, skip_validation=True
         ) as self.client:
             documents = await self.client.list_documents(filter=filter)
             for doc in documents:
@@ -447,10 +491,8 @@ class HaikuRAGApp:
     async def add_document_from_text(
         self, text: str, title: str | None = None, metadata: dict | None = None
     ):
-        async with HaikuRAG(
-            db_path=self.db_path,
-            config=self.config,
-            read_only=self.read_only,
+        async with HaikuRAG._covering(
+            self.scope, self.config, read_only=self.read_only
         ) as self.client:
             doc = await self.client.create_document(
                 text, title=title, metadata=metadata
@@ -463,10 +505,8 @@ class HaikuRAGApp:
     async def add_document_from_source(
         self, source: str, title: str | None = None, metadata: dict | None = None
     ):
-        async with HaikuRAG(
-            db_path=self.db_path,
-            config=self.config,
-            read_only=self.read_only,
+        async with HaikuRAG._covering(
+            self.scope, self.config, read_only=self.read_only
         ) as self.client:
             result = await self.client.create_document_from_source(
                 source, title=title, metadata=metadata
@@ -484,11 +524,8 @@ class HaikuRAGApp:
                 )
 
     async def get_document(self, doc_id: str):
-        async with HaikuRAG(
-            db_path=self.db_path,
-            config=self.config,
-            read_only=True,
-            skip_validation=True,
+        async with HaikuRAG._covering(
+            self.scope, self.config, read_only=True, skip_validation=True
         ) as self.client:
             doc = await self.client.get_document_by_id(doc_id)
             if doc is None:
@@ -497,11 +534,8 @@ class HaikuRAGApp:
             self._rich_print_document(doc, truncate=False)
 
     async def delete_document(self, doc_id: str):
-        async with HaikuRAG(
-            db_path=self.db_path,
-            config=self.config,
-            read_only=self.read_only,
-            skip_validation=True,
+        async with HaikuRAG._covering(
+            self.scope, self.config, read_only=self.read_only, skip_validation=True
         ) as self.client:
             deleted = await self.client.delete_document(doc_id)
             if deleted:
@@ -541,10 +575,8 @@ class HaikuRAGApp:
             assert query is not None
             search_input = query
 
-        async with HaikuRAG(
-            db_path=self._client_db_path,
-            config=self.config,
-            read_only=True,
+        async with HaikuRAG._covering(
+            self.scope, self.config, read_only=True
         ) as self.client:
             results = await self.client.search(
                 search_input,
@@ -562,11 +594,8 @@ class HaikuRAGApp:
         """Display visual grounding images for a chunk."""
         from textual_image.renderable import Image as RichImage
 
-        async with HaikuRAG(
-            db_path=self.db_path,
-            config=self.config,
-            read_only=True,
-            skip_validation=True,
+        async with HaikuRAG._covering(
+            self.scope, self.config, read_only=True, skip_validation=True
         ) as self.client:
             chunk = await self.client.get_chunk_by_id(chunk_id)
             if not chunk:
@@ -608,10 +637,8 @@ class HaikuRAGApp:
             filter: SQL WHERE clause to filter documents
             images: Paths of images to attach to the question
         """
-        async with HaikuRAG(
-            db_path=self._client_db_path,
-            config=self.config,
-            read_only=True,
+        async with HaikuRAG._covering(
+            self.scope, self.config, read_only=True
         ) as self.client:
             answer, citations = await self.client.ask(
                 question,
@@ -641,10 +668,8 @@ class HaikuRAGApp:
             filter: SQL WHERE clause to filter documents
             images: Paths of images to attach to the question
         """
-        async with HaikuRAG(
-            db_path=self._client_db_path,
-            config=self.config,
-            read_only=True,
+        async with HaikuRAG._covering(
+            self.scope, self.config, read_only=True
         ) as self.client:
             self.console.print(f"[bold blue]Question:[/bold blue] {question}")
             self.console.print()
@@ -667,11 +692,8 @@ class HaikuRAGApp:
                 self.console.print(renderable)
 
     async def rebuild(self, mode: RebuildMode = RebuildMode.FULL):
-        async with HaikuRAG(
-            db_path=self.db_path,
-            config=self.config,
-            skip_validation=True,
-            read_only=self.read_only,
+        async with HaikuRAG._covering(
+            self.scope, self.config, skip_validation=True, read_only=self.read_only
         ) as client:
             if mode == RebuildMode.SET_EMBEDDER:
                 async for _ in client.rebuild_database(mode=mode):
@@ -710,11 +732,8 @@ class HaikuRAGApp:
 
     async def vacuum(self):
         """Run database maintenance: optimize and cleanup table history."""
-        async with HaikuRAG(
-            db_path=self.db_path,
-            config=self.config,
-            skip_validation=True,
-            read_only=self.read_only,
+        async with HaikuRAG._covering(
+            self.scope, self.config, skip_validation=True, read_only=self.read_only
         ) as client:
             await client.vacuum()
         self.console.print("[bold green]Vacuum completed successfully.[/bold green]")
@@ -728,8 +747,8 @@ class HaikuRAGApp:
         from haiku.rag.store.engine import Store
 
         async with Store(
-            self.db_path,
-            config=self.config,
+            self._path,
+            config=self._store_config,
             skip_validation=True,
             skip_migration_check=True,
             read_only=self.read_only,
@@ -738,11 +757,8 @@ class HaikuRAGApp:
 
     async def create_index(self):
         """Create vector index on the chunks table."""
-        async with HaikuRAG(
-            db_path=self.db_path,
-            config=self.config,
-            skip_validation=True,
-            read_only=self.read_only,
+        async with HaikuRAG._covering(
+            self.scope, self.config, skip_validation=True, read_only=self.read_only
         ) as client:
             row_count = await client.store.chunks_table.count_rows()
             self.console.print(f"Chunks in database: {row_count}")
@@ -899,13 +915,11 @@ class HaikuRAGApp:
         port: int = 8001,
     ):
         """Run the MCP server until interrupted."""
-        async with HaikuRAG(
-            self.db_path,
-            config=self.config,
-            read_only=self.read_only,
+        async with HaikuRAG._covering(
+            self.scope, self.config, read_only=self.read_only
         ):
             server = create_mcp_server(
-                self.db_path, config=self.config, read_only=self.read_only
+                self._path, config=self._store_config, read_only=self.read_only
             )
             try:
                 if transport == "stdio":

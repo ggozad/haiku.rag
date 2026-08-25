@@ -14,6 +14,7 @@ from haiku.rag.client import RebuildMode
 from haiku.rag.config.models import AppConfig, LanceDBConfig
 from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document import Document
+from tests.conftest import for_path
 
 
 @pytest.fixture
@@ -28,6 +29,10 @@ def app(tmp_path, client, monkeypatch):
         def __init__(self, *args, **kwargs):
             pass
 
+        @classmethod
+        def _covering(cls, *args, **kwargs):
+            return cls()
+
         async def __aenter__(self):
             return client
 
@@ -37,7 +42,7 @@ def app(tmp_path, client, monkeypatch):
     monkeypatch.setattr("haiku.rag.app.HaikuRAG", StubHaikuRAG)
     db = tmp_path / "db.lancedb"
     db.mkdir()
-    application = HaikuRAGApp(db_path=db, config=AppConfig())
+    application = HaikuRAGApp(scope=for_path(db), config=AppConfig())
     application.console = Console(record=True, width=200)
     return application
 
@@ -317,7 +322,7 @@ async def test_create_index_rebuilds_an_existing_one(app, client):
 
 def test_show_settings_hides_secrets(tmp_path):
     config = AppConfig(lancedb=LanceDBConfig(uri="db://x", api_key="secret-value"))
-    app = HaikuRAGApp(db_path=tmp_path / "db", config=config)
+    app = HaikuRAGApp(scope=for_path(tmp_path / "db", config), config=config)
     app.console = Console(record=True, width=200)
 
     app.show_settings()
@@ -329,7 +334,7 @@ def test_show_settings_hides_secrets(tmp_path):
 
 def test_remote_uri_is_the_display_path(tmp_path):
     config = AppConfig(lancedb=LanceDBConfig(uri="s3://bucket/path"))
-    app = HaikuRAGApp(db_path=tmp_path / "db", config=config)
+    app = HaikuRAGApp(scope=for_path(None, config), config=config)
 
     assert app._display_path == "s3://bucket/path"
     assert app._is_local is False
@@ -364,7 +369,7 @@ async def test_init_reports_an_existing_database(app):
 
 
 async def test_info_reports_a_missing_path(tmp_path):
-    application = HaikuRAGApp(db_path=tmp_path / "gone", config=AppConfig())
+    application = HaikuRAGApp(scope=for_path(tmp_path / "gone"), config=AppConfig())
     application.console = Console(record=True, width=200)
 
     await application.info()
@@ -375,7 +380,7 @@ async def test_info_reports_a_missing_path(tmp_path):
 
 
 async def test_history_reports_a_missing_path(tmp_path):
-    application = HaikuRAGApp(db_path=tmp_path / "gone", config=AppConfig())
+    application = HaikuRAGApp(scope=for_path(tmp_path / "gone"), config=AppConfig())
     application.console = Console(record=True, width=200)
 
     await application.history()
@@ -459,7 +464,7 @@ async def test_restore_tag_reports_the_safety_tag(app, monkeypatch):
     ],
 )
 async def test_tag_operations_require_the_database(tmp_path, method, args):
-    application = HaikuRAGApp(db_path=tmp_path / "gone", config=AppConfig())
+    application = HaikuRAGApp(scope=for_path(tmp_path / "gone"), config=AppConfig())
 
     with pytest.raises(ValueError, match="does not exist"):
         await getattr(application, method)(*args)
@@ -601,7 +606,7 @@ async def test_doctor_reports_the_duplicates_export(app, monkeypatch, tmp_path):
 
 
 async def test_doctor_reports_a_missing_database(tmp_path):
-    application = HaikuRAGApp(db_path=tmp_path / "gone", config=AppConfig())
+    application = HaikuRAGApp(scope=for_path(tmp_path / "gone"), config=AppConfig())
     application.console = Console(record=True, width=200)
 
     assert await application.doctor() is True

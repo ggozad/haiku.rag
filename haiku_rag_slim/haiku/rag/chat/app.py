@@ -3,7 +3,6 @@ import uuid
 from collections.abc import Iterable, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import textual_image.widget  # noqa: F401 - import early for renderer detection
@@ -43,6 +42,8 @@ configure_telemetry(service_name="haiku-rag")
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
+
+    from haiku.rag.client.scope import DatabaseScope
 
 
 RAG_STATE_NAMESPACE = "rag"
@@ -86,13 +87,13 @@ class ChatApp(App):
 
     def __init__(
         self,
-        db_path: Path | None,
         capabilities: Sequence[RAGCapabilityBase[Any]],
+        scope: "DatabaseScope",
         read_only: bool = False,
         model: str | None = None,
     ) -> None:
         super().__init__()
-        self.db_path = db_path
+        self.scope = scope
         self._capabilities = capabilities
         self.read_only = read_only
         self._model = model
@@ -141,15 +142,16 @@ class ChatApp(App):
 
     async def on_mount(self) -> None:
         """Initialize the app when mounted."""
-        client = HaikuRAG(
-            db_path=self.db_path,
-            config=self.config,
-            read_only=self.read_only,
-        )
+        client = HaikuRAG._covering(self.scope, self.config, read_only=self.read_only)
         # Assign only after a successful open: on_unmount must not tear down
         # a client whose __aenter__ failed.
         await client.__aenter__()
         self.client = client
+        # The capabilities read through this one, rather than each opening its
+        # own: it is already the databases they were built for, and lending it
+        # means one connection per database instead of one per capability.
+        for capability in self._capabilities:
+            capability.borrowed_rag = client
 
         self._agent = Agent(
             self._model,
@@ -387,7 +389,7 @@ class ChatApp(App):
 
         from haiku.rag.inspector.widgets.info_modal import InfoModal
 
-        await self.push_screen(InfoModal(self.client, self.db_path))
+        await self.push_screen(InfoModal(self.client, None))
 
     def on_citation_widget_selected(self, event: CitationWidget.Selected) -> None:
         """Handle citation selection."""

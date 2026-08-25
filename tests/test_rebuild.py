@@ -7,7 +7,7 @@ import pytest
 
 from haiku.rag.client import HaikuRAG, RebuildMode
 from haiku.rag.config import get_config
-from tests.conftest import capture_logs, writing
+from tests.conftest import capture_logs, for_path, writing
 
 
 class ChunkData(TypedDict):
@@ -1061,7 +1061,7 @@ async def test_rebuild_set_embedder_works_on_empty_database(temp_db_path):
     drift = AppConfig()
     drift.embeddings.model.name = "different-model"
 
-    app = HaikuRAGApp(db_path=temp_db_path, config=drift)
+    app = HaikuRAGApp(scope=for_path(temp_db_path, drift), config=drift)
     await app.rebuild(mode=RebuildMode.SET_EMBEDDER)
 
     async with HaikuRAG(temp_db_path, config=drift, skip_validation=True) as client:

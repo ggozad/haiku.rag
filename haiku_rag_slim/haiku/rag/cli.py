@@ -33,6 +33,7 @@ from haiku.rag.utils import is_up_to_date  # noqa: E402
 
 if TYPE_CHECKING:
     from haiku.rag.app import HaikuRAGApp
+    from haiku.rag.client.scope import DatabaseScope
     from haiku.rag.config.models import AppConfig
 
 _cli = typer.Typer(
@@ -59,95 +60,53 @@ def cli():
 # Module-level flags set by callback
 _read_only: bool = False
 _database: str | None = None
-_database_path: Path | None = None
 
 
-def create_app(db: Path | None = None, *, federated: bool = False) -> "HaikuRAGApp":
-    """Create HaikuRAGApp with loaded config and resolved database path.
+def create_app(db: Path | None = None, *, covers_set: bool = False) -> "HaikuRAGApp":
+    """The application for a command, on the database(s) it works on.
 
-    Args:
-        db: Optional database path. If None, uses `--database`, then the path
-            from config.
-        federated: Whether this command works across `lancedb.databases`.
-
-    Returns:
-        HaikuRAGApp instance with proper config and db path.
+    `covers_set` is the command declaring that it can read several: `search`,
+    `ask`, `analyze` and `chat` can, and everything else names one.
 
     Raises:
-        AmbiguousDatabaseError: Several databases are configured and this
+        AmbiguousDatabaseError: several databases are configured and this
             command works on one, without `--db` or `--database` naming which.
     """
     from haiku.rag.app import HaikuRAGApp
 
-    db_path = resolve_db_path(db, federated=federated)
     return HaikuRAGApp(
-        db_path=db_path,
         config=get_config(),
         read_only=_read_only,
-        federated=federated and db is None and _database is None,
+        scope=resolve_scope(db, covers_set=covers_set),
     )
 
 
-def resolve_db_path(db: Path | None = None, *, federated: bool = False) -> Path:
-    """The database a command works on, from `--db`, `--database`, or config."""
+def resolve_scope(
+    db: Path | None = None, *, covers_set: bool = False
+) -> "DatabaseScope":
+    """The databases a command works on, resolved once.
+
+    The CLI decides only what it alone knows: that `--db` and `--database` are
+    the same thing said twice, and whether this command can read more than one.
+    Everything else — an unknown name, a legacy `uri`, the default location — is
+    `DatabaseScope.resolve`'s to answer, so there is one table and not two.
+    """
+    from haiku.rag.client.scope import DatabaseScope
+
     if db is not None and _database is not None:
         raise AmbiguousDatabaseError(
             "pass --db or --database, not both: they name the same thing"
         )
-    require_one_database(get_config(), db, federated=federated)
-    if db is not None:
-        return db
-    if _database_path is not None:
-        return _database_path
-    return get_config().storage.data_dir / "haiku.rag.lancedb"
-
-
-def resolve_database_set(db: Path | None = None) -> Path | None:
-    """The database a set-covering command opens, or None to cover the set.
-
-    None where `lancedb.databases` names the databases and the caller named none
-    of them, so the client resolves the set itself.
-    """
-    if db is None and _database is None and get_config().lancedb.databases:
-        return None
-    return resolve_db_path(db, federated=True)
-
-
-def require_one_database(
-    config: "AppConfig", db: Path | None, *, federated: bool
-) -> None:
-    """Refuse a one-database command that cannot tell which one to use."""
-    databases = config.lancedb.databases
-    if federated or db is not None or not databases:
-        return
-    raise AmbiguousDatabaseError(
-        f"lancedb.databases names {', '.join(sorted(databases))}; this command "
-        "works on a single database: pass --database NAME, or --db PATH."
+    scope = DatabaseScope.resolve(
+        get_config(), database_name=_database, database_path=db
     )
-
-
-def select_database(name: str) -> Path | None:
-    """Point the configuration at one database from `lancedb.databases`.
-
-    Returns its local path, or None where it lives behind a URI. Rewriting the
-    configuration is what lets every command, the TUIs included, work on the
-    selected database without knowing the set exists.
-    """
-    from haiku.rag.utils import locate_database
-
-    config = get_config()
-    databases = config.lancedb.databases
-    if name not in databases:
+    if scope.covers_multiple and not covers_set:
         raise AmbiguousDatabaseError(
-            f"unknown database {name!r}; lancedb.databases names "
-            f"{', '.join(sorted(databases)) or 'nothing'}"
+            f"lancedb.databases names {', '.join(sorted(scope.names))}; this "
+            "command works on a single database: pass --database NAME, or "
+            "--db PATH."
         )
-    uri, db_path = locate_database(databases[name])
-    selected = config.model_copy(deep=True)
-    selected.lancedb.databases = {}
-    selected.lancedb.uri = uri
-    set_config(selected)
-    return db_path
+    return scope
 
 
 async def check_version():
@@ -193,10 +152,9 @@ def main(
     ),
 ):
     """haiku.rag CLI - Vector database RAG system"""
-    global _read_only, _database, _database_path
+    global _read_only, _database
     _read_only = read_only
     _database = database
-    _database_path = None
     # Load config from --config, local folder, or default directory
     config_path = find_config_file(cli_path=config)
     if config_path:
@@ -204,9 +162,6 @@ def main(
         set_config(AppConfig.model_validate(yaml_data))
     else:
         set_config(AppConfig())
-
-    if database is not None:
-        _database_path = select_database(database)
 
     configure_cli_logging()
 
@@ -402,7 +357,7 @@ def search(
         help="Path to the LanceDB database file",
     ),
 ):
-    app = create_app(db, federated=True)
+    app = create_app(db, covers_set=True)
     asyncio.run(
         app.search(
             query=query,
@@ -456,7 +411,7 @@ def ask(
         help="Path to an image to attach to the question (repeatable; requires a vision-capable model)",
     ),
 ):
-    app = create_app(db, federated=True)
+    app = create_app(db, covers_set=True)
     asyncio.run(
         app.ask(
             question=question,
@@ -488,7 +443,7 @@ def analyze(
         help="Path to an image to attach to the question (repeatable; requires a vision-capable model)",
     ),
 ):
-    app = create_app(db, federated=True)
+    app = create_app(db, covers_set=True)
     asyncio.run(
         app.analyze(
             question=question,
@@ -503,7 +458,10 @@ def settings():
     from haiku.rag.app import HaikuRAGApp
 
     config = get_config()
-    app = HaikuRAGApp(db_path=Path(), config=config, read_only=True)
+    # Neither of these opens a database; the scope is whatever is configured.
+    app = HaikuRAGApp(
+        scope=resolve_scope(covers_set=True), config=config, read_only=True
+    )
     app.show_settings()
 
 
@@ -798,11 +756,11 @@ def tag_restore(
     ),
 ):
     app = create_app(db)
-    if app._is_local and not app.db_path.exists():
-        typer.echo(f"Error: Database path does not exist: {app.db_path}", err=True)
+    if app._is_local and not app._path.exists():
+        typer.echo(f"Error: Database path does not exist: {app._path}", err=True)
         raise typer.Exit(1)
     if not yes:
-        typer.echo(f"Database: {app.db_path}")
+        typer.echo(f"Database: {app._display_path}")
         typer.echo(f"Tag: {name}")
         typer.echo("This changes the live database state across all tables.")
         typer.echo("Stop all ingestion and other writers before continuing.")
@@ -821,7 +779,9 @@ def tag_restore(
 def download_models_cmd():
     from haiku.rag.app import HaikuRAGApp
 
-    app = HaikuRAGApp(db_path=Path(), config=get_config(), read_only=True)
+    app = HaikuRAGApp(
+        scope=resolve_scope(covers_set=True), config=get_config(), read_only=True
+    )
     try:
         asyncio.run(app.download_models())
     except Exception as e:
@@ -844,7 +804,7 @@ def inspect(
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1) from e
 
-    run_inspector(resolve_db_path(db), read_only=True)
+    run_inspector(read_only=True, scope=resolve_scope(db))
 
 
 @_cli.command("chat", help="Launch interactive chat TUI for conversational RAG")
@@ -869,15 +829,15 @@ def chat(
     """Launch the chat TUI for conversational RAG."""
     from haiku.rag.chat import run_chat
 
-    db_path = resolve_database_set(db)
+    scope = resolve_scope(db, covers_set=True)
     capabilities = capability if capability else ["rag"]
 
     try:
         run_chat(
-            db_path,
             read_only=True,
             model=model,
             capabilities=capabilities,
+            scope=scope,
         )
     except ImportError as e:
         typer.echo(f"Error: {e}", err=True)

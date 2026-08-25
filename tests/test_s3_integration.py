@@ -13,6 +13,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig, LanceDBConfig
 from haiku.rag.s3 import make_s3_store
 from haiku.rag.store.engine import Store
+from tests.conftest import for_path
 from tests.services import reachable
 
 S3_ENDPOINT = "http://localhost:8333"
@@ -137,7 +138,7 @@ async def test_app_info(tmp_path, capsys, config):
     async with HaikuRAG(tmp_path / "unused", config=config, create=True) as rag:
         await rag.create_document("Info test document.", uri="test://info")
 
-    app = HaikuRAGApp(db_path=tmp_path / "unused", config=config)
+    app = HaikuRAGApp(scope=for_path(tmp_path / "unused", config), config=config)
     await app.info()
 
     out = capsys.readouterr().out
@@ -148,7 +149,7 @@ async def test_app_info(tmp_path, capsys, config):
 
 @pytest.mark.asyncio
 async def test_app_info_empty_db(tmp_path, capsys, config):
-    app = HaikuRAGApp(db_path=tmp_path / "unused", config=config)
+    app = HaikuRAGApp(scope=for_path(tmp_path / "unused", config), config=config)
     await app.info()
 
     out = capsys.readouterr().out

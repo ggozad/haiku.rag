@@ -6,6 +6,7 @@ import pytest
 from haiku.rag.app import HaikuRAGApp
 from haiku.rag.config.models import AppConfig, LanceDBConfig
 from haiku.rag.store.schema import DocumentItemRecord
+from tests.conftest import for_path
 
 
 @pytest.mark.asyncio
@@ -61,7 +62,7 @@ async def test_app_info_outputs(temp_db_path, capsys):
         [ChunkRecord(id="c1", document_id="doc-1", content="c", vector=[0.1, 0.2, 0.3])]
     )
 
-    app = HaikuRAGApp(db_path=temp_db_path)
+    app = HaikuRAGApp(scope=for_path(temp_db_path))
     await app.info()
 
     out = capsys.readouterr().out
@@ -148,7 +149,7 @@ async def test_app_info_with_vector_index(temp_db_path, capsys):
     # Create vector index
     await chunks_tbl.create_index("vector", config=IvfPq(distance_type="cosine"))
 
-    app = HaikuRAGApp(db_path=temp_db_path)
+    app = HaikuRAGApp(scope=for_path(temp_db_path))
     await app.info()
 
     out = capsys.readouterr().out
@@ -164,16 +165,61 @@ async def test_app_info_with_vector_index(temp_db_path, capsys):
 
 
 @pytest.mark.asyncio
+async def test_app_info_opens_a_named_remote_database(tmp_path):
+    """A database named in `lancedb.databases` can sit behind a URI while the
+    configuration's own `uri` is empty. Passing that configuration on would open
+    the local path that only stands in for it."""
+    from haiku.rag.client.scope import DatabaseScope
+
+    config = AppConfig(
+        lancedb=LanceDBConfig(databases={"medic": "s3://bucket/medic.lancedb"})
+    )
+    scope = DatabaseScope.resolve(config, database_name="medic")
+    app = HaikuRAGApp(scope=scope, config=config)
+
+    assert app._is_local is False
+    assert app._store_config.lancedb.uri == "s3://bucket/medic.lancedb"
+    assert app._store_config.lancedb.databases == {}
+
+    with patch(
+        "haiku.rag.store.info.connect_lancedb", new_callable=AsyncMock
+    ) as mock_connect:
+        mock_db = mock_connect.return_value
+        mock_list_result = MagicMock()
+        mock_list_result.tables = []
+        mock_db.list_tables = AsyncMock(return_value=mock_list_result)
+        await app.info()
+
+    opened = mock_connect.call_args.args[0]
+    assert opened.lancedb.uri == "s3://bucket/medic.lancedb"
+
+
+async def test_app_doctor_opens_a_named_remote_database():
+    """`run_doctor` connects with the configuration it is handed, so it needs the
+    one derived for the database rather than the one naming the set."""
+    from haiku.rag.client.scope import DatabaseScope
+
+    config = AppConfig(
+        lancedb=LanceDBConfig(databases={"medic": "s3://bucket/medic.lancedb"})
+    )
+    app = HaikuRAGApp(scope=DatabaseScope.resolve(config, database_name="medic"))
+
+    with patch("haiku.rag.doctor.run_doctor", new_callable=AsyncMock) as run:
+        run.return_value = MagicMock(checks=[], ok=True, duplicates=None)
+        await app.doctor()
+
+    assert run.call_args.args[0].lancedb.uri == "s3://bucket/medic.lancedb"
+
+
 async def test_app_info_uses_connect_lancedb_for_remote(tmp_path):
     """info() should use connect_lancedb() instead of direct lancedb.connect() for remote URIs."""
-    nonexistent = tmp_path / "does_not_exist" / "db.lancedb"
     config = AppConfig(
         lancedb=LanceDBConfig(
             uri="s3://bucket/path",
             storage_options={"endpoint": "http://localhost:9000"},
         )
     )
-    app = HaikuRAGApp(db_path=nonexistent, config=config)
+    app = HaikuRAGApp(scope=for_path(None, config), config=config)
 
     with patch(
         "haiku.rag.store.info.connect_lancedb", new_callable=AsyncMock
@@ -185,7 +231,10 @@ async def test_app_info_uses_connect_lancedb_for_remote(tmp_path):
         mock_db.list_tables = AsyncMock(return_value=mock_list_result)
         await app.info()
 
-    mock_connect.assert_called_once_with(config, nonexistent)
+    # The uri decides where it connects; the path argument is not read, so the
+    # claim here is the remote branch, not which placeholder path it carried.
+    mock_connect.assert_called_once()
+    assert mock_connect.call_args.args[0].lancedb.uri == "s3://bucket/path"
 
 
 @pytest.mark.asyncio
@@ -241,7 +290,7 @@ async def test_app_info_with_missing_document_items_table(temp_db_path, capsys):
         [ChunkRecord(id="c1", document_id="doc-1", content="c", vector=[0.1, 0.2, 0.3])]
     )
 
-    app = HaikuRAGApp(db_path=temp_db_path)
+    app = HaikuRAGApp(scope=for_path(temp_db_path))
     await app.info()
 
     out = capsys.readouterr().out
@@ -311,7 +360,7 @@ async def test_app_info_reports_up_to_date(temp_db_path, capsys):
         ]
     )
 
-    app = HaikuRAGApp(db_path=temp_db_path)
+    app = HaikuRAGApp(scope=for_path(temp_db_path))
     await app.info()
 
     out = capsys.readouterr().out
@@ -322,35 +371,34 @@ async def test_app_info_reports_up_to_date(temp_db_path, capsys):
 @pytest.mark.asyncio
 async def test_app_init_skips_exists_check_for_remote(tmp_path):
     """init() should not check db_path.exists() for remote URIs."""
-    nonexistent = tmp_path / "does_not_exist" / "db.lancedb"
     config = AppConfig(
         lancedb=LanceDBConfig(
             uri="s3://bucket/path",
             storage_options={"endpoint": "http://localhost:9000"},
         )
     )
-    app = HaikuRAGApp(db_path=nonexistent, config=config)
+    app = HaikuRAGApp(scope=for_path(None, config), config=config)
 
     with patch("haiku.rag.app.HaikuRAG") as mock_client_cls:
         mock_client = AsyncMock()
-        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+        covering = mock_client_cls._covering.return_value
+        covering.__aenter__ = AsyncMock(return_value=mock_client)
+        covering.__aexit__ = AsyncMock(return_value=False)
         await app.init()
-        # Should have called HaikuRAG to create, not returned early
-        mock_client_cls.assert_called_once()
+        # Opened to create, rather than returning early on a missing local path.
+        mock_client_cls._covering.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_app_history_skips_exists_check_for_remote(tmp_path):
     """history() should not check db_path.exists() for remote URIs."""
-    nonexistent = tmp_path / "does_not_exist" / "db.lancedb"
     config = AppConfig(
         lancedb=LanceDBConfig(
             uri="s3://bucket/path",
             storage_options={"endpoint": "http://localhost:9000"},
         )
     )
-    app = HaikuRAGApp(db_path=nonexistent, config=config)
+    app = HaikuRAGApp(scope=for_path(None, config), config=config)
 
     with patch("haiku.rag.store.engine.Store") as mock_store_cls:
         mock_store = AsyncMock()
@@ -377,7 +425,7 @@ async def test_app_tag_rendering_escapes_markup(tmp_path):
             storage_options={"endpoint": "http://localhost:9000"},
         )
     )
-    app = HaikuRAGApp(db_path=tmp_path / "db.lancedb", config=config)
+    app = HaikuRAGApp(scope=for_path(None, config), config=config)
     app.console = Console(record=True, width=200)
 
     hostile = "[red]release[/red]"
@@ -411,7 +459,7 @@ async def test_app_history_survives_tag_annotation_failure(tmp_path):
             storage_options={"endpoint": "http://localhost:9000"},
         )
     )
-    app = HaikuRAGApp(db_path=tmp_path / "db.lancedb", config=config)
+    app = HaikuRAGApp(scope=for_path(None, config), config=config)
     app.console = Console(record=True, width=200)
 
     with patch("haiku.rag.store.engine.Store") as mock_store_cls:

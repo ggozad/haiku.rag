@@ -21,6 +21,7 @@ from haiku.rag.client.session import (
     FederatedSession,
     SingleDatabaseSession,
     aclose_quietly,
+    default_db_path,
 )
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.converters import get_converter
@@ -143,6 +144,7 @@ class HaikuRAG:
         self._read_only = read_only
         self._requested_sources = sources
         self._clients: dict[str, HaikuRAG] = {}
+        self._scope: DatabaseScope | None = None
         self._session: SingleDatabaseSession | FederatedSession | None = None
         self._owns_session = True
 
@@ -260,31 +262,21 @@ class HaikuRAG:
         """
         return get_reranker(config=self._config)
 
-    def _selected(self) -> dict[str, str]:
-        """The configured databases this client covers, name to location.
+    def _resolve_scope(self) -> DatabaseScope:
+        """The databases this client covers.
 
-        Empty when the caller named a database itself: an explicit `db_path` says
-        which one to open, so it is not overridden by a configured set.
+        Resolved once, here or by whoever handed one in. An explicit `db_path`
+        says which database to open, so a configured set does not override it.
         """
-        declared = self._configured.lancedb.databases
-        if not declared or self._db_path_given:
-            return {}
-        if self._requested_sources is not None and not self._requested_sources:
-            raise ValueError(
-                "sources=[] selects no database; pass None for all of them"
-            )
-        names = (
-            list(declared)
-            if self._requested_sources is None
-            else list(self._requested_sources)
+        if self._scope is not None:
+            return self._scope
+        scope = DatabaseScope.resolve(
+            self._configured,
+            database_path=self._db_path if self._db_path_given else None,
         )
-        missing = [n for n in names if n not in declared]
-        if missing:
-            raise KeyError(
-                f"unknown database(s) {', '.join(sorted(missing))}; "
-                f"configured: {', '.join(sorted(declared))}"
-            )
-        return {n: declared[n] for n in names}
+        if self._requested_sources is not None and not self._db_path_given:
+            scope = scope.select(self._requested_sources)
+        return scope
 
     async def __aenter__(self):
         """Async context manager entry — initializes store and repositories.
@@ -294,34 +286,27 @@ class HaikuRAG:
         repositories stay unset in that case, since they have no unambiguous
         meaning across a set.
         """
-        selected = self._selected()
-        if len(selected) > 1:
+        scope = self._resolve_scope()
+        if scope.covers_multiple:
             if self._create:
                 raise AmbiguousDatabaseError(
                     "create=True creates one database, and this client covers "
-                    f"{', '.join(sorted(selected))}; name the one to create with "
-                    "sources=[name]"
+                    f"{', '.join(sorted(scope.names))}; name the one to create "
+                    "with sources=[name]"
                 )
             self._session = FederatedSession(
-                DatabaseScope(
-                    tuple(
-                        DatabaseRef.configured(name, location)
-                        for name, location in selected.items()
-                    )
-                ),
-                self._config,
+                scope,
+                self._configured,
                 skip_validation=self._skip_validation,
                 read_only=self._read_only,
             )
             return self
-        source: str | None = None
-        if selected:
-            [(source, location)] = selected.items()
-            self._config, db_path = DatabaseRef.configured(source, location).connection(
-                self._configured
-            )
-            if db_path is not None:
-                self._db_path = db_path
+
+        [ref] = scope.databases
+        self._config, db_path = ref.connection(self._configured)
+        self._db_path = (
+            db_path if db_path is not None else default_db_path(self._config)
+        )
 
         self._session = await SingleDatabaseSession(
             self._db_path,
@@ -329,7 +314,7 @@ class HaikuRAG:
             skip_validation=self._skip_validation,
             create=self._create,
             read_only=self._read_only,
-            source=source,
+            source=ref.name,
         ).open()
         return self
 
@@ -360,6 +345,30 @@ class HaikuRAG:
             facade = HaikuRAG._from_session(session)
             self._clients[name] = facade
         return facade
+
+    @classmethod
+    def _covering(
+        cls,
+        scope: DatabaseScope,
+        config: AppConfig | None = None,
+        *,
+        read_only: bool = False,
+        create: bool = False,
+        skip_validation: bool = False,
+    ) -> "HaikuRAG":
+        """A client over databases someone already resolved.
+
+        Internal: the public constructor takes a path or names, and resolving
+        those is its own job. This is for callers that did the resolving.
+        """
+        client = cls(
+            config=config,
+            read_only=read_only,
+            create=create,
+            skip_validation=skip_validation,
+        )
+        client._scope = scope
+        return client
 
     @classmethod
     def _from_session(cls, session: SingleDatabaseSession) -> "HaikuRAG":

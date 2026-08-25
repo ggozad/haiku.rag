@@ -74,6 +74,18 @@ class TestResolution:
 
         assert scope.databases == (DatabaseRef(None, "s3://bucket/one.lancedb", None),)
 
+    def test_a_path_selects_the_database_over_a_configured_uri(self):
+        """`--db` exists to override what is configured, and the configuration
+        derived from the ref is what makes the connection follow it."""
+        config = _config(uri="s3://bucket/one.lancedb")
+
+        scope = DatabaseScope.resolve(config, database_path=Path("/data/local"))
+
+        [ref] = scope.databases
+        assert ref.db_path == Path("/data/local")
+        one, _ = ref.connection(config)
+        assert one.lancedb.uri == ""
+
     def test_nothing_configured_falls_back_to_the_data_directory(self, tmp_path):
         config = AppConfig(storage=StorageConfig(data_dir=tmp_path))
 

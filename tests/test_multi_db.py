@@ -6,6 +6,7 @@ from docling_core.types.doc.labels import DocItemLabel
 from pydantic import ValidationError
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.client.session import FederatedSession
 from haiku.rag.config import get_config
 from haiku.rag.config.models import AppConfig, LanceDBConfig
@@ -377,6 +378,46 @@ class TestClosingASet:
 
         assert sorted(released) == ["alpha", "beta"]
         assert sorted(drained) == ["alpha", "beta"]
+
+
+class TestNamingOneOfTheSetOnTheCommandLine:
+    """`--database NAME` reaches the application layer as a name, and every
+    client it opens has to honour it — one that ignores it covers the set and
+    quietly answers from the wrong database."""
+
+    @pytest.mark.asyncio
+    async def test_a_named_database_is_the_one_read(self, tmp_path, capsys):
+        from haiku.rag.app import HaikuRAGApp
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        scope = DatabaseScope.resolve(config).select(["beta"])
+        app = HaikuRAGApp(scope=scope, config=config, read_only=True)
+        await app.list_documents()
+
+        # Rich wraps long lines, so match the unwrapped part of the URI.
+        printed = capsys.readouterr().out
+        assert "test://beta/" in printed
+        assert "test://alpha/" not in printed
+
+    @pytest.mark.asyncio
+    async def test_naming_none_of_them_covers_the_set(self, tmp_path, capsys):
+        from haiku.rag.app import HaikuRAGApp
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        app = HaikuRAGApp(
+            scope=DatabaseScope.resolve(config), config=config, read_only=True
+        )
+        await app.list_documents()
+
+        printed = capsys.readouterr().out
+        assert "test://alpha/" in printed
+        assert "test://beta/" in printed
 
 
 class TestPlacingADatabase:
