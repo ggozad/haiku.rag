@@ -155,9 +155,9 @@ class TestOpeningDatabases:
             await _seed(config, name, [f"{name} document about cats"])
 
         async with HaikuRAG(config=config) as rag:
-            assert rag._federated_session is not None
+            assert isinstance(rag._session, FederatedSession)
             barrier = asyncio.Barrier(len(names))
-            open_one = rag._federated_session._open
+            open_one = rag._session._open
 
             async def gated(ref):
                 # Every open has to be in flight before any of them finishes, so
@@ -165,7 +165,7 @@ class TestOpeningDatabases:
                 await barrier.wait()
                 return await open_one(ref)
 
-            rag._federated_session._open = gated
+            rag._session._open = gated
             clients = await asyncio.wait_for(rag.clients_for(names), timeout=15)
 
         assert {client._source for client in clients} == set(names)
@@ -182,8 +182,8 @@ class TestOpeningDatabases:
             with pytest.raises(SourceUnavailableError, match="beta"):
                 await rag.clients_for(["alpha", "beta"])
 
-            assert rag._federated_session is not None
-            assert set(rag._federated_session._sessions) == {"alpha"}
+            assert isinstance(rag._session, FederatedSession)
+            assert set(rag._session._sessions) == {"alpha"}
 
     @pytest.mark.asyncio
     async def test_a_database_named_twice_is_opened_once(self, tmp_path):
@@ -358,9 +358,9 @@ class TestClosingASet:
         drained: list[str | None] = []
 
         async with HaikuRAG(config=config, read_only=True) as rag:
-            assert rag._federated_session is not None
+            assert isinstance(rag._session, FederatedSession)
             await rag.clients_for(["alpha", "beta"])
-            for name, session in rag._federated_session._sessions.items():
+            for name, session in rag._session._sessions.items():
                 original = session.store.embedder.aclose
                 drain = session.drain_vacuum
 
@@ -932,8 +932,8 @@ class TestRerankerFusion:
         rag = HaikuRAG(config=config)
         await rag.__aenter__()
         await rag.clients_for(["alpha", "beta"])
-        assert rag._federated_session is not None
-        sessions = rag._federated_session._sessions
+        assert isinstance(rag._session, FederatedSession)
+        sessions = rag._session._sessions
 
         async def boom():
             raise RuntimeError("close failed")
@@ -945,7 +945,7 @@ class TestRerankerFusion:
 
         # The failure is swallowed, and the sibling is still closed after it.
         assert rag._clients == {}
-        assert rag._federated_session._sessions == {}
+        assert rag._session._sessions == {}
         assert not beta.db.is_open()
 
     @pytest.mark.asyncio

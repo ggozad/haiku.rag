@@ -3,6 +3,7 @@ import asyncio
 import pytest
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.store.engine import Store
 
 
@@ -438,7 +439,7 @@ async def test_close_suppresses_failing_drain_vacuum(temp_db_path, monkeypatch):
         raise RuntimeError("vacuum boom")
 
     # Writes happened, so close owes a final vacuum — force that drain branch.
-    assert client._session is not None
+    assert isinstance(client._session, SingleDatabaseSession)
     client._session._vacuum_dirty = True
     monkeypatch.setattr(client.store, "vacuum", boom)
 

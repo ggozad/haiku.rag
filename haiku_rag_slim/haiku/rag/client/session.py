@@ -2,7 +2,7 @@ import asyncio
 import logging
 from pathlib import Path
 from time import monotonic
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from haiku.rag.client.scope import DatabaseRef, DatabaseScope
 from haiku.rag.config import AppConfig
@@ -16,6 +16,9 @@ from haiku.rag.store.exceptions import (
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.repositories.document_item import DocumentItemRepository
+
+if TYPE_CHECKING:
+    from haiku.rag.store.models.document import Document
 
 logger = logging.getLogger(__name__)
 
@@ -165,6 +168,73 @@ class SingleDatabaseSession:
         self._vacuum_tasks.add(task)
         task.add_done_callback(self._vacuum_tasks.discard)
 
+    def name(self, document: "Document | None") -> "Document | None":
+        """`document`, told which database it came from."""
+        if document is not None:
+            document.source = self.source
+        return document
+
+    async def get_document_by_id(self, document_id: str) -> "Document | None":
+        return self.name(await self.document_repository.get_by_id(document_id))
+
+    async def get_document_by_uri(self, uri: str) -> "Document | None":
+        return self.name(await self.document_repository.get_by_uri(uri))
+
+    async def list_documents(
+        self,
+        limit: int | None = None,
+        offset: int | None = None,
+        filter: str | None = None,
+        include_content: bool = False,
+    ) -> "list[Document]":
+        documents = await self.document_repository.list_all(
+            limit=limit, offset=offset, filter=filter, include_content=include_content
+        )
+        for document in documents:
+            document.source = self.source
+        return documents
+
+    async def delete_document(self, document_id: str) -> bool:
+        """Delete a document, cascading to children linked via
+        ``metadata.parent_uri``.
+
+        The whole subtree (root + transitive children) is deleted under a single
+        write lock and a single version snapshot, so the cascade is atomic: any
+        failure restores every table to the pre-delete state, and no other write
+        can interleave between deleting a child and its parent.
+        """
+        from haiku.rag.client.documents import parent_uri_filter
+
+        async with self.store.write_transaction():
+            # Resolve existence and collect the subtree under the lock so two
+            # concurrent deletes of the same id can't both proceed, and children
+            # can't appear or move between collection and deletion. parent_uri
+            # links a child to its parent's uri; walk transitively, guarding
+            # against cycles.
+            ids_to_delete: list[str] = []
+            seen: set[str] = set()
+            queue = [await self.get_document_by_id(document_id)]
+            while queue:
+                doc = queue.pop()
+                if doc is None or doc.id is None or doc.id in seen:
+                    continue
+                seen.add(doc.id)
+                ids_to_delete.append(doc.id)
+                if doc.uri:
+                    queue.extend(
+                        await self.list_documents(filter=parent_uri_filter(doc.uri))
+                    )
+
+            if not ids_to_delete:
+                return False
+
+            for doc_id in ids_to_delete:
+                await self.document_repository.delete(doc_id)
+
+        if self.config.storage.auto_vacuum:
+            self.schedule_vacuum()
+        return True
+
     async def aclose(self) -> None:
         """Drain, release the embedder, and close the connection.
 
@@ -208,6 +278,11 @@ class FederatedSession:
         self._read_only = read_only
         self._sessions: dict[str, SingleDatabaseSession] = {}
         self._lock = asyncio.Lock()
+
+    @property
+    def locations(self) -> dict[str, str]:
+        """The databases covered, name to location as configured."""
+        return {name: ref.uri or str(ref.db_path) for name, ref in self._refs.items()}
 
     async def sessions_for(self, names: list[str]) -> list[SingleDatabaseSession]:
         """The sessions for these databases, opening any not yet open.
