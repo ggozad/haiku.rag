@@ -549,11 +549,9 @@ def test_dedup_does_not_collapse_across_documents():
 @pytest.mark.asyncio
 async def test_expand_context_passes_through_results_without_document(temp_db_path):
     """A result with no document_id can't be expanded; it is returned as-is."""
-    from haiku.rag.client.search import expand_context
-
     async with HaikuRAG(temp_db_path, create=True) as rag:
         orphan = SearchResult(content="loose text", score=0.5, chunk_id="c1")
-        assert await expand_context(rag, [orphan]) == [orphan]
+        assert await rag.expand_context([orphan]) == [orphan]
 
 
 @pytest.mark.asyncio

@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from PIL import Image as PILImage
 
     from haiku.rag.client import HaikuRAG
+    from haiku.rag.client.session import FederatedSession, SingleDatabaseSession
 
 
 async def search(
@@ -45,13 +46,12 @@ async def search(
     query_vector = (
         None if isinstance(query, str) else await _embed_query(client, query, resolved)
     )
-    candidates = await _fetch(
-        client,
-        query,
-        _fetch_limit(client, query, limit),
-        resolved,
-        filter,
-        query_vector,
+    candidates = await client.chunk_repository.search(
+        query=query if isinstance(query, str) else "",
+        limit=_fetch_limit(client, query, limit),
+        search_type=resolved,
+        filter=filter,
+        query_vector=query_vector,
     )
     chunk_results = await _rank(client, query, candidates, limit)
 
@@ -92,12 +92,20 @@ async def search_sources(
 
     # One over-fetch decision, one query vector, and one reranker, for the whole
     # set. The databases in a selection share an embedder, so the vector is the
-    # same wherever it is computed.
+    # same wherever it is computed, and deciding the over-fetch per database would
+    # have each consult its own reranker.
     fetch_limit = _fetch_limit(client, query, limit)
     query_vector = await _embed_query(selected[0], query, resolved)
+    text = query if isinstance(query, str) else ""
     per_source = await asyncio.gather(
         *(
-            _fetch(c, query, fetch_limit, resolved, filter, query_vector)
+            c.chunk_repository.search(
+                query=text,
+                limit=fetch_limit,
+                search_type=resolved,
+                filter=filter,
+                query_vector=query_vector,
+            )
             for c in selected
         )
     )
@@ -236,29 +244,6 @@ async def _embed_query(
             "model."
         )
     return await embedder.embed_image(query)
-
-
-async def _fetch(
-    client: "HaikuRAG",
-    query: "str | bytes | PILImage.Image",
-    limit: int,
-    search_type: SearchType,
-    filter: str | None,
-    query_vector: list[float] | None,
-) -> list[tuple[Chunk, float]]:
-    """Candidates from one database, ranked by that database.
-
-    `limit` is how many to fetch, already including any over-fetch the caller
-    wants. Deciding that here would have each database consult its own reranker,
-    and a local reranker loads model weights per instance.
-    """
-    return await client.chunk_repository.search(
-        query=query if isinstance(query, str) else "",
-        limit=limit,
-        search_type=search_type,
-        filter=filter,
-        query_vector=query_vector,
-    )
 
 
 async def _rank(
@@ -416,8 +401,55 @@ async def _populate_image_data(client: "HaikuRAG", results: list[SearchResult]) 
             r.picture_captions = captions
 
 
+async def expand_sources(
+    federated: "FederatedSession",
+    search_results: list[SearchResult],
+) -> list[SearchResult]:
+    """Expand results drawn from several databases, each through its own.
+
+    A result naming no database passes through unexpanded: it cannot be placed,
+    which is the case for results a caller built by hand.
+    """
+    by_source: dict[str, list[SearchResult]] = {}
+    unsourced: list[SearchResult] = []
+    for result in search_results:
+        if result.source:
+            by_source.setdefault(result.source, []).append(result)
+        else:
+            unsourced.append(result)
+    names = list(by_source)
+    sessions = await federated.sessions_for(names)
+    expanded_groups = await asyncio.gather(
+        *(
+            expand_context(session, by_source[name])
+            for name, session in zip(names, sessions, strict=True)
+        )
+    )
+    merged = unsourced + [r for group in expanded_groups for r in group]
+    # Grouping by database must not become the tiebreak: fused scores tie often,
+    # so equal scores keep the order they were fused in.
+    arrival = {
+        result.chunk_id: rank
+        for rank, result in enumerate(search_results)
+        if result.chunk_id
+    }
+
+    def fused_rank(result: SearchResult) -> int:
+        return min(
+            (
+                arrival[cid]
+                for cid in (result.chunk_id, *result.chunk_ids)
+                if cid in arrival
+            ),
+            default=len(arrival),
+        )
+
+    merged.sort(key=lambda r: (-r.score, fused_rank(r)))
+    return merged
+
+
 async def expand_context(
-    client: "HaikuRAG",
+    session: "SingleDatabaseSession",
     search_results: list[SearchResult],
 ) -> list[SearchResult]:
     """Expand search results with surrounding content from the document.
@@ -429,49 +461,9 @@ async def expand_context(
     chunks were created without docling metadata (e.g., custom chunks passed
     to import_document).
     """
-    # A federating client has no repositories of its own, so each result expands
-    # through the database it came from.
-    if client.covers_multiple:
-        by_source: dict[str, list[SearchResult]] = {}
-        unsourced: list[SearchResult] = []
-        for result in search_results:
-            if result.source:
-                by_source.setdefault(result.source, []).append(result)
-            else:
-                unsourced.append(result)
-        owners = await client.clients_for(list(by_source))
-        expanded_groups = await asyncio.gather(
-            *(
-                expand_context(owner, by_source[owner.source])
-                for owner in owners
-                if owner.source
-            )
-        )
-        merged = unsourced + [r for group in expanded_groups for r in group]
-        # Grouping by database must not become the tiebreak: fused scores tie
-        # often, so equal scores keep the order they were fused in.
-        arrival = {
-            result.chunk_id: rank
-            for rank, result in enumerate(search_results)
-            if result.chunk_id
-        }
-
-        def fused_rank(result: SearchResult) -> int:
-            return min(
-                (
-                    arrival[cid]
-                    for cid in (result.chunk_id, *result.chunk_ids)
-                    if cid in arrival
-                ),
-                default=len(arrival),
-            )
-
-        merged.sort(key=lambda r: (-r.score, fused_rank(r)))
-        return merged
-
     from haiku.rag.context import expand_with_items, window_for
 
-    max_chars = client._config.search.max_context_chars
+    max_chars = session.config.search.max_context_chars
 
     # Group by document_id for efficient processing
     document_groups: dict[str | None, list[SearchResult]] = {}
@@ -487,7 +479,7 @@ async def expand_context(
         for doc_id, doc_results in document_groups.items()
         if doc_id is not None and any(r.doc_item_refs for r in doc_results)
     }
-    repo = client.document_item_repository
+    repo = session.document_item_repository
     positions_by_document = await repo.resolve_refs_grouped(
         {
             doc_id: [ref for r in doc_results for ref in r.doc_item_refs]
@@ -526,7 +518,7 @@ async def expand_context(
 
 
 async def visualize_chunk(
-    client: "HaikuRAG",
+    session: "SingleDatabaseSession",
     chunk: "Chunk | Sequence[Chunk]",
     refs: list[str] | None = None,
     expand: bool = True,
@@ -561,7 +553,7 @@ async def visualize_chunk(
         return []
     chunks = [c for c in chunks if c.document_id == document_id]
 
-    doc = await client.document_repository.get_docling_data(document_id)
+    doc = await session.document_repository.get_docling_data(document_id)
     if not doc:
         return []
 
@@ -591,7 +583,7 @@ async def visualize_chunk(
             if (meta := c.get_chunk_metadata()).doc_item_refs
         ]
         if search_results:
-            expanded = await expand_context(client, search_results)
+            expanded = await expand_context(session, search_results)
             all_refs = []
             for result in expanded:
                 all_refs.extend(r for r in result.doc_item_refs if r not in all_refs)
@@ -622,7 +614,7 @@ async def visualize_chunk(
         boxes_by_page[bbox.page_no].append((bbox, is_matched))
 
     # Load only the needed page images
-    pages_doc = await client.document_repository.get_pages_data(document_id)
+    pages_doc = await session.document_repository.get_pages_data(document_id)
     if not pages_doc:
         return []
     page_images = pages_doc.get_page_images(list(boxes_by_page.keys()))

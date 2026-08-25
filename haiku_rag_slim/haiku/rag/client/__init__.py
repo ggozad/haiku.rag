@@ -828,9 +828,13 @@ class HaikuRAG:
         self,
         search_results: list[SearchResult],
     ) -> list[SearchResult]:
-        from haiku.rag.client.search import expand_context
+        from haiku.rag.client.search import expand_context, expand_sources
 
-        return await expand_context(self, search_results)
+        if isinstance(self._session, FederatedSession):
+            return await expand_sources(self._session, search_results)
+        return await expand_context(
+            self._single_session("expand_context"), search_results
+        )
 
     async def ask(
         self,
@@ -862,9 +866,9 @@ class HaikuRAG:
     ) -> list:
         from haiku.rag.client.search import visualize_chunk
 
-        self._single_session("visualize_chunk")
-
-        return await visualize_chunk(self, chunk, refs, expand)
+        return await visualize_chunk(
+            self._single_session("visualize_chunk"), chunk, refs, expand
+        )
 
     async def rebuild_database(
         self, mode: RebuildMode = RebuildMode.FULL

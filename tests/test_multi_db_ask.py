@@ -70,6 +70,25 @@ class TestExpansionRouting:
         assert expanded[0].source == "alpha"
 
     @pytest.mark.asyncio
+    async def test_a_federated_result_is_expanded_by_its_own_database(self, tmp_path):
+        """Routing is not enough: each result has to come back carrying the
+        neighbours of the database it was expanded through, and only those."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed_expandable(
+            config, "alpha", ["cats sleep often", "alpha follows on"]
+        )
+        await _seed_expandable(config, "beta", ["cats also hunt", "beta follows on"])
+
+        async with HaikuRAG(config=config) as rag:
+            results = await rag.search("cats", search_type="fts", limit=10)
+            expanded = await rag.expand_context(results)
+
+        content = {r.source: r.content for r in expanded}
+        assert "alpha follows on" in content["alpha"]
+        assert "beta follows on" not in content["alpha"]
+        assert "beta follows on" in content["beta"]
+
+    @pytest.mark.asyncio
     async def test_expansion_keeps_tied_results_in_fused_order(self, tmp_path):
         """Fused scores tie often, so grouping by database must not reorder
         them: the tiebreak is the order they arrived in."""
