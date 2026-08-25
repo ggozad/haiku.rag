@@ -394,7 +394,7 @@ async def format_citations_rich(
         idx = c.index if c.index is not None else (i + 1)
 
         header_parts: list[str] = [f"[{idx}] {_citation_label(c)}"]
-        if c.source and client is not None and client._federated:
+        if c.source and client is not None and client.covers_multiple:
             header_parts.append(c.source)
         pages = _citation_pages(c)
         if pages:

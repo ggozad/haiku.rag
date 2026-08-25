@@ -118,10 +118,11 @@ def _make_mock_client():
     mock_client = AsyncMock()
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
-    # Covers one database: a bare AsyncMock answers `_federated` with a truthy
+    # Covers one database: a bare AsyncMock answers `covers_multiple` with a truthy
     # Mock, which would send every read down the covering-a-set branch.
-    mock_client._federated = {}
-    mock_client._source = None
+    mock_client.covers_multiple = False
+    mock_client.source_names = ()
+    mock_client.source = None
     return mock_client
 
 
@@ -510,14 +511,15 @@ async def test_visual_grounding_uses_the_database_holding_the_citation(tmp_path)
     from haiku.rag.store.models.citation import Citation
 
     owner = _make_mock_client()
-    owner._source = "beta"
+    owner.source = "beta"
     owner.get_chunk_by_id.return_value = Chunk(
         id="c1", document_id="d1", content="cited body"
     )
 
     covering = _make_mock_client()
-    covering._federated = {"alpha": "/a.lancedb", "beta": "/b.lancedb"}
-    covering.clients_for = AsyncMock(return_value=[owner])
+    covering.covers_multiple = True
+    covering.source_names = ("alpha", "beta")
+    covering.reader_for = AsyncMock(return_value=owner)
 
     app, _ = _make_app(tmp_path / "unused.lancedb", covering)
     with patch("haiku.rag.chat.app.HaikuRAG", return_value=covering):
@@ -540,7 +542,7 @@ async def test_visual_grounding_uses_the_database_holding_the_citation(tmp_path)
             with patch.object(app, "push_screen", new=AsyncMock()) as push:
                 await app.action_show_visual()
 
-    covering.clients_for.assert_awaited_once_with(["beta"])
+    covering.reader_for.assert_awaited_once_with("beta")
     owner.get_chunk_by_id.assert_awaited_once_with("c1")
     assert push.await_args is not None
     assert push.await_args.args[0].client is owner
@@ -558,7 +560,8 @@ class TestDocumentSelectionIdentity:
         from haiku.rag.store.models.document import Document
 
         client = AsyncMock()
-        client._federated = {"arxiv": "a", "wiki": "b"}
+        client.covers_multiple = True
+        client.source_names = ("arxiv", "wiki")
         client.list_documents.return_value = [
             Document(id="id-one", content="", title="Capital region", source="arxiv"),
             Document(id="id-two", content="", title="Capital region", source="wiki"),

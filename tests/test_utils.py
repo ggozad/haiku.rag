@@ -785,7 +785,8 @@ async def test_format_citations_rich_names_the_database_when_federating():
         source="medic",
     )
     client = AsyncMock()
-    client._federated = {"medic": "/data/medic.lancedb", "st": "/data/st.lancedb"}
+    client.covers_multiple = True
+    client.source_names = ("medic", "st")
 
     output = _render_rich(await format_citations_rich([citation], client))
 
@@ -808,7 +809,8 @@ async def test_format_citations_rich_omits_the_database_for_one_database():
         source="medic",
     )
     client = AsyncMock()
-    client._federated = {}
+    client.covers_multiple = False
+    client.source_names = ()
 
     output = _render_rich(await format_citations_rich([citation], client))
 

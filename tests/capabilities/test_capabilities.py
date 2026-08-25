@@ -144,13 +144,15 @@ def test_domain_preamble_is_added_to_capability_instructions(temp_db_path):
 def _single_database_client() -> AsyncMock:
     """A stand-in for a client covering one unnamed database.
 
-    A bare AsyncMock answers every attribute with a truthy Mock, so `_federated`
-    would read as a set of databases, `_source` would reach a validated field, and
-    `clients_covering` would return a Mock where the code iterates clients.
+    A bare AsyncMock answers every attribute with a truthy Mock, so
+    `covers_multiple` would read as a set of databases, `source` would reach a
+    validated field, and `clients_covering` would return a Mock where the code
+    iterates clients.
     """
     client = AsyncMock()
-    client._federated = {}
-    client._source = None
+    client.covers_multiple = False
+    client.source_names = ()
+    client.source = None
     client.clients_covering.return_value = [client]
     return client
 
@@ -1537,7 +1539,8 @@ class TestSeveralDatabasesInstructions:
     @staticmethod
     def _client(federated):
         client = AsyncMock()
-        client._federated = federated
+        client.covers_multiple = len(federated) > 1
+        client.source_names = tuple(federated)
         return client
 
     def test_one_database_is_instructed_as_before(self):

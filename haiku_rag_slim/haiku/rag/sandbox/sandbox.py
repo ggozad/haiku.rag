@@ -214,7 +214,7 @@ class Sandbox:
         a database the question excluded cannot be mounted.
         """
         async with self._connection() as rag:
-            if not rag._federated:
+            if not rag.covers_multiple:
                 if not await rag.clients_covering(self._context.sources):
                     return [], {}
                 docs = await rag.list_documents(filter=self._context.filter)
@@ -251,10 +251,10 @@ class Sandbox:
                 if doc.id in holders:
                     raise ValueError(
                         f"document {doc.id} is in databases {held_by[doc.id]!r} and "
-                        f"{owner._source!r}; analysis mounts one document per id"
+                        f"{owner.source!r}; analysis mounts one document per id"
                     )
                 holders[doc.id] = owner
-                held_by[doc.id] = owner._source
+                held_by[doc.id] = owner.source
         return holders
 
     def _run_on_loop(self, coro: Coroutine[Any, Any, Any]) -> Any:
@@ -354,7 +354,7 @@ class Sandbox:
                     "title": d.title,
                     "uri": d.uri,
                     "created_at": str(d.created_at),
-                    "source": owners[d.id]._source if d.id in owners else None,
+                    "source": owners[d.id].source if d.id in owners else None,
                 }
                 for d in docs
             ]

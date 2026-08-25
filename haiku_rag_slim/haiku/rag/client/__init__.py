@@ -41,7 +41,7 @@ from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.repositories.document_item import DocumentItemRepository
 from haiku.rag.store.repositories.settings import SettingsRepository
-from haiku.rag.utils import escape_sql_string, locate_database
+from haiku.rag.utils import escape_sql_string
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
@@ -128,7 +128,11 @@ class HaikuRAG:
                 None means all of them. Ignored when a single ``uri`` or an
                 explicit ``db_path`` is given.
         """
-        self._config = config if config is not None else get_config()
+        self._configured = config if config is not None else get_config()
+        # What the caller configured, kept intact: entering derives a
+        # single-database configuration from it, and asking again has to see the
+        # same set rather than the answer from last time.
+        self._config = self._configured
         self._db_path_given = db_path is not None
         if db_path is None:
             db_path = self._config.storage.data_dir / "haiku.rag.lancedb"
@@ -139,20 +143,47 @@ class HaikuRAG:
         self._read_only = read_only
         self._requested_sources = sources
         self._clients: dict[str, HaikuRAG] = {}
-        self._source: str | None = None
         self._session: SingleDatabaseSession | FederatedSession | None = None
         self._owns_session = True
 
     @property
-    def _federated(self) -> dict[str, str]:
-        """The databases covered, name to location, empty while covering one.
+    def covers_multiple(self) -> bool:
+        """Whether this client reads from more than one database."""
+        return isinstance(self._session, FederatedSession)
 
-        Derived from the session rather than stored beside it: two answers to
-        "how many databases?" is what left every call site deciding for itself.
+    @property
+    def source_names(self) -> tuple[str, ...]:
+        """The configured databases this client covers, in configured order.
+
+        A single database contributes its own name, or nothing where the
+        configuration named none.
         """
         if isinstance(self._session, FederatedSession):
-            return self._session.locations
-        return {}
+            return self._session.names
+        return () if self.source is None else (self.source,)
+
+    @property
+    def source(self) -> str | None:
+        """The configured database this client reads, or None while covering a
+        set or reading a database the configuration did not name."""
+        if isinstance(self._session, SingleDatabaseSession):
+            return self._session.source
+        return None
+
+    async def reader_for(self, source: str | None) -> "HaikuRAG | None":
+        """The client that can read `source` — itself, where it reads one
+        database.
+
+        None where the database cannot be placed: a client covering a set needs
+        the name, and evidence recorded before databases could be named carries
+        none.
+        """
+        if not self.covers_multiple:
+            return self
+        if source is None:
+            return None
+        (owner,) = await self.clients_for([source])
+        return owner
 
     def _single_session(self, operation: str) -> SingleDatabaseSession:
         """The one database this operation works on.
@@ -163,7 +194,7 @@ class HaikuRAG:
         """
         if isinstance(self._session, SingleDatabaseSession):
             return self._session
-        covered = ", ".join(sorted(self._federated))
+        covered = ", ".join(sorted(self.source_names))
         raise AmbiguousDatabaseError(
             f"{operation} works on one database, and this client covers "
             f"{covered}; select one with clients_for([name])"
@@ -216,7 +247,7 @@ class HaikuRAG:
         covering a set has an unambiguous embedder without opening any of them.
         Built on first use and owned by this client, which closes it.
         """
-        if self._federated:
+        if self.covers_multiple:
             return get_embedder(config=self._config)
         return self.store.embedder
 
@@ -235,7 +266,7 @@ class HaikuRAG:
         Empty when the caller named a database itself: an explicit `db_path` says
         which one to open, so it is not overridden by a configured set.
         """
-        declared = self._config.lancedb.databases
+        declared = self._configured.lancedb.databases
         if not declared or self._db_path_given:
             return {}
         if self._requested_sources is not None and not self._requested_sources:
@@ -283,12 +314,12 @@ class HaikuRAG:
                 read_only=self._read_only,
             )
             return self
+        source: str | None = None
         if selected:
-            [(self._source, location)] = selected.items()
-            uri, db_path = locate_database(location)
-            self._config = self._config.model_copy(deep=True)
-            self._config.lancedb.databases = {}
-            self._config.lancedb.uri = uri
+            [(source, location)] = selected.items()
+            self._config, db_path = DatabaseRef.configured(source, location).connection(
+                self._configured
+            )
             if db_path is not None:
                 self._db_path = db_path
 
@@ -298,7 +329,7 @@ class HaikuRAG:
             skip_validation=self._skip_validation,
             create=self._create,
             read_only=self._read_only,
-            source=self._source,
+            source=source,
         ).open()
         return self
 
@@ -337,7 +368,6 @@ class HaikuRAG:
             session.db_path, config=session.config, read_only=session.read_only
         )
         client._session = session
-        client._source = session.source
         client._owns_session = False
         return client
 
@@ -354,7 +384,7 @@ class HaikuRAG:
         `SettingsRepository` reports on open.
         """
         recorded = [
-            (client._source, client.store.stored_embedding)
+            (client.source, client.store.stored_embedding)
             for client in clients
             if client.store.stored_embedding is not None
         ]
@@ -569,7 +599,7 @@ class HaikuRAG:
         Returns:
             The Document instance if found, None otherwise.
         """
-        if self._federated:
+        if self.covers_multiple:
             return await self._from_any_covered(
                 lambda owner: owner.get_document_by_id(document_id)
             )
@@ -586,7 +616,7 @@ class HaikuRAG:
         Returns:
             The Chunk instance if found, None otherwise.
         """
-        if self._federated:
+        if self.covers_multiple:
             return await self._from_any_covered(
                 lambda owner: owner.get_chunk_by_id(chunk_id)
             )
@@ -605,7 +635,7 @@ class HaikuRAG:
         Returns:
             The picture bytes if found, None otherwise.
         """
-        if not self._federated:
+        if not self.covers_multiple:
             return await self.document_item_repository.get_picture_bytes(
                 document_id, self_ref
             )
@@ -627,7 +657,7 @@ class HaikuRAG:
         Returns:
             The Document instance if found, None otherwise.
         """
-        if self._federated:
+        if self.covers_multiple:
             return await self._from_any_covered(
                 lambda owner: owner.get_document_by_uri(uri)
             )
@@ -685,7 +715,7 @@ class HaikuRAG:
         Returns:
             List of Document instances matching the criteria.
         """
-        if self._federated:
+        if self.covers_multiple:
             # Each database is asked for enough rows to satisfy the window, and
             # the window is applied to the merged listing: a limit means that
             # many documents in total, not that many per database.
@@ -718,7 +748,7 @@ class HaikuRAG:
         Returns:
             Number of documents matching the criteria.
         """
-        if self._federated:
+        if self.covers_multiple:
             counts = await asyncio.gather(
                 *(
                     owner.count_documents(filter=filter)
@@ -745,19 +775,19 @@ class HaikuRAG:
         `None` for all of them. Every read honouring `sources` decides through
         this, so the rule cannot differ between one operation and another.
         """
-        if self._federated:
+        if self.covers_multiple:
             return await self.clients_for(
-                list(self._federated) if sources is None else sources
+                list(self.source_names) if sources is None else sources
             )
         if sources is None:
             return [self]
         sources = _without_repeats(sources)
         if not sources:
             return []
-        if sources != [self._source]:
+        if sources != [self.source]:
             raise KeyError(
                 f"unknown database(s) {', '.join(sources) or '(none)'}; this "
-                f"client covers {self._source or 'a single unnamed database'}"
+                f"client covers {self.source or 'a single unnamed database'}"
             )
         return [self]
 
@@ -772,7 +802,7 @@ class HaikuRAG:
     ) -> list[SearchResult]:
         from haiku.rag.client.search import search, search_sources
 
-        if self._federated:
+        if self.covers_multiple:
             return await search_sources(
                 self, query, limit, search_type, filter, include_images, sources
             )
@@ -782,7 +812,7 @@ class HaikuRAG:
         # A database named in config keeps its name even when it is the only one
         # this client covers. Only a legacy single `uri` leaves source unset.
         for result in results:
-            result.source = self._source
+            result.source = self.source
         return results
 
     async def expand_context(

@@ -339,7 +339,8 @@ class TestReportedDatabase:
     @staticmethod
     def _client(federated, store_path=None):
         client = MagicMock()
-        client._federated = federated
+        client.covers_multiple = len(federated) > 1
+        client.source_names = tuple(federated)
         client.store.db_path = store_path
         return client
 

@@ -64,7 +64,7 @@ async def ask(
     from haiku.rag.utils import get_model
 
     capability = create_capability(
-        db_path=None if client._federated else client.store.db_path,
+        db_path=None if client.covers_multiple else client.store.db_path,
         config=client._config,
         rag=client,
         defer_loading=False,
@@ -124,7 +124,7 @@ async def analyze(
     from haiku.rag.utils import get_model
 
     capability = create_capability(
-        db_path=None if client._federated else client.store.db_path,
+        db_path=None if client.covers_multiple else client.store.db_path,
         config=client._config,
         rag=client,
         defer_loading=False,

@@ -126,8 +126,8 @@ class TestNamingADatabaseDirectly:
         await _seed(config, "alpha", ["alpha document about cats"])
 
         async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
-            assert rag._federated == {}
-            assert rag._source is None
+            assert not rag.covers_multiple
+            assert rag.source is None
             assert rag.store.db_path == temp_db_path
 
     @pytest.mark.asyncio
@@ -137,8 +137,8 @@ class TestNamingADatabaseDirectly:
         await _seed(config, "alpha", ["alpha document about cats"])
 
         async with HaikuRAG(config=config) as rag:
-            assert rag._federated == {}
-            assert rag._source == "alpha"
+            assert not rag.covers_multiple
+            assert rag.source == "alpha"
             results = await rag.search("cats", search_type="fts", limit=10)
 
         assert [r.source for r in results] == ["alpha"]
@@ -168,7 +168,7 @@ class TestOpeningDatabases:
             rag._session._open = gated
             clients = await asyncio.wait_for(rag.clients_for(names), timeout=15)
 
-        assert {client._source for client in clients} == set(names)
+        assert {client.source for client in clients} == set(names)
 
     @pytest.mark.asyncio
     async def test_a_failed_open_does_not_leak_the_ones_that_worked(self, tmp_path):
@@ -195,7 +195,7 @@ class TestOpeningDatabases:
         async with HaikuRAG(config=config) as rag:
             clients = await rag.clients_for(["alpha", "alpha", "beta"])
 
-        assert [client._source for client in clients] == ["alpha", "beta"]
+        assert [client.source for client in clients] == ["alpha", "beta"]
 
     @pytest.mark.asyncio
     async def test_a_database_named_twice_returns_each_result_once(self, tmp_path):
@@ -220,7 +220,7 @@ class TestOpeningDatabases:
         async with HaikuRAG(config=config) as rag:
             covering = await rag.clients_covering(["alpha", "alpha"])
 
-        assert [client._source for client in covering] == ["alpha"]
+        assert [client.source for client in covering] == ["alpha"]
 
 
 class TestListingAcrossDatabases:
@@ -377,6 +377,84 @@ class TestClosingASet:
 
         assert sorted(released) == ["alpha", "beta"]
         assert sorted(drained) == ["alpha", "beta"]
+
+
+class TestPlacingADatabase:
+    """What a client says about the databases it covers, so nothing outside has
+    to read its private state to find out."""
+
+    @pytest.mark.asyncio
+    async def test_a_set_names_every_database_it_covers(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+
+        async with HaikuRAG(config=config, read_only=True) as rag:
+            assert rag.covers_multiple
+            assert rag.source_names == ("alpha", "beta")
+            assert rag.source is None
+
+    @pytest.mark.asyncio
+    async def test_one_named_database_names_itself(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+
+        async with HaikuRAG(config=config, read_only=True, sources=["alpha"]) as rag:
+            assert not rag.covers_multiple
+            assert rag.source_names == ("alpha",)
+            assert rag.source == "alpha"
+
+    @pytest.mark.asyncio
+    async def test_a_named_database_keeps_its_name_on_re_entry(self, tmp_path):
+        """Entering derives a single-database configuration from what was
+        configured. Deriving it from the last derivation loses the name."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+
+        rag = HaikuRAG(config=config, read_only=True, sources=["alpha"])
+        async with rag:
+            assert rag.source == "alpha"
+        async with rag:
+            assert rag.source == "alpha"
+            assert rag.source_names == ("alpha",)
+            results = await rag.search("cats", search_type="fts")
+
+        assert {r.source for r in results} == {"alpha"}
+
+    @pytest.mark.asyncio
+    async def test_an_unnamed_database_names_nothing(self, temp_db_path):
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            assert rag.source_names == ()
+            assert rag.source is None
+
+    @pytest.mark.asyncio
+    async def test_the_reader_for_a_database_is_the_client_holding_it(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+
+        async with HaikuRAG(config=config, read_only=True) as rag:
+            reader = await rag.reader_for("beta")
+
+            assert reader is not None
+            assert reader.source == "beta"
+            # Asked twice, the same wrapper comes back.
+            assert await rag.reader_for("beta") is reader
+
+    @pytest.mark.asyncio
+    async def test_a_client_reading_one_database_is_its_own_reader(self, temp_db_path):
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            assert await rag.reader_for(None) is rag
+            assert await rag.reader_for("anything") is rag
+
+    @pytest.mark.asyncio
+    async def test_a_set_cannot_place_evidence_that_names_no_database(self, tmp_path):
+        """Evidence recorded before databases could be named carries no source."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+
+        async with HaikuRAG(config=config, read_only=True) as rag:
+            assert await rag.reader_for(None) is None
 
 
 class TestBorrowedDatabases:

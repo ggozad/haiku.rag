@@ -357,12 +357,10 @@ class ChatApp(App):
 
         citation = selected_widgets[0].citation
         # Chunks, pages and bounding boxes all come from the database holding the
-        # cited chunk. A client covering a set has no repositories of its own.
-        client = self.client
-        if client._federated:
-            if citation.source is None:
-                return
-            (client,) = await client.clients_for([citation.source])
+        # cited chunk, which a client covering a set has to be asked for.
+        client = await self.client.reader_for(citation.source)
+        if client is None:
+            return
         chunk_ids = citation.chunk_ids or [citation.chunk_id]
         chunks = []
         for cid in chunk_ids:

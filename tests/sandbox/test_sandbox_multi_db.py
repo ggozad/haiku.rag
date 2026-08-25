@@ -33,7 +33,7 @@ class TestDocumentsAcrossDatabases:
             "test://alpha/alpha document about cats",
             "test://beta/beta document about cats",
         }
-        assert {owner._source for owner in owners.values()} == {"alpha", "beta"}
+        assert {owner.source for owner in owners.values()} == {"alpha", "beta"}
 
     @pytest.mark.asyncio
     async def test_selected_databases_bound_the_corpus(self, tmp_path):
@@ -46,7 +46,7 @@ class TestDocumentsAcrossDatabases:
             _, docs, owners = await _mounted(rag, sources=["alpha"])
 
         assert [d.uri for d in docs] == ["test://alpha/alpha document about cats"]
-        assert {owner._source for owner in owners.values()} == {"alpha"}
+        assert {owner.source for owner in owners.values()} == {"alpha"}
 
     @pytest.mark.asyncio
     async def test_one_database_needs_no_owners(self, tmp_path, temp_db_path):
@@ -76,8 +76,8 @@ class TestDocumentsAcrossDatabases:
                 async with sandbox._connection(owners[doc.id]) as owner:
                     content = await owner.document_repository.get_content(doc.id)
                 assert content is not None
-                assert owners[doc.id]._source is not None
-                assert owners[doc.id]._source in content
+                assert owners[doc.id].source is not None
+                assert owners[doc.id].source in content
 
 
 class TestExecutingAcrossDatabases:

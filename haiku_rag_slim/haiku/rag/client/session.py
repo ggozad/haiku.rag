@@ -280,9 +280,9 @@ class FederatedSession:
         self._lock = asyncio.Lock()
 
     @property
-    def locations(self) -> dict[str, str]:
-        """The databases covered, name to location as configured."""
-        return {name: ref.uri or str(ref.db_path) for name, ref in self._refs.items()}
+    def names(self) -> tuple[str, ...]:
+        """The databases covered, in configured order."""
+        return tuple(self._refs)
 
     async def sessions_for(self, names: list[str]) -> list[SingleDatabaseSession]:
         """The sessions for these databases, opening any not yet open.

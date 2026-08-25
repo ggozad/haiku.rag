@@ -293,7 +293,7 @@ class TestStandaloneCapabilities:
             await run._close()
 
         assert len(docs) == 2
-        assert {owner._source for owner in owners.values()} == {"alpha", "beta"}
+        assert {owner.source for owner in owners.values()} == {"alpha", "beta"}
 
     @pytest.mark.asyncio
     async def test_a_single_configured_database_is_still_opened(self, tmp_path):
@@ -304,7 +304,7 @@ class TestStandaloneCapabilities:
         capability = create_capability(config=config, defer_loading=False)
         rag = await capability._ensure_rag()
         try:
-            assert rag._source == "alpha"
+            assert rag.source == "alpha"
         finally:
             await capability._close()
 

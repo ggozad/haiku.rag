@@ -22,7 +22,7 @@ def reported_database(client: "HaikuRAG", db_path: "Path | None") -> "Path | Non
     one named database opens it rather than covering a set. Only what the client
     ended up covering says which of the two this is.
     """
-    if client._federated:
+    if client.covers_multiple:
         return None
     return db_path if db_path is not None else client.store.db_path
 
@@ -194,7 +194,7 @@ class InfoModal(ModalScreen):
             # rather than the whole panel. Names only, no paths — a location
             # belongs in the configuration.
             blocks = await asyncio.gather(
-                *(self._report(name) for name in sorted(self.client._federated))
+                *(self._report(name) for name in sorted(self.client.source_names))
             )
             for block in blocks:
                 lines.extend(block)

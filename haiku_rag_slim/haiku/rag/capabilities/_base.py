@@ -127,7 +127,7 @@ def covers_several_databases(
     covers. Instructions follow coverage, not configuration.
     """
     if rag is not None:
-        return bool(rag._federated)
+        return rag.covers_multiple
     return db_path is None and len(config.lancedb.databases) > 1
 
 
@@ -543,7 +543,7 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
                     owner, chunk = found
                     if not chunk.document_id:
                         continue
-                    key = (owner._source, chunk.document_id)
+                    key = (owner.source, chunk.document_id)
                     if key not in documents:
                         documents[key] = await owner.get_document_by_id(
                             chunk.document_id
@@ -553,7 +553,7 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
                     chunk.document_title = document.title if document else None
                     chunk.document_meta = document.metadata if document else {}
                     result = SearchResult.from_chunk(chunk, score=1.0)
-                    result.source = owner._source
+                    result.source = owner.source
                     synthetic.append(result)
                 citations.extend(resolve_citations(missing, synthetic))
 

@@ -82,7 +82,7 @@ async def search_sources(
     if limit is None:
         limit = client._config.search.limit
 
-    names = list(client._federated) if sources is None else list(sources)
+    names = list(client.source_names) if sources is None else list(sources)
     if not names:
         return []
     selected = await client.clients_for(names)
@@ -107,7 +107,7 @@ async def search_sources(
     results: list[SearchResult] = []
     for owner, chunk, score in ranked:
         result = SearchResult.from_chunk(chunk, score)
-        result.source = owner._source
+        result.source = owner.source
         results.append(result)
     results = _dedup_picture_chunks(results)
 
@@ -116,10 +116,11 @@ async def search_sources(
         for result in results:
             if result.source:
                 by_owner.setdefault(result.source, []).append(result)
+        owners = await client.clients_for(list(by_owner))
         await asyncio.gather(
             *(
-                _populate_image_data(client._clients[name], owned)
-                for name, owned in by_owner.items()
+                _populate_image_data(owner, by_owner[name])
+                for name, owner in zip(by_owner, owners, strict=True)
             )
         )
 
@@ -430,7 +431,7 @@ async def expand_context(
     """
     # A federating client has no repositories of its own, so each result expands
     # through the database it came from.
-    if client._federated:
+    if client.covers_multiple:
         by_source: dict[str, list[SearchResult]] = {}
         unsourced: list[SearchResult] = []
         for result in search_results:
@@ -441,9 +442,9 @@ async def expand_context(
         owners = await client.clients_for(list(by_source))
         expanded_groups = await asyncio.gather(
             *(
-                expand_context(owner, by_source[owner._source])
+                expand_context(owner, by_source[owner.source])
                 for owner in owners
-                if owner._source
+                if owner.source
             )
         )
         merged = unsourced + [r for group in expanded_groups for r in group]
