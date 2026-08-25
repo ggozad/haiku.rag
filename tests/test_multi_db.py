@@ -6,6 +6,7 @@ from docling_core.types.doc.labels import DocItemLabel
 from pydantic import ValidationError
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.client.session import FederatedSession
 from haiku.rag.config import get_config
 from haiku.rag.config.models import AppConfig, LanceDBConfig
 from haiku.rag.store.exceptions import (
@@ -154,16 +155,17 @@ class TestOpeningDatabases:
             await _seed(config, name, [f"{name} document about cats"])
 
         async with HaikuRAG(config=config) as rag:
+            assert rag._federated_session is not None
             barrier = asyncio.Barrier(len(names))
-            open_one = rag._open_client
+            open_one = rag._federated_session._open
 
-            async def gated(name: str, location: str):
+            async def gated(ref):
                 # Every open has to be in flight before any of them finishes, so
                 # a serial loop cannot get past this and the wait times out.
                 await barrier.wait()
-                return await open_one(name, location)
+                return await open_one(ref)
 
-            rag._open_client = gated
+            rag._federated_session._open = gated
             clients = await asyncio.wait_for(rag.clients_for(names), timeout=15)
 
         assert {client._source for client in clients} == set(names)
@@ -180,7 +182,8 @@ class TestOpeningDatabases:
             with pytest.raises(SourceUnavailableError, match="beta"):
                 await rag.clients_for(["alpha", "beta"])
 
-            assert set(rag._clients) == {"alpha"}
+            assert rag._federated_session is not None
+            assert set(rag._federated_session._sessions) == {"alpha"}
 
     @pytest.mark.asyncio
     async def test_a_database_named_twice_is_opened_once(self, tmp_path):
@@ -342,6 +345,83 @@ class TestLookupByIdentifier:
             assert await rag.get_document_by_uri("test://nowhere") is None
 
 
+class TestClosingASet:
+    @pytest.mark.asyncio
+    async def test_every_database_opened_is_released(self, tmp_path):
+        """A covered database owns an embedder and may owe a vacuum. Closing only
+        its connection would leave both behind."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+
+        released: list[str | None] = []
+        drained: list[str | None] = []
+
+        async with HaikuRAG(config=config, read_only=True) as rag:
+            assert rag._federated_session is not None
+            await rag.clients_for(["alpha", "beta"])
+            for name, session in rag._federated_session._sessions.items():
+                original = session.store.embedder.aclose
+                drain = session.drain_vacuum
+
+                async def release(_original=original, _name=name):
+                    released.append(_name)
+                    return await _original()
+
+                async def drain_it(_drain=drain, _name=name):
+                    drained.append(_name)
+                    return await _drain()
+
+                session.store.embedder.aclose = release
+                session.drain_vacuum = drain_it
+
+        assert sorted(released) == ["alpha", "beta"]
+        assert sorted(drained) == ["alpha", "beta"]
+
+
+class TestBorrowedDatabases:
+    """A client for one of a set wraps a database the set opened."""
+
+    @pytest.mark.asyncio
+    async def test_closing_a_borrowed_client_leaves_the_set_working(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        async with HaikuRAG(config=config) as rag:
+            (alpha,) = await rag.clients_for(["alpha"])
+            store = alpha.store
+
+            alpha.close()
+            assert store.db.is_open(), "close() closed a database it borrowed"
+
+            await alpha.__aexit__(None, None, None)
+            assert store.db.is_open(), "exit closed a database it borrowed"
+
+            results = await rag.search("cats", search_type="fts")
+
+        assert {r.source for r in results} == {"alpha", "beta"}
+        assert not store.db.is_open(), "the set left a database open"
+
+    @pytest.mark.asyncio
+    async def test_a_borrowed_client_releases_what_it_built(self, tmp_path):
+        """Its reranker is its own; the database it wraps is not."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+
+        closed: list[str] = []
+
+        class Reranker:
+            async def aclose(self):
+                closed.append("reranker")
+
+        async with HaikuRAG(config=config) as rag:
+            (alpha,) = await rag.clients_for(["alpha"])
+            alpha.__dict__["reranker"] = Reranker()
+
+        assert closed == ["reranker"]
+
+
 class TestDatabaseIndependentWork:
     """Converting, chunking and titling are functions of the configuration, not
     of a database, so covering a set does not stop them."""
@@ -354,11 +434,11 @@ class TestDatabaseIndependentWork:
 
         opened: list[str] = []
 
-        async def refuse(self, name, location):
-            opened.append(name)
+        async def refuse(self, ref):
+            opened.append(ref.name)
             raise AssertionError("opened a database to chunk a document")
 
-        monkeypatch.setattr(HaikuRAG, "_open_client", refuse)
+        monkeypatch.setattr(FederatedSession, "_open", refuse)
 
         doc = DoclingDocument(name="note")
         doc.add_text(
@@ -484,6 +564,8 @@ class TestOperationsThatNeedOneDatabase:
                 await rag.create_document("orphan")
             with pytest.raises(AmbiguousDatabaseError, match="clients_for"):
                 await rag.vacuum()
+            with pytest.raises(AmbiguousDatabaseError, match="close"):
+                rag.close()
 
     @pytest.mark.asyncio
     async def test_a_set_has_no_store_of_its_own(self, tmp_path):
@@ -850,15 +932,21 @@ class TestRerankerFusion:
         rag = HaikuRAG(config=config)
         await rag.__aenter__()
         await rag.clients_for(["alpha", "beta"])
+        assert rag._federated_session is not None
+        sessions = rag._federated_session._sessions
 
-        async def boom(exc_type, exc_val, exc_tb):
+        async def boom():
             raise RuntimeError("close failed")
 
-        rag._clients["alpha"].__aexit__ = boom  # ty: ignore[invalid-assignment]
+        sessions["alpha"].aclose = boom  # ty: ignore[invalid-assignment]
+        beta = sessions["beta"].store
 
         await rag.__aexit__(None, None, None)
 
+        # The failure is swallowed, and the sibling is still closed after it.
         assert rag._clients == {}
+        assert rag._federated_session._sessions == {}
+        assert not beta.db.is_open()
 
     @pytest.mark.asyncio
     async def test_multimodal_reranking_attaches_each_database_own_pictures(

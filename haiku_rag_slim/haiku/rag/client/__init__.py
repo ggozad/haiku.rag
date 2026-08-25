@@ -16,7 +16,12 @@ from urllib.parse import urlparse
 import httpx
 
 from haiku.rag.client.documents import DocumentImport
-from haiku.rag.client.session import SingleDatabaseSession
+from haiku.rag.client.scope import DatabaseRef, DatabaseScope
+from haiku.rag.client.session import (
+    FederatedSession,
+    SingleDatabaseSession,
+    aclose_quietly,
+)
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.converters import get_converter
 from haiku.rag.embeddings import get_embedder
@@ -68,18 +73,6 @@ async def first_found(
         if found is not None:
             return client, found
     return None
-
-
-async def _aclose_quietly(closeable: Any, what: str) -> None:
-    """Close, reporting failure to the log rather than raising.
-
-    Teardown can run while an exception unwinds, so a raising close must
-    neither mask that exception nor stop a sibling from being closed.
-    """
-    try:
-        await closeable.aclose()
-    except Exception:
-        logger.debug("Closing the %s failed on teardown", what, exc_info=True)
 
 
 def _spell(embedding: tuple[str | None, str | None, int | None]) -> str:
@@ -150,6 +143,8 @@ class HaikuRAG:
         self._clients_lock = asyncio.Lock()
         self._source: str | None = None
         self._session: SingleDatabaseSession | None = None
+        self._federated_session: FederatedSession | None = None
+        self._owns_session = True
 
     @property
     def store(self) -> Store:
@@ -254,6 +249,17 @@ class HaikuRAG:
                     "sources=[name]"
                 )
             self._federated = selected
+            self._federated_session = FederatedSession(
+                DatabaseScope(
+                    tuple(
+                        DatabaseRef.configured(name, location)
+                        for name, location in selected.items()
+                    )
+                ),
+                self._config,
+                skip_validation=self._skip_validation,
+                read_only=self._read_only,
+            )
             return self
         if selected:
             [(self._source, location)] = selected.items()
@@ -280,36 +286,38 @@ class HaikuRAG:
         Opening is per query rather than at entry: a set of 25 configured
         databases is typically queried a few at a time, and a database nobody
         asked for must not be able to fail a query, or be opened for nothing.
-
-        Missing ones open together: on object storage a serial loop makes the
-        first query cost the sum of the opens.
         """
+        assert self._federated_session is not None
         names = _without_repeats(names)
-        unknown = [n for n in names if n not in self._federated]
-        if unknown:
-            raise KeyError(
-                f"unknown database(s) {', '.join(sorted(unknown))}; configured: "
-                f"{', '.join(sorted(self._federated))}"
-            )
-        async with self._clients_lock:
-            missing = [n for n in names if n not in self._clients]
-            if missing:
-                opened = await asyncio.gather(
-                    *(self._open_client(n, self._federated[n]) for n in missing),
-                    return_exceptions=True,
-                )
-                # Whatever opened is tracked before the failure is reported, so
-                # `__aexit__` closes it: `gather` does not cancel the siblings of
-                # the one that raised, and an untracked connection leaks.
-                failure: BaseException | None = None
-                for name, result in zip(missing, opened, strict=True):
-                    if isinstance(result, BaseException):
-                        failure = failure or result
-                    else:
-                        self._clients[name] = result
-                if failure is not None:
-                    raise failure
-        return [self._clients[n] for n in names]
+        sessions = await self._federated_session.sessions_for(names)
+        return [
+            self._facade_for(name, session)
+            for name, session in zip(names, sessions, strict=True)
+        ]
+
+    def _facade_for(self, name: str, session: SingleDatabaseSession) -> "HaikuRAG":
+        """The client for one covered database, made once and kept.
+
+        The facade is public and the session is not, so the wrapper lives here
+        while the federated session keeps the database it wraps. A borrowed facade
+        never closes what it did not open.
+        """
+        facade = self._clients.get(name)
+        if facade is None:
+            facade = HaikuRAG._from_session(session)
+            self._clients[name] = facade
+        return facade
+
+    @classmethod
+    def _from_session(cls, session: SingleDatabaseSession) -> "HaikuRAG":
+        """A client over a database another session opened and will close."""
+        client = cls(
+            session.db_path, config=session.config, read_only=session.read_only
+        )
+        client._session = session
+        client._source = session.source
+        client._owns_session = False
+        return client
 
     def _require_one_embedder(self, clients: "list[HaikuRAG]") -> None:
         """Fail when two of these databases were written with different embedders.
@@ -340,48 +348,43 @@ class HaikuRAG:
                     "query once, so their vectors are not comparable"
                 )
 
-    async def _open_client(self, name: str, location: str) -> "HaikuRAG":
-        uri, db_path = locate_database(location)
-        config = self._config.model_copy(deep=True)
-        config.lancedb.databases = {}
-        config.lancedb.uri = uri
-        client = HaikuRAG(
-            db_path,
-            config=config,
-            skip_validation=self._skip_validation,
-            read_only=self._read_only,
-        )
-        client._source = name
-        return await client.__aenter__()
-
-    async def _close_clients(self) -> None:
-        for client in self._clients.values():
-            try:
-                await client.__aexit__(None, None, None)
-            except Exception:
-                logger.debug("Closing a database failed on teardown", exc_info=True)
-        self._clients.clear()
-
     async def __aexit__(self, exc_type, exc_val, exc_tb):  # noqa: ARG002
         """Async context manager exit."""
         # Branch on what this client covers, not on what it happened to open:
         # a federating client that answered no query has nothing open and no
         # store either.
         if self._federated:
-            await self._close_clients()
+            assert self._federated_session is not None
+            # The wrappers built over covered databases hold rerankers of their
+            # own; the databases themselves are the federated session's to close.
+            for facade in self._clients.values():
+                await facade._release_own()
+            self._clients.clear()
+            await self._federated_session.aclose()
             # The set shares this client's embedder and reranker, so this is the
             # only place they are closed — and only if anything built them.
             await self._aclose_cached("embedder")
             await self._aclose_cached("reranker")
             return False
-        await self._await_vacuum_tasks()
-        # Accessed so the store's embedder is closed even where nothing used it;
-        # `cached_property` stores it, which is what `_aclose_cached` discards.
-        _ = self.embedder
-        await self._aclose_cached("embedder")
-        await self._aclose_cached("reranker")
-        self.close()
+        if not self._owns_session:
+            await self._release_own()
+            return False
+        assert self._session is not None
+        # The session drains, releases its store's embedder and closes; the
+        # cached reference here is only discarded, never closed twice.
+        await self._release_own()
+        await self._session.aclose()
         return False
+
+    async def _release_own(self) -> None:
+        """Release what this client built, leaving the database to its owner.
+
+        The embedder belongs to the store and is closed with it, so the cached
+        reference is only discarded. The reranker is this client's own, built on
+        its first text query.
+        """
+        self.__dict__.pop("embedder", None)
+        await self._aclose_cached("reranker")
 
     async def _aclose_cached(self, name: str) -> None:
         """Close a cached_property this client materialized, and discard it.
@@ -391,7 +394,7 @@ class HaikuRAG:
         """
         cached = self.__dict__.pop(name, None)
         if cached is not None:
-            await _aclose_quietly(cached, name)
+            await aclose_quietly(cached, name)
 
     async def _await_vacuum_tasks(self) -> None:
         if self._session is not None:
@@ -885,7 +888,13 @@ class HaikuRAG:
         await self.store.vacuum()
 
     def close(self):
-        """Close the underlying store connection."""
+        """Close the underlying store connection.
+
+        A client covering one of a set borrows that database and never closes
+        it: the set opened it and the set closes it.
+        """
         self._require_one_database("close")
+        if not self._owns_session:
+            return
         assert self._session is not None
         self._session.close()

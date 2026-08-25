@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from haiku.rag.client.scope import DatabaseRef, DatabaseScope
+from haiku.rag.client.session import default_db_path
 from haiku.rag.config.models import AppConfig, LanceDBConfig, StorageConfig
 from haiku.rag.store.exceptions import AmbiguousDatabaseError
 
@@ -176,3 +177,18 @@ class TestConnectionDerivation:
         assert one is not other
         assert one.lancedb.uri == ""
         assert other.lancedb.uri == "s3://b/b.lancedb"
+
+
+def test_a_database_behind_a_uri_has_no_path_of_its_own(tmp_path):
+    """`connection` hands back no path for a URI, and the store still needs one:
+    the default stands in, and the URI is what decides where it connects."""
+    config = AppConfig(
+        storage=StorageConfig(data_dir=tmp_path),
+        lancedb=LanceDBConfig(databases={"alpha": "s3://bucket/alpha.lancedb"}),
+    )
+    [ref] = DatabaseScope.resolve(config).databases
+
+    one, db_path = ref.connection(config)
+
+    assert db_path is None
+    assert default_db_path(one) == tmp_path / "haiku.rag.lancedb"

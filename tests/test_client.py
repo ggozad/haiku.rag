@@ -1185,6 +1185,19 @@ async def test_metadata_only_update_does_not_advance_documents_table(temp_db_pat
         assert docling.get_docling_document() is not None
 
 
+async def test_close_releases_the_connection(temp_db_path):
+    """A caller managing the client itself closes it directly; leaving the
+    context goes through the session instead."""
+    client = HaikuRAG(temp_db_path, create=True)
+    await client.__aenter__()
+    store = client.store
+    assert store.db.is_open()
+
+    client.close()
+
+    assert not store.db.is_open()
+
+
 async def test_delete_marks_vacuum_dirty(temp_db_path):
     """A delete adds tombstone/table versions, so it must enter the auto-vacuum
     lifecycle — otherwise a delete-only run closes without a final vacuum."""
