@@ -3,7 +3,7 @@ from collections.abc import Iterable
 from pydantic import BaseModel
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.store.models.chunk import SearchResult
+from haiku.rag.store.models.chunk import SearchResult, qualified_id
 
 
 class CodeExecutionEntry(BaseModel):
@@ -37,14 +37,15 @@ def merge_results(
 ) -> None:
     """Add the results not already held.
 
-    Identity is the chunk id, which every stored chunk carries; results built by
-    hand without one cannot be told apart and collapse to the first.
+    Identity is the database and the chunk id: results built by hand carry
+    neither and cannot be told apart, so they collapse to the first.
     """
-    seen = {result.chunk_id for result in existing}
+    seen = {qualified_id(result.source, result.chunk_id) for result in existing}
     for result in incoming:
-        if result.chunk_id not in seen:
+        key = qualified_id(result.source, result.chunk_id)
+        if key not in seen:
             existing.append(result)
-            seen.add(result.chunk_id)
+            seen.add(key)
 
 
 __all__ = [

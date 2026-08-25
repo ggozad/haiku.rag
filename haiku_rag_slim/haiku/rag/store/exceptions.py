@@ -24,6 +24,15 @@ class AmbiguousDatabaseError(Exception):
     """
 
 
+class AmbiguousCitationError(Exception):
+    """A cited chunk id names a chunk in more than one database.
+
+    A citation records the id alone, so nothing downstream can say which
+    database it came from. Raised rather than resolved: picking one attributes
+    the answer to a database it may not have come from.
+    """
+
+
 class SourceUnavailableError(Exception):
     """A configured database could not be opened.
 

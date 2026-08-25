@@ -3,7 +3,12 @@ import base64
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from haiku.rag.store.models.chunk import Chunk, SearchResult, SearchType
+from haiku.rag.store.models.chunk import (
+    Chunk,
+    SearchResult,
+    SearchType,
+    qualified_id,
+)
 from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX
 
 if TYPE_CHECKING:
@@ -429,7 +434,7 @@ async def expand_sources(
     # Grouping by database must not become the tiebreak: fused scores tie often,
     # so equal scores keep the order they were fused in.
     arrival = {
-        result.chunk_id: rank
+        qualified_id(result.source, result.chunk_id): rank
         for rank, result in enumerate(search_results)
         if result.chunk_id
     }
@@ -437,9 +442,9 @@ async def expand_sources(
     def fused_rank(result: SearchResult) -> int:
         return min(
             (
-                arrival[cid]
+                arrival[key]
                 for cid in (result.chunk_id, *result.chunk_ids)
-                if cid in arrival
+                if (key := qualified_id(result.source, cid)) in arrival
             ),
             default=len(arrival),
         )

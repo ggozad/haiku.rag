@@ -33,10 +33,15 @@ from haiku.rag.capabilities._tools import (
     search_corpus,
 )
 from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord, EvidenceRef
-from haiku.rag.client import HaikuRAG, first_found
+from haiku.rag.client import HaikuRAG, all_found
 from haiku.rag.config.models import AppConfig
+from haiku.rag.store.exceptions import AmbiguousCitationError
 from haiku.rag.store.models.chunk import SearchResult
-from haiku.rag.store.models.citation import Citation, resolve_citations
+from haiku.rag.store.models.citation import (
+    Citation,
+    ambiguous_citation,
+    resolve_citations,
+)
 from haiku.rag.tools.search import build_image_content_from_results
 
 CITATION_GRACE_REQUESTS = 2
@@ -54,6 +59,18 @@ CHUNK_ID_MATCH_CUTOFF = 0.75
 Calibration knob. Two unrelated UUID4s reach about 0.5, while dropping or
 duplicating a character or a whole group stays above 0.75, so the gap is wide.
 """
+
+
+def _ambiguous_retry(error: AmbiguousCitationError) -> ModelRetry:
+    """The only way out of an id that names a chunk in two databases.
+
+    The model cannot say which it meant, so it is asked for other evidence
+    rather than for the same id again.
+    """
+    return ModelRetry(
+        f"{error}. Cite a chunk id that appears once across the databases "
+        "searched, or cite nothing."
+    )
 
 
 def _nearest_known_id(chunk_id: str, known_ids: list[str]) -> str:
@@ -521,7 +538,10 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
             all_results.extend(results)
         known_ids = [result.chunk_id for result in all_results if result.chunk_id]
         requested = [_nearest_known_id(cid.strip("[]"), known_ids) for cid in chunk_ids]
-        citations = resolve_citations(requested, all_results)
+        try:
+            citations = resolve_citations(requested, all_results)
+        except AmbiguousCitationError as error:
+            raise _ambiguous_retry(error) from error
         resolved = {citation.chunk_id for citation in citations}
         missing = [cid for cid in requested if cid not in resolved]
 
@@ -535,12 +555,21 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
                 synthetic: list[SearchResult] = []
                 documents: dict[tuple[str | None, str], Any] = {}
                 for chunk_id in missing:
-                    found = await first_found(
+                    # Every database that has it, not the first: taking the first
+                    # would attribute the answer to one of them without ever
+                    # seeing that another had it too.
+                    holders = await all_found(
                         lookups, lambda owner: owner.get_chunk_by_id(chunk_id)
                     )
-                    if found is None:
+                    if len(holders) > 1:
+                        raise _ambiguous_retry(
+                            ambiguous_citation(
+                                chunk_id, [owner.source for owner, _ in holders]
+                            )
+                        )
+                    if not holders:
                         continue
-                    owner, chunk = found
+                    [(owner, chunk)] = holders
                     if not chunk.document_id:
                         continue
                     key = (owner.source, chunk.document_id)
@@ -562,7 +591,10 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
                 f"None of the supplied chunk_ids {list(chunk_ids)} could be resolved. "
                 "Copy chunk_ids verbatim from search results."
             )
-        self._register_citations(citations)
+        try:
+            self._register_citations(citations)
+        except AmbiguousCitationError as error:
+            raise _ambiguous_retry(error) from error
         self._declare(citations)
         resolved = {citation.chunk_id for citation in citations}
         unresolved = [cid for cid in missing if cid not in resolved]
@@ -579,8 +611,22 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
         return f"Registered {len(citations)} citation(s)."
 
     def _register_citations(self, citations: list[Citation]) -> None:
+        """Index the citations, numbering the ones not already registered.
+
+        The index is keyed by chunk id and outlives the question, so an id
+        already registered from another database is refused here rather than
+        silently keeping the earlier one's content and database.
+        """
         assert self.state is not None
         state = self.state
+        for citation in citations:
+            held = state.citation_index.get(citation.chunk_id)
+            if held is not None and held.source != citation.source:
+                raise AmbiguousCitationError(
+                    f"chunk id {citation.chunk_id} was already cited from "
+                    "another database in this conversation; a citation records "
+                    "the id alone and cannot say which"
+                )
         next_index = len(state.citation_index) + 1
         for citation in citations:
             if citation.chunk_id not in state.citation_index:

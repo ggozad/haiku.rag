@@ -1,4 +1,5 @@
 from .exceptions import (
+    AmbiguousCitationError,
     AmbiguousDatabaseError,
     ConfigMismatchError,
     MigrationRequiredError,
@@ -12,6 +13,7 @@ __all__ = [
     "Document",
     "MigrationRequiredError",
     "ReadOnlyError",
+    "AmbiguousCitationError",
     "AmbiguousDatabaseError",
     "ConfigMismatchError",
     "SourceUnavailableError",

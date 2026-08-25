@@ -116,6 +116,21 @@ class Chunk(BaseModel):
 SearchType = Literal["vector", "fts", "hybrid"]
 
 
+def qualified_id(source: str | None, id: str | None) -> tuple[str | None, str | None]:
+    """What tells one chunk from another.
+
+    A chunk id is unique within a database and says nothing across them: a
+    database copied from another holds the same ids, so the database is part of
+    the identity. `id` is optional because a result built by hand carries none,
+    and those cannot be told apart.
+
+    Only for structures held in memory. Everything serialized — citations,
+    evidence refs, compaction — records the id alone, so ambiguity there is
+    rejected rather than qualified.
+    """
+    return (source, id)
+
+
 class SearchResult(BaseModel):
     """Search result with optional provenance information for citations.
 

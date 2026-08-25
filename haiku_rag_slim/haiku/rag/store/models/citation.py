@@ -1,7 +1,9 @@
+from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
+from haiku.rag.store.exceptions import AmbiguousCitationError
 from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX
 
 if TYPE_CHECKING:
@@ -55,16 +57,42 @@ class Citation(BaseModel):
     picture_refs: list[str] = Field(default_factory=list)
 
 
+def ambiguous_citation(
+    chunk_id: str, sources: Iterable[str | None]
+) -> AmbiguousCitationError:
+    """The refusal for an id that names a chunk in more than one database."""
+    named = ", ".join(sorted(s or "unnamed" for s in sources))
+    return AmbiguousCitationError(
+        f"chunk id {chunk_id} names a chunk in more than one database "
+        f"({named}); a citation records the id alone and cannot say which"
+    )
+
+
 def resolve_citations(
     cited_chunk_ids: list[str],
     search_results: "list[SearchResult]",
 ) -> list[Citation]:
-    """Resolve chunk IDs to full Citation objects with metadata."""
-    by_id = {r.chunk_id: r for r in search_results if r.chunk_id}
+    """Resolve chunk IDs to full Citation objects with metadata.
+
+    Raises ``AmbiguousCitationError`` when a cited id names a chunk in more than
+    one of the databases searched. An id held by two of them, as after copying a
+    database, resolves to whichever result came last, attributing the answer to a
+    database it may not have come from.
+    """
+    by_id: dict[str, SearchResult] = {}
+    ambiguous: dict[str, set[str | None]] = {}
+    for r in search_results:
+        # A result built by hand carries no id and nothing can cite it.
+        if cid := r.chunk_id:
+            held = by_id.setdefault(cid, r)
+            if held.source != r.source:
+                ambiguous.setdefault(cid, {held.source}).add(r.source)
 
     citations = []
     for raw_id in cited_chunk_ids:
         chunk_id = raw_id.strip("[]")
+        if chunk_id in ambiguous:
+            raise ambiguous_citation(chunk_id, ambiguous[chunk_id])
         r = by_id.get(chunk_id)
         if not r:
             continue

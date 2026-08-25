@@ -6,7 +6,7 @@
 
 - `api_key` on model and embedding-model config, overriding the provider's environment variable. Honored on the `openai` and `ollama` providers, `vllm` embedders and rerankers, the picture-description VLM endpoint, and `doctor`'s endpoint probes; other providers raise.
 - `lancedb.databases`: a name-to-location mapping for searching several databases at once, mutually exclusive with `lancedb.uri`. `client.search(..., sources=[...])` selects which to search, `sources=None` searches all of them, and `SearchResult.source` carries the configured name a result came from. `Document.source` names it on a document from a listing or a lookup, so a listing that spans databases says which one each came from. Candidates are fused by the configured reranker over the union, or by reciprocal rank fusion when none is configured. Databases searched together must have been written with the same embedder; two that disagree raise `ConfigMismatchError`. The query is embedded once for the whole selection. `SearchResult.format_for_agent` names the database, so the model can attribute evidence to one while it answers. `haiku-rag search`, `ask`, `analyze` and `chat` cover the configured set and label each result and citation with its database; every other command works on one, named with `--database NAME` or `--db PATH`.
-- `client.ask(..., sources=[...])` asks across the selected databases, and `Citation.source` names the one a cited chunk came from. The cite fallback for an id absent from the run's results looks only in the selected databases, so a question scoped to some cannot cite another.
+- `client.ask(..., sources=[...])` asks across the selected databases, and `Citation.source` names the one a cited chunk came from. The cite fallback for an id absent from the run's results looks only in the selected databases, so a question scoped to some cannot cite another. A chunk id held by two of the databases searched raises `AmbiguousCitationError`, which reaches the model as a retry; the fallback refuses it too, rather than answering from the first database that holds it.
 - `client.analyze(..., sources=[...])` analyzes across the selected databases: the sandbox mounts their documents under one flat `/documents/{id}/` namespace, resolving each id to the database holding it, and in-code `search()` covers the same selection.
 
 ### Fixed
@@ -16,8 +16,6 @@
 - `doctor`'s docling-serve probe sends `X-Api-Key`, so an instance requiring a key is reported reachable rather than unreachable.
 - The picture-description request to the public OpenAI endpoint sends `OPENAI_API_KEY`; it carried no authorization header.
 - `haiku-rag` prints the message and exits when the configured embedder does not match the database, instead of raising a traceback.
-
-## [0.77.0] - 2026-08-21
 
 ## [0.77.0] - 2026-08-21
 

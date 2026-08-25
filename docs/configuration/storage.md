@@ -223,6 +223,12 @@ citation. A document from `list_documents`, `get_document_by_id`,
 on the command line points the configuration at it, so commands that work on one
 database report no name.
 
+Chunk ids are unique within a database and say nothing across them, so a database
+copied from another holds the same ids. Results are told apart by the database
+and the id together. A chunk id held by two of the databases searched cannot be
+cited: `resolve_citations` raises `AmbiguousCitationError`, and the capability
+asks the model for other evidence instead.
+
 **Configure a reranker when searching several databases.** Reciprocal rank fusion
 compares ranks, not scores, so every database contributes its own best matches
 whether or not they are relevant to the question, and results from databases

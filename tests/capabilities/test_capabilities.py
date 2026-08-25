@@ -397,6 +397,30 @@ async def test_a_narrower_repeat_keeps_what_the_wider_search_returned(temp_db_pa
 
 
 @pytest.mark.asyncio
+async def test_two_databases_holding_one_chunk_id_both_survive(temp_db_path):
+    """A database copied from another holds the same chunk ids, so what tells
+    two results apart is the database and the id together."""
+    capability = create_rag(db_path=temp_db_path, config=AppConfig())
+    capability.state = RAGState()
+    capability.borrowed_rag = _stub_client(
+        [SearchResult(content="alpha", score=1.0, chunk_id="c1", source="alpha")],
+        [
+            SearchResult(content="alpha", score=1.0, chunk_id="c1", source="alpha"),
+            SearchResult(content="beta", score=0.9, chunk_id="c1", source="beta"),
+        ],
+    )
+
+    await capability._search("cats", 20)
+    await capability._search("cats", None)
+
+    stored = capability.state.searches["cats"]
+    assert [(r.source, r.chunk_id) for r in stored] == [
+        ("alpha", "c1"),
+        ("beta", "c1"),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_cite_resolves_direct_chunk_ids_and_reuses_document_lookup(temp_db_path):
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
     capability.state = RAGState(evidence=CapabilityEvidenceRecord(question=0))

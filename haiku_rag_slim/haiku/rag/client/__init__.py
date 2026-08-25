@@ -58,22 +58,36 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+async def all_found(
+    clients: "list[HaikuRAG]",
+    lookup: "Callable[[HaikuRAG], Coroutine[Any, Any, Any]]",
+) -> "list[tuple[HaikuRAG, Any]]":
+    """Every client for which `lookup` finds something, and what each found.
+
+    An id or a URI says nothing about which database holds it, so every one is
+    asked at once. Asking in turn would cost a round trip per database for an
+    identifier that is missing or held by the last of them.
+    """
+    found_by_client = await asyncio.gather(*(lookup(client) for client in clients))
+    return [
+        (client, found)
+        for client, found in zip(clients, found_by_client, strict=True)
+        if found is not None
+    ]
+
+
 async def first_found(
     clients: "list[HaikuRAG]",
     lookup: "Callable[[HaikuRAG], Coroutine[Any, Any, Any]]",
 ) -> "tuple[HaikuRAG, Any] | None":
     """The first of `clients` for which `lookup` finds something, and what it found.
 
-    An id or a URI says nothing about which database holds it, so every one is
-    asked at once and the first that has it, in the order given, answers. Asking
-    in turn would cost a round trip per database for an identifier that is
-    missing or held by the last of them.
+    For a lookup that has an answer wherever it is found, as a document read
+    does. Where holding the same identifier in two databases means something,
+    ask `all_found` and decide.
     """
-    found_by_client = await asyncio.gather(*(lookup(client) for client in clients))
-    for client, found in zip(clients, found_by_client, strict=True):
-        if found is not None:
-            return client, found
-    return None
+    found = await all_found(clients, lookup)
+    return found[0] if found else None
 
 
 def _spell(embedding: tuple[str | None, str | None, int | None]) -> str:

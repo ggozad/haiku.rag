@@ -329,6 +329,28 @@ class TestLookupByIdentifier:
         assert found is not None and found.content == "beta one"
 
     @pytest.mark.asyncio
+    async def test_a_document_held_by_two_databases_answers_from_the_first(
+        self, tmp_path
+    ):
+        """A database copied from another holds the same ids. A read has an
+        answer wherever it finds one, and which one it is has to be the
+        configured order rather than whichever replied first."""
+        import shutil
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        shutil.copytree(tmp_path / "alpha.lancedb", tmp_path / "beta.lancedb")
+
+        async with HaikuRAG(config=config) as rag:
+            beta = (await rag.clients_for(["beta"]))[0]
+            [target] = await beta.document_repository.list_all(limit=1)
+            assert target.id is not None
+
+            found = await rag.get_document_by_id(target.id)
+
+        assert found is not None and found.source == "alpha"
+
+    @pytest.mark.asyncio
     async def test_an_unknown_identifier_is_absent_rather_than_an_error(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha one"])
