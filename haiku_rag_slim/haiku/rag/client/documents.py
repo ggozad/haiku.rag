@@ -11,9 +11,12 @@ from urllib.parse import quote, urlparse
 from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.client.processing import (
     _write_fetch_body,
+    chunk,
+    convert,
     ensure_chunks_embedded,
     get_extension_from_content_type_or_url,
 )
+from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.client.titles import resolve_title
 from haiku.rag.converters import get_converter
 from haiku.rag.store.models.chunk import Chunk
@@ -25,7 +28,6 @@ from haiku.rag.uri import is_local_uri, uri_to_path
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
-    from haiku.rag.client import HaikuRAG
     from haiku.rag.ingester.metadata import MetadataProvider
     from haiku.rag.sources.base import FetchResult, Source
 
@@ -86,7 +88,9 @@ async def _prepare_document_from_docling(
 
 
 async def _prepare_and_title(
-    client: "HaikuRAG", document: Document, docling_document: "DoclingDocument"
+    session: SingleDatabaseSession,
+    document: Document,
+    docling_document: "DoclingDocument",
 ) -> None:
     """Fill the document from its converted form and title it if it has none.
 
@@ -97,8 +101,25 @@ async def _prepare_and_title(
     stored_content = await _prepare_document_from_docling(document, docling_document)
     if document.title is None:
         document.title = await resolve_title(
-            client._config, docling_document, stored_content
+            session.config, docling_document, stored_content
         )
+
+
+async def chunk_document(
+    session: SingleDatabaseSession,
+    docling_document: "DoclingDocument",
+    *,
+    existing_picture_data: dict[str, bytes] | None = None,
+    document_id: str | None = None,
+) -> list[Chunk]:
+    """Chunk and embed through the database this write belongs to."""
+    return await chunk(
+        session.config,
+        docling_document,
+        embedder=session.store.embedder,
+        existing_picture_data=existing_picture_data,
+        document_id=document_id,
+    )
 
 
 def parent_uri_filter(parent_uri: str) -> str:
@@ -112,7 +133,7 @@ def parent_uri_filter(parent_uri: str) -> str:
 
 
 async def _store_document_with_chunks(
-    client: "HaikuRAG",
+    session: SingleDatabaseSession,
     document: Document,
     chunks: list[Chunk],
     docling_document: "DoclingDocument",
@@ -121,16 +142,18 @@ async def _store_document_with_chunks(
 
     Handles versioning/rollback on failure.
     """
-    chunks = await ensure_chunks_embedded(client._config, chunks, client.embedder)
+    chunks = await ensure_chunks_embedded(
+        session.config, chunks, session.store.embedder
+    )
     items = await asyncio.to_thread(extract_items, "", docling_document)
 
-    async with client.store.write_transaction():
+    async with session.store.write_transaction():
         # A concurrent ingestion of the same URI may have created the document
         # while this one was converting/embedding outside the lock. LanceDB has
         # no unique constraint on `uri`, so re-check under the lock and update in
         # place rather than inserting a duplicate.
         existing = (
-            await client.get_document_by_uri(document.uri)
+            await session.get_document_by_uri(document.uri)
             if document.uri is not None
             else None
         )
@@ -138,9 +161,9 @@ async def _store_document_with_chunks(
         if existing is not None:
             document.id = existing.id
             document.created_at = existing.created_at
-            stored_doc = await client.document_repository.update(document)
+            stored_doc = await session.document_repository.update(document)
         else:
-            stored_doc = await client.document_repository.create(document)
+            stored_doc = await session.document_repository.create(document)
 
         assert stored_doc.id is not None, "Document ID should not be None after storing"
         for order, chunk in enumerate(chunks):
@@ -150,22 +173,22 @@ async def _store_document_with_chunks(
             item.document_id = stored_doc.id
 
         if existing is not None:
-            await client.chunk_repository.replace_for_document(stored_doc.id, chunks)
-            await client.document_item_repository.replace_for_document(
+            await session.chunk_repository.replace_for_document(stored_doc.id, chunks)
+            await session.document_item_repository.replace_for_document(
                 stored_doc.id, items
             )
         else:
-            await client.chunk_repository.create(chunks)
-            await client.document_item_repository.create_items(stored_doc.id, items)
+            await session.chunk_repository.create(chunks)
+            await session.document_item_repository.create_items(stored_doc.id, items)
 
-    if client._config.storage.auto_vacuum:
-        client._schedule_vacuum()
+    if session.config.storage.auto_vacuum:
+        session.schedule_vacuum()
 
     return stored_doc
 
 
 async def _update_document_with_chunks(
-    client: "HaikuRAG",
+    session: SingleDatabaseSession,
     document: Document,
     chunks: list[Chunk],
     docling_document: "DoclingDocument | None" = None,
@@ -183,10 +206,12 @@ async def _update_document_with_chunks(
     existing_picture_data: dict[str, bytes] | None = None
     if docling_document is not None:
         existing_picture_data = (
-            await client.document_item_repository.get_all_picture_data(document.id)
+            await session.document_item_repository.get_all_picture_data(document.id)
         )
 
-    chunks = await ensure_chunks_embedded(client._config, chunks, client.embedder)
+    chunks = await ensure_chunks_embedded(
+        session.config, chunks, session.store.embedder
+    )
 
     items: list[DocumentItem] | None = None
     if docling_document is not None:
@@ -194,29 +219,29 @@ async def _update_document_with_chunks(
             extract_items, document.id, docling_document, existing_picture_data
         )
 
-    async with client.store.write_transaction():
-        updated_doc = await client.document_repository.update(document)
+    async with session.store.write_transaction():
+        updated_doc = await session.document_repository.update(document)
 
         assert updated_doc.id is not None
         for order, chunk in enumerate(chunks):
             chunk.document_id = updated_doc.id
             chunk.order = order
 
-        await client.chunk_repository.replace_for_document(updated_doc.id, chunks)
+        await session.chunk_repository.replace_for_document(updated_doc.id, chunks)
 
         if items is not None:
-            await client.document_item_repository.replace_for_document(
+            await session.document_item_repository.replace_for_document(
                 updated_doc.id, items
             )
 
-    if client._config.storage.auto_vacuum:
-        client._schedule_vacuum()
+    if session.config.storage.auto_vacuum:
+        session.schedule_vacuum()
 
     return updated_doc
 
 
 async def create_document(
-    client: "HaikuRAG",
+    session: SingleDatabaseSession,
     content: str,
     uri: str | None = None,
     title: str | None = None,
@@ -227,9 +252,9 @@ async def create_document(
 
     Converts the content, chunks it, and generates embeddings.
     """
-    converter = get_converter(client._config)
+    converter = get_converter(session.config)
     docling_document = await converter.convert_text(content, format=format)
-    chunks = await client.chunk(docling_document)
+    chunks = await chunk_document(session, docling_document)
 
     document = Document(
         content="",
@@ -237,13 +262,15 @@ async def create_document(
         title=title,
         metadata=metadata or {},
     )
-    await _prepare_and_title(client, document, docling_document)
+    await _prepare_and_title(session, document, docling_document)
 
-    return await _store_document_with_chunks(client, document, chunks, docling_document)
+    return await _store_document_with_chunks(
+        session, document, chunks, docling_document
+    )
 
 
 async def import_document(
-    client: "HaikuRAG",
+    session: SingleDatabaseSession,
     docling_document: "DoclingDocument",
     chunks: list[Chunk],
     uri: str | None = None,
@@ -261,13 +288,15 @@ async def import_document(
         title=title,
         metadata=metadata or {},
     )
-    await _prepare_and_title(client, document, docling_document)
+    await _prepare_and_title(session, document, docling_document)
 
-    return await _store_document_with_chunks(client, document, chunks, docling_document)
+    return await _store_document_with_chunks(
+        session, document, chunks, docling_document
+    )
 
 
 async def _store_documents_with_chunks(
-    client: "HaikuRAG",
+    session: SingleDatabaseSession,
     prepared: list[tuple[Document, list[Chunk], "DoclingDocument"]],
 ) -> list[Document]:
     """Store many documents with their chunks in a single table version each.
@@ -276,9 +305,9 @@ async def _store_documents_with_chunks(
     and document_items tables once apiece. Restores all tables on any failure.
     """
     flat = await ensure_chunks_embedded(
-        client._config,
+        session.config,
         [chunk for _, chunks, _ in prepared for chunk in chunks],
-        client.embedder,
+        session.store.embedder,
     )
     embedded: list[list[Chunk]] = []
     position = 0
@@ -291,8 +320,8 @@ async def _store_documents_with_chunks(
 
     all_item_lists = await asyncio.to_thread(_extract_all_items)
 
-    async with client.store.write_transaction():
-        created = await client.document_repository.create(
+    async with session.store.write_transaction():
+        created = await session.document_repository.create(
             [doc for doc, _, _ in prepared]
         )
 
@@ -308,17 +337,17 @@ async def _store_documents_with_chunks(
                 item.document_id = doc.id
             all_items.extend(item_list)
 
-        await client.chunk_repository.create(all_chunks)
-        await client.document_item_repository.create_all(all_items)
+        await session.chunk_repository.create(all_chunks)
+        await session.document_item_repository.create_all(all_items)
 
-    if client._config.storage.auto_vacuum:
-        client._schedule_vacuum()
+    if session.config.storage.auto_vacuum:
+        session.schedule_vacuum()
 
     return created
 
 
 async def import_documents(
-    client: "HaikuRAG",
+    session: SingleDatabaseSession,
     imports: list[DocumentImport],
 ) -> list[Document]:
     """Batch-import pre-processed documents with their chunks.
@@ -338,14 +367,14 @@ async def import_documents(
             title=item.title,
             metadata=item.metadata or {},
         )
-        await _prepare_and_title(client, document, item.docling_document)
+        await _prepare_and_title(session, document, item.docling_document)
         prepared.append((document, item.chunks, item.docling_document))
 
-    return await _store_documents_with_chunks(client, prepared)
+    return await _store_documents_with_chunks(session, prepared)
 
 
 async def _refresh_doc_metadata(
-    client: "HaikuRAG",
+    session: SingleDatabaseSession,
     doc: Document,
     *,
     title: str | None,
@@ -367,12 +396,12 @@ async def _refresh_doc_metadata(
         updated = True
 
     if updated:
-        async with client.store._write_lock:
-            result = await client.document_repository.update_meta(doc)
+        async with session.store._write_lock:
+            result = await session.document_repository.update_meta(doc)
         # Reclaim the document_meta churn from rolling source_revision sweeps.
         # The vacuum is debounced, and document_meta is tiny, so this is cheap.
-        if client._config.storage.auto_vacuum:
-            client._schedule_vacuum()
+        if session.config.storage.auto_vacuum:
+            session.schedule_vacuum()
         return result
     return doc
 
@@ -398,7 +427,7 @@ async def _provider_metadata(
 
 
 async def _ingest_fetch_result(
-    client: "HaikuRAG",
+    session: SingleDatabaseSession,
     result: "FetchResult",
     *,
     title: str | None,
@@ -417,7 +446,7 @@ async def _ingest_fetch_result(
     fallback. Callers pass it when ``result.uri`` cannot yield the right
     extension, e.g. embedded attachments whose name lives in a URI fragment."""
 
-    converter = get_converter(client._config)
+    converter = get_converter(session.config)
     if filename is not None:
         file_extension = Path(filename).suffix.lower()
     else:
@@ -446,9 +475,11 @@ async def _ingest_fetch_result(
 
     try:
         with logfire.span("document.convert", uri=result.uri):
-            docling_document = await client.convert(target_path, source_uri=result.uri)
+            docling_document = await convert(
+                session.config, target_path, source_uri=result.uri
+            )
         with logfire.span("document.chunk", uri=result.uri) as chunk_span:
-            chunks = await client.chunk(docling_document)
+            chunks = await chunk_document(session, docling_document)
             chunk_span.set_attribute("chunks_created", len(chunks))
     finally:
         if cleanup_path is not None:
@@ -460,13 +491,13 @@ async def _ingest_fetch_result(
         existing_doc.metadata = final_metadata
         if title is not None:
             existing_doc.title = title
-        await _prepare_and_title(client, existing_doc, docling_document)
+        await _prepare_and_title(session, existing_doc, docling_document)
         with logfire.span("document.store", uri=result.uri, op="update") as store_span:
             updated = await _update_document_with_chunks(
-                client, existing_doc, chunks, docling_document
+                session, existing_doc, chunks, docling_document
             )
             store_span.set_attribute("document_id", updated.id)
-        await _reconcile_pdf_attachments(client, updated, result.body, depth=depth)
+        await _reconcile_pdf_attachments(session, updated, result.body, depth=depth)
         return updated
 
     document = Document(
@@ -475,13 +506,13 @@ async def _ingest_fetch_result(
         title=title,
         metadata=final_metadata,
     )
-    await _prepare_and_title(client, document, docling_document)
+    await _prepare_and_title(session, document, docling_document)
     with logfire.span("document.store", uri=result.uri, op="create") as store_span:
         created = await _store_document_with_chunks(
-            client, document, chunks, docling_document
+            session, document, chunks, docling_document
         )
         store_span.set_attribute("document_id", created.id)
-    await _reconcile_pdf_attachments(client, created, result.body, depth=depth)
+    await _reconcile_pdf_attachments(session, created, result.body, depth=depth)
     return created
 
 
@@ -545,7 +576,7 @@ def _extract_pdf_attachments(
 
 
 async def _reconcile_pdf_attachments(
-    client: "HaikuRAG",
+    session: SingleDatabaseSession,
     parent_doc: Document,
     parent_body: bytes,
     *,
@@ -559,7 +590,7 @@ async def _reconcile_pdf_attachments(
     path runs uniformly — child PDFs recurse into this helper one level deeper,
     bounded by ``MAX_ATTACHMENT_DEPTH``.
     """
-    if not client._config.processing.extract_pdf_attachments:
+    if not session.config.processing.extract_pdf_attachments:
         return
     if not parent_doc.uri:
         return
@@ -572,7 +603,7 @@ async def _reconcile_pdf_attachments(
     if new_attachments is None:
         return
 
-    existing = await client.list_documents(filter=parent_uri_filter(parent_doc.uri))
+    existing = await session.list_documents(filter=parent_uri_filter(parent_doc.uri))
     existing_by_uri: dict[str, Document] = {d.uri: d for d in existing if d.uri}
 
     for child_uri, (name, data, content_type, content_hash) in new_attachments.items():
@@ -594,7 +625,7 @@ async def _reconcile_pdf_attachments(
         )
         try:
             await _ingest_fetch_result(
-                client,
+                session,
                 child_fr,
                 title=None,
                 user_metadata={},
@@ -615,11 +646,11 @@ async def _reconcile_pdf_attachments(
 
     for child_uri, child in existing_by_uri.items():
         if child_uri not in new_attachments and child.id:
-            await client.delete_document(child.id)
+            await session.delete_document(child.id)
 
 
 async def create_document_from_source(
-    client: "HaikuRAG",
+    session: SingleDatabaseSession,
     source: str | Path,
     title: str | None = None,
     metadata: dict | None = None,
@@ -674,7 +705,7 @@ async def create_document_from_source(
             for child in walk_files(local_path):
                 if child.is_file() and filter.include_file(str(child)):
                     doc = await create_document_from_source(
-                        client,
+                        session,
                         child,
                         title=None,
                         metadata=metadata,
@@ -692,7 +723,7 @@ async def create_document_from_source(
 
         # Match the old _create_document_from_file behaviour: fail fast on
         # unsupported extension before reading any bytes.
-        converter = get_converter(client._config)
+        converter = get_converter(session.config)
         if local_path.suffix.lower() not in converter.supported_extensions:
             raise UnsupportedSourceError(
                 f"Unsupported file extension: {local_path.suffix}"
@@ -733,7 +764,7 @@ async def create_document_from_source(
         else:
             stored_uri = source_str
 
-        existing_doc = await client.get_document_by_uri(stored_uri)
+        existing_doc = await session.get_document_by_uri(stored_uri)
 
         # Cheap revision-based short-circuit: only worth a HEAD when we have a
         # stored revision to compare against. All sources persist their native
@@ -748,7 +779,7 @@ async def create_document_from_source(
             current_revision = await fetcher.head(source_str)
             if current_revision == stored_revision:
                 return await _refresh_doc_metadata(
-                    client,
+                    session,
                     existing_doc,
                     title=title,
                     user_metadata=metadata,
@@ -781,7 +812,7 @@ async def create_document_from_source(
             if result.revision is not None:
                 source_meta["source_revision"] = result.revision
             return await _refresh_doc_metadata(
-                client,
+                session,
                 existing_doc,
                 title=title,
                 user_metadata=user_metadata,
@@ -789,7 +820,7 @@ async def create_document_from_source(
             )
 
         return await _ingest_fetch_result(
-            client,
+            session,
             result,
             title=title,
             user_metadata=user_metadata,
@@ -802,7 +833,7 @@ async def create_document_from_source(
 
 
 async def update_document(
-    client: "HaikuRAG",
+    session: SingleDatabaseSession,
     document_id: str,
     content: str | None = None,
     metadata: dict | None = None,
@@ -830,7 +861,7 @@ async def update_document(
 
     # Caller-supplied chunks without a docling document replace neither blob,
     # and the row is written back whole, so they have to make the round trip.
-    existing_doc = await client.document_repository.get_by_id(
+    existing_doc = await session.document_repository.get_by_id(
         document_id, include_blobs=chunks is not None and docling_document is None
     )
     if existing_doc is None:
@@ -844,10 +875,10 @@ async def update_document(
         existing_doc.uri = uri
 
     if content is None and chunks is None and docling_document is None:
-        async with client.store._write_lock:
-            updated = await client.document_repository.update_meta(existing_doc)
-        if client._config.storage.auto_vacuum:
-            client._schedule_vacuum()
+        async with session.store._write_lock:
+            updated = await session.document_repository.update_meta(existing_doc)
+        if session.config.storage.auto_vacuum:
+            session.schedule_vacuum()
         return updated
 
     if chunks is not None:
@@ -857,26 +888,26 @@ async def update_document(
             existing_doc.content = content
 
         return await _update_document_with_chunks(
-            client, existing_doc, chunks, docling_document
+            session, existing_doc, chunks, docling_document
         )
 
     if docling_document is not None:
         await _prepare_document_from_docling(existing_doc, docling_document)
 
-        new_chunks = await client.chunk(docling_document)
+        new_chunks = await chunk_document(session, docling_document)
         return await _update_document_with_chunks(
-            client, existing_doc, new_chunks, docling_document
+            session, existing_doc, new_chunks, docling_document
         )
 
     assert content is not None
     existing_doc.content = content
-    converter = get_converter(client._config)
+    converter = get_converter(session.config)
     converted_docling = await converter.convert_text(existing_doc.content, format="md")
     await _prepare_document_from_docling(existing_doc, converted_docling)
 
-    new_chunks = await client.chunk(converted_docling)
+    new_chunks = await chunk_document(session, converted_docling)
     return await _update_document_with_chunks(
-        client, existing_doc, new_chunks, converted_docling
+        session, existing_doc, new_chunks, converted_docling
     )
 
 

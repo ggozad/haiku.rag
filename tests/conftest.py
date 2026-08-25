@@ -30,6 +30,9 @@ from .services import reachable  # noqa: E402
 if TYPE_CHECKING:
     from vcr import VCR
 
+    from haiku.rag.client import HaikuRAG
+    from haiku.rag.client.session import SingleDatabaseSession
+
 setattr(pydantic_ai.models, "ALLOW_MODEL_REQUESTS", False)
 logging.getLogger("vcr.cassette").setLevel(logging.WARNING)
 
@@ -216,3 +219,14 @@ def docling_serve_url() -> str:
     if not reachable("localhost", 5001):
         pytest.skip(f"docling-serve not reachable on localhost:5001 — {_COMPOSE_HINT}")
     return "http://localhost:5001"
+
+
+def writing(client: "HaikuRAG") -> "SingleDatabaseSession":
+    """The database a write implementation works on, from a client holding one.
+
+    Write implementations take a session rather than a client, so a set can
+    never reach them. Tests that call one directly go through here."""
+    from haiku.rag.client.session import SingleDatabaseSession
+
+    assert isinstance(client._session, SingleDatabaseSession)
+    return client._session

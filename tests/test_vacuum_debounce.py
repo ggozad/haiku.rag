@@ -7,6 +7,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.client.documents import _refresh_doc_metadata
 from haiku.rag.config import get_config
 from haiku.rag.store.models.chunk import Chunk
+from tests.conftest import writing
 
 
 def _docling_doc(name: str, text: str):
@@ -85,7 +86,7 @@ async def test_metadata_refresh_sweep_schedules_vacuum(temp_db_path):
         client._session._vacuum_dirty = False
 
         await _refresh_doc_metadata(
-            client,
+            writing(client),
             doc,
             title=None,
             user_metadata={},
@@ -111,7 +112,7 @@ async def test_metadata_refresh_waits_for_write_lock(temp_db_path):
         async with client.store._write_lock:
             task = asyncio.create_task(
                 _refresh_doc_metadata(
-                    client,
+                    writing(client),
                     doc,
                     title=None,
                     user_metadata={},

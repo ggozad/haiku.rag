@@ -353,17 +353,19 @@ class TestRebuildTitleOnly:
             await client.document_repository.update(doc2)
 
             # Make generate_title fail for the first doc, succeed for the second
-            original = HaikuRAG.generate_title
+            import haiku.rag.client.rebuild as rebuild_mod
+
+            original = rebuild_mod.generate_title
             call_count = 0
 
-            async def flaky_generate(self, document):
+            async def flaky_generate(config, document):
                 nonlocal call_count
                 call_count += 1
                 if call_count == 1:
                     raise RuntimeError("LLM failed")
-                return await original(self, document)
+                return await original(config, document)
 
-            monkeypatch.setattr(HaikuRAG, "generate_title", flaky_generate)
+            monkeypatch.setattr(rebuild_mod, "generate_title", flaky_generate)
 
             processed_ids = []
             async for doc_id in client.rebuild_database(mode=RebuildMode.TITLE_ONLY):

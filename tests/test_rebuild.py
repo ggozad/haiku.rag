@@ -7,7 +7,7 @@ import pytest
 
 from haiku.rag.client import HaikuRAG, RebuildMode
 from haiku.rag.config import get_config
-from tests.conftest import capture_logs
+from tests.conftest import capture_logs, writing
 
 
 class ChunkData(TypedDict):
@@ -603,12 +603,14 @@ async def test_rebuild_title_only_handles_llm_failure(temp_db_path, monkeypatch)
         )
         assert doc1.id is not None and doc2.id is not None
 
-        async def fake_generate_title(doc):
+        async def fake_generate_title(config, doc):
             if doc.id == doc1.id:
                 raise RuntimeError("simulated LLM failure")
             return "Second Title"
 
-        monkeypatch.setattr(client, "generate_title", fake_generate_title)
+        monkeypatch.setattr(
+            "haiku.rag.client.rebuild.generate_title", fake_generate_title
+        )
 
         processed_ids = [
             doc_id
@@ -743,7 +745,9 @@ async def test_rebuild_descriptions_patches_blob_and_chunks(temp_db_path, monkey
     async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
         document = Document(content="x", uri="test://doc")
         document.set_docling(docling_doc)
-        created = await _store_document_with_chunks(rag, document, [], docling_doc)
+        created = await _store_document_with_chunks(
+            writing(rag), document, [], docling_doc
+        )
         assert created.id is not None
 
         # _docling_doc_with_picture has no PageItems, so set_docling leaves
@@ -827,7 +831,9 @@ async def test_rebuild_descriptions_skips_already_described(temp_db_path, monkey
     async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
         document = Document(content="x", uri="test://doc")
         document.set_docling(docling_doc)
-        created = await _store_document_with_chunks(rag, document, [], docling_doc)
+        created = await _store_document_with_chunks(
+            writing(rag), document, [], docling_doc
+        )
         assert created.id is not None
 
         called_with: list[dict[str, bytes]] = []
@@ -873,7 +879,7 @@ async def test_patch_picture_descriptions_returns_zero_for_doc_without_pictures(
     async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
         doc = await rag.create_document(content="Just text, no pictures.")
         assert doc.id is not None
-        n = await _patch_picture_descriptions(rag, doc)
+        n = await _patch_picture_descriptions(writing(rag), doc)
         assert n == 0
 
 
@@ -897,7 +903,9 @@ async def test_patch_picture_descriptions_warns_on_missing_bytes(temp_db_path):
     async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
         document = Document(content="x", uri="test://doc")
         document.set_docling(docling_doc)
-        created = await _store_document_with_chunks(rag, document, [], docling_doc)
+        created = await _store_document_with_chunks(
+            writing(rag), document, [], docling_doc
+        )
         assert created.id is not None
 
         # Wipe the stored picture bytes to simulate a doc that knows about
@@ -910,7 +918,7 @@ async def test_patch_picture_descriptions_warns_on_missing_bytes(temp_db_path):
         from haiku.rag.client import rebuild as rebuild_module
 
         with capture_logs(rebuild_module.logger, logging.WARNING) as records:
-            n = await _patch_picture_descriptions(rag, created)
+            n = await _patch_picture_descriptions(writing(rag), created)
 
         assert n == 0
         assert any("no stored picture bytes" in r.getMessage() for r in records)
@@ -941,7 +949,9 @@ async def test_patch_picture_descriptions_skips_when_all_already_described(
     async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
         document = Document(content="x", uri="test://doc")
         document.set_docling(docling_doc)
-        created = await _store_document_with_chunks(rag, document, [], docling_doc)
+        created = await _store_document_with_chunks(
+            writing(rag), document, [], docling_doc
+        )
         assert created.id is not None
 
         called = False
@@ -956,7 +966,7 @@ async def test_patch_picture_descriptions_skips_when_all_already_described(
             fake_describe,
         )
 
-        n = await _patch_picture_descriptions(rag, created)
+        n = await _patch_picture_descriptions(writing(rag), created)
         assert n == 0
         assert called is False
 
@@ -979,7 +989,9 @@ async def test_rebuild_descriptions_raises_when_blob_is_missing(
     async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
         document = Document(content="x", uri="test://doc")
         document.set_docling(docling_doc)
-        created = await _store_document_with_chunks(rag, document, [], docling_doc)
+        created = await _store_document_with_chunks(
+            writing(rag), document, [], docling_doc
+        )
         assert created.id is not None
 
         # Force the stored doc to come back without a docling blob.
@@ -1251,9 +1263,11 @@ async def test_patch_picture_descriptions_returns_zero_without_descriptions(
     async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
         document = Document(content="x", uri="test://doc")
         document.set_docling(docling_doc)
-        created = await _store_document_with_chunks(rag, document, [], docling_doc)
+        created = await _store_document_with_chunks(
+            writing(rag), document, [], docling_doc
+        )
 
-        assert await _patch_picture_descriptions(rag, created) == 0
+        assert await _patch_picture_descriptions(writing(rag), created) == 0
 
 
 @pytest.mark.vcr()
@@ -1462,7 +1476,9 @@ async def test_rebuild_descriptions_flushes_in_batches(temp_db_path, monkeypatch
             docling_doc = _docling_doc_with_picture()
             document = Document(content=f"picture doc {i}", uri=f"test://doc-{i}")
             document.set_docling(docling_doc)
-            created = await _store_document_with_chunks(rag, document, [], docling_doc)
+            created = await _store_document_with_chunks(
+                writing(rag), document, [], docling_doc
+            )
             assert created.id is not None
             ids.append(created.id)
 
@@ -1543,7 +1559,7 @@ async def test_rebuild_embed_only_recovers_picture_bytes(
             embedding=[0.1] * rag.embedder.vector_dim,
         )
         created = await _store_document_with_chunks(
-            rag, document, [picture_chunk, text_chunk], docling_doc
+            writing(rag), document, [picture_chunk, text_chunk], docling_doc
         )
         assert created.id is not None
 

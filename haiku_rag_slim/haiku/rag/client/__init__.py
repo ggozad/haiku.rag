@@ -139,7 +139,6 @@ class HaikuRAG:
         self._read_only = read_only
         self._requested_sources = sources
         self._clients: dict[str, HaikuRAG] = {}
-        self._clients_lock = asyncio.Lock()
         self._source: str | None = None
         self._session: SingleDatabaseSession | FederatedSession | None = None
         self._owns_session = True
@@ -418,14 +417,6 @@ class HaikuRAG:
         if cached is not None:
             await aclose_quietly(cached, name)
 
-    async def _await_vacuum_tasks(self) -> None:
-        if isinstance(self._session, SingleDatabaseSession):
-            await self._session.drain_vacuum()
-
-    def _schedule_vacuum(self) -> None:
-        if isinstance(self._session, SingleDatabaseSession):
-            self._session.schedule_vacuum()
-
     # =========================================================================
     # Processing Primitives
     # =========================================================================
@@ -487,9 +478,9 @@ class HaikuRAG:
     ) -> Document:
         from haiku.rag.client.documents import create_document
 
-        self._single_session("create_document")
+        session = self._single_session("create_document")
 
-        return await create_document(self, content, uri, title, metadata, format)
+        return await create_document(session, content, uri, title, metadata, format)
 
     async def import_document(
         self,
@@ -501,10 +492,10 @@ class HaikuRAG:
     ) -> Document:
         from haiku.rag.client.documents import import_document
 
-        self._single_session("import_document")
+        session = self._single_session("import_document")
 
         return await import_document(
-            self, docling_document, chunks, uri, title, metadata
+            session, docling_document, chunks, uri, title, metadata
         )
 
     async def import_documents(
@@ -513,9 +504,9 @@ class HaikuRAG:
     ) -> list[Document]:
         from haiku.rag.client.documents import import_documents
 
-        self._single_session("import_documents")
+        session = self._single_session("import_documents")
 
-        return await import_documents(self, imports)
+        return await import_documents(session, imports)
 
     async def create_document_from_source(
         self,
@@ -530,10 +521,10 @@ class HaikuRAG:
     ) -> Document | list[Document]:
         from haiku.rag.client.documents import create_document_from_source
 
-        self._single_session("create_document_from_source")
+        session = self._single_session("create_document_from_source")
 
         return await create_document_from_source(
-            self,
+            session,
             source,
             title,
             metadata,
@@ -556,10 +547,10 @@ class HaikuRAG:
     ) -> Document:
         from haiku.rag.client.documents import update_document
 
-        self._single_session("update_document")
+        session = self._single_session("update_document")
 
         return await update_document(
-            self,
+            session,
             document_id,
             content,
             metadata,
@@ -841,9 +832,9 @@ class HaikuRAG:
     ) -> AsyncGenerator[str, None]:
         from haiku.rag.client.rebuild import rebuild_database
 
-        self._single_session("rebuild_database")
+        session = self._single_session("rebuild_database")
 
-        async for doc_id in rebuild_database(self, mode):
+        async for doc_id in rebuild_database(session, mode):
             yield doc_id
 
     async def vacuum(self) -> None:
