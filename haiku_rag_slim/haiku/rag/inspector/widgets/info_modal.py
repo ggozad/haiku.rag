@@ -1,5 +1,4 @@
 import asyncio
-import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -51,24 +50,14 @@ async def database_lines(client: "HaikuRAG") -> list[str]:
     except Exception as e:
         return [f"[red]Failed to open database: {e}[/red]"]
 
-    stored_version = "unknown"
-    embed_provider: str | None = None
-    embed_model: str | None = None
-    vector_dim: int | None = None
-
-    if stats["settings"]["exists"]:
-        settings_tbl = await db.open_table("settings")
-        arrow = await settings_tbl.query().where("id = 'settings'").limit(1).to_arrow()
-        rows = arrow.to_pylist() if arrow is not None else []
-        if rows:
-            raw = rows[0].get("settings") or "{}"
-            data = json.loads(raw) if isinstance(raw, str) else (raw or {})
-            stored_version = str(data.get("version", stored_version))
-            embeddings = data.get("embeddings", {})
-            embed_model_obj = embeddings.get("model", {})
-            embed_provider = embed_model_obj.get("provider")
-            embed_model = embed_model_obj.get("name")
-            vector_dim = embed_model_obj.get("vector_dim")
+    # The store read these on open; a second query would re-read and re-parse
+    # the same blob.
+    settings = client.store.stored_settings
+    stored_version = str(settings.get("version", "unknown"))
+    embed_model_obj = settings.get("embeddings", {}).get("model", {})
+    embed_provider = embed_model_obj.get("provider")
+    embed_model = embed_model_obj.get("name")
+    vector_dim = embed_model_obj.get("vector_dim")
 
     num_docs = stats["documents"].get("num_rows", 0)
     num_chunks = stats["chunks"].get("num_rows", 0)

@@ -215,6 +215,10 @@ class Store:
         # Create embedder (sync — no LanceDB needed)
         self.embedder = get_embedder(config=self._config)
         self.stored_embedding: tuple[str | None, str | None, int | None] | None = None
+        # The settings blob as of open, so reporting on a database costs no
+        # second read of it. Not refreshed by a later write, the same as
+        # `stored_embedding`.
+        self.stored_settings: dict = {}
 
     async def _initialize(self):
         """Perform async initialization: connect to LanceDB, init tables, validate."""
@@ -228,30 +232,30 @@ class Store:
         existing_tables = (await self.db.list_tables()).tables
         is_new_db = self._is_new_db or not existing_tables
 
-        stored_settings: dict = {}
         if not is_new_db and "settings" in existing_tables:
             self.settings_table = await self.db.open_table("settings")
-            stored_settings = await self._read_stored_settings()
+            self.stored_settings = await self._read_stored_settings()
 
         # An existing database's chunks can only be read with the dimension they
         # were written at.
-        stored_vector_dim = _stored_vector_dim(stored_settings)
-        self.stored_embedding = _stored_embedding(stored_settings)
+        stored_vector_dim = _stored_vector_dim(self.stored_settings)
+        self.stored_embedding = _stored_embedding(self.stored_settings)
         chunk_vector_dim = stored_vector_dim or self.embedder._vector_dim
         self.ChunkRecord: type[ChunkRecordBase] = create_chunk_model(chunk_vector_dim)
 
         # Initialize tables (creates them if they don't exist). For an existing
         # DB this raises MigrationRequiredError up front when migrations are
         # pending, before creating any newly-introduced table.
-        await self._init_tables(is_new_db, existing_tables, stored_settings)
+        await self._init_tables(is_new_db, existing_tables, self.stored_settings)
 
         # Set version for new databases.
         if is_new_db and not self._read_only:
             await self._set_initial_version()
+            self.stored_settings = await self._read_stored_settings()
 
         # Validate config compatibility after connection is established
         if not self._skip_validation:
-            await self._validate_configuration(stored_settings)
+            await self._validate_configuration(self.stored_settings)
 
     async def __aenter__(self):
         # If _initialize connects to LanceDB but then fails (e.g. migration

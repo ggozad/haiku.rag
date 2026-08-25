@@ -403,12 +403,46 @@ class TestReportingReusesTheConnection:
         client = MagicMock()
         client.store.db = connection
         client.store.db_path = tmp_path
+        client.store.stored_settings = {}
         client.store._connection_mode = ConnectionMode.LOCAL
 
         lines = await database_lines(client)
 
         assert asked == [connection]
         assert any("documents" in line for line in lines)
+
+    @pytest.mark.asyncio
+    async def test_settings_come_from_the_store_that_parsed_them(
+        self, tmp_path, monkeypatch
+    ):
+        """The store read and parsed the settings blob on open, so reporting
+        reads it from there instead of querying the settings table again."""
+        from haiku.rag.inspector.widgets.info_modal import database_lines
+        from haiku.rag.store.engine import ConnectionMode
+
+        async def fake_stats(db):  # noqa: ARG001
+            return {
+                "documents": {"num_rows": 1},
+                "document_meta": {"num_rows": 1},
+                "chunks": {"num_rows": 1},
+            }
+
+        monkeypatch.setattr("haiku.rag.store.info.get_database_stats", fake_stats)
+
+        client = MagicMock()
+        client.store.db_path = tmp_path
+        client.store._connection_mode = ConnectionMode.LOCAL
+        client.store.stored_settings = {
+            "version": "1.2.3",
+            "embeddings": {
+                "model": {"provider": "ollama", "name": "embed", "vector_dim": 7}
+            },
+        }
+
+        lines = await database_lines(client)
+
+        assert any("1.2.3" in line for line in lines)
+        assert any("ollama/embed (dim: 7)" in line for line in lines)
 
 
 class TestReportingEachDatabase:
