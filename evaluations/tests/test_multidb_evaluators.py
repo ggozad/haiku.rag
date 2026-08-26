@@ -25,7 +25,7 @@ def test_gold_number_counts_as_correct():
     result = NumericAnswer().evaluate(
         ctx("It sits at 1240 metres.", {"expected_value": 1240})
     )
-    assert result == {"answer_correct": True}
+    assert result == {"answer_correct": 1.0}
 
 
 def test_hedging_between_gold_and_distractor_fails():
@@ -37,7 +37,7 @@ def test_hedging_between_gold_and_distractor_fails():
             {"expected_value": 1240, "distractor_value": 2310},
         )
     )
-    assert result == {"answer_correct": False}
+    assert result == {"answer_correct": 0.0}
 
 
 def test_numeric_answer_abstains_without_a_gold_value():
@@ -100,10 +100,10 @@ def test_ordered_text_must_appear_in_order():
     meta = {"expected_ordered": ["Overview", "Instruments", "Measurements"]}
     assert TextAnswer().evaluate(
         ctx("Overview, then Instruments, then Measurements", meta)
-    ) == {"answer_correct": True}
+    ) == {"answer_correct": 1.0}
     assert TextAnswer().evaluate(
         ctx("Measurements, then Overview, then Instruments", meta)
-    ) == {"answer_correct": False}
+    ) == {"answer_correct": 0.0}
 
 
 def test_forbidden_text_fails_even_when_required_text_is_present():
@@ -116,4 +116,4 @@ def test_forbidden_text_fails_even_when_required_text_is_present():
             },
         )
     )
-    assert result == {"answer_correct": False}
+    assert result == {"answer_correct": 0.0}

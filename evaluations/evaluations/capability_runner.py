@@ -55,6 +55,9 @@ class CapabilityRunResult:
     n_failed_tools: int = 0
     n_requests: int = 0
     citation_status: str | None = None
+    # The Python the model itself ran, so a run can report which sandbox
+    # surfaces it actually reached rather than only how often it ran code.
+    executed_code: list[str] = field(default_factory=list)
 
 
 class ToolTraffic(NamedTuple):
@@ -277,8 +280,9 @@ def _result_from_run(
                 seen_searched.add(uri)
                 searched_uris.append(uri)
 
-    executions = getattr(typed, "executions", None)
-    n_executions = len(executions) if executions is not None else 0
+    executions = getattr(typed, "executions", None) or []
+    n_executions = len(executions)
+    executed_code = [entry.code for entry in executions]
 
     record = typed.evidence
     status = (
@@ -304,4 +308,5 @@ def _result_from_run(
         n_failed_tools=traffic.n_failed_tools,
         n_requests=traffic.n_requests,
         citation_status=status,
+        executed_code=executed_code,
     )

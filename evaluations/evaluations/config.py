@@ -94,6 +94,9 @@ class DatasetSpec:
     live: bool = False
     compaction: bool = False
     experiment_metadata: dict[str, Any] | None = None
+    # Called with the report's cases after the run prints, for datasets that
+    # report something the shared summary cannot express (e.g. hard gates).
+    report_hook: Callable[[list[Any]], None] | None = None
 
     def uses_configured_databases(
         self, config, override_path: Path | None = None

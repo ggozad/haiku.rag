@@ -44,15 +44,16 @@ def test_filename_names_a_dataset(path: Path) -> None:
 
 @pytest.mark.parametrize("path", _config_paths(), ids=lambda p: p.stem)
 def test_judge_pinned_where_the_judge_runs(path: Path) -> None:
-    """Datasets without their own qa_evaluator are scored by the LLM judge.
+    """Wherever a judge runs, its sampling must be frozen so accuracy stays
+    comparable across runs.
 
-    Those configs must carry the frozen judge settings, so accuracy stays
-    comparable across runs. Datasets that bring a deterministic evaluator
-    never construct a judge, so a judge block there would be dead config.
+    A dataset without its own qa_evaluator is scored by the LLM judge and must
+    carry the block. A dataset with a deterministic evaluator may still need one,
+    because RefusalJudge runs on any case carrying an answerability label; where
+    it declares no judge it is asserting that no case does.
     """
     judge = _load(path).evaluations.judge
-    if DATASETS[path.stem].qa_evaluator is not None:
-        assert judge is None
+    if DATASETS[path.stem].qa_evaluator is not None and judge is None:
         return
 
     assert judge is not None

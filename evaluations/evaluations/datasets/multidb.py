@@ -8,6 +8,7 @@ from datasets import Dataset
 from pydantic_evals import Case
 
 from evaluations.config import DatasetSpec, ScopedQuestion
+from evaluations.datasets.multidb_report import render as render_gate_report
 from evaluations.evaluators.multidb import MultiDBScores
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
@@ -772,6 +773,16 @@ def _unused_document_loader() -> Dataset:  # pragma: no cover - never called
     )
 
 
+def print_gate_report(cases: list[Any]) -> None:
+    """Print the hard gates, per-family rates and surface coverage.
+
+    Emits a greppable `GATES: PASSED` / `GATES: FAILED` line, since this dataset
+    is an acceptance gate rather than a rate to watch drift on.
+    """
+    text, _passed = render_gate_report(cases)
+    print(text)
+
+
 MULTIDB_SPEC = DatasetSpec(
     key="multidb",
     db_filename="multidb_northern.lancedb",
@@ -780,6 +791,7 @@ MULTIDB_SPEC = DatasetSpec(
     qa_loader=load_behaviour_questions,
     qa_case_builder=build_multidb_case,
     qa_evaluator=MultiDBScores(),
+    report_hook=print_gate_report,
 )
 
 MULTIDB_SURFACES_SPEC = DatasetSpec(
@@ -790,4 +802,5 @@ MULTIDB_SURFACES_SPEC = DatasetSpec(
     qa_loader=load_surface_questions,
     qa_case_builder=build_multidb_case,
     qa_evaluator=MultiDBScores(),
+    report_hook=print_gate_report,
 )

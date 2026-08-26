@@ -47,7 +47,7 @@ class NumericAnswer(Evaluator):
     def get_default_evaluation_name(self) -> str:
         return "answer_correct"
 
-    def evaluate(self, ctx: EvaluatorContext) -> dict[str, bool]:
+    def evaluate(self, ctx: EvaluatorContext) -> dict[str, float | bool]:
         meta = ctx.metadata or {}
         expected = _as_floats(meta.get("expected_value"), meta.get("expected_values"))
         if not expected:
@@ -57,7 +57,7 @@ class NumericAnswer(Evaluator):
             meta.get("distractor_value"), meta.get("distractor_values")
         )
         correct = expected <= found and not (forbidden & found)
-        return {"answer_correct": correct}
+        return {"answer_correct": 1.0 if correct else 0.0}
 
 
 @dataclass
@@ -71,7 +71,7 @@ class AttributionGate(Evaluator):
     def get_default_evaluation_name(self) -> str:
         return "attribution_correct"
 
-    def evaluate(self, ctx: EvaluatorContext) -> dict[str, bool]:
+    def evaluate(self, ctx: EvaluatorContext) -> dict[str, float | bool]:
         meta = ctx.metadata or {}
         expected = meta.get("expected_sources")
         if expected is None:
@@ -90,7 +90,7 @@ class ScopeGate(Evaluator):
     def get_default_evaluation_name(self) -> str:
         return "scope_honoured"
 
-    def evaluate(self, ctx: EvaluatorContext) -> dict[str, bool]:
+    def evaluate(self, ctx: EvaluatorContext) -> dict[str, float | bool]:
         meta = ctx.metadata or {}
         scope = meta.get("scope")
         if scope is None:
@@ -109,7 +109,7 @@ class TextAnswer(Evaluator):
     def get_default_evaluation_name(self) -> str:
         return "answer_correct"
 
-    def evaluate(self, ctx: EvaluatorContext) -> dict[str, bool]:
+    def evaluate(self, ctx: EvaluatorContext) -> dict[str, float | bool]:
         meta = ctx.metadata or {}
         required = meta.get("expected_ordered")
         if required is None:
@@ -119,12 +119,12 @@ class TextAnswer(Evaluator):
         for needle in required:
             found = haystack.find(str(needle).lower(), cursor)
             if found < 0:
-                return {"answer_correct": False}
+                return {"answer_correct": 0.0}
             cursor = found + len(str(needle))
         for forbidden in meta.get("forbidden_text") or []:
             if str(forbidden).lower() in haystack:
-                return {"answer_correct": False}
-        return {"answer_correct": True}
+                return {"answer_correct": 0.0}
+        return {"answer_correct": 1.0}
 
 
 @dataclass
@@ -136,7 +136,10 @@ class MultiDBScores(Evaluator):
     on cases whose metadata does not ask for it.
     """
 
-    def evaluate(self, ctx: EvaluatorContext) -> dict[str, bool]:
+    def get_default_evaluation_name(self) -> str:
+        return "answer_correct"
+
+    def evaluate(self, ctx: EvaluatorContext) -> dict[str, float | bool]:
         meta = ctx.metadata or {}
         numeric = bool(meta.get("expected_value") or meta.get("expected_values"))
         textual = meta.get("expected_ordered") is not None
@@ -145,7 +148,7 @@ class MultiDBScores(Evaluator):
                 f"case {meta.get('question_id')!r} asks for both a numeric and an "
                 "ordered-text answer; they share the answer_correct key"
             )
-        scores: dict[str, bool] = {}
+        scores: dict[str, float | bool] = {}
         for evaluator in (
             NumericAnswer(),
             TextAnswer(),

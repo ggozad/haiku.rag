@@ -377,6 +377,7 @@ async def run_qa_benchmark(
         set_eval_attribute("n_executions", result.n_executions)
         set_eval_attribute("n_requests", result.n_requests)
         set_eval_attribute("citation_status", result.citation_status)
+        set_eval_attribute("executed_code", result.executed_code)
         return result.answer
 
     report = await evaluation_dataset.evaluate(
@@ -449,6 +450,9 @@ async def run_qa_benchmark(
             f"UNANSWERABLE turns: {unanswerable} | refusals: {refusals} "
             "(PARTIAL excluded)"
         )
+
+    if spec.report_hook is not None:
+        spec.report_hook(list(report.cases))
 
     _print_failures(failures, show_question=True)
 

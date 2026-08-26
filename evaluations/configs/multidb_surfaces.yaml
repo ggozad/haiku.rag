@@ -1,0 +1,68 @@
+# Reference config for the `multidb_surfaces` analysis families (sandbox surfaces).
+# lancedb.databases. Build the corpus first, then run with --skip-db:
+#   uv run python -m evaluations.datasets.multidb --config configs/multidb_surfaces.yaml
+#   evaluations run multidb_surfaces --config configs/multidb_surfaces.yaml --skip-db --skip-retrieval
+# For the no-reranker arm, copy this and drop the reranking block; a reference
+# config's filename has to name a dataset, so that arm lives outside configs/.
+
+environment: development
+
+storage:
+  auto_vacuum: false
+
+lancedb:
+  # Order matters: RRF ties resolve to the order listed here, so the first
+  # database wins ties. B2 rotates the order it passes per case.
+  databases:
+    northern: ${HOME}/.local/share/haiku.rag/evaluations/dbs/multidb_northern.lancedb
+    southern: ${HOME}/.local/share/haiku.rag/evaluations/dbs/multidb_southern.lancedb
+    equipment: ${HOME}/.local/share/haiku.rag/evaluations/dbs/multidb_equipment.lancedb
+
+processing:
+  # Pinned: the builder asserts no single chunk holds all twelve monthly
+  # readings, so S3 cannot be answered from one search hit.
+  chunk_size: 256
+
+search:
+  # Three databases at limit 5 means RRF fuses 15 candidates to 5, so the
+  # truncation bites and the no-reranker arm can lose evidence.
+  limit: 5
+
+embeddings:
+  model:
+    provider: openai
+    name: qwen3-embedding-4b
+    vector_dim: 2560
+    base_url: http://vllm:11431/v1
+
+reranking:
+  model:
+    provider: vllm
+    name: Qwen/Qwen3-Reranker-4B
+    base_url: http://vllm:11455
+
+qa:
+  model:
+    provider: openai
+    name: Inferact/Qwen3.8-27B-NVFP4
+    base_url: http://vllm:11439/v1
+    max_tokens: 16384
+    extra_body:
+      chat_template_kwargs:
+        reasoning_effort: low
+
+evaluations:
+  # Scoring is deterministic, but RefusalJudge runs on the B6 and B7 cases,
+  # which carry answerability labels.
+  judge:
+    provider: openai
+    name: Inferact/Qwen3.8-27B-NVFP4
+    base_url: http://vllm:11439/v1
+    temperature: 0.6
+    max_tokens: 16384
+    extra_body:
+      top_p: 0.95
+      top_k: 20
+      min_p: 0
+      chat_template_kwargs:
+        reasoning_effort: low
