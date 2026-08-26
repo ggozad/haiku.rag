@@ -707,18 +707,21 @@ def surface_rows() -> list[dict]:
             )
         )
 
-    # S6 — per-document metadata, with the twin's uri forbidden.
-    for north_name, south_name in NEAR_NAME_PAIRS[:2]:
+    # S6 — per-document metadata: the uri and then the database that holds it.
+    #
+    # The twin's uri is deliberately NOT forbidden here. Naming the other
+    # document as a different document is correct behaviour, and better than the
+    # minimum; forbidding it failed two answers that were right. Forbidding a
+    # distractor belongs on B3, where two elevations cannot both be the answer.
+    for north_name, _south_name in NEAR_NAME_PAIRS[:2]:
         s = station(north_name, NORTHERN)
-        twin = station(south_name, SOUTHERN)
         rows.append(
             _row(
                 f"s6-{s.slug}",
                 "S6",
                 f"What is the uri of the document titled {s.title!r}, and which "
                 "database holds it?",
-                expected_ordered=[s.uri],
-                forbidden_text=[twin.uri],
+                expected_ordered=[s.uri, s.database],
             )
         )
     return rows
