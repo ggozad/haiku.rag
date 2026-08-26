@@ -272,14 +272,11 @@ class Sandbox:
     def _holders(
         owners: "list[HaikuRAG]", groups: "list[list[Any]]"
     ) -> "dict[str, HaikuRAG]":
-        """Map each document id to the database holding it.
+        """Map each document id to the database holding it, rejecting an id two
+        databases claim.
 
-        Document ids are UUID4, so the flat `/documents/{id}/` namespace is
-        unambiguous for databases that were filled independently — but not for one
-        copied from another, where the same id is in both. Duplicate results are
-        merely redundant in a search; here they would be two documents claiming one
-        path, and whichever arrived last would answer for both. Rejected rather
-        than resolved, since either answer would be wrong half the time.
+        The mount has one `/documents/{id}/` path per id, so a copied database
+        would put two documents on one path and the last would answer for both.
         """
         holders: dict[str, HaikuRAG] = {}
         held_by: dict[str, str | None] = {}

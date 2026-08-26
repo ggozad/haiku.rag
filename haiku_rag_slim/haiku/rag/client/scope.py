@@ -8,20 +8,12 @@ from haiku.rag.utils import locate_database
 
 @dataclass(frozen=True)
 class DatabaseRef:
-    """One database, and the name it answers to.
+    """A resolved database location, and the configured name it answers to.
 
-    ``name`` is the key from ``lancedb.databases``, and the only identity that
-    leaves the configuration: it travels in results, citations and the errors an
-    operator or a model sees, where a location must not. The invariant below is
-    the exception, and deliberately so — a malformed ref is a programming error
-    raised in the caller's own process, where naming what it was given is what
-    makes it fixable. None where nothing names the database — a path given
-    directly, or the legacy single ``uri``.
-
-    Location is resolved once, on construction, into exactly one of ``uri`` and
-    ``db_path``. Keeping the configured string and re-reading it later would let a
-    path the caller gave be reinterpreted as a URI because it happens to carry a
-    scheme.
+    Exactly one of ``uri`` and ``db_path`` is set. ``name`` is the key from
+    ``lancedb.databases``, and the only identity that leaves the configuration:
+    it travels in results, citations and errors, where a location must not.
+    None where nothing names the database.
     """
 
     name: str | None
@@ -42,18 +34,16 @@ class DatabaseRef:
 
     @classmethod
     def configured(cls, name: str | None, location: str) -> "DatabaseRef":
-        """A database the configuration placed, by ``lancedb.uri`` or by an entry
-        in ``lancedb.databases``. A value carrying a scheme is a URI and anything
-        else is a local path, so the two settings place a database alike."""
+        """A database the configuration placed, by ``lancedb.uri`` or an entry in
+        ``lancedb.databases``. A location carrying a scheme is a URI, anything
+        else a local path."""
         uri, db_path = locate_database(location)
         return cls(name=name, uri=uri, db_path=db_path)
 
     def connection(self, config: AppConfig) -> tuple[AppConfig, Path | None]:
         """The configuration and path to open this one database with.
 
-        A copy. The scope is resolved once from the caller's configuration, and
-        rewriting that configuration in place is what left downstream code unable
-        to tell that a set had been named.
+        A copy: the caller's configuration still names whatever set it named.
         """
         one = config.model_copy(deep=True)
         one.lancedb.databases = {}
@@ -66,12 +56,10 @@ class DatabaseScope:
     """The databases an operation covers.
 
     Resolved once, from configuration plus at most one selector, and passed down
-    rather than re-derived. Never empty: every resolution reaches a database, and
-    the sessions built from a scope have no meaning without one.
+    rather than re-derived. Never empty.
 
-    Nothing here reads the environment. ``HAIKU_RAG_DB`` is honoured by the
-    capability entry point alone, which passes it as ``database_path``, so
-    resolving a scope cannot quietly change what any other caller opens.
+    Nothing here reads the environment: ``HAIKU_RAG_DB`` is the capability entry
+    point's to honour, and reading it here would extend it to every caller.
     """
 
     databases: tuple[DatabaseRef, ...]

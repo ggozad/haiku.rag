@@ -360,12 +360,7 @@ class HaikuRAG:
         ]
 
     def _facade_for(self, name: str, session: SingleDatabaseSession) -> "HaikuRAG":
-        """The client for one covered database, made once and kept.
-
-        The facade is public and the session is not, so the wrapper lives here
-        while the federated session keeps the database it wraps. A borrowed facade
-        never closes what it did not open.
-        """
+        """The cached client borrowing this session, made once and kept."""
         facade = self._clients.get(name)
         if facade is None:
             facade = HaikuRAG._from_session(session)

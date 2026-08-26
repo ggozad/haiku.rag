@@ -39,12 +39,7 @@ class HaikuRAGApp:
         config: AppConfig | None = None,
         read_only: bool = False,
     ):
-        """The databases this command works on, resolved by whoever built it.
-
-        One selector, not three: a command that took a path and a name and a
-        scope would have to decide between them, which is the deciding this
-        layer exists to have already done.
-        """
+        """The databases this command works on, resolved by whoever built it."""
         self.scope = scope
         self.config = config if config is not None else get_config()
         self.read_only = read_only

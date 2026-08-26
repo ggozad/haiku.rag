@@ -58,9 +58,8 @@ class SingleDatabaseSession:
     it has one. ``source`` is the configured name this database answers to, or
     None where nothing names it.
 
-    ``db_path``, ``config``, ``read_only`` and ``source`` are readable because a
-    client facade is built over a session it does not own, and needs to report
-    the same things it would have reported had it opened the database itself.
+    ``db_path``, ``config``, ``read_only`` and ``source`` are readable so that a
+    client borrowing this session can report them as its own.
     """
 
     def __init__(
@@ -131,12 +130,9 @@ class SingleDatabaseSession:
     async def drain_vacuum(self) -> None:
         """Drain background vacuum work and run a final collapse before teardown.
 
-        Writes schedule a throttled background vacuum; many are debounced or skip
-        because another vacuum holds the lock. The final pass collapses the
-        versions those left behind. It runs whenever writes happened
-        (``_vacuum_dirty``) — not gated on in-flight tasks remaining, since a
-        debounced run may have scheduled none — but never when nothing was
-        written (so opening + closing a store still never writes).
+        The final pass runs whenever writes happened, not when tasks remain: a
+        debounced run may have scheduled none and still left versions behind. It
+        never runs without writes, so opening and closing a store writes nothing.
         """
         if self._vacuum_tasks:
             await asyncio.gather(*self._vacuum_tasks, return_exceptions=True)
@@ -251,15 +247,12 @@ class SingleDatabaseSession:
 
 
 class FederatedSession:
-    """Several databases, read as one.
+    """Several databases, read as one. Reads only.
 
     Composes single-database sessions and owns their teardown. They open on first
     use rather than at entry: which databases a query covers is a per-query
     choice, so a database nobody asked for must neither be opened for nothing nor
     be able to fail a query.
-
-    Reads only. Writing names a database, and naming one is what
-    ``SingleDatabaseSession`` is.
     """
 
     def __init__(

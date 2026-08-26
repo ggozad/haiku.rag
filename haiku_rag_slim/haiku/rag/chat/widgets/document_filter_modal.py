@@ -8,9 +8,8 @@ from textual.widgets import Button, Checkbox, Input, Static
 from haiku.rag.client import HaikuRAG
 from haiku.rag.utils import escape_sql_string
 
-# One page of documents. A corpus is not a list to scroll: mounting a checkbox
-# per document wedges the modal at tens of thousands, so the list is a page and
-# the search box asks the database for the rest.
+# Documents listed at once. Mounting a checkbox per document wedges the modal on
+# a large corpus, so the rest is reached through the search box.
 DOCUMENT_PAGE = 200
 
 
