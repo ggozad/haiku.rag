@@ -117,12 +117,10 @@ SearchType = Literal["vector", "fts", "hybrid"]
 
 
 def qualified_id(source: str | None, id: str | None) -> tuple[str | None, str | None]:
-    """What tells one chunk from another: a chunk id is unique within a database
-    and says nothing across them.
+    """What tells one chunk from another: an id is unique within a database only.
 
-    For in-memory structures only. Everything serialized records the id alone
-    and rejects ambiguity instead. `id` is optional, and results built by hand
-    carry none and cannot be told apart.
+    For in-memory structures. Serialized ones record the id alone and reject
+    ambiguity instead. Results built by hand carry no id and cannot be told apart.
     """
     return (source, id)
 

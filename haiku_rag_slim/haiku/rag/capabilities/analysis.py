@@ -15,7 +15,6 @@ from haiku.rag.capabilities._base import (
     CodeExecutionEntry,
     EvidenceState,
     RAGCapabilityBase,
-    covers_several_databases,
     resolve_scope,
 )
 from haiku.rag.capabilities._tools import merge_results
@@ -215,7 +214,9 @@ def create_capability(
     analysis_model = config.analysis.model or config.qa.model
     scope = resolve_scope(db_path, config)
     instruction_text = instructions()
-    if covers_several_databases(scope, rag):
+    # A lent client covers what it covers; otherwise the scope says.
+    several = rag.covers_multiple if rag is not None else scope.covers_multiple
+    if several:
         instruction_text += several_databases_instructions()
     return AnalysisCapability(
         scope=scope,

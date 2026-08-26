@@ -131,17 +131,6 @@ class EvidenceState(BaseModel):
         self.searches.clear()
 
 
-def covers_several_databases(scope: DatabaseScope, rag: "HaikuRAG | None") -> bool:
-    """Whether the capability will read from more than one database.
-
-    A lent client already covers what it covers; otherwise the scope says.
-    Instructions follow coverage, not configuration.
-    """
-    if rag is not None:
-        return rag.covers_multiple
-    return scope.covers_multiple
-
-
 def _awaits_the_model(messages: list[ModelMessage]) -> bool:
     """Whether the history unmistakably leaves the model something to answer.
 
@@ -637,6 +626,5 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
 __all__ = [
     "CodeExecutionEntry",
     "RAGCapabilityBase",
-    "covers_several_databases",
     "resolve_scope",
 ]

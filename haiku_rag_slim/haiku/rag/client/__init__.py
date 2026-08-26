@@ -148,11 +148,7 @@ class HaikuRAG:
         # single-database configuration from it, and asking again has to see the
         # same set rather than the answer from last time.
         self._config = self._configured
-        self._db_path_given = db_path is not None
-        if db_path is None:
-            db_path = self._config.storage.data_dir / "haiku.rag.lancedb"
-
-        self._db_path = db_path
+        self._requested_db_path = Path(db_path) if db_path is not None else None
         self._skip_validation = skip_validation
         self._create = create
         self._read_only = read_only
@@ -285,10 +281,9 @@ class HaikuRAG:
         if self._scope is not None:
             return self._scope
         scope = DatabaseScope.resolve(
-            self._configured,
-            database_path=self._db_path if self._db_path_given else None,
+            self._configured, database_path=self._requested_db_path
         )
-        if self._requested_sources is not None and not self._db_path_given:
+        if self._requested_sources is not None and self._requested_db_path is None:
             scope = scope.select(self._requested_sources)
         return scope
 
@@ -326,12 +321,9 @@ class HaikuRAG:
 
         [ref] = scope.databases
         self._config, db_path = ref.connection(self._configured)
-        self._db_path = (
-            db_path if db_path is not None else default_db_path(self._config)
-        )
 
         self._session = await SingleDatabaseSession(
-            self._db_path,
+            db_path if db_path is not None else default_db_path(self._config),
             self._config,
             skip_validation=self._skip_validation,
             create=self._create,
