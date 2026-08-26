@@ -345,6 +345,80 @@ async def test_conversation_applies_document_filter(tmp_path):
     assert deps_seen[0].state["rag"]["document_filter"] == "uri = 'manual.pdf'"
 
 
+async def test_question_applies_sources(tmp_path):
+    """Per-case `sources` must reach the capability state, so a scoped question
+    only ever searches the databases it named."""
+    deps_seen = []
+
+    async def _run(question, deps=None, message_history=None):
+        deps_seen.append(deps)
+        return SimpleNamespace(output="a", new_messages=lambda: [])
+
+    with patch("evaluations.capability_runner.Agent.run", side_effect=_run):
+        await run_capability_question(
+            create_rag,
+            tmp_path / "rag.lancedb",
+            AppConfig(),
+            "q",
+            TestModel(call_tools=[]),
+            sources=["northern"],
+        )
+
+    assert deps_seen[0].state["rag"]["sources"] == ["northern"]
+
+
+async def test_question_distinguishes_empty_sources_from_none(tmp_path):
+    """`sources=[]` covers nothing and `sources=None` covers everything, so the
+    empty list must survive to the state rather than being treated as unset."""
+    deps_seen = []
+
+    async def _run(question, deps=None, message_history=None):
+        deps_seen.append(deps)
+        return SimpleNamespace(output="a", new_messages=lambda: [])
+
+    with patch("evaluations.capability_runner.Agent.run", side_effect=_run):
+        for sources in ([], None):
+            await run_capability_question(
+                create_rag,
+                tmp_path / "rag.lancedb",
+                AppConfig(),
+                "q",
+                TestModel(call_tools=[]),
+                sources=sources,
+            )
+
+    assert deps_seen[0].state["rag"]["sources"] == []
+    assert deps_seen[1].state["rag"]["sources"] is None
+
+
+async def test_conversation_applies_sources(tmp_path):
+    """Scope must hold for every turn of a conversation, not just the first."""
+    from evaluations.capability_runner import run_capability_conversation
+
+    deps_seen = []
+
+    async def _run(question, deps=None, message_history=None):
+        deps_seen.append(deps)
+        return SimpleNamespace(
+            output="a", all_messages=lambda: [], new_messages=lambda: []
+        )
+
+    with patch("evaluations.capability_runner.Agent.run", side_effect=_run):
+        await run_capability_conversation(
+            create_rag,
+            tmp_path / "rag.lancedb",
+            AppConfig(),
+            ["q1", "q2"],
+            TestModel(call_tools=[]),
+            sources=["southern"],
+        )
+
+    assert [d.state["rag"]["sources"] for d in deps_seen] == [
+        ["southern"],
+        ["southern"],
+    ]
+
+
 async def test_conversation_carries_one_state_dict_across_turns(tmp_path):
     """Capabilities read and write state through the deps dict; carrying the
     same dict across turns is what lets compaction see earlier questions'

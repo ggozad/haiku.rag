@@ -130,6 +130,7 @@ def _prepare_agent(
     document_filter: str | None,
     request_limit: int | None,
     compaction: bool = False,
+    sources: list[str] | None = None,
 ) -> tuple[RAGCapabilityBase[Any], _EvalDeps, Agent[_EvalDeps, str]]:
     capability = capability_factory(
         db_path=db_path,
@@ -141,6 +142,8 @@ def _prepare_agent(
     state = capability.state_type()
     if document_filter is not None:
         state.document_filter = document_filter
+    if sources is not None:
+        state.sources = sources
 
     capabilities: list[AbstractCapability] = [capability]
     if compaction:
@@ -169,6 +172,7 @@ async def run_capability_question(
     document_filter: str | None = None,
     request_limit: int | None = None,
     message_history: list[ModelMessage] | None = None,
+    sources: list[str] | None = None,
 ) -> CapabilityRunResult:
     """Run a single question through a capability and return answer + retrieval data.
 
@@ -177,8 +181,11 @@ async def run_capability_question(
     are extracted from the state for downstream eval scoring.
 
     The capability must produce a state with RAG-capability-shaped fields (citation
-    index, searches, optional document filter) — i.e. ``RAGState`` or
-    ``AnalysisState`` from ``haiku.rag.capabilities``.
+    index, searches, optional document filter and source scope) — i.e. ``RAGState``
+    or ``AnalysisState`` from ``haiku.rag.capabilities``.
+
+    ``sources`` scopes the question to named databases; ``[]`` covers none and
+    ``None`` covers everything the client covers.
     """
     capability, deps, agent = _prepare_agent(
         capability_factory,
@@ -187,6 +194,7 @@ async def run_capability_question(
         capability_model,
         document_filter,
         request_limit,
+        sources=sources,
     )
     agent_result = await agent.run(question, deps=deps, message_history=message_history)
     traffic = _count_tool_traffic(
@@ -205,6 +213,7 @@ async def run_capability_conversation(
     capability_model: str | Model,
     document_filter: str | None = None,
     compaction: bool = False,
+    sources: list[str] | None = None,
 ) -> list[CapabilityRunResult]:
     """Run a conversation's user turns sequentially through one capability.
 
@@ -223,6 +232,7 @@ async def run_capability_conversation(
         document_filter=document_filter,
         request_limit=None,
         compaction=compaction,
+        sources=sources,
     )
     history: list[ModelMessage] | None = None
     results: list[CapabilityRunResult] = []
