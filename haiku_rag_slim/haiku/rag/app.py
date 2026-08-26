@@ -855,22 +855,22 @@ class HaikuRAGApp:
             content = Markdown(content)
         else:
             content = Markdown(doc.content)
-        title_part = (
-            f" [repr.attrib_name]title[/repr.attrib_name]: {doc.title}"
-            if doc.title
-            else ""
-        )
-        self.console.print(
-            f"[repr.attrib_name]id[/repr.attrib_name]: {doc.id} "
-            f"[repr.attrib_name]uri[/repr.attrib_name]: {doc.uri}"
-            + title_part
-            + f" [repr.attrib_name]meta[/repr.attrib_name]: {doc.metadata}"
-        )
+        parts = [f"[repr.attrib_name]id[/repr.attrib_name]: {doc.id}"]
+        if doc.uri:
+            parts.append(f"[repr.attrib_name]uri[/repr.attrib_name]: {doc.uri}")
+        if doc.title:
+            parts.append(f"[repr.attrib_name]title[/repr.attrib_name]: {doc.title}")
+        if doc.metadata:
+            parts.append(f"[repr.attrib_name]meta[/repr.attrib_name]: {doc.metadata}")
+        self.console.print(" ".join(parts))
         self.console.print(
             f"[repr.attrib_name]created at[/repr.attrib_name]: {doc.created_at} [repr.attrib_name]updated at[/repr.attrib_name]: {doc.updated_at}"
         )
-        self.console.print("[repr.attrib_name]content[/repr.attrib_name]:")
-        self.console.print(content)
+        # `list` does not load content, which is where the docling blobs live, so
+        # the header would otherwise announce a field the command declined to fetch.
+        if doc.content:
+            self.console.print("[repr.attrib_name]content[/repr.attrib_name]:")
+            self.console.print(content)
         self.console.rule()
 
     def _rich_print_search_result(self, result: "SearchResult"):

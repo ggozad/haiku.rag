@@ -59,6 +59,36 @@ def _doc(content: str = "body text", **kwargs) -> Document:
     return doc
 
 
+async def test_a_listing_omits_the_fields_it_did_not_fetch(app, client):
+    """`list` does not load content, and a document need not carry a uri, a
+    title or metadata. Printing a header for each regardless announced fields
+    the command declined to fetch or the document never had."""
+    bare = Document(content="", uri=None)
+    bare.id = "doc-bare"
+    client.list_documents.return_value = [bare]
+
+    await app.list_documents()
+
+    printed = out(app)
+    assert "doc-bare" in printed
+    for absent in ("uri:", "title:", "meta:", "content:"):
+        assert absent not in printed, absent
+
+
+async def test_a_listing_prints_the_fields_it_has(app, client):
+    client.list_documents.return_value = [
+        _doc("body text", title="A title", metadata={"k": "v"})
+    ]
+
+    await app.list_documents()
+
+    printed = out(app)
+    assert "uri: test://doc" in printed
+    assert "title: A title" in printed
+    assert "meta:" in printed
+    assert "content:" in printed
+
+
 async def test_list_documents_prints_each_document(app, client):
     client.list_documents.return_value = [_doc("first"), _doc("second")]
 
