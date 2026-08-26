@@ -4,7 +4,6 @@
 
 ### Added
 
-- `api_key` on model and embedding-model config, overriding the provider's environment variable. Honored on the `openai` and `ollama` providers, `vllm` embedders and rerankers, the picture-description VLM endpoint, and `doctor`'s endpoint probes; other providers raise.
 - `lancedb.databases`: a name-to-location mapping for searching several databases at once, mutually exclusive with `lancedb.uri`. `client.search(..., sources=[...])` selects which to search, `sources=None` searches all of them, and `SearchResult.source` carries the configured name a result came from. `Document.source` names it on a document from a listing or a lookup, so a listing that spans databases says which one each came from. Candidates are fused by the configured reranker over the union, or by reciprocal rank fusion when none is configured. Databases searched together must have been written with the same embedder; two that disagree raise `ConfigMismatchError`. The query is embedded once for the whole selection. `SearchResult.format_for_agent` names the database, so the model can attribute evidence to one while it answers. `haiku-rag search`, `ask`, `analyze` and `chat` cover the configured set and label each result and citation with its database; every other command works on one, named with `--database NAME` or `--db PATH`.
 - `client.ask(..., sources=[...])` asks across the selected databases, and `Citation.source` names the one a cited chunk came from. The cite fallback for an id absent from the run's results looks only in the selected databases, so a question scoped to some cannot cite another. A chunk id held by two of the databases searched raises `AmbiguousCitationError`, which reaches the model as a retry; the fallback refuses it too, rather than answering from the first database that holds it.
 - `client.analyze(..., sources=[...])` analyzes across the selected databases: the sandbox mounts their documents under one flat `/documents/{id}/` namespace, resolving each id to the database holding it, and in-code `search()` covers the same selection.
@@ -13,11 +12,20 @@
 
 - `client.chunk()` and `client.embedder` work on a client covering `lancedb.databases`: an embedder is a function of configuration, so the client builds one on first use and closes it on teardown. Operations that need one database (`create_document`, `import_document(s)`, `create_document_from_source`, `update_document`, `delete_document`, `rebuild_database`, `vacuum`, `visualize_chunk`, `close`) raise `AmbiguousDatabaseError` naming the databases covered, instead of `AttributeError`.
 - The chat TUI's document filter selects documents by id and names each document's database, instead of matching the displayed title or URI as a substring across every database.
-- `doctor`'s docling-serve probe sends `X-Api-Key`, so an instance requiring a key is reported reachable rather than unreachable.
-- The picture-description request to the public OpenAI endpoint sends `OPENAI_API_KEY`; it carried no authorization header.
 - `haiku-rag` prints the message and exits when the configured embedder does not match the database, instead of raising a traceback.
 - A capability built without a client opens the databases the configuration places — `lancedb.uri` or the whole `lancedb.databases` set — instead of the default under `storage.data_dir`.
 - A `lancedb.uri` with no scheme is a local path, as it already is in `lancedb.databases`: `haiku-rag init` creates it and every command that opens an existing database requires it to exist, where a missing path was opened as object storage and became an empty database. `--db PATH` overrides `lancedb.uri`.
+
+## [0.78.0] - 2026-08-24
+
+### Added
+
+- `api_key` on model and embedding-model config, overriding the provider's environment variable. Honored on the `openai` and `ollama` providers, `vllm` embedders and rerankers, the picture-description VLM endpoint, and `doctor`'s endpoint probes; other providers raise.
+
+### Fixed
+
+- `doctor`'s docling-serve probe sends `X-Api-Key`, so an instance requiring a key is reported reachable rather than unreachable.
+- The picture-description request to the public OpenAI endpoint sends `OPENAI_API_KEY`; it carried no authorization header.
 
 ## [0.77.0] - 2026-08-21
 
@@ -78,7 +86,6 @@
 
 ### Added
 
-- `frames` evaluation dataset.
 - `evaluations run --filter/-f CLAUSE`: SQL `WHERE` clause over document columns, applied to the retrieval benchmark's searches and to every capability search during QA. Recorded as `document_filter` in experiment metadata.
 - `mtrag_clapnq` / `mtrag_clapnq_rewrite` / `mtrag_clapnq_live` / `mtrag_clapnq_live_uncompacted` evaluation datasets: multi-turn QA with gold-prefix and live-session conversation replay, live arms with and without `EvidenceCompactionCapability`, Recall@k/nDCG@k retrieval metrics, eligibility-aware citation scoring, refusal precision/recall, per-turn tool-traffic attributes, and `citation_status` / `turn_citation_status` eval attributes.
 - Raw chunk metadata is now exposed to search and citation results, through `SearchResult.chunk_meta` and `Citation.chunk_meta`. For context-expanded results, the metadata is that of the anchor chunk.
@@ -2232,7 +2239,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.77.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.78.0...HEAD
+[0.78.0]: https://github.com/ggozad/haiku.rag/compare/0.77.0...0.78.0
 [0.77.0]: https://github.com/ggozad/haiku.rag/compare/0.77.0...0.77.0
 [0.77.0]: https://github.com/ggozad/haiku.rag/compare/0.76.0...0.77.0
 [0.76.0]: https://github.com/ggozad/haiku.rag/compare/0.75.0...0.76.0
