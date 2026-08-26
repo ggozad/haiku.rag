@@ -243,15 +243,25 @@ Candidates from each database are fused into one ranked list, by the configured
 reranker where there is one and by reciprocal rank fusion otherwise. Each result
 carries `source`, the name of the database it came from, and so does each
 citation. A document from `list_documents`, `get_document_by_id`,
-`get_document_by_uri` or `resolve_document` carries it too. Naming one database
-on the command line points the configuration at it, so commands that work on one
-database report no name.
+`get_document_by_uri` or `resolve_document` carries it too, and a database
+named in `lancedb.databases` keeps that name even when it is the only one a
+client covers. Only a database placed by `lancedb.uri`, which names none, has no
+name to carry. The CLI does not print the name of a single database it was told
+to use, since the caller just named it.
 
 Chunk ids are unique within a database and say nothing across them, so a database
 copied from another holds the same ids. Results are told apart by the database
 and the id together. A chunk id held by two of the databases searched cannot be
 cited: `resolve_citations` raises `AmbiguousCitationError`, and the capability
 asks the model for other evidence instead.
+
+Document ids behave the same way, and two places treat a collision differently.
+The analysis sandbox mounts one document per id and refuses a set where two
+databases claim one, since the mount has a single path per id. The chat document
+filter does not: it selects by document id and applies `id IN (...)` to every
+covered database, so selecting an id that exists in copies of a database matches
+the document in each of them. Independently built databases use UUID document
+ids and do not collide.
 
 **Configure a reranker when searching several databases.** Reciprocal rank fusion
 compares ranks, not scores, so every database contributes its own best matches
@@ -276,11 +286,18 @@ A database that cannot be opened fails the whole query and is named in the error
 A result set silently missing one of the databases asked for cannot be told apart
 from a complete one.
 
-### Commands that work on one database
+### How commands treat the set
 
-`haiku-rag search`, `ask`, `analyze` and `chat` cover the configured set. Every
-other command works on a single database, named with the global `--database`
-option:
+Commands fall into three groups:
+
+- **Set-capable**: `search`, `ask`, `analyze` and `chat` cover the whole
+  configured set, or the subset named by `--database`.
+- **Config-only**: `settings`, `init-config` and `download-models` open no
+  database, so the set is irrelevant to them.
+- **Single-database**: everything else — document writes, `rebuild`, `vacuum`,
+  `migrate`, `init`, `info`, `history`, `tag`, `doctor`, `list`, `inspect`,
+  `visualize` and `mcp` — works on one database, named with the global
+  `--database` option.
 
 ```bash
 haiku-rag search "query"                  # every configured database
@@ -289,9 +306,10 @@ haiku-rag --database medic migrate
 ```
 
 `--database` takes a name from `lancedb.databases`, which is how a database
-behind a URI is reached. `--db` takes a path, and overrides the configured set
-with that one database. A command that works on one database and is given
-neither fails rather than choosing for you.
+behind a URI is reached. `--db` takes a path, and overrides the configured
+location with that one database. A single-database command given neither fails
+rather than choosing for you, unless `lancedb.databases` names exactly one: a
+set of one is unambiguous and is used, keeping its configured name.
 
 Each database is created, migrated and vacuumed on its own:
 

@@ -121,7 +121,7 @@ class LanceDBConfig(ConfigModel):
         if self.uri and self.databases:
             raise ValueError(
                 "lancedb.uri and lancedb.databases are mutually exclusive: "
-                "use uri for one database, databases for several"
+                "use uri for one unnamed location, or databases for named ones"
             )
         for name, location in self.databases.items():
             # A blank name is falsy, so source routing reads it as absent; a

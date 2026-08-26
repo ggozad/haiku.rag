@@ -258,6 +258,28 @@ result = await client.analyze("How many documents mention it?", sources=["medic"
 A question scoped to some databases can only cite those, and the analysis
 sandbox mounts only their documents.
 
+`sources=None` covers every database the client covers; `sources=[]` covers none
+and returns nothing, which is not the same thing.
+
+#### Asking a client what it covers
+
+```python
+client.covers_multiple      # True while reading more than one database
+client.source_names         # the configured names covered, in configured order
+client.source               # the one name, or None while covering a set
+
+owner = await client.reader_for("medic")      # the client reading that database
+medic, st = await client.clients_for(["medic", "st"])
+```
+
+`clients_for` opens the databases it names, on first use rather than at entry,
+and returns a client for each. Those clients borrow their databases from the
+covering one: they are valid only while it is open, and closing or entering one
+leaves its database alone. The covering client closes them all on teardown.
+
+A borrowed client reads one database, so it has the `store` and repositories a
+covering client cannot have, and it is writable when the covering client is.
+
 ### Filtering Search Results
 
 Filter search results to only include chunks from documents matching specific criteria:

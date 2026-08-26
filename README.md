@@ -11,8 +11,6 @@ Agentic RAG that answers questions about your own documents with citations to pa
 
 Built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.pydantic.dev/), and [Docling](https://docling-project.github.io/docling/). Full documentation at [ggozad.github.io/haiku.rag](https://ggozad.github.io/haiku.rag/).
 
-> **New: vision and multimodal search.** Picture-aware ingestion captures embedded figure bytes; vision-capable QA models receive them alongside text. Multimodal embedders put picture vectors in the same space as text, enabling text-as-query → figure hits and image-as-query retrieval.
-
 ## Features
 
 - **Hybrid search** — Vector + full-text with Reciprocal Rank Fusion
@@ -26,7 +24,7 @@ Built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.pydantic.dev/
 - **Conversational RAG** — Chat TUI and web application for multi-turn conversations with session memory
 - **Document structure** — Stores full [DoclingDocument](https://docling-project.github.io/docling/concepts/docling_document/), enabling structure-aware context expansion
 - **Multiple providers** — Embeddings: Ollama, OpenAI, VoyageAI, Cohere, LM Studio, vLLM (multimodal via `multimodal: true` on vLLM/VoyageAI/Cohere). QA: any model supported by Pydantic AI
-- **Several databases** — Name databases in `lancedb.databases` and search, ask or analyze across them at once, with each result and citation carrying the database it came from
+- **Several databases** — Name databases in `lancedb.databases` and search, ask, analyze or chat across them at once, with each result and citation carrying the database it came from
 - **Local-first** — Embedded LanceDB, no servers required. Also supports S3, GCS, Azure, and LanceDB Cloud
 - **CLI & Python API** — Full functionality from command line or code
 - **MCP server** — Expose as tools for AI assistants (Claude Desktop, etc.)
