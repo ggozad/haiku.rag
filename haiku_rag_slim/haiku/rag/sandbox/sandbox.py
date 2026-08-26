@@ -347,14 +347,14 @@ class Sandbox:
             return out
 
         async def list_documents() -> list[dict[str, Any]]:
-            docs, owners = await self._documents()
+            docs, _ = await self._documents()
             return [
                 {
                     "id": d.id,
                     "title": d.title,
                     "uri": d.uri,
                     "created_at": str(d.created_at),
-                    "source": owners[d.id].source if d.id in owners else None,
+                    "source": d.source,
                 }
                 for d in docs
             ]

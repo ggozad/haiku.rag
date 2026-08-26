@@ -104,11 +104,14 @@ class TestSandboxListDocuments:
             result = await sb.execute(
                 "docs = await list_documents()\n"
                 "print(len(docs))\n"
-                "print(docs[0]['title'])"
+                "print(docs[0]['title'])\n"
+                "print(docs[0]['source'])"
             )
             assert result.success
             assert "1" in result.stdout
             assert "Test Document" in result.stdout
+            # Nothing names this database, so there is no name to report.
+            assert "None" in result.stdout
 
 
 class TestSandboxSearch:

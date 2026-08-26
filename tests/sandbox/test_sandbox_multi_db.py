@@ -244,3 +244,22 @@ class TestListingOrder:
 
         assert "source" in rows[0]
         assert {r["source"] for r in rows} == {"alpha", "beta"}
+
+    @pytest.mark.asyncio
+    async def test_in_code_list_documents_names_one_database_too(self, tmp_path):
+        """A document knows which database it came from whether or not the
+        analysis spans several."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+
+        async with HaikuRAG(config=config, sources=["alpha"]) as rag:
+            sandbox = Sandbox(
+                db_path=None,
+                config=config,
+                context=AnalysisContext(),
+                rag=rag,
+            )
+            rows = await sandbox._build_external_functions()["list_documents"]()
+
+        assert [r["source"] for r in rows] == ["alpha"]
