@@ -334,6 +334,74 @@ class TestResolvingTheDatabasePath:
             resolve_scope(Path("/data/other.lancedb"))
 
 
+class TestConfiguredLocalUri:
+    """`lancedb.uri` with a local path, the surface issue #582 reports."""
+
+    def _config_file(self, tmp_path, located: Path) -> Path:
+        config_file = tmp_path / "haiku.rag.yaml"
+        config_file.write_text(f"lancedb:\n  uri: {located}\n")
+        return config_file
+
+    def _fresh(self, monkeypatch) -> None:
+        import haiku.rag.cli as cli_module
+        import haiku.rag.config as config_module
+
+        monkeypatch.setattr(config_module, "_config", None)
+        monkeypatch.setattr(cli_module, "_database", None)
+
+    def _reports(self, result, located: Path) -> bool:
+        """Rich wraps a long path to the terminal width, so compare without it."""
+        return str(located) in "".join(result.output.split())
+
+    def test_init_creates_the_configured_local_database(self, tmp_path, monkeypatch):
+        self._fresh(monkeypatch)
+        located = tmp_path / "notes.lancedb"
+        config_file = self._config_file(tmp_path, located)
+
+        result = runner.invoke(cli, ["--config", str(config_file), "init"])
+
+        assert result.exit_code == 0, result.output
+        assert located.exists()
+
+        self._fresh(monkeypatch)
+        result = runner.invoke(cli, ["--config", str(config_file), "info"])
+        assert result.exit_code == 0, result.output
+        assert self._reports(result, located)
+
+    def test_a_missing_configured_path_is_refused(self, tmp_path, monkeypatch):
+        """A schemeless value is a local path, so a typo fails instead of
+        becoming a new empty database."""
+        self._fresh(monkeypatch)
+        located = tmp_path / "typo.lancedb"
+        config_file = self._config_file(tmp_path, located)
+
+        result = runner.invoke(cli, ["--config", str(config_file), "info"])
+
+        assert "does not exist" in result.output
+        assert not located.exists()
+
+    def test_db_overrides_the_configured_uri(self, tmp_path, monkeypatch):
+        self._fresh(monkeypatch)
+        configured = tmp_path / "configured.lancedb"
+        chosen = tmp_path / "chosen.lancedb"
+        config_file = self._config_file(tmp_path, configured)
+
+        result = runner.invoke(
+            cli, ["--config", str(config_file), "init", "--db", str(chosen)]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert chosen.exists()
+        assert not configured.exists()
+
+        self._fresh(monkeypatch)
+        result = runner.invoke(
+            cli, ["--config", str(config_file), "info", "--db", str(chosen)]
+        )
+        assert result.exit_code == 0, result.output
+        assert self._reports(result, chosen)
+
+
 class TestCliConfigMismatchError:
     def test_a_config_mismatch_exits_with_its_remedy(self):
         """The message says which database and what to run, so it is worth more

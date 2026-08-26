@@ -66,6 +66,29 @@ If that number times six exceeds available RAM, use one of:
 
 This is an upstream limitation rather than a `haiku.rag` setting. Compaction bounds itself by row count instead of bytes, and LanceDB's async API exposes no batch size or fragment target to override it. Tracked at [lancedb/lancedb#2325](https://github.com/lancedb/lancedb/issues/2325). The requirement above will drop once compaction batches by bytes.
 
+### Changing the Default Database Path
+
+`storage.data_dir` holds the default database, always called
+`haiku.rag.lancedb`. To put the database somewhere else for every command, give
+`lancedb.uri` a local path:
+
+```yaml
+lancedb:
+  uri: /data/notes.lancedb
+```
+
+An explicit `--db PATH` overrides `lancedb.uri` for that invocation.
+
+This places one database without naming it. Its `source` is `None` in search
+results, citations and documents, since only [`lancedb.databases`](#several-databases)
+assigns the names that carry provenance. A path here changes where the database
+lives, not what it is called.
+
+A value with no scheme is a local path wherever it is configured, so
+`haiku-rag init` creates it and every command that opens an existing database
+requires it to exist. A mistyped path fails rather than becoming a new empty
+database.
+
 ## Database Creation
 
 Databases must be explicitly created before use:
@@ -145,6 +168,7 @@ lancedb:
 - **LanceDB Cloud** (`db://`): Requires `api_key` and `region`. Table optimization and indexing are managed server-side.
 - **Object storage** (`s3://`, `gs://`, `az://`, `hdfs://`): Uses `storage_options` for credentials and endpoint configuration. Authentication can also be provided via environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, etc.) or cloud provider SDK defaults (AWS CLI, Azure CLI, gcloud).
 - **S3-compatible stores** (MinIO, Tigris, etc.): Set `endpoint` in `storage_options`. When using `http://` endpoints, also set `allow_http: "true"`.
+- **Local path** (no scheme): `uri` also takes a local path, which is how the default database is pointed elsewhere. See [Changing the Default Database Path](#changing-the-default-database-path).
 
 The `storage_options` keys are case-insensitive and passed directly to the underlying object store library. Available keys depend on the backend. See the [LanceDB storage docs](https://lancedb.com/docs/storage/) for details.
 

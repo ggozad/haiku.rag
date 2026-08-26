@@ -145,6 +145,60 @@ class TestNamingADatabaseDirectly:
         assert [r.source for r in results] == ["alpha"]
 
 
+class TestOneConfiguredLocation:
+    """`lancedb.uri` places one unnamed database, at a URI or at a local path."""
+
+    def _config(self, location) -> AppConfig:
+        return AppConfig(lancedb=LanceDBConfig(uri=str(location)))
+
+    @pytest.mark.asyncio
+    async def test_a_local_uri_opens_the_configured_database(self, tmp_path):
+        located = tmp_path / "notes.lancedb"
+        config = self._config(located)
+
+        async with HaikuRAG(config=config, create=True) as rag:
+            assert rag.store.db_path == located
+            # It places a database without naming one: only `lancedb.databases`
+            # assigns the name results and citations carry.
+            assert rag.source is None
+        assert located.exists()
+
+    @pytest.mark.asyncio
+    async def test_an_explicit_path_overrides_a_local_uri(self, tmp_path):
+        """`--db` overrides the configured location for one invocation."""
+        config = self._config(tmp_path / "configured.lancedb")
+        chosen = tmp_path / "chosen.lancedb"
+
+        async with HaikuRAG(chosen, config=config, create=True) as rag:
+            assert rag.store.db_path == chosen
+        assert chosen.exists()
+        assert not (tmp_path / "configured.lancedb").exists()
+
+    @pytest.mark.asyncio
+    async def test_a_local_uri_that_does_not_exist_is_refused(self, tmp_path):
+        """A mistyped path fails instead of quietly becoming an empty database,
+        which is what a value carrying a scheme would do."""
+        config = self._config(tmp_path / "typo.lancedb")
+
+        with pytest.raises(FileNotFoundError):
+            async with HaikuRAG(config=config):
+                pass
+        assert not (tmp_path / "typo.lancedb").exists()
+
+    def test_a_uri_with_a_scheme_stays_a_uri(self, tmp_path):
+        """Object storage has no local path to check, and a location that does
+        not exist yet is normal there."""
+        from haiku.rag.store.engine import ConnectionMode
+
+        config = self._config("s3://bucket/one.lancedb")
+
+        [ref] = DatabaseScope.resolve(config).databases
+        one, db_path = ref.connection(config)
+
+        assert db_path is None
+        assert ConnectionMode.from_config(one) == ConnectionMode.OBJECT_STORAGE
+
+
 class TestOpeningDatabases:
     @pytest.mark.asyncio
     async def test_missing_databases_open_together(self, tmp_path):

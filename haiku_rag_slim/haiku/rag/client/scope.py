@@ -42,8 +42,9 @@ class DatabaseRef:
 
     @classmethod
     def configured(cls, name: str | None, location: str) -> "DatabaseRef":
-        """A database from ``lancedb.databases``, where the configured value is a
-        URI or a local path depending on whether it carries a scheme."""
+        """A database the configuration placed, by ``lancedb.uri`` or by an entry
+        in ``lancedb.databases``. A value carrying a scheme is a URI and anything
+        else is a local path, so the two settings place a database alike."""
         uri, db_path = locate_database(location)
         return cls(name=name, uri=uri, db_path=db_path)
 
@@ -123,7 +124,7 @@ class DatabaseScope:
             )
 
         if config.lancedb.uri:
-            return cls((DatabaseRef(name=None, uri=config.lancedb.uri, db_path=None),))
+            return cls((DatabaseRef.configured(None, config.lancedb.uri),))
 
         return cls((DatabaseRef.at(config.storage.data_dir / "haiku.rag.lancedb"),))
 
