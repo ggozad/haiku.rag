@@ -19,9 +19,13 @@ lancedb:
     equipment: ${HOME}/.local/share/haiku.rag/evaluations/dbs/multidb_equipment.lancedb
 
 processing:
-  # Pinned: the builder asserts no single chunk holds all twelve monthly
-  # readings, so S3 cannot be answered from one search hit.
-  chunk_size: 256
+  # Pinned, and small deliberately. The builder asserts that no single chunk
+  # holds all twelve monthly readings, so S3 cannot be answered from one search
+  # hit; measured, the chunker keeps the whole table in one chunk at 256 and at
+  # 128, and splits it at 64. The cost is a corpus chunked more finely than a
+  # real one. The alternative is a longer table at a realistic chunk size, which
+  # would change what S3 asks.
+  chunk_size: 64
 
 search:
   # Three databases at limit 5 means RRF fuses 15 candidates to 5, so the

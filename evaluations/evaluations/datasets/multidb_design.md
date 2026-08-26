@@ -67,6 +67,12 @@ readings**, and fails the build if one does. Without that guarantee S3 collapses
 search question, and the guarantee has to survive a chunker change — so it is asserted,
 not assumed.
 
+It earned its keep on the first real build: at `chunk_size` 256 the chunker keeps the
+entire table in one chunk, and so does 128. Only 64 splits it, which is what the config
+pins. The cost is a corpus chunked more finely than a real one; the alternative is a
+longer table at a realistic chunk size, which would change what S3 asks. Worth
+revisiting if the dataset grows.
+
 ## Question families
 
 B-family runs against both capabilities, S-family against analysis only.
