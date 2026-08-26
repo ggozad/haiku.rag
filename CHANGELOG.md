@@ -14,6 +14,7 @@
 - Citation resolution rejects chunk IDs shared by multiple selected databases
   with `AmbiguousCitationError`.
 
+- `multidb` and `multidb_surfaces` evaluation datasets and their reference configs: a generated three-database corpus of station reports and instrument sheets, with hard gates on scope leakage and citation attribution, deterministic scoring, and a table of which sandbox surfaces the model reached. `evaluations run` records `executed_code` as an eval attribute, `DatasetSpec` takes a `report_hook`, and a case's inputs may be a `ScopedQuestion` carrying per-case `sources`.
 ### Fixed
 
 - `client.chunk()` and `client.embedder` work when the client covers several
