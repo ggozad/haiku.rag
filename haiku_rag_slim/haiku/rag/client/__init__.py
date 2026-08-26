@@ -133,15 +133,17 @@ class HaikuRAG:
         """Initialize the RAG client with a database path.
 
         Args:
-            db_path: Path or string path to the database file. If None, uses
-                config.storage.data_dir.
+            db_path: Path or string path to the database. When omitted, resolves
+                ``lancedb.databases``, then ``lancedb.uri``, then the default
+                path under ``storage.data_dir``.
             config: Configuration to use. Defaults to the current global config.
             skip_validation: Whether to skip configuration validation on database load.
             create: Whether to create the database if it doesn't exist.
             read_only: Whether to open the database in read-only mode.
-            sources: Names from ``config.lancedb.databases`` this client covers.
-                None means all of them. Ignored when a single ``uri`` or an
-                explicit ``db_path`` is given.
+            sources: Names from ``config.lancedb.databases`` this client covers,
+                None for all of them. Only that setting names databases, so a
+                name raises when ``lancedb.uri`` placed the database. Ignored
+                when ``db_path`` says which database to open.
         """
         self._configured = config if config is not None else get_config()
         # What the caller configured, kept intact: entering derives a
@@ -290,14 +292,9 @@ class HaikuRAG:
     async def __aenter__(self):
         """Async context manager entry — initializes store and repositories.
 
-        A client borrowing a database is already open and returns itself.
-        Opening a second session would leak it: teardown declines to close what
-        this client did not open.
-
-        A client covering several databases opens none of them here: which are
-        searched is a per-query choice, so they open on first use. `store` and the
-        repositories stay unset in that case, since they have no unambiguous
-        meaning across a set.
+        A borrowed client reuses its session, which its owner closes. A client
+        covering several opens their sessions lazily, so `store` and the
+        repositories stay unset until one database is named.
         """
         if not self._owns_session:
             assert self._session is not None

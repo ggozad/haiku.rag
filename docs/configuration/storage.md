@@ -214,9 +214,10 @@ lancedb:
 A location is a URI or a local path. `databases` and `uri` are mutually
 exclusive, and setting both fails validation.
 
-The name is the only identity that leaves the configuration. Results, citations
-and error messages carry it, so a path or a bucket never reaches a log, a trace
-or a model.
+Results, citations, model input and errors opening a named database carry the
+configured name rather than the location, so a path or a bucket does not reach a
+trace or a model. Commands that report on a database — `info`, `init`, `tag` —
+print its location, as does an error about a path.
 
 Every database in the set is opened with the same embedding configuration. A
 different `vector_dim` raises `ConfigMismatchError` on open. A different provider

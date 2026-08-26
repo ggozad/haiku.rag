@@ -258,8 +258,9 @@ result = await client.analyze("How many documents mention it?", sources=["medic"
 A question scoped to some databases can only cite those, and the analysis
 sandbox mounts only their documents.
 
-`sources=None` covers every database the client covers; `sources=[]` covers none
-and returns nothing, which is not the same thing.
+`sources=None` covers every database the client covers. `sources=[]` covers
+none: `search` returns no results, and `ask` and `analyze` run with no evidence
+from any database.
 
 #### Asking a client what it covers
 

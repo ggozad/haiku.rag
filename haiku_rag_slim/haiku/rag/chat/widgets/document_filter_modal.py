@@ -146,9 +146,8 @@ class DocumentFilterModal(ModalScreen):
         filter_list = self.query_one("#filter-list", VerticalScroll)
         await filter_list.remove_children()
 
-        # The page is picked to represent every database; sorting is so it reads
-        # like a list rather than in whatever order the tables returned. The label
-        # names the database, since a title alone does not say which one it is in.
+        # Sort the interleaved page and label each document's database, which
+        # a title alone does not say.
         labelled = sorted(
             (
                 (

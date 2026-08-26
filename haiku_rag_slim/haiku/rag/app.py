@@ -59,9 +59,8 @@ class HaikuRAGApp:
     def _connection(self) -> "tuple[AppConfig, Path]":
         """How to open the one database this command works on, directly.
 
-        The configuration a command was given names a *set*; the one it opens
-        needs its own, or a named database behind a URI is opened as the local
-        path that stands in for it.
+        Derived per database: opening one of a set against the set's own
+        configuration would reach the local path that stands in for it.
         """
         from haiku.rag.client.session import default_db_path
 

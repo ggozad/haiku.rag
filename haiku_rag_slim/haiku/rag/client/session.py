@@ -93,32 +93,27 @@ class SingleDatabaseSession:
                 create=self._create,
                 read_only=self.read_only,
             )
-            # If _initialize fails mid-way (e.g. migration check raises after
-            # connect), close the store so we don't leak the LanceDB connection —
-            # the caller's `async with` never entered, so its exit won't run.
+            # Close a partially initialized store: the caller's `async with`
+            # never entered, so its exit will not run.
             try:
                 await self.store._initialize()
             except BaseException:
                 self.store.close()
                 raise
         except _NAMEABLE_FAILURES as error:
-            # These say what to run and never where the database is, so the name
-            # is added to the message rather than replacing it: the operator needs
-            # both which database failed and what to do about it.
+            # These name the remedy and not the database, so the name is added
+            # rather than substituted.
             if self.source is None:
                 raise
             raise type(error)(f"database {self.source!r}: {error}") from error
         except Exception as error:
-            # A legacy `uri` or `db_path` session has no name to report instead,
-            # so its error passes through as it always has.
+            # Without a name there is nothing to report in the location's place.
             if self.source is None:
                 raise
             failure = type(error).__name__
         if failure is not None:
-            # Raised outside the except block on purpose. A database named in
-            # config is reported by name, and the original spells out the path or
-            # the bucket: `from None` would only stop it being *printed*, leaving
-            # it on `__context__` for anything that walks the chain.
+            # Raised outside the handler to discard the location-bearing
+            # context, which `from None` would only stop printing.
             raise SourceUnavailableError(
                 f"database {self.source!r} could not be opened: {failure}"
             )

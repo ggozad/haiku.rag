@@ -247,10 +247,9 @@ class Sandbox:
     async def _documents(self) -> "tuple[list[Any], dict[str, HaikuRAG]]":
         """Every document in scope, and the client holding each of them.
 
-        The owners are empty where one connection serves every read: a single
-        database, or the ephemeral connection opened per read when no client was
-        supplied. The selection is resolved the same way a search resolves it, so
-        a database the question excluded cannot be mounted.
+        Owners are empty where one connection serves every read. The selection
+        resolves as a search resolves it, so a database the question excluded
+        cannot be mounted.
         """
         async with self._connection() as rag:
             if not rag.covers_multiple:
