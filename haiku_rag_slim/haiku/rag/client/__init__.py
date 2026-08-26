@@ -295,11 +295,19 @@ class HaikuRAG:
     async def __aenter__(self):
         """Async context manager entry — initializes store and repositories.
 
+        A client borrowing a database is already open and returns itself.
+        Opening a second session would leak it: teardown declines to close what
+        this client did not open.
+
         A client covering several databases opens none of them here: which are
         searched is a per-query choice, so they open on first use. `store` and the
         repositories stay unset in that case, since they have no unambiguous
         meaning across a set.
         """
+        if not self._owns_session:
+            assert self._session is not None
+            return self
+
         scope = self._resolve_scope()
         if scope.covers_multiple:
             if self._create:
@@ -338,6 +346,10 @@ class HaikuRAG:
         Opening is per query rather than at entry: a set of 25 configured
         databases is typically queried a few at a time, and a database nobody
         asked for must not be able to fail a query, or be opened for nothing.
+
+        The clients returned borrow their databases from this one and are valid
+        only while it is open. Closing one, or entering it as a context manager,
+        leaves the database alone; this client closes them all on teardown.
         """
         assert isinstance(self._session, FederatedSession)
         names = _without_repeats(names)

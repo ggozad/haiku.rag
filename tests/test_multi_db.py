@@ -599,6 +599,27 @@ class TestBorrowedDatabases:
         assert not store.db.is_open(), "the set left a database open"
 
     @pytest.mark.asyncio
+    async def test_entering_a_borrowed_client_reuses_its_database(self, tmp_path):
+        """`async with` on a borrowed client is a plausible thing to write.
+        Opening a second session would leak it, since teardown declines to close
+        what this client did not open."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+
+        async with HaikuRAG(config=config) as rag:
+            (alpha,) = await rag.clients_for(["alpha"])
+            borrowed = alpha.store
+
+            async with alpha as entered:
+                assert entered is alpha
+                assert alpha.store is borrowed, "entry opened a second database"
+
+            assert borrowed.db.is_open(), "exit closed a database it borrowed"
+            assert alpha.store is borrowed
+
+        assert not borrowed.db.is_open(), "the set left a database open"
+
+    @pytest.mark.asyncio
     async def test_a_borrowed_client_releases_what_it_built(self, tmp_path):
         """Its reranker is its own; the database it wraps is not."""
         config = _config(tmp_path, ["alpha", "beta"])
