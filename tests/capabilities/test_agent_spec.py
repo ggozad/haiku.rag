@@ -14,6 +14,7 @@ from haiku.rag.capabilities.compaction import EvidenceCompactionCapability
 from haiku.rag.capabilities.policy import CAPABILITY_ID as POLICY_ID
 from haiku.rag.capabilities.policy import CitationPolicyCapability
 from haiku.rag.capabilities.rag import RAGCapability, RAGState
+from haiku.rag.client.scope import DatabaseRef
 
 ALL_CAPABILITIES = [
     RAGCapability,
@@ -46,7 +47,7 @@ def test_rag_capability_is_built_from_a_spec(temp_db_path):
     )
 
     assert isinstance(capability, RAGCapability)
-    assert capability.db_path == temp_db_path
+    assert capability.scope.databases == (DatabaseRef.at(temp_db_path),)
     assert capability.id == "haiku-rag"
     assert capability.state_type is RAGState
     assert capability.tool_names == {"rag_search", "rag_cite"}
@@ -60,7 +61,7 @@ def test_analysis_capability_is_built_from_a_spec(temp_db_path):
     )
 
     assert isinstance(capability, AnalysisCapability)
-    assert capability.db_path == temp_db_path
+    assert capability.scope.databases == (DatabaseRef.at(temp_db_path),)
     assert capability.id == "haiku-rag-analysis"
     assert capability.state_type is AnalysisState
     assert capability.request_limit == 30

@@ -14,7 +14,7 @@ from haiku.rag.capabilities._base import (
     EvidenceState,
     RAGCapabilityBase,
     covers_several_databases,
-    resolve_db_path,
+    resolve_scope,
 )
 from haiku.rag.config.models import AppConfig
 
@@ -116,12 +116,12 @@ def create_capability(
         from haiku.rag.config import get_config
 
         config = get_config()
-    resolved_db_path = resolve_db_path(db_path, config)
+    scope = resolve_scope(db_path, config)
     instruction_text = instructions()
-    if covers_several_databases(resolved_db_path, config, rag):
+    if covers_several_databases(scope, rag):
         instruction_text += several_databases_instructions()
     return RAGCapability(
-        db_path=resolved_db_path,
+        scope=scope,
         config=config,
         borrowed_rag=rag,
         state_type=RAGState,

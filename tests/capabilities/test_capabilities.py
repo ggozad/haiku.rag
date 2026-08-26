@@ -39,6 +39,7 @@ from haiku.rag.capabilities.ledger import (
 )
 from haiku.rag.capabilities.rag import AGENT_PREAMBLE, RAGCapability, RAGState
 from haiku.rag.capabilities.rag import create_capability as create_rag
+from haiku.rag.client.scope import DatabaseRef
 from haiku.rag.config.models import AppConfig, PromptsConfig
 from haiku.rag.sandbox import Sandbox, SandboxResult
 from haiku.rag.store.models.chunk import Chunk, SearchResult
@@ -91,26 +92,89 @@ def test_analysis_capability_api(temp_db_path):
     assert capability.request_limit == 30
 
 
+def _placed(capability) -> "Path | None":
+    """Where a capability covering one local database will open it."""
+    [ref] = capability.scope.databases
+    return ref.db_path
+
+
 def test_capability_factories_resolve_environment_and_defaults(
     temp_db_path, monkeypatch
 ):
     config = AppConfig()
     monkeypatch.setenv("HAIKU_RAG_DB", str(temp_db_path))
-    assert create_rag(config=config).db_path == temp_db_path
+    assert _placed(create_rag(config=config)) == temp_db_path
 
     monkeypatch.delenv("HAIKU_RAG_DB")
-    assert create_rag(config=config).db_path == (
+    assert _placed(create_rag(config=config)) == (
         config.storage.data_dir / "haiku.rag.lancedb"
     )
 
     for factory in (create_rag, create_analysis):
-        db_path = factory(db_path=str(temp_db_path), config=config).db_path
+        db_path = _placed(factory(db_path=str(temp_db_path), config=config))
         assert db_path == temp_db_path
         assert isinstance(db_path, Path)
 
     with patch("haiku.rag.config.get_config", return_value=config):
         assert create_rag().config is config
         assert create_analysis().config is config
+
+
+class TestACapabilityFollowsTheConfiguredLocation:
+    """A capability nobody handed a client opens one for itself, and has to open
+    the database the configuration places rather than the default directory."""
+
+    def _config(self, tmp_path, uri: str) -> AppConfig:
+        from haiku.rag.config.models import LanceDBConfig, StorageConfig
+
+        return AppConfig(
+            lancedb=LanceDBConfig(uri=uri),
+            storage=StorageConfig(data_dir=tmp_path / "elsewhere"),
+        )
+
+    def test_a_configured_uri_is_left_to_the_client(self, tmp_path):
+        """A path overrides a configured location, so manufacturing one would
+        send the capability to the default directory instead of the bucket."""
+        located = tmp_path / "notes.lancedb"
+        for factory in (create_rag, create_analysis):
+            [local] = factory(
+                config=self._config(tmp_path, str(located))
+            ).scope.databases
+            assert local == DatabaseRef.configured(None, str(located))
+
+            remote = self._config(tmp_path, "s3://bucket/one.lancedb")
+            [ref] = factory(config=remote).scope.databases
+            assert ref == DatabaseRef(None, "s3://bucket/one.lancedb", None)
+
+    @pytest.mark.asyncio
+    async def test_it_opens_the_database_the_uri_places(self, tmp_path):
+        from haiku.rag.client import HaikuRAG
+
+        located = tmp_path / "notes.lancedb"
+        config = self._config(tmp_path, str(located))
+        async with HaikuRAG(config=config, create=True):
+            pass
+
+        capability = create_rag(config=config)
+        rag = await capability._ensure_rag()
+        try:
+            assert rag.store.db_path == located
+        finally:
+            await capability._close()
+
+    def test_an_explicit_path_still_overrides_the_configured_uri(self, tmp_path):
+        config = self._config(tmp_path, str(tmp_path / "notes.lancedb"))
+        chosen = tmp_path / "chosen.lancedb"
+
+        assert _placed(create_rag(db_path=chosen, config=config)) == chosen
+
+    def test_the_environment_still_overrides_the_configured_uri(
+        self, tmp_path, monkeypatch
+    ):
+        config = self._config(tmp_path, "s3://bucket/one.lancedb")
+        monkeypatch.setenv("HAIKU_RAG_DB", str(tmp_path / "from-env.lancedb"))
+
+        assert _placed(create_rag(config=config)) == tmp_path / "from-env.lancedb"
 
 
 @pytest.mark.asyncio

@@ -16,7 +16,7 @@ from haiku.rag.capabilities._base import (
     EvidenceState,
     RAGCapabilityBase,
     covers_several_databases,
-    resolve_db_path,
+    resolve_scope,
 )
 from haiku.rag.capabilities._tools import merge_results
 from haiku.rag.config.models import AppConfig
@@ -84,8 +84,8 @@ class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
         if self.sandbox is None:
             rag = await self._ensure_rag()
             assert self.state is not None
-            self.sandbox = Sandbox(
-                db_path=self.db_path,
+            self.sandbox = Sandbox._covering(
+                scope=self.scope,
                 config=self.config,
                 context=AnalysisContext(
                     filter=self.state.document_filter,
@@ -213,12 +213,12 @@ def create_capability(
 
         config = get_config()
     analysis_model = config.analysis.model or config.qa.model
-    resolved_db_path = resolve_db_path(db_path, config)
+    scope = resolve_scope(db_path, config)
     instruction_text = instructions()
-    if covers_several_databases(resolved_db_path, config, rag):
+    if covers_several_databases(scope, rag):
         instruction_text += several_databases_instructions()
     return AnalysisCapability(
-        db_path=resolved_db_path,
+        scope=scope,
         config=config,
         borrowed_rag=rag,
         state_type=AnalysisState,

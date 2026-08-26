@@ -34,6 +34,7 @@ from haiku.rag.capabilities._tools import (
 )
 from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord, EvidenceRef
 from haiku.rag.client import HaikuRAG, all_found
+from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.exceptions import AmbiguousCitationError
 from haiku.rag.store.models.chunk import SearchResult
@@ -87,20 +88,16 @@ def _nearest_known_id(chunk_id: str, known_ids: list[str]) -> str:
     return match[0] if match else chunk_id
 
 
-def resolve_db_path(db_path: Path | str | None, config: AppConfig) -> Path | None:
-    """The database a capability opens for itself, or None to let the client decide.
+def resolve_scope(db_path: Path | str | None, config: AppConfig) -> DatabaseScope:
+    """The databases a capability covers, resolved once at its entry point.
 
-    None where `lancedb.databases` names the databases: a path would name one of
-    them instead, and a capability nobody handed a client would search a single
-    database where the configuration says several.
+    ``HAIKU_RAG_DB`` is read here and nowhere else. ``DatabaseScope`` is
+    environment-agnostic on purpose, so honouring the variable inside it would
+    silently extend it to every other caller.
     """
-    if db_path is not None:
-        return Path(db_path)
-    if env_db := os.environ.get("HAIKU_RAG_DB"):
-        return Path(env_db).expanduser()
-    if config.lancedb.databases:
-        return None
-    return config.storage.data_dir / "haiku.rag.lancedb"
+    if db_path is None and (env_db := os.environ.get("HAIKU_RAG_DB")):
+        db_path = Path(env_db).expanduser()
+    return DatabaseScope.resolve(config, database_path=db_path)
 
 
 class EvidenceState(BaseModel):
@@ -134,18 +131,15 @@ class EvidenceState(BaseModel):
         self.searches.clear()
 
 
-def covers_several_databases(
-    db_path: Path | None, config: AppConfig, rag: "HaikuRAG | None"
-) -> bool:
+def covers_several_databases(scope: DatabaseScope, rag: "HaikuRAG | None") -> bool:
     """Whether the capability will read from more than one database.
 
-    What the configuration names is not what a capability opens: an explicit
-    `db_path` opens that one database, and a lent client already knows what it
-    covers. Instructions follow coverage, not configuration.
+    A lent client already covers what it covers; otherwise the scope says.
+    Instructions follow coverage, not configuration.
     """
     if rag is not None:
         return rag.covers_multiple
-    return db_path is None and len(config.lancedb.databases) > 1
+    return scope.covers_multiple
 
 
 def _awaits_the_model(messages: list[ModelMessage]) -> bool:
@@ -178,7 +172,7 @@ def _called_own_tool(messages: list[ModelMessage], tool_names: frozenset[str]) -
 
 @dataclass
 class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
-    db_path: Path | None
+    scope: DatabaseScope
     config: AppConfig
     state_type: type[StateT]
     state_namespace: str
@@ -415,7 +409,7 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
         if self.rag is None:
             async with self.resource_lock:
                 if self.rag is None:
-                    rag = HaikuRAG(self.db_path, config=self.config, read_only=True)
+                    rag = HaikuRAG._covering(self.scope, self.config, read_only=True)
                     await rag.__aenter__()
                     self.rag = rag
         return self.rag
@@ -644,5 +638,5 @@ __all__ = [
     "CodeExecutionEntry",
     "RAGCapabilityBase",
     "covers_several_databases",
-    "resolve_db_path",
+    "resolve_scope",
 ]

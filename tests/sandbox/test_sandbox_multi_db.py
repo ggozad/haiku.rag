@@ -3,6 +3,7 @@ import shutil
 import pytest
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.client.scope import DatabaseRef, DatabaseScope
 from haiku.rag.sandbox import AnalysisContext, Sandbox
 from tests.test_multi_db import _config, _seed
 
@@ -10,7 +11,7 @@ from tests.test_multi_db import _config, _seed
 async def _mounted(rag, sources=None):
     """The sandbox's view of the corpus, and the sandbox itself."""
     sandbox = Sandbox(
-        db_path=rag._db_path,
+        db_path=None,
         config=rag._config,
         context=AnalysisContext(sources=sources),
         rag=rag,
@@ -80,6 +81,74 @@ class TestDocumentsAcrossDatabases:
                 assert owners[doc.id].source in content
 
 
+class TestTheSandboxConstructors:
+    """`Sandbox` is public and takes a path; `_covering` is for callers that
+    already resolved a scope, as `HaikuRAG._covering` is."""
+
+    @pytest.mark.asyncio
+    async def test_the_public_constructor_resolves_the_path_it_is_given(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+
+        sandbox = Sandbox(
+            db_path=tmp_path / "alpha.lancedb",
+            config=config,
+            context=AnalysisContext(),
+        )
+
+        assert sandbox._scope.databases == (DatabaseRef.at(tmp_path / "alpha.lancedb"),)
+
+    @pytest.mark.asyncio
+    async def test_no_path_covers_what_the_configuration_places(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+
+        sandbox = Sandbox(db_path=None, config=config, context=AnalysisContext())
+
+        assert sandbox._scope.names == ("alpha", "beta")
+
+    @pytest.mark.asyncio
+    async def test_covering_resolves_nothing_of_its_own(self, tmp_path, monkeypatch):
+        """Handed a scope, it must not reach resolution again: resolving twice
+        is what let a capability's databases and its sandbox's disagree."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        scope = DatabaseScope.resolve(config, database_name="alpha")
+
+        def _refuse(*args, **kwargs):
+            raise AssertionError("resolved a scope it was already given")
+
+        monkeypatch.setattr(DatabaseScope, "resolve", _refuse)
+        sandbox = Sandbox._covering(scope, config, AnalysisContext())
+
+        assert sandbox._scope is scope
+        assert sandbox._config is config
+
+
+class TestTheSandboxCoversWhatTheCapabilityCovers:
+    @pytest.mark.asyncio
+    async def test_the_capability_hands_over_the_scope_it_resolved(self, tmp_path):
+        """The capability resolved its databases once. Letting the sandbox
+        resolve them again from the same configuration reaches a different
+        answer wherever a path or the environment named one of a set."""
+        from haiku.rag.capabilities.analysis import AnalysisState, create_capability
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+
+        capability = create_capability(
+            db_path=tmp_path / "alpha.lancedb", config=config, defer_loading=False
+        )
+        capability.state = AnalysisState()
+
+        sandbox = await capability._ensure_sandbox()
+        try:
+            assert sandbox._scope is capability.scope
+            assert capability.scope.names == ()
+        finally:
+            await capability._close()
+
+
 class TestExecutingAcrossDatabases:
     @pytest.mark.asyncio
     async def test_code_reads_documents_from_every_database(self, tmp_path):
@@ -91,7 +160,7 @@ class TestExecutingAcrossDatabases:
 
         async with HaikuRAG(config=config) as rag:
             sandbox = Sandbox(
-                db_path=rag._db_path,
+                db_path=None,
                 config=rag._config,
                 context=AnalysisContext(),
                 rag=rag,
@@ -121,7 +190,7 @@ class TestExecutingAcrossDatabases:
             beta = (await rag.clients_for(["beta"]))[0]
             [outside] = await beta.document_repository.list_all(limit=1)
             sandbox = Sandbox(
-                db_path=rag._db_path,
+                db_path=None,
                 config=rag._config,
                 context=AnalysisContext(sources=["alpha"]),
                 rag=rag,

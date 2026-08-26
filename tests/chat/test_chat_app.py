@@ -90,9 +90,12 @@ def test_chat_capabilities_read_the_named_database(tmp_path, monkeypatch):
         run_chat(scope=DatabaseScope.resolve(config))
         [covering] = chat_app.call_args.kwargs["capabilities"]
 
-    assert named.db_path == tmp_path / "b.lancedb"
+    # The chat lends its own client, so this scope is the fallback: what matters
+    # is that it places the named database rather than the whole set.
+    [placed] = named.scope.databases
+    assert placed.db_path == tmp_path / "b.lancedb"
     assert named.config.lancedb.databases == {}
-    assert covering.db_path is None
+    assert covering.scope.names == ("a", "b")
     assert set(covering.config.lancedb.databases) == {"a", "b"}
 
 

@@ -143,10 +143,18 @@ Capabilities use a plain `state: dict[str, Any]` attribute on agent dependencies
 
 Applications serving AG-UI should adapt the agent with Pydantic AI's `AGUIAdapter`. Native model and tool events require no haiku.rag-specific bridge.
 
-## Database path
+## Which databases a capability covers
 
-Both factories resolve their database in this order:
+Both factories resolve this once, in order:
 
-1. The `db_path` argument.
-2. `HAIKU_RAG_DB`.
-3. `config.storage.data_dir / "haiku.rag.lancedb"`.
+1. The `db_path` argument, which covers that one database.
+2. `HAIKU_RAG_DB`, the same way.
+3. [`lancedb.databases`](../configuration/storage.md#several-databases), covering the
+   whole configured set. A capability covering several says so in its instructions, so
+   the model can attribute evidence to one while it answers.
+4. [`lancedb.uri`](../configuration/storage.md#changing-the-default-database-path),
+   covering the one database it places.
+5. `config.storage.data_dir / "haiku.rag.lancedb"`.
+
+Passing a live client through `rag=` overrides all of it: the capability reads what that
+client covers, and never closes it.

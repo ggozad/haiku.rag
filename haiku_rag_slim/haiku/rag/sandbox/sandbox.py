@@ -5,7 +5,6 @@ from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from itertools import zip_longest
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import pydantic_monty
@@ -23,9 +22,10 @@ from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX, DocumentItem
 
 if TYPE_CHECKING:
-    from pathlib import PurePosixPath
+    from pathlib import Path, PurePosixPath
 
     from haiku.rag.client import HaikuRAG
+    from haiku.rag.client.scope import DatabaseScope
 
 
 @dataclass
@@ -138,7 +138,7 @@ class Sandbox:
     each read opens an ephemeral read-only connection.
     """
 
-    _db_path: Path | None
+    _scope: "DatabaseScope"
     _config: AppConfig
     _context: AnalysisContext
     _rag: "HaikuRAG | None"
@@ -157,13 +157,52 @@ class Sandbox:
 
     def __init__(
         self,
-        db_path: Path | None,
+        db_path: "Path | str | None",
         config: AppConfig,
         context: AnalysisContext,
         rag: "HaikuRAG | None" = None,
         lock: "asyncio.Lock | None" = None,
     ):
-        self._db_path = db_path
+        from haiku.rag.client.scope import DatabaseScope
+
+        self._configure(
+            DatabaseScope.resolve(config, database_path=db_path),
+            config,
+            context,
+            rag,
+            lock,
+        )
+
+    @classmethod
+    def _covering(
+        cls,
+        scope: "DatabaseScope",
+        config: AppConfig,
+        context: AnalysisContext,
+        rag: "HaikuRAG | None" = None,
+        lock: "asyncio.Lock | None" = None,
+    ) -> "Sandbox":
+        """A sandbox over databases someone already resolved.
+
+        Internal: the public constructor takes a path and resolves it, which is
+        its own job. This is for callers that did the resolving, as
+        ``HaikuRAG._covering`` is. It sets the sandbox up directly rather than
+        through ``__init__``, so the scope it is handed is the only one resolved.
+        """
+        sandbox = cls.__new__(cls)
+        sandbox._configure(scope, config, context, rag, lock)
+        return sandbox
+
+    def _configure(
+        self,
+        scope: "DatabaseScope",
+        config: AppConfig,
+        context: AnalysisContext,
+        rag: "HaikuRAG | None",
+        lock: "asyncio.Lock | None",
+    ) -> None:
+        """The state every sandbox starts with, however its scope was reached."""
+        self._scope = scope
         self._config = config
         self._context = context
         self._rag = rag
@@ -202,7 +241,7 @@ class Sandbox:
             return
         from haiku.rag.client import HaikuRAG
 
-        async with HaikuRAG(self._db_path, config=self._config, read_only=True) as rag:
+        async with HaikuRAG._covering(self._scope, self._config, read_only=True) as rag:
             yield rag
 
     async def _documents(self) -> "tuple[list[Any], dict[str, HaikuRAG]]":

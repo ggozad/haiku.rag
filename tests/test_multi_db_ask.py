@@ -512,7 +512,7 @@ class TestStandaloneCapabilities:
         await _seed(config, "beta", ["beta document about cats"])
 
         capability = create_capability(config=config, defer_loading=False)
-        assert capability.db_path is None
+        assert capability.scope.names == ("alpha", "beta")
         run = await capability.for_run(make_context(Deps()))
         try:
             formatted = await run._search("cats", limit=10)
