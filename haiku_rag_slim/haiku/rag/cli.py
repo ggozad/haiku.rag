@@ -59,7 +59,7 @@ def cli():
 
 # Module-level flags set by callback
 _read_only: bool = False
-_database: str | None = None
+_db_name: str | None = None
 
 
 def create_app(db: Path | None = None, *, covers_set: bool = False) -> "HaikuRAGApp":
@@ -70,7 +70,7 @@ def create_app(db: Path | None = None, *, covers_set: bool = False) -> "HaikuRAG
 
     Raises:
         AmbiguousDatabaseError: several databases are configured and this
-            command works on one, without `--db` or `--database` naming which.
+            command works on one, without `--db` or `--db-name` naming which.
     """
     from haiku.rag.app import HaikuRAGApp
 
@@ -86,24 +86,24 @@ def resolve_scope(
 ) -> "DatabaseScope":
     """The databases a command works on, resolved once.
 
-    The CLI decides only what it alone knows: that `--db` and `--database` are
+    The CLI decides only what it alone knows: that `--db` and `--db-name` are
     the same thing said twice, and whether this command can read more than one.
     Everything else — an unknown name, a legacy `uri`, the default location — is
     `DatabaseScope.resolve`'s to answer, so there is one table and not two.
     """
     from haiku.rag.client.scope import DatabaseScope
 
-    if db is not None and _database is not None:
+    if db is not None and _db_name is not None:
         raise AmbiguousDatabaseError(
-            "pass --db or --database, not both: they name the same thing"
+            "pass --db or --db-name, not both: they name the same thing"
         )
     scope = DatabaseScope.resolve(
-        get_config(), database_name=_database, database_path=db
+        get_config(), database_name=_db_name, database_path=db
     )
     if scope.covers_multiple and not covers_set:
         raise AmbiguousDatabaseError(
             f"lancedb.databases names {', '.join(sorted(scope.names))}; this "
-            "command works on a single database: pass --database NAME, or "
+            "command works on a single database: pass --db-name NAME, or "
             "--db PATH."
         )
     return scope
@@ -145,16 +145,16 @@ def main(
         "--read-only",
         help="Open database in read-only mode",
     ),
-    database: str | None = typer.Option(
+    db_name: str | None = typer.Option(
         None,
-        "--database",
+        "--db-name",
         help="Name of a database from lancedb.databases to work on",
     ),
 ):
     """haiku.rag CLI - Vector database RAG system"""
-    global _read_only, _database
+    global _read_only, _db_name
     _read_only = read_only
-    _database = database
+    _db_name = db_name
     # Load config from --config, local folder, or default directory
     config_path = find_config_file(cli_path=config)
     if config_path:

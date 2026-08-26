@@ -197,7 +197,7 @@ class TestDocumentsNameTheirDatabase:
 
     @pytest.mark.asyncio
     async def test_one_named_database_still_names_itself(self, tmp_path):
-        """`haiku-rag --database alpha list` opens one database, and its name is
+        """`haiku-rag --db-name alpha list` opens one database, and its name is
         the whole reason the option exists."""
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha one"])

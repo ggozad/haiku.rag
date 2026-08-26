@@ -249,7 +249,7 @@ class TestPlacingADatabase:
 
 
 class TestNamingOneOfTheSetOnTheCommandLine:
-    """`--database NAME` reaches the application layer as a name, and every
+    """`--db-name NAME` reaches the application layer as a name, and every
     client it opens has to honour it — one that ignores it covers the set and
     quietly answers from the wrong database."""
 

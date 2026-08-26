@@ -44,7 +44,7 @@ def run_chat(
 
     # The capabilities read the databases the scope covers, not whatever the
     # configuration happens to name: `--db PATH` would otherwise leave them on
-    # the default database, and `--database NAME` on the whole set.
+    # the default database, and `--db-name NAME` on the whole set.
     if scope.covers_multiple:
         capability_config, capability_db_path = config, None
     else:

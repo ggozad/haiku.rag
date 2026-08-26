@@ -273,6 +273,13 @@ the same queries: retrieval MAP 0.9914 with a reranker against 0.9918 for the
 same corpus in a single database, and 0.6044 without one against 0.9798. The cost
 is that a reranker scores candidates in proportion to the number of databases.
 
+Without one, consider raising `search.limit` with the number of databases
+searched. Each contributes its own best matches to a list that is then truncated
+at the limit, so with three full rankings and a limit of 5 any one database may
+contribute only one or two results. Raising the limit raises what the caller and
+the model receive, since without a reranker nothing is over-fetched to absorb
+it.
+
 Creating names a database: `create=True` on a client covering the set raises
 `AmbiguousDatabaseError`, and `HaikuRAG(config=config, create=True,
 sources=["name"])` creates that one.
@@ -292,21 +299,21 @@ from a complete one.
 Commands fall into three groups:
 
 - **Set-capable**: `search`, `ask`, `analyze` and `chat` cover the whole
-  configured set, or the subset named by `--database`.
+  configured set, or the subset named by `--db-name`.
 - **Config-only**: `settings`, `init-config` and `download-models` open no
   database, so the set is irrelevant to them.
 - **Single-database**: everything else — document writes, `rebuild`, `vacuum`,
   `migrate`, `init`, `info`, `history`, `tag`, `doctor`, `list`, `inspect`,
   `visualize` and `mcp` — works on one database, named with the global
-  `--database` option.
+  `--db-name` option.
 
 ```bash
 haiku-rag search "query"                  # every configured database
-haiku-rag --database medic list           # one of them
-haiku-rag --database medic migrate
+haiku-rag --db-name medic list           # one of them
+haiku-rag --db-name medic migrate
 ```
 
-`--database` takes a name from `lancedb.databases`, which is how a database
+`--db-name` takes a name from `lancedb.databases`, which is how a database
 behind a URI is reached. `--db` takes a path, and overrides the configured
 location with that one database. A single-database command given neither fails
 rather than choosing for you, unless `lancedb.databases` names exactly one: a
@@ -315,8 +322,8 @@ set of one is unambiguous and is used, keeping its configured name.
 Each database is created, migrated and vacuumed on its own:
 
 ```bash
-haiku-rag --database medic init
-haiku-rag --database st init
+haiku-rag --db-name medic init
+haiku-rag --db-name st init
 ```
 
 ## Vector Indexing

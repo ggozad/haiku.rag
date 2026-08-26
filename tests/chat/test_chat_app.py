@@ -63,7 +63,7 @@ def test_run_chat_covers_a_configured_set(tmp_path, monkeypatch):
 
 
 def test_chat_capabilities_read_the_named_database(tmp_path, monkeypatch):
-    """`--db PATH` and `--database NAME` have to reach the capabilities too, or
+    """`--db PATH` and `--db-name NAME` have to reach the capabilities too, or
     they answer from the default database or the whole set."""
     import haiku.rag.config as config_module
     from haiku.rag.client.scope import DatabaseScope
