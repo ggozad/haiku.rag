@@ -11,6 +11,7 @@ from rich.console import Console
 
 from haiku.rag.app import HaikuRAGApp
 from haiku.rag.client import RebuildMode
+from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.config.models import (
     AppConfig,
     LanceDBConfig,
@@ -198,6 +199,34 @@ async def test_search_prints_results(app, client):
 
     client.search.assert_awaited_once_with("q", limit=3, filter=None, search_type=None)
     assert "hit one" in out(app)
+
+
+async def test_a_result_names_its_database_only_across_several(tmp_path):
+    """The label answers what this operation covers, not what is configured:
+    after narrowing to one, the caller has already named it."""
+    config = AppConfig(
+        lancedb=LanceDBConfig(
+            databases={
+                "alpha": str(tmp_path / "a.lancedb"),
+                "beta": str(tmp_path / "b.lancedb"),
+            }
+        )
+    )
+    hit = SearchResult(content="hit", score=0.9, chunk_id="c1", source="alpha")
+
+    covering = HaikuRAGApp(scope=DatabaseScope.resolve(config), config=config)
+    covering.console = Console(record=True, width=200)
+    covering._rich_print_search_result(hit)
+    assert "database: alpha" in covering.console.export_text()
+
+    narrowed = HaikuRAGApp(
+        scope=DatabaseScope.resolve(config, database_name="alpha"), config=config
+    )
+    narrowed.console = Console(record=True, width=200)
+    narrowed._rich_print_search_result(hit)
+    printed = narrowed.console.export_text()
+    assert "hit" in printed
+    assert "database:" not in printed
 
 
 async def test_search_by_image_reads_the_bytes(app, client, tmp_path):

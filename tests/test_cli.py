@@ -749,12 +749,13 @@ class TestRenderingTheDatabase:
 
     @staticmethod
     def _app(tmp_path, **databases):
+        """An app over the configured set. The scope is what decides the label,
+        so it has to be the one the configuration resolves to."""
         from haiku.rag.app import HaikuRAGApp
+        from haiku.rag.client.scope import DatabaseScope
 
-        return HaikuRAGApp(
-            scope=for_path(tmp_path / "unused"),
-            config=AppConfig(lancedb=LanceDBConfig(databases=databases)),
-        )
+        config = AppConfig(lancedb=LanceDBConfig(databases=databases))
+        return HaikuRAGApp(scope=DatabaseScope.resolve(config), config=config)
 
     @staticmethod
     def _rendered(app, result) -> str:

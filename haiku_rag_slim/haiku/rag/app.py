@@ -891,7 +891,7 @@ class HaikuRAGApp:
             f"[repr.attrib_name]chunk_id[/repr.attrib_name]: {result.chunk_id} "
             f"[repr.attrib_name]score[/repr.attrib_name]: {result.score:.4f}"
         )
-        if result.source and len(self.config.lancedb.databases) > 1:
+        if result.source and self.scope.covers_multiple:
             self.console.print(
                 f"[repr.attrib_name]database[/repr.attrib_name]: {result.source}"
             )
