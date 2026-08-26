@@ -1,8 +1,14 @@
 import hashlib
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
+from datasets import Dataset
+from pydantic_evals import Case
+
+from evaluations.config import DatasetSpec, ScopedQuestion
+from evaluations.evaluators.multidb import MultiDBScores
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 
@@ -416,3 +422,372 @@ if __name__ == "__main__":  # pragma: no cover - operator entry point
     import asyncio
 
     asyncio.run(main())
+
+
+# --- question families -------------------------------------------------------
+#
+# B-family runs against both capabilities, S-family against analysis only, so
+# they are registered as two dataset keys: a surface question cannot pass under
+# the RAG target, and scoring it there would be noise rather than a finding.
+
+UNIQUE_STATIONS = tuple(
+    s
+    for s in STATIONS
+    if s.name != SHARED_STATION and not any(s.name in pair for pair in NEAR_NAME_PAIRS)
+)
+
+
+def _row(
+    question_id: str,
+    family: str,
+    question: str,
+    *,
+    sources: list[str] | None = None,
+    scope: list[str] | None = None,
+    expected_value: float | None = None,
+    expected_values: list[float] | None = None,
+    distractor_value: float | None = None,
+    expected_ordered: list[str] | None = None,
+    forbidden_text: list[str] | None = None,
+    expected_sources: list[str] | None = None,
+    answerability: str = "ANSWERABLE",
+) -> dict:
+    return {
+        "id": question_id,
+        "family": family,
+        "question": question,
+        "sources": sources,
+        "scope": scope,
+        "expected_value": expected_value,
+        "expected_values": expected_values,
+        "distractor_value": distractor_value,
+        "expected_ordered": expected_ordered,
+        "forbidden_text": forbidden_text,
+        "expected_sources": expected_sources,
+        "answerability": answerability,
+    }
+
+
+def _twin_of(name: str) -> str:
+    for north, south in NEAR_NAME_PAIRS:
+        if name == north:
+            return south
+        if name == south:
+            return north
+    raise KeyError(name)
+
+
+def behaviour_rows() -> list[dict]:
+    rows: list[dict] = []
+
+    # B1 — a fact held by exactly one database.
+    for i, s in enumerate(UNIQUE_STATIONS[:3]):
+        rows.append(
+            _row(
+                f"b1-{i}",
+                "B1",
+                f"At what elevation in metres does Station {s.name} sit?",
+                expected_value=s.elevation_m,
+                expected_sources=[s.database],
+            )
+        )
+
+    # B2 — a fact from each database in one answer. RRF ties resolve to the
+    # order the databases are listed, so the order is rotated across instances:
+    # otherwise the family measures ordering rather than fusion.
+    order = list(DATABASE_NAMES)
+    for i, (north_name, south_name) in enumerate(NEAR_NAME_PAIRS):
+        north, south = station(north_name, NORTHERN), station(south_name, SOUTHERN)
+        higher = north if north.elevation_m > south.elevation_m else south
+        rotated = order[i % len(order) :] + order[: i % len(order)]
+        rows.append(
+            _row(
+                f"b2-{i}",
+                "B2",
+                f"Which sits higher, Station {north.name} or Station {south.name}, "
+                "and at what elevation in metres?",
+                sources=rotated,
+                expected_value=higher.elevation_m,
+                expected_sources=[NORTHERN, SOUTHERN],
+            )
+        )
+
+    # B3 — the near-name distractor. Gold present and the twin's number absent,
+    # because a hedge naming both is the failure this family exists to catch.
+    for i, (north_name, south_name) in enumerate(NEAR_NAME_PAIRS):
+        for name, db in ((north_name, NORTHERN), (south_name, SOUTHERN)):
+            s = station(name, db)
+            twin = station(_twin_of(name), SOUTHERN if db == NORTHERN else NORTHERN)
+            rows.append(
+                _row(
+                    f"b3-elev-{i}-{db}",
+                    "B3",
+                    f"At what elevation in metres does Station {s.name} sit?",
+                    expected_value=s.elevation_m,
+                    distractor_value=twin.elevation_m,
+                    expected_sources=[db],
+                )
+            )
+        north = station(north_name, NORTHERN)
+        twin = station(south_name, SOUTHERN)
+        rows.append(
+            _row(
+                f"b3-year-{i}",
+                "B3",
+                f"In what year was Station {north.name} commissioned?",
+                expected_value=north.commissioned,
+                distractor_value=twin.commissioned,
+                expected_sources=[NORTHERN],
+            )
+        )
+
+    # B4 — scoped. Half the instances ask about a near-name pair member with the
+    # twin excluded, so honouring scope costs the model the other strong match.
+    for i, (north_name, south_name) in enumerate(NEAR_NAME_PAIRS):
+        for name, db in ((north_name, NORTHERN), (south_name, SOUTHERN)):
+            s = station(name, db)
+            rows.append(
+                _row(
+                    f"b4-pair-{i}-{db}",
+                    "B4",
+                    f"At what elevation in metres does Station {s.name} sit?",
+                    sources=[db],
+                    scope=[db],
+                    expected_value=s.elevation_m,
+                    expected_sources=[db],
+                )
+            )
+    for i, s in enumerate(UNIQUE_STATIONS[:4]):
+        rows.append(
+            _row(
+                f"b4-unique-{i}",
+                "B4",
+                f"In what year was Station {s.name} commissioned?",
+                sources=[s.database],
+                scope=[s.database],
+                expected_value=s.commissioned,
+                expected_sources=[s.database],
+            )
+        )
+
+    # B5 — one entity in both databases, unscoped: both must surface and both
+    # must be attributed.
+    north, south = station(SHARED_STATION, NORTHERN), station(SHARED_STATION, SOUTHERN)
+    rows.append(
+        _row(
+            "b5-years",
+            "B5",
+            f"In what years was Station {SHARED_STATION} commissioned? There is a "
+            "station of that name in more than one programme.",
+            expected_values=[north.commissioned, south.commissioned],
+            expected_sources=[NORTHERN, SOUTHERN],
+        )
+    )
+    rows.append(
+        _row(
+            "b5-elevations",
+            "B5",
+            f"At what elevations do the stations named {SHARED_STATION} sit?",
+            expected_values=[north.elevation_m, south.elevation_m],
+            expected_sources=[NORTHERN, SOUTHERN],
+        )
+    )
+    rows.append(
+        _row(
+            "b5-programmes",
+            "B5",
+            f"Which programmes operate a Station {SHARED_STATION}?",
+            expected_ordered=[NORTHERN_PROGRAMME],
+            expected_sources=[NORTHERN, SOUTHERN],
+        )
+    )
+
+    # B6 — absent stations. Judge-scored, because a deterministic refusal matcher
+    # keys on phrasing the model may never use.
+    for i, absent in enumerate(("Cormorant", "Razorbill", "Kittiwake")):
+        rows.append(
+            _row(
+                f"b6-{i}",
+                "B6",
+                f"At what elevation in metres does Station {absent} sit?",
+                answerability="UNANSWERABLE",
+            )
+        )
+
+    # B7 — empty scope covers no database, so there is no evidence to answer
+    # from. API-only: the CLI has no --sources.
+    for i, s in enumerate(UNIQUE_STATIONS[:3]):
+        rows.append(
+            _row(
+                f"b7-{i}",
+                "B7",
+                f"At what elevation in metres does Station {s.name} sit?",
+                sources=[],
+                scope=[],
+                answerability="UNANSWERABLE",
+            )
+        )
+    return rows
+
+
+def surface_rows() -> list[dict]:
+    rows: list[dict] = []
+
+    # S1 — inventory per database. Counts differ, so a count cannot be right by
+    # luck while attribution is wrong.
+    for name in DATABASE_NAMES:
+        rows.append(
+            _row(
+                f"s1-{name}",
+                "S1",
+                f"How many documents does the {name} database hold?",
+                expected_value=len(documents_for(name)),
+            )
+        )
+
+    # S2 — a scoped search per programme, run in code.
+    for programme, db in (
+        (NORTHERN_PROGRAMME, NORTHERN),
+        (SOUTHERN_PROGRAMME, SOUTHERN),
+    ):
+        for model in ("Vaisala WXT536", "Young 81000V"):
+            count = sum(1 for s in stations_in(db) if s.instrument == model)
+            rows.append(
+                _row(
+                    f"s2-{db}-{model.split()[0].lower()}",
+                    "S2",
+                    f"How many stations in the {programme} use a {model}?",
+                    expected_value=count,
+                )
+            )
+
+    # S3 — a whole-document surface. No single chunk holds all twelve readings
+    # (asserted at build time), so the total cannot come from search alone.
+    for name, db in (("Kestrel", NORTHERN), ("Auk", NORTHERN), ("Snowcap", SOUTHERN)):
+        s = station(name, db)
+        rows.append(
+            _row(
+                f"s3-{db}-{s.slug}",
+                "S3",
+                f"What is the total of the twelve monthly mean wind speeds in the "
+                f"report for Station {s.name} in the {db} database?",
+                expected_value=s.readings_total,
+            )
+        )
+
+    # S4 — structure: the table's row count, which needs the itemised document.
+    for name, db in (("Kestrel", NORTHERN), ("Albatross", SOUTHERN)):
+        s = station(name, db)
+        rows.append(
+            _row(
+                f"s4-{db}-{s.slug}",
+                "S4",
+                f"How many data rows does the monthly readings table in the report "
+                f"for Station {s.name} have?",
+                expected_value=len(MONTHS),
+            )
+        )
+
+    # S5 — the outline, in document order.
+    for name, db in (("Kestrel", NORTHERN), ("Snowcap", SOUTHERN)):
+        s = station(name, db)
+        rows.append(
+            _row(
+                f"s5-{db}-{s.slug}",
+                "S5",
+                f"List the section headings of the report for Station {s.name}, in "
+                "the order they appear.",
+                expected_ordered=[
+                    "Overview",
+                    "Instruments",
+                    "Measurements",
+                    "Maintenance",
+                ],
+            )
+        )
+
+    # S6 — per-document metadata, with the twin's uri forbidden.
+    for north_name, south_name in NEAR_NAME_PAIRS[:2]:
+        s = station(north_name, NORTHERN)
+        twin = station(south_name, SOUTHERN)
+        rows.append(
+            _row(
+                f"s6-{s.slug}",
+                "S6",
+                f"What is the uri of the document titled {s.title!r}, and which "
+                "database holds it?",
+                expected_ordered=[s.uri],
+                forbidden_text=[twin.uri],
+            )
+        )
+    return rows
+
+
+def load_behaviour_questions() -> Dataset:
+    return Dataset.from_list(behaviour_rows())
+
+
+def load_surface_questions() -> Dataset:
+    return Dataset.from_list(surface_rows())
+
+
+def build_multidb_case(index: int, row: Mapping[str, Any]) -> Case[Any, Any, dict]:
+    """One case. A scope travels in the inputs, since the task function receives
+    a case's inputs and never its metadata."""
+    question = str(row["question"])
+    sources = row["sources"]
+    inputs: str | ScopedQuestion = (
+        question
+        if sources is None
+        else ScopedQuestion(question=question, sources=list(sources))
+    )
+    metadata = {
+        "question_id": str(row["id"]),
+        "family": str(row["family"]),
+        "case_index": str(index),
+        "answerability": row["answerability"],
+    }
+    for key in (
+        "expected_value",
+        "expected_values",
+        "distractor_value",
+        "expected_ordered",
+        "forbidden_text",
+        "expected_sources",
+        "scope",
+    ):
+        if row[key] is not None:
+            metadata[key] = row[key]
+    return Case(
+        name=f"{index}_{row['id']}",
+        inputs=inputs,
+        expected_output=None,
+        metadata=metadata,
+    )
+
+
+def _unused_document_loader() -> Dataset:  # pragma: no cover - never called
+    raise RuntimeError(
+        "the multi-database corpus is built by build_databases(); run with --skip-db"
+    )
+
+
+MULTIDB_SPEC = DatasetSpec(
+    key="multidb",
+    db_filename="multidb_northern.lancedb",
+    document_loader=_unused_document_loader,
+    document_mapper=lambda _row: None,
+    qa_loader=load_behaviour_questions,
+    qa_case_builder=build_multidb_case,
+    qa_evaluator=MultiDBScores(),
+)
+
+MULTIDB_SURFACES_SPEC = DatasetSpec(
+    key="multidb_surfaces",
+    db_filename="multidb_northern.lancedb",
+    document_loader=_unused_document_loader,
+    document_mapper=lambda _row: None,
+    qa_loader=load_surface_questions,
+    qa_case_builder=build_multidb_case,
+    qa_evaluator=MultiDBScores(),
+)

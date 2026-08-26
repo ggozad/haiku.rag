@@ -15,7 +15,7 @@ from evaluations.capability_runner import (
     run_capability_conversation,
     run_capability_question,
 )
-from evaluations.config import ConversationInput, DatasetSpec
+from evaluations.config import ConversationInput, DatasetSpec, ScopedQuestion
 from evaluations.evaluators import (
     ANSWER_EQUIVALENCE_RUBRIC,
     REFUSAL_ELIGIBLE_LABELS,
@@ -344,10 +344,15 @@ async def run_qa_benchmark(
         name=spec.key, cases=cases, evaluators=evaluators
     )
 
-    async def answer_question(inputs: str | ConversationInput) -> str:
+    async def answer_question(inputs: str | ConversationInput | ScopedQuestion) -> str:
+        sources: list[str] | None = None
         if isinstance(inputs, ConversationInput):
             question = inputs.question
             message_history = prefix_to_messages(inputs.prefix)
+        elif isinstance(inputs, ScopedQuestion):
+            question = inputs.question
+            sources = inputs.sources
+            message_history = None
         else:
             question = inputs
             message_history = None
@@ -359,6 +364,7 @@ async def run_qa_benchmark(
             capability_model=run.capability_model,
             document_filter=document_filter,
             message_history=message_history,
+            sources=sources,
         )
         set_eval_attribute("cited_uris", result.cited_uris)
         set_eval_attribute("cited_chunk_ids", result.cited_chunk_ids)

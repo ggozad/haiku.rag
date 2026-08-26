@@ -2,6 +2,7 @@ from evaluations.config import DatasetSpec
 
 from .frames import FRAMES_SPEC
 from .hotpotqa import HOTPOTQA_SPEC
+from .multidb import MULTIDB_SPEC, MULTIDB_SURFACES_SPEC
 from .mtrag import (
     MTRAG_CLAPNQ_LIVE_SPEC,
     MTRAG_CLAPNQ_LIVE_UNCOMPACTED_SPEC,
@@ -24,6 +25,8 @@ DATASETS: dict[str, DatasetSpec] = {
         MTRAG_CLAPNQ_REWRITE_SPEC,
         MTRAG_CLAPNQ_LIVE_SPEC,
         MTRAG_CLAPNQ_LIVE_UNCOMPACTED_SPEC,
+        MULTIDB_SPEC,
+        MULTIDB_SURFACES_SPEC,
         ORB_TEXT_SPEC,
         ORB_MULTIMODAL_SPEC,
         ORB_MULTIMODAL_NEMOTRON_SPEC,

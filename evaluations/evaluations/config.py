@@ -38,6 +38,18 @@ class ConversationInput(BaseModel):
         return "\n".join(f"{turn.speaker}: {turn.text}" for turn in self.turns)
 
 
+class ScopedQuestion(BaseModel):
+    """A question and the databases it may draw on.
+
+    The task function receives only a case's inputs, never its metadata, so a
+    per-case scope has to travel in the inputs. `sources=[]` covers no database
+    and `None` covers every one the client covers.
+    """
+
+    question: str
+    sources: list[str] | None = None
+
+
 @dataclass
 class DocumentPayload:
     uri: str
