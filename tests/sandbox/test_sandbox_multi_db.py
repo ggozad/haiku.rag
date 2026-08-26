@@ -5,7 +5,7 @@ import pytest
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.scope import DatabaseRef, DatabaseScope
 from haiku.rag.sandbox import AnalysisContext, Sandbox
-from tests.test_multi_db import _config, _seed
+from tests.multi_db.helpers import _config, _seed
 
 
 async def _mounted(rag, sources=None):
