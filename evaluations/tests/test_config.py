@@ -161,7 +161,7 @@ class TestCoversASet:
             lancedb=LanceDBConfig(databases={"a": "/a.lancedb", "b": "/b.lancedb"})
         )
 
-        assert spec.covers_a_set(config) is True
+        assert spec.uses_configured_databases(config) is True
 
     def test_a_named_path_overrides_the_set(self):
         """`--db` is documented as an override, so it names the one database to
@@ -177,7 +177,7 @@ class TestCoversASet:
             lancedb=LanceDBConfig(databases={"a": "/a.lancedb", "b": "/b.lancedb"})
         )
 
-        assert spec.covers_a_set(config, _Path("/chosen.lancedb")) is False
+        assert spec.uses_configured_databases(config, _Path("/chosen.lancedb")) is False
 
     def test_one_database_is_not_a_set(self):
         from haiku.rag.config.models import AppConfig
@@ -186,4 +186,4 @@ class TestCoversASet:
 
         spec = next(iter(DATASETS.values()))
 
-        assert spec.covers_a_set(AppConfig()) is False
+        assert spec.uses_configured_databases(AppConfig()) is False

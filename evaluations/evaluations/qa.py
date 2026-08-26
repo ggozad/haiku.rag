@@ -252,7 +252,9 @@ def _prepare_qa_run(
 
     return _QARun(
         cases=cases,
-        db=None if spec.covers_a_set(config, db_path) else spec.db_path(db_path),
+        db=None
+        if spec.uses_configured_databases(config, db_path)
+        else spec.db_path(db_path),
         judge_config=judge_config,
         eval_name=eval_name,
         experiment_metadata=experiment_metadata,

@@ -83,12 +83,14 @@ class DatasetSpec:
     compaction: bool = False
     experiment_metadata: dict[str, Any] | None = None
 
-    def covers_a_set(self, config, override_path: Path | None = None) -> bool:
-        """Whether `lancedb.databases` names the databases to evaluate over.
+    def uses_configured_databases(
+        self, config, override_path: Path | None = None
+    ) -> bool:
+        """Whether `lancedb.databases` places the databases to evaluate over.
 
-        A path names one database and wins over the configured set, both when it
-        comes from `--db` and when the client resolves it, so a run over a set is
-        one where the configuration names several and nobody named a path.
+        A path names one database and wins over the configuration, both when it
+        comes from `--db` and when the client resolves it. True for a mapping of
+        one, which is a configured database like any other and keeps its name.
         """
         return bool(config.lancedb.databases) and override_path is None
 
