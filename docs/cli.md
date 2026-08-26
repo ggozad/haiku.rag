@@ -20,15 +20,15 @@ The `haiku-rag` CLI provides complete document management functionality.
     haiku-rag --config /path/to/config.yaml list
     haiku-rag --config /path/to/config.yaml list --db /path/to/custom.db
     haiku-rag --read-only search "query"
-    haiku-rag --db-name medic list
+    haiku-rag --db-name papers list
     haiku-rag add -h
     ```
 
-    With `lancedb.databases` configured, `search`, `ask`, `analyze` and `chat`
-    cover every database in it. `settings`, `init-config` and `download-models`
-    open no database at all. Every other command works on one, named with
-    `--db-name` or `--db`. See
-    [Several Databases](configuration/storage.md#several-databases).
+    With `lancedb.databases` configured, `search`, `ask`, `analyze`, and `chat`
+    use the full set by default. Select one database for other commands with
+    `--db-name` or `--db`. `settings`, `init-config`, and `download-models` do
+    not open a database. See
+    [Multiple Databases](configuration/storage.md#multiple-databases).
 
 ## Document Management
 

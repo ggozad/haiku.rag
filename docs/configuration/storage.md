@@ -80,7 +80,7 @@ lancedb:
 An explicit `--db PATH` overrides `lancedb.uri` for that invocation.
 
 This places one database without naming it. Its `source` is `None` in search
-results, citations and documents, since only [`lancedb.databases`](#several-databases)
+results, citations and documents, since only [`lancedb.databases`](#multiple-databases)
 assigns the names that carry provenance. A path here changes where the database
 lives, not what it is called.
 
@@ -198,132 +198,129 @@ The recommended layout for production is "different buckets, same account, separ
 
 Each process picks up its own credentials from the AWS default chain (env vars, IAM instance role, AWS profile), so no credentials are hard-coded in the configuration files.
 
-## Several Databases
+## Multiple Databases
 
-`lancedb.databases` maps a name to a location, for searching several databases at
-once:
+Use `lancedb.databases` to name local or remote databases that should be searched
+together:
 
 ```yaml
 lancedb:
   databases:
-    medic: s3://my-bucket/medic.lancedb
-    st: s3://my-bucket/st.lancedb
-    local: /data/notes.lancedb
+    papers: s3://my-bucket/papers.lancedb
+    wiki: s3://my-bucket/wiki.lancedb
+    notes: /data/notes.lancedb
 ```
 
-A location is a URI or a local path. `databases` and `uri` are mutually
-exclusive, and setting both fails validation.
+A location can be a URI or local path. `databases` and `uri` are mutually
+exclusive.
 
-Results, citations, model input and errors opening a named database carry the
-configured name rather than the location, so a path or a bucket does not reach a
-trace or a model. Commands that report on a database — `info`, `init`, `tag` —
-print its location, as does an error about a path.
+Results, documents, citations, and model context use the configured name as
+`source`. Commands such as `info` and path-related errors still show locations.
 
-Every database in the set is opened with the same embedding configuration. A
-different `vector_dim` raises `ConfigMismatchError` on open. A different provider
-or model name at the same dimension is a warning on a read-only open, since the
-same model served by another stack is spelled differently, and raises on a
-writable one.
+All databases in a search must use compatible embeddings because the query is
+embedded once. A dimension mismatch raises `ConfigMismatchError`. A provider or
+model-name mismatch at the same dimension warns in read-only mode and raises in
+writable mode.
 
-Searching embeds the query once for the whole selection, so the databases
-searched together must have been written with the same embedder. Two that
-disagree with each other raise `ConfigMismatchError` naming both, whatever the
-configuration says.
+### Search and Provenance
 
-### Searching a set
-
-`search`, `ask` and `analyze` cover the whole set, or the subset named by
-`sources`:
+`search`, `ask`, and `analyze` use the full set by default. Pass `sources` to
+select a subset:
 
 ```python
 results = await client.search("query")                     # every database
-results = await client.search("query", sources=["medic"])   # one of them
+results = await client.search("query", sources=["papers"])   # one of them
 ```
 
-Candidates from each database are fused into one ranked list, by the configured
-reranker where there is one and by reciprocal rank fusion otherwise. Each result
-carries `source`, the name of the database it came from, and so does each
-citation. A document from `list_documents`, `get_document_by_id`,
-`get_document_by_uri` or `resolve_document` carries it too, and a database
-named in `lancedb.databases` keeps that name even when it is the only one a
-client covers. Only a database placed by `lancedb.uri`, which names none, has no
-name to carry. The CLI does not print the name of a single database it was told
-to use, since the caller just named it.
+Candidates are combined into one ranked list with the configured reranker, or
+with reciprocal rank fusion when reranking is disabled. `SearchResult.source`,
+`Citation.source`, and `Document.source` contain the configured database name.
+The name is retained when a client covers only one named database. Databases
+configured through `lancedb.uri` are unnamed, so their `source` is `None`.
 
-Chunk ids are unique within a database and say nothing across them, so a database
-copied from another holds the same ids. Results are told apart by the database
-and the id together. A chunk id held by two of the databases searched cannot be
-cited: `resolve_citations` raises `AmbiguousCitationError`, and the capability
-asks the model for other evidence instead.
+The CLI labels results and citations only when the operation spans multiple
+databases. A command already narrowed with `--db-name` does not repeat the name
+on every result.
 
-Document ids behave the same way, and two places treat a collision differently.
-The analysis sandbox mounts one document per id and refuses a set where two
-databases claim one, since the mount has a single path per id. The chat document
-filter does not: it selects by document id and applies `id IN (...)` to every
-covered database, so selecting an id that exists in copies of a database matches
-the document in each of them. Independently built databases use UUID document
-ids and do not collide.
+#### Duplicate IDs
 
-**Configure a reranker when searching several databases.** Reciprocal rank fusion
-compares ranks, not scores, so every database contributes its own best matches
-whether or not they are relevant to the question, and results from databases
-holding nothing relevant displace better ones. A reranker scores the whole union
-instead, which removes the effect. Measured on one corpus split three ways, with
-the same queries: retrieval MAP 0.9914 with a reranker against 0.9918 for the
-same corpus in a single database, and 0.6044 without one against 0.9798. The cost
-is that a reranker scores candidates in proportion to the number of databases.
+IDs are unique within a database, not across databases. Copies of a database
+therefore retain the same IDs. Citation resolution raises
+`AmbiguousCitationError` when a cited chunk ID exists in more than one selected
+database; a shared ID that nothing cites is ignored. The analysis sandbox
+rejects shared document IDs because its mount path is `/documents/{id}/`.
 
-Without one, consider raising `search.limit` with the number of databases
-searched. Each contributes its own best matches to a list that is then truncated
-at the limit, so with three full rankings and a limit of 5 any one database may
-contribute only one or two results. Raising the limit raises what the caller and
-the model receive, since without a reranker nothing is over-fetched to absorb
-it.
+The chat document filter selects by document ID and applies `id IN (...)` to
+every covered database, so selecting an ID that copies share matches the
+document in each of them.
 
-Creating names a database: `create=True` on a client covering the set raises
-`AmbiguousDatabaseError`, and `HaikuRAG(config=config, create=True,
-sources=["name"])` creates that one.
+#### Ranking
 
-Converting, chunking and title generation are functions of the configuration
-rather than of a database, so they work on a client covering the set. Writing,
-rebuilding and vacuuming name one database: asking a set-covering client raises
-`AmbiguousDatabaseError`, and `client.clients_for(["name"])` returns a client for
-one of them, writable when the covering client is.
+Configure a reranker when searching multiple databases. Reciprocal rank fusion
+compares positions rather than scores, so each database contributes top-ranked
+results even when another database has stronger matches. A reranker scores the
+combined candidate set directly.
 
-A database that cannot be opened fails the whole query and is named in the error.
-A result set silently missing one of the databases asked for cannot be told apart
-from a complete one.
+In a 3,045-query evaluation over a corpus split across three databases,
+reranking produced retrieval MAP 0.9914, compared with 0.9918 for the same corpus
+in one database. Without a reranker, MAP was 0.6044, compared with 0.9798 in one
+database. Reranking cost grows with the number of databases because each
+contributes candidates.
 
-### How commands treat the set
+Without a reranker, consider increasing `search.limit` with the number of
+databases. With three complete rankings and a limit of 5, a database may
+contribute only one or two results. A higher limit also sends more results to
+the caller and model.
 
-Commands fall into three groups:
+If any selected database fails to open, the operation fails and identifies that
+database.
 
-- **Set-capable**: `search`, `ask`, `analyze` and `chat` cover the whole
+### Python Operations
+
+Creating, writing, rebuilding, and vacuuming require one database. Calling these
+operations on a client that covers several raises `AmbiguousDatabaseError`.
+Select one at creation time or obtain a single-database client:
+
+```python
+async with HaikuRAG(config=config, create=True, sources=["papers"]) as papers:
+    ...
+
+async with HaikuRAG(config=config) as client:
+    papers = (await client.clients_for(["papers"]))[0]
+```
+
+Conversion, chunking, and title generation do not access a database and remain
+available on a multi-database client.
+
+### CLI Commands
+
+Commands use database sets as follows:
+
+- **Set-capable**: `search`, `ask`, `analyze`, and `chat` use the full
   configured set, or the subset named by `--db-name`.
-- **Config-only**: `settings`, `init-config` and `download-models` open no
-  database, so the set is irrelevant to them.
+- **Config-only**: `settings`, `init-config`, and `download-models` do not open
+  a database.
 - **Single-database**: everything else — document writes, `rebuild`, `vacuum`,
   `migrate`, `init`, `info`, `history`, `tag`, `doctor`, `list`, `inspect`,
-  `visualize` and `mcp` — works on one database, named with the global
+  `visualize`, and `mcp` — works on one database, selected with the global
   `--db-name` option.
 
 ```bash
-haiku-rag search "query"                  # every configured database
-haiku-rag --db-name medic list           # one of them
-haiku-rag --db-name medic migrate
+haiku-rag search "query"         # every configured database
+haiku-rag --db-name papers list  # one of them
+haiku-rag --db-name papers migrate
 ```
 
-`--db-name` takes a name from `lancedb.databases`, which is how a database
-behind a URI is reached. `--db` takes a path, and overrides the configured
-location with that one database. A single-database command given neither fails
-rather than choosing for you, unless `lancedb.databases` names exactly one: a
-set of one is unambiguous and is used, keeping its configured name.
+`--db-name` selects an entry from `lancedb.databases`, including remote entries.
+`--db` selects a local path and overrides the configured location. A
+single-database command requires one of these options when multiple databases are
+configured. A configured set of one is selected automatically.
 
 Each database is created, migrated and vacuumed on its own:
 
 ```bash
-haiku-rag --db-name medic init
-haiku-rag --db-name st init
+haiku-rag --db-name papers init
+haiku-rag --db-name wiki init
 ```
 
 ## Vector Indexing

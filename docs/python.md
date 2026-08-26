@@ -230,56 +230,51 @@ for result in results:
     print(f"Document Title: {result.document_title}")  # when available
 ```
 
-### Searching Several Databases
+### Searching Multiple Databases
 
-With [`lancedb.databases`](configuration/storage.md#several-databases)
-configured, a client covers every database in it. `sources` narrows a call to
-some of them, and each result names the database it came from:
+With [`lancedb.databases`](configuration/storage.md#multiple-databases)
+configured, a client covers the full set. Use `sources` to select a subset.
+Each result includes its database name:
 
 ```python
 results = await client.search("machine learning")                    # all of them
-results = await client.search("machine learning", sources=["medic"])  # one of them
+results = await client.search("machine learning", sources=["papers"])  # one of them
 
 for result in results:
     print(f"{result.source}: {result.content}")
 ```
 
-`ask` and `analyze` take `sources` too, and every citation carries the database
-it was drawn from:
+`ask` and `analyze` also accept `sources`. Citations include the database name:
 
 ```python
-answer, citations = await client.ask("What changed?", sources=["medic", "st"])
+answer, citations = await client.ask("What changed?", sources=["papers", "wiki"])
 for cite in citations:
     print(f"[{cite.source}] {cite.document_title or cite.document_uri}")
 
-result = await client.analyze("How many documents mention it?", sources=["medic"])
+result = await client.analyze("How many documents mention it?", sources=["papers"])
 ```
 
-A question scoped to some databases can only cite those, and the analysis
-sandbox mounts only their documents.
+A scoped question can cite only the selected databases. Analysis mounts only
+their documents.
 
 `sources=None` covers every database the client covers. `sources=[]` covers
 none: `search` returns no results, and `ask` and `analyze` run with no evidence
 from any database.
 
-#### Asking a client what it covers
+#### Inspecting the client scope
 
 ```python
-client.covers_multiple      # True while reading more than one database
-client.source_names         # the configured names covered, in configured order
-client.source               # the one name, or None while covering a set
+client.covers_multiple      # whether the client covers more than one database
+client.source_names         # configured names, in order
+client.source               # one configured name, or None for a set or unnamed database
 
-owner = await client.reader_for("medic")      # the client reading that database
-medic, st = await client.clients_for(["medic", "st"])
+owner = await client.reader_for("papers")      # the client reading that database
+papers, wiki = await client.clients_for(["papers", "wiki"])
 ```
 
-`clients_for` opens the databases it names, on first use rather than at entry,
-and returns a client for each. Those clients borrow their databases from the
-covering one: they are valid only while it is open, and closing or entering one
-leaves its database alone. The covering client closes them all on teardown.
-
-A borrowed client reads one database, so it has the `store` and repositories a
-covering client cannot have, and it is writable when the covering client is.
+`reader_for` and `clients_for` open databases lazily and return borrowed clients.
+They remain valid while the covering client is open and inherit its read-only
+mode. The covering client owns and closes their database sessions.
 
 ### Filtering Search Results
 

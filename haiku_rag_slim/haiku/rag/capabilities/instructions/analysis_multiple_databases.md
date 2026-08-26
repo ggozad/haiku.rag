@@ -1,5 +1,5 @@
 
-## Several databases
+## Multiple databases
 
 The corpus spans several databases, and each interface names them differently:
 

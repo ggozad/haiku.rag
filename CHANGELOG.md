@@ -4,17 +4,27 @@
 
 ### Added
 
-- `lancedb.databases`: a name-to-location mapping for searching several databases at once, mutually exclusive with `lancedb.uri`. `client.search(..., sources=[...])` selects which to search, `sources=None` searches all of them, and `SearchResult.source` carries the configured name a result came from. `Document.source` names it on a document from a listing or a lookup, so a listing that spans databases says which one each came from. Candidates are fused by the configured reranker over the union, or by reciprocal rank fusion when none is configured. Databases searched together must have been written with the same embedder; two that disagree raise `ConfigMismatchError`. The query is embedded once for the whole selection. `SearchResult.format_for_agent` names the database, so the model can attribute evidence to one while it answers. `haiku-rag search`, `ask`, `analyze` and `chat` cover the configured set and label each result and citation with its database. `settings`, `init-config` and `download-models` open no database; every other command works on one, named with `--db-name NAME` or `--db PATH`, or resolved from a configured set of one.
-- `client.ask(..., sources=[...])` asks across the selected databases, and `Citation.source` names the one a cited chunk came from. The cite fallback for an id absent from the run's results looks only in the selected databases, so a question scoped to some cannot cite another. A chunk id held by two of the databases searched raises `AmbiguousCitationError`, which reaches the model as a retry; the fallback refuses it too, rather than answering from the first database that holds it.
-- `client.analyze(..., sources=[...])` analyzes across the selected databases: the sandbox mounts their documents under one flat `/documents/{id}/` namespace, resolving each id to the database holding it, and in-code `search()` covers the same selection.
+- `lancedb.databases` configures a named set of local or remote databases. `search`,
+  `ask` and `analyze` accept a `sources` subset; results, documents and citations
+  include the originating database in `source`. Search results are combined with
+  the configured reranker, or reciprocal rank fusion when reranking is disabled.
+- `haiku-rag search`, `ask`, `analyze` and `chat` can cover a configured database
+  set. Commands that access one database select it with `--db-name NAME` or
+  `--db PATH`.
+- Citation resolution rejects chunk IDs shared by multiple selected databases
+  with `AmbiguousCitationError`.
 
 ### Fixed
 
-- `client.chunk()` and `client.embedder` work on a client covering `lancedb.databases`: an embedder is a function of configuration, so the client builds one on first use and closes it on teardown. Operations that need one database (`create_document`, `import_document(s)`, `create_document_from_source`, `update_document`, `delete_document`, `rebuild_database`, `vacuum`, `visualize_chunk`, `close`) raise `AmbiguousDatabaseError` naming the databases covered, instead of `AttributeError`.
-- The chat TUI's document filter selects documents by id and names each document's database, instead of matching the displayed title or URI as a substring across every database.
+- `client.chunk()` and `client.embedder` work when the client covers several
+  databases. Operations that require one database raise `AmbiguousDatabaseError`.
+- The chat document filter selects by document ID and shows each document's
+  database.
 - `haiku-rag` prints the message and exits when the configured embedder does not match the database, instead of raising a traceback.
-- A capability built without a client opens the databases the configuration places — `lancedb.uri` or the whole `lancedb.databases` set — instead of the default under `storage.data_dir`.
-- A `lancedb.uri` with no scheme is a local path, as it already is in `lancedb.databases`: `haiku-rag init` creates it and every command that opens an existing database requires it to exist, where a missing path was opened as object storage and became an empty database. `--db PATH` overrides `lancedb.uri`.
+- Capabilities created without a client now honor `lancedb.uri` and
+  `lancedb.databases`.
+- A `lancedb.uri` without a scheme is treated as a local path. `--db PATH`
+  overrides it.
 
 ## [0.78.0] - 2026-08-24
 
