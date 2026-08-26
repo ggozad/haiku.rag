@@ -11,7 +11,12 @@ from rich.console import Console
 
 from haiku.rag.app import HaikuRAGApp
 from haiku.rag.client import RebuildMode
-from haiku.rag.config.models import AppConfig, LanceDBConfig
+from haiku.rag.config.models import (
+    AppConfig,
+    LanceDBConfig,
+    PromptsConfig,
+    StorageConfig,
+)
 from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document import Document
 from tests.conftest import for_path
@@ -360,6 +365,55 @@ def test_show_settings_hides_secrets(tmp_path):
     printed = app.console.export_text()
     assert "haiku.rag configuration" in printed
     assert "secret-value" not in printed
+
+
+def test_show_settings_renders_the_shape_a_config_file_has(tmp_path):
+    """Nesting is indented rather than flattened into one dict repr per block,
+    and a path is its string rather than its Python repr, so what is read here
+    is what would be written into `haiku.rag.yaml`."""
+    import yaml
+
+    config = AppConfig(
+        lancedb=LanceDBConfig(databases={"alpha": "/tmp/a.lancedb"}),
+        storage=StorageConfig(data_dir=tmp_path),
+    )
+    app = HaikuRAGApp(scope=for_path(tmp_path / "db", config), config=config)
+    app.console = Console(record=True, width=200)
+
+    app.show_settings()
+
+    printed = app.console.export_text()
+    assert "PosixPath" not in printed
+    # A Python dict repr parses as YAML flow style, so parsing alone does not
+    # distinguish a block per field from one flattened repr per field.
+    assert "{'" not in printed
+    assert "\n    alpha: /tmp/a.lancedb" in printed
+    body = printed.split("haiku.rag configuration", 1)[1]
+    parsed = yaml.safe_load(body)
+    assert parsed["lancedb"]["databases"] == {"alpha": "/tmp/a.lancedb"}
+    assert parsed["storage"]["data_dir"] == str(tmp_path)
+
+
+def test_show_settings_survives_a_narrow_console_and_bracketed_values(tmp_path):
+    """Rich reads `[...]` as markup and wraps to the terminal, so a prompt
+    carrying an instruction tag rendered away or raised, and a long path was
+    broken across lines into something that no longer parsed."""
+    import yaml
+
+    long_dir = tmp_path / "Application Support" / "haiku.rag" / "collections" / "one"
+    config = AppConfig(
+        storage=StorageConfig(data_dir=long_dir),
+        prompts=PromptsConfig(domain_preamble="[INST] keep this [/INST]"),
+    )
+    app = HaikuRAGApp(scope=for_path(long_dir / "db", config), config=config)
+    app.console = Console(record=True, width=60)
+
+    app.show_settings()
+
+    body = app.console.export_text().split("haiku.rag configuration", 1)[1]
+    parsed = yaml.safe_load(body)
+    assert parsed["prompts"]["domain_preamble"] == "[INST] keep this [/INST]"
+    assert parsed["storage"]["data_dir"] == str(long_dir)
 
 
 def test_remote_uri_is_the_display_path(tmp_path):

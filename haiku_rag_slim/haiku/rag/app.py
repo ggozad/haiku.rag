@@ -834,16 +834,26 @@ class HaikuRAGApp:
                 )
 
     def show_settings(self):
-        """Display current configuration settings."""
+        """Display current configuration settings.
+
+        As YAML, which is the shape `haiku.rag.yaml` is written in, so what is
+        read here is what would be written there. `mode="json"` keeps paths and
+        enums out of their Python reprs.
+        """
+        import yaml
+
         self.console.print("[bold]haiku.rag configuration[/bold]")
         self.console.print()
 
         # redact_secrets walks the whole dump: masking only top-level names left
         # nested api keys, tokens and source passwords printed in full.
-        for field_name, field_value in redact_secrets(self.config.model_dump()).items():
-            self.console.print(
-                f"  [repr.attrib_name]{field_name}[/repr.attrib_name]: {field_value}"
-            )
+        dumped = redact_secrets(self.config.model_dump(mode="json"))
+        # Preserve YAML values and line structure through Rich rendering.
+        self.console.print(
+            yaml.safe_dump(dumped, default_flow_style=False, sort_keys=False).rstrip(),
+            markup=False,
+            soft_wrap=True,
+        )
 
     def _rich_print_document(self, doc: Document, truncate: bool = False):
         """Format a document for display."""
