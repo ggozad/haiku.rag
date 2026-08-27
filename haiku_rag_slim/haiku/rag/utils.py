@@ -363,11 +363,8 @@ def format_citations(citations: "list[Citation]") -> str:
 
 
 def truncated(text: str, limit: int) -> str:
-    """`text` cut to `limit` characters, marked where anything was dropped.
-
-    Without the mark a clipped value reads as the value: a sentence ending
-    "commissioned in 1991" becomes "commissioned in 1".
-    """
+    """The first `limit` characters of `text`, with `…` appended when anything
+    was dropped. A cut result is `limit` characters plus the mark."""
     if len(text) <= limit:
         return text
     return text[:limit].rstrip() + "…"

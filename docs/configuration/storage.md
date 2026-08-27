@@ -217,10 +217,18 @@ exclusive.
 Results, documents, citations, and model context use the configured name as
 `source`. Commands such as `info` and path-related errors still show locations.
 
-All databases in a search must use compatible embeddings because the query is
-embedded once. A dimension mismatch raises `ConfigMismatchError`. A provider or
-model-name mismatch at the same dimension warns in read-only mode and raises in
-writable mode.
+Embedding compatibility is checked against two different things.
+
+On open, each database is compared with the current configuration. A dimension
+mismatch raises `ConfigMismatchError`. A provider or model-name mismatch at the
+same dimension warns in read-only mode and raises in writable mode.
+
+Across a selection, the databases are compared with each other. Vector and
+hybrid search embed the query once, so every database answering it must record
+the same provider, model, and dimension. A disagreement raises
+`ConfigMismatchError` in read-only mode as well. Only the databases searched
+together have to agree, and full-text search embeds nothing, so it is
+unaffected.
 
 ### Search and Provenance
 
@@ -278,7 +286,7 @@ database.
 ### Python Operations
 
 Creating, writing, rebuilding, and vacuuming require one database. Calling these
-operations on a client that covers several raises `AmbiguousDatabaseError`.
+operations on a client that covers multiple raises `AmbiguousDatabaseError`.
 Select one at creation time or obtain a single-database client:
 
 ```python

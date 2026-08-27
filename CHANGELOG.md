@@ -16,7 +16,7 @@
 
 ### Fixed
 
-- `client.chunk()` and `client.embedder` work when the client covers several
+- `client.chunk()` and `client.embedder` work when the client covers multiple
   databases. Operations that require one database raise `AmbiguousDatabaseError`.
 - The chat document filter selects by document ID and shows each document's
   database.
@@ -25,6 +25,7 @@
   `lancedb.databases`.
 - A `lancedb.uri` without a scheme is treated as a local path. `--db PATH`
   overrides it.
+- Inspector search results mark truncated previews with an ellipsis.
 
 ## [0.78.0] - 2026-08-24
 

@@ -65,11 +65,11 @@ _db_name: str | None = None
 def create_app(db: Path | None = None, *, covers_set: bool = False) -> "HaikuRAGApp":
     """The application for a command, on the database(s) it works on.
 
-    `covers_set` is the command declaring that it can read several: `search`,
+    `covers_set` is the command declaring that it can read multiple: `search`,
     `ask`, `analyze` and `chat` can, and everything else names one.
 
     Raises:
-        AmbiguousDatabaseError: several databases are configured and this
+        AmbiguousDatabaseError: multiple databases are configured and this
             command works on one, without `--db` or `--db-name` naming which.
     """
     from haiku.rag.app import HaikuRAGApp

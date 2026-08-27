@@ -45,8 +45,7 @@ def instructions() -> str:
 
 @cache
 def multiple_databases_instructions() -> str:
-    """Appended only where the capability covers several databases, so a single
-    database is instructed exactly as it was before they could be named."""
+    """Appended only where the capability covers multiple databases."""
     return _multiple_databases_path.read_text().rstrip()
 
 
@@ -118,8 +117,8 @@ def create_capability(
     scope = resolve_scope(db_path, config)
     instruction_text = instructions()
     # A lent client covers what it covers; otherwise the scope says.
-    several = rag.covers_multiple if rag is not None else scope.covers_multiple
-    if several:
+    covers_multiple = rag.covers_multiple if rag is not None else scope.covers_multiple
+    if covers_multiple:
         instruction_text += multiple_databases_instructions()
     return RAGCapability(
         scope=scope,

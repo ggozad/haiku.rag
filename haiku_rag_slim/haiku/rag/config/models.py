@@ -102,7 +102,7 @@ class LanceDBConfig(ConfigModel):
     The cache sizes are per process, since the session is shared across
     connections.
 
-    `databases` maps a name to a location, for searching several at once. The
+    `databases` maps a name to a location, for searching multiple at once. The
     name is what results and citations carry, so a location never leaves the
     configuration. Mutually exclusive with `uri`.
     """

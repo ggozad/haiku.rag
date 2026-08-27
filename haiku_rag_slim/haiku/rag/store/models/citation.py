@@ -75,8 +75,8 @@ def resolve_citations(
     """Resolve chunk IDs to full Citation objects with metadata.
 
     Raises ``AmbiguousCitationError`` when a cited id names a chunk in more than
-    one of the databases searched. An id held by two of them, as after copying a
-    database, resolves to whichever result came last, attributing the answer to a
+    one of the databases searched, as after copying a database. A citation
+    records the id alone, so resolving one would attribute the answer to a
     database it may not have come from.
     """
     by_id: dict[str, SearchResult] = {}
