@@ -236,7 +236,26 @@ class TestPlacingADatabase:
     async def test_a_client_reading_one_database_is_its_own_reader(self, temp_db_path):
         async with HaikuRAG(temp_db_path, create=True) as rag:
             assert await rag.reader_for(None) is rag
-            assert await rag.reader_for("anything") is rag
+
+    @pytest.mark.asyncio
+    async def test_one_database_refuses_a_name_it_does_not_cover(self, tmp_path):
+        """Answering with itself would hand back the wrong database's reader for
+        a citation that named another."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+
+        async with HaikuRAG(config=config, sources=["alpha"]) as alpha:
+            assert await alpha.reader_for("alpha") is alpha
+            with pytest.raises(KeyError, match="beta"):
+                await alpha.reader_for("beta")
+
+    @pytest.mark.asyncio
+    async def test_an_unnamed_database_refuses_any_name(self, temp_db_path):
+        """Nothing names it, so no name can be the one it covers."""
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            with pytest.raises(KeyError, match="single unnamed database"):
+                await rag.reader_for("anything")
 
     @pytest.mark.asyncio
     async def test_a_set_cannot_place_evidence_that_names_no_database(self, tmp_path):

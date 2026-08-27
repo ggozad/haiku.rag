@@ -203,9 +203,9 @@ class TestCollectionIdentityForTheModel:
 class TestLendingANamedClient:
     @pytest.mark.asyncio
     async def test_a_lent_named_client_names_the_citation(self, tmp_path):
-        """The chat TUI builds capabilities before its client exists and lends
-        it on mount, so what a citation records is the lent client's database
-        and not whatever scope the capability was constructed with."""
+        """What a citation records is the lent client's database, not the scope
+        the capability was constructed with. That chat lends its client is
+        `TestLendingTheClient` in `tests/chat/test_chat_app.py`."""
         from tests.capabilities.test_capabilities import Deps, make_context
 
         config = _config(tmp_path, ["alpha", "beta"])

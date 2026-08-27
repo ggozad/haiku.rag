@@ -198,15 +198,14 @@ class HaikuRAG:
         database.
 
         None only when a client covering a set is given no name, as for evidence
-        recorded before databases could be named. A name outside the set raises
-        `KeyError`, the same as `clients_for`: provenance naming a database this
-        client does not cover is wrong rather than absent.
+        recorded before databases could be named. A name this client does not
+        cover raises `KeyError`, decided by `clients_covering` so that one
+        database answers a wrong name the same way a set does: provenance naming
+        another database is wrong rather than absent.
         """
-        if not self.covers_multiple:
-            return self
         if source is None:
-            return None
-        (owner,) = await self.clients_for([source])
+            return None if self.covers_multiple else self
+        (owner,) = await self.clients_covering([source])
         return owner
 
     def _single_session(self, operation: str) -> SingleDatabaseSession:

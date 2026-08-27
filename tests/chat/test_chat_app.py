@@ -625,6 +625,25 @@ async def test_visual_grounding_uses_the_database_holding_the_citation(tmp_path)
     assert push.await_args.args[0].client is owner
 
 
+class TestLendingTheClient:
+    @pytest.mark.asyncio
+    async def test_mounting_lends_its_client_to_every_capability(self, temp_db_path):
+        """Capabilities are built before the client exists, so each reads through
+        the one the app opened rather than opening its own."""
+        client = _make_mock_client()
+        app, _ = _make_app(temp_db_path, client)
+
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as stub_rag,
+            _covering_returns(stub_rag, client),
+        ):
+            async with app.run_test():
+                borrowed = [c.borrowed_rag for c in app._capabilities]
+
+        assert borrowed == [client] * len(app._capabilities)
+        assert borrowed
+
+
 class TestDocumentSelectionIdentity:
     """Two documents can share a title, within a corpus and across databases, so
     the selection is by id and the label says which database."""
