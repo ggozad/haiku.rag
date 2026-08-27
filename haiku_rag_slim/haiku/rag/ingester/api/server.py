@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import Depends, FastAPI, Request
@@ -7,6 +6,7 @@ from fastapi import Depends, FastAPI, Request
 from haiku.rag.ingester.api.auth import require_auth
 
 if TYPE_CHECKING:
+    from haiku.rag.client.scope import DatabaseScope
     from haiku.rag.config import AppConfig
     from haiku.rag.ingester.pollers.manager import PollerManager
     from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
@@ -23,7 +23,7 @@ class APIState:
     sync_repo: "SyncStateRepo"
     pool: "WorkerPool | None" = None
     pollers: "PollerManager | None" = None
-    db_path: Path | None = None
+    scope: "DatabaseScope | None" = None
 
 
 def get_state(request: Request) -> APIState:

@@ -4,7 +4,9 @@ import httpx
 import pytest
 from httpx import ASGITransport
 
+from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.config import AppConfig
+from haiku.rag.config.models import LanceDBConfig
 from haiku.rag.ingester.api.server import APIState, build_app
 from haiku.rag.ingester.queue.models import JobOp, JobStatus
 from haiku.rag.sources.base import (
@@ -12,6 +14,7 @@ from haiku.rag.sources.base import (
     SourceEvent,
     SourceEventKind,
 )
+from tests.conftest import for_path
 
 
 @pytest.fixture
@@ -808,7 +811,9 @@ async def _seed_lancedb(path):
 async def test_database_reports_info(tmp_path, jobs, sync):
     db_path = tmp_path / "docs.lancedb"
     await _seed_lancedb(db_path)
-    state = APIState(config=AppConfig(), job_repo=jobs, sync_repo=sync, db_path=db_path)
+    state = APIState(
+        config=AppConfig(), job_repo=jobs, sync_repo=sync, scope=for_path(db_path)
+    )
     async with _client(state) as client:
         resp = await client.get("/database")
     assert resp.status_code == 200
@@ -825,10 +830,31 @@ async def test_database_reports_info(tmp_path, jobs, sync):
 
 
 @pytest.mark.asyncio
-async def test_database_503_when_db_path_unset(state):
+async def test_database_503_when_no_database_is_configured(state):
     async with _client(state) as client:
         resp = await client.get("/database")
     assert resp.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_the_report_follows_a_configured_uri(tmp_path, jobs, sync):
+    """A configured `lancedb.uri` places the database, so the report opens that
+    and not the local default."""
+    db_path = tmp_path / "configured.lancedb"
+    await _seed_lancedb(db_path)
+    config = AppConfig(lancedb=LanceDBConfig(uri=str(db_path)))
+    state = APIState(
+        config=config,
+        job_repo=jobs,
+        sync_repo=sync,
+        scope=DatabaseScope.resolve(config),
+    )
+
+    async with _client(state) as client:
+        resp = await client.get("/database")
+
+    assert resp.status_code == 200
+    assert resp.json()["stored_version"] == "1.2.3"
 
 
 @pytest.mark.asyncio

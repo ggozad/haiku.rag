@@ -198,6 +198,8 @@ The recommended layout for production is "different buckets, same account, separ
 
 Each process picks up its own credentials from the AWS default chain (env vars, IAM instance role, AWS profile), so no credentials are hard-coded in the configuration files.
 
+`haiku-ingester` writes the database the configuration places, so a `lancedb.uri` needs no further option. `--db PATH` overrides it. When `lancedb.databases` contains more than one database the ingester has no way to name which it writes, and refuses to start with `AmbiguousDatabaseError`: give each database its own ingester process, each with a configuration naming a single database, or select one with `--db PATH`. A one-entry mapping is unambiguous and is accepted.
+
 ## Multiple Databases
 
 Use `lancedb.databases` to name local or remote databases that should be searched

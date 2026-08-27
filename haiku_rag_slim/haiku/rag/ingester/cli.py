@@ -33,6 +33,7 @@ from haiku.rag.ingester.batch import BatchManifest  # noqa: E402
 from haiku.rag.ingester.queue.migrations import open_queue  # noqa: E402
 from haiku.rag.logging import configure_cli_logging  # noqa: E402
 from haiku.rag.store.exceptions import (  # noqa: E402
+    AmbiguousDatabaseError,
     MigrationRequiredError,
     ReadOnlyError,
 )
@@ -70,7 +71,7 @@ def cli() -> None:
     """Entry point that translates store-state errors into a clean exit."""
     try:
         _cli()
-    except (MigrationRequiredError, ReadOnlyError) as e:
+    except (AmbiguousDatabaseError, MigrationRequiredError, ReadOnlyError) as e:
         typer.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
@@ -149,10 +150,6 @@ def queue_migrate(
     typer.echo(f"Queue at {_queue_target(queue_config)} is up to date")
 
 
-def _resolve_db_path(config: AppConfig, override: Path | None) -> Path:
-    return override or (config.storage.data_dir / "haiku.rag.lancedb")
-
-
 def _default_manifest_path() -> Path:
     datestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%SZ")
     return Path(f"manifest-{datestamp}.yaml")
@@ -216,7 +213,7 @@ def serve(
     db: Path | None = typer.Option(
         None,
         "--db",
-        help="LanceDB path (overrides config.storage.data_dir).",
+        help="LanceDB path (overrides the configured database location).",
     ),
     host: str | None = typer.Option(
         None,
@@ -252,8 +249,7 @@ def serve(
         app_config.ingester.api.port = port
     if root_path is not None:
         app_config.ingester.api.root_path = root_path
-    db_path = _resolve_db_path(app_config, db)
-    app = IngesterApp(config=app_config, db_path=db_path)
+    app = IngesterApp(config=app_config, db_path=db)
     asyncio.run(app.serve(api=not no_api))
 
 
@@ -262,7 +258,7 @@ def run_batch(
     db: Path | None = typer.Option(
         None,
         "--db",
-        help="LanceDB path (overrides config.storage.data_dir).",
+        help="LanceDB path (overrides the configured database location).",
     ),
     dry_run: bool = typer.Option(
         False,
@@ -312,8 +308,7 @@ async def _run_batch(
 ) -> None:
     from haiku.rag.ingester.app import IngesterApp
 
-    db = _resolve_db_path(app_config, db_path)
-    app = IngesterApp(config=app_config, db_path=db)
+    app = IngesterApp(config=app_config, db_path=db_path)
     if dry_run:
         report = await app.run_batch_dry_run()
         if report.failed_sweeps:
