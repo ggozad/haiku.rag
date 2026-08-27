@@ -918,20 +918,25 @@ class HaikuRAGApp:
         host: str = "127.0.0.1",
         port: int = 8001,
     ):
-        """Run the MCP server until interrupted."""
-        async with HaikuRAG._covering(
-            self.scope, self.config, read_only=self.read_only
-        ):
-            server = create_mcp_server(
-                self._path, config=self._store_config, read_only=self.read_only
-            )
-            try:
-                if transport == "stdio":
-                    await server.run_stdio_async()
-                else:
-                    logger.info(f"Starting MCP server on {host}:{port}")
-                    await server.run_http_async(
-                        transport="streamable-http", host=host, port=port
-                    )
-            except KeyboardInterrupt:
-                pass
+        """Run the MCP server until interrupted.
+
+        The server opens its own client and validates it on startup, so nothing
+        is opened here first.
+        """
+        # The ref's own path, not `_path`: a URI-backed database has none, and
+        # the local stand-in would override the URI in `_store_config`.
+        server = create_mcp_server(
+            self._one.db_path,
+            config=self._store_config,
+            read_only=self.read_only,
+        )
+        try:
+            if transport == "stdio":
+                await server.run_stdio_async()
+            else:
+                logger.info(f"Starting MCP server on {host}:{port}")
+                await server.run_http_async(
+                    transport="streamable-http", host=host, port=port
+                )
+        except KeyboardInterrupt:
+            pass

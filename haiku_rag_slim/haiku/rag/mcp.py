@@ -22,12 +22,16 @@ def _decode_images(images_base64: list[str] | None) -> list[bytes] | None:
 
 
 def create_mcp_server(
-    db_path: Path, config: AppConfig | None = None, read_only: bool = False
+    db_path: Path | None = None,
+    config: AppConfig | None = None,
+    read_only: bool = False,
 ) -> FastMCP:
     """Create an MCP server with the specified database path.
 
     Args:
-        db_path: Path to the database file.
+        db_path: Path to the database file, or None to let `config` place it. A
+            path overrides a configured `lancedb.uri`, so a URI-backed database
+            must pass None rather than a local stand-in.
         config: Configuration to use.
         read_only: If True, write tools (add_document_*, delete_document) are not registered.
     """

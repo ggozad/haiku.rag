@@ -604,6 +604,44 @@ class TestMCPClientLifetime:
         assert opens == 1
 
     @pytest.mark.asyncio
+    async def test_a_uri_backed_database_is_not_replaced_by_a_local_path(
+        self, monkeypatch
+    ):
+        """A path overrides `lancedb.uri`, so the server gets the database's own
+        path — None where a URI placed it — not the local stand-in a URI-backed
+        ref resolves to for display."""
+        from haiku.rag.app import HaikuRAGApp
+        from haiku.rag.client.scope import DatabaseScope
+        from haiku.rag.config.models import AppConfig, LanceDBConfig
+
+        config = AppConfig(
+            lancedb=LanceDBConfig(databases={"prod": "s3://bucket/prod.lancedb"})
+        )
+        seen: dict = {}
+
+        class _Server:
+            async def run_stdio_async(self):
+                return None
+
+        def fake_create(db_path=None, config=None, read_only=False):
+            seen["db_path"] = db_path
+            seen["config"] = config
+            return _Server()
+
+        monkeypatch.setattr("haiku.rag.app.create_mcp_server", fake_create)
+        app = HaikuRAGApp(
+            scope=DatabaseScope.resolve(config, database_name="prod"), config=config
+        )
+
+        await app.run_mcp(transport="stdio")
+
+        assert seen["db_path"] is None
+        [ref] = DatabaseScope.resolve(
+            seen["config"], database_path=seen["db_path"]
+        ).databases
+        assert ref.uri == "s3://bucket/prod.lancedb"
+
+    @pytest.mark.asyncio
     async def test_startup_fails_when_the_database_cannot_open(self, tmp_path):
         mcp = create_mcp_server(tmp_path / "does-not-exist.lancedb", read_only=True)
 
