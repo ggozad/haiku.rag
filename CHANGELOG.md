@@ -4,25 +4,30 @@
 
 ### Added
 
-- `lancedb.databases` configures a named set of local or remote databases. `search`,
-  `ask` and `analyze` accept a `sources` subset; results, documents and citations
-  include the originating database in `source`. Search results are combined with
-  the configured reranker, or reciprocal rank fusion when reranking is disabled.
-- `haiku-rag search`, `ask`, `analyze` and `chat` can cover a configured database
-  set. Commands that access one database select it with `--db-name NAME` or
+- `lancedb.databases` configures a named set of local or remote databases.
+  `search`, `ask` and `analyze` accept a `sources` subset; results, documents and
+  citations carry the originating database in `source`, and model context names
+  it as `Collection:` when a search spans more than one. Candidates are combined
+  with the configured reranker, or reciprocal rank fusion when reranking is
+  disabled. Operations that need one database raise `AmbiguousDatabaseError`, an
+  unknown name raises `UnknownDatabaseError`, and a cited chunk ID retrieved from
+  or previously cited from more than one selected database raises
+  `AmbiguousCitationError`.
+- `haiku-rag search`, `ask`, `analyze` and `chat` cover a configured set.
+  Commands that access one database select it with `--db-name NAME` or
   `--db PATH`.
-- Citation resolution rejects a chunk ID retrieved from, or previously cited
-  from, more than one selected database with `AmbiguousCitationError`.
+- `HaikuRAG.aclose()` releases a client whatever it covers. `close()` remains
+  limited to clients covering one database.
 
 ### Fixed
 
-- `client.chunk()` and `client.embedder` work when the client covers multiple
-  databases. Operations that require one database raise `AmbiguousDatabaseError`.
-- The chat document filter selects by document ID and shows each document's
-  database.
+- `haiku-rag settings` prints YAML instead of Python dict reprs.
+- The chat document filter pages results, searches the database for the rest, and
+  lists the selected separately, instead of mounting a checkbox per document.
+  Selection is by document ID.
+- `haiku-rag list` prints only the fields a document has.
 - `haiku-rag` prints the message and exits when the configured embedder does not match the database, instead of raising a traceback.
-- Capabilities created without a client now honor `lancedb.uri` and
-  `lancedb.databases`.
+- Capabilities created without a client honor `lancedb.uri`.
 - A `lancedb.uri` without a scheme is treated as a local path. `--db PATH`
   overrides it.
 - Inspector search results mark truncated previews with an ellipsis.

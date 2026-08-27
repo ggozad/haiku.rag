@@ -278,21 +278,37 @@ document in each of them.
 
 #### Ranking
 
-Configure a reranker when searching multiple databases. Reciprocal rank fusion
-compares positions rather than scores, so each database contributes top-ranked
-results even when another database has stronger matches. A reranker scores the
-combined candidate set directly.
+Reciprocal rank fusion compares positions rather than scores, so each database
+contributes top-ranked results even when another database has stronger matches. A
+reranker scores the combined candidate set directly, which has been measured to
+help aggregate retrieval and to hurt attribution between near-identical
+documents.
 
-In a 3,045-query evaluation over a corpus split across three databases,
-reranking produced retrieval MAP 0.9914, compared with 0.9918 for the same corpus
-in one database. Without a reranker, MAP was 0.6044, compared with 0.9798 in one
-database. Reranking cost grows with the number of databases because each
-contributes candidates.
+Aggregate retrieval is stronger with a reranker. In a 3,045-query evaluation over
+a corpus split across three databases, reranking produced retrieval MAP 0.9914,
+compared with 0.9918 for the same corpus in one database. Without a reranker, MAP
+was 0.6044, compared with 0.9798 in one database. Reranking cost grows with the
+number of databases because each contributes candidates.
+
+A reranker scores the combined candidates with no notion of which database each
+came from, so on near-identical text it can pick the wrong database's chunk,
+where fusion keeps them apart because each database contributes its own
+top-ranked result. In two nine-case acceptance runs over a synthetic corpus
+holding one station in two databases under near-identical names, attribution was
+weaker with reranking: citing the right database succeeded 5 of 9 and 6 of 9
+times with a reranker, against 8 of 9 and 9 of 9 without.
+
+Configure a reranker where retrieval breadth matters, and measure it where
+answers have to attribute between documents that read alike.
 
 Without a reranker, consider increasing `search.limit` with the number of
 databases. With three complete rankings and a limit of 5, a database may
 contribute only one or two results. A higher limit also sends more results to
 the caller and model.
+
+Image queries are vector-only and skip the reranker: there is no query text to
+score a document against, so candidates keep their vector ranking and fusion
+ranks by position.
 
 If any selected database fails to open, the operation fails and identifies that
 database.
@@ -319,7 +335,7 @@ available on a multi-database client.
 Commands use database sets as follows:
 
 - **Set-capable**: `search`, `ask`, `analyze`, and `chat` use the full
-  configured set, or the subset named by `--db-name`.
+  configured set, or the single database selected by `--db-name`.
 - **Config-only**: `settings`, `init-config`, and `download-models` do not open
   a database.
 - **Single-database**: everything else — document writes, `rebuild`, `vacuum`,
