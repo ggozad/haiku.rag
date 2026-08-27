@@ -923,12 +923,11 @@ class HaikuRAGApp:
         The server opens its own client and validates it on startup, so nothing
         is opened here first.
         """
-        # The ref's own path, not `_path`: a URI-backed database has none, and
-        # the local stand-in would override the URI in `_store_config`.
+        # The resolved scope, not a derived path and configuration: a path
+        # would override a configured URI, and deriving drops the name results
+        # and citations carry.
         server = create_mcp_server(
-            self._one.db_path,
-            config=self._store_config,
-            read_only=self.read_only,
+            config=self.config, read_only=self.read_only, scope=self.scope
         )
         try:
             if transport == "stdio":

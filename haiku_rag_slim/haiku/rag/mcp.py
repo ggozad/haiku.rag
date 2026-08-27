@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastmcp import FastMCP
 
@@ -11,6 +11,9 @@ from haiku.rag.config import AppConfig, get_config
 from haiku.rag.store.models import Document, SearchResult
 from haiku.rag.tools.document import DocumentInfo
 from haiku.rag.utils import format_citations
+
+if TYPE_CHECKING:
+    from haiku.rag.client.scope import DatabaseScope
 
 
 def _decode_images(images_base64: list[str] | None) -> list[bytes] | None:
@@ -25,8 +28,9 @@ def create_mcp_server(
     db_path: Path | None = None,
     config: AppConfig | None = None,
     read_only: bool = False,
+    scope: "DatabaseScope | None" = None,
 ) -> FastMCP:
-    """Create an MCP server with the specified database path.
+    """Create an MCP server over one database.
 
     Args:
         db_path: Path to the database file, or None to let `config` place it. A
@@ -34,8 +38,15 @@ def create_mcp_server(
             must pass None rather than a local stand-in.
         config: Configuration to use.
         read_only: If True, write tools (add_document_*, delete_document) are not registered.
+        scope: The database, already resolved. Pass this rather than a derived
+            path and configuration to keep its configured name, which results
+            and citations carry as `source`.
     """
+    from haiku.rag.client.scope import DatabaseScope
+
     config = config if config is not None else get_config()
+    if scope is None:
+        scope = DatabaseScope.resolve(config, database_path=db_path)
     client: HaikuRAG | None = None
     stack = AsyncExitStack()
     client_lock = asyncio.Lock()
@@ -51,7 +62,7 @@ def create_mcp_server(
         async with client_lock:
             if client is None:
                 client = await stack.enter_async_context(
-                    HaikuRAG(db_path, config=config, read_only=read_only)
+                    HaikuRAG._covering(scope, config, read_only=read_only)
                 )
         return client
 

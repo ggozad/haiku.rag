@@ -604,12 +604,42 @@ class TestMCPClientLifetime:
         assert opens == 1
 
     @pytest.mark.asyncio
-    async def test_a_uri_backed_database_is_not_replaced_by_a_local_path(
+    async def test_the_scope_decides_the_database_and_names_its_results(
+        self, mcp_db, tmp_path
+    ):
+        """The scope is the selection, so the server reads the one database it
+        names and results carry that name. The configuration alone would place
+        every database it configures."""
+        from haiku.rag.client.scope import DatabaseScope
+        from haiku.rag.config.models import AppConfig, LanceDBConfig
+
+        other = tmp_path / "beta.lancedb"
+        async with HaikuRAG(other, create=True) as rag:
+            await rag.create_document(
+                "Zebras graze on the savannah.", title="Zebras", uri="test://zebras"
+            )
+
+        config = AppConfig(
+            lancedb=LanceDBConfig(databases={"alpha": str(mcp_db), "beta": str(other)})
+        )
+        scope = DatabaseScope.resolve(config, database_name="alpha")
+
+        mcp = create_mcp_server(config=config, read_only=True, scope=scope)
+        async with mcp._lifespan_manager():
+            search = await _get_tool(mcp, "search_documents")
+            results = await search(query="artificial intelligence")
+            zebras = await search(query="zebras savannah")
+
+        assert results
+        assert {r.source for r in results} == {"alpha"}
+        assert all(r.source == "alpha" for r in zebras)
+
+    @pytest.mark.asyncio
+    async def test_the_command_hands_the_server_its_resolved_database(
         self, monkeypatch
     ):
-        """A path overrides `lancedb.uri`, so the server gets the database's own
-        path — None where a URI placed it — not the local stand-in a URI-backed
-        ref resolves to for display."""
+        """A path would override a configured URI, and a derived configuration
+        would lose the name, so `run_mcp` passes neither."""
         from haiku.rag.app import HaikuRAGApp
         from haiku.rag.client.scope import DatabaseScope
         from haiku.rag.config.models import AppConfig, LanceDBConfig
@@ -623,9 +653,8 @@ class TestMCPClientLifetime:
             async def run_stdio_async(self):
                 return None
 
-        def fake_create(db_path=None, config=None, read_only=False):
-            seen["db_path"] = db_path
-            seen["config"] = config
+        def fake_create(db_path=None, config=None, read_only=False, scope=None):
+            seen.update(db_path=db_path, scope=scope)
             return _Server()
 
         monkeypatch.setattr("haiku.rag.app.create_mcp_server", fake_create)
@@ -636,9 +665,8 @@ class TestMCPClientLifetime:
         await app.run_mcp(transport="stdio")
 
         assert seen["db_path"] is None
-        [ref] = DatabaseScope.resolve(
-            seen["config"], database_path=seen["db_path"]
-        ).databases
+        [ref] = seen["scope"].databases
+        assert ref.name == "prod"
         assert ref.uri == "s3://bucket/prod.lancedb"
 
     @pytest.mark.asyncio
