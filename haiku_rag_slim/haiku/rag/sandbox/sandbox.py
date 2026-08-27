@@ -149,6 +149,7 @@ class Sandbox:
     _doc_chunk_index: dict[str, dict[str, list[str]]]
     _items_jsonl_cache: dict[str, str]
     _toc_json_cache: dict[str, str]
+    _opened: "HaikuRAG | None"
     _pool: AsyncMonty | None
     _session: AsyncMontySession | None
     _vfs: OSAccess | None
@@ -206,6 +207,7 @@ class Sandbox:
         self._config = config
         self._context = context
         self._rag = rag
+        self._opened = None
         self._owners = {}
         self._lock = lock
         self._search_results = []
@@ -239,10 +241,22 @@ class Sandbox:
             else:
                 yield connection
             return
+        if self._scope.covers_multiple:
+            yield await self._open_connection()
+            return
         from haiku.rag.client import HaikuRAG
 
         async with HaikuRAG._covering(self._scope, self._config, read_only=True) as rag:
             yield rag
+
+    async def _open_connection(self) -> "HaikuRAG":
+        """Open and retain a federated client for owner-backed reads."""
+        if self._opened is None:
+            from haiku.rag.client import HaikuRAG
+
+            self._opened = HaikuRAG._covering(self._scope, self._config, read_only=True)
+            await self._opened.__aenter__()
+        return self._opened
 
     async def _documents(self) -> "tuple[list[Any], dict[str, HaikuRAG]]":
         """Every document in scope, and the client holding each of them.
@@ -338,6 +352,9 @@ class Sandbox:
         if self._pool is not None:
             await self._pool.__aexit__(None, None, None)
             self._pool = None
+        if self._opened is not None:
+            await self._opened.__aexit__(None, None, None)
+            self._opened = None
 
     def _build_external_functions(self) -> dict[str, Any]:
         """Build async external functions for the Monty interpreter."""

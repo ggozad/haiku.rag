@@ -20,6 +20,29 @@ async def _mounted(rag, sources=None):
     return sandbox, docs, owners
 
 
+class TestStandaloneAcrossDatabases:
+    """Without a lent client the sandbox opens its own. The owners it hands out
+    are stored for later file reads, so that connection has to outlive the call
+    that produced them."""
+
+    @pytest.mark.asyncio
+    async def test_owners_stay_open_for_later_reads(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        sandbox = Sandbox(db_path=None, config=config, context=AnalysisContext())
+        try:
+            _, owners = await sandbox._documents()
+
+            assert len(owners) == 2
+            assert all(owner.store.db.is_open() for owner in owners.values())
+        finally:
+            await sandbox.close()
+
+        assert not any(owner.store.db.is_open() for owner in owners.values())
+
+
 class TestDocumentsAcrossDatabases:
     @pytest.mark.asyncio
     async def test_the_corpus_covers_every_configured_database(self, tmp_path):
