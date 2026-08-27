@@ -225,13 +225,17 @@ class Sandbox:
     async def _connection(
         self, owner: "HaikuRAG | None" = None
     ) -> "AsyncIterator[HaikuRAG]":
-        """Yield the shared connection (serialized by the lock), or an ephemeral
-        read-only one. The lock guards the whole block so a read's awaits cannot
-        interleave with another task's operation on the same connection.
+        """Yield the shared connection, or an ephemeral read-only one.
+
+        The lock, where there is one, is held for the block: what a caller does
+        to the shared connection is serialized against the capability's own tool
+        calls, since both hold that client. It guards that connection and not
+        the databases underneath, which have their own locks.
 
         `owner` is the client holding one document, for the reads addressed to a
         single document. The shared connection covers a set of databases and has
-        no repositories of its own, so those reads have to name their owner.
+        no repositories of its own, so those reads have to name their owner. An
+        owner is a session of its own, so it is yielded unserialized.
         """
         connection = owner if owner is not None else self._rag
         if connection is not None:
@@ -272,6 +276,8 @@ class Sandbox:
                 docs = await rag.list_documents(filter=self._context.filter)
                 return docs, {}
             owners = await rag.clients_covering(self._context.sources)
+        # Resolve owners under the shared-client lock; owner sessions perform
+        # reads independently.
         groups = await asyncio.gather(
             *(owner.list_documents(filter=self._context.filter) for owner in owners)
         )
