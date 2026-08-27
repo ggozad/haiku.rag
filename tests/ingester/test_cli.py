@@ -525,6 +525,23 @@ class TestPlacingTheIngesterDatabase:
         assert scope.names == ("docs",)
         assert not scope.covers_multiple
 
+    def test_a_set_is_refused_with_a_remedy_this_command_has(self, tmp_path):
+        """The client would name `sources=[name]`, a Python argument no CLI user
+        can pass."""
+        from haiku.rag.store.exceptions import AmbiguousDatabaseError
+
+        config = AppConfig(
+            lancedb=LanceDBConfig(
+                databases={"a": str(tmp_path / "a"), "b": str(tmp_path / "b")}
+            )
+        )
+
+        with pytest.raises(AmbiguousDatabaseError) as raised:
+            self._app(config)
+
+        assert "--db PATH" in str(raised.value)
+        assert "sources=" not in str(raised.value)
+
     def test_several_configured_databases_exit_cleanly(self, tmp_path, monkeypatch):
         """No selector names one of a set, so the CLI reports it rather than
         printing a traceback."""

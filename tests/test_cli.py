@@ -116,8 +116,13 @@ class TestOneDatabaseCommands:
     def test_a_configured_set_refuses_a_one_database_command(self, monkeypatch):
         self._install(monkeypatch, alpha="/db/a.lancedb", beta="/db/b.lancedb")
 
-        with pytest.raises(AmbiguousDatabaseError, match="alpha, beta"):
+        with pytest.raises(AmbiguousDatabaseError, match="alpha, beta") as raised:
             resolve_scope(None)
+
+        # `--db-name` is global and `--db` is per-command, so the remedy says
+        # where each one goes.
+        assert "--db-name NAME before the command" in str(raised.value)
+        assert "--db PATH after it" in str(raised.value)
 
     def test_the_refusal_names_the_databases_and_not_their_locations(self, monkeypatch):
         """A location in an error message travels into logs and terminals; the

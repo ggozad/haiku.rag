@@ -105,8 +105,8 @@ def resolve_scope(
     if scope.covers_multiple and not covers_set:
         raise AmbiguousDatabaseError(
             f"lancedb.databases names {', '.join(sorted(scope.names))}; this "
-            "command works on a single database: pass --db-name NAME, or "
-            "--db PATH."
+            "command works on a single database: pass --db-name NAME before "
+            "the command, or --db PATH after it"
         )
     return scope
 

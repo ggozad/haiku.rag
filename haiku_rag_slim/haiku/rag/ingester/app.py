@@ -74,11 +74,19 @@ class IngesterApp:
 
     def __init__(self, *, config: AppConfig, db_path: Path | None = None):
         from haiku.rag.client.scope import DatabaseScope
+        from haiku.rag.store.exceptions import AmbiguousDatabaseError
 
         self._config = config
         # `--db` names the database directly, and nothing stands in for it: a
         # manufactured default would override a configured `lancedb.uri`.
         self._scope = DatabaseScope.resolve(config, database_path=db_path)
+        if self._scope.covers_multiple:
+            raise AmbiguousDatabaseError(
+                "haiku-ingester writes one database, and lancedb.databases "
+                f"names {', '.join(self._scope.names)}; select one with "
+                "--db PATH, or give each database its own ingester with a "
+                "configuration naming a single one"
+            )
         self._engine: AsyncEngine | None = None
         self._jobs: JobRepo | None = None
         self._sync: SyncStateRepo | None = None
