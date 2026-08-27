@@ -24,6 +24,12 @@ async with HaikuRAG("path/to/database.lancedb", read_only=True) as client:
     # await client.create_document(...)  # Would raise ReadOnlyError
 ```
 
+`async with` is the lifecycle. A caller that owns the client some other way
+releases it with `await client.aclose()`, which does the same work for every
+client shape. `client.close()` closes the connection to one database and nothing
+else, since draining the background vacuum and releasing the embedder and
+reranker are awaitable; it refuses a client covering several.
+
 !!! note
     Databases must be explicitly created with `create=True` or via `haiku-rag init` before use. Operations on non-existent databases will raise `FileNotFoundError`.
 

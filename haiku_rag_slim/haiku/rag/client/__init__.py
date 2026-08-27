@@ -169,6 +169,7 @@ class HaikuRAG:
         self._scope: DatabaseScope | None = None
         self._session: SingleDatabaseSession | FederatedSession | None = None
         self._owns_session = True
+        self._closed = False
 
     @property
     def covers_multiple(self) -> bool:
@@ -321,6 +322,7 @@ class HaikuRAG:
         covering several opens their sessions lazily, so `store` and the
         repositories stay unset until one database is named.
         """
+        self._closed = False
         if not self._owns_session:
             assert self._session is not None
             return self
@@ -452,7 +454,14 @@ class HaikuRAG:
                 )
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):  # noqa: ARG002
-        """Async context manager exit."""
+        """Async context manager exit.
+
+        Nothing to release is not an error: exiting before entering and exiting
+        twice both do nothing. The session stays readable afterwards, so what a
+        client covered can still be asked.
+        """
+        if self._session is None or self._closed:
+            return False
         # Branch on what this client covers, not on what it happened to open:
         # a federating client that answered no query has nothing open and no
         # store either.
@@ -468,15 +477,16 @@ class HaikuRAG:
             # only place they are closed — and only if anything built them.
             await self._aclose_cached("embedder")
             await self._aclose_cached("_own_reranker")
+            self._closed = True
             return False
         if not self._owns_session:
             await self._release_own()
             return False
-        assert self._session is not None
         # The session drains, releases its store's embedder and closes; the
         # cached reference here is only discarded, never closed twice.
         await self._release_own()
         await self._session.aclose()
+        self._closed = True
         return False
 
     async def _release_own(self) -> None:
@@ -944,13 +954,32 @@ class HaikuRAG:
         """Optimize and clean up old versions across all tables."""
         await self._single_session("vacuum").store.vacuum()
 
-    def close(self):
-        """Close the underlying store connection.
+    async def aclose(self) -> None:
+        """Release everything this client opened, whatever it covers.
+
+        The teardown `async with` runs, for a caller that owns the client's
+        lifetime some other way. Nothing to release is not an error, so this is
+        safe before entering and after closing.
+        """
+        await self.__aexit__(None, None, None)
+
+    def close(self) -> None:
+        """Close the connection to the one database this client opened.
+
+        The connection and nothing else: draining the background vacuum and
+        releasing the embedder and reranker are awaitable, so `aclose` is what
+        does all of it, and `async with` is the usual way to ask for it.
 
         A client covering one of a set borrows that database and never closes
-        it: the set opened it and the set closes it.
+        it: the set opened it and the set closes it. A client covering a set has
+        no single connection to close and refuses.
         """
-        session = self._single_session("close")
+        if not isinstance(self._session, SingleDatabaseSession):
+            raise AmbiguousDatabaseError(
+                "close works on one connection, and this client covers "
+                f"{', '.join(sorted(self.source_names))}; await aclose() to "
+                "release every database it opened"
+            )
         if not self._owns_session:
             return
-        session.close()
+        self._session.close()

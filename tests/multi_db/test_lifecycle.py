@@ -245,6 +245,83 @@ class TestBorrowedDatabases:
         assert closed == ["reranker"]
 
 
+class TestReleasingAClient:
+    """`async with` is the usual lifecycle, and `aclose` is it for a caller that
+    owns the client some other way. `close` is a connection, not a lifecycle."""
+
+    @pytest.mark.asyncio
+    async def test_aclose_releases_a_set(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        rag = HaikuRAG(config=config)
+        await rag.__aenter__()
+        alpha, beta = await rag.clients_for(["alpha", "beta"])
+        assert alpha.store.db.is_open()
+
+        await rag.aclose()
+
+        assert not alpha.store.db.is_open()
+        assert not beta.store.db.is_open()
+
+    @pytest.mark.asyncio
+    async def test_aclose_releases_one_database(self, tmp_path):
+        config = _config(tmp_path, ["alpha"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+
+        rag = HaikuRAG(config=config)
+        await rag.__aenter__()
+        assert rag.store.db.is_open()
+
+        await rag.aclose()
+
+        assert not rag.store.db.is_open()
+
+    @pytest.mark.asyncio
+    async def test_aclose_before_entering_does_nothing(self, tmp_path):
+        """Nothing was opened, so there is nothing to release and no error."""
+        config = _config(tmp_path, ["alpha"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+
+        await HaikuRAG(config=config).aclose()
+
+    @pytest.mark.asyncio
+    async def test_aclose_twice_releases_once(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+
+        closed: list[str] = []
+
+        rag = HaikuRAG(config=config)
+        await rag.__aenter__()
+        (alpha,) = await rag.clients_for(["alpha"])
+        session = rag._session
+        assert isinstance(session, FederatedSession)
+        real = session.aclose
+
+        async def counting():
+            closed.append("set")
+            await real()
+
+        session.aclose = counting  # ty: ignore[invalid-assignment]
+
+        await rag.aclose()
+        await rag.aclose()
+
+        assert closed == ["set"]
+        assert not alpha.store.db.is_open()
+
+    @pytest.mark.asyncio
+    async def test_close_refuses_a_set_and_names_aclose(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+
+        async with HaikuRAG(config=config) as rag:
+            with pytest.raises(AmbiguousDatabaseError, match="aclose"):
+                rag.close()
+
+
 class TestSharingTheReranker:
     @pytest.mark.asyncio
     async def test_the_set_builds_and_closes_one_reranker(self, tmp_path, monkeypatch):
