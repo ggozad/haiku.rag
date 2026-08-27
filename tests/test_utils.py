@@ -793,6 +793,20 @@ async def test_format_citations_rich_names_the_database_when_federating():
     assert "medic" in output
 
 
+def test_truncated_marks_what_it_dropped():
+    """An unmarked cut reads as the value: a sentence ending "in 1991" becomes
+    one ending "in 1"."""
+    from haiku.rag.utils import truncated
+
+    sentence = "Station Kestrel sits at 980 metres and was commissioned in 1991."
+
+    assert truncated(sentence, 60) == sentence[:60] + "…"
+    assert truncated(sentence, len(sentence)) == sentence
+    assert truncated("short", 60) == "short"
+    # Trailing space before the mark reads as a gap in the text.
+    assert truncated("a bc", 2) == "a…"
+
+
 async def test_format_citations_rich_omits_the_database_for_one_database():
     """A single database is not worth naming on every citation."""
     from unittest.mock import AsyncMock

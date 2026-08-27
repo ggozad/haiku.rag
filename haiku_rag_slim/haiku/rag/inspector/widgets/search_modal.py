@@ -9,6 +9,7 @@ from textual.widgets import Input, ListItem, ListView, Static
 from haiku.rag.client import HaikuRAG
 from haiku.rag.inspector.widgets.detail_view import DetailView
 from haiku.rag.store.models import Chunk, SearchResult
+from haiku.rag.utils import truncated
 
 
 class SearchModal(Screen):
@@ -112,7 +113,7 @@ class SearchModal(Screen):
 
             await list_view.clear()
             for result in self.search_results:
-                first_line = result.content.split("\n")[0][:60]
+                first_line = truncated(result.content.split("\n")[0], 60)
                 score_str = f"{result.score:.2f}"
                 # Add page info if available
                 page_info = ""

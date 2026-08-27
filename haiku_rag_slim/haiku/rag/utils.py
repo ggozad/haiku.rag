@@ -362,6 +362,17 @@ def format_citations(citations: "list[Citation]") -> str:
     return "\n".join(lines)
 
 
+def truncated(text: str, limit: int) -> str:
+    """`text` cut to `limit` characters, marked where anything was dropped.
+
+    Without the mark a clipped value reads as the value: a sentence ending
+    "commissioned in 1991" becomes "commissioned in 1".
+    """
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "…"
+
+
 async def format_citations_rich(
     citations: "list[Citation]",
     client: "HaikuRAG | None" = None,
@@ -415,10 +426,7 @@ async def format_citations_rich(
                 else Text(f"[Figure: {ref}]", style="italic dim")
             )
 
-        preview = c.content
-        if len(preview) > CITATION_PREVIEW_CHARS:
-            preview = preview[:CITATION_PREVIEW_CHARS].rstrip() + "…"
-        body.append(Text(preview))
+        body.append(Text(truncated(c.content, CITATION_PREVIEW_CHARS)))
 
         footer = Text()
         footer.append("doc: ", style="dim")
