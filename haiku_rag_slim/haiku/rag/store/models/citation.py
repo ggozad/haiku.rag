@@ -74,19 +74,23 @@ def resolve_citations(
 ) -> list[Citation]:
     """Resolve chunk IDs to full Citation objects with metadata.
 
-    Raises ``AmbiguousCitationError`` when a cited id names a chunk in more than
-    one of the databases searched, as after copying a database. A citation
-    records the id alone, so resolving one would attribute the answer to a
-    database it may not have come from.
+    A chunk returned by more than one search resolves to its last occurrence.
+    Raises ``AmbiguousCitationError`` instead when a cited id names a chunk in
+    more than one of the databases searched, as after copying a database: a
+    citation records the id alone, so resolving one would attribute the answer
+    to a database it may not have come from.
     """
     by_id: dict[str, SearchResult] = {}
     ambiguous: dict[str, set[str | None]] = {}
     for r in search_results:
         # A result built by hand carries no id and nothing can cite it.
         if cid := r.chunk_id:
-            held = by_id.setdefault(cid, r)
-            if held.source != r.source:
+            if (held := by_id.get(cid)) is not None and held.source != r.source:
                 ambiguous.setdefault(cid, {held.source}).add(r.source)
+            # A chunk found by several searches is expanded once per search, so
+            # the copies differ in content, window and figures. The later entry
+            # wins.
+            by_id[cid] = r
 
     citations = []
     for raw_id in cited_chunk_ids:

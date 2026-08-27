@@ -66,7 +66,9 @@ class TestSharedChunkIds:
 
     def test_a_repeated_id_from_one_database_still_collapses(self):
         """One database cannot hold two chunks under one id, so seeing it twice
-        is the same chunk seen twice."""
+        is the same chunk seen twice, and it resolves rather than raising. Which
+        copy supplies the content is `resolve_citations`' own rule, pinned in
+        `tests/store/test_citation.py`."""
         results = [
             SearchResult(
                 content="first",
@@ -88,7 +90,8 @@ class TestSharedChunkIds:
 
         [citation] = resolve_citations(["c1"], results)
 
-        assert citation.content == "first"
+        assert citation.chunk_id == "c1"
+        assert citation.source == "alpha"
 
     def test_only_a_cited_id_has_to_be_unambiguous(self):
         """An id the answer never cites attributes nothing."""
