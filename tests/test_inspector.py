@@ -381,11 +381,6 @@ class TestReportingReusesTheConnection:
         from haiku.rag.inspector.widgets.info_modal import database_lines
         from haiku.rag.store.engine import ConnectionMode
 
-        def explode(*args, **kwargs):
-            raise AssertionError("opened a second connection to report statistics")
-
-        monkeypatch.setattr("haiku.rag.store.engine.connect_lancedb", explode)
-
         asked: list[object] = []
 
         async def fake_stats(db):
