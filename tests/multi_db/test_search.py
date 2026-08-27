@@ -482,6 +482,22 @@ class TestFusingWhatARerankerReturns:
                 await _fuse(rag, clients, "cats", per_source, 5)
 
 
+class TestRememberingTheStoredEmbedder:
+    @pytest.mark.asyncio
+    async def test_creating_a_database_records_the_embedder_it_wrote(self, tmp_path):
+        """Creating writes the settings this database will be read with, so a
+        client that created one can be compared against a client that opened
+        one."""
+        config = _config(tmp_path, ["alpha", "beta"])
+
+        async with HaikuRAG(config=config, create=True, sources=["alpha"]) as created:
+            assert created.store.stored_embedding is not None
+            written = created.store.stored_embedding
+
+        async with HaikuRAG(config=config, sources=["alpha"]) as reopened:
+            assert reopened.store.stored_embedding == written
+
+
 class TestComparingEmbedders:
     @pytest.mark.asyncio
     async def test_a_database_recording_no_embedder_is_not_compared(self, tmp_path):

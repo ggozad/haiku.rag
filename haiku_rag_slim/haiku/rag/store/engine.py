@@ -214,11 +214,19 @@ class Store:
 
         # Create embedder (sync — no LanceDB needed)
         self.embedder = get_embedder(config=self._config)
-        self.stored_embedding: tuple[str | None, str | None, int | None] | None = None
-        # The settings blob as of open, so reporting on a database costs no
-        # second read of it. Not refreshed by a later write, the same as
-        # `stored_embedding`.
+        # The settings blob as of open, and the embedder it records, so
+        # reporting on a database and comparing it against another cost no
+        # second read. Neither follows a later write.
         self.stored_settings: dict = {}
+        self.stored_embedding: tuple[str | None, str | None, int | None] | None = None
+
+    def _remember_settings(self, settings: dict) -> None:
+        """Hold the settings blob and the embedder it records.
+
+        Together, so nothing reports on one reading while comparing the other.
+        """
+        self.stored_settings = settings
+        self.stored_embedding = _stored_embedding(settings)
 
     async def _initialize(self):
         """Perform async initialization: connect to LanceDB, init tables, validate."""
@@ -234,12 +242,11 @@ class Store:
 
         if not is_new_db and "settings" in existing_tables:
             self.settings_table = await self.db.open_table("settings")
-            self.stored_settings = await self._read_stored_settings()
+            self._remember_settings(await self._read_stored_settings())
 
         # An existing database's chunks can only be read with the dimension they
         # were written at.
         stored_vector_dim = _stored_vector_dim(self.stored_settings)
-        self.stored_embedding = _stored_embedding(self.stored_settings)
         chunk_vector_dim = stored_vector_dim or self.embedder._vector_dim
         self.ChunkRecord: type[ChunkRecordBase] = create_chunk_model(chunk_vector_dim)
 
@@ -251,7 +258,9 @@ class Store:
         # Set version for new databases.
         if is_new_db and not self._read_only:
             await self._set_initial_version()
-            self.stored_settings = await self._read_stored_settings()
+            # Creating wrote the settings this database will be read with, so
+            # both readings of them are taken again together.
+            self._remember_settings(await self._read_stored_settings())
 
         # Validate config compatibility after connection is established
         if not self._skip_validation:
