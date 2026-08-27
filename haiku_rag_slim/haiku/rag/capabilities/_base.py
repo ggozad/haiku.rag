@@ -166,6 +166,8 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
     state_type: type[StateT]
     state_namespace: str
     instruction_text: str
+    collection_instructions: str
+    """Appended for a run that spans more than one collection."""
     vision: bool
     tool_names: frozenset[str]
     request_limit: int | None = None
@@ -235,10 +237,27 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
         run_capability._sync_state()
         return run_capability
 
+    @property
+    def spans_collections(self) -> bool:
+        """Whether this run reads more than one collection.
+
+        A question narrows the conversation through `sources`, so a capability
+        built over a set can still run against one collection, and telling it
+        how to attribute across collections it cannot reach is noise.
+        """
+        if self.state is not None and self.state.sources is not None:
+            return len(set(self.state.sources)) > 1
+        if self.borrowed_rag is not None:
+            return self.borrowed_rag.covers_multiple
+        return self.scope.covers_multiple
+
     def get_instructions(self) -> str:
+        parts = [self.instruction_text]
         if self.config.prompts.domain_preamble:
-            return f"{self.config.prompts.domain_preamble}\n\n{self.instruction_text}"
-        return self.instruction_text
+            parts.insert(0, self.config.prompts.domain_preamble)
+        if self.spans_collections:
+            parts.append(self.collection_instructions)
+        return "\n\n".join(parts)
 
     async def before_model_request(
         self, ctx: RunContext[Any], request_context: ModelRequestContext

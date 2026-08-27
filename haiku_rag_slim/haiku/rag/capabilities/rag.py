@@ -29,8 +29,8 @@ STATE_NAMESPACE = "rag"
 _CAPABILITY_ID = "haiku-rag"
 _TOOL_NAMES = frozenset({"rag_search", "rag_cite"})
 _instructions_path = Path(__file__).parent / "instructions" / "rag.md"
-_multiple_databases_path = (
-    Path(__file__).parent / "instructions" / "rag_multiple_databases.md"
+_multiple_collections_path = (
+    Path(__file__).parent / "instructions" / "rag_multiple_collections.md"
 )
 
 
@@ -44,9 +44,9 @@ def instructions() -> str:
 
 
 @cache
-def multiple_databases_instructions() -> str:
-    """Appended only where the capability covers multiple databases."""
-    return _multiple_databases_path.read_text().rstrip()
+def multiple_collections_instructions() -> str:
+    """Appended for a run that spans more than one collection."""
+    return _multiple_collections_path.read_text().rstrip()
 
 
 @dataclass
@@ -115,18 +115,14 @@ def create_capability(
 
         config = get_config()
     scope = resolve_scope(db_path, config)
-    instruction_text = instructions()
-    # A lent client covers what it covers; otherwise the scope says.
-    covers_multiple = rag.covers_multiple if rag is not None else scope.covers_multiple
-    if covers_multiple:
-        instruction_text += multiple_databases_instructions()
     return RAGCapability(
         scope=scope,
         config=config,
         borrowed_rag=rag,
         state_type=RAGState,
         state_namespace=STATE_NAMESPACE,
-        instruction_text=instruction_text,
+        instruction_text=instructions(),
+        collection_instructions=multiple_collections_instructions(),
         vision=config.qa.model.vision if vision is None else vision,
         tool_names=_TOOL_NAMES,
         request_limit=request_limit,

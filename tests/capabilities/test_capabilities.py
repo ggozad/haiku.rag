@@ -1613,9 +1613,9 @@ async def test_an_answered_question_is_no_longer_in_progress(temp_db_path):
     assert record.in_progress is False
 
 
-class TestSeveralDatabasesInstructions:
-    """The note follows what a capability opens, not what the configuration
-    names, so a single database is instructed exactly as it was before databases
+class TestMultipleCollectionsInstructions:
+    """The note follows what a run reads, not what the configuration names, so a
+    run over one collection is instructed exactly as it was before collections
     could be named."""
 
     @staticmethod
@@ -1674,25 +1674,64 @@ class TestSeveralDatabasesInstructions:
 
         for factory in (create_rag, create_analysis):
             capability = factory(config=config, rag=covering)
-            assert "source" in capability.instruction_text or (
-                "Database:" in capability.instruction_text
-            )
+            assert "Collection:" in capability.get_instructions()
 
     def test_the_rag_note_names_the_line_a_result_carries(self):
         config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
 
-        text = create_rag(config=config).instruction_text
+        text = create_rag(config=config).get_instructions()
 
-        assert "Database:" in text
+        assert "Collection:" in text
 
     def test_the_analysis_note_separates_the_interfaces(self):
-        """The three interfaces name a database differently, and the mounted
+        """The three interfaces name a collection differently, and the mounted
         files do not name it at all."""
         config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
 
-        text = create_analysis(config=config).instruction_text
+        text = create_analysis(config=config).get_instructions()
 
-        assert "Database:" in text  # analysis_search results
+        assert "Collection:" in text  # analysis_search results
         assert "source" in text  # in-code search / list_documents
         assert "metadata.json" in text  # the mounted files, which lack it
-        assert "list_documents" in text  # how to map ids to databases
+        assert "list_documents" in text  # how to map ids to collections
+
+    def test_a_run_narrowed_to_one_collection_drops_the_note(self):
+        """A question narrows the conversation, so a capability over a set can
+        still read one collection."""
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
+
+        rag = create_rag(config=config)
+        rag.state = RAGState(sources=["alpha"])
+        analysis = create_analysis(config=config)
+        analysis.state = AnalysisState(sources=["alpha"])
+
+        assert "Collection:" not in rag.get_instructions()
+        assert "Collection:" not in analysis.get_instructions()
+
+    def test_a_run_narrowed_to_two_collections_keeps_the_note(self):
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb", gamma="/c.lancedb")
+
+        capability = create_rag(config=config)
+        capability.state = RAGState(sources=["alpha", "beta"])
+
+        assert "Collection:" in capability.get_instructions()
+
+    def test_an_unnarrowed_run_follows_the_lent_client(self):
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
+        one = create_rag(config=config, rag=self._client({}))
+        one.state = RAGState()
+        covering = create_rag(
+            config=config, rag=self._client({"alpha": "/a", "beta": "/b"})
+        )
+        covering.state = RAGState()
+
+        assert "Collection:" not in one.get_instructions()
+        assert "Collection:" in covering.get_instructions()
+
+    def test_the_note_follows_the_preamble_and_the_base(self):
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
+        config.prompts.domain_preamble = "PREAMBLE"
+
+        text = create_rag(config=config).get_instructions()
+
+        assert text.index("PREAMBLE") < text.index("# RAG") < text.index("Collection:")

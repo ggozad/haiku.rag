@@ -25,8 +25,8 @@ STATE_NAMESPACE = "analysis"
 _CAPABILITY_ID = "haiku-rag-analysis"
 _TOOL_NAMES = frozenset({"analysis_search", "analysis_execute_code", "analysis_cite"})
 _instructions_path = Path(__file__).parent / "instructions" / "analysis.md"
-_multiple_databases_path = (
-    Path(__file__).parent / "instructions" / "analysis_multiple_databases.md"
+_multiple_collections_path = (
+    Path(__file__).parent / "instructions" / "analysis_multiple_collections.md"
 )
 
 
@@ -44,9 +44,9 @@ def instructions() -> str:
 
 
 @cache
-def multiple_databases_instructions() -> str:
-    """Appended only where the capability covers multiple databases."""
-    return _multiple_databases_path.read_text().rstrip()
+def multiple_collections_instructions() -> str:
+    """Appended for a run that spans more than one collection."""
+    return _multiple_collections_path.read_text().rstrip()
 
 
 def _recovery_hint(stderr: str) -> str:
@@ -212,18 +212,14 @@ def create_capability(
         config = get_config()
     analysis_model = config.analysis.model or config.qa.model
     scope = resolve_scope(db_path, config)
-    instruction_text = instructions()
-    # A lent client covers what it covers; otherwise the scope says.
-    covers_multiple = rag.covers_multiple if rag is not None else scope.covers_multiple
-    if covers_multiple:
-        instruction_text += multiple_databases_instructions()
     return AnalysisCapability(
         scope=scope,
         config=config,
         borrowed_rag=rag,
         state_type=AnalysisState,
         state_namespace=STATE_NAMESPACE,
-        instruction_text=instruction_text,
+        instruction_text=instructions(),
+        collection_instructions=multiple_collections_instructions(),
         vision=analysis_model.vision if vision is None else vision,
         tool_names=_TOOL_NAMES,
         request_limit=request_limit,
