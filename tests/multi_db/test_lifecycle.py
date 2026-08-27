@@ -131,6 +131,22 @@ class TestOpeningDatabases:
         assert [client.source for client in covering] == ["alpha"]
 
 
+class TestReportingWhereADatabaseIs:
+    @pytest.mark.asyncio
+    async def test_one_database_reports_its_location_and_a_set_none(self, tmp_path):
+        """A set has no single location to report. What the CLI and the info
+        modal print comes from here."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        async with HaikuRAG(config=config) as covering:
+            assert covering.location is None
+
+        async with HaikuRAG(config=config, sources=["alpha"]) as one:
+            assert one.location == tmp_path / "alpha.lancedb"
+
+
 class TestClosingASet:
     @pytest.mark.asyncio
     async def test_every_database_opened_is_released(self, tmp_path):

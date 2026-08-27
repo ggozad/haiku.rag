@@ -14,16 +14,13 @@ if TYPE_CHECKING:
     from haiku.rag.client import HaikuRAG
 
 
-def reported_database(client: "HaikuRAG", db_path: "Path | None") -> "Path | None":
-    """The database whose statistics to report, or None where a set is covered.
+def reported_location(client: "HaikuRAG") -> "Path | str | None":
+    """Where the database to report on is, or None where a set is covered.
 
-    A caller passing no path leaves the choice to the client, and a client given
-    one named database opens it rather than covering a set. Only what the client
-    ended up covering says which of the two this is.
+    What the client ended up covering is what says which of the two it is: a
+    client given one named database opens it rather than covering a set.
     """
-    if client.covers_multiple:
-        return None
-    return db_path if db_path is not None else client.store.db_path
+    return client.location
 
 
 async def database_lines(client: "HaikuRAG") -> list[str]:
@@ -160,10 +157,9 @@ class InfoModal(ModalScreen):
     }
     """
 
-    def __init__(self, client: "HaikuRAG", db_path: Path | None):
+    def __init__(self, client: "HaikuRAG"):
         super().__init__()
         self.client = client
-        self.db_path = db_path
         self._content_widget = Static("Loading...")
 
     def compose(self) -> ComposeResult:
@@ -176,8 +172,8 @@ class InfoModal(ModalScreen):
         """Load and display database info."""
         lines: list[str] = []
 
-        db_path = reported_database(self.client, self.db_path)
-        if db_path is None:
+        location = reported_location(self.client)
+        if location is None:
             # Covering a set: report each database under its configured name, and
             # each on its own, so one that cannot be opened costs its own block
             # rather than the whole panel. Names only, no paths — a location
@@ -188,7 +184,7 @@ class InfoModal(ModalScreen):
             for block in blocks:
                 lines.extend(block)
         else:
-            lines.append(f"[bold $accent]path[/bold $accent]: {db_path}")
+            lines.append(f"[bold $accent]location[/bold $accent]: {location}")
             lines.extend(await database_lines(self.client))
 
         lines.append("[bold]Versions[/bold]")

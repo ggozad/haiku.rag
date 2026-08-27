@@ -82,6 +82,14 @@ class SingleDatabaseSession:
         self._last_vacuum_at: float | None = None
         self._vacuum_dirty = False
 
+    @property
+    def location(self) -> Path | str:
+        """Configured URI or local path for this database.
+
+        Not `db_path`, which is a placeholder where a URI holds the database.
+        """
+        return self.config.lancedb.uri or self.db_path
+
     async def open(self) -> "SingleDatabaseSession":
         """Connect, validate, and build the repositories."""
         failure: str | None = None

@@ -389,7 +389,7 @@ class ChatApp(App):
 
         from haiku.rag.inspector.widgets.info_modal import InfoModal
 
-        await self.push_screen(InfoModal(self.client, None))
+        await self.push_screen(InfoModal(self.client))
 
     def on_citation_widget_selected(self, event: CitationWidget.Selected) -> None:
         """Handle citation selection."""

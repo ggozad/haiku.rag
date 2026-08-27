@@ -133,7 +133,7 @@ class InspectorApp(App):
         if self.client:
             from haiku.rag.inspector.widgets.info_modal import InfoModal
 
-            await self._switch_modal(InfoModal(self.client, None))
+            await self._switch_modal(InfoModal(self.client))
 
     async def on_search_modal_chunk_selected(
         self, message: SearchModal.ChunkSelected

@@ -333,42 +333,43 @@ async def test_inspector_open_failure_surfaces_real_error(tmp_path):
             pass
 
 
-class TestReportedDatabase:
-    """`db_path=None` means the client chose, and a client handed one named
-    database opens it rather than covering a set."""
+class TestReportedLocation:
+    """A URI-backed database is constructed with a placeholder local path, so
+    what the modal prints has to come from the configuration."""
 
     @staticmethod
-    def _client(federated, store_path=None):
-        client = MagicMock()
-        client.covers_multiple = len(federated) > 1
-        client.source_names = tuple(federated)
-        client.store.db_path = store_path
-        return client
+    def _session(location: str):
+        from haiku.rag.client.scope import DatabaseScope
+        from haiku.rag.client.session import SingleDatabaseSession, default_db_path
+        from haiku.rag.config.models import AppConfig, LanceDBConfig
 
-    def test_a_covered_set_reports_no_single_database(self):
-        from haiku.rag.inspector.widgets.info_modal import reported_database
-
-        client = self._client({"a": "/a.lancedb", "b": "/b.lancedb"})
-
-        assert reported_database(client, None) is None
-
-    def test_one_named_database_reports_the_path_it_opened(self):
-        """The path is None because the client resolved the name, not because
-        there is a set to cover."""
-        from haiku.rag.inspector.widgets.info_modal import reported_database
-
-        client = self._client({}, store_path=Path("/data/alpha.lancedb"))
-
-        assert reported_database(client, None) == Path("/data/alpha.lancedb")
-
-    def test_an_explicit_path_is_reported_as_given(self):
-        from haiku.rag.inspector.widgets.info_modal import reported_database
-
-        client = self._client({}, store_path=Path("/data/other.lancedb"))
-
-        assert reported_database(client, Path("/data/given.lancedb")) == Path(
-            "/data/given.lancedb"
+        config = AppConfig(lancedb=LanceDBConfig(databases={"alpha": location}))
+        [ref] = DatabaseScope.resolve(config, database_name="alpha").databases
+        one, db_path = ref.connection(config)
+        return SingleDatabaseSession(
+            db_path if db_path is not None else default_db_path(one),
+            one,
+            source="alpha",
         )
+
+    def test_a_covered_set_reports_no_location(self):
+        from haiku.rag.inspector.widgets.info_modal import reported_location
+
+        client = MagicMock()
+        client.location = None
+
+        assert reported_location(client) is None
+
+    def test_a_named_remote_database_reports_its_uri(self):
+        session = self._session("s3://bucket/alpha.lancedb")
+
+        assert isinstance(session.db_path, Path)
+        assert session.location == "s3://bucket/alpha.lancedb"
+
+    def test_a_named_local_database_reports_its_path(self):
+        session = self._session("/data/alpha.lancedb")
+
+        assert session.location == Path("/data/alpha.lancedb")
 
 
 class TestReportingReusesTheConnection:

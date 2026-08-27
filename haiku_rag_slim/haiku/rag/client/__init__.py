@@ -184,6 +184,13 @@ class HaikuRAG:
             return self._session.source
         return None
 
+    @property
+    def location(self) -> "Path | str | None":
+        """Where the database this client reads is, or None while covering a set."""
+        if not isinstance(self._session, SingleDatabaseSession):
+            return None
+        return self._session.location
+
     async def reader_for(self, source: str | None) -> "HaikuRAG | None":
         """The client that can read `source` — itself, where it reads one
         database.
