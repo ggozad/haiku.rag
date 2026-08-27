@@ -35,11 +35,11 @@ class TestOpeningDatabases:
             barrier = asyncio.Barrier(len(names))
             open_one = rag._session._open
 
-            async def gated(ref):
+            async def gated(name):
                 # Every open has to be in flight before any of them finishes, so
                 # a serial loop cannot get past this and the wait times out.
                 await barrier.wait()
-                return await open_one(ref)
+                await open_one(name)
 
             rag._session._open = gated
             clients = await asyncio.wait_for(rag.clients_for(names), timeout=15)
@@ -60,6 +60,38 @@ class TestOpeningDatabases:
 
             assert isinstance(rag._session, FederatedSession)
             assert set(rag._session._sessions) == {"alpha"}
+
+    @pytest.mark.asyncio
+    async def test_a_cancelled_open_does_not_leak_the_ones_that_worked(self, tmp_path):
+        """Cancellation discards the fan-out's results rather than returning them,
+        so a database that opened while a sibling was still pending is reachable
+        only because the opener recorded it."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        async with HaikuRAG(config=config) as rag:
+            assert isinstance(rag._session, FederatedSession)
+            open_one = rag._session._open
+            alpha_open = asyncio.Event()
+
+            async def staged(name):
+                if name == "beta":
+                    await asyncio.sleep(60)
+                await open_one(name)
+                alpha_open.set()
+
+            rag._session._open = staged
+            fanout = asyncio.create_task(rag.clients_for(["alpha", "beta"]))
+            await asyncio.wait_for(alpha_open.wait(), timeout=15)
+            fanout.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await fanout
+
+            assert set(rag._session._sessions) == {"alpha"}
+            alpha = rag._session._sessions["alpha"]
+
+        assert not alpha.store.db.is_open()
 
     @pytest.mark.asyncio
     async def test_a_database_named_twice_is_opened_once(self, tmp_path):
@@ -392,8 +424,8 @@ class TestDatabaseIndependentWork:
 
         opened: list[str] = []
 
-        async def refuse(self, ref):
-            opened.append(ref.name)
+        async def refuse(self, name):
+            opened.append(name)
             raise AssertionError("opened a database to chunk a document")
 
         monkeypatch.setattr(FederatedSession, "_open", refuse)

@@ -288,25 +288,22 @@ class FederatedSession:
             missing = [name for name in names if name not in self._sessions]
             if missing:
                 opened = await asyncio.gather(
-                    *(self._open(self._refs[name]) for name in missing),
+                    *(self._open(name) for name in missing),
                     return_exceptions=True,
                 )
-                # Whatever opened is tracked before the failure is reported, so
-                # teardown closes it: `gather` does not cancel the siblings of the
-                # one that raised, and an untracked connection leaks.
-                failure: BaseException | None = None
-                for name, result in zip(missing, opened, strict=True):
+                for result in opened:
                     if isinstance(result, BaseException):
-                        failure = failure or result
-                    else:
-                        self._sessions[name] = result
-                if failure is not None:
-                    raise failure
+                        raise result
         return [self._sessions[name] for name in names]
 
-    async def _open(self, ref: DatabaseRef) -> SingleDatabaseSession:
+    async def _open(self, name: str) -> None:
+        """Open and register one database before returning to the fan-out.
+
+        Registered here because a cancelled `gather` discards its results.
+        """
+        ref = self._refs[name]
         one, db_path = ref.connection(self._config)
-        return await SingleDatabaseSession(
+        self._sessions[name] = await SingleDatabaseSession(
             db_path if db_path is not None else default_db_path(one),
             one,
             skip_validation=self._skip_validation,
