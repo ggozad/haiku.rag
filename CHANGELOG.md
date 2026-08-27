@@ -37,6 +37,7 @@
 - Inspector search results mark truncated previews with an ellipsis.
 - Document titles, URIs, headings and database names render as text, not Rich
   markup, in `search` output, chat citations and the chat document filter.
+- `reranking.model.base_url` accepts the endpoint with or without the `/v1` path, matching the `vllm` embedder. Writing `/v1` produced a request to `/v1/v1/rerank`.
 - An unrecognized chat model provider raises `Unknown model provider '<name>'` instead of reaching pydantic-ai as a `provider:name` string, and outranks the `api_key` check, so an unusable provider is no longer reported as a missing vendor environment variable.
 
 ## [0.78.0] - 2026-08-24

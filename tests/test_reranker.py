@@ -197,7 +197,7 @@ class TestGetReranker:
                 {"base_url": "http://localhost:8000"},
                 {
                     "_model": "BAAI/bge-reranker-v2-m3",
-                    "_base_url": "http://localhost:8000",
+                    "_base_url": "http://localhost:8000/v1",
                 },
                 {},
             ),
@@ -293,11 +293,12 @@ class TestGetReranker:
 
 
 class _PoolStats:
-    """Fake httpx.AsyncClient factory counting constructions and closes."""
+    """Fake httpx.AsyncClient factory recording constructions, closes and URLs."""
 
     def __init__(self, response_json):
         self.constructed = 0
         self.closed = 0
+        self.urls: list[str] = []
         stats = self
 
         class FakeResponse:
@@ -312,6 +313,7 @@ class _PoolStats:
                 stats.constructed += 1
 
             async def post(self, url, json, headers):
+                stats.urls.append(url)
                 return FakeResponse()
 
             async def aclose(self):
@@ -337,6 +339,25 @@ async def test_vllm_reranker_reuses_pooled_client(monkeypatch):
     assert stats.constructed == 1
     await reranker.aclose()
     assert stats.closed == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "base_url", ["http://localhost:8000", "http://localhost:8000/v1"]
+)
+async def test_vllm_reranker_accepts_base_url_with_or_without_v1(monkeypatch, base_url):
+    """`reranking.model.base_url` is the same endpoint as the embedder's, which
+    carries /v1, so both spellings must post to /v1/rerank exactly once."""
+    from haiku.rag.reranking.vllm import VLLMReranker
+
+    stats = _PoolStats({"results": [{"index": 0, "relevance_score": 0.9}]})
+    monkeypatch.setattr("httpx.AsyncClient", stats.client_class)
+
+    reranker = VLLMReranker(model="m", base_url=base_url)
+    await reranker.rerank("q", [Chunk(content="a", order=0)])
+
+    assert stats.urls == ["http://localhost:8000/v1/rerank"]
+    await reranker.aclose()
 
 
 @pytest.mark.asyncio

@@ -472,10 +472,10 @@ reranking:
   model:
     provider: vllm
     name: Qwen/Qwen3-Reranker-4B
-    base_url: http://localhost:8001
+    base_url: http://localhost:8001/v1
 ```
 
-**Note:** vLLM reranking uses the `/v1/rerank` API endpoint. You need to run a vLLM server separately with a reranking model loaded.
+**Note:** vLLM reranking posts to the `/v1/rerank` endpoint. As with the embedder, `base_url` may be written with or without the `/v1` path. You need to run a vLLM server separately with a reranking model loaded.
 
 #### Multimodal reranking
 
@@ -487,7 +487,7 @@ reranking:
   model:
     provider: vllm
     name: nvidia/llama-nemotron-rerank-vl-1b-v2
-    base_url: http://localhost:8001
+    base_url: http://localhost:8001/v1
 ```
 
 Picture chunks are sent as image documents (base64 data URIs) alongside plain text documents in the same rerank request. The flag is supported on the vllm provider only, and the served model must accept multimodal inputs.

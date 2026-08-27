@@ -4,6 +4,7 @@ import httpx
 
 from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk
+from haiku.rag.utils import vllm_base_url
 
 
 def _document(chunk: Chunk) -> str | dict:
@@ -26,7 +27,7 @@ def _document(chunk: Chunk) -> str | dict:
 class VLLMReranker(RerankerBase):
     def __init__(self, model: str, base_url: str, api_key: str | None = None):
         self._model = model
-        self._base_url = base_url
+        self._base_url = vllm_base_url(base_url)
         self._headers = {
             "accept": "application/json",
             "Content-Type": "application/json",
@@ -47,7 +48,7 @@ class VLLMReranker(RerankerBase):
         documents = [_document(chunk) for chunk in chunks]
 
         response = await self._client.post(
-            f"{self._base_url}/v1/rerank",
+            f"{self._base_url}/rerank",
             json={"model": self._model, "query": query, "documents": documents},
             headers=self._headers,
         )

@@ -62,6 +62,18 @@ def check_api_key_supported(
         )
 
 
+def vllm_base_url(base_url: str | None) -> str:
+    """Normalize a vLLM endpoint to its OpenAI-compatible `/v1` root.
+
+    Embedders and rerankers take the same endpoint from config, so both accept
+    it written with or without `/v1`.
+    """
+    base_url = base_url or "http://localhost:8000/v1"
+    if not base_url.rstrip("/").endswith("/v1"):
+        base_url = base_url.rstrip("/") + "/v1"
+    return base_url
+
+
 def _check_provider_known(provider: str) -> None:
     """Reject a chat provider pydantic-ai cannot resolve.
 
