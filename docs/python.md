@@ -261,8 +261,9 @@ their documents.
 none: `search` returns no results, and `ask` and `analyze` run with no evidence
 from any database.
 
-On the constructor, `sources=[]` raises `ValueError` instead. A selection of
-nothing to search is a legitimate question; a client over no database is not.
+On the constructor, `sources` is rejected alongside a database path, and `[]`
+raises `ValueError`. A selection of nothing to search is a legitimate question;
+a client over no database is not.
 
 #### Inspecting the client scope
 

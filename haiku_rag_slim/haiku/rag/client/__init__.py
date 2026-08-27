@@ -142,10 +142,11 @@ class HaikuRAG:
             read_only: Whether to open the database in read-only mode.
             sources: Names from ``config.lancedb.databases`` this client covers,
                 None for all of them. Only that setting names databases, so a
-                name raises when ``lancedb.uri`` placed the database. Ignored
-                when ``db_path`` says which database to open. ``[]`` raises: a
-                client over no database can do nothing, unlike ``sources=[]`` on
-                a search, which is a selection of nothing to search.
+                name raises when ``lancedb.uri`` placed the database, and is
+                rejected alongside ``db_path``, which says the same thing
+                another way. ``[]`` raises too: a client over no database can do
+                nothing, unlike ``sources=[]`` on a search, which is a selection
+                of nothing to search.
         """
         self._configured = config if config is not None else get_config()
         # What the caller configured, kept intact: entering derives a
@@ -153,6 +154,11 @@ class HaikuRAG:
         # same set rather than the answer from last time.
         self._config = self._configured
         self._requested_db_path = Path(db_path) if db_path is not None else None
+        if self._requested_db_path is not None and sources is not None:
+            raise AmbiguousDatabaseError(
+                "a path and `sources` both say which databases to open; pass "
+                "one of them"
+            )
         self._skip_validation = skip_validation
         self._create = create
         self._read_only = read_only

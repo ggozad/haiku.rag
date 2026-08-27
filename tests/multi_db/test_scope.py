@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.config.models import AppConfig, LanceDBConfig
+from haiku.rag.store.exceptions import AmbiguousDatabaseError
 from haiku.rag.utils import locate_database
 from tests.multi_db.helpers import (
     _config,
@@ -236,6 +237,15 @@ class TestPlacingADatabase:
     async def test_a_client_reading_one_database_is_its_own_reader(self, temp_db_path):
         async with HaikuRAG(temp_db_path, create=True) as rag:
             assert await rag.reader_for(None) is rag
+
+    def test_a_path_and_sources_cannot_both_choose(self, tmp_path):
+        """`sources` used to be ignored beside a path, so selecting a database
+        that is not the one at the path opened the path anyway."""
+        config = _config(tmp_path, ["alpha", "beta"])
+
+        for sources in ([], ["alpha"], ["nope"]):
+            with pytest.raises(AmbiguousDatabaseError, match="pass one of them"):
+                HaikuRAG(tmp_path / "alpha.lancedb", config=config, sources=sources)
 
     @pytest.mark.asyncio
     async def test_one_database_refuses_a_name_it_does_not_cover(self, tmp_path):
