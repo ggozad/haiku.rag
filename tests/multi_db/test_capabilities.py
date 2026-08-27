@@ -10,6 +10,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.client.session import FederatedSession
 from haiku.rag.sandbox import AnalysisContext, Sandbox
+from haiku.rag.store.exceptions import UnknownDatabaseError
 from haiku.rag.store.models import SearchResult
 from tests.multi_db.helpers import (
     _config,
@@ -212,7 +213,7 @@ class TestNamingDatabasesBeforeTheModelRuns:
         await _seed(config, "beta", ["beta document about cats"])
 
         async with HaikuRAG(config=config) as rag:
-            with pytest.raises(KeyError, match="typo"):
+            with pytest.raises(UnknownDatabaseError, match="typo"):
                 await rag.ask("what about cats?", sources=["typo"])
 
     @pytest.mark.asyncio
@@ -221,7 +222,7 @@ class TestNamingDatabasesBeforeTheModelRuns:
         await _seed(config, "alpha", ["alpha document about cats"])
 
         async with HaikuRAG(config=config) as rag:
-            with pytest.raises(KeyError, match="typo"):
+            with pytest.raises(UnknownDatabaseError, match="typo"):
                 await rag.analyze("how many?", sources=["typo"])
 
     @pytest.mark.asyncio
@@ -238,7 +239,7 @@ class TestNamingDatabasesBeforeTheModelRuns:
             rag._require_known_sources(None)
             rag._require_known_sources(["alpha"])
             rag._require_known_sources([])
-            with pytest.raises(KeyError, match="typo"):
+            with pytest.raises(UnknownDatabaseError, match="typo"):
                 rag._require_known_sources(["alpha", "typo"])
 
             assert rag._session._sessions == {}

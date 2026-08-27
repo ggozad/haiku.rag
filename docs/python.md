@@ -267,7 +267,10 @@ their documents.
 none: `search` returns no results, and `ask` and `analyze` run with no evidence
 from any database.
 
-On the constructor it means something else. Passing `sources` alongside a
+A name no client covers raises `UnknownDatabaseError`, a `KeyError`, wherever it
+is given: at construction, per query, and when placing a citation.
+
+On the constructor `sources=[]` means something else. Passing `sources` alongside a
 database path raises `AmbiguousDatabaseError` immediately, since both say which
 database to open. Passing `sources=[]` alone raises `ValueError` on entering the
 client: a selection of nothing to search is a legitimate question, a client over

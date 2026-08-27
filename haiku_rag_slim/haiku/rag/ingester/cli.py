@@ -36,6 +36,7 @@ from haiku.rag.store.exceptions import (  # noqa: E402
     AmbiguousDatabaseError,
     MigrationRequiredError,
     ReadOnlyError,
+    UnknownDatabaseError,
 )
 
 if TYPE_CHECKING:
@@ -71,7 +72,12 @@ def cli() -> None:
     """Entry point that translates store-state errors into a clean exit."""
     try:
         _cli()
-    except (AmbiguousDatabaseError, MigrationRequiredError, ReadOnlyError) as e:
+    except (
+        AmbiguousDatabaseError,
+        MigrationRequiredError,
+        ReadOnlyError,
+        UnknownDatabaseError,
+    ) as e:
         typer.echo(f"Error: {e}", err=True)
         sys.exit(1)
 

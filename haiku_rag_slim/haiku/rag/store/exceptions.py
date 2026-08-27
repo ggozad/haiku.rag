@@ -24,6 +24,19 @@ class AmbiguousDatabaseError(Exception):
     """
 
 
+class UnknownDatabaseError(KeyError):
+    """A name that does not belong to the databases in question.
+
+    A `KeyError`, since selecting by name is a lookup, and one type wherever a
+    name is checked: at construction, per query, and when placing evidence.
+    """
+
+    def __str__(self) -> str:
+        # KeyError quotes its argument, which reads as a missing dict key rather
+        # than the sentence this carries.
+        return str(self.args[0]) if self.args else ""
+
+
 class AmbiguousCitationError(Exception):
     """A cited chunk id names a chunk in more than one database.
 

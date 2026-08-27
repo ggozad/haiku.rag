@@ -34,6 +34,7 @@ from haiku.rag.store.exceptions import (
     MigrationRequiredError,
     ReadOnlyError,
     SourceUnavailableError,
+    UnknownDatabaseError,
 )
 from haiku.rag.store.models.chunk import Chunk, SearchResult, SearchType
 from haiku.rag.store.models.document import Document
@@ -208,9 +209,9 @@ class HaikuRAG:
 
         None only when a client covering a set is given no name, as for evidence
         recorded before databases could be named. A name this client does not
-        cover raises `KeyError`, decided by `clients_covering` so that one
-        database answers a wrong name the same way a set does: provenance naming
-        another database is wrong rather than absent.
+        cover raises `UnknownDatabaseError`, decided by `clients_covering` so
+        that one database answers a wrong name the same way a set does:
+        provenance naming another database is wrong rather than absent.
         """
         if source is None:
             return None if self.covers_multiple else self
@@ -839,7 +840,7 @@ class HaikuRAG:
         covered = set(self.source_names)
         unknown = [name for name in sources if name not in covered]
         if unknown:
-            raise KeyError(
+            raise UnknownDatabaseError(
                 f"unknown database(s) {', '.join(sorted(set(unknown)))}; this "
                 f"client covers {', '.join(sorted(covered)) or 'a single unnamed database'}"
             )
@@ -864,7 +865,7 @@ class HaikuRAG:
         if not sources:
             return []
         if sources != [self.source]:
-            raise KeyError(
+            raise UnknownDatabaseError(
                 f"unknown database(s) {', '.join(sources) or '(none)'}; this "
                 f"client covers {self.source or 'a single unnamed database'}"
             )

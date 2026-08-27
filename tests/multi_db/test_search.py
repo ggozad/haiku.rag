@@ -10,6 +10,7 @@ from haiku.rag.config import get_config
 from haiku.rag.store.exceptions import (
     ConfigMismatchError,
     SourceUnavailableError,
+    UnknownDatabaseError,
 )
 from haiku.rag.store.models import Chunk, DocumentItem
 from tests.multi_db.helpers import (
@@ -54,7 +55,7 @@ class TestFederatedSearch:
         await _seed(config, "alpha", ["alpha document about cats"])
 
         async with HaikuRAG(config=config) as rag:
-            with pytest.raises(KeyError, match="nope"):
+            with pytest.raises(UnknownDatabaseError, match="nope"):
                 await rag.search("cats", search_type="fts", sources=["nope"])
 
     @pytest.mark.asyncio

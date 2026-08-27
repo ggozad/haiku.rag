@@ -27,6 +27,7 @@ from haiku.rag.store.exceptions import (  # noqa: E402
     MigrationRequiredError,
     ReadOnlyError,
     SourceUnavailableError,
+    UnknownDatabaseError,
 )
 from haiku.rag.store.models.chunk import SearchType  # noqa: E402
 from haiku.rag.utils import is_up_to_date  # noqa: E402
@@ -51,6 +52,7 @@ def cli():
         ConfigMismatchError,
         MigrationRequiredError,
         ReadOnlyError,
+        UnknownDatabaseError,
         SourceUnavailableError,
     ) as e:
         typer.echo(f"Error: {e}", err=True)

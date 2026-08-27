@@ -2,7 +2,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from haiku.rag.config import AppConfig
-from haiku.rag.store.exceptions import AmbiguousDatabaseError
+from haiku.rag.store.exceptions import (
+    AmbiguousDatabaseError,
+    UnknownDatabaseError,
+)
 from haiku.rag.utils import locate_database
 
 
@@ -95,7 +98,7 @@ class DatabaseScope:
 
         if database_name is not None:
             if database_name not in declared:
-                raise AmbiguousDatabaseError(
+                raise UnknownDatabaseError(
                     f"unknown database {database_name!r}; lancedb.databases names "
                     f"{', '.join(sorted(declared)) or 'nothing'}"
                 )
@@ -129,7 +132,7 @@ class DatabaseScope:
         by_name = {ref.name: ref for ref in self.databases if ref.name is not None}
         missing = [name for name in names if name not in by_name]
         if missing:
-            raise KeyError(
+            raise UnknownDatabaseError(
                 f"unknown database(s) {', '.join(sorted(missing))}; "
                 f"configured: {', '.join(sorted(by_name))}"
             )

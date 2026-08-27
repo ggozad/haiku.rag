@@ -15,6 +15,7 @@ from haiku.rag.config.models import AppConfig, LanceDBConfig, StorageConfig
 from haiku.rag.store.exceptions import (
     AmbiguousDatabaseError,
     MigrationRequiredError,
+    UnknownDatabaseError,
 )
 from tests.conftest import for_path
 
@@ -207,14 +208,14 @@ class TestSelectingADatabaseByName:
         self._install(monkeypatch, alpha="/data/a.lancedb", beta="/data/b.lancedb")
         monkeypatch.setattr("haiku.rag.cli._db_name", "gamma")
 
-        with pytest.raises(AmbiguousDatabaseError, match="alpha, beta"):
+        with pytest.raises(UnknownDatabaseError, match="alpha, beta"):
             resolve_scope(None)
 
     def test_an_unknown_name_does_not_leak_locations(self, monkeypatch):
         self._install(monkeypatch, papers="s3://bucket/prefix/papers.lancedb")
         monkeypatch.setattr("haiku.rag.cli._db_name", "gamma")
 
-        with pytest.raises(AmbiguousDatabaseError) as raised:
+        with pytest.raises(UnknownDatabaseError) as raised:
             resolve_scope(None)
 
         assert "bucket" not in str(raised.value)
@@ -223,7 +224,7 @@ class TestSelectingADatabaseByName:
         self._install(monkeypatch)
         monkeypatch.setattr("haiku.rag.cli._db_name", "papers")
 
-        with pytest.raises(AmbiguousDatabaseError, match="nothing"):
+        with pytest.raises(UnknownDatabaseError, match="nothing"):
             resolve_scope(None)
 
     def test_the_callback_selects_before_a_command_runs(self, tmp_path, monkeypatch):
@@ -240,7 +241,7 @@ class TestSelectingADatabaseByName:
         )
 
         assert result.exit_code != 0
-        assert isinstance(result.exception, AmbiguousDatabaseError)
+        assert isinstance(result.exception, UnknownDatabaseError)
         assert "nope" in str(result.exception)
 
     def test_a_selection_does_not_outlive_its_invocation(self, tmp_path, monkeypatch):

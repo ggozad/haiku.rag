@@ -12,6 +12,7 @@ from haiku.rag.store.exceptions import (
     MigrationRequiredError,
     ReadOnlyError,
     SourceUnavailableError,
+    UnknownDatabaseError,
 )
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
@@ -288,7 +289,7 @@ class FederatedSession:
         """
         unknown = [name for name in names if name not in self._refs]
         if unknown:
-            raise KeyError(
+            raise UnknownDatabaseError(
                 f"unknown database(s) {', '.join(sorted(unknown))}; configured: "
                 f"{', '.join(sorted(self._refs))}"
             )

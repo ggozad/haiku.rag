@@ -6,7 +6,10 @@ from pydantic import ValidationError
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.config.models import AppConfig, LanceDBConfig
-from haiku.rag.store.exceptions import AmbiguousDatabaseError
+from haiku.rag.store.exceptions import (
+    AmbiguousDatabaseError,
+    UnknownDatabaseError,
+)
 from haiku.rag.utils import locate_database
 from tests.multi_db.helpers import (
     _config,
@@ -147,7 +150,7 @@ class TestSelection:
     async def test_unknown_source_at_construction_is_rejected(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
 
-        with pytest.raises(KeyError, match="nope"):
+        with pytest.raises(UnknownDatabaseError, match="nope"):
             async with HaikuRAG(config=config, sources=["nope"]):
                 pass
 
@@ -158,7 +161,7 @@ class TestSelection:
         await _seed(config, "beta", ["beta document about cats"])
 
         async with HaikuRAG(config=config) as rag:
-            with pytest.raises(KeyError, match="nope"):
+            with pytest.raises(UnknownDatabaseError, match="nope"):
                 await rag.search("cats", search_type="fts", sources=["nope"])
 
     @pytest.mark.asyncio
@@ -238,6 +241,23 @@ class TestPlacingADatabase:
         async with HaikuRAG(temp_db_path, create=True) as rag:
             assert await rag.reader_for(None) is rag
 
+    def test_one_type_answers_for_a_name_nothing_covers(self, tmp_path):
+        """Selecting by name is a lookup wherever it happens, so it fails the
+        same way at construction, per query, and when placing evidence."""
+        config = _config(tmp_path, ["alpha", "beta"])
+
+        with pytest.raises(UnknownDatabaseError):
+            DatabaseScope.resolve(config, database_name="typo")
+        with pytest.raises(UnknownDatabaseError):
+            DatabaseScope.resolve(config).select(["typo"])
+
+        # A KeyError, so a caller treating selection as a lookup still catches it.
+        assert issubclass(UnknownDatabaseError, KeyError)
+        # ...but the message reads as a sentence rather than a missing key.
+        assert str(UnknownDatabaseError("unknown database 'typo'")) == (
+            "unknown database 'typo'"
+        )
+
     def test_a_path_and_sources_cannot_both_choose(self, tmp_path):
         """`sources` used to be ignored beside a path, so selecting a database
         that is not the one at the path opened the path anyway."""
@@ -257,14 +277,14 @@ class TestPlacingADatabase:
 
         async with HaikuRAG(config=config, sources=["alpha"]) as alpha:
             assert await alpha.reader_for("alpha") is alpha
-            with pytest.raises(KeyError, match="beta"):
+            with pytest.raises(UnknownDatabaseError, match="beta"):
                 await alpha.reader_for("beta")
 
     @pytest.mark.asyncio
     async def test_an_unnamed_database_refuses_any_name(self, temp_db_path):
         """Nothing names it, so no name can be the one it covers."""
         async with HaikuRAG(temp_db_path, create=True) as rag:
-            with pytest.raises(KeyError, match="single unnamed database"):
+            with pytest.raises(UnknownDatabaseError, match="single unnamed database"):
                 await rag.reader_for("anything")
 
     @pytest.mark.asyncio

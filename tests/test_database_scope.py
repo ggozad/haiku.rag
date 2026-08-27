@@ -5,7 +5,10 @@ import pytest
 from haiku.rag.client.scope import DatabaseRef, DatabaseScope
 from haiku.rag.client.session import default_db_path
 from haiku.rag.config.models import AppConfig, LanceDBConfig, StorageConfig
-from haiku.rag.store.exceptions import AmbiguousDatabaseError
+from haiku.rag.store.exceptions import (
+    AmbiguousDatabaseError,
+    UnknownDatabaseError,
+)
 
 
 def _config(**kwargs) -> AppConfig:
@@ -45,7 +48,7 @@ class TestResolution:
     def test_an_unknown_name_is_refused(self):
         config = _config(databases={"alpha": "/data/alpha.lancedb"})
 
-        with pytest.raises(AmbiguousDatabaseError, match="unknown database 'nope'"):
+        with pytest.raises(UnknownDatabaseError, match="unknown database 'nope'"):
             DatabaseScope.resolve(config, database_name="nope")
 
     def test_no_selector_covers_the_configured_set_in_order(self):
