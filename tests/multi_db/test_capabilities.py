@@ -225,7 +225,11 @@ class TestLendingANamedClient:
             deps = Deps(state={"rag": RAGState().model_dump(mode="json")})
             run = await capability.for_run(make_context(deps))
             assert run.state is not None
-            await run._search("cats", limit=5)
+
+            # The lent client is what it reads through, whatever it was built with.
+            assert await run._ensure_rag() is client
+
+            run.state.searches["cats"] = await client.search("cats", search_type="fts")
             [result] = run.state.searches["cats"]
             assert result.chunk_id is not None
             await run._cite([result.chunk_id])
