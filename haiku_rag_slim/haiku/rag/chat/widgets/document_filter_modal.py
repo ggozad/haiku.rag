@@ -13,6 +13,14 @@ from haiku.rag.utils import escape_sql_string
 DOCUMENT_PAGE = 200
 
 
+class DocumentCheckbox(Checkbox):
+    def __init__(self, label: str, doc_id: str, *, value: bool) -> None:
+        super().__init__(label, value=value, classes="doc-checkbox")
+        self.doc_id = doc_id
+        # `label` is a reactive Text; narrowing the page wants the plain string.
+        self.search_text = label
+
+
 def search_filter(term: str) -> str | None:
     """A document filter matching `term` in a title or URI, or None for no term.
 
@@ -139,10 +147,6 @@ class DocumentFilterModal(ModalScreen):
         )
         self._matching = await self.client.count_documents(filter=document_filter)
 
-        loading = self.query_one("#loading-indicator", Static)
-        if loading.parent is not None:
-            loading.remove()
-
         filter_list = self.query_one("#filter-list", VerticalScroll)
         await filter_list.remove_children()
 
@@ -161,23 +165,10 @@ class DocumentFilterModal(ModalScreen):
             key=lambda pair: pair[0],
         )
 
-        boxes = []
-        for position, (label, doc_id) in enumerate(labelled):
-            checkbox = Checkbox(
-                label,
-                value=doc_id in self._selected,
-                # Positional, because a label is not unique and a repeated
-                # widget id is an error.
-                id=f"doc-{position}",
-                classes="doc-checkbox",
-            )
-            # The selection is the document id: a title repeats within a corpus
-            # and across databases, so selecting by name widens to documents the
-            # user did not pick.
-            checkbox._doc_id = doc_id  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
-            # Not `_label`: Textual's ToggleButton owns that name.
-            checkbox._search_text = label  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
-            boxes.append(checkbox)
+        boxes = [
+            DocumentCheckbox(label, doc_id, value=doc_id in self._selected)
+            for label, doc_id in labelled
+        ]
         if boxes:
             await filter_list.mount_all(boxes)
 
@@ -202,14 +193,13 @@ class DocumentFilterModal(ModalScreen):
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         """Handle checkbox state changes."""
         checkbox = event.checkbox
-        doc_id = getattr(checkbox, "_doc_id", None)
-        if doc_id is None:
+        if not isinstance(checkbox, DocumentCheckbox):
             return
 
         if event.value:
-            self._selected.add(doc_id)
+            self._selected.add(checkbox.doc_id)
         else:
-            self._selected.discard(doc_id)
+            self._selected.discard(checkbox.doc_id)
 
         self._update_footer()
 
@@ -222,12 +212,10 @@ class DocumentFilterModal(ModalScreen):
         search_term = event.value.lower().strip()
         filter_list = self.query_one("#filter-list", VerticalScroll)
 
-        for checkbox in filter_list.query(Checkbox):
-            label = getattr(checkbox, "_search_text", "")
-            if search_term == "" or search_term in label.lower():
-                checkbox.display = True
-            else:
-                checkbox.display = False
+        for checkbox in filter_list.query(DocumentCheckbox):
+            checkbox.display = (
+                search_term == "" or search_term in checkbox.search_text.lower()
+            )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""

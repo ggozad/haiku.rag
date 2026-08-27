@@ -631,9 +631,10 @@ class TestDocumentSelectionIdentity:
 
     @pytest.mark.asyncio
     async def test_a_repeated_title_selects_one_document(self, temp_db_path: Path):
-        from textual.widgets import Checkbox
-
-        from haiku.rag.chat.widgets.document_filter_modal import DocumentFilterModal
+        from haiku.rag.chat.widgets.document_filter_modal import (
+            DocumentCheckbox,
+            DocumentFilterModal,
+        )
         from haiku.rag.store.models.document import Document
 
         client = AsyncMock()
@@ -655,8 +656,8 @@ class TestDocumentSelectionIdentity:
                 await app.push_screen(modal)
                 await pilot.pause()
 
-                boxes = list(modal.query(Checkbox))
-                selected_ids = [getattr(box, "_doc_id", None) for box in boxes]
+                boxes = list(modal.query(DocumentCheckbox))
+                selected_ids = [box.doc_id for box in boxes]
                 assert selected_ids == ["id-one", "id-two"]
                 labels = [str(b.label) for b in boxes]
                 assert "Capital region  (arxiv)" in labels
@@ -714,3 +715,46 @@ class TestDocumentSearchFilter:
 
         assert built is not None
         assert "o''brien" in built
+
+    @pytest.mark.asyncio
+    async def test_submitting_a_search_reloads_the_page(self, temp_db_path: Path):
+        """The typed term reaches the database and replaces what is shown."""
+        from textual.widgets import Input
+
+        from haiku.rag.chat.widgets.document_filter_modal import (
+            DocumentCheckbox,
+            DocumentFilterModal,
+        )
+        from haiku.rag.store.models.document import Document
+
+        client = AsyncMock()
+        client.covers_multiple = False
+        client.source_names = ()
+        client.list_documents.return_value = [
+            Document(id="id-one", content="", title="Capital region"),
+            Document(id="id-two", content="", title="Nobel laureates"),
+        ]
+        client.count_documents.return_value = 2
+
+        modal = DocumentFilterModal(client=client)
+        app, _ = _make_app(temp_db_path, client)
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+            _covering_returns(_stub_rag, client),
+        ):
+            async with app.run_test() as pilot:
+                await app.push_screen(modal)
+                await pilot.pause()
+                assert len(list(modal.query(DocumentCheckbox))) == 2
+
+                client.list_documents.return_value = [
+                    Document(id="id-two", content="", title="Nobel laureates"),
+                ]
+                client.count_documents.return_value = 1
+                await modal.on_input_submitted(Input.Submitted(Input(), "Nobel"))
+                await pilot.pause()
+
+                assert client.list_documents.await_args is not None
+                assert "nobel" in client.list_documents.await_args.kwargs["filter"]
+                labels = [str(b.label) for b in modal.query(DocumentCheckbox)]
+                assert labels == ["Nobel laureates"]
