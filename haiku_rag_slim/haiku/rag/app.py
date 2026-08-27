@@ -18,7 +18,7 @@ from rich.progress import (
 
 from haiku.rag.client import HaikuRAG, RebuildMode
 from haiku.rag.config import AppConfig, get_config
-from haiku.rag.mcp import create_mcp_server
+from haiku.rag.mcp import _covering as _mcp_server_covering
 from haiku.rag.store.models.chunk import SearchType
 from haiku.rag.store.models.document import Document
 
@@ -926,9 +926,7 @@ class HaikuRAGApp:
         # The resolved scope, not a derived path and configuration: a path
         # would override a configured URI, and deriving drops the name results
         # and citations carry.
-        server = create_mcp_server(
-            config=self.config, read_only=self.read_only, scope=self.scope
-        )
+        server = _mcp_server_covering(self.scope, self.config, self.read_only)
         try:
             if transport == "stdio":
                 await server.run_stdio_async()

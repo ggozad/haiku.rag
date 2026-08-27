@@ -28,7 +28,6 @@ def create_mcp_server(
     db_path: Path | None = None,
     config: AppConfig | None = None,
     read_only: bool = False,
-    scope: "DatabaseScope | None" = None,
 ) -> FastMCP:
     """Create an MCP server over one database.
 
@@ -38,15 +37,30 @@ def create_mcp_server(
             must pass None rather than a local stand-in.
         config: Configuration to use.
         read_only: If True, write tools (add_document_*, delete_document) are not registered.
-        scope: The database, already resolved. Pass this rather than a derived
-            path and configuration to keep its configured name, which results
-            and citations carry as `source`.
     """
     from haiku.rag.client.scope import DatabaseScope
 
     config = config if config is not None else get_config()
-    if scope is None:
-        scope = DatabaseScope.resolve(config, database_path=db_path)
+    return _covering(
+        DatabaseScope.resolve(config, database_path=db_path), config, read_only
+    )
+
+
+def _covering(scope: "DatabaseScope", config: AppConfig, read_only: bool) -> FastMCP:
+    """An MCP server over databases someone already resolved.
+
+    Internal, as ``HaikuRAG._covering`` is: the public factory takes a path and
+    resolves it, which is its own job. A caller that resolved already passes the
+    scope, so the configured name survives, which results and citations carry as
+    ``source``.
+    """
+    from haiku.rag.store.exceptions import AmbiguousDatabaseError
+
+    if scope.covers_multiple:
+        raise AmbiguousDatabaseError(
+            "an MCP server serves one database, and this scope covers "
+            f"{', '.join(scope.names)}; name the one to serve"
+        )
     client: HaikuRAG | None = None
     stack = AsyncExitStack()
     client_lock = asyncio.Lock()

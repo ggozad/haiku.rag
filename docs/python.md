@@ -261,9 +261,11 @@ their documents.
 none: `search` returns no results, and `ask` and `analyze` run with no evidence
 from any database.
 
-On the constructor, `sources` is rejected alongside a database path, and `[]`
-raises `ValueError`. A selection of nothing to search is a legitimate question;
-a client over no database is not.
+On the constructor it means something else. Passing `sources` alongside a
+database path raises `AmbiguousDatabaseError` immediately, since both say which
+database to open. Passing `sources=[]` alone raises `ValueError` on entering the
+client: a selection of nothing to search is a legitimate question, a client over
+no database is not.
 
 #### Inspecting the client scope
 

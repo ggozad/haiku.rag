@@ -620,7 +620,7 @@ def test_search_result_rendering_includes_provenance(app):
 
 async def test_run_mcp_stdio(app, client, monkeypatch):
     server = AsyncMock()
-    monkeypatch.setattr("haiku.rag.app.create_mcp_server", lambda *a, **kw: server)
+    monkeypatch.setattr("haiku.rag.app._mcp_server_covering", lambda *a, **kw: server)
 
     await app.run_mcp(transport="stdio")
 
@@ -629,7 +629,7 @@ async def test_run_mcp_stdio(app, client, monkeypatch):
 
 async def test_run_mcp_http(app, client, monkeypatch):
     server = AsyncMock()
-    monkeypatch.setattr("haiku.rag.app.create_mcp_server", lambda *a, **kw: server)
+    monkeypatch.setattr("haiku.rag.app._mcp_server_covering", lambda *a, **kw: server)
 
     await app.run_mcp(host="0.0.0.0", port=9001)
 
@@ -641,7 +641,7 @@ async def test_run_mcp_http(app, client, monkeypatch):
 async def test_run_mcp_survives_interruption(app, client, monkeypatch):
     server = AsyncMock()
     server.run_stdio_async.side_effect = KeyboardInterrupt
-    monkeypatch.setattr("haiku.rag.app.create_mcp_server", lambda *a, **kw: server)
+    monkeypatch.setattr("haiku.rag.app._mcp_server_covering", lambda *a, **kw: server)
 
     await app.run_mcp(transport="stdio")
 

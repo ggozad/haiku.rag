@@ -226,7 +226,7 @@ class TestLendingANamedClient:
             run = await capability.for_run(make_context(deps))
             assert run.state is not None
 
-            # The lent client is what it reads through, whatever it was built with.
+            # A borrowed client overrides the capability's configured placement.
             assert await run._ensure_rag() is client
 
             run.state.searches["cats"] = await client.search("cats", search_type="fts")
