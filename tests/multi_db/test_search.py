@@ -381,6 +381,79 @@ class TestNarrowingToOneDatabase:
         assert results == []
 
 
+class TestReciprocalRankFusion:
+    """Without a reranker, scores from separate indexes are not comparable, so
+    fusion ranks by position. These pin what that produces."""
+
+    @staticmethod
+    def _ranked(source: str, count: int, top: float) -> list[tuple[Chunk, float]]:
+        return [
+            (Chunk(id=f"{source}{i}", content=f"{source} {i}"), top - i / 100)
+            for i in range(count)
+        ]
+
+    def _lopsided(self, count: int) -> list[list[tuple[Chunk, float]]]:
+        """Every native score in the first database beats every one in the
+        second, so anything ranking by score rather than position puts all of
+        one before any of the other."""
+        return [self._ranked("a", count, 0.9), self._ranked("b", count, 0.2)]
+
+    async def _fuse_over(self, tmp_path, per_source, limit):
+        from haiku.rag.client.search import _fuse
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+        async with HaikuRAG(config=config) as rag:
+            assert rag.reranker is None
+            clients = await rag.clients_for(["alpha", "beta"])
+            fused = await _fuse(rag, clients, "cats", per_source, limit)
+        return [(owner.source, chunk.id, score) for owner, chunk, score in fused]
+
+    @pytest.mark.asyncio
+    async def test_databases_interleave_by_rank(self, tmp_path):
+        """Each contributes its rank-1 before either contributes its rank-2."""
+        fused = await self._fuse_over(tmp_path, self._lopsided(3), 10)
+
+        assert [(source, cid) for source, cid, _ in fused] == [
+            ("alpha", "a0"),
+            ("beta", "b0"),
+            ("alpha", "a1"),
+            ("beta", "b1"),
+            ("alpha", "a2"),
+            ("beta", "b2"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_the_score_is_the_reciprocal_of_the_rank(self, tmp_path):
+        fused = await self._fuse_over(tmp_path, self._lopsided(2), 10)
+
+        assert [score for _, _, score in fused] == [
+            1 / 61,
+            1 / 61,
+            1 / 62,
+            1 / 62,
+        ]
+
+    @pytest.mark.asyncio
+    async def test_equal_scores_keep_the_configured_order(self, tmp_path):
+        """Every rank ties across databases, so the tiebreak decides all of it."""
+        fused = await self._fuse_over(tmp_path, self._lopsided(2), 10)
+
+        assert [source for source, _, _ in fused] == ["alpha", "beta", "alpha", "beta"]
+
+    @pytest.mark.asyncio
+    async def test_the_limit_cuts_the_fused_list(self, tmp_path):
+        """Each database was asked for enough to fill the window on its own."""
+        fused = await self._fuse_over(tmp_path, self._lopsided(5), 3)
+
+        assert [(source, cid) for source, cid, _ in fused] == [
+            ("alpha", "a0"),
+            ("beta", "b0"),
+            ("alpha", "a1"),
+        ]
+
+
 class TestFusingWhatARerankerReturns:
     @pytest.mark.asyncio
     async def test_a_reranker_returning_copies_is_named(self, tmp_path):
@@ -399,7 +472,7 @@ class TestFusingWhatARerankerReturns:
 
         async with HaikuRAG(config=config) as rag:
             clients = await rag.clients_for(["alpha", "beta"])
-            rag.__dict__["reranker"] = Rebuilds()
+            rag.__dict__["_own_reranker"] = Rebuilds()
             per_source = [
                 await c.chunk_repository.search("cats", 5, "fts") for c in clients
             ]
