@@ -11,8 +11,8 @@
 - `haiku-rag search`, `ask`, `analyze` and `chat` can cover a configured database
   set. Commands that access one database select it with `--db-name NAME` or
   `--db PATH`.
-- Citation resolution rejects chunk IDs shared by multiple selected databases
-  with `AmbiguousCitationError`.
+- Citation resolution rejects a chunk ID retrieved from, or previously cited
+  from, more than one selected database with `AmbiguousCitationError`.
 
 ### Fixed
 

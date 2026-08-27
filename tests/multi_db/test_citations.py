@@ -232,6 +232,41 @@ class TestSharedChunkIds:
         with pytest.raises(ModelRetry, match="another database"):
             await capability._cite(["c1"])
 
+    @pytest.mark.asyncio
+    async def test_one_retrieved_copy_of_a_shared_id_cites_where_it_came_from(
+        self, tmp_path
+    ):
+        """Rejection is about evidence the run holds, not about what the other
+        databases contain. A copy the search never returned did not ground the
+        answer, so the retrieved one is the citation and its database is not a
+        guess. A later question that does retrieve the twin is refused by the
+        citation index."""
+        from tests.capabilities.test_capabilities import Deps, make_context
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        capability = create_capability(config=config, defer_loading=False)
+        deps = Deps(state={"rag": RAGState().model_dump(mode="json")})
+        run = await capability.for_run(make_context(deps))
+        assert run.state is not None
+        # What a run holds when fusion returned one copy of a shared id and
+        # truncated the other: the run never saw the twin.
+        run.state.searches["cats"] = [
+            SearchResult(
+                content="alpha body",
+                score=0.9,
+                source="alpha",
+                chunk_id="c1",
+                document_id="d1",
+                document_uri="test://alpha/one",
+            )
+        ]
+
+        await run._cite(["c1"])
+
+        [cited] = run.state.citation_index.values()
+        assert cited.source == "alpha"
+        assert cited.content == "alpha body"
+
 
 class TestCitationSource:
     def test_a_citation_carries_the_result_source(self):

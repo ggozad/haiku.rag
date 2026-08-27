@@ -260,10 +260,17 @@ on every result.
 #### Duplicate IDs
 
 IDs are unique within a database, not across databases. Copies of a database
-therefore retain the same IDs. Citation resolution raises
-`AmbiguousCitationError` when a cited chunk ID exists in more than one selected
-database; a shared ID that nothing cites is ignored. The analysis sandbox
-rejects shared document IDs because its mount path is `/documents/{id}/`.
+therefore retain the same IDs.
+
+Citation ambiguity is evaluated against evidence available to the run. A cited
+chunk ID is rejected with `AmbiguousCitationError` if search returned it from
+multiple databases, or it was previously cited from another database. If only
+one retrieved result has the ID, that result is cited. For an ID absent from
+search results, the fallback checks every selected database and rejects
+multiple holders. A shared ID that nothing cites is ignored.
+
+The analysis sandbox rejects shared document IDs because its mount path is
+`/documents/{id}/`.
 
 The chat document filter selects by document ID and applies `id IN (...)` to
 every covered database, so selecting an ID that copies share matches the
