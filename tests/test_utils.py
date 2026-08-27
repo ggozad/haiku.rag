@@ -1,4 +1,5 @@
 import importlib.util
+from unittest.mock import AsyncMock
 
 import pytest
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -793,6 +794,34 @@ async def test_format_citations_rich_names_the_database_when_federating():
     assert "papers" in output
 
 
+async def test_an_unattributable_picture_renders_its_marker(tmp_path):
+    """Evidence recorded before databases could be named carries no source, so
+    across databases nothing says which holds the picture. One unrenderable
+    figure must not cost the answer."""
+    from rich.console import Console
+
+    from haiku.rag.store.models.citation import Citation
+    from haiku.rag.utils import format_citations_rich
+
+    covering = AsyncMock()
+    covering.covers_multiple = True
+    citation = Citation(
+        document_id="d1",
+        chunk_id="c1",
+        content="body",
+        document_uri="test://doc",
+        picture_refs=["#/pictures/0"],
+    )
+
+    renderables = await format_citations_rich([citation], covering)
+
+    console = Console(record=True, width=200)
+    for renderable in renderables:
+        console.print(renderable)
+    assert "[Figure: #/pictures/0]" in console.export_text()
+    covering.get_picture_bytes.assert_not_awaited()
+
+
 def test_truncated_marks_what_it_dropped():
     """An unmarked cut reads as the value: a sentence ending "in 1991" becomes
     one ending "in 1"."""
@@ -999,6 +1028,7 @@ async def test_render_picture_handles_stored_bytes(stored, renders):
         stored = buf.getvalue()
 
     client = AsyncMock()
+    client.covers_multiple = False
     client.get_picture_bytes = AsyncMock(return_value=stored)
 
     result = await _render_picture(client, "doc1", "#/pictures/0")

@@ -447,8 +447,14 @@ async def format_citations_rich(
 async def _render_picture(
     client: "HaikuRAG | None", document_id: str, ref: str, source: str | None = None
 ) -> "RenderableType | None":
-    """Fetch a picture and return a Rich renderable, or None on failure/no client."""
+    """A picture as a Rich renderable, or None where it cannot be rendered.
+
+    None where no client, no source to place it across databases, or bytes that
+    do not decode. The caller renders its figure marker instead.
+    """
     if client is None:
+        return None
+    if source is None and client.covers_multiple:
         return None
     from io import BytesIO
 
