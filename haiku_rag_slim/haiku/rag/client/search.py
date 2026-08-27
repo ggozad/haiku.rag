@@ -91,6 +91,13 @@ async def search_sources(
     if not names:
         return []
     selected = await client.clients_for(names)
+    if len(selected) == 1:
+        # One database is an ordinary search, whatever the client covers: fusion
+        # would replace its hybrid scores with ranks, and embedding up front
+        # would embed for a filter the repository can see matches nothing.
+        return await selected[0].search(
+            query, limit, search_type, filter, include_images
+        )
     resolved = _resolved_search_type(query, search_type)
     if resolved != "fts":
         client._require_one_embedder(selected)
@@ -178,7 +185,14 @@ async def _fuse(
                     )
                 )
             reranked = await reranker.rerank(query, chunks, top_n=limit)
+            # Identity, since chunk ids repeat between copies of a database.
             owner_of = {id(chunk): client for client, chunk, _ in owned}
+            if any(id(chunk) not in owner_of for chunk, _ in reranked):
+                raise ValueError(
+                    f"{type(reranker).__name__} returned chunks that are not the "
+                    "ones it was given, so the database each came from is lost; "
+                    "a reranker must return objects from the list passed to it"
+                )
             return [(owner_of[id(chunk)], chunk, score) for chunk, score in reranked]
 
     scored: list[tuple[float, HaikuRAG, Chunk]] = []

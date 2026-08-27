@@ -333,6 +333,97 @@ class TestOneReranker:
         assert closes == [1], f"closed {len(closes)} times"
 
 
+class TestNarrowingToOneDatabase:
+    """A selection of one is an ordinary search. Fusion exists to reconcile
+    rankings from separate indexes, and there is nothing to reconcile."""
+
+    @pytest.mark.asyncio
+    async def test_narrowing_keeps_the_database_s_own_scores(self, tmp_path):
+        """RRF scores position, so fusing one ranking would report 1/(60+rank)
+        where the database reported a hybrid score."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats", "alpha on dogs"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        async with HaikuRAG(config=config) as covering:
+            narrowed = await covering.search(
+                "cats", search_type="fts", sources=["alpha"]
+            )
+        async with HaikuRAG(config=config, sources=["alpha"]) as one:
+            native = await one.search("cats", search_type="fts")
+
+        assert [r.chunk_id for r in narrowed] == [r.chunk_id for r in native]
+        assert [r.score for r in narrowed] == [r.score for r in native]
+        assert all(r.source == "alpha" for r in narrowed)
+
+    @pytest.mark.asyncio
+    async def test_narrowing_does_not_embed_for_a_filter_matching_nothing(
+        self, tmp_path, monkeypatch
+    ):
+        """One database embeds inside the repository, which returns early when
+        the filter matches no document. Fusing would have embedded first."""
+        from haiku.rag.embeddings import EmbedderWrapper
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        def explode(self, query):
+            raise AssertionError("embedded a query no document could match")
+
+        monkeypatch.setattr(EmbedderWrapper, "embed_query", explode)
+
+        async with HaikuRAG(config=config) as covering:
+            results = await covering.search(
+                "cats", filter="uri = 'test://nothing'", sources=["alpha"]
+            )
+
+        assert results == []
+
+
+class TestFusingWhatARerankerReturns:
+    @pytest.mark.asyncio
+    async def test_a_reranker_returning_copies_is_named(self, tmp_path):
+        """Candidates are mapped back to their database by identity, because
+        chunk ids repeat between copies of one. A reranker that rebuilds its
+        chunks loses that, and saying so beats a KeyError."""
+        from haiku.rag.client.search import _fuse
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        class Rebuilds:
+            async def rerank(self, query, chunks, top_n=10):
+                return [(chunk.model_copy(), 1.0) for chunk in chunks[:top_n]]
+
+        async with HaikuRAG(config=config) as rag:
+            clients = await rag.clients_for(["alpha", "beta"])
+            rag.__dict__["reranker"] = Rebuilds()
+            per_source = [
+                await c.chunk_repository.search("cats", 5, "fts") for c in clients
+            ]
+
+            with pytest.raises(ValueError, match="objects from the list"):
+                await _fuse(rag, clients, "cats", per_source, 5)
+
+
+class TestComparingEmbedders:
+    @pytest.mark.asyncio
+    async def test_a_database_recording_no_embedder_is_not_compared(self, tmp_path):
+        """A database whose settings never recorded one cannot disagree with a
+        database that did, so there is nothing to reject."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        async with HaikuRAG(config=config) as rag:
+            alpha, beta = await rag.clients_for(["alpha", "beta"])
+            beta.store.stored_embedding = None
+
+            rag._require_one_embedder([alpha, beta])
+
+
 class TestOneNamedDatabase:
     @pytest.mark.asyncio
     async def test_a_single_named_database_keeps_its_name(self, tmp_path):
