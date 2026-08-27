@@ -8,6 +8,7 @@ from haiku.rag.capabilities._tools import search_corpus
 from haiku.rag.capabilities.rag import RAGState, create_capability
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.scope import DatabaseScope
+from haiku.rag.client.session import FederatedSession
 from haiku.rag.sandbox import AnalysisContext, Sandbox
 from haiku.rag.store.models import SearchResult
 from tests.multi_db.helpers import (
@@ -198,6 +199,49 @@ class TestCollectionIdentityForTheModel:
         assert result.success, result.stderr
         assert "['alpha', 'beta']" in result.stdout
         assert result.stdout.count("['alpha', 'beta']") == 2
+
+
+class TestNamingDatabasesBeforeTheModelRuns:
+    """A name is checked at the boundary. Discovering it from a failed search
+    spends model requests, and a run can answer without reaching one."""
+
+    @pytest.mark.asyncio
+    async def test_ask_refuses_an_unknown_source_before_the_model(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        async with HaikuRAG(config=config) as rag:
+            with pytest.raises(KeyError, match="typo"):
+                await rag.ask("what about cats?", sources=["typo"])
+
+    @pytest.mark.asyncio
+    async def test_analyze_refuses_an_unknown_source_before_the_model(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+
+        async with HaikuRAG(config=config) as rag:
+            with pytest.raises(KeyError, match="typo"):
+                await rag.analyze("how many?", sources=["typo"])
+
+    @pytest.mark.asyncio
+    async def test_checking_a_name_opens_nothing(self, tmp_path):
+        """Opening to check would open every database on an unscoped question,
+        and let one nobody asked about fail a run before any search."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        async with HaikuRAG(config=config) as rag:
+            assert isinstance(rag._session, FederatedSession)
+
+            rag._require_known_sources(None)
+            rag._require_known_sources(["alpha"])
+            rag._require_known_sources([])
+            with pytest.raises(KeyError, match="typo"):
+                rag._require_known_sources(["alpha", "typo"])
+
+            assert rag._session._sessions == {}
 
 
 class TestLendingANamedClient:

@@ -63,6 +63,9 @@ async def ask(
     )
     from haiku.rag.utils import get_model
 
+    # Validate names without opening lazily covered databases.
+    client._require_known_sources(sources)
+
     # No `db_path`: the lent client is what the capability reads through, and it
     # already knows which databases that is.
     capability = create_capability(
@@ -123,6 +126,9 @@ async def analyze(
     from haiku.rag.capabilities.analysis import AnalysisState, create_capability
     from haiku.rag.sandbox import AnalysisResult
     from haiku.rag.utils import get_model
+
+    # Validate names without opening lazily covered databases.
+    client._require_known_sources(sources)
 
     # No `db_path`: the lent client is what the capability reads through, and it
     # already knows which databases that is.

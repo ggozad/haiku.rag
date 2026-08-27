@@ -817,6 +817,23 @@ class HaikuRAG:
         found = await first_found(await self.clients_covering(), lookup)
         return None if found is None else found[1]
 
+    def _require_known_sources(self, sources: "list[str] | None") -> None:
+        """Fail on a name this client does not cover, opening nothing.
+
+        `clients_covering` answers the same question by opening the databases,
+        and a name is wrong whether or not what it names can be opened. `[]`
+        passes: a selection of nothing to search names nothing wrong.
+        """
+        if sources is None:
+            return
+        covered = set(self.source_names)
+        unknown = [name for name in sources if name not in covered]
+        if unknown:
+            raise KeyError(
+                f"unknown database(s) {', '.join(sorted(set(unknown)))}; this "
+                f"client covers {', '.join(sorted(covered)) or 'a single unnamed database'}"
+            )
+
     async def clients_covering(
         self, sources: list[str] | None = None
     ) -> list["HaikuRAG"]:
