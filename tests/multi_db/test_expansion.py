@@ -242,5 +242,5 @@ class TestFederatedEdges:
         capability = create_capability(config=config, defer_loading=False)
         run = await capability.for_run(make_context(Deps()))
         with patch.object(RAGCapability, "_ensure_rag", AsyncMock(return_value=orphan)):
-            with pytest.raises(ModelRetry):
+            with pytest.raises(ModelRetry, match="None of the supplied chunk_ids"):
                 await run._cite(["orphan"])

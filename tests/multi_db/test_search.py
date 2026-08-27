@@ -7,6 +7,7 @@ from docling_core.types.doc.labels import DocItemLabel
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.session import FederatedSession
 from haiku.rag.config import get_config
+from haiku.rag.embeddings import EmbedderWrapper
 from haiku.rag.store.exceptions import (
     ConfigMismatchError,
     SourceUnavailableError,
@@ -292,8 +293,9 @@ class TestOneReranker:
 
     @pytest.mark.asyncio
     async def test_an_image_query_builds_no_reranker(self, tmp_path, monkeypatch):
-        """Opening a database must not build one either: an image query has no
-        text to score against and never uses it."""
+        """An image query has no text to score against, so it keeps its vector
+        ranking. The query type is checked before the reranker, which loads
+        model weights for a local one on first access."""
         built = []
         monkeypatch.setattr(
             "haiku.rag.client.get_reranker",
@@ -305,9 +307,20 @@ class TestOneReranker:
         await _seed(config, "beta", ["beta document about cats"])
         built.clear()
 
-        async with HaikuRAG(config=config) as rag:
-            await rag.clients_for(["alpha", "beta"])
+        dim = get_config().embeddings.model.vector_dim
 
+        async def embed_image(self, image):  # noqa: ARG001
+            return [0.1] * dim
+
+        monkeypatch.setattr(EmbedderWrapper, "supports_images", True)
+        monkeypatch.setattr(EmbedderWrapper, "embed_image", embed_image)
+
+        async with HaikuRAG(config=config) as rag:
+            results = await rag.search(b"\x89PNG\r\n\x1a\n")
+
+        # The whole path ran: over-fetching, embedding and fusing all saw an
+        # image query, and none of them reached for a reranker.
+        assert {r.source for r in results} == {"alpha", "beta"}
         assert built == []
 
     @pytest.mark.asyncio
@@ -509,9 +522,20 @@ class TestComparingEmbedders:
 
         async with HaikuRAG(config=config) as rag:
             alpha, beta = await rag.clients_for(["alpha", "beta"])
-            beta.store.stored_embedding = None
+            recorded = beta.store.stored_embedding
+            assert recorded is not None and recorded != ("other", "model", 7)
 
+            # Disagreeing on the record is what is rejected...
+            beta.store.stored_embedding = ("other", "model", 7)
+            with pytest.raises(ConfigMismatchError, match="different embedders"):
+                rag._require_one_embedder([alpha, beta])
+
+            # ...and having no record is not a disagreement.
+            beta.store.stored_embedding = None
             rag._require_one_embedder([alpha, beta])
+            results = await rag.search("cats", search_type="fts")
+
+        assert {r.source for r in results} == {"alpha", "beta"}
 
 
 class TestOneNamedDatabase:

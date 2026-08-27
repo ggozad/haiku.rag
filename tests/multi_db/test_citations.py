@@ -377,7 +377,7 @@ class TestCiteFallback:
             run = await capability.for_run(make_context(deps))
             await run._search("cats", limit=10)
 
-            with pytest.raises(ModelRetry):
+            with pytest.raises(ModelRetry, match="None of the supplied chunk_ids"):
                 await run._cite([outside.id])
 
     @pytest.mark.asyncio
@@ -399,5 +399,5 @@ class TestCiteFallback:
             deps = Deps(state={"rag": RAGState(sources=[]).model_dump(mode="json")})
             run = await capability.for_run(make_context(deps))
 
-            with pytest.raises(ModelRetry):
+            with pytest.raises(ModelRetry, match="None of the supplied chunk_ids"):
                 await run._cite([chunk.id])
