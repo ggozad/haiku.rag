@@ -164,6 +164,8 @@ class HaikuRAG:
         self._read_only = read_only
         self._requested_sources = sources
         self._clients: dict[str, HaikuRAG] = {}
+        # The client this one covers a database for, whose reranker it borrows.
+        self._lender: HaikuRAG | None = None
         self._scope: DatabaseScope | None = None
         self._session: SingleDatabaseSession | FederatedSession | None = None
         self._owns_session = True
@@ -280,13 +282,21 @@ class HaikuRAG:
             return get_embedder(config=self._config)
         return self.store.embedder
 
-    @cached_property
+    @property
     def reranker(self) -> "RerankerBase | None":
         """The configured reranker, built once and reused across searches.
 
         None when reranking is disabled. Local rerankers load model weights on
-        construction, so building per search would reload them on every query.
+        construction, so one per database in a set would load the same weights
+        that many times over: a client covering a database for another borrows
+        that one's, built on the first query to reach any of them.
         """
+        if self._lender is not None:
+            return self._lender.reranker
+        return self._own_reranker
+
+    @cached_property
+    def _own_reranker(self) -> "RerankerBase | None":
         return get_reranker(config=self._config)
 
     def _resolve_scope(self) -> DatabaseScope:
@@ -367,7 +377,7 @@ class HaikuRAG:
         """The cached client borrowing this session, made once and kept."""
         facade = self._clients.get(name)
         if facade is None:
-            facade = HaikuRAG._from_session(session)
+            facade = HaikuRAG._from_session(session, lender=self)
             self._clients[name] = facade
         return facade
 
@@ -396,13 +406,20 @@ class HaikuRAG:
         return client
 
     @classmethod
-    def _from_session(cls, session: SingleDatabaseSession) -> "HaikuRAG":
-        """A client over a database another session opened and will close."""
+    def _from_session(
+        cls, session: SingleDatabaseSession, lender: "HaikuRAG | None" = None
+    ) -> "HaikuRAG":
+        """A client over a database another session opened and will close.
+
+        `lender` is the client that opened it, whose reranker this one borrows
+        rather than building a second copy of the same model.
+        """
         client = cls(
             session.db_path, config=session.config, read_only=session.read_only
         )
         client._session = session
         client._owns_session = False
+        client._lender = lender
         return client
 
     def _require_one_embedder(self, clients: "list[HaikuRAG]") -> None:
@@ -440,8 +457,9 @@ class HaikuRAG:
         # a federating client that answered no query has nothing open and no
         # store either.
         if isinstance(self._session, FederatedSession):
-            # The wrappers built over covered databases hold rerankers of their
-            # own; the databases themselves are the federated session's to close.
+            # The wrappers only discard what they cached: the databases are the
+            # federated session's to close, and the reranker they searched with
+            # is this client's, closed below.
             for facade in self._clients.values():
                 await facade._release_own()
             self._clients.clear()
@@ -449,7 +467,7 @@ class HaikuRAG:
             # The set shares this client's embedder and reranker, so this is the
             # only place they are closed — and only if anything built them.
             await self._aclose_cached("embedder")
-            await self._aclose_cached("reranker")
+            await self._aclose_cached("_own_reranker")
             return False
         if not self._owns_session:
             await self._release_own()
@@ -465,11 +483,11 @@ class HaikuRAG:
         """Release what this client built, leaving the database to its owner.
 
         The embedder belongs to the store and is closed with it, so the cached
-        reference is only discarded. The reranker is this client's own, built on
-        its first text query.
+        reference is only discarded. A borrowed reranker belongs to its lender,
+        so only one built here is closed.
         """
         self.__dict__.pop("embedder", None)
-        await self._aclose_cached("reranker")
+        await self._aclose_cached("_own_reranker")
 
     async def _aclose_cached(self, name: str) -> None:
         """Close a cached_property this client materialized, and discard it.

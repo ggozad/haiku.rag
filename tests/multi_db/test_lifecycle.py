@@ -240,9 +240,41 @@ class TestBorrowedDatabases:
 
         async with HaikuRAG(config=config) as rag:
             (alpha,) = await rag.clients_for(["alpha"])
-            alpha.__dict__["reranker"] = Reranker()
+            alpha.__dict__["_own_reranker"] = Reranker()
 
         assert closed == ["reranker"]
+
+
+class TestSharingTheReranker:
+    @pytest.mark.asyncio
+    async def test_the_set_builds_and_closes_one_reranker(self, tmp_path, monkeypatch):
+        """A local reranker loads model weights, so one per database in a set
+        would load the same weights that many times."""
+        import haiku.rag.client as client_module
+
+        built: list[object] = []
+        closed: list[object] = []
+
+        class Reranker:
+            def __init__(self):
+                built.append(self)
+
+            async def aclose(self):
+                closed.append(self)
+
+        monkeypatch.setattr(client_module, "get_reranker", lambda config: Reranker())
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        async with HaikuRAG(config=config) as rag:
+            alpha, beta = await rag.clients_for(["alpha", "beta"])
+
+            assert alpha.reranker is beta.reranker is rag.reranker
+            assert len(built) == 1
+
+        assert closed == built
 
 
 class TestLazyOpening:

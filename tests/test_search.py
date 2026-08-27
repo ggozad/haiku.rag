@@ -452,7 +452,7 @@ async def test_search_attaches_picture_bytes_for_multimodal_reranker(
             ],
         )
         rag.chunk_repository.search = fake_chunk_search  # type: ignore[method-assign]
-        rag.__dict__["reranker"] = StubReranker()
+        rag.__dict__["_own_reranker"] = StubReranker()
         rag._config.reranking.multimodal = multimodal
 
         await rag.search("totals", include_images=False)
