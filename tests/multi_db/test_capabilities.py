@@ -1,7 +1,10 @@
 """Asking and analyzing across the databases a question covers."""
 
+from unittest.mock import AsyncMock
+
 import pytest
 
+from haiku.rag.capabilities._tools import search_corpus
 from haiku.rag.capabilities.rag import RAGState, create_capability
 from haiku.rag.client import HaikuRAG
 from haiku.rag.sandbox import AnalysisContext, Sandbox
@@ -140,23 +143,35 @@ class TestAnalyzeAcrossDatabases:
         assert sandbox._context.sources == ["alpha"]
 
 
-class TestDatabaseIdentityForTheModel:
-    def test_a_result_names_its_database(self):
-        """The model has to attribute and compare evidence by database while it
-        composes the answer, not only afterwards through the citations."""
+class TestCollectionIdentityForTheModel:
+    """A collection is named to the model only when the search spans more than
+    one, and the caller decides that: a result cannot tell from its own fields
+    whether anything else was searched."""
+
+    def test_a_result_names_its_collection_when_asked(self):
+        """The model has to attribute and compare evidence by collection while
+        it composes the answer, not only afterwards through the citations."""
         result = SearchResult(content="body", score=0.9, source="alpha", chunk_id="c1")
 
-        assert "Database: alpha" in result.format_for_agent()
+        assert "Collection: alpha" in result.format_for_agent(include_collection=True)
 
-    def test_an_unnamed_database_is_not_mentioned(self):
-        """A single unnamed database renders as it always has."""
+    def test_a_named_collection_is_silent_unless_asked(self):
+        """One collection has nothing to distinguish, named or not."""
+        result = SearchResult(content="body", score=0.9, source="alpha", chunk_id="c1")
+
+        assert "Collection" not in result.format_for_agent()
+
+    def test_an_unnamed_collection_is_never_mentioned(self):
+        """Nothing to name, whatever the caller asked for."""
         result = SearchResult(content="body", score=0.9, chunk_id="c1")
 
-        assert "Database" not in result.format_for_agent()
+        assert "Collection" not in result.format_for_agent(include_collection=True)
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
-    async def test_in_code_search_names_the_database(self, tmp_path):
+    async def test_in_code_search_names_the_collection(self, tmp_path):
+        """The dictionaries analysis code reads carry `source` whatever the
+        formatted output renders, since grouping by it is computation."""
 
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -182,6 +197,34 @@ class TestDatabaseIdentityForTheModel:
         assert result.success, result.stderr
         assert "['alpha', 'beta']" in result.stdout
         assert result.stdout.count("['alpha', 'beta']") == 2
+
+
+class TestWhenTheModelIsToldTheCollection:
+    """The line is decided by what the search spans, not by whether a name
+    exists: one collection has nothing to distinguish."""
+
+    @pytest.mark.asyncio
+    async def test_a_search_spanning_a_set_names_every_result(
+        self, tmp_path, monkeypatch
+    ):
+        """Named from the selection, so a result is named even when every hit
+        came back from one collection: the search could have drawn on both."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        only_alpha = [
+            SearchResult(content="body", score=0.9, source="alpha", chunk_id="c1")
+        ]
+
+        async with HaikuRAG(config=config) as rag:
+            monkeypatch.setattr(rag, "search", AsyncMock(return_value=only_alpha))
+
+            spanning, _ = await search_corpus(rag, "cats")
+            narrowed, _ = await search_corpus(rag, "cats", sources=["alpha"])
+
+        assert "Collection: alpha" in spanning
+        assert "Collection" not in narrowed
 
 
 class TestActionableFailures:

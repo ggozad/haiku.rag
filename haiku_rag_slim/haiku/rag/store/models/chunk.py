@@ -197,7 +197,11 @@ class SearchResult(BaseModel):
         )
 
     def format_for_agent(
-        self, rank: int | None = None, total: int | None = None
+        self,
+        rank: int | None = None,
+        total: int | None = None,
+        *,
+        include_collection: bool = False,
     ) -> str:
         """Format this search result for inclusion in agent context.
 
@@ -209,8 +213,9 @@ class SearchResult(BaseModel):
         the source and nature of the content. When rank is provided, shows
         position instead of raw score to avoid confusing LLMs with low RRF scores.
 
-        The database is named only where one is named at all, so a single
-        unnamed database renders exactly as before.
+        `include_collection` is the caller's decision, not this result's: a
+        search spanning one collection has nothing to distinguish, whether or
+        not that collection is named.
         """
         if rank is not None and total is not None:
             parts = [f"[{self.chunk_id}] [rank {rank} of {total}]"]
@@ -219,8 +224,8 @@ class SearchResult(BaseModel):
         else:
             parts = [f"[{self.chunk_id}] (score: {self.score:.2f})"]
 
-        if self.source:
-            parts.append(f"Database: {self.source}")
+        if include_collection and self.source:
+            parts.append(f"Collection: {self.source}")
 
         # Document source info
         source_parts = []

@@ -214,8 +214,13 @@ lancedb:
 A location can be a URI or local path. `databases` and `uri` are mutually
 exclusive.
 
-Results, documents, citations, and model context use the configured name as
-`source`. Commands such as `info` and path-related errors still show locations.
+Results, documents, and citations use the configured name as `source`. Commands
+such as `info` and path-related errors still show locations.
+
+Searches spanning multiple databases identify each result with a model-facing
+`Collection:` line. Searches over one database omit it. Structured `source`
+fields on results, documents, citations, and analysis dictionaries are
+unchanged.
 
 Embedding compatibility is checked against two different things.
 

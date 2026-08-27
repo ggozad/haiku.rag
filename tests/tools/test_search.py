@@ -37,6 +37,49 @@ class TestSearchToolset:
         assert "search" in toolset.tools
 
 
+class TestNamingTheCollection:
+    """The generic tool has no source selector, so what the client covers is
+    what the search spans."""
+
+    @staticmethod
+    def _client(covers_multiple: bool, source: str | None):
+        from unittest.mock import AsyncMock
+
+        results = [
+            SearchResult(
+                content="body",
+                score=0.9,
+                source=source,
+                chunk_id="c1",
+                document_id="d1",
+                document_title="Report",
+            )
+        ]
+        return SimpleNamespace(
+            covers_multiple=covers_multiple,
+            search=AsyncMock(return_value=results),
+            expand_context=AsyncMock(return_value=results),
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_client_covering_a_set_names_each_result(self, search_config):
+        toolset = create_search_toolset(search_config)
+        client = self._client(covers_multiple=True, source="alpha")
+
+        text = await toolset.tools["search"].function(make_ctx(client), "cats")
+
+        assert "Collection: alpha" in text
+
+    @pytest.mark.asyncio
+    async def test_one_named_collection_is_not_named(self, search_config):
+        toolset = create_search_toolset(search_config)
+        client = self._client(covers_multiple=False, source="alpha")
+
+        text = await toolset.tools["search"].function(make_ctx(client), "cats")
+
+        assert "Collection" not in text
+
+
 @pytest.mark.vcr()
 class TestSearchToolExecution:
     """Tests for search tool execution."""

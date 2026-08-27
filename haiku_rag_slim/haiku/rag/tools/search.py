@@ -160,8 +160,11 @@ def create_search_toolset(
             return "No results found."
 
         total = len(results_list)
+        include_collection = client.covers_multiple
         formatted = [
-            r.format_for_agent(rank=i + 1, total=total)
+            r.format_for_agent(
+                rank=i + 1, total=total, include_collection=include_collection
+            )
             for i, r in enumerate(results_list)
         ]
         text = "\n\n".join(formatted)

@@ -25,8 +25,14 @@ async def search_corpus(
         query, limit=limit, filter=document_filter, sources=sources
     )
     results = await rag.expand_context(results)
+    # Named from the selection, not the hits: a search that could have drawn on
+    # two collections names them even when everything came back from one.
+    selected = rag.source_names if sources is None else sources
+    include_collection = len(set(selected)) > 1
     formatted = "\n\n---\n\n".join(
-        result.format_for_agent(rank=index + 1, total=len(results))
+        result.format_for_agent(
+            rank=index + 1, total=len(results), include_collection=include_collection
+        )
         for index, result in enumerate(results)
     )
     return formatted or "No results found.", list(results)
