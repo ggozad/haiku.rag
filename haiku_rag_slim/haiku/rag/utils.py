@@ -62,6 +62,32 @@ def check_api_key_supported(
         )
 
 
+def _check_provider_known(provider: str) -> None:
+    """Reject a chat provider pydantic-ai cannot resolve.
+
+    Providers we do not branch on reach pydantic-ai as a `provider:name` string,
+    so without this an unusable name fails deep inside pydantic-ai with nothing
+    naming the config key it came from. Asking pydantic-ai's own resolver rather
+    than keeping a list here leaves a newly added provider working with no
+    release of ours.
+    """
+    from pydantic_ai.providers import infer_provider_class
+
+    try:
+        infer_provider_class(provider)
+    except ImportError:
+        # pydantic-ai knows the name, its SDK is just not installed here. That
+        # failure names the extra to install, so leave it to be raised in place.
+        return
+    except ValueError:
+        raise ValueError(
+            f"Unknown model provider '{provider}'. See "
+            "https://ai.pydantic.dev/models/ for the providers pydantic-ai "
+            "supports. An OpenAI-compatible server (vLLM, sglang, LM Studio) "
+            "uses provider 'openai' with base_url."
+        ) from None
+
+
 def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
     """Compute cosine similarity between two vectors."""
     dot_product = sum(a * b for a, b in zip(vec1, vec2))
@@ -169,6 +195,7 @@ def get_model(
 
     provider = model_config.provider
     model = model_config.name
+    _check_provider_known(provider)
     check_api_key_supported(model_config, {"openai", "ollama"})
 
     if provider == "ollama":
@@ -261,7 +288,7 @@ def get_model(
 
         return AnthropicModel(model_name=model, settings=anthropic_settings)
 
-    elif provider == "gemini":
+    elif provider == "google":
         from pydantic_ai.models.google import GoogleModel
 
         return GoogleModel(

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Chat model provider `gemini` renamed to `google`, matching pydantic-ai. Update `provider: gemini` to `provider: google`.
+
 ### Added
 
 - `lancedb.databases` configures a named set of local or remote databases.
@@ -33,6 +37,7 @@
 - Inspector search results mark truncated previews with an ellipsis.
 - Document titles, URIs, headings and database names render as text, not Rich
   markup, in `search` output, chat citations and the chat document filter.
+- An unrecognized chat model provider raises `Unknown model provider '<name>'` instead of reaching pydantic-ai as a `provider:name` string, and outranks the `api_key` check, so an unusable provider is no longer reported as a missing vendor environment variable.
 
 ## [0.78.0] - 2026-08-24
 

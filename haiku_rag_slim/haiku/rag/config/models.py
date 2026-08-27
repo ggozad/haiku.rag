@@ -36,7 +36,7 @@ class ModelConfig(ConfigModel):
             `ModelSettings.extra_body`. Provider-side escape hatch for
             keys haiku.rag doesn't model explicitly (e.g. vLLM's
             `chat_template_kwargs.enable_thinking: false` for Qwen3).
-            Honored by openai/ollama/anthropic/groq; ignored by gemini/bedrock.
+            Honored by openai/ollama/anthropic/groq; ignored by google/bedrock.
     """
 
     provider: str = "ollama"

@@ -390,23 +390,23 @@ def test_get_model_anthropic_thinking_off_disables_adaptive_models():
 
 
 @pytest.mark.skipif(not HAS_GOOGLE, reason="Google not installed")
-def test_get_model_gemini():
-    """Test get_model returns GoogleModel for Gemini."""
+def test_get_model_google():
+    """Test get_model returns GoogleModel for Google."""
     from pydantic_ai.models.google import GoogleModel
 
-    model_config = ModelConfig(provider="gemini", name="gemini-2.0-flash-exp")
+    model_config = ModelConfig(provider="google", name="gemini-2.0-flash-exp")
     result = get_model(model_config)
     assert isinstance(result, GoogleModel)
 
 
 @pytest.mark.skipif(not HAS_GOOGLE, reason="Google not installed")
 @pytest.mark.parametrize("enable_thinking", [True, False])
-def test_get_model_gemini_with_thinking(enable_thinking):
-    """Test get_model configures thinking for Gemini."""
+def test_get_model_google_with_thinking(enable_thinking):
+    """Test get_model configures thinking for Google."""
     from pydantic_ai.models.google import GoogleModel
 
     model_config = ModelConfig(
-        provider="gemini",
+        provider="google",
         name="gemini-2.0-flash-thinking-exp",
         enable_thinking=enable_thinking,
     )
@@ -536,12 +536,43 @@ def test_get_model_bedrock_rejects_mantle_only_model():
         get_model(model_config)
 
 
-def test_get_model_unknown_provider():
-    """Test get_model returns string format for unknown providers."""
+def test_get_model_passthrough_for_unbranched_provider():
+    """A provider pydantic-ai knows but we do not branch on passes through as a
+    string, so a new pydantic-ai provider needs no haiku.rag release."""
     model_config = ModelConfig(provider="mistral", name="mistral-large-latest")
     result = get_model(model_config)
     assert isinstance(result, str)
     assert result == "mistral:mistral-large-latest"
+
+
+def test_get_model_accepts_provider_whose_sdk_is_missing(monkeypatch):
+    """A missing vendor SDK is not an unknown provider: that ImportError names
+    the extra to install, so it must reach the caller unchanged.
+
+    Uses a provider whose SDK *is* installed, so the patch is what produces the
+    ImportError rather than the environment.
+    """
+    import pydantic_ai.providers
+
+    def _missing_sdk(provider: str):
+        raise ImportError("Please install the `cohere` package")
+
+    monkeypatch.setattr(pydantic_ai.providers, "infer_provider_class", _missing_sdk)
+    result = get_model(ModelConfig(provider="cohere", name="command-r"))
+
+    assert result == "cohere:command-r"
+
+
+@pytest.mark.parametrize("provider", ["nonsense", "vllm", "gemini"])
+def test_get_model_rejects_unknown_provider(provider):
+    """An unknown provider is named here rather than passed through to fail
+    inside pydantic-ai, where nothing identifies the config it came from.
+
+    `vllm` and `gemini` get no special case: both were haiku.rag's own
+    vocabulary, and both fail the same way as a typo.
+    """
+    with pytest.raises(ValueError, match=provider):
+        get_model(ModelConfig(provider=provider, name="whatever"))
 
 
 def test_get_package_versions():
