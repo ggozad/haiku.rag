@@ -6,6 +6,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, Input, Static
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.tools.filters import build_document_id_filter
 from haiku.rag.utils import escape_sql_string
 
 # Documents listed at once. Mounting a checkbox per document wedges the modal on
@@ -19,6 +20,20 @@ class DocumentCheckbox(Checkbox):
         self.doc_id = doc_id
         # `label` is a reactive Text; narrowing the page wants the plain string.
         self.search_text = label
+
+
+def _labelled(docs) -> list[tuple[str, str]]:
+    """Each document's label and id, sorted. The database is named alongside the
+    title, which a title alone does not say."""
+    return sorted(
+        (
+            f"{doc.title or doc.uri or doc.id}"
+            + (f"  ({doc.source})" if doc.source else ""),
+            doc.id,
+        )
+        for doc in docs
+        if doc.id is not None
+    )
 
 
 def search_filter(term: str) -> str | None:
@@ -121,8 +136,13 @@ class DocumentFilterModal(ModalScreen):
         self.client = client
         self.initial_selected = selected or []
         self._selected: set[str] = set(self.initial_selected)
-        self._shown = 0
         self._matching = 0
+        self._search = ""
+        self._page = 0
+        # Selections outside the page stay applied, and a checkbox is the only
+        # way to remove one, so they are reachable through their own listing
+        # rather than appended to this one, which the page bound has to hold.
+        self._listing_selected = False
 
     def compose(self) -> ComposeResult:
         with Vertical(id="filter-container"):
@@ -132,6 +152,9 @@ class DocumentFilterModal(ModalScreen):
                 yield Static("Loading...", id="loading-indicator")
             yield Static("", id="filter-footer")
             with Horizontal(id="button-row"):
+                yield Button("Selected", id="selected-btn", variant="default")
+                yield Button("Prev", id="prev-btn", variant="default")
+                yield Button("Next", id="next-btn", variant="default")
                 yield Button("Cancel", id="cancel-btn", variant="default")
                 yield Button("Apply", id="apply-btn", variant="primary")
 
@@ -139,58 +162,94 @@ class DocumentFilterModal(ModalScreen):
         """Load the first page of documents when mounted."""
         await self._load_documents()
 
-    async def _load_documents(self, search: str = "") -> None:
-        """Show one page of documents, narrowed by `search` when given."""
-        document_filter = search_filter(search)
-        docs = await self.client.list_documents(
-            limit=DOCUMENT_PAGE, filter=document_filter
-        )
-        self._matching = await self.client.count_documents(filter=document_filter)
+    async def _load_documents(self, search: str | None = None) -> None:
+        """Show one page of whichever listing is on screen.
+
+        Either the documents matching the search, or the selected ones. Both
+        page at `DOCUMENT_PAGE`, so the mounted widgets stay bounded whichever
+        is showing and every selection stays reachable.
+        """
+        if search is not None:
+            self._search = search
+            self._page = 0
+            self._listing_selected = False
+
+        if self._listing_selected:
+            ids = sorted(self._selected)
+            self._matching = len(ids)
+            page = ids[self._page * DOCUMENT_PAGE : (self._page + 1) * DOCUMENT_PAGE]
+            docs = (
+                list(
+                    await self.client.list_documents(
+                        filter=build_document_id_filter(page)
+                    )
+                )
+                if page
+                else []
+            )
+        else:
+            document_filter = search_filter(self._search)
+            docs = list(
+                await self.client.list_documents(
+                    limit=DOCUMENT_PAGE,
+                    offset=self._page * DOCUMENT_PAGE,
+                    filter=document_filter,
+                )
+            )
+            self._matching = await self.client.count_documents(filter=document_filter)
 
         filter_list = self.query_one("#filter-list", VerticalScroll)
         await filter_list.remove_children()
 
-        # Sort the interleaved page and label each document's database, which
-        # a title alone does not say.
-        labelled = sorted(
-            (
-                (
-                    f"{doc.title or doc.uri or doc.id}"
-                    + (f"  ({doc.source})" if doc.source else ""),
-                    doc.id,
-                )
-                for doc in docs
-                if doc.id is not None
-            ),
-            key=lambda pair: pair[0],
-        )
-
         boxes = [
             DocumentCheckbox(label, doc_id, value=doc_id in self._selected)
-            for label, doc_id in labelled
+            for label, doc_id in _labelled(docs)
         ]
         if boxes:
             await filter_list.mount_all(boxes)
+        else:
+            # Otherwise the list is an empty box, indistinguishable from one
+            # still loading.
+            empty = (
+                "Nothing selected." if self._listing_selected else "No documents match."
+            )
+            await filter_list.mount(Static(empty, id="filter-empty"))
 
-        self._shown = len(boxes)
         self._update_footer()
 
+    @property
+    def _pages(self) -> int:
+        """Pages the current listing spans, at least one."""
+        return max(1, -(-self._matching // DOCUMENT_PAGE))
+
     def _update_footer(self) -> None:
-        """Update the footer with the selection and how much of the corpus is shown."""
+        """Report the selection, and where in the listing this page sits.
+
+        Counted from the checkboxes on screen, so narrowing the page as the user
+        types reports what they can actually see.
+        """
         footer = self.query_one("#filter-footer", Static)
         count = len(self._selected)
         if count == 0:
             state = "[dim]No filter (all documents)[/dim]"
         else:
             state = f"[bold]{count}[/bold] document(s) selected"
-        if self._matching > self._shown:
+        if self._listing_selected:
+            state += " [dim]— listing the selected[/dim]"
+        visible = sum(1 for box in self.query(DocumentCheckbox) if box.display)
+        if self._pages > 1:
             state += (
-                f" [dim]— showing {self._shown} of {self._matching};"
+                f" [dim]— page {self._page + 1} of {self._pages}"
+                f" ({self._matching} total)[/dim]"
+            )
+        elif self._matching > visible:
+            state += (
+                f" [dim]— showing {visible} of {self._matching};"
                 " type and press enter to search[/dim]"
             )
         footer.update(state)
 
-    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+    async def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         """Handle checkbox state changes."""
         checkbox = event.checkbox
         if not isinstance(checkbox, DocumentCheckbox):
@@ -200,6 +259,14 @@ class DocumentFilterModal(ModalScreen):
             self._selected.add(checkbox.doc_id)
         else:
             self._selected.discard(checkbox.doc_id)
+
+        if self._listing_selected:
+            # This listing is the selection, so removing one changes both what
+            # it holds and how far it runs. The last page can stop existing.
+            pages = max(1, -(-len(self._selected) // DOCUMENT_PAGE))
+            self._page = min(self._page, pages - 1)
+            await self._load_documents()
+            return
 
         self._update_footer()
 
@@ -216,9 +283,27 @@ class DocumentFilterModal(ModalScreen):
             checkbox.display = (
                 search_term == "" or search_term in checkbox.search_text.lower()
             )
+        self._update_footer()
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
+    async def _turn_to(self, page: int) -> None:
+        """Show `page` of the current listing, if there is one."""
+        if 0 <= page < self._pages:
+            self._page = page
+            await self._load_documents()
+
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""
+        if event.button.id == "selected-btn":
+            self._listing_selected = not self._listing_selected
+            self._page = 0
+            await self._load_documents()
+            return
+        if event.button.id == "prev-btn":
+            await self._turn_to(self._page - 1)
+            return
+        if event.button.id == "next-btn":
+            await self._turn_to(self._page + 1)
+            return
         if event.button.id == "cancel-btn":
             self.action_cancel()
         elif event.button.id == "apply-btn":

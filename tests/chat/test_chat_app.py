@@ -687,6 +687,251 @@ class TestDocumentSelectionIdentity:
                 assert modal._selected == {"id-one"}
 
 
+class TestKeepingSelectionsReachable:
+    """A selection applies whether or not the page shows it, and a checkbox is
+    the only way to remove one."""
+
+    @pytest.mark.asyncio
+    async def test_every_selection_is_reachable_and_the_page_stays_bounded(
+        self, temp_db_path: Path
+    ):
+        """Selections accumulate across searches. Appending them to the results
+        loses the bound the page exists to keep, so they get their own listing,
+        paged the same way."""
+        from textual.widgets import Button, Static
+
+        from haiku.rag.chat.widgets.document_filter_modal import (
+            DOCUMENT_PAGE,
+            DocumentCheckbox,
+            DocumentFilterModal,
+        )
+        from haiku.rag.store.models.document import Document
+
+        picked = [
+            Document(id=f"sel-{i:04d}", content="", title=f"Selected {i:04d}")
+            for i in range(DOCUMENT_PAGE + 20)
+        ]
+        by_id = {d.id: d for d in picked}
+        matched = [
+            Document(id=f"hit-{i}", content="", title=f"Hit {i}") for i in range(5)
+        ]
+
+        client = AsyncMock()
+        client.covers_multiple = False
+        client.source_names = ()
+        client.count_documents.return_value = 5
+
+        async def listing(limit=None, offset=0, filter=None):
+            if filter and filter.startswith("id IN"):
+                ids = filter[len("id IN (") : -1].replace("'", "").split(", ")
+                return [by_id[i] for i in ids]
+            return matched
+
+        client.list_documents.side_effect = listing
+
+        modal = DocumentFilterModal(
+            client=client, selected=[d.id or "" for d in picked]
+        )
+        app, _ = _make_app(temp_db_path, client)
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as stub,
+            _covering_returns(stub, client),
+        ):
+            async with app.run_test() as pilot:
+                await app.push_screen(modal)
+                await pilot.pause()
+
+                # Results are the results: selections are not appended to them.
+                assert len(list(modal.query(DocumentCheckbox))) == len(matched)
+
+                await modal.on_button_pressed(
+                    Button.Pressed(modal.query_one("#selected-btn", Button))
+                )
+                await pilot.pause()
+                first = [b.doc_id for b in modal.query(DocumentCheckbox)]
+                footer = str(modal.query_one("#filter-footer", Static).content)
+
+                await modal.on_button_pressed(
+                    Button.Pressed(modal.query_one("#next-btn", Button))
+                )
+                await pilot.pause()
+                second = [b.doc_id for b in modal.query(DocumentCheckbox)]
+
+        assert len(first) == DOCUMENT_PAGE
+        assert "page 1 of 2" in footer
+        # The rest are on the next page, so every selection can be removed.
+        assert len(second) == 20
+        assert set(first) | set(second) == {d.id for d in picked}
+
+    @pytest.mark.asyncio
+    async def test_deselecting_updates_the_selected_listing(self, temp_db_path: Path):
+        """The listing is the selection, so removing one changes what it holds
+        and how far it runs. Its last page can stop existing."""
+        from textual.widgets import Button, Checkbox, Static
+
+        from haiku.rag.chat.widgets.document_filter_modal import (
+            DOCUMENT_PAGE,
+            DocumentCheckbox,
+            DocumentFilterModal,
+        )
+        from haiku.rag.store.models.document import Document
+
+        picked = [
+            Document(id=f"sel-{i:04d}", content="", title=f"Selected {i:04d}")
+            for i in range(DOCUMENT_PAGE + 1)
+        ]
+        by_id = {d.id: d for d in picked}
+
+        client = AsyncMock()
+        client.covers_multiple = False
+        client.source_names = ()
+        client.count_documents.return_value = 0
+
+        async def listing(limit=None, offset=0, filter=None):
+            if filter and filter.startswith("id IN"):
+                ids = filter[len("id IN (") : -1].replace("'", "").split(", ")
+                return [by_id[i] for i in ids]
+            return []
+
+        client.list_documents.side_effect = listing
+
+        modal = DocumentFilterModal(
+            client=client, selected=[d.id or "" for d in picked]
+        )
+        app, _ = _make_app(temp_db_path, client)
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as stub,
+            _covering_returns(stub, client),
+        ):
+            async with app.run_test() as pilot:
+                await app.push_screen(modal)
+                await pilot.pause()
+                await modal.on_button_pressed(
+                    Button.Pressed(modal.query_one("#selected-btn", Button))
+                )
+                await pilot.pause()
+                await modal.on_button_pressed(
+                    Button.Pressed(modal.query_one("#next-btn", Button))
+                )
+                await pilot.pause()
+
+                [only] = list(modal.query(DocumentCheckbox))
+                assert only.doc_id == "sel-0200"
+                # Awaited rather than posted: the handler reads the database, so
+                # a single pause need not have flushed it.
+                await modal.on_checkbox_changed(Checkbox.Changed(only, False))
+                await pilot.pause()
+
+                remaining = [b.doc_id for b in modal.query(DocumentCheckbox)]
+                footer = str(modal.query_one("#filter-footer", Static).content)
+
+        # The row is gone from the listing, not merely unchecked.
+        assert "sel-0200" not in remaining
+        assert len(remaining) == DOCUMENT_PAGE
+        assert modal._selected == {d.id for d in picked} - {"sel-0200"}
+        # The page it was on no longer exists, so the modal does not report it.
+        assert modal._page == 0
+        assert "page" not in footer
+        assert f"[bold]{DOCUMENT_PAGE}[/bold] document(s) selected" in footer
+
+    @pytest.mark.asyncio
+    async def test_the_results_listing_pages_too(self, temp_db_path: Path):
+        """More documents match than one page holds, so the rest are a page
+        away rather than unreachable."""
+        from textual.widgets import Button
+
+        from haiku.rag.chat.widgets.document_filter_modal import (
+            DOCUMENT_PAGE,
+            DocumentFilterModal,
+        )
+        from haiku.rag.store.models.document import Document
+
+        client = AsyncMock()
+        client.covers_multiple = False
+        client.source_names = ()
+        client.count_documents.return_value = DOCUMENT_PAGE * 2
+        client.list_documents.return_value = [
+            Document(id="d1", content="", title="One")
+        ]
+
+        modal = DocumentFilterModal(client=client)
+        app, _ = _make_app(temp_db_path, client)
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as stub,
+            _covering_returns(stub, client),
+        ):
+            async with app.run_test() as pilot:
+                await app.push_screen(modal)
+                await pilot.pause()
+                assert client.list_documents.await_args.kwargs["offset"] == 0
+
+                await modal.on_button_pressed(
+                    Button.Pressed(modal.query_one("#next-btn", Button))
+                )
+                await pilot.pause()
+
+        assert client.list_documents.await_args.kwargs["offset"] == DOCUMENT_PAGE
+
+    @pytest.mark.asyncio
+    async def test_a_search_matching_nothing_says_so(self, temp_db_path: Path):
+        """An empty list is indistinguishable from one still loading."""
+        from textual.widgets import Static
+
+        from haiku.rag.chat.widgets.document_filter_modal import DocumentFilterModal
+
+        client = AsyncMock()
+        client.covers_multiple = False
+        client.source_names = ()
+        client.list_documents.return_value = []
+        client.count_documents.return_value = 0
+
+        modal = DocumentFilterModal(client=client)
+        app, _ = _make_app(temp_db_path, client)
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as stub,
+            _covering_returns(stub, client),
+        ):
+            async with app.run_test() as pilot:
+                await app.push_screen(modal)
+                await pilot.pause()
+
+                empty = modal.query_one("#filter-empty", Static)
+                assert "No documents match" in str(empty.content)
+
+    @pytest.mark.asyncio
+    async def test_narrowing_as_you_type_updates_the_count(self, temp_db_path: Path):
+        from textual.widgets import Input, Static
+
+        from haiku.rag.chat.widgets.document_filter_modal import DocumentFilterModal
+        from haiku.rag.store.models.document import Document
+
+        client = AsyncMock()
+        client.covers_multiple = False
+        client.source_names = ()
+        client.list_documents.return_value = [
+            Document(id="id-one", content="", title="Capital region"),
+            Document(id="id-two", content="", title="Nobel laureates"),
+        ]
+        client.count_documents.return_value = 9
+
+        modal = DocumentFilterModal(client=client)
+        app, _ = _make_app(temp_db_path, client)
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as stub,
+            _covering_returns(stub, client),
+        ):
+            async with app.run_test() as pilot:
+                await app.push_screen(modal)
+                await pilot.pause()
+                footer = modal.query_one("#filter-footer", Static)
+                assert "showing 2 of 9" in str(footer.content)
+
+                modal.on_input_changed(Input.Changed(Input(), "nobel"))
+                await pilot.pause()
+
+                assert "showing 1 of 9" in str(footer.content)
+
+
 class TestDocumentSearchFilter:
     """The filter modal shows one page and asks the database for the rest, so the
     typed term reaches SQL."""
