@@ -143,7 +143,9 @@ class HaikuRAG:
             sources: Names from ``config.lancedb.databases`` this client covers,
                 None for all of them. Only that setting names databases, so a
                 name raises when ``lancedb.uri`` placed the database. Ignored
-                when ``db_path`` says which database to open.
+                when ``db_path`` says which database to open. ``[]`` raises: a
+                client over no database can do nothing, unlike ``sources=[]`` on
+                a search, which is a selection of nothing to search.
         """
         self._configured = config if config is not None else get_config()
         # What the caller configured, kept intact: entering derives a
@@ -195,9 +197,10 @@ class HaikuRAG:
         """The client that can read `source` — itself, where it reads one
         database.
 
-        None where the database cannot be placed: a client covering a set needs
-        the name, and evidence recorded before databases could be named carries
-        none.
+        None only when a client covering a set is given no name, as for evidence
+        recorded before databases could be named. A name outside the set raises
+        `KeyError`, the same as `clients_for`: provenance naming a database this
+        client does not cover is wrong rather than absent.
         """
         if not self.covers_multiple:
             return self

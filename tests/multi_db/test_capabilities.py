@@ -7,6 +7,7 @@ import pytest
 from haiku.rag.capabilities._tools import search_corpus
 from haiku.rag.capabilities.rag import RAGState, create_capability
 from haiku.rag.client import HaikuRAG
+from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.sandbox import AnalysisContext, Sandbox
 from haiku.rag.store.models import SearchResult
 from tests.multi_db.helpers import (
@@ -197,6 +198,42 @@ class TestCollectionIdentityForTheModel:
         assert result.success, result.stderr
         assert "['alpha', 'beta']" in result.stdout
         assert result.stdout.count("['alpha', 'beta']") == 2
+
+
+class TestLendingANamedClient:
+    @pytest.mark.asyncio
+    async def test_a_lent_named_client_names_the_citation(self, tmp_path):
+        """The chat TUI builds capabilities before its client exists and lends
+        it on mount, so what a citation records is the lent client's database
+        and not whatever scope the capability was constructed with."""
+        from tests.capabilities.test_capabilities import Deps, make_context
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        # `run_chat` derives these for a single-database scope.
+        scope = DatabaseScope.resolve(config, database_name="alpha")
+        one_config, one_path = scope.databases[0].connection(config)
+        capability = create_capability(
+            db_path=one_path, config=one_config, defer_loading=False
+        )
+
+        async with HaikuRAG(config=config, sources=["alpha"]) as client:
+            # What `ChatApp.on_mount` does.
+            capability.borrowed_rag = client
+            deps = Deps(state={"rag": RAGState().model_dump(mode="json")})
+            run = await capability.for_run(make_context(deps))
+            assert run.state is not None
+            await run._search("cats", limit=5)
+            [result] = run.state.searches["cats"]
+            assert result.chunk_id is not None
+            await run._cite([result.chunk_id])
+
+            [citation] = run.state.citation_index.values()
+
+        assert result.source == "alpha"
+        assert citation.source == "alpha"
 
 
 class TestWhenTheModelIsToldTheCollection:
