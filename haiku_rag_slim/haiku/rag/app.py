@@ -35,15 +35,24 @@ logger = logging.getLogger(__name__)
 class HaikuRAGApp:
     def __init__(
         self,
-        scope: "DatabaseScope",
+        scope: "DatabaseScope | None" = None,
         config: AppConfig | None = None,
         read_only: bool = False,
     ):
-        """The databases this command works on, resolved by whoever built it."""
-        self.scope = scope
+        """The databases this command works on, resolved by whoever built it.
+
+        `scope` is None for configuration-only commands.
+        """
+        self._scope = scope
         self.config = config if config is not None else get_config()
         self.read_only = read_only
         self.console = Console()
+
+    @property
+    def scope(self) -> "DatabaseScope":
+        """The databases this command works on."""
+        assert self._scope is not None, "this command works on no database"
+        return self._scope
 
     @property
     def _one(self) -> "DatabaseRef":

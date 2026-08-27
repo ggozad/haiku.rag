@@ -326,6 +326,50 @@ class TestSelectingADatabaseByName:
         assert cli_module._db_name is None
 
 
+class TestCommandsThatWorkOnNoDatabase:
+    """`settings` and `download-models` read the configuration. A name that
+    selects a database is nothing to them, including a wrong one."""
+
+    def test_settings_ignores_an_unknown_name(self, tmp_path, monkeypatch):
+        import haiku.rag.config as config_module
+
+        monkeypatch.setattr(config_module, "_config", None)
+        config_file = tmp_path / "haiku.rag.yaml"
+        config_file.write_text("lancedb:\n  databases:\n    alpha: /data/a.lancedb\n")
+
+        result = runner.invoke(
+            cli, ["--config", str(config_file), "--db-name", "nope", "settings"]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "haiku.rag configuration" in result.output
+
+    def test_download_models_ignores_an_unknown_name(self, tmp_path, monkeypatch):
+        import haiku.rag.config as config_module
+
+        monkeypatch.setattr(config_module, "_config", None)
+        config_file = tmp_path / "haiku.rag.yaml"
+        config_file.write_text("lancedb:\n  databases:\n    alpha: /data/a.lancedb\n")
+        downloaded: list[object] = []
+
+        async def nothing_to_download(config):
+            downloaded.append(config)
+            return
+            yield  # pragma: no cover - an empty async generator needs one
+
+        monkeypatch.setattr(
+            "haiku.rag.client.downloads.download_models", nothing_to_download
+        )
+
+        result = runner.invoke(
+            cli,
+            ["--config", str(config_file), "--db-name", "nope", "download-models"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert len(downloaded) == 1
+
+
 class TestResolvingTheDatabasePath:
     def test_a_path_wins_when_nothing_is_selected(self, monkeypatch):
         monkeypatch.setattr("haiku.rag.cli._db_name", None)

@@ -461,9 +461,7 @@ def settings():
 
     config = get_config()
     # Neither of these opens a database; the scope is whatever is configured.
-    app = HaikuRAGApp(
-        scope=resolve_scope(covers_set=True), config=config, read_only=True
-    )
+    app = HaikuRAGApp(config=config, read_only=True)
     app.show_settings()
 
 
@@ -781,9 +779,7 @@ def tag_restore(
 def download_models_cmd():
     from haiku.rag.app import HaikuRAGApp
 
-    app = HaikuRAGApp(
-        scope=resolve_scope(covers_set=True), config=get_config(), read_only=True
-    )
+    app = HaikuRAGApp(config=get_config(), read_only=True)
     try:
         asyncio.run(app.download_models())
     except Exception as e:
