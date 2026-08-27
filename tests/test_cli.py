@@ -185,20 +185,20 @@ class TestSelectingADatabaseByName:
     def test_a_named_database_is_passed_on_by_name(self, monkeypatch):
         """Not resolved to a path: the name is what results and citations carry,
         and rewriting the configuration is what used to lose it."""
-        self._install(monkeypatch, medic="s3://bucket/prefix/medic.lancedb")
-        monkeypatch.setattr("haiku.rag.cli._db_name", "medic")
+        self._install(monkeypatch, papers="s3://bucket/prefix/papers.lancedb")
+        monkeypatch.setattr("haiku.rag.cli._db_name", "papers")
 
-        assert resolve_scope(None).names == ("medic",)
+        assert resolve_scope(None).names == ("papers",)
 
     def test_naming_a_database_leaves_the_configuration_alone(self, monkeypatch):
-        self._install(monkeypatch, st="/data/st.lancedb", other="/data/o.lancedb")
-        monkeypatch.setattr("haiku.rag.cli._db_name", "st")
+        self._install(monkeypatch, notes="/data/notes.lancedb", other="/data/o.lancedb")
+        monkeypatch.setattr("haiku.rag.cli._db_name", "notes")
 
         resolve_scope(None)
 
         config = get_config()
         assert config.lancedb.databases == {
-            "st": "/data/st.lancedb",
+            "notes": "/data/notes.lancedb",
             "other": "/data/o.lancedb",
         }
         assert config.lancedb.uri == ""
@@ -211,7 +211,7 @@ class TestSelectingADatabaseByName:
             resolve_scope(None)
 
     def test_an_unknown_name_does_not_leak_locations(self, monkeypatch):
-        self._install(monkeypatch, medic="s3://bucket/prefix/medic.lancedb")
+        self._install(monkeypatch, papers="s3://bucket/prefix/papers.lancedb")
         monkeypatch.setattr("haiku.rag.cli._db_name", "gamma")
 
         with pytest.raises(AmbiguousDatabaseError) as raised:
@@ -221,7 +221,7 @@ class TestSelectingADatabaseByName:
 
     def test_selecting_nothing_reports_an_empty_mapping(self, monkeypatch):
         self._install(monkeypatch)
-        monkeypatch.setattr("haiku.rag.cli._db_name", "medic")
+        monkeypatch.setattr("haiku.rag.cli._db_name", "papers")
 
         with pytest.raises(AmbiguousDatabaseError, match="nothing"):
             resolve_scope(None)
@@ -304,13 +304,15 @@ class TestSelectingADatabaseByName:
         monkeypatch.chdir(tmp_path)
         config_file = tmp_path / "selected.yaml"
         config_file.write_text(
-            "lancedb:\n  databases:\n    medic: s3://bucket/medic.lancedb\n"
+            "lancedb:\n  databases:\n    papers: s3://bucket/papers.lancedb\n"
         )
 
         runner.invoke(
-            cli, ["--config", str(config_file), "--db-name", "medic", "settings"]
+            cli, ["--config", str(config_file), "--db-name", "papers", "settings"]
         )
-        assert get_config().lancedb.databases == {"medic": "s3://bucket/medic.lancedb"}
+        assert get_config().lancedb.databases == {
+            "papers": "s3://bucket/papers.lancedb"
+        }
 
         runner.invoke(cli, ["settings"])
 
@@ -326,7 +328,7 @@ class TestResolvingTheDatabasePath:
         assert ref.db_path == Path("/data/one.lancedb")
 
     def test_naming_a_database_twice_is_refused(self, monkeypatch):
-        monkeypatch.setattr("haiku.rag.cli._db_name", "st")
+        monkeypatch.setattr("haiku.rag.cli._db_name", "notes")
 
         with pytest.raises(AmbiguousDatabaseError, match="not both"):
             resolve_scope(Path("/data/other.lancedb"))

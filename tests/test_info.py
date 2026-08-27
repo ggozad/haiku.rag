@@ -172,13 +172,13 @@ async def test_app_info_opens_a_named_remote_database(tmp_path):
     from haiku.rag.client.scope import DatabaseScope
 
     config = AppConfig(
-        lancedb=LanceDBConfig(databases={"medic": "s3://bucket/medic.lancedb"})
+        lancedb=LanceDBConfig(databases={"papers": "s3://bucket/papers.lancedb"})
     )
-    scope = DatabaseScope.resolve(config, database_name="medic")
+    scope = DatabaseScope.resolve(config, database_name="papers")
     app = HaikuRAGApp(scope=scope, config=config)
 
     assert app._is_local is False
-    assert app._store_config.lancedb.uri == "s3://bucket/medic.lancedb"
+    assert app._store_config.lancedb.uri == "s3://bucket/papers.lancedb"
     assert app._store_config.lancedb.databases == {}
 
     with patch(
@@ -191,7 +191,7 @@ async def test_app_info_opens_a_named_remote_database(tmp_path):
         await app.info()
 
     opened = mock_connect.call_args.args[0]
-    assert opened.lancedb.uri == "s3://bucket/medic.lancedb"
+    assert opened.lancedb.uri == "s3://bucket/papers.lancedb"
 
 
 async def test_app_doctor_opens_a_named_remote_database():
@@ -200,15 +200,15 @@ async def test_app_doctor_opens_a_named_remote_database():
     from haiku.rag.client.scope import DatabaseScope
 
     config = AppConfig(
-        lancedb=LanceDBConfig(databases={"medic": "s3://bucket/medic.lancedb"})
+        lancedb=LanceDBConfig(databases={"papers": "s3://bucket/papers.lancedb"})
     )
-    app = HaikuRAGApp(scope=DatabaseScope.resolve(config, database_name="medic"))
+    app = HaikuRAGApp(scope=DatabaseScope.resolve(config, database_name="papers"))
 
     with patch("haiku.rag.doctor.run_doctor", new_callable=AsyncMock) as run:
         run.return_value = MagicMock(checks=[], ok=True, duplicates=None)
         await app.doctor()
 
-    assert run.call_args.args[0].lancedb.uri == "s3://bucket/medic.lancedb"
+    assert run.call_args.args[0].lancedb.uri == "s3://bucket/papers.lancedb"
 
 
 async def test_app_info_uses_connect_lancedb_for_remote(tmp_path):

@@ -782,15 +782,15 @@ async def test_format_citations_rich_names_the_database_when_federating():
         document_uri="test://doc",
         document_title="Test Doc",
         content="Body",
-        source="medic",
+        source="papers",
     )
     client = AsyncMock()
     client.covers_multiple = True
-    client.source_names = ("medic", "st")
+    client.source_names = ("papers", "notes")
 
     output = _render_rich(await format_citations_rich([citation], client))
 
-    assert "medic" in output
+    assert "papers" in output
 
 
 def test_truncated_marks_what_it_dropped():
@@ -820,7 +820,7 @@ async def test_format_citations_rich_omits_the_database_for_one_database():
         document_uri="test://doc",
         document_title="Test Doc",
         content="Body",
-        source="medic",
+        source="papers",
     )
     client = AsyncMock()
     client.covers_multiple = False
@@ -828,7 +828,7 @@ async def test_format_citations_rich_omits_the_database_for_one_database():
 
     output = _render_rich(await format_citations_rich([citation], client))
 
-    assert "medic" not in output
+    assert "papers" not in output
 
 
 async def test_format_citations_rich_truncates_long_content():
