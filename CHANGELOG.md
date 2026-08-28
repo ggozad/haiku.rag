@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.79.0] - 2026-08-28
+
 ### Changed
 
 - Chat model provider `gemini` renamed to `google`, matching pydantic-ai. Update `provider: gemini` to `provider: google`.
@@ -2263,7 +2265,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.78.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.79.0...HEAD
+[0.79.0]: https://github.com/ggozad/haiku.rag/compare/0.78.0...0.79.0
 [0.78.0]: https://github.com/ggozad/haiku.rag/compare/0.77.0...0.78.0
 [0.77.0]: https://github.com/ggozad/haiku.rag/compare/0.77.0...0.77.0
 [0.77.0]: https://github.com/ggozad/haiku.rag/compare/0.76.0...0.77.0
