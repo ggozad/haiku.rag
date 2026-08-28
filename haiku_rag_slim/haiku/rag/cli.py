@@ -92,7 +92,7 @@ def resolve_scope(
     The CLI decides only what it alone knows: that `--db` and `--db-name` are
     the same thing said twice, and whether this command can read more than one.
     Everything else — an unknown name, a `lancedb.uri`, the default location —
-    is `DatabaseScope.resolve`'s to answer, so there is one table and not two.
+    is `DatabaseScope.resolve`'s to answer.
     """
     from haiku.rag.client.scope import DatabaseScope
 

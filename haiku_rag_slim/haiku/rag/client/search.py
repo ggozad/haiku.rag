@@ -91,8 +91,8 @@ async def search_sources(
         return []
     selected = await client.clients_for(names)
     if len(selected) == 1:
-        # One database is an ordinary search: fusion would replace its hybrid
-        # scores with ranks, and embedding up front would defeat the late embed.
+        # One database is an ordinary search: it keeps the database's own
+        # hybrid scores and embeds late.
         return await selected[0].search(
             query, limit, search_type, filter, include_images
         )
@@ -101,8 +101,7 @@ async def search_sources(
         client._require_one_embedder(selected)
 
     # One over-fetch decision, one query vector and one reranker for the whole
-    # set: the databases share an embedder, and deciding per database would have
-    # each consult its own reranker.
+    # set: the databases share an embedder.
     fetch_limit = _fetch_limit(client, query, limit)
     query_vector = await _embed_query(selected[0], query, resolved)
     text = query if isinstance(query, str) else ""
@@ -316,8 +315,8 @@ async def _attach_picture_data(client: "HaikuRAG", chunks: list[Chunk]) -> None:
 def _dedup_picture_chunks(results: list[SearchResult]) -> list[SearchResult]:
     """Collapse duplicate picture-only chunks to one result per ``self_ref``.
 
-    Keyed by database as well, since a database copied from another holds the same
-    document id: collapsing across them would drop one of two real results.
+    Keyed by database as well: copies of a database hold the same document id,
+    and each copy's picture is its own result.
 
     A single picture can produce two chunks for the same self_ref: one whose
     vector is the text embedding of the picture's description, and one whose

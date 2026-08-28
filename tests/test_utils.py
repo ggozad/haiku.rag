@@ -797,9 +797,8 @@ async def test_format_citations_rich_names_the_database_when_federating():
 
 
 async def test_an_unattributable_picture_renders_its_marker(tmp_path):
-    """Evidence recorded before databases could be named carries no source, so
-    across databases nothing says which holds the picture. One unrenderable
-    figure must not cost the answer."""
+    """A citation without a source has no picture owner across databases. One
+    unrenderable figure must not cost the answer."""
     from rich.console import Console
 
     from haiku.rag.store.models.citation import Citation

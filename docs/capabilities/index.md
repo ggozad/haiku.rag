@@ -149,11 +149,8 @@ RAG and analysis capabilities select databases in this order:
 
 1. The `db_path` argument.
 2. `HAIKU_RAG_DB`.
-3. [`lancedb.databases`](../configuration/storage.md#multiple-databases), which
-   selects the full configured set.
-4. [`lancedb.uri`](../configuration/storage.md#changing-the-default-database-path),
-   which selects one database.
+3. [`lancedb.databases`](../configuration/storage.md#multiple-databases), which selects the full configured set.
+4. [`lancedb.uri`](../configuration/storage.md#changing-the-default-database-path), which selects one database.
 5. `config.storage.data_dir / "haiku.rag.lancedb"`.
 
-Passing a client through `rag=` bypasses this selection. The capability uses the
-databases covered by that client and does not close it.
+Passing a client through `rag=` bypasses this selection. The capability uses the databases covered by that client and does not close it.

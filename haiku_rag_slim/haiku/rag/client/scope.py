@@ -62,7 +62,7 @@ class DatabaseScope:
     down. Never empty.
 
     Nothing here reads the environment: ``HAIKU_RAG_DB`` is the capability entry
-    point's to honour, and reading it here would extend it to every caller.
+    point's to honour.
     """
 
     databases: tuple[DatabaseRef, ...]
@@ -122,8 +122,7 @@ class DatabaseScope:
     def select(self, names: list[str]) -> "DatabaseScope":
         """The databases in this scope named by `names`, in the order given.
 
-        Repeats collapse: a database named twice would be searched twice and
-        fused as two rank lists, which counts it double.
+        Repeats collapse: a name selects its database once.
         """
         if not names:
             raise ValueError(

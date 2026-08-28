@@ -454,8 +454,7 @@ async def test_gold_prefix_run_answers_with_history(tmp_path):
 
 
 def test_records_the_database_each_citation_came_from():
-    """A run over several databases has to record which one grounded the answer:
-    the distribution cannot be recovered from the report afterwards."""
+    """A run over several databases records which one grounded the answer."""
     from haiku.rag.capabilities._base import EvidenceState
     from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
     from haiku.rag.store.models.citation import Citation

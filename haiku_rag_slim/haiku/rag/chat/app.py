@@ -300,9 +300,8 @@ class ChatApp(App):
                 refs = list(citation.picture_refs or [])
                 if not refs:
                     continue
-                # Evidence recorded before databases could be named carries no
-                # source, and across databases nothing places its pictures. The
-                # citation still renders, with its figure markers.
+                # A sourceless citation across a set has no owner to fetch
+                # pictures from: it renders with its figure markers alone.
                 owner = await self.client.reader_for(citation.source)
                 if owner is None:
                     continue

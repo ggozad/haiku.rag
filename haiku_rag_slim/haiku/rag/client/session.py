@@ -116,8 +116,8 @@ class SingleDatabaseSession:
                 raise
             failure = type(error).__name__
         if failure is not None:
-            # Raised outside the handler to discard the location-bearing
-            # context, which `from None` would only stop printing.
+            # Raised outside the handler: the exception carries neither a cause
+            # nor a location-bearing context.
             raise SourceUnavailableError(
                 f"database {self.source!r} could not be opened: {failure}"
             )

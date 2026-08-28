@@ -63,8 +63,7 @@ def test_run_chat_covers_a_configured_set(tmp_path, monkeypatch):
 
 
 def test_chat_capabilities_read_the_named_database(tmp_path, monkeypatch):
-    """`--db PATH` and `--db-name NAME` have to reach the capabilities too, or
-    they answer from the default database or the whole set."""
+    """`--db PATH` and `--db-name NAME` reach the capabilities too."""
     import haiku.rag.config as config_module
     from haiku.rag.client.scope import DatabaseScope
     from haiku.rag.config import set_config
@@ -821,9 +820,8 @@ class TestRenderingUnattributedPictures:
     async def test_a_sourceless_picture_citation_does_not_fail_the_answer(
         self, temp_db_path: Path
     ):
-        """Evidence recorded before databases could be named carries no source,
-        and across databases nothing places its pictures. The citation still
-        renders, with its figure markers."""
+        """A citation without a source has no picture owner across databases.
+        It renders with its figure markers."""
         from haiku.rag.chat.app import RAG_STATE_NAMESPACE
         from haiku.rag.store.models.citation import Citation
 
@@ -1004,8 +1002,7 @@ class TestKeepingSelectionsReachable:
     async def test_every_selection_is_reachable_and_the_page_stays_bounded(
         self, temp_db_path: Path
     ):
-        """Selections accumulate across searches. Appending them to the results
-        loses the bound the page exists to keep, so they get their own listing,
+        """Selections accumulate across searches and get their own listing,
         paged the same way."""
         from textual.widgets import Button, Static
 

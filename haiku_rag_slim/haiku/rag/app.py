@@ -68,8 +68,7 @@ class HaikuRAGApp:
     def _connection(self) -> "tuple[AppConfig, Path]":
         """How to open the one database this command works on, directly.
 
-        Derived per database: opening one of a set against the set's own
-        configuration would reach the local path that stands in for it.
+        Derived per database from its configured location.
         """
         from haiku.rag.client.session import default_db_path
 
@@ -85,9 +84,8 @@ class HaikuRAGApp:
     def _is_local(self) -> bool:
         """True when the database is a local path, False for a URI.
 
-        Read from the database this command resolved to, not from the
-        configuration: a database named in `lancedb.databases` can sit behind a
-        URI while the configuration's own `uri` is empty.
+        Read from the resolved database: one named in `lancedb.databases` can
+        sit behind a URI while the configuration's own `uri` is empty.
         """
         return self._one.db_path is not None
 
@@ -853,9 +851,8 @@ class HaikuRAGApp:
     def show_settings(self):
         """Display current configuration settings.
 
-        As YAML, which is the shape `haiku.rag.yaml` is written in, so what is
-        read here is what would be written there. `mode="json"` keeps paths and
-        enums out of their Python reprs.
+        As YAML, the shape `haiku.rag.yaml` is written in. `mode="json"` keeps
+        paths and enums out of their Python reprs.
         """
         import yaml
 
@@ -884,11 +881,15 @@ class HaikuRAGApp:
             content = Markdown(doc.content)
         parts = [f"[repr.attrib_name]id[/repr.attrib_name]: {doc.id}"]
         if doc.uri:
-            parts.append(f"[repr.attrib_name]uri[/repr.attrib_name]: {doc.uri}")
+            parts.append(f"[repr.attrib_name]uri[/repr.attrib_name]: {escape(doc.uri)}")
         if doc.title:
-            parts.append(f"[repr.attrib_name]title[/repr.attrib_name]: {doc.title}")
+            parts.append(
+                f"[repr.attrib_name]title[/repr.attrib_name]: {escape(doc.title)}"
+            )
         if doc.metadata:
-            parts.append(f"[repr.attrib_name]meta[/repr.attrib_name]: {doc.metadata}")
+            parts.append(
+                f"[repr.attrib_name]meta[/repr.attrib_name]: {escape(str(doc.metadata))}"
+            )
         self.console.print(" ".join(parts))
         self.console.print(
             f"[repr.attrib_name]created at[/repr.attrib_name]: {doc.created_at} [repr.attrib_name]updated at[/repr.attrib_name]: {doc.updated_at}"

@@ -90,9 +90,7 @@ def _nearest_known_id(chunk_id: str, known_ids: list[str]) -> str:
 def resolve_scope(db_path: Path | str | None, config: AppConfig) -> DatabaseScope:
     """The databases a capability covers, resolved once at its entry point.
 
-    ``HAIKU_RAG_DB`` is read here and nowhere else. ``DatabaseScope`` is
-    environment-agnostic on purpose, so honouring the variable inside it would
-    silently extend it to every other caller.
+    ``HAIKU_RAG_DB`` is read here and nowhere else.
     """
     if db_path is None and (env_db := os.environ.get("HAIKU_RAG_DB")):
         db_path = Path(env_db).expanduser()
@@ -559,8 +557,8 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
                 synthetic: list[SearchResult] = []
                 documents: dict[tuple[str | None, str], Any] = {}
                 for chunk_id in missing:
-                    # Every database that has it, not the first: the first
-                    # alone cannot see that another had it too.
+                    # All holders are asked: a collision shows only across
+                    # every database's answer.
                     holders = await all_found(
                         lookups, lambda owner: owner.get_chunk_by_id(chunk_id)
                     )

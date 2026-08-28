@@ -124,7 +124,7 @@ class Sandbox:
 
     The session persists across ``execute()`` calls within the same Sandbox
     instance — variables carry over. Call ``close()`` to return the worker to
-    the pool and shut the pool down.
+    the pool, shut the pool down and release any held connection.
 
         sandbox = Sandbox(db_path, config, context)
         result = await sandbox.execute("x = await search('query')")
@@ -285,9 +285,7 @@ class Sandbox:
         groups = await gather_all(
             *(owner.list_documents(filter=self._context.filter) for owner in owners)
         )
-        # Interleaved, not concatenated: code that prints the listing is read
-        # through a truncated output, and concatenating shows one database's
-        # documents until the truncation, hiding that there are others.
+        # Interleaved: a truncated listing still shows every database.
         docs = [doc for row in zip_longest(*groups) for doc in row if doc is not None]
         return docs, self._holders(owners, groups)
 
@@ -296,10 +294,7 @@ class Sandbox:
         owners: "list[HaikuRAG]", groups: "list[list[Any]]"
     ) -> "dict[str, HaikuRAG]":
         """Map each document id to the database holding it, rejecting an id two
-        databases claim.
-
-        The mount has one `/documents/{id}/` path per id, so a copied database
-        would put two documents on one path and the last would answer for both.
+        databases claim. The mount has one `/documents/{id}/` path per id.
         """
         holders: dict[str, HaikuRAG] = {}
         held_by: dict[str, str | None] = {}

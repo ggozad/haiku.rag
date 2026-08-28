@@ -125,8 +125,8 @@ class TestOneDatabaseCommands:
         assert "--db PATH after it" in str(raised.value)
 
     def test_the_refusal_names_the_databases_and_not_their_locations(self, monkeypatch):
-        """A location in an error message travels into logs and terminals; the
-        names exist so it does not have to."""
+        """The refusal carries names only; a location in an error message
+        travels into logs and terminals."""
         self._install(
             monkeypatch,
             alpha="s3://bucket/prefix/a.lancedb",
@@ -385,7 +385,7 @@ class TestResolvingTheDatabasePath:
 
 
 class TestConfiguredLocalUri:
-    """`lancedb.uri` with a local path, the surface issue #582 reports."""
+    """`lancedb.uri` with a local path."""
 
     def _config_file(self, tmp_path, located: Path) -> Path:
         config_file = tmp_path / "haiku.rag.yaml"

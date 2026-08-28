@@ -148,8 +148,8 @@ class TestRetrievalSample:
 
 
 class TestCoversASet:
-    """A run over `lancedb.databases` must pass no path, since a path names one
-    database and wins over the configured set."""
+    """A run over `lancedb.databases` passes no path: a path names one
+    database."""
 
     def test_a_configured_set_is_covered(self):
         from haiku.rag.config.models import AppConfig, LanceDBConfig
@@ -164,8 +164,8 @@ class TestCoversASet:
         assert spec.uses_configured_databases(config) is True
 
     def test_a_named_path_overrides_the_set(self):
-        """`--db` is documented as an override, so it names the one database to
-        evaluate even when the configuration names several."""
+        """`--db` names the one database to evaluate, whatever the
+        configuration names."""
         from pathlib import Path as _Path
 
         from haiku.rag.config.models import AppConfig, LanceDBConfig

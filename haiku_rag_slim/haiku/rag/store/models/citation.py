@@ -76,9 +76,8 @@ def resolve_citations(
 
     A chunk returned by more than one search resolves to its last occurrence.
     Raises ``AmbiguousCitationError`` instead when a cited id names a chunk in
-    more than one of the databases searched, as after copying a database: a
-    citation records the id alone, so resolving one would attribute the answer
-    to a database it may not have come from.
+    more than one of the databases searched: a citation records the id alone
+    and cannot say which.
     """
     by_id: dict[str, SearchResult] = {}
     ambiguous: dict[str, set[str | None]] = {}

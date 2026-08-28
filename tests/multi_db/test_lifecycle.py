@@ -37,8 +37,7 @@ class TestOpeningDatabases:
             open_one = rag._session._open
 
             async def gated(name):
-                # Every open has to be in flight before any of them finishes, so
-                # a serial loop cannot get past this and the wait times out.
+                # Every open is in flight before any finishes.
                 await barrier.wait()
                 await open_one(name)
 

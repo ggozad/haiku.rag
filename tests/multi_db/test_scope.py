@@ -288,7 +288,7 @@ class TestPlacingADatabase:
 
     @pytest.mark.asyncio
     async def test_a_set_cannot_place_evidence_that_names_no_database(self, tmp_path):
-        """Evidence recorded before databases could be named carries no source."""
+        """A sourceless citation names no database a set could place."""
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha one"])
 

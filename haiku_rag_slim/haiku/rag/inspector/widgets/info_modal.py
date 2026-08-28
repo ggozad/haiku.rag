@@ -161,8 +161,8 @@ class InfoModal(ModalScreen):
 
         location = self.client.location
         if location is None:
-            # Report each database independently so one failure does not hide
-            # the rest. Names only: a location belongs in the configuration.
+            # Each database reports independently, failures included. Names
+            # only: a location belongs in the configuration.
             blocks = await asyncio.gather(
                 *(self._report(name) for name in sorted(self.client.source_names))
             )

@@ -14,11 +14,8 @@ def vcr_cassette_dir(request):
 
 @pytest.fixture
 def query_embedding(monkeypatch):
-    """Vector search with no embedder behind it, recording the queries embedded.
-
-    These tests are about which databases are asked and how often, not about
-    retrieval quality, and CI has no embedding endpoint.
-    """
+    """Vector search with no embedder behind it, recording the queries
+    embedded."""
     from haiku.rag.embeddings import EmbedderWrapper
 
     embedded: list[str] = []

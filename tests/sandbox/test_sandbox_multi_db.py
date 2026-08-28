@@ -70,9 +70,9 @@ class TestSerializingTheConnection:
 
 
 class TestStandaloneAcrossDatabases:
-    """Without a lent client the sandbox opens its own. The owners it hands out
-    are stored for later file reads, so that connection has to outlive the call
-    that produced them."""
+    """Without a lent client the sandbox opens its own. The owners it hands
+    out are stored for later file reads and outlive the call that produced
+    them."""
 
     @pytest.mark.asyncio
     async def test_owners_stay_open_for_later_reads(self, tmp_path):
@@ -181,8 +181,7 @@ class TestTheSandboxConstructors:
 
     @pytest.mark.asyncio
     async def test_covering_resolves_nothing_of_its_own(self, tmp_path, monkeypatch):
-        """Handed a scope, it must not reach resolution again: resolving twice
-        is what let a capability's databases and its sandbox's disagree."""
+        """Handed a scope, it resolves nothing of its own."""
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
         scope = DatabaseScope.resolve(config, database_name="alpha")
@@ -200,9 +199,8 @@ class TestTheSandboxConstructors:
 class TestTheSandboxCoversWhatTheCapabilityCovers:
     @pytest.mark.asyncio
     async def test_the_capability_hands_over_the_scope_it_resolved(self, tmp_path):
-        """The capability resolved its databases once. Letting the sandbox
-        resolve them again from the same configuration reaches a different
-        answer wherever a path or the environment named one of a set."""
+        """The sandbox covers the scope the capability resolved, as handed
+        over."""
         from haiku.rag.capabilities.analysis import AnalysisState, create_capability
 
         config = _config(tmp_path, ["alpha", "beta"])
@@ -348,8 +346,7 @@ class TestCopiedDatabases:
 class TestListingOrder:
     @pytest.mark.asyncio
     async def test_the_listing_interleaves_the_databases(self, tmp_path):
-        """Code reads the listing through a truncated output, so concatenating
-        shows one database's documents until the truncation and hides the rest."""
+        """A truncated listing still shows documents from every database."""
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", [f"alpha {i}" for i in range(5)])
         await _seed(config, "beta", ["beta one"])

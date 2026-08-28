@@ -230,8 +230,7 @@ async def test_app_info_uses_connect_lancedb_for_remote(tmp_path):
         mock_db.list_tables = AsyncMock(return_value=mock_list_result)
         await app.info()
 
-    # The uri decides where it connects; the path argument is not read, so the
-    # claim here is the remote branch, not which placeholder path it carried.
+    # The uri decides where it connects; the path argument is not read.
     mock_connect.assert_called_once()
     assert mock_connect.call_args.args[0].lancedb.uri == "s3://bucket/path"
 

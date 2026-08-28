@@ -95,6 +95,23 @@ async def test_a_listing_prints_the_fields_it_has(app, client):
     assert "content:" in printed
 
 
+async def test_a_document_renders_fields_that_look_like_markup(app):
+    """Uris, titles and metadata render as text, not markup."""
+    doc = _doc(
+        "body",
+        uri="test://doc [/blue]",
+        title="The [/bold] Title",
+        metadata={"k": "[/red]"},
+    )
+
+    app._rich_print_document(doc)
+
+    printed = out(app)
+    assert "test://doc [/blue]" in printed
+    assert "The [/bold] Title" in printed
+    assert "[/red]" in printed
+
+
 async def test_list_documents_prints_each_document(app, client):
     client.list_documents.return_value = [_doc("first"), _doc("second")]
 
@@ -443,8 +460,8 @@ def test_show_settings_renders_the_shape_a_config_file_has(tmp_path):
 
     printed = app.console.export_text()
     assert "PosixPath" not in printed
-    # A Python dict repr parses as YAML flow style, so parsing alone does not
-    # distinguish a block per field from one flattened repr per field.
+    # A dict repr parses as YAML flow style; the brace check tells the shapes
+    # apart.
     assert "{'" not in printed
     assert "\n    alpha: /tmp/a.lancedb" in printed
     body = printed.split("haiku.rag configuration", 1)[1]
@@ -454,9 +471,8 @@ def test_show_settings_renders_the_shape_a_config_file_has(tmp_path):
 
 
 def test_show_settings_survives_a_narrow_console_and_bracketed_values(tmp_path):
-    """Rich reads `[...]` as markup and wraps to the terminal, so a prompt
-    carrying an instruction tag rendered away or raised, and a long path was
-    broken across lines into something that no longer parsed."""
+    """Values in `[...]` render verbatim and a long path stays on one
+    parseable line, however narrow the console."""
     import yaml
 
     long_dir = tmp_path / "Application Support" / "haiku.rag" / "collections" / "one"

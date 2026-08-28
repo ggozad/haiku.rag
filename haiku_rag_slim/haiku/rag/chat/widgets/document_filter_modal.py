@@ -226,8 +226,8 @@ class DocumentFilterModal(ModalScreen):
         if boxes:
             await filter_list.mount_all(boxes)
         else:
-            # Otherwise the list is an empty box, indistinguishable from one
-            # still loading.
+            # An explicit message tells an empty listing from one still
+            # loading.
             empty = (
                 "Nothing selected." if self._listing_selected else "No documents match."
             )

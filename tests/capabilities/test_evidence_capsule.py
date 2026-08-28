@@ -83,8 +83,8 @@ def discovered(
 
 
 def test_a_retained_picture_carries_the_source_it_came_from():
-    """Compaction re-fetches cited pictures later, so the capsule has to remember
-    which database each came from."""
+    """A retained picture carries its database: compaction re-fetches cited
+    pictures through it."""
     found = discovered(cited={"c1": [2]}, pictures={"c1": ["#/pictures/0"]})
     found = replace(
         found,

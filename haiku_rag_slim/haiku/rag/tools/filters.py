@@ -18,10 +18,8 @@ def _build_document_filter(document_name: str) -> str:
 def build_document_id_filter(document_ids: list[str]) -> str | None:
     """SQL filter matching exactly these documents, or None for an empty list.
 
-    Unlike name matching, an id identifies one document: names repeat within a
-    corpus and across databases, so a name filter can widen to documents the
-    caller did not pick. Ids repeat only between copies of a database, where the
-    same id names the same document in each.
+    Ids repeat only between copies of a database, where the same id names the
+    same document in each.
     """
     if not document_ids:
         return None

@@ -66,8 +66,7 @@ async def all_found(
     """Every client for which `lookup` finds something, and what each found.
 
     An id or a URI says nothing about which database holds it, so every one is
-    asked at once. Asking in turn would cost a round trip per database for an
-    identifier that is missing or held by the last of them.
+    asked at once.
     """
     found_by_client = await gather_all(*(lookup(client) for client in clients))
     return [
@@ -98,11 +97,7 @@ def _spell(embedding: tuple[str | None, str | None, int | None]) -> str:
 
 
 def _without_repeats(names: list[str]) -> list[str]:
-    """`names` in order, without repeats.
-
-    A database named twice would be searched twice and fused as two rank lists,
-    which counts it double.
-    """
+    """`names` in order, without repeats: a name selects its database once."""
     return list(dict.fromkeys(names))
 
 
@@ -207,10 +202,10 @@ class HaikuRAG:
         """The client that can read `source` — itself, where it reads one
         database.
 
-        None only when a client covering a set is given no name, as for evidence
-        recorded before databases could be named. A name this client does not
-        cover raises `UnknownDatabaseError`, decided by `clients_covering`: one
-        database answers a wrong name the same way a set does.
+        None only when a client covering a set is given no name. A name this
+        client does not cover raises `UnknownDatabaseError`, decided by
+        `clients_covering`: one database answers a wrong name the same way a
+        set does.
         """
         if source is None:
             return None if self.covers_multiple else self
@@ -287,10 +282,9 @@ class HaikuRAG:
     def reranker(self) -> "RerankerBase | None":
         """The configured reranker, built once and reused across searches.
 
-        None when reranking is disabled. Local rerankers load model weights on
-        construction, so one per database in a set would load the same weights
-        that many times over: a client covering a database for another borrows
-        that one's, built on the first query to reach any of them.
+        None when reranking is disabled. A client covering a database for
+        another borrows that one's, built on the first query to reach any of
+        them.
         """
         if self._lender is not None:
             return self._lender.reranker
@@ -814,8 +808,7 @@ class HaikuRAG:
                     for owner in await self.clients_covering()
                 )
             )
-            # Round-robin, so a window shows every database. Concatenating lets
-            # the first one fill the whole page and hide the rest.
+            # Round-robin: a window shows every database.
             merged = [
                 doc for row in zip_longest(*groups) for doc in row if doc is not None
             ]
