@@ -20,6 +20,7 @@ from haiku.rag.config.models import AppConfig
 from haiku.rag.sandbox.dependencies import AnalysisContext
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX, DocumentItem
+from haiku.rag.utils import gather_all
 
 if TYPE_CHECKING:
     from pathlib import Path, PurePosixPath
@@ -280,7 +281,7 @@ class Sandbox:
             owners = await rag.clients_covering(self._context.sources)
         # Resolve owners under the shared-client lock; owner sessions perform
         # reads independently.
-        groups = await asyncio.gather(
+        groups = await gather_all(
             *(owner.list_documents(filter=self._context.filter) for owner in owners)
         )
         # Interleaved, not concatenated: code that prints the listing is read

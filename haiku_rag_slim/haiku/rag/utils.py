@@ -1,5 +1,7 @@
+import asyncio
 import math
 import sys
+from collections.abc import Awaitable
 from importlib import metadata
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn, cast
@@ -14,6 +16,22 @@ if TYPE_CHECKING:
     from haiku.rag.client import HaikuRAG
     from haiku.rag.config.models import AppConfig, EmbeddingModelConfig, ModelConfig
     from haiku.rag.store.models.citation import Citation
+
+
+async def gather_all[T](*awaitables: Awaitable[T]) -> list[T]:
+    """Run `awaitables` concurrently, leaving none of them running when one fails.
+
+    `asyncio.gather` leaves its siblings running; `TaskGroup` wraps the failure in
+    an `ExceptionGroup`.
+    """
+    tasks = [asyncio.ensure_future(awaitable) for awaitable in awaitables]
+    try:
+        return await asyncio.gather(*tasks)
+    except BaseException:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
 
 
 def parse_model_option(value: str) -> "ModelConfig":

@@ -1,3 +1,4 @@
+import asyncio
 import importlib.util
 from unittest.mock import AsyncMock
 
@@ -7,7 +8,8 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from haiku.rag.config import get_config
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.converters import get_converter
-from haiku.rag.utils import get_model
+from haiku.rag.store.exceptions import ReadOnlyError
+from haiku.rag.utils import gather_all, get_model
 
 # Check for optional dependencies
 HAS_ANTHROPIC = importlib.util.find_spec("anthropic") is not None
@@ -1104,3 +1106,57 @@ def test_get_model_api_key_rejected_on_unplumbed_provider():
         get_model(
             ModelConfig(provider="anthropic", name="claude-sonnet-4-5", api_key="sk-x")
         )
+
+
+class TestGatherAll:
+    """A fan-out leaves nothing running: a caller unwinding from a failure closes
+    the sessions its siblings are still reading through."""
+
+    @pytest.mark.asyncio
+    async def test_results_arrive_in_the_order_asked_for(self):
+        async def slow(value):
+            await asyncio.sleep(0.01)
+            return value
+
+        async def fast(value):
+            return value
+
+        assert await gather_all(slow("a"), fast("b"), slow("c")) == ["a", "b", "c"]
+
+    @pytest.mark.asyncio
+    async def test_a_failure_leaves_no_sibling_running(self):
+        started = asyncio.Event()
+        unwound = asyncio.Event()
+
+        async def sibling():
+            started.set()
+            try:
+                await asyncio.sleep(60)
+            finally:
+                unwound.set()
+
+        async def failing():
+            await started.wait()
+            raise ReadOnlyError("beta is read-only")
+
+        before = asyncio.all_tasks()
+        with pytest.raises(ReadOnlyError, match="beta"):
+            await gather_all(sibling(), failing())
+
+        assert unwound.is_set()
+        assert asyncio.all_tasks() - before == set()
+
+    @pytest.mark.asyncio
+    async def test_the_failure_arrives_as_itself(self):
+        """A `TaskGroup` drains the siblings too, but raises an `ExceptionGroup`."""
+
+        async def failing():
+            raise ReadOnlyError("beta is read-only")
+
+        async def sibling():
+            await asyncio.sleep(60)
+
+        with pytest.raises(ReadOnlyError) as raised:
+            await gather_all(sibling(), failing())
+
+        assert not isinstance(raised.value, BaseExceptionGroup)

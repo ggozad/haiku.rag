@@ -43,7 +43,7 @@ from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.repositories.document_item import DocumentItemRepository
 from haiku.rag.store.repositories.settings import SettingsRepository
-from haiku.rag.utils import escape_sql_string
+from haiku.rag.utils import escape_sql_string, gather_all
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
@@ -69,7 +69,7 @@ async def all_found(
     asked at once. Asking in turn would cost a round trip per database for an
     identifier that is missing or held by the last of them.
     """
-    found_by_client = await asyncio.gather(*(lookup(client) for client in clients))
+    found_by_client = await gather_all(*(lookup(client) for client in clients))
     return [
         (client, found)
         for client, found in zip(clients, found_by_client, strict=True)
@@ -784,7 +784,7 @@ class HaikuRAG:
             # the window is applied to the merged listing: a limit means that
             # many documents in total, not that many per database.
             wanted = None if limit is None else limit + (offset or 0)
-            groups = await asyncio.gather(
+            groups = await gather_all(
                 *(
                     owner.list_documents(
                         limit=wanted, filter=filter, include_content=include_content
@@ -813,7 +813,7 @@ class HaikuRAG:
             Number of documents matching the criteria.
         """
         if self.covers_multiple:
-            counts = await asyncio.gather(
+            counts = await gather_all(
                 *(
                     owner.count_documents(filter=filter)
                     for owner in await self.clients_covering()

@@ -1,4 +1,3 @@
-import asyncio
 import base64
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
@@ -10,6 +9,7 @@ from haiku.rag.store.models.chunk import (
     qualified_id,
 )
 from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX
+from haiku.rag.utils import gather_all
 
 if TYPE_CHECKING:
     from PIL import Image as PILImage
@@ -109,7 +109,7 @@ async def search_sources(
     fetch_limit = _fetch_limit(client, query, limit)
     query_vector = await _embed_query(selected[0], query, resolved)
     text = query if isinstance(query, str) else ""
-    per_source = await asyncio.gather(
+    per_source = await gather_all(
         *(
             c.chunk_repository.search(
                 query=text,
@@ -137,7 +137,7 @@ async def search_sources(
             if result.source:
                 by_owner.setdefault(result.source, []).append(result)
         owners = await client.clients_for(list(by_owner))
-        await asyncio.gather(
+        await gather_all(
             *(
                 _populate_image_data(owner, by_owner[name])
                 for name, owner in zip(by_owner, owners, strict=True)
@@ -176,7 +176,7 @@ async def _fuse(
         if reranker is not None:
             chunks = [chunk for _, chunk, _ in owned]
             if federator._config.reranking.multimodal:
-                await asyncio.gather(
+                await gather_all(
                     *(
                         _attach_picture_data(
                             c, [chunk for owner, chunk, _ in owned if owner is c]
@@ -438,7 +438,7 @@ async def expand_sources(
             unsourced.append(result)
     names = list(by_source)
     sessions = await federated.sessions_for(names)
-    expanded_groups = await asyncio.gather(
+    expanded_groups = await gather_all(
         *(
             expand_context(session, by_source[name])
             for name, session in zip(names, sessions, strict=True)

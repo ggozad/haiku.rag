@@ -7,10 +7,11 @@ from docling_core.types.doc.document import DoclingDocument
 from docling_core.types.doc.labels import DocItemLabel
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.client.session import FederatedSession
+from haiku.rag.client.session import FederatedSession, SingleDatabaseSession
 from haiku.rag.config import get_config
 from haiku.rag.store.exceptions import (
     AmbiguousDatabaseError,
+    ReadOnlyError,
     SourceUnavailableError,
 )
 from haiku.rag.store.models import Chunk
@@ -92,6 +93,38 @@ class TestOpeningDatabases:
             alpha = rag._session._sessions["alpha"]
 
         assert not alpha.store.db.is_open()
+
+    @pytest.mark.asyncio
+    async def test_a_failing_read_leaves_no_sibling_reading(
+        self, tmp_path, monkeypatch
+    ):
+        """Unwinding through `async with` closes every session, so a sibling still
+        reading reads through a closed one."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        reading = asyncio.Event()
+        unwound = asyncio.Event()
+
+        async def listing(self, *args, **kwargs):
+            if self.source == "beta":
+                await reading.wait()
+                raise ReadOnlyError("beta is read-only")
+            reading.set()
+            try:
+                await asyncio.sleep(60)
+            finally:
+                unwound.set()
+            return []
+
+        monkeypatch.setattr(SingleDatabaseSession, "list_documents", listing)
+
+        async with HaikuRAG(config=config) as rag:
+            with pytest.raises(ReadOnlyError, match="beta"):
+                await rag.list_documents()
+
+            assert unwound.is_set()
 
     @pytest.mark.asyncio
     async def test_a_database_named_twice_is_opened_once(self, tmp_path):
