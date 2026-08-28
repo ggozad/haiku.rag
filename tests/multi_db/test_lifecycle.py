@@ -95,6 +95,23 @@ class TestOpeningDatabases:
         assert not alpha.store.db.is_open()
 
     @pytest.mark.asyncio
+    async def test_a_client_keeps_the_databases_it_first_covered(self, tmp_path):
+        """Resolution happens once, so a configuration edited afterwards does not
+        change what an already-entered client covers."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        rag = HaikuRAG(config=config)
+        async with rag:
+            assert rag.source_names == ("alpha", "beta")
+
+        config.lancedb.databases = {"gamma": str(tmp_path / "gamma.lancedb")}
+
+        async with rag:
+            assert rag.source_names == ("alpha", "beta")
+
+    @pytest.mark.asyncio
     async def test_a_failing_read_leaves_no_sibling_reading(
         self, tmp_path, monkeypatch
     ):

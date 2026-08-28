@@ -314,6 +314,7 @@ class HaikuRAG:
         )
         if self._requested_sources is not None and self._requested_db_path is None:
             scope = scope.select(self._requested_sources)
+        self._scope = scope
         return scope
 
     async def __aenter__(self):
