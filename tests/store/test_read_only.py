@@ -9,6 +9,7 @@ from haiku.rag.store.models import Chunk, Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.repositories.settings import SettingsRepository
+from tests.conftest import for_path
 
 
 @pytest.fixture(scope="module")
@@ -321,7 +322,7 @@ class TestAppReadVerbsDoNotWrite:
         drift.embeddings.model.name = "different-model"
 
         # list is a read verb — must open read-only and not raise on drift
-        app = HaikuRAGApp(db_path=temp_db_path, config=drift)
+        app = HaikuRAGApp(scope=for_path(temp_db_path, drift), config=drift)
         await app.list_documents()
 
         async with Store(temp_db_path, skip_validation=True, read_only=True) as store:
@@ -347,7 +348,7 @@ class TestAppReadVerbsDoNotWrite:
         drift.embeddings.model.name = "different-model"
         drift.embeddings.model.vector_dim = 4096
 
-        app = HaikuRAGApp(db_path=temp_db_path, config=drift)
+        app = HaikuRAGApp(scope=for_path(temp_db_path, drift), config=drift)
         await app.list_documents()
 
         async with Store(temp_db_path, skip_validation=True, read_only=True) as store:
@@ -368,7 +369,7 @@ class TestAppReadVerbsDoNotWrite:
         drift = AppConfig()
         drift.embeddings.model.vector_dim = 4096
 
-        app = HaikuRAGApp(db_path=temp_db_path, config=drift)
+        app = HaikuRAGApp(scope=for_path(temp_db_path, drift), config=drift)
         assert doc.id is not None
         await app.get_document(doc.id)
 
@@ -386,7 +387,7 @@ class TestAppReadVerbsDoNotWrite:
         drift = AppConfig()
         drift.embeddings.model.vector_dim = 4096
 
-        app = HaikuRAGApp(db_path=temp_db_path, config=drift)
+        app = HaikuRAGApp(scope=for_path(temp_db_path, drift), config=drift)
         await app.visualize_chunk("missing-chunk-id")
 
     @pytest.mark.asyncio
@@ -394,7 +395,7 @@ class TestAppReadVerbsDoNotWrite:
         """A write CLI verb opens writable: drift raises before any write."""
         from haiku.rag.app import HaikuRAGApp
         from haiku.rag.config import AppConfig
-        from haiku.rag.store.repositories.settings import ConfigMismatchError
+        from haiku.rag.store.exceptions import ConfigMismatchError
 
         async with Store(temp_db_path, create=True) as store:
             stored_name_before = (
@@ -404,7 +405,7 @@ class TestAppReadVerbsDoNotWrite:
         drift = AppConfig()
         drift.embeddings.model.name = "different-model"
 
-        app = HaikuRAGApp(db_path=temp_db_path, config=drift)
+        app = HaikuRAGApp(scope=for_path(temp_db_path, drift), config=drift)
         with pytest.raises(ConfigMismatchError):
             await app.add_document_from_text("hello")
 

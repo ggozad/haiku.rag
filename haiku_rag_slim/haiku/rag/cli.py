@@ -22,14 +22,20 @@ from haiku.rag.config import (  # noqa: E402
 )
 from haiku.rag.logging import configure_cli_logging  # noqa: E402
 from haiku.rag.store.exceptions import (  # noqa: E402
+    AmbiguousDatabaseError,
+    ConfigMismatchError,
     MigrationRequiredError,
     ReadOnlyError,
+    SourceUnavailableError,
+    UnknownDatabaseError,
 )
 from haiku.rag.store.models.chunk import SearchType  # noqa: E402
 from haiku.rag.utils import is_up_to_date  # noqa: E402
 
 if TYPE_CHECKING:
     from haiku.rag.app import HaikuRAGApp
+    from haiku.rag.client.scope import DatabaseScope
+    from haiku.rag.config.models import AppConfig
 
 _cli = typer.Typer(
     context_settings={"help_option_names": ["-h", "--help"]},
@@ -41,29 +47,69 @@ _cli = typer.Typer(
 def cli():
     try:
         _cli()
-    except (MigrationRequiredError, ReadOnlyError) as e:
+    except (
+        AmbiguousDatabaseError,
+        ConfigMismatchError,
+        MigrationRequiredError,
+        ReadOnlyError,
+        UnknownDatabaseError,
+        SourceUnavailableError,
+    ) as e:
         typer.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
 
 # Module-level flags set by callback
 _read_only: bool = False
+_db_name: str | None = None
 
 
-def create_app(db: Path | None = None) -> "HaikuRAGApp":
-    """Create HaikuRAGApp with loaded config and resolved database path.
+def create_app(db: Path | None = None, *, covers_set: bool = False) -> "HaikuRAGApp":
+    """The application for a command, on the database(s) it works on.
 
-    Args:
-        db: Optional database path. If None, uses path from config.
+    `covers_set` is the command declaring that it can read multiple: `search`,
+    `ask`, `analyze` and `chat` can, and everything else names one.
 
-    Returns:
-        HaikuRAGApp instance with proper config and db path.
+    Raises:
+        AmbiguousDatabaseError: multiple databases are configured and this
+            command works on one, without `--db` or `--db-name` naming which;
+            or `--db` and `--db-name` are both given.
     """
     from haiku.rag.app import HaikuRAGApp
 
-    config = get_config()
-    db_path = db if db else config.storage.data_dir / "haiku.rag.lancedb"
-    return HaikuRAGApp(db_path=db_path, config=config, read_only=_read_only)
+    return HaikuRAGApp(
+        config=get_config(),
+        read_only=_read_only,
+        scope=resolve_scope(db, covers_set=covers_set),
+    )
+
+
+def resolve_scope(
+    db: Path | None = None, *, covers_set: bool = False
+) -> "DatabaseScope":
+    """The databases a command works on, resolved once.
+
+    The CLI decides only what it alone knows: that `--db` and `--db-name` are
+    the same thing said twice, and whether this command can read more than one.
+    Everything else — an unknown name, a `lancedb.uri`, the default location —
+    is `DatabaseScope.resolve`'s to answer.
+    """
+    from haiku.rag.client.scope import DatabaseScope
+
+    if db is not None and _db_name is not None:
+        raise AmbiguousDatabaseError(
+            "pass --db or --db-name, not both: they name the same thing"
+        )
+    scope = DatabaseScope.resolve(
+        get_config(), database_name=_db_name, database_path=db
+    )
+    if scope.covers_multiple and not covers_set:
+        raise AmbiguousDatabaseError(
+            f"lancedb.databases names {', '.join(sorted(scope.names))}; this "
+            "command works on a single database: pass --db-name NAME before "
+            "the command, or --db PATH after it"
+        )
+    return scope
 
 
 async def check_version():
@@ -102,16 +148,23 @@ def main(
         "--read-only",
         help="Open database in read-only mode",
     ),
+    db_name: str | None = typer.Option(
+        None,
+        "--db-name",
+        help="Name of a database from lancedb.databases to work on",
+    ),
 ):
     """haiku.rag CLI - Vector database RAG system"""
-    global _read_only
+    global _read_only, _db_name
     _read_only = read_only
+    _db_name = db_name
     # Load config from --config, local folder, or default directory
     config_path = find_config_file(cli_path=config)
     if config_path:
         yaml_data = load_yaml_config(config_path)
-        loaded_config = AppConfig.model_validate(yaml_data)
-        set_config(loaded_config)
+        set_config(AppConfig.model_validate(yaml_data))
+    else:
+        set_config(AppConfig())
 
     configure_cli_logging()
 
@@ -307,7 +360,7 @@ def search(
         help="Path to the LanceDB database file",
     ),
 ):
-    app = create_app(db)
+    app = create_app(db, covers_set=True)
     asyncio.run(
         app.search(
             query=query,
@@ -361,7 +414,7 @@ def ask(
         help="Path to an image to attach to the question (repeatable; requires a vision-capable model)",
     ),
 ):
-    app = create_app(db)
+    app = create_app(db, covers_set=True)
     asyncio.run(
         app.ask(
             question=question,
@@ -393,7 +446,7 @@ def analyze(
         help="Path to an image to attach to the question (repeatable; requires a vision-capable model)",
     ),
 ):
-    app = create_app(db)
+    app = create_app(db, covers_set=True)
     asyncio.run(
         app.analyze(
             question=question,
@@ -408,7 +461,8 @@ def settings():
     from haiku.rag.app import HaikuRAGApp
 
     config = get_config()
-    app = HaikuRAGApp(db_path=Path(), config=config, read_only=True)
+    # Configuration-only; no database scope is resolved.
+    app = HaikuRAGApp(config=config, read_only=True)
     app.show_settings()
 
 
@@ -703,11 +757,11 @@ def tag_restore(
     ),
 ):
     app = create_app(db)
-    if app._is_local and not app.db_path.exists():
-        typer.echo(f"Error: Database path does not exist: {app.db_path}", err=True)
+    if app.database_missing:
+        typer.echo(f"Error: Database path does not exist: {app.display_path}", err=True)
         raise typer.Exit(1)
     if not yes:
-        typer.echo(f"Database: {app.db_path}")
+        typer.echo(f"Database: {app.display_path}")
         typer.echo(f"Tag: {name}")
         typer.echo("This changes the live database state across all tables.")
         typer.echo("Stop all ingestion and other writers before continuing.")
@@ -726,7 +780,7 @@ def tag_restore(
 def download_models_cmd():
     from haiku.rag.app import HaikuRAGApp
 
-    app = HaikuRAGApp(db_path=Path(), config=get_config(), read_only=True)
+    app = HaikuRAGApp(config=get_config(), read_only=True)
     try:
         asyncio.run(app.download_models())
     except Exception as e:
@@ -749,8 +803,7 @@ def inspect(
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1) from e
 
-    db_path = db if db else get_config().storage.data_dir / "haiku.rag.lancedb"
-    run_inspector(db_path, read_only=True)
+    run_inspector(read_only=True, scope=resolve_scope(db))
 
 
 @_cli.command("chat", help="Launch interactive chat TUI for conversational RAG")
@@ -775,15 +828,15 @@ def chat(
     """Launch the chat TUI for conversational RAG."""
     from haiku.rag.chat import run_chat
 
-    db_path = db if db else get_config().storage.data_dir / "haiku.rag.lancedb"
+    scope = resolve_scope(db, covers_set=True)
     capabilities = capability if capability else ["rag"]
 
     try:
         run_chat(
-            db_path,
             read_only=True,
             model=model,
             capabilities=capabilities,
+            scope=scope,
         )
     except ImportError as e:
         typer.echo(f"Error: {e}", err=True)

@@ -186,16 +186,24 @@ def _refusal_metrics(report_cases) -> tuple[float, float, int, int] | None:
 def _filter_qa_corpus(corpus, case_ids: set[str] | None):
     """Keep only rows whose ``id`` is in ``case_ids`` (failure-subset reruns).
 
-    Returns the corpus unchanged when ``case_ids`` is None.
+    Returns the corpus unchanged when ``case_ids`` is None; matching nothing
+    raises.
     """
     if case_ids is None:
         return corpus
-    return corpus.filter(lambda row: row.get("id") in case_ids)
+    filtered = corpus.filter(lambda row: row.get("id") in case_ids)
+    if len(filtered) == 0:
+        raise ValueError(
+            f"--filter-ids matched none of the {len(corpus)} cases. "
+            "Check that the ids belong to this dataset and that its rows are "
+            "keyed by `id`."
+        )
+    return filtered
 
 
 class _QARun(NamedTuple):
     cases: list[Case[Any, Any, dict[str, Any]]]
-    db: Path
+    db: Path | None
     judge_config: ModelConfig
     eval_name: str
     experiment_metadata: dict[str, Any]
@@ -243,7 +251,9 @@ def _prepare_qa_run(
 
     return _QARun(
         cases=cases,
-        db=spec.db_path(db_path),
+        db=None
+        if spec.uses_configured_databases(config, db_path)
+        else spec.db_path(db_path),
         judge_config=judge_config,
         eval_name=eval_name,
         experiment_metadata=experiment_metadata,
@@ -351,6 +361,7 @@ async def run_qa_benchmark(
         )
         set_eval_attribute("cited_uris", result.cited_uris)
         set_eval_attribute("cited_chunk_ids", result.cited_chunk_ids)
+        set_eval_attribute("cited_sources", result.cited_sources)
         set_eval_attribute("searched_uris", result.searched_uris)
         set_eval_attribute("n_searches", result.n_searches)
         set_eval_attribute("n_search_calls", result.n_search_calls)

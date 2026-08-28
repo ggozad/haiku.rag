@@ -82,6 +82,131 @@ def discovered(
     )
 
 
+def test_a_retained_picture_carries_the_source_it_came_from():
+    """A retained picture carries its database: compaction re-fetches cited
+    pictures through it."""
+    found = discovered(cited={"c1": [2]}, pictures={"c1": ["#/pictures/0"]})
+    found = replace(
+        found,
+        citations={"c1": replace_citation(found.citations["c1"], source="beta")},
+    )
+
+    capsule = build_capsule([found])
+
+    [picture] = capsule.pictures
+    assert picture.source == "beta"
+
+
+def test_the_capsule_names_the_collection_evidence_came_from():
+    found = discovered(cited={"a": [2], "b": [2]})
+    found = replace(
+        found,
+        citations={
+            "a": replace_citation(found.citations["a"], source="papers"),
+            "b": replace_citation(found.citations["b"], source="wiki"),
+        },
+    )
+
+    lines = build_capsule([found]).text.splitlines()
+
+    def rendered(chunk_id: str) -> list[str]:
+        start = lines.index(f"[{chunk_id}]")
+        return lines[start : start + 3]
+
+    assert rendered("a") == [
+        "[a]",
+        "Collection: papers",
+        'Source: "Title a" (test://a)',
+    ]
+    assert rendered("b") == ["[b]", "Collection: wiki", 'Source: "Title b" (test://b)']
+
+
+def test_evidence_from_one_collection_does_not_name_it():
+    found = discovered(cited={"a": [2], "b": [2]})
+    found = replace(
+        found,
+        citations={
+            chunk_id: replace_citation(cited, source="papers")
+            for chunk_id, cited in found.citations.items()
+        },
+    )
+
+    lines = build_capsule([found]).text.splitlines()
+
+    assert not [line for line in lines if line.startswith("Collection:")]
+    assert '[a] Source: "Title a" (test://a)' in lines
+
+
+def test_a_picture_in_two_collections_is_retained_from_each():
+    """A document copied into another collection keeps its id and picture refs."""
+    found = discovered(
+        cited={"a": [2], "b": [2]},
+        pictures={"a": ["#/pictures/0"], "b": ["#/pictures/0"]},
+    )
+    found = replace(
+        found,
+        citations={
+            "a": replace_citation(
+                found.citations["a"], document_id="shared", source="papers"
+            ),
+            "b": replace_citation(
+                found.citations["b"], document_id="shared", source="wiki"
+            ),
+        },
+    )
+
+    capsule = build_capsule([found])
+
+    assert [(picture.source, picture.self_ref) for picture in capsule.pictures] == [
+        ("papers", "#/pictures/0"),
+        ("wiki", "#/pictures/0"),
+    ]
+    # Nothing else tells the two apart once they are attached.
+    assert "Collection: papers." in capsule.pictures[0].label
+    assert "Collection: wiki." in capsule.pictures[1].label
+
+
+def test_one_chunk_id_cited_from_two_collections_labels_each_picture():
+    """Both capabilities can cite the same id from different collections, where
+    the reference and the document are the same too."""
+    found = [
+        replace(
+            discovered(
+                capability=capability,
+                cited={"c1": [2]},
+                pictures={"c1": ["#/pictures/0"]},
+            ),
+            citations={
+                "c1": replace_citation(
+                    citation("c1", pictures=["#/pictures/0"]),
+                    document_id="shared",
+                    source=source,
+                )
+            },
+        )
+        for capability, source in (("analysis", "papers"), ("rag", "wiki"))
+    ]
+
+    capsule = build_capsule(found)
+
+    labels = [picture.label for picture in capsule.pictures]
+    assert all("[c1] (#/pictures/0)" in label for label in labels)
+    assert "Collection: papers." in labels[0]
+    assert "Collection: wiki." in labels[1]
+
+
+def test_a_picture_from_one_collection_is_not_labelled_with_it():
+    found = discovered(cited={"c1": [2]}, pictures={"c1": ["#/pictures/0"]})
+    found = replace(
+        found,
+        citations={"c1": replace_citation(found.citations["c1"], source="papers")},
+    )
+
+    [picture] = build_capsule([found]).pictures
+
+    assert "Collection" not in picture.label
+
+
 def test_nothing_cited_produces_no_capsule():
     capsule = build_capsule([discovered()])
 

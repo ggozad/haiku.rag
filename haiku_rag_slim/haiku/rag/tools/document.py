@@ -53,14 +53,14 @@ async def find_document(client: HaikuRAG, query: str):
         filter=f"LOWER(uri) LIKE LOWER('%{escaped_query}%') OR LOWER(uri) LIKE LOWER('%{no_spaces}%')",
     )
     if docs and docs[0].id:
-        return await client.get_document_by_id(docs[0].id)
+        return await client.get_document_by_id(docs[0].id, docs[0].source)
 
     docs = await client.list_documents(
         limit=1,
         filter=f"LOWER(title) LIKE LOWER('%{escaped_query}%') OR LOWER(title) LIKE LOWER('%{no_spaces}%')",
     )
     if docs and docs[0].id:
-        return await client.get_document_by_id(docs[0].id)
+        return await client.get_document_by_id(docs[0].id, docs[0].source)
 
     return None
 

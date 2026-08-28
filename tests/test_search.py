@@ -386,7 +386,7 @@ async def test_reranker_built_once_across_searches(temp_db_path, monkeypatch):
 
     monkeypatch.setattr("haiku.rag.client.get_reranker", fake_get_reranker)
 
-    async def fake_chunk_search(query, limit, search_type, filter):
+    async def fake_chunk_search(query, limit, search_type, filter, query_vector):
         return [(Chunk(content="x", metadata={}), 0.5)]
 
     async with HaikuRAG(temp_db_path, create=True) as rag:
@@ -434,7 +434,7 @@ async def test_search_attaches_picture_bytes_for_multimodal_reranker(
         metadata={"doc_item_refs": ["#/pictures/1"], "labels": ["picture"]},
     )
 
-    async def fake_chunk_search(query, limit, search_type, filter):
+    async def fake_chunk_search(query, limit, search_type, filter, query_vector):
         return [(text_chunk, 0.9), (picture_chunk, 0.8), (detached_chunk, 0.7)]
 
     async with HaikuRAG(temp_db_path, create=True) as rag:
@@ -452,7 +452,7 @@ async def test_search_attaches_picture_bytes_for_multimodal_reranker(
             ],
         )
         rag.chunk_repository.search = fake_chunk_search  # type: ignore[method-assign]
-        rag.__dict__["reranker"] = StubReranker()
+        rag.__dict__["_own_reranker"] = StubReranker()
         rag._config.reranking.multimodal = multimodal
 
         await rag.search("totals", include_images=False)
@@ -549,11 +549,9 @@ def test_dedup_does_not_collapse_across_documents():
 @pytest.mark.asyncio
 async def test_expand_context_passes_through_results_without_document(temp_db_path):
     """A result with no document_id can't be expanded; it is returned as-is."""
-    from haiku.rag.client.search import expand_context
-
     async with HaikuRAG(temp_db_path, create=True) as rag:
         orphan = SearchResult(content="loose text", score=0.5, chunk_id="c1")
-        assert await expand_context(rag, [orphan]) == [orphan]
+        assert await rag.expand_context([orphan]) == [orphan]
 
 
 @pytest.mark.asyncio

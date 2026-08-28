@@ -3,6 +3,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.client.documents import parent_uri_filter
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models.document import Document
+from tests.conftest import for_path
 
 
 def test_parent_uri_filter_simple():
@@ -138,7 +139,7 @@ async def test_delete_succeeds_with_embedding_dim_mismatch(temp_db_path):
     mismatched = AppConfig()
     mismatched.embeddings.model.vector_dim = 9999
 
-    app = HaikuRAGApp(db_path=temp_db_path, config=mismatched)
+    app = HaikuRAGApp(scope=for_path(temp_db_path, mismatched), config=mismatched)
     await app.delete_document(doc.id)
 
     async with HaikuRAG(

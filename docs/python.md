@@ -24,8 +24,10 @@ async with HaikuRAG("path/to/database.lancedb", read_only=True) as client:
     # await client.create_document(...)  # Would raise ReadOnlyError
 ```
 
+`async with` is the lifecycle. A caller that owns the client some other way releases it with `await client.aclose()`, which does the same work for every client shape. `client.close()` closes the connection to one database and nothing else, since draining the background vacuum and releasing the embedder and reranker are awaitable; it refuses a client covering several.
+
 !!! note
-    Databases must be explicitly created with `create=True` or via `haiku-rag init` before use. Operations on non-existent databases will raise `FileNotFoundError`.
+    Databases must be explicitly created with `create=True` or via `haiku-rag init` before use. Opening a nonexistent unnamed local database raises `FileNotFoundError`, naming its path; one named in `lancedb.databases` raises `SourceUnavailableError`, which names the database rather than its location.
 
 !!! note
     Read-only mode is useful for safely accessing databases without risk of modification. It blocks all write operations and downgrades an embedding provider/name mismatch to a warning instead of raising `ConfigMismatchError`.
@@ -87,6 +89,8 @@ PDFs that carry attachments via the `/EmbeddedFiles` table are split into one Do
 By ID:
 ```python
 doc = await client.get_document_by_id("document-id-string")
+doc = await client.get_document_by_id("document-id-string", "papers")
+chunk = await client.get_chunk_by_id("chunk-id-string", "papers")
 ```
 
 By URI:
@@ -229,6 +233,49 @@ for result in results:
     print(f"Document URI: {result.document_uri}")
     print(f"Document Title: {result.document_title}")  # when available
 ```
+
+### Searching Multiple Databases
+
+With [`lancedb.databases`](configuration/storage.md#multiple-databases) configured, a client covers the full set. Use `sources` to select a subset. Each result includes its database name:
+
+```python
+results = await client.search("machine learning")                    # all of them
+results = await client.search("machine learning", sources=["papers"])  # one of them
+
+for result in results:
+    print(f"{result.source}: {result.content}")
+```
+
+`ask` and `analyze` also accept `sources`. Citations include the database name:
+
+```python
+answer, citations = await client.ask("What changed?", sources=["papers", "wiki"])
+for cite in citations:
+    print(f"[{cite.source}] {cite.document_title or cite.document_uri}")
+
+result = await client.analyze("How many documents mention it?", sources=["papers"])
+```
+
+A scoped question can cite only the selected databases. Analysis mounts only their documents.
+
+`sources=None` covers every database the client covers. `sources=[]` covers none: `search` returns no results, and `ask` and `analyze` run with no evidence from any database.
+
+A name no client covers raises `UnknownDatabaseError`, a `KeyError`, wherever it is given: at construction, per query, and when placing a citation.
+
+On the constructor `sources=[]` means something else. Passing `sources` alongside a database path raises `AmbiguousDatabaseError` immediately, since both say which database to open. Passing `sources=[]` alone raises `ValueError` on entering the client: a selection of nothing to search is a legitimate question, a client over no database is not.
+
+#### Inspecting the client scope
+
+```python
+client.covers_multiple      # whether the client covers more than one database
+client.source_names         # configured names, in order
+client.source               # one configured name, or None for a set or unnamed database
+
+owner = await client.reader_for("papers")      # the client reading that database
+papers, wiki = await client.clients_for(["papers", "wiki"])
+```
+
+`reader_for` and `clients_for` open databases lazily and return borrowed clients. They remain valid while the covering client is open and inherit its read-only mode. The covering client owns and closes their database sessions.
 
 ### Filtering Search Results
 

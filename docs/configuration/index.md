@@ -88,6 +88,7 @@ lancedb:
   uri: ""  # Empty for local, or db://, s3://, az://, gs://
   api_key: ""
   region: ""
+  databases: {}  # Name-to-location map to search multiple at once; excludes uri
 
 embeddings:
   model:

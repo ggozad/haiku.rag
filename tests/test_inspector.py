@@ -1,5 +1,6 @@
 import base64
 from io import BytesIO
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -8,6 +9,7 @@ from typer.testing import CliRunner
 
 from haiku.rag.cli import _cli as cli
 from haiku.rag.store.models import Chunk, Document, SearchResult
+from tests.conftest import for_path
 
 runner = CliRunner()
 
@@ -325,7 +327,166 @@ async def test_inspector_open_failure_surfaces_real_error(tmp_path):
     AttributeError from tearing down a client that never opened."""
     from haiku.rag.inspector.app import InspectorApp
 
-    app = InspectorApp(db_path=tmp_path / "missing.lancedb", read_only=True)
+    app = InspectorApp(scope=for_path(tmp_path / "missing.lancedb"), read_only=True)
     with pytest.raises(FileNotFoundError):
         async with app.run_test():
             pass
+
+
+class TestReportedLocation:
+    """A URI-backed database is constructed with a placeholder local path, so
+    what the modal prints has to come from the configuration."""
+
+    @staticmethod
+    def _session(location: str):
+        from haiku.rag.client.scope import DatabaseScope
+        from haiku.rag.client.session import SingleDatabaseSession, default_db_path
+        from haiku.rag.config.models import AppConfig, LanceDBConfig
+
+        config = AppConfig(lancedb=LanceDBConfig(databases={"alpha": location}))
+        [ref] = DatabaseScope.resolve(config, database_name="alpha").databases
+        one, db_path = ref.connection(config)
+        return SingleDatabaseSession(
+            db_path if db_path is not None else default_db_path(one),
+            one,
+            source="alpha",
+        )
+
+    def test_a_named_remote_database_reports_its_uri(self):
+        session = self._session("s3://bucket/alpha.lancedb")
+
+        assert isinstance(session.db_path, Path)
+        assert session.location == "s3://bucket/alpha.lancedb"
+
+    def test_a_named_local_database_reports_its_path(self):
+        session = self._session("/data/alpha.lancedb")
+
+        assert session.location == Path("/data/alpha.lancedb")
+
+
+class TestReportingReusesTheConnection:
+    @pytest.mark.asyncio
+    async def test_statistics_come_from_the_open_connection(
+        self, tmp_path, monkeypatch
+    ):
+        """Statistics are read through the connection the client already
+        holds."""
+        from haiku.rag.inspector.widgets.info_modal import database_lines
+        from haiku.rag.store.engine import ConnectionMode
+
+        asked: list[object] = []
+
+        async def fake_stats(db):
+            asked.append(db)
+            return {
+                "settings": {"exists": False},
+                "documents": {"num_rows": 1},
+                "document_meta": {"num_rows": 1},
+                "chunks": {"num_rows": 1},
+            }
+
+        monkeypatch.setattr("haiku.rag.store.info.get_database_stats", fake_stats)
+
+        connection = object()
+        client = MagicMock()
+        client.store.db = connection
+        client.store.db_path = tmp_path
+        client.store.stored_settings = {}
+        client.store._connection_mode = ConnectionMode.LOCAL
+
+        lines = await database_lines(client)
+
+        assert asked == [connection]
+        assert any("documents" in line for line in lines)
+
+    @pytest.mark.asyncio
+    async def test_settings_come_from_the_store_that_parsed_them(
+        self, tmp_path, monkeypatch
+    ):
+        """The store read and parsed the settings blob on open, and reporting
+        reads it from there."""
+        from haiku.rag.inspector.widgets.info_modal import database_lines
+        from haiku.rag.store.engine import ConnectionMode
+
+        async def fake_stats(db):  # noqa: ARG001
+            return {
+                "documents": {"num_rows": 1},
+                "document_meta": {"num_rows": 1},
+                "chunks": {"num_rows": 1},
+            }
+
+        monkeypatch.setattr("haiku.rag.store.info.get_database_stats", fake_stats)
+
+        client = MagicMock()
+        client.store.db_path = tmp_path
+        client.store._connection_mode = ConnectionMode.LOCAL
+        client.store.stored_settings = {
+            "version": "1.2.3",
+            "embeddings": {
+                "model": {"provider": "ollama", "name": "embed", "vector_dim": 7}
+            },
+        }
+
+        lines = await database_lines(client)
+
+        assert any("1.2.3" in line for line in lines)
+        assert any("ollama/embed (dim: 7)" in line for line in lines)
+
+
+class TestReportingEachDatabase:
+    @pytest.mark.asyncio
+    async def test_a_database_that_cannot_be_opened_reports_itself(self):
+        """One unreachable database must not cost the report on the others."""
+        from haiku.rag.inspector.widgets.info_modal import InfoModal
+        from haiku.rag.store.exceptions import SourceUnavailableError
+
+        modal = InfoModal.__new__(InfoModal)
+        client = AsyncMock()
+        client.clients_for.side_effect = SourceUnavailableError(
+            "database 'beta' could not be opened: OSError"
+        )
+        modal.client = client
+
+        lines = await modal._report("beta")
+
+        assert lines[0] == "[bold]beta[/bold]"
+        assert "could not be opened" in lines[1]
+
+    @pytest.mark.asyncio
+    async def test_a_failure_with_bracketed_text_renders_literally(self):
+        """Error text and database names render verbatim, not as Rich markup."""
+        from rich.text import Text
+
+        from haiku.rag.inspector.widgets.info_modal import InfoModal
+        from haiku.rag.store.exceptions import SourceUnavailableError
+
+        modal = InfoModal.__new__(InfoModal)
+        client = AsyncMock()
+        message = "database 'beta [prod]' could not be opened: [/red] [Errno 2]"
+        client.clients_for.side_effect = SourceUnavailableError(message)
+        modal.client = client
+
+        lines = await modal._report("beta [prod]")
+
+        assert Text.from_markup(lines[0]).plain == "beta [prod]"
+        assert message in Text.from_markup(lines[1]).plain
+
+    @pytest.mark.asyncio
+    async def test_an_open_failure_with_bracketed_text_renders_literally(
+        self, tmp_path
+    ):
+        """A stats-read failure renders its message verbatim, not as markup."""
+        from rich.text import Text
+
+        from haiku.rag.inspector.widgets.info_modal import database_lines
+        from haiku.rag.store.engine import ConnectionMode
+
+        client = MagicMock()
+        client.store.db_path = tmp_path
+        client.store._connection_mode = ConnectionMode.LOCAL
+        message = "Schema error: no field named [vector, text] [/red]"
+        type(client.store).db = property(MagicMock(side_effect=RuntimeError(message)))
+
+        lines = await database_lines(client)
+
+        assert message in Text.from_markup(lines[0]).plain

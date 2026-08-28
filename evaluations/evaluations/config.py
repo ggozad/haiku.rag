@@ -7,6 +7,7 @@ from datasets import Dataset
 from pydantic import BaseModel, model_validator
 from pydantic_evals import Case
 from pydantic_evals.evaluators import Evaluator
+from haiku.rag.config.models import AppConfig
 
 
 class Turn(BaseModel):
@@ -82,6 +83,17 @@ class DatasetSpec:
     live: bool = False
     compaction: bool = False
     experiment_metadata: dict[str, Any] | None = None
+
+    def uses_configured_databases(
+        self, config: AppConfig, override_path: Path | None = None
+    ) -> bool:
+        """Whether `lancedb.databases` places the databases to evaluate over.
+
+        A path names one database and wins over the configuration, both when it
+        comes from `--db` and when the client resolves it. True for a mapping of
+        one, which is a configured database like any other and keeps its name.
+        """
+        return bool(config.lancedb.databases) and override_path is None
 
     def db_path(self, override_path: Path | None = None) -> Path:
         """Get the database path.

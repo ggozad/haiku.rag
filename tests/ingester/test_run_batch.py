@@ -7,7 +7,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from urllib.parse import unquote, urlparse
 
 import pytest
@@ -103,7 +103,11 @@ def use_client(monkeypatch):
         async def _cm(*_, **__):
             yield client
 
-        monkeypatch.setattr("haiku.rag.client.HaikuRAG", lambda *a, **k: _cm())
+        # The app opens the databases its scope covers: the double stands in
+        # for `_covering`.
+        stub = MagicMock()
+        stub._covering = lambda *a, **k: _cm()
+        monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
 
     return _install
 

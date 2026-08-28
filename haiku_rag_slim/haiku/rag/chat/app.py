@@ -3,7 +3,6 @@ import uuid
 from collections.abc import Iterable, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import textual_image.widget  # noqa: F401 - import early for renderer detection
@@ -37,12 +36,15 @@ from haiku.rag.chat.widgets.prompt import (
 )
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
+from haiku.rag.store.models.chunk import qualified_id
 from haiku.rag.telemetry import configure as configure_telemetry
 
 configure_telemetry(service_name="haiku-rag")
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
+
+    from haiku.rag.client.scope import DatabaseScope
 
 
 RAG_STATE_NAMESPACE = "rag"
@@ -86,13 +88,13 @@ class ChatApp(App):
 
     def __init__(
         self,
-        db_path: Path,
         capabilities: Sequence[RAGCapabilityBase[Any]],
+        scope: "DatabaseScope",
         read_only: bool = False,
         model: str | None = None,
     ) -> None:
         super().__init__()
-        self.db_path = db_path
+        self.scope = scope
         self._capabilities = capabilities
         self.read_only = read_only
         self._model = model
@@ -103,7 +105,7 @@ class ChatApp(App):
         self._state: dict[str, Any] = {}
         self._is_processing = False
         self._current_worker: Worker[None] | None = None
-        self._document_filter: list[str] = []
+        self._document_filter: list[tuple[str | None, str]] = []
         self._images: list[bytes] = []
         # Stable per-launch id for multi-turn model and telemetry correlation.
         self._conversation_id = str(uuid.uuid4())
@@ -141,15 +143,15 @@ class ChatApp(App):
 
     async def on_mount(self) -> None:
         """Initialize the app when mounted."""
-        client = HaikuRAG(
-            db_path=self.db_path,
-            config=self.config,
-            read_only=self.read_only,
-        )
+        client = HaikuRAG._covering(self.scope, self.config, read_only=self.read_only)
         # Assign only after a successful open: on_unmount must not tear down
         # a client whose __aenter__ failed.
         await client.__aenter__()
         self.client = client
+        # Lent to the capabilities: already the databases they were built for,
+        # and one connection per database however many capabilities read it.
+        for capability in self._capabilities:
+            capability.borrowed_rag = client
 
         self._agent = Agent(
             self._model,
@@ -292,23 +294,32 @@ class ChatApp(App):
         if not citations:
             return
 
-        picture_bytes: dict[str, list[bytes]] = {}
+        picture_bytes: dict[tuple[str | None, str | None], list[bytes]] = {}
         if self.client is not None:
             for citation in citations:
                 refs = list(citation.picture_refs or [])
                 if not refs:
                     continue
+                # A sourceless citation across a set has no owner to fetch
+                # pictures from: it renders with its figure markers alone.
+                owner = await self.client.reader_for(citation.source)
+                if owner is None:
+                    continue
                 blobs: list[bytes] = []
                 for ref in refs:
-                    data = await self.client.document_item_repository.get_picture_bytes(
-                        citation.document_id, ref
-                    )
+                    data = await owner.get_picture_bytes(citation.document_id, ref)
                     if data:
                         blobs.append(data)
                 if blobs:
-                    picture_bytes[citation.chunk_id] = blobs
+                    picture_bytes[qualified_id(citation.source, citation.chunk_id)] = (
+                        blobs
+                    )
 
-        await chat_history.add_citations(citations, picture_bytes=picture_bytes)
+        await chat_history.add_citations(
+            citations,
+            picture_bytes=picture_bytes,
+            include_collection=self.client is not None and self.client.covers_multiple,
+        )
 
         if analysis_data := self._state.get(ANALYSIS_STATE_NAMESPACE):
             analysis_state = AnalysisState.model_validate(analysis_data)
@@ -356,10 +367,15 @@ class ChatApp(App):
             return
 
         citation = selected_widgets[0].citation
+        # Chunks, pages and bounding boxes all come from the database holding the
+        # cited chunk, which a client covering a set has to be asked for.
+        client = await self.client.reader_for(citation.source)
+        if client is None:
+            return
         chunk_ids = citation.chunk_ids or [citation.chunk_id]
         chunks = []
         for cid in chunk_ids:
-            chunk = await self.client.get_chunk_by_id(cid)
+            chunk = await client.get_chunk_by_id(cid)
             if chunk:
                 chunks.append(chunk)
         if not chunks:
@@ -370,7 +386,7 @@ class ChatApp(App):
         await self.push_screen(
             VisualGroundingModal(
                 chunk=chunks,
-                client=self.client,
+                client=client,
                 refs=citation.doc_item_refs or None,
             )
         )
@@ -382,7 +398,7 @@ class ChatApp(App):
 
         from haiku.rag.inspector.widgets.info_modal import InfoModal
 
-        await self.push_screen(InfoModal(self.client, self.db_path))
+        await self.push_screen(InfoModal(self.client))
 
     def on_citation_widget_selected(self, event: CitationWidget.Selected) -> None:
         """Handle citation selection."""
@@ -408,12 +424,20 @@ class ChatApp(App):
         )
 
     def on_document_filter_modal_filter_changed(self, event: Any) -> None:
-        """Handle document filter changes from modal."""
-        from haiku.rag.tools.filters import build_multi_document_filter
+        """Scope the conversation to the selection: the filter carries the ids,
+        and `sources` restricts the search to the databases the selection names.
+        """
+        from haiku.rag.tools.filters import build_document_id_filter
 
         self._document_filter = event.selected
 
-        doc_filter = build_multi_document_filter(self._document_filter)
+        doc_filter = build_document_id_filter(
+            sorted({doc_id for _, doc_id in event.selected})
+        )
+        selected_sources = {source for source, _ in event.selected}
+        sources: list[str] | None = None
+        if selected_sources and None not in selected_sources:
+            sources = sorted(s for s in selected_sources if s is not None)
         for namespace, state_type in (
             (RAG_STATE_NAMESPACE, RAGState),
             (ANALYSIS_STATE_NAMESPACE, AnalysisState),
@@ -421,4 +445,5 @@ class ChatApp(App):
             if namespace in self._state:
                 state = state_type.model_validate(self._state[namespace])
                 state.document_filter = doc_filter
+                state.sources = sources
                 self._state[namespace] = state.model_dump(mode="json")

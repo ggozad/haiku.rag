@@ -1,4 +1,8 @@
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from haiku.rag.client.scope import DatabaseScope
 
 
 def run_chat(
@@ -6,11 +10,13 @@ def run_chat(
     read_only: bool = False,
     model: str | None = None,
     capabilities: list[str] | None = None,
+    scope: "DatabaseScope | None" = None,
 ) -> None:
     """Run the chat TUI.
 
     Args:
-        db_path: Path to the LanceDB database. If None, uses default from config.
+        db_path: Path to the LanceDB database, when no scope is given.
+        scope: The databases to cover, resolved by the caller.
         read_only: Whether to open the database in read-only mode.
         model: Model to use for the chat.
         capabilities: Capabilities to enable ("rag", "analysis"). Defaults to ["rag"].
@@ -26,13 +32,23 @@ def run_chat(
     from haiku.rag.utils import get_model, parse_model_option
 
     config = get_config()
-    if db_path is None:
-        db_path = config.storage.data_dir / "haiku.rag.lancedb"
+    if scope is None:
+        from haiku.rag.client.scope import DatabaseScope
+
+        scope = DatabaseScope.resolve(config, database_path=db_path)
 
     if model:
         model_config = parse_model_option(model)
         config.qa.model = model_config
         config.analysis.model = model_config
+
+    # The capabilities read the databases the scope covers, not what the
+    # configuration names: a `--db PATH` selection is outside the
+    # configuration, and a `--db-name NAME` selection is narrower than it.
+    if scope.covers_multiple:
+        capability_config, capability_db_path = config, None
+    else:
+        capability_config, capability_db_path = scope.databases[0].connection(config)
 
     enabled = capabilities or ["rag"]
     capability_list = []
@@ -52,8 +68,8 @@ def run_chat(
 
         capability_list.append(
             create_capability(
-                db_path=db_path,
-                config=config,
+                db_path=capability_db_path,
+                config=capability_config,
                 defer_loading=defer_loading,
                 vision=driving_model.vision,
             )
@@ -64,17 +80,17 @@ def run_chat(
 
         capability_list.append(
             create_capability(
-                db_path=db_path,
-                config=config,
+                db_path=capability_db_path,
+                config=capability_config,
                 defer_loading=defer_loading,
                 vision=driving_model.vision,
             )
         )
 
     app = ChatApp(
-        db_path,
         capabilities=capability_list,
         read_only=read_only,
         model=model or get_model(driving_model, config),
+        scope=scope,
     )
     app.run()

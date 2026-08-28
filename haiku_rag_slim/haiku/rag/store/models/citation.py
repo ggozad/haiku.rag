@@ -1,7 +1,9 @@
+from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
+from haiku.rag.store.exceptions import AmbiguousCitationError
 from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX
 
 if TYPE_CHECKING:
@@ -16,11 +18,15 @@ class Citation(BaseModel):
 
     ``picture_refs`` lists the ``self_ref`` values of picture items in the
     cited chunk. Empty for text-only citations. UIs can fetch the picture
-    bytes via ``DocumentItemRepository.get_picture_bytes(document_id, ref)``
-    and render them alongside the text content.
+    bytes via ``HaikuRAG.get_picture_bytes(document_id, ref, source)`` and
+    render them alongside the text content.
 
     ``chunk_ids`` lists the ids of all chunks whose expansion ranges merged
     into the cited result (always includes ``chunk_id``).
+
+    ``source`` names the configured database the cited chunk came from: the name
+    from ``lancedb.databases``, never a path or URI. It is None only where no
+    database is named, as with the single ``lancedb.uri``.
 
     ``doc_item_refs`` are the ``self_ref`` values of every item in the cited
     content — the exact items the model saw. Visual grounding resolves bounding
@@ -37,6 +43,7 @@ class Citation(BaseModel):
 
     index: int | None = None
     document_id: str
+    source: str | None = None
     chunk_id: str
     chunk_ids: list[str] = Field(default_factory=list)
     chunk_meta: dict = Field(default_factory=dict)
@@ -50,16 +57,45 @@ class Citation(BaseModel):
     picture_refs: list[str] = Field(default_factory=list)
 
 
+def ambiguous_citation(
+    chunk_id: str, sources: Iterable[str | None]
+) -> AmbiguousCitationError:
+    """The refusal for an id that names a chunk in more than one database."""
+    named = ", ".join(sorted(s or "unnamed" for s in sources))
+    return AmbiguousCitationError(
+        f"chunk id {chunk_id} names a chunk in more than one database "
+        f"({named}); a citation records the id alone and cannot say which"
+    )
+
+
 def resolve_citations(
     cited_chunk_ids: list[str],
     search_results: "list[SearchResult]",
 ) -> list[Citation]:
-    """Resolve chunk IDs to full Citation objects with metadata."""
-    by_id = {r.chunk_id: r for r in search_results if r.chunk_id}
+    """Resolve chunk IDs to full Citation objects with metadata.
+
+    A chunk returned by more than one search resolves to its last occurrence.
+    Raises ``AmbiguousCitationError`` instead when a cited id names a chunk in
+    more than one of the databases searched: a citation records the id alone
+    and cannot say which.
+    """
+    by_id: dict[str, SearchResult] = {}
+    ambiguous: dict[str, set[str | None]] = {}
+    for r in search_results:
+        # A result built by hand carries no id and nothing can cite it.
+        if cid := r.chunk_id:
+            if (held := by_id.get(cid)) is not None and held.source != r.source:
+                ambiguous.setdefault(cid, {held.source}).add(r.source)
+            # A chunk found by several searches is expanded once per search, so
+            # the copies differ in content, window and figures. The later entry
+            # wins.
+            by_id[cid] = r
 
     citations = []
     for raw_id in cited_chunk_ids:
         chunk_id = raw_id.strip("[]")
+        if chunk_id in ambiguous:
+            raise ambiguous_citation(chunk_id, ambiguous[chunk_id])
         r = by_id.get(chunk_id)
         if not r:
             continue
@@ -69,6 +105,7 @@ def resolve_citations(
         citations.append(
             Citation(
                 document_id=r.document_id or "",
+                source=r.source,
                 chunk_id=chunk_id,
                 chunk_ids=r.chunk_ids or [chunk_id],
                 chunk_meta=r.chunk_meta,

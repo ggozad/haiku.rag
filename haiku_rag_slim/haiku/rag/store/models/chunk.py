@@ -116,6 +116,15 @@ class Chunk(BaseModel):
 SearchType = Literal["vector", "fts", "hybrid"]
 
 
+def qualified_id(source: str | None, id: str | None) -> tuple[str | None, str | None]:
+    """What tells one chunk from another: an id is unique within a database only.
+
+    For in-memory structures. Serialized ones record the id alone and reject
+    ambiguity instead. Results built by hand carry no id and cannot be told apart.
+    """
+    return (source, id)
+
+
 class SearchResult(BaseModel):
     """Search result with optional provenance information for citations.
 
@@ -136,10 +145,16 @@ class SearchResult(BaseModel):
     ``chunk_meta`` is the anchor chunk's unparsed ``Chunk.metadata`` and does not
     include the metadata of any other chunks merged with it. Never part of
     ``format_for_agent`` output.
+
+    ``source`` names the configured database a result came from: the name from
+    ``lancedb.databases``, never a path or URI, so a location cannot travel in a
+    result, a citation or a log. It is None only where no database is named, as
+    with the single ``lancedb.uri``.
     """
 
     content: str
     score: float
+    source: str | None = None
     chunk_id: str | None = None
     chunk_ids: list[str] = []
     chunk_meta: dict = {}
@@ -182,7 +197,11 @@ class SearchResult(BaseModel):
         )
 
     def format_for_agent(
-        self, rank: int | None = None, total: int | None = None
+        self,
+        rank: int | None = None,
+        total: int | None = None,
+        *,
+        include_collection: bool = False,
     ) -> str:
         """Format this search result for inclusion in agent context.
 
@@ -193,6 +212,10 @@ class SearchResult(BaseModel):
         Produces a structured format with metadata that helps LLMs understand
         the source and nature of the content. When rank is provided, shows
         position instead of raw score to avoid confusing LLMs with low RRF scores.
+
+        `include_collection` is the caller's decision, not this result's: a
+        search spanning one collection has nothing to distinguish, whether or
+        not that collection is named.
         """
         if rank is not None and total is not None:
             parts = [f"[{self.chunk_id}] [rank {rank} of {total}]"]
@@ -200,6 +223,9 @@ class SearchResult(BaseModel):
             parts = [f"[{self.chunk_id}] [rank {rank}]"]
         else:
             parts = [f"[{self.chunk_id}] (score: {self.score:.2f})"]
+
+        if include_collection and self.source:
+            parts.append(f"Collection: {self.source}")
 
         # Document source info
         source_parts = []

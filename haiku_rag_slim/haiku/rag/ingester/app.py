@@ -72,9 +72,21 @@ class IngesterApp:
     WorkerPool, and a HaikuRAG client for the worker pool to ingest through.
     """
 
-    def __init__(self, *, config: AppConfig, db_path: Path):
+    def __init__(self, *, config: AppConfig, db_path: Path | None = None):
+        from haiku.rag.client.scope import DatabaseScope
+        from haiku.rag.store.exceptions import AmbiguousDatabaseError
+
         self._config = config
-        self._db_path = db_path
+        # `--db` is an explicit override; None leaves placement to the
+        # configuration.
+        self._scope = DatabaseScope.resolve(config, database_path=db_path)
+        if self._scope.covers_multiple:
+            raise AmbiguousDatabaseError(
+                "haiku-ingester writes one database, and lancedb.databases "
+                f"names {', '.join(self._scope.names)}; select one with "
+                "--db PATH, or give each database its own ingester with a "
+                "configuration naming a single one"
+            )
         self._engine: AsyncEngine | None = None
         self._jobs: JobRepo | None = None
         self._sync: SyncStateRepo | None = None
@@ -107,8 +119,8 @@ class IngesterApp:
             # The ingester is the sole writer for its LanceDB target; create on
             # first start so docker-compose / fresh deployments don't require a
             # manual `haiku-rag init`.
-            async with HaikuRAG(
-                self._db_path, config=self._config, create=True
+            async with HaikuRAG._covering(
+                self._scope, self._config, create=True
             ) as client:
                 self._pollers = PollerManager(
                     configs=ingester_cfg.sources,
@@ -471,7 +483,7 @@ class IngesterApp:
             sync_repo=self._sync,
             pool=self._pool,
             pollers=self._pollers,
-            db_path=self._db_path,
+            scope=self._scope,
         )
         if ingester_cfg.api.auth_token is None:
             logger.warning("API auth_token is unset — control plane is unauthenticated")

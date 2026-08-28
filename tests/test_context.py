@@ -12,6 +12,7 @@ from haiku.rag.context import (
 )
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.document_item import DocumentItem
+from tests.conftest import writing
 
 
 def _item(
@@ -352,7 +353,7 @@ class TestExpandWithItems:
 
         async with HaikuRAG(temp_db_path, create=True) as rag:
             doc = await _store_document_with_chunks(
-                rag,
+                writing(rag),
                 Document(content="test"),
                 [],
                 __import__(

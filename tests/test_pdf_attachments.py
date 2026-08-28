@@ -12,6 +12,7 @@ from haiku.rag.client.documents import (
 )
 from haiku.rag.sources import FetchResult
 from haiku.rag.store.models.document import Document
+from tests.conftest import writing
 
 
 def build_pdf(attachments: list[tuple[str, bytes]]) -> bytes:
@@ -27,7 +28,7 @@ def build_pdf(attachments: list[tuple[str, bytes]]) -> bytes:
 
 
 async def fake_ingest_fetch_result(
-    client,
+    session,
     result: FetchResult,
     *,
     title,
@@ -55,9 +56,9 @@ async def fake_ingest_fetch_result(
         existing_doc.metadata = final_metadata
         if title is not None:
             existing_doc.title = title
-        doc = await client.document_repository.update(existing_doc)
+        doc = await session.document_repository.update(existing_doc)
     else:
-        doc = await client.document_repository.create(
+        doc = await session.document_repository.create(
             Document(
                 content="",
                 uri=stored_uri,
@@ -65,7 +66,7 @@ async def fake_ingest_fetch_result(
                 metadata=final_metadata,
             )
         )
-    await _reconcile_pdf_attachments(client, doc, result.body, depth=depth)
+    await _reconcile_pdf_attachments(session, doc, result.body, depth=depth)
     return doc
 
 
@@ -101,7 +102,7 @@ async def test_first_ingest_creates_one_doc_per_attachment(temp_db_path, monkeyp
         parent_uri = "file:///fixtures/parent.pdf"
         parent = await _make_parent(client, parent_uri, pdf_bytes)
 
-        await _reconcile_pdf_attachments(client, parent, pdf_bytes, depth=0)
+        await _reconcile_pdf_attachments(writing(client), parent, pdf_bytes, depth=0)
 
         children = await client.list_documents(filter=parent_uri_filter(parent_uri))
         assert len(children) == 2
@@ -129,7 +130,7 @@ async def test_attachment_with_spaces_in_name_is_percent_encoded(
     async with HaikuRAG(temp_db_path, create=True) as client:
         parent_uri = "file:///fixtures/parent.pdf"
         parent = await _make_parent(client, parent_uri, pdf_bytes)
-        await _reconcile_pdf_attachments(client, parent, pdf_bytes, depth=0)
+        await _reconcile_pdf_attachments(writing(client), parent, pdf_bytes, depth=0)
 
         children = await client.list_documents(filter=parent_uri_filter(parent_uri))
         assert len(children) == 1
@@ -145,13 +146,13 @@ async def test_reingest_removes_dropped_attachment(temp_db_path, monkeypatch):
         parent_uri = "file:///fixtures/parent.pdf"
         first = build_pdf([("a.txt", b"A"), ("b.txt", b"B")])
         parent = await _make_parent(client, parent_uri, first)
-        await _reconcile_pdf_attachments(client, parent, first, depth=0)
+        await _reconcile_pdf_attachments(writing(client), parent, first, depth=0)
         assert (
             len(await client.list_documents(filter=parent_uri_filter(parent_uri))) == 2
         )
 
         second = build_pdf([("a.txt", b"A")])
-        await _reconcile_pdf_attachments(client, parent, second, depth=0)
+        await _reconcile_pdf_attachments(writing(client), parent, second, depth=0)
         remaining = await client.list_documents(filter=parent_uri_filter(parent_uri))
         assert len(remaining) == 1
         assert remaining[0].uri == f"{parent_uri}#attachment=a.txt"
@@ -166,11 +167,11 @@ async def test_reingest_updates_changed_attachment_in_place(temp_db_path, monkey
         parent_uri = "file:///fixtures/parent.pdf"
         first = build_pdf([("a.txt", b"original")])
         parent = await _make_parent(client, parent_uri, first)
-        await _reconcile_pdf_attachments(client, parent, first, depth=0)
+        await _reconcile_pdf_attachments(writing(client), parent, first, depth=0)
         before = (await client.list_documents(filter=parent_uri_filter(parent_uri)))[0]
 
         second = build_pdf([("a.txt", b"different")])
-        await _reconcile_pdf_attachments(client, parent, second, depth=0)
+        await _reconcile_pdf_attachments(writing(client), parent, second, depth=0)
         after = (await client.list_documents(filter=parent_uri_filter(parent_uri)))[0]
 
         assert after.id == before.id
@@ -186,10 +187,10 @@ async def test_reingest_adds_new_attachment(temp_db_path, monkeypatch):
         parent_uri = "file:///fixtures/parent.pdf"
         first = build_pdf([("a.txt", b"A")])
         parent = await _make_parent(client, parent_uri, first)
-        await _reconcile_pdf_attachments(client, parent, first, depth=0)
+        await _reconcile_pdf_attachments(writing(client), parent, first, depth=0)
 
         second = build_pdf([("a.txt", b"A"), ("c.txt", b"C")])
-        await _reconcile_pdf_attachments(client, parent, second, depth=0)
+        await _reconcile_pdf_attachments(writing(client), parent, second, depth=0)
         children = await client.list_documents(filter=parent_uri_filter(parent_uri))
         assert len(children) == 2
         names = {c.uri for c in children}
@@ -213,7 +214,7 @@ async def test_nested_pdf_attachments_recurse_up_to_cap(temp_db_path, monkeypatc
     async with HaikuRAG(temp_db_path, create=True) as client:
         root_uri = "file:///fixtures/root.pdf"
         parent = await _make_parent(client, root_uri, root)
-        await _reconcile_pdf_attachments(client, parent, root, depth=0)
+        await _reconcile_pdf_attachments(writing(client), parent, root, depth=0)
 
         l1_uri = f"{root_uri}#attachment=l1.pdf"
         l2_uri = f"{l1_uri}#attachment=l2.pdf"
@@ -234,7 +235,7 @@ async def test_config_off_skips_extraction(temp_db_path, monkeypatch):
         parent_uri = "file:///fixtures/parent.pdf"
         pdf_bytes = build_pdf([("a.txt", b"A")])
         parent = await _make_parent(client, parent_uri, pdf_bytes)
-        await _reconcile_pdf_attachments(client, parent, pdf_bytes, depth=0)
+        await _reconcile_pdf_attachments(writing(client), parent, pdf_bytes, depth=0)
 
         assert await client.list_documents(filter=parent_uri_filter(parent_uri)) == []
 
@@ -256,7 +257,7 @@ async def test_non_pdf_parent_is_ignored(temp_db_path, monkeypatch):
         )
         # Even with PDF bytes, content_type=text/plain blocks extraction.
         pdf_bytes = build_pdf([("a.txt", b"A")])
-        await _reconcile_pdf_attachments(client, parent, pdf_bytes, depth=0)
+        await _reconcile_pdf_attachments(writing(client), parent, pdf_bytes, depth=0)
         assert await client.list_documents(filter=parent_uri_filter(parent_uri)) == []
 
 
@@ -272,7 +273,7 @@ async def test_parent_without_uri_is_skipped(temp_db_path, monkeypatch):
             metadata={"content_type": "application/pdf", "md5": "abc"},
         )
         pdf_bytes = build_pdf([("a.txt", b"A")])
-        await _reconcile_pdf_attachments(client, parent, pdf_bytes, depth=0)
+        await _reconcile_pdf_attachments(writing(client), parent, pdf_bytes, depth=0)
         assert await client.list_documents() == []
 
 
@@ -290,7 +291,7 @@ async def test_malformed_pdf_logs_warning_and_skips(temp_db_path, monkeypatch, c
         garbage = b"this is not a pdf at all"
         parent = await _make_parent(client, parent_uri, garbage)
         with caplog.at_level(logging.WARNING, logger="haiku.rag.client.documents"):
-            await _reconcile_pdf_attachments(client, parent, garbage, depth=0)
+            await _reconcile_pdf_attachments(writing(client), parent, garbage, depth=0)
         assert await client.list_documents(filter=parent_uri_filter(parent_uri)) == []
 
 
@@ -328,7 +329,7 @@ async def test_unsupported_attachment_continues_loop(temp_db_path, monkeypatch):
         parent_uri = "file:///fixtures/parent.pdf"
         pdf_bytes = build_pdf([("ok.txt", b"keep me"), ("unsupported.xyz", b"data")])
         parent = await _make_parent(client, parent_uri, pdf_bytes)
-        await _reconcile_pdf_attachments(client, parent, pdf_bytes, depth=0)
+        await _reconcile_pdf_attachments(writing(client), parent, pdf_bytes, depth=0)
         children = await client.list_documents(filter=parent_uri_filter(parent_uri))
         assert {c.uri for c in children} == {f"{parent_uri}#attachment=ok.txt"}
 
@@ -346,7 +347,9 @@ async def test_joboptions_attachment_skipped_not_routed_as_pdf(temp_db_path, cap
         parent = await _make_parent(client, parent_uri, pdf_bytes)
 
         with caplog.at_level(logging.WARNING, logger="haiku.rag.client.documents"):
-            await _reconcile_pdf_attachments(client, parent, pdf_bytes, depth=0)
+            await _reconcile_pdf_attachments(
+                writing(client), parent, pdf_bytes, depth=0
+            )
 
         assert await client.list_documents(filter=parent_uri_filter(parent_uri)) == []
 
@@ -360,7 +363,7 @@ async def test_cascade_delete_removes_reconciled_children(temp_db_path, monkeypa
         parent_uri = "file:///fixtures/parent.pdf"
         pdf_bytes = build_pdf([("a.txt", b"A"), ("b.txt", b"B")])
         parent = await _make_parent(client, parent_uri, pdf_bytes)
-        await _reconcile_pdf_attachments(client, parent, pdf_bytes, depth=0)
+        await _reconcile_pdf_attachments(writing(client), parent, pdf_bytes, depth=0)
         assert len(await client.list_documents()) == 3
 
         await client.delete_document(parent.id)
@@ -512,7 +515,7 @@ async def test_extract_pdf_attachments_called_off_event_loop_thread(
     async with HaikuRAG(temp_db_path, create=True) as client:
         parent_uri = "file:///fixtures/parent.pdf"
         parent = await _make_parent(client, parent_uri, pdf_bytes)
-        await _reconcile_pdf_attachments(client, parent, pdf_bytes, depth=0)
+        await _reconcile_pdf_attachments(writing(client), parent, pdf_bytes, depth=0)
 
     assert called_from, "_extract_pdf_attachments was never called"
     assert called_from[0] is not event_loop_thread, (

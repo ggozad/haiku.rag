@@ -7,6 +7,7 @@ from typer.testing import CliRunner
 
 from haiku.rag.capabilities.rag import RAGState, create_capability
 from haiku.rag.cli import _cli as cli
+from tests.conftest import _covering_returns, for_path
 
 runner = CliRunner()
 
@@ -33,6 +34,68 @@ def test_run_chat_creates_app_and_runs(temp_db_path: Path):
     attached = mock_app.call_args.kwargs["capabilities"]
     assert len(attached) == 1
     assert attached[0].defer_loading is False
+
+
+def test_run_chat_covers_a_configured_set(tmp_path, monkeypatch):
+    """A configured set has no single path to fall back to: the app is handed
+    None so the client opens the set."""
+    import haiku.rag.config as config_module
+    from haiku.rag.config import AppConfig, set_config
+    from haiku.rag.config.models import LanceDBConfig
+
+    monkeypatch.setattr(config_module, "_config", None)
+    set_config(
+        AppConfig(
+            lancedb=LanceDBConfig(
+                databases={
+                    "a": str(tmp_path / "a.lancedb"),
+                    "b": str(tmp_path / "b.lancedb"),
+                }
+            )
+        )
+    )
+    with patch("haiku.rag.chat.app.ChatApp") as app:
+        from haiku.rag.chat import run_chat
+
+        run_chat(db_path=None)
+
+    assert app.call_args.kwargs["scope"].names == ("a", "b")
+
+
+def test_chat_capabilities_read_the_named_database(tmp_path, monkeypatch):
+    """`--db PATH` and `--db-name NAME` reach the capabilities too."""
+    import haiku.rag.config as config_module
+    from haiku.rag.client.scope import DatabaseScope
+    from haiku.rag.config import set_config
+    from haiku.rag.config.models import AppConfig, LanceDBConfig
+
+    monkeypatch.setattr(config_module, "_config", None)
+    config = AppConfig(
+        lancedb=LanceDBConfig(
+            databases={
+                "a": str(tmp_path / "a.lancedb"),
+                "b": str(tmp_path / "b.lancedb"),
+            }
+        )
+    )
+    set_config(config)
+
+    with patch("haiku.rag.chat.app.ChatApp") as chat_app:
+        from haiku.rag.chat import run_chat
+
+        run_chat(scope=DatabaseScope.resolve(config, database_name="b"))
+        [named] = chat_app.call_args.kwargs["capabilities"]
+
+        run_chat(scope=DatabaseScope.resolve(config))
+        [covering] = chat_app.call_args.kwargs["capabilities"]
+
+    # The chat lends its own client, so this scope is the fallback: it places
+    # the named database alone.
+    [placed] = named.scope.databases
+    assert placed.db_path == tmp_path / "b.lancedb"
+    assert named.config.lancedb.databases == {}
+    assert covering.scope.names == ("a", "b")
+    assert set(covering.config.lancedb.databases) == {"a", "b"}
 
 
 def test_run_chat_defers_multiple_capabilities(temp_db_path: Path):
@@ -92,6 +155,11 @@ def _make_mock_client():
     mock_client = AsyncMock()
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
+    # Covers one database; a bare AsyncMock answers `covers_multiple` with a
+    # truthy Mock.
+    mock_client.covers_multiple = False
+    mock_client.source_names = ()
+    mock_client.source = None
     return mock_client
 
 
@@ -103,7 +171,7 @@ def _make_app(db_path: Path, mock_client: AsyncMock | None = None):
         mock_client = _make_mock_client()
 
     return ChatApp(
-        db_path=db_path,
+        scope=for_path(db_path),
         capabilities=[create_capability(db_path=db_path)],
         read_only=True,
     ), mock_client
@@ -117,7 +185,7 @@ def _make_app_with_state(db_path: Path, mock_client: AsyncMock | None = None):
         mock_client = _make_mock_client()
 
     return ChatApp(
-        db_path=db_path,
+        scope=for_path(db_path),
         capabilities=[create_capability(db_path=db_path)],
         read_only=True,
     ), mock_client
@@ -130,7 +198,10 @@ async def test_chat_app_has_required_widgets(temp_db_path: Path):
 
     app, mock_client = _make_app(temp_db_path)
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test():
             chat_history = app.query_one(ChatHistory)
             assert chat_history is not None
@@ -146,7 +217,10 @@ async def test_chat_app_quit_binding(temp_db_path: Path):
     """Test that pressing ctrl+q quits the app."""
     app, mock_client = _make_app(temp_db_path)
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test() as pilot:
             assert app.is_running
             await pilot.press("ctrl+q")
@@ -160,7 +234,10 @@ async def test_chat_history_can_add_message(temp_db_path: Path):
 
     app, mock_client = _make_app(temp_db_path)
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test():
             chat_history = app.query_one(ChatHistory)
 
@@ -179,7 +256,10 @@ async def test_chat_history_can_add_tool_calls(temp_db_path: Path):
 
     app, mock_client = _make_app(temp_db_path)
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test():
             chat_history = app.query_one(ChatHistory)
 
@@ -201,7 +281,10 @@ async def test_chat_history_can_add_citations(temp_db_path: Path):
 
     app, mock_client = _make_app(temp_db_path)
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test():
             chat_history = app.query_one(ChatHistory)
 
@@ -241,7 +324,10 @@ async def test_chat_history_thinking_indicator(temp_db_path: Path):
 
     app, mock_client = _make_app(temp_db_path)
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test() as pilot:
             chat_history = app.query_one(ChatHistory)
 
@@ -262,7 +348,10 @@ async def test_clear_chat_resets_state(temp_db_path: Path):
 
     app, mock_client = _make_app(temp_db_path)
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test() as pilot:
             chat_history = app.query_one(ChatHistory)
 
@@ -286,7 +375,10 @@ async def test_citation_expand_collapse_with_enter(temp_db_path: Path):
 
     app, mock_client = _make_app(temp_db_path)
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test() as pilot:
             chat_history = app.query_one(ChatHistory)
 
@@ -325,7 +417,10 @@ async def test_show_citations_renders_from_flat_state(temp_db_path: Path):
 
     app, mock_client = _make_app_with_state(temp_db_path)
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test() as pilot:
             rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
 
@@ -356,25 +451,75 @@ async def test_document_filter_updates_rag_state(temp_db_path: Path):
     """Test that selecting document filters updates RAGState.document_filter."""
     from haiku.rag.chat.app import RAG_STATE_NAMESPACE
     from haiku.rag.chat.widgets.document_filter_modal import DocumentFilterModal
-    from haiku.rag.tools.filters import build_multi_document_filter
+    from haiku.rag.tools.filters import build_document_id_filter
 
     app, mock_client = _make_app_with_state(temp_db_path)
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test():
-            # Simulate the FilterChanged message
-            selected = ["AI Overview", "ML Basics"]
+            # The selection is document ids, so a repeated title cannot widen it.
+            selected = [
+                (None, "6f1c2d4e-0000-4000-8000-000000000001"),
+                (None, "6f1c2d4e-0000-4000-8000-000000000002"),
+            ]
             app.on_document_filter_modal_filter_changed(
                 DocumentFilterModal.FilterChanged(selected)
             )
 
             # RAGState.document_filter should be set
             rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
-            expected_filter = build_multi_document_filter(selected)
+            expected_filter = build_document_id_filter(
+                [doc_id for _, doc_id in selected]
+            )
             assert rag_state.document_filter == expected_filter
+            assert rag_state.document_filter is not None
+            assert "LIKE" not in rag_state.document_filter
+            # An unnamed database leaves the question unscoped by source.
+            assert rag_state.sources is None
 
             # The state snapshot should also reflect the change
             assert app._state["rag"]["document_filter"] == expected_filter
+
+
+@pytest.mark.asyncio
+async def test_document_filter_narrows_sources_to_the_selection(temp_db_path: Path):
+    """The filter carries ids, and `sources` restricts the question to the
+    databases the selection names."""
+    from haiku.rag.chat.app import RAG_STATE_NAMESPACE
+    from haiku.rag.chat.widgets.document_filter_modal import DocumentFilterModal
+
+    app, mock_client = _make_app_with_state(temp_db_path)
+
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
+        async with app.run_test():
+            app.on_document_filter_modal_filter_changed(
+                DocumentFilterModal.FilterChanged(
+                    [("alpha", "id-one"), ("alpha", "id-two")]
+                )
+            )
+            rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
+            assert rag_state.sources == ["alpha"]
+
+            app.on_document_filter_modal_filter_changed(
+                DocumentFilterModal.FilterChanged(
+                    [("alpha", "id-one"), ("beta", "id-three")]
+                )
+            )
+            rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
+            assert rag_state.sources == ["alpha", "beta"]
+
+            app.on_document_filter_modal_filter_changed(
+                DocumentFilterModal.FilterChanged([])
+            )
+            rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
+            assert rag_state.sources is None
+            assert rag_state.document_filter is None
 
 
 @pytest.mark.asyncio
@@ -385,11 +530,14 @@ async def test_document_filter_cleared_when_empty(temp_db_path: Path):
 
     app, mock_client = _make_app_with_state(temp_db_path)
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test():
             # First set a filter
             app.on_document_filter_modal_filter_changed(
-                DocumentFilterModal.FilterChanged(["AI Overview"])
+                DocumentFilterModal.FilterChanged([(None, "AI Overview")])
             )
             rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
             assert rag_state.document_filter is not None
@@ -409,7 +557,7 @@ async def test_chat_app_open_failure_surfaces_real_error(tmp_path: Path):
     AttributeError from tearing down a client that never opened."""
     from haiku.rag.chat.app import ChatApp
 
-    app = ChatApp(db_path=tmp_path / "missing.lancedb", capabilities=[])
+    app = ChatApp(scope=for_path(tmp_path / "missing.lancedb"), capabilities=[])
     with pytest.raises(FileNotFoundError):
         async with app.run_test():
             pass
@@ -449,7 +597,10 @@ async def test_a_cancelled_run_does_not_advance_persisted_state(temp_db_path: Pa
         async def __anext__(self):
             raise asyncio.CancelledError
 
-    with patch("haiku.rag.chat.app.HaikuRAG", return_value=mock_client):
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
         async with app.run_test():
             app._state = {
                 "rag": {"evidence": {"question": 0, "latest_evidence_epoch": 0}}
@@ -465,3 +616,744 @@ async def test_a_cancelled_run_does_not_advance_persisted_state(temp_db_path: Pa
 
             assert app._state == before
             assert app._messages == []
+
+
+async def test_visual_grounding_uses_the_database_holding_the_citation(tmp_path):
+    """Chunks, pages and boxes come from one database. Covering a set, the
+    citation's source says which, and a covering client has no repositories."""
+    from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
+    from haiku.rag.store.models import Chunk
+    from haiku.rag.store.models.citation import Citation
+
+    owner = _make_mock_client()
+    owner.source = "beta"
+    owner.get_chunk_by_id.return_value = Chunk(
+        id="c1", document_id="d1", content="cited body"
+    )
+
+    covering = _make_mock_client()
+    covering.covers_multiple = True
+    covering.source_names = ("alpha", "beta")
+    covering.reader_for = AsyncMock(return_value=owner)
+
+    app, _ = _make_app(tmp_path / "unused.lancedb", covering)
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, covering),
+    ):
+        async with app.run_test():
+            history = app.query_one(ChatHistory)
+            await history.add_citations(
+                [
+                    Citation(
+                        chunk_id="c1",
+                        document_id="d1",
+                        document_uri="test://beta/one",
+                        content="cited body",
+                        source="beta",
+                    )
+                ]
+            )
+            widget = next(iter(app.query(CitationWidget)))
+            widget.add_class("selected")
+
+            with patch.object(app, "push_screen", new=AsyncMock()) as push:
+                await app.action_show_visual()
+
+    covering.reader_for.assert_awaited_once_with("beta")
+    owner.get_chunk_by_id.assert_awaited_once_with("c1")
+    assert push.await_args is not None
+    assert push.await_args.args[0].client is owner
+
+
+class TestLendingTheClient:
+    @pytest.mark.asyncio
+    async def test_mounting_lends_its_client_to_every_capability(self, temp_db_path):
+        """Capabilities are built before the client exists, and each reads
+        through the one the app opened."""
+        client = _make_mock_client()
+        app, _ = _make_app(temp_db_path, client)
+
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as stub_rag,
+            _covering_returns(stub_rag, client),
+        ):
+            async with app.run_test():
+                borrowed = [c.borrowed_rag for c in app._capabilities]
+
+        assert borrowed == [client] * len(app._capabilities)
+        assert borrowed
+
+
+class TestDocumentSelectionIdentity:
+    """Two documents can share a title, within a corpus and across databases, so
+    the selection is by id and the label says which database."""
+
+    @pytest.mark.asyncio
+    async def test_a_repeated_title_selects_one_document(self, temp_db_path: Path):
+        from haiku.rag.chat.widgets.document_filter_modal import (
+            DocumentCheckbox,
+            DocumentFilterModal,
+        )
+        from haiku.rag.store.models.document import Document
+
+        client = AsyncMock()
+        client.covers_multiple = True
+        client.source_names = ("arxiv", "wiki")
+        client.list_documents.return_value = [
+            Document(id="id-one", content="", title="Capital region", source="arxiv"),
+            Document(id="id-two", content="", title="Capital region", source="wiki"),
+        ]
+        client.count_documents.return_value = 2
+
+        modal = DocumentFilterModal(client=client)
+        app, _ = _make_app(temp_db_path, client)
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+            _covering_returns(_stub_rag, client),
+        ):
+            async with app.run_test() as pilot:
+                await app.push_screen(modal)
+                await pilot.pause()
+
+                boxes = list(modal.query(DocumentCheckbox))
+                selected_ids = [box.doc_id for box in boxes]
+                assert selected_ids == ["id-one", "id-two"]
+                labels = [str(b.label) for b in boxes]
+                assert "Capital region  (arxiv)" in labels
+                assert "Capital region  (wiki)" in labels
+
+                boxes[0].value = True
+                await pilot.pause()
+                assert modal._selected == {("arxiv", "id-one")}
+
+    @pytest.mark.asyncio
+    async def test_a_shared_id_selects_only_the_named_database_copy(
+        self, temp_db_path: Path
+    ):
+        """Copies of a database share document ids, so a selection carries the
+        database name and checking one copy leaves the other unselected."""
+        from haiku.rag.chat.widgets.document_filter_modal import (
+            DocumentCheckbox,
+            DocumentFilterModal,
+        )
+        from haiku.rag.store.models.document import Document
+
+        client = AsyncMock()
+        client.covers_multiple = True
+        client.source_names = ("alpha", "beta")
+        client.list_documents.return_value = [
+            Document(id="id-x", content="", title="Report", source="alpha"),
+            Document(id="id-x", content="", title="Report", source="beta"),
+        ]
+        client.count_documents.return_value = 2
+
+        modal = DocumentFilterModal(client=client)
+        app, _ = _make_app(temp_db_path, client)
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+            _covering_returns(_stub_rag, client),
+        ):
+            async with app.run_test() as pilot:
+                await app.push_screen(modal)
+                await pilot.pause()
+
+                boxes = list(modal.query(DocumentCheckbox))
+                assert [str(b.label) for b in boxes] == [
+                    "Report  (alpha)",
+                    "Report  (beta)",
+                ]
+
+                boxes[0].value = True
+                await pilot.pause()
+                assert modal._selected == {("alpha", "id-x")}
+
+                await modal._load_documents()
+                rebuilt = list(modal.query(DocumentCheckbox))
+                assert [b.value for b in rebuilt] == [True, False]
+
+    def test_a_label_that_looks_like_markup_is_text(self):
+        from haiku.rag.chat.widgets.document_filter_modal import (
+            DocumentCheckbox,
+            _labelled,
+        )
+        from haiku.rag.store.models.document import Document
+
+        docs = [
+            Document(
+                id="id-one", content="", title="Report [/red]", source="alpha [/x]"
+            )
+        ]
+
+        ((label, source, doc_id),) = _labelled(docs)
+        box = DocumentCheckbox(label, source, doc_id, value=False)
+
+        assert str(box.label) == "Report [/red]  (alpha [/x])"
+
+
+def test_a_citation_title_that_looks_like_markup_is_text():
+    from rich.text import Text
+
+    from haiku.rag.chat.widgets.chat_history import CitationWidget
+    from haiku.rag.store.models.citation import Citation
+
+    citation = Citation(
+        index=1,
+        document_id="doc1",
+        chunk_id="chunk1",
+        document_uri="file:///doc [/blue].pdf",
+        document_title="Report [/red]",
+        headings=["Chapter [/dim]"],
+        content="content",
+        source="alpha [/x]",
+    )
+
+    widget = CitationWidget(citation, include_collection=True)
+
+    title = Text.from_markup(str(widget.title)).plain
+    assert "Report [/red]" in title
+    assert "alpha [/x]" in title
+
+
+class TestRenderingUnattributedPictures:
+    @pytest.mark.asyncio
+    async def test_a_sourceless_picture_citation_does_not_fail_the_answer(
+        self, temp_db_path: Path
+    ):
+        """A citation without a source has no picture owner across databases.
+        It renders with its figure markers."""
+        from haiku.rag.chat.app import RAG_STATE_NAMESPACE
+        from haiku.rag.store.models.citation import Citation
+
+        covering = _make_mock_client()
+        covering.covers_multiple = True
+        covering.source_names = ("alpha", "beta")
+        covering.reader_for = AsyncMock(return_value=None)
+        covering.get_picture_bytes = AsyncMock(
+            side_effect=AssertionError("asked a set for a picture it cannot place")
+        )
+
+        citation = Citation(
+            document_id="d1",
+            chunk_id="c1",
+            content="body",
+            document_uri="test://doc",
+            picture_refs=["#/pictures/0"],
+        )
+
+        app, _ = _make_app(temp_db_path, covering)
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as stub,
+            _covering_returns(stub, covering),
+        ):
+            async with app.run_test() as pilot:
+                app._state[RAG_STATE_NAMESPACE] = {
+                    "citations": ["c1"],
+                    "citation_index": {"c1": citation.model_dump(mode="json")},
+                }
+                from haiku.rag.chat.widgets.chat_history import ChatHistory
+
+                await app._show_citations_and_programs(app.query_one(ChatHistory))
+                await pilot.pause()
+
+        covering.reader_for.assert_awaited_once_with(None)
+        covering.get_picture_bytes.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_one_chunk_id_in_two_collections_keeps_its_own_pictures(
+        self, temp_db_path: Path, monkeypatch
+    ):
+        """Chunk ids repeat between copies of a database, and both capabilities'
+        citations are gathered into one mapping."""
+        from io import BytesIO
+
+        from PIL import Image as PILImage
+
+        from haiku.rag.chat.app import ANALYSIS_STATE_NAMESPACE, RAG_STATE_NAMESPACE
+        from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
+        from haiku.rag.store.models.citation import Citation
+
+        def png(color: str) -> bytes:
+            buffer = BytesIO()
+            PILImage.new("RGB", (4, 4), color).save(buffer, format="PNG")
+            return buffer.getvalue()
+
+        pictures = {"alpha": png("red"), "beta": png("blue")}
+
+        def reader(source):
+            owner = AsyncMock()
+            owner.get_picture_bytes = AsyncMock(return_value=pictures[source])
+            return owner
+
+        covering = _make_mock_client()
+        covering.covers_multiple = True
+        covering.source_names = ("alpha", "beta")
+        covering.reader_for = AsyncMock(side_effect=reader)
+
+        def cited(source: str) -> dict:
+            return Citation(
+                document_id="d1",
+                chunk_id="c1",
+                source=source,
+                content="body",
+                document_uri=f"test://{source}",
+                picture_refs=["#/pictures/0"],
+            ).model_dump(mode="json")
+
+        seen: list[tuple[str | None, list[bytes] | None]] = []
+        build = CitationWidget.__init__
+
+        def capture(self, citation, picture_bytes=None, **kwargs):
+            seen.append((citation.source, picture_bytes))
+            build(self, citation, picture_bytes, **kwargs)
+
+        monkeypatch.setattr(CitationWidget, "__init__", capture)
+
+        app, _ = _make_app(temp_db_path, covering)
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as stub,
+            _covering_returns(stub, covering),
+        ):
+            async with app.run_test() as pilot:
+                app._state[RAG_STATE_NAMESPACE] = {
+                    "citations": ["c1"],
+                    "citation_index": {"c1": cited("alpha")},
+                }
+                app._state[ANALYSIS_STATE_NAMESPACE] = {
+                    "citations": ["c1"],
+                    "citation_index": {"c1": cited("beta")},
+                }
+
+                await app._show_citations_and_programs(app.query_one(ChatHistory))
+                await pilot.pause()
+
+        assert seen == [
+            ("alpha", [pictures["alpha"]]),
+            ("beta", [pictures["beta"]]),
+        ]
+
+
+class TestNamingACitationsCollection:
+    @staticmethod
+    async def _titles(temp_db_path, covering, *sources: str | None) -> list[str]:
+        """The collapsed titles of one citation per source, all named alike."""
+        from haiku.rag.chat.app import RAG_STATE_NAMESPACE
+        from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
+        from haiku.rag.store.models.citation import Citation
+
+        index = {
+            f"c{position}": Citation(
+                document_id=f"d{position}",
+                chunk_id=f"c{position}",
+                source=source,
+                content="body",
+                document_uri="test://report",
+                document_title="Quarterly report",
+            ).model_dump(mode="json")
+            for position, source in enumerate(sources)
+        }
+
+        app, _ = _make_app(temp_db_path, covering)
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as stub,
+            _covering_returns(stub, covering),
+        ):
+            async with app.run_test() as pilot:
+                app._state[RAG_STATE_NAMESPACE] = {
+                    "citations": list(index),
+                    "citation_index": index,
+                }
+                await app._show_citations_and_programs(app.query_one(ChatHistory))
+                await pilot.pause()
+                return [str(w.title) for w in app.query(CitationWidget)]
+
+    @pytest.mark.asyncio
+    async def test_one_title_in_two_collections_reads_as_two_citations(
+        self, temp_db_path: Path
+    ):
+        covering = _make_mock_client()
+        covering.covers_multiple = True
+        covering.source_names = ("alpha", "beta")
+
+        titles = await self._titles(temp_db_path, covering, "alpha", "beta")
+
+        assert len(set(titles)) == 2
+        assert "alpha" in titles[0]
+        assert "beta" in titles[1]
+
+    @pytest.mark.asyncio
+    async def test_one_named_database_is_not_named_on_its_citations(
+        self, temp_db_path: Path
+    ):
+        covering = _make_mock_client()
+        covering.covers_multiple = False
+        covering.source_names = ("alpha",)
+
+        [title] = await self._titles(temp_db_path, covering, "alpha")
+
+        assert "alpha" not in title
+
+
+class TestKeepingSelectionsReachable:
+    """A selection applies whether or not the page shows it, and a checkbox is
+    the only way to remove one."""
+
+    @pytest.mark.asyncio
+    async def test_every_selection_is_reachable_and_the_page_stays_bounded(
+        self, temp_db_path: Path
+    ):
+        """Selections accumulate across searches and get their own listing,
+        paged the same way."""
+        from textual.widgets import Button, Static
+
+        from haiku.rag.chat.widgets.document_filter_modal import (
+            DOCUMENT_PAGE,
+            DocumentCheckbox,
+            DocumentFilterModal,
+        )
+        from haiku.rag.store.models.document import Document
+
+        picked = [
+            Document(id=f"sel-{i:04d}", content="", title=f"Selected {i:04d}")
+            for i in range(DOCUMENT_PAGE + 20)
+        ]
+        by_id = {d.id: d for d in picked}
+        matched = [
+            Document(id=f"hit-{i}", content="", title=f"Hit {i}") for i in range(5)
+        ]
+
+        client = AsyncMock()
+        client.covers_multiple = False
+        client.source_names = ()
+        client.count_documents.return_value = 5
+
+        async def listing(limit=None, offset=0, filter=None):
+            if filter and filter.startswith("id IN"):
+                ids = filter[len("id IN (") : -1].replace("'", "").split(", ")
+                return [by_id[i] for i in ids]
+            return matched
+
+        client.list_documents.side_effect = listing
+
+        modal = DocumentFilterModal(
+            client=client, selected=[(None, d.id or "") for d in picked]
+        )
+        app, _ = _make_app(temp_db_path, client)
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as stub,
+            _covering_returns(stub, client),
+        ):
+            async with app.run_test() as pilot:
+                await app.push_screen(modal)
+                await pilot.pause()
+
+                # Results are the results: selections are not appended to them.
+                assert len(list(modal.query(DocumentCheckbox))) == len(matched)
+
+                await modal.on_button_pressed(
+                    Button.Pressed(modal.query_one("#selected-btn", Button))
+                )
+                await pilot.pause()
+                first = [b.doc_id for b in modal.query(DocumentCheckbox)]
+                footer = str(modal.query_one("#filter-footer", Static).content)
+
+                await modal.on_button_pressed(
+                    Button.Pressed(modal.query_one("#next-btn", Button))
+                )
+                await pilot.pause()
+                second = [b.doc_id for b in modal.query(DocumentCheckbox)]
+
+        assert len(first) == DOCUMENT_PAGE
+        assert "page 1 of 2" in footer
+        # The rest are on the next page, so every selection can be removed.
+        assert len(second) == 20
+        assert set(first) | set(second) == {d.id for d in picked}
+
+    @pytest.mark.asyncio
+    async def test_deselecting_updates_the_selected_listing(self, temp_db_path: Path):
+        """The listing is the selection, so removing one changes what it holds
+        and how far it runs. Its last page can stop existing."""
+        from textual.widgets import Button, Checkbox, Static
+
+        from haiku.rag.chat.widgets.document_filter_modal import (
+            DOCUMENT_PAGE,
+            DocumentCheckbox,
+            DocumentFilterModal,
+        )
+        from haiku.rag.store.models.document import Document
+
+        picked = [
+            Document(id=f"sel-{i:04d}", content="", title=f"Selected {i:04d}")
+            for i in range(DOCUMENT_PAGE + 1)
+        ]
+        by_id = {d.id: d for d in picked}
+
+        client = AsyncMock()
+        client.covers_multiple = False
+        client.source_names = ()
+        client.count_documents.return_value = 0
+
+        async def listing(limit=None, offset=0, filter=None):
+            if filter and filter.startswith("id IN"):
+                ids = filter[len("id IN (") : -1].replace("'", "").split(", ")
+                return [by_id[i] for i in ids]
+            return []
+
+        client.list_documents.side_effect = listing
+
+        modal = DocumentFilterModal(
+            client=client, selected=[(None, d.id or "") for d in picked]
+        )
+        app, _ = _make_app(temp_db_path, client)
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as stub,
+            _covering_returns(stub, client),
+        ):
+            async with app.run_test() as pilot:
+                await app.push_screen(modal)
+                await pilot.pause()
+                await modal.on_button_pressed(
+                    Button.Pressed(modal.query_one("#selected-btn", Button))
+                )
+                await pilot.pause()
+                await modal.on_button_pressed(
+                    Button.Pressed(modal.query_one("#next-btn", Button))
+                )
+                await pilot.pause()
+
+                [only] = list(modal.query(DocumentCheckbox))
+                assert only.doc_id == "sel-0200"
+                # Awaited directly: the handler reads the database, and a
+                # single pause need not have flushed it.
+                await modal.on_checkbox_changed(Checkbox.Changed(only, False))
+                await pilot.pause()
+
+                remaining = [b.doc_id for b in modal.query(DocumentCheckbox)]
+                footer = str(modal.query_one("#filter-footer", Static).content)
+
+        # The row is gone from the listing, not merely unchecked.
+        assert "sel-0200" not in remaining
+        assert len(remaining) == DOCUMENT_PAGE
+        assert modal._selected == {(None, d.id) for d in picked} - {(None, "sel-0200")}
+        # The page it was on no longer exists, so the modal does not report it.
+        assert modal._page == 0
+        assert "page" not in footer
+        assert f"[bold]{DOCUMENT_PAGE}[/bold] document(s) selected" in footer
+
+    @pytest.mark.asyncio
+    async def test_the_results_listing_pages_too(self, temp_db_path: Path):
+        """More documents match than one page holds; the rest are a page
+        away."""
+        from textual.widgets import Button
+
+        from haiku.rag.chat.widgets.document_filter_modal import (
+            DOCUMENT_PAGE,
+            DocumentFilterModal,
+        )
+        from haiku.rag.store.models.document import Document
+
+        client = AsyncMock()
+        client.covers_multiple = False
+        client.source_names = ()
+        client.count_documents.return_value = DOCUMENT_PAGE * 2
+        client.list_documents.return_value = [
+            Document(id="d1", content="", title="One")
+        ]
+
+        modal = DocumentFilterModal(client=client)
+        app, _ = _make_app(temp_db_path, client)
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as stub,
+            _covering_returns(stub, client),
+        ):
+            async with app.run_test() as pilot:
+                await app.push_screen(modal)
+                await pilot.pause()
+                assert client.list_documents.await_args.kwargs["offset"] == 0
+
+                await modal.on_button_pressed(
+                    Button.Pressed(modal.query_one("#next-btn", Button))
+                )
+                await pilot.pause()
+
+        assert client.list_documents.await_args.kwargs["offset"] == DOCUMENT_PAGE
+
+    @pytest.mark.asyncio
+    async def test_a_search_matching_nothing_says_so(self, temp_db_path: Path):
+        """An empty list is indistinguishable from one still loading."""
+        from textual.widgets import Static
+
+        from haiku.rag.chat.widgets.document_filter_modal import DocumentFilterModal
+
+        client = AsyncMock()
+        client.covers_multiple = False
+        client.source_names = ()
+        client.list_documents.return_value = []
+        client.count_documents.return_value = 0
+
+        modal = DocumentFilterModal(client=client)
+        app, _ = _make_app(temp_db_path, client)
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as stub,
+            _covering_returns(stub, client),
+        ):
+            async with app.run_test() as pilot:
+                await app.push_screen(modal)
+                await pilot.pause()
+
+                empty = modal.query_one("#filter-empty", Static)
+                assert "No documents match" in str(empty.content)
+
+    @pytest.mark.asyncio
+    async def test_typing_without_submitting_leaves_the_listing_alone(
+        self, temp_db_path: Path
+    ):
+        """The listing is what the last submitted search asked for, and it
+        pages. The term applies on enter, and the footer says so until then.
+        """
+        from textual.widgets import Button, Input, Static
+
+        from haiku.rag.chat.widgets.document_filter_modal import (
+            DOCUMENT_PAGE,
+            DocumentCheckbox,
+            DocumentFilterModal,
+        )
+        from haiku.rag.store.models.document import Document
+
+        client = AsyncMock()
+        client.covers_multiple = False
+        client.source_names = ()
+        client.list_documents.return_value = [
+            Document(id="id-one", content="", title="Capital region"),
+            Document(id="id-two", content="", title="Nobel laureates"),
+        ]
+        client.count_documents.return_value = DOCUMENT_PAGE * 2
+
+        modal = DocumentFilterModal(client=client)
+        app, _ = _make_app(temp_db_path, client)
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as stub,
+            _covering_returns(stub, client),
+        ):
+            async with app.run_test() as pilot:
+                await app.push_screen(modal)
+                await pilot.pause()
+                footer = modal.query_one("#filter-footer", Static)
+                assert "press enter to search" not in str(footer.content)
+
+                search = modal.query_one("#filter-search", Input)
+                search.value = "nobel"
+                modal.on_input_changed(Input.Changed(search, "nobel"))
+
+                assert "press enter to search" in str(footer.content)
+                assert all(box.display for box in modal.query(DocumentCheckbox))
+
+                await modal.on_button_pressed(
+                    Button.Pressed(modal.query_one("#next-btn", Button))
+                )
+                await pilot.pause()
+
+                paged = client.list_documents.await_args.kwargs
+                assert paged["offset"] == DOCUMENT_PAGE
+                assert paged["filter"] is None
+                assert "press enter to search" in str(footer.content)
+
+                await modal.on_input_submitted(Input.Submitted(search, search.value))
+                await pilot.pause()
+
+                submitted = client.list_documents.await_args.kwargs
+                assert submitted["offset"] == 0
+                assert "nobel" in submitted["filter"]
+                assert "press enter to search" not in str(footer.content)
+
+
+class TestDocumentSearchFilter:
+    """The filter modal shows one page and asks the database for the rest, so the
+    typed term reaches SQL."""
+
+    def test_no_term_means_no_filter(self):
+        from haiku.rag.chat.widgets.document_filter_modal import search_filter
+
+        assert search_filter("   ") is None
+
+    def test_a_term_matches_titles_and_uris(self):
+        from haiku.rag.chat.widgets.document_filter_modal import search_filter
+
+        built = search_filter("Nobel")
+
+        assert built == (
+            "LOWER(title) LIKE '%nobel%' ESCAPE '\\' "
+            "OR LOWER(uri) LIKE '%nobel%' ESCAPE '\\'"
+        )
+
+    def test_the_search_is_case_insensitive(self):
+        """LIKE is case-sensitive, so both sides are lowered."""
+        from haiku.rag.chat.widgets.document_filter_modal import search_filter
+
+        built = search_filter("NoBeL")
+
+        assert built is not None
+        assert "LOWER(title) LIKE '%nobel%'" in built
+        assert "LOWER(uri) LIKE '%nobel%'" in built
+
+    def test_like_wildcards_in_the_term_are_literal(self):
+        """A term is text to find, not a pattern: `_` matches any character."""
+        from haiku.rag.chat.widgets.document_filter_modal import search_filter
+
+        built = search_filter("100%_raw")
+
+        assert built is not None
+        assert "100\\%\\_raw" in built
+        assert "ESCAPE '\\'" in built
+
+    def test_a_quote_in_the_term_is_escaped(self):
+        """Whatever was typed is data, not syntax."""
+        from haiku.rag.chat.widgets.document_filter_modal import search_filter
+
+        built = search_filter("O'Brien")
+
+        assert built is not None
+        assert "o''brien" in built
+
+    @pytest.mark.asyncio
+    async def test_submitting_a_search_reloads_the_page(self, temp_db_path: Path):
+        """The typed term reaches the database and replaces what is shown."""
+        from textual.widgets import Input
+
+        from haiku.rag.chat.widgets.document_filter_modal import (
+            DocumentCheckbox,
+            DocumentFilterModal,
+        )
+        from haiku.rag.store.models.document import Document
+
+        client = AsyncMock()
+        client.covers_multiple = False
+        client.source_names = ()
+        client.list_documents.return_value = [
+            Document(id="id-one", content="", title="Capital region"),
+            Document(id="id-two", content="", title="Nobel laureates"),
+        ]
+        client.count_documents.return_value = 2
+
+        modal = DocumentFilterModal(client=client)
+        app, _ = _make_app(temp_db_path, client)
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+            _covering_returns(_stub_rag, client),
+        ):
+            async with app.run_test() as pilot:
+                await app.push_screen(modal)
+                await pilot.pause()
+                assert len(list(modal.query(DocumentCheckbox))) == 2
+
+                client.list_documents.return_value = [
+                    Document(id="id-two", content="", title="Nobel laureates"),
+                ]
+                client.count_documents.return_value = 1
+                await modal.on_input_submitted(Input.Submitted(Input(), "Nobel"))
+                await pilot.pause()
+
+                assert client.list_documents.await_args is not None
+                assert "nobel" in client.list_documents.await_args.kwargs["filter"]
+                labels = [str(b.label) for b in modal.query(DocumentCheckbox)]
+                assert labels == ["Nobel laureates"]

@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 from haiku.rag.capabilities._base import (
     EvidenceState,
     RAGCapabilityBase,
-    resolve_db_path,
+    resolve_scope,
 )
 from haiku.rag.config.models import AppConfig
 
@@ -29,6 +29,9 @@ STATE_NAMESPACE = "rag"
 _CAPABILITY_ID = "haiku-rag"
 _TOOL_NAMES = frozenset({"rag_search", "rag_cite"})
 _instructions_path = Path(__file__).parent / "instructions" / "rag.md"
+_multiple_collections_path = (
+    Path(__file__).parent / "instructions" / "rag_multiple_collections.md"
+)
 
 
 class RAGState(EvidenceState):
@@ -38,6 +41,12 @@ class RAGState(EvidenceState):
 @cache
 def instructions() -> str:
     return _instructions_path.read_text().strip()
+
+
+@cache
+def multiple_collections_instructions() -> str:
+    """Appended for a run that spans more than one collection."""
+    return _multiple_collections_path.read_text().rstrip()
 
 
 @dataclass
@@ -105,13 +114,15 @@ def create_capability(
         from haiku.rag.config import get_config
 
         config = get_config()
+    scope = resolve_scope(db_path, config)
     return RAGCapability(
-        db_path=resolve_db_path(db_path, config),
+        scope=scope,
         config=config,
         borrowed_rag=rag,
         state_type=RAGState,
         state_namespace=STATE_NAMESPACE,
         instruction_text=instructions(),
+        collection_instructions=multiple_collections_instructions(),
         vision=config.qa.model.vision if vision is None else vision,
         tool_names=_TOOL_NAMES,
         request_limit=request_limit,

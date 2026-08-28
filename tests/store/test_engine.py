@@ -4,6 +4,31 @@ from haiku.rag.store.engine import Store
 from haiku.rag.store.info import get_database_stats
 
 
+class TestStoredSettings:
+    @pytest.mark.asyncio
+    async def test_a_new_database_carries_the_version_it_was_created_with(
+        self, temp_db_path
+    ):
+        """Creating writes the settings row, and the store reports it."""
+        from importlib import metadata
+
+        async with Store(temp_db_path, create=True) as store:
+            assert store.stored_settings["version"] == metadata.version(
+                "haiku.rag-slim"
+            )
+
+    @pytest.mark.asyncio
+    async def test_an_existing_database_carries_its_stored_settings(self, temp_db_path):
+        """Read once on open: reporting on a database reads them from
+        here."""
+        async with Store(temp_db_path, create=True) as store:
+            written = store.stored_settings
+
+        async with Store(temp_db_path) as store:
+            assert store.stored_settings == written
+            assert store.stored_settings["embeddings"]["model"]["vector_dim"] > 0
+
+
 class TestGetDatabaseStats:
     @pytest.mark.asyncio
     async def test_empty_database_stats(self, temp_db_path):

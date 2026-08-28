@@ -1,5 +1,38 @@
 # Changelog
+
 ## [Unreleased]
+
+### Added
+
+- `lancedb.databases` configures a named set of local or remote databases.
+  `search`, `ask` and `analyze` accept a `sources` subset; results, documents and
+  citations carry the originating database in `source`, and model context names
+  it as `Collection:` when a search spans more than one. Candidates are combined
+  with the configured reranker, or reciprocal rank fusion when reranking is
+  disabled. Operations that need one database raise `AmbiguousDatabaseError`, an
+  unknown name raises `UnknownDatabaseError`, and a cited chunk ID retrieved from
+  or previously cited from more than one selected database raises
+  `AmbiguousCitationError`. An unavailable configured database raises
+  `SourceUnavailableError`, which names the database and not its location.
+- `haiku-rag search`, `ask`, `analyze` and `chat` cover a configured set.
+  Commands that access one database select it with `--db-name NAME` or
+  `--db PATH`.
+- `HaikuRAG.aclose()` releases a client whatever it covers. `close()` remains
+  limited to clients covering one database.
+
+### Fixed
+
+- `haiku-rag settings` prints YAML.
+- The chat document filter pages results and lists the selected separately.
+  Selection is by document ID and database, and a typed search applies on enter.
+- `haiku-rag list` prints only the fields a document has.
+- `haiku-rag` and `haiku-ingester` exit with a message on an embedder mismatch.
+- Capabilities created without a client honor `lancedb.uri`.
+- A `lancedb.uri` without a scheme is treated as a local path. `--db PATH`
+  overrides it.
+- Inspector search results mark truncated previews with an ellipsis.
+- Document titles, URIs, headings and database names render as text, not Rich
+  markup, in `search` output, chat citations and the chat document filter.
 
 ## [0.78.0] - 2026-08-24
 

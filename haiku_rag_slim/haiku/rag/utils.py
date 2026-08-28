@@ -1,5 +1,7 @@
+import asyncio
 import math
 import sys
+from collections.abc import Awaitable
 from importlib import metadata
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn, cast
@@ -14,6 +16,22 @@ if TYPE_CHECKING:
     from haiku.rag.client import HaikuRAG
     from haiku.rag.config.models import AppConfig, EmbeddingModelConfig, ModelConfig
     from haiku.rag.store.models.citation import Citation
+
+
+async def gather_all[T](*awaitables: Awaitable[T]) -> list[T]:
+    """Run `awaitables` concurrently, leaving none of them running when one fails.
+
+    `asyncio.gather` leaves its siblings running; `TaskGroup` wraps the failure in
+    an `ExceptionGroup`.
+    """
+    tasks = [asyncio.ensure_future(awaitable) for awaitable in awaitables]
+    try:
+        return await asyncio.gather(*tasks)
+    except BaseException:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
 
 
 def parse_model_option(value: str) -> "ModelConfig":
@@ -362,15 +380,24 @@ def format_citations(citations: "list[Citation]") -> str:
     return "\n".join(lines)
 
 
+def truncated(text: str, limit: int) -> str:
+    """The first `limit` characters of `text`, with `…` appended when anything
+    was dropped. A cut result is `limit` characters plus the mark."""
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "…"
+
+
 async def format_citations_rich(
     citations: "list[Citation]",
     client: "HaikuRAG | None" = None,
 ) -> "list[RenderableType]":
     """Format citations as Rich renderables for terminal display.
 
-    Each citation becomes a Panel with a compact header (``[N] Title (URI) — locator``),
-    a body holding any referenced figures followed by a truncated text preview, and
-    a dimmed footer that exposes the document and chunk IDs.
+    Each citation becomes a Panel with a compact header (``[N] Title (URI) —
+    locator``, with the database name before the locator when ``client`` covers
+    several), a body holding any referenced figures followed by a truncated text
+    preview, and a dimmed footer that exposes the document and chunk IDs.
 
     When ``client`` is supplied, picture bytes for ``picture_refs`` are fetched and
     rendered inline via ``textual_image``. Without a client, picture refs appear as
@@ -394,6 +421,8 @@ async def format_citations_rich(
         idx = c.index if c.index is not None else (i + 1)
 
         header_parts: list[str] = [f"[{idx}] {_citation_label(c)}"]
+        if c.source and client is not None and client.covers_multiple:
+            header_parts.append(c.source)
         pages = _citation_pages(c)
         if pages:
             header_parts.append(pages)
@@ -404,17 +433,16 @@ async def format_citations_rich(
 
         body: list[RenderableType] = []
         for ref in c.picture_refs:
-            image_renderable = await _render_picture(client, c.document_id, ref)
+            image_renderable = await _render_picture(
+                client, c.document_id, ref, c.source
+            )
             body.append(
                 image_renderable
                 if image_renderable
                 else Text(f"[Figure: {ref}]", style="italic dim")
             )
 
-        preview = c.content
-        if len(preview) > CITATION_PREVIEW_CHARS:
-            preview = preview[:CITATION_PREVIEW_CHARS].rstrip() + "…"
-        body.append(Text(preview))
+        body.append(Text(truncated(c.content, CITATION_PREVIEW_CHARS)))
 
         footer = Text()
         footer.append("doc: ", style="dim")
@@ -436,17 +464,23 @@ async def format_citations_rich(
 
 
 async def _render_picture(
-    client: "HaikuRAG | None", document_id: str, ref: str
+    client: "HaikuRAG | None", document_id: str, ref: str, source: str | None = None
 ) -> "RenderableType | None":
-    """Fetch a picture and return a Rich renderable, or None on failure/no client."""
+    """A picture as a Rich renderable, or None where it cannot be rendered.
+
+    None where no client, no source to place it across databases, or bytes that
+    do not decode. The caller renders its figure marker instead.
+    """
     if client is None:
+        return None
+    if source is None and client.covers_multiple:
         return None
     from io import BytesIO
 
     from PIL import Image as PILImage
     from textual_image.renderable import Image as RichImage
 
-    data = await client.document_item_repository.get_picture_bytes(document_id, ref)
+    data = await client.get_picture_bytes(document_id, ref, source)
     if not data:
         return None
     try:
@@ -470,6 +504,19 @@ def raise_missing_extra(module: str, extra: str, exc: ModuleNotFoundError) -> No
         f"{module} is not installed. Install it with "
         f"`uv pip install 'haiku.rag-slim[{extra}]'`."
     ) from exc
+
+
+def locate_database(location: str) -> tuple[str, Path | None]:
+    """Split a configured location into (uri, db_path).
+
+    A value with a scheme is a `lancedb.uri`; anything else is a local path.
+    `ConnectionMode` classifies a `uri` as object storage and opens it without
+    the existence check a local database gets, so a local path never travels
+    as one.
+    """
+    if "://" in location:
+        return location, None
+    return "", Path(location)
 
 
 def get_default_data_dir() -> Path:

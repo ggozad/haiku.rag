@@ -1,3 +1,6 @@
+from haiku.rag.utils import escape_sql_string
+
+
 def _build_document_filter(document_name: str) -> str:
     """Build SQL filter for document name matching.
 
@@ -10,6 +13,18 @@ def _build_document_filter(document_name: str) -> str:
         f"LOWER(uri) LIKE LOWER('%{escaped}%') OR LOWER(title) LIKE LOWER('%{escaped}%') "
         f"OR LOWER(uri) LIKE LOWER('%{no_spaces}%') OR LOWER(title) LIKE LOWER('%{no_spaces}%')"
     )
+
+
+def build_document_id_filter(document_ids: list[str]) -> str | None:
+    """SQL filter matching exactly these documents, or None for an empty list.
+
+    Ids repeat only between copies of a database, where the same id names the
+    same document in each.
+    """
+    if not document_ids:
+        return None
+    ids = ", ".join(f"'{escape_sql_string(i)}'" for i in document_ids)
+    return f"id IN ({ids})"
 
 
 def build_multi_document_filter(document_names: list[str]) -> str | None:

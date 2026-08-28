@@ -3,6 +3,7 @@
 # Stop after:
 #   docker compose -f tests/docker/docker-compose.yml down -v
 
+from contextlib import asynccontextmanager
 from uuid import uuid4
 
 import obstore
@@ -10,9 +11,10 @@ import pytest
 
 from haiku.rag.app import HaikuRAGApp
 from haiku.rag.client import HaikuRAG
+from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.config.models import AppConfig, LanceDBConfig
 from haiku.rag.s3 import make_s3_store
-from haiku.rag.store.engine import Store
+from haiku.rag.store.engine import ConnectionMode, Store
 from tests.services import reachable
 
 S3_ENDPOINT = "http://localhost:8333"
@@ -63,6 +65,26 @@ def config():
         obstore.delete(store, paths)
 
 
+def _remote_scope(config: AppConfig) -> DatabaseScope:
+    """The configured S3 database.
+
+    These tests name no path, and the assertion pins that the scope resolved to
+    the URI.
+    """
+    scope = DatabaseScope.resolve(config)
+    [ref] = scope.databases
+    assert ref.db_path is None and ref.uri.startswith("s3://")
+    return scope
+
+
+@asynccontextmanager
+async def _remote_client(config: AppConfig):
+    """A client on the configured S3 database, asserting it went there."""
+    async with HaikuRAG(config=config, create=True) as rag:
+        assert rag.store._connection_mode is ConnectionMode.OBJECT_STORAGE
+        yield rag
+
+
 @pytest.mark.asyncio
 async def test_store_connect_and_create(tmp_path, config):
     from haiku.rag.store.info import get_database_stats
@@ -93,8 +115,8 @@ async def test_store_add_document(tmp_path, config):
 
 
 @pytest.mark.asyncio
-async def test_client_create_document(tmp_path, config):
-    async with HaikuRAG(tmp_path / "unused", config=config, create=True) as rag:
+async def test_client_create_document(config):
+    async with _remote_client(config) as rag:
         doc = await rag.create_document(
             "Python is a programming language.", uri="test://python"
         )
@@ -103,8 +125,8 @@ async def test_client_create_document(tmp_path, config):
 
 
 @pytest.mark.asyncio
-async def test_client_list_documents(tmp_path, config):
-    async with HaikuRAG(tmp_path / "unused", config=config, create=True) as rag:
+async def test_client_list_documents(config):
+    async with _remote_client(config) as rag:
         await rag.create_document("First document.", uri="test://first")
         await rag.create_document("Second document.", uri="test://second")
 
@@ -113,8 +135,8 @@ async def test_client_list_documents(tmp_path, config):
 
 
 @pytest.mark.asyncio
-async def test_client_search(tmp_path, config):
-    async with HaikuRAG(tmp_path / "unused", config=config, create=True) as rag:
+async def test_client_search(config):
+    async with _remote_client(config) as rag:
         await rag.create_document(
             "The Eiffel Tower is located in Paris, France.", uri="test://eiffel"
         )
@@ -124,8 +146,8 @@ async def test_client_search(tmp_path, config):
 
 
 @pytest.mark.asyncio
-async def test_client_delete_document(tmp_path, config):
-    async with HaikuRAG(tmp_path / "unused", config=config, create=True) as rag:
+async def test_client_delete_document(config):
+    async with _remote_client(config) as rag:
         doc = await rag.create_document("Temporary document.", uri="test://temp")
         await rag.delete_document(doc.id)
         docs = await rag.list_documents()
@@ -133,11 +155,11 @@ async def test_client_delete_document(tmp_path, config):
 
 
 @pytest.mark.asyncio
-async def test_app_info(tmp_path, capsys, config):
-    async with HaikuRAG(tmp_path / "unused", config=config, create=True) as rag:
+async def test_app_info(capsys, config):
+    async with _remote_client(config) as rag:
         await rag.create_document("Info test document.", uri="test://info")
 
-    app = HaikuRAGApp(db_path=tmp_path / "unused", config=config)
+    app = HaikuRAGApp(scope=_remote_scope(config), config=config)
     await app.info()
 
     out = capsys.readouterr().out
@@ -147,8 +169,8 @@ async def test_app_info(tmp_path, capsys, config):
 
 
 @pytest.mark.asyncio
-async def test_app_info_empty_db(tmp_path, capsys, config):
-    app = HaikuRAGApp(db_path=tmp_path / "unused", config=config)
+async def test_app_info_empty_db(capsys, config):
+    app = HaikuRAGApp(scope=_remote_scope(config), config=config)
     await app.info()
 
     out = capsys.readouterr().out

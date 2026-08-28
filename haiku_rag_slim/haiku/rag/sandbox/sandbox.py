@@ -4,7 +4,7 @@ import os
 from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
-from pathlib import Path
+from itertools import zip_longest
 from typing import TYPE_CHECKING, Any, Literal
 
 import pydantic_monty
@@ -20,11 +20,13 @@ from haiku.rag.config.models import AppConfig
 from haiku.rag.sandbox.dependencies import AnalysisContext
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX, DocumentItem
+from haiku.rag.utils import gather_all
 
 if TYPE_CHECKING:
-    from pathlib import PurePosixPath
+    from pathlib import Path, PurePosixPath
 
     from haiku.rag.client import HaikuRAG
+    from haiku.rag.client.scope import DatabaseScope
 
 
 @dataclass
@@ -122,7 +124,7 @@ class Sandbox:
 
     The session persists across ``execute()`` calls within the same Sandbox
     instance — variables carry over. Call ``close()`` to return the worker to
-    the pool and shut the pool down.
+    the pool, shut the pool down and release any held connection.
 
         sandbox = Sandbox(db_path, config, context)
         result = await sandbox.execute("x = await search('query')")
@@ -133,20 +135,23 @@ class Sandbox:
     file callbacks are synchronous and run off that loop while ``feed_run`` is
     awaited, so they bridge back to it via ``run_coroutine_threadsafe`` without
     deadlocking. When a ``rag`` connection is supplied it is used for every read,
-    so an analysis run drives a single connection on a single loop; otherwise
-    each read opens an ephemeral read-only connection.
+    so an analysis run drives a single connection on a single loop. Otherwise a
+    scope covering several databases opens a federated client once and holds it
+    until ``close()``, and a single database is opened per read.
     """
 
-    _db_path: Path
+    _scope: "DatabaseScope"
     _config: AppConfig
     _context: AnalysisContext
     _rag: "HaikuRAG | None"
+    _owners: dict[str, "HaikuRAG"]
     _lock: "asyncio.Lock | None"
     _search_results: "list[SearchResult]"
     _doc_items: dict[str, list["DocumentItem"]]
     _doc_chunk_index: dict[str, dict[str, list[str]]]
     _items_jsonl_cache: dict[str, str]
     _toc_json_cache: dict[str, str]
+    _opened: "HaikuRAG | None"
     _pool: AsyncMonty | None
     _session: AsyncMontySession | None
     _vfs: OSAccess | None
@@ -155,16 +160,57 @@ class Sandbox:
 
     def __init__(
         self,
-        db_path: Path,
+        db_path: "Path | str | None",
         config: AppConfig,
         context: AnalysisContext,
         rag: "HaikuRAG | None" = None,
         lock: "asyncio.Lock | None" = None,
     ):
-        self._db_path = db_path
+        from haiku.rag.client.scope import DatabaseScope
+
+        self._configure(
+            DatabaseScope.resolve(config, database_path=db_path),
+            config,
+            context,
+            rag,
+            lock,
+        )
+
+    @classmethod
+    def _covering(
+        cls,
+        scope: "DatabaseScope",
+        config: AppConfig,
+        context: AnalysisContext,
+        rag: "HaikuRAG | None" = None,
+        lock: "asyncio.Lock | None" = None,
+    ) -> "Sandbox":
+        """A sandbox over databases someone already resolved.
+
+        Internal: the public constructor takes a path and resolves it, which is
+        its own job. This is for callers that did the resolving, as
+        ``HaikuRAG._covering`` is. It bypasses ``__init__``: the scope it is
+        handed is the only one resolved.
+        """
+        sandbox = cls.__new__(cls)
+        sandbox._configure(scope, config, context, rag, lock)
+        return sandbox
+
+    def _configure(
+        self,
+        scope: "DatabaseScope",
+        config: AppConfig,
+        context: AnalysisContext,
+        rag: "HaikuRAG | None",
+        lock: "asyncio.Lock | None",
+    ) -> None:
+        """The state every sandbox starts with, however its scope was reached."""
+        self._scope = scope
         self._config = config
         self._context = context
         self._rag = rag
+        self._opened = None
+        self._owners = {}
         self._lock = lock
         self._search_results = []
         self._doc_items = {}
@@ -178,10 +224,24 @@ class Sandbox:
         self._deadline = None
 
     @asynccontextmanager
-    async def _connection(self) -> "AsyncIterator[HaikuRAG]":
-        """Yield the shared connection (serialized by the lock), or an ephemeral
-        read-only one. The lock guards the whole block so a read's awaits cannot
-        interleave with another task's operation on the same connection."""
+    async def _connection(
+        self, owner: "HaikuRAG | None" = None
+    ) -> "AsyncIterator[HaikuRAG]":
+        """Yield the shared connection, or an ephemeral read-only one.
+
+        The lock, where there is one, is held for the block: what a caller does
+        to the shared connection is serialized against the capability's own tool
+        calls, since both hold that client. It guards that connection and not
+        the databases underneath, which have their own locks.
+
+        `owner` is the client holding one document, for the reads addressed to a
+        single document. The shared connection covers a set of databases and has
+        no repositories of its own, so those reads have to name their owner. An
+        owner is a session of its own, so it is yielded unserialized.
+        """
+        if owner is not None:
+            yield owner
+            return
         if self._rag is not None:
             if self._lock is not None:
                 async with self._lock:
@@ -189,10 +249,67 @@ class Sandbox:
             else:
                 yield self._rag
             return
+        if self._scope.covers_multiple:
+            yield await self._open_connection()
+            return
         from haiku.rag.client import HaikuRAG
 
-        async with HaikuRAG(self._db_path, config=self._config, read_only=True) as rag:
+        async with HaikuRAG._covering(self._scope, self._config, read_only=True) as rag:
             yield rag
+
+    async def _open_connection(self) -> "HaikuRAG":
+        """Open and retain a federated client for owner-backed reads."""
+        if self._opened is None:
+            from haiku.rag.client import HaikuRAG
+
+            self._opened = HaikuRAG._covering(self._scope, self._config, read_only=True)
+            await self._opened.__aenter__()
+        return self._opened
+
+    async def _documents(self) -> "tuple[list[Any], dict[str, HaikuRAG]]":
+        """Every document in scope, and the client holding each of them.
+
+        Owners are empty where one connection serves every read. The selection
+        resolves as a search resolves it, so a database the question excluded
+        cannot be mounted.
+        """
+        async with self._connection() as rag:
+            if not rag.covers_multiple:
+                if not await rag.clients_covering(self._context.sources):
+                    return [], {}
+                docs = await rag.list_documents(filter=self._context.filter)
+                return docs, {}
+            owners = await rag.clients_covering(self._context.sources)
+        # Resolve owners under the shared-client lock; owner sessions perform
+        # reads independently.
+        groups = await gather_all(
+            *(owner.list_documents(filter=self._context.filter) for owner in owners)
+        )
+        # Interleaved: a truncated listing still shows every database.
+        docs = [doc for row in zip_longest(*groups) for doc in row if doc is not None]
+        return docs, self._holders(owners, groups)
+
+    @staticmethod
+    def _holders(
+        owners: "list[HaikuRAG]", groups: "list[list[Any]]"
+    ) -> "dict[str, HaikuRAG]":
+        """Map each document id to the database holding it, rejecting an id two
+        databases claim. The mount has one `/documents/{id}/` path per id.
+        """
+        holders: dict[str, HaikuRAG] = {}
+        held_by: dict[str, str | None] = {}
+        for owner, group in zip(owners, groups, strict=True):
+            for doc in group:
+                if not doc.id:  # pragma: no cover - stored rows always carry an id
+                    continue
+                if doc.id in holders:
+                    raise ValueError(
+                        f"document {doc.id} is in databases {held_by[doc.id]!r} and "
+                        f"{owner.source!r}; analysis mounts one document per id"
+                    )
+                holders[doc.id] = owner
+                held_by[doc.id] = owner.source
+        return holders
 
     def _run_on_loop(self, coro: Coroutine[Any, Any, Any]) -> Any:
         """Run a coroutine on the execute() loop from a synchronous callback.
@@ -233,13 +350,21 @@ class Sandbox:
                 await session.__aexit__(None, None, None)
 
     async def close(self) -> None:
-        """Return the worker to the pool and shut the pool down. Idempotent."""
+        """Return the worker to the pool, shut the pool down and release any
+        held connection. Idempotent, and each release happens whatever the
+        others raise."""
         if self._session is not None:
-            await self._session.__aexit__(None, None, None)
-            self._session = None
+            session, self._session = self._session, None
+            with suppress(Exception):
+                await session.__aexit__(None, None, None)
         if self._pool is not None:
-            await self._pool.__aexit__(None, None, None)
-            self._pool = None
+            pool, self._pool = self._pool, None
+            with suppress(Exception):
+                await pool.__aexit__(None, None, None)
+        if self._opened is not None:
+            opened, self._opened = self._opened, None
+            with suppress(Exception):
+                await opened.__aexit__(None, None, None)
 
     def _build_external_functions(self) -> dict[str, Any]:
         """Build async external functions for the Monty interpreter."""
@@ -252,7 +377,12 @@ class Sandbox:
             # gets figures through the top-level `search` tool when the
             # question is visual; in-code search is for structural work.
             async with self._connection() as rag:
-                results = await rag.search(query, limit=limit, filter=context.filter)
+                results = await rag.search(
+                    query,
+                    limit=limit,
+                    filter=context.filter,
+                    sources=context.sources,
+                )
                 expanded = await rag.expand_context(results)
             self._search_results.extend(expanded)
             out: list[dict[str, Any]] = []
@@ -264,6 +394,7 @@ class Sandbox:
                     {
                         "chunk_id": r.chunk_id,
                         "content": r.content,
+                        "source": r.source,
                         "document_id": r.document_id,
                         "document_title": r.document_title,
                         "document_uri": r.document_uri,
@@ -278,14 +409,14 @@ class Sandbox:
             return out
 
         async def list_documents() -> list[dict[str, Any]]:
-            async with self._connection() as rag:
-                docs = await rag.list_documents(filter=context.filter)
+            docs, _ = await self._documents()
             return [
                 {
                     "id": d.id,
                     "title": d.title,
                     "uri": d.uri,
                     "created_at": str(d.created_at),
+                    "source": d.source,
                 }
                 for d in docs
             ]
@@ -309,8 +440,7 @@ class Sandbox:
         def _deny_write(_path: "PurePosixPath", _content: str | bytes) -> None:
             raise PermissionError(f"Document files are read-only: {_path}")
 
-        async with self._connection() as rag:
-            docs = await rag.list_documents(filter=self._context.filter)
+        docs, self._owners = await self._documents()
 
         doc_titles = {doc.id: doc.title for doc in docs if doc.id}
 
@@ -323,7 +453,7 @@ class Sandbox:
                 return cached
 
             async def _fetch() -> list[DocumentItem]:
-                async with sandbox._connection() as rag:
+                async with sandbox._connection(sandbox._owners.get(did)) as rag:
                     return await rag.document_item_repository.get_all_items(did)
 
             items = sandbox._run_on_loop(_fetch())
@@ -337,7 +467,7 @@ class Sandbox:
                 return cached
 
             async def _fetch() -> dict[str, list[str]]:
-                async with sandbox._connection() as rag:
+                async with sandbox._connection(sandbox._owners.get(did)) as rag:
                     index = (
                         await rag.chunk_repository.get_chunk_ids_by_self_ref_grouped(
                             [did]
@@ -430,7 +560,7 @@ class Sandbox:
             ) -> Callable[["PurePosixPath"], str]:
                 def read_content(_path: "PurePosixPath") -> str:
                     async def _fetch() -> str:
-                        async with sandbox._connection() as rag:
+                        async with sandbox._connection(sandbox._owners.get(did)) as rag:
                             content = await rag.document_repository.get_content(did)
                             return content or ""
 
@@ -470,9 +600,8 @@ class Sandbox:
         """Resource limits for the worker session.
 
         Monty spends ``max_duration_secs`` across the session's whole life, and
-        the session is reused so variables persist between calls. Budget it for
-        the run rather than for one call, or the first slow call starves every
-        later one. ``code_timeout`` is enforced per call elsewhere: the read
+        the session is reused so variables persist between calls: the budget
+        covers the whole run. ``code_timeout`` is enforced per call elsewhere: the read
         deadline in ``_run_on_loop`` bounds a call that reads, and the pool's
         ``request_timeout`` bounds one that computes.
         """

@@ -50,6 +50,13 @@ async def evaluate_dataset(
         console.print(f"Document filter: {document_filter}", style="dim")
 
     if not skip_db:
+        if spec.uses_configured_databases(config, db_path):
+            raise ValueError(
+                "lancedb.databases places the databases this run reads, and "
+                "population writes to one, so it would ingest into a database "
+                "the run does not read. Pass --skip-db to evaluate the "
+                "configured set, or --db PATH to populate and evaluate one."
+            )
         console.print(f"Using dataset: {spec.key}", style="bold magenta")
         await populate_db(
             spec, config, db_path=db_path, vacuum_interval=vacuum_interval

@@ -11,7 +11,8 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from haiku.rag.config import QueueConfig
+from haiku.rag.config import AppConfig, QueueConfig
+from haiku.rag.config.models import LanceDBConfig
 from haiku.rag.ingester.app import BatchProgress, BatchReport
 from haiku.rag.ingester.batch import (
     BatchChange,
@@ -21,7 +22,16 @@ from haiku.rag.ingester.batch import (
 )
 from haiku.rag.ingester.cli import _cli as cli
 from haiku.rag.ingester.cli import _resolve_queue_config
+from haiku.rag.ingester.cli import cli as ingester_cli
 from haiku.rag.ingester.queue.models import JobOp
+from haiku.rag.store.exceptions import (
+    AmbiguousDatabaseError,
+    ConfigMismatchError,
+    MigrationRequiredError,
+    ReadOnlyError,
+    SourceUnavailableError,
+    UnknownDatabaseError,
+)
 
 runner = CliRunner()
 
@@ -467,17 +477,100 @@ def test_cli_entry_point(monkeypatch):
     mock_cli.assert_called_once()
 
 
-def test_cli_entry_point_exits_on_migration_error(monkeypatch):
+@pytest.mark.parametrize(
+    "error",
+    [
+        AmbiguousDatabaseError("names a set"),
+        ConfigMismatchError("embedder drifted"),
+        MigrationRequiredError("need migration"),
+        ReadOnlyError("read-only"),
+        SourceUnavailableError("papers would not open"),
+        UnknownDatabaseError("no such database"),
+    ],
+    ids=lambda e: type(e).__name__,
+)
+def test_cli_entry_point_exits_on_store_state_errors(monkeypatch, capsys, error):
     from haiku.rag.ingester.cli import cli as cli_entry
-    from haiku.rag.store.exceptions import MigrationRequiredError
 
-    monkeypatch.setattr(
-        "haiku.rag.ingester.cli._cli",
-        MagicMock(side_effect=MigrationRequiredError("need migration")),
-    )
+    monkeypatch.setattr("haiku.rag.ingester.cli._cli", MagicMock(side_effect=error))
     monkeypatch.setattr("haiku.rag.ingester.cli.configure_cli_logging", lambda: None)
     monkeypatch.setattr("haiku.rag.telemetry.configure", lambda **_: None)
 
     with pytest.raises(SystemExit) as exc_info:
         cli_entry()
     assert exc_info.value.code == 1
+    assert f"Error: {error}" in capsys.readouterr().err
+
+
+class TestPlacingTheIngesterDatabase:
+    """The ingester writes wherever the configuration places the database, and
+    resolves that once. A path is an explicit override of a configured
+    `lancedb.uri`, so no local default stands in for one."""
+
+    @staticmethod
+    def _app(config: AppConfig, db_path=None):
+        from haiku.rag.ingester.app import IngesterApp
+
+        return IngesterApp(config=config, db_path=db_path)
+
+    def test_a_configured_uri_becomes_the_scope(self, tmp_path):
+        config = AppConfig(lancedb=LanceDBConfig(uri="s3://bucket/prod.lancedb"))
+
+        [ref] = self._app(config)._scope.databases
+
+        assert ref.uri == "s3://bucket/prod.lancedb"
+        assert ref.db_path is None
+
+    def test_an_override_names_the_database(self, tmp_path):
+        config = AppConfig(lancedb=LanceDBConfig(uri="s3://bucket/prod.lancedb"))
+        override = tmp_path / "local.lancedb"
+
+        [ref] = self._app(config, override)._scope.databases
+
+        assert ref.db_path == override
+        assert ref.uri == ""
+
+    def test_one_configured_database_is_accepted(self, tmp_path):
+        """A one-entry mapping names which database to write."""
+        config = AppConfig(
+            lancedb=LanceDBConfig(databases={"docs": str(tmp_path / "docs.lancedb")})
+        )
+
+        scope = self._app(config)._scope
+
+        assert scope.names == ("docs",)
+        assert not scope.covers_multiple
+
+    def test_a_set_is_refused_with_a_remedy_this_command_has(self, tmp_path):
+        """The remedy in the message is `--db PATH`, an argument this command
+        has; `sources=` is a Python argument no CLI user can pass."""
+        from haiku.rag.store.exceptions import AmbiguousDatabaseError
+
+        config = AppConfig(
+            lancedb=LanceDBConfig(
+                databases={"a": str(tmp_path / "a"), "b": str(tmp_path / "b")}
+            )
+        )
+
+        with pytest.raises(AmbiguousDatabaseError) as raised:
+            self._app(config)
+
+        assert "--db PATH" in str(raised.value)
+        assert "sources=" not in str(raised.value)
+
+    def test_several_configured_databases_exit_cleanly(self, tmp_path, monkeypatch):
+        """No selector names one of a set, so the CLI exits with the message
+        and no traceback."""
+        config_file = tmp_path / "haiku.rag.yaml"
+        config_file.write_text(
+            "lancedb:\n  databases:\n"
+            f"    a: {tmp_path / 'a.lancedb'}\n"
+            f"    b: {tmp_path / 'b.lancedb'}\n"
+        )
+        monkeypatch.setattr(sys, "argv", ["haiku-ingester", "run-batch"])
+        monkeypatch.setenv("HAIKU_RAG_CONFIG_PATH", str(config_file))
+
+        with pytest.raises(SystemExit) as exit_info:
+            ingester_cli()
+
+        assert exit_info.value.code == 1

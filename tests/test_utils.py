@@ -1,4 +1,6 @@
+import asyncio
 import importlib.util
+from unittest.mock import AsyncMock
 
 import pytest
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -6,7 +8,8 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from haiku.rag.config import get_config
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.converters import get_converter
-from haiku.rag.utils import get_model
+from haiku.rag.store.exceptions import ReadOnlyError
+from haiku.rag.utils import gather_all, get_model
 
 # Check for optional dependencies
 HAS_ANTHROPIC = importlib.util.find_spec("anthropic") is not None
@@ -769,6 +772,95 @@ async def test_format_citations_rich_header_and_footer():
     assert "chunk: chunk-uuid-1" in output
 
 
+async def test_format_citations_rich_names_the_database_when_federating():
+    """Across databases, a citation has to say which one it came from."""
+    from unittest.mock import AsyncMock
+
+    from haiku.rag.store.models.citation import Citation
+    from haiku.rag.utils import format_citations_rich
+
+    citation = Citation(
+        document_id="doc-uuid-1",
+        chunk_id="chunk-uuid-1",
+        document_uri="test://doc",
+        document_title="Test Doc",
+        content="Body",
+        source="papers",
+    )
+    client = AsyncMock()
+    client.covers_multiple = True
+    client.source_names = ("papers", "notes")
+
+    output = _render_rich(await format_citations_rich([citation], client))
+
+    assert "papers" in output
+
+
+async def test_an_unattributable_picture_renders_its_marker(tmp_path):
+    """A citation without a source has no picture owner across databases. One
+    unrenderable figure must not cost the answer."""
+    from rich.console import Console
+
+    from haiku.rag.store.models.citation import Citation
+    from haiku.rag.utils import format_citations_rich
+
+    covering = AsyncMock()
+    covering.covers_multiple = True
+    citation = Citation(
+        document_id="d1",
+        chunk_id="c1",
+        content="body",
+        document_uri="test://doc",
+        picture_refs=["#/pictures/0"],
+    )
+
+    renderables = await format_citations_rich([citation], covering)
+
+    console = Console(record=True, width=200)
+    for renderable in renderables:
+        console.print(renderable)
+    assert "[Figure: #/pictures/0]" in console.export_text()
+    covering.get_picture_bytes.assert_not_awaited()
+
+
+def test_truncated_marks_what_it_dropped():
+    """An unmarked cut reads as the value: a sentence ending "in 1991" becomes
+    one ending "in 1"."""
+    from haiku.rag.utils import truncated
+
+    sentence = "Station Kestrel sits at 980 metres and was commissioned in 1991."
+
+    assert truncated(sentence, 60) == sentence[:60] + "…"
+    assert truncated(sentence, len(sentence)) == sentence
+    assert truncated("short", 60) == "short"
+    # Trailing space before the mark reads as a gap in the text.
+    assert truncated("a bc", 2) == "a…"
+
+
+async def test_format_citations_rich_omits_the_database_for_one_database():
+    """A single database is not worth naming on every citation."""
+    from unittest.mock import AsyncMock
+
+    from haiku.rag.store.models.citation import Citation
+    from haiku.rag.utils import format_citations_rich
+
+    citation = Citation(
+        document_id="doc-uuid-1",
+        chunk_id="chunk-uuid-1",
+        document_uri="test://doc",
+        document_title="Test Doc",
+        content="Body",
+        source="papers",
+    )
+    client = AsyncMock()
+    client.covers_multiple = False
+    client.source_names = ()
+
+    output = _render_rich(await format_citations_rich([citation], client))
+
+    assert "papers" not in output
+
+
 async def test_format_citations_rich_truncates_long_content():
     from haiku.rag.store.models.citation import Citation
     from haiku.rag.utils import CITATION_PREVIEW_CHARS, format_citations_rich
@@ -937,7 +1029,8 @@ async def test_render_picture_handles_stored_bytes(stored, renders):
         stored = buf.getvalue()
 
     client = AsyncMock()
-    client.document_item_repository.get_picture_bytes = AsyncMock(return_value=stored)
+    client.covers_multiple = False
+    client.get_picture_bytes = AsyncMock(return_value=stored)
 
     result = await _render_picture(client, "doc1", "#/pictures/0")
 
@@ -1012,3 +1105,57 @@ def test_get_model_api_key_rejected_on_unplumbed_provider():
         get_model(
             ModelConfig(provider="anthropic", name="claude-sonnet-4-5", api_key="sk-x")
         )
+
+
+class TestGatherAll:
+    """A fan-out leaves nothing running: a caller unwinding from a failure closes
+    the sessions its siblings are still reading through."""
+
+    @pytest.mark.asyncio
+    async def test_results_arrive_in_the_order_asked_for(self):
+        async def slow(value):
+            await asyncio.sleep(0.01)
+            return value
+
+        async def fast(value):
+            return value
+
+        assert await gather_all(slow("a"), fast("b"), slow("c")) == ["a", "b", "c"]
+
+    @pytest.mark.asyncio
+    async def test_a_failure_leaves_no_sibling_running(self):
+        started = asyncio.Event()
+        unwound = asyncio.Event()
+
+        async def sibling():
+            started.set()
+            try:
+                await asyncio.sleep(60)
+            finally:
+                unwound.set()
+
+        async def failing():
+            await started.wait()
+            raise ReadOnlyError("beta is read-only")
+
+        before = asyncio.all_tasks()
+        with pytest.raises(ReadOnlyError, match="beta"):
+            await gather_all(sibling(), failing())
+
+        assert unwound.is_set()
+        assert asyncio.all_tasks() - before == set()
+
+    @pytest.mark.asyncio
+    async def test_the_failure_arrives_as_itself(self):
+        """A `TaskGroup` drains the siblings too, but raises an `ExceptionGroup`."""
+
+        async def failing():
+            raise ReadOnlyError("beta is read-only")
+
+        async def sibling():
+            await asyncio.sleep(60)
+
+        with pytest.raises(ReadOnlyError) as raised:
+            await gather_all(sibling(), failing())
+
+        assert not isinstance(raised.value, BaseExceptionGroup)

@@ -2,6 +2,7 @@ from io import BytesIO
 from typing import TYPE_CHECKING, Any
 
 from PIL import Image as PILImage
+from rich.markup import escape
 from textual.containers import Horizontal, VerticalScroll
 from textual.css.query import NoMatches
 from textual.message import Message
@@ -9,6 +10,7 @@ from textual.widgets import Collapsible, LoadingIndicator, Markdown, Static
 from textual.widgets.markdown import MarkdownStream
 from textual_image.widget import Image as TextualImage
 
+from haiku.rag.store.models.chunk import qualified_id
 from haiku.rag.store.models.citation import Citation
 
 if TYPE_CHECKING:
@@ -117,14 +119,19 @@ class CitationWidget(Collapsible):
         self,
         citation: Citation,
         picture_bytes: list[bytes] | None = None,
+        include_collection: bool = False,
         **kwargs,
     ) -> None:
         title = f"[{citation.index}] {citation.document_title or citation.document_uri}"
+        if include_collection and citation.source:
+            title += f" — {citation.source}"
         if citation.page_numbers:
             pages = ", ".join(map(str, citation.page_numbers[:3]))
             if len(citation.page_numbers) > 3:
                 pages += "..."
             title += f" (p.{pages})"
+        # The title is data, not Textual markup.
+        title = escape(title)
 
         content = citation.content
         if len(content) > 500:
@@ -139,9 +146,14 @@ class CitationWidget(Collapsible):
             children.append(TextualImage(pil, classes="citation-image"))
         if citation.headings:
             headings = " > ".join(citation.headings[:3])
-            children.append(Static(f"Section: {headings}", classes="citation-metadata"))
+            children.append(
+                Static(escape(f"Section: {headings}"), classes="citation-metadata")
+            )
         children.append(
-            Static(f"Source: {citation.document_uri}", classes="citation-metadata")
+            Static(
+                escape(f"Source: {citation.document_uri}"),
+                classes="citation-metadata",
+            )
         )
 
         super().__init__(*children, title=title, collapsed=True, **kwargs)
@@ -430,14 +442,14 @@ class ChatHistory(VerticalScroll):
     async def add_citations(
         self,
         citations: list[Citation],
-        picture_bytes: dict[str, list[bytes]] | None = None,
+        picture_bytes: dict[tuple[str | None, str | None], list[bytes]] | None = None,
+        include_collection: bool = False,
     ) -> None:
         """Add citations inline after a response.
 
-        ``picture_bytes`` maps citation ``chunk_id`` → list of raw PNG bytes,
-        one per entry in the citation's ``picture_refs``. Pre-fetched by the
-        caller (typically the chat app's post-response hook) so widget
-        construction stays synchronous.
+        ``picture_bytes`` maps a citation's ``(source, chunk_id)`` → list of raw
+        PNG bytes, one per entry in the citation's ``picture_refs``. Pre-fetched
+        by the caller so widget construction stays synchronous.
         """
         if not citations:
             return
@@ -445,7 +457,11 @@ class ChatHistory(VerticalScroll):
         picture_bytes = picture_bytes or {}
         for citation in citations:
             widget = CitationWidget(
-                citation, picture_bytes=picture_bytes.get(citation.chunk_id)
+                citation,
+                picture_bytes=picture_bytes.get(
+                    qualified_id(citation.source, citation.chunk_id)
+                ),
+                include_collection=include_collection,
             )
             await self.mount(widget)
         self.scroll_end(animate=False)

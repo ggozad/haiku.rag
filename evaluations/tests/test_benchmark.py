@@ -1288,3 +1288,52 @@ class TestEvaluateDatasetCaseIds:
             )
         mock_qa.assert_called_once()
         assert mock_qa.call_args[1]["case_ids"] == {"finqa_dev_16", "finqa_dev_66"}
+
+
+def test_a_case_filter_matching_nothing_raises():
+    """An id set that matches no case raises."""
+    import pytest
+    from datasets import Dataset
+
+    from evaluations.qa import _filter_qa_corpus
+
+    corpus = Dataset.from_list([{"query_id": "a"}, {"query_id": "b"}])
+
+    with pytest.raises(ValueError, match="matched none"):
+        _filter_qa_corpus(corpus, {"a"})
+
+
+def test_a_case_filter_that_matches_keeps_those_rows():
+    from datasets import Dataset
+
+    from evaluations.qa import _filter_qa_corpus
+
+    corpus = Dataset.from_list([{"id": "a"}, {"id": "b"}, {"id": "c"}])
+
+    assert _filter_qa_corpus(corpus, {"a", "c"})["id"] == ["a", "c"]
+
+
+async def test_population_refuses_a_configured_set():
+    """Population writes to one database and refuses a configured set."""
+    import pytest
+    from haiku.rag.config.models import AppConfig, LanceDBConfig
+
+    from evaluations.benchmark import evaluate_dataset
+    from evaluations.datasets import DATASETS
+
+    spec = next(iter(DATASETS.values()))
+    config = AppConfig(
+        lancedb=LanceDBConfig(databases={"a": "/a.lancedb", "b": "/b.lancedb"})
+    )
+
+    with pytest.raises(ValueError, match="--skip-db"):
+        await evaluate_dataset(
+            spec,
+            config,
+            skip_db=False,
+            skip_retrieval=True,
+            skip_qa=True,
+            limit=None,
+            name=None,
+            db_path=None,
+        )

@@ -213,7 +213,8 @@ class ChunkRepository:
             limit: Maximum number of results to return.
             search_type: "vector", "fts", or "hybrid" (default).
             filter: Optional SQL WHERE clause to filter documents before searching chunks.
-            query_vector: Pre-computed query embedding; forces vector-only search.
+            query_vector: Pre-computed query embedding; when supplied, ``query``
+                is not embedded.
 
         Returns:
             List of (chunk, score) tuples ordered by relevance.
@@ -239,37 +240,27 @@ class ChunkRepository:
             id_list = ", ".join(f"'{d}'" for d in docs_df["id"])
             chunk_filter = f"document_id IN ({id_list})"
 
-        if query_vector is not None:
-            # Image-as-query: vector-only against the pre-computed embedding.
-            results = (
-                self.store.chunks_table.query()
-                .nearest_to(query_vector)
-                .column("vector")
-                .refine_factor(self.store._config.search.vector_refine_factor)
-            )
-        elif search_type == "vector":
-            query_embedding = await self.embedder.embed_query(query)
-            results = (
-                self.store.chunks_table.query()
-                .nearest_to(query_embedding)
-                .column("vector")
-                .refine_factor(self.store._config.search.vector_refine_factor)
-            )
-        elif search_type == "fts":
+        if search_type == "fts":
             results = self.store.chunks_table.query().nearest_to_text(
                 query, columns="content_fts"
             )
-        else:  # hybrid (default)
-            query_embedding = await self.embedder.embed_query(query)
-            reranker = RRFReranker()
+        else:
+            query_embedding = (
+                query_vector
+                if query_vector is not None
+                else await self.embedder.embed_query(query)
+            )
             results = (
                 self.store.chunks_table.query()
                 .nearest_to(query_embedding)
                 .column("vector")
-                .nearest_to_text(query, columns="content_fts")
                 .refine_factor(self.store._config.search.vector_refine_factor)
-                .rerank(reranker)
             )
+            # An image query has no text to match, so it stays vector-only.
+            if search_type != "vector" and query.strip():
+                results = results.nearest_to_text(query, columns="content_fts").rerank(
+                    RRFReranker()
+                )
 
         if chunk_filter is not None:
             results = results.where(chunk_filter)

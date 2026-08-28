@@ -1,6 +1,7 @@
 import pytest
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.mcp import _covering as _mcp_covering
 from haiku.rag.mcp import create_mcp_server
 from haiku.rag.store.models import Chunk, Document, SearchResult
 from haiku.rag.tools.document import DocumentInfo
@@ -604,6 +605,103 @@ class TestMCPClientLifetime:
         assert opens == 1
 
     @pytest.mark.asyncio
+    async def test_the_scope_decides_the_database_and_names_its_results(
+        self, mcp_db, tmp_path
+    ):
+        """The scope is the selection: the server reads the one database it
+        names, and results carry that name."""
+        from haiku.rag.client.scope import DatabaseScope
+        from haiku.rag.config.models import AppConfig, LanceDBConfig
+
+        other = tmp_path / "beta.lancedb"
+        async with HaikuRAG(other, create=True) as rag:
+            await rag.create_document(
+                "Zebras graze on the savannah.", title="Zebras", uri="test://zebras"
+            )
+
+        config = AppConfig(
+            lancedb=LanceDBConfig(databases={"alpha": str(mcp_db), "beta": str(other)})
+        )
+        scope = DatabaseScope.resolve(config, database_name="alpha")
+
+        mcp = _mcp_covering(scope, config, read_only=True)
+        async with mcp._lifespan_manager():
+            search = await _get_tool(mcp, "search_documents")
+            results = await search(query="artificial intelligence")
+            listing = await _get_tool(mcp, "list_documents")
+            documents = await listing()
+
+        assert results
+        assert {r.source for r in results} == {"alpha"}
+        titles = {d.title for d in documents}
+        assert "AI Overview" in titles
+        assert "Zebras" not in titles
+
+    def test_a_scope_covering_a_set_is_refused(self, tmp_path):
+        from haiku.rag.client.scope import DatabaseScope
+        from haiku.rag.config.models import AppConfig, LanceDBConfig
+        from haiku.rag.store.exceptions import AmbiguousDatabaseError
+
+        config = AppConfig(
+            lancedb=LanceDBConfig(
+                databases={"alpha": str(tmp_path / "a"), "beta": str(tmp_path / "b")}
+            )
+        )
+
+        with pytest.raises(AmbiguousDatabaseError, match="alpha, beta"):
+            _mcp_covering(DatabaseScope.resolve(config), config, read_only=True)
+
+    def test_the_public_factory_refuses_a_configured_set_too(self, tmp_path):
+        """It resolves the same scope, so it reaches the same refusal."""
+        from haiku.rag.config.models import AppConfig, LanceDBConfig
+        from haiku.rag.store.exceptions import AmbiguousDatabaseError
+
+        config = AppConfig(
+            lancedb=LanceDBConfig(
+                databases={"alpha": str(tmp_path / "a"), "beta": str(tmp_path / "b")}
+            )
+        )
+
+        with pytest.raises(AmbiguousDatabaseError, match="alpha, beta"):
+            create_mcp_server(config=config)
+
+    @pytest.mark.asyncio
+    async def test_the_command_hands_the_server_its_resolved_database(
+        self, monkeypatch
+    ):
+        """`run_mcp` passes the resolved scope, not a path and not a derived
+        configuration: the scope keeps both the URI and the name."""
+        from haiku.rag.app import HaikuRAGApp
+        from haiku.rag.client.scope import DatabaseScope
+        from haiku.rag.config.models import AppConfig, LanceDBConfig
+
+        config = AppConfig(
+            lancedb=LanceDBConfig(databases={"prod": "s3://bucket/prod.lancedb"})
+        )
+        seen: dict = {}
+
+        class _Server:
+            async def run_stdio_async(self):
+                return None
+
+        def fake_covering(scope, config, read_only):
+            seen.update(scope=scope, config=config)
+            return _Server()
+
+        monkeypatch.setattr("haiku.rag.app._mcp_server_covering", fake_covering)
+        app = HaikuRAGApp(
+            scope=DatabaseScope.resolve(config, database_name="prod"), config=config
+        )
+
+        await app.run_mcp(transport="stdio")
+
+        [ref] = seen["scope"].databases
+        assert ref.name == "prod"
+        assert ref.uri == "s3://bucket/prod.lancedb"
+        # The caller's configuration, not one derived from the ref.
+        assert seen["config"].lancedb.databases == {"prod": "s3://bucket/prod.lancedb"}
+
+    @pytest.mark.asyncio
     async def test_startup_fails_when_the_database_cannot_open(self, tmp_path):
         mcp = create_mcp_server(tmp_path / "does-not-exist.lancedb", read_only=True)
 
@@ -645,7 +743,7 @@ class TestMCPClientLifetime:
         read-only mode and raises in writable mode. The MCP server no longer
         opts out of it for deletion."""
         from haiku.rag.config import get_config
-        from haiku.rag.store.repositories.settings import ConfigMismatchError
+        from haiku.rag.store.exceptions import ConfigMismatchError
 
         drifted = get_config().model_copy(deep=True)
         drifted.embeddings.model.name = "a-different-model"

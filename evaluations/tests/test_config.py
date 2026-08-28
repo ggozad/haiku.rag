@@ -145,3 +145,56 @@ class TestRetrievalSample:
         )
         assert sample.skip is True
         assert sample.source_type == "image"
+
+
+class TestCoversASet:
+    """A run over `lancedb.databases` passes no path: a path names one
+    database."""
+
+    def test_a_configured_set_is_covered(self):
+        from haiku.rag.config.models import AppConfig, LanceDBConfig
+
+        from evaluations.datasets import DATASETS
+
+        spec = next(iter(DATASETS.values()))
+        config = AppConfig(
+            lancedb=LanceDBConfig(databases={"a": "/a.lancedb", "b": "/b.lancedb"})
+        )
+
+        assert spec.uses_configured_databases(config) is True
+
+    def test_a_named_path_overrides_the_set(self):
+        """`--db` names the one database to evaluate, whatever the
+        configuration names."""
+        from pathlib import Path as _Path
+
+        from haiku.rag.config.models import AppConfig, LanceDBConfig
+
+        from evaluations.datasets import DATASETS
+
+        spec = next(iter(DATASETS.values()))
+        config = AppConfig(
+            lancedb=LanceDBConfig(databases={"a": "/a.lancedb", "b": "/b.lancedb"})
+        )
+
+        assert spec.uses_configured_databases(config, _Path("/chosen.lancedb")) is False
+
+    def test_a_configured_set_of_one_is_still_configured(self):
+        """A mapping of one is a named database like any other."""
+        from haiku.rag.config.models import AppConfig, LanceDBConfig
+
+        from evaluations.datasets import DATASETS
+
+        spec = next(iter(DATASETS.values()))
+        config = AppConfig(lancedb=LanceDBConfig(databases={"a": "/a.lancedb"}))
+
+        assert spec.uses_configured_databases(config) is True
+
+    def test_naming_no_database_is_not_a_set(self):
+        from haiku.rag.config.models import AppConfig
+
+        from evaluations.datasets import DATASETS
+
+        spec = next(iter(DATASETS.values()))
+
+        assert spec.uses_configured_databases(AppConfig()) is False

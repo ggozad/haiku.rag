@@ -30,6 +30,11 @@ from .services import reachable  # noqa: E402
 if TYPE_CHECKING:
     from vcr import VCR
 
+    from haiku.rag.client import HaikuRAG
+    from haiku.rag.client.scope import DatabaseScope
+    from haiku.rag.client.session import SingleDatabaseSession
+    from haiku.rag.config.models import AppConfig
+
 setattr(pydantic_ai.models, "ALLOW_MODEL_REQUESTS", False)
 logging.getLogger("vcr.cassette").setLevel(logging.WARNING)
 
@@ -216,3 +221,42 @@ def docling_serve_url() -> str:
     if not reachable("localhost", 5001):
         pytest.skip(f"docling-serve not reachable on localhost:5001 — {_COMPOSE_HINT}")
     return "http://localhost:5001"
+
+
+def writing(client: "HaikuRAG") -> "SingleDatabaseSession":
+    """The database a write implementation works on, from a client holding one.
+
+    Write implementations take a session, never a client, so a set can
+    never reach them. Tests that call one directly go through here."""
+    from haiku.rag.client.session import SingleDatabaseSession
+
+    assert isinstance(client._session, SingleDatabaseSession)
+    return client._session
+
+
+def for_path(
+    db_path: "Path | str | None" = None, config: "AppConfig | None" = None
+) -> "DatabaseScope":
+    """A scope covering one database at `db_path`.
+
+    The application layer takes the databases it works on, already resolved.
+    Tests that hold a path and need a scope go through here.
+    """
+    from haiku.rag.client.scope import DatabaseScope
+    from haiku.rag.config import get_config
+
+    return DatabaseScope.resolve(
+        config if config is not None else get_config(), database_path=db_path
+    )
+
+
+@contextmanager
+def _covering_returns(stub, client):
+    """Make a patched `HaikuRAG` hand back `client` however it is constructed.
+
+    The TUIs build their client through `HaikuRAG._covering`, so patching the
+    constructor alone leaves `_covering` answering with a fresh Mock.
+    """
+    stub.return_value = client
+    stub._covering.return_value = client
+    yield stub

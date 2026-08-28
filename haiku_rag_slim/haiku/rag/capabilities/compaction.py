@@ -49,10 +49,12 @@ def group_label(position: int) -> str:
     return f"[Cited evidence group {position}]"
 
 
-def picture_label(chunk_id: str, self_ref: str) -> str:
+def picture_label(chunk_id: str, self_ref: str, collection: str | None = None) -> str:
+    named = f"Collection: {collection}. " if collection else ""
     return (
         f"Page image retrieved from the knowledge base for cited evidence "
-        f"[{chunk_id}] ({self_ref}). Not provided by the user. {RETRIEVED_IMAGE_TAG}"
+        f"[{chunk_id}] ({self_ref}). {named}"
+        f"Not provided by the user. {RETRIEVED_IMAGE_TAG}"
     )
 
 
@@ -60,9 +62,9 @@ def picture_label(chunk_id: str, self_ref: str) -> str:
 class RetainedPicture:
     """A picture to re-attach, with the label that must accompany it.
 
-    Addressed by owner, document and reference, because a reference such as
-    ``#/pictures/0`` repeats across documents and capabilities. The label travels
-    with it so it can never be emitted without its image.
+    Addressed by owner, collection, document and reference, because a reference
+    such as ``#/pictures/0`` repeats across all three. The label travels with it
+    so it can never be emitted without its image.
     """
 
     capability: str
@@ -70,6 +72,7 @@ class RetainedPicture:
     document_id: str
     self_ref: str
     label: str
+    source: str | None = None
 
 
 @dataclass(frozen=True)
@@ -87,13 +90,21 @@ class _Entry:
     question: int
     citation: Citation
 
-    def render(self) -> str:
+    def render(self, *, include_collection: bool = False) -> str:
+        """Render an entry, optionally naming its collection."""
         title = self.citation.document_title
         uri = self.citation.document_uri
-        source = f'"{title}"' if title else uri
+        document = f'"{title}"' if title else uri
         if title and uri and uri != title:
-            source = f"{source} ({uri})"
-        return f"[{self.chunk_id}] Source: {source}\n{self.citation.content}"
+            document = f"{document} ({uri})"
+        if include_collection and self.citation.source:
+            header = (
+                f"[{self.chunk_id}]\nCollection: {self.citation.source}\n"
+                f"Source: {document}"
+            )
+        else:
+            header = f"[{self.chunk_id}] Source: {document}"
+        return f"{header}\n{self.citation.content}"
 
 
 def _eligible_entries(evidence: Sequence[DiscoveredEvidence]) -> list[_Entry]:
@@ -152,7 +163,9 @@ def build_capsule(evidence: Sequence[DiscoveredEvidence]) -> Capsule:
 
     lines = [CAPSULE_HEADER]
     pictures: list[RetainedPicture] = []
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[tuple[str, str | None, str, str]] = set()
+    # A capsule may combine citations from different search scopes.
+    include_collection = len({entry.citation.source for entry in entries}) > 1
     position = 0
     current_question: int | None = None
     for entry in entries:
@@ -160,12 +173,17 @@ def build_capsule(evidence: Sequence[DiscoveredEvidence]) -> Capsule:
             position += 1
             current_question = entry.question
             lines.append(group_label(position))
-        lines.append(entry.render())
+        lines.append(entry.render(include_collection=include_collection))
         for self_ref in entry.citation.picture_refs:
             # Overlapping chunks cite one figure, and a provider counts it twice.
-            # Identity is owner plus document plus reference, so the same reference
-            # in another document stays a different picture.
-            identity = (entry.capability, entry.citation.document_id, self_ref)
+            # A reference such as `#/pictures/0` repeats across documents, and a
+            # document repeats across collections.
+            identity = (
+                entry.capability,
+                entry.citation.source,
+                entry.citation.document_id,
+                self_ref,
+            )
             if identity in seen:
                 continue
             seen.add(identity)
@@ -175,7 +193,12 @@ def build_capsule(evidence: Sequence[DiscoveredEvidence]) -> Capsule:
                     chunk_id=entry.chunk_id,
                     document_id=entry.citation.document_id,
                     self_ref=self_ref,
-                    label=picture_label(entry.chunk_id, self_ref),
+                    label=picture_label(
+                        entry.chunk_id,
+                        self_ref,
+                        entry.citation.source if include_collection else None,
+                    ),
+                    source=entry.citation.source,
                 )
             )
     return Capsule(text=ENTRY_SEPARATOR.join(lines), pictures=tuple(pictures))
@@ -406,7 +429,7 @@ class EvidenceCompactionCapability(AbstractCapability[Any]):
             owner = owners[retained.capability]
             try:
                 data = await owner.get_picture_bytes(
-                    retained.document_id, retained.self_ref
+                    retained.document_id, retained.self_ref, retained.source
                 )
             except Exception:
                 # A read that fails costs this picture, not the answer.

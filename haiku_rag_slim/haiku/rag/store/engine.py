@@ -104,6 +104,16 @@ def _stored_vector_dim(settings: dict) -> int | None:
     return settings.get("embeddings", {}).get("model", {}).get("vector_dim")
 
 
+def _stored_embedding(
+    settings: dict,
+) -> tuple[str | None, str | None, int | None] | None:
+    """The embedder a database's chunks were written with, or None if unrecorded."""
+    model = settings.get("embeddings", {}).get("model", {})
+    if not model:
+        return None
+    return model.get("provider"), model.get("name"), model.get("vector_dim")
+
+
 # Keeps the vacuum cleanup cutoff safely older than the oldest tagged
 # version; guards against timestamp precision at the boundary.
 TAG_RETENTION_MARGIN = timedelta(seconds=1)
@@ -204,6 +214,19 @@ class Store:
 
         # Create embedder (sync — no LanceDB needed)
         self.embedder = get_embedder(config=self._config)
+        # The settings blob as of open, and the embedder it records, so
+        # reporting on a database and comparing it against another cost no
+        # second read. Neither follows a later write.
+        self.stored_settings: dict = {}
+        self.stored_embedding: tuple[str | None, str | None, int | None] | None = None
+
+    def _remember_settings(self, settings: dict) -> None:
+        """Hold the settings blob and the embedder it records.
+
+        Together, so nothing reports on one reading while comparing the other.
+        """
+        self.stored_settings = settings
+        self.stored_embedding = _stored_embedding(settings)
 
     async def _initialize(self):
         """Perform async initialization: connect to LanceDB, init tables, validate."""
@@ -217,29 +240,31 @@ class Store:
         existing_tables = (await self.db.list_tables()).tables
         is_new_db = self._is_new_db or not existing_tables
 
-        stored_settings: dict = {}
         if not is_new_db and "settings" in existing_tables:
             self.settings_table = await self.db.open_table("settings")
-            stored_settings = await self._read_stored_settings()
+            self._remember_settings(await self._read_stored_settings())
 
         # An existing database's chunks can only be read with the dimension they
         # were written at.
-        stored_vector_dim = _stored_vector_dim(stored_settings)
+        stored_vector_dim = _stored_vector_dim(self.stored_settings)
         chunk_vector_dim = stored_vector_dim or self.embedder._vector_dim
         self.ChunkRecord: type[ChunkRecordBase] = create_chunk_model(chunk_vector_dim)
 
         # Initialize tables (creates them if they don't exist). For an existing
         # DB this raises MigrationRequiredError up front when migrations are
         # pending, before creating any newly-introduced table.
-        await self._init_tables(is_new_db, existing_tables, stored_settings)
+        await self._init_tables(is_new_db, existing_tables, self.stored_settings)
 
         # Set version for new databases.
         if is_new_db and not self._read_only:
             await self._set_initial_version()
+            # Creating wrote the settings this database will be read with, so
+            # both readings of them are taken again together.
+            self._remember_settings(await self._read_stored_settings())
 
         # Validate config compatibility after connection is established
         if not self._skip_validation:
-            await self._validate_configuration(stored_settings)
+            await self._validate_configuration(self.stored_settings)
 
     async def __aenter__(self):
         # If _initialize connects to LanceDB but then fails (e.g. migration

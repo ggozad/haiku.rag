@@ -11,9 +11,16 @@ from rich.console import Console
 
 from haiku.rag.app import HaikuRAGApp
 from haiku.rag.client import RebuildMode
-from haiku.rag.config.models import AppConfig, LanceDBConfig
+from haiku.rag.client.scope import DatabaseScope
+from haiku.rag.config.models import (
+    AppConfig,
+    LanceDBConfig,
+    PromptsConfig,
+    StorageConfig,
+)
 from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document import Document
+from tests.conftest import for_path
 
 
 @pytest.fixture
@@ -28,6 +35,10 @@ def app(tmp_path, client, monkeypatch):
         def __init__(self, *args, **kwargs):
             pass
 
+        @classmethod
+        def _covering(cls, *args, **kwargs):
+            return cls()
+
         async def __aenter__(self):
             return client
 
@@ -37,7 +48,7 @@ def app(tmp_path, client, monkeypatch):
     monkeypatch.setattr("haiku.rag.app.HaikuRAG", StubHaikuRAG)
     db = tmp_path / "db.lancedb"
     db.mkdir()
-    application = HaikuRAGApp(db_path=db, config=AppConfig())
+    application = HaikuRAGApp(scope=for_path(db), config=AppConfig())
     application.console = Console(record=True, width=200)
     return application
 
@@ -52,6 +63,53 @@ def _doc(content: str = "body text", **kwargs) -> Document:
     doc = Document(content=content, uri=kwargs.pop("uri", "test://doc"), **kwargs)
     doc.id = kwargs.get("id", "doc-1")
     return doc
+
+
+async def test_a_listing_omits_the_fields_it_did_not_fetch(app, client):
+    """`list` does not load content, and a document need not carry a uri, a
+    title or metadata. Printing a header for each regardless announced fields
+    the command declined to fetch or the document never had."""
+    bare = Document(content="", uri=None)
+    bare.id = "doc-bare"
+    client.list_documents.return_value = [bare]
+
+    await app.list_documents()
+
+    printed = out(app)
+    assert "doc-bare" in printed
+    for absent in ("uri:", "title:", "meta:", "content:"):
+        assert absent not in printed, absent
+
+
+async def test_a_listing_prints_the_fields_it_has(app, client):
+    client.list_documents.return_value = [
+        _doc("body text", title="A title", metadata={"k": "v"})
+    ]
+
+    await app.list_documents()
+
+    printed = out(app)
+    assert "uri: test://doc" in printed
+    assert "title: A title" in printed
+    assert "meta:" in printed
+    assert "content:" in printed
+
+
+async def test_a_document_renders_fields_that_look_like_markup(app):
+    """Uris, titles and metadata render as text, not markup."""
+    doc = _doc(
+        "body",
+        uri="test://doc [/blue]",
+        title="The [/bold] Title",
+        metadata={"k": "[/red]"},
+    )
+
+    app._rich_print_document(doc)
+
+    printed = out(app)
+    assert "test://doc [/blue]" in printed
+    assert "The [/bold] Title" in printed
+    assert "[/red]" in printed
 
 
 async def test_list_documents_prints_each_document(app, client):
@@ -158,6 +216,65 @@ async def test_search_prints_results(app, client):
 
     client.search.assert_awaited_once_with("q", limit=3, filter=None, search_type=None)
     assert "hit one" in out(app)
+
+
+async def test_a_result_names_its_database_only_across_several(tmp_path):
+    """The label answers what this operation covers, not what is configured:
+    after narrowing to one, the caller has already named it."""
+    config = AppConfig(
+        lancedb=LanceDBConfig(
+            databases={
+                "alpha": str(tmp_path / "a.lancedb"),
+                "beta": str(tmp_path / "b.lancedb"),
+            }
+        )
+    )
+    hit = SearchResult(content="hit", score=0.9, chunk_id="c1", source="alpha")
+
+    covering = HaikuRAGApp(scope=DatabaseScope.resolve(config), config=config)
+    covering.console = Console(record=True, width=200)
+    covering._rich_print_search_result(hit)
+    assert "database: alpha" in covering.console.export_text()
+
+    narrowed = HaikuRAGApp(
+        scope=DatabaseScope.resolve(config, database_name="alpha"), config=config
+    )
+    narrowed.console = Console(record=True, width=200)
+    narrowed._rich_print_search_result(hit)
+    printed = narrowed.console.export_text()
+    assert "hit" in printed
+    assert "database:" not in printed
+
+
+async def test_a_result_renders_names_that_look_like_markup(tmp_path):
+    """Database names, titles, uris and headings render as text, not markup."""
+    config = AppConfig(
+        lancedb=LanceDBConfig(
+            databases={
+                "alpha [/red]": str(tmp_path / "a.lancedb"),
+                "beta": str(tmp_path / "b.lancedb"),
+            }
+        )
+    )
+    hit = SearchResult(
+        content="hit",
+        score=0.9,
+        chunk_id="c1",
+        source="alpha [/red]",
+        document_uri="test://doc [/blue]",
+        document_title="The [/bold] Title",
+        headings=["Chapter [/dim]"],
+    )
+
+    app = HaikuRAGApp(scope=DatabaseScope.resolve(config), config=config)
+    app.console = Console(record=True, width=200)
+    app._rich_print_search_result(hit)
+
+    printed = app.console.export_text()
+    assert "database: alpha [/red]" in printed
+    assert "test://doc [/blue]" in printed
+    assert "The [/bold] Title" in printed
+    assert "Chapter [/dim]" in printed
 
 
 async def test_search_by_image_reads_the_bytes(app, client, tmp_path):
@@ -317,7 +434,7 @@ async def test_create_index_rebuilds_an_existing_one(app, client):
 
 def test_show_settings_hides_secrets(tmp_path):
     config = AppConfig(lancedb=LanceDBConfig(uri="db://x", api_key="secret-value"))
-    app = HaikuRAGApp(db_path=tmp_path / "db", config=config)
+    app = HaikuRAGApp(scope=for_path(tmp_path / "db", config), config=config)
     app.console = Console(record=True, width=200)
 
     app.show_settings()
@@ -327,11 +444,58 @@ def test_show_settings_hides_secrets(tmp_path):
     assert "secret-value" not in printed
 
 
+def test_show_settings_renders_the_shape_a_config_file_has(tmp_path):
+    """Nesting is indented and a path is its string: what is read here is what
+    `haiku.rag.yaml` holds."""
+    import yaml
+
+    config = AppConfig(
+        lancedb=LanceDBConfig(databases={"alpha": "/tmp/a.lancedb"}),
+        storage=StorageConfig(data_dir=tmp_path),
+    )
+    app = HaikuRAGApp(scope=for_path(tmp_path / "db", config), config=config)
+    app.console = Console(record=True, width=200)
+
+    app.show_settings()
+
+    printed = app.console.export_text()
+    assert "PosixPath" not in printed
+    # A dict repr parses as YAML flow style; the brace check tells the shapes
+    # apart.
+    assert "{'" not in printed
+    assert "\n    alpha: /tmp/a.lancedb" in printed
+    body = printed.split("haiku.rag configuration", 1)[1]
+    parsed = yaml.safe_load(body)
+    assert parsed["lancedb"]["databases"] == {"alpha": "/tmp/a.lancedb"}
+    assert parsed["storage"]["data_dir"] == str(tmp_path)
+
+
+def test_show_settings_survives_a_narrow_console_and_bracketed_values(tmp_path):
+    """Values in `[...]` render verbatim and a long path stays on one
+    parseable line, however narrow the console."""
+    import yaml
+
+    long_dir = tmp_path / "Application Support" / "haiku.rag" / "collections" / "one"
+    config = AppConfig(
+        storage=StorageConfig(data_dir=long_dir),
+        prompts=PromptsConfig(domain_preamble="[INST] keep this [/INST]"),
+    )
+    app = HaikuRAGApp(scope=for_path(long_dir / "db", config), config=config)
+    app.console = Console(record=True, width=60)
+
+    app.show_settings()
+
+    body = app.console.export_text().split("haiku.rag configuration", 1)[1]
+    parsed = yaml.safe_load(body)
+    assert parsed["prompts"]["domain_preamble"] == "[INST] keep this [/INST]"
+    assert parsed["storage"]["data_dir"] == str(long_dir)
+
+
 def test_remote_uri_is_the_display_path(tmp_path):
     config = AppConfig(lancedb=LanceDBConfig(uri="s3://bucket/path"))
-    app = HaikuRAGApp(db_path=tmp_path / "db", config=config)
+    app = HaikuRAGApp(scope=for_path(None, config), config=config)
 
-    assert app._display_path == "s3://bucket/path"
+    assert app.display_path == "s3://bucket/path"
     assert app._is_local is False
 
 
@@ -364,7 +528,7 @@ async def test_init_reports_an_existing_database(app):
 
 
 async def test_info_reports_a_missing_path(tmp_path):
-    application = HaikuRAGApp(db_path=tmp_path / "gone", config=AppConfig())
+    application = HaikuRAGApp(scope=for_path(tmp_path / "gone"), config=AppConfig())
     application.console = Console(record=True, width=200)
 
     await application.info()
@@ -375,7 +539,7 @@ async def test_info_reports_a_missing_path(tmp_path):
 
 
 async def test_history_reports_a_missing_path(tmp_path):
-    application = HaikuRAGApp(db_path=tmp_path / "gone", config=AppConfig())
+    application = HaikuRAGApp(scope=for_path(tmp_path / "gone"), config=AppConfig())
     application.console = Console(record=True, width=200)
 
     await application.history()
@@ -459,7 +623,7 @@ async def test_restore_tag_reports_the_safety_tag(app, monkeypatch):
     ],
 )
 async def test_tag_operations_require_the_database(tmp_path, method, args):
-    application = HaikuRAGApp(db_path=tmp_path / "gone", config=AppConfig())
+    application = HaikuRAGApp(scope=for_path(tmp_path / "gone"), config=AppConfig())
 
     with pytest.raises(ValueError, match="does not exist"):
         await getattr(application, method)(*args)
@@ -502,7 +666,7 @@ def test_search_result_rendering_includes_provenance(app):
 
 async def test_run_mcp_stdio(app, client, monkeypatch):
     server = AsyncMock()
-    monkeypatch.setattr("haiku.rag.app.create_mcp_server", lambda *a, **kw: server)
+    monkeypatch.setattr("haiku.rag.app._mcp_server_covering", lambda *a, **kw: server)
 
     await app.run_mcp(transport="stdio")
 
@@ -511,7 +675,7 @@ async def test_run_mcp_stdio(app, client, monkeypatch):
 
 async def test_run_mcp_http(app, client, monkeypatch):
     server = AsyncMock()
-    monkeypatch.setattr("haiku.rag.app.create_mcp_server", lambda *a, **kw: server)
+    monkeypatch.setattr("haiku.rag.app._mcp_server_covering", lambda *a, **kw: server)
 
     await app.run_mcp(host="0.0.0.0", port=9001)
 
@@ -523,7 +687,7 @@ async def test_run_mcp_http(app, client, monkeypatch):
 async def test_run_mcp_survives_interruption(app, client, monkeypatch):
     server = AsyncMock()
     server.run_stdio_async.side_effect = KeyboardInterrupt
-    monkeypatch.setattr("haiku.rag.app.create_mcp_server", lambda *a, **kw: server)
+    monkeypatch.setattr("haiku.rag.app._mcp_server_covering", lambda *a, **kw: server)
 
     await app.run_mcp(transport="stdio")
 
@@ -601,7 +765,7 @@ async def test_doctor_reports_the_duplicates_export(app, monkeypatch, tmp_path):
 
 
 async def test_doctor_reports_a_missing_database(tmp_path):
-    application = HaikuRAGApp(db_path=tmp_path / "gone", config=AppConfig())
+    application = HaikuRAGApp(scope=for_path(tmp_path / "gone"), config=AppConfig())
     application.console = Console(record=True, width=200)
 
     assert await application.doctor() is True

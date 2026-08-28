@@ -15,7 +15,7 @@ from haiku.rag.capabilities._base import (
     CodeExecutionEntry,
     EvidenceState,
     RAGCapabilityBase,
-    resolve_db_path,
+    resolve_scope,
 )
 from haiku.rag.capabilities._tools import merge_results
 from haiku.rag.config.models import AppConfig
@@ -25,6 +25,9 @@ STATE_NAMESPACE = "analysis"
 _CAPABILITY_ID = "haiku-rag-analysis"
 _TOOL_NAMES = frozenset({"analysis_search", "analysis_execute_code", "analysis_cite"})
 _instructions_path = Path(__file__).parent / "instructions" / "analysis.md"
+_multiple_collections_path = (
+    Path(__file__).parent / "instructions" / "analysis_multiple_collections.md"
+)
 
 
 class AnalysisState(EvidenceState):
@@ -38,6 +41,12 @@ class AnalysisState(EvidenceState):
 @cache
 def instructions() -> str:
     return _instructions_path.read_text().strip()
+
+
+@cache
+def multiple_collections_instructions() -> str:
+    """Appended for a run that spans more than one collection."""
+    return _multiple_collections_path.read_text().rstrip()
 
 
 def _recovery_hint(stderr: str) -> str:
@@ -73,10 +82,13 @@ class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
         if self.sandbox is None:
             rag = await self._ensure_rag()
             assert self.state is not None
-            self.sandbox = Sandbox(
-                db_path=self.db_path,
+            self.sandbox = Sandbox._covering(
+                scope=self.scope,
                 config=self.config,
-                context=AnalysisContext(filter=self.state.document_filter),
+                context=AnalysisContext(
+                    filter=self.state.document_filter,
+                    sources=self.state.sources,
+                ),
                 rag=rag,
                 lock=self.rag_lock,
             )
@@ -199,13 +211,15 @@ def create_capability(
 
         config = get_config()
     analysis_model = config.analysis.model or config.qa.model
+    scope = resolve_scope(db_path, config)
     return AnalysisCapability(
-        db_path=resolve_db_path(db_path, config),
+        scope=scope,
         config=config,
         borrowed_rag=rag,
         state_type=AnalysisState,
         state_namespace=STATE_NAMESPACE,
         instruction_text=instructions(),
+        collection_instructions=multiple_collections_instructions(),
         vision=analysis_model.vision if vision is None else vision,
         tool_names=_TOOL_NAMES,
         request_limit=request_limit,

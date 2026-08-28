@@ -89,3 +89,16 @@ By default, evaluation databases are stored in the haiku.rag data directory:
 - **Windows**: `C:/Users/<USER>/AppData/Roaming/haiku.rag/evaluations/dbs/`
 
 You can override this with the `--db` option.
+
+### Evaluating over Multiple Databases
+
+With [`lancedb.databases`](https://ggozad.github.io/haiku.rag/configuration/storage/#multiple-databases) configured, `evaluations run <dataset> --skip-db` benchmarks the full set. Retrieval, QA, and live conversations preserve the database name on results and citations. A configured set of one follows the same path and retains its name.
+
+Population writes one database and therefore requires `--db`:
+
+```bash
+evaluations run hotpotqa --db /path/to/one.lancedb   # populate, then benchmark
+evaluations run hotpotqa --skip-db                   # benchmark the configured set
+```
+
+`--db` overrides the configured set for both population and benchmarks.

@@ -17,7 +17,6 @@ from haiku.rag.config.models import (
 )
 from haiku.rag.store.engine import Store, connect_lancedb
 from haiku.rag.store.info import get_database_stats
-from haiku.rag.store.repositories.settings import SettingsRepository
 from haiku.rag.store.schema import REQUIRED_TABLES
 from haiku.rag.store.upgrades import get_pending_upgrades
 
@@ -725,7 +724,7 @@ async def run_db_checks(
         .select(["id", "vector", "document_id"])
         .to_arrow()
     )
-    stored = await SettingsRepository(store).get_current_settings()
+    stored = store.stored_settings
     stored_dim = stored.get("embeddings", {}).get("model", {}).get("vector_dim")
     actual_dim = arrow.schema.field("vector").type.list_size
     results.append(_check_vector_dimension(stored_dim, actual_dim))

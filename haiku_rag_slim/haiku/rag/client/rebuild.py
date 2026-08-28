@@ -10,8 +10,11 @@ from lancedb.pydantic import LanceModel
 
 from haiku.rag.client.documents import (
     check_source_accessible,
+    chunk_document,
     create_document_from_source,
 )
+from haiku.rag.client.session import SingleDatabaseSession
+from haiku.rag.client.titles import generate_title
 from haiku.rag.converters import get_converter
 from haiku.rag.store.compression import compress_docling_split
 from haiku.rag.store.models.chunk import Chunk
@@ -23,7 +26,7 @@ from haiku.rag.store.schema import ChunkRecordBase
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
-    from haiku.rag.client import HaikuRAG, RebuildMode
+    from haiku.rag.client import RebuildMode
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +72,7 @@ class _StagingMarkerRecord(LanceModel):
 
 
 async def rebuild_database(
-    client: "HaikuRAG", mode: "RebuildMode"
+    session: SingleDatabaseSession, mode: "RebuildMode"
 ) -> AsyncGenerator[str, None]:
     """Rebuild the database with the specified mode.
 
@@ -82,17 +85,17 @@ async def rebuild_database(
     """
     from haiku.rag.client import RebuildMode
 
-    async with client.store._rebuild_lock:
+    async with session.store._rebuild_lock:
         if mode == RebuildMode.SET_EMBEDDER:
-            await _set_embedder(client)
+            await _set_embedder(session)
             return
 
-        async for doc_id in _rebuild_locked(client, mode):
+        async for doc_id in _rebuild_locked(session, mode):
             yield doc_id
 
 
 async def _rebuild_locked(
-    client: "HaikuRAG", mode: "RebuildMode"
+    session: SingleDatabaseSession, mode: "RebuildMode"
 ) -> AsyncGenerator[str, None]:
     from haiku.rag.client import RebuildMode
 
@@ -100,7 +103,7 @@ async def _rebuild_locked(
     # interrupted rebuild. Returns True only when phase 1 was already
     # complete and the current mode is EMBED_ONLY, in which case we resume
     # phase 2 from the existing staging table instead of recopying.
-    resume_from_staging = await _resolve_rebuild_recovery(client, mode)
+    resume_from_staging = await _resolve_rebuild_recovery(session, mode)
 
     # Wait for any already-scheduled background vacuum before the destructive
     # table operations at the top of RECHUNK / FULL. Rebuild drops and
@@ -109,64 +112,64 @@ async def _rebuild_locked(
     # lance. Note: FULL calls create_document_from_source inside its loop,
     # which may schedule *new* background vacuums — those run after the
     # destructive phase and are fine.
-    await client._await_vacuum_tasks()
+    await session.drain_vacuum()
 
-    settings_repo = SettingsRepository(client.store)
+    settings_repo = SettingsRepository(session.store)
     await settings_repo.save_current_settings()
 
     # Light listing — id/uri/title/metadata only. Each rebuild function
     # fetches full content (including the multi-MB docling_pages blob) one
     # document at a time so a 1000-doc database doesn't pull ~15 GB of
     # blobs into memory before the loop starts.
-    documents = await client.list_documents(include_content=False)
+    documents = await session.list_documents(include_content=False)
 
     if mode == RebuildMode.TITLE_ONLY:
-        async for doc_id in _rebuild_title_only(client, documents):
+        async for doc_id in _rebuild_title_only(session, documents):
             yield doc_id
     elif mode == RebuildMode.EMBED_ONLY:
         async for doc_id in _rebuild_embed_only(
-            client, documents, resume_from_staging=resume_from_staging
+            session, documents, resume_from_staging=resume_from_staging
         ):
             yield doc_id
     elif mode == RebuildMode.RECHUNK:
-        await client.chunk_repository.delete_all()
-        await client.store.recreate_embeddings_table()
-        async for doc_id in _rebuild_rechunk(client, documents):
+        await session.chunk_repository.delete_all()
+        await session.store.recreate_embeddings_table()
+        async for doc_id in _rebuild_rechunk(session, documents):
             yield doc_id
     elif mode == RebuildMode.DESCRIPTIONS:
-        await client.chunk_repository.delete_all()
-        await client.store.recreate_embeddings_table()
-        async for doc_id in _rebuild_descriptions(client, documents):
+        await session.chunk_repository.delete_all()
+        await session.store.recreate_embeddings_table()
+        async for doc_id in _rebuild_descriptions(session, documents):
             yield doc_id
     else:  # FULL
-        await client.chunk_repository.delete_all()
-        await client.store.recreate_embeddings_table()
-        async for doc_id in _rebuild_full(client, documents):
+        await session.chunk_repository.delete_all()
+        await session.store.recreate_embeddings_table()
+        async for doc_id in _rebuild_full(session, documents):
             yield doc_id
 
     # Final maintenance if auto_vacuum enabled. Swallowing only so that a
     # failed post-rebuild optimize doesn't mask a successful rebuild — but
     # log it so the failure is visible in the output.
-    if client._config.storage.auto_vacuum:
+    if session.config.storage.auto_vacuum:
         try:
-            await client.store.vacuum()
+            await session.store.vacuum()
         except Exception:
             logger.warning("Post-rebuild vacuum failed", exc_info=True)
 
 
-async def _set_embedder(client: "HaikuRAG") -> None:
+async def _set_embedder(session: SingleDatabaseSession) -> None:
     """Adopt the current embedder identity without re-embedding.
 
     Only valid when the vector dimension is unchanged — the stored vectors stay
     usable, so just the recorded provider/name are updated. A changed dimension
     requires regenerating every embedding via a full rebuild.
     """
-    from haiku.rag.store.repositories.settings import ConfigMismatchError
+    from haiku.rag.store.exceptions import ConfigMismatchError
 
-    settings_repo = SettingsRepository(client.store)
+    settings_repo = SettingsRepository(session.store)
     stored = await settings_repo.get_current_settings()
     stored_dim = stored.get("embeddings", {}).get("model", {}).get("vector_dim")
-    current_dim = client._config.embeddings.model.vector_dim
+    current_dim = session.config.embeddings.model.vector_dim
 
     if stored_dim is not None and current_dim != stored_dim:
         raise ConfigMismatchError(
@@ -178,7 +181,9 @@ async def _set_embedder(client: "HaikuRAG") -> None:
 
 
 async def _hydrate(
-    client: "HaikuRAG", light_docs: list[Document], include_blobs: bool = True
+    session: SingleDatabaseSession,
+    light_docs: list[Document],
+    include_blobs: bool = True,
 ) -> AsyncGenerator[Document, None]:
     """Yield fully-loaded documents one at a time from a light listing.
 
@@ -189,7 +194,7 @@ async def _hydrate(
     """
     for light_doc in light_docs:
         assert light_doc.id is not None
-        doc = await client.document_repository.get_by_id(
+        doc = await session.document_repository.get_by_id(
             light_doc.id, include_blobs=include_blobs
         )
         if doc is None:
@@ -199,22 +204,22 @@ async def _hydrate(
 
 
 async def _rebuild_title_only(
-    client: "HaikuRAG", documents: list[Document]
+    session: SingleDatabaseSession, documents: list[Document]
 ) -> AsyncGenerator[str, None]:
     """Generate titles for documents that don't have one.
 
     A title comes from the content or the docling structure, never the page
     rasters, so those are left out of the per-document load.
     """
-    repo = client.document_repository
+    repo = session.document_repository
     untitled = [d for d in documents if d.title is None]
-    async for doc in _hydrate(client, untitled, include_blobs=False):
+    async for doc in _hydrate(session, untitled, include_blobs=False):
         assert doc.id is not None
         structure = await repo.get_docling_data(doc.id)
         if structure is not None:
             doc.docling_document = structure.docling_document
         try:
-            title = await client.generate_title(doc)
+            title = await generate_title(session.config, doc)
         except Exception:
             logger.warning(
                 "Failed to generate title for document %s", doc.id, exc_info=True
@@ -226,7 +231,9 @@ async def _rebuild_title_only(
             yield doc.id
 
 
-async def _resolve_rebuild_recovery(client: "HaikuRAG", mode: "RebuildMode") -> bool:
+async def _resolve_rebuild_recovery(
+    session: SingleDatabaseSession, mode: "RebuildMode"
+) -> bool:
     """Resolve any partially-completed rebuild state from a previous crash.
 
     Returns ``True`` if ``_rebuild_embed_only`` should resume from the
@@ -243,7 +250,7 @@ async def _resolve_rebuild_recovery(client: "HaikuRAG", mode: "RebuildMode") -> 
     """
     from haiku.rag.client import RebuildMode
 
-    db = client.store.db
+    db = session.store.db
     tables = (await db.list_tables()).tables
     has_staging = _STAGING_TABLE_NAME in tables
     has_marker = _STAGING_MARKER_TABLE_NAME in tables
@@ -286,7 +293,7 @@ async def _resolve_rebuild_recovery(client: "HaikuRAG", mode: "RebuildMode") -> 
     return False
 
 
-async def _populate_staging_table(client: "HaikuRAG") -> None:
+async def _populate_staging_table(session: SingleDatabaseSession) -> None:
     """Stream the non-vector columns of the chunks table into staging.
 
     Uses ``to_batches`` for a single streaming read (no offset/limit
@@ -297,7 +304,7 @@ async def _populate_staging_table(client: "HaikuRAG") -> None:
     Requires ``_resolve_rebuild_recovery`` to have cleared any leftover
     staging table first: ``create_table`` raises if the name is already taken.
     """
-    db = client.store.db
+    db = session.store.db
     tables = (await db.list_tables()).tables
 
     staging = await db.create_table(_STAGING_TABLE_NAME, schema=_StagingChunkRecord)
@@ -305,7 +312,7 @@ async def _populate_staging_table(client: "HaikuRAG") -> None:
         return
 
     stream = (
-        await client.store.chunks_table.query()
+        await session.store.chunks_table.query()
         .select(["id", "document_id", "content", "metadata", "order"])
         .to_batches(max_batch_length=_STAGING_COPY_BATCH_SIZE)
     )
@@ -324,13 +331,13 @@ async def _populate_staging_table(client: "HaikuRAG") -> None:
         await staging.add(records)
 
 
-async def _mark_phase1_complete(client: "HaikuRAG") -> None:
+async def _mark_phase1_complete(session: SingleDatabaseSession) -> None:
     """Create the marker table that designates staging as authoritative.
 
     Called after ``_populate_staging_table`` finishes. On crash recovery the
     marker's presence flips ``_rebuild_embed_only`` into resume mode.
     """
-    db = client.store.db
+    db = session.store.db
     if _STAGING_MARKER_TABLE_NAME in (await db.list_tables()).tables:
         return
     marker = await db.create_table(
@@ -339,7 +346,7 @@ async def _mark_phase1_complete(client: "HaikuRAG") -> None:
     await marker.add([_StagingMarkerRecord(id="phase1_complete")])
 
 
-async def _drop_staging_tables(client: "HaikuRAG") -> None:
+async def _drop_staging_tables(session: SingleDatabaseSession) -> None:
     """Drop the marker first, then the staging table.
 
     Ordering matters: if a crash interrupts cleanup between the two drops,
@@ -347,7 +354,7 @@ async def _drop_staging_tables(client: "HaikuRAG") -> None:
     partial phase 1 → drops staging harmlessly. The reverse order would
     leak a marker pointing at nothing.
     """
-    db = client.store.db
+    db = session.store.db
     tables = (await db.list_tables()).tables
     if _STAGING_MARKER_TABLE_NAME in tables:
         await db.drop_table(_STAGING_MARKER_TABLE_NAME)
@@ -384,7 +391,7 @@ async def _read_chunks_from_staging(staging_table, document_id: str) -> list[Chu
 
 
 async def _rebuild_embed_only(
-    client: "HaikuRAG",
+    session: SingleDatabaseSession,
     documents: list[Document],
     *,
     resume_from_staging: bool = False,
@@ -414,19 +421,19 @@ async def _rebuild_embed_only(
     """
     from haiku.rag.embeddings import contextualize, embed_chunks
 
-    db = client.store.db
-    embedder = client.chunk_repository.embedder
+    db = session.store.db
+    embedder = session.chunk_repository.embedder
 
     if not resume_from_staging:
         # Phase 1: copy chunks into staging, then mark it complete. After the
         # marker exists, a crash will resume phase 2 from staging.
-        await _populate_staging_table(client)
-        await _mark_phase1_complete(client)
+        await _populate_staging_table(session)
+        await _mark_phase1_complete(session)
 
     # Recreate the chunks table fresh (idempotent; handles vector-dim
     # changes and discards any partial new chunks from a prior crashed
     # phase 2).
-    await client.store.recreate_embeddings_table()
+    await session.store.recreate_embeddings_table()
 
     staging_table = await db.open_table(_STAGING_TABLE_NAME)
 
@@ -443,7 +450,7 @@ async def _rebuild_embed_only(
         # chunks route through embed_image rather than being text-embedded.
         # Bytes live in document_items (embed-only never touches that table).
         if embedder.supports_images:
-            picture_data = await client.document_item_repository.get_all_picture_data(
+            picture_data = await session.document_item_repository.get_all_picture_data(
                 doc.id
             )
             for chunk in chunks:
@@ -462,7 +469,7 @@ async def _rebuild_embed_only(
                     )
 
         content_fts_list = contextualize(chunks)
-        embedded_chunks = await embed_chunks(chunks, embedder, client._config)
+        embedded_chunks = await embed_chunks(chunks, embedder, session.config)
 
         for chunk, content_fts, embedded in zip(
             chunks, content_fts_list, embedded_chunks
@@ -471,7 +478,7 @@ async def _rebuild_embed_only(
             assert chunk.document_id is not None
             assert embedded.embedding is not None
             pending_records.append(
-                client.store.ChunkRecord(
+                session.store.ChunkRecord(
                     id=chunk.id,
                     document_id=chunk.document_id,
                     content=chunk.content,
@@ -491,16 +498,16 @@ async def _rebuild_embed_only(
         yield doc.id
 
         if len(yielded_docs) % _REBUILD_BATCH_SIZE == 0 and pending_records:
-            await client.store.chunks_table.add(pending_records)
+            await session.store.chunks_table.add(pending_records)
             pending_records = []
 
     if pending_records:
-        await client.store.chunks_table.add(pending_records)
+        await session.store.chunks_table.add(pending_records)
 
     # Phase 2 finished. Drop the recovery state — marker first so a crash
     # between the two drops leaves only staging behind, which the next
     # rebuild discards harmlessly.
-    await _drop_staging_tables(client)
+    await _drop_staging_tables(session)
 
     for doc in documents:
         if doc.id and doc.id not in yielded_docs:
@@ -508,7 +515,7 @@ async def _rebuild_embed_only(
 
 
 async def _flush_rebuild_batch(
-    client: "HaikuRAG", documents: list[Document], chunks: list[Chunk]
+    session: SingleDatabaseSession, documents: list[Document], chunks: list[Chunk]
 ) -> None:
     """Batch write documents and chunks during rebuild.
 
@@ -552,12 +559,12 @@ async def _flush_rebuild_batch(
         )
 
     await (
-        client.store.documents_table.merge_insert("id")
+        session.store.documents_table.merge_insert("id")
         .when_matched_update_all()
         .execute(doc_records)
     )
     await (
-        client.store.document_meta_table.merge_insert("id")
+        session.store.document_meta_table.merge_insert("id")
         .when_matched_update_all()
         .when_not_matched_insert_all()
         .execute(meta_records)
@@ -565,7 +572,7 @@ async def _flush_rebuild_batch(
 
     # Batch create all chunks (single LanceDB version)
     if chunks:
-        await client.chunk_repository.create(chunks)
+        await session.chunk_repository.create(chunks)
 
     # Repopulate document items from stored docling data. The stored docling
     # blob has had its picture URIs stripped (compress_docling_split), so
@@ -576,28 +583,28 @@ async def _flush_rebuild_batch(
         docling_doc = doc.get_docling_document()
         if docling_doc is not None:
             existing_picture_data = (
-                await client.document_item_repository.get_all_picture_data(doc.id)
+                await session.document_item_repository.get_all_picture_data(doc.id)
             )
-            await client.document_item_repository.delete_by_document_id(doc.id)
+            await session.document_item_repository.delete_by_document_id(doc.id)
             items = extract_items(
                 doc.id,
                 docling_doc,
                 existing_picture_data=existing_picture_data,
             )
-            await client.document_item_repository.create_items(doc.id, items)
+            await session.document_item_repository.create_items(doc.id, items)
 
 
 async def _rebuild_rechunk(
-    client: "HaikuRAG", documents: list[Document]
+    session: SingleDatabaseSession, documents: list[Document]
 ) -> AsyncGenerator[str, None]:
     """Re-chunk and re-embed each document from its stored docling blob."""
     from haiku.rag.embeddings import embed_chunks
 
     pending_chunks: list[Chunk] = []
     pending_docs: list[Document] = []
-    embedder = client.embedder
+    embedder = session.store.embedder
 
-    async for doc in _hydrate(client, documents):
+    async for doc in _hydrate(session, documents):
         assert doc.id is not None
         docling_document = doc.get_docling_document()
         if docling_document is None:
@@ -609,16 +616,17 @@ async def _rebuild_rechunk(
         # Stored blob has stripped picture URIs; pass the snapshot so
         # build_picture_chunks (inside chunk()) can recover the bytes.
         existing_picture_data = (
-            await client.document_item_repository.get_all_picture_data(doc.id)
+            await session.document_item_repository.get_all_picture_data(doc.id)
             if embedder.supports_images
             else None
         )
-        chunks = await client.chunk(
+        chunks = await chunk_document(
+            session,
             docling_document,
             existing_picture_data=existing_picture_data,
             document_id=doc.id,
         )
-        embedded_chunks = await embed_chunks(chunks, embedder, client._config)
+        embedded_chunks = await embed_chunks(chunks, embedder, session.config)
 
         for order, chunk in enumerate(embedded_chunks):
             chunk.document_id = doc.id
@@ -634,12 +642,12 @@ async def _rebuild_rechunk(
         yield doc.id
 
         if len(pending_docs) >= _REBUILD_BATCH_SIZE:
-            await _flush_rebuild_batch(client, pending_docs, pending_chunks)
+            await _flush_rebuild_batch(session, pending_docs, pending_chunks)
             pending_chunks = []
             pending_docs = []
 
     if pending_docs:
-        await _flush_rebuild_batch(client, pending_docs, pending_chunks)
+        await _flush_rebuild_batch(session, pending_docs, pending_chunks)
 
 
 def _apply_descriptions_sync(
@@ -668,7 +676,9 @@ def _apply_descriptions_sync(
     return len(descriptions)
 
 
-async def _patch_picture_descriptions(client: "HaikuRAG", doc: Document) -> int:
+async def _patch_picture_descriptions(
+    session: SingleDatabaseSession, doc: Document
+) -> int:
     """Run the VLM against pictures lacking a description, patch the docling
     blob in-place. Returns the number of newly described pictures.
     Pictures that already carry ``meta.description.text`` are skipped, so the
@@ -692,7 +702,7 @@ async def _patch_picture_descriptions(client: "HaikuRAG", doc: Document) -> int:
     if not needs_description:
         return 0
 
-    bytes_by_ref = await client.document_item_repository.get_pictures_for_chunk(
+    bytes_by_ref = await session.document_item_repository.get_pictures_for_chunk(
         doc.id, needs_description
     )
     if not bytes_by_ref:
@@ -705,7 +715,7 @@ async def _patch_picture_descriptions(client: "HaikuRAG", doc: Document) -> int:
         )
         return 0
 
-    descriptions = await describe_pictures(bytes_by_ref, config=client._config)
+    descriptions = await describe_pictures(bytes_by_ref, config=session.config)
 
     if not descriptions:
         return 0
@@ -716,7 +726,7 @@ async def _patch_picture_descriptions(client: "HaikuRAG", doc: Document) -> int:
 
 
 async def _rebuild_descriptions(
-    client: "HaikuRAG", documents: list[Document]
+    session: SingleDatabaseSession, documents: list[Document]
 ) -> AsyncGenerator[str, None]:
     """Run the VLM over already-stored picture bytes, patch descriptions into
     the docling blob, then re-chunk + re-embed.
@@ -727,7 +737,7 @@ async def _rebuild_descriptions(
     """
     from haiku.rag.embeddings import embed_chunks
 
-    if client._config.processing.pictures != "description":
+    if session.config.processing.pictures != "description":
         raise ValueError(
             "rebuild --descriptions requires processing.pictures = 'description' "
             "in your config."
@@ -735,10 +745,10 @@ async def _rebuild_descriptions(
 
     pending_chunks: list[Chunk] = []
     pending_docs: list[Document] = []
-    embedder = client.embedder
+    embedder = session.store.embedder
 
     described_total = 0
-    async for doc in _hydrate(client, documents):
+    async for doc in _hydrate(session, documents):
         assert doc.id is not None
         docling_document = doc.get_docling_document()
         if docling_document is None:
@@ -747,23 +757,24 @@ async def _rebuild_descriptions(
                 "rebuild --descriptions requires it. Run a full rebuild instead."
             )
 
-        n = await _patch_picture_descriptions(client, doc)
+        n = await _patch_picture_descriptions(session, doc)
         described_total += n
         # Use the (possibly patched) docling document for chunking.
         docling_document = doc.get_docling_document()
         assert docling_document is not None
 
         existing_picture_data = (
-            await client.document_item_repository.get_all_picture_data(doc.id)
+            await session.document_item_repository.get_all_picture_data(doc.id)
             if embedder.supports_images
             else None
         )
-        chunks = await client.chunk(
+        chunks = await chunk_document(
+            session,
             docling_document,
             existing_picture_data=existing_picture_data,
             document_id=doc.id,
         )
-        embedded_chunks = await embed_chunks(chunks, embedder, client._config)
+        embedded_chunks = await embed_chunks(chunks, embedder, session.config)
 
         for order, chunk in enumerate(embedded_chunks):
             chunk.document_id = doc.id
@@ -774,12 +785,12 @@ async def _rebuild_descriptions(
         yield doc.id
 
         if len(pending_docs) >= _REBUILD_BATCH_SIZE:
-            await _flush_rebuild_batch(client, pending_docs, pending_chunks)
+            await _flush_rebuild_batch(session, pending_docs, pending_chunks)
             pending_chunks = []
             pending_docs = []
 
     if pending_docs:
-        await _flush_rebuild_batch(client, pending_docs, pending_chunks)
+        await _flush_rebuild_batch(session, pending_docs, pending_chunks)
 
     logger.info(
         "rebuild --descriptions: %d new picture descriptions added across %d documents",
@@ -789,15 +800,15 @@ async def _rebuild_descriptions(
 
 
 async def _rebuild_full(
-    client: "HaikuRAG", documents: list[Document]
+    session: SingleDatabaseSession, documents: list[Document]
 ) -> AsyncGenerator[str, None]:
     """Full rebuild: re-convert from source, re-chunk, re-embed."""
     from haiku.rag.embeddings import embed_chunks
 
     pending_chunks: list[Chunk] = []
     pending_docs: list[Document] = []
-    converter = get_converter(client._config)
-    embedder = client.embedder
+    converter = get_converter(session.config)
+    embedder = session.store.embedder
 
     for light_doc in documents:
         assert light_doc.id is not None
@@ -805,10 +816,10 @@ async def _rebuild_full(
         # Try to rebuild from source if available — uses the light listing
         # directly, no need to load the stored content/blobs first.
         if light_doc.uri and check_source_accessible(light_doc.uri):
-            # The refresh writes through the client, not the batch buffer, so
+            # The refresh writes through the database, not the batch buffer, so
             # anything pending has to land first.
             if pending_docs:
-                await _flush_rebuild_batch(client, pending_docs, pending_chunks)
+                await _flush_rebuild_batch(session, pending_docs, pending_chunks)
                 pending_chunks = []
                 pending_docs = []
 
@@ -817,7 +828,7 @@ async def _rebuild_full(
                 # point of a FULL rebuild is to re-convert them anyway. Updates
                 # in place, so a failure here cannot cost the document.
                 refreshed = await create_document_from_source(
-                    client,
+                    session,
                     source=light_doc.uri,
                     metadata=light_doc.metadata or {},
                     force=True,
@@ -840,7 +851,7 @@ async def _rebuild_full(
 
         # Fallback: rebuild from stored content. Now we need the full
         # record (content + docling_pages for the round-trip write).
-        doc = await client.document_repository.get_by_id(
+        doc = await session.document_repository.get_by_id(
             light_doc.id, include_blobs=True
         )
         if doc is None:
@@ -848,8 +859,8 @@ async def _rebuild_full(
         assert doc.id is not None
 
         docling_document = await converter.convert_text(doc.content, format="md")
-        chunks = await client.chunk(docling_document)
-        embedded_chunks = await embed_chunks(chunks, embedder, client._config)
+        chunks = await chunk_document(session, docling_document)
+        embedded_chunks = await embed_chunks(chunks, embedder, session.config)
 
         doc.set_docling(docling_document)
 
@@ -862,9 +873,9 @@ async def _rebuild_full(
         yield doc.id
 
         if len(pending_docs) >= _REBUILD_BATCH_SIZE:
-            await _flush_rebuild_batch(client, pending_docs, pending_chunks)
+            await _flush_rebuild_batch(session, pending_docs, pending_chunks)
             pending_chunks = []
             pending_docs = []
 
     if pending_docs:
-        await _flush_rebuild_batch(client, pending_docs, pending_chunks)
+        await _flush_rebuild_batch(session, pending_docs, pending_chunks)

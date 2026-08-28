@@ -39,6 +39,7 @@ from haiku.rag.capabilities.ledger import (
 )
 from haiku.rag.capabilities.rag import AGENT_PREAMBLE, RAGCapability, RAGState
 from haiku.rag.capabilities.rag import create_capability as create_rag
+from haiku.rag.client.scope import DatabaseRef
 from haiku.rag.config.models import AppConfig, PromptsConfig
 from haiku.rag.sandbox import Sandbox, SandboxResult
 from haiku.rag.store.models.chunk import Chunk, SearchResult
@@ -91,26 +92,89 @@ def test_analysis_capability_api(temp_db_path):
     assert capability.request_limit == 30
 
 
+def _placed(capability) -> "Path | None":
+    """Where a capability covering one local database will open it."""
+    [ref] = capability.scope.databases
+    return ref.db_path
+
+
 def test_capability_factories_resolve_environment_and_defaults(
     temp_db_path, monkeypatch
 ):
     config = AppConfig()
     monkeypatch.setenv("HAIKU_RAG_DB", str(temp_db_path))
-    assert create_rag(config=config).db_path == temp_db_path
+    assert _placed(create_rag(config=config)) == temp_db_path
 
     monkeypatch.delenv("HAIKU_RAG_DB")
-    assert create_rag(config=config).db_path == (
+    assert _placed(create_rag(config=config)) == (
         config.storage.data_dir / "haiku.rag.lancedb"
     )
 
     for factory in (create_rag, create_analysis):
-        db_path = factory(db_path=str(temp_db_path), config=config).db_path
+        db_path = _placed(factory(db_path=str(temp_db_path), config=config))
         assert db_path == temp_db_path
         assert isinstance(db_path, Path)
 
     with patch("haiku.rag.config.get_config", return_value=config):
         assert create_rag().config is config
         assert create_analysis().config is config
+
+
+class TestACapabilityFollowsTheConfiguredLocation:
+    """A capability nobody handed a client opens one for itself, at the
+    database the configuration places."""
+
+    def _config(self, tmp_path, uri: str) -> AppConfig:
+        from haiku.rag.config.models import LanceDBConfig, StorageConfig
+
+        return AppConfig(
+            lancedb=LanceDBConfig(uri=uri),
+            storage=StorageConfig(data_dir=tmp_path / "elsewhere"),
+        )
+
+    def test_a_configured_uri_is_left_to_the_client(self, tmp_path):
+        """A path overrides a configured location, so the capability passes
+        None and the client resolves the configured URI."""
+        located = tmp_path / "notes.lancedb"
+        for factory in (create_rag, create_analysis):
+            [local] = factory(
+                config=self._config(tmp_path, str(located))
+            ).scope.databases
+            assert local == DatabaseRef.configured(None, str(located))
+
+            remote = self._config(tmp_path, "s3://bucket/one.lancedb")
+            [ref] = factory(config=remote).scope.databases
+            assert ref == DatabaseRef(None, "s3://bucket/one.lancedb", None)
+
+    @pytest.mark.asyncio
+    async def test_it_opens_the_database_the_uri_places(self, tmp_path):
+        from haiku.rag.client import HaikuRAG
+
+        located = tmp_path / "notes.lancedb"
+        config = self._config(tmp_path, str(located))
+        async with HaikuRAG(config=config, create=True):
+            pass
+
+        capability = create_rag(config=config)
+        rag = await capability._ensure_rag()
+        try:
+            assert rag.store.db_path == located
+        finally:
+            await capability._close()
+
+    def test_an_explicit_path_still_overrides_the_configured_uri(self, tmp_path):
+        config = self._config(tmp_path, str(tmp_path / "notes.lancedb"))
+        chosen = tmp_path / "chosen.lancedb"
+
+        assert _placed(create_rag(db_path=chosen, config=config)) == chosen
+
+    def test_the_environment_still_overrides_the_configured_uri(
+        self, tmp_path, monkeypatch
+    ):
+        config = self._config(tmp_path, "s3://bucket/one.lancedb")
+        monkeypatch.setenv("HAIKU_RAG_DB", str(tmp_path / "from-env.lancedb"))
+
+        assert _placed(create_rag(config=config)) == tmp_path / "from-env.lancedb"
 
 
 @pytest.mark.asyncio
@@ -139,6 +203,20 @@ def test_domain_preamble_is_added_to_capability_instructions(temp_db_path):
     assert capability.get_instructions().startswith(
         "The corpus contains solar manuals.\n\n# RAG"
     )
+
+
+def _single_database_client() -> AsyncMock:
+    """A stand-in for a client covering one unnamed database.
+
+    `covers_multiple`, `source` and `clients_covering` answer as one unnamed
+    database does; a bare AsyncMock answers every attribute with a truthy Mock.
+    """
+    client = AsyncMock()
+    client.covers_multiple = False
+    client.source_names = ()
+    client.source = None
+    client.clients_covering.return_value = [client]
+    return client
 
 
 @pytest.mark.asyncio
@@ -315,7 +393,7 @@ async def test_capability_isolated_per_run_and_round_trips_state(temp_db_path):
 @pytest.mark.asyncio
 async def test_run_error_closes_resources_and_propagates(temp_db_path):
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
-    client = AsyncMock()
+    client = _single_database_client()
     capability.rag = client
     error = RuntimeError("model failed")
 
@@ -343,6 +421,59 @@ def _stub_client(*batches: list[SearchResult]) -> AsyncMock:
     client.search.side_effect = list(batches)
     client.expand_context.side_effect = lambda results: results
     return client
+
+
+def _picture_result(source: str) -> SearchResult:
+    import base64
+    from io import BytesIO
+
+    from PIL import Image as PILImage
+
+    buffer = BytesIO()
+    PILImage.new("RGB", (4, 4), "red").save(buffer, format="PNG")
+    return SearchResult(
+        content="body",
+        score=0.9,
+        source=source,
+        chunk_id="c1",
+        document_id="d1",
+        image_data={"#/pictures/0": base64.b64encode(buffer.getvalue()).decode()},
+    )
+
+
+async def _labels_of_search(temp_db_path, *sources: str) -> list[str]:
+    """The labels the search tool attaches to its images, for a client covering
+    `sources`."""
+    from pydantic_ai.messages import ToolReturn
+
+    capability = create_rag(db_path=temp_db_path, config=AppConfig(), vision=True)
+    capability.state = RAGState()
+    client = _stub_client([_picture_result(sources[0])])
+    client.source_names = sources
+
+    with patch.object(RAGCapability, "_ensure_rag", AsyncMock(return_value=client)):
+        returned = await capability._search("cats", None)
+
+    assert isinstance(returned, ToolReturn)
+    assert returned.content is not None
+    return [item for item in returned.content if isinstance(item, str)]
+
+
+@pytest.mark.asyncio
+async def test_a_search_spanning_collections_names_them_on_its_images(temp_db_path):
+    """Images travel beside the results and are labelled the same way."""
+    labels = await _labels_of_search(temp_db_path, "alpha", "beta")
+
+    assert "Collection: alpha." in labels[0]
+
+
+@pytest.mark.asyncio
+async def test_a_search_over_one_collection_does_not_name_it_on_its_images(
+    temp_db_path,
+):
+    labels = await _labels_of_search(temp_db_path, "alpha")
+
+    assert not [label for label in labels if "Collection" in label]
 
 
 @pytest.mark.asyncio
@@ -381,10 +512,34 @@ async def test_a_narrower_repeat_keeps_what_the_wider_search_returned(temp_db_pa
 
 
 @pytest.mark.asyncio
+async def test_two_databases_holding_one_chunk_id_both_survive(temp_db_path):
+    """A database copied from another holds the same chunk ids, so what tells
+    two results apart is the database and the id together."""
+    capability = create_rag(db_path=temp_db_path, config=AppConfig())
+    capability.state = RAGState()
+    capability.borrowed_rag = _stub_client(
+        [SearchResult(content="alpha", score=1.0, chunk_id="c1", source="alpha")],
+        [
+            SearchResult(content="alpha", score=1.0, chunk_id="c1", source="alpha"),
+            SearchResult(content="beta", score=0.9, chunk_id="c1", source="beta"),
+        ],
+    )
+
+    await capability._search("cats", 20)
+    await capability._search("cats", None)
+
+    stored = capability.state.searches["cats"]
+    assert [(r.source, r.chunk_id) for r in stored] == [
+        ("alpha", "c1"),
+        ("beta", "c1"),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_cite_resolves_direct_chunk_ids_and_reuses_document_lookup(temp_db_path):
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
     capability.state = RAGState(evidence=CapabilityEvidenceRecord(question=0))
-    client = AsyncMock()
+    client = _single_database_client()
     client.get_chunk_by_id.side_effect = [
         Chunk(id="chunk-1", document_id="doc-1", content="first"),
         Chunk(id="chunk-2", document_id="doc-1", content="second"),
@@ -410,7 +565,7 @@ async def test_cite_resolves_direct_chunk_ids_and_reuses_document_lookup(temp_db
 async def test_cite_reports_unresolved_ids_on_partial_success(temp_db_path):
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
     capability.state = RAGState(evidence=CapabilityEvidenceRecord(question=0))
-    client = AsyncMock()
+    client = _single_database_client()
     client.get_chunk_by_id.side_effect = [
         Chunk(id="chunk-1", document_id="doc-1", content="first"),
         None,
@@ -454,7 +609,7 @@ async def test_cite_repairs_chunk_ids_damaged_in_transcription(temp_db_path):
             ]
         },
     )
-    client = AsyncMock()
+    client = _single_database_client()
     client.get_chunk_by_id.return_value = None
     capability.rag = client
 
@@ -1213,7 +1368,7 @@ async def test_citing_without_searching_grounds_the_question(temp_db_path):
     async def model(_messages, _info):
         return ModelResponse(parts=next(calls))
 
-    client = AsyncMock()
+    client = _single_database_client()
     client.get_chunk_by_id.return_value = Chunk(
         id="chunk-1", document_id="doc-1", content="evidence"
     )
@@ -1315,15 +1470,13 @@ async def test_a_capability_fetches_its_own_evidences_pictures(temp_db_path):
     """Compaction rehydrates through the owner, which already holds the connection."""
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
     client = AsyncMock()
-    client.document_item_repository.get_picture_bytes.return_value = b"picture-bytes"
+    client.get_picture_bytes.return_value = b"picture-bytes"
     capability.rag = client
 
-    data = await capability.get_picture_bytes("doc-1", "#/pictures/0")
+    data = await capability.get_picture_bytes("doc-1", "#/pictures/0", "beta")
 
     assert data == b"picture-bytes"
-    client.document_item_repository.get_picture_bytes.assert_awaited_once_with(
-        "doc-1", "#/pictures/0"
-    )
+    client.get_picture_bytes.assert_awaited_once_with("doc-1", "#/pictures/0", "beta")
 
 
 @pytest.mark.asyncio
@@ -1353,7 +1506,7 @@ async def test_citing_nothing_after_citing_something_keeps_it_grounded(temp_db_p
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
     capability.state = RAGState(evidence=CapabilityEvidenceRecord(question=0))
     capability.epoch = 5
-    client = AsyncMock()
+    client = _single_database_client()
     client.get_chunk_by_id.return_value = Chunk(
         id="chunk-1", document_id="doc-1", content="evidence"
     )
@@ -1509,3 +1662,126 @@ async def test_an_answered_question_is_no_longer_in_progress(temp_db_path):
     record = _record(deps, "rag")
     assert record.question == 0
     assert record.in_progress is False
+
+
+class TestMultipleCollectionsInstructions:
+    """The note follows what a run reads, not what the configuration names: a
+    run over one collection gets the single-collection instructions."""
+
+    @staticmethod
+    def _config(**databases):
+        from haiku.rag.config.models import LanceDBConfig
+
+        return AppConfig(lancedb=LanceDBConfig(databases=databases))
+
+    @staticmethod
+    def _client(federated):
+        client = AsyncMock()
+        client.covers_multiple = len(federated) > 1
+        client.source_names = tuple(federated)
+        return client
+
+    def test_one_database_is_instructed_as_before(self):
+        from haiku.rag.capabilities.analysis import instructions as analysis_text
+        from haiku.rag.capabilities.rag import instructions as rag_text
+
+        for factory, baseline in (
+            (create_rag, rag_text),
+            (create_analysis, analysis_text),
+        ):
+            for config in (AppConfig(), self._config(alpha="/a.lancedb")):
+                capability = factory(db_path=Path("/tmp/x.lancedb"), config=config)
+                assert capability.instruction_text == baseline()
+
+    def test_an_explicit_path_opens_one_database(self):
+        """A path names one database, whatever the configuration names."""
+        from haiku.rag.capabilities.analysis import instructions as analysis_text
+        from haiku.rag.capabilities.rag import instructions as rag_text
+
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
+        for factory, baseline in (
+            (create_rag, rag_text),
+            (create_analysis, analysis_text),
+        ):
+            capability = factory(db_path=Path("/tmp/one.lancedb"), config=config)
+            assert capability.instruction_text == baseline()
+
+    def test_a_lent_client_covering_one_database_is_instructed_as_before(self):
+        from haiku.rag.capabilities.analysis import instructions as analysis_text
+        from haiku.rag.capabilities.rag import instructions as rag_text
+
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
+        for factory, baseline in (
+            (create_rag, rag_text),
+            (create_analysis, analysis_text),
+        ):
+            capability = factory(config=config, rag=self._client({}))
+            assert capability.instruction_text == baseline()
+
+    def test_a_lent_client_covering_a_set_is_told_about_it(self):
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
+        covering = self._client({"alpha": "/a.lancedb", "beta": "/b.lancedb"})
+
+        for factory in (create_rag, create_analysis):
+            capability = factory(config=config, rag=covering)
+            assert "Collection:" in capability.get_instructions()
+
+    def test_the_rag_note_names_the_line_a_result_carries(self):
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
+
+        text = create_rag(config=config).get_instructions()
+
+        assert "Collection:" in text
+
+    def test_the_analysis_note_separates_the_interfaces(self):
+        """The three interfaces name a collection differently, and the mounted
+        files do not name it at all."""
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
+
+        text = create_analysis(config=config).get_instructions()
+
+        assert "Collection:" in text  # analysis_search results
+        assert "source" in text  # in-code search / list_documents
+        assert "metadata.json" in text  # the mounted files, which lack it
+        assert "list_documents" in text  # how to map ids to collections
+
+    def test_a_run_narrowed_to_one_collection_drops_the_note(self):
+        """A question narrows the conversation, so a capability over a set can
+        still read one collection."""
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
+
+        rag = create_rag(config=config)
+        rag.state = RAGState(sources=["alpha"])
+        analysis = create_analysis(config=config)
+        analysis.state = AnalysisState(sources=["alpha"])
+
+        assert "Collection:" not in rag.get_instructions()
+        assert "Collection:" not in analysis.get_instructions()
+
+    def test_a_run_narrowed_to_two_collections_keeps_the_note(self):
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb", gamma="/c.lancedb")
+
+        capability = create_rag(config=config)
+        capability.state = RAGState(sources=["alpha", "beta"])
+
+        assert "Collection:" in capability.get_instructions()
+
+    def test_an_unnarrowed_run_follows_the_lent_client(self):
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
+        one = create_rag(config=config, rag=self._client({}))
+        one.state = RAGState()
+        covering = create_rag(
+            config=config, rag=self._client({"alpha": "/a", "beta": "/b"})
+        )
+        covering.state = RAGState()
+
+        assert "Collection:" not in one.get_instructions()
+        assert "Collection:" in covering.get_instructions()
+
+    def test_the_note_follows_the_preamble_and_the_base(self):
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
+        config.prompts.domain_preamble = "PREAMBLE"
+
+        text = create_rag(config=config).get_instructions()
+
+        assert text.index("PREAMBLE") < text.index("# RAG") < text.index("Collection:")

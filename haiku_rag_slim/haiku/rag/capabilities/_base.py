@@ -33,10 +33,16 @@ from haiku.rag.capabilities._tools import (
     search_corpus,
 )
 from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord, EvidenceRef
-from haiku.rag.client import HaikuRAG
+from haiku.rag.client import HaikuRAG, all_found
+from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.config.models import AppConfig
+from haiku.rag.store.exceptions import AmbiguousCitationError
 from haiku.rag.store.models.chunk import SearchResult
-from haiku.rag.store.models.citation import Citation, resolve_citations
+from haiku.rag.store.models.citation import (
+    Citation,
+    ambiguous_citation,
+    resolve_citations,
+)
 from haiku.rag.tools.search import build_image_content_from_results
 
 CITATION_GRACE_REQUESTS = 2
@@ -56,6 +62,17 @@ duplicating a character or a whole group stays above 0.75, so the gap is wide.
 """
 
 
+def _ambiguous_retry(error: AmbiguousCitationError) -> ModelRetry:
+    """The only way out of an id that names a chunk in two databases.
+
+    The model cannot say which it meant, so the retry asks for other evidence.
+    """
+    return ModelRetry(
+        f"{error}. Cite a chunk id that appears once across the databases "
+        "searched, or cite nothing."
+    )
+
+
 def _nearest_known_id(chunk_id: str, known_ids: list[str]) -> str:
     """Recover a chunk id the model damaged while transcribing it.
 
@@ -70,12 +87,14 @@ def _nearest_known_id(chunk_id: str, known_ids: list[str]) -> str:
     return match[0] if match else chunk_id
 
 
-def resolve_db_path(db_path: Path | str | None, config: AppConfig) -> Path:
-    if db_path is not None:
-        return Path(db_path)
-    if env_db := os.environ.get("HAIKU_RAG_DB"):
-        return Path(env_db).expanduser()
-    return config.storage.data_dir / "haiku.rag.lancedb"
+def resolve_scope(db_path: Path | str | None, config: AppConfig) -> DatabaseScope:
+    """The databases a capability covers, resolved once at its entry point.
+
+    ``HAIKU_RAG_DB`` is read here and nowhere else.
+    """
+    if db_path is None and (env_db := os.environ.get("HAIKU_RAG_DB")):
+        db_path = Path(env_db).expanduser()
+    return DatabaseScope.resolve(config, database_path=db_path)
 
 
 class EvidenceState(BaseModel):
@@ -91,6 +110,7 @@ class EvidenceState(BaseModel):
     citations: list[str] = Field(default_factory=list)
     evidence: CapabilityEvidenceRecord = Field(default_factory=CapabilityEvidenceRecord)
     document_filter: str | None = None
+    sources: list[str] | None = None
     searches: dict[str, list[SearchResult]] = Field(default_factory=dict)
 
     def begin_invocation(self) -> None:
@@ -101,8 +121,8 @@ class EvidenceState(BaseModel):
         leaves a later citation unable to resolve against the expanded result the
         model saw, recording no provenance for it.
 
-        `document_filter` scopes the conversation, and `evidence` carries question
-        identity, so neither is working evidence.
+        `document_filter` and `sources` scope the conversation, and `evidence`
+        carries question identity, so none of them is working evidence.
         """
         self.citations.clear()
         self.searches.clear()
@@ -138,11 +158,13 @@ def _called_own_tool(messages: list[ModelMessage], tool_names: frozenset[str]) -
 
 @dataclass
 class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
-    db_path: Path
+    scope: DatabaseScope
     config: AppConfig
     state_type: type[StateT]
     state_namespace: str
     instruction_text: str
+    collection_instructions: str
+    """Appended for a run that spans more than one collection."""
     vision: bool
     tool_names: frozenset[str]
     request_limit: int | None = None
@@ -163,7 +185,7 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
 
     False on a first question, and equally on every question of a host that does
     not carry state between runs. Capabilities that need the record to mean
-    anything across questions read it to refuse rather than act on nothing.
+    anything across questions refuse when this is False.
     """
 
     async def for_run(self, ctx: RunContext[Any]) -> "RAGCapabilityBase[StateT]":
@@ -212,10 +234,27 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
         run_capability._sync_state()
         return run_capability
 
+    @property
+    def spans_collections(self) -> bool:
+        """Whether this run reads more than one collection.
+
+        A question narrows the conversation through `sources`, so a capability
+        built over a set can still run against one collection, and telling it
+        how to attribute across collections it cannot reach is noise.
+        """
+        if self.state is not None and self.state.sources is not None:
+            return len(set(self.state.sources)) > 1
+        if self.borrowed_rag is not None:
+            return self.borrowed_rag.covers_multiple
+        return self.scope.covers_multiple
+
     def get_instructions(self) -> str:
+        parts = [self.instruction_text]
         if self.config.prompts.domain_preamble:
-            return f"{self.config.prompts.domain_preamble}\n\n{self.instruction_text}"
-        return self.instruction_text
+            parts.insert(0, self.config.prompts.domain_preamble)
+        if self.spans_collections:
+            parts.append(self.collection_instructions)
+        return "\n\n".join(parts)
 
     async def before_model_request(
         self, ctx: RunContext[Any], request_context: ModelRequestContext
@@ -375,12 +414,14 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
         if self.rag is None:
             async with self.resource_lock:
                 if self.rag is None:
-                    rag = HaikuRAG(self.db_path, config=self.config, read_only=True)
+                    rag = HaikuRAG._covering(self.scope, self.config, read_only=True)
                     await rag.__aenter__()
                     self.rag = rag
         return self.rag
 
-    async def get_picture_bytes(self, document_id: str, self_ref: str) -> bytes | None:
+    async def get_picture_bytes(
+        self, document_id: str, self_ref: str, source: str | None = None
+    ) -> bytes | None:
         """Fetch a picture of this capability's evidence, for whoever re-attaches it.
 
         Public because compaction rehydrates cited pictures and this capability
@@ -388,9 +429,7 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
         """
         async with self.rag_lock:
             rag = await self._ensure_rag()
-            return await rag.document_item_repository.get_picture_bytes(
-                document_id, self_ref
-            )
+            return await rag.get_picture_bytes(document_id, self_ref, source)
 
     async def _close(self) -> None:
         if self.rag is not None:
@@ -463,18 +502,23 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
                 "the results you already have."
             )
         async with self.rag_lock:
-            formatted, results = await search_corpus(
+            formatted, results, include_collection = await search_corpus(
                 await self._ensure_rag(),
                 query,
                 limit=limit,
                 document_filter=self.state.document_filter,
+                sources=self.state.sources,
             )
         state = self.state
         # A model can search the same query twice with different limits, and the
         # narrower return must not drop what the wider one already showed it.
         merge_results(state.searches.setdefault(query, []), results)
         self._note_evidence()
-        if self.vision and (parts := build_image_content_from_results(results)):
+        if self.vision and (
+            parts := build_image_content_from_results(
+                results, include_collection=include_collection
+            )
+        ):
             return ToolReturn(return_value=formatted, content=parts)
         return formatted
 
@@ -497,27 +541,50 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
             all_results.extend(results)
         known_ids = [result.chunk_id for result in all_results if result.chunk_id]
         requested = [_nearest_known_id(cid.strip("[]"), known_ids) for cid in chunk_ids]
-        citations = resolve_citations(requested, all_results)
+        try:
+            citations = resolve_citations(requested, all_results)
+        except AmbiguousCitationError as error:
+            raise _ambiguous_retry(error) from error
         resolved = {citation.chunk_id for citation in citations}
         missing = [cid for cid in requested if cid not in resolved]
 
         if missing:
             async with self.rag_lock:
                 rag = await self._ensure_rag()
+                # A chunk id names no database, so the fallback covers exactly
+                # what the question covers, and nothing it does not.
+                lookups = await rag.clients_covering(self.state.sources)
                 synthetic: list[SearchResult] = []
-                documents: dict[str, Any] = {}
+                documents: dict[tuple[str | None, str], Any] = {}
                 for chunk_id in missing:
-                    chunk = await rag.get_chunk_by_id(chunk_id)
-                    if chunk is None or not chunk.document_id:
+                    # All holders are asked: a collision shows only across
+                    # every database's answer.
+                    holders = await all_found(
+                        lookups, lambda owner: owner.get_chunk_by_id(chunk_id)
+                    )
+                    if len(holders) > 1:
+                        raise _ambiguous_retry(
+                            ambiguous_citation(
+                                chunk_id, [owner.source for owner, _ in holders]
+                            )
+                        )
+                    if not holders:
                         continue
-                    document = documents.get(chunk.document_id)
-                    if chunk.document_id not in documents:
-                        document = await rag.get_document_by_id(chunk.document_id)
-                        documents[chunk.document_id] = document
+                    [(owner, chunk)] = holders
+                    if not chunk.document_id:
+                        continue
+                    key = (owner.source, chunk.document_id)
+                    if key not in documents:
+                        documents[key] = await owner.get_document_by_id(
+                            chunk.document_id
+                        )
+                    document = documents[key]
                     chunk.document_uri = document.uri if document else None
                     chunk.document_title = document.title if document else None
                     chunk.document_meta = document.metadata if document else {}
-                    synthetic.append(SearchResult.from_chunk(chunk, score=1.0))
+                    result = SearchResult.from_chunk(chunk, score=1.0)
+                    result.source = owner.source
+                    synthetic.append(result)
                 citations.extend(resolve_citations(missing, synthetic))
 
         if not citations:
@@ -525,7 +592,10 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
                 f"None of the supplied chunk_ids {list(chunk_ids)} could be resolved. "
                 "Copy chunk_ids verbatim from search results."
             )
-        self._register_citations(citations)
+        try:
+            self._register_citations(citations)
+        except AmbiguousCitationError as error:
+            raise _ambiguous_retry(error) from error
         self._declare(citations)
         resolved = {citation.chunk_id for citation in citations}
         unresolved = [cid for cid in missing if cid not in resolved]
@@ -542,8 +612,21 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
         return f"Registered {len(citations)} citation(s)."
 
     def _register_citations(self, citations: list[Citation]) -> None:
+        """Index the citations, numbering the ones not already registered.
+
+        The index is keyed by chunk id and outlives the question, so an id
+        already registered from another database is refused here.
+        """
         assert self.state is not None
         state = self.state
+        for citation in citations:
+            held = state.citation_index.get(citation.chunk_id)
+            if held is not None and held.source != citation.source:
+                raise AmbiguousCitationError(
+                    f"chunk id {citation.chunk_id} was already cited from "
+                    "another database in this conversation; a citation records "
+                    "the id alone and cannot say which"
+                )
         next_index = len(state.citation_index) + 1
         for citation in citations:
             if citation.chunk_id not in state.citation_index:
@@ -560,5 +643,5 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
 __all__ = [
     "CodeExecutionEntry",
     "RAGCapabilityBase",
-    "resolve_db_path",
+    "resolve_scope",
 ]

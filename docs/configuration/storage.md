@@ -66,6 +66,21 @@ If that number times six exceeds available RAM, use one of:
 
 This is an upstream limitation rather than a `haiku.rag` setting. Compaction bounds itself by row count instead of bytes, and LanceDB's async API exposes no batch size or fragment target to override it. Tracked at [lancedb/lancedb#2325](https://github.com/lancedb/lancedb/issues/2325). The requirement above will drop once compaction batches by bytes.
 
+### Changing the Default Database Path
+
+`storage.data_dir` holds the default database, always called `haiku.rag.lancedb`. To put the database somewhere else for every command, give `lancedb.uri` a local path:
+
+```yaml
+lancedb:
+  uri: /data/notes.lancedb
+```
+
+An explicit `--db PATH` overrides `lancedb.uri` for that invocation.
+
+This places one database without naming it. Its `source` is `None` in search results, citations and documents, since only [`lancedb.databases`](#multiple-databases) assigns the names that carry provenance. A path here changes where the database lives, not what it is called.
+
+A value with no scheme is a local path wherever it is configured, so `haiku-rag init` creates it and every command that opens an existing database requires it to exist. A mistyped path fails rather than becoming a new empty database.
+
 ## Database Creation
 
 Databases must be explicitly created before use:
@@ -92,7 +107,7 @@ async with HaikuRAG(create=True) as client:
 
 The [default location](index.md#configuration-file-locations) is platform-specific (e.g., `~/Library/Application Support/haiku.rag/` on macOS).
 
-Operations on non-existent databases raise `FileNotFoundError`. This prevents accidental database creation from typos or misconfigured paths.
+Opening a nonexistent unnamed local database raises `FileNotFoundError`, naming its path. This prevents accidental database creation from typos or misconfigured paths. A database named in `lancedb.databases` raises `SourceUnavailableError` instead, naming the database and not its location.
 
 ## Remote Storage
 
@@ -145,6 +160,7 @@ lancedb:
 - **LanceDB Cloud** (`db://`): Requires `api_key` and `region`. Table optimization and indexing are managed server-side.
 - **Object storage** (`s3://`, `gs://`, `az://`, `hdfs://`): Uses `storage_options` for credentials and endpoint configuration. Authentication can also be provided via environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, etc.) or cloud provider SDK defaults (AWS CLI, Azure CLI, gcloud).
 - **S3-compatible stores** (MinIO, Tigris, etc.): Set `endpoint` in `storage_options`. When using `http://` endpoints, also set `allow_http: "true"`.
+- **Local path** (no scheme): `uri` also takes a local path, which is how the default database is pointed elsewhere. See [Changing the Default Database Path](#changing-the-default-database-path).
 
 The `storage_options` keys are case-insensitive and passed directly to the underlying object store library. Available keys depend on the backend. See the [LanceDB storage docs](https://lancedb.com/docs/storage/) for details.
 
@@ -173,6 +189,110 @@ The recommended layout for production is "different buckets, same account, separ
 - **Consumer processes** (1..N) — IAM role with `s3:Get/List` on the LanceDB bucket only. Run `haiku-rag --read-only mcp`, the chat TUI, etc. They never see the documents bucket.
 
 Each process picks up its own credentials from the AWS default chain (env vars, IAM instance role, AWS profile), so no credentials are hard-coded in the configuration files.
+
+`haiku-ingester` writes the database the configuration places, so a `lancedb.uri` needs no further option. `--db PATH` overrides it. When `lancedb.databases` contains more than one database the ingester has no way to name which it writes, and refuses to start with `AmbiguousDatabaseError`: give each database its own ingester process, each with a configuration naming a single database, or select one with `--db PATH`. A one-entry mapping is unambiguous and is accepted.
+
+## Multiple Databases
+
+Use `lancedb.databases` to name local or remote databases that should be searched together:
+
+```yaml
+lancedb:
+  databases:
+    papers: s3://my-bucket/papers.lancedb
+    wiki: s3://my-bucket/wiki.lancedb
+    notes: /data/notes.lancedb
+```
+
+A location can be a URI or local path. `databases` and `uri` are mutually exclusive.
+
+Results, documents, and citations use the configured name as `source`. An unavailable configured database raises `SourceUnavailableError`, which names the database and not its location, so a location never travels in an error a consumer might render or log. A migration, configuration or read-only failure keeps its own type, with the database named in the message. Commands that report on a database, such as `info`, still show where it is.
+
+Searches spanning multiple databases identify each result with a model-facing `Collection:` line. Searches over one database omit it. Structured `source` fields on results, documents, citations, and analysis dictionaries are unchanged.
+
+Embedding compatibility is checked against two different things.
+
+On open, each database is compared with the current configuration. A dimension mismatch raises `ConfigMismatchError`. A provider or model-name mismatch at the same dimension warns in read-only mode and raises in writable mode.
+
+Across a selection, the databases are compared with each other. Vector and hybrid search embed the query once, so every database answering it must record the same provider, model, and dimension. A disagreement raises `ConfigMismatchError` in read-only mode as well. Only the databases searched together have to agree, and full-text search embeds nothing, so it is unaffected.
+
+### Search and Provenance
+
+`search`, `ask`, and `analyze` use the full set by default. Pass `sources` to select a subset:
+
+```python
+results = await client.search("query")                     # every database
+results = await client.search("query", sources=["papers"])   # one of them
+```
+
+Candidates are combined into one ranked list with the configured reranker, or with reciprocal rank fusion when reranking is disabled. `SearchResult.source`, `Citation.source`, and `Document.source` contain the configured database name. The name is retained when a client covers only one named database. Databases configured through `lancedb.uri` are unnamed, so their `source` is `None`.
+
+The CLI labels results and citations only when the operation spans multiple databases. A command already narrowed with `--db-name` does not repeat the name on every result.
+
+#### Duplicate IDs
+
+IDs are unique within a database, not across databases. Copies of a database therefore retain the same IDs.
+
+Citation ambiguity is evaluated against evidence available to the run. A cited chunk ID is rejected with `AmbiguousCitationError` if search returned it from multiple databases, or it was previously cited from another database. If only one retrieved result has the ID, that result is cited. For an ID absent from search results, the fallback checks every selected database and rejects multiple holders. A shared ID that nothing cites is ignored.
+
+`get_document_by_id`, `get_chunk_by_id` and `get_picture_bytes` take an optional `source`, and ask that database alone. A name the client does not cover raises `UnknownDatabaseError`. Without one, the document and chunk lookups ask every covered database and answer from the first that holds the ID; `get_picture_bytes` requires one whenever the client covers a set.
+
+The analysis sandbox rejects shared document IDs because its mount path is `/documents/{id}/`.
+
+The chat document filter selects by document and database: the search is narrowed to the databases the selection names, and the ID filter applies within them. An ID that copies share still matches in every selected database that holds it.
+
+#### Ranking
+
+Reciprocal rank fusion compares positions rather than scores, so each database contributes top-ranked results even when another database has stronger matches. A reranker scores the combined candidate set directly, which has been measured to help aggregate retrieval and to hurt attribution between near-identical documents.
+
+Aggregate retrieval is stronger with a reranker. In a 3,045-query evaluation over a corpus split across three databases, reranking produced retrieval MAP 0.9914, compared with 0.9918 for the same corpus in one database. Without a reranker, MAP was 0.6044, compared with 0.9798 in one database. Reranking cost grows with the number of databases because each contributes candidates.
+
+A reranker scores the combined candidates with no notion of which database each came from, so on near-identical text it can pick the wrong database's chunk, where fusion keeps them apart because each database contributes its own top-ranked result. In two nine-case acceptance runs over a synthetic corpus holding one station in two databases under near-identical names, attribution was weaker with reranking: citing the right database succeeded 5 of 9 and 6 of 9 times with a reranker, against 8 of 9 and 9 of 9 without.
+
+Configure a reranker where retrieval breadth matters, and measure it where answers have to attribute between documents that read alike.
+
+Without a reranker, consider increasing `search.limit` with the number of databases. With three complete rankings and a limit of 5, a database may contribute only one or two results. A higher limit also sends more results to the caller and model.
+
+Image queries are vector-only and skip the reranker: there is no query text to score a document against, so candidates keep their vector ranking and fusion ranks by position.
+
+If a selected database is unavailable, the operation fails with `SourceUnavailableError`, which names that database.
+
+### Python Operations
+
+Creating, writing, rebuilding, and vacuuming require one database. Calling these operations on a client that covers multiple raises `AmbiguousDatabaseError`. Select one at creation time or obtain a single-database client:
+
+```python
+async with HaikuRAG(config=config, create=True, sources=["papers"]) as papers:
+    ...
+
+async with HaikuRAG(config=config) as client:
+    papers = (await client.clients_for(["papers"]))[0]
+```
+
+Conversion, chunking, and title generation do not access a database and remain available on a multi-database client.
+
+### CLI Commands
+
+Commands use database sets as follows:
+
+- **Set-capable**: `search`, `ask`, `analyze`, and `chat` use the full configured set, or the single database selected by `--db-name`.
+- **Config-only**: `settings`, `init-config`, and `download-models` do not open a database.
+- **Single-database**: everything else — document writes, `rebuild`, `vacuum`, `migrate`, `init`, `info`, `history`, `tag`, `doctor`, `list`, `inspect`, `visualize`, and `mcp` — works on one database, selected with the global `--db-name` option.
+
+```bash
+haiku-rag search "query"         # every configured database
+haiku-rag --db-name papers list  # one of them
+haiku-rag --db-name papers migrate
+```
+
+`--db-name` selects an entry from `lancedb.databases`, including remote entries. `--db` selects a local path and overrides the configured location. A single-database command requires one of these options when multiple databases are configured. A configured set of one is selected automatically.
+
+Each database is created, migrated and vacuumed on its own:
+
+```bash
+haiku-rag --db-name papers init
+haiku-rag --db-name wiki init
+```
 
 ## Vector Indexing
 

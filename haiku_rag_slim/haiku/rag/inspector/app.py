@@ -16,6 +16,8 @@ from haiku.rag.inspector.widgets.search_modal import SearchModal
 if TYPE_CHECKING:
     from textual.app import ComposeResult
 
+    from haiku.rag.client.scope import DatabaseScope
+
 
 class InspectorApp(App):
     """Textual TUI for inspecting LanceDB data."""
@@ -66,9 +68,13 @@ class InspectorApp(App):
         Binding("c", "show_context", "Context", show=True),
     ]
 
-    def __init__(self, db_path: Path, read_only: bool = False):
+    def __init__(
+        self,
+        scope: "DatabaseScope",
+        read_only: bool = False,
+    ):
         super().__init__()
-        self.db_path = db_path
+        self.scope = scope
         self.read_only = read_only
         self.client: HaikuRAG | None = None
 
@@ -83,11 +89,7 @@ class InspectorApp(App):
     async def on_mount(self) -> None:
         """Initialize the app when mounted."""
         config = get_config()
-        client = HaikuRAG(
-            db_path=self.db_path,
-            config=config,
-            read_only=self.read_only,
-        )
+        client = HaikuRAG._covering(self.scope, config, read_only=self.read_only)
         # Assign only after a successful open: on_unmount must not tear down
         # a client whose __aenter__ failed.
         await client.__aenter__()
@@ -131,7 +133,7 @@ class InspectorApp(App):
         if self.client:
             from haiku.rag.inspector.widgets.info_modal import InfoModal
 
-            await self._switch_modal(InfoModal(self.client, self.db_path))
+            await self._switch_modal(InfoModal(self.client))
 
     async def on_search_modal_chunk_selected(
         self, message: SearchModal.ChunkSelected
@@ -228,16 +230,20 @@ class InspectorApp(App):
 def run_inspector(
     db_path: Path | None = None,
     read_only: bool = False,
+    scope: "DatabaseScope | None" = None,
 ) -> None:
     """Run the inspector TUI.
 
     Args:
-        db_path: Path to the LanceDB database. If None, uses default from config.
+        db_path: Path to the LanceDB database, when no scope is given.
+        scope: The database to inspect, resolved by the caller.
         read_only: Whether to open the database in read-only mode.
     """
     config = get_config()
-    if db_path is None:
-        db_path = config.storage.data_dir / "haiku.rag.lancedb"
+    if scope is None:
+        from haiku.rag.client.scope import DatabaseScope
 
-    app = InspectorApp(db_path, read_only=read_only)
+        scope = DatabaseScope.resolve(config, database_path=db_path)
+
+    app = InspectorApp(scope, read_only=read_only)
     app.run()
