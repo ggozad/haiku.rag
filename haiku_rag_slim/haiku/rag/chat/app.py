@@ -317,7 +317,11 @@ class ChatApp(App):
                         blobs
                     )
 
-        await chat_history.add_citations(citations, picture_bytes=picture_bytes)
+        await chat_history.add_citations(
+            citations,
+            picture_bytes=picture_bytes,
+            include_collection=self.client is not None and self.client.covers_multiple,
+        )
 
         if analysis_data := self._state.get(ANALYSIS_STATE_NAMESPACE):
             analysis_state = AnalysisState.model_validate(analysis_data)

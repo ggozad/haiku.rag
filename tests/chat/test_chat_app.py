@@ -806,6 +806,67 @@ class TestRenderingUnattributedPictures:
         ]
 
 
+class TestNamingACitationsCollection:
+    @staticmethod
+    async def _titles(temp_db_path, covering, *sources: str | None) -> list[str]:
+        """The collapsed titles of one citation per source, all named alike."""
+        from haiku.rag.chat.app import RAG_STATE_NAMESPACE
+        from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
+        from haiku.rag.store.models.citation import Citation
+
+        index = {
+            f"c{position}": Citation(
+                document_id=f"d{position}",
+                chunk_id=f"c{position}",
+                source=source,
+                content="body",
+                document_uri="test://report",
+                document_title="Quarterly report",
+            ).model_dump(mode="json")
+            for position, source in enumerate(sources)
+        }
+
+        app, _ = _make_app(temp_db_path, covering)
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as stub,
+            _covering_returns(stub, covering),
+        ):
+            async with app.run_test() as pilot:
+                app._state[RAG_STATE_NAMESPACE] = {
+                    "citations": list(index),
+                    "citation_index": index,
+                }
+                await app._show_citations_and_programs(app.query_one(ChatHistory))
+                await pilot.pause()
+                return [str(w.title) for w in app.query(CitationWidget)]
+
+    @pytest.mark.asyncio
+    async def test_one_title_in_two_collections_reads_as_two_citations(
+        self, temp_db_path: Path
+    ):
+        covering = _make_mock_client()
+        covering.covers_multiple = True
+        covering.source_names = ("alpha", "beta")
+
+        titles = await self._titles(temp_db_path, covering, "alpha", "beta")
+
+        assert len(set(titles)) == 2
+        assert "alpha" in titles[0]
+        assert "beta" in titles[1]
+
+    @pytest.mark.asyncio
+    async def test_one_named_database_is_not_named_on_its_citations(
+        self, temp_db_path: Path
+    ):
+        covering = _make_mock_client()
+        covering.covers_multiple = False
+        covering.source_names = ("alpha",)
+
+        [title] = await self._titles(temp_db_path, covering, "alpha")
+
+        assert "alpha" not in title
+
+
 class TestKeepingSelectionsReachable:
     """A selection applies whether or not the page shows it, and a checkbox is
     the only way to remove one."""
