@@ -31,7 +31,7 @@ else, since draining the background vacuum and releasing the embedder and
 reranker are awaitable; it refuses a client covering several.
 
 !!! note
-    Databases must be explicitly created with `create=True` or via `haiku-rag init` before use. Operations on non-existent databases will raise `FileNotFoundError`.
+    Databases must be explicitly created with `create=True` or via `haiku-rag init` before use. Opening a nonexistent unnamed local database raises `FileNotFoundError`, naming its path; one named in `lancedb.databases` raises `SourceUnavailableError`, which names the database rather than its location.
 
 !!! note
     Read-only mode is useful for safely accessing databases without risk of modification. It blocks all write operations and downgrades an embedding provider/name mismatch to a warning instead of raising `ConfigMismatchError`.

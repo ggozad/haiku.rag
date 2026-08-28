@@ -115,7 +115,7 @@ async with HaikuRAG(create=True) as client:
 
 The [default location](index.md#configuration-file-locations) is platform-specific (e.g., `~/Library/Application Support/haiku.rag/` on macOS).
 
-Operations on non-existent databases raise `FileNotFoundError`. This prevents accidental database creation from typos or misconfigured paths.
+Opening a nonexistent unnamed local database raises `FileNotFoundError`, naming its path. This prevents accidental database creation from typos or misconfigured paths. A database named in `lancedb.databases` raises `SourceUnavailableError` instead, naming the database and not its location.
 
 ## Remote Storage
 
@@ -216,8 +216,12 @@ lancedb:
 A location can be a URI or local path. `databases` and `uri` are mutually
 exclusive.
 
-Results, documents, and citations use the configured name as `source`. Commands
-such as `info` and path-related errors still show locations.
+Results, documents, and citations use the configured name as `source`. An
+unavailable configured database raises `SourceUnavailableError`, which names the
+database and not its location, so a location never travels in an error a consumer
+might render or log. A migration, configuration or read-only failure keeps its
+own type, with the database named in the message. Commands that report on a
+database, such as `info`, still show where it is.
 
 Searches spanning multiple databases identify each result with a model-facing
 `Collection:` line. Searches over one database omit it. Structured `source`
@@ -310,8 +314,8 @@ Image queries are vector-only and skip the reranker: there is no query text to
 score a document against, so candidates keep their vector ranking and fusion
 ranks by position.
 
-If any selected database fails to open, the operation fails and identifies that
-database.
+If a selected database is unavailable, the operation fails with
+`SourceUnavailableError`, which names that database.
 
 ### Python Operations
 

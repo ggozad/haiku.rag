@@ -12,7 +12,8 @@
   disabled. Operations that need one database raise `AmbiguousDatabaseError`, an
   unknown name raises `UnknownDatabaseError`, and a cited chunk ID retrieved from
   or previously cited from more than one selected database raises
-  `AmbiguousCitationError`.
+  `AmbiguousCitationError`. An unavailable configured database raises
+  `SourceUnavailableError`, which names the database and not its location.
 - `haiku-rag search`, `ask`, `analyze` and `chat` cover a configured set.
   Commands that access one database select it with `--db-name NAME` or
   `--db PATH`.
