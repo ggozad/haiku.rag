@@ -352,14 +352,6 @@ class TestReportedLocation:
             source="alpha",
         )
 
-    def test_a_covered_set_reports_no_location(self):
-        from haiku.rag.inspector.widgets.info_modal import reported_location
-
-        client = MagicMock()
-        client.location = None
-
-        assert reported_location(client) is None
-
     def test_a_named_remote_database_reports_its_uri(self):
         session = self._session("s3://bucket/alpha.lancedb")
 

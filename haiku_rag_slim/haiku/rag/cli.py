@@ -460,7 +460,7 @@ def settings():
     from haiku.rag.app import HaikuRAGApp
 
     config = get_config()
-    # Neither of these opens a database; the scope is whatever is configured.
+    # Configuration-only; no database scope is resolved.
     app = HaikuRAGApp(config=config, read_only=True)
     app.show_settings()
 

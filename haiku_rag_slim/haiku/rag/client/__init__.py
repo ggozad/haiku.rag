@@ -474,8 +474,9 @@ class HaikuRAG:
                 await facade._release_own()
             self._clients.clear()
             await self._session.aclose()
-            # The set shares this client's embedder and reranker, so this is the
-            # only place they are closed — and only if anything built them.
+            # This client's own: the reranker its facades borrow, and the
+            # embedder it builds from configuration for work that names no
+            # database. Each covered database builds and closes its own.
             await self._aclose_cached("embedder")
             await self._aclose_cached("_own_reranker")
             self._closed = True

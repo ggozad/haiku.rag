@@ -20,8 +20,6 @@ async def database(state: APIState = Depends(get_state)) -> DatabaseInfo:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="database not configured",
         )
-    # The one database the ingester writes: a configured set is refused when the
-    # client opens, before this app is built.
     [ref] = state.scope.databases
     one, db_path = ref.connection(state.config)
     return await gather_database_info(one, db_path or default_db_path(one))

@@ -1,5 +1,4 @@
 import asyncio
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from textual.app import ComposeResult
@@ -12,15 +11,6 @@ from haiku.rag.utils import format_bytes, get_package_versions
 
 if TYPE_CHECKING:
     from haiku.rag.client import HaikuRAG
-
-
-def reported_location(client: "HaikuRAG") -> "Path | str | None":
-    """Where the database to report on is, or None where a set is covered.
-
-    What the client ended up covering is what says which of the two it is: a
-    client given one named database opens it rather than covering a set.
-    """
-    return client.location
 
 
 async def database_lines(client: "HaikuRAG") -> list[str]:
@@ -172,12 +162,10 @@ class InfoModal(ModalScreen):
         """Load and display database info."""
         lines: list[str] = []
 
-        location = reported_location(self.client)
+        location = self.client.location
         if location is None:
-            # Covering a set: report each database under its configured name, and
-            # each on its own, so one that cannot be opened costs its own block
-            # rather than the whole panel. Names only, no paths — a location
-            # belongs in the configuration.
+            # Report each database independently so one failure does not hide
+            # the rest. Names only: a location belongs in the configuration.
             blocks = await asyncio.gather(
                 *(self._report(name) for name in sorted(self.client.source_names))
             )

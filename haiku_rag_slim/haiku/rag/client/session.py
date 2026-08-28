@@ -193,12 +193,14 @@ class SingleDatabaseSession:
         filter: str | None = None,
         include_content: bool = False,
     ) -> "list[Document]":
-        documents = await self.document_repository.list_all(
-            limit=limit, offset=offset, filter=filter, include_content=include_content
+        return self.name_all(
+            await self.document_repository.list_all(
+                limit=limit,
+                offset=offset,
+                filter=filter,
+                include_content=include_content,
+            )
         )
-        for document in documents:
-            document.source = self.source
-        return documents
 
     async def delete_document(self, document_id: str) -> bool:
         """Delete a document, cascading to children linked via
