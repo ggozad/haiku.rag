@@ -282,9 +282,7 @@ requires one whenever the client covers a set.
 The analysis sandbox rejects shared document IDs because its mount path is
 `/documents/{id}/`.
 
-The chat document filter selects by document ID and applies `id IN (...)` to
-every covered database, so selecting an ID that copies share matches the
-document in each of them.
+The chat document filter selects by document and database: the search is narrowed to the databases the selection names, and the ID filter applies within them. An ID that copies share still matches in every selected database that holds it.
 
 #### Ranking
 

@@ -463,8 +463,8 @@ async def test_document_filter_updates_rag_state(temp_db_path: Path):
         async with app.run_test():
             # The selection is document ids, so a repeated title cannot widen it.
             selected = [
-                "6f1c2d4e-0000-4000-8000-000000000001",
-                "6f1c2d4e-0000-4000-8000-000000000002",
+                (None, "6f1c2d4e-0000-4000-8000-000000000001"),
+                (None, "6f1c2d4e-0000-4000-8000-000000000002"),
             ]
             app.on_document_filter_modal_filter_changed(
                 DocumentFilterModal.FilterChanged(selected)
@@ -472,13 +472,55 @@ async def test_document_filter_updates_rag_state(temp_db_path: Path):
 
             # RAGState.document_filter should be set
             rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
-            expected_filter = build_document_id_filter(selected)
+            expected_filter = build_document_id_filter(
+                [doc_id for _, doc_id in selected]
+            )
             assert rag_state.document_filter == expected_filter
             assert rag_state.document_filter is not None
             assert "LIKE" not in rag_state.document_filter
+            # An unnamed database leaves the question unscoped by source.
+            assert rag_state.sources is None
 
             # The state snapshot should also reflect the change
             assert app._state["rag"]["document_filter"] == expected_filter
+
+
+@pytest.mark.asyncio
+async def test_document_filter_narrows_sources_to_the_selection(temp_db_path: Path):
+    """The filter carries ids, and `sources` restricts the question to the
+    databases the selection names."""
+    from haiku.rag.chat.app import RAG_STATE_NAMESPACE
+    from haiku.rag.chat.widgets.document_filter_modal import DocumentFilterModal
+
+    app, mock_client = _make_app_with_state(temp_db_path)
+
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
+        async with app.run_test():
+            app.on_document_filter_modal_filter_changed(
+                DocumentFilterModal.FilterChanged(
+                    [("alpha", "id-one"), ("alpha", "id-two")]
+                )
+            )
+            rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
+            assert rag_state.sources == ["alpha"]
+
+            app.on_document_filter_modal_filter_changed(
+                DocumentFilterModal.FilterChanged(
+                    [("alpha", "id-one"), ("beta", "id-three")]
+                )
+            )
+            rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
+            assert rag_state.sources == ["alpha", "beta"]
+
+            app.on_document_filter_modal_filter_changed(
+                DocumentFilterModal.FilterChanged([])
+            )
+            rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
+            assert rag_state.sources is None
+            assert rag_state.document_filter is None
 
 
 @pytest.mark.asyncio
@@ -496,7 +538,7 @@ async def test_document_filter_cleared_when_empty(temp_db_path: Path):
         async with app.run_test():
             # First set a filter
             app.on_document_filter_modal_filter_changed(
-                DocumentFilterModal.FilterChanged(["AI Overview"])
+                DocumentFilterModal.FilterChanged([(None, "AI Overview")])
             )
             rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
             assert rag_state.document_filter is not None
@@ -684,7 +726,52 @@ class TestDocumentSelectionIdentity:
 
                 boxes[0].value = True
                 await pilot.pause()
-                assert modal._selected == {"id-one"}
+                assert modal._selected == {("arxiv", "id-one")}
+
+    @pytest.mark.asyncio
+    async def test_a_shared_id_selects_only_the_named_database_copy(
+        self, temp_db_path: Path
+    ):
+        """Copies of a database share document ids, so a selection carries the
+        database name and checking one copy leaves the other unselected."""
+        from haiku.rag.chat.widgets.document_filter_modal import (
+            DocumentCheckbox,
+            DocumentFilterModal,
+        )
+        from haiku.rag.store.models.document import Document
+
+        client = AsyncMock()
+        client.covers_multiple = True
+        client.source_names = ("alpha", "beta")
+        client.list_documents.return_value = [
+            Document(id="id-x", content="", title="Report", source="alpha"),
+            Document(id="id-x", content="", title="Report", source="beta"),
+        ]
+        client.count_documents.return_value = 2
+
+        modal = DocumentFilterModal(client=client)
+        app, _ = _make_app(temp_db_path, client)
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+            _covering_returns(_stub_rag, client),
+        ):
+            async with app.run_test() as pilot:
+                await app.push_screen(modal)
+                await pilot.pause()
+
+                boxes = list(modal.query(DocumentCheckbox))
+                assert [str(b.label) for b in boxes] == [
+                    "Report  (alpha)",
+                    "Report  (beta)",
+                ]
+
+                boxes[0].value = True
+                await pilot.pause()
+                assert modal._selected == {("alpha", "id-x")}
+
+                await modal._load_documents()
+                rebuilt = list(modal.query(DocumentCheckbox))
+                assert [b.value for b in rebuilt] == [True, False]
 
     def test_a_label_that_looks_like_markup_is_text(self):
         from haiku.rag.chat.widgets.document_filter_modal import (
@@ -699,8 +786,8 @@ class TestDocumentSelectionIdentity:
             )
         ]
 
-        ((label, doc_id),) = _labelled(docs)
-        box = DocumentCheckbox(label, doc_id, value=False)
+        ((label, source, doc_id),) = _labelled(docs)
+        box = DocumentCheckbox(label, source, doc_id, value=False)
 
         assert str(box.label) == "Report [/red]  (alpha [/x])"
 
@@ -952,7 +1039,7 @@ class TestKeepingSelectionsReachable:
         client.list_documents.side_effect = listing
 
         modal = DocumentFilterModal(
-            client=client, selected=[d.id or "" for d in picked]
+            client=client, selected=[(None, d.id or "") for d in picked]
         )
         app, _ = _make_app(temp_db_path, client)
         with (
@@ -1018,7 +1105,7 @@ class TestKeepingSelectionsReachable:
         client.list_documents.side_effect = listing
 
         modal = DocumentFilterModal(
-            client=client, selected=[d.id or "" for d in picked]
+            client=client, selected=[(None, d.id or "") for d in picked]
         )
         app, _ = _make_app(temp_db_path, client)
         with (
@@ -1050,7 +1137,7 @@ class TestKeepingSelectionsReachable:
         # The row is gone from the listing, not merely unchecked.
         assert "sel-0200" not in remaining
         assert len(remaining) == DOCUMENT_PAGE
-        assert modal._selected == {d.id for d in picked} - {"sel-0200"}
+        assert modal._selected == {(None, d.id) for d in picked} - {(None, "sel-0200")}
         # The page it was on no longer exists, so the modal does not report it.
         assert modal._page == 0
         assert "page" not in footer

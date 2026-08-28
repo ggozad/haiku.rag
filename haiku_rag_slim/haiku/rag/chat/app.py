@@ -105,7 +105,7 @@ class ChatApp(App):
         self._state: dict[str, Any] = {}
         self._is_processing = False
         self._current_worker: Worker[None] | None = None
-        self._document_filter: list[str] = []
+        self._document_filter: list[tuple[str | None, str]] = []
         self._images: list[bytes] = []
         # Stable per-launch id for multi-turn model and telemetry correlation.
         self._conversation_id = str(uuid.uuid4())
@@ -425,12 +425,20 @@ class ChatApp(App):
         )
 
     def on_document_filter_modal_filter_changed(self, event: Any) -> None:
-        """Handle document filter changes from modal."""
+        """Scope the conversation to the selection: the filter carries the ids,
+        and `sources` restricts the search to the databases the selection names.
+        """
         from haiku.rag.tools.filters import build_document_id_filter
 
         self._document_filter = event.selected
 
-        doc_filter = build_document_id_filter(self._document_filter)
+        doc_filter = build_document_id_filter(
+            sorted({doc_id for _, doc_id in event.selected})
+        )
+        selected_sources = {source for source, _ in event.selected}
+        sources: list[str] | None = None
+        if selected_sources and None not in selected_sources:
+            sources = sorted(s for s in selected_sources if s is not None)
         for namespace, state_type in (
             (RAG_STATE_NAMESPACE, RAGState),
             (ANALYSIS_STATE_NAMESPACE, AnalysisState),
@@ -438,4 +446,5 @@ class ChatApp(App):
             if namespace in self._state:
                 state = state_type.model_validate(self._state[namespace])
                 state.document_filter = doc_filter
+                state.sources = sources
                 self._state[namespace] = state.model_dump(mode="json")

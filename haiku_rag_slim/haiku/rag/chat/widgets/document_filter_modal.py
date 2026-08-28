@@ -16,26 +16,31 @@ DOCUMENT_PAGE = 200
 
 
 class DocumentCheckbox(Checkbox):
-    def __init__(self, label: str, doc_id: str, *, value: bool) -> None:
+    def __init__(
+        self, label: str, source: str | None, doc_id: str, *, value: bool
+    ) -> None:
         super().__init__(label, value=value, classes="doc-checkbox")
+        self.source = source
         self.doc_id = doc_id
 
 
-def _labelled(docs) -> list[tuple[str, str]]:
-    """Each document's label and id, sorted. The database is named alongside the
-    title, which a title alone does not say. Labels are escaped: titles and
-    database names are data, not Textual markup."""
-    return sorted(
+def _labelled(docs) -> list[tuple[str, str | None, str]]:
+    """Each document's label, database and id, sorted by label. The database is
+    named alongside the title, which a title alone does not say. Labels are
+    escaped: titles and database names are data, not Textual markup."""
+    rows = [
         (
             escape(
                 f"{doc.title or doc.uri or doc.id}"
                 + (f"  ({doc.source})" if doc.source else "")
             ),
+            doc.source,
             doc.id,
         )
         for doc in docs
         if doc.id is not None
-    )
+    ]
+    return sorted(rows, key=lambda row: (row[0], row[1] or "", row[2]))
 
 
 def search_filter(term: str) -> str | None:
@@ -123,21 +128,22 @@ class DocumentFilterModal(ModalScreen):
     """
 
     class FilterChanged(Message):
-        """Emitted when the document filter selection changes."""
+        """Emitted when the document filter selection changes. Each selection
+        names its database, since copies of a database share document ids."""
 
-        def __init__(self, selected: list[str]) -> None:
+        def __init__(self, selected: list[tuple[str | None, str]]) -> None:
             super().__init__()
             self.selected = selected
 
     def __init__(
         self,
         client: HaikuRAG,
-        selected: list[str] | None = None,
+        selected: list[tuple[str | None, str]] | None = None,
     ) -> None:
         super().__init__()
         self.client = client
         self.initial_selected = selected or []
-        self._selected: set[str] = set(self.initial_selected)
+        self._selected: set[tuple[str | None, str]] = set(self.initial_selected)
         self._matching = 0
         self._search = ""
         self._page = 0
@@ -180,15 +186,20 @@ class DocumentFilterModal(ModalScreen):
             self._listing_selected = False
 
         if self._listing_selected:
-            ids = sorted(self._selected)
-            self._matching = len(ids)
-            page = ids[self._page * DOCUMENT_PAGE : (self._page + 1) * DOCUMENT_PAGE]
+            keys = sorted(self._selected, key=lambda key: (key[0] or "", key[1]))
+            self._matching = len(keys)
+            page = keys[self._page * DOCUMENT_PAGE : (self._page + 1) * DOCUMENT_PAGE]
+            page_keys = set(page)
             docs = (
-                list(
-                    await self.client.list_documents(
-                        filter=build_document_id_filter(page)
+                [
+                    doc
+                    for doc in await self.client.list_documents(
+                        filter=build_document_id_filter(
+                            sorted({doc_id for _, doc_id in page})
+                        )
                     )
-                )
+                    if (doc.source, doc.id) in page_keys
+                ]
                 if page
                 else []
             )
@@ -207,8 +218,10 @@ class DocumentFilterModal(ModalScreen):
         await filter_list.remove_children()
 
         boxes = [
-            DocumentCheckbox(label, doc_id, value=doc_id in self._selected)
-            for label, doc_id in _labelled(docs)
+            DocumentCheckbox(
+                label, source, doc_id, value=(source, doc_id) in self._selected
+            )
+            for label, source, doc_id in _labelled(docs)
         ]
         if boxes:
             await filter_list.mount_all(boxes)
@@ -253,10 +266,11 @@ class DocumentFilterModal(ModalScreen):
         if not isinstance(checkbox, DocumentCheckbox):
             return
 
+        key = (checkbox.source, checkbox.doc_id)
         if event.value:
-            self._selected.add(checkbox.doc_id)
+            self._selected.add(key)
         else:
-            self._selected.discard(checkbox.doc_id)
+            self._selected.discard(key)
 
         if self._listing_selected:
             # This listing is the selection, so removing one changes both what

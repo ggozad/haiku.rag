@@ -24,7 +24,7 @@
 
 - `haiku-rag settings` prints YAML.
 - The chat document filter pages results and lists the selected separately.
-  Selection is by document ID, and a typed search applies on enter.
+  Selection is by document ID and database, and a typed search applies on enter.
 - `haiku-rag list` prints only the fields a document has.
 - `haiku-rag` and `haiku-ingester` exit with a message on an embedder mismatch.
 - Capabilities created without a client honor `lancedb.uri`.
