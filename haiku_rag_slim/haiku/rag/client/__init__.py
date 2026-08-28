@@ -655,15 +655,28 @@ class HaikuRAG:
             uri,
         )
 
-    async def get_document_by_id(self, document_id: str) -> Document | None:
-        """Get a document by its ID.
+    async def get_document_by_id(
+        self, document_id: str, source: str | None = None
+    ) -> Document | None:
+        """Get a document by its ID, from the database named by `source`.
 
         Args:
             document_id: The unique identifier of the document.
+            source: The database it came from, which this client must cover.
+                Without one every covered database is asked, and ids repeat
+                between copies of a database, so a caller holding a source must
+                pass it.
 
         Returns:
             The Document instance if found, None otherwise.
+
+        Raises:
+            UnknownDatabaseError: If `source` names a database this client does
+                not cover.
         """
+        if source is not None:
+            (owner,) = await self.clients_covering([source])
+            return await owner.get_document_by_id(document_id)
         if self.covers_multiple:
             return await self._from_any_covered(
                 lambda owner: owner.get_document_by_id(document_id)
@@ -672,15 +685,28 @@ class HaikuRAG:
             document_id
         )
 
-    async def get_chunk_by_id(self, chunk_id: str) -> Chunk | None:
-        """Get a chunk by its ID.
+    async def get_chunk_by_id(
+        self, chunk_id: str, source: str | None = None
+    ) -> Chunk | None:
+        """Get a chunk by its ID, from the database named by `source`.
 
         Args:
             chunk_id: The unique identifier of the chunk.
+            source: The database it came from, which this client must cover.
+                Without one every covered database is asked, and ids repeat
+                between copies of a database, so a caller holding a source must
+                pass it.
 
         Returns:
             The Chunk instance if found, None otherwise.
+
+        Raises:
+            UnknownDatabaseError: If `source` names a database this client does
+                not cover.
         """
+        if source is not None:
+            (owner,) = await self.clients_covering([source])
+            return await owner.get_chunk_by_id(chunk_id)
         if self.covers_multiple:
             return await self._from_any_covered(
                 lambda owner: owner.get_chunk_by_id(chunk_id)
@@ -695,21 +721,26 @@ class HaikuRAG:
         Args:
             document_id: The document holding the picture.
             self_ref: The picture's `self_ref`.
-            source: The database it came from. Required when federating.
+            source: The database it came from, which this client must cover.
+                Required when covering a set.
 
         Returns:
             The picture bytes if found, None otherwise.
+
+        Raises:
+            UnknownDatabaseError: If `source` names a database this client does
+                not cover.
         """
-        if not self.covers_multiple:
-            return await self.document_item_repository.get_picture_bytes(
+        if source is not None:
+            (owner,) = await self.clients_covering([source])
+            return await owner.document_item_repository.get_picture_bytes(
                 document_id, self_ref
             )
-        if source is None:
+        if self.covers_multiple:
             raise ValueError(
                 "a picture lookup across databases needs the source it came from"
             )
-        (owner,) = await self.clients_for([source])
-        return await owner.document_item_repository.get_picture_bytes(
+        return await self.document_item_repository.get_picture_bytes(
             document_id, self_ref
         )
 
@@ -744,13 +775,10 @@ class HaikuRAG:
             return doc
 
         safe_input = escape_sql_string(id_or_title)
-        docs = await self.list_documents(filter=f"title = '{safe_input}'")
-        if docs and docs[0].id:
-            return await self.get_document_by_id(docs[0].id)
-
-        docs = await self.list_documents(filter=f"uri = '{safe_input}'")
-        if docs and docs[0].id:
-            return await self.get_document_by_id(docs[0].id)
+        for column in ("title", "uri"):
+            docs = await self.list_documents(filter=f"{column} = '{safe_input}'")
+            if docs and docs[0].id:
+                return await self.get_document_by_id(docs[0].id, docs[0].source)
 
         return None
 

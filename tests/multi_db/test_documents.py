@@ -7,7 +7,9 @@ from docling_core.types.doc.labels import DocItemLabel
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.config import get_config
+from haiku.rag.store.exceptions import UnknownDatabaseError
 from haiku.rag.store.models import Chunk
+from haiku.rag.store.models.document_item import DocumentItem
 from tests.multi_db.helpers import (
     _config,
     _seed,
@@ -119,6 +121,36 @@ class TestLookupByIdentifier:
         assert found is not None and found.content == "beta one"
 
     @pytest.mark.asyncio
+    async def test_a_chunk_is_read_from_the_database_its_source_names(self, tmp_path):
+        """One chunk id in two databases, holding different content. A result
+        carries the database it came from, so a caller holding one must be able
+        to say which of the two it means."""
+        import shutil
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["shared body"])
+        shutil.copytree(tmp_path / "alpha.lancedb", tmp_path / "beta.lancedb")
+
+        async with HaikuRAG(config=config, sources=["beta"]) as beta:
+            [held] = await beta.chunk_repository.list_all(limit=1)
+            assert held.id is not None
+            await beta.store.chunks_table.update(
+                {"content": "only in beta"}, where=f"id = '{held.id}'"
+            )
+
+        async with HaikuRAG(config=config) as rag:
+            from_alpha = await rag.get_chunk_by_id(held.id, "alpha")
+            from_beta = await rag.get_chunk_by_id(held.id, "beta")
+            unqualified = await rag.get_chunk_by_id(held.id)
+            with pytest.raises(UnknownDatabaseError):
+                await rag.get_chunk_by_id(held.id, "gamma")
+
+        assert from_alpha is not None and from_alpha.content == "shared body"
+        assert from_beta is not None and from_beta.content == "only in beta"
+        # Configured order, as an unqualified lookup has always answered.
+        assert unqualified is not None and unqualified.content == "shared body"
+
+    @pytest.mark.asyncio
     async def test_a_document_held_by_two_databases_answers_from_the_first(
         self, tmp_path
     ):
@@ -139,6 +171,118 @@ class TestLookupByIdentifier:
             found = await rag.get_document_by_id(target.id)
 
         assert found is not None and found.source == "alpha"
+
+    @staticmethod
+    async def _collided(tmp_path):
+        """Two databases holding one document id, where only beta's answers to
+        the title and URI asked for."""
+        import shutil
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["shared body"])
+        shutil.copytree(tmp_path / "alpha.lancedb", tmp_path / "beta.lancedb")
+
+        async with HaikuRAG(config=config, sources=["beta"]) as beta:
+            [target] = await beta.document_repository.list_all(limit=1)
+            target.title = "only in beta"
+            target.uri = "test://beta/only"
+            await beta.document_repository.update_meta(target)
+        return config
+
+    @pytest.mark.asyncio
+    async def test_a_title_match_is_read_from_the_database_that_matched(self, tmp_path):
+        config = await self._collided(tmp_path)
+
+        async with HaikuRAG(config=config) as rag:
+            by_title = await rag.resolve_document("only in beta")
+            by_uri = await rag.resolve_document("test://beta/only")
+
+        assert by_title is not None
+        assert (by_title.source, by_title.title) == ("beta", "only in beta")
+        assert by_uri is not None
+        assert (by_uri.source, by_uri.uri) == ("beta", "test://beta/only")
+
+    @pytest.mark.asyncio
+    async def test_a_partial_match_is_read_from_the_database_that_matched(
+        self, tmp_path
+    ):
+        from haiku.rag.tools.document import find_document
+
+        config = await self._collided(tmp_path)
+
+        async with HaikuRAG(config=config) as rag:
+            by_uri = await find_document(rag, "beta/onl")
+            by_title = await find_document(rag, "only in bet")
+
+        assert by_uri is not None and by_uri.source == "beta"
+        assert by_title is not None and by_title.source == "beta"
+
+    @pytest.mark.asyncio
+    async def test_a_source_is_checked_against_what_the_client_covers(self, tmp_path):
+        """A lookup naming a database the client does not cover is wrong rather
+        than answerable from the one it does cover."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+
+        async with HaikuRAG(config=config, sources=["alpha"]) as alpha:
+            [target] = await alpha.document_repository.list_all(limit=1)
+            assert target.id is not None
+
+            await alpha.document_item_repository.create_all(
+                [
+                    DocumentItem(
+                        document_id=target.id,
+                        self_ref="#/pictures/0",
+                        position=0,
+                        label="picture",
+                        text="",
+                        picture_data=b"alpha-picture",
+                    )
+                ]
+            )
+
+            [held] = await alpha.chunk_repository.list_all(limit=1)
+            assert held.id is not None
+
+            found = await alpha.get_document_by_id(target.id, "alpha")
+            picture = await alpha.get_picture_bytes(target.id, "#/pictures/0", "alpha")
+            chunk = await alpha.get_chunk_by_id(held.id, "alpha")
+            with pytest.raises(UnknownDatabaseError):
+                await alpha.get_document_by_id(target.id, "beta")
+            with pytest.raises(UnknownDatabaseError):
+                await alpha.get_picture_bytes(target.id, "#/pictures/0", "beta")
+            with pytest.raises(UnknownDatabaseError):
+                await alpha.get_chunk_by_id(held.id, "beta")
+
+        assert found is not None and found.uri == "test://alpha/alpha one"
+        assert picture == b"alpha-picture"
+        assert chunk is not None and chunk.content == "alpha one"
+
+    @pytest.mark.asyncio
+    async def test_an_unnamed_database_answers_to_no_name(self, temp_db_path):
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            docling = DoclingDocument(name="one")
+            docling.add_text(label=DocItemLabel.TEXT, text="body")
+            dim = get_config().embeddings.model.vector_dim
+            doc = await rag.import_document(
+                docling,
+                [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+                uri="test://one",
+            )
+            assert doc.id is not None
+
+            [held] = await rag.chunk_repository.list_all(limit=1)
+            assert held.id is not None
+
+            assert await rag.get_document_by_id(doc.id) is not None
+            assert await rag.get_chunk_by_id(held.id) is not None
+            with pytest.raises(UnknownDatabaseError):
+                await rag.get_document_by_id(doc.id, "alpha")
+            with pytest.raises(UnknownDatabaseError):
+                await rag.get_picture_bytes(doc.id, "#/pictures/0", "alpha")
+            with pytest.raises(UnknownDatabaseError):
+                await rag.get_chunk_by_id(held.id, "alpha")
 
     @pytest.mark.asyncio
     async def test_an_unknown_identifier_is_absent_rather_than_an_error(self, tmp_path):

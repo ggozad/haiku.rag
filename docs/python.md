@@ -93,6 +93,8 @@ PDFs that carry attachments via the `/EmbeddedFiles` table are split into one Do
 By ID:
 ```python
 doc = await client.get_document_by_id("document-id-string")
+doc = await client.get_document_by_id("document-id-string", "papers")
+chunk = await client.get_chunk_by_id("chunk-id-string", "papers")
 ```
 
 By URI:
