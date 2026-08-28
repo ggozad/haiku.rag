@@ -24,6 +24,14 @@ from haiku.rag.ingester.cli import _cli as cli
 from haiku.rag.ingester.cli import _resolve_queue_config
 from haiku.rag.ingester.cli import cli as ingester_cli
 from haiku.rag.ingester.queue.models import JobOp
+from haiku.rag.store.exceptions import (
+    AmbiguousDatabaseError,
+    ConfigMismatchError,
+    MigrationRequiredError,
+    ReadOnlyError,
+    SourceUnavailableError,
+    UnknownDatabaseError,
+)
 
 runner = CliRunner()
 
@@ -469,20 +477,29 @@ def test_cli_entry_point(monkeypatch):
     mock_cli.assert_called_once()
 
 
-def test_cli_entry_point_exits_on_migration_error(monkeypatch):
+@pytest.mark.parametrize(
+    "error",
+    [
+        AmbiguousDatabaseError("names a set"),
+        ConfigMismatchError("embedder drifted"),
+        MigrationRequiredError("need migration"),
+        ReadOnlyError("read-only"),
+        SourceUnavailableError("papers would not open"),
+        UnknownDatabaseError("no such database"),
+    ],
+    ids=lambda e: type(e).__name__,
+)
+def test_cli_entry_point_exits_on_store_state_errors(monkeypatch, capsys, error):
     from haiku.rag.ingester.cli import cli as cli_entry
-    from haiku.rag.store.exceptions import MigrationRequiredError
 
-    monkeypatch.setattr(
-        "haiku.rag.ingester.cli._cli",
-        MagicMock(side_effect=MigrationRequiredError("need migration")),
-    )
+    monkeypatch.setattr("haiku.rag.ingester.cli._cli", MagicMock(side_effect=error))
     monkeypatch.setattr("haiku.rag.ingester.cli.configure_cli_logging", lambda: None)
     monkeypatch.setattr("haiku.rag.telemetry.configure", lambda **_: None)
 
     with pytest.raises(SystemExit) as exc_info:
         cli_entry()
     assert exc_info.value.code == 1
+    assert f"Error: {error}" in capsys.readouterr().err
 
 
 class TestPlacingTheIngesterDatabase:

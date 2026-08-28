@@ -34,8 +34,10 @@ from haiku.rag.ingester.queue.migrations import open_queue  # noqa: E402
 from haiku.rag.logging import configure_cli_logging  # noqa: E402
 from haiku.rag.store.exceptions import (  # noqa: E402
     AmbiguousDatabaseError,
+    ConfigMismatchError,
     MigrationRequiredError,
     ReadOnlyError,
+    SourceUnavailableError,
     UnknownDatabaseError,
 )
 
@@ -74,8 +76,10 @@ def cli() -> None:
         _cli()
     except (
         AmbiguousDatabaseError,
+        ConfigMismatchError,
         MigrationRequiredError,
         ReadOnlyError,
+        SourceUnavailableError,
         UnknownDatabaseError,
     ) as e:
         typer.echo(f"Error: {e}", err=True)

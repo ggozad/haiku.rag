@@ -27,7 +27,7 @@
   lists the selected separately, instead of mounting a checkbox per document.
   Selection is by document ID.
 - `haiku-rag list` prints only the fields a document has.
-- `haiku-rag` prints the message and exits when the configured embedder does not match the database, instead of raising a traceback.
+- `haiku-rag` and `haiku-ingester` print the message and exit when the configured embedder does not match the database, instead of raising a traceback.
 - Capabilities created without a client honor `lancedb.uri`.
 - A `lancedb.uri` without a scheme is treated as a local path. `--db PATH`
   overrides it.
