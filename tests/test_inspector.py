@@ -446,9 +446,47 @@ class TestReportingEachDatabase:
             "database 'beta' could not be opened: OSError"
         )
         modal.client = client
-        modal.db_path = None
 
         lines = await modal._report("beta")
 
         assert lines[0] == "[bold]beta[/bold]"
         assert "could not be opened" in lines[1]
+
+    @pytest.mark.asyncio
+    async def test_a_failure_with_bracketed_text_renders_literally(self):
+        """Error text and database names render verbatim, not as Rich markup."""
+        from rich.text import Text
+
+        from haiku.rag.inspector.widgets.info_modal import InfoModal
+        from haiku.rag.store.exceptions import SourceUnavailableError
+
+        modal = InfoModal.__new__(InfoModal)
+        client = AsyncMock()
+        message = "database 'beta [prod]' could not be opened: [/red] [Errno 2]"
+        client.clients_for.side_effect = SourceUnavailableError(message)
+        modal.client = client
+
+        lines = await modal._report("beta [prod]")
+
+        assert Text.from_markup(lines[0]).plain == "beta [prod]"
+        assert message in Text.from_markup(lines[1]).plain
+
+    @pytest.mark.asyncio
+    async def test_an_open_failure_with_bracketed_text_renders_literally(
+        self, tmp_path
+    ):
+        """A stats-read failure renders its message verbatim, not as markup."""
+        from rich.text import Text
+
+        from haiku.rag.inspector.widgets.info_modal import database_lines
+        from haiku.rag.store.engine import ConnectionMode
+
+        client = MagicMock()
+        client.store.db_path = tmp_path
+        client.store._connection_mode = ConnectionMode.LOCAL
+        message = "Schema error: no field named [vector, text] [/red]"
+        type(client.store).db = property(MagicMock(side_effect=RuntimeError(message)))
+
+        lines = await database_lines(client)
+
+        assert message in Text.from_markup(lines[0]).plain

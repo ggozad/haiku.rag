@@ -1,6 +1,7 @@
 import asyncio
 from typing import TYPE_CHECKING
 
+from rich.markup import escape
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
@@ -35,12 +36,11 @@ async def database_lines(client: "HaikuRAG") -> list[str]:
         db = client.store.db
         stats = await get_database_stats(db)
     except Exception as e:
-        return [f"[red]Failed to open database: {e}[/red]"]
+        return [f"[red]Failed to open database: {escape(str(e))}[/red]"]
 
-    # The store read these on open; a second query would re-read and re-parse
-    # the same blob.
+    # The store read and parsed these on open.
     settings = client.store.stored_settings
-    stored_version = str(settings.get("version", "unknown"))
+    stored_version = escape(str(settings.get("version", "unknown")))
     embed_model_obj = settings.get("embeddings", {}).get("model", {})
     embed_provider = embed_model_obj.get("provider")
     embed_model = embed_model_obj.get("name")
@@ -56,9 +56,9 @@ async def database_lines(client: "HaikuRAG") -> list[str]:
     )
 
     if embed_provider or embed_model or vector_dim:
-        provider_part = embed_provider or "unknown"
-        model_part = embed_model or "unknown"
-        dim_part = f"{vector_dim}" if vector_dim is not None else "unknown"
+        provider_part = escape(str(embed_provider or "unknown"))
+        model_part = escape(str(embed_model or "unknown"))
+        dim_part = escape(str(vector_dim)) if vector_dim is not None else "unknown"
         lines.append(
             f"[bold $accent]embeddings[/bold $accent]: "
             f"{provider_part}/{model_part} (dim: {dim_part})"
@@ -172,11 +172,15 @@ class InfoModal(ModalScreen):
             for block in blocks:
                 lines.extend(block)
         else:
-            lines.append(f"[bold $accent]location[/bold $accent]: {location}")
+            lines.append(
+                f"[bold $accent]location[/bold $accent]: {escape(str(location))}"
+            )
             lines.extend(await database_lines(self.client))
 
         lines.append("[bold]Versions[/bold]")
-        versions = get_package_versions()
+        versions = {
+            key: escape(str(value)) for key, value in get_package_versions().items()
+        }
         lines.append(f"[bold $accent]haiku.rag[/bold $accent]: {versions['haiku_rag']}")
         lines.append(f"[bold $accent]lancedb[/bold $accent]: {versions['lancedb']}")
         lines.append(f"[bold $accent]docling[/bold $accent]: {versions['docling']}")
@@ -192,13 +196,13 @@ class InfoModal(ModalScreen):
 
     async def _report(self, name: str) -> list[str]:
         """One database's block, including its own failure to open."""
-        lines = [f"[bold]{name}[/bold]"]
+        lines = [f"[bold]{escape(name)}[/bold]"]
         try:
             (owner,) = await self.client.clients_for([name])
         except Exception as e:
             # The client names a configured database by name and never by
             # location, so its message is safe to show.
-            return [*lines, f"[red]{e}[/red]", ""]
+            return [*lines, f"[red]{escape(str(e))}[/red]", ""]
         return [*lines, *await database_lines(owner)]
 
     async def action_dismiss(self, result=None) -> None:
