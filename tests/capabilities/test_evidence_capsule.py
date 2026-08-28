@@ -97,6 +97,46 @@ def test_a_retained_picture_carries_the_source_it_came_from():
     assert picture.source == "beta"
 
 
+def test_the_capsule_names_the_collection_evidence_came_from():
+    found = discovered(cited={"a": [2], "b": [2]})
+    found = replace(
+        found,
+        citations={
+            "a": replace_citation(found.citations["a"], source="papers"),
+            "b": replace_citation(found.citations["b"], source="wiki"),
+        },
+    )
+
+    lines = build_capsule([found]).text.splitlines()
+
+    def rendered(chunk_id: str) -> list[str]:
+        start = lines.index(f"[{chunk_id}]")
+        return lines[start : start + 3]
+
+    assert rendered("a") == [
+        "[a]",
+        "Collection: papers",
+        'Source: "Title a" (test://a)',
+    ]
+    assert rendered("b") == ["[b]", "Collection: wiki", 'Source: "Title b" (test://b)']
+
+
+def test_evidence_from_one_collection_does_not_name_it():
+    found = discovered(cited={"a": [2], "b": [2]})
+    found = replace(
+        found,
+        citations={
+            chunk_id: replace_citation(cited, source="papers")
+            for chunk_id, cited in found.citations.items()
+        },
+    )
+
+    lines = build_capsule([found]).text.splitlines()
+
+    assert not [line for line in lines if line.startswith("Collection:")]
+    assert '[a] Source: "Title a" (test://a)' in lines
+
+
 def test_nothing_cited_produces_no_capsule():
     capsule = build_capsule([discovered()])
 

@@ -31,8 +31,9 @@ refuses rather than replace evidence it cannot retain. See
 
 On each request, evidence from earlier questions is replaced by the evidence those
 questions actually cited. Cited text and cited page images are kept in full, grouped by
-the question that cited them, and stay citable by the same chunk ids. Every other
-earlier evidence return becomes a short receipt. The current question is untouched.
+the question that cited them, and stay citable by the same chunk ids. Evidence spanning
+more than one collection carries a `Collection:` line naming the one it came from. Every
+other earlier evidence return becomes a short receipt. The current question is untouched.
 
 Compaction rewrites the request, never the stored history, so `all_messages()` still
 holds everything the run gathered.

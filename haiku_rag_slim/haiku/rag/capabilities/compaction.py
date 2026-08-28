@@ -88,13 +88,21 @@ class _Entry:
     question: int
     citation: Citation
 
-    def render(self) -> str:
+    def render(self, *, include_collection: bool = False) -> str:
+        """Render an entry, optionally naming its collection."""
         title = self.citation.document_title
         uri = self.citation.document_uri
-        source = f'"{title}"' if title else uri
+        document = f'"{title}"' if title else uri
         if title and uri and uri != title:
-            source = f"{source} ({uri})"
-        return f"[{self.chunk_id}] Source: {source}\n{self.citation.content}"
+            document = f"{document} ({uri})"
+        if include_collection and self.citation.source:
+            header = (
+                f"[{self.chunk_id}]\nCollection: {self.citation.source}\n"
+                f"Source: {document}"
+            )
+        else:
+            header = f"[{self.chunk_id}] Source: {document}"
+        return f"{header}\n{self.citation.content}"
 
 
 def _eligible_entries(evidence: Sequence[DiscoveredEvidence]) -> list[_Entry]:
@@ -154,6 +162,8 @@ def build_capsule(evidence: Sequence[DiscoveredEvidence]) -> Capsule:
     lines = [CAPSULE_HEADER]
     pictures: list[RetainedPicture] = []
     seen: set[tuple[str, str, str]] = set()
+    # A capsule may combine citations from different search scopes.
+    include_collection = len({entry.citation.source for entry in entries}) > 1
     position = 0
     current_question: int | None = None
     for entry in entries:
@@ -161,7 +171,7 @@ def build_capsule(evidence: Sequence[DiscoveredEvidence]) -> Capsule:
             position += 1
             current_question = entry.question
             lines.append(group_label(position))
-        lines.append(entry.render())
+        lines.append(entry.render(include_collection=include_collection))
         for self_ref in entry.citation.picture_refs:
             # Overlapping chunks cite one figure, and a provider counts it twice.
             # Identity is owner plus document plus reference, so the same reference
