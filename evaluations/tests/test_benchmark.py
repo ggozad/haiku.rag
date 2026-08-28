@@ -1291,8 +1291,7 @@ class TestEvaluateDatasetCaseIds:
 
 
 def test_a_case_filter_matching_nothing_raises():
-    """A run of no cases reports 0.0000, which reads like a score rather than a
-    mistake — so an id set that matches nothing fails instead."""
+    """An id set that matches no case raises."""
     import pytest
     from datasets import Dataset
 
@@ -1315,8 +1314,7 @@ def test_a_case_filter_that_matches_keeps_those_rows():
 
 
 async def test_population_refuses_a_configured_set():
-    """Population writes to one database, so a set would be ingested into a
-    database the run never reads."""
+    """Population writes to one database and refuses a configured set."""
     import pytest
     from haiku.rag.config.models import AppConfig, LanceDBConfig
 

@@ -103,8 +103,8 @@ def use_client(monkeypatch):
         async def _cm(*_, **__):
             yield client
 
-        # The app opens the databases its scope covers, so the double stands in
-        # for `_covering` rather than the public constructor.
+        # The app opens the databases its scope covers: the double stands in
+        # for `_covering`.
         stub = MagicMock()
         stub._covering = lambda *a, **k: _cm()
         monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)

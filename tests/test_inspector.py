@@ -369,8 +369,8 @@ class TestReportingReusesTheConnection:
     async def test_statistics_come_from_the_open_connection(
         self, tmp_path, monkeypatch
     ):
-        """The client already holds a connection to the database being reported,
-        so opening a second one would be an open for the same statistics."""
+        """Statistics are read through the connection the client already
+        holds."""
         from haiku.rag.inspector.widgets.info_modal import database_lines
         from haiku.rag.store.engine import ConnectionMode
 
@@ -403,8 +403,8 @@ class TestReportingReusesTheConnection:
     async def test_settings_come_from_the_store_that_parsed_them(
         self, tmp_path, monkeypatch
     ):
-        """The store read and parsed the settings blob on open, so reporting
-        reads it from there instead of querying the settings table again."""
+        """The store read and parsed the settings blob on open, and reporting
+        reads it from there."""
         from haiku.rag.inspector.widgets.info_modal import database_lines
         from haiku.rag.store.engine import ConnectionMode
 

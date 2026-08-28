@@ -226,8 +226,8 @@ class TestNamingDatabasesBeforeTheModelRuns:
 
     @pytest.mark.asyncio
     async def test_checking_a_name_opens_nothing(self, tmp_path):
-        """Opening to check would open every database on an unscoped question,
-        and let one nobody asked about fail a run before any search."""
+        """Validating a name reads the configured set; no database opens for
+        it."""
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
         await _seed(config, "beta", ["beta document about cats"])

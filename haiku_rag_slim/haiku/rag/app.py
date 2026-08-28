@@ -83,7 +83,7 @@ class HaikuRAGApp:
 
     @property
     def _is_local(self) -> bool:
-        """Whether the database is a local path rather than a URI.
+        """True when the database is a local path, False for a URI.
 
         Read from the database this command resolved to, not from the
         configuration: a database named in `lancedb.databases` can sit behind a
@@ -166,7 +166,7 @@ class HaikuRAGApp:
         tables = {t.name: t for t in info.tables}
 
         # Per-table row counts and sizes. Missing required tables are
-        # reported as "absent" rather than raising.
+        # reported as "absent".
         for name in ("documents", "document_meta", "chunks", "document_items"):
             entry = tables[name]
             if entry.exists:

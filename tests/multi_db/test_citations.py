@@ -40,8 +40,8 @@ class TestSharedChunkIds:
         ]
 
     def test_a_shared_id_cannot_be_cited(self):
-        """A citation records the id alone, so resolving one held by two
-        databases would attribute the answer to whichever came last."""
+        """A citation records the id alone, so one held by two databases
+        cannot say which grounded the answer."""
         results = [
             SearchResult(
                 content="alpha body",
@@ -66,8 +66,8 @@ class TestSharedChunkIds:
 
     def test_a_repeated_id_from_one_database_still_collapses(self):
         """One database cannot hold two chunks under one id, so seeing it twice
-        is the same chunk seen twice, and it resolves rather than raising. Which
-        copy supplies the content is `resolve_citations`' own rule, pinned in
+        is the same chunk seen twice, and it resolves. Which copy supplies the
+        content is `resolve_citations`' own rule, pinned in
         `tests/store/test_citation.py`."""
         results = [
             SearchResult(
@@ -122,8 +122,7 @@ class TestSharedChunkIds:
     @pytest.mark.asyncio
     async def test_an_unsearched_shared_id_is_refused_by_the_fallback(self, tmp_path):
         """The direct lookup is the only place a collision shows for an id no
-        search returned, so it has to ask every database rather than take the
-        first that answers."""
+        search returned, so it asks every database."""
         import shutil
 
         config = _config(tmp_path, ["alpha", "beta"])
@@ -200,8 +199,8 @@ class TestSharedChunkIds:
     async def test_cite_refuses_an_id_already_cited_from_another_database(
         self, tmp_path
     ):
-        """The citation index outlives the question, so the collision can arrive
-        a turn later than the search that would have shown it."""
+        """The citation index outlives the question, so the collision can
+        arrive a turn after the search."""
         capability = create_capability(
             config=_config(tmp_path, ["alpha", "beta"]), defer_loading=False
         )

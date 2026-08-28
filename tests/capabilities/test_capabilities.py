@@ -121,8 +121,8 @@ def test_capability_factories_resolve_environment_and_defaults(
 
 
 class TestACapabilityFollowsTheConfiguredLocation:
-    """A capability nobody handed a client opens one for itself, and has to open
-    the database the configuration places rather than the default directory."""
+    """A capability nobody handed a client opens one for itself, at the
+    database the configuration places."""
 
     def _config(self, tmp_path, uri: str) -> AppConfig:
         from haiku.rag.config.models import LanceDBConfig, StorageConfig
@@ -133,8 +133,8 @@ class TestACapabilityFollowsTheConfiguredLocation:
         )
 
     def test_a_configured_uri_is_left_to_the_client(self, tmp_path):
-        """A path overrides a configured location, so manufacturing one would
-        send the capability to the default directory instead of the bucket."""
+        """A path overrides a configured location, so the capability passes
+        None and the client resolves the configured URI."""
         located = tmp_path / "notes.lancedb"
         for factory in (create_rag, create_analysis):
             [local] = factory(
@@ -208,10 +208,8 @@ def test_domain_preamble_is_added_to_capability_instructions(temp_db_path):
 def _single_database_client() -> AsyncMock:
     """A stand-in for a client covering one unnamed database.
 
-    A bare AsyncMock answers every attribute with a truthy Mock, so
-    `covers_multiple` would read as a set of databases, `source` would reach a
-    validated field, and `clients_covering` would return a Mock where the code
-    iterates clients.
+    `covers_multiple`, `source` and `clients_covering` answer as one unnamed
+    database does; a bare AsyncMock answers every attribute with a truthy Mock.
     """
     client = AsyncMock()
     client.covers_multiple = False
@@ -1667,9 +1665,8 @@ async def test_an_answered_question_is_no_longer_in_progress(temp_db_path):
 
 
 class TestMultipleCollectionsInstructions:
-    """The note follows what a run reads, not what the configuration names, so a
-    run over one collection is instructed exactly as it was before collections
-    could be named."""
+    """The note follows what a run reads, not what the configuration names: a
+    run over one collection gets the single-collection instructions."""
 
     @staticmethod
     def _config(**databases):

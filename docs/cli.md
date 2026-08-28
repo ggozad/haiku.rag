@@ -24,11 +24,7 @@ The `haiku-rag` CLI provides complete document management functionality.
     haiku-rag add -h
     ```
 
-    With `lancedb.databases` configured, `search`, `ask`, `analyze`, and `chat`
-    use the full set by default. Select one database for other commands with
-    `--db-name` or `--db`. `settings`, `init-config`, and `download-models` do
-    not open a database. See
-    [Multiple Databases](configuration/storage.md#multiple-databases).
+    With `lancedb.databases` configured, `search`, `ask`, `analyze`, and `chat` use the full set by default. Select one database for other commands with `--db-name` or `--db`. `settings`, `init-config`, and `download-models` do not open a database. See [Multiple Databases](configuration/storage.md#multiple-databases).
 
 ## Document Management
 

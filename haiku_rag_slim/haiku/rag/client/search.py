@@ -80,8 +80,8 @@ async def search_sources(
     """Search several databases and fuse their results into one ranked list.
 
     Fetch, fuse, truncate, then enrich: enrichment runs on the survivors through
-    the database each came from, so it costs the same as a single-database search
-    rather than multiplying by the number searched.
+    the database each came from, so its cost is that of a single-database
+    search.
     """
     if limit is None:
         limit = client._config.search.limit
@@ -242,10 +242,9 @@ async def _embed_query(
 ) -> list[float] | None:
     """The query as a vector, or None when the search needs no vector.
 
-    Computed by the caller so that searching several databases embeds once: the
-    databases in a selection share an embedder, and embedding per database costs
-    a round trip each on a remote endpoint. `search_type` is the resolved one, so
-    only a text query ever reaches this as full-text.
+    The caller computes it once for however many databases the search covers:
+    the databases in a selection share an embedder. `search_type` is the
+    resolved one, so only a text query ever reaches this as full-text.
     """
     if search_type == "fts":
         return None
@@ -289,9 +288,8 @@ async def _rank(
 
 
 async def _attach_picture_data(client: "HaikuRAG", chunks: list[Chunk]) -> None:
-    """Attach picture bytes to synthetic picture chunks in-place, so a
-    multimodal reranker can score the pixels instead of just the chunk's
-    description text.
+    """Attach picture bytes to synthetic picture chunks in-place; a multimodal
+    reranker scores the pixels.
 
     One query however many documents the candidates span, which matters here
     more than anywhere: reranking fetches `limit * 10` candidates.

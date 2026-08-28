@@ -394,9 +394,10 @@ async def format_citations_rich(
 ) -> "list[RenderableType]":
     """Format citations as Rich renderables for terminal display.
 
-    Each citation becomes a Panel with a compact header (``[N] Title (URI) — locator``),
-    a body holding any referenced figures followed by a truncated text preview, and
-    a dimmed footer that exposes the document and chunk IDs.
+    Each citation becomes a Panel with a compact header (``[N] Title (URI) —
+    locator``, with the database name before the locator when ``client`` covers
+    several), a body holding any referenced figures followed by a truncated text
+    preview, and a dimmed footer that exposes the document and chunk IDs.
 
     When ``client`` is supplied, picture bytes for ``picture_refs`` are fetched and
     rendered inline via ``textual_image``. Without a client, picture refs appear as

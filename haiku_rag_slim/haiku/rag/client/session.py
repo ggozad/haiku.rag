@@ -30,17 +30,13 @@ logger = logging.getLogger(__name__)
 _VACUUM_MIN_INTERVAL_S = 300.0
 
 
-# Failures whose message names the remedy and never the location, so the failing
-# database is named alongside it instead of in place of it.
+# Failures whose message names the remedy and never the location. `open()`
+# prefixes the failing database's name.
 _NAMEABLE_FAILURES = (MigrationRequiredError, ConfigMismatchError, ReadOnlyError)
 
 
 async def aclose_quietly(closeable: Any, what: str) -> None:
-    """Close, reporting failure to the log rather than raising.
-
-    Teardown can run while an exception unwinds, so a raising close must
-    neither mask that exception nor stop a sibling from being closed.
-    """
+    """Close; a failure is logged, never raised."""
     try:
         await closeable.aclose()
     except Exception:
@@ -59,8 +55,8 @@ class SingleDatabaseSession:
     it has one. ``source`` is the configured name this database answers to, or
     None where nothing names it.
 
-    ``db_path``, ``config``, ``read_only`` and ``source`` are readable so that a
-    client borrowing this session can report them as its own.
+    ``db_path``, ``config``, ``read_only`` and ``source`` are readable: a client
+    borrowing this session reports them as its own.
     """
 
     def __init__(
@@ -110,8 +106,7 @@ class SingleDatabaseSession:
                 self.store.close()
                 raise
         except _NAMEABLE_FAILURES as error:
-            # These name the remedy and not the database, so the name is added
-            # rather than substituted.
+            # The message keeps its remedy and gains the database's name.
             if self.source is None:
                 raise
             raise type(error)(f"database {self.source!r}: {error}") from error
@@ -152,10 +147,8 @@ class SingleDatabaseSession:
 
     def schedule_vacuum(self) -> None:
         """Schedule a background vacuum, throttled to at most one per
-        ``_VACUUM_MIN_INTERVAL_S``. Sustained writes would otherwise trigger
-        back-to-back compaction of the blob-bearing documents table. The throttle
-        only skips the background task — ``_vacuum_dirty`` still marks that a
-        final vacuum on close is owed."""
+        ``_VACUUM_MIN_INTERVAL_S``. The throttle only skips the background task —
+        ``_vacuum_dirty`` still marks that a final vacuum on close is owed."""
         self._vacuum_dirty = True
         now = monotonic()
         if (
@@ -246,8 +239,7 @@ class SingleDatabaseSession:
     async def aclose(self) -> None:
         """Drain, release the embedder, and close the connection.
 
-        The store owns the embedder, so releasing it belongs here rather than
-        with whoever happened to hold the session.
+        The store owns the embedder, so this is where it is released.
         """
         await self.drain_vacuum()
         await aclose_quietly(self.store.embedder, "embedder")
@@ -262,9 +254,8 @@ class FederatedSession:
     """Several databases, read as one. Reads only.
 
     Composes single-database sessions and owns their teardown. They open on first
-    use rather than at entry: which databases a query covers is a per-query
-    choice, so a database nobody asked for must neither be opened for nothing nor
-    be able to fail a query.
+    use: which databases a query covers is a per-query choice, and a database the
+    query does not cover stays closed.
     """
 
     def __init__(

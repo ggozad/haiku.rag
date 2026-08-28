@@ -235,7 +235,8 @@ def run_inspector(
     """Run the inspector TUI.
 
     Args:
-        db_path: Path to the LanceDB database. If None, uses default from config.
+        db_path: Path to the LanceDB database, when no scope is given.
+        scope: The database to inspect, resolved by the caller.
         read_only: Whether to open the database in read-only mode.
     """
     config = get_config()

@@ -47,13 +47,13 @@ class TestSerializingTheConnection:
 
     @pytest.mark.asyncio
     async def test_an_owner_is_not(self, tmp_path):
-        """Serializing owner reads would queue every database's file read behind
-        the capability's searches, to guard state none of them touch."""
+        """The lock guards the lent session's state, which owner reads do not
+        touch: they take no lock."""
         import asyncio
 
         class Trap(asyncio.Lock):
-            """Refuses rather than waits: holding a real lock would wedge the
-            suite on a regression instead of failing it."""
+            """Raises on acquire, failing the test at the serialization
+            point."""
 
             async def acquire(self):
                 raise AssertionError("serialized a read on an owner's own session")
@@ -282,7 +282,7 @@ class TestExecutingAcrossDatabases:
 
 class TestSelectionOnOneDatabase:
     """A client covering a single named database answers a selection the same way
-    a search does, or the sandbox would mount what a search would refuse."""
+    a search does: the sandbox mounts what a search reaches."""
 
     @pytest.mark.asyncio
     async def test_selecting_no_database_mounts_nothing(self, tmp_path):
@@ -318,8 +318,8 @@ class TestSelectionOnOneDatabase:
 class TestCopiedDatabases:
     @pytest.mark.asyncio
     async def test_a_document_in_two_databases_is_refused(self, tmp_path):
-        """Ids are unique per database, not across a copy of one: two documents
-        would claim one path and the last would answer for both."""
+        """Ids are unique per database, not across a copy of one, so one path
+        cannot serve two documents."""
         config = _config(tmp_path, ["alpha", "clone"])
         await _seed(config, "alpha", ["alpha document about cats"])
         shutil.rmtree(tmp_path / "clone.lancedb", ignore_errors=True)

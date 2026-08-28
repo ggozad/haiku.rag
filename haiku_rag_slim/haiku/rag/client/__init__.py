@@ -151,8 +151,8 @@ class HaikuRAG:
         """
         self._configured = config if config is not None else get_config()
         # What the caller configured, kept intact: entering derives a
-        # single-database configuration from it, and asking again has to see the
-        # same set rather than the answer from last time.
+        # single-database configuration from it, and every re-entry derives
+        # from the configured set.
         self._config = self._configured
         self._requested_db_path = Path(db_path) if db_path is not None else None
         if self._requested_db_path is not None and sources is not None:
@@ -209,9 +209,8 @@ class HaikuRAG:
 
         None only when a client covering a set is given no name, as for evidence
         recorded before databases could be named. A name this client does not
-        cover raises `UnknownDatabaseError`, decided by `clients_covering` so
-        that one database answers a wrong name the same way a set does:
-        provenance naming another database is wrong rather than absent.
+        cover raises `UnknownDatabaseError`, decided by `clients_covering`: one
+        database answers a wrong name the same way a set does.
         """
         if source is None:
             return None if self.covers_multiple else self
@@ -275,7 +274,7 @@ class HaikuRAG:
     def embedder(self) -> "EmbedderWrapper":
         """The embedder for the databases this client covers.
 
-        An embedder is a function of configuration rather than of a database,
+        An embedder is a function of configuration, not of a database,
         and the databases in a selection are required to share one, so a client
         covering a set has an unambiguous embedder without opening any of them.
         Built on first use and owned by this client, which closes it.
@@ -361,9 +360,9 @@ class HaikuRAG:
     async def clients_for(self, names: list[str]) -> list["HaikuRAG"]:
         """The clients for these databases, opening any not yet open.
 
-        Opening is per query rather than at entry: a set of 25 configured
-        databases is typically queried a few at a time, and a database nobody
-        asked for must not be able to fail a query, or be opened for nothing.
+        Opening is per query: a set of 25 configured databases is typically
+        queried a few at a time, and a database the query does not cover stays
+        closed.
 
         The clients returned borrow their databases from this one and are valid
         only while it is open. Closing one, or entering it as a context manager,
@@ -415,8 +414,7 @@ class HaikuRAG:
     ) -> "HaikuRAG":
         """A client over a database another session opened and will close.
 
-        `lender` is the client that opened it, whose reranker this one borrows
-        rather than building a second copy of the same model.
+        `lender` is the client that opened it, whose reranker this one borrows.
         """
         client = cls(
             session.db_path, config=session.config, read_only=session.read_only
@@ -429,14 +427,10 @@ class HaikuRAG:
     def _require_one_embedder(self, clients: "list[HaikuRAG]") -> None:
         """Fail when two of these databases were written with different embedders.
 
-        Searching a set embeds the query once, so a database written with another
-        model answers from a different vector space: its candidates are noise, and
-        rank fusion gives them slots anyway. Only databases searched together have
-        to agree, so this is a property of the selection rather than of the set.
-
-        Drift between a database and the *config* is a separate, softer matter —
-        the same model served by another stack is spelled differently — which
-        `SettingsRepository` reports on open.
+        Only databases searched together have to agree: this is a property of
+        the selection, not of the set. Drift between a database and the *config*
+        is a separate, softer matter, which `SettingsRepository` reports on
+        open.
         """
         recorded = [
             (client.source, client.store.stored_embedding)
@@ -505,8 +499,7 @@ class HaikuRAG:
     async def _aclose_cached(self, name: str) -> None:
         """Close a cached_property this client materialized, and discard it.
 
-        Discarded rather than left in place so that re-entering the client
-        builds a fresh one instead of reusing something already closed.
+        Re-entering the client builds a fresh one.
         """
         cached = self.__dict__.pop(name, None)
         if cached is not None:
@@ -920,7 +913,8 @@ class HaikuRAG:
             return []
         results = await search(self, query, limit, search_type, filter, include_images)
         # A database named in config keeps its name even when it is the only one
-        # this client covers. Only a legacy single `uri` leaves source unset.
+        # this client covers. Only an unnamed `lancedb.uri` database leaves
+        # source unset.
         for result in results:
             result.source = self.source
         return results

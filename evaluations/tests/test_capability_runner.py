@@ -346,9 +346,8 @@ async def test_conversation_applies_document_filter(tmp_path):
 
 
 async def test_conversation_carries_one_state_dict_across_turns(tmp_path):
-    """Capabilities read and write state through the deps dict; carrying the
-    same dict across turns is what lets compaction see earlier questions'
-    records instead of refusing."""
+    """Capabilities read and write state through the deps dict, and the same
+    dict is carried across every turn of a conversation."""
     from evaluations.capability_runner import run_capability_conversation
 
     deps_seen: list[object] = []
@@ -488,7 +487,7 @@ def test_records_the_database_each_citation_came_from():
 
 
 def test_an_unnamed_database_records_no_source():
-    """One database names nothing, so the field stays empty rather than absent."""
+    """One database names nothing: the field holds an empty string."""
     from haiku.rag.capabilities._base import EvidenceState
     from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
     from haiku.rag.store.models.citation import Citation

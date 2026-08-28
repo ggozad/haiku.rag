@@ -17,11 +17,8 @@ if TYPE_CHECKING:
 async def database_lines(client: "HaikuRAG") -> list[str]:
     """What one database reports about itself, without naming its location.
 
-    Reported through the connection the client already holds: a second one to the
-    same database would be a second open for the same statistics.
-
-    A failure is reported as a line rather than raised, so one unreachable
-    database does not cost the report on the others.
+    Reported through the connection the client already holds. A failure becomes
+    a line of the report, and the other databases still report.
     """
     from haiku.rag.store.engine import ConnectionMode
     from haiku.rag.store.info import get_database_stats

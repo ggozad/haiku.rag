@@ -90,8 +90,8 @@ def test_chat_capabilities_read_the_named_database(tmp_path, monkeypatch):
         run_chat(scope=DatabaseScope.resolve(config))
         [covering] = chat_app.call_args.kwargs["capabilities"]
 
-    # The chat lends its own client, so this scope is the fallback: what matters
-    # is that it places the named database rather than the whole set.
+    # The chat lends its own client, so this scope is the fallback: it places
+    # the named database alone.
     [placed] = named.scope.databases
     assert placed.db_path == tmp_path / "b.lancedb"
     assert named.config.lancedb.databases == {}
@@ -156,8 +156,8 @@ def _make_mock_client():
     mock_client = AsyncMock()
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
-    # Covers one database: a bare AsyncMock answers `covers_multiple` with a truthy
-    # Mock, which would send every read down the covering-a-set branch.
+    # Covers one database; a bare AsyncMock answers `covers_multiple` with a
+    # truthy Mock.
     mock_client.covers_multiple = False
     mock_client.source_names = ()
     mock_client.source = None
@@ -670,8 +670,8 @@ async def test_visual_grounding_uses_the_database_holding_the_citation(tmp_path)
 class TestLendingTheClient:
     @pytest.mark.asyncio
     async def test_mounting_lends_its_client_to_every_capability(self, temp_db_path):
-        """Capabilities are built before the client exists, so each reads through
-        the one the app opened rather than opening its own."""
+        """Capabilities are built before the client exists, and each reads
+        through the one the app opened."""
         client = _make_mock_client()
         app, _ = _make_app(temp_db_path, client)
 
@@ -1126,8 +1126,8 @@ class TestKeepingSelectionsReachable:
 
                 [only] = list(modal.query(DocumentCheckbox))
                 assert only.doc_id == "sel-0200"
-                # Awaited rather than posted: the handler reads the database, so
-                # a single pause need not have flushed it.
+                # Awaited directly: the handler reads the database, and a
+                # single pause need not have flushed it.
                 await modal.on_checkbox_changed(Checkbox.Changed(only, False))
                 await pilot.pause()
 
@@ -1145,8 +1145,8 @@ class TestKeepingSelectionsReachable:
 
     @pytest.mark.asyncio
     async def test_the_results_listing_pages_too(self, temp_db_path: Path):
-        """More documents match than one page holds, so the rest are a page
-        away rather than unreachable."""
+        """More documents match than one page holds; the rest are a page
+        away."""
         from textual.widgets import Button
 
         from haiku.rag.chat.widgets.document_filter_modal import (
@@ -1211,11 +1211,8 @@ class TestKeepingSelectionsReachable:
     async def test_typing_without_submitting_leaves_the_listing_alone(
         self, temp_db_path: Path
     ):
-        """The listing is what the last submitted search asked for, and it pages.
-
-        Narrowing it as the user types would hide rows from the page the search
-        landed on while the rest of the matches stayed a page away, so the term
-        applies on enter and says so until then.
+        """The listing is what the last submitted search asked for, and it
+        pages. The term applies on enter, and the footer says so until then.
         """
         from textual.widgets import Button, Input, Static
 

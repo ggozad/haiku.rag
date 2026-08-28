@@ -24,11 +24,7 @@ async with HaikuRAG("path/to/database.lancedb", read_only=True) as client:
     # await client.create_document(...)  # Would raise ReadOnlyError
 ```
 
-`async with` is the lifecycle. A caller that owns the client some other way
-releases it with `await client.aclose()`, which does the same work for every
-client shape. `client.close()` closes the connection to one database and nothing
-else, since draining the background vacuum and releasing the embedder and
-reranker are awaitable; it refuses a client covering several.
+`async with` is the lifecycle. A caller that owns the client some other way releases it with `await client.aclose()`, which does the same work for every client shape. `client.close()` closes the connection to one database and nothing else, since draining the background vacuum and releasing the embedder and reranker are awaitable; it refuses a client covering several.
 
 !!! note
     Databases must be explicitly created with `create=True` or via `haiku-rag init` before use. Opening a nonexistent unnamed local database raises `FileNotFoundError`, naming its path; one named in `lancedb.databases` raises `SourceUnavailableError`, which names the database rather than its location.
@@ -240,9 +236,7 @@ for result in results:
 
 ### Searching Multiple Databases
 
-With [`lancedb.databases`](configuration/storage.md#multiple-databases)
-configured, a client covers the full set. Use `sources` to select a subset.
-Each result includes its database name:
+With [`lancedb.databases`](configuration/storage.md#multiple-databases) configured, a client covers the full set. Use `sources` to select a subset. Each result includes its database name:
 
 ```python
 results = await client.search("machine learning")                    # all of them
@@ -262,21 +256,13 @@ for cite in citations:
 result = await client.analyze("How many documents mention it?", sources=["papers"])
 ```
 
-A scoped question can cite only the selected databases. Analysis mounts only
-their documents.
+A scoped question can cite only the selected databases. Analysis mounts only their documents.
 
-`sources=None` covers every database the client covers. `sources=[]` covers
-none: `search` returns no results, and `ask` and `analyze` run with no evidence
-from any database.
+`sources=None` covers every database the client covers. `sources=[]` covers none: `search` returns no results, and `ask` and `analyze` run with no evidence from any database.
 
-A name no client covers raises `UnknownDatabaseError`, a `KeyError`, wherever it
-is given: at construction, per query, and when placing a citation.
+A name no client covers raises `UnknownDatabaseError`, a `KeyError`, wherever it is given: at construction, per query, and when placing a citation.
 
-On the constructor `sources=[]` means something else. Passing `sources` alongside a
-database path raises `AmbiguousDatabaseError` immediately, since both say which
-database to open. Passing `sources=[]` alone raises `ValueError` on entering the
-client: a selection of nothing to search is a legitimate question, a client over
-no database is not.
+On the constructor `sources=[]` means something else. Passing `sources` alongside a database path raises `AmbiguousDatabaseError` immediately, since both say which database to open. Passing `sources=[]` alone raises `ValueError` on entering the client: a selection of nothing to search is a legitimate question, a client over no database is not.
 
 #### Inspecting the client scope
 
@@ -289,9 +275,7 @@ owner = await client.reader_for("papers")      # the client reading that databas
 papers, wiki = await client.clients_for(["papers", "wiki"])
 ```
 
-`reader_for` and `clients_for` open databases lazily and return borrowed clients.
-They remain valid while the covering client is open and inherit its read-only
-mode. The covering client owns and closes their database sessions.
+`reader_for` and `clients_for` open databases lazily and return borrowed clients. They remain valid while the covering client is open and inherit its read-only mode. The covering client owns and closes their database sessions.
 
 ### Filtering Search Results
 

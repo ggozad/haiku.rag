@@ -167,8 +167,7 @@ async def test_app_info_with_vector_index(temp_db_path, capsys):
 @pytest.mark.asyncio
 async def test_app_info_opens_a_named_remote_database(tmp_path):
     """A database named in `lancedb.databases` can sit behind a URI while the
-    configuration's own `uri` is empty. Passing that configuration on would open
-    the local path that only stands in for it."""
+    configuration's own `uri` is empty; info derives and opens the URI."""
     from haiku.rag.client.scope import DatabaseScope
 
     config = AppConfig(
@@ -195,8 +194,8 @@ async def test_app_info_opens_a_named_remote_database(tmp_path):
 
 
 async def test_app_doctor_opens_a_named_remote_database():
-    """`run_doctor` connects with the configuration it is handed, so it needs the
-    one derived for the database rather than the one naming the set."""
+    """`run_doctor` connects with the configuration it is handed: the one
+    derived for the database, not the one naming the set."""
     from haiku.rag.client.scope import DatabaseScope
 
     config = AppConfig(
@@ -385,7 +384,7 @@ async def test_app_init_skips_exists_check_for_remote(tmp_path):
         covering.__aenter__ = AsyncMock(return_value=mock_client)
         covering.__aexit__ = AsyncMock(return_value=False)
         await app.init()
-        # Opened to create, rather than returning early on a missing local path.
+        # A missing local path is opened to create, not returned early on.
         mock_client_cls._covering.assert_called_once()
 
 

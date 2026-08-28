@@ -135,8 +135,9 @@ class Sandbox:
     file callbacks are synchronous and run off that loop while ``feed_run`` is
     awaited, so they bridge back to it via ``run_coroutine_threadsafe`` without
     deadlocking. When a ``rag`` connection is supplied it is used for every read,
-    so an analysis run drives a single connection on a single loop; otherwise
-    each read opens an ephemeral read-only connection.
+    so an analysis run drives a single connection on a single loop. Otherwise a
+    scope covering several databases opens a federated client once and holds it
+    until ``close()``, and a single database is opened per read.
     """
 
     _scope: "DatabaseScope"
@@ -188,8 +189,8 @@ class Sandbox:
 
         Internal: the public constructor takes a path and resolves it, which is
         its own job. This is for callers that did the resolving, as
-        ``HaikuRAG._covering`` is. It sets the sandbox up directly rather than
-        through ``__init__``, so the scope it is handed is the only one resolved.
+        ``HaikuRAG._covering`` is. It bypasses ``__init__``: the scope it is
+        handed is the only one resolved.
         """
         sandbox = cls.__new__(cls)
         sandbox._configure(scope, config, context, rag, lock)
@@ -604,9 +605,8 @@ class Sandbox:
         """Resource limits for the worker session.
 
         Monty spends ``max_duration_secs`` across the session's whole life, and
-        the session is reused so variables persist between calls. Budget it for
-        the run rather than for one call, or the first slow call starves every
-        later one. ``code_timeout`` is enforced per call elsewhere: the read
+        the session is reused so variables persist between calls: the budget
+        covers the whole run. ``code_timeout`` is enforced per call elsewhere: the read
         deadline in ``_run_on_loop`` bounds a call that reads, and the pool's
         ``request_timeout`` bounds one that computes.
         """

@@ -9,8 +9,7 @@ class TestStoredSettings:
     async def test_a_new_database_carries_the_version_it_was_created_with(
         self, temp_db_path
     ):
-        """Creating writes the settings row, so the store has to report it
-        rather than the emptiness it opened on."""
+        """Creating writes the settings row, and the store reports it."""
         from importlib import metadata
 
         async with Store(temp_db_path, create=True) as store:
@@ -20,8 +19,8 @@ class TestStoredSettings:
 
     @pytest.mark.asyncio
     async def test_an_existing_database_carries_its_stored_settings(self, temp_db_path):
-        """Read once on open: reporting on a database reads them from here
-        instead of querying the settings table again."""
+        """Read once on open: reporting on a database reads them from
+        here."""
         async with Store(temp_db_path, create=True) as store:
             written = store.stored_settings
 

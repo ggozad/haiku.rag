@@ -186,9 +186,8 @@ def _refusal_metrics(report_cases) -> tuple[float, float, int, int] | None:
 def _filter_qa_corpus(corpus, case_ids: set[str] | None):
     """Keep only rows whose ``id`` is in ``case_ids`` (failure-subset reruns).
 
-    Returns the corpus unchanged when ``case_ids`` is None. Matching nothing
-    raises: a dataset keying its rows by another name leaves every case filtered
-    out, and a run of no cases otherwise reports 0.0000 as though it were a score.
+    Returns the corpus unchanged when ``case_ids`` is None; matching nothing
+    raises.
     """
     if case_ids is None:
         return corpus

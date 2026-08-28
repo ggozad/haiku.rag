@@ -64,9 +64,9 @@ class TestOpeningDatabases:
 
     @pytest.mark.asyncio
     async def test_a_cancelled_open_does_not_leak_the_ones_that_worked(self, tmp_path):
-        """Cancellation discards the fan-out's results rather than returning them,
-        so a database that opened while a sibling was still pending is reachable
-        only because the opener recorded it."""
+        """Cancellation discards the fan-out's results, so a database that
+        opened while a sibling was still pending is reachable only through the
+        opener's record."""
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
         await _seed(config, "beta", ["beta document about cats"])
@@ -145,7 +145,8 @@ class TestOpeningDatabases:
 
     @pytest.mark.asyncio
     async def test_a_database_named_twice_is_opened_once(self, tmp_path):
-        """Fusion would count a repeated database as two rank lists."""
+        """Fusion counts rank lists per database, so a repeated name
+        contributes one."""
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
         await _seed(config, "beta", ["beta document about cats"])
@@ -200,8 +201,8 @@ class TestReportingWhereADatabaseIs:
 class TestClosingASet:
     @pytest.mark.asyncio
     async def test_every_database_opened_is_released(self, tmp_path):
-        """A covered database owns an embedder and may owe a vacuum. Closing only
-        its connection would leave both behind."""
+        """A covered database owns an embedder and may owe a vacuum; closing
+        releases both."""
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha one"])
         await _seed(config, "beta", ["beta one"])
@@ -257,9 +258,9 @@ class TestBorrowedDatabases:
 
     @pytest.mark.asyncio
     async def test_entering_a_borrowed_client_reuses_its_database(self, tmp_path):
-        """`async with` on a borrowed client is a plausible thing to write.
-        Opening a second session would leak it, since teardown declines to close
-        what this client did not open."""
+        """`async with` on a borrowed client is a plausible thing to write. It
+        reuses the borrowed session: teardown declines to close what this client
+        did not open."""
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
 
@@ -375,8 +376,8 @@ class TestReleasingAClient:
 class TestSharingTheReranker:
     @pytest.mark.asyncio
     async def test_the_set_builds_and_closes_one_reranker(self, tmp_path, monkeypatch):
-        """A local reranker loads model weights, so one per database in a set
-        would load the same weights that many times."""
+        """A local reranker loads model weights; the set builds one and shares
+        it."""
         import haiku.rag.client as client_module
 
         built: list[object] = []
@@ -475,8 +476,8 @@ class TestFailureNaming:
         assert caught.value.__cause__ is None
 
     @pytest.mark.asyncio
-    async def test_a_legacy_uri_client_keeps_its_error(self, tmp_path):
-        """Nothing named it, so there is no name to report instead."""
+    async def test_an_unnamed_database_keeps_its_error(self, tmp_path):
+        """Nothing named it, so there is no name to report."""
         with pytest.raises(FileNotFoundError):
             async with HaikuRAG(tmp_path / "nope.lancedb"):
                 pass
@@ -645,8 +646,7 @@ class TestDatabaseIndependentWork:
 
     @pytest.mark.asyncio
     async def test_re_entering_a_set_builds_a_fresh_embedder(self, tmp_path):
-        """Teardown closes the embedder, so keeping it would hand the next
-        context one that is already closed."""
+        """Teardown closes the embedder; re-entry builds a fresh one."""
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha one"])
 

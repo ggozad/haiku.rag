@@ -226,7 +226,7 @@ def docling_serve_url() -> str:
 def writing(client: "HaikuRAG") -> "SingleDatabaseSession":
     """The database a write implementation works on, from a client holding one.
 
-    Write implementations take a session rather than a client, so a set can
+    Write implementations take a session, never a client, so a set can
     never reach them. Tests that call one directly go through here."""
     from haiku.rag.client.session import SingleDatabaseSession
 
@@ -240,7 +240,7 @@ def for_path(
     """A scope covering one database at `db_path`.
 
     The application layer takes the databases it works on, already resolved.
-    Tests that hold a path rather than a scope go through here.
+    Tests that hold a path and need a scope go through here.
     """
     from haiku.rag.client.scope import DatabaseScope
     from haiku.rag.config import get_config

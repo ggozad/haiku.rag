@@ -28,7 +28,7 @@ class TestResolution:
 
     def test_a_path_names_one_unnamed_database(self):
         """A path says which database, not what it is called, even where the
-        configuration would have named it."""
+        configuration names one."""
         config = _config(databases={"alpha": "/data/alpha.lancedb"})
 
         scope = DatabaseScope.resolve(config, database_path=Path("/data/other.lancedb"))
@@ -108,8 +108,8 @@ class TestResolution:
         assert scope.databases == (DatabaseRef.at(tmp_path / "haiku.rag.lancedb"),)
 
     def test_the_environment_is_not_consulted(self, monkeypatch, tmp_path):
-        """HAIKU_RAG_DB is honoured by the capability entry point alone. Reading it
-        here would change what every other caller opens."""
+        """HAIKU_RAG_DB is honoured by the capability entry point alone;
+        resolution never reads the environment."""
         monkeypatch.setenv("HAIKU_RAG_DB", "/data/from-the-environment.lancedb")
         config = _config(databases={"alpha": "/data/alpha.lancedb"})
 
@@ -118,8 +118,7 @@ class TestResolution:
         assert scope.names == ("alpha",)
 
     def test_a_path_is_never_reinterpreted_as_a_uri(self):
-        """A caller naming a path means that path. Sending it back through the
-        configured-location rules would let a scheme turn it into a URI."""
+        """A caller naming a path means that path, whatever scheme it carries."""
         scope = DatabaseScope.resolve(
             _config(), database_path="s3://bucket/looks-like-a-uri.lancedb"
         )
@@ -139,8 +138,7 @@ class TestResolution:
         assert ref.db_path is None
 
     def test_a_database_is_a_uri_or_a_path(self):
-        """Both would silently ignore the path; neither fails later, when the
-        connection is derived and there is nothing to open.
+        """A ref holding both, or neither, is refused at construction.
 
         The message names what it was given: this is a programming error raised
         in the caller's own process, not one an operator or a model ever sees.

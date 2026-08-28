@@ -109,8 +109,7 @@ class TestOneConfiguredLocation:
 
     @pytest.mark.asyncio
     async def test_a_local_uri_that_does_not_exist_is_refused(self, tmp_path):
-        """A mistyped path fails instead of quietly becoming an empty database,
-        which is what a value carrying a scheme would do."""
+        """A schemeless location is a local path and must exist."""
         config = self._config(tmp_path / "typo.lancedb")
 
         with pytest.raises(FileNotFoundError):
@@ -253,14 +252,14 @@ class TestPlacingADatabase:
 
         # A KeyError, so a caller treating selection as a lookup still catches it.
         assert issubclass(UnknownDatabaseError, KeyError)
-        # ...but the message reads as a sentence rather than a missing key.
+        # ...but the message reads as a sentence, not as a missing key.
         assert str(UnknownDatabaseError("unknown database 'typo'")) == (
             "unknown database 'typo'"
         )
 
     def test_a_path_and_sources_cannot_both_choose(self, tmp_path):
-        """`sources` used to be ignored beside a path, so selecting a database
-        that is not the one at the path opened the path anyway."""
+        """A path names one database and `sources` names others; together they
+        are refused, whatever the selection."""
         config = _config(tmp_path, ["alpha", "beta"])
 
         for sources in ([], ["alpha"], ["nope"]):
@@ -269,8 +268,8 @@ class TestPlacingADatabase:
 
     @pytest.mark.asyncio
     async def test_one_database_refuses_a_name_it_does_not_cover(self, tmp_path):
-        """Answering with itself would hand back the wrong database's reader for
-        a citation that named another."""
+        """A citation naming another database must not get this database's
+        reader."""
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha one"])
         await _seed(config, "beta", ["beta one"])

@@ -58,8 +58,7 @@ async def _restore_embedder(config, name, *, provider=None, model_name=None):
 
 async def _seed_expandable(config, name, sentences):
     """One document whose chunk covers a single item, so expansion has
-    neighbours to pull in and rebuilds the result rather than passing it
-    through."""
+    neighbours to pull in and rebuilds the result."""
     dim = get_config().embeddings.model.vector_dim
     doc = DoclingDocument(name=name)
     for sentence in sentences:

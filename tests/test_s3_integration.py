@@ -68,9 +68,8 @@ def config():
 def _remote_scope(config: AppConfig) -> DatabaseScope:
     """The configured S3 database.
 
-    These tests name no path, so the scope must resolve to the URI. A precedence
-    change that let a path win would otherwise move them to the local disk and
-    leave them passing against nothing.
+    These tests name no path, and the assertion pins that the scope resolved to
+    the URI.
     """
     scope = DatabaseScope.resolve(config)
     [ref] = scope.databases

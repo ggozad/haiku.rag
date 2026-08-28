@@ -155,8 +155,7 @@ class TestLookupByIdentifier:
         self, tmp_path
     ):
         """A database copied from another holds the same ids. A read has an
-        answer wherever it finds one, and which one it is has to be the
-        configured order rather than whichever replied first."""
+        answer wherever it finds one, and the configured order says which."""
         import shutil
 
         config = _config(tmp_path, ["alpha", "beta"])

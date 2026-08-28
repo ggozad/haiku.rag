@@ -43,9 +43,8 @@ class CapabilityRunResult:
     answer: str
     cited_uris: list[str] = field(default_factory=list)
     cited_chunk_ids: list[str] = field(default_factory=list)
-    # The database each cited chunk came from, in the order they were cited, so a
-    # run over several databases records which one grounded the answer. Empty
-    # strings where the database is unnamed, since one database names nothing.
+    # The database each cited chunk came from, in the order they were cited.
+    # Empty string where the database is unnamed.
     cited_sources: list[str] = field(default_factory=list)
     searched_uris: list[str] = field(default_factory=list)
     n_searches: int = 0

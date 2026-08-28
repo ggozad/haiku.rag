@@ -72,7 +72,8 @@ def create_app(db: Path | None = None, *, covers_set: bool = False) -> "HaikuRAG
 
     Raises:
         AmbiguousDatabaseError: multiple databases are configured and this
-            command works on one, without `--db` or `--db-name` naming which.
+            command works on one, without `--db` or `--db-name` naming which;
+            or `--db` and `--db-name` are both given.
     """
     from haiku.rag.app import HaikuRAGApp
 
@@ -90,8 +91,8 @@ def resolve_scope(
 
     The CLI decides only what it alone knows: that `--db` and `--db-name` are
     the same thing said twice, and whether this command can read more than one.
-    Everything else — an unknown name, a legacy `uri`, the default location — is
-    `DatabaseScope.resolve`'s to answer, so there is one table and not two.
+    Everything else — an unknown name, a `lancedb.uri`, the default location —
+    is `DatabaseScope.resolve`'s to answer, so there is one table and not two.
     """
     from haiku.rag.client.scope import DatabaseScope
 

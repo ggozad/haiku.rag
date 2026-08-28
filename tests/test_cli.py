@@ -141,8 +141,8 @@ class TestOneDatabaseCommands:
         assert "bucket" not in str(raised.value)
 
     def test_a_configured_set_of_one_needs_no_choosing(self, monkeypatch):
-        """Nothing is ambiguous about a set with one database in it, and it keeps
-        its name rather than being refused."""
+        """Nothing is ambiguous about a set with one database in it, and it
+        keeps its name."""
         self._install(monkeypatch, alpha="/db/a.lancedb")
 
         assert resolve_scope(None).names == ("alpha",)
@@ -189,8 +189,8 @@ class TestSelectingADatabaseByName:
         set_config(AppConfig(lancedb=LanceDBConfig(databases=databases)))
 
     def test_a_named_database_is_passed_on_by_name(self, monkeypatch):
-        """Not resolved to a path: the name is what results and citations carry,
-        and rewriting the configuration is what used to lose it."""
+        """Not resolved to a path: the name is what results and citations
+        carry."""
         self._install(monkeypatch, papers="s3://bucket/prefix/papers.lancedb")
         monkeypatch.setattr("haiku.rag.cli._db_name", "papers")
 
@@ -271,8 +271,8 @@ class TestSelectingADatabaseByName:
     def test_a_selection_does_not_outlive_its_invocation_in_process(
         self, tmp_path, monkeypatch
     ):
-        """The selection is per invocation, so a second one starts from a
-        freshly loaded configuration rather than inheriting the first."""
+        """The selection is per invocation: a second one starts from a freshly
+        loaded configuration."""
         import haiku.rag.cli as cli_module
         import haiku.rag.config as config_module
 
@@ -419,8 +419,7 @@ class TestConfiguredLocalUri:
         assert self._reports(result, located)
 
     def test_a_missing_configured_path_is_refused(self, tmp_path, monkeypatch):
-        """A schemeless value is a local path, so a typo fails instead of
-        becoming a new empty database."""
+        """A schemeless value is a local path and must exist."""
         self._fresh(monkeypatch)
         located = tmp_path / "typo.lancedb"
         config_file = self._config_file(tmp_path, located)
@@ -726,8 +725,8 @@ class TestAskAnalyzeImageOption:
 
 
 class TestChatCoversTheSet:
-    """Chat is a read verb: it answers with the same capabilities `ask` uses, so
-    it covers the configured set rather than demanding one database."""
+    """Chat is a read verb: it answers with the same capabilities `ask` uses,
+    and covers the configured set."""
 
     @staticmethod
     def _config_file(tmp_path):

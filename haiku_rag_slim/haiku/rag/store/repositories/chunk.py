@@ -213,9 +213,8 @@ class ChunkRepository:
             limit: Maximum number of results to return.
             search_type: "vector", "fts", or "hybrid" (default).
             filter: Optional SQL WHERE clause to filter documents before searching chunks.
-            query_vector: Pre-computed query embedding, used instead of embedding
-                ``query``. Searching several databases embeds once and passes it
-                to each.
+            query_vector: Pre-computed query embedding; when supplied, ``query``
+                is not embedded.
 
         Returns:
             List of (chunk, score) tuples ordered by relevance.

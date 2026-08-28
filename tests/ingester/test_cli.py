@@ -504,9 +504,8 @@ def test_cli_entry_point_exits_on_store_state_errors(monkeypatch, capsys, error)
 
 class TestPlacingTheIngesterDatabase:
     """The ingester writes wherever the configuration places the database, and
-    resolves that once. A manufactured local default would silently redirect a
-    remote deployment to the local disk, because a path is an explicit override
-    of a configured `lancedb.uri`."""
+    resolves that once. A path is an explicit override of a configured
+    `lancedb.uri`, so no local default stands in for one."""
 
     @staticmethod
     def _app(config: AppConfig, db_path=None):
@@ -543,8 +542,8 @@ class TestPlacingTheIngesterDatabase:
         assert not scope.covers_multiple
 
     def test_a_set_is_refused_with_a_remedy_this_command_has(self, tmp_path):
-        """The client would name `sources=[name]`, a Python argument no CLI user
-        can pass."""
+        """The remedy in the message is `--db PATH`, an argument this command
+        has; `sources=` is a Python argument no CLI user can pass."""
         from haiku.rag.store.exceptions import AmbiguousDatabaseError
 
         config = AppConfig(
@@ -560,8 +559,8 @@ class TestPlacingTheIngesterDatabase:
         assert "sources=" not in str(raised.value)
 
     def test_several_configured_databases_exit_cleanly(self, tmp_path, monkeypatch):
-        """No selector names one of a set, so the CLI reports it rather than
-        printing a traceback."""
+        """No selector names one of a set, so the CLI exits with the message
+        and no traceback."""
         config_file = tmp_path / "haiku.rag.yaml"
         config_file.write_text(
             "lancedb:\n  databases:\n"

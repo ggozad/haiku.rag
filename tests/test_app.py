@@ -428,9 +428,8 @@ def test_show_settings_hides_secrets(tmp_path):
 
 
 def test_show_settings_renders_the_shape_a_config_file_has(tmp_path):
-    """Nesting is indented rather than flattened into one dict repr per block,
-    and a path is its string rather than its Python repr, so what is read here
-    is what would be written into `haiku.rag.yaml`."""
+    """Nesting is indented and a path is its string: what is read here is what
+    `haiku.rag.yaml` holds."""
     import yaml
 
     config = AppConfig(

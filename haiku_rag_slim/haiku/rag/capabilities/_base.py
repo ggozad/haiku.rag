@@ -65,8 +65,7 @@ duplicating a character or a whole group stays above 0.75, so the gap is wide.
 def _ambiguous_retry(error: AmbiguousCitationError) -> ModelRetry:
     """The only way out of an id that names a chunk in two databases.
 
-    The model cannot say which it meant, so it is asked for other evidence
-    rather than for the same id again.
+    The model cannot say which it meant, so the retry asks for other evidence.
     """
     return ModelRetry(
         f"{error}. Cite a chunk id that appears once across the databases "
@@ -188,7 +187,7 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
 
     False on a first question, and equally on every question of a host that does
     not carry state between runs. Capabilities that need the record to mean
-    anything across questions read it to refuse rather than act on nothing.
+    anything across questions refuse when this is False.
     """
 
     async def for_run(self, ctx: RunContext[Any]) -> "RAGCapabilityBase[StateT]":
@@ -618,8 +617,7 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
         """Index the citations, numbering the ones not already registered.
 
         The index is keyed by chunk id and outlives the question, so an id
-        already registered from another database is refused here rather than
-        silently keeping the earlier one's content and database.
+        already registered from another database is refused here.
         """
         assert self.state is not None
         state = self.state

@@ -110,8 +110,8 @@ class TestOneQueryVector:
 
 
 class TestOneEmbedderAcrossTheSet:
-    """A set is searched with one query vector, so a database written with
-    another model would answer from a different space."""
+    """A set is searched with one query vector, so the databases in a
+    selection must share an embedder."""
 
     @pytest.mark.asyncio
     async def test_disagreeing_databases_cannot_be_searched_together(self, tmp_path):
@@ -403,8 +403,8 @@ class TestOneReranker:
 
     @pytest.mark.asyncio
     async def test_the_reranker_is_closed_once(self, tmp_path, monkeypatch):
-        """Handing the same object to every database and letting each close it
-        would close it N times, and the federator not at all."""
+        """The federator owns the reranker: it hands the same object to every
+        database and closes it once."""
         closes = []
 
         class CountingReranker(StubReranker):
@@ -431,8 +431,8 @@ class TestNarrowingToOneDatabase:
 
     @pytest.mark.asyncio
     async def test_narrowing_keeps_the_database_s_own_scores(self, tmp_path):
-        """RRF scores position, so fusing one ranking would report 1/(60+rank)
-        where the database reported a hybrid score."""
+        """RRF scores position; a selection of one keeps the database's own
+        hybrid scores."""
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats", "alpha on dogs"])
         await _seed(config, "beta", ["beta document about cats"])
@@ -453,7 +453,7 @@ class TestNarrowingToOneDatabase:
         self, tmp_path, monkeypatch
     ):
         """One database embeds inside the repository, which returns early when
-        the filter matches no document. Fusing would have embedded first."""
+        the filter matches no document."""
         from haiku.rag.embeddings import EmbedderWrapper
 
         config = _config(tmp_path, ["alpha", "beta"])
@@ -486,8 +486,7 @@ class TestReciprocalRankFusion:
 
     def _lopsided(self, count: int) -> list[list[tuple[Chunk, float]]]:
         """Every native score in the first database beats every one in the
-        second, so anything ranking by score rather than position puts all of
-        one before any of the other."""
+        second, so score order and position order disagree."""
         return [self._ranked("a", count, 0.9), self._ranked("b", count, 0.2)]
 
     async def _fuse_over(self, tmp_path, per_source, limit):
@@ -640,8 +639,7 @@ class TestOneNamedDatabase:
     @pytest.mark.asyncio
     async def test_selecting_nothing_means_the_same_with_one_database(self, tmp_path):
         """`sources=[]` selects nothing whether one database is configured or
-        several, rather than raising on one path and returning nothing on the
-        other."""
+        several."""
         config = _config(tmp_path, ["alpha"])
         await _seed(config, "alpha", ["alpha document about cats"])
 

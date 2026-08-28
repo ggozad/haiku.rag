@@ -33,8 +33,8 @@ def create_mcp_server(
 
     Args:
         db_path: Path to the database file, or None to let `config` place it. A
-            path overrides a configured `lancedb.uri`, so a URI-backed database
-            must pass None rather than a local stand-in.
+            path overrides a configured `lancedb.uri`: for a URI-backed
+            database, pass None.
         config: Configuration to use.
         read_only: If True, write tools (add_document_*, delete_document) are not registered.
     """
@@ -82,8 +82,7 @@ def _covering(scope: "DatabaseScope", config: AppConfig, read_only: bool) -> Fas
 
     @asynccontextmanager
     async def lifespan(_server: FastMCP) -> AsyncIterator[None]:
-        # Open eagerly so an unopenable database fails startup rather than
-        # every tool call.
+        # Opened eagerly: an unopenable database fails at startup.
         nonlocal client
         await _client()
         try:

@@ -77,8 +77,8 @@ class IngesterApp:
         from haiku.rag.store.exceptions import AmbiguousDatabaseError
 
         self._config = config
-        # `--db` names the database directly, and nothing stands in for it: a
-        # manufactured default would override a configured `lancedb.uri`.
+        # `--db` is an explicit override; None leaves placement to the
+        # configuration.
         self._scope = DatabaseScope.resolve(config, database_path=db_path)
         if self._scope.covers_multiple:
             raise AmbiguousDatabaseError(

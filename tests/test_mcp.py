@@ -608,9 +608,8 @@ class TestMCPClientLifetime:
     async def test_the_scope_decides_the_database_and_names_its_results(
         self, mcp_db, tmp_path
     ):
-        """The scope is the selection, so the server reads the one database it
-        names and results carry that name. The configuration alone would place
-        every database it configures."""
+        """The scope is the selection: the server reads the one database it
+        names, and results carry that name."""
         from haiku.rag.client.scope import DatabaseScope
         from haiku.rag.config.models import AppConfig, LanceDBConfig
 
@@ -670,8 +669,8 @@ class TestMCPClientLifetime:
     async def test_the_command_hands_the_server_its_resolved_database(
         self, monkeypatch
     ):
-        """A path would override a configured URI, and a derived configuration
-        would lose the name, so `run_mcp` passes neither."""
+        """`run_mcp` passes the resolved scope, not a path and not a derived
+        configuration: the scope keeps both the URI and the name."""
         from haiku.rag.app import HaikuRAGApp
         from haiku.rag.client.scope import DatabaseScope
         from haiku.rag.config.models import AppConfig, LanceDBConfig
