@@ -237,13 +237,15 @@ class Sandbox:
         no repositories of its own, so those reads have to name their owner. An
         owner is a session of its own, so it is yielded unserialized.
         """
-        connection = owner if owner is not None else self._rag
-        if connection is not None:
+        if owner is not None:
+            yield owner
+            return
+        if self._rag is not None:
             if self._lock is not None:
                 async with self._lock:
-                    yield connection
+                    yield self._rag
             else:
-                yield connection
+                yield self._rag
             return
         if self._scope.covers_multiple:
             yield await self._open_connection()

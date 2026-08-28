@@ -20,6 +20,54 @@ async def _mounted(rag, sources=None):
     return sandbox, docs, owners
 
 
+class TestSerializingTheConnection:
+    """The lock guards the shared connection, which the capability's own tool
+    calls also hold. An owner is a session of its own."""
+
+    @staticmethod
+    def _sandbox(rag, lock):
+        return Sandbox._covering(
+            rag._resolve_scope(), rag._config, AnalysisContext(), rag, lock
+        )
+
+    @pytest.mark.asyncio
+    async def test_the_shared_connection_is_serialized(self, tmp_path):
+        import asyncio
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+
+        lock = asyncio.Lock()
+        async with HaikuRAG(config=config) as rag:
+            sandbox = self._sandbox(rag, lock)
+            async with sandbox._connection():
+                assert lock.locked()
+            assert not lock.locked()
+
+    @pytest.mark.asyncio
+    async def test_an_owner_is_not(self, tmp_path):
+        """Serializing owner reads would queue every database's file read behind
+        the capability's searches, to guard state none of them touch."""
+        import asyncio
+
+        class Trap(asyncio.Lock):
+            """Refuses rather than waits: holding a real lock would wedge the
+            suite on a regression instead of failing it."""
+
+            async def acquire(self):
+                raise AssertionError("serialized a read on an owner's own session")
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+
+        async with HaikuRAG(config=config) as rag:
+            (alpha,) = await rag.clients_for(["alpha"])
+            sandbox = self._sandbox(rag, Trap())
+
+            async with sandbox._connection(alpha) as connection:
+                assert connection is alpha
+
+
 class TestStandaloneAcrossDatabases:
     """Without a lent client the sandbox opens its own. The owners it hands out
     are stored for later file reads, so that connection has to outlive the call
