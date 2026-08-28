@@ -554,16 +554,14 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
         if missing:
             async with self.rag_lock:
                 rag = await self._ensure_rag()
-                # A chunk id says nothing about which database holds it, so the
-                # fallback looks through everything the question covers — and
-                # nothing it does not.
+                # A chunk id names no database, so the fallback covers exactly
+                # what the question covers, and nothing it does not.
                 lookups = await rag.clients_covering(self.state.sources)
                 synthetic: list[SearchResult] = []
                 documents: dict[tuple[str | None, str], Any] = {}
                 for chunk_id in missing:
-                    # Every database that has it, not the first: taking the first
-                    # would attribute the answer to one of them without ever
-                    # seeing that another had it too.
+                    # Every database that has it, not the first: the first
+                    # alone cannot see that another had it too.
                     holders = await all_found(
                         lookups, lambda owner: owner.get_chunk_by_id(chunk_id)
                     )

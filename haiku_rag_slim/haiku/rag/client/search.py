@@ -46,8 +46,7 @@ async def search(
         limit = client._config.search.limit
 
     resolved = _resolved_search_type(query, search_type)
-    # One database embeds inside the repository, which returns early for a filter
-    # that matches nothing, so a text query that finds no documents never embeds.
+    # The repository embeds late, so a filter matching nothing never embeds.
     query_vector = (
         None if isinstance(query, str) else await _embed_query(client, query, resolved)
     )
@@ -92,9 +91,8 @@ async def search_sources(
         return []
     selected = await client.clients_for(names)
     if len(selected) == 1:
-        # One database is an ordinary search, whatever the client covers: fusion
-        # would replace its hybrid scores with ranks, and embedding up front
-        # would embed for a filter the repository can see matches nothing.
+        # One database is an ordinary search: fusion would replace its hybrid
+        # scores with ranks, and embedding up front would defeat the late embed.
         return await selected[0].search(
             query, limit, search_type, filter, include_images
         )
@@ -102,10 +100,9 @@ async def search_sources(
     if resolved != "fts":
         client._require_one_embedder(selected)
 
-    # One over-fetch decision, one query vector, and one reranker, for the whole
-    # set. The databases in a selection share an embedder, so the vector is the
-    # same wherever it is computed, and deciding the over-fetch per database would
-    # have each consult its own reranker.
+    # One over-fetch decision, one query vector and one reranker for the whole
+    # set: the databases share an embedder, and deciding per database would have
+    # each consult its own reranker.
     fetch_limit = _fetch_limit(client, query, limit)
     query_vector = await _embed_query(selected[0], query, resolved)
     text = query if isinstance(query, str) else ""

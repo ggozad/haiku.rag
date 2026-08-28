@@ -42,9 +42,9 @@ def run_chat(
         config.qa.model = model_config
         config.analysis.model = model_config
 
-    # The capabilities read the databases the scope covers, not whatever the
-    # configuration happens to name: `--db PATH` would otherwise leave them on
-    # the default database, and `--db-name NAME` on the whole set.
+    # The capabilities read the databases the scope covers, not what the
+    # configuration names: a `--db PATH` selection is outside the
+    # configuration, and a `--db-name NAME` selection is narrower than it.
     if scope.covers_multiple:
         capability_config, capability_db_path = config, None
     else:

@@ -138,8 +138,8 @@ class DocumentFilterModal(ModalScreen):
         self._search = ""
         self._page = 0
         # Selections outside the page stay applied, and a checkbox is the only
-        # way to remove one, so they are reachable through their own listing
-        # rather than appended to this one, which the page bound has to hold.
+        # way to remove one, so their own listing keeps them reachable while
+        # this one holds the page bound.
         self._listing_selected = False
 
     def compose(self) -> ComposeResult:

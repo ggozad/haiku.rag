@@ -509,9 +509,9 @@ def locate_database(location: str) -> tuple[str, Path | None]:
     """Split a configured location into (uri, db_path).
 
     A value with a scheme is a `lancedb.uri`; anything else is a local path.
-    Routing a local path through `uri` would have `ConnectionMode` classify it as
-    object storage, which opens it without the existence check a local database
-    gets.
+    `ConnectionMode` classifies a `uri` as object storage and opens it without
+    the existence check a local database gets, so a local path never travels
+    as one.
     """
     if "://" in location:
         return location, None

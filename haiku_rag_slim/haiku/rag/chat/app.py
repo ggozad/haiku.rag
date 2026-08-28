@@ -148,9 +148,8 @@ class ChatApp(App):
         # a client whose __aenter__ failed.
         await client.__aenter__()
         self.client = client
-        # The capabilities read through this one, rather than each opening its
-        # own: it is already the databases they were built for, and lending it
-        # means one connection per database instead of one per capability.
+        # Lent to the capabilities: already the databases they were built for,
+        # and one connection per database however many capabilities read it.
         for capability in self._capabilities:
             capability.borrowed_rag = client
 
