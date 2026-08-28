@@ -687,6 +687,52 @@ class TestDocumentSelectionIdentity:
                 assert modal._selected == {"id-one"}
 
 
+class TestRenderingUnattributedPictures:
+    @pytest.mark.asyncio
+    async def test_a_sourceless_picture_citation_does_not_fail_the_answer(
+        self, temp_db_path: Path
+    ):
+        """Evidence recorded before databases could be named carries no source,
+        and across databases nothing places its pictures. The citation still
+        renders, with its figure markers."""
+        from haiku.rag.chat.app import RAG_STATE_NAMESPACE
+        from haiku.rag.store.models.citation import Citation
+
+        covering = _make_mock_client()
+        covering.covers_multiple = True
+        covering.source_names = ("alpha", "beta")
+        covering.reader_for = AsyncMock(return_value=None)
+        covering.get_picture_bytes = AsyncMock(
+            side_effect=AssertionError("asked a set for a picture it cannot place")
+        )
+
+        citation = Citation(
+            document_id="d1",
+            chunk_id="c1",
+            content="body",
+            document_uri="test://doc",
+            picture_refs=["#/pictures/0"],
+        )
+
+        app, _ = _make_app(temp_db_path, covering)
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as stub,
+            _covering_returns(stub, covering),
+        ):
+            async with app.run_test() as pilot:
+                app._state[RAG_STATE_NAMESPACE] = {
+                    "citations": ["c1"],
+                    "citation_index": {"c1": citation.model_dump(mode="json")},
+                }
+                from haiku.rag.chat.widgets.chat_history import ChatHistory
+
+                await app._show_citations_and_programs(app.query_one(ChatHistory))
+                await pilot.pause()
+
+        covering.reader_for.assert_awaited_once_with(None)
+        covering.get_picture_bytes.assert_not_awaited()
+
+
 class TestKeepingSelectionsReachable:
     """A selection applies whether or not the page shows it, and a checkbox is
     the only way to remove one."""

@@ -300,11 +300,15 @@ class ChatApp(App):
                 refs = list(citation.picture_refs or [])
                 if not refs:
                     continue
+                # Evidence recorded before databases could be named carries no
+                # source, and across databases nothing places its pictures. The
+                # citation still renders, with its figure markers.
+                owner = await self.client.reader_for(citation.source)
+                if owner is None:
+                    continue
                 blobs: list[bytes] = []
                 for ref in refs:
-                    data = await self.client.get_picture_bytes(
-                        citation.document_id, ref, citation.source
-                    )
+                    data = await owner.get_picture_bytes(citation.document_id, ref)
                     if data:
                         blobs.append(data)
                 if blobs:
