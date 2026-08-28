@@ -9,6 +9,7 @@ from textual.widgets import Collapsible, LoadingIndicator, Markdown, Static
 from textual.widgets.markdown import MarkdownStream
 from textual_image.widget import Image as TextualImage
 
+from haiku.rag.store.models.chunk import qualified_id
 from haiku.rag.store.models.citation import Citation
 
 if TYPE_CHECKING:
@@ -430,11 +431,12 @@ class ChatHistory(VerticalScroll):
     async def add_citations(
         self,
         citations: list[Citation],
-        picture_bytes: dict[str, list[bytes]] | None = None,
+        picture_bytes: dict[tuple[str | None, str | None], list[bytes]] | None = None,
     ) -> None:
         """Add citations inline after a response.
 
-        ``picture_bytes`` maps citation ``chunk_id`` → list of raw PNG bytes,
+        ``picture_bytes`` maps a citation's ``(source, chunk_id)`` → list of raw
+        PNG bytes,
         one per entry in the citation's ``picture_refs``. Pre-fetched by the
         caller (typically the chat app's post-response hook) so widget
         construction stays synchronous.
@@ -445,7 +447,10 @@ class ChatHistory(VerticalScroll):
         picture_bytes = picture_bytes or {}
         for citation in citations:
             widget = CitationWidget(
-                citation, picture_bytes=picture_bytes.get(citation.chunk_id)
+                citation,
+                picture_bytes=picture_bytes.get(
+                    qualified_id(citation.source, citation.chunk_id)
+                ),
             )
             await self.mount(widget)
         self.scroll_end(animate=False)

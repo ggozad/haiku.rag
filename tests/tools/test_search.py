@@ -304,6 +304,37 @@ class TestBuildImageContentFromResults:
         images = [item for item in content if isinstance(item, BinaryContent)]
         assert len(images) == 1
 
+    def test_the_same_picture_in_two_collections_is_attached_from_each(self):
+        """A document copied into another collection keeps its id and picture refs."""
+        from pydantic_ai.messages import BinaryContent
+
+        from haiku.rag.tools.search import build_image_content_from_results
+
+        shared = {"#/pictures/0": _png_b64()}
+        results = [
+            SearchResult(
+                content="a",
+                score=0.9,
+                chunk_id="c1",
+                document_id="doc-1",
+                source="papers",
+                image_data=shared,
+            ),
+            SearchResult(
+                content="b",
+                score=0.8,
+                chunk_id="c2",
+                document_id="doc-1",
+                source="wiki",
+                image_data=shared,
+            ),
+        ]
+
+        content = build_image_content_from_results(results)
+
+        images = [item for item in content if isinstance(item, BinaryContent)]
+        assert len(images) == 2
+
     def test_each_image_is_labelled_with_the_result_it_belongs_to(self):
         """Label every picture, not just the batch.
 

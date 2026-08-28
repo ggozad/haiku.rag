@@ -36,6 +36,7 @@ from haiku.rag.chat.widgets.prompt import (
 )
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
+from haiku.rag.store.models.chunk import qualified_id
 from haiku.rag.telemetry import configure as configure_telemetry
 
 configure_telemetry(service_name="haiku-rag")
@@ -294,7 +295,7 @@ class ChatApp(App):
         if not citations:
             return
 
-        picture_bytes: dict[str, list[bytes]] = {}
+        picture_bytes: dict[tuple[str | None, str | None], list[bytes]] = {}
         if self.client is not None:
             for citation in citations:
                 refs = list(citation.picture_refs or [])
@@ -312,7 +313,9 @@ class ChatApp(App):
                     if data:
                         blobs.append(data)
                 if blobs:
-                    picture_bytes[citation.chunk_id] = blobs
+                    picture_bytes[qualified_id(citation.source, citation.chunk_id)] = (
+                        blobs
+                    )
 
         await chat_history.add_citations(citations, picture_bytes=picture_bytes)
 

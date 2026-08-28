@@ -60,9 +60,9 @@ def picture_label(chunk_id: str, self_ref: str) -> str:
 class RetainedPicture:
     """A picture to re-attach, with the label that must accompany it.
 
-    Addressed by owner, document and reference, because a reference such as
-    ``#/pictures/0`` repeats across documents and capabilities. The label travels
-    with it so it can never be emitted without its image.
+    Addressed by owner, collection, document and reference, because a reference
+    such as ``#/pictures/0`` repeats across all three. The label travels with it
+    so it can never be emitted without its image.
     """
 
     capability: str
@@ -161,7 +161,7 @@ def build_capsule(evidence: Sequence[DiscoveredEvidence]) -> Capsule:
 
     lines = [CAPSULE_HEADER]
     pictures: list[RetainedPicture] = []
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[tuple[str, str | None, str, str]] = set()
     # A capsule may combine citations from different search scopes.
     include_collection = len({entry.citation.source for entry in entries}) > 1
     position = 0
@@ -174,9 +174,14 @@ def build_capsule(evidence: Sequence[DiscoveredEvidence]) -> Capsule:
         lines.append(entry.render(include_collection=include_collection))
         for self_ref in entry.citation.picture_refs:
             # Overlapping chunks cite one figure, and a provider counts it twice.
-            # Identity is owner plus document plus reference, so the same reference
-            # in another document stays a different picture.
-            identity = (entry.capability, entry.citation.document_id, self_ref)
+            # A reference such as `#/pictures/0` repeats across documents, and a
+            # document repeats across collections.
+            identity = (
+                entry.capability,
+                entry.citation.source,
+                entry.citation.document_id,
+                self_ref,
+            )
             if identity in seen:
                 continue
             seen.add(identity)

@@ -137,6 +137,32 @@ def test_evidence_from_one_collection_does_not_name_it():
     assert '[a] Source: "Title a" (test://a)' in lines
 
 
+def test_a_picture_in_two_collections_is_retained_from_each():
+    """A document copied into another collection keeps its id and picture refs."""
+    found = discovered(
+        cited={"a": [2], "b": [2]},
+        pictures={"a": ["#/pictures/0"], "b": ["#/pictures/0"]},
+    )
+    found = replace(
+        found,
+        citations={
+            "a": replace_citation(
+                found.citations["a"], document_id="shared", source="papers"
+            ),
+            "b": replace_citation(
+                found.citations["b"], document_id="shared", source="wiki"
+            ),
+        },
+    )
+
+    capsule = build_capsule([found])
+
+    assert [(picture.source, picture.self_ref) for picture in capsule.pictures] == [
+        ("papers", "#/pictures/0"),
+        ("wiki", "#/pictures/0"),
+    ]
+
+
 def test_nothing_cited_produces_no_capsule():
     capsule = build_capsule([discovered()])
 

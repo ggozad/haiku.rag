@@ -732,6 +732,79 @@ class TestRenderingUnattributedPictures:
         covering.reader_for.assert_awaited_once_with(None)
         covering.get_picture_bytes.assert_not_awaited()
 
+    @pytest.mark.asyncio
+    async def test_one_chunk_id_in_two_collections_keeps_its_own_pictures(
+        self, temp_db_path: Path, monkeypatch
+    ):
+        """Chunk ids repeat between copies of a database, and both capabilities'
+        citations are gathered into one mapping."""
+        from io import BytesIO
+
+        from PIL import Image as PILImage
+
+        from haiku.rag.chat.app import ANALYSIS_STATE_NAMESPACE, RAG_STATE_NAMESPACE
+        from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
+        from haiku.rag.store.models.citation import Citation
+
+        def png(color: str) -> bytes:
+            buffer = BytesIO()
+            PILImage.new("RGB", (4, 4), color).save(buffer, format="PNG")
+            return buffer.getvalue()
+
+        pictures = {"alpha": png("red"), "beta": png("blue")}
+
+        def reader(source):
+            owner = AsyncMock()
+            owner.get_picture_bytes = AsyncMock(return_value=pictures[source])
+            return owner
+
+        covering = _make_mock_client()
+        covering.covers_multiple = True
+        covering.source_names = ("alpha", "beta")
+        covering.reader_for = AsyncMock(side_effect=reader)
+
+        def cited(source: str) -> dict:
+            return Citation(
+                document_id="d1",
+                chunk_id="c1",
+                source=source,
+                content="body",
+                document_uri=f"test://{source}",
+                picture_refs=["#/pictures/0"],
+            ).model_dump(mode="json")
+
+        seen: list[tuple[str | None, list[bytes] | None]] = []
+        build = CitationWidget.__init__
+
+        def capture(self, citation, picture_bytes=None, **kwargs):
+            seen.append((citation.source, picture_bytes))
+            build(self, citation, picture_bytes, **kwargs)
+
+        monkeypatch.setattr(CitationWidget, "__init__", capture)
+
+        app, _ = _make_app(temp_db_path, covering)
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as stub,
+            _covering_returns(stub, covering),
+        ):
+            async with app.run_test() as pilot:
+                app._state[RAG_STATE_NAMESPACE] = {
+                    "citations": ["c1"],
+                    "citation_index": {"c1": cited("alpha")},
+                }
+                app._state[ANALYSIS_STATE_NAMESPACE] = {
+                    "citations": ["c1"],
+                    "citation_index": {"c1": cited("beta")},
+                }
+
+                await app._show_citations_and_programs(app.query_one(ChatHistory))
+                await pilot.pause()
+
+        assert seen == [
+            ("alpha", [pictures["alpha"]]),
+            ("beta", [pictures["beta"]]),
+        ]
+
 
 class TestKeepingSelectionsReachable:
     """A selection applies whether or not the page shows it, and a checkbox is

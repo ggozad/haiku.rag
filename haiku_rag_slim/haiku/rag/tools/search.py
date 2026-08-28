@@ -40,8 +40,8 @@ def build_image_content_from_results(
 ) -> list[str | BinaryContent]:
     """Decode and validate picture bytes attached to search results, labelled.
 
-    Dedup keyed on ``(document_id, self_ref)`` so the same picture in
-    different chunks is sent once. Pictures that fail
+    Dedup keyed on ``(source, document_id, self_ref)`` so the same picture in
+    different chunks is sent once, and a copy in another collection is its own. Pictures that fail
     ``PIL.Image.verify()`` are skipped — the model adapter renders one
     vision placeholder per ``BinaryContent``, so emitting one for an
     image the server can't decode leaves the processor with an
@@ -58,12 +58,12 @@ def build_image_content_from_results(
     to the vision API.
     """
     collected: list[tuple[str | None, str, BinaryContent]] = []
-    seen: set[tuple[str | None, str]] = set()
+    seen: set[tuple[str | None, str | None, str]] = set()
     for result in results:
         if not result.image_data:
             continue
         for self_ref, b64 in result.image_data.items():
-            key = (result.document_id, self_ref)
+            key = (result.source, result.document_id, self_ref)
             if key in seen:
                 continue
             picture = decode_picture(base64.b64decode(b64), self_ref)
