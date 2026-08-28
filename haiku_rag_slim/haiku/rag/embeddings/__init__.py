@@ -8,7 +8,7 @@ from pydantic_ai.providers.ollama import OllamaProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from haiku.rag.config import AppConfig, get_config
-from haiku.rag.utils import check_api_key_supported
+from haiku.rag.utils import check_api_key_supported, vllm_base_url
 
 if TYPE_CHECKING:
     from PIL import Image as PILImage
@@ -241,7 +241,7 @@ def get_embedder(config: AppConfig | None = None) -> EmbedderWrapper:
     if provider == "vllm":
         from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
 
-        base_url = _vllm_base_url(embedding_model.base_url)
+        base_url = vllm_base_url(embedding_model.base_url)
         return VLLMMultimodalEmbedder(
             model_name,
             vector_dim,
@@ -251,13 +251,6 @@ def get_embedder(config: AppConfig | None = None) -> EmbedderWrapper:
         )
 
     raise ValueError(f"Unsupported embedding provider: {provider}")
-
-
-def _vllm_base_url(base_url: str | None) -> str:
-    base_url = base_url or "http://localhost:8000/v1"
-    if not base_url.rstrip("/").endswith("/v1"):
-        base_url = base_url.rstrip("/") + "/v1"
-    return base_url
 
 
 def _get_multimodal_embedder(
@@ -275,7 +268,7 @@ def _get_multimodal_embedder(
     if provider == "vllm":
         from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
 
-        base_url = _vllm_base_url(embedding_model.base_url)
+        base_url = vllm_base_url(embedding_model.base_url)
         return VLLMMultimodalEmbedder(
             model_name,
             vector_dim,
