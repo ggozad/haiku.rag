@@ -935,3 +935,29 @@ class TestSandboxRequestTimeout:
             assert "alive" in recovered.stdout
         finally:
             await sb.close()
+
+
+class TestSandboxClose:
+    @pytest.mark.asyncio
+    async def test_a_failing_teardown_still_releases_the_rest(self, tmp_path):
+        """Each of the session, the pool and the held connection is released,
+        whichever of them fails."""
+        from unittest.mock import AsyncMock
+
+        sb = Sandbox(
+            db_path=tmp_path / "x.lancedb",
+            config=AppConfig(),
+            context=AnalysisContext(),
+        )
+        session, pool, opened = AsyncMock(), AsyncMock(), AsyncMock()
+        session.__aexit__.side_effect = RuntimeError("worker already gone")
+        sb._session, sb._pool = session, pool  # ty: ignore[invalid-assignment]
+        sb._opened = opened
+
+        await sb.close()
+
+        pool.__aexit__.assert_awaited_once()
+        opened.__aexit__.assert_awaited_once()
+        assert sb._session is None
+        assert sb._pool is None
+        assert sb._opened is None

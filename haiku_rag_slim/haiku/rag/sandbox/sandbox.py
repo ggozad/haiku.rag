@@ -354,16 +354,21 @@ class Sandbox:
                 await session.__aexit__(None, None, None)
 
     async def close(self) -> None:
-        """Return the worker to the pool and shut the pool down. Idempotent."""
+        """Return the worker to the pool, shut the pool down and release any
+        held connection. Idempotent, and each release happens whatever the
+        others raise."""
         if self._session is not None:
-            await self._session.__aexit__(None, None, None)
-            self._session = None
+            session, self._session = self._session, None
+            with suppress(Exception):
+                await session.__aexit__(None, None, None)
         if self._pool is not None:
-            await self._pool.__aexit__(None, None, None)
-            self._pool = None
+            pool, self._pool = self._pool, None
+            with suppress(Exception):
+                await pool.__aexit__(None, None, None)
         if self._opened is not None:
-            await self._opened.__aexit__(None, None, None)
-            self._opened = None
+            opened, self._opened = self._opened, None
+            with suppress(Exception):
+                await opened.__aexit__(None, None, None)
 
     def _build_external_functions(self) -> dict[str, Any]:
         """Build async external functions for the Monty interpreter."""
