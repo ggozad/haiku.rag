@@ -174,6 +174,12 @@ class SingleDatabaseSession:
             document.source = self.source
         return document
 
+    def name_all(self, documents: "list[Document]") -> "list[Document]":
+        """`documents`, each told which database it came from."""
+        for document in documents:
+            document.source = self.source
+        return documents
+
     async def get_document_by_id(self, document_id: str) -> "Document | None":
         return self.name(await self.document_repository.get_by_id(document_id))
 

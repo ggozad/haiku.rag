@@ -184,6 +184,7 @@ async def _store_document_with_chunks(
     if session.config.storage.auto_vacuum:
         session.schedule_vacuum()
 
+    session.name(stored_doc)
     return stored_doc
 
 
@@ -237,6 +238,7 @@ async def _update_document_with_chunks(
     if session.config.storage.auto_vacuum:
         session.schedule_vacuum()
 
+    session.name(updated_doc)
     return updated_doc
 
 
@@ -343,7 +345,7 @@ async def _store_documents_with_chunks(
     if session.config.storage.auto_vacuum:
         session.schedule_vacuum()
 
-    return created
+    return session.name_all(created)
 
 
 async def import_documents(
@@ -402,7 +404,9 @@ async def _refresh_doc_metadata(
         # The vacuum is debounced, and document_meta is tiny, so this is cheap.
         if session.config.storage.auto_vacuum:
             session.schedule_vacuum()
+        session.name(result)
         return result
+    session.name(doc)
     return doc
 
 
@@ -879,6 +883,7 @@ async def update_document(
             updated = await session.document_repository.update_meta(existing_doc)
         if session.config.storage.auto_vacuum:
             session.schedule_vacuum()
+        session.name(updated)
         return updated
 
     if chunks is not None:

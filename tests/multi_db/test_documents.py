@@ -5,6 +5,7 @@ from docling_core.types.doc.document import DoclingDocument
 from docling_core.types.doc.labels import DocItemLabel
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.config import get_config
 from haiku.rag.store.models import Chunk
 from tests.multi_db.helpers import (
@@ -155,6 +156,107 @@ class TestLookupByIdentifier:
                 is None
             )
             assert await rag.get_document_by_uri("test://nowhere") is None
+
+
+class TestWritesNameTheirDatabase:
+    """A write returns the document it wrote, and it came from a database. A
+    read of the same document names it, so the write has to as well."""
+
+    @staticmethod
+    def _doc(text: str):
+        from docling_core.types.doc.document import DoclingDocument
+        from docling_core.types.doc.labels import DocItemLabel
+
+        doc = DoclingDocument(name=text)
+        doc.add_text(label=DocItemLabel.TEXT, text=text)
+        return doc
+
+    @pytest.mark.asyncio
+    async def test_import_names_the_database(self, tmp_path):
+        config = _config(tmp_path, ["alpha"])
+        dim = get_config().embeddings.model.vector_dim
+
+        async with HaikuRAG(config=config, create=True, sources=["alpha"]) as rag:
+            written = await rag.import_document(
+                self._doc("cats"),
+                [Chunk(content="cats", embedding=[0.1] * dim, order=0)],
+                uri="test://alpha/cats",
+            )
+            assert written.id is not None
+            read = await rag.get_document_by_id(written.id)
+
+        assert written.source == "alpha"
+        assert read is not None and read.source == written.source
+
+    @pytest.mark.asyncio
+    async def test_a_batch_import_names_every_document(self, tmp_path):
+        from haiku.rag.client.documents import DocumentImport
+
+        config = _config(tmp_path, ["alpha"])
+        dim = get_config().embeddings.model.vector_dim
+
+        async with HaikuRAG(config=config, create=True, sources=["alpha"]) as rag:
+            written = await rag.import_documents(
+                [
+                    DocumentImport(
+                        docling_document=self._doc(text),
+                        chunks=[Chunk(content=text, embedding=[0.1] * dim, order=0)],
+                        uri=f"test://alpha/{text}",
+                    )
+                    for text in ("cats", "dogs")
+                ]
+            )
+
+        assert [d.source for d in written] == ["alpha", "alpha"]
+
+    @pytest.mark.asyncio
+    async def test_a_metadata_only_update_names_the_database(self, tmp_path):
+        """Changing only metadata rewrites the row without re-chunking, so it
+        never reaches the paths that name a document on the way through."""
+        config = _config(tmp_path, ["alpha"])
+        dim = get_config().embeddings.model.vector_dim
+
+        async with HaikuRAG(config=config, create=True, sources=["alpha"]) as rag:
+            stored = await rag.import_document(
+                self._doc("cats"),
+                [Chunk(content="cats", embedding=[0.1] * dim, order=0)],
+                uri="test://alpha/cats",
+            )
+            assert stored.id is not None
+
+            updated = await rag.update_document(
+                stored.id, title="Cats", metadata={"k": "v"}
+            )
+
+        assert updated is not None
+        assert updated.title == "Cats"
+        assert updated.source == "alpha"
+
+    @pytest.mark.asyncio
+    async def test_the_revision_short_circuit_names_the_database(self, tmp_path):
+        """`create_document_from_source` refreshes metadata in place when the
+        revision is unchanged, returning the document it rewrote."""
+        from haiku.rag.client.documents import _refresh_doc_metadata
+
+        config = _config(tmp_path, ["alpha"])
+        dim = get_config().embeddings.model.vector_dim
+
+        async with HaikuRAG(config=config, create=True, sources=["alpha"]) as rag:
+            stored = await rag.import_document(
+                self._doc("cats"),
+                [Chunk(content="cats", embedding=[0.1] * dim, order=0)],
+                uri="test://alpha/cats",
+            )
+            assert isinstance(rag._session, SingleDatabaseSession)
+            refreshed = await _refresh_doc_metadata(
+                rag._session,
+                stored,
+                title="Cats",
+                user_metadata={"k": "v"},
+                source_metadata=None,
+            )
+
+        assert refreshed.source == "alpha"
 
 
 class TestDocumentsNameTheirDatabase:
