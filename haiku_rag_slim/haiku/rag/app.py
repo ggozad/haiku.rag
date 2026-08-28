@@ -101,9 +101,17 @@ class HaikuRAGApp:
         return self._connection[1]
 
     @property
-    def _display_path(self) -> "Path | str":
+    def display_path(self) -> "Path | str":
         """What a one-database command calls the database it opened."""
         return self._one.db_path or self._one.uri
+
+    @property
+    def database_missing(self) -> bool:
+        """Whether the one local database this command resolved to does not exist.
+
+        Always False for a database behind a URI, which has no path to check.
+        """
+        return self._is_local and not self._path.exists()
 
     async def init(self):
         """Initialize a new database."""
@@ -116,7 +124,7 @@ class HaikuRAGApp:
         async with HaikuRAG._covering(self.scope, self.config, create=True):
             pass
         self.console.print(
-            f"[bold green]Database initialized at {self._display_path}[/bold green]"
+            f"[bold green]Database initialized at {self.display_path}[/bold green]"
         )
 
     async def info(self):
@@ -127,10 +135,10 @@ class HaikuRAGApp:
         # Basic: show path/URI
         self.console.print("[bold]haiku.rag database info[/bold]")
         self.console.print(
-            f"  [repr.attrib_name]path[/repr.attrib_name]: {self._display_path}"
+            f"  [repr.attrib_name]path[/repr.attrib_name]: {self.display_path}"
         )
 
-        if self._is_local and not self._path.exists():
+        if self.database_missing:
             self.console.print("[red]Database path does not exist.[/red]")
             return
 
@@ -258,10 +266,10 @@ class HaikuRAGApp:
 
         self.console.print("[bold]haiku.rag doctor[/bold]")
         self.console.print(
-            f"  [repr.attrib_name]path[/repr.attrib_name]: {self._display_path}"
+            f"  [repr.attrib_name]path[/repr.attrib_name]: {self.display_path}"
         )
 
-        if self._is_local and not self._path.exists():
+        if self.database_missing:
             self.console.print("[red]Database path does not exist.[/red]")
             return True
 
@@ -329,7 +337,7 @@ class HaikuRAGApp:
         """
         from haiku.rag.store.engine import Store
 
-        if self._is_local and not self._path.exists():
+        if self.database_missing:
             self.console.print("[red]Database path does not exist.[/red]")
             return
 
@@ -425,7 +433,7 @@ class HaikuRAGApp:
 
     async def create_tag(self, name: str):
         """Tag the current version of every table."""
-        if self._is_local and not self._path.exists():
+        if self.database_missing:
             raise ValueError(f"Database path does not exist: {self._path}")
         async with self._tag_write_store() as store:
             await store.create_tag(name)
@@ -433,7 +441,7 @@ class HaikuRAGApp:
 
     async def list_tags(self):
         """List database tags, flagging partial ones."""
-        if self._is_local and not self._path.exists():
+        if self.database_missing:
             raise ValueError(f"Database path does not exist: {self._path}")
         async with self._tag_read_store() as store:
             tags = await store.list_tags()
@@ -454,7 +462,7 @@ class HaikuRAGApp:
 
     async def delete_tag(self, name: str):
         """Delete a tag from every table that has it."""
-        if self._is_local and not self._path.exists():
+        if self.database_missing:
             raise ValueError(f"Database path does not exist: {self._path}")
         async with self._tag_write_store() as store:
             await store.delete_tag(name)
@@ -469,7 +477,7 @@ class HaikuRAGApp:
         Raises:
             ValueError: If the database path does not exist.
         """
-        if self._is_local and not self._path.exists():
+        if self.database_missing:
             raise ValueError(f"Database path does not exist: {self._path}")
         async with self._tag_write_store() as store:
             safety_tag = await store.restore_tag(name)
@@ -886,7 +894,7 @@ class HaikuRAGApp:
             f"[repr.attrib_name]created at[/repr.attrib_name]: {doc.created_at} [repr.attrib_name]updated at[/repr.attrib_name]: {doc.updated_at}"
         )
         # `list` does not load content, which is where the docling blobs live, so
-        # the header would otherwise announce a field the command declined to fetch.
+        # the header prints only for a fetched field.
         if doc.content:
             self.console.print("[repr.attrib_name]content[/repr.attrib_name]:")
             self.console.print(content)
@@ -932,9 +940,9 @@ class HaikuRAGApp:
         The server opens its own client and validates it on startup, so nothing
         is opened here first.
         """
-        # The resolved scope, not a derived path and configuration: a path
-        # would override a configured URI, and deriving drops the name results
-        # and citations carry.
+        # The resolved scope: a path overrides a configured URI, and a derived
+        # single-database configuration drops the name results and citations
+        # carry.
         server = _mcp_server_covering(self.scope, self.config, self.read_only)
         try:
             if transport == "stdio":

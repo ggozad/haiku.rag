@@ -756,11 +756,11 @@ def tag_restore(
     ),
 ):
     app = create_app(db)
-    if app._is_local and not app._path.exists():
-        typer.echo(f"Error: Database path does not exist: {app._path}", err=True)
+    if app.database_missing:
+        typer.echo(f"Error: Database path does not exist: {app.display_path}", err=True)
         raise typer.Exit(1)
     if not yes:
-        typer.echo(f"Database: {app._display_path}")
+        typer.echo(f"Database: {app.display_path}")
         typer.echo(f"Tag: {name}")
         typer.echo("This changes the live database state across all tables.")
         typer.echo("Stop all ingestion and other writers before continuing.")

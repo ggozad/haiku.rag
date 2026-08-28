@@ -449,7 +449,7 @@ def test_remote_uri_is_the_display_path(tmp_path):
     config = AppConfig(lancedb=LanceDBConfig(uri="s3://bucket/path"))
     app = HaikuRAGApp(scope=for_path(None, config), config=config)
 
-    assert app._display_path == "s3://bucket/path"
+    assert app.display_path == "s3://bucket/path"
     assert app._is_local is False
 
 
