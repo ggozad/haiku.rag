@@ -18,8 +18,6 @@ class DocumentCheckbox(Checkbox):
     def __init__(self, label: str, doc_id: str, *, value: bool) -> None:
         super().__init__(label, value=value, classes="doc-checkbox")
         self.doc_id = doc_id
-        # `label` is a reactive Text; narrowing the page wants the plain string.
-        self.search_text = label
 
 
 def _labelled(docs) -> list[tuple[str, str]]:
@@ -147,7 +145,10 @@ class DocumentFilterModal(ModalScreen):
     def compose(self) -> ComposeResult:
         with Vertical(id="filter-container"):
             yield Static("[bold]Filter Documents[/bold]", id="filter-header")
-            yield Input(placeholder="Search documents...", id="filter-search")
+            yield Input(
+                placeholder="Search documents; press Enter to search...",
+                id="filter-search",
+            )
             with VerticalScroll(id="filter-list"):
                 yield Static("Loading...", id="loading-indicator")
             yield Static("", id="filter-footer")
@@ -170,7 +171,7 @@ class DocumentFilterModal(ModalScreen):
         is showing and every selection stays reachable.
         """
         if search is not None:
-            self._search = search
+            self._search = search.strip()
             self._page = 0
             self._listing_selected = False
 
@@ -223,11 +224,8 @@ class DocumentFilterModal(ModalScreen):
         return max(1, -(-self._matching // DOCUMENT_PAGE))
 
     def _update_footer(self) -> None:
-        """Report the selection, and where in the listing this page sits.
-
-        Counted from the checkboxes on screen, so narrowing the page as the user
-        types reports what they can actually see.
-        """
+        """Report the selection, where in the listing this page sits, and
+        whether the search box holds a term the listing was not built from."""
         footer = self.query_one("#filter-footer", Static)
         count = len(self._selected)
         if count == 0:
@@ -236,17 +234,13 @@ class DocumentFilterModal(ModalScreen):
             state = f"[bold]{count}[/bold] document(s) selected"
         if self._listing_selected:
             state += " [dim]— listing the selected[/dim]"
-        visible = sum(1 for box in self.query(DocumentCheckbox) if box.display)
         if self._pages > 1:
             state += (
                 f" [dim]— page {self._page + 1} of {self._pages}"
                 f" ({self._matching} total)[/dim]"
             )
-        elif self._matching > visible:
-            state += (
-                f" [dim]— showing {visible} of {self._matching};"
-                " type and press enter to search[/dim]"
-            )
+        if self.query_one("#filter-search", Input).value.strip() != self._search:
+            state += " [dim]— press enter to search[/dim]"
         footer.update(state)
 
     async def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
@@ -275,14 +269,7 @@ class DocumentFilterModal(ModalScreen):
         await self._load_documents(event.value)
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        """Narrow the page already shown, for feedback while typing."""
-        search_term = event.value.lower().strip()
-        filter_list = self.query_one("#filter-list", VerticalScroll)
-
-        for checkbox in filter_list.query(DocumentCheckbox):
-            checkbox.display = (
-                search_term == "" or search_term in checkbox.search_text.lower()
-            )
+        """Prompt when the search term has not been submitted."""
         self._update_footer()
 
     async def _turn_to(self, page: int) -> None:

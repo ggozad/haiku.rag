@@ -945,10 +945,22 @@ class TestKeepingSelectionsReachable:
                 assert "No documents match" in str(empty.content)
 
     @pytest.mark.asyncio
-    async def test_narrowing_as_you_type_updates_the_count(self, temp_db_path: Path):
-        from textual.widgets import Input, Static
+    async def test_typing_without_submitting_leaves_the_listing_alone(
+        self, temp_db_path: Path
+    ):
+        """The listing is what the last submitted search asked for, and it pages.
 
-        from haiku.rag.chat.widgets.document_filter_modal import DocumentFilterModal
+        Narrowing it as the user types would hide rows from the page the search
+        landed on while the rest of the matches stayed a page away, so the term
+        applies on enter and says so until then.
+        """
+        from textual.widgets import Button, Input, Static
+
+        from haiku.rag.chat.widgets.document_filter_modal import (
+            DOCUMENT_PAGE,
+            DocumentCheckbox,
+            DocumentFilterModal,
+        )
         from haiku.rag.store.models.document import Document
 
         client = AsyncMock()
@@ -958,7 +970,7 @@ class TestKeepingSelectionsReachable:
             Document(id="id-one", content="", title="Capital region"),
             Document(id="id-two", content="", title="Nobel laureates"),
         ]
-        client.count_documents.return_value = 9
+        client.count_documents.return_value = DOCUMENT_PAGE * 2
 
         modal = DocumentFilterModal(client=client)
         app, _ = _make_app(temp_db_path, client)
@@ -970,12 +982,32 @@ class TestKeepingSelectionsReachable:
                 await app.push_screen(modal)
                 await pilot.pause()
                 footer = modal.query_one("#filter-footer", Static)
-                assert "showing 2 of 9" in str(footer.content)
+                assert "press enter to search" not in str(footer.content)
 
-                modal.on_input_changed(Input.Changed(Input(), "nobel"))
+                search = modal.query_one("#filter-search", Input)
+                search.value = "nobel"
+                modal.on_input_changed(Input.Changed(search, "nobel"))
+
+                assert "press enter to search" in str(footer.content)
+                assert all(box.display for box in modal.query(DocumentCheckbox))
+
+                await modal.on_button_pressed(
+                    Button.Pressed(modal.query_one("#next-btn", Button))
+                )
                 await pilot.pause()
 
-                assert "showing 1 of 9" in str(footer.content)
+                paged = client.list_documents.await_args.kwargs
+                assert paged["offset"] == DOCUMENT_PAGE
+                assert paged["filter"] is None
+                assert "press enter to search" in str(footer.content)
+
+                await modal.on_input_submitted(Input.Submitted(search, search.value))
+                await pilot.pause()
+
+                submitted = client.list_documents.await_args.kwargs
+                assert submitted["offset"] == 0
+                assert "nobel" in submitted["filter"]
+                assert "press enter to search" not in str(footer.content)
 
 
 class TestDocumentSearchFilter:
