@@ -31,6 +31,8 @@
 - A `lancedb.uri` without a scheme is treated as a local path. `--db PATH`
   overrides it.
 - Inspector search results mark truncated previews with an ellipsis.
+- Document titles, URIs, headings and database names render as text, not Rich
+  markup, in `search` output, chat citations and the chat document filter.
 
 ## [0.78.0] - 2026-08-24
 

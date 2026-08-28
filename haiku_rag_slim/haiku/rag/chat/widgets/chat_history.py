@@ -2,6 +2,7 @@ from io import BytesIO
 from typing import TYPE_CHECKING, Any
 
 from PIL import Image as PILImage
+from rich.markup import escape
 from textual.containers import Horizontal, VerticalScroll
 from textual.css.query import NoMatches
 from textual.message import Message
@@ -129,6 +130,8 @@ class CitationWidget(Collapsible):
             if len(citation.page_numbers) > 3:
                 pages += "..."
             title += f" (p.{pages})"
+        # The title is data, not Textual markup.
+        title = escape(title)
 
         content = citation.content
         if len(content) > 500:
@@ -143,9 +146,14 @@ class CitationWidget(Collapsible):
             children.append(TextualImage(pil, classes="citation-image"))
         if citation.headings:
             headings = " > ".join(citation.headings[:3])
-            children.append(Static(f"Section: {headings}", classes="citation-metadata"))
+            children.append(
+                Static(escape(f"Section: {headings}"), classes="citation-metadata")
+            )
         children.append(
-            Static(f"Source: {citation.document_uri}", classes="citation-metadata")
+            Static(
+                escape(f"Source: {citation.document_uri}"),
+                classes="citation-metadata",
+            )
         )
 
         super().__init__(*children, title=title, collapsed=True, **kwargs)

@@ -1,3 +1,4 @@
+from rich.markup import escape
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -22,11 +23,14 @@ class DocumentCheckbox(Checkbox):
 
 def _labelled(docs) -> list[tuple[str, str]]:
     """Each document's label and id, sorted. The database is named alongside the
-    title, which a title alone does not say."""
+    title, which a title alone does not say. Labels are escaped: titles and
+    database names are data, not Textual markup."""
     return sorted(
         (
-            f"{doc.title or doc.uri or doc.id}"
-            + (f"  ({doc.source})" if doc.source else ""),
+            escape(
+                f"{doc.title or doc.uri or doc.id}"
+                + (f"  ({doc.source})" if doc.source else "")
+            ),
             doc.id,
         )
         for doc in docs

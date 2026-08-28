@@ -229,6 +229,37 @@ async def test_a_result_names_its_database_only_across_several(tmp_path):
     assert "database:" not in printed
 
 
+async def test_a_result_renders_names_that_look_like_markup(tmp_path):
+    """Database names, titles, uris and headings render as text, not markup."""
+    config = AppConfig(
+        lancedb=LanceDBConfig(
+            databases={
+                "alpha [/red]": str(tmp_path / "a.lancedb"),
+                "beta": str(tmp_path / "b.lancedb"),
+            }
+        )
+    )
+    hit = SearchResult(
+        content="hit",
+        score=0.9,
+        chunk_id="c1",
+        source="alpha [/red]",
+        document_uri="test://doc [/blue]",
+        document_title="The [/bold] Title",
+        headings=["Chapter [/dim]"],
+    )
+
+    app = HaikuRAGApp(scope=DatabaseScope.resolve(config), config=config)
+    app.console = Console(record=True, width=200)
+    app._rich_print_search_result(hit)
+
+    printed = app.console.export_text()
+    assert "database: alpha [/red]" in printed
+    assert "test://doc [/blue]" in printed
+    assert "The [/bold] Title" in printed
+    assert "Chapter [/dim]" in printed
+
+
 async def test_search_by_image_reads_the_bytes(app, client, tmp_path):
     image = tmp_path / "query.png"
     image.write_bytes(b"pixels")

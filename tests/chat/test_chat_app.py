@@ -686,6 +686,48 @@ class TestDocumentSelectionIdentity:
                 await pilot.pause()
                 assert modal._selected == {"id-one"}
 
+    def test_a_label_that_looks_like_markup_is_text(self):
+        from haiku.rag.chat.widgets.document_filter_modal import (
+            DocumentCheckbox,
+            _labelled,
+        )
+        from haiku.rag.store.models.document import Document
+
+        docs = [
+            Document(
+                id="id-one", content="", title="Report [/red]", source="alpha [/x]"
+            )
+        ]
+
+        ((label, doc_id),) = _labelled(docs)
+        box = DocumentCheckbox(label, doc_id, value=False)
+
+        assert str(box.label) == "Report [/red]  (alpha [/x])"
+
+
+def test_a_citation_title_that_looks_like_markup_is_text():
+    from rich.text import Text
+
+    from haiku.rag.chat.widgets.chat_history import CitationWidget
+    from haiku.rag.store.models.citation import Citation
+
+    citation = Citation(
+        index=1,
+        document_id="doc1",
+        chunk_id="chunk1",
+        document_uri="file:///doc [/blue].pdf",
+        document_title="Report [/red]",
+        headings=["Chapter [/dim]"],
+        content="content",
+        source="alpha [/x]",
+    )
+
+    widget = CitationWidget(citation, include_collection=True)
+
+    title = Text.from_markup(str(widget.title)).plain
+    assert "Report [/red]" in title
+    assert "alpha [/x]" in title
+
 
 class TestRenderingUnattributedPictures:
     @pytest.mark.asyncio

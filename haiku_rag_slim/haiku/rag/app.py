@@ -910,21 +910,22 @@ class HaikuRAGApp:
         )
         if result.source and self.scope.covers_multiple:
             self.console.print(
-                f"[repr.attrib_name]database[/repr.attrib_name]: {result.source}"
+                f"[repr.attrib_name]database[/repr.attrib_name]: {escape(result.source)}"
             )
         if result.document_uri:
             self.console.print(
-                f"[repr.attrib_name]document uri[/repr.attrib_name]: {result.document_uri}"
+                "[repr.attrib_name]document uri[/repr.attrib_name]: "
+                f"{escape(result.document_uri)}"
             )
         if result.document_title:
             self.console.print("[repr.attrib_name]document title[/repr.attrib_name]:")
-            self.console.print(result.document_title)
+            self.console.print(escape(result.document_title))
         if result.page_numbers:
             self.console.print("[repr.attrib_name]pages[/repr.attrib_name]:")
             self.console.print(", ".join(str(p) for p in result.page_numbers))
         if result.headings:
             self.console.print("[repr.attrib_name]headings[/repr.attrib_name]:")
-            self.console.print(" > ".join(result.headings))
+            self.console.print(escape(" > ".join(result.headings)))
         self.console.print("[repr.attrib_name]content[/repr.attrib_name]:")
         self.console.print(content)
         self.console.rule()
