@@ -268,6 +268,84 @@ class TestRerankerFusion:
         assert stub.attached == {"alpha": b"bytes-alpha", "beta": b"bytes-beta"}
 
 
+class TestOverFetchingForAReranker:
+    """A reranker needs more candidates than it returns. Ranking without one does
+    not, and an image query keeps its vector ranking either way."""
+
+    @staticmethod
+    def _limits_asked(monkeypatch) -> list[int]:
+        from haiku.rag.store.repositories.chunk import ChunkRepository
+
+        asked: list[int] = []
+        search = ChunkRepository.search
+
+        async def spy(self, *args, **kwargs):
+            asked.append(kwargs["limit"])
+            return await search(self, *args, **kwargs)
+
+        monkeypatch.setattr(ChunkRepository, "search", spy)
+        return asked
+
+    @pytest.mark.asyncio
+    async def test_a_text_query_over_fetches_for_a_reranker(
+        self, tmp_path, monkeypatch
+    ):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+        monkeypatch.setattr(HaikuRAG, "reranker", property(lambda self: StubReranker()))
+        asked = self._limits_asked(monkeypatch)
+
+        async with HaikuRAG(config=config) as rag:
+            await rag.search("cats", limit=3, search_type="fts")
+            per_database = list(asked)
+            asked.clear()
+            await rag.search("cats", limit=3, search_type="fts", sources=["alpha"])
+
+        assert per_database == [30, 30]
+        assert asked == [30]
+
+    @pytest.mark.asyncio
+    async def test_a_text_query_without_a_reranker_fetches_what_it_returns(
+        self, tmp_path, monkeypatch
+    ):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+        monkeypatch.setattr(HaikuRAG, "reranker", property(lambda self: None))
+        asked = self._limits_asked(monkeypatch)
+
+        async with HaikuRAG(config=config) as rag:
+            await rag.search("cats", limit=3, search_type="fts")
+            per_database = list(asked)
+            asked.clear()
+            await rag.search("cats", limit=3, search_type="fts", sources=["alpha"])
+
+        assert per_database == [3, 3]
+        assert asked == [3]
+
+    @pytest.mark.asyncio
+    async def test_an_image_query_fetches_what_it_returns(self, tmp_path, monkeypatch):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+        monkeypatch.setattr(HaikuRAG, "reranker", property(lambda self: StubReranker()))
+
+        dim = get_config().embeddings.model.vector_dim
+
+        async def embed_image(self, image):  # noqa: ARG001
+            return [0.1] * dim
+
+        monkeypatch.setattr(EmbedderWrapper, "supports_images", True)
+        monkeypatch.setattr(EmbedderWrapper, "embed_image", embed_image)
+        asked = self._limits_asked(monkeypatch)
+
+        async with HaikuRAG(config=config) as rag:
+            await rag.search(b"\x89PNG\r\n\x1a\n", limit=3)
+
+        assert asked == [3, 3]
+
+
 class TestOneReranker:
     @pytest.mark.asyncio
     async def test_the_set_builds_one_reranker_for_a_text_query(

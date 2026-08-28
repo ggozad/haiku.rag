@@ -179,7 +179,18 @@ class TestCoversASet:
 
         assert spec.uses_configured_databases(config, _Path("/chosen.lancedb")) is False
 
-    def test_one_database_is_not_a_set(self):
+    def test_a_configured_set_of_one_is_still_configured(self):
+        """A mapping of one is a named database like any other."""
+        from haiku.rag.config.models import AppConfig, LanceDBConfig
+
+        from evaluations.datasets import DATASETS
+
+        spec = next(iter(DATASETS.values()))
+        config = AppConfig(lancedb=LanceDBConfig(databases={"a": "/a.lancedb"}))
+
+        assert spec.uses_configured_databases(config) is True
+
+    def test_naming_no_database_is_not_a_set(self):
         from haiku.rag.config.models import AppConfig
 
         from evaluations.datasets import DATASETS

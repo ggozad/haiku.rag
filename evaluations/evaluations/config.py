@@ -7,6 +7,7 @@ from datasets import Dataset
 from pydantic import BaseModel, model_validator
 from pydantic_evals import Case
 from pydantic_evals.evaluators import Evaluator
+from haiku.rag.config.models import AppConfig
 
 
 class Turn(BaseModel):
@@ -84,7 +85,7 @@ class DatasetSpec:
     experiment_metadata: dict[str, Any] | None = None
 
     def uses_configured_databases(
-        self, config, override_path: Path | None = None
+        self, config: AppConfig, override_path: Path | None = None
     ) -> bool:
         """Whether `lancedb.databases` places the databases to evaluate over.
 

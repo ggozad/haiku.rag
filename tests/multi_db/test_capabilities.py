@@ -81,7 +81,6 @@ class TestStandaloneCapabilities:
         assert "beta document" in formatted
 
     @pytest.mark.asyncio
-    @pytest.mark.vcr()
     async def test_an_analysis_capability_mounts_the_configured_set(self, tmp_path):
         from haiku.rag.capabilities.analysis import (
             create_capability as create_analysis,

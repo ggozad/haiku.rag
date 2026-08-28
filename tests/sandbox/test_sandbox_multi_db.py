@@ -5,6 +5,7 @@ import pytest
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.scope import DatabaseRef, DatabaseScope
 from haiku.rag.sandbox import AnalysisContext, Sandbox
+from haiku.rag.store.exceptions import UnknownDatabaseError
 from tests.multi_db.helpers import _config, _seed
 
 
@@ -300,7 +301,7 @@ class TestSelectionOnOneDatabase:
         await _seed(config, "alpha", ["alpha document about cats"])
 
         async with HaikuRAG(config=config) as rag:
-            with pytest.raises(KeyError, match="beta"):
+            with pytest.raises(UnknownDatabaseError, match="beta"):
                 await _mounted(rag, sources=["beta"])
 
     @pytest.mark.asyncio

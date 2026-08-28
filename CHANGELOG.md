@@ -22,12 +22,11 @@
 
 ### Fixed
 
-- `haiku-rag settings` prints YAML instead of Python dict reprs.
-- The chat document filter pages results, searches the database for the rest, and
-  lists the selected separately, instead of mounting a checkbox per document.
-  Selection is by document ID.
+- `haiku-rag settings` prints YAML.
+- The chat document filter pages results and lists the selected separately.
+  Selection is by document ID, and a typed search applies on enter.
 - `haiku-rag list` prints only the fields a document has.
-- `haiku-rag` and `haiku-ingester` print the message and exit when the configured embedder does not match the database, instead of raising a traceback.
+- `haiku-rag` and `haiku-ingester` exit with a message on an embedder mismatch.
 - Capabilities created without a client honor `lancedb.uri`.
 - A `lancedb.uri` without a scheme is treated as a local path. `--db PATH`
   overrides it.
