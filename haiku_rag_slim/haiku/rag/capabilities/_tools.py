@@ -19,8 +19,8 @@ async def search_corpus(
     limit: int | None = None,
     document_filter: str | None = None,
     sources: list[str] | None = None,
-) -> tuple[str, list[SearchResult]]:
-    """Search and context-expand results for a capability tool."""
+) -> tuple[str, list[SearchResult], bool]:
+    """Search and context-expand results, and whether they name their collection."""
     results = await rag.search(
         query, limit=limit, filter=document_filter, sources=sources
     )
@@ -35,7 +35,7 @@ async def search_corpus(
         )
         for index, result in enumerate(results)
     )
-    return formatted or "No results found.", list(results)
+    return formatted or "No results found.", list(results), include_collection
 
 
 def merge_results(

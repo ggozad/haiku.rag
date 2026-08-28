@@ -505,7 +505,7 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
                 "the results you already have."
             )
         async with self.rag_lock:
-            formatted, results = await search_corpus(
+            formatted, results, include_collection = await search_corpus(
                 await self._ensure_rag(),
                 query,
                 limit=limit,
@@ -517,7 +517,11 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
         # narrower return must not drop what the wider one already showed it.
         merge_results(state.searches.setdefault(query, []), results)
         self._note_evidence()
-        if self.vision and (parts := build_image_content_from_results(results)):
+        if self.vision and (
+            parts := build_image_content_from_results(
+                results, include_collection=include_collection
+            )
+        ):
             return ToolReturn(return_value=formatted, content=parts)
         return formatted
 

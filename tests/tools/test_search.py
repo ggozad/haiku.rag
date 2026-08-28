@@ -42,7 +42,7 @@ class TestNamingTheCollection:
     what the search spans."""
 
     @staticmethod
-    def _client(covers_multiple: bool, source: str | None):
+    def _client(covers_multiple: bool, source: str | None, *, pictures: bool = False):
         from unittest.mock import AsyncMock
 
         results = [
@@ -53,6 +53,7 @@ class TestNamingTheCollection:
                 chunk_id="c1",
                 document_id="d1",
                 document_title="Report",
+                image_data={"#/pictures/0": _png_b64()} if pictures else None,
             )
         ]
         return SimpleNamespace(
@@ -78,6 +79,42 @@ class TestNamingTheCollection:
         text = await toolset.tools["search"].function(make_ctx(client), "cats")
 
         assert "Collection" not in text
+
+    @staticmethod
+    def _seeing_config(search_config):
+        config = search_config.model_copy(deep=True)
+        config.qa.model.vision = True
+        return config
+
+    @pytest.mark.asyncio
+    async def test_a_client_covering_a_set_names_each_image(self, search_config):
+        """Images travel beside the results and are labelled the same way."""
+        from pydantic_ai.messages import ToolReturn
+
+        toolset = create_search_toolset(self._seeing_config(search_config))
+        client = self._client(covers_multiple=True, source="alpha", pictures=True)
+
+        returned = await toolset.tools["search"].function(make_ctx(client), "cats")
+
+        assert isinstance(returned, ToolReturn)
+        labels = [item for item in returned.content if isinstance(item, str)]
+        assert "Collection: alpha." in labels[0]
+
+    @pytest.mark.asyncio
+    async def test_one_named_collection_is_not_named_on_an_image(self, search_config):
+        from pydantic_ai.messages import ToolReturn
+
+        toolset = create_search_toolset(self._seeing_config(search_config))
+        client = self._client(covers_multiple=False, source="alpha", pictures=True)
+
+        returned = await toolset.tools["search"].function(make_ctx(client), "cats")
+
+        assert isinstance(returned, ToolReturn)
+        assert not [
+            item
+            for item in returned.content
+            if isinstance(item, str) and "Collection" in item
+        ]
 
 
 @pytest.mark.vcr()
@@ -304,14 +341,11 @@ class TestBuildImageContentFromResults:
         images = [item for item in content if isinstance(item, BinaryContent)]
         assert len(images) == 1
 
-    def test_the_same_picture_in_two_collections_is_attached_from_each(self):
-        """A document copied into another collection keeps its id and picture refs."""
-        from pydantic_ai.messages import BinaryContent
-
-        from haiku.rag.tools.search import build_image_content_from_results
-
+    @staticmethod
+    def _one_picture_in_two_collections():
+        """A document copied into another collection keeps its ids and refs."""
         shared = {"#/pictures/0": _png_b64()}
-        results = [
+        return [
             SearchResult(
                 content="a",
                 score=0.9,
@@ -321,19 +355,50 @@ class TestBuildImageContentFromResults:
                 image_data=shared,
             ),
             SearchResult(
-                content="b",
+                content="a",
                 score=0.8,
-                chunk_id="c2",
+                chunk_id="c1",
                 document_id="doc-1",
                 source="wiki",
                 image_data=shared,
             ),
         ]
 
-        content = build_image_content_from_results(results)
+    def test_the_same_picture_in_two_collections_is_attached_from_each(self):
+        from pydantic_ai.messages import BinaryContent
+
+        from haiku.rag.tools.search import build_image_content_from_results
+
+        content = build_image_content_from_results(
+            self._one_picture_in_two_collections()
+        )
 
         images = [item for item in content if isinstance(item, BinaryContent)]
         assert len(images) == 2
+
+    def test_each_image_is_labelled_with_the_collection_it_came_from(self):
+        """Nothing else tells the two apart: same chunk id, same document, same
+        reference."""
+        from haiku.rag.tools.search import build_image_content_from_results
+
+        content = build_image_content_from_results(
+            self._one_picture_in_two_collections(), include_collection=True
+        )
+
+        labels = [item for item in content if isinstance(item, str)]
+        assert "Collection: papers." in labels[0]
+        assert "Collection: wiki." in labels[1]
+
+    def test_an_unasked_for_collection_is_not_named_on_an_image(self):
+        from haiku.rag.tools.search import build_image_content_from_results
+
+        content = build_image_content_from_results(
+            self._one_picture_in_two_collections()
+        )
+
+        assert not [
+            item for item in content if isinstance(item, str) and "Collection" in item
+        ]
 
     def test_each_image_is_labelled_with_the_result_it_belongs_to(self):
         """Label every picture, not just the batch.

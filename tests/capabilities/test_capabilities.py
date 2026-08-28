@@ -425,6 +425,59 @@ def _stub_client(*batches: list[SearchResult]) -> AsyncMock:
     return client
 
 
+def _picture_result(source: str) -> SearchResult:
+    import base64
+    from io import BytesIO
+
+    from PIL import Image as PILImage
+
+    buffer = BytesIO()
+    PILImage.new("RGB", (4, 4), "red").save(buffer, format="PNG")
+    return SearchResult(
+        content="body",
+        score=0.9,
+        source=source,
+        chunk_id="c1",
+        document_id="d1",
+        image_data={"#/pictures/0": base64.b64encode(buffer.getvalue()).decode()},
+    )
+
+
+async def _labels_of_search(temp_db_path, *sources: str) -> list[str]:
+    """The labels the search tool attaches to its images, for a client covering
+    `sources`."""
+    from pydantic_ai.messages import ToolReturn
+
+    capability = create_rag(db_path=temp_db_path, config=AppConfig(), vision=True)
+    capability.state = RAGState()
+    client = _stub_client([_picture_result(sources[0])])
+    client.source_names = sources
+
+    with patch.object(RAGCapability, "_ensure_rag", AsyncMock(return_value=client)):
+        returned = await capability._search("cats", None)
+
+    assert isinstance(returned, ToolReturn)
+    assert returned.content is not None
+    return [item for item in returned.content if isinstance(item, str)]
+
+
+@pytest.mark.asyncio
+async def test_a_search_spanning_collections_names_them_on_its_images(temp_db_path):
+    """Images travel beside the results and are labelled the same way."""
+    labels = await _labels_of_search(temp_db_path, "alpha", "beta")
+
+    assert "Collection: alpha." in labels[0]
+
+
+@pytest.mark.asyncio
+async def test_a_search_over_one_collection_does_not_name_it_on_its_images(
+    temp_db_path,
+):
+    labels = await _labels_of_search(temp_db_path, "alpha")
+
+    assert not [label for label in labels if "Collection" in label]
+
+
 @pytest.mark.asyncio
 async def test_a_fruitless_search_says_so(temp_db_path):
     """A blank tool return reads as a broken tool, not as an empty corpus."""

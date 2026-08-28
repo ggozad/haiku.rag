@@ -49,10 +49,12 @@ def group_label(position: int) -> str:
     return f"[Cited evidence group {position}]"
 
 
-def picture_label(chunk_id: str, self_ref: str) -> str:
+def picture_label(chunk_id: str, self_ref: str, collection: str | None = None) -> str:
+    named = f"Collection: {collection}. " if collection else ""
     return (
         f"Page image retrieved from the knowledge base for cited evidence "
-        f"[{chunk_id}] ({self_ref}). Not provided by the user. {RETRIEVED_IMAGE_TAG}"
+        f"[{chunk_id}] ({self_ref}). {named}"
+        f"Not provided by the user. {RETRIEVED_IMAGE_TAG}"
     )
 
 
@@ -191,7 +193,11 @@ def build_capsule(evidence: Sequence[DiscoveredEvidence]) -> Capsule:
                     chunk_id=entry.chunk_id,
                     document_id=entry.citation.document_id,
                     self_ref=self_ref,
-                    label=picture_label(entry.chunk_id, self_ref),
+                    label=picture_label(
+                        entry.chunk_id,
+                        self_ref,
+                        entry.citation.source if include_collection else None,
+                    ),
                     source=entry.citation.source,
                 )
             )

@@ -37,6 +37,7 @@ def decode_picture(data: bytes, self_ref: str) -> BinaryContent | None:
 
 def build_image_content_from_results(
     results: list[SearchResult],
+    include_collection: bool = False,
 ) -> list[str | BinaryContent]:
     """Decode and validate picture bytes attached to search results, labelled.
 
@@ -57,7 +58,7 @@ def build_image_content_from_results(
     ``BinaryContent.identifier`` cannot do — it does not survive serialization
     to the vision API.
     """
-    collected: list[tuple[str | None, str, BinaryContent]] = []
+    collected: list[tuple[str | None, str | None, str, BinaryContent]] = []
     seen: set[tuple[str | None, str | None, str]] = set()
     for result in results:
         if not result.image_data:
@@ -69,15 +70,16 @@ def build_image_content_from_results(
             picture = decode_picture(base64.b64decode(b64), self_ref)
             if picture is None:
                 continue
-            collected.append((result.chunk_id, self_ref, picture))
+            collected.append((result.source, result.chunk_id, self_ref, picture))
             seen.add(key)
 
     content: list[str | BinaryContent] = []
     total = len(collected)
-    for position, (chunk_id, self_ref, picture) in enumerate(collected, 1):
+    for position, (source, chunk_id, self_ref, picture) in enumerate(collected, 1):
+        collection = f"Collection: {source}. " if include_collection and source else ""
         content.append(
             f"Page image {position} of {total}, retrieved from the knowledge base "
-            f"for search result [{chunk_id}] ({self_ref}). "
+            f"for search result [{chunk_id}] ({self_ref}). {collection}"
             f"Not provided by the user. {RETRIEVED_IMAGE_TAG}"
         )
         content.append(picture)
@@ -172,7 +174,9 @@ def create_search_toolset(
         if not config.qa.model.vision:
             return text
 
-        image_content = build_image_content_from_results(results_list)
+        image_content = build_image_content_from_results(
+            results_list, include_collection=include_collection
+        )
         if image_content:
             return ToolReturn(return_value=text, content=image_content)
         return text

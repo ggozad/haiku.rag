@@ -161,6 +161,50 @@ def test_a_picture_in_two_collections_is_retained_from_each():
         ("papers", "#/pictures/0"),
         ("wiki", "#/pictures/0"),
     ]
+    # Nothing else tells the two apart once they are attached.
+    assert "Collection: papers." in capsule.pictures[0].label
+    assert "Collection: wiki." in capsule.pictures[1].label
+
+
+def test_one_chunk_id_cited_from_two_collections_labels_each_picture():
+    """Both capabilities can cite the same id from different collections, where
+    the reference and the document are the same too."""
+    found = [
+        replace(
+            discovered(
+                capability=capability,
+                cited={"c1": [2]},
+                pictures={"c1": ["#/pictures/0"]},
+            ),
+            citations={
+                "c1": replace_citation(
+                    citation("c1", pictures=["#/pictures/0"]),
+                    document_id="shared",
+                    source=source,
+                )
+            },
+        )
+        for capability, source in (("analysis", "papers"), ("rag", "wiki"))
+    ]
+
+    capsule = build_capsule(found)
+
+    labels = [picture.label for picture in capsule.pictures]
+    assert all("[c1] (#/pictures/0)" in label for label in labels)
+    assert "Collection: papers." in labels[0]
+    assert "Collection: wiki." in labels[1]
+
+
+def test_a_picture_from_one_collection_is_not_labelled_with_it():
+    found = discovered(cited={"c1": [2]}, pictures={"c1": ["#/pictures/0"]})
+    found = replace(
+        found,
+        citations={"c1": replace_citation(found.citations["c1"], source="papers")},
+    )
+
+    [picture] = build_capsule([found]).pictures
+
+    assert "Collection" not in picture.label
 
 
 def test_nothing_cited_produces_no_capsule():
