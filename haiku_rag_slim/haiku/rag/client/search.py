@@ -193,10 +193,15 @@ async def _fuse(
 
     scored: list[tuple[float, HaikuRAG, Chunk]] = []
     for client, candidates in zip(clients, per_source, strict=True):
-        for rank, (chunk, _) in enumerate(candidates):
-            scored.append((1.0 / (_RRF_K + rank + 1), client, chunk))
-    scored.sort(key=lambda item: item[0], reverse=True)
-    return [(client, chunk, score) for score, client, chunk in scored[:limit]]
+        for rank, (chunk, score) in enumerate(candidates):
+            scored.append((1.0 / (_RRF_K + rank + 1), score, client, chunk))
+    # ARM ONLY, NEVER MERGE: retrieval score primary, RRF rank secondary. Keeps
+    # merge-and-sort's content-driven allocation while resolving score ties by
+    # within-database position instead of declaration order. Rank and score are
+    # independent discriminators: a single-branch rank-0 candidate and a rank-2
+    # candidate with two both-branch candidates above it can carry the same score.
+    scored.sort(key=lambda item: (item[1], item[0]), reverse=True)
+    return [(client, chunk, fused) for fused, _, client, chunk in scored[:limit]]
 
 
 # Reciprocal rank fusion's smoothing constant, the value the literature uses.
