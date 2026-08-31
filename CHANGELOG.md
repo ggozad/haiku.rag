@@ -2,10 +2,17 @@
 
 ## [Unreleased]
 
+### Changed
+
+- lancedb 0.37.1.
+- An invalid search `filter` raises `ValueError`.
+
 ### Added
 
 - `--full-citations` on `haiku-rag ask` and `haiku-rag analyze` renders citation
   text untruncated. `format_citations_rich` takes a `full` argument.
+- `doctor` fails when the chunks FTS index covers no rows.
+- FTS and hybrid searches log a warning when the FTS index covers no rows.
 
 ### Removed
 
@@ -14,6 +21,9 @@
 
 ### Fixed
 
+- FTS and hybrid search on a database whose FTS index covers no rows. Chunk
+  writes now build the index and rebuild it if it covers none; `haiku-rag
+  vacuum` also repairs it.
 - Migration to 0.38.0 no longer fails with `UnicodeDecodeError` on a
   `docling_document` blob written as zstd.
 - Vector search sets `search.vector_index_metric` on every query.

@@ -91,7 +91,7 @@ class TestMCPReadTools:
                     embedding=embedding,
                 )
             )
-            await rag.chunk_repository._ensure_fts_index()
+            await rag.store.chunks_table.optimize()
 
         mcp = create_mcp_server(mcp_db, read_only=True)
         async with Client(mcp) as client:

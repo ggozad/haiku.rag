@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import pytest
 
 from haiku.rag.client import HaikuRAG
@@ -477,8 +479,100 @@ async def test_chunk_content_fts(temp_db_path, metadata, content, expected_conte
         assert record["content_fts"] == expected_content_fts
 
 
-async def test_ensure_fts_index_warns_on_failure(temp_db_path):
-    """A failed FTS index build is surfaced at WARNING, not swallowed silently."""
+async def _import_one(client) -> None:
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
+    doc = DoclingDocument(name="one")
+    doc.add_text(label=DocItemLabel.TEXT, text="a document about gardens")
+    await client.import_document(
+        doc,
+        [
+            Chunk(
+                content="a document about gardens",
+                embedding=[0.1] * get_config().embeddings.model.vector_dim,
+                order=0,
+            )
+        ],
+        uri="test://one",
+    )
+
+
+async def _add_legacy_row(client) -> None:
+    """A row written without index maintenance, as older releases wrote them."""
+    await client.store.chunks_table.add(
+        [
+            client.store.ChunkRecord(
+                document_id="doc-legacy",
+                content="a document about gardens",
+                content_fts="a document about gardens",
+                metadata="{}",
+                order=0,
+                vector=[0.1] * get_config().embeddings.model.vector_dim,
+            )
+        ]
+    )
+
+
+async def test_fts_search_warns_when_index_covers_no_rows(temp_db_path):
+    """A database whose FTS index predates its rows covers none of them;
+    searching that state warns, once."""
+    import logging
+
+    from lancedb.index import FTS
+
+    from haiku.rag.store.repositories import chunk as chunk_module
+
+    async with HaikuRAG(
+        db_path=temp_db_path, config=get_config(), create=True
+    ) as client:
+        await client.store.chunks_table.create_index(
+            "content_fts", config=FTS(with_position=True, remove_stop_words=False)
+        )
+        await _add_legacy_row(client)
+
+        with capture_logs(chunk_module.logger, logging.WARNING) as records:
+            await client.chunk_repository.search("gardens", search_type="fts")
+            await client.chunk_repository.search("gardens", search_type="fts")
+
+        warned = [r for r in records if "covers 0 rows" in r.getMessage()]
+        assert len(warned) == 1
+
+
+async def test_fts_search_warns_when_index_is_missing(temp_db_path, monkeypatch):
+    import logging
+
+    from lancedb.table import AsyncTable
+
+    from haiku.rag.store.repositories import chunk as chunk_module
+
+    original = AsyncTable.list_indices
+
+    async def no_chunk_indices(self):
+        if self.name == "chunks":
+            return []
+        return await original(self)
+
+    async with HaikuRAG(
+        db_path=temp_db_path, config=get_config(), create=True
+    ) as client:
+        await _import_one(client)
+        monkeypatch.setattr(AsyncTable, "list_indices", no_chunk_indices)
+
+        with capture_logs(chunk_module.logger, logging.WARNING) as records:
+            await client.chunk_repository.search("gardens", search_type="fts")
+
+        warned = [
+            r.getMessage()
+            for r in records
+            if "No full-text search index" in r.getMessage()
+        ]
+        assert len(warned) == 1
+        assert "rebuild --embed-only" in warned[0]
+        assert "vacuum" not in warned[0]
+
+
+async def test_fts_search_does_not_warn_when_index_covers_rows(temp_db_path):
     import logging
 
     from haiku.rag.store.repositories import chunk as chunk_module
@@ -486,18 +580,100 @@ async def test_ensure_fts_index_warns_on_failure(temp_db_path):
     async with HaikuRAG(
         db_path=temp_db_path, config=get_config(), create=True
     ) as client:
-        repo = client.chunk_repository
-
-        async def _boom(*_args, **_kwargs):
-            raise RuntimeError("index build failed")
-
-        repo.store.chunks_table.create_index = _boom
+        await _import_one(client)
+        await client.store.vacuum(retention_seconds=0)
 
         with capture_logs(chunk_module.logger, logging.WARNING) as records:
-            await repo._ensure_fts_index()
+            results = await client.chunk_repository.search("gardens", search_type="fts")
 
-        assert [r for r in records if r.levelno == logging.WARNING]
-        assert any("index build failed" in r.getMessage() for r in records)
+        assert results
+        assert not records
+
+
+async def test_fts_coverage_check_failure_does_not_break_search(temp_db_path):
+    """The coverage check is a diagnostic: a metadata failure must not take
+    the search down with it."""
+    from lancedb.table import AsyncTable
+
+    async def boom(self):
+        raise RuntimeError("metadata unavailable")
+
+    async with HaikuRAG(
+        db_path=temp_db_path, config=get_config(), create=True
+    ) as client:
+        await _import_one(client)
+
+        with patch.object(AsyncTable, "list_indices", boom):
+            results = await client.chunk_repository.search("gardens", search_type="fts")
+
+        assert results
+
+
+async def test_create_assigns_the_id_when_index_maintenance_fails(temp_db_path):
+    """The row is committed before the index is ensured, so the chunk carries
+    the id it was written with even when that ensure fails."""
+    from haiku.rag.store.repositories import chunk as chunk_module
+
+    async with HaikuRAG(
+        db_path=temp_db_path, config=get_config(), create=True
+    ) as client:
+        repo = client.chunk_repository
+
+        async def boom(*_args, **_kwargs):
+            raise RuntimeError("index build failed")
+
+        chunk = Chunk(
+            document_id="doc-1",
+            content="a chunk about gardens",
+            embedding=[0.1] * get_config().embeddings.model.vector_dim,
+            order=0,
+        )
+        with patch.object(chunk_module, "ensure_indexes", boom):
+            with pytest.raises(RuntimeError, match="index build failed"):
+                await repo.create(chunk)
+
+        assert chunk.id is not None
+        assert await client.store.chunks_table.count_rows() == 1
+
+
+async def test_fts_search_on_an_empty_table_does_not_suppress_later_warnings(
+    temp_db_path,
+):
+    """An empty table proves nothing about coverage, so searching it must not
+    spend the once-per-repository check."""
+    import logging
+
+    from lancedb.index import FTS
+
+    from haiku.rag.store.repositories import chunk as chunk_module
+
+    async with HaikuRAG(
+        db_path=temp_db_path, config=get_config(), create=True
+    ) as client:
+        await client.store.chunks_table.create_index(
+            "content_fts", config=FTS(with_position=True, remove_stop_words=False)
+        )
+        await client.chunk_repository.search("gardens", search_type="fts")
+        await _add_legacy_row(client)
+
+        with capture_logs(chunk_module.logger, logging.WARNING) as records:
+            await client.chunk_repository.search("gardens", search_type="fts")
+
+        assert any("covers 0 rows" in r.getMessage() for r in records)
+
+
+async def test_fts_search_does_not_warn_on_an_empty_table(temp_db_path):
+    import logging
+
+    from haiku.rag.store.repositories import chunk as chunk_module
+
+    async with HaikuRAG(
+        db_path=temp_db_path, config=get_config(), create=True
+    ) as client:
+        with capture_logs(chunk_module.logger, logging.WARNING) as records:
+            await client.chunk_repository.search("gardens", search_type="fts")
+
+        assert not records
 
 
 @pytest.mark.vcr()
