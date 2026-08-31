@@ -87,7 +87,9 @@ async def test_ensure_indexes_corrects_an_index_of_the_wrong_type(temp_db_path):
     """A wrong-typed index does not satisfy the declared one."""
     async with Store(temp_db_path, create=True) as store:
         table = store.document_items_table
-        await table.create_index("label", config=BTree(), replace=True)
+        await table.create_index(
+            "label", config=BTree(), replace=True, name="label_idx"
+        )
         assert await _index_type(table, "label") == "BTree"
 
         await ensure_indexes(table, "document_items")

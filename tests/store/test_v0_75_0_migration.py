@@ -95,7 +95,7 @@ async def test_replaces_a_wrong_typed_legacy_index(temp_db_path):
     """A BTree on `label` does not satisfy the declared Bitmap."""
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
         await store.document_items_table.create_index(
-            "label", config=BTree(), replace=True
+            "label", config=BTree(), replace=True, name="label_idx"
         )
 
         await _apply_index_hot_lookup_keys(store)

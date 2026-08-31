@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- lancedb 0.37.1.
+- An invalid search `filter` raises `ValueError`.
+
 ### Added
 
 - `--full-citations` on `haiku-rag ask` and `haiku-rag analyze` renders citation

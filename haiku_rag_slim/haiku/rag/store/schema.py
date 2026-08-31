@@ -198,7 +198,10 @@ async def ensure_indexes(table: lancedb.AsyncTable, table_name: str) -> list[str
                 f"Adding {declared} index on {table_name}.{column}, which carries "
                 f"{', '.join(sorted(present))}"
             )
-        await table.create_index(column, config=config, replace=True)
+        # Replace matches on the index name.
+        await table.create_index(
+            column, config=config, replace=True, name=f"{column}_idx"
+        )
         applied.append(column)
     return applied
 
