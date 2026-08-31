@@ -545,6 +545,97 @@ class TestReciprocalRankFusion:
         ]
 
 
+class TestZScoredBranchFusion:
+    """ARM C+D (never merge): hybrid without a reranker fuses every database's
+    vector and FTS branches by per-branch z-score."""
+
+    @staticmethod
+    def _client(vector: list[tuple[Chunk, float]], fts: list[tuple[Chunk, float]]):
+        from types import SimpleNamespace
+
+        class Repo:
+            async def search(
+                self, query, limit, search_type, filter=None, query_vector=None
+            ):
+                return vector if search_type == "vector" else fts
+
+        return SimpleNamespace(chunk_repository=Repo())
+
+    @staticmethod
+    def _branch(source: str, scores: list[float]) -> list[tuple[Chunk, float]]:
+        return [
+            (Chunk(id=f"{source}{i}", content=f"{source} {i}"), score)
+            for i, score in enumerate(scores)
+        ]
+
+    @pytest.mark.asyncio
+    async def test_a_spike_beats_a_flat_profile(self):
+        """The database whose top hit stands out from its own candidates wins,
+        whatever the raw magnitudes."""
+        from haiku.rag.client.search import _fuse_branches
+
+        spike = self._client(self._branch("a", [0.9, 0.2, 0.19, 0.18]), [])
+        flat = self._client(self._branch("b", [5.0, 4.99, 4.98, 4.97]), [])
+
+        ranked = await _fuse_branches([flat, spike], "q", None, None, 2)
+
+        assert [chunk.id for _, chunk, _ in ranked] == ["a0", "b0"]
+
+    @pytest.mark.asyncio
+    async def test_agreement_within_a_database_sums(self):
+        """A chunk topping both of its database's branches carries both
+        z-scores."""
+        from haiku.rag.client.search import _fuse_branches
+
+        scores = [0.9, 0.2, 0.19, 0.18]
+        both = self._client(self._branch("a", scores), self._branch("a", scores))
+        one = self._client(self._branch("b", scores), [])
+
+        ranked = await _fuse_branches([one, both], "q", None, None, 3)
+
+        assert [chunk.id for _, chunk, _ in ranked][:2] == ["a0", "b0"]
+        assert ranked[0][2] == pytest.approx(2 * ranked[1][2])
+
+    @pytest.mark.asyncio
+    async def test_a_flat_or_thin_branch_is_nothing_special(self):
+        from haiku.rag.client.search import _z_scores
+
+        assert _z_scores([]) == []
+        assert _z_scores([0.9]) == [0.0]
+        assert _z_scores([0.5, 0.5, 0.5]) == [0.0, 0.0, 0.0]
+
+    @pytest.mark.asyncio
+    async def test_hybrid_without_a_reranker_fetches_both_branches(
+        self, tmp_path, monkeypatch, query_embedding
+    ):
+        from haiku.rag.store.repositories.chunk import ChunkRepository
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+        monkeypatch.setattr(HaikuRAG, "reranker", property(lambda self: None))
+
+        asked: list[tuple[str, int]] = []
+        search = ChunkRepository.search
+
+        async def spy(self, *args, **kwargs):
+            asked.append((kwargs["search_type"], kwargs["limit"]))
+            return await search(self, *args, **kwargs)
+
+        monkeypatch.setattr(ChunkRepository, "search", spy)
+
+        async with HaikuRAG(config=config) as rag:
+            results = await rag.search("cats", limit=3)
+
+        assert sorted(asked) == [
+            ("fts", 20),
+            ("fts", 20),
+            ("vector", 20),
+            ("vector", 20),
+        ]
+        assert {r.source for r in results} == {"alpha", "beta"}
+
+
 class TestFusingWhatARerankerReturns:
     @pytest.mark.asyncio
     async def test_a_reranker_returning_copies_is_named(self, tmp_path):

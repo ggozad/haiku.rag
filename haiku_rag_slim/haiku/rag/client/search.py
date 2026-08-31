@@ -1,4 +1,6 @@
 import base64
+import os
+import statistics
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
@@ -105,20 +107,24 @@ async def search_sources(
     fetch_limit = _fetch_limit(client, query, limit)
     query_vector = await _embed_query(selected[0], query, resolved)
     text = query if isinstance(query, str) else ""
-    per_source = await gather_all(
-        *(
-            c.chunk_repository.search(
-                query=text,
-                limit=fetch_limit,
-                search_type=resolved,
-                filter=filter,
-                query_vector=query_vector,
+    if resolved == "hybrid" and isinstance(query, str) and client.reranker is None:
+        # ARM C+D (never merge): z-scored branch fusion.
+        ranked = await _fuse_branches(selected, text, query_vector, filter, limit)
+    else:
+        per_source = await gather_all(
+            *(
+                c.chunk_repository.search(
+                    query=text,
+                    limit=fetch_limit,
+                    search_type=resolved,
+                    filter=filter,
+                    query_vector=query_vector,
+                )
+                for c in selected
             )
-            for c in selected
         )
-    )
 
-    ranked = await _fuse(client, selected, query, per_source, limit)
+        ranked = await _fuse(client, selected, query, per_source, limit)
 
     results: list[SearchResult] = []
     for owner, chunk, score in ranked:
@@ -197,6 +203,76 @@ async def _fuse(
             scored.append((1.0 / (_RRF_K + rank + 1), client, chunk))
     scored.sort(key=lambda item: item[0], reverse=True)
     return [(client, chunk, score) for score, client, chunk in scored[:limit]]
+
+
+async def _fuse_branches(
+    clients: list["HaikuRAG"],
+    query: str,
+    query_vector: list[float] | None,
+    filter: str | None,
+    limit: int,
+) -> list[tuple["HaikuRAG", Chunk, float]]:
+    """ARM C+D (never merge): one ranked list from every database's vector and
+    FTS branches, compared by per-branch z-score.
+
+    Each branch's scores are normalized against that branch's own candidate
+    distribution, so databases are compared by how exceptional a hit is for
+    them rather than by raw score. A chunk in both branches of its database
+    sums both z-scores. Ties keep arrival order: client order, vector before
+    FTS, rank within a branch.
+    """
+
+    async def branches(client: "HaikuRAG"):
+        return await gather_all(
+            client.chunk_repository.search(
+                query=query,
+                limit=_BRANCH_DEPTH,
+                search_type="vector",
+                filter=filter,
+                query_vector=query_vector,
+            ),
+            client.chunk_repository.search(
+                query=query,
+                limit=_BRANCH_DEPTH,
+                search_type="fts",
+                filter=filter,
+            ),
+        )
+
+    per_client = await gather_all(*(branches(c) for c in clients))
+
+    totals: dict[tuple[int, str], float] = {}
+    seen: dict[tuple[int, str], tuple[HaikuRAG, Chunk]] = {}
+    for position, (client, (vector, fts)) in enumerate(
+        zip(clients, per_client, strict=True)
+    ):
+        for branch in (vector, fts):
+            zs = _z_scores([score for _, score in branch])
+            for (chunk, _), z in zip(branch, zs, strict=True):
+                key = (position, chunk.id or chunk.content)
+                totals[key] = totals.get(key, 0.0) + z
+                seen.setdefault(key, (client, chunk))
+    ranked = sorted(seen, key=lambda key: totals[key], reverse=True)[:limit]
+    return [(*seen[key], totals[key]) for key in ranked]
+
+
+def _z_scores(scores: list[float]) -> list[float]:
+    """Each score as standard deviations above its own list's mean.
+
+    A list too short or too flat to carry a distribution normalizes to zeros:
+    nothing in it is exceptional.
+    """
+    if len(scores) < 2:
+        return [0.0] * len(scores)
+    mean = statistics.fmean(scores)
+    sd = statistics.pstdev(scores)
+    if sd == 0:
+        return [0.0] * len(scores)
+    return [(score - mean) / sd for score in scores]
+
+
+# ARM C+D (never merge): candidates fetched per branch, an eval grid knob.
+_BRANCH_DEPTH = int(os.environ.get("HAIKU_RAG_BRANCH_DEPTH", "20"))
 
 
 # Reciprocal rank fusion's smoothing constant, the value the literature uses.
