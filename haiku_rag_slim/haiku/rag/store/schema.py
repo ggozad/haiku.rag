@@ -174,6 +174,11 @@ async def ensure_indexes(table: lancedb.AsyncTable, table_name: str) -> list[str
         present = covering.get(column, set())
         if declared in present:
             continue
+        # lance indexes nothing when the table is empty and never catches an
+        # FTS index up on add: the scan path it then serves returns results
+        # unsorted by score, with matching rows dropped.
+        if isinstance(config, FTS) and not await table.count_rows():
+            continue
         if present:
             logger.info(
                 f"Adding {declared} index on {table_name}.{column}, which carries "

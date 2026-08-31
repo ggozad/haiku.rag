@@ -895,8 +895,20 @@ async def test_client_import_documents_single_version_per_table(temp_db_path):
         assert all(d.id is not None for d in docs)
         assert len({d.id for d in docs}) == 3
 
+        assert after["documents"] - before["documents"] == 1
+        assert after["document_items"] - before["document_items"] == 1
+        # Two on chunks: the batch, plus building the FTS index over the first
+        # rows the table has ever held.
+        assert after["chunks"] - before["chunks"] == 2
+
+        # With the index in place, a further batch is one version per table.
+        again = await client.import_documents(
+            [_import("d", "Delta document body", uri="mem://d", title="Delta")]
+        )
+        assert [d.title for d in again] == ["Delta"]
+        latest = await client.store.current_table_versions()
         for table in ("documents", "chunks", "document_items"):
-            assert after[table] - before[table] == 1, table
+            assert latest[table] - after[table] == 1, table
 
         for doc, expected in zip(docs, ("Alpha", "Beta", "Gamma")):
             assert doc.id is not None

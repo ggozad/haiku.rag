@@ -21,7 +21,7 @@ from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import extract_items
 from haiku.rag.store.repositories.settings import SettingsRepository
-from haiku.rag.store.schema import ChunkRecordBase
+from haiku.rag.store.schema import ChunkRecordBase, ensure_indexes
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
@@ -503,6 +503,8 @@ async def _rebuild_embed_only(
 
     if pending_records:
         await session.store.chunks_table.add(pending_records)
+
+    await ensure_indexes(session.store.chunks_table, "chunks")
 
     # Phase 2 finished. Drop the recovery state — marker first so a crash
     # between the two drops leaves only staging behind, which the next

@@ -64,6 +64,8 @@ If that number times six exceeds available RAM, use one of:
 - Set `generate_page_images: false` if visual grounding through `visualize_chunk()` is not needed. This removes page rasters entirely.
 - Set `auto_vacuum: false` and run `haiku-rag vacuum` manually when the machine is otherwise idle, so the peak does not land alongside ingestion.
 
+Vacuum also folds new rows into the full-text index. Search stays correct without it but scans the uncovered rows on every query. `haiku-rag doctor` reports the coverage.
+
 This is an upstream limitation rather than a `haiku.rag` setting. Compaction bounds itself by row count instead of bytes, and LanceDB's async API exposes no batch size or fragment target to override it. Tracked at [lancedb/lancedb#2325](https://github.com/lancedb/lancedb/issues/2325). The requirement above will drop once compaction batches by bytes.
 
 ### Changing the Default Database Path

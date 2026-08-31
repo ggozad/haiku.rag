@@ -3,16 +3,39 @@ import pytest
 from lancedb.index import BTree
 
 from haiku.rag.store.engine import Store
-from haiku.rag.store.models import Document
+from haiku.rag.store.models import Chunk, Document
+from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.schema import ensure_indexes
 
 EXPECTED_INDEXED_COLUMNS = {
     "documents": {"id"},
     "document_meta": {"id", "uri"},
-    "chunks": {"content_fts", "id", "document_id"},
+    "chunks": {"id", "document_id"},
     "document_items": {"document_id", "position", "self_ref", "label"},
 }
+
+# content_fts joins the set once the table holds rows to index.
+EXPECTED_POPULATED_CHUNK_COLUMNS = {"content_fts", "id", "document_id"}
+
+
+async def _fts_indexed_rows(table) -> int | None:
+    """Rows the FTS index covers, or None when there is no FTS index."""
+    for index in await table.list_indices():
+        if index.index_type == "FTS":
+            return (await table.index_stats(index.name)).num_indexed_rows
+    return None
+
+
+async def _add_chunk(store, content: str = "a chunk about gardens") -> None:
+    await ChunkRepository(store).create(
+        Chunk(
+            document_id="doc-1",
+            content=content,
+            embedding=[0.1] * store.embedder.vector_dim,
+            order=0,
+        )
+    )
 
 
 async def _indexed_columns(table) -> set[str]:
@@ -130,3 +153,102 @@ async def test_delete_all_keeps_picture_data_as_large_binary(temp_db_path):
 
         schema = await store.document_items_table.schema()
         assert schema.field("picture_data").type == pa.large_binary()
+
+
+@pytest.mark.asyncio
+async def test_empty_chunks_table_carries_no_fts_index(temp_db_path):
+    """An FTS index over no rows indexes nothing and lance never catches it up,
+    so it waits for rows rather than being built with the table."""
+    async with Store(temp_db_path, create=True) as store:
+        assert await _fts_indexed_rows(store.chunks_table) is None
+
+
+@pytest.mark.asyncio
+async def test_ensure_indexes_skips_fts_while_the_table_is_empty(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        await ensure_indexes(store.chunks_table, "chunks")
+
+        assert await _fts_indexed_rows(store.chunks_table) is None
+        assert (
+            await _indexed_columns(store.chunks_table)
+            == (EXPECTED_INDEXED_COLUMNS["chunks"])
+        )
+
+
+@pytest.mark.asyncio
+async def test_ensure_indexes_builds_fts_over_existing_rows(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        await store.chunks_table.add(
+            [
+                store.ChunkRecord(
+                    document_id="doc-1",
+                    content="a chunk",
+                    content_fts="a chunk",
+                    metadata="{}",
+                    order=0,
+                    vector=[0.1] * store.embedder.vector_dim,
+                )
+            ]
+        )
+
+        await ensure_indexes(store.chunks_table, "chunks")
+
+        assert await _fts_indexed_rows(store.chunks_table) == 1
+        assert await _indexed_columns(store.chunks_table) == (
+            EXPECTED_POPULATED_CHUNK_COLUMNS
+        )
+
+
+@pytest.mark.asyncio
+async def test_creating_chunks_builds_a_covering_fts_index(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        await _add_chunk(store)
+
+        assert await _fts_indexed_rows(store.chunks_table) == 1
+
+
+@pytest.mark.asyncio
+async def test_replacing_chunks_builds_a_covering_fts_index(temp_db_path):
+    """replace_for_document inserts where nothing matches, so it can be the
+    first write into a fresh table."""
+    async with Store(temp_db_path, create=True) as store:
+        await ChunkRepository(store).replace_for_document(
+            "doc-1",
+            [
+                Chunk(
+                    document_id="doc-1",
+                    content="a chunk about gardens",
+                    embedding=[0.1] * store.embedder.vector_dim,
+                    order=0,
+                )
+            ],
+        )
+
+        assert await _fts_indexed_rows(store.chunks_table) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_second_write_leaves_the_covering_index_in_place(temp_db_path):
+    """One indexed row is enough: later rows merge as a scanned tail, so the
+    index is not rebuilt per write."""
+    async with Store(temp_db_path, create=True) as store:
+        await _add_chunk(store, "first")
+        version_after_first = await store.chunks_table.version()
+
+        await _add_chunk(store, "second")
+
+        assert await _fts_indexed_rows(store.chunks_table) == 1
+        assert await store.chunks_table.version() == version_after_first + 1
+
+
+@pytest.mark.asyncio
+async def test_delete_all_then_write_rebuilds_a_covering_fts_index(temp_db_path):
+    """delete_all recreates the table empty, so the next write owns the index."""
+    async with Store(temp_db_path, create=True) as store:
+        await _add_chunk(store)
+        await ChunkRepository(store).delete_all()
+        assert await _fts_indexed_rows(store.chunks_table) is None
+
+        await _add_chunk(store)
+
+        assert await _fts_indexed_rows(store.chunks_table) == 1

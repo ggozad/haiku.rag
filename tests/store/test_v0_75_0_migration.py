@@ -32,6 +32,18 @@ async def _make_legacy(store: Store) -> None:
 @pytest.mark.asyncio
 async def test_adds_the_missing_indexes(temp_db_path):
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
+        await store.chunks_table.add(
+            [
+                store.ChunkRecord(
+                    document_id="doc-1",
+                    content="a chunk",
+                    content_fts="a chunk",
+                    metadata="{}",
+                    order=0,
+                    vector=[0.1] * store.embedder.vector_dim,
+                )
+            ]
+        )
         await _make_legacy(store)
 
         await _apply_index_hot_lookup_keys(store)

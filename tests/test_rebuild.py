@@ -101,8 +101,9 @@ async def test_rebuild_embed_only_multi_doc_streams_via_staging(
     the chunks table, then streams doc-by-doc. This test verifies:
 
     - chunks survive across multiple documents (correctness),
-    - the staging table is dropped at the end (no leak), and
-    - the rebuild yields every document with chunks.
+    - the staging table is dropped at the end (no leak),
+    - the rebuild yields every document with chunks, and
+    - the recreated chunks table carries an FTS index covering its rows.
     """
     async with HaikuRAG(temp_db_path, create=True) as client:
         doc1 = await client.create_document(content=qa_corpus[0]["document_extracted"])
@@ -135,6 +136,16 @@ async def test_rebuild_embed_only_multi_doc_streams_via_staging(
         # Staging table was cleaned up.
         tables = (await client.store.db.list_tables()).tables
         assert "chunks_rebuild_staging" not in tables
+
+        # Phase 2 recreates the chunks table, so it owns the FTS index.
+        fts = [
+            index
+            for index in await client.store.chunks_table.list_indices()
+            if index.index_type == "FTS"
+        ]
+        assert len(fts) == 1
+        stats = await client.store.chunks_table.index_stats(fts[0].name)
+        assert stats.num_indexed_rows > 0
 
 
 @pytest.mark.vcr()

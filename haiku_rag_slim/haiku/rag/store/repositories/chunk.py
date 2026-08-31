@@ -104,8 +104,9 @@ class ChunkRepository:
             chunk_record = self._to_record(entity, chunk_id)
 
             await self.store.chunks_table.add([chunk_record])
-
             entity.id = chunk_id
+            await ensure_indexes(self.store.chunks_table, "chunks")
+
             return entity
 
         chunks = entity
@@ -126,6 +127,7 @@ class ChunkRepository:
             chunk.id = chunk_id
 
         await self.store.chunks_table.add(chunk_records)
+        await ensure_indexes(self.store.chunks_table, "chunks")
 
         return chunks
 
@@ -159,6 +161,7 @@ class ChunkRepository:
             .when_not_matched_by_source_delete(f"document_id = '{safe_id}'")
             .execute(records)
         )
+        await ensure_indexes(self.store.chunks_table, "chunks")
         return chunks
 
     async def get_by_id(self, entity_id: str) -> Chunk | None:

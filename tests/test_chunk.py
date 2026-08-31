@@ -503,11 +503,16 @@ async def test_fts_search_warns_when_index_covers_no_rows(temp_db_path):
     searching that state warns, once."""
     import logging
 
+    from lancedb.index import FTS
+
     from haiku.rag.store.repositories import chunk as chunk_module
 
     async with HaikuRAG(
         db_path=temp_db_path, config=get_config(), create=True
     ) as client:
+        await client.store.chunks_table.create_index(
+            "content_fts", config=FTS(with_position=True, remove_stop_words=False)
+        )
         await _import_one(client)
 
         with capture_logs(chunk_module.logger, logging.WARNING) as records:
@@ -588,6 +593,33 @@ async def test_fts_coverage_check_failure_does_not_break_search(temp_db_path):
         assert results
 
 
+async def test_create_assigns_the_id_when_index_maintenance_fails(temp_db_path):
+    """The row is committed before the index is ensured, so the chunk carries
+    the id it was written with even when that ensure fails."""
+    from haiku.rag.store.repositories import chunk as chunk_module
+
+    async with HaikuRAG(
+        db_path=temp_db_path, config=get_config(), create=True
+    ) as client:
+        repo = client.chunk_repository
+
+        async def boom(*_args, **_kwargs):
+            raise RuntimeError("index build failed")
+
+        chunk = Chunk(
+            document_id="doc-1",
+            content="a chunk about gardens",
+            embedding=[0.1] * get_config().embeddings.model.vector_dim,
+            order=0,
+        )
+        with patch.object(chunk_module, "ensure_indexes", boom):
+            with pytest.raises(RuntimeError, match="index build failed"):
+                await repo.create(chunk)
+
+        assert chunk.id is not None
+        assert await client.store.chunks_table.count_rows() == 1
+
+
 async def test_fts_search_on_an_empty_table_does_not_suppress_later_warnings(
     temp_db_path,
 ):
@@ -595,11 +627,16 @@ async def test_fts_search_on_an_empty_table_does_not_suppress_later_warnings(
     spend the once-per-repository check."""
     import logging
 
+    from lancedb.index import FTS
+
     from haiku.rag.store.repositories import chunk as chunk_module
 
     async with HaikuRAG(
         db_path=temp_db_path, config=get_config(), create=True
     ) as client:
+        await client.store.chunks_table.create_index(
+            "content_fts", config=FTS(with_position=True, remove_stop_words=False)
+        )
         await client.chunk_repository.search("gardens", search_type="fts")
         await _import_one(client)
 
