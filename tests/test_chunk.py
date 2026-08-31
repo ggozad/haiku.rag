@@ -570,6 +570,82 @@ async def test_chunk_search_with_precomputed_vector_skips_text_query(temp_db_pat
         assert any(c.document_id == doc.id for c, _ in results)
 
 
+@pytest.mark.parametrize(
+    "metric,expected_ids",
+    [
+        ("cosine", ["cosine-best", "l2-best"]),
+        ("l2", ["l2-best", "cosine-best"]),
+    ],
+)
+async def test_vector_metric_ranking_matches_before_and_after_index(
+    temp_db_path, metric, expected_ids
+):
+    """Flat and indexed searches honor the configured metric.
+
+    The two leading vectors are deliberately not unit-normalized: cosine and
+    L2 must rank them in opposite orders, so LanceDB's flat-search L2 default
+    cannot accidentally satisfy the cosine case.
+    """
+    from datetime import timedelta
+
+    from lancedb.index import IvfPq
+
+    config = get_config().model_copy(deep=True)
+    config.embeddings.model.vector_dim = 8
+    config.search.vector_index_metric = metric
+
+    def row(chunk_id, vector, order):
+        return {
+            "id": chunk_id,
+            "document_id": "doc-1",
+            "content": chunk_id,
+            "content_fts": chunk_id,
+            "metadata": "{}",
+            "order": order,
+            "vector": vector,
+        }
+
+    rows = [
+        row("cosine-best", [10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 0),
+        row("l2-best", [1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 1),
+    ]
+    # IVF-PQ needs 256 training rows. These are far from the query under both
+    # metrics and vary enough to train the quantizer without entering Top-K.
+    rows.extend(
+        row(
+            f"filler-{i}",
+            [0.0, *[100.0 + i + j for j in range(7)]],
+            i + 2,
+        )
+        for i in range(254)
+    )
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        await client.store.chunks_table.add(rows)
+        query_vector = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+        async def top_ids():
+            results = await client.chunk_repository.search(
+                "", limit=2, search_type="vector", query_vector=query_vector
+            )
+            return [chunk.id for chunk, _score in results]
+
+        flat_ids = await top_ids()
+
+        await client.store.chunks_table.create_index(
+            "vector",
+            config=IvfPq(distance_type=metric, num_partitions=1, num_sub_vectors=1),
+            replace=True,
+        )
+        await client.store.chunks_table.wait_for_index(
+            ["vector_idx"], timeout=timedelta(minutes=1)
+        )
+        indexed_ids = await top_ids()
+
+    assert flat_ids == expected_ids
+    assert indexed_ids == expected_ids
+
+
 async def test_get_chunk_ids_by_self_ref_grouped_without_documents(temp_db_path):
     async with HaikuRAG(
         db_path=temp_db_path, config=get_config(), create=True

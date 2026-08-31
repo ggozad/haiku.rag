@@ -114,7 +114,7 @@ qa:
 search:
   limit: 5                     # Default number of results to return
   max_context_chars: 5000     # Maximum characters in expanded context
-  vector_index_metric: cosine  # cosine, l2, or dot
+  vector_index_metric: cosine  # cosine or l2
   vector_refine_factor: 30
 
 doctor:

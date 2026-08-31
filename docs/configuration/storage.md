@@ -300,7 +300,7 @@ Configure vector search settings:
 
 ```yaml
 search:
-  vector_index_metric: cosine  # cosine, l2, or dot
+  vector_index_metric: cosine  # cosine or l2
   vector_refine_factor: 30     # Re-ranking factor for accuracy
 ```
 
@@ -309,7 +309,6 @@ For search behavior settings (`limit`, `max_context_chars`), see [Search and Que
 - **vector_index_metric**: Distance metric for vector similarity:
   - `cosine`: Cosine similarity (default, best for most embeddings)
   - `l2`: Euclidean distance
-  - `dot`: Dot product similarity
 - **vector_refine_factor**: Improves accuracy when using a vector index by retrieving `refine_factor * limit` candidates (using approximate search) and re-ranking them with exact distances. Higher values increase accuracy but slow down queries. Default: 30
   - **Only applies with a vector index** - has no effect on brute-force search, which already returns exact results
 

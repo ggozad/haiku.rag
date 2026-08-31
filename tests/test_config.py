@@ -670,6 +670,7 @@ def test_unknown_keys_are_rejected(data, bad_key):
         {"processing": {"converter": "docling-loca"}},
         {"processing": {"chunker": "docling-remote"}},
         {"processing": {"chunker_type": "semantic"}},
+        {"search": {"vector_index_metric": "dot"}},
     ],
 )
 def test_finite_switches_reject_unknown_values(data):

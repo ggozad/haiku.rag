@@ -254,6 +254,7 @@ class ChunkRepository:
                 self.store.chunks_table.query()
                 .nearest_to(query_embedding)
                 .column("vector")
+                .distance_type(self.store._config.search.vector_index_metric)
                 .refine_factor(self.store._config.search.vector_refine_factor)
             )
             # An image query has no text to match, so it stays vector-only.
