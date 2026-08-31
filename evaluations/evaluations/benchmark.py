@@ -41,6 +41,7 @@ async def evaluate_dataset(
     vacuum_interval: int = 100,
     multimodal_only: bool = False,
     judge_model: ModelConfig | None = None,
+    retrieval_limit: int | None = None,
     target: Target = "rag-capability",
     capability_model: ModelConfig | None = None,
     case_ids: set[str] | None = None,
@@ -72,6 +73,7 @@ async def evaluate_dataset(
             db_path=db_path,
             multimodal_only=multimodal_only,
             document_filter=document_filter,
+            retrieval_limit=retrieval_limit,
         )
 
     if not skip_qa:
@@ -169,6 +171,14 @@ def run(
         None, "--limit", help="Limit number of test cases for both retrieval and QA."
     ),
     name: str | None = typer.Option(None, "--name", help="Override evaluation name."),
+    retrieval_limit: int | None = typer.Option(
+        None,
+        "--retrieval-limit",
+        help=(
+            "Candidates each database fetches, overriding the dataset's. "
+            "Sets how deep hybrid search looks before its results are scored."
+        ),
+    ),
     vacuum_interval: int = typer.Option(
         100, "--vacuum-interval", help="Vacuum every N documents during DB population."
     ),
@@ -235,6 +245,7 @@ def run(
             vacuum_interval=vacuum_interval,
             multimodal_only=multimodal_only,
             judge_model=judge_model_config,
+            retrieval_limit=retrieval_limit,
             target=target_value,
             capability_model=capability_model_config,
             case_ids=_load_case_ids(filter_ids),
