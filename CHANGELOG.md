@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `mtrag_federated` evaluation dataset and its reference config `evaluations/configs/mtrag_federated.yaml`: MTRAG ClapNQ partitioned by article title into `n` collections, scored on retrieval only with Recall@5/@10, nDCG@5 and MAP. `python -m evaluations.datasets.mtrag_federated --config REF --n N --out PATH` builds the partition and emits the config that searches it.
+
 ### Fixed
 
 - Migration to 0.38.0 no longer fails with `UnicodeDecodeError` on a

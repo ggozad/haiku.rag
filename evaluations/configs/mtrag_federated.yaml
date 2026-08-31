@@ -1,0 +1,56 @@
+# Reference config for `mtrag_federated`: IBM MTRAG ClapNQ, partitioned by
+# article title into four collections, scored on retrieval only.
+#
+# Build the partition and emit the config that searches exactly it:
+#   uv run python -m evaluations.datasets.mtrag_federated \
+#       --config configs/mtrag_federated.yaml --n 4 --out ~/configs/fed-n4.yaml
+#   evaluations run mtrag_federated --config ~/configs/fed-n4.yaml \
+#       --skip-db --skip-qa
+#
+# The databases below are the canonical n=4 partition at seed 20260831. Sweep
+# configs for other collection counts live outside the repo, because a config
+# here must be named after a registered dataset.
+#
+# No reranking block on purpose: this eval measures the reciprocal-rank fusion
+# path, where retrieval depth per collection is `limit // n`. Adding a reranker
+# is the comparison arm, not the baseline.
+# base_url uses the `vllm` host serving each model over an OpenAI-compatible API.
+
+environment: development
+
+storage:
+  auto_vacuum: false
+
+lancedb:
+  # Declaration order is load-bearing: fusion resolves equal ranks to this
+  # order, so permuting these four keys is an arm.
+  databases:
+    clapnq_0: ${HOME}/.local/share/haiku.rag/evaluations/dbs/mtrag_federated_s20260831_n4_0.lancedb
+    clapnq_1: ${HOME}/.local/share/haiku.rag/evaluations/dbs/mtrag_federated_s20260831_n4_1.lancedb
+    clapnq_2: ${HOME}/.local/share/haiku.rag/evaluations/dbs/mtrag_federated_s20260831_n4_2.lancedb
+    clapnq_3: ${HOME}/.local/share/haiku.rag/evaluations/dbs/mtrag_federated_s20260831_n4_3.lancedb
+
+embeddings:
+  model:
+    provider: openai
+    name: qwen3-embedding-4b
+    vector_dim: 2560
+    base_url: http://vllm:11431/v1
+
+search:
+  # Matches the spec's retrieval_limit and the product default.
+  limit: 5
+
+evaluations:
+  judge:
+    provider: openai
+    name: Inferact/Qwen3.8-27B-NVFP4
+    base_url: http://vllm:11439/v1
+    temperature: 0.6
+    max_tokens: 16384
+    extra_body:
+      top_p: 0.95
+      top_k: 20
+      min_p: 0
+      chat_template_kwargs:
+        reasoning_effort: low
