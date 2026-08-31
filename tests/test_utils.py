@@ -907,6 +907,23 @@ async def test_format_citations_rich_truncates_long_content():
     assert "A" * (CITATION_PREVIEW_CHARS + 1) not in output
 
 
+async def test_format_citations_rich_full_keeps_the_whole_content():
+    from haiku.rag.store.models.citation import Citation
+    from haiku.rag.utils import CITATION_PREVIEW_CHARS, format_citations_rich
+
+    content = "A" * (CITATION_PREVIEW_CHARS + 200)
+    citation = Citation(
+        document_id="doc1",
+        chunk_id="chunk1",
+        document_uri="test://doc",
+        content=content,
+    )
+    output = _render_rich(await format_citations_rich([citation], full=True))
+    assert "…" not in output
+    # Rich wraps the body across panel lines, so count the content instead.
+    assert output.count("A") == len(content)
+
+
 async def test_format_citations_rich_picture_marker_without_client():
     from haiku.rag.store.models.citation import Citation
     from haiku.rag.utils import format_citations_rich

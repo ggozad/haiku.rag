@@ -307,7 +307,7 @@ async def test_visualize_reports_no_grounding(app, client):
 async def test_ask_prints_question_answer_and_citations(app, client, monkeypatch):
     client.ask.return_value = ("The answer.", [])
 
-    async def no_citations(citations, client=None):
+    async def no_citations(citations, client=None, full=False):
         return ["citation block"]
 
     monkeypatch.setattr("haiku.rag.app.format_citations_rich", no_citations)
@@ -326,7 +326,7 @@ async def test_ask_attaches_image_bytes(app, client, monkeypatch, tmp_path):
     image.write_bytes(b"img")
     client.ask.return_value = ("answer", [])
 
-    async def no_citations(citations, client=None):
+    async def no_citations(citations, client=None, full=False):
         return []
 
     monkeypatch.setattr("haiku.rag.app.format_citations_rich", no_citations)
@@ -336,13 +336,36 @@ async def test_ask_attaches_image_bytes(app, client, monkeypatch, tmp_path):
     assert client.ask.await_args.kwargs["images"] == [b"img"]
 
 
+@pytest.mark.parametrize("verb", ["ask", "analyze"])
+async def test_full_citations_reaches_the_formatter(app, client, monkeypatch, verb):
+    """The flag has to survive the app layer, or the CLI switch does nothing."""
+    client.ask.return_value = ("answer", [])
+    result = AsyncMock()
+    result.answer = "answer"
+    result.citations = []
+    client.analyze.return_value = result
+
+    seen = []
+
+    async def record(citations, client=None, full=False):
+        seen.append(full)
+        return []
+
+    monkeypatch.setattr("haiku.rag.app.format_citations_rich", record)
+
+    await getattr(app, verb)("why?", full_citations=True)
+    await getattr(app, verb)("why?")
+
+    assert seen == [True, False]
+
+
 async def test_analyze_prints_the_answer(app, client, monkeypatch):
     result = AsyncMock()
     result.answer = "computed answer"
     result.citations = []
     client.analyze.return_value = result
 
-    async def no_citations(citations, client=None):
+    async def no_citations(citations, client=None, full=False):
         return []
 
     monkeypatch.setattr("haiku.rag.app.format_citations_rich", no_citations)
@@ -964,7 +987,7 @@ async def test_analyze_prints_citation_renderables(app, client, monkeypatch):
     result.citations = ["c1"]
     client.analyze.return_value = result
 
-    async def one_citation(citations, client=None):
+    async def one_citation(citations, client=None, full=False):
         return ["citation renderable"]
 
     monkeypatch.setattr("haiku.rag.app.format_citations_rich", one_citation)
