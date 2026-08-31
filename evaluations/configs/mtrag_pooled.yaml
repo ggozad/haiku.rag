@@ -1,0 +1,49 @@
+# Reference config for `mtrag_pooled`: all four MTRAG domains (clapnq, cloud,
+# fiqa, govt) pooled and partitioned across `n` collections, scored on retrieval
+# only.
+#
+# This is the heterogeneous corpus. `mtrag_federated` partitions one domain by
+# article title, which is round-robin fusion's friendliest case: no collection is
+# ever off-topic for a query, so the guaranteed-slot waste is never exercised.
+# Here a query belongs to one domain and the others are genuinely off-topic.
+#
+# Build the partition and emit the config that searches exactly it:
+#   uv run python -m evaluations.datasets.mtrag_federated \
+#       --config configs/mtrag_pooled.yaml --pooled --n 4 --alpha 0 \
+#       --out ~/configs/pooled-n4-a0.yaml
+#   evaluations run mtrag_pooled --config ~/configs/pooled-n4-a0.yaml \
+#       --skip-db --skip-qa
+#
+# alpha 0 keeps each collection to one domain; alpha 1 shards titles across all
+# of them, which is the degenerate sharding endpoint rather than a rival design.
+# The operator emits the databases, so none are listed here.
+
+environment: development
+
+storage:
+  auto_vacuum: false
+
+embeddings:
+  model:
+    provider: openai
+    name: qwen3-embedding-4b
+    vector_dim: 2560
+    base_url: http://vllm:11431/v1
+
+search:
+  # Matches the spec's retrieval_limit and the product default.
+  limit: 5
+
+evaluations:
+  judge:
+    provider: openai
+    name: Inferact/Qwen3.8-27B-NVFP4
+    base_url: http://vllm:11439/v1
+    temperature: 0.6
+    max_tokens: 16384
+    extra_body:
+      top_p: 0.95
+      top_k: 20
+      min_p: 0
+      chat_template_kwargs:
+        reasoning_effort: low
