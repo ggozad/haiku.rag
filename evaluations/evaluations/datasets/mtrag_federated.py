@@ -37,6 +37,7 @@ DEFAULT_SEED = 20260831
 GOLD_TITLE_FLOOR = 10_723
 DEFAULT_BUDGET = 40_000
 INGEST_BATCH_SIZE = 512
+FTS_INDEX_NAME = "content_fts_idx"
 
 
 def collection_of(title: str, n: int, seed: int = DEFAULT_SEED) -> int:
@@ -172,6 +173,25 @@ def emitted_config(reference: Path, n: int, seed: int = DEFAULT_SEED) -> dict[st
     return settings
 
 
+class FTSIndexNotCoveringRows(AssertionError):
+    """The chunks FTS index does not cover every row, so full-text search is
+    dead while still returning results."""
+
+
+async def assert_fts_covers_rows(table: Any, name: str) -> None:
+    rows = await table.count_rows()
+    indices = {index.name for index in await table.list_indices()}
+    if FTS_INDEX_NAME not in indices:
+        raise FTSIndexNotCoveringRows(f"{name}: no {FTS_INDEX_NAME} on {rows} rows")
+    stats = await table.index_stats(FTS_INDEX_NAME)
+    indexed = getattr(stats, "num_indexed_rows", 0) or 0
+    if indexed < rows:
+        raise FTSIndexNotCoveringRows(
+            f"{name}: {FTS_INDEX_NAME} covers {indexed} of {rows} rows; "
+            "full-text search would return near-arbitrary rows"
+        )
+
+
 async def build_databases(
     config: AppConfig,
     n: int,
@@ -213,6 +233,13 @@ async def build_databases(
             await _ingest_batched(
                 client, MTRAG_FEDERATED_SPEC, grouped[name], INGEST_BATCH_SIZE
             )
+            # The chunks FTS index is built once when the table is created, over
+            # zero rows, and nothing folds later rows into it but an optimize.
+            # `auto_vacuum` is false here, as in every reference config, so
+            # without this the index covers nothing and full-text search returns
+            # near-arbitrary rows while still looking like it works.
+            await client.store.vacuum(retention_seconds=0)
+            await assert_fts_covers_rows(client.store.chunks_table, name)
         written[name] = len(grouped[name])
     return written
 

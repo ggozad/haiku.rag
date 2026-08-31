@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `mtrag_federated` builds vacuum each collection after ingest and assert the chunks FTS index covers every row. Without the vacuum the index stays at zero rows, and full-text search returns near-arbitrary rows while still returning results.
+
 ### Added
 
 - `evaluations run --retrieval-limit N`: candidates each database fetches during the retrieval benchmark, overriding the dataset's `retrieval_limit`.
