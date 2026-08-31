@@ -193,10 +193,13 @@ async def _fuse(
 
     scored: list[tuple[float, HaikuRAG, Chunk]] = []
     for client, candidates in zip(clients, per_source, strict=True):
-        for rank, (chunk, _) in enumerate(candidates):
-            scored.append((1.0 / (_RRF_K + rank + 1), client, chunk))
-    scored.sort(key=lambda item: item[0], reverse=True)
-    return [(client, chunk, score) for score, client, chunk in scored[:limit]]
+        for rank, (chunk, score) in enumerate(candidates):
+            scored.append((1.0 / (_RRF_K + rank + 1), score, client, chunk))
+    # ARM ONLY, NEVER MERGE: merge the union and sort by the raw retrieval
+    # score, discarding the rank interleaving entirely. Measures whether the
+    # depth quota costs more than it buys.
+    scored.sort(key=lambda item: (item[1],), reverse=True)
+    return [(client, chunk, fused) for fused, _, client, chunk in scored[:limit]]
 
 
 # Reciprocal rank fusion's smoothing constant, the value the literature uses.
