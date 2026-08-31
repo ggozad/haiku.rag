@@ -638,6 +638,7 @@ class HaikuRAGApp:
         question: str,
         filter: str | None = None,
         images: list[Path] | None = None,
+        full_citations: bool = False,
     ):
         """Ask a question using the RAG system.
 
@@ -645,6 +646,7 @@ class HaikuRAGApp:
             question: The question to ask
             filter: SQL WHERE clause to filter documents
             images: Paths of images to attach to the question
+            full_citations: Render citation text without truncating it
         """
         async with HaikuRAG._covering(
             self.scope, self.config, read_only=True
@@ -660,7 +662,7 @@ class HaikuRAGApp:
             self.console.print("[bold green]Answer:[/bold green]")
             self.console.print(Markdown(answer))
             for renderable in await format_citations_rich(
-                citations, client=self.client
+                citations, client=self.client, full=full_citations
             ):
                 self.console.print(renderable)
 
@@ -669,6 +671,7 @@ class HaikuRAGApp:
         question: str,
         filter: str | None = None,
         images: list[Path] | None = None,
+        full_citations: bool = False,
     ):
         """Answer a question using the analysis capability.
 
@@ -676,6 +679,7 @@ class HaikuRAGApp:
             question: The question to answer
             filter: SQL WHERE clause to filter documents
             images: Paths of images to attach to the question
+            full_citations: Render citation text without truncating it
         """
         async with HaikuRAG._covering(
             self.scope, self.config, read_only=True
@@ -696,7 +700,7 @@ class HaikuRAGApp:
             self.console.print("[bold green]Answer:[/bold green]")
             self.console.print(Markdown(result.answer))
             for renderable in await format_citations_rich(
-                result.citations, client=self.client
+                result.citations, client=self.client, full=full_citations
             ):
                 self.console.print(renderable)
 

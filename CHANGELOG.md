@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- `--full-citations` on `haiku-rag ask` and `haiku-rag analyze` renders citation
+  text untruncated. `format_citations_rich` takes a `full` argument.
+
 ### Fixed
 
 - Migration to 0.38.0 no longer fails with `UnicodeDecodeError` on a

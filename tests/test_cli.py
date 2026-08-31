@@ -951,8 +951,16 @@ def test_question_commands_dispatch(app_stub, command, method):
 
     assert result.exit_code == 0, result.output
     getattr(app_stub, method).assert_called_once_with(
-        question="why?", filter=None, images=None
+        question="why?", filter=None, images=None, full_citations=False
     )
+
+
+@pytest.mark.parametrize("command, method", [("ask", "ask"), ("analyze", "analyze")])
+def test_full_citations_flag_dispatches(app_stub, command, method):
+    result = runner.invoke(cli, [command, "why?", "--full-citations"] + DB_ARGS)
+
+    assert result.exit_code == 0, result.output
+    assert getattr(app_stub, method).call_args.kwargs["full_citations"] is True
 
 
 @pytest.mark.parametrize(

@@ -430,13 +430,15 @@ def truncated(text: str, limit: int) -> str:
 async def format_citations_rich(
     citations: "list[Citation]",
     client: "HaikuRAG | None" = None,
+    full: bool = False,
 ) -> "list[RenderableType]":
     """Format citations as Rich renderables for terminal display.
 
     Each citation becomes a Panel with a compact header (``[N] Title (URI) —
     locator``, with the database name before the locator when ``client`` covers
-    several), a body holding any referenced figures followed by a truncated text
-    preview, and a dimmed footer that exposes the document and chunk IDs.
+    several), a body holding any referenced figures followed by a text preview
+    truncated at ``CITATION_PREVIEW_CHARS``, and a dimmed footer that exposes the
+    document and chunk IDs. ``full`` renders the content untruncated.
 
     When ``client`` is supplied, picture bytes for ``picture_refs`` are fetched and
     rendered inline via ``textual_image``. Without a client, picture refs appear as
@@ -481,7 +483,9 @@ async def format_citations_rich(
                 else Text(f"[Figure: {ref}]", style="italic dim")
             )
 
-        body.append(Text(truncated(c.content, CITATION_PREVIEW_CHARS)))
+        body.append(
+            Text(c.content if full else truncated(c.content, CITATION_PREVIEW_CHARS))
+        )
 
         footer = Text()
         footer.append("doc: ", style="dim")

@@ -413,6 +413,11 @@ def ask(
         "--image",
         help="Path to an image to attach to the question (repeatable; requires a vision-capable model)",
     ),
+    full_citations: bool = typer.Option(
+        False,
+        "--full-citations",
+        help="Show the full text of each citation instead of a truncated preview",
+    ),
 ):
     app = create_app(db, covers_set=True)
     asyncio.run(
@@ -420,6 +425,7 @@ def ask(
             question=question,
             filter=filter,
             images=image,
+            full_citations=full_citations,
         )
     )
 
@@ -445,6 +451,11 @@ def analyze(
         "--image",
         help="Path to an image to attach to the question (repeatable; requires a vision-capable model)",
     ),
+    full_citations: bool = typer.Option(
+        False,
+        "--full-citations",
+        help="Show the full text of each citation instead of a truncated preview",
+    ),
 ):
     app = create_app(db, covers_set=True)
     asyncio.run(
@@ -452,6 +463,7 @@ def analyze(
             question=question,
             filter=filter,
             images=image,
+            full_citations=full_citations,
         )
     )
 

@@ -172,10 +172,16 @@ haiku-rag ask "Does this photo satisfy the spec in the design document?" --image
 
 `ask` runs the [RAG capability](capabilities/rag.md) and always renders citations under the answer. When available, citations use the document title, otherwise they fall back to the URI.
 
+Citation text is truncated to a 300-character preview. To read the whole passage the model saw:
+```bash
+haiku-rag ask "What are the main findings?" --full-citations
+```
+
 Flags:
 
 - `--filter` / `-f`: Restrict searches to documents matching the filter (see [Filtering Search Results](python.md#filtering-search-results))
 - `--image`: Path to an image attached to the question (repeatable). Retrieval stays text-based; the model must have `vision: true` configured.
+- `--full-citations`: Show the full text of each citation instead of a truncated preview
 
 ## Analyze
 
@@ -195,6 +201,7 @@ Flags:
 
 - `--filter` / `-f`: SQL WHERE clause to restrict document access
 - `--image`: Path to an image attached to the question (repeatable). Requires `vision: true` on the analysis model.
+- `--full-citations`: Show the full text of each citation instead of a truncated preview
 
 See [Analysis capability](capabilities/analysis.md) for details and configuration.
 
