@@ -527,11 +527,46 @@ class TestReciprocalRankFusion:
         ]
 
     @pytest.mark.asyncio
-    async def test_equal_scores_keep_the_configured_order(self, tmp_path):
-        """Every rank ties across databases, so the tiebreak decides all of it."""
-        fused = await self._fuse_over(tmp_path, self._lopsided(2), 10)
+    async def test_ranks_tie_and_the_retrieval_score_breaks_them(self, tmp_path):
+        """Every rank ties across databases, so the tiebreak decides all of it,
+        and it must be relevance, not the order databases were configured in."""
+        per_source = [self._ranked("a", 2, 0.2), self._ranked("b", 2, 0.9)]
+        fused = await self._fuse_over(tmp_path, per_source, 10)
+
+        assert [source for source, _, _ in fused] == ["beta", "alpha", "beta", "alpha"]
+
+    @pytest.mark.asyncio
+    async def test_the_configured_order_does_not_matter(self, tmp_path):
+        """The same candidates fuse to the same list whichever database is
+        declared first."""
+        forward = await self._fuse_over(tmp_path, self._lopsided(3), 10)
+        (tmp_path / "swapped").mkdir()
+        backward = await self._fuse_over(
+            tmp_path / "swapped",
+            [self._ranked("b", 3, 0.2), self._ranked("a", 3, 0.9)],
+            10,
+        )
+
+        assert [(cid, score) for _, cid, score in forward] == [
+            (cid, score) for _, cid, score in backward
+        ]
+
+    @pytest.mark.asyncio
+    async def test_exact_ties_keep_the_configured_order(self, tmp_path):
+        """Hybrid scores are rank-derived and tie exactly when databases agree,
+        so a genuine tie must still resolve deterministically."""
+        per_source = [self._ranked("a", 2, 0.9), self._ranked("b", 2, 0.9)]
+        fused = await self._fuse_over(tmp_path, per_source, 10)
 
         assert [source for source, _, _ in fused] == ["alpha", "beta", "alpha", "beta"]
+
+    @pytest.mark.asyncio
+    async def test_the_retrieval_score_never_overrides_the_rank(self, tmp_path):
+        """Raw scores are not calibrated across indexes, so a database with
+        inflated scores still contributes one candidate per rank."""
+        fused = await self._fuse_over(tmp_path, self._lopsided(2), 10)
+
+        assert [cid for _, cid, _ in fused] == ["a0", "b0", "a1", "b1"]
 
     @pytest.mark.asyncio
     async def test_the_limit_cuts_the_fused_list(self, tmp_path):

@@ -156,6 +156,14 @@ async def _fuse(
     across databases tractable: it compares query against document and does not
     care where a candidate came from. Without one, reciprocal rank fusion over the
     per-database rankings, since scores from separate indexes are not comparable.
+    The corpora are disjoint, so every database's rank-r candidate carries the
+    same RRF score; those ties break on the raw retrieval score, which is not
+    calibrated across indexes but only ever orders candidates within one rank
+    and never lifts a candidate above another rank. A hybrid score is itself
+    rank-derived (each database fuses its own vector and FTS rankings with
+    lancedb's RRFReranker), so there the tiebreak compares rank agreement, not
+    relevance magnitude, and databases agreeing exactly still tie, resolving
+    deterministically to configured order.
     """
     owned = [
         (client, chunk, score)
@@ -191,12 +199,12 @@ async def _fuse(
                 )
             return [(owner_of[id(chunk)], chunk, score) for chunk, score in reranked]
 
-    scored: list[tuple[float, HaikuRAG, Chunk]] = []
+    scored: list[tuple[float, float, HaikuRAG, Chunk]] = []
     for client, candidates in zip(clients, per_source, strict=True):
-        for rank, (chunk, _) in enumerate(candidates):
-            scored.append((1.0 / (_RRF_K + rank + 1), client, chunk))
-    scored.sort(key=lambda item: item[0], reverse=True)
-    return [(client, chunk, score) for score, client, chunk in scored[:limit]]
+        for rank, (chunk, score) in enumerate(candidates):
+            scored.append((1.0 / (_RRF_K + rank + 1), score, client, chunk))
+    scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return [(client, chunk, fused) for fused, _, client, chunk in scored[:limit]]
 
 
 # Reciprocal rank fusion's smoothing constant, the value the literature uses.
