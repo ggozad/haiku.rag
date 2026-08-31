@@ -20,6 +20,7 @@
   and rerun `create-index`.
 ### Fixed
 
+- Batched evaluation ingest converts inline content as text instead of letting `HaikuRAG.convert` disambiguate it, so a passage beginning with a URL is stored rather than fetched over HTTP. 187 MTRAG cloud and fiqa passages start with one; no clapnq passage does, so no existing dataset's numbers change.
 - `mtrag_federated` builds vacuum each collection after ingest and assert the chunks FTS index covers every row. Without the vacuum the index stays at zero rows, and full-text search returns near-arbitrary rows while still returning results.
 
 ### Added

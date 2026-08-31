@@ -888,7 +888,11 @@ class TestBatchedIngest:
         rag.store.chunks_table = _table(
             [{"document_id": f"id-{uri}"} for uri in complete_uris]
         )
-        rag.convert = AsyncMock(side_effect=lambda content, **kw: f"docling:{content}")
+        # Batched ingest converts text through the configured converter, the
+        # same path create_document uses, so the double needs a real config.
+        from haiku.rag.config.models import AppConfig
+
+        rag._config = AppConfig()
         rag.chunk = AsyncMock(return_value=[])
         rag.import_documents = AsyncMock()
         rag.delete_document = AsyncMock()
@@ -933,8 +937,11 @@ class TestBatchedIngest:
         await _ingest_batched(rag, self._spec(), corpus, batch_size=10)
 
         (batch,), _ = rag.import_documents.call_args
+        # Conversion goes through the configured converter now, not rag.convert,
+        # so the batch contents are the assertion: exactly the incomplete uris,
+        # which is stricter than counting conversions.
         assert [imp.uri for imp in batch] == ["u1", "u3"]
-        assert rag.convert.await_count == 2
+        assert len(batch) == 2
         rag.delete_document.assert_not_awaited()
 
     @pytest.mark.asyncio
