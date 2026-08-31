@@ -18,6 +18,7 @@ from evaluations.datasets.mtrag_federated import (
     partition_pooled,
     pooled_collection_names,
     pooled_database_paths,
+    sample_pooled_records,
     partition_records,
     pool_composition,
     sample_records,
@@ -421,3 +422,59 @@ class TestPooledPartition:
         for alpha in (0.0, 0.5, 1.0):
             grouped = partition_pooled(records, 8, alpha=alpha)
             assert sum(len(v) for v in grouped.values()) == len(records)
+
+
+class TestPooledSampler:
+    """Two of the four domains have no titles at all, so the pooled corpus is
+    sampled and partitioned at passage level rather than by title."""
+
+    @staticmethod
+    def _pool(per_domain: int = 40) -> list[dict[str, str]]:
+        return [
+            {
+                "_id": f"{domain}-{i}",
+                # cloud and fiqa carry an empty title upstream.
+                "title": "" if domain in ("cloud", "fiqa") else f"{domain} t{i}",
+                "text": "x",
+                "domain": domain,
+            }
+            for domain in DOMAINS
+            for i in range(per_domain)
+        ]
+
+    def test_keeps_every_gold_passage(self) -> None:
+        pool = self._pool()
+        gold = {"cloud-3", "fiqa-7", "clapnq-1", "govt-39"}
+        kept = sample_pooled_records(pool, gold, budget=20)
+        assert gold <= {row["_id"] for row in kept}
+
+    def test_respects_the_budget_above_the_gold_floor(self) -> None:
+        pool = self._pool()
+        kept = sample_pooled_records(pool, {"cloud-3"}, budget=25)
+        assert len(kept) == 25
+
+    def test_a_titleless_domain_does_not_drag_in_its_whole_corpus(self) -> None:
+        """The failure this replaces: whole-title keeping pulled all 72,442 cloud
+        passages in because they share one empty title."""
+        pool = self._pool()
+        kept = sample_pooled_records(pool, {"cloud-3"}, budget=10)
+        cloud = [row for row in kept if row["domain"] == "cloud"]
+        assert len(cloud) < 40, f"kept {len(cloud)} of 40 cloud passages"
+
+    def test_rejects_gold_the_pool_does_not_hold(self) -> None:
+        with pytest.raises(ValueError, match="do not resolve"):
+            sample_pooled_records(self._pool(), {"nope-1"}, budget=10)
+
+    def test_partition_is_passage_level_not_title_level(self) -> None:
+        """A titleless domain must still spread across its own collections."""
+        pool = self._pool(per_domain=200)
+        grouped = partition_pooled(pool, 8, alpha=0.0)
+        cloud_collections = {
+            name
+            for name, rows in grouped.items()
+            if any(row["domain"] == "cloud" for row in rows)
+        }
+        assert len(cloud_collections) == 2, (
+            f"cloud landed in {len(cloud_collections)} collections; with one empty "
+            "title a title-keyed partition would give 1"
+        )

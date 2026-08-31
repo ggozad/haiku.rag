@@ -301,7 +301,43 @@ def pooled_gold_ids(variant: str = "lastturn") -> set[str]:
 def load_pooled(
     budget: int = DEFAULT_BUDGET, seed: int = DEFAULT_SEED
 ) -> list[Mapping[str, Any]]:
-    return sample_records(load_pooled_records(), pooled_gold_ids(), budget, seed)
+    return sample_pooled_records(load_pooled_records(), pooled_gold_ids(), budget, seed)
+
+
+def sample_pooled_records(
+    records: Sequence[Mapping[str, Any]],
+    gold_ids: Iterable[str],
+    budget: int = DEFAULT_BUDGET,
+    seed: int = DEFAULT_SEED,
+) -> list[Mapping[str, Any]]:
+    """A fixed sub-corpus at passage level, keeping every gold passage.
+
+    The single-domain dataset keeps whole titles, which cannot work here: `title`
+    is the empty string for every cloud and fiqa passage, so two of the four
+    domains have exactly one title covering 72,442 and 61,022 passages. Whole
+    titles put the gold floor at 146,543 passages, leaving no distractors at any
+    budget below the entire corpus.
+
+    Passage level costs nothing this comparison needs: at alpha=0 the domain
+    places a collection, so a query's gold is concentrated by construction rather
+    than by the atom.
+    """
+    wanted = set(gold_ids)
+    by_id = {row["_id"]: row for row in records}
+    missing = sorted(wanted - set(by_id))
+    if missing:
+        raise ValueError(
+            f"{len(missing)} gold passages do not resolve to the pooled corpus, "
+            f"first few: {missing[:3]}"
+        )
+    kept = set(wanted)
+    others = [row["_id"] for row in records if row["_id"] not in wanted]
+    random.Random(seed).shuffle(others)
+    for passage_id in others:
+        if len(kept) >= budget:
+            break
+        kept.add(passage_id)
+    return [row for row in records if row["_id"] in kept]
 
 
 def partition_pooled(
@@ -310,11 +346,15 @@ def partition_pooled(
     alpha: float,
     seed: int = DEFAULT_SEED,
 ) -> dict[str, list[Mapping[str, Any]]]:
-    """Route pooled records to collections, honouring each record's domain."""
+    """Route pooled records to collections, honouring each record's domain.
+
+    Keyed on the passage id rather than the title, because two of the four
+    domains have no titles. See `sample_pooled_records`.
+    """
     names = pooled_collection_names(n)
     grouped: dict[str, list[Mapping[str, Any]]] = {name: [] for name in names}
     for row in records:
-        index = collection_of(row["title"], n, seed, alpha=alpha, domain=row["domain"])
+        index = collection_of(row["_id"], n, seed, alpha=alpha, domain=row["domain"])
         grouped[names[index]].append(row)
     return grouped
 
