@@ -52,6 +52,15 @@ class DocumentMetaRecord(LanceModel):
     updated_at: str = Field(default_factory=lambda: "")
 
 
+def has_payload_columns(schema: pa.Schema) -> bool:
+    """Whether a table stores multi-megabyte values inline.
+
+    Vacuum sizes compaction only for these; the rest are small enough that
+    lance's own row target already bounds it.
+    """
+    return any(pa.types.is_large_binary(field.type) for field in schema)
+
+
 def get_documents_arrow_schema() -> pa.Schema:
     """Generate Arrow schema for documents table with large_binary for docling_document.
 

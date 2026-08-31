@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- `storage.compaction_target_bytes` (default 2 GiB): target size for the fragments compaction writes on the tables holding docling blobs.
+
+### Changed
+
+- `Store.vacuum` compacts `documents` and `document_items` through `lance` with a fragment target derived from `compaction_target_bytes`, instead of `AsyncTable.optimize`. The other tables are unchanged. New dependency: `pylance`.
+
 ## [0.82.1] - 2026-09-03
 
 ### Fixed
