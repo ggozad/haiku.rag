@@ -13,24 +13,19 @@
   text untruncated. `format_citations_rich` takes a `full` argument.
 - `doctor` fails when the chunks FTS index covers no rows.
 - FTS and hybrid searches log a warning when the FTS index covers no rows.
+- `evaluations run --retrieval-limit N`: candidates each database fetches during the retrieval benchmark, overriding the dataset's `retrieval_limit`.
+- `mtrag_pooled` evaluation dataset and its reference config `evaluations/configs/mtrag_pooled.yaml`: all four MTRAG domains pooled and partitioned across `n` collections, `--alpha` interpolating between one domain per collection and a uniform shard.
+- `mtrag_federated` evaluation dataset and its reference config `evaluations/configs/mtrag_federated.yaml`: MTRAG ClapNQ partitioned by article title into `n` collections, scored on retrieval only with Recall@5/@10, nDCG@5 and MAP. `python -m evaluations.datasets.mtrag_federated --config REF --n N --out PATH` builds the partition and emits the config that searches it.
 
 ### Removed
 
 - `dot` removed from `search.vector_index_metric`; switch to `cosine` or `l2`
   and rerun `create-index`.
+
 ### Fixed
 
 - Batched evaluation ingest converts inline content as text instead of letting `HaikuRAG.convert` disambiguate it, so a passage beginning with a URL is stored rather than fetched over HTTP. 187 MTRAG cloud and fiqa passages start with one; no clapnq passage does, so no existing dataset's numbers change.
 - `mtrag_federated` builds vacuum each collection after ingest and assert the chunks FTS index covers every row. Without the vacuum the index stays at zero rows, and full-text search returns near-arbitrary rows while still returning results.
-
-### Added
-
-- `evaluations run --retrieval-limit N`: candidates each database fetches during the retrieval benchmark, overriding the dataset's `retrieval_limit`.
-- `mtrag_pooled` evaluation dataset and its reference config `evaluations/configs/mtrag_pooled.yaml`: all four MTRAG domains pooled and partitioned across `n` collections, `--alpha` interpolating between one domain per collection and a uniform shard.
-- `mtrag_federated` evaluation dataset and its reference config `evaluations/configs/mtrag_federated.yaml`: MTRAG ClapNQ partitioned by article title into `n` collections, scored on retrieval only with Recall@5/@10, nDCG@5 and MAP. `python -m evaluations.datasets.mtrag_federated --config REF --n N --out PATH` builds the partition and emits the config that searches it.
-
-### Fixed
-
 - FTS and hybrid search on a database whose FTS index covers no rows. Chunk
   writes now build the index and rebuild it if it covers none; `haiku-rag
   vacuum` also repairs it.
