@@ -417,6 +417,9 @@ class HaikuRAG:
         client._session = session
         client._owns_session = False
         client._lender = lender
+        # Hooks belong to the client that owns the session: a facade firing its
+        # own copy would run every hook once per database it was borrowed for.
+        client._hooks = []
         return client
 
     def _require_one_embedder(self, clients: "list[HaikuRAG]") -> None:

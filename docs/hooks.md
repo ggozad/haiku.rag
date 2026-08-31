@@ -20,6 +20,12 @@ Events are batch shaped. `IngestEvent` carries `documents` (a batch import arriv
 
 Hooks receive the `HaikuRAG` client, so they can search, read repositories, and store their own state.
 
+## Several databases
+
+Hooks fire once, at the client you call, whatever it covers. A search across several configured databases runs `before_search` once and hands `after_search` the fused, ranked list, with each result's `source` naming the database it came from. The per-database clients a federating client lends out through `clients_for` run no hooks of their own.
+
+Lifespans follow the same ownership: they enter for a client that owns its session, single-database or federating, and never for a borrowed one. A federating client has no `client.store`; a lifespan running on one reaches a database through `clients_for` or keeps its own state.
+
 ## Registering a hook
 
 ```python
@@ -74,7 +80,7 @@ class GlossaryHook(Hook):
             yield
 ```
 
-Lifespans are entered in the order listed in config, once the store is open, and exited in reverse order while the store, embedder and reranker are all still usable.
+Lifespans are entered in the order listed in config, once the session is open, and exited in reverse order while the session, embedder and reranker are all still usable.
 
 Failing on entry fails `async with HaikuRAG(...)` and unwinds the lifespans already started: an activated hook that cannot start is a startup failure, not something to run degraded. Failing on exit is logged and swallowed, so one hook's teardown cannot strand another's. A hook is told which exception is being unwound, whether it came from the client's caller or from a later hook failing to start, but cannot suppress it.
 
