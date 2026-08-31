@@ -7,13 +7,16 @@
 - `--full-citations` on `haiku-rag ask` and `haiku-rag analyze` renders citation
   text untruncated. `format_citations_rich` takes a `full` argument.
 
+### Removed
+
+- `dot` removed from `search.vector_index_metric`; switch to `cosine` or `l2`
+  and rerun `create-index`.
+
 ### Fixed
 
 - Migration to 0.38.0 no longer fails with `UnicodeDecodeError` on a
   `docling_document` blob written as zstd.
-- Vector search explicitly uses `search.vector_index_metric`, so flat and indexed
-  searches rank with the same configured distance metric. The unused `dot` option
-  is removed; `cosine` and `l2` remain.
+- Vector search sets `search.vector_index_metric` on every query.
 
 ## [0.79.0] - 2026-08-28
 
