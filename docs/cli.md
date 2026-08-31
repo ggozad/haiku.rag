@@ -391,7 +391,7 @@ haiku-rag create-index [--db /path/to/your.lancedb]
 
 **Requirements:**
 - Minimum 256 chunks required for index creation (LanceDB training data requirement)
-- Creates an IVF_PQ index using the configured `search.vector_index_metric` (cosine/l2/dot)
+- Creates an IVF_PQ index using the configured `search.vector_index_metric` (cosine/l2)
 
 **When to use:**
 - After ingesting documents (indexes are not created automatically)

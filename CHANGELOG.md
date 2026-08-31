@@ -6,6 +6,9 @@
 
 - Migration to 0.38.0 no longer fails with `UnicodeDecodeError` on a
   `docling_document` blob written as zstd.
+- Vector search explicitly uses `search.vector_index_metric`, so flat and indexed
+  searches rank with the same configured distance metric. The unused `dot` option
+  is removed; `cosine` and `l2` remain.
 
 ## [0.79.0] - 2026-08-28
 
