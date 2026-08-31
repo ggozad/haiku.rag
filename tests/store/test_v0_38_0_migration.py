@@ -9,14 +9,17 @@ import gzip
 import json
 
 import lancedb
-import pyarrow as pa
 import pytest
-from lancedb.pydantic import LanceModel
-from pydantic import Field
 
 from haiku.rag.store.compression import compress_json, decompress_json
 from haiku.rag.store.engine import Store
 from haiku.rag.store.upgrades.v0_38_0 import _apply_split_pages_zstd
+from tests.store.legacy_documents import (
+    DocumentRecordV4,
+    LegacyDocumentRecord,
+    documents_schema,
+    seed_documents,
+)
 
 STAGING = "documents_v5_staging"
 
@@ -43,47 +46,8 @@ def _docling_doc(name: str = "test", with_pages: bool = True) -> dict:
     return doc
 
 
-class DocumentRecordV4(LanceModel):
-    id: str
-    content: str
-    uri: str | None = None
-    title: str | None = None
-    metadata: str = Field(default="{}")
-    docling_document: bytes | None = None
-    docling_version: str | None = None
-    created_at: str = Field(default_factory=lambda: "")
-    updated_at: str = Field(default_factory=lambda: "")
-
-
-class DocumentRecordV5(DocumentRecordV4):
-    docling_pages: bytes | None = None
-
-
-def _large_binary_schema(model: type[LanceModel]) -> pa.Schema:
-    blobs = {"docling_document", "docling_pages"}
-    return pa.schema(
-        [
-            pa.field(field.name, pa.large_binary()) if field.name in blobs else field
-            for field in model.to_arrow_schema()
-        ]
-    )
-
-
-def _v4_schema() -> pa.Schema:
-    return _large_binary_schema(DocumentRecordV4)
-
-
-def _v5_schema() -> pa.Schema:
-    return _large_binary_schema(DocumentRecordV5)
-
-
-async def _make_v4_documents_table(store: Store) -> None:
-    """Replace the live documents table with the pre-0.38.0 schema."""
-    del store.documents_table
-    await store.db.drop_table("documents")
-    store.documents_table = await store.db.create_table(
-        "documents", schema=_v4_schema()
-    )
+async def _seed_v4(store: Store, records: list[DocumentRecordV4]) -> None:
+    await seed_documents(store, documents_schema(DocumentRecordV4), records)
 
 
 async def _read_migrated(store: Store, doc_id: str) -> dict:
@@ -107,8 +71,8 @@ async def test_migrates_every_v0_25_0_blob_encoding(temp_db_path, encode):
     """Every encoding a v0.25.0 database can carry migrates to zstd."""
     doc = _docling_doc()
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
-        await _make_v4_documents_table(store)
-        await store.documents_table.add(
+        await _seed_v4(
+            store,
             [
                 DocumentRecordV4(
                     id="doc-1",
@@ -121,7 +85,7 @@ async def test_migrates_every_v0_25_0_blob_encoding(temp_db_path, encode):
                     created_at="2026-01-01",
                     updated_at="2026-01-02",
                 )
-            ]
+            ],
         )
 
         await _apply_split_pages_zstd(store)
@@ -143,8 +107,8 @@ async def test_migrates_every_v0_25_0_blob_encoding(temp_db_path, encode):
 @pytest.mark.asyncio
 async def test_document_without_pages_gets_null_pages_column(temp_db_path):
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
-        await _make_v4_documents_table(store)
-        await store.documents_table.add(
+        await _seed_v4(
+            store,
             [
                 DocumentRecordV4(
                     id="doc-1",
@@ -154,7 +118,7 @@ async def test_document_without_pages_gets_null_pages_column(temp_db_path):
                     ),
                 ),
                 DocumentRecordV4(id="doc-2", content="no blob"),
-            ]
+            ],
         )
 
         await _apply_split_pages_zstd(store)
@@ -172,8 +136,8 @@ async def test_document_without_pages_gets_null_pages_column(temp_db_path):
 async def test_migrates_batches_larger_than_batch_size(temp_db_path):
     """BATCH_SIZE is 5; the staging round-trip must carry every document."""
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
-        await _make_v4_documents_table(store)
-        await store.documents_table.add(
+        await _seed_v4(
+            store,
             [
                 DocumentRecordV4(
                     id=f"doc-{n}",
@@ -183,7 +147,7 @@ async def test_migrates_batches_larger_than_batch_size(temp_db_path):
                     ),
                 )
                 for n in range(12)
-            ]
+            ],
         )
 
         await _apply_split_pages_zstd(store)
@@ -201,8 +165,10 @@ async def test_migrates_batches_larger_than_batch_size(temp_db_path):
 async def test_stale_staging_table_is_replaced(temp_db_path):
     """A staging table left by an interrupted run is dropped, not appended to."""
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
-        await _make_v4_documents_table(store)
-        await store.db.create_table(STAGING, schema=_v4_schema())
+        await _seed_v4(store, [])
+        await store.db.create_table(
+            STAGING, schema=documents_schema(LegacyDocumentRecord)
+        )
         await store.documents_table.add(
             [
                 DocumentRecordV4(
@@ -232,8 +198,10 @@ async def test_recovers_documents_from_staging_when_documents_table_is_empty(
     structure = compress_json(json.dumps(doc))
 
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
-        await _make_v4_documents_table(store)
-        staging = await store.db.create_table(STAGING, schema=_v5_schema())
+        await _seed_v4(store, [])
+        staging = await store.db.create_table(
+            STAGING, schema=documents_schema(LegacyDocumentRecord)
+        )
         await staging.add(
             [
                 {
@@ -276,8 +244,10 @@ async def test_unreadable_documents_table_falls_back_to_staging(
         return original(self)
 
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
-        await _make_v4_documents_table(store)
-        staging = await store.db.create_table(STAGING, schema=_v5_schema())
+        await _seed_v4(store, [])
+        staging = await store.db.create_table(
+            STAGING, schema=documents_schema(LegacyDocumentRecord)
+        )
         await staging.add(
             [
                 {
@@ -308,7 +278,7 @@ async def test_unreadable_documents_table_falls_back_to_staging(
 @pytest.mark.asyncio
 async def test_empty_database_is_rebuilt_on_the_new_schema(temp_db_path):
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
-        await _make_v4_documents_table(store)
+        await _seed_v4(store, [])
 
         await _apply_split_pages_zstd(store)
 
@@ -320,8 +290,10 @@ async def test_empty_database_is_rebuilt_on_the_new_schema(temp_db_path):
 @pytest.mark.asyncio
 async def test_empty_staging_table_is_not_mistaken_for_recovery(temp_db_path):
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
-        await _make_v4_documents_table(store)
-        await store.db.create_table(STAGING, schema=_v5_schema())
+        await _seed_v4(store, [])
+        await store.db.create_table(
+            STAGING, schema=documents_schema(LegacyDocumentRecord)
+        )
 
         await _apply_split_pages_zstd(store)
 
