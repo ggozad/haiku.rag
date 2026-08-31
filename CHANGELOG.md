@@ -7,6 +7,11 @@
 - `docs/configuration/storage.md` "Vector Indexing" carries the measured with/without IVF_PQ retrieval comparison; `docs/benchmarks.md` states the published numbers are measured without a vector index.
 - Re-indexing note corrected: `optimize()` adds new chunks to an existing vector index, a rebuild retrains centroids.
 
+### Fixed
+
+- Cross-database fusion without a reranker breaks rank ties by retrieval
+  score instead of database declaration order.
+
 ## [0.80.0] - 2026-08-31
 
 ### Changed
