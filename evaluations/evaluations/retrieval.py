@@ -24,6 +24,7 @@ async def run_retrieval_benchmark(
     db_path: Path | None = None,
     multimodal_only: bool = False,
     document_filter: str | None = None,
+    retrieval_limit: int | None = None,
 ) -> dict[str, float] | None:
     if spec.retrieval_loader is None or spec.retrieval_mapper is None:
         console.print("Skipping retrieval benchmark; no retrieval config.")
@@ -72,6 +73,7 @@ async def run_retrieval_benchmark(
         evaluators=list(spec.retrieval_evaluators),
     )
 
+    fetch = retrieval_limit or spec.retrieval_limit
     db = (
         None
         if spec.uses_configured_databases(config, db_path)
@@ -82,7 +84,7 @@ async def run_retrieval_benchmark(
         async def retrieval_target(question: str) -> list[str]:
             chunks = await rag.search(
                 query=question,
-                limit=spec.retrieval_limit,
+                limit=fetch,
                 include_images=False,
                 filter=document_filter,
             )

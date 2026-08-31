@@ -17,6 +17,22 @@ from evaluations.datasets.mtrag_federated import (
 )
 
 
+def _smoke_config():
+    """A config placing two databases, so the run resolves a federated client."""
+    from haiku.rag.config.models import AppConfig
+
+    return AppConfig.model_validate(
+        {
+            "lancedb": {
+                "databases": {
+                    "clapnq_0": "/tmp/a.lancedb",
+                    "clapnq_1": "/tmp/b.lancedb",
+                }
+            }
+        }
+    )
+
+
 def record(passage_id: str, title: str) -> dict[str, str]:
     return {"_id": passage_id, "title": title, "text": f"text of {passage_id}"}
 
@@ -193,3 +209,42 @@ class TestPoolComposition:
 
     def test_the_default_budget_clears_the_gold_floor(self) -> None:
         assert DEFAULT_BUDGET > GOLD_TITLE_FLOOR
+
+
+class TestRetrievalLimitOverride:
+    async def test_override_replaces_the_spec_value(self, monkeypatch) -> None:
+        """Fetch depth is a run knob: hybrid search degenerates below roughly 50
+        candidates, so every regime would otherwise need its own dataset."""
+        seen: list[int | None] = []
+
+        async def fake_search(self, query, limit=None, **kwargs):  # noqa: ANN001
+            seen.append(limit)
+            return []
+
+        from haiku.rag.client import HaikuRAG
+
+        monkeypatch.setattr(HaikuRAG, "search", fake_search)
+        from evaluations.retrieval import run_retrieval_benchmark
+
+        await run_retrieval_benchmark(
+            MTRAG_FEDERATED_SPEC,
+            _smoke_config(),
+            limit=1,
+            retrieval_limit=77,
+        )
+        assert seen and set(seen) == {77}
+
+    async def test_spec_value_is_the_default(self, monkeypatch) -> None:
+        seen: list[int | None] = []
+
+        async def fake_search(self, query, limit=None, **kwargs):  # noqa: ANN001
+            seen.append(limit)
+            return []
+
+        from haiku.rag.client import HaikuRAG
+
+        monkeypatch.setattr(HaikuRAG, "search", fake_search)
+        from evaluations.retrieval import run_retrieval_benchmark
+
+        await run_retrieval_benchmark(MTRAG_FEDERATED_SPEC, _smoke_config(), limit=1)
+        assert seen and set(seen) == {MTRAG_FEDERATED_SPEC.retrieval_limit}
