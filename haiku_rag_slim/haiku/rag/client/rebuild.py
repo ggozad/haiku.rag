@@ -499,12 +499,12 @@ async def _rebuild_embed_only(
 
         if len(yielded_docs) % _REBUILD_BATCH_SIZE == 0 and pending_records:
             await session.store.chunks_table.add(pending_records)
+            await ensure_indexes(session.store.chunks_table, "chunks")
             pending_records = []
 
     if pending_records:
         await session.store.chunks_table.add(pending_records)
-
-    await ensure_indexes(session.store.chunks_table, "chunks")
+        await ensure_indexes(session.store.chunks_table, "chunks")
 
     # Phase 2 finished. Drop the recovery state — marker first so a crash
     # between the two drops leaves only staging behind, which the next

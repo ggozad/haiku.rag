@@ -341,6 +341,55 @@ async def test_rebuild_non_embed_mode_drops_staging_recovery_state(
         assert "chunks_rebuild_marker" not in tables
 
 
+async def test_rebuild_embed_only_covers_the_index_from_the_first_flush(
+    temp_db_path, monkeypatch
+):
+    """A rebuild abandoned after a flushed batch leaves the FTS index
+    covering the flushed rows."""
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
+    from haiku.rag import embeddings as embeddings_module
+    from haiku.rag.client import rebuild as rebuild_module
+    from haiku.rag.config import get_config
+    from haiku.rag.store.models.chunk import Chunk
+
+    monkeypatch.setattr(rebuild_module, "_REBUILD_BATCH_SIZE", 1)
+
+    async def keep_embeddings(chunks, embedder, config=None):
+        for chunk in chunks:
+            if chunk.embedding is None:
+                chunk.embedding = [0.1] * embedder.vector_dim
+        return chunks
+
+    monkeypatch.setattr(embeddings_module, "embed_chunks", keep_embeddings)
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        dim = get_config().embeddings.model.vector_dim
+        for name in ("one", "two"):
+            doc = DoclingDocument(name=name)
+            doc.add_text(label=DocItemLabel.TEXT, text=f"document {name}")
+            await client.import_document(
+                doc,
+                [Chunk(content=f"document {name}", embedding=[0.1] * dim, order=0)],
+                uri=f"test://{name}",
+            )
+
+        rebuild = client.rebuild_database(mode=RebuildMode.EMBED_ONLY)
+        await anext(rebuild)
+        await anext(rebuild)
+        await rebuild.aclose()
+
+        fts = [
+            index
+            for index in await client.store.chunks_table.list_indices()
+            if index.index_type == "FTS"
+        ]
+        assert len(fts) == 1
+        stats = await client.store.chunks_table.index_stats(fts[0].name)
+        assert stats.num_indexed_rows > 0
+
+
 @pytest.mark.vcr()
 async def test_rebuild_embed_only_skips_unchanged(
     qa_corpus: list[dict[str, str]], temp_db_path

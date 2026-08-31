@@ -1,6 +1,6 @@
 import pyarrow as pa
 import pytest
-from lancedb.index import BTree
+from lancedb.index import FTS, BTree
 
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models import Chunk, Document
@@ -27,10 +27,12 @@ async def _fts_indexed_rows(table) -> int | None:
     return None
 
 
-async def _add_chunk(store, content: str = "a chunk about gardens") -> None:
+async def _add_chunk(
+    store, content: str = "a chunk about gardens", document_id: str = "doc-1"
+) -> None:
     await ChunkRepository(store).create(
         Chunk(
-            document_id="doc-1",
+            document_id=document_id,
             content=content,
             embedding=[0.1] * store.embedder.vector_dim,
             order=0,
@@ -252,3 +254,89 @@ async def test_delete_all_then_write_rebuilds_a_covering_fts_index(temp_db_path)
         await _add_chunk(store)
 
         assert await _fts_indexed_rows(store.chunks_table) == 1
+
+
+@pytest.mark.asyncio
+async def test_deleting_the_indexed_rows_rebuilds_the_fts_index(temp_db_path):
+    """Deleting every row the index covers, while unindexed rows remain,
+    reaches the zero-coverage scan path; the delete repairs it."""
+    async with Store(temp_db_path, create=True) as store:
+        await _add_chunk(store, "first", document_id="doc-a")
+        await _add_chunk(store, "second", document_id="doc-b")
+        assert await _fts_indexed_rows(store.chunks_table) == 1
+
+        await ChunkRepository(store).delete_by_document_id("doc-a")
+
+        assert await store.chunks_table.count_rows() == 1
+        assert await _fts_indexed_rows(store.chunks_table) == 1
+
+
+@pytest.mark.asyncio
+async def test_replacing_the_indexed_rows_rebuilds_the_fts_index(temp_db_path):
+    """Replacement rewrites rows, and rewritten rows are unindexed."""
+    async with Store(temp_db_path, create=True) as store:
+        await _add_chunk(store, "first", document_id="doc-a")
+        await _add_chunk(store, "second", document_id="doc-b")
+
+        await ChunkRepository(store).replace_for_document(
+            "doc-a",
+            [
+                Chunk(
+                    document_id="doc-a",
+                    content="rewritten",
+                    embedding=[0.1] * store.embedder.vector_dim,
+                    order=0,
+                )
+            ],
+        )
+
+        assert await _fts_indexed_rows(store.chunks_table) == 2
+
+
+@pytest.mark.asyncio
+async def test_a_write_repairs_a_legacy_index_that_covers_no_rows(temp_db_path):
+    """A database whose FTS index predates its rows is repaired by the first
+    write that runs index maintenance."""
+    async with Store(temp_db_path, create=True) as store:
+        await store.chunks_table.create_index(
+            "content_fts", config=FTS(with_position=True, remove_stop_words=False)
+        )
+        await store.chunks_table.add(
+            [
+                store.ChunkRecord(
+                    document_id="doc-a",
+                    content="a legacy chunk",
+                    content_fts="a legacy chunk",
+                    metadata="{}",
+                    order=0,
+                    vector=[0.1] * store.embedder.vector_dim,
+                )
+            ]
+        )
+        assert await _fts_indexed_rows(store.chunks_table) == 0
+
+        await _add_chunk(store, "second", document_id="doc-b")
+
+        assert await _fts_indexed_rows(store.chunks_table) == 2
+
+
+@pytest.mark.asyncio
+async def test_unavailable_index_stats_repair_matches_doctor(temp_db_path, monkeypatch):
+    """index_stats may return None; doctor treats that as uncovered, so the
+    write-path repair does too."""
+    from lancedb.table import AsyncTable
+
+    async with Store(temp_db_path, create=True) as store:
+        await _add_chunk(store)
+
+        original = AsyncTable.index_stats
+
+        async def no_stats(self, name):
+            if self.name == "chunks":
+                return None
+            return await original(self, name)
+
+        monkeypatch.setattr(AsyncTable, "index_stats", no_stats)
+        applied = await ensure_indexes(store.chunks_table, "chunks")
+
+        assert applied == ["content_fts"]

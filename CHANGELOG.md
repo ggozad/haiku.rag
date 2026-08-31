@@ -16,9 +16,9 @@
 
 ### Fixed
 
-- FTS and hybrid search on a database whose FTS index covers no rows. The index
-  is now built on the first chunk write; `haiku-rag vacuum` repairs existing
-  databases.
+- FTS and hybrid search on a database whose FTS index covers no rows. Chunk
+  writes now build the index and rebuild it if it covers none; `haiku-rag
+  vacuum` also repairs it.
 - Migration to 0.38.0 no longer fails with `UnicodeDecodeError` on a
   `docling_document` blob written as zstd.
 - Vector search sets `search.vector_index_metric` on every query.

@@ -161,18 +161,32 @@ async def ensure_indexes(table: lancedb.AsyncTable, table_name: str) -> list[str
 
     Matches on index type, not column coverage, so a BTree does not satisfy a
     declared Bitmap. Never drops or converts an index it did not declare.
-    Re-creating is not free: `create_index(replace=True)` rebuilds.
+    Re-creating is not free: `create_index(replace=True)` rebuilds. A declared
+    FTS index covering no rows of a populated table is rebuilt in place: it
+    serves the same broken scan path as a missing one.
     """
     covering: dict[str, set[str]] = {}
+    fts_names: dict[str, str] = {}
     for index in await table.list_indices():
         for column in index.columns:
             covering.setdefault(column, set()).add(index.index_type)
+            if index.index_type == "FTS":
+                fts_names.setdefault(column, index.name)
 
     applied: list[str] = []
     for column, config in index_specs(table_name):
         declared = type(config).__name__
         present = covering.get(column, set())
         if declared in present:
+            if isinstance(config, FTS):
+                stats = await table.index_stats(fts_names[column])
+                if (
+                    stats is None or stats.num_indexed_rows == 0
+                ) and await table.count_rows():
+                    await table.create_index(
+                        column, config=config, replace=True, name=fts_names[column]
+                    )
+                    applied.append(column)
             continue
         # lance indexes nothing when the table is empty and never catches an
         # FTS index up on add: the scan path it then serves returns results

@@ -271,7 +271,7 @@ async def _check_fts_coverage(store: Store) -> CheckResult:
     return CheckResult(
         name="fts_index_coverage",
         severity=Severity.OK,
-        message="Full-text search indexes cover their tables.",
+        message="Full-text search indexes are present and cover rows.",
     )
 
 

@@ -498,6 +498,22 @@ async def _import_one(client) -> None:
     )
 
 
+async def _add_legacy_row(client) -> None:
+    """A row written without index maintenance, as older releases wrote them."""
+    await client.store.chunks_table.add(
+        [
+            client.store.ChunkRecord(
+                document_id="doc-legacy",
+                content="a document about gardens",
+                content_fts="a document about gardens",
+                metadata="{}",
+                order=0,
+                vector=[0.1] * get_config().embeddings.model.vector_dim,
+            )
+        ]
+    )
+
+
 async def test_fts_search_warns_when_index_covers_no_rows(temp_db_path):
     """A database whose FTS index predates its rows covers none of them;
     searching that state warns, once."""
@@ -513,7 +529,7 @@ async def test_fts_search_warns_when_index_covers_no_rows(temp_db_path):
         await client.store.chunks_table.create_index(
             "content_fts", config=FTS(with_position=True, remove_stop_words=False)
         )
-        await _import_one(client)
+        await _add_legacy_row(client)
 
         with capture_logs(chunk_module.logger, logging.WARNING) as records:
             await client.chunk_repository.search("gardens", search_type="fts")
@@ -638,7 +654,7 @@ async def test_fts_search_on_an_empty_table_does_not_suppress_later_warnings(
             "content_fts", config=FTS(with_position=True, remove_stop_words=False)
         )
         await client.chunk_repository.search("gardens", search_type="fts")
-        await _import_one(client)
+        await _add_legacy_row(client)
 
         with capture_logs(chunk_module.logger, logging.WARNING) as records:
             await client.chunk_repository.search("gardens", search_type="fts")

@@ -230,6 +230,7 @@ class ChunkRepository:
             return False
 
         await self.store.chunks_table.delete(f"document_id = '{document_id}'")
+        await ensure_indexes(self.store.chunks_table, "chunks")
         return True
 
     async def search(
