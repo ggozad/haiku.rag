@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.80.0] - 2026-08-31
+
 ### Changed
 
 - lancedb 0.37.1.
@@ -2291,7 +2293,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.79.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.80.0...HEAD
+[0.80.0]: https://github.com/ggozad/haiku.rag/compare/0.79.0...0.80.0
 [0.79.0]: https://github.com/ggozad/haiku.rag/compare/0.78.0...0.79.0
 [0.78.0]: https://github.com/ggozad/haiku.rag/compare/0.77.0...0.78.0
 [0.77.0]: https://github.com/ggozad/haiku.rag/compare/0.77.0...0.77.0
