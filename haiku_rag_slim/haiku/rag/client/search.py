@@ -71,7 +71,7 @@ async def search(
 async def search_sources(
     client: "HaikuRAG",
     query: "str | bytes | PILImage.Image",
-    limit: int | None = None,
+    limit: int,
     search_type: SearchType | None = None,
     filter: str | None = None,
     include_images: bool = True,
@@ -83,9 +83,6 @@ async def search_sources(
     the database each came from, so its cost is that of a single-database
     search.
     """
-    if limit is None:
-        limit = client._config.search.limit
-
     names = list(client.source_names) if sources is None else list(sources)
     if not names:
         return []
