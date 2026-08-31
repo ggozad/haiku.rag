@@ -470,10 +470,13 @@ async def build_pooled_databases(
     by_domain: dict[str, int] = {}
     for row in pool:
         by_domain[row["domain"]] = by_domain.get(row["domain"], 0) + 1
-    gold_side, distractors = pool_composition(pool, pooled_gold_ids())
+    # Passage level, not `pool_composition`: that counts gold-bearing titles,
+    # which is meaningless here since cloud and fiqa have one empty title each.
+    gold = pooled_gold_ids()
+    gold_kept = sum(1 for row in pool if row["_id"] in gold)
     print(
-        f"pool: {len(pool)} passages, {gold_side} in gold-bearing titles, "
-        f"{distractors} distractors, by domain {by_domain}"
+        f"pool: {len(pool)} passages, {gold_kept} gold, "
+        f"{len(pool) - gold_kept} distractors, by domain {by_domain}"
     )
     grouped = partition_pooled(pool, n, alpha, seed)
     written: dict[str, int] = {}
