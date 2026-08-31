@@ -7,6 +7,11 @@
 - `sources` on `create_capability` and `from_spec` for the RAG and analysis
   capabilities, naming the configured databases the capability covers. Refused
   beside `db_path` or `rag=` with `AmbiguousDatabaseError`.
+- `storage.compaction_target_bytes` (default 2 GiB): target size for the fragments compaction writes on the tables holding docling blobs.
+
+### Changed
+
+- `Store.vacuum` compacts `documents` and `document_items` through `lance` with a fragment target derived from `compaction_target_bytes`, instead of `AsyncTable.optimize`. The other tables are unchanged. New dependency: `pylance`.
 
 ### Fixed
 
