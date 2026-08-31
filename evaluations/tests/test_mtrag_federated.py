@@ -7,8 +7,10 @@ import pytest
 from evaluations.datasets import DATASETS
 from evaluations.datasets.mtrag_federated import (
     DEFAULT_BUDGET,
+    FTSIndexNotCoveringRows,
     GOLD_TITLE_FLOOR,
     MTRAG_FEDERATED_SPEC,
+    assert_fts_covers_rows,
     collection_names,
     collection_of,
     partition_records,
@@ -248,3 +250,49 @@ class TestRetrievalLimitOverride:
 
         await run_retrieval_benchmark(MTRAG_FEDERATED_SPEC, _smoke_config(), limit=1)
         assert seen and set(seen) == {MTRAG_FEDERATED_SPEC.retrieval_limit}
+
+
+class TestFTSCoverageAssertion:
+    """The chunks FTS index is built once over zero rows and only an optimize
+    folds later rows in, so a build that skips it ships dead full-text search
+    that still returns results."""
+
+    class _Index:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+    class _Stats:
+        def __init__(self, indexed: int) -> None:
+            self.num_indexed_rows = indexed
+
+    class _Table:
+        def __init__(self, rows: int, indexed: int | None) -> None:
+            self._rows = rows
+            self._indexed = indexed
+
+        async def count_rows(self) -> int:
+            return self._rows
+
+        async def list_indices(self):
+            if self._indexed is None:
+                return []
+            return [TestFTSCoverageAssertion._Index("content_fts_idx")]
+
+        async def index_stats(self, name: str):
+            assert name == "content_fts_idx"
+            return TestFTSCoverageAssertion._Stats(self._indexed or 0)
+
+    async def test_passes_when_the_index_covers_every_row(self) -> None:
+        await assert_fts_covers_rows(self._Table(100, 100), "clapnq_0")
+
+    async def test_rejects_a_zero_row_index(self) -> None:
+        with pytest.raises(FTSIndexNotCoveringRows, match="covers 0 of 100"):
+            await assert_fts_covers_rows(self._Table(100, 0), "clapnq_0")
+
+    async def test_rejects_a_partially_covering_index(self) -> None:
+        with pytest.raises(FTSIndexNotCoveringRows, match="covers 60 of 100"):
+            await assert_fts_covers_rows(self._Table(100, 60), "clapnq_0")
+
+    async def test_rejects_a_missing_index(self) -> None:
+        with pytest.raises(FTSIndexNotCoveringRows, match="no content_fts_idx"):
+            await assert_fts_covers_rows(self._Table(100, None), "clapnq_0")
