@@ -31,7 +31,8 @@
   vacuum` also repairs it.
 - Migration to 0.38.0 no longer fails with `UnicodeDecodeError` on a
   `docling_document` blob written as zstd.
-- Vector search sets `search.vector_index_metric` on every query.
+- Cross-database fusion without a reranker breaks rank ties by retrieval
+  score instead of database declaration order.
 
 ## [0.79.0] - 2026-08-28
 
