@@ -329,6 +329,7 @@ Checks include:
 - the configured embedding identity matches the stored settings
 - no database migrations are pending
 - the vector index covers all chunks
+- the full-text index covers the chunks it searches
 - near-identical documents (by embedding-centroid similarity) are grouped and reported, with the largest member flagged as the likely one to keep (advisory only, never deleted, tuned via `doctor.duplicates` in config)
 - API keys are set for configured providers
 
@@ -340,7 +341,7 @@ It also probes the external endpoints the config uses and reports them under a P
 
 SaaS providers (OpenAI, Anthropic, Cohere, Jina, ZeroEntropy, Voyage) are covered by the API-key check rather than a network probe. In-process local models (sentence-transformers, cross-encoder, jina-local) have no endpoint and are reported as such.
 
-Each failure prints the command that fixes it (`rebuild`, `create-index`, `migrate`, `rebuild --set-embedder`). `doctor` makes no changes. It exits with status 1 when any check fails, so it can gate CI or monitoring.
+Each failure prints the command that fixes it (`rebuild`, `create-index`, `vacuum`, `migrate`, `rebuild --set-embedder`). `doctor` makes no changes. It exits with status 1 when any check fails, so it can gate CI or monitoring.
 
 ### Migrate Database
 

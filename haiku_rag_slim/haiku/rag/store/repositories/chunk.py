@@ -6,7 +6,6 @@ from uuid import uuid4
 if TYPE_CHECKING:
     from lancedb.query import AsyncQueryBase
 
-from lancedb.index import FTS
 from lancedb.rerankers import RRFReranker
 
 from haiku.rag.store.engine import Store
@@ -23,17 +22,49 @@ class ChunkRepository:
     def __init__(self, store: Store) -> None:
         self.store = store
         self.embedder = store.embedder
+        self._fts_coverage_checked = False
 
-    async def _ensure_fts_index(self) -> None:
-        """Ensure FTS index exists on the content_fts column."""
+    async def _warn_if_fts_uncovered(self) -> None:
+        """An FTS index covering no rows makes lance serve a broken scan path:
+        results unsorted by score, with matching documents dropped. Checked
+        on the first search that uses the index, once per repository after
+        the table holds rows."""
+        if self._fts_coverage_checked:
+            return
         try:
-            await self.store.chunks_table.create_index(
-                "content_fts",
-                config=FTS(with_position=True, remove_stop_words=False),
-                replace=True,
+            indices = await self.store.chunks_table.list_indices()
+            index = next(
+                (
+                    i
+                    for i in indices
+                    if "content_fts" in i.columns and i.index_type == "FTS"
+                ),
+                None,
             )
-        except Exception as e:
-            logger.warning(f"FTS index build failed; full-text search degraded: {e}")
+            stats = (
+                await self.store.chunks_table.index_stats(index.name) if index else None
+            )
+            if stats is not None and stats.num_indexed_rows > 0:
+                self._fts_coverage_checked = True
+                return
+            # An empty table proves nothing; check again once it has rows.
+            if not await self.store.chunks_table.count_rows():
+                return
+        except Exception:
+            self._fts_coverage_checked = True
+            logger.debug("FTS coverage check failed", exc_info=True)
+            return
+        self._fts_coverage_checked = True
+        if index is None:
+            logger.warning(
+                "No full-text search index; FTS and hybrid results are "
+                "degraded. Run 'haiku-rag rebuild --embed-only'."
+            )
+            return
+        logger.warning(
+            "Full-text search index covers 0 rows; FTS and hybrid results "
+            "are degraded. Run 'haiku-rag vacuum'."
+        )
 
     def _contextualize_content(self, chunk: Chunk) -> str:
         """Generate contextualized content for FTS by prepending headings."""
@@ -239,6 +270,9 @@ class ChunkRepository:
                 return []
             id_list = ", ".join(f"'{d}'" for d in docs_df["id"])
             chunk_filter = f"document_id IN ({id_list})"
+
+        if search_type != "vector" and query.strip():
+            await self._warn_if_fts_uncovered()
 
         if search_type == "fts":
             results = self.store.chunks_table.query().nearest_to_text(

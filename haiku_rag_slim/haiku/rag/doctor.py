@@ -17,7 +17,7 @@ from haiku.rag.config.models import (
 )
 from haiku.rag.store.engine import Store, connect_lancedb
 from haiku.rag.store.info import get_database_stats
-from haiku.rag.store.schema import REQUIRED_TABLES
+from haiku.rag.store.schema import REQUIRED_TABLES, index_specs
 from haiku.rag.store.upgrades import get_pending_upgrades
 
 # Cap how many offending ids we collect per check; doctor is a summary, not a dump.
@@ -223,6 +223,56 @@ def _classify_unchunked(
             )
         )
     return results
+
+
+async def _check_fts_coverage(store: Store) -> CheckResult:
+    """An FTS index that covers no rows, and a populated table with no FTS
+    index at all, both make lance serve results unsorted by score with
+    matching rows dropped. optimize indexes the rows of an index that
+    exists; it never creates one that is absent."""
+    from lancedb.index import FTS
+
+    uncovered: list[str] = []
+    missing: list[str] = []
+    for table_name, table in store._tables().items():
+        declared = [c for c, cfg in index_specs(table_name) if isinstance(cfg, FTS)]
+        if not declared:
+            continue
+        rows = await table.count_rows()
+        if not rows:
+            continue
+        indices = await table.list_indices()
+        for column in declared:
+            index = next(
+                (i for i in indices if column in i.columns and i.index_type == "FTS"),
+                None,
+            )
+            if index is None:
+                missing.append(f"{table_name}.{column}: no index over {rows} rows")
+                continue
+            stats = await table.index_stats(index.name)
+            if stats is None or stats.num_indexed_rows == 0:
+                uncovered.append(f"{table_name}.{column}: 0 of {rows} rows indexed")
+    if missing or uncovered:
+        return CheckResult(
+            name="fts_index_coverage",
+            severity=Severity.FAIL,
+            message=(
+                "Full-text search index does not cover its rows; FTS and "
+                "hybrid results are unsorted and incomplete."
+            ),
+            remediation=(
+                "Run 'haiku-rag rebuild --embed-only' to build the index."
+                if missing
+                else "Run 'haiku-rag vacuum' to index the rows."
+            ),
+            details=missing + uncovered,
+        )
+    return CheckResult(
+        name="fts_index_coverage",
+        severity=Severity.OK,
+        message="Full-text search indexes cover their tables.",
+    )
 
 
 async def _column_values(table, column: str) -> list:
@@ -701,6 +751,9 @@ async def run_db_checks(
     for row in item_rows:
         self_refs_by_doc.setdefault(row["document_id"], set()).add(row["self_ref"])
         labels_by_doc.setdefault(row["document_id"], set()).add(row["label"])
+
+    notify("Checking index coverage")
+    results.append(await _check_fts_coverage(store))
 
     notify("Checking referential integrity")
     results.append(_check_document_meta_parity(doc_ids, meta_doc_ids))

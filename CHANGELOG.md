@@ -6,6 +6,8 @@
 
 - `--full-citations` on `haiku-rag ask` and `haiku-rag analyze` renders citation
   text untruncated. `format_citations_rich` takes a `full` argument.
+- `doctor` fails when the chunks FTS index covers no rows.
+- FTS and hybrid searches log a warning when the FTS index covers no rows.
 
 ### Removed
 

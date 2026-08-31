@@ -81,18 +81,25 @@ async def _build_db(
     name: str = "test",
     vector_dim: int = VECTOR_DIM,
     stored_vector_dim: int | None = None,
+    fts_index: str | None = "covering",
 ):
     """Create a consistent single-document database without touching an embedder.
 
     ``stored_vector_dim`` records a different dimension in settings than the
     chunks table actually uses, to exercise the vector-dimension check.
+    ``fts_index`` places the chunks FTS index: "covering" builds it over the
+    rows, "empty" builds it before them, None never builds it.
     """
+    from lancedb.index import FTS
+
     db = await lancedb.connect_async(path)
     settings_tbl = await db.create_table("settings", schema=SettingsRecord)
     docs_tbl = await db.create_table("documents", schema=DocumentRecord)
     meta_tbl = await db.create_table("document_meta", schema=DocumentMetaRecord)
     chunks_tbl = await db.create_table("chunks", schema=create_chunk_model(vector_dim))
     items_tbl = await db.create_table("document_items", schema=DocumentItemRecord)
+    if fts_index == "empty":
+        await chunks_tbl.create_index("content_fts", config=FTS())
 
     await settings_tbl.add(
         [
@@ -134,6 +141,8 @@ async def _build_db(
             )
         ]
     )
+    if fts_index == "covering":
+        await chunks_tbl.create_index("content_fts", config=FTS())
     return db
 
 
@@ -199,6 +208,41 @@ async def test_missing_table_fails_without_opening_store(temp_db_path):
     tables = _result(report, "tables_present")
     assert tables.severity is Severity.FAIL
     assert "documents" in tables.details
+
+
+@pytest.mark.asyncio
+async def test_missing_fts_index_fails(temp_db_path):
+    """optimize indexes the rows of an index that exists; it never creates a
+    missing one, so the remediation has to build it."""
+    await _build_db(temp_db_path, fts_index=None)
+    report = await run_doctor(_config(), temp_db_path, {})
+    result = _result(report, "fts_index_coverage")
+    assert result.severity is Severity.FAIL
+    assert "chunks.content_fts" in result.details[0]
+    assert "no index over 1 rows" in result.details[0]
+    assert "rebuild" in (result.remediation or "")
+    assert "vacuum" not in (result.remediation or "")
+    assert report.failed
+
+
+@pytest.mark.asyncio
+async def test_fts_index_covering_no_rows_fails(temp_db_path):
+    """The state a bulk write without a closing vacuum leaves behind."""
+    await _build_db(temp_db_path, fts_index="empty")
+    report = await run_doctor(_config(), temp_db_path, {})
+    result = _result(report, "fts_index_coverage")
+    assert result.severity is Severity.FAIL
+    assert "0 of 1 rows indexed" in result.details[0]
+    assert "vacuum" in (result.remediation or "")
+
+
+@pytest.mark.asyncio
+async def test_fts_coverage_passes_an_empty_table(temp_db_path):
+    db = await _build_db(temp_db_path)
+    chunks_tbl = await db.open_table("chunks")
+    await chunks_tbl.delete("id = 'c1'")
+    report = await run_doctor(_config(), temp_db_path, {})
+    assert _result(report, "fts_index_coverage").severity is Severity.OK
 
 
 @pytest.mark.asyncio
