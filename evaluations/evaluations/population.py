@@ -39,6 +39,9 @@ async def _ingest_batched(
         row["uri"]: row["id"] for row in uri_rows if row["id"] not in chunked_ids
     }
 
+    from haiku.rag.converters import get_converter
+
+    converter = get_converter(rag._config)
     batch: list[DocumentImport] = []
     for doc in corpus:
         payload = spec.document_mapper(cast(Mapping[str, Any], doc))
@@ -48,7 +51,13 @@ async def _ingest_batched(
         if payload.uri in chunkless:
             await rag.delete_document(chunkless[payload.uri])
         assert payload.content is not None, "batched ingest requires inline content"
-        docling_document = await rag.convert(payload.content, format=payload.format)
+        # Convert as text explicitly. `rag.convert` disambiguates a str by
+        # parsing it, and a passage beginning with a URL (187 of them across
+        # MTRAG's cloud and fiqa corpora) is then fetched over HTTP instead of
+        # stored. Batched ingest has already asserted the content is inline.
+        docling_document = await converter.convert_text(
+            payload.content, format=payload.format
+        )
         chunks = await rag.chunk(docling_document)
         batch.append(
             DocumentImport(
