@@ -7,7 +7,7 @@ import pyarrow as pa
 from lancedb.pydantic import LanceModel
 from pydantic import Field
 
-from haiku.rag.store.compression import compress_docling_split
+from haiku.rag.store.compression import compress_docling_split, decompress_json
 from haiku.rag.store.engine import Store
 from haiku.rag.store.upgrades import Upgrade
 
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 BATCH_SIZE = 5
 
 
-async def _apply_split_pages_zstd(store: Store) -> None:  # pragma: no cover
+async def _apply_split_pages_zstd(store: Store) -> None:
     """Split docling_document into structure + pages and re-compress with zstd."""
 
     class DocumentRecordV5(LanceModel):
@@ -44,18 +44,21 @@ async def _apply_split_pages_zstd(store: Store) -> None:  # pragma: no cover
         return pa.schema(fields)
 
     def migrate_row(row: dict) -> DocumentRecordV5:
-        """Migrate a single row: decompress gzip, split pages, re-compress with zstd."""
+        """Migrate a single row: decompress, split pages, re-compress with zstd."""
         docling_blob = row.get("docling_document")
         structure_bytes: bytes | None = None
         pages_bytes: bytes | None = None
 
         if docling_blob and isinstance(docling_blob, bytes):
-            # Decompress from gzip
+            # v0.25.0 blobs are gzip, zstd or uncompressed, depending on the
+            # version that wrote them.
             try:
                 json_str = gzip.decompress(docling_blob).decode("utf-8")
             except Exception:
-                # May already be zstd or uncompressed — try as-is
-                json_str = docling_blob.decode("utf-8")
+                try:
+                    json_str = decompress_json(docling_blob)
+                except Exception:
+                    json_str = docling_blob.decode("utf-8")
 
             # Split structure and pages, re-compress with zstd
             structure_bytes, pages_bytes = compress_docling_split(json.loads(json_str))
@@ -222,7 +225,7 @@ async def _apply_split_pages_zstd(store: Store) -> None:  # pragma: no cover
     for table in [store.documents_table, store.chunks_table, store.settings_table]:
         try:
             await table.optimize(cleanup_older_than=timedelta(seconds=0))
-        except Exception:
+        except Exception:  # pragma: no cover - vacuum failure must not fail migration
             pass
 
     logger.info("Migration complete")

@@ -232,5 +232,5 @@ async def _apply_compress_docling_document(store: Store) -> None:  # pragma: no 
 upgrade_compress_docling_document = Upgrade(
     version="0.25.0",
     apply=_apply_compress_docling_document,
-    description="Compress docling_document with gzip and use large_binary type",
+    description="Compress docling_document and use large_binary type",
 )

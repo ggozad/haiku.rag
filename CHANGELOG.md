@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Migration to 0.38.0 no longer fails with `UnicodeDecodeError` on a
+  `docling_document` blob written as zstd.
+
 ## [0.79.0] - 2026-08-28
 
 ### Changed
