@@ -7,12 +7,17 @@ import pytest
 from evaluations.datasets import DATASETS
 from evaluations.datasets.mtrag_federated import (
     DEFAULT_BUDGET,
+    DOMAINS,
     FTSIndexNotCoveringRows,
     GOLD_TITLE_FLOOR,
     MTRAG_FEDERATED_SPEC,
     assert_fts_covers_rows,
     collection_names,
     collection_of,
+    domain_files,
+    partition_pooled,
+    pooled_collection_names,
+    pooled_database_paths,
     partition_records,
     pool_composition,
     sample_records,
@@ -296,3 +301,123 @@ class TestFTSCoverageAssertion:
     async def test_rejects_a_missing_index(self) -> None:
         with pytest.raises(FTSIndexNotCoveringRows, match="no content_fts_idx"):
             await assert_fts_covers_rows(self._Table(100, None), "clapnq_0")
+
+
+class TestDomains:
+    def test_names_the_four_upstream_domains(self) -> None:
+        assert DOMAINS == ("clapnq", "cloud", "fiqa", "govt")
+
+    def test_paths_follow_the_upstream_layout(self) -> None:
+        assert domain_files("govt") == (
+            "corpora/passage_level/govt.jsonl.zip",
+            "mtrag-human/retrieval_tasks/govt/qrels/dev.tsv",
+            "mtrag-human/retrieval_tasks/govt/govt_lastturn.jsonl",
+        )
+
+
+class TestDomainPartition:
+    """With four real domains, alpha finally means something: 0 keeps a
+    collection to one topic, 1 shards titles across all of them."""
+
+    def test_alpha_zero_keeps_a_domain_together_when_n_matches(self) -> None:
+        for domain_index, domain in enumerate(DOMAINS):
+            assigned = {
+                collection_of(f"{domain} title {i}", 4, alpha=0.0, domain=domain)
+                for i in range(50)
+            }
+            assert assigned == {domain_index}
+
+    def test_alpha_zero_subdivides_within_a_domain_when_n_exceeds_it(self) -> None:
+        for domain_index, domain in enumerate(DOMAINS):
+            assigned = {
+                collection_of(f"{domain} title {i}", 8, alpha=0.0, domain=domain)
+                for i in range(200)
+            }
+            assert assigned == {domain_index * 2, domain_index * 2 + 1}
+
+    def test_alpha_zero_groups_domains_when_n_is_below_it(self) -> None:
+        assigned = {
+            (domain, collection_of(f"t{i}", 2, alpha=0.0, domain=domain))
+            for domain in DOMAINS
+            for i in range(20)
+        }
+        by_collection: dict[int, set[str]] = {}
+        for domain, collection in assigned:
+            by_collection.setdefault(collection, set()).add(domain)
+        assert set(by_collection) == {0, 1}
+        assert all(len(v) == 2 for v in by_collection.values())
+
+    def test_alpha_one_ignores_the_domain(self) -> None:
+        """The shard endpoint: a title's collection must not depend on its domain."""
+        titles = [f"title {i}" for i in range(200)]
+        as_clapnq = [collection_of(t, 8, alpha=1.0, domain="clapnq") for t in titles]
+        as_govt = [collection_of(t, 8, alpha=1.0, domain="govt") for t in titles]
+        assert as_clapnq == as_govt
+
+    def test_alpha_one_spreads_a_single_domain_across_every_collection(self) -> None:
+        assigned = {
+            collection_of(f"title {i}", 8, alpha=1.0, domain="clapnq")
+            for i in range(400)
+        }
+        assert assigned == set(range(8))
+
+    def test_intermediate_alpha_moves_some_titles_off_their_domain(self) -> None:
+        titles = [f"title {i}" for i in range(400)]
+        home = [collection_of(t, 4, alpha=0.0, domain="fiqa") for t in titles]
+        mixed = [collection_of(t, 4, alpha=0.5, domain="fiqa") for t in titles]
+        moved = sum(1 for a, b in zip(home, mixed) if a != b)
+        assert 0 < moved < len(titles), f"alpha=0.5 moved {moved} of {len(titles)}"
+
+    def test_default_alpha_is_the_domain_partition(self) -> None:
+        for domain in DOMAINS:
+            assert collection_of("t", 4, domain=domain) == collection_of(
+                "t", 4, alpha=0.0, domain=domain
+            )
+
+
+class TestPooledPartition:
+    def test_names_are_distinct_from_the_single_domain_set(self) -> None:
+        """The two datasets must never share database paths."""
+        assert not set(pooled_collection_names(4)) & set(collection_names(4))
+
+    def test_database_paths_separate_alpha_and_n(self) -> None:
+        a = pooled_database_paths(4, 0.0)
+        b = pooled_database_paths(4, 1.0)
+        c = pooled_database_paths(8, 0.0)
+        assert not set(a.values()) & set(b.values())
+        assert not set(a.values()) & set(c.values())
+
+    def test_routes_each_record_by_its_own_domain(self) -> None:
+        records = [
+            {
+                "_id": f"{domain}-{i}",
+                "title": f"{domain} t{i}",
+                "text": "x",
+                "domain": domain,
+            }
+            for domain in DOMAINS
+            for i in range(20)
+        ]
+        grouped = partition_pooled(records, 4, alpha=0.0)
+        for name, rows in grouped.items():
+            domains = {row["domain"] for row in rows}
+            assert len(domains) == 1, f"{name} mixes domains at alpha=0: {domains}"
+
+    def test_alpha_one_mixes_domains_in_every_collection(self) -> None:
+        records = [
+            {"_id": f"{domain}-{i}", "title": f"t{i}", "text": "x", "domain": domain}
+            for domain in DOMAINS
+            for i in range(60)
+        ]
+        grouped = partition_pooled(records, 4, alpha=1.0)
+        assert all(len({r["domain"] for r in rows}) > 1 for rows in grouped.values())
+
+    def test_keeps_every_record(self) -> None:
+        records = [
+            {"_id": f"{d}-{i}", "title": f"{d} t{i}", "text": "x", "domain": d}
+            for d in DOMAINS
+            for i in range(15)
+        ]
+        for alpha in (0.0, 0.5, 1.0):
+            grouped = partition_pooled(records, 8, alpha=alpha)
+            assert sum(len(v) for v in grouped.values()) == len(records)

@@ -1,7 +1,9 @@
 import argparse
 import asyncio
 import hashlib
+import json
 import random
+import zipfile
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -29,6 +31,8 @@ from haiku.rag.config.models import AppConfig
 from haiku.rag.utils import get_default_data_dir
 
 COLLECTION_PREFIX = "clapnq"
+# The four corpora MTRAG ships, in upstream order.
+DOMAINS = ("clapnq", "cloud", "fiqa", "govt")
 DEFAULT_SEED = 20260831
 # Whole titles are kept, and the 148 titles holding a gold passage carry 10,723
 # passages between them, so that is the floor. A budget near it leaves no
@@ -40,17 +44,66 @@ INGEST_BATCH_SIZE = 512
 FTS_INDEX_NAME = "content_fts_idx"
 
 
-def collection_of(title: str, n: int, seed: int = DEFAULT_SEED) -> int:
+def _hash_int(payload: str) -> int:
+    """sha256 rather than `hash()`, which is salted per process: the partition is
+    never stored, and scoring recomputes it in a different process than the one
+    that ingested."""
+    return int.from_bytes(hashlib.sha256(payload.encode()).digest()[:8], "big")
+
+
+def _unit(payload: str) -> float:
+    """A stable value in [0, 1) for probabilistic assignment."""
+    return (_hash_int(payload) % 10**9) / 10**9
+
+
+def domain_files(domain: str, variant: str = "lastturn") -> tuple[str, str, str]:
+    """Corpus, qrels and query paths for one MTRAG domain."""
+    return (
+        f"corpora/passage_level/{domain}.jsonl.zip",
+        f"mtrag-human/retrieval_tasks/{domain}/qrels/dev.tsv",
+        f"mtrag-human/retrieval_tasks/{domain}/{domain}_{variant}.jsonl",
+    )
+
+
+def _domain_collection(title: str, domain: str, n: int, seed: int) -> int:
+    """The collection a title takes from its domain.
+
+    Domains map onto collections proportionally: with more collections than
+    domains each domain is subdivided by title, with fewer, domains are grouped.
+    """
+    index = DOMAINS.index(domain)
+    count = len(DOMAINS)
+    if n >= count:
+        per = n // count
+        return index * per + (_hash_int(f"{seed}/sub/{title}") % per)
+    return index * n // count
+
+
+def collection_of(
+    title: str,
+    n: int,
+    seed: int = DEFAULT_SEED,
+    alpha: float = 0.0,
+    domain: str | None = None,
+) -> int:
     """Which of `n` collections holds a title's passages.
 
-    Keyed on the title, so an article's passages never split. sha256 rather than
-    `hash()`, which is salted per process: the partition is never stored, and
-    scoring recomputes it in a different process than the one that ingested.
+    Keyed on the title, so an article's passages never split.
+
+    Without a domain the assignment is a pure hash — a topically arbitrary
+    grouping of whole articles, which is all the quota and order-bias arms need.
+    With one, `alpha` interpolates between the domain partition (0, each
+    collection one topic) and a uniform shard (1, domain ignored). Sharding is
+    the endpoint of the knob rather than a rival design.
     """
     if n < 1:
         raise ValueError("a partition needs at least one collection")
-    digest = hashlib.sha256(f"{seed}/{title}".encode()).digest()
-    return int.from_bytes(digest[:8], "big") % n
+    shard = _hash_int(f"{seed}/{title}") % n
+    if domain is None or alpha >= 1.0:
+        return shard
+    if alpha > 0.0 and _unit(f"{seed}/alpha/{title}") < alpha:
+        return shard
+    return _domain_collection(title, domain, n, seed)
 
 
 def collection_names(n: int) -> tuple[str, ...]:
@@ -157,6 +210,115 @@ def load_pool(
     return sample_records(records, gold_passage_ids(), budget, seed)
 
 
+POOLED_PREFIX = "dom"
+
+
+class PassageIdCollision(AssertionError):
+    """Two domains claim the same passage id, so uri-keyed gold is ambiguous."""
+
+
+def pooled_collection_names(n: int) -> tuple[str, ...]:
+    """Names for the pooled partition, positional and distinct from the
+    single-domain set so the two never share database paths."""
+    return tuple(f"{POOLED_PREFIX}_{index}" for index in range(n))
+
+
+def pooled_database_paths(
+    n: int, alpha: float, seed: int = DEFAULT_SEED
+) -> dict[str, str]:
+    root = get_default_data_dir() / "evaluations" / "dbs"
+    tag = f"s{seed}_a{alpha:g}_n{n}"
+    return {
+        name: str(root / f"mtrag_pooled_{tag}_{index}.lancedb")
+        for index, name in enumerate(pooled_collection_names(n))
+    }
+
+
+def load_pooled_records() -> list[Mapping[str, Any]]:
+    """Every passage of all four domains, each tagged with the domain it came
+    from. Raises when two domains claim one passage id, since gold is uri-keyed.
+    """
+    from evaluations.datasets.mtrag import _download
+
+    records: list[Mapping[str, Any]] = []
+    seen: dict[str, str] = {}
+    for domain in DOMAINS:
+        corpus_file, _, _ = domain_files(domain)
+        path = _download(corpus_file)
+        with zipfile.ZipFile(path) as archive:
+            with archive.open(archive.namelist()[0]) as handle:
+                for line in handle:
+                    row = json.loads(line)
+                    passage_id = row["_id"]
+                    if passage_id in seen and seen[passage_id] != domain:
+                        raise PassageIdCollision(
+                            f"{passage_id} claimed by {seen[passage_id]} and {domain}"
+                        )
+                    seen[passage_id] = domain
+                    records.append(
+                        {
+                            "_id": passage_id,
+                            "title": row["title"],
+                            "text": row["text"],
+                            "domain": domain,
+                        }
+                    )
+    return records
+
+
+def load_pooled_queries(variant: str = "lastturn") -> list[dict[str, Any]]:
+    """Retrieval queries from every domain, each with its gold passage uris."""
+    from evaluations.datasets.mtrag import _download, _parse_qrels
+
+    out: list[dict[str, Any]] = []
+    for domain in DOMAINS:
+        _, qrels_file, query_file = domain_files(domain, variant)
+        qrels = _parse_qrels(_download(qrels_file).read_text().splitlines())
+        for line in _download(query_file).read_text().splitlines():
+            if not line.strip():
+                continue
+            query = json.loads(line)
+            expected = qrels.get(query["_id"])
+            if not expected:
+                continue
+            out.append(
+                {
+                    "query_id": f"{domain}/{query['_id']}",
+                    "question": query["text"],
+                    "expected_uris": expected,
+                    "domain": domain,
+                }
+            )
+    return out
+
+
+def pooled_gold_ids(variant: str = "lastturn") -> set[str]:
+    return {
+        uri for query in load_pooled_queries(variant) for uri in query["expected_uris"]
+    }
+
+
+def load_pooled(
+    budget: int = DEFAULT_BUDGET, seed: int = DEFAULT_SEED
+) -> list[Mapping[str, Any]]:
+    return sample_records(load_pooled_records(), pooled_gold_ids(), budget, seed)
+
+
+def partition_pooled(
+    records: Sequence[Mapping[str, Any]],
+    n: int,
+    alpha: float,
+    seed: int = DEFAULT_SEED,
+) -> dict[str, list[Mapping[str, Any]]]:
+    """Route pooled records to collections, honouring each record's domain."""
+    names = pooled_collection_names(n)
+    grouped: dict[str, list[Mapping[str, Any]]] = {name: [] for name in names}
+    for row in records:
+        index = collection_of(row["title"], n, seed, alpha=alpha, domain=row["domain"])
+        grouped[names[index]].append(row)
+    return grouped
+
+
 def _unused_document_loader() -> Dataset:
     raise RuntimeError(
         "the federated corpus is built by build_databases(); run with --skip-db"
@@ -244,6 +406,48 @@ async def build_databases(
     return written
 
 
+async def build_pooled_databases(
+    config: AppConfig,
+    n: int,
+    alpha: float,
+    seed: int = DEFAULT_SEED,
+    budget: int = DEFAULT_BUDGET,
+) -> dict[str, int]:
+    """Ingest the four-domain pooled partition, one database per collection."""
+    from haiku.rag.client import HaikuRAG
+
+    from evaluations.population import _ingest_batched
+
+    names = pooled_collection_names(n)
+    configured = set(config.lancedb.databases or {})
+    missing = sorted(set(names) - configured)
+    if missing:
+        raise ValueError(
+            f"lancedb.databases must place every collection; missing {missing}"
+        )
+
+    pool = load_pooled(budget, seed)
+    by_domain: dict[str, int] = {}
+    for row in pool:
+        by_domain[row["domain"]] = by_domain.get(row["domain"], 0) + 1
+    gold_side, distractors = pool_composition(pool, pooled_gold_ids())
+    print(
+        f"pool: {len(pool)} passages, {gold_side} in gold-bearing titles, "
+        f"{distractors} distractors, by domain {by_domain}"
+    )
+    grouped = partition_pooled(pool, n, alpha, seed)
+    written: dict[str, int] = {}
+    for name in names:
+        async with HaikuRAG(config=config, sources=[name], create=True) as client:
+            await _ingest_batched(
+                client, MTRAG_POOLED_SPEC, grouped[name], INGEST_BATCH_SIZE
+            )
+            await client.store.vacuum(retention_seconds=0)
+            await assert_fts_covers_rows(client.store.chunks_table, name)
+        written[name] = len(grouped[name])
+    return written
+
+
 MTRAG_FEDERATED_SPEC = DatasetSpec(
     key="mtrag_federated",
     # Never read: the run searches the configured set. Present because the spec
@@ -272,6 +476,27 @@ MTRAG_FEDERATED_SPEC = DatasetSpec(
 )
 
 
+MTRAG_POOLED_SPEC = DatasetSpec(
+    key="mtrag_pooled",
+    db_filename="mtrag_pooled_unused.lancedb",
+    document_loader=_unused_document_loader,
+    document_mapper=map_mtrag_document,
+    qa_loader=_unused_document_loader,
+    qa_case_builder=build_mtrag_case,
+    retrieval_loader=lambda: Dataset.from_list(load_pooled_queries("lastturn")),
+    retrieval_mapper=map_mtrag_retrieval,
+    retrieval_evaluators=[
+        RecallEvaluator(5),
+        RecallEvaluator(10),
+        NDCGEvaluator(5),
+        MAPEvaluator(),
+    ],
+    citation_evaluator=CitationMAPEvaluator(),
+    retrieval_limit=5,
+    ingest_batch_size=INGEST_BATCH_SIZE,
+)
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
@@ -284,6 +509,17 @@ async def main() -> None:
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--budget", type=int, default=DEFAULT_BUDGET)
     parser.add_argument(
+        "--pooled",
+        action="store_true",
+        help="build the four-domain pooled corpus instead of clapnq alone",
+    )
+    parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.0,
+        help="pooled only: 0 keeps a collection to one domain, 1 shards across all",
+    )
+    parser.add_argument(
         "--out",
         type=Path,
         required=True,
@@ -291,14 +527,26 @@ async def main() -> None:
     )
     args = parser.parse_args()
 
-    settings = emitted_config(args.config, args.n, args.seed)
+    if args.pooled:
+        settings = load_yaml_config(args.config)
+        lancedb = dict(settings.get("lancedb") or {})
+        lancedb.pop("uri", None)
+        lancedb["databases"] = pooled_database_paths(args.n, args.alpha, args.seed)
+        settings["lancedb"] = lancedb
+    else:
+        settings = emitted_config(args.config, args.n, args.seed)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(yaml.safe_dump(settings, sort_keys=False))
     print(f"wrote {args.out}")
 
     # Reload from disk, so the config that builds is the file that will search.
     config = AppConfig.model_validate(load_yaml_config(args.out))
-    written = await build_databases(config, args.n, args.seed, args.budget)
+    if args.pooled:
+        written = await build_pooled_databases(
+            config, args.n, args.alpha, args.seed, args.budget
+        )
+    else:
+        written = await build_databases(config, args.n, args.seed, args.budget)
     for name, count in written.items():
         print(f"{name}: {count} passages")
 

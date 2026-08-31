@@ -8,7 +8,7 @@ from .mtrag import (
     MTRAG_CLAPNQ_REWRITE_SPEC,
     MTRAG_CLAPNQ_SPEC,
 )
-from .mtrag_federated import MTRAG_FEDERATED_SPEC
+from .mtrag_federated import MTRAG_FEDERATED_SPEC, MTRAG_POOLED_SPEC
 from .open_rag_bench import (
     ORB_MULTIMODAL_NEMOTRON_SPEC,
     ORB_MULTIMODAL_SPEC,
@@ -26,6 +26,7 @@ DATASETS: dict[str, DatasetSpec] = {
         MTRAG_CLAPNQ_LIVE_SPEC,
         MTRAG_CLAPNQ_LIVE_UNCOMPACTED_SPEC,
         MTRAG_FEDERATED_SPEC,
+        MTRAG_POOLED_SPEC,
         ORB_TEXT_SPEC,
         ORB_MULTIMODAL_SPEC,
         ORB_MULTIMODAL_NEMOTRON_SPEC,
