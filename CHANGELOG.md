@@ -9,8 +9,9 @@
 
 ### Fixed
 
-- Cross-database fusion without a reranker breaks rank ties by retrieval
-  score instead of database declaration order.
+- Cross-database fusion without a reranker orders the union by retrieval
+  score, with within-database rank breaking ties, instead of round-robin by
+  database declaration order. Fused results carry the retrieval score.
 
 ## [0.80.0] - 2026-08-31
 
