@@ -863,3 +863,32 @@ async def test_process_search_results_rejects_unknown_score_column(temp_db_path)
 
         with pytest.raises(ValueError, match="Unknown search result format"):
             await client.chunk_repository._process_search_results(_Frame())
+
+
+@pytest.mark.parametrize("search_type", ["vector", "hybrid"])
+async def test_search_applies_configured_nprobes(
+    temp_db_path, monkeypatch, search_type
+):
+    """The configured probe count reaches the vector query."""
+    from lancedb.query import AsyncVectorQueryBase
+
+    probed: list[int] = []
+    original = AsyncVectorQueryBase.nprobes
+
+    def record(self, nprobes):
+        probed.append(nprobes)
+        return original(self, nprobes)
+
+    monkeypatch.setattr(AsyncVectorQueryBase, "nprobes", record)
+
+    config = get_config()
+    config.search.vector_nprobes = 7
+    async with HaikuRAG(db_path=temp_db_path, config=config, create=True) as client:
+        await _import_one(client)
+        await client.chunk_repository.search(
+            "gardens",
+            search_type=search_type,
+            query_vector=[0.1] * config.embeddings.model.vector_dim,
+        )
+
+    assert probed == [7]

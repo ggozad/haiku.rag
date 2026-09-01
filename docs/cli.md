@@ -402,15 +402,16 @@ haiku-rag create-index [--db /path/to/your.lancedb]
 - Creates an IVF_PQ index using the configured `search.vector_index_metric` (cosine/l2)
 
 **When to use:**
-- After ingesting documents (indexes are not created automatically)
-- After adding significant new data to rebuild the index
-- Use `haiku-rag info` to check index status and see how many chunks are indexed/unindexed
+- On a collection over 100,000 chunks (below that, brute-force kNN is exact and fast enough)
+- After substantial corpus growth, to retrain the centroids
+- Use `haiku-rag info` to check index status and see how many chunks are indexed/unindexed, or `haiku-rag doctor` for the same as a health check
+
+See [Vector Indexing](configuration/storage.md#vector-indexing) for the measured accuracy and build cost.
 
 **Search behavior:**
 - Without index: Brute-force kNN search (exact nearest neighbors, slower for large datasets)
-- With index: Fast ANN (approximate nearest neighbors) using IVF_PQ
-- With stale index: LanceDB combines indexed results (fast ANN) + brute-force kNN on unindexed rows
-- Performance degrades as more unindexed data accumulates
+- With index: ANN (approximate nearest neighbors) using IVF_PQ, tuned by `search.vector_nprobes`
+- Between a write and the next `optimize()`: LanceDB combines ANN over indexed rows with brute-force kNN over the remainder
 
 ### Rebuild Database
 

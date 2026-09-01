@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `search.vector_nprobes` (default 20) sets the IVF partitions each vector query searches.
+
 ### Documentation
 
 - `docs/configuration/storage.md` "Vector Indexing" carries the measured with/without IVF_PQ retrieval comparison; `docs/benchmarks.md` states the published numbers are measured without a vector index.
