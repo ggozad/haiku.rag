@@ -154,16 +154,16 @@ async def _fuse(
 
     A configured reranker scores the union directly, which is what makes ranking
     across databases tractable: it compares query against document and does not
-    care where a candidate came from. Without one, reciprocal rank fusion over the
-    per-database rankings, since scores from separate indexes are not comparable.
-    The corpora are disjoint, so every database's rank-r candidate carries the
-    same RRF score; those ties break on the raw retrieval score, which is not
-    calibrated across indexes but only ever orders candidates within one rank
-    and never lifts a candidate above another rank. A hybrid score is itself
-    rank-derived (each database fuses its own vector and FTS rankings with
-    lancedb's RRFReranker), so there the tiebreak compares rank agreement, not
-    relevance magnitude, and databases agreeing exactly still tie, resolving
-    deterministically to configured order.
+    care where a candidate came from. Without one, the union is ordered by the
+    raw retrieval score. Scores from separate indexes are not calibrated, but a
+    hybrid score is each database's own rank agreement (lancedb fuses vector and
+    FTS with RRF inside the database), which carries across databases; rank
+    interleaving instead guarantees every database slots regardless of content,
+    which on domain-split collections allocates no better than chance. Equal
+    scores resolve by within-database rank — the candidate nothing in its own
+    database beat wins — and only a tie on both falls to configured order. The
+    returned score is the candidate's own, so downstream re-sorts (context
+    expansion) preserve this order.
     """
     owned = [
         (client, chunk, score)
@@ -203,8 +203,8 @@ async def _fuse(
     for client, candidates in zip(clients, per_source, strict=True):
         for rank, (chunk, score) in enumerate(candidates):
             scored.append((1.0 / (_RRF_K + rank + 1), score, client, chunk))
-    scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
-    return [(client, chunk, fused) for fused, _, client, chunk in scored[:limit]]
+    scored.sort(key=lambda item: (item[1], item[0]), reverse=True)
+    return [(client, chunk, score) for _, score, client, chunk in scored[:limit]]
 
 
 # Reciprocal rank fusion's smoothing constant, the value the literature uses.

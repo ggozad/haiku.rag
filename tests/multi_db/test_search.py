@@ -473,9 +473,10 @@ class TestNarrowingToOneDatabase:
         assert results == []
 
 
-class TestReciprocalRankFusion:
-    """Without a reranker, scores from separate indexes are not comparable, so
-    fusion ranks by position. These pin what that produces."""
+class TestFusionWithoutAReranker:
+    """Without a reranker, the union is ordered by retrieval score; score ties
+    resolve by within-database rank, and only a tie on both falls to configured
+    order. These pin what that produces."""
 
     @staticmethod
     def _ranked(source: str, count: int, top: float) -> list[tuple[Chunk, float]]:
@@ -502,38 +503,46 @@ class TestReciprocalRankFusion:
         return [(owner.source, chunk.id, score) for owner, chunk, score in fused]
 
     @pytest.mark.asyncio
-    async def test_databases_interleave_by_rank(self, tmp_path):
-        """Each contributes its rank-1 before either contributes its rank-2."""
+    async def test_the_score_orders_the_union(self, tmp_path):
+        """A stronger database takes consecutive slots; breadth is not
+        guaranteed."""
         fused = await self._fuse_over(tmp_path, self._lopsided(3), 10)
 
         assert [(source, cid) for source, cid, _ in fused] == [
             ("alpha", "a0"),
-            ("beta", "b0"),
             ("alpha", "a1"),
-            ("beta", "b1"),
             ("alpha", "a2"),
+            ("beta", "b0"),
+            ("beta", "b1"),
             ("beta", "b2"),
         ]
 
     @pytest.mark.asyncio
-    async def test_the_score_is_the_reciprocal_of_the_rank(self, tmp_path):
+    async def test_the_score_is_the_retrieval_score(self, tmp_path):
+        """The fused score is the candidate's own, so re-sorting downstream
+        (context expansion) preserves the fused order."""
         fused = await self._fuse_over(tmp_path, self._lopsided(2), 10)
 
-        assert [score for _, _, score in fused] == [
-            1 / 61,
-            1 / 61,
-            1 / 62,
-            1 / 62,
-        ]
+        assert [score for _, _, score in fused] == [0.9, 0.89, 0.2, 0.19]
 
     @pytest.mark.asyncio
-    async def test_ranks_tie_and_the_retrieval_score_breaks_them(self, tmp_path):
-        """Every rank ties across databases, so the tiebreak decides all of it,
-        and it must be relevance, not the order databases were configured in."""
-        per_source = [self._ranked("a", 2, 0.2), self._ranked("b", 2, 0.9)]
+    async def test_score_ties_break_by_rank_within_the_database(self, tmp_path):
+        """Equal scores can sit at different ranks: rank depends on what the
+        rest of a database scored. The candidate nothing in its own database
+        beat wins the tie."""
+        per_source = [
+            [
+                (Chunk(id="a0", content="a 0"), 0.9),
+                (Chunk(id="a1", content="a 1"), 0.5),
+            ],
+            [
+                (Chunk(id="b0", content="b 0"), 0.5),
+                (Chunk(id="b1", content="b 1"), 0.3),
+            ],
+        ]
         fused = await self._fuse_over(tmp_path, per_source, 10)
 
-        assert [source for source, _, _ in fused] == ["beta", "alpha", "beta", "alpha"]
+        assert [cid for _, cid, _ in fused] == ["a0", "b0", "a1", "b1"]
 
     @pytest.mark.asyncio
     async def test_the_configured_order_does_not_matter(self, tmp_path):
@@ -561,12 +570,12 @@ class TestReciprocalRankFusion:
         assert [source for source, _, _ in fused] == ["alpha", "beta", "alpha", "beta"]
 
     @pytest.mark.asyncio
-    async def test_the_retrieval_score_never_overrides_the_rank(self, tmp_path):
-        """Raw scores are not calibrated across indexes, so a database with
-        inflated scores still contributes one candidate per rank."""
+    async def test_rank_never_overrides_the_score(self, tmp_path):
+        """A database's rank-2 with a higher score precedes another's rank-0:
+        allocation is content-driven, not round-robin."""
         fused = await self._fuse_over(tmp_path, self._lopsided(2), 10)
 
-        assert [cid for _, cid, _ in fused] == ["a0", "b0", "a1", "b1"]
+        assert [cid for _, cid, _ in fused] == ["a0", "a1", "b0", "b1"]
 
     @pytest.mark.asyncio
     async def test_the_limit_cuts_the_fused_list(self, tmp_path):
@@ -575,8 +584,8 @@ class TestReciprocalRankFusion:
 
         assert [(source, cid) for source, cid, _ in fused] == [
             ("alpha", "a0"),
-            ("beta", "b0"),
             ("alpha", "a1"),
+            ("alpha", "a2"),
         ]
 
 
