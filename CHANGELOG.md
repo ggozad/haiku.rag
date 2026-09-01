@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.81.0] - 2026-09-01
+
 ### Added
 
 - `search.vector_nprobes` (default 20) sets the IVF partitions each vector query searches.
@@ -2309,7 +2311,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.80.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.81.0...HEAD
+[0.81.0]: https://github.com/ggozad/haiku.rag/compare/0.80.0...0.81.0
 [0.80.0]: https://github.com/ggozad/haiku.rag/compare/0.79.0...0.80.0
 [0.79.0]: https://github.com/ggozad/haiku.rag/compare/0.78.0...0.79.0
 [0.78.0]: https://github.com/ggozad/haiku.rag/compare/0.77.0...0.78.0
