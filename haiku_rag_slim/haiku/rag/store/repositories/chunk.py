@@ -240,6 +240,7 @@ class ChunkRepository:
         search_type: SearchType = "hybrid",
         filter: str | None = None,
         query_vector: list[float] | None = None,
+        with_vectors: bool = False,
     ) -> list[tuple[Chunk, float]]:
         """Search for relevant chunks using the specified search method.
 
@@ -304,7 +305,7 @@ class ChunkRepository:
         if chunk_filter is not None:
             results = results.where(chunk_filter)
         results = results.limit(limit)
-        return await self._process_search_results(results)
+        return await self._process_search_results(results, with_vectors=with_vectors)
 
     async def get_by_document_id(
         self,
@@ -405,7 +406,7 @@ class ChunkRepository:
         return len(df)
 
     async def _process_search_results(
-        self, query_result: "AsyncQueryBase"
+        self, query_result: "AsyncQueryBase", with_vectors: bool = False
     ) -> list[tuple[Chunk, float]]:
         """Process search results into chunks with document info and scores."""
         import pandas as pd
@@ -456,6 +457,13 @@ class ChunkRepository:
             )
             documents_map = {str(row["id"]): row for row in doc_rows}
 
+        # The query projects no columns, so the vectors are already in the
+        # frame; only the federated fusion path reads them, so materializing
+        # per-chunk lists is gated on the caller asking.
+        vectors = (
+            df["vector"].tolist() if with_vectors and "vector" in df.columns else None
+        )
+
         chunks_with_scores = []
         for i, chunk_record in enumerate(pydantic_results):
             doc = documents_map.get(chunk_record.document_id)
@@ -468,6 +476,7 @@ class ChunkRepository:
                 document_uri=doc["uri"] if doc else None,
                 document_title=doc["title"] if doc else None,
                 document_meta=json.loads(doc.get("metadata", "{}") if doc else "{}"),
+                embedding=list(vectors[i]) if vectors is not None else None,
             )
             score = scores[i] if i < len(scores) else 1.0
             chunks_with_scores.append((chunk, score))

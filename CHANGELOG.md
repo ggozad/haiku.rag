@@ -4,9 +4,10 @@
 
 ### Fixed
 
-- Cross-database fusion without a reranker orders the union by retrieval
-  score, with within-database rank breaking ties, instead of round-robin by
-  database declaration order. Fused results carry the retrieval score.
+- Cross-database fusion without a reranker orders the union by cosine
+  similarity to the query, with within-database rank breaking ties, instead
+  of round-robin by database declaration order. Full-text-only searches order
+  by retrieval score. Fused results carry the ordering score.
 
 ## [0.80.0] - 2026-08-31
 

@@ -474,9 +474,10 @@ class TestNarrowingToOneDatabase:
 
 
 class TestFusionWithoutAReranker:
-    """Without a reranker, the union is ordered by retrieval score; score ties
-    resolve by within-database rank, and only a tie on both falls to configured
-    order. These pin what that produces."""
+    """Without a reranker, the union is ordered by cosine similarity to the
+    query. A search with no query vector (full-text) orders by retrieval score
+    instead; in both, ties resolve by within-database rank and only a tie on
+    both falls to configured order. These pin what that produces."""
 
     @staticmethod
     def _ranked(source: str, count: int, top: float) -> list[tuple[Chunk, float]]:
@@ -490,7 +491,7 @@ class TestFusionWithoutAReranker:
         second, so score order and position order disagree."""
         return [self._ranked("a", count, 0.9), self._ranked("b", count, 0.2)]
 
-    async def _fuse_over(self, tmp_path, per_source, limit):
+    async def _fuse_over(self, tmp_path, per_source, limit, query_vector=None):
         from haiku.rag.client.search import _fuse
 
         config = _config(tmp_path, ["alpha", "beta"])
@@ -499,8 +500,96 @@ class TestFusionWithoutAReranker:
         async with HaikuRAG(config=config) as rag:
             assert rag.reranker is None
             clients = await rag.clients_for(["alpha", "beta"])
-            fused = await _fuse(rag, clients, "cats", per_source, limit)
+            fused = await _fuse(
+                rag, clients, "cats", per_source, limit, query_vector=query_vector
+            )
         return [(owner.source, chunk.id, score) for owner, chunk, score in fused]
+
+    @staticmethod
+    def _embedded(
+        source: str, embeddings: list[list[float]]
+    ) -> list[tuple[Chunk, float]]:
+        """A ranking whose retrieval scores descend while the embeddings are
+        the caller's, so cosine order and score order can be made to disagree."""
+        return [
+            (
+                Chunk(id=f"{source}{i}", content=f"{source} {i}", embedding=e),
+                0.9 - i / 100,
+            )
+            for i, e in enumerate(embeddings)
+        ]
+
+    @pytest.mark.asyncio
+    async def test_cosine_orders_the_union(self, tmp_path):
+        """With a query vector, similarity to the query decides, not the
+        databases' own scores or ranks."""
+        alpha = self._embedded("a", [[0.0, 1.0], [0.6, 0.8]])
+        beta = self._embedded("b", [[1.0, 0.0], [0.8, 0.6]])
+        fused = await self._fuse_over(
+            tmp_path, [alpha, beta], 10, query_vector=[1.0, 0.0]
+        )
+
+        assert [cid for _, cid, _ in fused] == ["b0", "b1", "a1", "a0"]
+        assert [round(score, 2) for _, _, score in fused] == [1.0, 0.8, 0.6, 0.0]
+
+    @pytest.mark.asyncio
+    async def test_cosine_ties_break_by_rank_then_configured_order(self, tmp_path):
+        """Identical embeddings tie on cosine; within-database rank decides,
+        and equal ranks fall to configured order."""
+        same = [1.0, 0.0]
+        alpha = self._embedded("a", [same, same])
+        beta = self._embedded("b", [same, same])
+        fused = await self._fuse_over(
+            tmp_path, [alpha, beta], 10, query_vector=[1.0, 0.0]
+        )
+
+        assert [cid for _, cid, _ in fused] == ["a0", "b0", "a1", "b1"]
+
+    @pytest.mark.asyncio
+    async def test_a_hybrid_search_takes_the_cosine_path_end_to_end(
+        self, tmp_path, monkeypatch
+    ):
+        """The result scores are cosines, not retrieval scores: a fusion that
+        silently loses the candidate embeddings reverts to score order and
+        returns lancedb's hybrid values, which this pins against."""
+        dim = get_config().embeddings.model.vector_dim
+        toward = [1.0] + [0.0] * (dim - 1)
+        away = [0.0, 1.0] + [0.0] * (dim - 2)
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        for name, embedding in (("alpha", away), ("beta", toward)):
+            async with HaikuRAG(config=config, create=True, sources=[name]) as rag:
+                doc = DoclingDocument(name=name)
+                doc.add_text(label=DocItemLabel.TEXT, text=f"{name} cats")
+                await rag.import_document(
+                    doc,
+                    [Chunk(content=f"{name} cats", embedding=embedding, order=0)],
+                    uri=f"test://{name}",
+                )
+
+        async def embed_query(self, text):
+            return toward
+
+        monkeypatch.setattr(EmbedderWrapper, "embed_query", embed_query)
+
+        async with HaikuRAG(config=config) as rag:
+            results = await rag.search("cats", limit=2)
+
+        assert [r.source for r in results] == ["beta", "alpha"]
+        assert results[0].score == pytest.approx(1.0)
+        assert results[1].score == pytest.approx(0.0)
+
+    @pytest.mark.asyncio
+    async def test_a_candidate_without_an_embedding_disables_the_cosine(self, tmp_path):
+        """One unembedded candidate makes cosine incomparable across the union,
+        so the whole fusion keeps retrieval-score order."""
+        alpha = self._embedded("a", [[0.0, 1.0]])
+        beta = self._ranked("b", 1, 0.2)
+        fused = await self._fuse_over(
+            tmp_path, [alpha, beta], 10, query_vector=[1.0, 0.0]
+        )
+
+        assert [(cid, score) for _, cid, score in fused] == [("a0", 0.9), ("b0", 0.2)]
 
     @pytest.mark.asyncio
     async def test_the_score_orders_the_union(self, tmp_path):
