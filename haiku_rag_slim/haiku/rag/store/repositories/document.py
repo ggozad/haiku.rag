@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import overload
 from uuid import uuid4
 
@@ -77,8 +77,8 @@ class DocumentRepository:
             docling_document=doc.docling_document,
             docling_pages=doc.docling_pages,
             docling_version=doc.docling_version,
-            created_at=datetime.fromisoformat(created) if created else datetime.now(),
-            updated_at=datetime.fromisoformat(updated) if updated else datetime.now(),
+            created_at=datetime.fromisoformat(created) if created else datetime.now(UTC),
+            updated_at=datetime.fromisoformat(updated) if updated else datetime.now(UTC),
         )
 
     def _to_documents_record(self, entity: Document, doc_id: str) -> DocumentRecord:
@@ -138,7 +138,7 @@ class DocumentRepository:
         # document_meta) would surface.
         if isinstance(entity, Document):
             doc_id = str(uuid4())
-            now = datetime.now().isoformat()
+            now = datetime.now(UTC).isoformat()
             await self.store.document_meta_table.add(
                 [self._to_meta_record(entity, doc_id, now, now)]
             )
@@ -159,7 +159,7 @@ class DocumentRepository:
         if not documents:
             return []
 
-        now = datetime.now().isoformat()
+        now = datetime.now(UTC).isoformat()
         created_at = datetime.fromisoformat(now)
         doc_records = []
         meta_records = []
@@ -272,7 +272,7 @@ class DocumentRepository:
         self.store._assert_writable()
         assert entity.id, "Document ID is required for update"
 
-        now = datetime.now().isoformat()
+        now = datetime.now(UTC).isoformat()
         entity.updated_at = datetime.fromisoformat(now)
         created = entity.created_at.isoformat() if entity.created_at else now
         record = self._to_meta_record(entity, entity.id, created, now)

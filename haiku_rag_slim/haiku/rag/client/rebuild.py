@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from docling_core.types.doc.document import DescriptionMetaField, PictureMeta
@@ -531,7 +531,7 @@ async def _flush_rebuild_batch(
     if not documents:
         return
 
-    now = datetime.now().isoformat()
+    now = datetime.now(UTC).isoformat()
 
     # Batch update documents and document_meta using merge_insert (one LanceDB
     # version per table). Content+blobs go to documents; mutable attributes go
