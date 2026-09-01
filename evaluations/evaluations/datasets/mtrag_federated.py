@@ -19,6 +19,7 @@ from evaluations.datasets.mtrag import (
     load_clapnq_retrieval,
     map_mtrag_document,
     map_mtrag_retrieval,
+    strip_speaker_markup,
 )
 from evaluations.evaluators import (
     CitationMAPEvaluator,
@@ -284,7 +285,7 @@ def load_pooled_queries(variant: str = "lastturn") -> list[dict[str, Any]]:
             out.append(
                 {
                     "query_id": f"{domain}/{query['_id']}",
-                    "question": query["text"],
+                    "question": strip_speaker_markup(query["text"]),
                     "expected_uris": expected,
                     "domain": domain,
                 }

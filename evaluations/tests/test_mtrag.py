@@ -13,8 +13,10 @@ from evaluations.datasets.mtrag import (
     _validate_qrels_resolve,
     build_mtrag_case,
     build_mtrag_live_case,
+    load_clapnq_retrieval,
     map_mtrag_document,
     map_mtrag_retrieval,
+    strip_speaker_markup,
 )
 from evaluations.evaluators import (
     CitationMAPEvaluator,
@@ -276,3 +278,40 @@ class TestLiveConversations:
             "mtrag_mode": "live_session",
             "compaction": False,
         }
+
+
+class TestSpeakerMarkup:
+    """MTRAG's retrieval query files encode the speaker into the query text.
+    It reaches the embedder, the BM25 query and the reranker's query; on the
+    reranker it costs about 3.6pp recall, measured paired over 777 queries.
+    """
+
+    def test_strips_a_leading_speaker_tag(self) -> None:
+        assert (
+            strip_speaker_markup("|user|: How many teams are in the NFL?")
+            == "How many teams are in the NFL?"
+        )
+
+    def test_strips_any_speaker_not_just_user(self) -> None:
+        assert strip_speaker_markup("|agent|: Twelve of them.") == "Twelve of them."
+
+    def test_leaves_an_unmarked_question_alone(self) -> None:
+        assert (
+            strip_speaker_markup("How many teams are in the NFL?")
+            == "How many teams are in the NFL?"
+        )
+
+    def test_leaves_a_pipe_mid_sentence_alone(self) -> None:
+        """Only a leading tag is markup; a pipe in the question is content."""
+        text = "What does the |> operator do?"
+        assert strip_speaker_markup(text) == text
+
+    def test_does_not_strip_a_second_tag(self) -> None:
+        """One tag is the encoding; a second is content and must survive."""
+        assert strip_speaker_markup("|user|: |agent|: nested") == "|agent|: nested"
+
+    def test_retrieval_samples_arrive_clean(self) -> None:
+        rows = list(load_clapnq_retrieval("lastturn"))
+        assert rows, "no retrieval rows"
+        marked = [r for r in rows if r["question"].startswith("|")]
+        assert not marked, f"{len(marked)} of {len(rows)} still carry markup"

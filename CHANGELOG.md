@@ -24,6 +24,7 @@
 
 ### Fixed
 
+- MTRAG retrieval queries have their `|speaker|: ` tag stripped. It reached the embedder, the BM25 query and the reranker's query, costing about 3.6pp recall on the reranker and nothing on the fusion path, measured paired over 777 queries. Affects `mtrag_clapnq`, `mtrag_clapnq_rewrite`, `mtrag_federated` and `mtrag_pooled` retrieval scores; the QA path never carried it.
 - Batched evaluation ingest converts inline content as text instead of letting `HaikuRAG.convert` disambiguate it, so a passage beginning with a URL is stored rather than fetched over HTTP. 187 MTRAG cloud and fiqa passages start with one; no clapnq passage does, so no existing dataset's numbers change.
 - `mtrag_federated` builds vacuum each collection after ingest and assert the chunks FTS index covers every row. Without the vacuum the index stays at zero rows, and full-text search returns near-arbitrary rows while still returning results.
 - FTS and hybrid search on a database whose FTS index covers no rows. Chunk
