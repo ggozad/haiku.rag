@@ -473,9 +473,11 @@ class TestNarrowingToOneDatabase:
         assert results == []
 
 
-class TestReciprocalRankFusion:
-    """Without a reranker, scores from separate indexes are not comparable, so
-    fusion ranks by position. These pin what that produces."""
+class TestFusionWithoutAReranker:
+    """Without a reranker, the union is ordered by cosine similarity to the
+    query. A search with no query vector (full-text) orders by retrieval score
+    instead; in both, ties resolve by within-database rank and only a tie on
+    both falls to configured order. These pin what that produces."""
 
     @staticmethod
     def _ranked(source: str, count: int, top: float) -> list[tuple[Chunk, float]]:
@@ -489,7 +491,7 @@ class TestReciprocalRankFusion:
         second, so score order and position order disagree."""
         return [self._ranked("a", count, 0.9), self._ranked("b", count, 0.2)]
 
-    async def _fuse_over(self, tmp_path, per_source, limit):
+    async def _fuse_over(self, tmp_path, per_source, limit, query_vector=None):
         from haiku.rag.client.search import _fuse
 
         config = _config(tmp_path, ["alpha", "beta"])
@@ -498,40 +500,216 @@ class TestReciprocalRankFusion:
         async with HaikuRAG(config=config) as rag:
             assert rag.reranker is None
             clients = await rag.clients_for(["alpha", "beta"])
-            fused = await _fuse(rag, clients, "cats", per_source, limit)
+            fused = await _fuse(
+                rag, clients, "cats", per_source, limit, query_vector=query_vector
+            )
         return [(owner.source, chunk.id, score) for owner, chunk, score in fused]
 
+    @staticmethod
+    def _embedded(
+        source: str, embeddings: list[list[float]]
+    ) -> list[tuple[Chunk, float]]:
+        """A ranking whose retrieval scores descend while the embeddings are
+        the caller's, so cosine order and score order can be made to disagree."""
+        return [
+            (
+                Chunk(id=f"{source}{i}", content=f"{source} {i}", embedding=e),
+                0.9 - i / 100,
+            )
+            for i, e in enumerate(embeddings)
+        ]
+
     @pytest.mark.asyncio
-    async def test_databases_interleave_by_rank(self, tmp_path):
-        """Each contributes its rank-1 before either contributes its rank-2."""
+    async def test_cosine_orders_the_union(self, tmp_path):
+        """With a query vector, similarity to the query decides, not the
+        databases' own scores or ranks."""
+        alpha = self._embedded("a", [[0.0, 1.0], [0.6, 0.8]])
+        beta = self._embedded("b", [[1.0, 0.0], [0.8, 0.6]])
+        fused = await self._fuse_over(
+            tmp_path, [alpha, beta], 10, query_vector=[1.0, 0.0]
+        )
+
+        assert [cid for _, cid, _ in fused] == ["b0", "b1", "a1", "a0"]
+        assert [round(score, 2) for _, _, score in fused] == [1.0, 0.8, 0.6, 0.0]
+
+    @pytest.mark.asyncio
+    async def test_cosine_ties_break_by_rank_then_configured_order(self, tmp_path):
+        """Identical embeddings tie on cosine; within-database rank decides,
+        and equal ranks fall to configured order."""
+        same = [1.0, 0.0]
+        alpha = self._embedded("a", [same, same])
+        beta = self._embedded("b", [same, same])
+        fused = await self._fuse_over(
+            tmp_path, [alpha, beta], 10, query_vector=[1.0, 0.0]
+        )
+
+        assert [cid for _, cid, _ in fused] == ["a0", "b0", "a1", "b1"]
+
+    @pytest.mark.asyncio
+    async def test_a_hybrid_search_takes_the_cosine_path_end_to_end(
+        self, tmp_path, monkeypatch
+    ):
+        """The result scores are cosines, not retrieval scores: a fusion that
+        silently loses the candidate embeddings reverts to score order and
+        returns lancedb's hybrid values, which this pins against."""
+        dim = get_config().embeddings.model.vector_dim
+        toward = [1.0] + [0.0] * (dim - 1)
+        away = [0.0, 1.0] + [0.0] * (dim - 2)
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        for name, embedding in (("alpha", away), ("beta", toward)):
+            async with HaikuRAG(config=config, create=True, sources=[name]) as rag:
+                doc = DoclingDocument(name=name)
+                doc.add_text(label=DocItemLabel.TEXT, text=f"{name} cats")
+                await rag.import_document(
+                    doc,
+                    [Chunk(content=f"{name} cats", embedding=embedding, order=0)],
+                    uri=f"test://{name}",
+                )
+
+        async def embed_query(self, text):
+            return toward
+
+        monkeypatch.setattr(EmbedderWrapper, "embed_query", embed_query)
+
+        async with HaikuRAG(config=config) as rag:
+            results = await rag.search("cats", limit=2)
+
+        assert [r.source for r in results] == ["beta", "alpha"]
+        assert results[0].score == pytest.approx(1.0)
+        assert results[1].score == pytest.approx(0.0)
+
+    @pytest.mark.asyncio
+    async def test_embeddings_are_materialized_only_for_cosine_fusion(
+        self, tmp_path, monkeypatch, query_embedding
+    ):
+        """A reranker scores the union itself, so its 10x over-fetch must not
+        materialize per-chunk embeddings."""
+        from haiku.rag.store.repositories.chunk import ChunkRepository
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        asked: list[bool] = []
+        search = ChunkRepository.search
+
+        async def spy(self, *args, **kwargs):
+            asked.append(kwargs.get("with_vectors", False))
+            return await search(self, *args, **kwargs)
+
+        monkeypatch.setattr(ChunkRepository, "search", spy)
+
+        async with HaikuRAG(config=config) as rag:
+            await rag.search("cats")
+        assert asked == [True, True]
+
+        asked.clear()
+        monkeypatch.setattr(HaikuRAG, "reranker", property(lambda self: StubReranker()))
+        async with HaikuRAG(config=config) as rag:
+            await rag.search("cats")
+        assert asked == [False, False]
+
+        # An image query skips the reranker branch, so it takes cosine fusion
+        # and needs vectors even with a reranker configured.
+        dim = get_config().embeddings.model.vector_dim
+
+        async def embed_image(self, image):
+            return [0.1] * dim
+
+        monkeypatch.setattr(EmbedderWrapper, "supports_images", True)
+        monkeypatch.setattr(EmbedderWrapper, "embed_image", embed_image)
+        asked.clear()
+        async with HaikuRAG(config=config) as rag:
+            await rag.search(b"\x89PNG\r\n\x1a\n")
+        assert asked == [True, True]
+
+    @pytest.mark.asyncio
+    async def test_a_candidate_without_an_embedding_disables_the_cosine(self, tmp_path):
+        """One unembedded candidate makes cosine incomparable across the union,
+        so the whole fusion keeps retrieval-score order."""
+        alpha = self._embedded("a", [[0.0, 1.0]])
+        beta = self._ranked("b", 1, 0.2)
+        fused = await self._fuse_over(
+            tmp_path, [alpha, beta], 10, query_vector=[1.0, 0.0]
+        )
+
+        assert [(cid, score) for _, cid, score in fused] == [("a0", 0.9), ("b0", 0.2)]
+
+    @pytest.mark.asyncio
+    async def test_the_score_orders_the_union(self, tmp_path):
+        """A stronger database takes consecutive slots; breadth is not
+        guaranteed."""
         fused = await self._fuse_over(tmp_path, self._lopsided(3), 10)
 
         assert [(source, cid) for source, cid, _ in fused] == [
             ("alpha", "a0"),
-            ("beta", "b0"),
             ("alpha", "a1"),
-            ("beta", "b1"),
             ("alpha", "a2"),
+            ("beta", "b0"),
+            ("beta", "b1"),
             ("beta", "b2"),
         ]
 
     @pytest.mark.asyncio
-    async def test_the_score_is_the_reciprocal_of_the_rank(self, tmp_path):
+    async def test_the_score_is_the_retrieval_score(self, tmp_path):
+        """The fused score is the candidate's own, so re-sorting downstream
+        (context expansion) preserves the fused order."""
         fused = await self._fuse_over(tmp_path, self._lopsided(2), 10)
 
-        assert [score for _, _, score in fused] == [
-            1 / 61,
-            1 / 61,
-            1 / 62,
-            1 / 62,
+        assert [score for _, _, score in fused] == [0.9, 0.89, 0.2, 0.19]
+
+    @pytest.mark.asyncio
+    async def test_score_ties_break_by_rank_within_the_database(self, tmp_path):
+        """Equal scores can sit at different ranks: rank depends on what the
+        rest of a database scored. The candidate nothing in its own database
+        beat wins the tie."""
+        per_source = [
+            [
+                (Chunk(id="a0", content="a 0"), 0.9),
+                (Chunk(id="a1", content="a 1"), 0.5),
+            ],
+            [
+                (Chunk(id="b0", content="b 0"), 0.5),
+                (Chunk(id="b1", content="b 1"), 0.3),
+            ],
+        ]
+        fused = await self._fuse_over(tmp_path, per_source, 10)
+
+        assert [cid for _, cid, _ in fused] == ["a0", "b0", "a1", "b1"]
+
+    @pytest.mark.asyncio
+    async def test_the_configured_order_does_not_matter(self, tmp_path):
+        """The same candidates fuse to the same list whichever database is
+        declared first."""
+        forward = await self._fuse_over(tmp_path, self._lopsided(3), 10)
+        (tmp_path / "swapped").mkdir()
+        backward = await self._fuse_over(
+            tmp_path / "swapped",
+            [self._ranked("b", 3, 0.2), self._ranked("a", 3, 0.9)],
+            10,
+        )
+
+        assert [(cid, score) for _, cid, score in forward] == [
+            (cid, score) for _, cid, score in backward
         ]
 
     @pytest.mark.asyncio
-    async def test_equal_scores_keep_the_configured_order(self, tmp_path):
-        """Every rank ties across databases, so the tiebreak decides all of it."""
-        fused = await self._fuse_over(tmp_path, self._lopsided(2), 10)
+    async def test_exact_ties_keep_the_configured_order(self, tmp_path):
+        """Hybrid scores are rank-derived and tie exactly when databases agree,
+        so a genuine tie must still resolve deterministically."""
+        per_source = [self._ranked("a", 2, 0.9), self._ranked("b", 2, 0.9)]
+        fused = await self._fuse_over(tmp_path, per_source, 10)
 
         assert [source for source, _, _ in fused] == ["alpha", "beta", "alpha", "beta"]
+
+    @pytest.mark.asyncio
+    async def test_rank_never_overrides_the_score(self, tmp_path):
+        """A database's rank-2 with a higher score precedes another's rank-0:
+        allocation is content-driven, not round-robin."""
+        fused = await self._fuse_over(tmp_path, self._lopsided(2), 10)
+
+        assert [cid for _, cid, _ in fused] == ["a0", "a1", "b0", "b1"]
 
     @pytest.mark.asyncio
     async def test_the_limit_cuts_the_fused_list(self, tmp_path):
@@ -540,8 +718,8 @@ class TestReciprocalRankFusion:
 
         assert [(source, cid) for source, cid, _ in fused] == [
             ("alpha", "a0"),
-            ("beta", "b0"),
             ("alpha", "a1"),
+            ("alpha", "a2"),
         ]
 
 
