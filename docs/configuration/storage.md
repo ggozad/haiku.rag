@@ -300,6 +300,7 @@ Configure vector search settings:
 search:
   vector_index_metric: cosine  # cosine or l2
   vector_refine_factor: 30     # Re-ranking factor for accuracy
+  vector_nprobes: 20           # IVF partitions searched per query
 ```
 
 For search behavior settings (`limit`, `max_context_chars`), see [Search and Question Answering](qa.md#search-settings).
@@ -309,6 +310,8 @@ For search behavior settings (`limit`, `max_context_chars`), see [Search and Que
   - `l2`: Euclidean distance
 - **vector_refine_factor**: Improves accuracy when using a vector index by retrieving `refine_factor * limit` candidates (using approximate search) and re-ranking them with exact distances. Higher values increase accuracy but slow down queries. Default: 30
   - **Only applies with a vector index** - has no effect on brute-force search, which already returns exact results
+- **vector_nprobes**: How many IVF partitions each query searches. Higher values increase recall and latency. A larger corpus holds more partitions, so the same value covers a smaller fraction of it. Default: 20
+  - **Only applies with a vector index** - ignored by brute-force search
 
 !!! note
     Vector indexes are only necessary for large datasets with over 100,000 chunks. For smaller datasets, LanceDB's brute-force kNN search provides exact results with good performance. Only create an index if you notice search performance degradation on large datasets.
@@ -321,7 +324,7 @@ Retrieval MAP with and without an index, measured on copies of the benchmark dat
 | `orb_multimodal_nemotron` | 121,168 | 2048 | 0.9799 | 0.9800 | +0.0001 | 25.8 s | 3.38 GB |
 | `frames` | 425,940 | 2560 | 0.5431 | 0.5387 | -0.0044 | 34.1 s | 4.02 GB |
 
-An index costs no accuracy at 70k and 121k chunks and 0.0044 MAP at 426k. A larger corpus holds more IVF partitions, so the default number of probes covers a smaller fraction of the space, and `vector_refine_factor` can only re-score what those probes returned. Build cost is near-flat in row count because training samples the data rather than scanning it, and vector dimension drives it more than corpus size.
+An index costs no accuracy at 70k and 121k chunks and 0.0044 MAP at 426k. A larger corpus holds more IVF partitions, so the default number of probes covers a smaller fraction of the space, and `vector_refine_factor` can only re-score what those probes returned. Raise `vector_nprobes` to trade latency for recall on a large corpus. Build cost is near-flat in row count because training samples the data rather than scanning it, and vector dimension drives it more than corpus size.
 
 **Index creation:**
 

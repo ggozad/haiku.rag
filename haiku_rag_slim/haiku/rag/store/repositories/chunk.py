@@ -295,6 +295,7 @@ class ChunkRepository:
                 .column("vector")
                 .distance_type(self.store._config.search.vector_index_metric)
                 .refine_factor(self.store._config.search.vector_refine_factor)
+                .nprobes(self.store._config.search.vector_nprobes)
             )
             # An image query has no text to match, so it stays vector-only.
             if search_type != "vector" and query.strip():

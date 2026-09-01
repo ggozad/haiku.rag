@@ -306,6 +306,7 @@ class SearchConfig(ConfigModel):
     max_context_chars: int = Field(default=5000, gt=0)
     vector_index_metric: Literal["cosine", "l2"] = "cosine"
     vector_refine_factor: int = Field(default=30, gt=0)
+    vector_nprobes: int = Field(default=20, gt=0)
 
 
 class OllamaConfig(ConfigModel):
