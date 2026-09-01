@@ -317,6 +317,16 @@ For search behavior settings (`limit`, `max_context_chars`), see [Search and Que
 !!! note
     Vector indexes are only necessary for large datasets with over 100,000 chunks. For smaller datasets, LanceDB's brute-force kNN search provides exact results with good performance. Only create an index if you notice search performance degradation on large datasets.
 
+Retrieval MAP with and without an index, measured on copies of the benchmark databases with no reranker:
+
+| Dataset | Chunks | Dim | Exact | Indexed | Delta | Build | Peak RSS |
+|---------|-------:|----:|------:|--------:|------:|------:|---------:|
+| `hotpotqa` | 70,527 | 2560 | 0.6978 | 0.6979 | +0.0001 | 29.3 s | 3.19 GB |
+| `orb_multimodal_nemotron` | 121,168 | 2048 | 0.9799 | 0.9800 | +0.0001 | 25.8 s | 3.38 GB |
+| `frames` | 425,940 | 2560 | 0.5431 | 0.5387 | -0.0044 | 34.1 s | 4.02 GB |
+
+An index costs no accuracy at 70k and 121k chunks and 0.0044 MAP at 426k. A larger corpus holds more IVF partitions, so the default number of probes covers a smaller fraction of the space, and `vector_refine_factor` can only re-score what those probes returned. Build cost is near-flat in row count because training samples the data rather than scanning it, and vector dimension drives it more than corpus size.
+
 **Index creation:**
 
 Vector indexes are **not created automatically** during document ingestion to avoid slowing down the process. After you've added documents (at least 256 chunks required), create the index manually:
@@ -332,12 +342,12 @@ This command:
 
 **Re-indexing:**
 
-Indexes are not automatically updated when you add new documents. After adding a significant amount of new data:
+New chunks reach the index without a rebuild. `optimize()`, which runs after writes while `auto_vacuum` is on, adds them as a delta part. Between a write and the next optimize, LanceDB serves ANN over the indexed rows and a brute-force scan over the remainder, then combines the results.
+
+A rebuild retrains the centroids, which are fitted once at build time and never recomputed. As a corpus grows past the distribution it was trained on the partitioning fits it less well, and delta parts accumulate. Rebuild after substantial growth:
 
 ```bash
-haiku-rag create-index  # Rebuilds the index with all data
+haiku-rag create-index
 ```
-
-Searches still work with stale indexes - LanceDB uses the index for old data (fast ANN) and brute-force kNN for new unindexed rows, then combines the results. However, performance degrades as more unindexed data accumulates.
 
 For datasets with fewer than 256 chunks, searches use brute-force kNN scans (exact nearest neighbors, 100% recall) which work well for small datasets but don't scale beyond a few hundred thousand vectors.
