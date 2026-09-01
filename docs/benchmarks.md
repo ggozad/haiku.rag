@@ -6,6 +6,8 @@ We evaluate `haiku.rag` on a small set of datasets that exercise different parts
 
 Numbers below were measured on a recent `haiku.rag` version. Most rows were judged by `Qwen3.6-35B-A3B-NVFP4`; the `Qwen3.8-27B` rows were judged by the currently pinned `qwen3.8`, as their footnote states. Rows are not re-judged when the pinned judge changes, so compare rows judged by the same judge and treat cross-judge differences as unmeasured.
 
+No benchmark database carries a vector index, so every number below reflects exact brute-force kNN rather than approximate search. A vector index is never built automatically. `haiku-rag create-index` builds one, and `haiku-rag doctor` reports whether a database has it. For the measured effect of indexing on retrieval, see [Vector Indexing](configuration/storage.md#vector-indexing).
+
 ### OpenRAG Bench (ORB)
 
 [OpenRAG Bench](https://huggingface.co/datasets/vectara/open_ragbench) contains ArXiv research papers with multimodal question-answering pairs. Queries include both text-based and image-based questions, testing retrieval and reasoning over visual content like figures, charts, and diagrams. Each query maps to one relevant document.
