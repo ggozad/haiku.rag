@@ -676,6 +676,26 @@ async def test_fts_search_does_not_warn_on_an_empty_table(temp_db_path):
         assert not records
 
 
+async def test_search_populates_embeddings_only_when_asked(temp_db_path):
+    """Vectors ride the result frame either way; the per-chunk lists are
+    materialized only for the caller that reads them (federated fusion)."""
+    async with HaikuRAG(
+        db_path=temp_db_path, config=get_config(), create=True
+    ) as client:
+        await _import_one(client)
+        await client.store.vacuum(retention_seconds=0)
+
+        plain = await client.chunk_repository.search("gardens", search_type="fts")
+        with_vectors = await client.chunk_repository.search(
+            "gardens", search_type="fts", with_vectors=True
+        )
+
+    assert plain and all(chunk.embedding is None for chunk, _ in plain)
+    assert with_vectors and all(
+        chunk.embedding is not None for chunk, _ in with_vectors
+    )
+
+
 @pytest.mark.vcr()
 async def test_chunk_repository_get_by_id_and_list_all_pagination(
     qa_corpus: list[dict[str, str]], temp_db_path

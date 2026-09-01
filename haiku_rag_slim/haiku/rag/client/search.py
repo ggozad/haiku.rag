@@ -105,6 +105,11 @@ async def search_sources(
     fetch_limit = _fetch_limit(client, query, limit)
     query_vector = await _embed_query(selected[0], query, resolved)
     text = query if isinstance(query, str) else ""
+    # Embeddings are read only by cosine fusion: a reranker scores the union
+    # itself, and its 10x over-fetch would materialize them for nothing.
+    uses_cosine = query_vector is not None and (
+        not isinstance(query, str) or client.reranker is None
+    )
     per_source = await gather_all(
         *(
             c.chunk_repository.search(
@@ -113,12 +118,15 @@ async def search_sources(
                 search_type=resolved,
                 filter=filter,
                 query_vector=query_vector,
+                with_vectors=uses_cosine,
             )
             for c in selected
         )
     )
 
-    ranked = await _fuse(client, selected, query, per_source, limit)
+    ranked = await _fuse(
+        client, selected, query, per_source, limit, query_vector=query_vector
+    )
 
     results: list[SearchResult] = []
     for owner, chunk, score in ranked:
@@ -149,21 +157,21 @@ async def _fuse(
     query: "str | bytes | PILImage.Image",
     per_source: list[list[tuple[Chunk, float]]],
     limit: int,
+    query_vector: list[float] | None = None,
 ) -> list[tuple["HaikuRAG", Chunk, float]]:
     """One ranked list from several, keeping each candidate's owner.
 
     A configured reranker scores the union directly, which is what makes ranking
     across databases tractable: it compares query against document and does not
-    care where a candidate came from. Without one, the union is ordered by the
-    raw retrieval score. Scores from separate indexes are not calibrated, but a
-    hybrid score is each database's own rank agreement (lancedb fuses vector and
-    FTS with RRF inside the database), which carries across databases; rank
-    interleaving instead guarantees every database slots regardless of content,
-    which on domain-split collections allocates no better than chance. Equal
-    scores resolve by within-database rank — the candidate nothing in its own
-    database beat wins — and only a tie on both falls to configured order. The
-    returned score is the candidate's own, so downstream re-sorts (context
-    expansion) preserve this order.
+    care where a candidate came from. Without one, the union is ordered by
+    cosine similarity to the query vector: the databases in a selection share an
+    embedder, so similarity in that one space is the signal that is comparable
+    across databases by construction, where retrieval scores are each database's
+    own rank arithmetic. A search with no query vector (full-text) orders by the
+    retrieval score instead. In both, ties resolve by within-database rank — the
+    candidate nothing in its own database beat wins — and only a tie on both
+    falls to configured order. The returned score is the one the union was
+    ordered by, so downstream re-sorts (context expansion) preserve this order.
     """
     owned = [
         (client, chunk, score)
@@ -173,8 +181,9 @@ async def _fuse(
     if not owned:
         return []
 
-    # An image query has no text for a reranker to score against, and the check
-    # precedes `reranker`, which builds the reranker on first access.
+    # The reranker interface takes a text query, so an image query skips it,
+    # and the check precedes `reranker`, which builds the reranker on first
+    # access.
     if isinstance(query, str):
         reranker = federator.reranker
         if reranker is not None:
@@ -203,8 +212,34 @@ async def _fuse(
     for client, candidates in zip(clients, per_source, strict=True):
         for rank, (chunk, score) in enumerate(candidates):
             scored.append((1.0 / (_RRF_K + rank + 1), score, client, chunk))
+
+    embeddings = [chunk.embedding for _, _, _, chunk in scored]
+    if query_vector is not None and all(e is not None for e in embeddings):
+        similarities = _cosine_to(query_vector, embeddings)  # ty: ignore[invalid-argument-type]
+        scored = [
+            (rank_score, similarity, client, chunk)
+            for (rank_score, _, client, chunk), similarity in zip(
+                scored, similarities, strict=True
+            )
+        ]
     scored.sort(key=lambda item: (item[1], item[0]), reverse=True)
     return [(client, chunk, score) for _, score, client, chunk in scored[:limit]]
+
+
+def _cosine_to(query_vector: list[float], embeddings: list[list[float]]) -> list[float]:
+    """Cosine similarity of each embedding to the query vector.
+
+    A zero-norm vector has no direction, so its similarity is 0 rather than a
+    division error.
+    """
+    import numpy as np
+
+    query = np.asarray(query_vector, dtype=np.float32)
+    matrix = np.asarray(embeddings, dtype=np.float32)
+    norms = np.linalg.norm(matrix, axis=1) * np.linalg.norm(query)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        similarities = np.where(norms > 0, matrix @ query / norms, 0.0)
+    return [float(s) for s in similarities]
 
 
 # Reciprocal rank fusion's smoothing constant, the value the literature uses.
@@ -276,10 +311,9 @@ async def _rank(
 ) -> list[tuple[Chunk, float]]:
     """Order candidates and cut them to `limit`.
 
-    An image query carries no text for a reranker to score against, so its
-    candidates keep the vector ranking. Its type is checked before
-    `client.reranker`, which builds the reranker on first access and loads model
-    weights for a local one.
+    The reranker interface takes a text query, so an image query keeps the
+    vector ranking. Its type is checked before `client.reranker`, which builds
+    the reranker on first access and loads model weights for a local one.
     """
     if not isinstance(query, str):
         return candidates[:limit]

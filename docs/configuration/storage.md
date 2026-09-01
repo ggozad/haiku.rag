@@ -227,7 +227,7 @@ results = await client.search("query")                     # every database
 results = await client.search("query", sources=["papers"])   # one of them
 ```
 
-Candidates are combined into one ranked list with the configured reranker, or by retrieval score when reranking is disabled, with within-database rank breaking score ties. `SearchResult.source`, `Citation.source`, and `Document.source` contain the configured database name. The name is retained when a client covers only one named database. Databases configured through `lancedb.uri` are unnamed, so their `source` is `None`.
+Candidates are combined into one ranked list with the configured reranker, or by cosine similarity to the query when reranking is disabled, with within-database rank breaking ties (full-text-only searches order by retrieval score). `SearchResult.source`, `Citation.source`, and `Document.source` contain the configured database name. The name is retained when a client covers only one named database. Databases configured through `lancedb.uri` are unnamed, so their `source` is `None`.
 
 The CLI labels results and citations only when the operation spans multiple databases. A command already narrowed with `--db-name` does not repeat the name on every result.
 
@@ -245,17 +245,13 @@ The chat document filter selects by document and database: the search is narrowe
 
 #### Ranking
 
-Reciprocal rank fusion compares positions rather than scores, so each database contributes top-ranked results even when another database has stronger matches. A reranker scores the combined candidate set directly, which has been measured to help aggregate retrieval and to hurt attribution between near-identical documents.
+Without a reranker, the fused list is ordered by cosine similarity between the query vector and each candidate. The databases in a selection share an embedder, so similarity in that one space is comparable across databases, where retrieval scores are each database's own arithmetic. Ties resolve by the candidate's rank within its own database, and configured order decides only when both tie. Similarities rarely tie exactly, so declaration order decides almost nothing: on MTRAG retrieval benchmarks, reversing it left recall unchanged in every cell. Full-text-only searches have no query vector and order by retrieval score instead.
 
-Aggregate retrieval is stronger with a reranker. In a 3,045-query evaluation over a corpus split across three databases, reranking produced retrieval MAP 0.9914, compared with 0.9918 for the same corpus in one database. Without a reranker, MAP was 0.6044, compared with 0.9798 in one database. Reranking cost grows with the number of databases because each contributes candidates.
+Results are not guaranteed to spread across databases: a database with nothing relevant to a query contributes nothing, and a strong database can fill every slot. On MTRAG retrieval benchmarks over two to eight collections, cosine fusion holds recall roughly flat as collections are added, where position-based fusion lost up to half its recall at eight.
 
-A reranker scores the combined candidates with no notion of which database each came from, so on near-identical text it can pick the wrong database's chunk, where fusion keeps them apart because each database contributes its own top-ranked result. In two nine-case acceptance runs over a synthetic corpus holding one station in two databases under near-identical names, attribution was weaker with reranking: citing the right database succeeded 5 of 9 and 6 of 9 times with a reranker, against 8 of 9 and 9 of 9 without.
+A configured reranker scores the combined candidate set directly, ignoring which database each candidate came from, and remains the strongest option: roughly 6 to 8 recall points above cosine fusion on the same benchmarks. Its cost grows with the number of databases because each contributes candidates.
 
-Configure a reranker where retrieval breadth matters, and measure it where answers have to attribute between documents that read alike.
-
-Without a reranker, consider increasing `search.limit` with the number of databases. With three complete rankings and a limit of 5, a database may contribute only one or two results. A higher limit also sends more results to the caller and model.
-
-Image queries are vector-only and skip the reranker: there is no query text to score a document against, so candidates keep their vector ranking and fusion ranks by position.
+Image queries are vector-only and skip the reranker: the reranker interface takes a text query, and multimodal reranking applies to pictures on the candidate side, not to image queries. Their fused list is ordered by cosine similarity like any other vector search.
 
 If a selected database is unavailable, the operation fails with `SourceUnavailableError`, which names that database.
 
