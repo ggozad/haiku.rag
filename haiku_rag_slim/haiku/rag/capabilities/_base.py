@@ -14,6 +14,7 @@ from pydantic_ai import (
 )
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import (
+    BinaryContent,
     InstructionPart,
     ModelMessage,
     ModelRequest,
@@ -29,6 +30,7 @@ from pydantic_ai.toolsets import AgentToolset
 
 from haiku.rag.capabilities._tools import (
     CodeExecutionEntry,
+    EvidenceKey,
     merge_results,
     search_corpus,
 )
@@ -43,7 +45,7 @@ from haiku.rag.store.models.citation import (
     ambiguous_citation,
     resolve_citations,
 )
-from haiku.rag.tools.search import build_image_content_from_results
+from haiku.rag.tools.search import PictureKey, build_image_content_from_results
 
 CITATION_GRACE_REQUESTS = 2
 """Requests calling this capability's tools that its cite tool outlives the rest by.
@@ -190,6 +192,8 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
     """The run_step whose searches are being priced and deduplicated."""
     step_searches: int = field(default=0, repr=False)
     step_rejected: bool = field(default=False, repr=False)
+    step_shown: set[EvidenceKey] = field(default_factory=set, repr=False)
+    step_pictures: set[PictureKey] = field(default_factory=set, repr=False)
     request_count: int = field(default=0, repr=False)
     grace_requests_used: int = field(default=0, repr=False)
     epoch: int = field(default=0, repr=False)
@@ -242,6 +246,8 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
             search_step=0,
             step_searches=0,
             step_rejected=False,
+            step_shown=set(),
+            step_pictures=set(),
             request_count=0,
             grace_requests_used=0,
             epoch=0,
@@ -517,6 +523,8 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
             self.search_step = run_step
             self.step_searches = 0
             self.step_rejected = False
+            self.step_shown = set()
+            self.step_pictures = set()
         self.step_searches += 1
         if (self.step_searches - 1) % FREE_SIBLINGS_PER_ROUND == 0:
             self.search_count += 1
@@ -527,23 +535,34 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
                 "the results you already have."
             )
         async with self.rag_lock:
-            formatted, results, include_collection = await search_corpus(
+            formatted, results, rendered, include_collection = await search_corpus(
                 await self._ensure_rag(),
                 query,
                 limit=limit,
                 document_filter=self.state.document_filter,
                 sources=self.state.sources,
+                shown=self.step_shown,
             )
+        parts: list[str | BinaryContent] = []
+        emitted: set[PictureKey] = set()
+        if self.vision:
+            parts, emitted = build_image_content_from_results(
+                results,
+                include_collection=include_collection,
+                exclude=self.step_pictures,
+            )
+        # Everything the search produced commits together, after formatting and
+        # image construction have both succeeded: a search that raises must not
+        # leave results citable, note evidence the model never received, or
+        # suppress a later sibling's results.
         state = self.state
         # A model can search the same query twice with different limits, and the
         # narrower return must not drop what the wider one already showed it.
         merge_results(state.searches.setdefault(query, []), results)
         self._note_evidence()
-        if self.vision and (
-            parts := build_image_content_from_results(
-                results, include_collection=include_collection
-            )
-        ):
+        self.step_shown |= rendered
+        self.step_pictures |= emitted
+        if parts:
             return ToolReturn(return_value=formatted, content=parts)
         return formatted
 

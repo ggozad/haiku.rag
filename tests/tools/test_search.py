@@ -311,7 +311,7 @@ class TestBuildImageContentFromResults:
             SearchResult(content="text only", score=0.5, chunk_id="c1", image_data=None)
         ]
 
-        assert build_image_content_from_results(results) == []
+        assert build_image_content_from_results(results) == ([], set())
 
     def test_duplicate_document_and_ref_is_attached_once(self):
         from pydantic_ai.messages import BinaryContent
@@ -336,7 +336,7 @@ class TestBuildImageContentFromResults:
             ),
         ]
 
-        content = build_image_content_from_results(results)
+        content, _ = build_image_content_from_results(results)
 
         images = [item for item in content if isinstance(item, BinaryContent)]
         assert len(images) == 1
@@ -369,7 +369,7 @@ class TestBuildImageContentFromResults:
 
         from haiku.rag.tools.search import build_image_content_from_results
 
-        content = build_image_content_from_results(
+        content, _ = build_image_content_from_results(
             self._one_picture_in_two_collections()
         )
 
@@ -381,7 +381,7 @@ class TestBuildImageContentFromResults:
         reference."""
         from haiku.rag.tools.search import build_image_content_from_results
 
-        content = build_image_content_from_results(
+        content, _ = build_image_content_from_results(
             self._one_picture_in_two_collections(), include_collection=True
         )
 
@@ -392,7 +392,7 @@ class TestBuildImageContentFromResults:
     def test_an_unasked_for_collection_is_not_named_on_an_image(self):
         from haiku.rag.tools.search import build_image_content_from_results
 
-        content = build_image_content_from_results(
+        content, _ = build_image_content_from_results(
             self._one_picture_in_two_collections()
         )
 
@@ -431,7 +431,7 @@ class TestBuildImageContentFromResults:
             ),
         ]
 
-        content = build_image_content_from_results(results)
+        content, _ = build_image_content_from_results(results)
 
         # label, image, label, image — each picture preceded by its own line.
         assert [type(item) is str for item in content] == [True, False, True, False]

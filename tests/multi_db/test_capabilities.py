@@ -305,8 +305,10 @@ class TestWhenTheModelIsToldTheCollection:
         async with HaikuRAG(config=config) as rag:
             monkeypatch.setattr(rag, "search", AsyncMock(return_value=only_alpha))
 
-            spanning, _, spans = await search_corpus(rag, "cats")
-            narrowed, _, narrows = await search_corpus(rag, "cats", sources=["alpha"])
+            spanning, _, _, spans = await search_corpus(rag, "cats")
+            narrowed, _, _, narrows = await search_corpus(
+                rag, "cats", sources=["alpha"]
+            )
 
         assert "Collection: alpha" in spanning
         assert "Collection" not in narrowed
