@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Document timestamps include timezone information and satisfy the MCP
+  date-time output schema.
+
 ## [0.82.0] - 2026-09-03
 
 ### Removed

@@ -77,8 +77,12 @@ class DocumentRepository:
             docling_document=doc.docling_document,
             docling_pages=doc.docling_pages,
             docling_version=doc.docling_version,
-            created_at=datetime.fromisoformat(created) if created else datetime.now(UTC),
-            updated_at=datetime.fromisoformat(updated) if updated else datetime.now(UTC),
+            created_at=datetime.fromisoformat(created)
+            if created
+            else datetime.now(UTC),
+            updated_at=datetime.fromisoformat(updated)
+            if updated
+            else datetime.now(UTC),
         )
 
     def _to_documents_record(self, entity: Document, doc_id: str) -> DocumentRecord:

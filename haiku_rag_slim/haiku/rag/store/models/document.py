@@ -34,14 +34,8 @@ class Document(BaseModel):
 
     @field_validator("created_at", "updated_at")
     @classmethod
-    def _assume_utc(cls, value: datetime) -> datetime:
-        """Attach UTC to a timezone-less timestamp instead of leaving it ambiguous.
-
-        A row written before timestamps carried an explicit offset parses back
-        with no tzinfo. Treat it as UTC rather than pass it on naive, which the
-        MCP tools' declared JSON schema rejects as an invalid date-time.
-        """
-        return value if value.tzinfo else value.replace(tzinfo=UTC)
+    def _to_utc(cls, value: datetime) -> datetime:
+        return value if value.tzinfo else value.astimezone(UTC)
 
     def set_docling(self, docling_doc: "DoclingDocument") -> None:
         """Serialize and store a DoclingDocument, splitting structure and pages.
