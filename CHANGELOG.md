@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `qa.max_searches` counts search units: searches a model emits in one
+  response share a unit, up to 3 per unit; sequential searches pay one unit
+  each.
+
 ## [0.81.0] - 2026-09-01
 
 ### Added

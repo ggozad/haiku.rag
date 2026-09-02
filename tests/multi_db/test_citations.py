@@ -342,7 +342,7 @@ class TestCiteFallback:
             )
             run = await capability.for_run(make_context(deps))
             # The search returns the cats chunk, never the aardvark one.
-            await run._search("cats", limit=10)
+            await run._search("cats", 10, 1)
 
             await run._cite([aardvark.id])
 
@@ -374,7 +374,7 @@ class TestCiteFallback:
                 state={"rag": RAGState(sources=["alpha"]).model_dump(mode="json")}
             )
             run = await capability.for_run(make_context(deps))
-            await run._search("cats", limit=10)
+            await run._search("cats", 10, 1)
 
             with pytest.raises(ModelRetry, match="None of the supplied chunk_ids"):
                 await run._cite([outside.id])

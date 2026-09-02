@@ -81,7 +81,7 @@ class RAGCapability(RAGCapabilityBase[RAGState]):
             ctx: RunContext[Any], query: str, limit: int | None = None
         ) -> str | ToolReturn:
             """Search the knowledge base using hybrid vector and full-text search."""
-            return await self._with_state(self._search(query, limit))
+            return await self._with_state(self._search(query, limit, ctx.run_step))
 
         async def rag_cite(ctx: RunContext[Any], chunk_ids: list[str]) -> Any:
             """Register exact search-result chunk IDs as citations for the answer."""

@@ -412,7 +412,7 @@ async def test_a_spent_search_budget_fails_the_tool(temp_db_path):
     capability.state = RAGState()
 
     with pytest.raises(ToolFailed, match="Search limit reached"):
-        await capability._search("anything", None)
+        await capability._search("anything", None, 1)
 
 
 def _stub_client(*batches: list[SearchResult]) -> AsyncMock:
@@ -452,7 +452,7 @@ async def _labels_of_search(temp_db_path, *sources: str) -> list[str]:
     client.source_names = sources
 
     with patch.object(RAGCapability, "_ensure_rag", AsyncMock(return_value=client)):
-        returned = await capability._search("cats", None)
+        returned = await capability._search("cats", None, 1)
 
     assert isinstance(returned, ToolReturn)
     assert returned.content is not None
@@ -483,7 +483,9 @@ async def test_a_fruitless_search_says_so(temp_db_path):
     capability.state = RAGState()
     capability.borrowed_rag = _stub_client([])
 
-    assert await capability._search("nothing about this", None) == "No results found."
+    assert (
+        await capability._search("nothing about this", None, 1) == "No results found."
+    )
 
 
 @pytest.mark.asyncio
@@ -500,8 +502,8 @@ async def test_a_narrower_repeat_keeps_what_the_wider_search_returned(temp_db_pa
         [SearchResult(content="first", score=1.0, chunk_id="chunk-1")],
     )
 
-    await capability._search("Figure 3-1", 20)
-    await capability._search("Figure 3-1", None)
+    await capability._search("Figure 3-1", 20, 1)
+    await capability._search("Figure 3-1", None, 2)
 
     stored = capability.state.searches["Figure 3-1"]
     assert [result.chunk_id for result in stored] == [
@@ -525,8 +527,8 @@ async def test_two_databases_holding_one_chunk_id_both_survive(temp_db_path):
         ],
     )
 
-    await capability._search("cats", 20)
-    await capability._search("cats", None)
+    await capability._search("cats", 20, 1)
+    await capability._search("cats", None, 2)
 
     stored = capability.state.searches["cats"]
     assert [(r.source, r.chunk_id) for r in stored] == [
@@ -1105,7 +1107,7 @@ def _record(deps: Deps, namespace: str) -> CapabilityEvidenceRecord:
     return CapabilityEvidenceRecord.model_validate(deps.state[namespace]["evidence"])
 
 
-async def _stub_search(self, query: str, _limit: int | None) -> str:
+async def _stub_search(self, query: str, _limit: int | None, _run_step: int) -> str:
     """Record a result the way the real search does, so citing resolves."""
     cast(Any, self.state).searches[query] = [
         SearchResult(content="evidence", score=1.0, chunk_id="chunk-1")

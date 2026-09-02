@@ -437,7 +437,9 @@ REAL_PNG = base64.b64decode(
 )
 
 
-async def _search_with_a_picture(self, query: str, _limit: int | None) -> str:
+async def _search_with_a_picture(
+    self, query: str, _limit: int | None, _run_step: int
+) -> str:
     """Record a result carrying a page image, the way a real search does."""
     cast(Any, self.state).searches[query] = [
         SearchResult(

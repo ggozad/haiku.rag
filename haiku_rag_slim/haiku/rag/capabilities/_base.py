@@ -61,6 +61,15 @@ Calibration knob. Two unrelated UUID4s reach about 0.5, while dropping or
 duplicating a character or a whole group stays above 0.75, so the gap is wide.
 """
 
+FREE_SIBLINGS_PER_ROUND = 3
+"""Searches one budget unit covers when emitted in the same model response.
+
+Calibration knob, sized to the measured modal burst. ``qa.max_searches``
+counts units, so a model rephrasing its query a few times in one response
+spends one unit, while every search of a sequential searcher is a unit of its
+own.
+"""
+
 
 def _ambiguous_retry(error: AmbiguousCitationError) -> ModelRetry:
     """The only way out of an id that names a chunk in two databases.
@@ -177,6 +186,10 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
     rag_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     resource_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     search_count: int = field(default=0, repr=False)
+    search_step: int = field(default=0, repr=False)
+    """The run_step whose searches are being priced and deduplicated."""
+    step_searches: int = field(default=0, repr=False)
+    step_rejected: bool = field(default=False, repr=False)
     request_count: int = field(default=0, repr=False)
     grace_requests_used: int = field(default=0, repr=False)
     epoch: int = field(default=0, repr=False)
@@ -226,6 +239,9 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
             rag_lock=asyncio.Lock(),
             resource_lock=asyncio.Lock(),
             search_count=0,
+            search_step=0,
+            step_searches=0,
+            step_rejected=False,
             request_count=0,
             grace_requests_used=0,
             epoch=0,
@@ -493,10 +509,19 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
             retrieved_now=retrieved,
         )
 
-    async def _search(self, query: str, limit: int | None) -> str | ToolReturn:
+    async def _search(
+        self, query: str, limit: int | None, run_step: int
+    ) -> str | ToolReturn:
         assert self.state is not None
-        self.search_count += 1
-        if self.search_count > self._max_searches:
+        if run_step != self.search_step:
+            self.search_step = run_step
+            self.step_searches = 0
+            self.step_rejected = False
+        self.step_searches += 1
+        if (self.step_searches - 1) % FREE_SIBLINGS_PER_ROUND == 0:
+            self.search_count += 1
+        if self.step_rejected or self.search_count > self._max_searches:
+            self.step_rejected = True
             raise ToolFailed(
                 "Search limit reached. Answer the question using "
                 "the results you already have."
