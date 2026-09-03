@@ -5,7 +5,9 @@
 ### Fixed
 
 - Document timestamps include timezone information and satisfy the MCP
-  date-time output schema.
+  date-time output schema. Stored timestamps without an offset are read as
+  host-local time; a database written under a different host timezone shifts
+  by that offset.
 
 ## [0.82.0] - 2026-09-03
 
