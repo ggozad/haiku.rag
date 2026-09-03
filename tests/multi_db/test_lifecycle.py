@@ -475,6 +475,25 @@ class TestFailureNaming:
         assert caught.value.__cause__ is None
 
     @pytest.mark.asyncio
+    async def test_a_missing_default_database_names_the_remedy(self, tmp_path):
+        """The location stays out of the message; the way to create the
+        database does not."""
+        from haiku.rag.config.models import AppConfig, StorageConfig
+
+        config = AppConfig(storage=StorageConfig(data_dir=tmp_path / "empty"))
+
+        with pytest.raises(SourceUnavailableError) as caught:
+            async with HaikuRAG(config=config):
+                pass
+
+        message = str(caught.value)
+        assert "database 'haiku.rag' does not exist" in message
+        assert "haiku-rag init" in message
+        assert "create=True" in message
+        assert str(tmp_path) not in message
+        assert caught.value.__cause__ is None
+
+    @pytest.mark.asyncio
     async def test_a_database_given_as_a_path_keeps_its_error(self, tmp_path):
         """The caller gave the path, so the error may name it."""
         with pytest.raises(FileNotFoundError):

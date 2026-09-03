@@ -54,10 +54,20 @@ class TestResolution:
         assert scope.names == ("beta",)
 
     def test_an_unknown_name_is_refused(self):
+        """The message lists the databases there are, configured or default."""
         config = _config(databases={"alpha": "/data/alpha.lancedb"})
 
-        with pytest.raises(UnknownDatabaseError, match="unknown database 'nope'"):
+        with pytest.raises(
+            UnknownDatabaseError,
+            match="unknown database 'nope'.*the databases are alpha",
+        ):
             DatabaseScope.resolve(config, database_name="nope")
+
+        with pytest.raises(
+            UnknownDatabaseError,
+            match="unknown database 'nope'.*the databases are haiku.rag",
+        ):
+            DatabaseScope.resolve(_config(), database_name="nope")
 
     def test_no_selector_covers_the_configured_set_in_order(self):
         config = _config(

@@ -27,7 +27,7 @@ async with HaikuRAG("path/to/database.lancedb", read_only=True) as client:
 `async with` is the lifecycle. A caller that owns the client some other way releases it with `await client.aclose()`, which does the same work for every client shape. `client.close()` closes the connection to one database and nothing else, since draining the background vacuum and releasing the embedder and reranker are awaitable; it refuses a client covering several.
 
 !!! note
-    Databases must be explicitly created with `create=True` or via `haiku-rag init` before use. Opening a nonexistent local database given as a path raises `FileNotFoundError`, naming the path; one placed by `lancedb.databases` raises `SourceUnavailableError`, which names the database rather than its location. A path beside a configured `lancedb.databases` raises `AmbiguousDatabaseError`.
+    Databases must be explicitly created with `create=True` or via `haiku-rag init` before use. Opening a nonexistent local database given as a path raises `FileNotFoundError`, naming the path; a configured or default database raises `SourceUnavailableError`, which names the database rather than its location. A path beside a configured `lancedb.databases` raises `AmbiguousDatabaseError`.
 
 !!! note
     Read-only mode is useful for safely accessing databases without risk of modification. It blocks all write operations and downgrades an embedding provider/name mismatch to a warning instead of raising `ConfigMismatchError`.

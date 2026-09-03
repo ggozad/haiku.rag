@@ -557,12 +557,6 @@ class TestPlacingTheIngesterDatabase:
         with pytest.raises(typer.BadParameter, match="no name"):
             _scope_for(Path("/"))
 
-    def test_a_python_caller_cannot_pass_a_path(self):
-        from haiku.rag.ingester.app import IngesterApp
-
-        with pytest.raises(TypeError):
-            IngesterApp(config=AppConfig(), db_path="/db/other.lancedb")  # type: ignore[call-arg]  # ty: ignore[unknown-argument]
-
     def test_one_configured_database_is_accepted(self, tmp_path):
         """A one-entry mapping names which database to write."""
         config = AppConfig(

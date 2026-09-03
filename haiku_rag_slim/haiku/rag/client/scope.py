@@ -126,7 +126,7 @@ class DatabaseScope:
         if database_name is not None:
             if database_name not in declared:
                 raise UnknownDatabaseError(
-                    f"unknown database {database_name!r}; lancedb.databases names "
+                    f"unknown database {database_name!r}; the databases are "
                     f"{', '.join(sorted(declared))}"
                 )
             return cls(

@@ -110,7 +110,7 @@ async with HaikuRAG(create=True) as client:
 
 The [default location](index.md#configuration-file-locations) is platform-specific (e.g., `~/Library/Application Support/haiku.rag/` on macOS).
 
-Opening a nonexistent local database given as a path raises `FileNotFoundError`, naming the path. This prevents accidental database creation from typos or misconfigured paths. A database placed by `lancedb.databases` raises `SourceUnavailableError` instead, naming the database and not its location.
+Opening a nonexistent local database given as a path raises `FileNotFoundError`, naming the path. This prevents accidental database creation from typos or misconfigured paths. A configured or default database raises `SourceUnavailableError` instead, naming the database and not its location.
 
 ## Remote Storage
 

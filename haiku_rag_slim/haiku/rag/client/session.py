@@ -113,13 +113,15 @@ class SingleDatabaseSession:
             # A path the caller gave may be named: the caller knows it already.
             if self.ref.given:
                 raise
-            failure = type(error).__name__
+            failure = (
+                "does not exist; create it with `haiku-rag init` or `create=True`"
+                if isinstance(error, FileNotFoundError)
+                else f"could not be opened: {type(error).__name__}"
+            )
         if failure is not None:
             # Raised outside the handler: the exception carries neither a cause
             # nor a location-bearing context.
-            raise SourceUnavailableError(
-                f"database {self.source!r} could not be opened: {failure}"
-            )
+            raise SourceUnavailableError(f"database {self.source!r} {failure}")
         self.document_repository = DocumentRepository(self.store)
         self.chunk_repository = ChunkRepository(self.store)
         self.document_item_repository = DocumentItemRepository(self.store)
