@@ -1,3 +1,7 @@
+import os
+import time
+from datetime import UTC, datetime
+
 import pytest
 
 from haiku.rag.store.engine import Store
@@ -549,3 +553,28 @@ async def test_document_get_by_uri_with_special_characters(
         assert retrieved is not None
         assert retrieved.id == created_doc.id
         assert retrieved.uri == "Hamish and Andy's Gap Year"
+
+
+@pytest.mark.skipif(not hasattr(time, "tzset"), reason="time.tzset is POSIX-only")
+def test_naive_timestamp_is_converted_from_local_time():
+    original_tz = os.environ.get("TZ")
+    os.environ["TZ"] = "Europe/Athens"
+    time.tzset()
+    try:
+        created = datetime(2026, 1, 1, 14, 0, 0)  # January is EET, UTC+2
+        updated = datetime(2026, 1, 1, 14, 30, 0)
+        doc = Document(content="x", created_at=created, updated_at=updated)
+        assert doc.created_at == datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
+        assert doc.updated_at == datetime(2026, 1, 1, 12, 30, 0, tzinfo=UTC)
+    finally:
+        if original_tz is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = original_tz
+        time.tzset()
+
+
+def test_created_at_serializes_with_timezone_offset():
+    doc = Document(content="x")
+    value = doc.model_dump(mode="json")["created_at"]
+    assert datetime.fromisoformat(value).utcoffset() is not None

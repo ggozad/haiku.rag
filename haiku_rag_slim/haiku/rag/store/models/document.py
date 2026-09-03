@@ -1,8 +1,8 @@
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from haiku.rag.store.compression import compress_docling_split, decompress_json
 
@@ -29,8 +29,13 @@ class Document(BaseModel):
     docling_document: bytes | None = Field(default=None, exclude=True)
     docling_pages: bytes | None = Field(default=None, exclude=True)
     docling_version: str | None = Field(default=None, exclude=True)
-    created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def _to_utc(cls, value: datetime) -> datetime:
+        return value if value.tzinfo else value.astimezone(UTC)
 
     def set_docling(self, docling_doc: "DoclingDocument") -> None:
         """Serialize and store a DoclingDocument, splitting structure and pages.
