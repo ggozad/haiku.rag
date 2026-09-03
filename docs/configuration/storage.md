@@ -122,7 +122,7 @@ lancedb:
   databases:
     papers: db://your-database-name
   api_key: your-api-key
-  region: us-west-2  # optional
+  region: us-west-2
 
 # Amazon S3
 lancedb:
