@@ -235,7 +235,7 @@ results = await client.search("query")                     # every database
 results = await client.search("query", sources=["papers"])   # one of them
 ```
 
-Candidates are combined into one ranked list with the configured reranker, or by cosine similarity to the query when reranking is disabled, with within-database rank breaking ties (full-text-only searches order by retrieval score). `SearchResult.source`, `Citation.source`, and `Document.source` contain the configured database name. The name is retained when a client covers only one named database. Databases configured through `lancedb.uri` are unnamed, so their `source` is `None`.
+Candidates are combined into one ranked list with the configured reranker, or by cosine similarity to the query when reranking is disabled, with within-database rank breaking ties (full-text-only searches order by retrieval score). `SearchResult.source`, `Citation.source`, and `Document.source` carry the database name, for a set and for one database alike.
 
 The CLI labels results and citations only when the operation spans multiple databases. A command already narrowed with `--db-name` does not repeat the name on every result.
 

@@ -159,8 +159,8 @@ def _make_mock_client():
     # Covers one database; a bare AsyncMock answers `covers_multiple` with a
     # truthy Mock.
     mock_client.covers_multiple = False
-    mock_client.source_names = ()
-    mock_client.source = None
+    mock_client.source_names = ("test",)
+    mock_client.source = "test"
     return mock_client
 
 
@@ -462,9 +462,9 @@ async def test_document_filter_updates_rag_state(temp_db_path: Path):
     ):
         async with app.run_test():
             # The selection is document ids, so a repeated title cannot widen it.
-            selected = [
-                (None, "6f1c2d4e-0000-4000-8000-000000000001"),
-                (None, "6f1c2d4e-0000-4000-8000-000000000002"),
+            selected: list[tuple[str | None, str]] = [
+                ("test", "6f1c2d4e-0000-4000-8000-000000000001"),
+                ("test", "6f1c2d4e-0000-4000-8000-000000000002"),
             ]
             app.on_document_filter_modal_filter_changed(
                 DocumentFilterModal.FilterChanged(selected)
@@ -478,7 +478,7 @@ async def test_document_filter_updates_rag_state(temp_db_path: Path):
             assert rag_state.document_filter == expected_filter
             assert rag_state.document_filter is not None
             assert "LIKE" not in rag_state.document_filter
-            # An unnamed database leaves the question unscoped by source.
+            # One database leaves the question unscoped by source.
             assert rag_state.sources is None
 
             # The state snapshot should also reflect the change
@@ -487,12 +487,15 @@ async def test_document_filter_updates_rag_state(temp_db_path: Path):
 
 @pytest.mark.asyncio
 async def test_document_filter_narrows_sources_to_the_selection(temp_db_path: Path):
-    """The filter carries ids, and `sources` restricts the question to the
-    databases the selection names."""
+    """Over a set, the filter carries ids and `sources` restricts the question
+    to the databases the selection names."""
     from haiku.rag.chat.app import RAG_STATE_NAMESPACE
     from haiku.rag.chat.widgets.document_filter_modal import DocumentFilterModal
 
     app, mock_client = _make_app_with_state(temp_db_path)
+    mock_client.covers_multiple = True
+    mock_client.source_names = ("alpha", "beta")
+    mock_client.source = None
 
     with (
         patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
@@ -538,7 +541,7 @@ async def test_document_filter_cleared_when_empty(temp_db_path: Path):
         async with app.run_test():
             # First set a filter
             app.on_document_filter_modal_filter_changed(
-                DocumentFilterModal.FilterChanged([(None, "AI Overview")])
+                DocumentFilterModal.FilterChanged([("test", "AI Overview")])
             )
             rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
             assert rag_state.document_filter is not None
@@ -817,10 +820,22 @@ class TestDocumentSelectionIdentity:
             )
         ]
 
-        ((label, source, doc_id),) = _labelled(docs)
+        ((label, source, doc_id),) = _labelled(docs, name_database=True)
         box = DocumentCheckbox(label, source, doc_id, value=False)
 
         assert str(box.label) == "Report [/red]  (alpha [/x])"
+
+    def test_one_database_is_not_named_on_its_labels(self):
+        """A single database names every document alike, so the label says
+        nothing a title does not."""
+        from haiku.rag.chat.widgets.document_filter_modal import _labelled
+        from haiku.rag.store.models.document import Document
+
+        docs = [Document(id="id-one", content="", title="Report", source="test")]
+
+        ((label, _, _),) = _labelled(docs)
+
+        assert label == "Report"
 
 
 def test_a_citation_title_that_looks_like_markup_is_text():
@@ -1046,17 +1061,20 @@ class TestKeepingSelectionsReachable:
         from haiku.rag.store.models.document import Document
 
         picked = [
-            Document(id=f"sel-{i:04d}", content="", title=f"Selected {i:04d}")
+            Document(
+                id=f"sel-{i:04d}", content="", title=f"Selected {i:04d}", source="test"
+            )
             for i in range(DOCUMENT_PAGE + 20)
         ]
         by_id = {d.id: d for d in picked}
         matched = [
-            Document(id=f"hit-{i}", content="", title=f"Hit {i}") for i in range(5)
+            Document(id=f"hit-{i}", content="", title=f"Hit {i}", source="test")
+            for i in range(5)
         ]
 
         client = AsyncMock()
         client.covers_multiple = False
-        client.source_names = ()
+        client.source_names = ("test",)
         client.count_documents.return_value = 5
 
         async def listing(limit=None, offset=0, filter=None):
@@ -1068,7 +1086,7 @@ class TestKeepingSelectionsReachable:
         client.list_documents.side_effect = listing
 
         modal = DocumentFilterModal(
-            client=client, selected=[(None, d.id or "") for d in picked]
+            client=client, selected=[("test", d.id or "") for d in picked]
         )
         app, _ = _make_app(temp_db_path, client)
         with (
@@ -1115,14 +1133,16 @@ class TestKeepingSelectionsReachable:
         from haiku.rag.store.models.document import Document
 
         picked = [
-            Document(id=f"sel-{i:04d}", content="", title=f"Selected {i:04d}")
+            Document(
+                id=f"sel-{i:04d}", content="", title=f"Selected {i:04d}", source="test"
+            )
             for i in range(DOCUMENT_PAGE + 1)
         ]
         by_id = {d.id: d for d in picked}
 
         client = AsyncMock()
         client.covers_multiple = False
-        client.source_names = ()
+        client.source_names = ("test",)
         client.count_documents.return_value = 0
 
         async def listing(limit=None, offset=0, filter=None):
@@ -1134,7 +1154,7 @@ class TestKeepingSelectionsReachable:
         client.list_documents.side_effect = listing
 
         modal = DocumentFilterModal(
-            client=client, selected=[(None, d.id or "") for d in picked]
+            client=client, selected=[("test", d.id or "") for d in picked]
         )
         app, _ = _make_app(temp_db_path, client)
         with (
@@ -1166,7 +1186,9 @@ class TestKeepingSelectionsReachable:
         # The row is gone from the listing, not merely unchecked.
         assert "sel-0200" not in remaining
         assert len(remaining) == DOCUMENT_PAGE
-        assert modal._selected == {(None, d.id) for d in picked} - {(None, "sel-0200")}
+        assert modal._selected == {("test", d.id) for d in picked} - {
+            ("test", "sel-0200")
+        }
         # The page it was on no longer exists, so the modal does not report it.
         assert modal._page == 0
         assert "page" not in footer
@@ -1186,10 +1208,10 @@ class TestKeepingSelectionsReachable:
 
         client = AsyncMock()
         client.covers_multiple = False
-        client.source_names = ()
+        client.source_names = ("test",)
         client.count_documents.return_value = DOCUMENT_PAGE * 2
         client.list_documents.return_value = [
-            Document(id="d1", content="", title="One")
+            Document(id="d1", content="", title="One", source="test")
         ]
 
         modal = DocumentFilterModal(client=client)
@@ -1219,7 +1241,7 @@ class TestKeepingSelectionsReachable:
 
         client = AsyncMock()
         client.covers_multiple = False
-        client.source_names = ()
+        client.source_names = ("test",)
         client.list_documents.return_value = []
         client.count_documents.return_value = 0
 
@@ -1254,10 +1276,10 @@ class TestKeepingSelectionsReachable:
 
         client = AsyncMock()
         client.covers_multiple = False
-        client.source_names = ()
+        client.source_names = ("test",)
         client.list_documents.return_value = [
-            Document(id="id-one", content="", title="Capital region"),
-            Document(id="id-two", content="", title="Nobel laureates"),
+            Document(id="id-one", content="", title="Capital region", source="test"),
+            Document(id="id-two", content="", title="Nobel laureates", source="test"),
         ]
         client.count_documents.return_value = DOCUMENT_PAGE * 2
 
@@ -1360,10 +1382,10 @@ class TestDocumentSearchFilter:
 
         client = AsyncMock()
         client.covers_multiple = False
-        client.source_names = ()
+        client.source_names = ("test",)
         client.list_documents.return_value = [
-            Document(id="id-one", content="", title="Capital region"),
-            Document(id="id-two", content="", title="Nobel laureates"),
+            Document(id="id-one", content="", title="Capital region", source="test"),
+            Document(id="id-two", content="", title="Nobel laureates", source="test"),
         ]
         client.count_documents.return_value = 2
 
@@ -1379,7 +1401,9 @@ class TestDocumentSearchFilter:
                 assert len(list(modal.query(DocumentCheckbox))) == 2
 
                 client.list_documents.return_value = [
-                    Document(id="id-two", content="", title="Nobel laureates"),
+                    Document(
+                        id="id-two", content="", title="Nobel laureates", source="test"
+                    ),
                 ]
                 client.count_documents.return_value = 1
                 await modal.on_input_submitted(Input.Submitted(Input(), "Nobel"))

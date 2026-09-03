@@ -145,6 +145,6 @@ Applications serving AG-UI should adapt the agent with Pydantic AI's `AGUIAdapte
 
 ## Database Selection
 
-RAG and analysis capabilities cover the databases the configuration places: [`lancedb.databases`](../configuration/storage.md#multiple-databases), or with nothing configured the default database `haiku.rag` under `storage.data_dir`. The `db_path` argument, or `HAIKU_RAG_DB`, places one database where the configuration places none; beside `lancedb.databases` either raises `AmbiguousDatabaseError`.
+RAG and analysis capabilities cover the databases the configuration places: [`lancedb.databases`](../configuration/storage.md#multiple-databases), or with nothing configured the default database `haiku.rag` under `storage.data_dir`. The `db_path` argument places one database where the configuration places none; beside `lancedb.databases` it raises `AmbiguousDatabaseError`.
 
 Passing a client through `rag=` bypasses this selection. The capability uses the databases covered by that client and does not close it.

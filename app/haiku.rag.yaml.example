@@ -1,6 +1,12 @@
 # haiku.rag configuration for the chat app
 # Copy to haiku.rag.yaml and customize as needed
 
+# The database. The compose files mount DB_VOLUME (default
+# ./data/haiku.rag.lancedb) at /data.
+lancedb:
+  databases:
+    haiku.rag: /data
+
 # QA model configuration
 qa:
   model:

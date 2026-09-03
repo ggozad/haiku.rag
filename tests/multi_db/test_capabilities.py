@@ -162,8 +162,9 @@ class TestCollectionIdentityForTheModel:
 
         assert "Collection" not in result.format_for_agent()
 
-    def test_an_unnamed_collection_is_never_mentioned(self):
-        """Nothing to name, whatever the caller asked for."""
+    def test_a_hand_built_result_without_a_source_is_never_labelled(self):
+        """A result built by hand carries no source to name, whatever the
+        caller asked for."""
         result = SearchResult(content="body", score=0.9, chunk_id="c1")
 
         assert "Collection" not in result.format_for_agent(include_collection=True)

@@ -24,9 +24,9 @@ class Citation(BaseModel):
     ``chunk_ids`` lists the ids of all chunks whose expansion ranges merged
     into the cited result (always includes ``chunk_id``).
 
-    ``source`` names the configured database the cited chunk came from: the name
-    from ``lancedb.databases``, never a path or URI. It is None only where no
-    database is named, as with the single ``lancedb.uri``.
+    ``source`` names the database the cited chunk came from: the name from
+    ``lancedb.databases`` or a path's stem, never a path or URI. None only on a
+    citation resolved from a hand-built result.
 
     ``doc_item_refs`` are the ``self_ref`` values of every item in the cited
     content — the exact items the model saw. Visual grounding resolves bounding

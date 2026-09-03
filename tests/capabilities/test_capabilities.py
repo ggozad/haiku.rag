@@ -98,14 +98,10 @@ def _placed(capability) -> "Path | None":
     return ref.db_path
 
 
-def test_capability_factories_resolve_environment_and_defaults(
-    temp_db_path, monkeypatch
-):
+def test_capability_factories_resolve_defaults(temp_db_path, monkeypatch):
+    """The configuration places the database; the environment plays no part."""
     config = AppConfig()
     monkeypatch.setenv("HAIKU_RAG_DB", str(temp_db_path))
-    assert _placed(create_rag(config=config)) == temp_db_path
-
-    monkeypatch.delenv("HAIKU_RAG_DB")
     assert _placed(create_rag(config=config)) == (
         config.storage.data_dir / "haiku.rag.lancedb"
     )
@@ -170,17 +166,6 @@ class TestACapabilityFollowsTheConfiguredLocation:
             with pytest.raises(AmbiguousDatabaseError, match="notes"):
                 factory(db_path=chosen, config=config)
 
-    def test_the_environment_beside_the_configured_placement_is_refused(
-        self, tmp_path, monkeypatch
-    ):
-        from haiku.rag.store.exceptions import AmbiguousDatabaseError
-
-        config = self._config(tmp_path, "s3://bucket/one.lancedb")
-        monkeypatch.setenv("HAIKU_RAG_DB", str(tmp_path / "from-env.lancedb"))
-
-        with pytest.raises(AmbiguousDatabaseError, match="notes"):
-            create_rag(config=config)
-
 
 @pytest.mark.asyncio
 async def test_a_string_db_path_opens_a_store(temp_db_path):
@@ -211,15 +196,15 @@ def test_domain_preamble_is_added_to_capability_instructions(temp_db_path):
 
 
 def _single_database_client() -> AsyncMock:
-    """A stand-in for a client covering one unnamed database.
+    """A stand-in for a client covering one database.
 
-    `covers_multiple`, `source` and `clients_covering` answer as one unnamed
-    database does; a bare AsyncMock answers every attribute with a truthy Mock.
+    `covers_multiple`, `source` and `clients_covering` answer as one database
+    does; a bare AsyncMock answers every attribute with a truthy Mock.
     """
     client = AsyncMock()
     client.covers_multiple = False
-    client.source_names = ()
-    client.source = None
+    client.source_names = ("test",)
+    client.source = "test"
     client.clients_covering.return_value = [client]
     return client
 

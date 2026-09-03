@@ -1,5 +1,4 @@
 import asyncio
-import os
 from dataclasses import dataclass, field, replace
 from difflib import get_close_matches
 from pathlib import Path
@@ -99,12 +98,7 @@ def _nearest_known_id(chunk_id: str, known_ids: list[str]) -> str:
 
 
 def resolve_scope(db_path: Path | str | None, config: AppConfig) -> DatabaseScope:
-    """The databases a capability covers, resolved once at its entry point.
-
-    ``HAIKU_RAG_DB`` is read here and nowhere else.
-    """
-    if db_path is None and (env_db := os.environ.get("HAIKU_RAG_DB")):
-        db_path = Path(env_db).expanduser()
+    """The databases a capability covers, resolved once at its entry point."""
     return DatabaseScope.resolve(config, database_path=db_path)
 
 

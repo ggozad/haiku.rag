@@ -70,10 +70,7 @@ class DatabaseScope:
     """The databases an operation covers.
 
     Resolved once, from configuration plus at most one selector, then passed
-    down. Never empty.
-
-    Nothing here reads the environment: ``HAIKU_RAG_DB`` is the capability entry
-    point's to honour.
+    down. Never empty. Nothing here reads the environment.
     """
 
     databases: tuple[DatabaseRef, ...]

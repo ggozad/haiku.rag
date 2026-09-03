@@ -259,7 +259,8 @@ class TestLookupByIdentifier:
         assert chunk is not None and chunk.content == "alpha one"
 
     @pytest.mark.asyncio
-    async def test_an_unnamed_database_answers_to_no_name(self, temp_db_path):
+    async def test_a_database_at_a_path_answers_to_its_stem_alone(self, temp_db_path):
+        stem = temp_db_path.stem
         async with HaikuRAG(temp_db_path, create=True) as rag:
             docling = DoclingDocument(name="one")
             docling.add_text(label=DocItemLabel.TEXT, text="body")
@@ -276,6 +277,8 @@ class TestLookupByIdentifier:
 
             assert await rag.get_document_by_id(doc.id) is not None
             assert await rag.get_chunk_by_id(held.id) is not None
+            assert await rag.get_document_by_id(doc.id, stem) is not None
+            assert await rag.get_chunk_by_id(held.id, stem) is not None
             with pytest.raises(UnknownDatabaseError):
                 await rag.get_document_by_id(doc.id, "alpha")
             with pytest.raises(UnknownDatabaseError):

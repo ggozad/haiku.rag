@@ -108,9 +108,8 @@ class TestResolution:
         with pytest.raises(UnknownDatabaseError, match="haiku.rag"):
             DatabaseScope.resolve(config, database_name="haiku.rag")
 
-    def test_the_environment_is_not_consulted(self, monkeypatch, tmp_path):
-        """HAIKU_RAG_DB is honoured by the capability entry point alone;
-        resolution never reads the environment."""
+    def test_the_environment_is_not_consulted(self, monkeypatch):
+        """Resolution reads the configuration alone."""
         monkeypatch.setenv("HAIKU_RAG_DB", "/data/from-the-environment.lancedb")
         config = _config(databases={"alpha": "/data/alpha.lancedb"})
 

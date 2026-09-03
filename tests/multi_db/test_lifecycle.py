@@ -475,8 +475,8 @@ class TestFailureNaming:
         assert caught.value.__cause__ is None
 
     @pytest.mark.asyncio
-    async def test_an_unnamed_database_keeps_its_error(self, tmp_path):
-        """Nothing named it, so there is no name to report."""
+    async def test_a_database_given_as_a_path_keeps_its_error(self, tmp_path):
+        """The caller gave the path, so the error may name it."""
         with pytest.raises(FileNotFoundError):
             async with HaikuRAG(tmp_path / "nope.lancedb"):
                 pass

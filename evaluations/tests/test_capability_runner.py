@@ -485,8 +485,8 @@ def test_records_the_database_each_citation_came_from():
     assert result.cited_sources == ["alpha", "beta", "alpha"]
 
 
-def test_an_unnamed_database_records_no_source():
-    """One database names nothing: the field holds an empty string."""
+def test_a_hand_built_citation_without_a_source_records_an_empty_string():
+    """A citation built without a source is recorded as an empty string."""
     from haiku.rag.capabilities._base import EvidenceState
     from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
     from haiku.rag.store.models.citation import Citation

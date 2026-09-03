@@ -26,8 +26,8 @@ uv run python examples/custom_agent.py /path/to/db.lancedb
 
 **Script:** `custom_agent_agui.py`
 
-A Starlette app that adapts a native RAG-capable agent to AG-UI.
+A Starlette app that adapts a native RAG-capable agent to AG-UI. The configuration places the database (`HAIKU_RAG_CONFIG_PATH`, or `./haiku.rag.yaml`):
 
 ```bash
-DB_PATH=/path/to/db.lancedb uv run uvicorn examples.custom_agent_agui:app --reload --port 8000
+uv run uvicorn examples.custom_agent_agui:app --reload --port 8000
 ```

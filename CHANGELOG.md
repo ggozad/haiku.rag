@@ -6,6 +6,12 @@
 
 - `lancedb.uri`. Write `lancedb.databases: {NAME: <location>}`; a config carrying
   `uri` fails to load with that message.
+- `HAIKU_RAG_DB`. Capabilities cover the databases the configuration places, or
+  the `db_path` argument.
+- `DB_PATH` in the `app/` backend and `examples/custom_agent_agui.py`. Both load
+  the configuration as the CLI does (`HAIKU_RAG_CONFIG_PATH`, `./haiku.rag.yaml`,
+  the platform directory); the compose files set
+  `HAIKU_RAG_CONFIG_PATH=/app/haiku.rag.yaml` and mount `DB_VOLUME` at `/data`.
 
 ### Changed
 

@@ -7,13 +7,14 @@ services:
     ports:
       - "127.0.0.1:8001:8000"
     environment:
-      - DB_PATH=/data
+      - HAIKU_RAG_CONFIG_PATH=/app/haiku.rag.yaml
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
     volumes:
-      - ${DB_PATH:-./data/haiku.rag.lancedb}:/data
+      # haiku.rag.yaml places the database at /data.
+      - ${DB_VOLUME:-./data/haiku.rag.lancedb}:/data
       - ./haiku.rag.yaml:/app/haiku.rag.yaml:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"

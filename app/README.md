@@ -40,7 +40,8 @@ A conversational RAG interface built with [CopilotKit](https://copilotkit.ai/) a
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `DB_PATH` | Path to your haiku.rag LanceDB database | Yes |
+| `DB_VOLUME` | Host path of the LanceDB database the compose files mount at `/data`, where `haiku.rag.yaml` places it (default `./data/haiku.rag.lancedb`) | No |
+| `HAIKU_RAG_CONFIG_PATH` | The configuration file; the compose files set it to the mounted `/app/haiku.rag.yaml` | No |
 | `ANTHROPIC_API_KEY` | Anthropic API key | One LLM key required |
 | `OPENAI_API_KEY` | OpenAI API key | One LLM key required |
 | `OLLAMA_BASE_URL` | Ollama server URL (default: `http://host.docker.internal:11434`) | For local models |

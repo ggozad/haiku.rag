@@ -40,8 +40,8 @@ Create a `.env` file in the `app/` directory:
 ANTHROPIC_API_KEY=your-anthropic-key
 OPENAI_API_KEY=your-openai-key
 
-# Database path
-DB_PATH=/path/to/your/haiku.rag.lancedb
+# Host path of the LanceDB database, mounted at /data
+DB_VOLUME=/path/to/your/haiku.rag.lancedb
 
 # Optional: Ollama base URL (if using local models)
 OLLAMA_BASE_URL=http://localhost:11434
@@ -50,15 +50,21 @@ OLLAMA_BASE_URL=http://localhost:11434
 LOGFIRE_TOKEN=your-logfire-token
 ```
 
-For full configuration, mount a `haiku.rag.yaml` file:
+The mounted `haiku.rag.yaml` places the database at `/data` and configures the models; the compose files point `HAIKU_RAG_CONFIG_PATH` at it:
 
 ```yaml
 # app/haiku.rag.yaml
+lancedb:
+  databases:
+    haiku.rag: /data
+
 qa:
   model:
     provider: anthropic
     name: claude-sonnet-4-20250514
 ```
+
+Outside compose, the backend loads its configuration like the CLI: `HAIKU_RAG_CONFIG_PATH`, then `./haiku.rag.yaml`, then the platform directory.
 
 ## API endpoints
 
