@@ -3,7 +3,6 @@ from pathlib import Path
 import pytest
 
 from haiku.rag.client.scope import DatabaseRef, DatabaseScope
-from haiku.rag.client.session import default_db_path
 from haiku.rag.config.models import AppConfig, LanceDBConfig, StorageConfig
 from haiku.rag.store.exceptions import (
     AmbiguousDatabaseError,
@@ -89,16 +88,13 @@ class TestResolution:
         assert ref.uri == ""
 
     def test_a_path_selects_the_database_over_a_configured_uri(self):
-        """`--db` exists to override what is configured, and the configuration
-        derived from the ref is what makes the connection follow it."""
+        """`--db` exists to override what is configured."""
         config = _config(uri="s3://bucket/one.lancedb")
 
         scope = DatabaseScope.resolve(config, database_path=Path("/data/local"))
 
         [ref] = scope.databases
-        assert ref.db_path == Path("/data/local")
-        one, _ = ref.connection(config)
-        assert one.lancedb.uri == ""
+        assert ref.location == Path("/data/local")
 
     def test_nothing_configured_falls_back_to_the_data_directory(self, tmp_path):
         config = AppConfig(storage=StorageConfig(data_dir=tmp_path))
@@ -158,61 +154,23 @@ class TestResolution:
             DatabaseScope(())
 
 
-class TestConnectionDerivation:
-    """Opening one of a set must not disturb the configuration it came from."""
+class TestLocation:
+    """One value says where a database is: a path for a local one, a URI string
+    for a remote one. Storage connects to it as given."""
 
-    def test_a_local_location_becomes_a_path(self):
+    def test_a_local_location_is_a_path(self):
         config = _config(databases={"alpha": "/data/alpha.lancedb"})
         [ref] = DatabaseScope.resolve(config).databases
 
-        one, db_path = ref.connection(config)
+        assert ref.location == Path("/data/alpha.lancedb")
 
-        assert db_path == Path("/data/alpha.lancedb")
-        assert one.lancedb.uri == ""
-        assert one.lancedb.databases == {}
-
-    def test_a_uri_location_stays_a_uri(self):
+    def test_a_uri_location_is_the_uri(self):
         config = _config(databases={"alpha": "s3://bucket/alpha.lancedb"})
         [ref] = DatabaseScope.resolve(config).databases
 
-        one, db_path = ref.connection(config)
+        assert ref.location == "s3://bucket/alpha.lancedb"
 
-        assert db_path is None
-        assert one.lancedb.uri == "s3://bucket/alpha.lancedb"
-
-    def test_the_original_configuration_is_untouched(self):
-        """Rewriting it in place is what left downstream code unable to tell a set
-        had been named."""
-        config = _config(databases={"alpha": "/a.lancedb", "beta": "/b.lancedb"})
-
-        for ref in DatabaseScope.resolve(config).databases:
-            ref.connection(config)
-
-        assert config.lancedb.databases == {"alpha": "/a.lancedb", "beta": "/b.lancedb"}
-        assert config.lancedb.uri == ""
-
-    def test_each_derived_configuration_is_its_own_copy(self):
-        config = _config(databases={"alpha": "/a.lancedb", "beta": "s3://b/b.lancedb"})
-        alpha, beta = DatabaseScope.resolve(config).databases
-
-        one, _ = alpha.connection(config)
-        other, _ = beta.connection(config)
-
-        assert one is not other
-        assert one.lancedb.uri == ""
-        assert other.lancedb.uri == "s3://b/b.lancedb"
-
-
-def test_a_database_behind_a_uri_has_no_path_of_its_own(tmp_path):
-    """`connection` hands back no path for a URI, and the store still needs one:
-    the default stands in, and the URI is what decides where it connects."""
-    config = AppConfig(
-        storage=StorageConfig(data_dir=tmp_path),
-        lancedb=LanceDBConfig(databases={"alpha": "s3://bucket/alpha.lancedb"}),
-    )
-    [ref] = DatabaseScope.resolve(config).databases
-
-    one, db_path = ref.connection(config)
-
-    assert db_path is None
-    assert default_db_path(one) == tmp_path / "haiku.rag.lancedb"
+    def test_a_path_the_caller_gave_is_its_location(self):
+        assert DatabaseRef.at("/data/other.lancedb").location == Path(
+            "/data/other.lancedb"
+        )

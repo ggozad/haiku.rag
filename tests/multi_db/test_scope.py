@@ -125,10 +125,44 @@ class TestOneConfiguredLocation:
         config = self._config("s3://bucket/one.lancedb")
 
         [ref] = DatabaseScope.resolve(config).databases
-        one, db_path = ref.connection(config)
 
-        assert db_path is None
-        assert ConnectionMode.from_config(one) == ConnectionMode.OBJECT_STORAGE
+        assert ref.location == "s3://bucket/one.lancedb"
+        assert ConnectionMode.of(ref.location) == ConnectionMode.OBJECT_STORAGE
+
+
+class TestSessionsOwnTheRef:
+    """A session is built from the resolved reference and hands storage only
+    its location; the configuration it keeps is the one the caller named."""
+
+    @pytest.mark.asyncio
+    async def test_a_session_opens_the_location_with_the_undivided_config(
+        self, tmp_path
+    ):
+        from haiku.rag.client.session import SingleDatabaseSession
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        [ref] = DatabaseScope.resolve(config, database_name="alpha").databases
+
+        session = await SingleDatabaseSession(ref, config, read_only=True).open()
+        try:
+            assert session.source == "alpha"
+            assert session.location == ref.location
+            assert session.db_path == ref.location
+            assert session.store.location == ref.location
+            assert session.store._config is config
+        finally:
+            await session.aclose()
+
+    @pytest.mark.asyncio
+    async def test_a_client_keeps_the_configuration_it_was_given(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+
+        async with HaikuRAG(config=config, sources=["alpha"]) as rag:
+            assert rag._config is config
+            assert set(rag._config.lancedb.databases) == {"alpha", "beta"}
+            assert rag.store.location == tmp_path / "alpha.lancedb"
 
 
 class TestLocate:

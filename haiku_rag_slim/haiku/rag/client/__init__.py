@@ -21,7 +21,6 @@ from haiku.rag.client.session import (
     FederatedSession,
     SingleDatabaseSession,
     aclose_quietly,
-    default_db_path,
 )
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.converters import get_converter
@@ -145,9 +144,6 @@ class HaikuRAG:
                 of nothing to search.
         """
         self._configured = config if config is not None else get_config()
-        # What the caller configured, kept intact: entering derives a
-        # single-database configuration from it, and every re-entry derives
-        # from the configured set.
         self._config = self._configured
         self._requested_db_path = Path(db_path) if db_path is not None else None
         if self._requested_db_path is not None and sources is not None:
@@ -339,15 +335,12 @@ class HaikuRAG:
             return self
 
         [ref] = scope.databases
-        self._config, db_path = ref.connection(self._configured)
-
         self._session = await SingleDatabaseSession(
-            db_path if db_path is not None else default_db_path(self._config),
+            ref,
             self._config,
             skip_validation=self._skip_validation,
             create=self._create,
             read_only=self._read_only,
-            source=ref.name,
         ).open()
         return self
 

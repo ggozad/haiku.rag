@@ -177,8 +177,7 @@ async def test_app_info_opens_a_named_remote_database(tmp_path):
     app = HaikuRAGApp(scope=scope, config=config)
 
     assert app._is_local is False
-    assert app._store_config.lancedb.uri == "s3://bucket/papers.lancedb"
-    assert app._store_config.lancedb.databases == {}
+    assert app._location == "s3://bucket/papers.lancedb"
 
     with patch(
         "haiku.rag.store.info.connect_lancedb", new_callable=AsyncMock
@@ -189,13 +188,12 @@ async def test_app_info_opens_a_named_remote_database(tmp_path):
         mock_db.list_tables = AsyncMock(return_value=mock_list_result)
         await app.info()
 
-    opened = mock_connect.call_args.args[0]
-    assert opened.lancedb.uri == "s3://bucket/papers.lancedb"
+    assert mock_connect.call_args.args[0] == "s3://bucket/papers.lancedb"
 
 
 async def test_app_doctor_opens_a_named_remote_database():
-    """`run_doctor` connects with the configuration it is handed: the one
-    derived for the database, not the one naming the set."""
+    """`run_doctor` is handed the database's location, not the configuration
+    naming the set."""
     from haiku.rag.client.scope import DatabaseScope
 
     config = AppConfig(
@@ -207,7 +205,7 @@ async def test_app_doctor_opens_a_named_remote_database():
         run.return_value = MagicMock(checks=[], ok=True, duplicates=None)
         await app.doctor()
 
-    assert run.call_args.args[0].lancedb.uri == "s3://bucket/papers.lancedb"
+    assert run.call_args.args[1] == "s3://bucket/papers.lancedb"
 
 
 async def test_app_info_uses_connect_lancedb_for_remote(tmp_path):
@@ -230,9 +228,8 @@ async def test_app_info_uses_connect_lancedb_for_remote(tmp_path):
         mock_db.list_tables = AsyncMock(return_value=mock_list_result)
         await app.info()
 
-    # The uri decides where it connects; the path argument is not read.
     mock_connect.assert_called_once()
-    assert mock_connect.call_args.args[0].lancedb.uri == "s3://bucket/path"
+    assert mock_connect.call_args.args[0] == "s3://bucket/path"
 
 
 @pytest.mark.asyncio

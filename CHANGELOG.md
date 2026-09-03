@@ -10,6 +10,11 @@
 - Searches in one model response deduplicate their results: evidence a sibling
   search already showed collapses to a reference line, and a picture attaches
   once per response.
+- `Store(location, config)`, `connect_lancedb(location, config)`,
+  `gather_database_info(location, config)` and `run_doctor(config, location, ...)`
+  take the database location, a path or a URI. `ConnectionMode.of(location)`
+  replaces `ConnectionMode.from_config`. `DatabaseRef.connection()` and
+  `default_db_path` removed.
 
 ## [0.81.0] - 2026-09-01
 

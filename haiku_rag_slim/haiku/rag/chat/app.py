@@ -148,10 +148,12 @@ class ChatApp(App):
         # a client whose __aenter__ failed.
         await client.__aenter__()
         self.client = client
-        # Lent to the capabilities: already the databases they were built for,
-        # and one connection per database however many capabilities read it.
+        # Lent to the capabilities, with the scope it covers: one connection
+        # per database however many capabilities read it, and the analysis
+        # sandbox is built over the same selection.
         for capability in self._capabilities:
             capability.borrowed_rag = client
+            capability.scope = self.scope
 
         self._agent = Agent(
             self._model,

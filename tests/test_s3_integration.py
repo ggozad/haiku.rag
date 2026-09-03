@@ -89,7 +89,7 @@ async def _remote_client(config: AppConfig):
 async def test_store_connect_and_create(tmp_path, config):
     from haiku.rag.store.info import get_database_stats
 
-    async with Store(tmp_path / "unused", config=config, create=True) as store:
+    async with Store(config.lancedb.uri, config=config, create=True) as store:
         stats = await get_database_stats(store.db)
         assert stats["documents"]["exists"]
         assert stats["chunks"]["exists"]
@@ -97,7 +97,7 @@ async def test_store_connect_and_create(tmp_path, config):
 
 @pytest.mark.asyncio
 async def test_store_vacuum(tmp_path, config):
-    async with Store(tmp_path / "unused", config=config, create=True) as store:
+    async with Store(config.lancedb.uri, config=config, create=True) as store:
         await store.vacuum()
 
 
@@ -106,7 +106,7 @@ async def test_store_add_document(tmp_path, config):
     from haiku.rag.store.info import get_database_stats
     from haiku.rag.store.schema import DocumentRecord
 
-    async with Store(tmp_path / "unused", config=config, create=True) as store:
+    async with Store(config.lancedb.uri, config=config, create=True) as store:
         doc = DocumentRecord(content="The quick brown fox jumps over the lazy dog.")
         await store.documents_table.add([doc])
 

@@ -38,11 +38,12 @@ class ConnectionMode(Enum):
     OBJECT_STORAGE = "object_storage"
 
     @staticmethod
-    def from_config(config: AppConfig) -> "ConnectionMode":
-        uri = config.lancedb.uri
-        if not uri:
+    def of(location: Path | str) -> "ConnectionMode":
+        """How a location is connected to: a path is local, `db://` is LanceDB
+        Cloud, any other scheme is object storage."""
+        if isinstance(location, Path) or "://" not in location:
             return ConnectionMode.LOCAL
-        if uri.startswith("db://"):
+        if location.startswith("db://"):
             return ConnectionMode.CLOUD
         return ConnectionMode.OBJECT_STORAGE
 
@@ -72,8 +73,10 @@ def _session(config: AppConfig) -> lancedb.Session:
 
 
 async def connect_lancedb(
-    config: AppConfig, db_path: Path | None = None
+    location: Path | str, config: AppConfig
 ) -> lancedb.AsyncConnection:
+    """Connect to the database at `location`, with the connection settings
+    (credentials, storage options, caches, consistency) from `config`."""
     interval = config.lancedb.read_consistency_interval_seconds
     kwargs: dict[str, Any] = {
         "session": _session(config),
@@ -81,22 +84,19 @@ async def connect_lancedb(
             timedelta(seconds=interval) if interval is not None else None
         ),
     }
-    mode = ConnectionMode.from_config(config)
+    mode = ConnectionMode.of(location)
     if mode == ConnectionMode.CLOUD:
         return await lancedb.connect_async(
-            uri=config.lancedb.uri,
+            uri=str(location),
             api_key=config.lancedb.api_key,
             region=config.lancedb.region,
             **kwargs,
         )
-    elif mode == ConnectionMode.OBJECT_STORAGE:
+    if mode == ConnectionMode.OBJECT_STORAGE:
         if config.lancedb.storage_options:
             kwargs["storage_options"] = config.lancedb.storage_options
-        return await lancedb.connect_async(uri=config.lancedb.uri, **kwargs)
-    else:
-        if db_path is None:
-            raise ValueError("No lancedb.uri configured and no db_path provided")
-        return await lancedb.connect_async(db_path.absolute(), **kwargs)
+        return await lancedb.connect_async(uri=str(location), **kwargs)
+    return await lancedb.connect_async(Path(location).absolute(), **kwargs)
 
 
 def _stored_vector_dim(settings: dict) -> int | None:
@@ -180,14 +180,24 @@ class TagInfo:
 class Store:
     def __init__(
         self,
-        db_path: Path | str,
+        location: Path | str,
         config: AppConfig | None = None,
         skip_validation: bool = False,
         create: bool = False,
         read_only: bool = False,
         skip_migration_check: bool = False,
     ):
-        self.db_path: Path = Path(db_path)
+        """A store over the database at `location`, a local path or a URI.
+
+        `config` supplies connection settings; where the database is comes
+        from `location` alone.
+        """
+        self._location: Path | str = location
+        self.db_path: Path | None = (
+            Path(location)
+            if ConnectionMode.of(location) == ConnectionMode.LOCAL
+            else None
+        )
         self._config = config if config is not None else get_config()
         self._read_only = read_only
         self._create = create
@@ -200,7 +210,7 @@ class Store:
         self._rebuild_lock = asyncio.Lock()
         self._is_new_db = False
 
-        if self._connection_mode == ConnectionMode.LOCAL:
+        if self.db_path is not None:
             if not self.db_path.exists():
                 if not create:
                     raise FileNotFoundError(
@@ -231,7 +241,7 @@ class Store:
     async def _initialize(self):
         """Perform async initialization: connect to LanceDB, init tables, validate."""
         self.db: lancedb.AsyncConnection = await connect_lancedb(
-            self._config, self.db_path
+            self.location, self._config
         )
 
         # Read once and thread onward: on object storage each of these is a
@@ -393,8 +403,13 @@ class Store:
         return max(retention, needed)
 
     @property
+    def location(self) -> Path | str:
+        """Where this store connected: a local path, or a URI."""
+        return self._location
+
+    @property
     def _connection_mode(self) -> ConnectionMode:
-        return ConnectionMode.from_config(self._config)
+        return ConnectionMode.of(self._location)
 
     async def _ensure_vector_index(self) -> None:
         """Create or rebuild vector index on chunks table.

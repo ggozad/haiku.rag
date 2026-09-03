@@ -84,17 +84,18 @@ def test_chat_capabilities_read_the_named_database(tmp_path, monkeypatch):
         from haiku.rag.chat import run_chat
 
         run_chat(scope=DatabaseScope.resolve(config, database_name="b"))
+        named_scope = chat_app.call_args.kwargs["scope"]
         [named] = chat_app.call_args.kwargs["capabilities"]
 
         run_chat(scope=DatabaseScope.resolve(config))
+        covering_scope = chat_app.call_args.kwargs["scope"]
         [covering] = chat_app.call_args.kwargs["capabilities"]
 
-    # The chat lends its own client, so this scope is the fallback: it places
-    # the named database alone.
-    [placed] = named.scope.databases
-    assert placed.db_path == tmp_path / "b.lancedb"
-    assert named.config.lancedb.databases == {}
-    assert covering.scope.names == ("a", "b")
+    # The app opens the scope it is handed and lends that client to the
+    # capabilities, which keep the configuration as the caller named it.
+    assert named_scope.names == ("b",)
+    assert covering_scope.names == ("a", "b")
+    assert set(named.config.lancedb.databases) == {"a", "b"}
     assert set(covering.config.lancedb.databases) == {"a", "b"}
 
 
@@ -683,6 +684,37 @@ class TestLendingTheClient:
 
         assert borrowed == [client] * len(app._capabilities)
         assert borrowed
+
+    @pytest.mark.asyncio
+    async def test_mounting_gives_every_capability_the_apps_scope(self, tmp_path):
+        """A capability built over the configured set covers what the chat
+        selected once mounted: the analysis sandbox is built over that scope."""
+        from haiku.rag.chat.app import ChatApp
+        from haiku.rag.client.scope import DatabaseScope
+        from haiku.rag.config.models import AppConfig, LanceDBConfig
+
+        config = AppConfig(
+            lancedb=LanceDBConfig(
+                databases={
+                    "a": str(tmp_path / "a.lancedb"),
+                    "b": str(tmp_path / "b.lancedb"),
+                }
+            )
+        )
+        selected = DatabaseScope.resolve(config, database_name="b")
+        capability = create_capability(config=config)
+        assert capability.scope.covers_multiple
+
+        client = _make_mock_client()
+        app = ChatApp(scope=selected, capabilities=[capability], read_only=True)
+        with (
+            patch("haiku.rag.chat.app.HaikuRAG") as stub_rag,
+            _covering_returns(stub_rag, client),
+        ):
+            async with app.run_test():
+                pass
+
+        assert capability.scope == selected
 
 
 class TestDocumentSelectionIdentity:

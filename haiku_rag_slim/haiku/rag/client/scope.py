@@ -43,15 +43,10 @@ class DatabaseRef:
         uri, db_path = locate_database(location)
         return cls(name=name, uri=uri, db_path=db_path)
 
-    def connection(self, config: AppConfig) -> tuple[AppConfig, Path | None]:
-        """The configuration and path to open this one database with.
-
-        A copy: the caller's configuration still names whatever set it named.
-        """
-        one = config.model_copy(deep=True)
-        one.lancedb.databases = {}
-        one.lancedb.uri = self.uri
-        return one, self.db_path
+    @property
+    def location(self) -> Path | str:
+        """Where the database is: its path, or its URI."""
+        return self.db_path if self.db_path is not None else self.uri
 
 
 @dataclass(frozen=True)

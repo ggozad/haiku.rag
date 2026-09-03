@@ -340,23 +340,19 @@ class TestReportedLocation:
     @staticmethod
     def _session(location: str):
         from haiku.rag.client.scope import DatabaseScope
-        from haiku.rag.client.session import SingleDatabaseSession, default_db_path
+        from haiku.rag.client.session import SingleDatabaseSession
         from haiku.rag.config.models import AppConfig, LanceDBConfig
 
         config = AppConfig(lancedb=LanceDBConfig(databases={"alpha": location}))
         [ref] = DatabaseScope.resolve(config, database_name="alpha").databases
-        one, db_path = ref.connection(config)
-        return SingleDatabaseSession(
-            db_path if db_path is not None else default_db_path(one),
-            one,
-            source="alpha",
-        )
+        return SingleDatabaseSession(ref, config)
 
     def test_a_named_remote_database_reports_its_uri(self):
         session = self._session("s3://bucket/alpha.lancedb")
 
-        assert isinstance(session.db_path, Path)
+        assert session.db_path is None
         assert session.location == "s3://bucket/alpha.lancedb"
+        assert session.source == "alpha"
 
     def test_a_named_local_database_reports_its_path(self):
         session = self._session("/data/alpha.lancedb")

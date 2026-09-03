@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from haiku.rag.client.session import default_db_path
 from haiku.rag.ingester.api.server import APIState, get_state
 from haiku.rag.store.info import DatabaseInfo, gather_database_info
 
@@ -21,5 +20,4 @@ async def database(state: APIState = Depends(get_state)) -> DatabaseInfo:
             detail="database not configured",
         )
     [ref] = state.scope.databases
-    one, db_path = ref.connection(state.config)
-    return await gather_database_info(one, db_path or default_db_path(one))
+    return await gather_database_info(ref.location, state.config)

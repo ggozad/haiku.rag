@@ -96,15 +96,15 @@ class DatabaseInfo(BaseModel):
     packages: dict[str, str] = Field(default_factory=dict)
 
 
-async def gather_database_info(config: AppConfig, db_path: Path) -> DatabaseInfo:
+async def gather_database_info(location: Path | str, config: AppConfig) -> DatabaseInfo:
     """Collect read-only database state without going through Store, so a
     database missing tables (e.g. pre-migration) still reports what it can."""
     from haiku.rag.store.upgrades import get_pending_upgrades
     from haiku.rag.utils import get_package_versions
 
-    display_path = config.lancedb.uri or str(db_path)
+    display_path = str(location)
 
-    db = await connect_lancedb(config, db_path)
+    db = await connect_lancedb(location, config)
     stats = await get_database_stats(db)
 
     if not any(entry["exists"] for entry in stats.values()):

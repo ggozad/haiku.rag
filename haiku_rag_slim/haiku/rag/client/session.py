@@ -43,36 +43,30 @@ async def aclose_quietly(closeable: Any, what: str) -> None:
         logger.debug("Closing the %s failed on teardown", what, exc_info=True)
 
 
-def default_db_path(config: AppConfig) -> Path:
-    """Where a database lives when its location names no path."""
-    return config.storage.data_dir / "haiku.rag.lancedb"
-
-
 class SingleDatabaseSession:
     """One database: its store, its repositories, and their lifecycle.
 
     Everything that needs a store lives here, so nothing above has to ask whether
-    it has one. ``source`` is the configured name this database answers to, or
-    None where nothing names it.
+    it has one. Built from the resolved reference: ``source`` is the configured
+    name it answers to, or None where nothing names it, and the store receives
+    its location.
 
-    ``db_path``, ``config``, ``read_only`` and ``source`` are readable: a client
+    ``ref``, ``config``, ``read_only`` and ``source`` are readable: a client
     borrowing this session reports them as its own.
     """
 
     def __init__(
         self,
-        db_path: Path | str,
+        ref: DatabaseRef,
         config: AppConfig,
         *,
         skip_validation: bool = False,
         create: bool = False,
         read_only: bool = False,
-        source: str | None = None,
     ) -> None:
-        self.db_path = db_path
+        self.ref = ref
         self.config = config
         self.read_only = read_only
-        self.source = source
         self._skip_validation = skip_validation
         self._create = create
         self._vacuum_tasks: set[asyncio.Task] = set()
@@ -80,19 +74,25 @@ class SingleDatabaseSession:
         self._vacuum_dirty = False
 
     @property
-    def location(self) -> Path | str:
-        """Configured URI or local path for this database.
+    def source(self) -> str | None:
+        return self.ref.name
 
-        Not `db_path`, which is a placeholder where a URI holds the database.
-        """
-        return self.config.lancedb.uri or self.db_path
+    @property
+    def location(self) -> Path | str:
+        """Where this database is: its path, or its URI."""
+        return self.ref.location
+
+    @property
+    def db_path(self) -> Path | None:
+        """The local path, or None for a database behind a URI."""
+        return self.ref.db_path
 
     async def open(self) -> "SingleDatabaseSession":
         """Connect, validate, and build the repositories."""
         failure: str | None = None
         try:
             self.store = Store(
-                self.db_path,
+                self.location,
                 config=self.config,
                 skip_validation=self._skip_validation,
                 create=self._create,
@@ -309,14 +309,11 @@ class FederatedSession:
 
         Registered here because a cancelled `gather` discards its results.
         """
-        ref = self._refs[name]
-        one, db_path = ref.connection(self._config)
         self._sessions[name] = await SingleDatabaseSession(
-            db_path if db_path is not None else default_db_path(one),
-            one,
+            self._refs[name],
+            self._config,
             skip_validation=self._skip_validation,
             read_only=self._read_only,
-            source=ref.name,
         ).open()
 
     async def aclose(self) -> None:

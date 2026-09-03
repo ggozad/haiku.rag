@@ -42,14 +42,8 @@ def run_chat(
         config.qa.model = model_config
         config.analysis.model = model_config
 
-    # The capabilities read the databases the scope covers, not what the
-    # configuration names: a `--db PATH` selection is outside the
-    # configuration, and a `--db-name NAME` selection is narrower than it.
-    if scope.covers_multiple:
-        capability_config, capability_db_path = config, None
-    else:
-        capability_config, capability_db_path = scope.databases[0].connection(config)
-
+    # The app opens the scope and lends that client to the capabilities, which
+    # read what `--db PATH` or `--db-name NAME` selected.
     enabled = capabilities or ["rag"]
     capability_list = []
     defer_loading = len(enabled) > 1
@@ -68,8 +62,7 @@ def run_chat(
 
         capability_list.append(
             create_capability(
-                db_path=capability_db_path,
-                config=capability_config,
+                config=config,
                 defer_loading=defer_loading,
                 vision=driving_model.vision,
             )
@@ -80,8 +73,7 @@ def run_chat(
 
         capability_list.append(
             create_capability(
-                db_path=capability_db_path,
-                config=capability_config,
+                config=config,
                 defer_loading=defer_loading,
                 vision=driving_model.vision,
             )

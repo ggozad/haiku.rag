@@ -20,13 +20,12 @@ async def database_lines(client: "HaikuRAG") -> list[str]:
     Reported through the connection the client already holds. A failure becomes
     a line of the report, and the other databases still report.
     """
-    from haiku.rag.store.engine import ConnectionMode
     from haiku.rag.store.info import get_database_stats
 
     lines: list[str] = []
     db_path = client.store.db_path
 
-    if client.store._connection_mode == ConnectionMode.LOCAL and not db_path.exists():
+    if db_path is not None and not db_path.exists():
         return ["[red]Database path does not exist.[/red]"]
 
     try:
