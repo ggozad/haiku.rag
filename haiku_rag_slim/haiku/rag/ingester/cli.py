@@ -224,7 +224,12 @@ def _scope_for(db: Path | None) -> "DatabaseScope | None":
     is configured. None leaves placement to the configuration."""
     from haiku.rag.client.scope import DatabaseScope
 
-    return DatabaseScope.at(db) if db is not None else None
+    if db is None:
+        return None
+    try:
+        return DatabaseScope.at(db)
+    except ValueError as error:
+        raise typer.BadParameter(str(error), param_hint="--db") from error
 
 
 @_cli.command("serve")

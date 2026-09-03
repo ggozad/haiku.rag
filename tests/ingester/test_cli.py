@@ -547,6 +547,16 @@ class TestPlacingTheIngesterDatabase:
             tmp_path / "local.lancedb"
         )
 
+    def test_a_path_without_a_stem_is_a_usage_error(self):
+        from pathlib import Path
+
+        import typer
+
+        from haiku.rag.ingester.cli import _scope_for
+
+        with pytest.raises(typer.BadParameter, match="no name"):
+            _scope_for(Path("/"))
+
     def test_a_python_caller_cannot_pass_a_path(self):
         from haiku.rag.ingester.app import IngesterApp
 

@@ -24,7 +24,8 @@
 - Every database has a name: the key in `lancedb.databases`, or the path's stem
   for `--db PATH`, `db_path=` and the default database, which is the entry
   `haiku.rag` under `storage.data_dir` and selectable by that name.
-  `SearchResult.source`, `Document.source` and `Citation.source` always carry it.
+  `SearchResult.source`, `Document.source` and `Citation.source` carry it on
+  every value a database produces.
 - `db_path=` beside a configured `lancedb.databases` raises
   `AmbiguousDatabaseError` (`HaikuRAG`, `create_capability`, `create_mcp_server`,
   `Sandbox`). `haiku-rag --db PATH` and `haiku-ingester --db PATH` open that path

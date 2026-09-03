@@ -169,6 +169,16 @@ class TestOneDatabaseCommands:
         assert scope.names == ("other",)
         assert not scope.covers_multiple
 
+    def test_a_path_without_a_stem_is_a_usage_error(self, monkeypatch):
+        """A path that names no database is the operator's mistake, reported as
+        one."""
+        import typer
+
+        self._install(monkeypatch)
+
+        with pytest.raises(typer.BadParameter, match="no name"):
+            resolve_scope(Path("/"))
+
     def test_no_configured_databases_is_allowed(self, monkeypatch, tmp_path):
         import haiku.rag.config as config_module
 

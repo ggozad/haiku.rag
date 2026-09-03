@@ -102,7 +102,10 @@ def resolve_scope(
             "pass --db or --db-name, not both: they name the same thing"
         )
     if db is not None:
-        return DatabaseScope.at(db)
+        try:
+            return DatabaseScope.at(db)
+        except ValueError as error:
+            raise typer.BadParameter(str(error), param_hint="--db") from error
     scope = DatabaseScope.resolve(get_config(), database_name=_db_name)
     if scope.covers_multiple and not covers_set:
         raise AmbiguousDatabaseError(

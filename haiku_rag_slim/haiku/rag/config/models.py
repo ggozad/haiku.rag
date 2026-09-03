@@ -120,9 +120,14 @@ class LanceDBConfig(ConfigModel):
     @classmethod
     def _uri_names_its_replacement(cls, data: Any) -> Any:
         if isinstance(data, dict) and "uri" in data:
+            if str(data["uri"]).strip():
+                raise ValueError(
+                    "lancedb.uri was removed; write lancedb.databases: {NAME: "
+                    f"{data['uri']!r}}} instead"
+                )
             raise ValueError(
-                "lancedb.uri was removed; write lancedb.databases: {NAME: "
-                f"{data['uri']!r}}} instead"
+                "lancedb.uri was removed; remove the empty key. With no "
+                "lancedb.databases the database is haiku.rag under storage.data_dir"
             )
         return data
 
