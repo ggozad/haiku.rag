@@ -459,8 +459,9 @@ class TestDocumentsNameTheirDatabase:
         assert by_uri is not None and by_uri.source == "alpha"
 
     @pytest.mark.asyncio
-    async def test_one_database_leaves_the_source_unset(self, tmp_path, temp_db_path):
-        """Nothing names the database when there is only one to name."""
+    async def test_one_database_at_a_path_is_named_by_its_stem(
+        self, tmp_path, temp_db_path
+    ):
         async with HaikuRAG(temp_db_path, create=True) as rag:
             dim = get_config().embeddings.model.vector_dim
             doc = DoclingDocument(name="solo")
@@ -472,6 +473,7 @@ class TestDocumentsNameTheirDatabase:
             )
 
             [listed] = await rag.list_documents()
-            assert listed.source is None
+            assert listed.source == temp_db_path.stem
             assert listed.id is not None
-            assert (await rag.get_document_by_id(listed.id)).source is None
+            by_id = await rag.get_document_by_id(listed.id)
+            assert by_id is not None and by_id.source == temp_db_path.stem

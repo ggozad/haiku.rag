@@ -62,7 +62,9 @@ class TestConnectLancedb:
     async def test_the_configured_uri_is_not_consulted(self, temp_db_path):
         """Storage connects to the location it is handed; placement is the
         caller's, and the configuration's own `uri` never redirects it."""
-        config = AppConfig(lancedb=LanceDBConfig(uri="s3://elsewhere/db.lancedb"))
+        config = AppConfig(
+            lancedb=LanceDBConfig(databases={"elsewhere": "s3://elsewhere/db.lancedb"})
+        )
         with patch(
             "haiku.rag.store.engine.lancedb.connect_async", new_callable=AsyncMock
         ) as mock_connect:
@@ -140,7 +142,9 @@ class TestStoreConnectionMode:
 
     @pytest.mark.asyncio
     async def test_a_local_store_ignores_the_configured_uri(self, temp_db_path):
-        config = AppConfig(lancedb=LanceDBConfig(uri="s3://elsewhere/db.lancedb"))
+        config = AppConfig(
+            lancedb=LanceDBConfig(databases={"elsewhere": "s3://elsewhere/db.lancedb"})
+        )
         async with Store(temp_db_path, config=config, create=True) as store:
             assert store._connection_mode == ConnectionMode.LOCAL
             assert store.db_path == temp_db_path

@@ -665,6 +665,18 @@ class TestMCPClientLifetime:
         with pytest.raises(AmbiguousDatabaseError, match="alpha, beta"):
             create_mcp_server(config=config)
 
+    def test_the_public_factory_refuses_a_path_beside_a_configured_set(self, tmp_path):
+        """A path and `lancedb.databases` both place the database."""
+        from haiku.rag.config.models import AppConfig, LanceDBConfig
+        from haiku.rag.store.exceptions import AmbiguousDatabaseError
+
+        config = AppConfig(
+            lancedb=LanceDBConfig(databases={"alpha": str(tmp_path / "a")})
+        )
+
+        with pytest.raises(AmbiguousDatabaseError, match="alpha"):
+            create_mcp_server(tmp_path / "other.lancedb", config=config)
+
     @pytest.mark.asyncio
     async def test_the_command_hands_the_server_its_resolved_database(
         self, monkeypatch
@@ -697,7 +709,7 @@ class TestMCPClientLifetime:
 
         [ref] = seen["scope"].databases
         assert ref.name == "prod"
-        assert ref.uri == "s3://bucket/prod.lancedb"
+        assert ref.location == "s3://bucket/prod.lancedb"
         # The caller's configuration, not one derived from the ref.
         assert seen["config"].lancedb.databases == {"prod": "s3://bucket/prod.lancedb"}
 

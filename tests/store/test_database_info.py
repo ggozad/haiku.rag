@@ -126,7 +126,9 @@ async def test_gather_database_info_connects_to_the_location_it_is_given():
 
     from haiku.rag.config.models import LanceDBConfig
 
-    config = AppConfig(lancedb=LanceDBConfig(uri="s3://elsewhere/other.lancedb"))
+    config = AppConfig(
+        lancedb=LanceDBConfig(databases={"other": "s3://elsewhere/other.lancedb"})
+    )
     with patch(
         "haiku.rag.store.info.connect_lancedb", new_callable=AsyncMock
     ) as mock_connect:

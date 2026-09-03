@@ -504,31 +504,54 @@ def test_cli_entry_point_exits_on_store_state_errors(monkeypatch, capsys, error)
 
 class TestPlacingTheIngesterDatabase:
     """The ingester writes wherever the configuration places the database, and
-    resolves that once. A path is an explicit override of a configured
-    `lancedb.uri`, so no local default stands in for one."""
+    resolves that once. `--db PATH` is the operator's explicit override and
+    constructs the scope directly."""
 
     @staticmethod
     def _app(config: AppConfig, db_path=None):
         from haiku.rag.ingester.app import IngesterApp
+        from haiku.rag.ingester.cli import _scope_for
 
-        return IngesterApp(config=config, db_path=db_path)
+        return IngesterApp(config=config, scope=_scope_for(db_path))
 
-    def test_a_configured_uri_becomes_the_scope(self, tmp_path):
-        config = AppConfig(lancedb=LanceDBConfig(uri="s3://bucket/prod.lancedb"))
+    def test_a_configured_location_becomes_the_scope(self, tmp_path):
+        config = AppConfig(
+            lancedb=LanceDBConfig(databases={"prod": "s3://bucket/prod.lancedb"})
+        )
 
         [ref] = self._app(config)._scope.databases
 
-        assert ref.uri == "s3://bucket/prod.lancedb"
+        assert ref.name == "prod"
+        assert ref.location == "s3://bucket/prod.lancedb"
         assert ref.db_path is None
 
-    def test_an_override_names_the_database(self, tmp_path):
-        config = AppConfig(lancedb=LanceDBConfig(uri="s3://bucket/prod.lancedb"))
+    def test_an_override_names_the_database_by_its_stem(self, tmp_path):
+        config = AppConfig(
+            lancedb=LanceDBConfig(databases={"prod": "s3://bucket/prod.lancedb"})
+        )
         override = tmp_path / "local.lancedb"
 
         [ref] = self._app(config, override)._scope.databases
 
-        assert ref.db_path == override
-        assert ref.uri == ""
+        assert ref.name == "local"
+        assert ref.location == override
+
+    def test_the_override_is_the_cli_s_alone(self, tmp_path):
+        """`IngesterApp` takes a resolved scope, so a Python caller has no path
+        to slip past the configuration; only the CLI constructs one."""
+        from haiku.rag.client.scope import DatabaseScope
+        from haiku.rag.ingester.cli import _scope_for
+
+        assert _scope_for(None) is None
+        assert _scope_for(tmp_path / "local.lancedb") == DatabaseScope.at(
+            tmp_path / "local.lancedb"
+        )
+
+    def test_a_python_caller_cannot_pass_a_path(self):
+        from haiku.rag.ingester.app import IngesterApp
+
+        with pytest.raises(TypeError):
+            IngesterApp(config=AppConfig(), db_path="/db/other.lancedb")  # type: ignore[call-arg]  # ty: ignore[unknown-argument]
 
     def test_one_configured_database_is_accepted(self, tmp_path):
         """A one-entry mapping names which database to write."""
@@ -567,6 +590,10 @@ class TestPlacingTheIngesterDatabase:
             f"    a: {tmp_path / 'a.lancedb'}\n"
             f"    b: {tmp_path / 'b.lancedb'}\n"
         )
+        import haiku.rag.config as config_module
+
+        # The CLI caches the loaded configuration process-wide.
+        monkeypatch.setattr(config_module, "_config", None)
         monkeypatch.setattr(sys, "argv", ["haiku-ingester", "run-batch"])
         monkeypatch.setenv("HAIKU_RAG_CONFIG_PATH", str(config_file))
 

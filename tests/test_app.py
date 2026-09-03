@@ -456,8 +456,10 @@ async def test_create_index_rebuilds_an_existing_one(app, client):
 
 
 def test_show_settings_hides_secrets(tmp_path):
-    config = AppConfig(lancedb=LanceDBConfig(uri="db://x", api_key="secret-value"))
-    app = HaikuRAGApp(scope=for_path(tmp_path / "db", config), config=config)
+    config = AppConfig(
+        lancedb=LanceDBConfig(databases={"x": "db://x"}, api_key="secret-value")
+    )
+    app = HaikuRAGApp(scope=DatabaseScope.resolve(config), config=config)
     app.console = Console(record=True, width=200)
 
     app.show_settings()
@@ -476,7 +478,7 @@ def test_show_settings_renders_the_shape_a_config_file_has(tmp_path):
         lancedb=LanceDBConfig(databases={"alpha": "/tmp/a.lancedb"}),
         storage=StorageConfig(data_dir=tmp_path),
     )
-    app = HaikuRAGApp(scope=for_path(tmp_path / "db", config), config=config)
+    app = HaikuRAGApp(scope=DatabaseScope.resolve(config), config=config)
     app.console = Console(record=True, width=200)
 
     app.show_settings()
@@ -515,7 +517,7 @@ def test_show_settings_survives_a_narrow_console_and_bracketed_values(tmp_path):
 
 
 def test_remote_uri_is_the_display_path(tmp_path):
-    config = AppConfig(lancedb=LanceDBConfig(uri="s3://bucket/path"))
+    config = AppConfig(lancedb=LanceDBConfig(databases={"path": "s3://bucket/path"}))
     app = HaikuRAGApp(scope=for_path(None, config), config=config)
 
     assert app.display_path == "s3://bucket/path"

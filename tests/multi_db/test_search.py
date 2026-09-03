@@ -71,7 +71,7 @@ class TestFederatedSearch:
 
 class TestSingleDatabaseUnchanged:
     @pytest.mark.asyncio
-    async def test_source_is_unset_without_configured_databases(self, temp_db_path):
+    async def test_source_is_the_stem_without_configured_databases(self, temp_db_path):
         async with HaikuRAG(temp_db_path, create=True) as rag:
             doc = DoclingDocument(name="one")
             doc.add_text(label=DocItemLabel.TEXT, text="a document about cats")
@@ -89,7 +89,7 @@ class TestSingleDatabaseUnchanged:
             results = await rag.search("cats", search_type="fts")
 
         assert results
-        assert all(r.source is None for r in results)
+        assert all(r.source == temp_db_path.stem for r in results)
 
 
 class TestOneQueryVector:

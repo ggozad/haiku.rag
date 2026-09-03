@@ -158,6 +158,17 @@ class TestOneDatabaseCommands:
         [ref] = resolve_scope(Path("/db/other.lancedb")).databases
         assert ref.db_path == Path("/db/other.lancedb")
 
+    def test_naming_a_path_overrides_a_configured_set(self, monkeypatch):
+        """`--db` is the operator's explicit override: it constructs the scope
+        directly, where a Python caller passing a path beside `databases` is
+        refused."""
+        self._install(monkeypatch, alpha="/db/a.lancedb", beta="/db/b.lancedb")
+
+        scope = resolve_scope(Path("/db/other.lancedb"))
+
+        assert scope.names == ("other",)
+        assert not scope.covers_multiple
+
     def test_no_configured_databases_is_allowed(self, monkeypatch, tmp_path):
         import haiku.rag.config as config_module
 
@@ -207,7 +218,6 @@ class TestSelectingADatabaseByName:
             "notes": "/data/notes.lancedb",
             "other": "/data/o.lancedb",
         }
-        assert config.lancedb.uri == ""
 
     def test_an_unknown_name_names_the_configured_ones(self, monkeypatch):
         self._install(monkeypatch, alpha="/data/a.lancedb", beta="/data/b.lancedb")
@@ -225,11 +235,15 @@ class TestSelectingADatabaseByName:
 
         assert "bucket" not in str(raised.value)
 
-    def test_selecting_nothing_reports_an_empty_mapping(self, monkeypatch):
+    def test_an_unknown_name_with_nothing_configured_names_the_default(
+        self, monkeypatch
+    ):
+        """Nothing configured is the one entry `haiku.rag`, which the message
+        offers."""
         self._install(monkeypatch)
         monkeypatch.setattr("haiku.rag.cli._db_name", "papers")
 
-        with pytest.raises(UnknownDatabaseError, match="nothing"):
+        with pytest.raises(UnknownDatabaseError, match="haiku.rag"):
             resolve_scope(None)
 
     def test_the_callback_selects_before_a_command_runs(self, tmp_path, monkeypatch):
@@ -288,7 +302,6 @@ class TestSelectingADatabaseByName:
             cli, ["--config", str(config_file), "--db-name", "alpha", "settings"]
         )
         # Naming one leaves the configuration naming both.
-        assert get_config().lancedb.uri == ""
         assert set(get_config().lancedb.databases) == {"alpha", "beta"}
 
         runner.invoke(cli, ["--config", str(config_file), "settings"])
@@ -384,12 +397,12 @@ class TestResolvingTheDatabasePath:
             resolve_scope(Path("/data/other.lancedb"))
 
 
-class TestConfiguredLocalUri:
-    """`lancedb.uri` with a local path."""
+class TestConfiguredLocalDatabase:
+    """One entry in `lancedb.databases` with a local path."""
 
     def _config_file(self, tmp_path, located: Path) -> Path:
         config_file = tmp_path / "haiku.rag.yaml"
-        config_file.write_text(f"lancedb:\n  uri: {located}\n")
+        config_file.write_text(f"lancedb:\n  databases:\n    notes: {located}\n")
         return config_file
 
     def _fresh(self, monkeypatch) -> None:
@@ -429,7 +442,7 @@ class TestConfiguredLocalUri:
         assert "does not exist" in result.output
         assert not located.exists()
 
-    def test_db_overrides_the_configured_uri(self, tmp_path, monkeypatch):
+    def test_db_overrides_the_configured_database(self, tmp_path, monkeypatch):
         self._fresh(monkeypatch)
         configured = tmp_path / "configured.lancedb"
         chosen = tmp_path / "chosen.lancedb"

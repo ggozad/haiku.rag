@@ -40,8 +40,8 @@ async def _restore_embedder(config, name, *, provider=None, model_name=None):
 
     import lancedb
 
-    _, db_path = locate_database(config.lancedb.databases[name])
-    assert db_path is not None
+    db_path = locate_database(config.lancedb.databases[name])
+    assert not isinstance(db_path, str)
     db = await lancedb.connect_async(str(db_path.resolve()))
     table = await db.open_table("settings")
     rows = (

@@ -8,6 +8,7 @@ from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.config.models import AppConfig, LanceDBConfig
 from haiku.rag.store.exceptions import (
     AmbiguousDatabaseError,
+    SourceUnavailableError,
     UnknownDatabaseError,
 )
 from haiku.rag.utils import locate_database
@@ -18,18 +19,13 @@ from tests.multi_db.helpers import (
 
 
 class TestConfig:
-    def test_databases_and_uri_are_mutually_exclusive(self):
-        with pytest.raises(ValidationError, match="databases"):
-            LanceDBConfig(
-                uri="s3://b/one.lancedb", databases={"one": "s3://b/one.lancedb"}
-            )
-
-    def test_databases_alone_is_fine(self):
+    def test_databases_is_the_one_placement(self):
         config = LanceDBConfig(databases={"one": "s3://b/one.lancedb"})
         assert config.databases == {"one": "s3://b/one.lancedb"}
 
-    def test_uri_alone_is_fine(self):
-        assert LanceDBConfig(uri="s3://b/one.lancedb").databases == {}
+    def test_uri_is_refused_naming_the_replacement(self):
+        with pytest.raises(ValidationError, match="lancedb.databases"):
+            LanceDBConfig.model_validate({"uri": "s3://b/one.lancedb"})
 
 
 class TestNamingIsRequired:
@@ -51,18 +47,18 @@ class TestNamingIsRequired:
 
 class TestNamingADatabaseDirectly:
     @pytest.mark.asyncio
-    async def test_an_explicit_db_path_wins_over_the_configured_set(
+    async def test_a_db_path_beside_the_configured_set_is_refused(
         self, tmp_path, temp_db_path
     ):
-        """A caller that names a path means that database, not the configured
-        set: the CLI resolves `--db` to one and must not fan out instead."""
+        """The configuration places databases; a path beside it is a second
+        placement, and the refusal names both."""
         config = _config(tmp_path, ["alpha", "beta"])
-        await _seed(config, "alpha", ["alpha document about cats"])
 
-        async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
-            assert not rag.covers_multiple
-            assert rag.source is None
-            assert rag.store.db_path == temp_db_path
+        with pytest.raises(AmbiguousDatabaseError, match="alpha") as raised:
+            async with HaikuRAG(temp_db_path, config=config, create=True):
+                pass
+        assert str(temp_db_path) in str(raised.value)
+        assert not temp_db_path.exists()
 
     @pytest.mark.asyncio
     async def test_one_configured_database_is_opened_by_name(self, tmp_path):
@@ -79,42 +75,43 @@ class TestNamingADatabaseDirectly:
 
 
 class TestOneConfiguredLocation:
-    """`lancedb.uri` places one unnamed database, at a URI or at a local path."""
+    """One entry in `lancedb.databases` places one named database, at a URI or
+    at a local path."""
 
     def _config(self, location) -> AppConfig:
-        return AppConfig(lancedb=LanceDBConfig(uri=str(location)))
+        return AppConfig(lancedb=LanceDBConfig(databases={"notes": str(location)}))
 
     @pytest.mark.asyncio
-    async def test_a_local_uri_opens_the_configured_database(self, tmp_path):
+    async def test_a_local_location_opens_the_configured_database(self, tmp_path):
         located = tmp_path / "notes.lancedb"
         config = self._config(located)
 
         async with HaikuRAG(config=config, create=True) as rag:
             assert rag.store.db_path == located
-            # It places a database without naming one: only `lancedb.databases`
-            # assigns the name results and citations carry.
-            assert rag.source is None
+            assert rag.source == "notes"
         assert located.exists()
 
     @pytest.mark.asyncio
-    async def test_an_explicit_path_overrides_a_local_uri(self, tmp_path):
-        """`--db` overrides the configured location for one invocation."""
+    async def test_a_path_beside_the_configured_database_is_refused(self, tmp_path):
         config = self._config(tmp_path / "configured.lancedb")
         chosen = tmp_path / "chosen.lancedb"
 
-        async with HaikuRAG(chosen, config=config, create=True) as rag:
-            assert rag.store.db_path == chosen
-        assert chosen.exists()
+        with pytest.raises(AmbiguousDatabaseError, match="notes"):
+            async with HaikuRAG(chosen, config=config, create=True):
+                pass
+        assert not chosen.exists()
         assert not (tmp_path / "configured.lancedb").exists()
 
     @pytest.mark.asyncio
-    async def test_a_local_uri_that_does_not_exist_is_refused(self, tmp_path):
-        """A schemeless location is a local path and must exist."""
+    async def test_a_local_location_that_does_not_exist_is_refused(self, tmp_path):
+        """A schemeless location is a local path and must exist. The error names
+        the configured database, never its location."""
         config = self._config(tmp_path / "typo.lancedb")
 
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises(SourceUnavailableError, match="notes") as caught:
             async with HaikuRAG(config=config):
                 pass
+        assert "typo.lancedb" not in str(caught.value)
         assert not (tmp_path / "typo.lancedb").exists()
 
     def test_a_uri_with_a_scheme_stays_a_uri(self, tmp_path):
@@ -167,15 +164,12 @@ class TestSessionsOwnTheRef:
 
 class TestLocate:
     def test_a_scheme_is_a_uri(self):
-        assert locate_database("s3://bucket/one.lancedb") == (
-            "s3://bucket/one.lancedb",
-            None,
-        )
+        assert locate_database("s3://bucket/one.lancedb") == "s3://bucket/one.lancedb"
 
     def test_anything_else_is_a_local_path(self):
-        uri, db_path = locate_database("/data/one.lancedb")
-        assert uri == ""
-        assert db_path is not None and str(db_path) == "/data/one.lancedb"
+        from pathlib import Path
+
+        assert locate_database("/data/one.lancedb") == Path("/data/one.lancedb")
 
 
 class TestSelection:
@@ -250,10 +244,39 @@ class TestPlacingADatabase:
         assert {r.source for r in results} == {"alpha"}
 
     @pytest.mark.asyncio
-    async def test_an_unnamed_database_names_nothing(self, temp_db_path):
+    async def test_a_database_at_a_path_is_named_by_its_stem(self, temp_db_path):
         async with HaikuRAG(temp_db_path, create=True) as rag:
-            assert rag.source_names == ()
-            assert rag.source is None
+            assert rag.source_names == (temp_db_path.stem,)
+            assert rag.source == temp_db_path.stem
+
+    @pytest.mark.asyncio
+    async def test_the_default_database_is_selectable_by_name(self, tmp_path):
+        """Nothing configured is the one entry `haiku.rag`, an ordinary
+        configured database that `sources` can name."""
+        from haiku.rag.config.models import StorageConfig
+
+        config = AppConfig(storage=StorageConfig(data_dir=tmp_path))
+
+        async with HaikuRAG(config=config, sources=["haiku.rag"], create=True) as rag:
+            assert rag.source == "haiku.rag"
+            assert rag.store.db_path == tmp_path / "haiku.rag.lancedb"
+
+    def test_coverage_is_known_before_the_client_opens(self, tmp_path):
+        """Coverage is a fact of the resolved scope, readable before entering,
+        and `source_names` and `covers_multiple` agree on it."""
+        config = _config(tmp_path, ["alpha", "beta"])
+
+        covering = HaikuRAG(config=config)
+        assert covering.source_names == ("alpha", "beta")
+        assert covering.covers_multiple
+
+        narrowed = HaikuRAG(config=config, sources=["beta"])
+        assert narrowed.source_names == ("beta",)
+        assert not narrowed.covers_multiple
+
+        at_path = HaikuRAG(tmp_path / "other.lancedb")
+        assert at_path.source_names == ("other",)
+        assert not at_path.covers_multiple
 
     @pytest.mark.asyncio
     async def test_the_reader_for_a_database_is_the_client_holding_it(self, tmp_path):
@@ -314,10 +337,10 @@ class TestPlacingADatabase:
                 await alpha.reader_for("beta")
 
     @pytest.mark.asyncio
-    async def test_an_unnamed_database_refuses_any_name(self, temp_db_path):
-        """Nothing names it, so no name can be the one it covers."""
+    async def test_a_database_at_a_path_answers_to_its_stem_alone(self, temp_db_path):
         async with HaikuRAG(temp_db_path, create=True) as rag:
-            with pytest.raises(UnknownDatabaseError, match="single unnamed database"):
+            assert await rag.reader_for(temp_db_path.stem) is rag
+            with pytest.raises(UnknownDatabaseError, match=temp_db_path.stem):
                 await rag.reader_for("anything")
 
     @pytest.mark.asyncio

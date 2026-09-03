@@ -85,10 +85,9 @@ ingester:
       delete_orphans: true
 
 lancedb:
-  uri: ""  # Empty for local, or db://, s3://, az://, gs://
-  api_key: ""
+  databases: {}  # Name-to-location map; empty places haiku.rag under data_dir
+  api_key: ""  # LanceDB Cloud (db://) credentials
   region: ""
-  databases: {}  # Name-to-location map to search multiple at once; excludes uri
 
 embeddings:
   model:

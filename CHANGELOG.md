@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Removed
+
+- `lancedb.uri`. Write `lancedb.databases: {NAME: <location>}`; a config carrying
+  `uri` fails to load with that message.
+
 ### Changed
 
 - `qa.max_searches` counts search units: searches a model emits in one
@@ -10,6 +15,17 @@
 - Searches in one model response deduplicate their results: evidence a sibling
   search already showed collapses to a reference line, and a picture attaches
   once per response.
+- Every database has a name: the key in `lancedb.databases`, or the path's stem
+  for `--db PATH`, `db_path=` and the default database, which is the entry
+  `haiku.rag` under `storage.data_dir` and selectable by that name.
+  `SearchResult.source`, `Document.source` and `Citation.source` always carry it.
+- `db_path=` beside a configured `lancedb.databases` raises
+  `AmbiguousDatabaseError` (`HaikuRAG`, `create_capability`, `create_mcp_server`,
+  `Sandbox`). `haiku-rag --db PATH` and `haiku-ingester --db PATH` open that path
+  whatever is configured.
+- `DatabaseRef(name, location, given)` replaces `DatabaseRef(name, uri, db_path)`;
+  `DatabaseScope.at(path)` added; `locate_database` returns `Path | str`.
+  `IngesterApp(config, scope)` takes a resolved scope in place of `db_path`.
 - `Store(location, config)`, `connect_lancedb(location, config)`,
   `gather_database_info(location, config)` and `run_doctor(config, location, ...)`
   take the database location, a path or a URI. `ConnectionMode.of(location)`

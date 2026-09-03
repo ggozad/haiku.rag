@@ -47,9 +47,8 @@ class SingleDatabaseSession:
     """One database: its store, its repositories, and their lifecycle.
 
     Everything that needs a store lives here, so nothing above has to ask whether
-    it has one. Built from the resolved reference: ``source`` is the configured
-    name it answers to, or None where nothing names it, and the store receives
-    its location.
+    it has one. Built from the resolved reference: ``source`` is the name it
+    answers to, and the store receives its location.
 
     ``ref``, ``config``, ``read_only`` and ``source`` are readable: a client
     borrowing this session reports them as its own.
@@ -74,7 +73,7 @@ class SingleDatabaseSession:
         self._vacuum_dirty = False
 
     @property
-    def source(self) -> str | None:
+    def source(self) -> str:
         return self.ref.name
 
     @property
@@ -107,12 +106,12 @@ class SingleDatabaseSession:
                 raise
         except _NAMEABLE_FAILURES as error:
             # The message keeps its remedy and gains the database's name.
-            if self.source is None:
+            if self.ref.given:
                 raise
             raise type(error)(f"database {self.source!r}: {error}") from error
         except Exception as error:
-            # Without a name there is nothing to report in the location's place.
-            if self.source is None:
+            # A path the caller gave may be named: the caller knows it already.
+            if self.ref.given:
                 raise
             failure = type(error).__name__
         if failure is not None:
@@ -266,9 +265,7 @@ class FederatedSession:
         skip_validation: bool = False,
         read_only: bool = False,
     ) -> None:
-        self._refs: dict[str, DatabaseRef] = {
-            ref.name: ref for ref in scope.databases if ref.name is not None
-        }
+        self._refs: dict[str, DatabaseRef] = {ref.name: ref for ref in scope.databases}
         self._config = config
         self._skip_validation = skip_validation
         self._read_only = read_only

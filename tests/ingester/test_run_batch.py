@@ -14,6 +14,7 @@ import pytest
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.exceptions import UnsupportedSourceError
+from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.config import (
     APIConfig,
     AppConfig,
@@ -121,7 +122,7 @@ async def test_run_batch_drains_upserts(tmp_path, use_client):
     use_client(client)
 
     report = await IngesterApp(
-        config=_config(tmp_path), db_path=tmp_path / "db.lancedb"
+        config=_config(tmp_path), scope=DatabaseScope.at(tmp_path / "db.lancedb")
     ).run_batch()
 
     assert report.succeeded == 2
@@ -146,7 +147,7 @@ async def test_run_batch_reports_progress(tmp_path, use_client):
     progress = []
 
     report = await IngesterApp(
-        config=_config(tmp_path), db_path=tmp_path / "db.lancedb"
+        config=_config(tmp_path), scope=DatabaseScope.at(tmp_path / "db.lancedb")
     ).run_batch(progress_callback=progress.append)
 
     assert report.succeeded == 2
@@ -171,7 +172,9 @@ async def test_run_batch_prunes_orphans(tmp_path, use_client):
     db_path = tmp_path / "db.lancedb"
 
     # First batch ingests both files and records sync_state for each.
-    first = await IngesterApp(config=config, db_path=db_path).run_batch()
+    first = await IngesterApp(
+        config=config, scope=DatabaseScope.at(db_path)
+    ).run_batch()
     assert first.succeeded == 2
     client.delete_document.assert_not_awaited()
 
@@ -179,7 +182,9 @@ async def test_run_batch_prunes_orphans(tmp_path, use_client):
     # sync_state but not on disk -> enqueues a DELETE for it.
     (tmp_path / "b.md").unlink()
 
-    second = await IngesterApp(config=config, db_path=db_path).run_batch()
+    second = await IngesterApp(
+        config=config, scope=DatabaseScope.at(db_path)
+    ).run_batch()
 
     # a.md is unchanged (same mtime) so it's not re-ingested; only the orphan
     # delete runs.
@@ -198,7 +203,7 @@ async def test_run_batch_reports_dead_on_permanent_failure(tmp_path, use_client)
     use_client(client)
 
     report = await IngesterApp(
-        config=_config(tmp_path), db_path=tmp_path / "db.lancedb"
+        config=_config(tmp_path), scope=DatabaseScope.at(tmp_path / "db.lancedb")
     ).run_batch()
 
     assert report.succeeded == 0
@@ -217,7 +222,9 @@ async def test_run_batch_recovered_doc_is_not_counted_as_dead(tmp_path, use_clie
     failing = _mock_client()
     failing.create_document_from_source.side_effect = UnsupportedSourceError("nope")
     use_client(failing)
-    first = await IngesterApp(config=config, db_path=db_path).run_batch()
+    first = await IngesterApp(
+        config=config, scope=DatabaseScope.at(db_path)
+    ).run_batch()
     assert first.dead == 1
 
     healthy = _mock_client()
@@ -226,7 +233,9 @@ async def test_run_batch_recovered_doc_is_not_counted_as_dead(tmp_path, use_clie
     # records the revision in sync_state, so a plain re-run no longer retries an
     # unchanged file — recovery needs the content (mtime) to change.
     (tmp_path / "a.md").write_text("hello again")
-    second = await IngesterApp(config=config, db_path=db_path).run_batch()
+    second = await IngesterApp(
+        config=config, scope=DatabaseScope.at(db_path)
+    ).run_batch()
     assert second.dead == 0
     assert second.succeeded == 1
 
@@ -248,7 +257,7 @@ async def test_run_batch_reports_failed_sweep(
 
     with caplog.at_level("ERROR", logger="haiku.rag.ingester.pollers.base"):
         report = await IngesterApp(
-            config=_config(tmp_path), db_path=tmp_path / "db.lancedb"
+            config=_config(tmp_path), scope=DatabaseScope.at(tmp_path / "db.lancedb")
         ).run_batch()
 
     assert report.failed_sweeps == ["local"]
@@ -264,7 +273,7 @@ async def test_run_batch_empty_source_returns_immediately(tmp_path, use_client):
 
     report = await asyncio.wait_for(
         IngesterApp(
-            config=_config(tmp_path), db_path=tmp_path / "db.lancedb"
+            config=_config(tmp_path), scope=DatabaseScope.at(tmp_path / "db.lancedb")
         ).run_batch(),
         timeout=5.0,
     )
@@ -287,7 +296,9 @@ async def test_run_batch_dry_run_reports_manifest_without_mutating_queue(tmp_pat
     finally:
         await engine.dispose()
 
-    report = await IngesterApp(config=config, db_path=db_path).run_batch_dry_run()
+    report = await IngesterApp(
+        config=config, scope=DatabaseScope.at(db_path)
+    ).run_batch_dry_run()
 
     assert report.failed_sweeps == []
     assert report.manifest.version == 1
@@ -322,7 +333,7 @@ async def test_run_batch_from_manifest_drains_changes_without_sweeping(
     monkeypatch.setattr(PollerManager, "sweep_all", sweep_all)
 
     report = await IngesterApp(
-        config=_config(tmp_path), db_path=tmp_path / "db.lancedb"
+        config=_config(tmp_path), scope=DatabaseScope.at(tmp_path / "db.lancedb")
     ).run_batch_from_manifest(
         _manifest(
             BatchChange(
@@ -350,7 +361,7 @@ async def test_run_batch_from_manifest_rejects_stale_upsert_revision(
     use_client(client)
 
     report = await IngesterApp(
-        config=_config(tmp_path), db_path=tmp_path / "db.lancedb"
+        config=_config(tmp_path), scope=DatabaseScope.at(tmp_path / "db.lancedb")
     ).run_batch_from_manifest(
         _manifest(
             BatchChange(
@@ -378,7 +389,7 @@ async def test_run_batch_from_manifest_delete_uses_manifest_even_if_file_reappea
     use_client(client)
 
     report = await IngesterApp(
-        config=_config(tmp_path), db_path=tmp_path / "db.lancedb"
+        config=_config(tmp_path), scope=DatabaseScope.at(tmp_path / "db.lancedb")
     ).run_batch_from_manifest(
         _manifest(
             BatchChange(
@@ -431,7 +442,7 @@ async def test_run_batch_from_manifest_resumes_same_manifest_work(tmp_path, use_
         await engine.dispose()
 
     report = await IngesterApp(
-        config=config, db_path=tmp_path / "db.lancedb"
+        config=config, scope=DatabaseScope.at(tmp_path / "db.lancedb")
     ).run_batch_from_manifest(manifest)
 
     assert report.succeeded == 1
@@ -456,7 +467,7 @@ async def test_run_batch_from_manifest_rejects_non_manifest_pending_work(
 
     with pytest.raises(ValueError, match="non-manifest pending work"):
         await IngesterApp(
-            config=config, db_path=tmp_path / "db.lancedb"
+            config=config, scope=DatabaseScope.at(tmp_path / "db.lancedb")
         ).run_batch_from_manifest(
             _manifest(
                 BatchChange(
@@ -505,7 +516,7 @@ async def test_run_batch_from_manifest_rejects_different_manifest_pending_work(
 
     with pytest.raises(ValueError, match="non-manifest pending work"):
         await IngesterApp(
-            config=config, db_path=tmp_path / "db.lancedb"
+            config=config, scope=DatabaseScope.at(tmp_path / "db.lancedb")
         ).run_batch_from_manifest(manifest)
 
 
@@ -526,7 +537,7 @@ async def test_run_batch_from_manifest_rejects_unrelated_pending_work(
 
     with pytest.raises(ValueError, match="non-manifest pending work"):
         await IngesterApp(
-            config=config, db_path=tmp_path / "db.lancedb"
+            config=config, scope=DatabaseScope.at(tmp_path / "db.lancedb")
         ).run_batch_from_manifest(
             _manifest(
                 BatchChange(
@@ -554,7 +565,7 @@ async def test_run_batch_from_manifest_rejects_duplicate_changes(tmp_path, use_c
 
     with pytest.raises(ValueError, match="duplicate change"):
         await IngesterApp(
-            config=_config(tmp_path), db_path=tmp_path / "db.lancedb"
+            config=_config(tmp_path), scope=DatabaseScope.at(tmp_path / "db.lancedb")
         ).run_batch_from_manifest(_manifest(change, change))
 
 
@@ -583,7 +594,9 @@ async def test_run_batch_aborts_when_all_workers_die(
 
     with caplog.at_level("ERROR", logger="haiku.rag.ingester.app"):
         report = await asyncio.wait_for(
-            IngesterApp(config=config, db_path=tmp_path / "db.lancedb").run_batch(),
+            IngesterApp(
+                config=config, scope=DatabaseScope.at(tmp_path / "db.lancedb")
+            ).run_batch(),
             timeout=10.0,
         )
 
@@ -608,7 +621,7 @@ async def test_serve_starts_workers_pollers_and_shuts_down(tmp_path, use_client,
     use_client(_mock_client())
     config = _config(tmp_path)
     config.ingester.api = APIConfig(enabled=api, host="127.0.0.1", port=0)
-    app = IngesterApp(config=config, db_path=tmp_path / "db.lancedb")
+    app = IngesterApp(config=config, scope=DatabaseScope.at(tmp_path / "db.lancedb"))
 
     task = asyncio.create_task(app.serve(api=api))
     try:
@@ -653,7 +666,7 @@ async def test_stop_pool_warns_when_shutdown_grace_elapses(tmp_path, caplog):
     """When a worker doesn't stop within the shutdown grace, _stop_pool logs a
     warning and still drains any pending cancel-cleanup releases."""
     config = _config(tmp_path, shutdown_grace_s=0.01)
-    app = IngesterApp(config=config, db_path=tmp_path / "db.lancedb")
+    app = IngesterApp(config=config, scope=DatabaseScope.at(tmp_path / "db.lancedb"))
     pool = _SlowPool()
     app._pool = pool
 
@@ -694,7 +707,9 @@ async def test_run_batch_closes_sources_after_pool_stops(
 ):
     (tmp_path / "a.md").write_text("hello")
     use_client(_mock_client())
-    app = IngesterApp(config=_config(tmp_path), db_path=tmp_path / "db.lancedb")
+    app = IngesterApp(
+        config=_config(tmp_path), scope=DatabaseScope.at(tmp_path / "db.lancedb")
+    )
     order = _record_close_order(monkeypatch)
 
     await app.run_batch()
@@ -707,7 +722,7 @@ async def test_serve_closes_sources_after_pool_stops(tmp_path, use_client, monke
     use_client(_mock_client())
     config = _config(tmp_path)
     config.ingester.api = APIConfig(enabled=False)
-    app = IngesterApp(config=config, db_path=tmp_path / "db.lancedb")
+    app = IngesterApp(config=config, scope=DatabaseScope.at(tmp_path / "db.lancedb"))
     order = _record_close_order(monkeypatch)
 
     task = asyncio.create_task(app.serve(api=False))

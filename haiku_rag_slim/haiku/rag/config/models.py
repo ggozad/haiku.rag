@@ -102,12 +102,12 @@ class LanceDBConfig(ConfigModel):
     The cache sizes are per process, since the session is shared across
     connections.
 
-    `databases` maps a name to a location, for searching multiple at once. The
-    name is what results and citations carry, so a location never leaves the
-    configuration. Mutually exclusive with `uri`.
+    `databases` maps a name to a location, a local path or a URI, and is the one
+    way to place databases. The name is what results and citations carry, so a
+    location never leaves the configuration. Empty means the default database,
+    `haiku.rag`, under `storage.data_dir`.
     """
 
-    uri: str = ""
     api_key: str = ""
     region: str = ""
     storage_options: dict[str, str] = Field(default_factory=dict)
@@ -116,13 +116,18 @@ class LanceDBConfig(ConfigModel):
     index_cache_size_bytes: int | None = Field(default=None, ge=0)
     metadata_cache_size_bytes: int | None = Field(default=None, ge=0)
 
-    @model_validator(mode="after")
-    def _one_way_of_naming_databases(self) -> "LanceDBConfig":
-        if self.uri and self.databases:
+    @model_validator(mode="before")
+    @classmethod
+    def _uri_names_its_replacement(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "uri" in data:
             raise ValueError(
-                "lancedb.uri and lancedb.databases are mutually exclusive: "
-                "use uri for one unnamed location, or databases for named ones"
+                "lancedb.uri was removed; write lancedb.databases: {NAME: "
+                f"{data['uri']!r}}} instead"
             )
+        return data
+
+    @model_validator(mode="after")
+    def _every_database_is_named_and_placed(self) -> "LanceDBConfig":
         for name, location in self.databases.items():
             # A blank name is falsy, so source routing reads it as absent; a
             # blank location resolves to the working directory.

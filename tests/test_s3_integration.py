@@ -41,10 +41,16 @@ def _make_config() -> AppConfig:
     unique_prefix = uuid4().hex[:8]
     return AppConfig(
         lancedb=LanceDBConfig(
-            uri=f"s3://{S3_BUCKET}/test-{unique_prefix}",
+            databases={"test": f"s3://{S3_BUCKET}/test-{unique_prefix}"},
             storage_options=S3_STORAGE_OPTIONS,
         )
     )
+
+
+def _uri(config: AppConfig) -> str:
+    """The one configured S3 location."""
+    [uri] = config.lancedb.databases.values()
+    return uri
 
 
 @pytest.fixture
@@ -58,7 +64,7 @@ def config():
     config = _make_config()
     yield config
 
-    bucket, _, prefix = config.lancedb.uri.removeprefix("s3://").partition("/")
+    bucket, _, prefix = _uri(config).removeprefix("s3://").partition("/")
     store = make_s3_store(bucket, S3_STORAGE_OPTIONS)
     paths = [obj["path"] for batch in store.list(prefix=f"{prefix}/") for obj in batch]
     if paths:
@@ -73,7 +79,7 @@ def _remote_scope(config: AppConfig) -> DatabaseScope:
     """
     scope = DatabaseScope.resolve(config)
     [ref] = scope.databases
-    assert ref.db_path is None and ref.uri.startswith("s3://")
+    assert ref.db_path is None and str(ref.location).startswith("s3://")
     return scope
 
 
@@ -89,7 +95,7 @@ async def _remote_client(config: AppConfig):
 async def test_store_connect_and_create(tmp_path, config):
     from haiku.rag.store.info import get_database_stats
 
-    async with Store(config.lancedb.uri, config=config, create=True) as store:
+    async with Store(_uri(config), config=config, create=True) as store:
         stats = await get_database_stats(store.db)
         assert stats["documents"]["exists"]
         assert stats["chunks"]["exists"]
@@ -97,7 +103,7 @@ async def test_store_connect_and_create(tmp_path, config):
 
 @pytest.mark.asyncio
 async def test_store_vacuum(tmp_path, config):
-    async with Store(config.lancedb.uri, config=config, create=True) as store:
+    async with Store(_uri(config), config=config, create=True) as store:
         await store.vacuum()
 
 
@@ -106,7 +112,7 @@ async def test_store_add_document(tmp_path, config):
     from haiku.rag.store.info import get_database_stats
     from haiku.rag.store.schema import DocumentRecord
 
-    async with Store(config.lancedb.uri, config=config, create=True) as store:
+    async with Store(_uri(config), config=config, create=True) as store:
         doc = DocumentRecord(content="The quick brown fox jumps over the lazy dog.")
         await store.documents_table.add([doc])
 
@@ -164,7 +170,7 @@ async def test_app_info(capsys, config):
 
     out = capsys.readouterr().out
     assert "path:" in out
-    assert config.lancedb.uri in out
+    assert _uri(config) in out
     assert "documents: 1" in out
 
 

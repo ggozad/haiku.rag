@@ -49,6 +49,13 @@ async def evaluate_dataset(
     if document_filter is not None:
         console.print(f"Document filter: {document_filter}", style="dim")
 
+    if db_path is not None and config.lancedb.databases:
+        raise ValueError(
+            "--db PATH places the database where the configuration places none, "
+            f"and this configuration names {', '.join(config.lancedb.databases)} "
+            "in lancedb.databases. Drop --db to evaluate the configured set."
+        )
+
     if not skip_db:
         if spec.uses_configured_databases(config, db_path):
             raise ValueError(
@@ -157,7 +164,11 @@ def run(
     config: Path | None = typer.Option(
         None, "--config", help="Path to haiku.rag YAML config file."
     ),
-    db: Path | None = typer.Option(None, "--db", help="Override the database path."),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Database path, where the configuration places no database.",
+    ),
     skip_db: bool = typer.Option(
         False, "--skip-db", help="Skip updating the evaluation db."
     ),

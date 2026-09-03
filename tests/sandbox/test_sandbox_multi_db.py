@@ -159,12 +159,14 @@ class TestTheSandboxConstructors:
 
     @pytest.mark.asyncio
     async def test_the_public_constructor_resolves_the_path_it_is_given(self, tmp_path):
+        from haiku.rag.config.models import AppConfig
+
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
 
         sandbox = Sandbox(
             db_path=tmp_path / "alpha.lancedb",
-            config=config,
+            config=AppConfig(),
             context=AnalysisContext(),
         )
 
@@ -202,19 +204,20 @@ class TestTheSandboxCoversWhatTheCapabilityCovers:
         """The sandbox covers the scope the capability resolved, as handed
         over."""
         from haiku.rag.capabilities.analysis import AnalysisState, create_capability
+        from haiku.rag.config.models import AppConfig
 
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
 
         capability = create_capability(
-            db_path=tmp_path / "alpha.lancedb", config=config, defer_loading=False
+            db_path=tmp_path / "alpha.lancedb", config=AppConfig(), defer_loading=False
         )
         capability.state = AnalysisState()
 
         sandbox = await capability._ensure_sandbox()
         try:
             assert sandbox._scope is capability.scope
-            assert capability.scope.names == ()
+            assert capability.scope.names == ("alpha",)
         finally:
             await capability._close()
 

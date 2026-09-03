@@ -212,7 +212,7 @@ async def test_app_info_uses_connect_lancedb_for_remote(tmp_path):
     """info() should use connect_lancedb() instead of direct lancedb.connect() for remote URIs."""
     config = AppConfig(
         lancedb=LanceDBConfig(
-            uri="s3://bucket/path",
+            databases={"path": "s3://bucket/path"},
             storage_options={"endpoint": "http://localhost:9000"},
         )
     )
@@ -368,7 +368,7 @@ async def test_app_init_skips_exists_check_for_remote(tmp_path):
     """init() should not check db_path.exists() for remote URIs."""
     config = AppConfig(
         lancedb=LanceDBConfig(
-            uri="s3://bucket/path",
+            databases={"path": "s3://bucket/path"},
             storage_options={"endpoint": "http://localhost:9000"},
         )
     )
@@ -389,7 +389,7 @@ async def test_app_history_skips_exists_check_for_remote(tmp_path):
     """history() should not check db_path.exists() for remote URIs."""
     config = AppConfig(
         lancedb=LanceDBConfig(
-            uri="s3://bucket/path",
+            databases={"path": "s3://bucket/path"},
             storage_options={"endpoint": "http://localhost:9000"},
         )
     )
@@ -416,7 +416,7 @@ async def test_app_tag_rendering_escapes_markup(tmp_path):
 
     config = AppConfig(
         lancedb=LanceDBConfig(
-            uri="s3://bucket/path",
+            databases={"path": "s3://bucket/path"},
             storage_options={"endpoint": "http://localhost:9000"},
         )
     )
@@ -450,7 +450,7 @@ async def test_app_history_survives_tag_annotation_failure(tmp_path):
 
     config = AppConfig(
         lancedb=LanceDBConfig(
-            uri="s3://bucket/path",
+            databases={"path": "s3://bucket/path"},
             storage_options={"endpoint": "http://localhost:9000"},
         )
     )

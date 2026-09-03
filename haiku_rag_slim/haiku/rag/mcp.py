@@ -32,9 +32,9 @@ def create_mcp_server(
     """Create an MCP server over one database.
 
     Args:
-        db_path: Path to the database file, or None to let `config` place it. A
-            path overrides a configured `lancedb.uri`: for a URI-backed
-            database, pass None.
+        db_path: Path to the database file, where `config` places none; or
+            None to serve the database the configuration places. Beside
+            `lancedb.databases` a path raises `AmbiguousDatabaseError`.
         config: Configuration to use.
         read_only: If True, write tools (add_document_*, delete_document) are not registered.
     """

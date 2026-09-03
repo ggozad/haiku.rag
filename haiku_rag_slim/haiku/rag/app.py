@@ -86,7 +86,7 @@ class HaikuRAGApp:
     @property
     def display_path(self) -> "Path | str":
         """What a one-database command calls the database it opened."""
-        return self._one.db_path or self._one.uri
+        return self._one.location
 
     @property
     def database_missing(self) -> bool:
