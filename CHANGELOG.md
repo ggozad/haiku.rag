@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.82.0] - 2026-09-03
+
 ### Removed
 
 - `lancedb.uri`. Write `lancedb.databases: {NAME: <location>}`; a config carrying
@@ -2355,7 +2357,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.81.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.82.0...HEAD
+[0.82.0]: https://github.com/ggozad/haiku.rag/compare/0.81.0...0.82.0
 [0.81.0]: https://github.com/ggozad/haiku.rag/compare/0.80.0...0.81.0
 [0.80.0]: https://github.com/ggozad/haiku.rag/compare/0.79.0...0.80.0
 [0.79.0]: https://github.com/ggozad/haiku.rag/compare/0.78.0...0.79.0
