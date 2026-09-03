@@ -8,13 +8,13 @@ Requirements:
     - An Anthropic API key (for the QA model) or adjust the model below
 
 Usage:
-    DB_PATH=/path/to/db.lancedb uv run uvicorn examples.custom_agent_agui:app --reload --port 8000
+    uv run uvicorn examples.custom_agent_agui:app --reload --port 8000
+
+    The configuration places the database (HAIKU_RAG_CONFIG_PATH, or
+    ./haiku.rag.yaml).
 """
 
-import os
-import sys
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 from ag_ui.core import EventType, StateSnapshotEvent
@@ -30,14 +30,7 @@ from haiku.rag.capabilities.compaction import create_capability as compaction
 from haiku.rag.capabilities.policy import create_capability as citation_policy
 from haiku.rag.capabilities.rag import RAGState, create_capability
 
-db_path = os.environ.get("DB_PATH")
-if not db_path:
-    print(
-        "Set DB_PATH environment variable to your haiku.rag database", file=sys.stderr
-    )
-    sys.exit(1)
-
-capability = create_capability(db_path=Path(db_path), defer_loading=False)
+capability = create_capability(defer_loading=False)
 
 
 @dataclass

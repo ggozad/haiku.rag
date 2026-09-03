@@ -12,7 +12,7 @@ The `haiku-rag` CLI provides complete document management functionality.
 
     Per-command options:
 
-    - `--db` - Specify custom database path
+    - `--db` - Open the database at this path, named by its stem, whatever the configuration places
     - `-h` - Show help for specific command
 
     Example:

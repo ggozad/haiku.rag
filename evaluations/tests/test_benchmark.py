@@ -711,6 +711,37 @@ class TestEvaluateDatasetJudgeModel:
         assert mock_qa.call_args[1]["judge_model"] is custom_judge
 
 
+@pytest.mark.asyncio
+async def test_a_db_path_beside_configured_databases_is_refused(tmp_path) -> None:
+    """`--db` places the database where the configuration places none; beside
+    `lancedb.databases` the run refuses before touching anything."""
+    from haiku.rag.config.models import LanceDBConfig
+
+    config = AppConfig(
+        lancedb=LanceDBConfig(databases={"alpha": str(tmp_path / "a.lancedb")})
+    )
+    spec = DatasetSpec(
+        key="test",
+        db_filename="test.lancedb",
+        document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        document_mapper=lambda doc: None,
+        qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+    )
+
+    with pytest.raises(ValueError, match="alpha"):
+        await evaluate_dataset(
+            spec=spec,
+            config=config,
+            skip_db=True,
+            skip_retrieval=True,
+            skip_qa=True,
+            limit=None,
+            name=None,
+            db_path=tmp_path / "other.lancedb",
+        )
+
+
 class TestExperimentMetadataTargets:
     def test_default_target_is_rag_capability(self) -> None:
         result = build_experiment_metadata(

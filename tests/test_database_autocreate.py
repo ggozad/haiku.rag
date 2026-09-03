@@ -55,7 +55,8 @@ def test_default_db_path_comes_from_storage_data_dir(tmp_path):
 
     [ref] = HaikuRAG(config=config)._resolve_scope().databases
 
-    assert ref.db_path == tmp_path / "haiku.rag.lancedb"
+    assert ref.location == tmp_path / "haiku.rag.lancedb"
+    assert ref.name == "haiku.rag"
 
 
 @pytest.mark.asyncio

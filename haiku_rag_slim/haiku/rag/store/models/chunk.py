@@ -146,10 +146,10 @@ class SearchResult(BaseModel):
     include the metadata of any other chunks merged with it. Never part of
     ``format_for_agent`` output.
 
-    ``source`` names the configured database a result came from: the name from
-    ``lancedb.databases``, never a path or URI, so a location cannot travel in a
-    result, a citation or a log. It is None only where no database is named, as
-    with the single ``lancedb.uri``.
+    ``source`` names the database a result came from: the name from
+    ``lancedb.databases`` or a path's stem, never a path or URI, so a location
+    cannot travel in a result, a citation or a log. Every result a search
+    produces carries it; None only on a result built by hand.
     """
 
     content: str

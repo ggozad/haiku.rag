@@ -24,15 +24,18 @@ class DocumentCheckbox(Checkbox):
         self.doc_id = doc_id
 
 
-def _labelled(docs) -> list[tuple[str, str | None, str]]:
-    """Each document's label, database and id, sorted by label. The database is
-    named alongside the title, which a title alone does not say. Labels are
-    escaped: titles and database names are data, not Textual markup."""
+def _labelled(
+    docs, *, name_database: bool = False
+) -> list[tuple[str, str | None, str]]:
+    """Each document's label, database and id, sorted by label. Across several
+    databases the database is named alongside the title, which a title alone
+    does not say. Labels are escaped: titles and database names are data, not
+    Textual markup."""
     rows = [
         (
             escape(
                 f"{doc.title or doc.uri or doc.id}"
-                + (f"  ({doc.source})" if doc.source else "")
+                + (f"  ({doc.source})" if name_database and doc.source else "")
             ),
             doc.source,
             doc.id,
@@ -221,7 +224,9 @@ class DocumentFilterModal(ModalScreen):
             DocumentCheckbox(
                 label, source, doc_id, value=(source, doc_id) in self._selected
             )
-            for label, source, doc_id in _labelled(docs)
+            for label, source, doc_id in _labelled(
+                docs, name_database=self.client.covers_multiple
+            )
         ]
         if boxes:
             await filter_list.mount_all(boxes)

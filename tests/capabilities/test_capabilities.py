@@ -98,14 +98,10 @@ def _placed(capability) -> "Path | None":
     return ref.db_path
 
 
-def test_capability_factories_resolve_environment_and_defaults(
-    temp_db_path, monkeypatch
-):
+def test_capability_factories_resolve_defaults(temp_db_path, monkeypatch):
+    """The configuration places the database; the environment plays no part."""
     config = AppConfig()
     monkeypatch.setenv("HAIKU_RAG_DB", str(temp_db_path))
-    assert _placed(create_rag(config=config)) == temp_db_path
-
-    monkeypatch.delenv("HAIKU_RAG_DB")
     assert _placed(create_rag(config=config)) == (
         config.storage.data_dir / "haiku.rag.lancedb"
     )
@@ -124,30 +120,28 @@ class TestACapabilityFollowsTheConfiguredLocation:
     """A capability nobody handed a client opens one for itself, at the
     database the configuration places."""
 
-    def _config(self, tmp_path, uri: str) -> AppConfig:
+    def _config(self, tmp_path, location: str) -> AppConfig:
         from haiku.rag.config.models import LanceDBConfig, StorageConfig
 
         return AppConfig(
-            lancedb=LanceDBConfig(uri=uri),
+            lancedb=LanceDBConfig(databases={"notes": location}),
             storage=StorageConfig(data_dir=tmp_path / "elsewhere"),
         )
 
-    def test_a_configured_uri_is_left_to_the_client(self, tmp_path):
-        """A path overrides a configured location, so the capability passes
-        None and the client resolves the configured URI."""
+    def test_a_configured_location_is_the_capability_scope(self, tmp_path):
         located = tmp_path / "notes.lancedb"
         for factory in (create_rag, create_analysis):
             [local] = factory(
                 config=self._config(tmp_path, str(located))
             ).scope.databases
-            assert local == DatabaseRef.configured(None, str(located))
+            assert local == DatabaseRef("notes", located)
 
             remote = self._config(tmp_path, "s3://bucket/one.lancedb")
             [ref] = factory(config=remote).scope.databases
-            assert ref == DatabaseRef(None, "s3://bucket/one.lancedb", None)
+            assert ref == DatabaseRef("notes", "s3://bucket/one.lancedb")
 
     @pytest.mark.asyncio
-    async def test_it_opens_the_database_the_uri_places(self, tmp_path):
+    async def test_it_opens_the_database_the_configuration_places(self, tmp_path):
         from haiku.rag.client import HaikuRAG
 
         located = tmp_path / "notes.lancedb"
@@ -162,19 +156,15 @@ class TestACapabilityFollowsTheConfiguredLocation:
         finally:
             await capability._close()
 
-    def test_an_explicit_path_still_overrides_the_configured_uri(self, tmp_path):
+    def test_a_path_beside_the_configured_placement_is_refused(self, tmp_path):
+        from haiku.rag.store.exceptions import AmbiguousDatabaseError
+
         config = self._config(tmp_path, str(tmp_path / "notes.lancedb"))
         chosen = tmp_path / "chosen.lancedb"
 
-        assert _placed(create_rag(db_path=chosen, config=config)) == chosen
-
-    def test_the_environment_still_overrides_the_configured_uri(
-        self, tmp_path, monkeypatch
-    ):
-        config = self._config(tmp_path, "s3://bucket/one.lancedb")
-        monkeypatch.setenv("HAIKU_RAG_DB", str(tmp_path / "from-env.lancedb"))
-
-        assert _placed(create_rag(config=config)) == tmp_path / "from-env.lancedb"
+        for factory in (create_rag, create_analysis):
+            with pytest.raises(AmbiguousDatabaseError, match="notes"):
+                factory(db_path=chosen, config=config)
 
 
 @pytest.mark.asyncio
@@ -206,15 +196,15 @@ def test_domain_preamble_is_added_to_capability_instructions(temp_db_path):
 
 
 def _single_database_client() -> AsyncMock:
-    """A stand-in for a client covering one unnamed database.
+    """A stand-in for a client covering one database.
 
-    `covers_multiple`, `source` and `clients_covering` answer as one unnamed
-    database does; a bare AsyncMock answers every attribute with a truthy Mock.
+    `covers_multiple`, `source` and `clients_covering` answer as one database
+    does; a bare AsyncMock answers every attribute with a truthy Mock.
     """
     client = AsyncMock()
     client.covers_multiple = False
-    client.source_names = ()
-    client.source = None
+    client.source_names = ("test",)
+    client.source = "test"
     client.clients_covering.return_value = [client]
     return client
 
@@ -1691,22 +1681,18 @@ class TestMultipleCollectionsInstructions:
             (create_rag, rag_text),
             (create_analysis, analysis_text),
         ):
-            for config in (AppConfig(), self._config(alpha="/a.lancedb")):
-                capability = factory(db_path=Path("/tmp/x.lancedb"), config=config)
-                assert capability.instruction_text == baseline()
+            one_at_a_path = factory(db_path=Path("/tmp/x.lancedb"), config=AppConfig())
+            assert one_at_a_path.instruction_text == baseline()
+            one_configured = factory(config=self._config(alpha="/a.lancedb"))
+            assert one_configured.instruction_text == baseline()
 
-    def test_an_explicit_path_opens_one_database(self):
-        """A path names one database, whatever the configuration names."""
-        from haiku.rag.capabilities.analysis import instructions as analysis_text
-        from haiku.rag.capabilities.rag import instructions as rag_text
+    def test_a_path_beside_a_configured_set_is_refused(self):
+        from haiku.rag.store.exceptions import AmbiguousDatabaseError
 
         config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
-        for factory, baseline in (
-            (create_rag, rag_text),
-            (create_analysis, analysis_text),
-        ):
-            capability = factory(db_path=Path("/tmp/one.lancedb"), config=config)
-            assert capability.instruction_text == baseline()
+        for factory in (create_rag, create_analysis):
+            with pytest.raises(AmbiguousDatabaseError, match="alpha, beta"):
+                factory(db_path=Path("/tmp/one.lancedb"), config=config)
 
     def test_a_lent_client_covering_one_database_is_instructed_as_before(self):
         from haiku.rag.capabilities.analysis import instructions as analysis_text

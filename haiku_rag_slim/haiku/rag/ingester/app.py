@@ -4,7 +4,6 @@ import signal
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
@@ -21,6 +20,8 @@ from haiku.rag.ingester.workers.retry import RetryPolicy
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
+
+    from haiku.rag.client.scope import DatabaseScope
 
 logger = logging.getLogger(__name__)
 
@@ -72,14 +73,14 @@ class IngesterApp:
     WorkerPool, and a HaikuRAG client for the worker pool to ingest through.
     """
 
-    def __init__(self, *, config: AppConfig, db_path: Path | None = None):
+    def __init__(self, *, config: AppConfig, scope: "DatabaseScope | None" = None):
+        """The ingester over the database `scope` covers, or the one the
+        configuration places when no scope is handed in."""
         from haiku.rag.client.scope import DatabaseScope
         from haiku.rag.store.exceptions import AmbiguousDatabaseError
 
         self._config = config
-        # `--db` is an explicit override; None leaves placement to the
-        # configuration.
-        self._scope = DatabaseScope.resolve(config, database_path=db_path)
+        self._scope = scope if scope is not None else DatabaseScope.resolve(config)
         if self._scope.covers_multiple:
             raise AmbiguousDatabaseError(
                 "haiku-ingester writes one database, and lancedb.databases "

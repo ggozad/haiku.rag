@@ -2,8 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from haiku.rag.client.scope import DatabaseRef, DatabaseScope
-from haiku.rag.client.session import default_db_path
+from haiku.rag.client.scope import DatabaseRef, DatabaseScope, database_name
 from haiku.rag.config.models import AppConfig, LanceDBConfig, StorageConfig
 from haiku.rag.store.exceptions import (
     AmbiguousDatabaseError,
@@ -26,30 +25,49 @@ class TestResolution:
                 config, database_name="alpha", database_path=Path("/data/other.lancedb")
             )
 
-    def test_a_path_names_one_unnamed_database(self):
-        """A path says which database, not what it is called, even where the
-        configuration names one."""
-        config = _config(databases={"alpha": "/data/alpha.lancedb"})
-
-        scope = DatabaseScope.resolve(config, database_path=Path("/data/other.lancedb"))
+    def test_a_path_places_the_database_where_the_configuration_places_none(self):
+        scope = DatabaseScope.resolve(_config(), database_path="/data/other.lancedb")
 
         assert scope.databases == (DatabaseRef.at("/data/other.lancedb"),)
-        assert scope.names == ()
+        assert scope.names == ("other",)
         assert not scope.covers_multiple
+
+    def test_a_path_beside_a_configured_placement_is_refused(self):
+        """The configuration places databases; a path beside it is a second
+        placement, and the refusal names both."""
+        config = _config(databases={"alpha": "/data/alpha.lancedb", "beta": "b://b"})
+
+        with pytest.raises(AmbiguousDatabaseError) as raised:
+            DatabaseScope.resolve(config, database_path=Path("/data/other.lancedb"))
+
+        message = str(raised.value)
+        assert "/data/other.lancedb" in message
+        assert "alpha" in message and "beta" in message
+        assert "lancedb.databases" in message
 
     def test_a_named_database_keeps_its_name(self):
         config = _config(databases={"alpha": "/data/alpha.lancedb", "beta": "b://b"})
 
         scope = DatabaseScope.resolve(config, database_name="beta")
 
-        assert scope.databases == (DatabaseRef("beta", "b://b", None),)
+        assert scope.databases == (DatabaseRef("beta", "b://b"),)
         assert scope.names == ("beta",)
 
     def test_an_unknown_name_is_refused(self):
+        """The message lists the databases there are, configured or default."""
         config = _config(databases={"alpha": "/data/alpha.lancedb"})
 
-        with pytest.raises(UnknownDatabaseError, match="unknown database 'nope'"):
+        with pytest.raises(
+            UnknownDatabaseError,
+            match="unknown database 'nope'.*the databases are alpha",
+        ):
             DatabaseScope.resolve(config, database_name="nope")
+
+        with pytest.raises(
+            UnknownDatabaseError,
+            match="unknown database 'nope'.*the databases are haiku.rag",
+        ):
+            DatabaseScope.resolve(_config(), database_name="nope")
 
     def test_no_selector_covers_the_configured_set_in_order(self):
         config = _config(
@@ -67,49 +85,41 @@ class TestResolution:
 
         scope = DatabaseScope.resolve(config)
 
-        assert scope.databases == (
-            DatabaseRef.configured("alpha", "/data/alpha.lancedb"),
-        )
+        assert scope.databases == (DatabaseRef("alpha", Path("/data/alpha.lancedb")),)
         assert not scope.covers_multiple
 
-    def test_a_bare_uri_is_one_unnamed_database(self):
-        scope = DatabaseScope.resolve(_config(uri="s3://bucket/one.lancedb"))
-
-        assert scope.databases == (DatabaseRef(None, "s3://bucket/one.lancedb", None),)
-
-    def test_a_bare_uri_without_a_scheme_is_a_local_path(self):
-        """`lancedb.uri` places one database the same way an entry in
-        `lancedb.databases` does, so a schemeless value is a path and gets the
-        existence check a local database gets."""
-        scope = DatabaseScope.resolve(_config(uri="/data/notes.lancedb"))
-
-        [ref] = scope.databases
-        assert ref.name is None
-        assert ref.db_path == Path("/data/notes.lancedb")
-        assert ref.uri == ""
-
-    def test_a_path_selects_the_database_over_a_configured_uri(self):
-        """`--db` exists to override what is configured, and the configuration
-        derived from the ref is what makes the connection follow it."""
-        config = _config(uri="s3://bucket/one.lancedb")
-
-        scope = DatabaseScope.resolve(config, database_path=Path("/data/local"))
-
-        [ref] = scope.databases
-        assert ref.db_path == Path("/data/local")
-        one, _ = ref.connection(config)
-        assert one.lancedb.uri == ""
-
-    def test_nothing_configured_falls_back_to_the_data_directory(self, tmp_path):
+    def test_nothing_configured_is_the_default_entry(self, tmp_path):
+        """No `databases` reads as one entry, `haiku.rag`, under the data
+        directory: an ordinary configured database in every respect."""
         config = AppConfig(storage=StorageConfig(data_dir=tmp_path))
 
         scope = DatabaseScope.resolve(config)
 
-        assert scope.databases == (DatabaseRef.at(tmp_path / "haiku.rag.lancedb"),)
+        assert scope.databases == (
+            DatabaseRef("haiku.rag", tmp_path / "haiku.rag.lancedb"),
+        )
+        assert scope.names == ("haiku.rag",)
 
-    def test_the_environment_is_not_consulted(self, monkeypatch, tmp_path):
-        """HAIKU_RAG_DB is honoured by the capability entry point alone;
-        resolution never reads the environment."""
+    def test_the_default_entry_is_selectable_by_name(self, tmp_path):
+        config = AppConfig(storage=StorageConfig(data_dir=tmp_path))
+
+        by_name = DatabaseScope.resolve(config, database_name="haiku.rag")
+        selected = DatabaseScope.resolve(config).select(["haiku.rag"])
+
+        assert by_name == selected == DatabaseScope.resolve(config)
+
+    def test_the_default_entry_does_not_hide_a_configured_set(self, tmp_path):
+        """The default stands in only where nothing is configured."""
+        config = AppConfig(
+            storage=StorageConfig(data_dir=tmp_path),
+            lancedb=LanceDBConfig(databases={"alpha": "/data/alpha.lancedb"}),
+        )
+
+        with pytest.raises(UnknownDatabaseError, match="haiku.rag"):
+            DatabaseScope.resolve(config, database_name="haiku.rag")
+
+    def test_the_environment_is_not_consulted(self, monkeypatch):
+        """Resolution reads the configuration alone."""
         monkeypatch.setenv("HAIKU_RAG_DB", "/data/from-the-environment.lancedb")
         config = _config(databases={"alpha": "/data/alpha.lancedb"})
 
@@ -124,8 +134,7 @@ class TestResolution:
         )
 
         [ref] = scope.databases
-        assert ref.db_path == Path("s3://bucket/looks-like-a-uri.lancedb")
-        assert ref.uri == ""
+        assert ref.location == Path("s3://bucket/looks-like-a-uri.lancedb")
 
     def test_a_configured_location_with_a_scheme_is_a_uri(self):
         """A configured value is a URI or a path depending on its scheme, which is
@@ -134,22 +143,16 @@ class TestResolution:
 
         [ref] = DatabaseScope.resolve(config).databases
 
-        assert ref.uri == "s3://bucket/alpha.lancedb"
+        assert ref.location == "s3://bucket/alpha.lancedb"
         assert ref.db_path is None
 
-    def test_a_database_is_a_uri_or_a_path(self):
-        """A ref holding both, or neither, is refused at construction.
+    def test_a_configured_location_without_a_scheme_is_a_path(self):
+        config = _config(databases={"alpha": "/data/alpha.lancedb"})
 
-        The message names what it was given: this is a programming error raised
-        in the caller's own process, not one an operator or a model ever sees.
-        """
-        with pytest.raises(ValueError, match="either a URI or a local path") as both:
-            DatabaseRef(None, "s3://bucket/a.lancedb", Path("/data/a.lancedb"))
-        assert "s3://bucket/a.lancedb" in str(both.value)
+        [ref] = DatabaseScope.resolve(config).databases
 
-        with pytest.raises(ValueError, match="either a URI or a local path") as neither:
-            DatabaseRef(None, "", None)
-        assert "db_path=None" in str(neither.value)
+        assert ref.location == Path("/data/alpha.lancedb")
+        assert ref.db_path == Path("/data/alpha.lancedb")
 
     def test_a_scope_covers_at_least_one_database(self):
         """Every resolution reaches a database, and the sessions built from a
@@ -158,61 +161,69 @@ class TestResolution:
             DatabaseScope(())
 
 
-class TestConnectionDerivation:
-    """Opening one of a set must not disturb the configuration it came from."""
+class TestTheReference:
+    """Constructed directly, a reference still holds what it advertises."""
 
-    def test_a_local_location_becomes_a_path(self):
-        config = _config(databases={"alpha": "/data/alpha.lancedb"})
-        [ref] = DatabaseScope.resolve(config).databases
+    def test_a_schemeless_string_location_is_a_path(self):
+        ref = DatabaseRef("x", "local.lancedb")
 
-        one, db_path = ref.connection(config)
+        assert ref.location == Path("local.lancedb")
+        assert ref.db_path == Path("local.lancedb")
 
-        assert db_path == Path("/data/alpha.lancedb")
-        assert one.lancedb.uri == ""
-        assert one.lancedb.databases == {}
+    def test_a_location_with_a_scheme_stays_a_uri(self):
+        ref = DatabaseRef("x", "s3://bucket/x.lancedb")
 
-    def test_a_uri_location_stays_a_uri(self):
-        config = _config(databases={"alpha": "s3://bucket/alpha.lancedb"})
-        [ref] = DatabaseScope.resolve(config).databases
+        assert ref.location == "s3://bucket/x.lancedb"
+        assert ref.db_path is None
 
-        one, db_path = ref.connection(config)
+    def test_a_blank_name_is_refused(self):
+        with pytest.raises(ValueError, match="no name"):
+            DatabaseRef("", "/data/x.lancedb")
+        with pytest.raises(ValueError, match="no name"):
+            DatabaseRef("  ", "s3://bucket/x.lancedb")
 
-        assert db_path is None
-        assert one.lancedb.uri == "s3://bucket/alpha.lancedb"
+    def test_a_blank_location_is_refused(self):
+        """A blank string would resolve to the working directory."""
+        with pytest.raises(ValueError, match="no location"):
+            DatabaseRef("x", "")
+        with pytest.raises(ValueError, match="no location"):
+            DatabaseRef("x", "   ")
 
-    def test_the_original_configuration_is_untouched(self):
-        """Rewriting it in place is what left downstream code unable to tell a set
-        had been named."""
-        config = _config(databases={"alpha": "/a.lancedb", "beta": "/b.lancedb"})
-
-        for ref in DatabaseScope.resolve(config).databases:
-            ref.connection(config)
-
-        assert config.lancedb.databases == {"alpha": "/a.lancedb", "beta": "/b.lancedb"}
-        assert config.lancedb.uri == ""
-
-    def test_each_derived_configuration_is_its_own_copy(self):
-        config = _config(databases={"alpha": "/a.lancedb", "beta": "s3://b/b.lancedb"})
-        alpha, beta = DatabaseScope.resolve(config).databases
-
-        one, _ = alpha.connection(config)
-        other, _ = beta.connection(config)
-
-        assert one is not other
-        assert one.lancedb.uri == ""
-        assert other.lancedb.uri == "s3://b/b.lancedb"
+    def test_a_given_database_is_a_local_path(self):
+        """Only a path can be given: a given database's errors name its
+        location, and a URI must never travel that way."""
+        assert DatabaseRef("x", "local.lancedb", given=True).location == Path(
+            "local.lancedb"
+        )
+        with pytest.raises(ValueError, match="is a URI"):
+            DatabaseRef("x", "s3://bucket/x.lancedb", given=True)
 
 
-def test_a_database_behind_a_uri_has_no_path_of_its_own(tmp_path):
-    """`connection` hands back no path for a URI, and the store still needs one:
-    the default stands in, and the URI is what decides where it connects."""
-    config = AppConfig(
-        storage=StorageConfig(data_dir=tmp_path),
-        lancedb=LanceDBConfig(databases={"alpha": "s3://bucket/alpha.lancedb"}),
-    )
-    [ref] = DatabaseScope.resolve(config).databases
+class TestNamingAPath:
+    """A path the caller gave is named by its stem, the one rule for the
+    default database and for `--db`."""
 
-    one, db_path = ref.connection(config)
+    def test_the_stem_names_the_database(self):
+        assert database_name(Path("/data/foo.lancedb")) == "foo"
+        assert database_name(Path("relative.lancedb")) == "relative"
+        assert database_name(Path("/data/haiku.rag.lancedb")) == "haiku.rag"
 
-    assert db_path is None
-    assert default_db_path(one) == tmp_path / "haiku.rag.lancedb"
+    def test_a_path_with_no_stem_is_refused(self):
+        with pytest.raises(ValueError, match="no name"):
+            database_name(Path("/"))
+
+    def test_at_names_the_path_it_is_given(self):
+        """A given path is marked as such: its errors may name it, since the
+        caller already knows where it is."""
+        assert DatabaseRef.at("/data/other.lancedb") == DatabaseRef(
+            "other", Path("/data/other.lancedb"), given=True
+        )
+        assert not DatabaseRef.configured("other", "/data/other.lancedb").given
+
+    def test_a_scope_at_a_path_ignores_the_configuration(self):
+        """The CLI's `--db` is a human's explicit override: it constructs the
+        scope directly and consults no configuration."""
+        scope = DatabaseScope.at(Path("/data/other.lancedb"))
+
+        assert scope.databases == (DatabaseRef.at("/data/other.lancedb"),)
+        assert scope.names == ("other",)

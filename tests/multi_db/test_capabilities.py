@@ -7,7 +7,6 @@ import pytest
 from haiku.rag.capabilities._tools import search_corpus
 from haiku.rag.capabilities.rag import RAGState, create_capability
 from haiku.rag.client import HaikuRAG
-from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.client.session import FederatedSession
 from haiku.rag.sandbox import AnalysisContext, Sandbox
 from haiku.rag.store.exceptions import UnknownDatabaseError
@@ -163,8 +162,9 @@ class TestCollectionIdentityForTheModel:
 
         assert "Collection" not in result.format_for_agent()
 
-    def test_an_unnamed_collection_is_never_mentioned(self):
-        """Nothing to name, whatever the caller asked for."""
+    def test_a_hand_built_result_without_a_source_is_never_labelled(self):
+        """A result built by hand carries no source to name, whatever the
+        caller asked for."""
         result = SearchResult(content="body", score=0.9, chunk_id="c1")
 
         assert "Collection" not in result.format_for_agent(include_collection=True)
@@ -256,12 +256,9 @@ class TestLendingANamedClient:
         await _seed(config, "alpha", ["alpha document about cats"])
         await _seed(config, "beta", ["beta document about cats"])
 
-        # `run_chat` derives these for a single-database scope.
-        scope = DatabaseScope.resolve(config, database_name="alpha")
-        one_config, one_path = scope.databases[0].connection(config)
-        capability = create_capability(
-            db_path=one_path, config=one_config, defer_loading=False
-        )
+        # What `run_chat` builds: the capability's own scope is the set, and
+        # the lent client is what narrows it.
+        capability = create_capability(config=config, defer_loading=False)
 
         async with HaikuRAG(config=config, sources=["alpha"]) as client:
             # What `ChatApp.on_mount` does.

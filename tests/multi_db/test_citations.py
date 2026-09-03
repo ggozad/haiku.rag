@@ -299,7 +299,7 @@ class TestCitationSource:
 
         assert citation.chunk_id == "c1"
 
-    def test_a_single_database_citation_has_no_source(self):
+    def test_a_citation_from_a_hand_built_result_has_no_source(self):
         result = SearchResult(
             content="body",
             score=0.9,

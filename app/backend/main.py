@@ -1,9 +1,7 @@
 import asyncio
 import logging
-import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 from ag_ui.core import EventType, StateSnapshotEvent
@@ -26,8 +24,8 @@ from haiku.rag.capabilities.policy import (
 )
 from haiku.rag.capabilities.rag import AGENT_PREAMBLE, RAGState, create_capability
 from haiku.rag.client import HaikuRAG
-from haiku.rag.config import load_yaml_config
-from haiku.rag.config.models import AppConfig
+from haiku.rag.client.scope import DatabaseScope
+from haiku.rag.config import get_config
 from haiku.rag.telemetry import configure as configure_telemetry
 from haiku.rag.utils import get_model
 
@@ -40,19 +38,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Load config
-config_path = Path("/app/haiku.rag.yaml")
-if config_path.exists():
-    yaml_data = load_yaml_config(config_path)
-    config = AppConfig.model_validate(yaml_data)
-else:
-    config = AppConfig()
+# The configuration places the database. This app serves one.
+config = get_config()
+scope = DatabaseScope.resolve(config)
+if scope.covers_multiple:
+    raise SystemExit(
+        f"lancedb.databases names {', '.join(scope.names)}; this app serves one "
+        "database: configure exactly one entry"
+    )
+[database] = scope.databases
 
-# Get DB path from environment
-db_path_str = os.getenv("DB_PATH", "haiku_rag.lancedb")
-db_path = Path(db_path_str)
 
-logger.info(f"Database path: {db_path}")
+def _database_exists() -> bool:
+    """A database behind a URI has no path to check."""
+    return database.db_path is None or database.db_path.exists()
+
+
+logger.info(f"Database: {database.name} at {database.location}")
 logger.info(f"QA Provider: {config.qa.model.provider}, Model: {config.qa.model.name}")
 
 # Only HaikuRAG client is a singleton (expensive to create)
@@ -71,7 +73,7 @@ async def get_client() -> HaikuRAG:
     if _client is None:
         async with _client_lock:
             if _client is None:
-                client = HaikuRAG(db_path=db_path, config=config, create=True)
+                client = HaikuRAG(config=config, create=True)
                 await client.__aenter__()
                 _client = client
     return _client
@@ -82,7 +84,7 @@ class AppDeps:
     state: dict[str, Any] = field(default_factory=dict)
 
 
-capability = create_capability(db_path=db_path, config=config, defer_loading=False)
+capability = create_capability(config=config, defer_loading=False)
 
 agent = Agent(
     get_model(config.qa.model, config),
@@ -138,15 +140,15 @@ async def health_check(_: Request) -> JSONResponse:
             "status": "healthy",
             "qa_provider": config.qa.model.provider,
             "qa_model": config.qa.model.name,
-            "db_path": str(db_path),
-            "db_exists": db_path.exists(),
+            "db_path": str(database.location),
+            "db_exists": _database_exists(),
         }
     )
 
 
 async def list_documents(_: Request) -> JSONResponse:
     """List all documents in the database."""
-    if not db_path.exists():
+    if not _database_exists():
         return JSONResponse({"documents": [], "error": "Database not found"})
 
     client = await get_client()
@@ -162,11 +164,11 @@ async def list_documents(_: Request) -> JSONResponse:
 
 async def db_info(_: Request) -> JSONResponse:
     """Get database info and statistics."""
-    if not db_path.exists():
+    if not _database_exists():
         return JSONResponse(
             {
                 "exists": False,
-                "path": str(db_path),
+                "path": str(database.location),
                 "documents": 0,
                 "chunks": 0,
             }
@@ -180,7 +182,7 @@ async def db_info(_: Request) -> JSONResponse:
     return JSONResponse(
         {
             "exists": True,
-            "path": str(db_path),
+            "path": str(database.location),
             "documents": stats["documents"].get("num_rows", 0),
             "chunks": stats["chunks"].get("num_rows", 0),
             "documents_bytes": stats["documents"].get("total_bytes", 0),
@@ -214,7 +216,7 @@ async def visualize_chunk(request: Request) -> JSONResponse:
         if isinstance(parsed, list):
             refs = [str(x) for x in parsed]
 
-    if not db_path.exists():
+    if not _database_exists():
         return JSONResponse({"error": "Database not found"}, status_code=404)
 
     client = await get_client()

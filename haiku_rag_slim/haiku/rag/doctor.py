@@ -1080,7 +1080,7 @@ async def run_provider_checks(
 
 async def run_doctor(
     config: AppConfig,
-    db_path: Path,
+    location: Path | str,
     environ: dict[str, str],
     duplicates_out: Path | None = None,
     on_progress: Callable[[str], None] | None = None,
@@ -1092,7 +1092,7 @@ async def run_doctor(
     """
     notify = on_progress or (lambda _label: None)
     notify("Inspecting tables")
-    db = await connect_lancedb(config, db_path)
+    db = await connect_lancedb(location, config)
     stats = await get_database_stats(db)
 
     results: list[CheckResult] = []
@@ -1110,7 +1110,7 @@ async def run_doctor(
         missing = [name for name in REQUIRED_TABLES if not stats[name]["exists"]]
         if not missing:
             async with Store(
-                db_path,
+                location,
                 config=config,
                 skip_validation=True,
                 read_only=True,

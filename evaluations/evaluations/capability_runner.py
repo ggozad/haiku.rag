@@ -44,7 +44,7 @@ class CapabilityRunResult:
     cited_uris: list[str] = field(default_factory=list)
     cited_chunk_ids: list[str] = field(default_factory=list)
     # The database each cited chunk came from, in the order they were cited.
-    # Empty string where the database is unnamed.
+    # Empty string for a citation built without a source.
     cited_sources: list[str] = field(default_factory=list)
     searched_uris: list[str] = field(default_factory=list)
     n_searches: int = 0

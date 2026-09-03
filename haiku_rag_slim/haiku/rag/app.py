@@ -1,5 +1,4 @@
 import logging
-from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -64,21 +63,10 @@ class HaikuRAGApp:
         [ref] = self.scope.databases
         return ref
 
-    @cached_property
-    def _connection(self) -> "tuple[AppConfig, Path]":
-        """How to open the one database this command works on, directly.
-
-        Derived per database from its configured location.
-        """
-        from haiku.rag.client.session import default_db_path
-
-        config, db_path = self._one.connection(self.config)
-        return config, db_path or default_db_path(config)
-
     @property
-    def _store_config(self) -> AppConfig:
-        """The configuration for opening the one database directly."""
-        return self._connection[0]
+    def _location(self) -> "Path | str":
+        """Where the one database this command works on is."""
+        return self._one.location
 
     @property
     def _is_local(self) -> bool:
@@ -91,17 +79,14 @@ class HaikuRAGApp:
 
     @property
     def _path(self) -> Path:
-        """The path of the one database this command works on.
-
-        A database behind a URI has none of its own, and the default stands in:
-        the URI in `_store_config` is what decides where it connects.
-        """
-        return self._connection[1]
+        """The path of the one local database this command works on."""
+        assert self._one.db_path is not None
+        return self._one.db_path
 
     @property
     def display_path(self) -> "Path | str":
         """What a one-database command calls the database it opened."""
-        return self._one.db_path or self._one.uri
+        return self._one.location
 
     @property
     def database_missing(self) -> bool:
@@ -140,7 +125,7 @@ class HaikuRAGApp:
             self.console.print("[red]Database path does not exist.[/red]")
             return
 
-        info = await gather_database_info(self._store_config, self._path)
+        info = await gather_database_info(self._location, self.config)
 
         if not info.exists:
             self.console.print(
@@ -282,8 +267,8 @@ class HaikuRAGApp:
         cm = status if status is not None else nullcontext()
         with cm:
             report = await run_doctor(
-                self._store_config,
-                self._path,
+                self.config,
+                self._location,
                 dict(os.environ),
                 duplicates_out=duplicates_out,
                 on_progress=on_progress,
@@ -340,8 +325,8 @@ class HaikuRAGApp:
             return
 
         async with Store(
-            self._path,
-            config=self._store_config,
+            self._location,
+            config=self.config,
             skip_validation=True,
             read_only=True,
             skip_migration_check=True,
@@ -415,15 +400,15 @@ class HaikuRAGApp:
         """
         from haiku.rag.store.engine import Store
 
-        return Store(self._path, config=self._store_config, read_only=self.read_only)
+        return Store(self._location, config=self.config, read_only=self.read_only)
 
     def _tag_read_store(self) -> "Store":
         """Read-only store for tag inspection; works on old or drifted DBs."""
         from haiku.rag.store.engine import Store
 
         return Store(
-            self._path,
-            config=self._store_config,
+            self._location,
+            config=self.config,
             skip_validation=True,
             skip_migration_check=True,
             read_only=True,
@@ -760,8 +745,8 @@ class HaikuRAGApp:
         from haiku.rag.store.engine import Store
 
         async with Store(
-            self._path,
-            config=self._store_config,
+            self._location,
+            config=self.config,
             skip_validation=True,
             skip_migration_check=True,
             read_only=self.read_only,

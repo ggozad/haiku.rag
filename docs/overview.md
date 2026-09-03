@@ -35,7 +35,8 @@ snapshot is only meaningful while this process is the only writer.
 ## Storage
 
 LanceDB is embedded, so there is no server. The same code runs against a local
-directory, S3, GCS, Azure or LanceDB Cloud by changing `lancedb.uri`.
+directory, S3, GCS, Azure or LanceDB Cloud by changing a database's location in
+`lancedb.databases`.
 
 Tables are versioned. Vacuum collapses old versions on a retention window, and
 [tags](cli.md) name a state across all tables so a database can be restored to

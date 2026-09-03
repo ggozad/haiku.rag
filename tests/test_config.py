@@ -800,3 +800,31 @@ def test_complete_example_matches_the_defaults():
     }
 
     assert not drifted, f"documented value != default: {drifted}"
+
+
+def test_lancedb_uri_is_refused_with_the_replacement_named():
+    """`lancedb.uri` no longer places a database; a config carrying it fails to
+    load with the `databases` spelling to use instead."""
+    from haiku.rag.config.models import LanceDBConfig
+
+    with pytest.raises(ValidationError) as raised:
+        AppConfig.model_validate({"lancedb": {"uri": "s3://bucket/notes.lancedb"}})
+
+    message = str(raised.value)
+    assert "lancedb.uri" in message
+    assert "lancedb.databases: {NAME: 's3://bucket/notes.lancedb'}" in message
+
+    with pytest.raises(ValidationError, match="lancedb.databases"):
+        LanceDBConfig.model_validate({"uri": "/data/notes.lancedb"})
+
+
+def test_an_empty_lancedb_uri_is_refused_with_removal_as_the_remedy():
+    """Generated configs carried `uri: ""` for the local default. The remedy is
+    to delete the key, never a mapping with an empty location."""
+    with pytest.raises(ValidationError) as raised:
+        AppConfig.model_validate({"lancedb": {"uri": ""}})
+
+    message = str(raised.value)
+    assert "lancedb.uri" in message
+    assert "remove" in message
+    assert "{NAME" not in message

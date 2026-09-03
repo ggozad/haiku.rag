@@ -77,8 +77,11 @@ async def _apply_split_document_meta(store: Store) -> None:
         Exception
     ):  # pragma: no cover - defensive; stats() failure shouldn't block the split
         live_bytes = 0
-    free_bytes = shutil.disk_usage(store.db_path).free
-    if live_bytes and free_bytes < live_bytes:
+    # A database behind a URI has no local disk to run out of.
+    free_bytes = (
+        shutil.disk_usage(store.db_path).free if store.db_path is not None else None
+    )
+    if live_bytes and free_bytes is not None and free_bytes < live_bytes:
         logger.warning(
             "Skipping post-migration vacuum: need ~%.2f GB free to compact the "
             "documents table, have %.2f GB. Run `haiku-rag vacuum` once you have "

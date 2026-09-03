@@ -110,8 +110,7 @@ class TestSandboxListDocuments:
             assert result.success
             assert "1" in result.stdout
             assert "Test Document" in result.stdout
-            # Nothing names this database, so there is no name to report.
-            assert "None" in result.stdout
+            assert temp_db_path.stem in result.stdout
 
 
 class TestSandboxSearch:

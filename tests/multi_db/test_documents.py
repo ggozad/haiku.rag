@@ -259,7 +259,8 @@ class TestLookupByIdentifier:
         assert chunk is not None and chunk.content == "alpha one"
 
     @pytest.mark.asyncio
-    async def test_an_unnamed_database_answers_to_no_name(self, temp_db_path):
+    async def test_a_database_at_a_path_answers_to_its_stem_alone(self, temp_db_path):
+        stem = temp_db_path.stem
         async with HaikuRAG(temp_db_path, create=True) as rag:
             docling = DoclingDocument(name="one")
             docling.add_text(label=DocItemLabel.TEXT, text="body")
@@ -276,6 +277,8 @@ class TestLookupByIdentifier:
 
             assert await rag.get_document_by_id(doc.id) is not None
             assert await rag.get_chunk_by_id(held.id) is not None
+            assert await rag.get_document_by_id(doc.id, stem) is not None
+            assert await rag.get_chunk_by_id(held.id, stem) is not None
             with pytest.raises(UnknownDatabaseError):
                 await rag.get_document_by_id(doc.id, "alpha")
             with pytest.raises(UnknownDatabaseError):
@@ -459,8 +462,9 @@ class TestDocumentsNameTheirDatabase:
         assert by_uri is not None and by_uri.source == "alpha"
 
     @pytest.mark.asyncio
-    async def test_one_database_leaves_the_source_unset(self, tmp_path, temp_db_path):
-        """Nothing names the database when there is only one to name."""
+    async def test_one_database_at_a_path_is_named_by_its_stem(
+        self, tmp_path, temp_db_path
+    ):
         async with HaikuRAG(temp_db_path, create=True) as rag:
             dim = get_config().embeddings.model.vector_dim
             doc = DoclingDocument(name="solo")
@@ -472,6 +476,7 @@ class TestDocumentsNameTheirDatabase:
             )
 
             [listed] = await rag.list_documents()
-            assert listed.source is None
+            assert listed.source == temp_db_path.stem
             assert listed.id is not None
-            assert (await rag.get_document_by_id(listed.id)).source is None
+            by_id = await rag.get_document_by_id(listed.id)
+            assert by_id is not None and by_id.source == temp_db_path.stem

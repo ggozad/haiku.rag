@@ -21,7 +21,6 @@ from haiku.rag.client.session import (
     FederatedSession,
     SingleDatabaseSession,
     aclose_quietly,
-    default_db_path,
 )
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.converters import get_converter
@@ -129,25 +128,22 @@ class HaikuRAG:
         """Initialize the RAG client with a database path.
 
         Args:
-            db_path: Path or string path to the database. When omitted, resolves
-                ``lancedb.databases``, then ``lancedb.uri``, then the default
-                path under ``storage.data_dir``.
+            db_path: Path or string path to the database, named by its stem.
+                Valid where the configuration places no database; beside
+                ``lancedb.databases`` it raises ``AmbiguousDatabaseError``.
+                When omitted, the configured databases are covered, or the
+                default database ``haiku.rag`` under ``storage.data_dir``.
             config: Configuration to use. Defaults to the current global config.
             skip_validation: Whether to skip configuration validation on database load.
             create: Whether to create the database if it doesn't exist.
             read_only: Whether to open the database in read-only mode.
-            sources: Names from ``config.lancedb.databases`` this client covers,
-                None for all of them. Only that setting names databases, so a
-                name raises when ``lancedb.uri`` placed the database, and is
-                rejected alongside ``db_path``, which says the same thing
+            sources: Names of the databases this client covers, None for all of
+                them. Rejected alongside ``db_path``, which says the same thing
                 another way. ``[]`` raises too: a client over no database can do
                 nothing, unlike ``sources=[]`` on a search, which is a selection
                 of nothing to search.
         """
         self._configured = config if config is not None else get_config()
-        # What the caller configured, kept intact: entering derives a
-        # single-database configuration from it, and every re-entry derives
-        # from the configured set.
         self._config = self._configured
         self._requested_db_path = Path(db_path) if db_path is not None else None
         if self._requested_db_path is not None and sources is not None:
@@ -169,24 +165,31 @@ class HaikuRAG:
 
     @property
     def covers_multiple(self) -> bool:
-        """Whether this client reads from more than one database."""
-        return isinstance(self._session, FederatedSession)
+        """Whether this client reads from more than one database.
+
+        Known before the client enters: coverage is a fact of the resolved
+        scope.
+        """
+        if self._session is not None:
+            return isinstance(self._session, FederatedSession)
+        return self._resolve_scope().covers_multiple
 
     @property
     def source_names(self) -> tuple[str, ...]:
-        """The configured databases this client covers, in configured order.
+        """The databases this client covers, by name, in configured order.
 
-        A single database contributes its own name, or nothing where the
-        configuration named none.
+        Known before the client enters: coverage is a fact of the resolved
+        scope.
         """
         if isinstance(self._session, FederatedSession):
             return self._session.names
-        return () if self.source is None else (self.source,)
+        if isinstance(self._session, SingleDatabaseSession):
+            return (self._session.source,)
+        return self._resolve_scope().names
 
     @property
     def source(self) -> str | None:
-        """The configured database this client reads, or None while covering a
-        set or reading a database the configuration did not name."""
+        """The database this client reads, or None while covering a set."""
         if isinstance(self._session, SingleDatabaseSession):
             return self._session.source
         return None
@@ -339,15 +342,12 @@ class HaikuRAG:
             return self
 
         [ref] = scope.databases
-        self._config, db_path = ref.connection(self._configured)
-
         self._session = await SingleDatabaseSession(
-            db_path if db_path is not None else default_db_path(self._config),
+            ref,
             self._config,
             skip_validation=self._skip_validation,
             create=self._create,
             read_only=self._read_only,
-            source=ref.name,
         ).open()
         return self
 
@@ -410,9 +410,8 @@ class HaikuRAG:
 
         `lender` is the client that opened it, whose reranker this one borrows.
         """
-        client = cls(
-            session.db_path, config=session.config, read_only=session.read_only
-        )
+        client = cls(config=session.config, read_only=session.read_only)
+        client._scope = DatabaseScope((session.ref,))
         client._session = session
         client._owns_session = False
         client._lender = lender
@@ -858,7 +857,7 @@ class HaikuRAG:
         if unknown:
             raise UnknownDatabaseError(
                 f"unknown database(s) {', '.join(sorted(set(unknown)))}; this "
-                f"client covers {', '.join(sorted(covered)) or 'a single unnamed database'}"
+                f"client covers {', '.join(sorted(covered))}"
             )
 
     async def clients_covering(
@@ -882,8 +881,8 @@ class HaikuRAG:
             return []
         if sources != [self.source]:
             raise UnknownDatabaseError(
-                f"unknown database(s) {', '.join(sources) or '(none)'}; this "
-                f"client covers {self.source or 'a single unnamed database'}"
+                f"unknown database(s) {', '.join(sources)}; this client covers "
+                f"{self.source}"
             )
         return [self]
 
@@ -905,9 +904,6 @@ class HaikuRAG:
         if not await self.clients_covering(sources):
             return []
         results = await search(self, query, limit, search_type, filter, include_images)
-        # A database named in config keeps its name even when it is the only one
-        # this client covers. Only an unnamed `lancedb.uri` database leaves
-        # source unset.
         for result in results:
             result.source = self.source
         return results

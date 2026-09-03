@@ -838,11 +838,11 @@ async def test_database_503_when_no_database_is_configured(state):
 
 @pytest.mark.asyncio
 async def test_the_report_follows_a_configured_uri(tmp_path, jobs, sync):
-    """A configured `lancedb.uri` places the database, so the report opens that
+    """A configured location places the database, so the report opens that
     and not the local default."""
     db_path = tmp_path / "configured.lancedb"
     await _seed_lancedb(db_path)
-    config = AppConfig(lancedb=LanceDBConfig(uri=str(db_path)))
+    config = AppConfig(lancedb=LanceDBConfig(databases={"configured": str(db_path)}))
     state = APIState(
         config=config,
         job_repo=jobs,

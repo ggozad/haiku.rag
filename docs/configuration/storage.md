@@ -68,18 +68,19 @@ Vacuum also folds new rows into the full-text index. Search stays correct withou
 
 This is an upstream limitation rather than a `haiku.rag` setting. Compaction bounds itself by row count instead of bytes, and LanceDB's async API exposes no batch size or fragment target to override it. Tracked at [lancedb/lancedb#2325](https://github.com/lancedb/lancedb/issues/2325). The requirement above will drop once compaction batches by bytes.
 
-### Changing the Default Database Path
+### Placing the Database
 
-`storage.data_dir` holds the default database, always called `haiku.rag.lancedb`. To put the database somewhere else for every command, give `lancedb.uri` a local path:
+`lancedb.databases` maps a name to a location, a local path or a URI, and is the one way to place databases. With nothing configured, the database is the entry `haiku.rag` at `<storage.data_dir>/haiku.rag.lancedb`. To put one database somewhere else, name it:
 
 ```yaml
 lancedb:
-  uri: /data/notes.lancedb
+  databases:
+    notes: /data/notes.lancedb
 ```
 
-An explicit `--db PATH` overrides `lancedb.uri` for that invocation.
+The name is what `source` carries in search results, citations and documents, and what `--db-name` and `sources` select. The default database answers to `haiku.rag`.
 
-This places one database without naming it. Its `source` is `None` in search results, citations and documents, since only [`lancedb.databases`](#multiple-databases) assigns the names that carry provenance. A path here changes where the database lives, not what it is called.
+An explicit `--db PATH` on the command line opens that database instead, named by the path's stem, whatever is configured. From Python, `db_path` places the database only where the configuration places none: beside `lancedb.databases` it raises `AmbiguousDatabaseError`.
 
 A value with no scheme is a local path wherever it is configured, so `haiku-rag init` creates it and every command that opens an existing database requires it to exist. A mistyped path fails rather than becoming a new empty database.
 
@@ -109,28 +110,31 @@ async with HaikuRAG(create=True) as client:
 
 The [default location](index.md#configuration-file-locations) is platform-specific (e.g., `~/Library/Application Support/haiku.rag/` on macOS).
 
-Opening a nonexistent unnamed local database raises `FileNotFoundError`, naming its path. This prevents accidental database creation from typos or misconfigured paths. A database named in `lancedb.databases` raises `SourceUnavailableError` instead, naming the database and not its location.
+Opening a nonexistent local database given as a path raises `FileNotFoundError`, naming the path. This prevents accidental database creation from typos or misconfigured paths. A configured or default database raises `SourceUnavailableError` instead, naming the database and not its location.
 
 ## Remote Storage
 
-For remote storage, use the `lancedb` settings with various backends:
+For remote storage, give the database a URI as its location. Credentials and storage options are connection settings, shared by every database in the configuration:
 
 ```yaml
 # LanceDB Cloud
 lancedb:
-  uri: db://your-database-name
+  databases:
+    papers: db://your-database-name
   api_key: your-api-key
   region: us-west-2  # optional
 
 # Amazon S3
 lancedb:
-  uri: s3://my-bucket/my-table
+  databases:
+    papers: s3://my-bucket/my-table
   storage_options:
     region: us-east-1
 
 # Amazon S3 with explicit credentials
 lancedb:
-  uri: s3://my-bucket/my-table
+  databases:
+    papers: s3://my-bucket/my-table
   storage_options:
     aws_access_key_id: YOUR_ACCESS_KEY
     aws_secret_access_key: YOUR_SECRET_KEY
@@ -138,7 +142,8 @@ lancedb:
 
 # S3-compatible (SeaweedFS, Tigris, etc.)
 lancedb:
-  uri: s3://my-bucket/my-table
+  databases:
+    papers: s3://my-bucket/my-table
   storage_options:
     endpoint: http://localhost:8333
     aws_access_key_id: YOUR_ACCESS_KEY
@@ -148,21 +153,24 @@ lancedb:
 
 # Azure Blob Storage
 lancedb:
-  uri: az://my-container/my-table
+  databases:
+    papers: az://my-container/my-table
 
 # Google Cloud Storage
 lancedb:
-  uri: gs://my-bucket/my-table
+  databases:
+    papers: gs://my-bucket/my-table
 
 # HDFS
 lancedb:
-  uri: hdfs://namenode:port/path/to/table
+  databases:
+    papers: hdfs://namenode:port/path/to/table
 ```
 
 - **LanceDB Cloud** (`db://`): Requires `api_key` and `region`. Table optimization and indexing are managed server-side.
 - **Object storage** (`s3://`, `gs://`, `az://`, `hdfs://`): Uses `storage_options` for credentials and endpoint configuration. Authentication can also be provided via environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, etc.) or cloud provider SDK defaults (AWS CLI, Azure CLI, gcloud).
 - **S3-compatible stores** (MinIO, Tigris, etc.): Set `endpoint` in `storage_options`. When using `http://` endpoints, also set `allow_http: "true"`.
-- **Local path** (no scheme): `uri` also takes a local path, which is how the default database is pointed elsewhere. See [Changing the Default Database Path](#changing-the-default-database-path).
+- **Local path** (no scheme): a location without a scheme is a local path. See [Placing the Database](#placing-the-database).
 
 The `storage_options` keys are case-insensitive and passed directly to the underlying object store library. Available keys depend on the backend. See the [LanceDB storage docs](https://lancedb.com/docs/storage/) for details.
 
@@ -192,7 +200,7 @@ The recommended layout for production is "different buckets, same account, separ
 
 Each process picks up its own credentials from the AWS default chain (env vars, IAM instance role, AWS profile), so no credentials are hard-coded in the configuration files.
 
-`haiku-ingester` writes the database the configuration places, so a `lancedb.uri` needs no further option. `--db PATH` overrides it. When `lancedb.databases` contains more than one database the ingester has no way to name which it writes, and refuses to start with `AmbiguousDatabaseError`: give each database its own ingester process, each with a configuration naming a single database, or select one with `--db PATH`. A one-entry mapping is unambiguous and is accepted.
+`haiku-ingester` writes the database the configuration places, so a one-entry `lancedb.databases` needs no further option. `--db PATH` overrides it. When `lancedb.databases` contains more than one database the ingester has no way to name which it writes, and refuses to start with `AmbiguousDatabaseError`: give each database its own ingester process, each with a configuration naming a single database, or select one with `--db PATH`.
 
 ## Multiple Databases
 
@@ -206,7 +214,7 @@ lancedb:
     notes: /data/notes.lancedb
 ```
 
-A location can be a URI or local path. `databases` and `uri` are mutually exclusive.
+A location can be a URI or local path.
 
 Results, documents, and citations use the configured name as `source`. An unavailable configured database raises `SourceUnavailableError`, which names the database and not its location, so a location never travels in an error a consumer might render or log. A migration, configuration or read-only failure keeps its own type, with the database named in the message. Commands that report on a database, such as `info`, still show where it is.
 
@@ -227,7 +235,7 @@ results = await client.search("query")                     # every database
 results = await client.search("query", sources=["papers"])   # one of them
 ```
 
-Candidates are combined into one ranked list with the configured reranker, or by cosine similarity to the query when reranking is disabled, with within-database rank breaking ties (full-text-only searches order by retrieval score). `SearchResult.source`, `Citation.source`, and `Document.source` contain the configured database name. The name is retained when a client covers only one named database. Databases configured through `lancedb.uri` are unnamed, so their `source` is `None`.
+Candidates are combined into one ranked list with the configured reranker, or by cosine similarity to the query when reranking is disabled, with within-database rank breaking ties (full-text-only searches order by retrieval score). `SearchResult.source`, `Citation.source`, and `Document.source` carry the database name, for a set and for one database alike.
 
 The CLI labels results and citations only when the operation spans multiple databases. A command already narrowed with `--db-name` does not repeat the name on every result.
 
@@ -283,7 +291,7 @@ haiku-rag --db-name papers list  # one of them
 haiku-rag --db-name papers migrate
 ```
 
-`--db-name` selects an entry from `lancedb.databases`, including remote entries. `--db` selects a local path and overrides the configured location. A single-database command requires one of these options when multiple databases are configured. A configured set of one is selected automatically.
+`--db-name` selects an entry from `lancedb.databases`, including remote entries, and `haiku.rag` when nothing is configured. `--db` opens a local path, named by its stem, whatever is configured. A single-database command requires one of these options when multiple databases are configured. A configured set of one is selected automatically.
 
 Each database is created, migrated and vacuumed on its own:
 

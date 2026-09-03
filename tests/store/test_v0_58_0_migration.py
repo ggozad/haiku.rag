@@ -126,6 +126,43 @@ class TestV0_58_0MigrationEdgeCases:
             assert set(by_id) == {"a", "b"}  # exactly one row each, no duplicates
             assert len(rows) == 2
 
+    async def test_a_remote_store_has_no_disk_to_check(self, temp_db_path, monkeypatch):
+        """A store behind a URI has no local path: the reclaim vacuum runs
+        without a free-disk check."""
+        from haiku.rag.store.upgrades import v0_58_0
+
+        async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
+            await seed_legacy_documents(
+                store,
+                [LegacyDocumentRecord(id="a", content="x", uri="u", metadata="{}")],
+            )
+            await store.set_haiku_version("0.57.0")
+
+        def no_disk(_path):
+            raise AssertionError("disk_usage consulted for a remote store")
+
+        monkeypatch.setattr(v0_58_0.shutil, "disk_usage", no_disk)
+        vacuum_calls: list[int] = []
+
+        async with Store(temp_db_path, skip_migration_check=True) as store:
+            store.db_path = None
+
+            async def fake_stats():
+                return {"total_bytes": 10_000_000}
+
+            monkeypatch.setattr(store.documents_table, "stats", fake_stats)
+            orig_vacuum = store.vacuum
+
+            async def tracking_vacuum(*args, **kwargs):
+                vacuum_calls.append(1)
+                return await orig_vacuum(*args, **kwargs)
+
+            monkeypatch.setattr(store, "vacuum", tracking_vacuum)
+
+            await store.migrate()
+
+        assert vacuum_calls == [1]
+
     async def test_skips_vacuum_when_disk_is_tight(self, temp_db_path, monkeypatch):
         """When free disk can't cover one compacted copy, the split still
         completes but the reclaim vacuum is skipped."""

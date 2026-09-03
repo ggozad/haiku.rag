@@ -43,36 +43,29 @@ async def aclose_quietly(closeable: Any, what: str) -> None:
         logger.debug("Closing the %s failed on teardown", what, exc_info=True)
 
 
-def default_db_path(config: AppConfig) -> Path:
-    """Where a database lives when its location names no path."""
-    return config.storage.data_dir / "haiku.rag.lancedb"
-
-
 class SingleDatabaseSession:
     """One database: its store, its repositories, and their lifecycle.
 
     Everything that needs a store lives here, so nothing above has to ask whether
-    it has one. ``source`` is the configured name this database answers to, or
-    None where nothing names it.
+    it has one. Built from the resolved reference: ``source`` is the name it
+    answers to, and the store receives its location.
 
-    ``db_path``, ``config``, ``read_only`` and ``source`` are readable: a client
+    ``ref``, ``config``, ``read_only`` and ``source`` are readable: a client
     borrowing this session reports them as its own.
     """
 
     def __init__(
         self,
-        db_path: Path | str,
+        ref: DatabaseRef,
         config: AppConfig,
         *,
         skip_validation: bool = False,
         create: bool = False,
         read_only: bool = False,
-        source: str | None = None,
     ) -> None:
-        self.db_path = db_path
+        self.ref = ref
         self.config = config
         self.read_only = read_only
-        self.source = source
         self._skip_validation = skip_validation
         self._create = create
         self._vacuum_tasks: set[asyncio.Task] = set()
@@ -80,19 +73,25 @@ class SingleDatabaseSession:
         self._vacuum_dirty = False
 
     @property
-    def location(self) -> Path | str:
-        """Configured URI or local path for this database.
+    def source(self) -> str:
+        return self.ref.name
 
-        Not `db_path`, which is a placeholder where a URI holds the database.
-        """
-        return self.config.lancedb.uri or self.db_path
+    @property
+    def location(self) -> Path | str:
+        """Where this database is: its path, or its URI."""
+        return self.ref.location
+
+    @property
+    def db_path(self) -> Path | None:
+        """The local path, or None for a database behind a URI."""
+        return self.ref.db_path
 
     async def open(self) -> "SingleDatabaseSession":
         """Connect, validate, and build the repositories."""
         failure: str | None = None
         try:
             self.store = Store(
-                self.db_path,
+                self.location,
                 config=self.config,
                 skip_validation=self._skip_validation,
                 create=self._create,
@@ -107,20 +106,22 @@ class SingleDatabaseSession:
                 raise
         except _NAMEABLE_FAILURES as error:
             # The message keeps its remedy and gains the database's name.
-            if self.source is None:
+            if self.ref.given:
                 raise
             raise type(error)(f"database {self.source!r}: {error}") from error
         except Exception as error:
-            # Without a name there is nothing to report in the location's place.
-            if self.source is None:
+            # A path the caller gave may be named: the caller knows it already.
+            if self.ref.given:
                 raise
-            failure = type(error).__name__
+            failure = (
+                "does not exist; create it with `haiku-rag init` or `create=True`"
+                if isinstance(error, FileNotFoundError)
+                else f"could not be opened: {type(error).__name__}"
+            )
         if failure is not None:
             # Raised outside the handler: the exception carries neither a cause
             # nor a location-bearing context.
-            raise SourceUnavailableError(
-                f"database {self.source!r} could not be opened: {failure}"
-            )
+            raise SourceUnavailableError(f"database {self.source!r} {failure}")
         self.document_repository = DocumentRepository(self.store)
         self.chunk_repository = ChunkRepository(self.store)
         self.document_item_repository = DocumentItemRepository(self.store)
@@ -266,9 +267,7 @@ class FederatedSession:
         skip_validation: bool = False,
         read_only: bool = False,
     ) -> None:
-        self._refs: dict[str, DatabaseRef] = {
-            ref.name: ref for ref in scope.databases if ref.name is not None
-        }
+        self._refs: dict[str, DatabaseRef] = {ref.name: ref for ref in scope.databases}
         self._config = config
         self._skip_validation = skip_validation
         self._read_only = read_only
@@ -309,14 +308,11 @@ class FederatedSession:
 
         Registered here because a cancelled `gather` discards its results.
         """
-        ref = self._refs[name]
-        one, db_path = ref.connection(self._config)
         self._sessions[name] = await SingleDatabaseSession(
-            db_path if db_path is not None else default_db_path(one),
-            one,
+            self._refs[name],
+            self._config,
             skip_validation=self._skip_validation,
             read_only=self._read_only,
-            source=ref.name,
         ).open()
 
     async def aclose(self) -> None:

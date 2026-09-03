@@ -885,7 +885,7 @@ async def test_format_citations_rich_omits_the_database_for_one_database():
     )
     client = AsyncMock()
     client.covers_multiple = False
-    client.source_names = ()
+    client.source_names = ("papers",)
 
     output = _render_rich(await format_citations_rich([citation], client))
 

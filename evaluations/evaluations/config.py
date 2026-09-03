@@ -89,9 +89,9 @@ class DatasetSpec:
     ) -> bool:
         """Whether `lancedb.databases` places the databases to evaluate over.
 
-        A path names one database and wins over the configuration, both when it
-        comes from `--db` and when the client resolves it. True for a mapping of
-        one, which is a configured database like any other and keeps its name.
+        `--db PATH` places the database where the configuration places none;
+        `evaluate_dataset` refuses the two together. True for a mapping of one,
+        which is a configured database like any other and keeps its name.
         """
         return bool(config.lancedb.databases) and override_path is None
 

@@ -90,9 +90,10 @@ def resolve_scope(
     """The databases a command works on, resolved once.
 
     The CLI decides only what it alone knows: that `--db` and `--db-name` are
-    the same thing said twice, and whether this command can read more than one.
-    Everything else — an unknown name, a `lancedb.uri`, the default location —
-    is `DatabaseScope.resolve`'s to answer.
+    the same thing said twice, that a human typing `--db PATH` means that
+    database whatever is configured, and whether this command can read more
+    than one. Everything else — an unknown name, the default location — is
+    `DatabaseScope.resolve`'s to answer.
     """
     from haiku.rag.client.scope import DatabaseScope
 
@@ -100,9 +101,12 @@ def resolve_scope(
         raise AmbiguousDatabaseError(
             "pass --db or --db-name, not both: they name the same thing"
         )
-    scope = DatabaseScope.resolve(
-        get_config(), database_name=_db_name, database_path=db
-    )
+    if db is not None:
+        try:
+            return DatabaseScope.at(db)
+        except ValueError as error:
+            raise typer.BadParameter(str(error), param_hint="--db") from error
+    scope = DatabaseScope.resolve(get_config(), database_name=_db_name)
     if scope.covers_multiple and not covers_set:
         raise AmbiguousDatabaseError(
             f"lancedb.databases names {', '.join(sorted(scope.names))}; this "

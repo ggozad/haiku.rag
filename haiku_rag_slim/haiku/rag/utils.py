@@ -549,17 +549,15 @@ def raise_missing_extra(module: str, extra: str, exc: ModuleNotFoundError) -> No
     ) from exc
 
 
-def locate_database(location: str) -> tuple[str, Path | None]:
-    """Split a configured location into (uri, db_path).
+def locate_database(location: str) -> Path | str:
+    """A configured location as a URI, or as a local path.
 
-    A value with a scheme is a `lancedb.uri`; anything else is a local path.
-    `ConnectionMode` classifies a `uri` as object storage and opens it without
-    the existence check a local database gets, so a local path never travels
-    as one.
+    A value with a scheme is a URI, which `ConnectionMode` opens without the
+    existence check a local database gets; anything else is a local path.
     """
     if "://" in location:
-        return location, None
-    return "", Path(location)
+        return location
+    return Path(location)
 
 
 def get_default_data_dir() -> Path:

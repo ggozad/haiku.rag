@@ -42,6 +42,7 @@ from haiku.rag.store.exceptions import (  # noqa: E402
 )
 
 if TYPE_CHECKING:
+    from haiku.rag.client.scope import DatabaseScope
     from haiku.rag.ingester.app import BatchProgress, BatchProgressCallback
 
 _cli = typer.Typer(
@@ -218,6 +219,19 @@ def _load_manifest(path: Path) -> BatchManifest:
     return BatchManifest.model_validate(data)
 
 
+def _scope_for(db: Path | None) -> "DatabaseScope | None":
+    """`--db PATH` is the operator's explicit override: that database, whatever
+    is configured. None leaves placement to the configuration."""
+    from haiku.rag.client.scope import DatabaseScope
+
+    if db is None:
+        return None
+    try:
+        return DatabaseScope.at(db)
+    except ValueError as error:
+        raise typer.BadParameter(str(error), param_hint="--db") from error
+
+
 @_cli.command("serve")
 def serve(
     db: Path | None = typer.Option(
@@ -259,7 +273,7 @@ def serve(
         app_config.ingester.api.port = port
     if root_path is not None:
         app_config.ingester.api.root_path = root_path
-    app = IngesterApp(config=app_config, db_path=db)
+    app = IngesterApp(config=app_config, scope=_scope_for(db))
     asyncio.run(app.serve(api=not no_api))
 
 
@@ -318,7 +332,7 @@ async def _run_batch(
 ) -> None:
     from haiku.rag.ingester.app import IngesterApp
 
-    app = IngesterApp(config=app_config, db_path=db_path)
+    app = IngesterApp(config=app_config, scope=_scope_for(db_path))
     if dry_run:
         report = await app.run_batch_dry_run()
         if report.failed_sweeps:

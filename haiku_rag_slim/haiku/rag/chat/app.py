@@ -148,10 +148,12 @@ class ChatApp(App):
         # a client whose __aenter__ failed.
         await client.__aenter__()
         self.client = client
-        # Lent to the capabilities: already the databases they were built for,
-        # and one connection per database however many capabilities read it.
+        # Lent to the capabilities, with the scope it covers: one connection
+        # per database however many capabilities read it, and the analysis
+        # sandbox is built over the same selection.
         for capability in self._capabilities:
             capability.borrowed_rag = client
+            capability.scope = self.scope
 
         self._agent = Agent(
             self._model,
@@ -425,7 +427,8 @@ class ChatApp(App):
 
     def on_document_filter_modal_filter_changed(self, event: Any) -> None:
         """Scope the conversation to the selection: the filter carries the ids,
-        and `sources` restricts the search to the databases the selection names.
+        and over a set `sources` restricts the search to the databases the
+        selection names. One database needs no narrowing by source.
         """
         from haiku.rag.tools.filters import build_document_id_filter
 
@@ -434,10 +437,9 @@ class ChatApp(App):
         doc_filter = build_document_id_filter(
             sorted({doc_id for _, doc_id in event.selected})
         )
-        selected_sources = {source for source, _ in event.selected}
-        sources: list[str] | None = None
-        if selected_sources and None not in selected_sources:
-            sources = sorted(s for s in selected_sources if s is not None)
+        selected_sources = sorted({source for source, _ in event.selected if source})
+        covers_multiple = self.client is not None and self.client.covers_multiple
+        sources = selected_sources if covers_multiple and selected_sources else None
         for namespace, state_type in (
             (RAG_STATE_NAMESPACE, RAGState),
             (ANALYSIS_STATE_NAMESPACE, AnalysisState),
