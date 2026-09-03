@@ -14,6 +14,7 @@ from pydantic_ai import (
 )
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import (
+    BinaryContent,
     InstructionPart,
     ModelMessage,
     ModelRequest,
@@ -29,6 +30,7 @@ from pydantic_ai.toolsets import AgentToolset
 
 from haiku.rag.capabilities._tools import (
     CodeExecutionEntry,
+    EvidenceKey,
     merge_results,
     search_corpus,
 )
@@ -43,7 +45,7 @@ from haiku.rag.store.models.citation import (
     ambiguous_citation,
     resolve_citations,
 )
-from haiku.rag.tools.search import build_image_content_from_results
+from haiku.rag.tools.search import PictureKey, build_image_content_from_results
 
 CITATION_GRACE_REQUESTS = 2
 """Requests calling this capability's tools that its cite tool outlives the rest by.
@@ -59,6 +61,15 @@ CHUNK_ID_MATCH_CUTOFF = 0.75
 
 Calibration knob. Two unrelated UUID4s reach about 0.5, while dropping or
 duplicating a character or a whole group stays above 0.75, so the gap is wide.
+"""
+
+FREE_SIBLINGS_PER_ROUND = 3
+"""Searches one budget unit covers when emitted in the same model response.
+
+Calibration knob, sized to the measured modal burst. ``qa.max_searches``
+counts units, so a model rephrasing its query a few times in one response
+spends one unit, while every search of a sequential searcher is a unit of its
+own.
 """
 
 
@@ -177,6 +188,12 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
     rag_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     resource_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     search_count: int = field(default=0, repr=False)
+    search_step: int = field(default=0, repr=False)
+    """The run_step whose searches are being priced and deduplicated."""
+    step_searches: int = field(default=0, repr=False)
+    step_rejected: bool = field(default=False, repr=False)
+    step_shown: set[EvidenceKey] = field(default_factory=set, repr=False)
+    step_pictures: set[PictureKey] = field(default_factory=set, repr=False)
     request_count: int = field(default=0, repr=False)
     grace_requests_used: int = field(default=0, repr=False)
     epoch: int = field(default=0, repr=False)
@@ -226,6 +243,11 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
             rag_lock=asyncio.Lock(),
             resource_lock=asyncio.Lock(),
             search_count=0,
+            search_step=0,
+            step_searches=0,
+            step_rejected=False,
+            step_shown=set(),
+            step_pictures=set(),
             request_count=0,
             grace_requests_used=0,
             epoch=0,
@@ -493,32 +515,54 @@ class RAGCapabilityBase[StateT: EvidenceState](AbstractCapability[Any]):
             retrieved_now=retrieved,
         )
 
-    async def _search(self, query: str, limit: int | None) -> str | ToolReturn:
+    async def _search(
+        self, query: str, limit: int | None, run_step: int
+    ) -> str | ToolReturn:
         assert self.state is not None
-        self.search_count += 1
-        if self.search_count > self._max_searches:
+        if run_step != self.search_step:
+            self.search_step = run_step
+            self.step_searches = 0
+            self.step_rejected = False
+            self.step_shown = set()
+            self.step_pictures = set()
+        self.step_searches += 1
+        if (self.step_searches - 1) % FREE_SIBLINGS_PER_ROUND == 0:
+            self.search_count += 1
+        if self.step_rejected or self.search_count > self._max_searches:
+            self.step_rejected = True
             raise ToolFailed(
                 "Search limit reached. Answer the question using "
                 "the results you already have."
             )
         async with self.rag_lock:
-            formatted, results, include_collection = await search_corpus(
+            formatted, results, rendered, include_collection = await search_corpus(
                 await self._ensure_rag(),
                 query,
                 limit=limit,
                 document_filter=self.state.document_filter,
                 sources=self.state.sources,
+                shown=self.step_shown,
             )
+        parts: list[str | BinaryContent] = []
+        emitted: set[PictureKey] = set()
+        if self.vision:
+            parts, emitted = build_image_content_from_results(
+                results,
+                include_collection=include_collection,
+                exclude=self.step_pictures,
+            )
+        # Everything the search produced commits together, after formatting and
+        # image construction have both succeeded: a search that raises must not
+        # leave results citable, note evidence the model never received, or
+        # suppress a later sibling's results.
         state = self.state
         # A model can search the same query twice with different limits, and the
         # narrower return must not drop what the wider one already showed it.
         merge_results(state.searches.setdefault(query, []), results)
         self._note_evidence()
-        if self.vision and (
-            parts := build_image_content_from_results(
-                results, include_collection=include_collection
-            )
-        ):
+        self.step_shown |= rendered
+        self.step_pictures |= emitted
+        if parts:
             return ToolReturn(return_value=formatted, content=parts)
         return formatted
 

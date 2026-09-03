@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `qa.max_searches` counts search units: searches a model emits in one
+  response share a unit, up to 3 per unit; sequential searches pay one unit
+  each.
+- Searches in one model response deduplicate their results: evidence a sibling
+  search already showed collapses to a reference line, and a picture attaches
+  once per response.
+
 ## [0.81.0] - 2026-09-01
 
 ### Added

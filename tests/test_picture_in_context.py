@@ -1022,7 +1022,7 @@ async def test_rag_capability_attaches_images_for_vision_model(temp_db_path):
     capability.state = RAGState()
     capability.rag = fake_client
 
-    result = await capability._search("anything", None)
+    result = await capability._search("anything", None, 1)
 
     assert isinstance(result, ToolReturn)
     assert result.content is not None

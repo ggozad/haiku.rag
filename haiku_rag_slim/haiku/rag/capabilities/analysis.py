@@ -172,7 +172,7 @@ class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
             ctx: RunContext[Any], query: str, limit: int | None = None
         ) -> str | ToolReturn:
             """Search the knowledge base for evidence to analyze."""
-            return await self._with_state(self._search(query, limit))
+            return await self._with_state(self._search(query, limit, ctx.run_step))
 
         async def analysis_execute_code(ctx: RunContext[Any], code: str) -> Any:
             """Execute Python against the sandboxed document filesystem."""

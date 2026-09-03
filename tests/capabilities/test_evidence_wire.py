@@ -437,7 +437,9 @@ REAL_PNG = base64.b64decode(
 )
 
 
-async def _search_with_a_picture(self, query: str, _limit: int | None) -> str:
+async def _search_with_a_picture(
+    self, query: str, _limit: int | None, _run_step: int
+) -> str:
     """Record a result carrying a page image, the way a real search does."""
     cast(Any, self.state).searches[query] = [
         SearchResult(
@@ -513,6 +515,89 @@ async def test_a_picture_that_will_not_decode_emits_neither_image_nor_label(
 
     assert images_of(wire[-1]) == []
     assert texts_of(wire[-1]) == []
+
+
+def _burst_result() -> SearchResult:
+    return SearchResult(
+        content="evidence",
+        score=1.0,
+        chunk_id="chunk-1",
+        document_id="doc-1",
+        source="main",
+        doc_item_refs=["#/pictures/0"],
+        image_data={"#/pictures/0": base64.b64encode(REAL_PNG).decode()},
+    )
+
+
+async def _fanout_question_then_another(temp_db_path, cite: bool) -> list[list[Any]]:
+    """Question 1 fans out over one picture chunk; question 2 follows compacted."""
+    rag = create_rag(
+        db_path=temp_db_path, config=AppConfig(), defer_loading=False, vision=True
+    )
+    client = AsyncMock()
+    client.search.side_effect = [[_burst_result()], [_burst_result()]]
+    client.expand_context.side_effect = lambda results: results
+    client.source_names = ["main"]
+    rag.borrowed_rag = client
+    citing = (
+        [[ToolCallPart("rag_cite", {"chunk_ids": ["chunk-1"]}, "call-3")]]
+        if cite
+        else []
+    )
+    calls = iter(
+        [
+            [
+                ToolCallPart("rag_search", {"query": "figure"}, "call-1"),
+                ToolCallPart("rag_search", {"query": "the figure"}, "call-2"),
+            ],
+            *citing,
+            [TextPart("first answer")],
+            [TextPart("second answer")],
+        ]
+    )
+    wire: list[list[Any]] = []
+
+    async def model(messages, _info):
+        wire.append(list(messages))
+        return ModelResponse(parts=next(calls))
+
+    agent = Agent(
+        FunctionModel(model),
+        deps_type=Deps,
+        capabilities=[rag, create_compaction()],
+    )
+    deps = Deps()
+
+    with patch.object(
+        RAGCapability, "get_picture_bytes", AsyncMock(return_value=REAL_PNG)
+    ):
+        first = await agent.run("what does the figure show?", deps=deps)
+        await agent.run(
+            "and what else?", deps=deps, message_history=first.all_messages()
+        )
+    return wire
+
+
+@pytest.mark.asyncio
+async def test_a_burst_deduplicated_picture_survives_compaction_when_cited(
+    temp_db_path,
+):
+    """Dedup attaches the picture once in its own question; the capsule re-fetches
+    it for the next. Neither pass may leave the model without it."""
+    wire = await _fanout_question_then_another(temp_db_path, cite=True)
+
+    assert [picture.data for picture in images_of(wire[1])] == [REAL_PNG]
+    assert [picture.data for picture in images_of(wire[-1])] == [REAL_PNG]
+
+
+@pytest.mark.asyncio
+async def test_a_burst_deduplicated_picture_is_dropped_by_compaction_uncited(
+    temp_db_path,
+):
+    wire = await _fanout_question_then_another(temp_db_path, cite=False)
+
+    assert [picture.data for picture in images_of(wire[1])] == [REAL_PNG]
+    assert images_of(wire[-1]) == []
 
 
 @pytest.mark.asyncio

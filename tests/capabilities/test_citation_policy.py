@@ -29,7 +29,7 @@ class Deps:
     state: dict[str, Any] = field(default_factory=dict)
 
 
-async def stub_search(self, query: str, _limit: int | None) -> str:
+async def stub_search(self, query: str, _limit: int | None, _run_step: int) -> str:
     cast(Any, self.state).searches[query] = [
         SearchResult(content="evidence", score=1.0, chunk_id="chunk-1")
     ]

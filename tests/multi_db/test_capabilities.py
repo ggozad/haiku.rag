@@ -30,7 +30,7 @@ class TestAskAcrossDatabases:
             capability = create_capability(config=config, rag=rag, defer_loading=False)
             capability.state = RAGState(sources=["alpha"])
 
-            formatted = await capability._search("cats", limit=10)
+            formatted = await capability._search("cats", 10, 1)
 
         assert isinstance(formatted, str)
         assert "alpha" in formatted
@@ -47,7 +47,7 @@ class TestAskAcrossDatabases:
             capability = create_capability(config=config, rag=rag, defer_loading=False)
             capability.state = RAGState()
 
-            formatted = await capability._search("cats", limit=10)
+            formatted = await capability._search("cats", 10, 1)
 
         assert isinstance(formatted, str)
         assert "alpha document" in formatted
@@ -72,7 +72,7 @@ class TestStandaloneCapabilities:
         assert capability.scope.names == ("alpha", "beta")
         run = await capability.for_run(make_context(Deps()))
         try:
-            formatted = await run._search("cats", limit=10)
+            formatted = await run._search("cats", 10, 1)
         finally:
             await run._close()
 
@@ -135,7 +135,7 @@ class TestAnalyzeAcrossDatabases:
             capability = create_analysis(config=config, rag=rag, defer_loading=False)
             capability.state = AnalysisState(sources=["alpha"])
 
-            formatted = await capability._search("cats", limit=10)
+            formatted = await capability._search("cats", 10, 1)
             sandbox = await capability._ensure_sandbox()
             await capability._close()
 
@@ -305,8 +305,10 @@ class TestWhenTheModelIsToldTheCollection:
         async with HaikuRAG(config=config) as rag:
             monkeypatch.setattr(rag, "search", AsyncMock(return_value=only_alpha))
 
-            spanning, _, spans = await search_corpus(rag, "cats")
-            narrowed, _, narrows = await search_corpus(rag, "cats", sources=["alpha"])
+            spanning, _, _, spans = await search_corpus(rag, "cats")
+            narrowed, _, _, narrows = await search_corpus(
+                rag, "cats", sources=["alpha"]
+            )
 
         assert "Collection: alpha" in spanning
         assert "Collection" not in narrowed

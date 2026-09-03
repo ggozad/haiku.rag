@@ -1,5 +1,6 @@
 import base64
 from collections.abc import Callable
+from collections.abc import Set as AbstractSet
 from io import BytesIO
 
 from PIL import Image
@@ -20,6 +21,22 @@ their own picture had it removed, along with their text.
 """
 
 
+PictureKey = tuple[str | None, str | None, str]
+"""Identity of one attached picture: (source, document_id, self_ref).
+
+``self_ref`` alone collides across documents, and a copy of a document in
+another collection carries its own pictures.
+"""
+
+
+def picture_keys(result: SearchResult) -> frozenset[PictureKey]:
+    """The identity of every picture this result carries."""
+    return frozenset(
+        (result.source, result.document_id, self_ref)
+        for self_ref in (result.image_data or {})
+    )
+
+
 def decode_picture(data: bytes, self_ref: str) -> BinaryContent | None:
     """Wrap picture bytes for the wire, or return nothing if they will not decode.
 
@@ -38,11 +55,14 @@ def decode_picture(data: bytes, self_ref: str) -> BinaryContent | None:
 def build_image_content_from_results(
     results: list[SearchResult],
     include_collection: bool = False,
-) -> list[str | BinaryContent]:
+    exclude: AbstractSet[PictureKey] = frozenset(),
+) -> tuple[list[str | BinaryContent], set[PictureKey]]:
     """Decode and validate picture bytes attached to search results, labelled.
 
-    Dedup keyed on ``(source, document_id, self_ref)`` so the same picture in
-    different chunks is sent once, and a copy in another collection is its own. Pictures that fail
+    Returns the labelled content and the ``PictureKey`` of every picture it
+    emitted. Dedup keyed on ``PictureKey`` so the same picture in
+    different chunks is sent once, and a copy in another collection is its
+    own; ``exclude`` seeds that dedup with pictures already sent. Pictures that fail
     ``PIL.Image.verify()`` are skipped — the model adapter renders one
     vision placeholder per ``BinaryContent``, so emitting one for an
     image the server can't decode leaves the processor with an
@@ -59,7 +79,8 @@ def build_image_content_from_results(
     to the vision API.
     """
     collected: list[tuple[str | None, str | None, str, BinaryContent]] = []
-    seen: set[tuple[str | None, str | None, str]] = set()
+    seen: set[PictureKey] = set(exclude)
+    emitted: set[PictureKey] = set()
     for result in results:
         if not result.image_data:
             continue
@@ -72,6 +93,7 @@ def build_image_content_from_results(
                 continue
             collected.append((result.source, result.chunk_id, self_ref, picture))
             seen.add(key)
+            emitted.add(key)
 
     content: list[str | BinaryContent] = []
     total = len(collected)
@@ -83,7 +105,7 @@ def build_image_content_from_results(
             f"Not provided by the user. {RETRIEVED_IMAGE_TAG}"
         )
         content.append(picture)
-    return content
+    return content, emitted
 
 
 def create_search_toolset(
@@ -174,7 +196,7 @@ def create_search_toolset(
         if not config.qa.model.vision:
             return text
 
-        image_content = build_image_content_from_results(
+        image_content, _ = build_image_content_from_results(
             results_list, include_collection=include_collection
         )
         if image_content:
