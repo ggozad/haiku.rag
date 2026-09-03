@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.82.1] - 2026-09-03
+
 ### Fixed
 
 - Document timestamps include timezone information and satisfy the MCP
@@ -2364,7 +2366,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.82.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.82.1...HEAD
+[0.82.1]: https://github.com/ggozad/haiku.rag/compare/0.82.0...0.82.1
 [0.82.0]: https://github.com/ggozad/haiku.rag/compare/0.81.0...0.82.0
 [0.81.0]: https://github.com/ggozad/haiku.rag/compare/0.80.0...0.81.0
 [0.80.0]: https://github.com/ggozad/haiku.rag/compare/0.79.0...0.80.0
