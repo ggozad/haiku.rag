@@ -934,7 +934,7 @@ class HaikuRAGApp:
         # The resolved scope: a path overrides a configured URI, and a derived
         # single-database configuration drops the name results and citations
         # carry.
-        server = _mcp_server_covering(self.scope, self.config, self.read_only)
+        server = _mcp_server_covering(self.scope, self.config)
         try:
             if transport == "stdio":
                 await server.run_stdio_async()

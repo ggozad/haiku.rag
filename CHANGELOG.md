@@ -16,6 +16,12 @@
 - `processing.conversion_options.picture_description.model` defaults to
   `enable_thinking: false`, and the field now reaches the VLM: docling's
   picture-description request carries `reasoning_effort` in `params`.
+### Removed
+
+- MCP write tools `add_document_from_file`, `add_document_from_url`,
+  `add_document_from_text` and `delete_document`. The server opens the
+  database read-only; ingest with `haiku-rag add`, `add-src`, `delete` or
+  `haiku-ingester`. `create_mcp_server` loses `read_only`.
 
 ## [0.82.1] - 2026-09-03
 

@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from fastmcp import FastMCP
 
@@ -27,7 +27,6 @@ def _decode_images(images_base64: list[str] | None) -> list[bytes] | None:
 def create_mcp_server(
     db_path: Path | None = None,
     config: AppConfig | None = None,
-    read_only: bool = False,
 ) -> FastMCP:
     """Create an MCP server over one database.
 
@@ -36,17 +35,14 @@ def create_mcp_server(
             None to serve the database the configuration places. Beside
             `lancedb.databases` a path raises `AmbiguousDatabaseError`.
         config: Configuration to use.
-        read_only: If True, write tools (add_document_*, delete_document) are not registered.
     """
     from haiku.rag.client.scope import DatabaseScope
 
     config = config if config is not None else get_config()
-    return _covering(
-        DatabaseScope.resolve(config, database_path=db_path), config, read_only
-    )
+    return _covering(DatabaseScope.resolve(config, database_path=db_path), config)
 
 
-def _covering(scope: "DatabaseScope", config: AppConfig, read_only: bool) -> FastMCP:
+def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
     """An MCP server over databases someone already resolved.
 
     Internal, as ``HaikuRAG._covering`` is: the public factory takes a path and
@@ -76,7 +72,7 @@ def _covering(scope: "DatabaseScope", config: AppConfig, read_only: bool) -> Fas
         async with client_lock:
             if client is None:
                 client = await stack.enter_async_context(
-                    HaikuRAG._covering(scope, config, read_only=read_only)
+                    HaikuRAG._covering(scope, config, read_only=True)
                 )
         return client
 
@@ -97,72 +93,6 @@ def _covering(scope: "DatabaseScope", config: AppConfig, read_only: bool) -> Fas
 
     mcp = FastMCP("haiku-rag", lifespan=lifespan)
 
-    # Write tools - only registered when not in read-only mode
-    if not read_only:
-
-        @mcp.tool()
-        async def add_document_from_file(
-            file_path: str,
-            metadata: dict[str, Any] | None = None,
-            title: str | None = None,
-        ) -> str | None:
-            """Add a document to the RAG system from a file path."""
-            try:
-                rag = await _client()
-                result = await rag.create_document_from_source(
-                    Path(file_path), title=title, metadata=metadata or {}
-                )
-                # Handle both single document and list of documents (directories)
-                if isinstance(result, list):
-                    return result[0].id if result else None
-                return result.id
-            except Exception:
-                return None
-
-        @mcp.tool()
-        async def add_document_from_url(
-            url: str, metadata: dict[str, Any] | None = None, title: str | None = None
-        ) -> str | None:
-            """Add a document to the RAG system from a URL."""
-            try:
-                rag = await _client()
-                result = await rag.create_document_from_source(
-                    url, title=title, metadata=metadata or {}
-                )
-                # Handle both single document and list of documents
-                if isinstance(result, list):
-                    return result[0].id if result else None
-                return result.id
-            except Exception:
-                return None
-
-        @mcp.tool()
-        async def add_document_from_text(
-            content: str,
-            uri: str | None = None,
-            metadata: dict[str, Any] | None = None,
-            title: str | None = None,
-        ) -> str | None:
-            """Add a document to the RAG system from text content."""
-            try:
-                rag = await _client()
-                document = await rag.create_document(
-                    content, uri, title=title, metadata=metadata or {}
-                )
-                return document.id
-            except Exception:
-                return None
-
-        @mcp.tool()
-        async def delete_document(document_id: str) -> bool:
-            """Delete a document by its ID."""
-            try:
-                rag = await _client()
-                return await rag.delete_document(document_id)
-            except Exception:
-                return False
-
-    # Read tools - always registered
     @mcp.tool()
     async def search_documents(
         query: str, limit: int | None = None, include_images: bool = True

@@ -18,16 +18,14 @@ haiku-rag mcp --host 0.0.0.0 --port 8001
 
 # stdio transport (for Claude Desktop)
 haiku-rag mcp --stdio
-
-# Read-only mode (excludes write tools)
-haiku-rag --read-only mcp --stdio
 ```
 
 `--host` defaults to `127.0.0.1` (loopback only). Bind to `0.0.0.0` only
 when you want the MCP server reachable from outside the local machine —
 e.g. inside a Docker container with port mapping, or on a trusted LAN.
 
-**Read-only mode:** When `--read-only` is specified, write tools (`add_document_from_file`, `add_document_from_url`, `add_document_from_text`, `delete_document`) are not registered. Only search and query tools remain available.
+The server opens the database read-only. Ingestion goes through the CLI
+(`haiku-rag add`, `add-src`, `delete`) or [`haiku-ingester`](ingester.md).
 
 ## Claude Desktop Integration
 
@@ -57,27 +55,11 @@ With a custom database path:
 }
 ```
 
-After restarting Claude Desktop, you can ask Claude to search your documents, add new content, or answer questions using your knowledge base.
+After restarting Claude Desktop, you can ask Claude to search your documents or answer questions using your knowledge base.
 
 ## Available Tools
 
-### Document Management
-
-- **`add_document_from_file`** - Add documents from local file paths
-  - `file_path` (required): Path to the file
-  - `metadata` (optional): Key-value metadata
-  - `title` (optional): Human-readable title
-
-- **`add_document_from_url`** - Add documents from URLs
-  - `url` (required): URL to fetch
-  - `metadata` (optional): Key-value metadata
-  - `title` (optional): Human-readable title
-
-- **`add_document_from_text`** - Add documents from raw text content
-  - `content` (required): Text content
-  - `uri` (optional): URI identifier
-  - `metadata` (optional): Key-value metadata
-  - `title` (optional): Human-readable title
+### Documents
 
 - **`get_document`** - Retrieve a document by ID
   - `document_id` (required): The document ID
@@ -86,9 +68,6 @@ After restarting Claude Desktop, you can ask Claude to search your documents, ad
   - `limit` (optional): Maximum number to return
   - `offset` (optional): Number to skip
   - `filter` (optional): SQL WHERE clause for filtering
-
-- **`delete_document`** - Delete a document by ID
-  - `document_id` (required): The document ID
 
 ### Search
 

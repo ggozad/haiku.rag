@@ -129,7 +129,7 @@ Add to your Claude Desktop configuration:
 }
 ```
 
-Provides tools for document management, search, QA, and analysis directly in your AI assistant.
+Provides search, document, QA, and analysis tools directly in your AI assistant.
 
 ## Examples
 
