@@ -18,6 +18,8 @@
 
 ### Changed
 
+- `fastmcp>=4.0.2,<5.0.0`, on MCP Python SDK 2. The MCP server answers both the
+  session-based and the sessionless (2026-07-28) protocol.
 - Default models are `ollama:qwen3.8`: `ModelConfig`, `qa.model`,
   `processing.title_model` (was `ollama:gpt-oss`) and
   `processing.conversion_options.picture_description.model` (was

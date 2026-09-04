@@ -50,7 +50,7 @@ Sources = Annotated[
 
 
 def _read_only(title: str) -> ToolAnnotations:
-    return ToolAnnotations(title=title, readOnlyHint=True, openWorldHint=False)
+    return ToolAnnotations(title=title, read_only_hint=True, open_world_hint=False)
 
 
 def _decode_image(image_base64: str) -> bytes:
@@ -150,7 +150,7 @@ def _search_result(results: list[SearchResult], covers_multiple: bool) -> ToolRe
             ImageContent(
                 type="image",
                 data=base64.b64encode(picture.data).decode("ascii"),
-                mimeType="image/png",
+                mime_type="image/png",
             )
         )
     return ToolResult(

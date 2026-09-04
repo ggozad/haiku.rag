@@ -506,7 +506,7 @@ class TestMCPSearchResultShape:
         images = [block for block in rest if isinstance(block, ImageContent)]
         labels = [block.text for block in rest if isinstance(block, TextContent)]
         assert len(images) == 2
-        assert all(image.mimeType == "image/png" for image in images)
+        assert all(image.mime_type == "image/png" for image in images)
         assert [
             label for label in labels if "[c1]" in label and "#/pictures/0" in label
         ]
@@ -610,10 +610,12 @@ class TestMCPDescribesItself:
         from fastmcp import Client
 
         async with Client(create_mcp_server(mcp_db)) as client:
-            init = client.initialize_result
+            instructions = client.instructions
+            server_info = client.server_info
 
-        assert init.instructions
-        assert init.serverInfo.version == metadata.version("haiku.rag-slim")
+        assert instructions
+        assert server_info is not None
+        assert server_info.version == metadata.version("haiku.rag-slim")
 
     @pytest.mark.asyncio
     async def test_instructions_name_the_collections_when_covering_several(
@@ -624,10 +626,10 @@ class TestMCPDescribesItself:
         from haiku.rag.client.scope import DatabaseScope
 
         async with Client(_covering_all(two_dbs)) as client:
-            covering_both = client.initialize_result.instructions
+            covering_both = client.instructions
         one = DatabaseScope.resolve(two_dbs, database_name="alpha")
         async with Client(_mcp_covering(one, two_dbs)) as client:
-            covering_one = client.initialize_result.instructions
+            covering_one = client.instructions
 
         assert "alpha" in covering_both
         assert "beta" in covering_both
@@ -638,9 +640,9 @@ class TestMCPDescribesItself:
         from fastmcp import Client
 
         async with Client(create_mcp_server(mcp_db)) as client:
-            full = client.initialize_result.instructions.splitlines()
+            full = client.instructions.splitlines()
         async with Client(create_mcp_server(mcp_db, agents=False)) as client:
-            without = client.initialize_result.instructions.splitlines()
+            without = client.instructions.splitlines()
 
         assert set(without) < set(full)
         assert len(without) == len(full) - 1
@@ -655,9 +657,9 @@ class TestMCPDescribesItself:
         config.prompts.domain_preamble = "Everything here is about zebras."
 
         async with Client(create_mcp_server(mcp_db, config=config)) as client:
-            with_preamble = client.initialize_result.instructions
+            with_preamble = client.instructions
         async with Client(create_mcp_server(mcp_db)) as client:
-            without = client.initialize_result.instructions
+            without = client.instructions
 
         assert "Everything here is about zebras." in with_preamble
         assert "zebras" not in without
@@ -672,8 +674,8 @@ class TestMCPDescribesItself:
         assert len(tools) == 8
         for tool in tools:
             assert tool.annotations is not None, tool.name
-            assert tool.annotations.readOnlyHint is True, tool.name
-            assert tool.annotations.openWorldHint is False, tool.name
+            assert tool.annotations.read_only_hint is True, tool.name
+            assert tool.annotations.open_world_hint is False, tool.name
             assert tool.annotations.title, tool.name
 
     @pytest.mark.asyncio
@@ -686,7 +688,7 @@ class TestMCPDescribesItself:
         undescribed = [
             f"{tool.name}.{name}"
             for tool in tools
-            for name, schema in tool.inputSchema.get("properties", {}).items()
+            for name, schema in tool.input_schema.get("properties", {}).items()
             if not schema.get("description")
         ]
         assert len(tools) == 8
