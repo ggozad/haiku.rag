@@ -1681,6 +1681,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-ai-slim", extra = ["ag-ui", "logfire", "openai"] },
     { name = "pydantic-monty" },
+    { name = "pylance" },
     { name = "pypdfium2" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
@@ -1773,6 +1774,7 @@ requires-dist = [
     { name = "pydantic-ai-slim", extras = ["openai", "logfire", "ag-ui"], specifier = ">=2.18.0,<3.0.0" },
     { name = "pydantic-ai-slim", extras = ["voyageai"], marker = "extra == 'voyageai'" },
     { name = "pydantic-monty", specifier = ">=0.0.19" },
+    { name = "pylance", specifier = "==10.0.0" },
     { name = "pypdfium2", specifier = ">=5.0" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "pyyaml", specifier = ">=6.0.3" },
@@ -2234,19 +2236,19 @@ wheels = [
 
 [[package]]
 name = "lance-namespace"
-version = "0.6.1"
+version = "0.8.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "lance-namespace-urllib3-client" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/28/9f/7906ba4117df8d965510285eaf07264a77de2fd283b9d44ec7fc63a4a57a/lance_namespace-0.6.1.tar.gz", hash = "sha256:f0deea442bd3f1056a8e2fed056ae2778e3356517ec2e680db049058b824d131", size = 10666, upload-time = "2026-03-17T17:55:44.977Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/af/12/f7ab93b29be3edbf5fc3610714bf2d06088e7f4524bfb38dfd6852458b08/lance_namespace-0.8.6.tar.gz", hash = "sha256:18232e721c8188145f4ec9389cc2dfbeeabf54a619d94885ea1b3375bee9f4af", size = 11529, upload-time = "2026-06-12T17:36:41.651Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d1/91/aee1c0a04d17f2810173bd304bd444eb78332045df1b0c1b07cebd01f530/lance_namespace-0.6.1-py3-none-any.whl", hash = "sha256:9699c9e3f12236e5e08ea979cc4e036a8e3c67ed2f37ae6f25c5353ab908e1be", size = 12498, upload-time = "2026-03-17T17:55:44.062Z" },
+    { url = "https://files.pythonhosted.org/packages/a0/1b/5b1668ee2dc8910965f390640359112a31157092fcf8e000b89c79b58708/lance_namespace-0.8.6-py3-none-any.whl", hash = "sha256:571eae34f9aad70e5b05020416c2860889b9ec82993ccd0eb015e7b39c3ea309", size = 13383, upload-time = "2026-06-12T17:36:43.456Z" },
 ]
 
 [[package]]
 name = "lance-namespace-urllib3-client"
-version = "0.6.1"
+version = "0.8.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
@@ -2254,9 +2256,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/63/a1/8706a2be25bd184acccc411e48f1a42a4cbf3b6556cba15b9fcf4c15cfcc/lance_namespace_urllib3_client-0.6.1.tar.gz", hash = "sha256:31fbd058ce1ea0bf49045cdeaa756360ece0bc61e9e10276f41af6d217debe87", size = 182567, upload-time = "2026-03-17T17:55:46.87Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c7/80/fb224b4a89c1c1638cde949cb6cce6c3aca7759effbfea46a3d9c3960b21/lance_namespace_urllib3_client-0.8.6.tar.gz", hash = "sha256:b6fb1d306e74a7576e5309919020be744527de484a63dbf5eed10f8b368548df", size = 228772, upload-time = "2026-06-12T17:36:42.609Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cd/c7/cb9580602dec25f0fdd6005c1c9ba1d4c8c0c3dc8d543107e5a9f248bba8/lance_namespace_urllib3_client-0.6.1-py3-none-any.whl", hash = "sha256:b9c103e1377ad46d2bd70eec894bfec0b1e2133dae0964d7e4de543c6e16293b", size = 317111, upload-time = "2026-03-17T17:55:45.546Z" },
+    { url = "https://files.pythonhosted.org/packages/c5/90/1e27de15cd1b16785a1c7312beb0a59e75c8344a815f600f58173a565bd1/lance_namespace_urllib3_client-0.8.6-py3-none-any.whl", hash = "sha256:9d78249c3fb15aa3d15d668f78f04a275af3d08d800a7027492f37996ac4968b", size = 369950, upload-time = "2026-06-12T17:36:40.438Z" },
 ]
 
 [[package]]
@@ -4108,6 +4110,24 @@ wheels = [
 [package.optional-dependencies]
 crypto = [
     { name = "cryptography" },
+]
+
+[[package]]
+name = "pylance"
+version = "10.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "lance-namespace" },
+    { name = "numpy" },
+    { name = "pyarrow" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/82/b2/c81de196076c4c8d768f485324a0043e113ce0950a339977d83fee9783ef/pylance-10.0.0-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:d4bba56ae829202b7e9cdc82c92c00a4b52f03e679dc3edfad1db09d1285be2e", size = 69279797, upload-time = "2026-08-07T18:25:24.812Z" },
+    { url = "https://files.pythonhosted.org/packages/d2/e9/af671a6225740bd70c1e70bd83fa08091d628b960397cbecc477f16aaaf1/pylance-10.0.0-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:489b944827c0271e16a62b4006f8c75acc3bd7fbc381f35388a2afaaae38d438", size = 72775384, upload-time = "2026-08-07T18:31:29.686Z" },
+    { url = "https://files.pythonhosted.org/packages/5d/22/e07194195bb3bbdf062b0c31690fc92fccb2686d5e768efa1dc379a93350/pylance-10.0.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:018efe7d437d326b9049c1223458bd955e85e48509b4b0bbf8b2d3d94075dbff", size = 76632194, upload-time = "2026-08-07T18:44:29.001Z" },
+    { url = "https://files.pythonhosted.org/packages/f2/71/ed9956cf657e86a5fee5d5ddcfa7bfed0d7c2968bee39ed85d12629d8c93/pylance-10.0.0-cp310-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:254bad5d765c14db6c4eddd5323133dee3c76ff6d40c4777afe0b0e91d4c04d2", size = 72804222, upload-time = "2026-08-07T18:31:24.264Z" },
+    { url = "https://files.pythonhosted.org/packages/94/96/de449c246b2892df9d5a0af775b79a061e9897e6942bcee5c4ab6d6071f8/pylance-10.0.0-cp310-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:9f0c089e30389d9b7765a4c16f3d9325b05ed4fbf6cc2bbc9418292983472e54", size = 76602015, upload-time = "2026-08-07T18:46:27.724Z" },
+    { url = "https://files.pythonhosted.org/packages/53/81/4a5a9072b6d68c4dbb8c7b5530a381c7a6bea4ba92f9eca58ac885142722/pylance-10.0.0-cp310-abi3-win_amd64.whl", hash = "sha256:9fecf46e6835dc64b2d71767d5eab4f73787543a852432e9ba8ecf8527b3cdab", size = 82799247, upload-time = "2026-08-07T18:47:46.855Z" },
 ]
 
 [[package]]
