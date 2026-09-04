@@ -40,7 +40,7 @@ class ModelConfig(ConfigModel):
     """
 
     provider: str = "ollama"
-    name: str = "gpt-oss"
+    name: str = "qwen3.8"
     base_url: str | None = None
     api_key: str | None = None
 
@@ -165,9 +165,10 @@ class QAConfig(ConfigModel):
     model: ModelConfig = Field(
         default_factory=lambda: ModelConfig(
             provider="ollama",
-            name="gpt-oss",
+            name="qwen3.8",
             enable_thinking=True,
             temperature=0.3,
+            vision=True,
         )
     )
     max_searches: int = Field(default=5, ge=0)
@@ -216,7 +217,8 @@ class PictureDescriptionConfig(ConfigModel):
     model: ModelConfig = Field(
         default_factory=lambda: ModelConfig(
             provider="ollama",
-            name="ministral-3",
+            name="qwen3.8",
+            enable_thinking=False,
             temperature=0.0,
         )
     )
@@ -303,7 +305,7 @@ class ProcessingConfig(ConfigModel):
     title_model: ModelConfig = Field(
         default_factory=lambda: ModelConfig(
             provider="ollama",
-            name="gpt-oss",
+            name="qwen3.8",
             enable_thinking=False,
             temperature=0.3,
             max_tokens=100,

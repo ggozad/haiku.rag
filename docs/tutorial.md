@@ -12,7 +12,7 @@ You also need [Ollama](https://ollama.com/) for the default embedding and answer
 
 ```bash
 ollama pull qwen3-embedding:4b
-ollama pull gpt-oss
+ollama pull qwen3.8
 ```
 
 !!! note "Prefer OpenAI?"

@@ -9,6 +9,7 @@ from haiku.rag.config import AppConfig
 from haiku.rag.converters.base import (
     DocumentConverter,
     vlm_api_headers,
+    vlm_api_params,
     vlm_api_url,
 )
 from haiku.rag.converters.text_utils import TextFileHandler, docling_safe_name
@@ -110,10 +111,7 @@ class DoclingServeConverter(DocumentConverter):
             picture_description_api = {
                 "url": vlm_api_url(self.config, pic_desc.model),
                 "headers": vlm_api_headers(pic_desc.model),
-                "params": {
-                    "model": pic_desc.model.name,
-                    "max_completion_tokens": pic_desc.max_tokens,
-                },
+                "params": vlm_api_params(pic_desc.model, pic_desc.max_tokens),
                 "prompt": prompt,
                 "timeout": pic_desc.timeout,
             }

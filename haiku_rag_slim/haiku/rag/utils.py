@@ -4,7 +4,7 @@ import sys
 from collections.abc import Awaitable
 from importlib import metadata
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NoReturn, cast
+from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
 
 from packaging.version import Version, parse
 
@@ -41,7 +41,7 @@ def parse_model_option(value: str) -> "ModelConfig":
     parts = value.split(":", 1)
     if len(parts) != 2 or not parts[0] or not parts[1]:
         raise ValueError(
-            f"Invalid model format '{value}'. Expected 'provider:name' (e.g. 'ollama:gpt-oss')."
+            f"Invalid model format '{value}'. Expected 'provider:name' (e.g. 'ollama:qwen3.8')."
         )
     return ModelConfig(provider=parts[0], name=parts[1])
 
@@ -182,6 +182,20 @@ _OPENAI_COMPAT_PROFILE: "OpenAIModelProfile" = {
 }
 
 
+def reasoning_effort(
+    model_config: "ModelConfig",
+) -> Literal["none", "low", "high"] | None:
+    """OpenAI `reasoning_effort` for a model config, or None when unset.
+
+    "low" is gpt-oss's floor; its template rejects "none".
+    """
+    if model_config.enable_thinking is None:
+        return None
+    if model_config.enable_thinking:
+        return "high"
+    return "low" if model_config.name == "gpt-oss" else "none"
+
+
 def get_model(
     model_config: "ModelConfig",
     app_config: "AppConfig | None" = None,
@@ -213,12 +227,9 @@ def get_model(
     if provider == "ollama":
         model_settings = None
 
-        # Apply thinking control for gpt-oss
-        if model == "gpt-oss" and model_config.enable_thinking is not None:
-            if model_config.enable_thinking is False:
-                model_settings = OpenAIChatModelSettings(openai_reasoning_effort="low")
-            else:
-                model_settings = OpenAIChatModelSettings(openai_reasoning_effort="high")
+        effort = reasoning_effort(model_config)
+        if effort is not None:
+            model_settings = OpenAIChatModelSettings(openai_reasoning_effort=effort)
 
         model_settings = apply_common_settings(
             model_settings, model_config, map_thinking=False

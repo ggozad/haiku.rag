@@ -837,7 +837,7 @@ async def test_ingest_emits_picture_chunks_with_multimodal_embedder(
 @pytest.mark.asyncio
 async def test_search_tool_skips_binary_content_when_qa_model_is_text_only():
     """The agent search tool must NOT attach picture bytes when the QA model
-    is text-only (``qa.model.vision = False``, the default). Sending image
+    is text-only (``qa.model.vision = False``). Sending image
     parts to a text-only model would cause it to hallucinate confidently —
     Ollama silently accepts the bytes and the model guesses."""
 
@@ -856,8 +856,7 @@ async def test_search_tool_skips_binary_content_when_qa_model_is_text_only():
     fake_client.expand_context = AsyncMock(return_value=[picture_result])
 
     config = AppConfig()
-    # vision defaults to False; assert anyway so the test reads explicitly.
-    assert config.qa.model.vision is False
+    config.qa.model.vision = False
     toolset = create_search_toolset(config, expand_context=False)
     func = toolset.tools["search"].function
 

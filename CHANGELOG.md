@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Default models are `ollama:qwen3.8`: `ModelConfig`, `qa.model`,
+  `processing.title_model` (was `ollama:gpt-oss`) and
+  `processing.conversion_options.picture_description.model` (was
+  `ollama:ministral-3`). Run `ollama pull qwen3.8`.
+- `qa.model.vision` defaults to `true`, matching `qwen3.8`. Set it `false` when
+  pointing `qa.model` at a text-only model.
+- `enable_thinking` on `provider: ollama` maps to `reasoning_effort` for every
+  model, not only `gpt-oss`: `false` sends `none`, `true` sends `high`.
+  `gpt-oss` keeps `low` for `false`.
+- `processing.conversion_options.picture_description.model` defaults to
+  `enable_thinking: false`, and the field now reaches the VLM: docling's
+  picture-description request carries `reasoning_effort` in `params`.
+
 ## [0.82.1] - 2026-09-03
 
 ### Fixed

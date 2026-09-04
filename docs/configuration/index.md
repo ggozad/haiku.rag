@@ -61,7 +61,7 @@ embeddings:
 qa:
   model:
     provider: ollama
-    name: gpt-oss
+    name: qwen3.8
     enable_thinking: true
 ```
 
@@ -105,7 +105,7 @@ reranking:
 qa:
   model:
     provider: ollama
-    name: gpt-oss
+    name: qwen3.8
     enable_thinking: true
     temperature: 0.3
   max_searches: 5
@@ -135,7 +135,7 @@ processing:
   auto_title: false              # Auto-generate titles on ingestion
   title_model:
     provider: ollama
-    name: gpt-oss
+    name: qwen3.8
     enable_thinking: false
     temperature: 0.3
     max_tokens: 100

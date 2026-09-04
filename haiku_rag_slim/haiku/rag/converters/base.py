@@ -42,6 +42,20 @@ def vlm_api_headers(model: "ModelConfig") -> dict[str, str]:
     return {}
 
 
+def vlm_api_params(model: "ModelConfig", max_tokens: int) -> dict[str, object]:
+    """Request body fields docling posts alongside the picture."""
+    from haiku.rag.utils import reasoning_effort
+
+    params: dict[str, object] = {
+        "model": model.name,
+        "max_completion_tokens": max_tokens,
+    }
+    effort = reasoning_effort(model)
+    if effort is not None:
+        params["reasoning_effort"] = effort
+    return params
+
+
 class DocumentConverter(ABC):
     """Abstract base class for document converters.
 

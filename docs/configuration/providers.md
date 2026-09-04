@@ -15,7 +15,7 @@ Configure model behavior for the `qa` and `analysis` capabilities. These setting
 qa:
   model:
     provider: ollama
-    name: gpt-oss
+    name: qwen3.8
     temperature: 0.3
     max_tokens: 500
 ```
@@ -79,7 +79,7 @@ See the [Pydantic AI thinking documentation](https://ai.pydantic.dev/thinking/) 
 - **Google**: Gemini models with thinking support
 - **Groq**: Models with reasoning capabilities
 - **Bedrock**: Claude, Qwen, and `gpt-oss` models. Bedrock Converse does not serve the proprietary OpenAI models, so configuring one raises an error. Reach those through `provider: bedrock-mantle`.
-- **Ollama**: Models supporting reasoning (gpt-oss, etc.)
+- **Ollama**: Any model with a thinking capability. `enable_thinking` maps to `reasoning_effort`: `false` sends `none` (`low` for `gpt-oss`, whose template has no `none` level), `true` sends `high`.
 - **vLLM**: Models with a pydantic-ai reasoning profile (gpt-oss). Qwen3, Gemma, and similar templates ignore the OpenAI `reasoning_effort` that `enable_thinking` translates to — use [`extra_body`](#raw-provider-pass-through) to drive them.
 - **LM Studio**: Models supporting reasoning (gpt-oss, etc.)
 
@@ -311,7 +311,7 @@ Configure which LLM provider to use for question answering. Any provider and mod
 qa:
   model:
     provider: ollama
-    name: gpt-oss
+    name: qwen3.8
 ```
 
 The Ollama base URL can be configured via the `OLLAMA_BASE_URL` environment variable, config file, or defaults to `http://localhost:11434`:

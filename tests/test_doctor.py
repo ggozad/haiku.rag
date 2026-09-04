@@ -163,7 +163,7 @@ def _stub_provider_probe(monkeypatch):
             {
                 "models": [
                     {"name": "test"},
-                    {"name": "gpt-oss:latest"},
+                    {"name": "qwen3.8:latest"},
                     {"name": "qwen3-embedding:4b"},
                 ]
             },
@@ -751,14 +751,11 @@ def test_api_key_not_required_when_config_supplies_it():
 
 
 def test_active_models_includes_picture_description_when_enabled():
-    config = AppConfig(processing=ProcessingConfig(pictures="description"))
-    names = [model.name for model in _active_models(config)]
-    assert "ministral-3" in names
-
-
-def test_active_models_excludes_picture_description_by_default():
-    names = [model.name for model in _active_models(AppConfig())]
-    assert "ministral-3" not in names
+    base = _active_models(AppConfig())
+    with_pictures = _active_models(
+        AppConfig(processing=ProcessingConfig(pictures="description"))
+    )
+    assert len(with_pictures) == len(base) + 1
 
 
 def test_active_models_includes_title_model_when_auto_title():
@@ -846,7 +843,7 @@ def test_provider_targets_default_groups_ollama_models():
     assert len(targets) == 1
     entry = next(iter(targets.values()))
     assert entry["kind"] == "ollama"
-    assert {"qwen3-embedding:4b", "gpt-oss"} <= entry["models"]
+    assert {"qwen3-embedding:4b", "qwen3.8"} <= entry["models"]
 
 
 def test_provider_targets_includes_docling_serve():
@@ -922,7 +919,7 @@ async def test_provider_check_ok_when_models_present(monkeypatch):
                 {
                     "models": [
                         {"name": "qwen3-embedding:4b"},
-                        {"name": "gpt-oss:latest"},
+                        {"name": "qwen3.8:latest"},
                     ]
                 },
             )
@@ -960,7 +957,7 @@ async def test_provider_check_fails_when_unreachable(monkeypatch):
 async def test_provider_check_reports_local_provider(monkeypatch):
     monkeypatch.setattr(
         "haiku.rag.doctor._probe_endpoint",
-        _fake_probe((True, None, {"models": [{"name": "gpt-oss:latest"}]})),
+        _fake_probe((True, None, {"models": [{"name": "qwen3.8:latest"}]})),
     )
     config = AppConfig(
         embeddings=EmbeddingsConfig(
@@ -981,7 +978,7 @@ async def test_run_doctor_includes_provider_results(temp_db_path, monkeypatch):
     monkeypatch.setattr(
         "haiku.rag.doctor._probe_endpoint",
         _fake_probe(
-            (True, None, {"models": [{"name": "test"}, {"name": "gpt-oss:latest"}]})
+            (True, None, {"models": [{"name": "test"}, {"name": "qwen3.8:latest"}]})
         ),
     )
     report = await run_doctor(_config(), temp_db_path, {})
