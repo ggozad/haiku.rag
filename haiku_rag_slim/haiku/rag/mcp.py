@@ -92,16 +92,22 @@ async def _check_filter(
         raise ToolError(f"Invalid filter {filter!r}: {e}") from e
 
 
-def _instructions(scope: "DatabaseScope", config: AppConfig) -> str:
+def _instructions(scope: "DatabaseScope", config: AppConfig, agents: bool) -> str:
     """What the server is for, naming no tools: the client has every tool's
     description from the listing."""
     lines = [
         "haiku-rag is the user's knowledge base: documents they ingested, "
-        "searchable by meaning and keyword, readable whole or section by "
-        "section, answered with citations, or computed across documents.",
-        "Use it whenever a question could be answered from those documents, "
-        "before answering from memory, and say when it had nothing relevant.",
+        "searchable by meaning and keyword, readable whole or section by section."
     ]
+    if agents:
+        lines.append(
+            "Questions can be answered from them with citations, or computed "
+            "across them with code."
+        )
+    lines.append(
+        "Use it whenever a question could be answered from those documents, "
+        "before answering from memory, and say when it had nothing relevant."
+    )
     if scope.covers_multiple:
         lines.append(
             f"It holds several collections: {', '.join(scope.names)}. Results "
@@ -181,6 +187,7 @@ def _find(toc: list["dict[str, Any]"], section_id: str) -> "dict[str, Any] | Non
 def create_mcp_server(
     db_path: Path | None = None,
     config: AppConfig | None = None,
+    agents: bool = True,
 ) -> FastMCP:
     """Create an MCP server over the databases the configuration places.
 
@@ -189,14 +196,20 @@ def create_mcp_server(
             None to serve the databases the configuration places. Beside
             `lancedb.databases` a path raises `AmbiguousDatabaseError`.
         config: Configuration to use.
+        agents: Register `ask_question` and `analyze`, which run a model on
+            the server.
     """
     from haiku.rag.client.scope import DatabaseScope
 
     config = config if config is not None else get_config()
-    return _covering(DatabaseScope.resolve(config, database_path=db_path), config)
+    return _covering(
+        DatabaseScope.resolve(config, database_path=db_path), config, agents
+    )
 
 
-def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
+def _covering(
+    scope: "DatabaseScope", config: AppConfig, agents: bool = True
+) -> FastMCP:
     """An MCP server over databases someone already resolved.
 
     Internal, as ``HaikuRAG._covering`` is: the public factory takes a path and
@@ -242,7 +255,7 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
     # the traceback goes to the server log. A ToolError reaches the client as is.
     mcp = FastMCP(
         "haiku-rag",
-        instructions=_instructions(scope, config),
+        instructions=_instructions(scope, config, agents),
         version=metadata.version("haiku.rag-slim"),
         lifespan=lifespan,
         mask_error_details=True,
@@ -453,68 +466,72 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
             for doc in documents
         ]
 
-    @mcp.tool(annotations=_read_only("Ask a question"))
-    async def ask_question(
-        question: str,
-        images_base64: list[str] | None = None,
-        sources: Sources = None,
-    ) -> str:
-        """Answer a question from the documents with a retrieval agent.
+    if agents:
 
-        Use this when the user wants an answer rather than material to read.
-        It runs a model on the server and is slower than a search. Returns
-        the answer, followed by citations to the passages it rests on.
+        @mcp.tool(annotations=_read_only("Ask a question"))
+        async def ask_question(
+            question: str,
+            images_base64: list[str] | None = None,
+            sources: Sources = None,
+        ) -> str:
+            """Answer a question from the documents with a retrieval agent.
 
-        Args:
-            question: The question, in natural language.
-            images_base64: Images to attach to the question, PNG or JPEG
-                bytes as base64. Needs a vision-capable model on the server.
-        """
-        images = _decode_images(images_base64)
-        rag = await _client()
-        try:
-            answer, citations = await rag.ask(question, images=images, sources=sources)
-        except UnknownDatabaseError as e:
-            raise ToolError(str(e)) from e
-        except Exception as e:
-            logger.exception("ask_question failed")
-            raise ToolError(f"ask_question failed: {type(e).__name__}") from e
-        if citations:
-            answer += "\n\n" + format_citations(
-                citations, include_source=rag.covers_multiple
-            )
-        return answer
+            Use this when the user wants an answer rather than material to read.
+            It runs a model on the server and is slower than a search. Returns
+            the answer, followed by citations to the passages it rests on.
 
-    @mcp.tool(annotations=_read_only("Analyze documents"))
-    async def analyze(
-        question: str,
-        filter: Filter = None,
-        images_base64: list[str] | None = None,
-        sources: Sources = None,
-    ) -> str:
-        """Compute an answer across documents with code.
+            Args:
+                question: The question, in natural language.
+                images_base64: Images to attach to the question, PNG or JPEG
+                    bytes as base64. Needs a vision-capable model on the server.
+            """
+            images = _decode_images(images_base64)
+            rag = await _client()
+            try:
+                answer, citations = await rag.ask(
+                    question, images=images, sources=sources
+                )
+            except UnknownDatabaseError as e:
+                raise ToolError(str(e)) from e
+            except Exception as e:
+                logger.exception("ask_question failed")
+                raise ToolError(f"ask_question failed: {type(e).__name__}") from e
+            if citations:
+                answer += "\n\n" + format_citations(
+                    citations, include_source=rag.covers_multiple
+                )
+            return answer
 
-        Use this for counting, aggregation, comparison across many documents
-        or arithmetic over tables, where reading passages is not enough. A
-        model writes and runs Python in a sandbox over the selected documents.
-        It is the slowest tool. Returns the answer as text.
+        @mcp.tool(annotations=_read_only("Analyze documents"))
+        async def analyze(
+            question: str,
+            filter: Filter = None,
+            images_base64: list[str] | None = None,
+            sources: Sources = None,
+        ) -> str:
+            """Compute an answer across documents with code.
 
-        Args:
-            question: The question, in natural language.
-            images_base64: Images to attach to the question, PNG or JPEG
-                bytes as base64. Needs a vision-capable model on the server.
-        """
-        images = _decode_images(images_base64)
-        rag = await _client()
-        try:
-            result = await rag.analyze(
-                question, filter=filter, images=images, sources=sources
-            )
-        except UnknownDatabaseError as e:
-            raise ToolError(str(e)) from e
-        except Exception as e:
-            logger.exception("analyze failed")
-            raise ToolError(f"analyze failed: {type(e).__name__}") from e
-        return result.answer
+            Use this for counting, aggregation, comparison across many documents
+            or arithmetic over tables, where reading passages is not enough. A
+            model writes and runs Python in a sandbox over the selected documents.
+            It is the slowest tool. Returns the answer as text.
+
+            Args:
+                question: The question, in natural language.
+                images_base64: Images to attach to the question, PNG or JPEG
+                    bytes as base64. Needs a vision-capable model on the server.
+            """
+            images = _decode_images(images_base64)
+            rag = await _client()
+            try:
+                result = await rag.analyze(
+                    question, filter=filter, images=images, sources=sources
+                )
+            except UnknownDatabaseError as e:
+                raise ToolError(str(e)) from e
+            except Exception as e:
+                logger.exception("analyze failed")
+                raise ToolError(f"analyze failed: {type(e).__name__}") from e
+            return result.answer
 
     return mcp

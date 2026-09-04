@@ -633,6 +633,18 @@ class TestMCPDescribesItself:
         assert "beta" not in covering_one
 
     @pytest.mark.asyncio
+    async def test_instructions_without_agents_drop_only_their_clause(self, mcp_db):
+        from fastmcp import Client
+
+        async with Client(create_mcp_server(mcp_db)) as client:
+            full = client.initialize_result.instructions.splitlines()
+        async with Client(create_mcp_server(mcp_db, agents=False)) as client:
+            without = client.initialize_result.instructions.splitlines()
+
+        assert set(without) < set(full)
+        assert len(without) == len(full) - 1
+
+    @pytest.mark.asyncio
     async def test_instructions_carry_the_domain_preamble(self, mcp_db):
         from fastmcp import Client
 
@@ -693,6 +705,18 @@ class TestMCPToolSet:
             "list_documents",
             "ask_question",
             "analyze",
+        }
+
+    @pytest.mark.asyncio
+    async def test_without_agents_the_agent_tools_are_not_registered(self, mcp_db):
+        mcp = create_mcp_server(mcp_db, agents=False)
+
+        assert {t.name for t in await mcp.list_tools()} == {
+            "search_documents",
+            "get_document",
+            "get_document_outline",
+            "get_document_section",
+            "list_documents",
         }
 
 
@@ -1235,7 +1259,7 @@ class TestMCPClientLifetime:
             async def run_stdio_async(self):
                 return None
 
-        def fake_covering(scope, config):
+        def fake_covering(scope, config, agents=True):
             seen.update(scope=scope, config=config)
             return _Server()
 

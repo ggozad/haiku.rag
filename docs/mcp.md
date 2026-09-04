@@ -18,6 +18,9 @@ haiku-rag mcp --host 0.0.0.0 --port 8001
 
 # stdio transport (for Claude Desktop)
 haiku-rag mcp --stdio
+
+# Without ask_question and analyze, which run a model on the server
+haiku-rag mcp --stdio --no-agents
 ```
 
 `--host` defaults to `127.0.0.1` (loopback only). Bind to `0.0.0.0` only
@@ -81,8 +84,8 @@ repeating it.
 | `get_document_outline` | always | `document_id`, `source` |
 | `get_document_section` | always | `document_id`, `section_id`, `source` |
 | `list_documents` | always | `limit`, `offset`, `filter` |
-| `ask_question` | always | `question`, `images_base64`, `sources` |
-| `analyze` | always | `question`, `filter`, `images_base64`, `sources` |
+| `ask_question` | unless `--no-agents` | `question`, `images_base64`, `sources` |
+| `analyze` | unless `--no-agents` | `question`, `filter`, `images_base64`, `sources` |
 
 `search_documents` runs hybrid search, vector and full-text. Its text content
 is the rendering the in-process agents read: results best first, each with its

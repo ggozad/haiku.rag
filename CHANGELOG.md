@@ -4,6 +4,8 @@
 
 ### Added
 
+- `haiku-rag mcp --no-agents` leaves `ask_question` and `analyze`
+  unregistered. `create_mcp_server(agents=)`, `HaikuRAGApp.run_mcp(agents=)`.
 - MCP tools `get_document_outline` (heading tree with page numbers) and
   `get_document_section` (one section's text, subsections included), built
   on `document_items`. `build_toc` in `haiku.rag.context`.

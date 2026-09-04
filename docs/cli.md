@@ -477,6 +477,9 @@ haiku-rag mcp --port 9000
 
 # Bind to all interfaces (containers, trusted LAN)
 haiku-rag mcp --host 0.0.0.0
+
+# Without the ask_question and analyze tools
+haiku-rag mcp --no-agents
 ```
 
 See [MCP](mcp.md) for details. For continuous document ingestion

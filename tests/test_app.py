@@ -705,6 +705,20 @@ async def test_run_mcp_http(app, client, monkeypatch):
     )
 
 
+async def test_run_mcp_hands_the_server_the_agents_switch(app, client, monkeypatch):
+    seen = {}
+
+    def fake_covering(scope, config, agents=True):
+        seen["agents"] = agents
+        return AsyncMock()
+
+    monkeypatch.setattr("haiku.rag.app._mcp_server_covering", fake_covering)
+
+    await app.run_mcp(transport="stdio", agents=False)
+
+    assert seen["agents"] is False
+
+
 async def test_run_mcp_survives_interruption(app, client, monkeypatch):
     server = AsyncMock()
     server.run_stdio_async.side_effect = KeyboardInterrupt

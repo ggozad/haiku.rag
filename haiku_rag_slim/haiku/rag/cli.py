@@ -884,13 +884,20 @@ def mcp(
         "--port",
         help="Port to bind MCP server to (ignored with --stdio)",
     ),
+    no_agents: bool = typer.Option(
+        False,
+        "--no-agents",
+        help="Do not register ask_question and analyze, which run a model",
+    ),
 ) -> None:
     """Run the MCP server."""
     app = create_app(db, covers_set=True)
 
     transport = "stdio" if stdio else None
 
-    asyncio.run(app.run_mcp(transport=transport, host=host, port=port))
+    asyncio.run(
+        app.run_mcp(transport=transport, host=host, port=port, agents=not no_agents)
+    )
 
 
 if __name__ == "__main__":

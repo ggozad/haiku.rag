@@ -1041,6 +1041,14 @@ def test_mcp_stdio_selects_the_transport(app_stub):
     app_stub.run_mcp.assert_called_once()
     kwargs = app_stub.run_mcp.call_args.kwargs
     assert kwargs["transport"] == "stdio"
+    assert kwargs["agents"] is True
+
+
+def test_mcp_no_agents_leaves_the_agent_tools_out(app_stub):
+    result = runner.invoke(cli, ["mcp", "--no-agents"] + DB_ARGS)
+
+    assert result.exit_code == 0, result.output
+    assert app_stub.run_mcp.call_args.kwargs["agents"] is False
 
 
 def test_mcp_without_stdio_leaves_the_transport_unset(app_stub):
