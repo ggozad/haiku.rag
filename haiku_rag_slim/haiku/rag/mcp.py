@@ -13,13 +13,17 @@ from pydantic import Field
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, get_config
+from haiku.rag.context import build_toc
 from haiku.rag.store.exceptions import UnknownDatabaseError
 from haiku.rag.store.models import Document, SearchResult
+from haiku.rag.store.models.document_item import DocumentItem
 from haiku.rag.store.schema import DocumentMetaRecord
-from haiku.rag.tools.document import DocumentInfo
+from haiku.rag.tools.document import DocumentInfo, DocumentSection, OutlineNode
 from haiku.rag.utils import format_citations
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from haiku.rag.client.scope import DatabaseScope
 
 logger = logging.getLogger(__name__)
@@ -91,8 +95,8 @@ def _instructions(scope: "DatabaseScope", config: AppConfig) -> str:
     description from the listing."""
     lines = [
         "haiku-rag is the user's knowledge base: documents they ingested, "
-        "searchable by meaning and keyword, readable whole, answered with "
-        "citations, or computed across documents.",
+        "searchable by meaning and keyword, readable whole or section by "
+        "section, answered with citations, or computed across documents.",
         "Use it whenever a question could be answered from those documents, "
         "before answering from memory, and say when it had nothing relevant.",
     ]
@@ -104,6 +108,26 @@ def _instructions(scope: "DatabaseScope", config: AppConfig) -> str:
     if config.prompts.domain_preamble:
         lines.append(config.prompts.domain_preamble)
     return "\n".join(lines)
+
+
+def _node(toc: "dict[str, Any]") -> OutlineNode:
+    return OutlineNode(
+        id=toc["self_ref"],
+        title=toc["title"],
+        level=toc["level"],
+        page_numbers=toc["page_numbers"],
+        children=[_node(child) for child in toc["children"]],
+    )
+
+
+def _find(toc: list["dict[str, Any]"], section_id: str) -> "dict[str, Any] | None":
+    for node in toc:
+        if node["self_ref"] == section_id:
+            return node
+        found = _find(node["children"], section_id)
+        if found is not None:
+            return found
+    return None
 
 
 def create_mcp_server(
@@ -279,6 +303,72 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
             raise ToolError(f"No document with id {document_id!r}")
         return document
 
+    async def _items_of(document_id: str, source: str | None) -> list[DocumentItem]:
+        """A document's items in reading order, from the database holding it."""
+        rag = await _client()
+        try:
+            document = await rag.get_document_by_id(document_id, source)
+            if document is None:
+                raise ToolError(f"No document with id {document_id!r}")
+            owner = await rag.reader_for(source or document.source)
+        except UnknownDatabaseError as e:
+            raise ToolError(str(e)) from e
+        assert owner is not None, "a stored document names its database"
+        return await owner.document_item_repository.get_all_items(document_id)
+
+    @mcp.tool(annotations=_read_only("Document outline"))
+    async def get_document_outline(
+        document_id: str, source: str | None = None
+    ) -> list[OutlineNode]:
+        """The heading tree of a document, with page numbers.
+
+        Use this on a long document to see its structure before reading, then
+        pass a node's `id` to `get_document_section`. Returns the headings
+        nested by level; an empty list means the document has no headings,
+        so read it with `get_document`.
+
+        Args:
+            document_id: The document's id.
+            source: The collection holding it. Without one every collection
+                is asked.
+        """
+        return [
+            _node(toc) for toc in build_toc(await _items_of(document_id, source), {})
+        ]
+
+    @mcp.tool(annotations=_read_only("Document section"))
+    async def get_document_section(
+        document_id: str, section_id: str, source: str | None = None
+    ) -> DocumentSection:
+        """The text of one section of a document, subsections included.
+
+        Use this to read a part of a long document instead of the whole.
+        `section_id` is a node `id` from `get_document_outline`. Returns the
+        section's heading, page numbers and text in reading order, up to the
+        next heading of the same or a higher level.
+
+        Args:
+            document_id: The document's id.
+            section_id: The `id` of a node in the document's outline.
+            source: The collection holding it. Without one every collection
+                is asked.
+        """
+        items = await _items_of(document_id, source)
+        node = _find(build_toc(items, {}), section_id)
+        if node is None:
+            raise ToolError(f"No section {section_id!r} in document {document_id!r}")
+        start, end = node["item_range"]
+        return DocumentSection(
+            id=node["self_ref"],
+            title=node["title"],
+            page_numbers=node["page_numbers"],
+            content="\n\n".join(
+                item.text
+                for item in items
+                if start <= item.position < end and item.text
+            ),
+        )
+
     @mcp.tool(annotations=_read_only("List documents"))
     async def list_documents(
         limit: int | None = None,
@@ -313,7 +403,6 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
     @mcp.tool(annotations=_read_only("Ask a question"))
     async def ask_question(
         question: str,
-        cite: bool = False,
         images_base64: list[str] | None = None,
         sources: Sources = None,
     ) -> str:
@@ -321,12 +410,10 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
 
         Use this when the user wants an answer rather than material to read.
         It runs a model on the server and is slower than a search. Returns
-        the answer, followed by citations to the passages it rests on when
-        `cite` is set.
+        the answer, followed by citations to the passages it rests on.
 
         Args:
             question: The question, in natural language.
-            cite: Append citations to the answer.
             images_base64: Images to attach to the question, PNG or JPEG
                 bytes as base64. Needs a vision-capable model on the server.
         """
@@ -339,7 +426,7 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
         except Exception as e:
             logger.exception("ask_question failed")
             raise ToolError(f"ask_question failed: {type(e).__name__}") from e
-        if cite and citations:
+        if citations:
             answer += "\n\n" + format_citations(
                 citations, include_source=rag.covers_multiple
             )

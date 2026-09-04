@@ -32,6 +32,8 @@ In both cases:
   - Results without doc_item_refs pass through unexpanded
 """
 
+from typing import Any
+
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.document_item import DocumentItem
 
@@ -488,3 +490,78 @@ def expand_with_items(
         final_results.append(built)
 
     return final_results + passthrough
+
+
+def build_toc(
+    items: list["DocumentItem"],
+    chunk_index: dict[str, list[str]],
+) -> list[dict[str, Any]]:
+    """Build a nested section tree from items in position order.
+
+    Each ``section_header`` with ``heading_level > 0`` becomes a node. Nesting
+    follows the explicit levels: a header pops the stack until the top is at
+    a strictly shallower level, then becomes a child of that top (or a root).
+
+    ``item_range = [position, end_exclusive]`` where ``end_exclusive`` is the
+    position of the next header whose level is the same or shallower (i.e.
+    the next sibling or ancestor that ends this section), or the total item
+    count if no such header exists.
+
+    ``chunk_ids`` aggregates the chunks covered by all items in the section's
+    ``item_range`` (deduped, order preserved). Pass directly to ``cite()`` to
+    ground a section-scoped answer without a corpus-wide ``search()`` call.
+
+    Items without a section_header label (or with ``heading_level == 0``) are
+    skipped. When all section_headers carry the same level the output is a
+    flat sibling list (see docling-project/docling#2121 for an upstream case
+    where every PDF section_header is emitted at level=1).
+    """
+    # Defensive: every consumer is supposed to pass items in position order,
+    # but the end_exclusive lookahead below silently miscomputes section
+    # boundaries if it's not — better to sort once than trust the caller.
+    items = sorted(items, key=lambda i: i.position)
+    headers: list[DocumentItem] = [
+        i for i in items if i.label == "section_header" and i.heading_level > 0
+    ]
+    if not headers:
+        return []
+
+    total = max((i.position for i in items), default=-1) + 1
+    items_by_position: dict[int, DocumentItem] = {i.position: i for i in items}
+
+    ends: list[int] = []
+    for idx, h in enumerate(headers):
+        end = total
+        for j in range(idx + 1, len(headers)):
+            if headers[j].heading_level <= h.heading_level:
+                end = headers[j].position
+                break
+        ends.append(end)
+
+    roots: list[dict[str, Any]] = []
+    stack: list[tuple[int, dict[str, Any]]] = []
+    for h, end in zip(headers, ends, strict=True):
+        seen: set[str] = set()
+        chunk_ids: list[str] = []
+        for pos in range(h.position, end):
+            item = items_by_position.get(pos)
+            if item is None:
+                continue
+            for cid in chunk_index.get(item.self_ref, []):
+                if cid not in seen:
+                    seen.add(cid)
+                    chunk_ids.append(cid)
+        node: dict[str, Any] = {
+            "self_ref": h.self_ref,
+            "level": h.heading_level,
+            "title": h.text,
+            "page_numbers": list(h.page_numbers),
+            "item_range": [h.position, end],
+            "chunk_ids": chunk_ids,
+            "children": [],
+        }
+        while stack and stack[-1][0] >= h.heading_level:
+            stack.pop()
+        (stack[-1][1]["children"] if stack else roots).append(node)
+        stack.append((h.heading_level, node))
+    return roots

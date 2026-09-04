@@ -4,6 +4,9 @@
 
 ### Added
 
+- MCP tools `get_document_outline` (heading tree with page numbers) and
+  `get_document_section` (one section's text, subsections included), built
+  on `document_items`. `build_toc` in `haiku.rag.context`.
 - MCP server `instructions`, `version`, and read-only `ToolAnnotations` on
   every tool; every parameter carries a description. `filter` on
   `search_documents` and `search_documents_by_image`. `DocumentInfo.metadata`.
@@ -35,6 +38,7 @@
 
 ### Removed
 
+- `cite` on the MCP `ask_question` tool; citations are always appended.
 - MCP write tools `add_document_from_file`, `add_document_from_url`,
   `add_document_from_text` and `delete_document`. The server opens the
   database read-only; ingest with `haiku-rag add`, `add-src`, `delete` or

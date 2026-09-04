@@ -78,8 +78,10 @@ repeating it.
 | `search_documents` | always | `query`, `limit`, `include_images`, `filter`, `sources` |
 | `search_documents_by_image` | multimodal embedder only | `image_base64`, `limit`, `include_images`, `filter`, `sources` |
 | `get_document` | always | `document_id`, `source` |
+| `get_document_outline` | always | `document_id`, `source` |
+| `get_document_section` | always | `document_id`, `section_id`, `source` |
 | `list_documents` | always | `limit`, `offset`, `filter` |
-| `ask_question` | always | `question`, `cite`, `images_base64`, `sources` |
+| `ask_question` | always | `question`, `images_base64`, `sources` |
 | `analyze` | always | `question`, `filter`, `images_base64`, `sources` |
 
 `search_documents` runs hybrid search, vector and full-text, and returns
@@ -88,12 +90,15 @@ Rank is the signal. `include_images` attaches picture bytes as base64 PNG under
 `image_data`. `search_documents_by_image` embeds the query image and searches
 by vector similarity alone.
 
-`get_document` returns a document whole, in reading order. `list_documents`
-returns titles, URIs and metadata, which is how a client learns what a filter
-can match.
+`get_document` returns a document whole, in reading order. For a long one,
+`get_document_outline` returns the heading tree with page numbers and
+`get_document_section` the text of one section, subsections included; a
+node's `id` in the outline is the `section_id`. A document without headings
+has an empty outline. `list_documents` returns titles, URIs and metadata,
+which is how a client learns what a filter can match.
 
-`ask_question` runs the RAG agent on the server and returns an answer, with
-citations when `cite` is set. `analyze` writes and runs Python in a sandbox
+`ask_question` runs the RAG agent on the server and returns an answer
+followed by its citations. `analyze` writes and runs Python in a sandbox
 over the documents, for counting, aggregation and computation across
 documents. Both cost a model call.
 
@@ -112,8 +117,9 @@ title = 'Q3 report'
 ### Errors
 
 A failure is an MCP error, never an empty result. Expected failures carry a
-message: a document id that matches nothing, a collection the server does not
-cover, a filter the query engine rejects (with its message), invalid base64,
+message: a document or section id that matches nothing, a collection the
+server does not cover, a filter the query engine rejects (with its message),
+invalid base64,
 and an `ask_question` or `analyze` failure naming only the exception type.
 Anything else reaches the client as `Error calling tool 'name'` and its
 traceback goes to the server log.

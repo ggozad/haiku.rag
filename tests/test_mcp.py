@@ -236,9 +236,7 @@ class TestMCPReadTools:
         assert overview["metadata"] == {"author": "Ada"}
 
     @pytest.mark.asyncio
-    async def test_ask_question_appends_citations_when_requested(
-        self, mcp_db, monkeypatch
-    ):
+    async def test_ask_question_appends_the_citations(self, mcp_db, monkeypatch):
         from haiku.rag.store.models.citation import Citation
 
         citation = Citation(
@@ -257,13 +255,182 @@ class TestMCPReadTools:
         mcp = create_mcp_server(mcp_db)
         ask = await _get_tool(mcp, "ask_question")
 
-        with_cite = await ask(question="q", cite=True)
-        assert with_cite.startswith("the answer")
-        assert "AI Overview" in with_cite
+        answer = await ask(question="q")
+        assert answer.startswith("the answer")
+        assert "AI Overview" in answer
         # One database: its name adds nothing.
-        assert "alpha" not in with_cite
+        assert "alpha" not in answer
 
-        assert await ask(question="q", cite=False) == "the answer"
+
+@pytest.fixture
+async def outlined_db(temp_db_path):
+    """A database with one document whose items carry a heading hierarchy.
+
+    Rows are written through the repositories, so no embedder is involved.
+    Returns the path and the document id."""
+    from haiku.rag.store.models.document import Document as DocumentModel
+    from haiku.rag.store.models.document_item import DocumentItem
+
+    def header(pos, level, text):
+        return DocumentItem(
+            document_id="",
+            position=pos,
+            self_ref=f"#/texts/{pos}",
+            label="section_header",
+            text=text,
+            page_numbers=[pos // 4 + 1],
+            heading_level=level,
+        )
+
+    def para(pos):
+        return DocumentItem(
+            document_id="",
+            position=pos,
+            self_ref=f"#/texts/{pos}",
+            label="paragraph",
+            text=f"para{pos}",
+            page_numbers=[pos // 4 + 1],
+        )
+
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        doc = await rag.document_repository.create(
+            DocumentModel(content="x", uri="test://outlined", title="Outlined")
+        )
+        items = [
+            header(0, 1, "Intro"),
+            para(1),
+            header(2, 2, "Background"),
+            para(3),
+            header(4, 3, "Prior Work"),
+            para(5),
+            header(6, 2, "Approach"),
+            para(7),
+            header(8, 1, "Methods"),
+            para(9),
+        ]
+        for item in items:
+            item.document_id = doc.id
+        await rag.document_item_repository.create_items(doc.id, items)
+    return temp_db_path, doc.id
+
+
+class TestMCPDocumentNavigation:
+    @pytest.mark.asyncio
+    async def test_the_outline_nests_headings_by_level(self, outlined_db):
+        db, doc_id = outlined_db
+        outline = await _get_tool(create_mcp_server(db), "get_document_outline")
+
+        roots = await outline(document_id=doc_id)
+
+        assert [n.title for n in roots] == ["Intro", "Methods"]
+        intro = roots[0]
+        assert (intro.id, intro.level, intro.page_numbers) == ("#/texts/0", 1, [1])
+        assert [c.title for c in intro.children] == ["Background", "Approach"]
+        assert [c.title for c in intro.children[0].children] == ["Prior Work"]
+        assert intro.children[0].children[0].level == 3
+        assert roots[1].children == []
+
+    @pytest.mark.asyncio
+    async def test_a_document_without_headings_has_an_empty_outline(self, mcp_db):
+        mcp = create_mcp_server(mcp_db)
+        [doc] = await (await _get_tool(mcp, "list_documents"))(limit=1)
+        outline = await _get_tool(mcp, "get_document_outline")
+
+        assert await outline(document_id=doc.id) == []
+
+    @pytest.mark.asyncio
+    async def test_a_section_covers_its_subsections_and_stops_at_its_sibling(
+        self, outlined_db
+    ):
+        db, doc_id = outlined_db
+        section = await _get_tool(create_mcp_server(db), "get_document_section")
+
+        background = await section(document_id=doc_id, section_id="#/texts/2")
+
+        assert background.title == "Background"
+        assert background.content.split("\n\n") == [
+            "Background",
+            "para3",
+            "Prior Work",
+            "para5",
+        ]
+        assert background.page_numbers == [1]
+
+        intro = await section(document_id=doc_id, section_id="#/texts/0")
+        assert intro.content.startswith("Intro")
+        assert "para7" in intro.content
+        assert "Methods" not in intro.content
+
+    @pytest.mark.asyncio
+    async def test_an_unknown_section_or_document_is_an_error(self, outlined_db):
+        db, doc_id = outlined_db
+        mcp = create_mcp_server(db)
+        section = await _get_tool(mcp, "get_document_section")
+        outline = await _get_tool(mcp, "get_document_outline")
+
+        with pytest.raises(ToolError, match="#/texts/99"):
+            await section(document_id=doc_id, section_id="#/texts/99")
+        with pytest.raises(ToolError, match="nonexistent-id"):
+            await outline(document_id="nonexistent-id")
+        with pytest.raises(ToolError, match="nonexistent-id"):
+            await section(document_id="nonexistent-id", section_id="#/texts/0")
+
+    @pytest.mark.asyncio
+    @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
+    async def test_outline_and_section_serialize_over_the_wire(self, outlined_db):
+        db, doc_id = outlined_db
+        mcp = create_mcp_server(db)
+
+        outline = await _call(mcp, "get_document_outline", document_id=doc_id)
+        section = await _call(
+            mcp, "get_document_section", document_id=doc_id, section_id="#/texts/8"
+        )
+
+        assert not outline.is_error and not section.is_error
+        [intro, methods] = outline.structured_content["result"]
+        assert set(intro) == {"id", "title", "level", "page_numbers", "children"}
+        assert intro["children"][0]["children"][0]["title"] == "Prior Work"
+        assert set(section.structured_content) == {
+            "id",
+            "title",
+            "page_numbers",
+            "content",
+        }
+        assert section.structured_content["content"] == "Methods\n\npara9"
+
+    @pytest.mark.asyncio
+    async def test_source_routes_to_the_database_holding_the_document(self, two_dbs):
+        from haiku.rag.store.models.document_item import DocumentItem
+
+        async with HaikuRAG(config=two_dbs, sources=["beta"]) as beta:
+            [doc] = await beta.list_documents()
+            await beta.document_item_repository.create_items(
+                doc.id,
+                [
+                    DocumentItem(
+                        document_id=doc.id,
+                        position=0,
+                        self_ref="#/texts/0",
+                        label="section_header",
+                        text="Only in beta",
+                        heading_level=1,
+                    )
+                ],
+            )
+        mcp = _covering_all(two_dbs)
+        outline = await _get_tool(mcp, "get_document_outline")
+        section = await _get_tool(mcp, "get_document_section")
+
+        named = await outline(document_id=doc.id, source="beta")
+        found = await outline(document_id=doc.id)
+        assert [n.title for n in named] == [n.title for n in found] == ["Only in beta"]
+        assert (
+            await section(document_id=doc.id, section_id="#/texts/0", source="beta")
+        ).title == "Only in beta"
+        with pytest.raises(ToolError, match="nope"):
+            await outline(document_id=doc.id, source="nope")
+        with pytest.raises(ToolError, match=doc.id):
+            await outline(document_id=doc.id, source="alpha")
 
 
 @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
@@ -324,7 +491,7 @@ class TestMCPDescribesItself:
         async with Client(create_mcp_server(mcp_db)) as client:
             tools = await client.list_tools()
 
-        assert len(tools) == 6
+        assert len(tools) == 8
         for tool in tools:
             assert tool.annotations is not None, tool.name
             assert tool.annotations.readOnlyHint is True, tool.name
@@ -344,7 +511,7 @@ class TestMCPDescribesItself:
             for name, schema in tool.inputSchema.get("properties", {}).items()
             if not schema.get("description")
         ]
-        assert len(tools) == 6
+        assert len(tools) == 8
         assert undescribed == []
 
 
@@ -356,6 +523,8 @@ class TestMCPToolSet:
         assert {t.name for t in await mcp.list_tools()} == {
             "search_documents",
             "get_document",
+            "get_document_outline",
+            "get_document_section",
             "list_documents",
             "ask_question",
             "analyze",
@@ -475,7 +644,7 @@ class TestMCPCoversTheConfiguredSet:
         mcp = _covering_all(two_dbs)
         ask = await _get_tool(mcp, "ask_question")
 
-        answer = await ask(question="q", cite=True)
+        answer = await ask(question="q")
 
         assert "alpha" in answer
         assert "beta" in answer
