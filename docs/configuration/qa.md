@@ -26,10 +26,10 @@ Configure the RAG capability (used by `client.ask`, `haiku-rag ask`, and the MCP
 qa:
   model:
     provider: ollama
-    name: gpt-oss
+    name: qwen3.8
     enable_thinking: true
     temperature: 0.3          # Default: 0.3
-    vision: false             # Set true for vision-capable models
+    vision: true              # Set false for text-only models
   max_searches: 5       # Maximum search units per question
 ```
 

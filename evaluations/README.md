@@ -49,7 +49,7 @@ datasets and judge:
 
 ```bash
 evaluations run hotpotqa --target rag-capability
-evaluations run hotpotqa --target analysis-capability --capability-model ollama:gpt-oss
+evaluations run hotpotqa --target analysis-capability --capability-model ollama:qwen3.8
 ```
 
 `--capability-model "provider:name"` overrides the capability model independently from

@@ -15,7 +15,11 @@ from docling_core.types.doc.document import DoclingDocument
 from haiku.rag.config import AppConfig
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.converters import docling_local, get_converter
-from haiku.rag.converters.base import vlm_api_headers, vlm_api_url
+from haiku.rag.converters.base import (
+    vlm_api_headers,
+    vlm_api_params,
+    vlm_api_url,
+)
 from haiku.rag.converters.docling_local import DoclingLocalConverter
 from haiku.rag.converters.docling_serve import DoclingServeConverter
 from haiku.rag.converters.text_utils import TextFileHandler, docling_safe_name
@@ -48,6 +52,32 @@ class TestVlmApiUrl:
     def test_unsupported_provider_raises(self):
         with pytest.raises(ValueError, match="Unsupported VLM provider"):
             vlm_api_url(AppConfig(), ModelConfig(provider="unsupported", name="test"))
+
+
+class TestVlmApiParams:
+    """Request body docling posts alongside the picture."""
+
+    def test_thinking_unset_sends_no_effort(self):
+        params = vlm_api_params(ModelConfig(provider="ollama", name="qwen3.8"), 200)
+        assert params == {"model": "qwen3.8", "max_completion_tokens": 200}
+
+    def test_thinking_off_sends_none(self):
+        params = vlm_api_params(
+            ModelConfig(provider="ollama", name="qwen3.8", enable_thinking=False), 200
+        )
+        assert params["reasoning_effort"] == "none"
+
+    def test_thinking_off_sends_gpt_oss_floor(self):
+        params = vlm_api_params(
+            ModelConfig(provider="ollama", name="gpt-oss", enable_thinking=False), 200
+        )
+        assert params["reasoning_effort"] == "low"
+
+    def test_thinking_on_sends_high(self):
+        params = vlm_api_params(
+            ModelConfig(provider="ollama", name="qwen3.8", enable_thinking=True), 200
+        )
+        assert params["reasoning_effort"] == "high"
 
 
 class TestVlmApiHeaders:
@@ -989,7 +1019,7 @@ class TestDoclingLocalConverter:
         pic_desc = config.processing.conversion_options.picture_description
         assert config.processing.pictures == "image"
         assert pic_desc.model.provider == "ollama"
-        assert pic_desc.model.name == "ministral-3"
+        assert pic_desc.model.name == "qwen3.8"
         assert pic_desc.timeout == 90
         assert pic_desc.max_tokens == 200
         # Default prompt is in PromptsConfig

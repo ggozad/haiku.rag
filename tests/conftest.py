@@ -102,7 +102,7 @@ def temp_yaml_config(tmp_path, monkeypatch):
                 "vector_dim": 2560,
             }
         },
-        "qa": {"model": {"provider": "ollama", "name": "gpt-oss"}},
+        "qa": {"model": {"provider": "ollama", "name": "qwen3.8"}},
     }
 
     with open(config_file, "w") as f:

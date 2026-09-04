@@ -155,6 +155,14 @@ Emoji test: 🚀 ✅ 📝"""
             {"openai_reasoning_effort": "high"},
         ),
         (
+            {"provider": "ollama", "name": "qwen3.8", "enable_thinking": False},
+            {"openai_reasoning_effort": "none"},
+        ),
+        (
+            {"provider": "ollama", "name": "qwen3.8", "enable_thinking": True},
+            {"openai_reasoning_effort": "high"},
+        ),
+        (
             {
                 "provider": "ollama",
                 "name": "llama3",
@@ -188,6 +196,8 @@ Emoji test: 🚀 ✅ 📝"""
         "ollama",
         "ollama_thinking_off",
         "ollama_thinking_on",
+        "ollama_other_thinking_off",
+        "ollama_other_thinking_on",
         "ollama_with_settings",
         "openai",
         "openai_reasoning_thinking_on",

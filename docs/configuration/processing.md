@@ -30,7 +30,7 @@ processing:
   auto_title: false                          # Auto-generate titles on ingestion
   title_model:                               # LLM for title generation (fallback)
     provider: ollama
-    name: gpt-oss
+    name: qwen3.8
     enable_thinking: false
 
   # Conversion options (works with both local and remote converters)
@@ -54,7 +54,7 @@ processing:
     picture_description:
       model:
         provider: ollama
-        name: ministral-3
+        name: qwen3.8
   pictures: image                            # none | description | image
 ```
 
@@ -270,7 +270,7 @@ processing:
     picture_description:          # only consulted when pictures == "description"
       model:
         provider: ollama          # any OpenAI-compatible /v1/chat/completions provider
-        name: ministral-3
+        name: qwen3.8
       timeout: 90
       max_tokens: 200
 ```
@@ -294,7 +294,7 @@ Three independent settings drive ingest, retrieval, and QA:
 |---|---|---|
 | `processing.pictures` | Generate and/or describe pictures at ingest? | `none` / `description` / `image` (default) |
 | `embeddings.model.multimodal` | Can the embedder index image content? | `false` (default, text-only) / `true` (supported on `vllm`, `voyageai`, `cohere`) |
-| `qa.model.vision` | Can the QA model interpret images? | `false` (default) / `true` |
+| `qa.model.vision` | Can the QA model interpret images? | `false` / `true` (default) |
 
 The Embedder column below is driven by `embeddings.model.multimodal`, not the provider name — a vision-capable model under a text-only configuration still indexes no images, and an image-only document then produces zero chunks. See [Multimodal embedders](providers.md#multimodal-embedders).
 
@@ -313,7 +313,7 @@ The Embedder column below is driven by `embeddings.model.multimodal`, not the pr
 - `qa.model.vision: false` — text chunks only (descriptions, when present, answer figure questions in prose).
 - `qa.model.vision: true` — text chunks + raw picture bytes via `BinaryContent`. The model reads figures directly. Requires `pictures != none` so the bytes exist.
 
-`qa.model.vision` is independent of ingestion. Flipping it never requires reingesting. Setting `vision: true` against a text-only model causes silent acceptance and confabulation on Ollama and a 400 on OpenAI. Default `false` is the safe choice.
+`qa.model.vision` is independent of ingestion. Flipping it never requires reingesting. It declares what the model can read: the default `qwen3.8` is vision-capable, so the default is `true`. Set it `false` when pointing `qa.model` at a text-only model, where `true` causes silent acceptance and confabulation on Ollama and a 400 on OpenAI.
 
 **Recommended combinations:**
 
@@ -368,7 +368,7 @@ processing:
   auto_title: true
   title_model:
     provider: ollama
-    name: gpt-oss
+    name: qwen3.8
     enable_thinking: false
 ```
 
