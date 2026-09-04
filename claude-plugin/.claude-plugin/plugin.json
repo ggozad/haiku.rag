@@ -1,0 +1,12 @@
+{
+  "name": "haiku-rag",
+  "version": "0.82.1",
+  "description": "Search, read and question your haiku.rag knowledge base from Claude Code.",
+  "author": {
+    "name": "Yiorgis Gozadinos",
+    "email": "ggozadinos@gmail.com"
+  },
+  "homepage": "https://ggozad.github.io/haiku.rag/mcp/",
+  "repository": "https://github.com/ggozad/haiku.rag",
+  "license": "MIT"
+}

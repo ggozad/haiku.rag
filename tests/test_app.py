@@ -31,10 +31,6 @@ def client():
 @pytest.fixture
 def app(tmp_path, client, monkeypatch):
     class StubHaikuRAG:
-        # run_mcp passes db_path positionally; every other caller uses kwargs.
-        def __init__(self, *args, **kwargs):
-            pass
-
         @classmethod
         def _covering(cls, *args, **kwargs):
             return cls()
@@ -707,6 +703,20 @@ async def test_run_mcp_http(app, client, monkeypatch):
     server.run_http_async.assert_awaited_once_with(
         transport="streamable-http", host="0.0.0.0", port=9001
     )
+
+
+async def test_run_mcp_hands_the_server_the_agents_switch(app, client, monkeypatch):
+    seen = {}
+
+    def fake_covering(scope, config, agents=True):
+        seen["agents"] = agents
+        return AsyncMock()
+
+    monkeypatch.setattr("haiku.rag.app._mcp_server_covering", fake_covering)
+
+    await app.run_mcp(transport="stdio", agents=False)
+
+    assert seen["agents"] is False
 
 
 async def test_run_mcp_survives_interruption(app, client, monkeypatch):

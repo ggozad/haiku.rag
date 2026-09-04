@@ -2,8 +2,24 @@
 
 ## [Unreleased]
 
+### Added
+
+- Claude Code plugin under `claude-plugin/`: the server configuration and the
+  `haiku-rag` skill. `claude plugin marketplace add ggozad/haiku.rag`, then
+  `claude plugin install haiku-rag`.
+- `haiku-rag mcp --no-agents` leaves `ask_question` and `analyze`
+  unregistered. `create_mcp_server(agents=)`, `HaikuRAGApp.run_mcp(agents=)`.
+- MCP tools `get_document_outline` (heading tree with page numbers) and
+  `get_document_section` (one section's text, subsections included), built
+  on `document_items`. `build_toc` in `haiku.rag.context`.
+- MCP server `instructions`, `version`, and read-only `ToolAnnotations` on
+  every tool; every parameter carries a description. `filter` on
+  `search_documents` and `search_documents_by_image`. `DocumentInfo.metadata`.
+
 ### Changed
 
+- `fastmcp>=4.0.2,<5.0.0`, on MCP Python SDK 2. The MCP server answers both the
+  session-based and the sessionless (2026-07-28) protocol.
 - Default models are `ollama:qwen3.8`: `ModelConfig`, `qa.model`,
   `processing.title_model` (was `ollama:gpt-oss`) and
   `processing.conversion_options.picture_description.model` (was
@@ -16,6 +32,35 @@
 - `processing.conversion_options.picture_description.model` defaults to
   `enable_thinking: false`, and the field now reaches the VLM: docling's
   picture-description request carries `reasoning_effort` in `params`.
+- MCP `search_documents` and `search_documents_by_image` expand results to
+  their section (`HaikuRAG.expand_context`) and return the agent rendering
+  as text (rank, `Document ID`, `Collection` over several databases, title,
+  headings, the matched chunk's metadata, passage) and pictures as
+  `ImageContent` blocks, with no structured content.
+  `SearchResult.format_for_agent(include_document_id=, include_chunk_meta=)`;
+  `collect_pictures` in `haiku.rag.tools.search`.
+- MCP tools raise on failure; an empty result no longer doubles as an error.
+  Unknown document, unknown collection, invalid filter and invalid base64
+  carry a message; `ask_question` and `analyze` failures name the exception
+  type. Anything else is masked (`mask_error_details=True`) and logged
+  server-side.
+- `haiku-rag mcp` covers the configured `lancedb.databases` set. `sources` on
+  `search_documents`, `search_documents_by_image`, `ask_question` and
+  `analyze`; `source` on `get_document`; an unknown name is a tool error.
+  `DocumentInfo.source`; citations name their database when the server
+  covers several. `format_citations(citations, include_source=False)`.
+
+### Fixed
+
+- MCP citations no longer repeat the URI of an untitled document.
+
+### Removed
+
+- `cite` on the MCP `ask_question` tool; citations are always appended.
+- MCP write tools `add_document_from_file`, `add_document_from_url`,
+  `add_document_from_text` and `delete_document`. The server opens the
+  database read-only; ingest with `haiku-rag add`, `add-src`, `delete` or
+  `haiku-ingester`. `create_mcp_server` loses `read_only`.
 
 ## [0.82.1] - 2026-09-03
 

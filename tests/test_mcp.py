@@ -1,10 +1,17 @@
+import logging
+import re
+from pathlib import Path
+from types import SimpleNamespace
+
 import pytest
+from fastmcp.exceptions import ToolError
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.mcp import _covering as _mcp_covering
 from haiku.rag.mcp import create_mcp_server
 from haiku.rag.store.models import Chunk, Document, SearchResult
 from haiku.rag.tools.document import DocumentInfo
+from tests.multi_db.helpers import _config, _seed, _seed_expandable
 
 
 @pytest.fixture(autouse=True)
@@ -30,6 +37,22 @@ def mock_embedder(monkeypatch):
 
 
 @pytest.fixture
+def multimodal_embedder(monkeypatch):
+    """An embedder reporting image support, so the image-query tool registers."""
+    from haiku.rag.embeddings import EmbedderWrapper
+
+    class StubMultimodal(EmbedderWrapper):
+        supports_images = True
+
+        def __init__(self):
+            super().__init__(embedder=None, vector_dim=2560)
+
+    monkeypatch.setattr(
+        "haiku.rag.embeddings.get_embedder", lambda *a, **kw: StubMultimodal()
+    )
+
+
+@pytest.fixture
 async def mcp_db(temp_db_path):
     """Create a test database with sample documents."""
     async with HaikuRAG(temp_db_path, create=True) as rag:
@@ -37,6 +60,7 @@ async def mcp_db(temp_db_path):
             "Artificial intelligence is transforming industries worldwide.",
             title="AI Overview",
             uri="test://ai-overview",
+            metadata={"author": "Ada"},
         )
         await rag.create_document(
             "Machine learning is a subset of artificial intelligence.",
@@ -46,38 +70,105 @@ async def mcp_db(temp_db_path):
     return temp_db_path
 
 
+@pytest.fixture
+async def two_dbs(tmp_path):
+    """Two configured databases, alpha and beta, one document each."""
+    config = _config(tmp_path, ["alpha", "beta"])
+    await _seed(config, "alpha", ["alpha document about cats"])
+    await _seed(config, "beta", ["beta document about cats"])
+    return config
+
+
+def _covering_all(config):
+    from haiku.rag.client.scope import DatabaseScope
+
+    return _mcp_covering(DatabaseScope.resolve(config), config)
+
+
 async def _get_tool(mcp, name):
     """Get a tool function from an MCP server by name."""
     tool = await mcp.get_tool(name)
     return tool.fn
 
 
+async def _call(mcp, name, **kwargs):
+    """Call a tool over the wire, returning the result whether or not it errored."""
+    from fastmcp import Client
+
+    async with Client(mcp) as client:
+        return await client.call_tool(name, kwargs, raise_on_error=False)
+
+
+def _results(tool_result) -> list[dict]:
+    """A tool's structured result list, as the client sees it."""
+    return tool_result.structured_content["result"]
+
+
+_HEADER = re.compile(r"^\[[^\]]+\] \[rank \d+ of \d+\]$", re.MULTILINE)
+
+
+def _rendered(search_result) -> list[str]:
+    """The result blocks of a search, split from the text the model reads."""
+    text = search_result.content[0].text
+    starts = [match.start() for match in _HEADER.finditer(text)]
+    return [text[a:b].strip() for a, b in zip(starts, starts[1:] + [len(text)])]
+
+
+def _line(block: str, name: str) -> str | None:
+    """The value of a `Name: value` line in a rendered result, if present."""
+    match = re.search(rf"^{re.escape(name)}: (.+)$", block, re.MULTILINE)
+    return match.group(1) if match else None
+
+
+def _png_b64() -> str:
+    import base64
+    from io import BytesIO
+
+    from PIL import Image as PILImage
+
+    buf = BytesIO()
+    PILImage.new("RGB", (4, 4), "red").save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
+
+
 class TestMCPReadTools:
     @pytest.mark.asyncio
     async def test_search_documents(self, mcp_db):
-        mcp = create_mcp_server(mcp_db, read_only=True)
+        mcp = create_mcp_server(mcp_db)
         search = await _get_tool(mcp, "search_documents")
 
-        results = await search(query="artificial intelligence")
-        assert len(results) > 0
-        assert all(isinstance(r, SearchResult) for r in results)
+        blocks = _rendered(await search(query="artificial intelligence"))
+        assert blocks
+        assert all("Content:" in block for block in blocks)
 
     @pytest.mark.asyncio
     async def test_search_documents_with_limit(self, mcp_db):
-        mcp = create_mcp_server(mcp_db, read_only=True)
+        mcp = create_mcp_server(mcp_db)
         search = await _get_tool(mcp, "search_documents")
 
-        results = await search(query="artificial intelligence", limit=1)
-        assert len(results) == 1
+        blocks = _rendered(await search(query="artificial intelligence", limit=1))
+        assert len(blocks) == 1
 
     @pytest.mark.asyncio
     @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
-    async def test_search_documents_preserves_chunk_meta_through_serialization(
-        self, mcp_db
-    ):
-        """Chunk_meta must survive FastMCP's actual wire serialization.
+    async def test_search_documents_with_filter(self, mcp_db):
+        from fastmcp import Client
 
-        Calling the tool function directly bypasses that serialization step entirely."""
+        async with Client(create_mcp_server(mcp_db)) as client:
+            result = await client.call_tool(
+                "search_documents",
+                {"query": "artificial intelligence", "filter": "title = 'ML Basics'"},
+            )
+
+        blocks = _rendered(result)
+        assert blocks
+        assert all('"ML Basics"' in block for block in blocks)
+
+    @pytest.mark.asyncio
+    @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
+    async def test_search_documents_carries_the_matched_chunks_metadata(self, mcp_db):
+        """The chunk's own metadata reaches the text the model reads, over the
+        wire, without haiku.rag's structural keys."""
         from fastmcp import Client
 
         async with HaikuRAG(mcp_db, create=True) as rag:
@@ -93,21 +184,35 @@ class TestMCPReadTools:
             )
             await rag.store.chunks_table.optimize()
 
-        mcp = create_mcp_server(mcp_db, read_only=True)
+        mcp = create_mcp_server(mcp_db)
         async with Client(mcp) as client:
             result = await client.call_tool(
                 "search_documents", {"query": "artificial intelligence"}
             )
 
-        results = result.structured_content["result"]
-        assert results
-        assert any(
-            r["chunk_meta"] == {"fake-metadata-for-testing": "42"} for r in results
-        )
+        text = result.content[0].text
+        assert "fake-metadata-for-testing" in text
+        assert "42" in text
+        assert "doc_item_refs" not in text
+        assert result.structured_content is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
+    async def test_search_results_come_expanded(self, tmp_path):
+        """The passage is the hit in its section, as the in-process agents read
+        it, not the chunk that matched."""
+        config = _config(tmp_path, ["alpha"])
+        sentences = ["Gardens need water.", "Roses need pruning.", "Tulips need sun."]
+        await _seed_expandable(config, "alpha", sentences)
+
+        result = await _call(_covering_all(config), "search_documents", query="gardens")
+
+        [hit] = _rendered(result)
+        assert all(sentence in hit for sentence in sentences)
 
     @pytest.mark.asyncio
     async def test_get_document(self, mcp_db):
-        mcp = create_mcp_server(mcp_db, read_only=True)
+        mcp = create_mcp_server(mcp_db)
         get_doc = await _get_tool(mcp, "get_document")
 
         # First get the ID via list
@@ -122,7 +227,7 @@ class TestMCPReadTools:
 
     @pytest.mark.asyncio
     async def test_get_document_excludes_docling_fields(self, mcp_db):
-        mcp = create_mcp_server(mcp_db, read_only=True)
+        mcp = create_mcp_server(mcp_db)
         get_doc = await _get_tool(mcp, "get_document")
 
         list_docs = await _get_tool(mcp, "list_documents")
@@ -135,16 +240,8 @@ class TestMCPReadTools:
         assert "docling_version" not in serialized
 
     @pytest.mark.asyncio
-    async def test_get_document_not_found(self, mcp_db):
-        mcp = create_mcp_server(mcp_db, read_only=True)
-        get_doc = await _get_tool(mcp, "get_document")
-
-        result = await get_doc(document_id="nonexistent-id")
-        assert result is None
-
-    @pytest.mark.asyncio
     async def test_list_documents(self, mcp_db):
-        mcp = create_mcp_server(mcp_db, read_only=True)
+        mcp = create_mcp_server(mcp_db)
         list_docs = await _get_tool(mcp, "list_documents")
 
         results = await list_docs()
@@ -153,7 +250,7 @@ class TestMCPReadTools:
 
     @pytest.mark.asyncio
     async def test_list_documents_with_limit(self, mcp_db):
-        mcp = create_mcp_server(mcp_db, read_only=True)
+        mcp = create_mcp_server(mcp_db)
         list_docs = await _get_tool(mcp, "list_documents")
 
         results = await list_docs(limit=1)
@@ -161,74 +258,645 @@ class TestMCPReadTools:
 
     @pytest.mark.asyncio
     async def test_list_documents_with_filter(self, mcp_db):
-        mcp = create_mcp_server(mcp_db, read_only=True)
+        mcp = create_mcp_server(mcp_db)
         list_docs = await _get_tool(mcp, "list_documents")
 
         results = await list_docs(filter="title = 'AI Overview'")
         assert len(results) == 1
         assert results[0].title == "AI Overview"
 
-
-class TestMCPWriteTools:
     @pytest.mark.asyncio
-    async def test_write_tools_registered_when_not_read_only(self, temp_db_path):
-        async with HaikuRAG(temp_db_path, create=True):
-            pass
-        mcp = create_mcp_server(temp_db_path, read_only=False)
-        tools = await mcp.list_tools()
-        tool_names = [t.name for t in tools]
-        assert "add_document_from_text" in tool_names
-        assert "add_document_from_file" in tool_names
-        assert "add_document_from_url" in tool_names
-        assert "delete_document" in tool_names
+    @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
+    async def test_list_documents_carries_metadata(self, mcp_db):
+        from fastmcp import Client
 
-    @pytest.mark.asyncio
-    async def test_write_tools_not_registered_when_read_only(self, temp_db_path):
-        async with HaikuRAG(temp_db_path, create=True):
-            pass
-        mcp = create_mcp_server(temp_db_path, read_only=True)
-        tools = await mcp.list_tools()
-        tool_names = [t.name for t in tools]
-        assert "add_document_from_text" not in tool_names
-        assert "delete_document" not in tool_names
+        async with Client(create_mcp_server(mcp_db)) as client:
+            result = await client.call_tool("list_documents", {})
+
+        [overview] = [
+            d
+            for d in result.structured_content["result"]
+            if d["title"] == "AI Overview"
+        ]
+        assert overview["metadata"] == {"author": "Ada"}
 
     @pytest.mark.asyncio
-    async def test_add_document_from_text(self, temp_db_path):
-        async with HaikuRAG(temp_db_path, create=True):
-            pass
-        mcp = create_mcp_server(temp_db_path, read_only=False)
-        add_text = await _get_tool(mcp, "add_document_from_text")
+    async def test_ask_question_appends_the_citations(self, mcp_db, monkeypatch):
+        from haiku.rag.store.models.citation import Citation
 
-        doc_id = await add_text(content="Test content for MCP", title="MCP Test Doc")
-        assert doc_id is not None
+        citation = Citation(
+            chunk_id="c1",
+            document_id="d1",
+            content="cited text",
+            document_uri="test://ai-overview",
+            document_title="AI Overview",
+            source="alpha",
+        )
 
-        get_doc = await _get_tool(mcp, "get_document")
-        doc = await get_doc(document_id=doc_id)
-        assert doc.title == "MCP Test Doc"
-        assert doc.content == "Test content for MCP"
+        async def fake_ask(self, question, filter=None, images=None, sources=None):
+            return ("the answer", [citation])
+
+        monkeypatch.setattr(HaikuRAG, "ask", fake_ask)
+        mcp = create_mcp_server(mcp_db)
+        ask = await _get_tool(mcp, "ask_question")
+
+        answer = await ask(question="q")
+        assert answer.startswith("the answer")
+        assert "AI Overview" in answer
+        # One database: its name adds nothing.
+        assert "alpha" not in answer
+
+
+@pytest.fixture
+async def outlined_db(temp_db_path):
+    """A database with one document whose items carry a heading hierarchy.
+
+    Rows are written through the repositories, so no embedder is involved.
+    Returns the path and the document id."""
+    from haiku.rag.store.models.document import Document as DocumentModel
+    from haiku.rag.store.models.document_item import DocumentItem
+
+    def header(pos, level, text):
+        return DocumentItem(
+            document_id="",
+            position=pos,
+            self_ref=f"#/texts/{pos}",
+            label="section_header",
+            text=text,
+            page_numbers=[pos // 4 + 1],
+            heading_level=level,
+        )
+
+    def para(pos):
+        return DocumentItem(
+            document_id="",
+            position=pos,
+            self_ref=f"#/texts/{pos}",
+            label="paragraph",
+            text=f"para{pos}",
+            page_numbers=[pos // 4 + 1],
+        )
+
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        doc = await rag.document_repository.create(
+            DocumentModel(content="x", uri="test://outlined", title="Outlined")
+        )
+        items = [
+            header(0, 1, "Intro"),
+            para(1),
+            header(2, 2, "Background"),
+            para(3),
+            header(4, 3, "Prior Work"),
+            para(5),
+            header(6, 2, "Approach"),
+            para(7),
+            header(8, 1, "Methods"),
+            para(9),
+        ]
+        for item in items:
+            item.document_id = doc.id
+        await rag.document_item_repository.create_items(doc.id, items)
+    return temp_db_path, doc.id
+
+
+class TestMCPDocumentNavigation:
+    @pytest.mark.asyncio
+    async def test_the_outline_nests_headings_by_level(self, outlined_db):
+        db, doc_id = outlined_db
+        outline = await _get_tool(create_mcp_server(db), "get_document_outline")
+
+        roots = await outline(document_id=doc_id)
+
+        assert [n.title for n in roots] == ["Intro", "Methods"]
+        intro = roots[0]
+        assert (intro.id, intro.level, intro.page_numbers) == ("#/texts/0", 1, [1])
+        assert [c.title for c in intro.children] == ["Background", "Approach"]
+        assert [c.title for c in intro.children[0].children] == ["Prior Work"]
+        assert intro.children[0].children[0].level == 3
+        assert roots[1].children == []
 
     @pytest.mark.asyncio
-    async def test_delete_document(self, mcp_db):
-        mcp = create_mcp_server(mcp_db, read_only=False)
+    async def test_a_document_without_headings_has_an_empty_outline(self, mcp_db):
+        mcp = create_mcp_server(mcp_db)
+        [doc] = await (await _get_tool(mcp, "list_documents"))(limit=1)
+        outline = await _get_tool(mcp, "get_document_outline")
+
+        assert await outline(document_id=doc.id) == []
+
+    @pytest.mark.asyncio
+    async def test_a_section_covers_its_subsections_and_stops_at_its_sibling(
+        self, outlined_db
+    ):
+        db, doc_id = outlined_db
+        section = await _get_tool(create_mcp_server(db), "get_document_section")
+
+        background = await section(document_id=doc_id, section_id="#/texts/2")
+
+        assert background.title == "Background"
+        assert background.content.split("\n\n") == [
+            "Background",
+            "para3",
+            "Prior Work",
+            "para5",
+        ]
+        assert background.page_numbers == [1]
+
+        intro = await section(document_id=doc_id, section_id="#/texts/0")
+        assert intro.content.startswith("Intro")
+        assert "para7" in intro.content
+        assert "Methods" not in intro.content
+
+    @pytest.mark.asyncio
+    async def test_an_unknown_section_or_document_is_an_error(self, outlined_db):
+        db, doc_id = outlined_db
+        mcp = create_mcp_server(db)
+        section = await _get_tool(mcp, "get_document_section")
+        outline = await _get_tool(mcp, "get_document_outline")
+
+        with pytest.raises(ToolError, match="#/texts/99"):
+            await section(document_id=doc_id, section_id="#/texts/99")
+        with pytest.raises(ToolError, match="nonexistent-id"):
+            await outline(document_id="nonexistent-id")
+        with pytest.raises(ToolError, match="nonexistent-id"):
+            await section(document_id="nonexistent-id", section_id="#/texts/0")
+
+    @pytest.mark.asyncio
+    @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
+    async def test_outline_and_section_serialize_over_the_wire(self, outlined_db):
+        db, doc_id = outlined_db
+        mcp = create_mcp_server(db)
+
+        outline = await _call(mcp, "get_document_outline", document_id=doc_id)
+        section = await _call(
+            mcp, "get_document_section", document_id=doc_id, section_id="#/texts/8"
+        )
+
+        assert not outline.is_error and not section.is_error
+        [intro, methods] = outline.structured_content["result"]
+        assert set(intro) == {"id", "title", "level", "page_numbers", "children"}
+        assert intro["children"][0]["children"][0]["title"] == "Prior Work"
+        assert set(section.structured_content) == {
+            "id",
+            "title",
+            "page_numbers",
+            "content",
+        }
+        assert section.structured_content["content"] == "Methods\n\npara9"
+
+    @pytest.mark.asyncio
+    async def test_source_routes_to_the_database_holding_the_document(self, two_dbs):
+        from haiku.rag.store.models.document_item import DocumentItem
+
+        async with HaikuRAG(config=two_dbs, sources=["beta"]) as beta:
+            [doc] = await beta.list_documents()
+            await beta.document_item_repository.create_items(
+                doc.id,
+                [
+                    DocumentItem(
+                        document_id=doc.id,
+                        position=0,
+                        self_ref="#/texts/0",
+                        label="section_header",
+                        text="Only in beta",
+                        heading_level=1,
+                    )
+                ],
+            )
+        mcp = _covering_all(two_dbs)
+        outline = await _get_tool(mcp, "get_document_outline")
+        section = await _get_tool(mcp, "get_document_section")
+
+        named = await outline(document_id=doc.id, source="beta")
+        found = await outline(document_id=doc.id)
+        assert [n.title for n in named] == [n.title for n in found] == ["Only in beta"]
+        assert (
+            await section(document_id=doc.id, section_id="#/texts/0", source="beta")
+        ).title == "Only in beta"
+        with pytest.raises(ToolError, match="nope"):
+            await outline(document_id=doc.id, source="nope")
+        with pytest.raises(ToolError, match=doc.id):
+            await outline(document_id=doc.id, source="alpha")
+
+
+@pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
+class TestMCPSearchResultShape:
+    """Text as the in-process agents read it, one image per distinct picture,
+    and the results as structured content without picture bytes."""
+
+    @staticmethod
+    def _serve(monkeypatch, results):
+        async def fake_search(self, *args, **kwargs):
+            return results
+
+        monkeypatch.setattr(HaikuRAG, "search", fake_search)
+
+    @pytest.mark.asyncio
+    async def test_text_ranks_then_one_image_per_distinct_picture(
+        self, mcp_db, monkeypatch
+    ):
+        from mcp.types import ImageContent, TextContent
+
+        shared = {"#/pictures/0": _png_b64()}
+        self._serve(
+            monkeypatch,
+            [
+                SearchResult(
+                    content="a",
+                    score=0.9,
+                    chunk_id="c1",
+                    document_id="d1",
+                    image_data=shared,
+                ),
+                SearchResult(
+                    content="b",
+                    score=0.8,
+                    chunk_id="c2",
+                    document_id="d1",
+                    image_data=shared,
+                ),
+                SearchResult(
+                    content="c",
+                    score=0.7,
+                    chunk_id="c3",
+                    document_id="d2",
+                    image_data={"#/pictures/3": _png_b64()},
+                ),
+            ],
+        )
+
+        result = await _call(create_mcp_server(mcp_db), "search_documents", query="q")
+
+        text, *rest = result.content
+        assert isinstance(text, TextContent)
+        assert "[rank 1 of 3]" in text.text and "[rank 3 of 3]" in text.text
+        assert "score" not in text.text
+        assert "Document ID: d1" in text.text
+        images = [block for block in rest if isinstance(block, ImageContent)]
+        labels = [block.text for block in rest if isinstance(block, TextContent)]
+        assert len(images) == 2
+        assert all(image.mime_type == "image/png" for image in images)
+        assert [
+            label for label in labels if "[c1]" in label and "#/pictures/0" in label
+        ]
+        assert [
+            label for label in labels if "[c3]" in label and "#/pictures/3" in label
+        ]
+        assert [block.split("]")[0] for block in _rendered(result)] == [
+            "[c1",
+            "[c2",
+            "[c3",
+        ]
+        assert result.structured_content is None
+
+    @pytest.mark.asyncio
+    async def test_an_undecodable_picture_yields_no_image(self, mcp_db, monkeypatch):
+        import base64
+
+        self._serve(
+            monkeypatch,
+            [
+                SearchResult(
+                    content="a",
+                    score=0.9,
+                    chunk_id="c1",
+                    document_id="d1",
+                    image_data={
+                        "#/pictures/0": base64.b64encode(b"not a png").decode()
+                    },
+                )
+            ],
+        )
+
+        result = await _call(create_mcp_server(mcp_db), "search_documents", query="q")
+
+        assert len(result.content) == 1
+        assert "[rank 1 of 1]" in result.content[0].text
+
+    @pytest.mark.asyncio
+    async def test_no_results_says_so(self, mcp_db, monkeypatch):
+        self._serve(monkeypatch, [])
+
+        result = await _call(create_mcp_server(mcp_db), "search_documents", query="q")
+
+        assert [block.text for block in result.content] == ["No results found."]
+        assert result.structured_content is None
+
+    @pytest.mark.asyncio
+    async def test_search_text_alone_drives_the_document_tools(self, two_dbs):
+        """Over two databases, every result's `Document ID` and `Collection`
+        parsed from the text are working arguments for the outline and
+        section tools."""
+        import re
+
+        from haiku.rag.store.models.document_item import DocumentItem
+
+        for name in ("alpha", "beta"):
+            async with HaikuRAG(config=two_dbs, sources=[name]) as rag:
+                [doc] = await rag.list_documents()
+                await rag.document_item_repository.create_items(
+                    doc.id,
+                    [
+                        DocumentItem(
+                            document_id=doc.id,
+                            position=0,
+                            self_ref="#/texts/0",
+                            label="section_header",
+                            text=f"Heading in {name}",
+                            heading_level=1,
+                        )
+                    ],
+                )
+        mcp = _covering_all(two_dbs)
+
+        search = await _call(mcp, "search_documents", query="cats")
+        pairs = re.findall(
+            r"Document ID: (\S+)\nCollection: (\S+)", search.content[0].text
+        )
+
+        assert len(pairs) == len(_rendered(search)) == 2
+        assert {source for _, source in pairs} == {"alpha", "beta"}
+        for document_id, source in pairs:
+            outline = await _call(
+                mcp, "get_document_outline", document_id=document_id, source=source
+            )
+            [node] = _results(outline)
+            section = await _call(
+                mcp,
+                "get_document_section",
+                document_id=document_id,
+                section_id=node["id"],
+                source=source,
+            )
+            assert section.structured_content["title"] == f"Heading in {source}"
+
+
+@pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
+class TestMCPDescribesItself:
+    """What a client learns from initialize and list_tools, over the wire."""
+
+    @pytest.mark.asyncio
+    async def test_instructions_and_version_are_set(self, mcp_db):
+        from importlib import metadata
+
+        from fastmcp import Client
+
+        async with Client(create_mcp_server(mcp_db)) as client:
+            instructions = client.instructions
+            server_info = client.server_info
+
+        assert instructions
+        assert server_info is not None
+        assert server_info.version == metadata.version("haiku.rag-slim")
+
+    @pytest.mark.asyncio
+    async def test_instructions_name_the_collections_when_covering_several(
+        self, two_dbs
+    ):
+        from fastmcp import Client
+
+        from haiku.rag.client.scope import DatabaseScope
+
+        async with Client(_covering_all(two_dbs)) as client:
+            covering_both = client.instructions
+        one = DatabaseScope.resolve(two_dbs, database_name="alpha")
+        async with Client(_mcp_covering(one, two_dbs)) as client:
+            covering_one = client.instructions
+
+        assert "alpha" in covering_both
+        assert "beta" in covering_both
+        assert "beta" not in covering_one
+
+    @pytest.mark.asyncio
+    async def test_instructions_without_agents_drop_only_their_clause(self, mcp_db):
+        from fastmcp import Client
+
+        async with Client(create_mcp_server(mcp_db)) as client:
+            full = client.instructions.splitlines()
+        async with Client(create_mcp_server(mcp_db, agents=False)) as client:
+            without = client.instructions.splitlines()
+
+        assert set(without) < set(full)
+        assert len(without) == len(full) - 1
+
+    @pytest.mark.asyncio
+    async def test_instructions_carry_the_domain_preamble(self, mcp_db):
+        from fastmcp import Client
+
+        from haiku.rag.config import get_config
+
+        config = get_config().model_copy(deep=True)
+        config.prompts.domain_preamble = "Everything here is about zebras."
+
+        async with Client(create_mcp_server(mcp_db, config=config)) as client:
+            with_preamble = client.instructions
+        async with Client(create_mcp_server(mcp_db)) as client:
+            without = client.instructions
+
+        assert "Everything here is about zebras." in with_preamble
+        assert "zebras" not in without
+
+    @pytest.mark.asyncio
+    async def test_every_tool_is_annotated_read_only(self, mcp_db, multimodal_embedder):
+        from fastmcp import Client
+
+        async with Client(create_mcp_server(mcp_db)) as client:
+            tools = await client.list_tools()
+
+        assert len(tools) == 8
+        for tool in tools:
+            assert tool.annotations is not None, tool.name
+            assert tool.annotations.read_only_hint is True, tool.name
+            assert tool.annotations.open_world_hint is False, tool.name
+            assert tool.annotations.title, tool.name
+
+    @pytest.mark.asyncio
+    async def test_every_parameter_is_described(self, mcp_db, multimodal_embedder):
+        from fastmcp import Client
+
+        async with Client(create_mcp_server(mcp_db)) as client:
+            tools = await client.list_tools()
+
+        undescribed = [
+            f"{tool.name}.{name}"
+            for tool in tools
+            for name, schema in tool.input_schema.get("properties", {}).items()
+            if not schema.get("description")
+        ]
+        assert len(tools) == 8
+        assert undescribed == []
+
+
+class TestMCPToolSet:
+    @pytest.mark.asyncio
+    async def test_the_server_registers_read_tools_only(self, mcp_db):
+        mcp = create_mcp_server(mcp_db)
+
+        assert {t.name for t in await mcp.list_tools()} == {
+            "search_documents",
+            "get_document",
+            "get_document_outline",
+            "get_document_section",
+            "list_documents",
+            "ask_question",
+            "analyze",
+        }
+
+    @pytest.mark.asyncio
+    async def test_without_agents_the_agent_tools_are_not_registered(self, mcp_db):
+        mcp = create_mcp_server(mcp_db, agents=False)
+
+        assert {t.name for t in await mcp.list_tools()} == {
+            "search_documents",
+            "get_document",
+            "get_document_outline",
+            "get_document_section",
+            "list_documents",
+        }
+
+
+class TestMCPCoversTheConfiguredSet:
+    @pytest.mark.asyncio
+    async def test_results_name_the_database_they_came_from(self, two_dbs):
+        mcp = _covering_all(two_dbs)
+        search = await _get_tool(mcp, "search_documents")
+
+        blocks = _rendered(await search(query="cats"))
+
+        assert {_line(block, "Collection") for block in blocks} == {"alpha", "beta"}
+
+    @pytest.mark.asyncio
+    async def test_sources_narrows_the_search(self, two_dbs):
+        mcp = _covering_all(two_dbs)
+        search = await _get_tool(mcp, "search_documents")
+
+        blocks = _rendered(await search(query="cats", sources=["beta"]))
+
+        assert blocks
+        assert {_line(block, "Collection") for block in blocks} == {"beta"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "tool_name,kwargs",
+        [
+            ("search_documents", {"query": "cats", "sources": ["nope"]}),
+            (
+                "search_documents_by_image",
+                {"image_base64": "AAAA", "sources": ["nope"]},
+            ),
+            ("get_document", {"document_id": "x", "source": "nope"}),
+            ("ask_question", {"question": "q", "sources": ["nope"]}),
+            ("analyze", {"question": "q", "sources": ["nope"]}),
+        ],
+    )
+    async def test_an_unknown_database_is_an_error_not_an_empty_result(
+        self, two_dbs, multimodal_embedder, tool_name, kwargs
+    ):
+        mcp = _covering_all(two_dbs)
+        tool = await _get_tool(mcp, tool_name)
+
+        with pytest.raises(ToolError, match="nope"):
+            await tool(**kwargs)
+
+    @pytest.mark.asyncio
+    async def test_a_filtered_search_touches_only_the_selected_databases(self, two_dbs):
+        """alpha is gone; a filtered search selecting beta must not notice."""
+        import shutil
+
+        shutil.rmtree(two_dbs.lancedb.databases["alpha"])
+        mcp = _covering_all(two_dbs)
+        search = await _get_tool(mcp, "search_documents")
+
+        blocks = _rendered(
+            await search(query="cats", filter="uri LIKE '%beta%'", sources=["beta"])
+        )
+        assert blocks
+        assert {_line(block, "Collection") for block in blocks} == {"beta"}
+        none = await search(query="cats", filter="uri LIKE '%beta%'", sources=[])
+        assert _rendered(none) == []
+
+    @pytest.mark.asyncio
+    async def test_the_listing_covers_every_database(self, two_dbs):
+        mcp = _covering_all(two_dbs)
         list_docs = await _get_tool(mcp, "list_documents")
-        delete_doc = await _get_tool(mcp, "delete_document")
 
-        docs = await list_docs()
-        assert len(docs) == 2
+        documents = await list_docs()
 
-        result = await delete_doc(document_id=docs[0].id)
-        assert result is True
-
-        docs_after = await list_docs()
-        assert len(docs_after) == 1
+        assert {d.source for d in documents} == {"alpha", "beta"}
 
     @pytest.mark.asyncio
-    async def test_delete_document_not_found(self, mcp_db):
-        mcp = create_mcp_server(mcp_db, read_only=False)
-        delete_doc = await _get_tool(mcp, "delete_document")
+    async def test_get_document_reaches_whichever_database_holds_it(self, two_dbs):
+        mcp = _covering_all(two_dbs)
+        list_docs = await _get_tool(mcp, "list_documents")
+        get_doc = await _get_tool(mcp, "get_document")
+        [beta] = [d for d in await list_docs() if d.source == "beta"]
 
-        result = await delete_doc(document_id="nonexistent-id")
-        assert result is False
+        found = await get_doc(document_id=beta.id)
+        named = await get_doc(document_id=beta.id, source="beta")
+
+        assert found.id == named.id == beta.id
+        assert found.source == named.source == "beta"
+
+    @pytest.mark.asyncio
+    async def test_the_public_factory_covers_a_configured_set(self, two_dbs):
+        mcp = create_mcp_server(config=two_dbs)
+        search = await _get_tool(mcp, "search_documents")
+
+        blocks = _rendered(await search(query="cats"))
+
+        assert {_line(block, "Collection") for block in blocks} == {"alpha", "beta"}
+
+    @pytest.mark.asyncio
+    async def test_ask_question_names_each_citations_database(
+        self, two_dbs, monkeypatch
+    ):
+        from haiku.rag.store.models.citation import Citation
+
+        def cited(source):
+            return Citation(
+                chunk_id="c1",
+                document_id="d1",
+                content="cited text",
+                document_uri="test://cats",
+                document_title="Cats",
+                source=source,
+            )
+
+        async def fake_ask(self, question, filter=None, images=None, sources=None):
+            return ("the answer", [cited("alpha"), cited("beta")])
+
+        monkeypatch.setattr(HaikuRAG, "ask", fake_ask)
+        mcp = _covering_all(two_dbs)
+        ask = await _get_tool(mcp, "ask_question")
+
+        answer = await ask(question="q")
+
+        assert "alpha" in answer
+        assert "beta" in answer
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "tool_name,client_method,returns",
+        [
+            ("ask_question", "ask", ("answer", [])),
+            ("analyze", "analyze", SimpleNamespace(answer="answer")),
+        ],
+    )
+    async def test_agents_search_the_selected_databases(
+        self, two_dbs, monkeypatch, tool_name, client_method, returns
+    ):
+        seen = {}
+
+        async def fake(self, question, filter=None, images=None, sources=None):
+            seen["sources"] = sources
+            return returns
+
+        monkeypatch.setattr(HaikuRAG, client_method, fake)
+        mcp = _covering_all(two_dbs)
+        tool = await _get_tool(mcp, tool_name)
+
+        await tool(question="q", sources=["beta"])
+
+        assert seen["sources"] == ["beta"]
 
 
 class TestMCPImageQuery:
@@ -237,72 +905,62 @@ class TestMCPImageQuery:
     @pytest.mark.asyncio
     async def test_image_query_tool_absent_for_text_only_embedder(self, mcp_db):
         """Default text-only embedder must not expose the image-query tool."""
-        mcp = create_mcp_server(mcp_db, read_only=True)
+        mcp = create_mcp_server(mcp_db)
         names = {t.name for t in await mcp.list_tools()}
         assert "search_documents_by_image" not in names
 
     @pytest.mark.asyncio
     async def test_image_query_tool_registered_for_multimodal_embedder(
-        self, mcp_db, monkeypatch
+        self, mcp_db, multimodal_embedder, monkeypatch
     ):
         """When the embedder reports supports_images=True, the tool exists
-        and routes a base64 image through ``client.search``."""
-        from haiku.rag.embeddings import EmbedderWrapper
+        and routes the decoded image and the selection through ``client.search``."""
+        seen = {}
 
-        class StubMultimodal(EmbedderWrapper):
-            supports_images = True
+        async def fake_search(self, query, **kwargs):
+            seen.update(query=query, **kwargs)
+            return []
 
-            def __init__(self):
-                super().__init__(embedder=None, vector_dim=2560)
+        monkeypatch.setattr(HaikuRAG, "search", fake_search)
 
-            async def embed_image(self, image):
-                # Produce a deterministic-ish vector of the right dim.
-                return [0.0] * 2560
-
-        monkeypatch.setattr(
-            "haiku.rag.embeddings.get_embedder",
-            lambda *a, **kw: StubMultimodal(),
-        )
-
-        mcp = create_mcp_server(mcp_db, read_only=True)
+        mcp = create_mcp_server(mcp_db)
         names = {t.name for t in await mcp.list_tools()}
         assert "search_documents_by_image" in names
 
         search_by_image = await _get_tool(mcp, "search_documents_by_image")
-        # Standalone PNG header (won't decode to a real image but our stub doesn't care).
         import base64
 
-        png_b64 = base64.b64encode(b"\x89PNG\r\n\x1a\n").decode("ascii")
-        results = await search_by_image(image_base64=png_b64)
-        # Empty list is fine (the stub vector won't match the toy fixture).
-        assert isinstance(results, list)
-
-    @pytest.mark.asyncio
-    async def test_image_query_returns_empty_on_invalid_base64(
-        self, mcp_db, monkeypatch
-    ):
-        """Garbage base64 from the caller is swallowed, returning an empty
-        list rather than crashing the MCP server."""
-        from haiku.rag.embeddings import EmbedderWrapper
-
-        class StubMultimodal(EmbedderWrapper):
-            supports_images = True
-
-            def __init__(self):
-                super().__init__(embedder=None, vector_dim=2560)
-
-        monkeypatch.setattr(
-            "haiku.rag.embeddings.get_embedder",
-            lambda *a, **kw: StubMultimodal(),
+        png = b"\x89PNG\r\n\x1a\n"
+        results = await search_by_image(
+            image_base64=base64.b64encode(png).decode("ascii"),
+            filter="uri LIKE 'x%'",
+            sources=[],
         )
 
-        mcp = create_mcp_server(mcp_db, read_only=True)
+        assert _rendered(results) == []
+        assert seen["query"] == png
+        assert seen["filter"] == "uri LIKE 'x%'"
+        assert seen["sources"] == []
+
+    @pytest.mark.asyncio
+    async def test_image_query_rejects_characters_outside_the_alphabet(
+        self, mcp_db, multimodal_embedder, monkeypatch
+    ):
+        """A lenient decoder would drop the stray characters and search."""
+        searched = False
+
+        async def fake_search(self, query, **kwargs):
+            nonlocal searched
+            searched = True
+            return []
+
+        monkeypatch.setattr(HaikuRAG, "search", fake_search)
+        mcp = create_mcp_server(mcp_db)
         search_by_image = await _get_tool(mcp, "search_documents_by_image")
 
-        # Not valid base64 (contains non-base64 chars) — the strict decoder
-        # in search_documents_by_image rejects it.
-        results = await search_by_image(image_base64="!!! not base64 !!!")
-        assert results == []
+        with pytest.raises(ToolError):
+            await search_by_image(image_base64="AAAA!!!!")
+        assert not searched
 
 
 class TestMCPImageInput:
@@ -312,12 +970,12 @@ class TestMCPImageInput:
 
         captured = {}
 
-        async def fake_ask(self, question, filter=None, images=None):
+        async def fake_ask(self, question, filter=None, images=None, sources=None):
             captured["images"] = images
             return ("answer", [])
 
         monkeypatch.setattr(HaikuRAG, "ask", fake_ask)
-        mcp = create_mcp_server(mcp_db, read_only=True)
+        mcp = create_mcp_server(mcp_db)
         ask = await _get_tool(mcp, "ask_question")
 
         png = b"fake image bytes"
@@ -332,12 +990,12 @@ class TestMCPImageInput:
 
         captured = {}
 
-        async def fake_analyze(self, question, filter=None, images=None):
+        async def fake_analyze(self, question, filter=None, images=None, sources=None):
             captured["images"] = images
             return SimpleNamespace(answer="answer")
 
         monkeypatch.setattr(HaikuRAG, "analyze", fake_analyze)
-        mcp = create_mcp_server(mcp_db, read_only=True)
+        mcp = create_mcp_server(mcp_db)
         analyze = await _get_tool(mcp, "analyze")
 
         jpeg = b"fake jpeg bytes"
@@ -346,23 +1004,15 @@ class TestMCPImageInput:
         assert captured["images"] == [jpeg]
 
     @pytest.mark.asyncio
-    async def test_ask_question_rejects_invalid_base64(self, mcp_db):
-        mcp = create_mcp_server(mcp_db, read_only=True)
-        ask = await _get_tool(mcp, "ask_question")
-
-        result = await ask(question="q", images_base64=["!!! not base64 !!!"])
-        assert "Error" in result
-
-    @pytest.mark.asyncio
     async def test_ask_question_without_images_passes_none(self, mcp_db, monkeypatch):
         captured = {}
 
-        async def fake_ask(self, question, filter=None, images=None):
+        async def fake_ask(self, question, filter=None, images=None, sources=None):
             captured["images"] = images
             return ("answer", [])
 
         monkeypatch.setattr(HaikuRAG, "ask", fake_ask)
-        mcp = create_mcp_server(mcp_db, read_only=True)
+        mcp = create_mcp_server(mcp_db)
         ask = await _get_tool(mcp, "ask_question")
 
         result = await ask(question="q")
@@ -370,153 +1020,184 @@ class TestMCPImageInput:
         assert captured["images"] is None
 
 
-class TestMCPFileAndUrlIngestion:
+@pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
+class TestMCPErrorContract:
+    """A failure is an error on the wire, never an empty result. Expected
+    failures say what went wrong; anything else is masked and logged on the
+    server."""
+
     @pytest.mark.asyncio
-    async def test_add_document_from_file(self, temp_db_path, tmp_path):
-        async with HaikuRAG(temp_db_path, create=True):
-            pass
-        source = tmp_path / "note.txt"
-        source.write_text("Ingested from a file path.")
+    async def test_an_unknown_document_is_an_error(self, mcp_db):
+        result = await _call(
+            create_mcp_server(mcp_db), "get_document", document_id="nonexistent-id"
+        )
 
-        mcp = create_mcp_server(temp_db_path, read_only=False)
-        add_file = await _get_tool(mcp, "add_document_from_file")
-
-        doc_id = await add_file(file_path=str(source), title="File Doc")
-        assert doc_id is not None
-
-        get_doc = await _get_tool(mcp, "get_document")
-        doc = await get_doc(document_id=doc_id)
-        assert doc.title == "File Doc"
+        assert result.is_error
+        assert "nonexistent-id" in result.content[0].text
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "tool_name,kwargs",
-        [
-            ("add_document_from_file", {"file_path": "/tmp/x.txt"}),
-            ("add_document_from_url", {"url": "https://example.com/x.txt"}),
-        ],
+        [("search_documents", {"query": "x"}), ("list_documents", {})],
     )
-    @pytest.mark.parametrize(
-        "results,expected",
-        [
-            (
-                [Document(id="first", content="a"), Document(id="second", content="b")],
-                "first",
-            ),
-            ([], None),
-        ],
-        ids=["directory_reports_first_id", "empty_directory_reports_none"],
-    )
-    async def test_add_tools_handle_multi_document_sources(
-        self, mcp_db, monkeypatch, tool_name, kwargs, results, expected
+    async def test_an_invalid_filter_is_an_error_naming_the_filter(
+        self, mcp_db, tool_name, kwargs
     ):
-        """A source resolving to several documents reports the first id."""
-
-        async def fake_from_source(self, source, title=None, metadata=None, **kw):
-            return results
-
-        monkeypatch.setattr(HaikuRAG, "create_document_from_source", fake_from_source)
-        mcp = create_mcp_server(mcp_db, read_only=False)
-        add = await _get_tool(mcp, tool_name)
-
-        assert await add(**kwargs) == expected
-
-    @pytest.mark.asyncio
-    async def test_add_document_from_url(self, mcp_db, monkeypatch):
-        async def fake_from_source(self, source, title=None, metadata=None, **kwargs):
-            assert source == "https://example.com/doc.txt"
-            return Document(id="url-doc", content="fetched")
-
-        monkeypatch.setattr(HaikuRAG, "create_document_from_source", fake_from_source)
-        mcp = create_mcp_server(mcp_db, read_only=False)
-        add_url = await _get_tool(mcp, "add_document_from_url")
-
-        assert await add_url(url="https://example.com/doc.txt") == "url-doc"
-
-
-class TestMCPToolsDegradeOnError:
-    """Every tool swallows client failures and returns its empty value rather
-    than propagating an exception to the MCP transport."""
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "client_method,tool_name,kwargs,expected",
-        [
-            (
-                "create_document_from_source",
-                "add_document_from_file",
-                {"file_path": "/tmp/x.txt"},
-                None,
-            ),
-            (
-                "create_document_from_source",
-                "add_document_from_url",
-                {"url": "https://example.com/x"},
-                None,
-            ),
-            ("create_document", "add_document_from_text", {"content": "x"}, None),
-            ("delete_document", "delete_document", {"document_id": "x"}, False),
-            ("search", "search_documents", {"query": "x"}, []),
-            ("get_document_by_id", "get_document", {"document_id": "x"}, None),
-            ("list_documents", "list_documents", {}, []),
-        ],
-    )
-    async def test_tool_returns_empty_value_when_client_raises(
-        self, mcp_db, monkeypatch, client_method, tool_name, kwargs, expected
-    ):
-        async def boom(self, *args, **kw):
-            raise RuntimeError("client exploded")
-
-        monkeypatch.setattr(HaikuRAG, client_method, boom)
-        mcp = create_mcp_server(mcp_db, read_only=False)
-        tool = await _get_tool(mcp, tool_name)
-
-        assert await tool(**kwargs) == expected
-
-    @pytest.mark.asyncio
-    async def test_list_documents_returns_empty_for_invalid_filter(self, mcp_db):
-        mcp = create_mcp_server(mcp_db, read_only=True)
-        list_docs = await _get_tool(mcp, "list_documents")
-
-        assert await list_docs(filter="no_such_column = 1") == []
-
-    @pytest.mark.asyncio
-    async def test_analyze_reports_the_error(self, mcp_db, monkeypatch):
-        async def boom(self, question, filter=None, images=None):
-            raise RuntimeError("sandbox exploded")
-
-        monkeypatch.setattr(HaikuRAG, "analyze", boom)
-        mcp = create_mcp_server(mcp_db, read_only=True)
-        analyze = await _get_tool(mcp, "analyze")
-
-        assert "sandbox exploded" in await analyze(question="q")
-
-    @pytest.mark.asyncio
-    async def test_ask_question_appends_citations_when_requested(
-        self, mcp_db, monkeypatch
-    ):
-        from haiku.rag.store.models.citation import Citation
-
-        citation = Citation(
-            chunk_id="c1",
-            document_id="d1",
-            content="cited text",
-            document_uri="test://ai-overview",
-            document_title="AI Overview",
+        result = await _call(
+            create_mcp_server(mcp_db), tool_name, filter="no_such_column = 1", **kwargs
         )
 
-        async def fake_ask(self, question, filter=None, images=None):
-            return ("the answer", [citation])
+        assert result.is_error
+        assert "no_such_column = 1" in result.content[0].text
+        assert "created_at" in result.content[0].text
+        assert "_rowid" not in result.content[0].text
 
-        monkeypatch.setattr(HaikuRAG, "ask", fake_ask)
-        mcp = create_mcp_server(mcp_db, read_only=True)
-        ask = await _get_tool(mcp, "ask_question")
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("filter", [None, "title = 'AI Overview'"])
+    async def test_a_value_error_from_the_read_is_not_an_invalid_filter(
+        self, mcp_db, monkeypatch, filter
+    ):
+        """Only the filter check translates ValueError; one raised by the read
+        itself, with or without a valid filter, stays masked."""
 
-        with_cite = await ask(question="q", cite=True)
-        assert with_cite.startswith("the answer")
-        assert "AI Overview" in with_cite
+        async def boom(self, *args, **kw):
+            raise ValueError("boom at /secret/path")
 
-        assert await ask(question="q", cite=False) == "the answer"
+        monkeypatch.setattr(HaikuRAG, "search", boom)
+        result = await _call(
+            create_mcp_server(mcp_db), "search_documents", query="x", filter=filter
+        )
+
+        assert result.is_error
+        assert "filter" not in result.content[0].text
+        assert "/secret/path" not in result.content[0].text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "payload", ["!!! not base64 !!!", "é"], ids=["outside_alphabet", "non_ascii"]
+    )
+    @pytest.mark.parametrize(
+        "tool_name,image_param,many",
+        [
+            ("search_documents_by_image", "image_base64", False),
+            ("ask_question", "images_base64", True),
+            ("analyze", "images_base64", True),
+        ],
+    )
+    async def test_invalid_base64_is_an_error(
+        self, mcp_db, multimodal_embedder, tool_name, image_param, many, payload
+    ):
+        kwargs: dict[str, object] = {"question": "q"} if many else {}
+        kwargs[image_param] = [payload] if many else payload
+
+        result = await _call(create_mcp_server(mcp_db), tool_name, **kwargs)
+
+        assert result.is_error
+        assert "base64" in result.content[0].text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "client_method,tool_name",
+        [("ask", "ask_question"), ("analyze", "analyze")],
+    )
+    async def test_an_agent_failure_names_only_its_type(
+        self, mcp_db, monkeypatch, caplog, client_method, tool_name
+    ):
+        async def boom(self, question, filter=None, images=None, sources=None):
+            raise RuntimeError("boom at /secret/path")
+
+        monkeypatch.setattr(HaikuRAG, client_method, boom)
+        with caplog.at_level(logging.ERROR, logger="haiku.rag.mcp"):
+            result = await _call(create_mcp_server(mcp_db), tool_name, question="q")
+
+        assert result.is_error
+        assert "RuntimeError" in result.content[0].text
+        assert "/secret/path" not in result.content[0].text
+        assert any(
+            r.exc_info and "boom at /secret/path" in str(r.exc_info[1])
+            for r in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "client_method,tool_name,kwargs",
+        [
+            ("search", "search_documents", {"query": "x"}),
+            ("search", "search_documents_by_image", {"image_base64": "AAAA"}),
+            ("get_document_by_id", "get_document", {"document_id": "x"}),
+            ("list_documents", "list_documents", {}),
+        ],
+    )
+    async def test_an_unexpected_failure_is_masked_and_logged(
+        self,
+        mcp_db,
+        multimodal_embedder,
+        monkeypatch,
+        caplog,
+        client_method,
+        tool_name,
+        kwargs,
+    ):
+        async def boom(self, *args, **kw):
+            raise RuntimeError("boom at /secret/path")
+
+        monkeypatch.setattr(HaikuRAG, client_method, boom)
+        # fastmcp's logger does not propagate, so listen to it directly.
+        fastmcp_logger = logging.getLogger("fastmcp")
+        fastmcp_logger.addHandler(caplog.handler)
+        try:
+            result = await _call(create_mcp_server(mcp_db), tool_name, **kwargs)
+        finally:
+            fastmcp_logger.removeHandler(caplog.handler)
+
+        assert result.is_error
+        assert "/secret/path" not in result.content[0].text
+        assert any(
+            r.exc_info and "boom at /secret/path" in str(r.exc_info[1])
+            for r in caplog.records
+        )
+
+
+class TestClaudeCodePlugin:
+    """The plugin under claude-plugin/ points at the server this module builds."""
+
+    root = Path(__file__).resolve().parents[1]
+
+    def test_the_manifests_name_the_plugin_and_its_server(self):
+        import json
+
+        plugin = json.loads(
+            (self.root / "claude-plugin/.claude-plugin/plugin.json").read_text()
+        )
+        marketplace = json.loads(
+            (self.root / ".claude-plugin/marketplace.json").read_text()
+        )
+        servers = json.loads((self.root / "claude-plugin/.mcp.json").read_text())
+
+        assert plugin["name"] == "haiku-rag"
+        assert plugin["description"]
+        [entry] = marketplace["plugins"]
+        assert entry["name"] == plugin["name"]
+        assert entry["source"] == "./claude-plugin"
+        assert servers["mcpServers"]["haiku-rag"]["args"] == ["mcp", "--stdio"]
+
+    @pytest.mark.asyncio
+    async def test_the_skill_pre_approves_every_tool_the_server_registers(
+        self, mcp_db, multimodal_embedder
+    ):
+        import yaml
+
+        text = (self.root / "claude-plugin/skills/haiku-rag/SKILL.md").read_text()
+        _, frontmatter, _ = text.split("---", 2)
+        skill = yaml.safe_load(frontmatter)
+        prefix = "mcp__plugin_haiku-rag_haiku-rag__"
+
+        assert skill["name"] == "haiku-rag"
+        assert skill["description"]
+        assert all(tool.startswith(prefix) for tool in skill["allowed-tools"])
+        approved = {tool.removeprefix(prefix) for tool in skill["allowed-tools"]}
+        registered = {t.name for t in await create_mcp_server(mcp_db).list_tools()}
+        assert approved == registered
 
 
 class TestMCPClientLifetime:
@@ -534,7 +1215,7 @@ class TestMCPClientLifetime:
 
         monkeypatch.setattr(Store, "_initialize", counted)
 
-        mcp = create_mcp_server(mcp_db, read_only=True)
+        mcp = create_mcp_server(mcp_db)
         search = await _get_tool(mcp, "search_documents")
         list_docs = await _get_tool(mcp, "list_documents")
         await search(query="artificial intelligence")
@@ -559,25 +1240,13 @@ class TestMCPClientLifetime:
 
         monkeypatch.setattr(Store, "_initialize", counted)
 
-        mcp = create_mcp_server(mcp_db, read_only=True)
+        mcp = create_mcp_server(mcp_db)
         list_docs = await _get_tool(mcp, "list_documents")
 
         results = await asyncio.gather(*(list_docs() for _ in range(5)))
 
         assert opens == 1
         assert all(len(r) == 2 for r in results)
-
-    @pytest.mark.asyncio
-    async def test_a_write_is_visible_to_the_next_read(self, mcp_db):
-        """One connection sees its own writes, whatever the consistency interval."""
-        mcp = create_mcp_server(mcp_db, read_only=False)
-        list_docs = await _get_tool(mcp, "list_documents")
-        delete_doc = await _get_tool(mcp, "delete_document")
-
-        docs = await list_docs()
-        assert await delete_doc(document_id=docs[0].id) is True
-
-        assert len(await list_docs()) == len(docs) - 1
 
     @pytest.mark.asyncio
     async def test_lifespan_opens_and_closes_once(self, mcp_db, monkeypatch):
@@ -593,7 +1262,7 @@ class TestMCPClientLifetime:
 
         monkeypatch.setattr(Store, "_initialize", counted)
 
-        mcp = create_mcp_server(mcp_db, read_only=True)
+        mcp = create_mcp_server(mcp_db)
         # _lifespan_manager is what every transport enters; the public
         # lifespan() combines provider lifespans only.
         async with mcp._lifespan_manager():
@@ -624,46 +1293,18 @@ class TestMCPClientLifetime:
         )
         scope = DatabaseScope.resolve(config, database_name="alpha")
 
-        mcp = _mcp_covering(scope, config, read_only=True)
+        mcp = _mcp_covering(scope, config)
         async with mcp._lifespan_manager():
             search = await _get_tool(mcp, "search_documents")
-            results = await search(query="artificial intelligence")
+            blocks = _rendered(await search(query="artificial intelligence"))
             listing = await _get_tool(mcp, "list_documents")
             documents = await listing()
 
-        assert results
-        assert {r.source for r in results} == {"alpha"}
+        assert blocks
+        assert {_line(block, "Collection") for block in blocks} == {None}
         titles = {d.title for d in documents}
         assert "AI Overview" in titles
         assert "Zebras" not in titles
-
-    def test_a_scope_covering_a_set_is_refused(self, tmp_path):
-        from haiku.rag.client.scope import DatabaseScope
-        from haiku.rag.config.models import AppConfig, LanceDBConfig
-        from haiku.rag.store.exceptions import AmbiguousDatabaseError
-
-        config = AppConfig(
-            lancedb=LanceDBConfig(
-                databases={"alpha": str(tmp_path / "a"), "beta": str(tmp_path / "b")}
-            )
-        )
-
-        with pytest.raises(AmbiguousDatabaseError, match="alpha, beta"):
-            _mcp_covering(DatabaseScope.resolve(config), config, read_only=True)
-
-    def test_the_public_factory_refuses_a_configured_set_too(self, tmp_path):
-        """It resolves the same scope, so it reaches the same refusal."""
-        from haiku.rag.config.models import AppConfig, LanceDBConfig
-        from haiku.rag.store.exceptions import AmbiguousDatabaseError
-
-        config = AppConfig(
-            lancedb=LanceDBConfig(
-                databases={"alpha": str(tmp_path / "a"), "beta": str(tmp_path / "b")}
-            )
-        )
-
-        with pytest.raises(AmbiguousDatabaseError, match="alpha, beta"):
-            create_mcp_server(config=config)
 
     def test_the_public_factory_refuses_a_path_beside_a_configured_set(self, tmp_path):
         """A path and `lancedb.databases` both place the database."""
@@ -696,7 +1337,7 @@ class TestMCPClientLifetime:
             async def run_stdio_async(self):
                 return None
 
-        def fake_covering(scope, config, read_only):
+        def fake_covering(scope, config, agents=True):
             seen.update(scope=scope, config=config)
             return _Server()
 
@@ -715,7 +1356,7 @@ class TestMCPClientLifetime:
 
     @pytest.mark.asyncio
     async def test_startup_fails_when_the_database_cannot_open(self, tmp_path):
-        mcp = create_mcp_server(tmp_path / "does-not-exist.lancedb", read_only=True)
+        mcp = create_mcp_server(tmp_path / "does-not-exist.lancedb")
 
         with pytest.raises(FileNotFoundError):
             async with mcp._lifespan_manager():
@@ -737,7 +1378,7 @@ class TestMCPClientLifetime:
 
         monkeypatch.setattr(Store, "_initialize", counted)
 
-        mcp = create_mcp_server(mcp_db, read_only=True)
+        mcp = create_mcp_server(mcp_db)
         search = await _get_tool(mcp, "search_documents")
 
         async with mcp._lifespan_manager():
@@ -745,28 +1386,18 @@ class TestMCPClientLifetime:
         assert opens == 1
 
         async with mcp._lifespan_manager():
-            results = await search(query="artificial intelligence")
+            blocks = _rendered(await search(query="artificial intelligence"))
         assert opens == 2
-        assert len(results) > 0
+        assert blocks
 
     @pytest.mark.asyncio
-    async def test_same_dim_drift_starts_read_only_but_not_writable(self, mcp_db):
-        """Validation is unchanged: same-dimension identity drift warns in
-        read-only mode and raises in writable mode. The MCP server no longer
-        opts out of it for deletion."""
+    async def test_same_dim_drift_starts(self, mcp_db):
+        """Same-dimension identity drift warns on a read-only open and raises
+        on a writable one; the server starts, so it opened read-only."""
         from haiku.rag.config import get_config
-        from haiku.rag.store.exceptions import ConfigMismatchError
 
         drifted = get_config().model_copy(deep=True)
         drifted.embeddings.model.name = "a-different-model"
 
-        async with create_mcp_server(
-            mcp_db, config=drifted, read_only=True
-        )._lifespan_manager():
+        async with create_mcp_server(mcp_db, config=drifted)._lifespan_manager():
             pass
-
-        with pytest.raises(ConfigMismatchError):
-            async with create_mcp_server(
-                mcp_db, config=drifted, read_only=False
-            )._lifespan_manager():
-                pass
