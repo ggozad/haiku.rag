@@ -22,6 +22,11 @@
 - `processing.conversion_options.picture_description.model` defaults to
   `enable_thinking: false`, and the field now reaches the VLM: docling's
   picture-description request carries `reasoning_effort` in `params`.
+- MCP tools raise on failure; an empty result no longer doubles as an error.
+  Unknown document, unknown collection, invalid filter and invalid base64
+  carry a message; `ask_question` and `analyze` failures name the exception
+  type. Anything else is masked (`mask_error_details=True`) and logged
+  server-side.
 - `haiku-rag mcp` covers the configured `lancedb.databases` set. `sources` on
   `search_documents`, `search_documents_by_image`, `ask_question` and
   `analyze`; `source` on `get_document`; an unknown name is a tool error.

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from importlib import metadata
@@ -20,6 +21,8 @@ from haiku.rag.utils import format_citations
 
 if TYPE_CHECKING:
     from haiku.rag.client.scope import DatabaseScope
+
+logger = logging.getLogger(__name__)
 
 _FILTER_COLUMNS = ", ".join(DocumentMetaRecord.model_fields)
 
@@ -47,13 +50,40 @@ def _read_only(title: str) -> ToolAnnotations:
 def _decode_image(image_base64: str) -> bytes:
     import base64
 
-    return base64.b64decode(image_base64, validate=True)
+    try:
+        return base64.b64decode(image_base64, validate=True)
+    except ValueError as e:
+        # binascii.Error for characters outside the alphabet or bad padding,
+        # ValueError itself for non-ASCII input.
+        raise ToolError("Invalid base64 image") from e
 
 
 def _decode_images(images_base64: list[str] | None) -> list[bytes] | None:
     if not images_base64:
         return None
     return [_decode_image(b64) for b64 in images_base64]
+
+
+async def _check_filter(
+    rag: HaikuRAG, filter: str | None, sources: list[str] | None = None
+) -> None:
+    """Evaluate a filter on its own before the read that would use it.
+
+    A filtered count on one selected database runs the same predicate on the
+    same table and nothing else, so a ValueError here is the query engine
+    rejecting the filter; its message names columns and the statement, never
+    a location. A ValueError raised later in the read stays masked. Only the
+    selection is touched: every database shares the schema, so one suffices.
+    """
+    if filter is None:
+        return
+    selected = await rag.clients_covering(sources)
+    if not selected:
+        return
+    try:
+        await selected[0].count_documents(filter=filter)
+    except ValueError as e:
+        raise ToolError(f"Invalid filter {filter!r}: {e}") from e
 
 
 def _instructions(scope: "DatabaseScope", config: AppConfig) -> str:
@@ -136,11 +166,14 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
             finally:
                 client = None
 
+    # Masking keeps paths and provider URLs out of an unexpected error's text;
+    # the traceback goes to the server log. A ToolError reaches the client as is.
     mcp = FastMCP(
         "haiku-rag",
         instructions=_instructions(scope, config),
         version=metadata.version("haiku.rag-slim"),
         lifespan=lifespan,
+        mask_error_details=True,
     )
 
     @mcp.tool(annotations=_read_only("Search documents"))
@@ -167,8 +200,9 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
             include_images: Attach the bytes of pictures in the results as
                 base64 PNG under `image_data`. False for a smaller response.
         """
+        rag = await _client()
         try:
-            rag = await _client()
+            await _check_filter(rag, filter, sources)
             return await rag.search(
                 query,
                 limit=limit,
@@ -178,8 +212,6 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
             )
         except UnknownDatabaseError as e:
             raise ToolError(str(e)) from e
-        except Exception:
-            return []
 
     # Image-as-query tool, only registered when the configured embedder
     # supports image embeddings. Probed at server-build time when no Store is
@@ -211,9 +243,10 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
                 include_images: Attach the bytes of pictures in the results as
                     base64 PNG under `image_data`. False for a smaller response.
             """
+            raw = _decode_image(image_base64)
+            rag = await _client()
             try:
-                raw = _decode_image(image_base64)
-                rag = await _client()
+                await _check_filter(rag, filter, sources)
                 return await rag.search(
                     raw,
                     limit=limit,
@@ -223,13 +256,9 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
                 )
             except UnknownDatabaseError as e:
                 raise ToolError(str(e)) from e
-            except Exception:
-                return []
 
     @mcp.tool(annotations=_read_only("Get document"))
-    async def get_document(
-        document_id: str, source: str | None = None
-    ) -> Document | None:
+    async def get_document(document_id: str, source: str | None = None) -> Document:
         """Read one document whole, in reading order.
 
         Use this after a search when a passage is not enough. Returns the
@@ -241,13 +270,14 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
             source: The collection holding it. Without one every collection
                 is asked.
         """
+        rag = await _client()
         try:
-            rag = await _client()
-            return await rag.get_document_by_id(document_id, source)
+            document = await rag.get_document_by_id(document_id, source)
         except UnknownDatabaseError as e:
             raise ToolError(str(e)) from e
-        except Exception:
-            return None
+        if document is None:
+            raise ToolError(f"No document with id {document_id!r}")
+        return document
 
     @mcp.tool(annotations=_read_only("List documents"))
     async def list_documents(
@@ -265,23 +295,20 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
             limit: How many documents to return.
             offset: How many documents to skip, for paging.
         """
-        try:
-            rag = await _client()
-            documents = await rag.list_documents(limit, offset, filter)
-
-            return [
-                DocumentInfo(
-                    id=doc.id,
-                    title=doc.title or "Untitled",
-                    uri=doc.uri or "",
-                    created=doc.created_at.strftime("%Y-%m-%d"),
-                    source=doc.source,
-                    metadata=doc.metadata,
-                )
-                for doc in documents
-            ]
-        except Exception:
-            return []
+        rag = await _client()
+        await _check_filter(rag, filter)
+        documents = await rag.list_documents(limit, offset, filter)
+        return [
+            DocumentInfo(
+                id=doc.id,
+                title=doc.title or "Untitled",
+                uri=doc.uri or "",
+                created=doc.created_at.strftime("%Y-%m-%d"),
+                source=doc.source,
+                metadata=doc.metadata,
+            )
+            for doc in documents
+        ]
 
     @mcp.tool(annotations=_read_only("Ask a question"))
     async def ask_question(
@@ -303,19 +330,20 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
             images_base64: Images to attach to the question, PNG or JPEG
                 bytes as base64. Needs a vision-capable model on the server.
         """
+        images = _decode_images(images_base64)
+        rag = await _client()
         try:
-            images = _decode_images(images_base64)
-            rag = await _client()
             answer, citations = await rag.ask(question, images=images, sources=sources)
-            if cite and citations:
-                answer += "\n\n" + format_citations(
-                    citations, include_source=rag.covers_multiple
-                )
-            return answer
         except UnknownDatabaseError as e:
             raise ToolError(str(e)) from e
         except Exception as e:
-            return f"Error answering question: {e!s}"
+            logger.exception("ask_question failed")
+            raise ToolError(f"ask_question failed: {type(e).__name__}") from e
+        if cite and citations:
+            answer += "\n\n" + format_citations(
+                citations, include_source=rag.covers_multiple
+            )
+        return answer
 
     @mcp.tool(annotations=_read_only("Analyze documents"))
     async def analyze(
@@ -336,16 +364,17 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
             images_base64: Images to attach to the question, PNG or JPEG
                 bytes as base64. Needs a vision-capable model on the server.
         """
+        images = _decode_images(images_base64)
+        rag = await _client()
         try:
-            images = _decode_images(images_base64)
-            rag = await _client()
             result = await rag.analyze(
                 question, filter=filter, images=images, sources=sources
             )
-            return result.answer
         except UnknownDatabaseError as e:
             raise ToolError(str(e)) from e
         except Exception as e:
-            return f"Error running analysis capability: {e!s}"
+            logger.exception("analyze failed")
+            raise ToolError(f"analyze failed: {type(e).__name__}") from e
+        return result.answer
 
     return mcp

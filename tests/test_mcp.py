@@ -1,6 +1,8 @@
+import logging
 from types import SimpleNamespace
 
 import pytest
+from fastmcp.exceptions import ToolError
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.mcp import _covering as _mcp_covering
@@ -85,6 +87,14 @@ async def _get_tool(mcp, name):
     """Get a tool function from an MCP server by name."""
     tool = await mcp.get_tool(name)
     return tool.fn
+
+
+async def _call(mcp, name, **kwargs):
+    """Call a tool over the wire, returning the result whether or not it errored."""
+    from fastmcp import Client
+
+    async with Client(mcp) as client:
+        return await client.call_tool(name, kwargs, raise_on_error=False)
 
 
 class TestMCPReadTools:
@@ -185,14 +195,6 @@ class TestMCPReadTools:
         assert "docling_version" not in serialized
 
     @pytest.mark.asyncio
-    async def test_get_document_not_found(self, mcp_db):
-        mcp = create_mcp_server(mcp_db)
-        get_doc = await _get_tool(mcp, "get_document")
-
-        result = await get_doc(document_id="nonexistent-id")
-        assert result is None
-
-    @pytest.mark.asyncio
     async def test_list_documents(self, mcp_db):
         mcp = create_mcp_server(mcp_db)
         list_docs = await _get_tool(mcp, "list_documents")
@@ -232,6 +234,36 @@ class TestMCPReadTools:
             if d["title"] == "AI Overview"
         ]
         assert overview["metadata"] == {"author": "Ada"}
+
+    @pytest.mark.asyncio
+    async def test_ask_question_appends_citations_when_requested(
+        self, mcp_db, monkeypatch
+    ):
+        from haiku.rag.store.models.citation import Citation
+
+        citation = Citation(
+            chunk_id="c1",
+            document_id="d1",
+            content="cited text",
+            document_uri="test://ai-overview",
+            document_title="AI Overview",
+            source="alpha",
+        )
+
+        async def fake_ask(self, question, filter=None, images=None, sources=None):
+            return ("the answer", [citation])
+
+        monkeypatch.setattr(HaikuRAG, "ask", fake_ask)
+        mcp = create_mcp_server(mcp_db)
+        ask = await _get_tool(mcp, "ask_question")
+
+        with_cite = await ask(question="q", cite=True)
+        assert with_cite.startswith("the answer")
+        assert "AI Overview" in with_cite
+        # One database: its name adds nothing.
+        assert "alpha" not in with_cite
+
+        assert await ask(question="q", cite=False) == "the answer"
 
 
 @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
@@ -367,13 +399,27 @@ class TestMCPCoversTheConfiguredSet:
     async def test_an_unknown_database_is_an_error_not_an_empty_result(
         self, two_dbs, multimodal_embedder, tool_name, kwargs
     ):
-        from fastmcp.exceptions import ToolError
-
         mcp = _covering_all(two_dbs)
         tool = await _get_tool(mcp, tool_name)
 
         with pytest.raises(ToolError, match="nope"):
             await tool(**kwargs)
+
+    @pytest.mark.asyncio
+    async def test_a_filtered_search_touches_only_the_selected_databases(self, two_dbs):
+        """alpha is gone; a filtered search selecting beta must not notice."""
+        import shutil
+
+        shutil.rmtree(two_dbs.lancedb.databases["alpha"])
+        mcp = _covering_all(two_dbs)
+        search = await _get_tool(mcp, "search_documents")
+
+        results = await search(
+            query="cats", filter="uri LIKE '%beta%'", sources=["beta"]
+        )
+        assert results
+        assert {r.source for r in results} == {"beta"}
+        assert await search(query="cats", filter="uri LIKE '%beta%'", sources=[]) == []
 
     @pytest.mark.asyncio
     async def test_the_listing_covers_every_database(self, two_dbs):
@@ -495,13 +541,13 @@ class TestMCPImageQuery:
         results = await search_by_image(
             image_base64=base64.b64encode(png).decode("ascii"),
             filter="uri LIKE 'x%'",
-            sources=["alpha"],
+            sources=[],
         )
 
         assert results == []
         assert seen["query"] == png
         assert seen["filter"] == "uri LIKE 'x%'"
-        assert seen["sources"] == ["alpha"]
+        assert seen["sources"] == []
 
     @pytest.mark.asyncio
     async def test_image_query_rejects_characters_outside_the_alphabet(
@@ -519,35 +565,9 @@ class TestMCPImageQuery:
         mcp = create_mcp_server(mcp_db)
         search_by_image = await _get_tool(mcp, "search_documents_by_image")
 
-        assert await search_by_image(image_base64="AAAA!!!!") == []
+        with pytest.raises(ToolError):
+            await search_by_image(image_base64="AAAA!!!!")
         assert not searched
-
-    @pytest.mark.asyncio
-    async def test_image_query_returns_empty_on_invalid_base64(
-        self, mcp_db, multimodal_embedder
-    ):
-        """Garbage base64 from the caller is swallowed, returning an empty
-        list rather than crashing the MCP server."""
-        mcp = create_mcp_server(mcp_db)
-        search_by_image = await _get_tool(mcp, "search_documents_by_image")
-
-        # Not valid base64 (contains non-base64 chars) — the strict decoder
-        # in search_documents_by_image rejects it.
-        results = await search_by_image(image_base64="!!! not base64 !!!")
-        assert results == []
-
-    @pytest.mark.asyncio
-    async def test_image_query_returns_empty_when_the_search_raises(
-        self, mcp_db, multimodal_embedder, monkeypatch
-    ):
-        async def boom(self, *args, **kw):
-            raise RuntimeError("client exploded")
-
-        monkeypatch.setattr(HaikuRAG, "search", boom)
-        mcp = create_mcp_server(mcp_db)
-        search_by_image = await _get_tool(mcp, "search_documents_by_image")
-
-        assert await search_by_image(image_base64="AAAA") == []
 
 
 class TestMCPImageInput:
@@ -591,14 +611,6 @@ class TestMCPImageInput:
         assert captured["images"] == [jpeg]
 
     @pytest.mark.asyncio
-    async def test_ask_question_rejects_invalid_base64(self, mcp_db):
-        mcp = create_mcp_server(mcp_db)
-        ask = await _get_tool(mcp, "ask_question")
-
-        result = await ask(question="q", images_base64=["!!! not base64 !!!"])
-        assert "Error" in result
-
-    @pytest.mark.asyncio
     async def test_ask_question_without_images_passes_none(self, mcp_db, monkeypatch):
         captured = {}
 
@@ -615,78 +627,140 @@ class TestMCPImageInput:
         assert captured["images"] is None
 
 
-class TestMCPToolsDegradeOnError:
-    """Every tool swallows client failures and returns its empty value rather
-    than propagating an exception to the MCP transport."""
+@pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
+class TestMCPErrorContract:
+    """A failure is an error on the wire, never an empty result. Expected
+    failures say what went wrong; anything else is masked and logged on the
+    server."""
+
+    @pytest.mark.asyncio
+    async def test_an_unknown_document_is_an_error(self, mcp_db):
+        result = await _call(
+            create_mcp_server(mcp_db), "get_document", document_id="nonexistent-id"
+        )
+
+        assert result.is_error
+        assert "nonexistent-id" in result.content[0].text
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "client_method,tool_name,kwargs,expected",
-        [
-            ("search", "search_documents", {"query": "x"}, []),
-            ("get_document_by_id", "get_document", {"document_id": "x"}, None),
-            ("list_documents", "list_documents", {}, []),
-        ],
+        "tool_name,kwargs",
+        [("search_documents", {"query": "x"}), ("list_documents", {})],
     )
-    async def test_tool_returns_empty_value_when_client_raises(
-        self, mcp_db, monkeypatch, client_method, tool_name, kwargs, expected
+    async def test_an_invalid_filter_is_an_error_naming_the_filter(
+        self, mcp_db, tool_name, kwargs
     ):
-        async def boom(self, *args, **kw):
-            raise RuntimeError("client exploded")
-
-        monkeypatch.setattr(HaikuRAG, client_method, boom)
-        mcp = create_mcp_server(mcp_db)
-        tool = await _get_tool(mcp, tool_name)
-
-        assert await tool(**kwargs) == expected
-
-    @pytest.mark.asyncio
-    async def test_list_documents_returns_empty_for_invalid_filter(self, mcp_db):
-        mcp = create_mcp_server(mcp_db)
-        list_docs = await _get_tool(mcp, "list_documents")
-
-        assert await list_docs(filter="no_such_column = 1") == []
-
-    @pytest.mark.asyncio
-    async def test_analyze_reports_the_error(self, mcp_db, monkeypatch):
-        async def boom(self, question, filter=None, images=None, sources=None):
-            raise RuntimeError("sandbox exploded")
-
-        monkeypatch.setattr(HaikuRAG, "analyze", boom)
-        mcp = create_mcp_server(mcp_db)
-        analyze = await _get_tool(mcp, "analyze")
-
-        assert "sandbox exploded" in await analyze(question="q")
-
-    @pytest.mark.asyncio
-    async def test_ask_question_appends_citations_when_requested(
-        self, mcp_db, monkeypatch
-    ):
-        from haiku.rag.store.models.citation import Citation
-
-        citation = Citation(
-            chunk_id="c1",
-            document_id="d1",
-            content="cited text",
-            document_uri="test://ai-overview",
-            document_title="AI Overview",
-            source="alpha",
+        result = await _call(
+            create_mcp_server(mcp_db), tool_name, filter="no_such_column = 1", **kwargs
         )
 
-        async def fake_ask(self, question, filter=None, images=None, sources=None):
-            return ("the answer", [citation])
+        assert result.is_error
+        assert "no_such_column = 1" in result.content[0].text
 
-        monkeypatch.setattr(HaikuRAG, "ask", fake_ask)
-        mcp = create_mcp_server(mcp_db)
-        ask = await _get_tool(mcp, "ask_question")
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("filter", [None, "title = 'AI Overview'"])
+    async def test_a_value_error_from_the_read_is_not_an_invalid_filter(
+        self, mcp_db, monkeypatch, filter
+    ):
+        """Only the filter check translates ValueError; one raised by the read
+        itself, with or without a valid filter, stays masked."""
 
-        with_cite = await ask(question="q", cite=True)
-        assert with_cite.startswith("the answer")
-        assert "AI Overview" in with_cite
-        # One database: its name adds nothing.
-        assert "alpha" not in with_cite
+        async def boom(self, *args, **kw):
+            raise ValueError("boom at /secret/path")
 
-        assert await ask(question="q", cite=False) == "the answer"
+        monkeypatch.setattr(HaikuRAG, "search", boom)
+        result = await _call(
+            create_mcp_server(mcp_db), "search_documents", query="x", filter=filter
+        )
+
+        assert result.is_error
+        assert "filter" not in result.content[0].text
+        assert "/secret/path" not in result.content[0].text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "payload", ["!!! not base64 !!!", "é"], ids=["outside_alphabet", "non_ascii"]
+    )
+    @pytest.mark.parametrize(
+        "tool_name,image_param,many",
+        [
+            ("search_documents_by_image", "image_base64", False),
+            ("ask_question", "images_base64", True),
+            ("analyze", "images_base64", True),
+        ],
+    )
+    async def test_invalid_base64_is_an_error(
+        self, mcp_db, multimodal_embedder, tool_name, image_param, many, payload
+    ):
+        kwargs: dict[str, object] = {"question": "q"} if many else {}
+        kwargs[image_param] = [payload] if many else payload
+
+        result = await _call(create_mcp_server(mcp_db), tool_name, **kwargs)
+
+        assert result.is_error
+        assert "base64" in result.content[0].text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "client_method,tool_name",
+        [("ask", "ask_question"), ("analyze", "analyze")],
+    )
+    async def test_an_agent_failure_names_only_its_type(
+        self, mcp_db, monkeypatch, caplog, client_method, tool_name
+    ):
+        async def boom(self, question, filter=None, images=None, sources=None):
+            raise RuntimeError("boom at /secret/path")
+
+        monkeypatch.setattr(HaikuRAG, client_method, boom)
+        with caplog.at_level(logging.ERROR, logger="haiku.rag.mcp"):
+            result = await _call(create_mcp_server(mcp_db), tool_name, question="q")
+
+        assert result.is_error
+        assert "RuntimeError" in result.content[0].text
+        assert "/secret/path" not in result.content[0].text
+        assert any(
+            r.exc_info and "boom at /secret/path" in str(r.exc_info[1])
+            for r in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "client_method,tool_name,kwargs",
+        [
+            ("search", "search_documents", {"query": "x"}),
+            ("search", "search_documents_by_image", {"image_base64": "AAAA"}),
+            ("get_document_by_id", "get_document", {"document_id": "x"}),
+            ("list_documents", "list_documents", {}),
+        ],
+    )
+    async def test_an_unexpected_failure_is_masked_and_logged(
+        self,
+        mcp_db,
+        multimodal_embedder,
+        monkeypatch,
+        caplog,
+        client_method,
+        tool_name,
+        kwargs,
+    ):
+        async def boom(self, *args, **kw):
+            raise RuntimeError("boom at /secret/path")
+
+        monkeypatch.setattr(HaikuRAG, client_method, boom)
+        # fastmcp's logger does not propagate, so listen to it directly.
+        fastmcp_logger = logging.getLogger("fastmcp")
+        fastmcp_logger.addHandler(caplog.handler)
+        try:
+            result = await _call(create_mcp_server(mcp_db), tool_name, **kwargs)
+        finally:
+            fastmcp_logger.removeHandler(caplog.handler)
+
+        assert result.is_error
+        assert "/secret/path" not in result.content[0].text
+        assert any(
+            r.exc_info and "boom at /secret/path" in str(r.exc_info[1])
+            for r in caplog.records
+        )
 
 
 class TestMCPClientLifetime:

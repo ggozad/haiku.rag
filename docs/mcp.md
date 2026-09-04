@@ -109,6 +109,15 @@ uri LIKE '%.pdf'
 title = 'Q3 report'
 ```
 
+### Errors
+
+A failure is an MCP error, never an empty result. Expected failures carry a
+message: a document id that matches nothing, a collection the server does not
+cover, a filter the query engine rejects (with its message), invalid base64,
+and an `ask_question` or `analyze` failure naming only the exception type.
+Anything else reaches the client as `Error calling tool 'name'` and its
+traceback goes to the server log.
+
 ### Instructions
 
 The server publishes `instructions` describing the knowledge base: what it
