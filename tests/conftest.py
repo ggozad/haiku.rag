@@ -21,6 +21,12 @@ embeddings:
 """)
 os.environ["HAIKU_RAG_CONFIG_PATH"] = str(_test_config_path)
 
+# telemetry.configure() passes send_to_logfire="if-token-present" explicitly,
+# which beats LOGFIRE_SEND_TO_LOGFIRE, so no token must resolve: drop the
+# environment variable and point credentials discovery at an empty directory.
+os.environ.pop("LOGFIRE_TOKEN", None)
+os.environ["LOGFIRE_CREDENTIALS_DIR"] = tempfile.mkdtemp()
+
 import pydantic_ai.models  # noqa: E402
 import pytest  # noqa: E402
 import yaml  # noqa: E402
