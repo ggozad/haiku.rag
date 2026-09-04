@@ -16,6 +16,12 @@
 - `processing.conversion_options.picture_description.model` defaults to
   `enable_thinking: false`, and the field now reaches the VLM: docling's
   picture-description request carries `reasoning_effort` in `params`.
+- `haiku-rag mcp` covers the configured `lancedb.databases` set. `sources` on
+  `search_documents`, `search_documents_by_image`, `ask_question` and
+  `analyze`; `source` on `get_document`; an unknown name is a tool error.
+  `DocumentInfo.source`; citations name their database when the server
+  covers several. `format_citations(citations, include_source=False)`.
+
 ### Removed
 
 - MCP write tools `add_document_from_file`, `add_document_from_url`,

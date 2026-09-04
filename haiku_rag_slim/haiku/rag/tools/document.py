@@ -27,6 +27,7 @@ class DocumentInfo(BaseModel):
     title: str
     uri: str
     created: str
+    source: str | None = None
 
 
 class DocumentListResponse(BaseModel):

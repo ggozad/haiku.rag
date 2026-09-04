@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 
 from haiku.rag.client import HaikuRAG
@@ -5,6 +7,7 @@ from haiku.rag.mcp import _covering as _mcp_covering
 from haiku.rag.mcp import create_mcp_server
 from haiku.rag.store.models import Chunk, Document, SearchResult
 from haiku.rag.tools.document import DocumentInfo
+from tests.multi_db.helpers import _config, _seed
 
 
 @pytest.fixture(autouse=True)
@@ -30,6 +33,22 @@ def mock_embedder(monkeypatch):
 
 
 @pytest.fixture
+def multimodal_embedder(monkeypatch):
+    """An embedder reporting image support, so the image-query tool registers."""
+    from haiku.rag.embeddings import EmbedderWrapper
+
+    class StubMultimodal(EmbedderWrapper):
+        supports_images = True
+
+        def __init__(self):
+            super().__init__(embedder=None, vector_dim=2560)
+
+    monkeypatch.setattr(
+        "haiku.rag.embeddings.get_embedder", lambda *a, **kw: StubMultimodal()
+    )
+
+
+@pytest.fixture
 async def mcp_db(temp_db_path):
     """Create a test database with sample documents."""
     async with HaikuRAG(temp_db_path, create=True) as rag:
@@ -44,6 +63,21 @@ async def mcp_db(temp_db_path):
             uri="test://ml-basics",
         )
     return temp_db_path
+
+
+@pytest.fixture
+async def two_dbs(tmp_path):
+    """Two configured databases, alpha and beta, one document each."""
+    config = _config(tmp_path, ["alpha", "beta"])
+    await _seed(config, "alpha", ["alpha document about cats"])
+    await _seed(config, "beta", ["beta document about cats"])
+    return config
+
+
+def _covering_all(config):
+    from haiku.rag.client.scope import DatabaseScope
+
+    return _mcp_covering(DatabaseScope.resolve(config), config)
 
 
 async def _get_tool(mcp, name):
@@ -183,6 +217,136 @@ class TestMCPToolSet:
         }
 
 
+class TestMCPCoversTheConfiguredSet:
+    @pytest.mark.asyncio
+    async def test_results_name_the_database_they_came_from(self, two_dbs):
+        mcp = _covering_all(two_dbs)
+        search = await _get_tool(mcp, "search_documents")
+
+        results = await search(query="cats")
+
+        assert {r.source for r in results} == {"alpha", "beta"}
+
+    @pytest.mark.asyncio
+    async def test_sources_narrows_the_search(self, two_dbs):
+        mcp = _covering_all(two_dbs)
+        search = await _get_tool(mcp, "search_documents")
+
+        results = await search(query="cats", sources=["beta"])
+
+        assert results
+        assert {r.source for r in results} == {"beta"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "tool_name,kwargs",
+        [
+            ("search_documents", {"query": "cats", "sources": ["nope"]}),
+            (
+                "search_documents_by_image",
+                {"image_base64": "AAAA", "sources": ["nope"]},
+            ),
+            ("get_document", {"document_id": "x", "source": "nope"}),
+            ("ask_question", {"question": "q", "sources": ["nope"]}),
+            ("analyze", {"question": "q", "sources": ["nope"]}),
+        ],
+    )
+    async def test_an_unknown_database_is_an_error_not_an_empty_result(
+        self, two_dbs, multimodal_embedder, tool_name, kwargs
+    ):
+        from fastmcp.exceptions import ToolError
+
+        mcp = _covering_all(two_dbs)
+        tool = await _get_tool(mcp, tool_name)
+
+        with pytest.raises(ToolError, match="nope"):
+            await tool(**kwargs)
+
+    @pytest.mark.asyncio
+    async def test_the_listing_covers_every_database(self, two_dbs):
+        mcp = _covering_all(two_dbs)
+        list_docs = await _get_tool(mcp, "list_documents")
+
+        documents = await list_docs()
+
+        assert {d.source for d in documents} == {"alpha", "beta"}
+
+    @pytest.mark.asyncio
+    async def test_get_document_reaches_whichever_database_holds_it(self, two_dbs):
+        mcp = _covering_all(two_dbs)
+        list_docs = await _get_tool(mcp, "list_documents")
+        get_doc = await _get_tool(mcp, "get_document")
+        [beta] = [d for d in await list_docs() if d.source == "beta"]
+
+        found = await get_doc(document_id=beta.id)
+        named = await get_doc(document_id=beta.id, source="beta")
+
+        assert found.id == named.id == beta.id
+        assert found.source == named.source == "beta"
+
+    @pytest.mark.asyncio
+    async def test_the_public_factory_covers_a_configured_set(self, two_dbs):
+        mcp = create_mcp_server(config=two_dbs)
+        search = await _get_tool(mcp, "search_documents")
+
+        results = await search(query="cats")
+
+        assert {r.source for r in results} == {"alpha", "beta"}
+
+    @pytest.mark.asyncio
+    async def test_ask_question_names_each_citations_database(
+        self, two_dbs, monkeypatch
+    ):
+        from haiku.rag.store.models.citation import Citation
+
+        def cited(source):
+            return Citation(
+                chunk_id="c1",
+                document_id="d1",
+                content="cited text",
+                document_uri="test://cats",
+                document_title="Cats",
+                source=source,
+            )
+
+        async def fake_ask(self, question, filter=None, images=None, sources=None):
+            return ("the answer", [cited("alpha"), cited("beta")])
+
+        monkeypatch.setattr(HaikuRAG, "ask", fake_ask)
+        mcp = _covering_all(two_dbs)
+        ask = await _get_tool(mcp, "ask_question")
+
+        answer = await ask(question="q", cite=True)
+
+        assert "alpha" in answer
+        assert "beta" in answer
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "tool_name,client_method,returns",
+        [
+            ("ask_question", "ask", ("answer", [])),
+            ("analyze", "analyze", SimpleNamespace(answer="answer")),
+        ],
+    )
+    async def test_agents_search_the_selected_databases(
+        self, two_dbs, monkeypatch, tool_name, client_method, returns
+    ):
+        seen = {}
+
+        async def fake(self, question, filter=None, images=None, sources=None):
+            seen["sources"] = sources
+            return returns
+
+        monkeypatch.setattr(HaikuRAG, client_method, fake)
+        mcp = _covering_all(two_dbs)
+        tool = await _get_tool(mcp, tool_name)
+
+        await tool(question="q", sources=["beta"])
+
+        assert seen["sources"] == ["beta"]
+
+
 class TestMCPImageQuery:
     """search_documents_by_image is registered only when the embedder is multimodal."""
 
@@ -195,59 +359,40 @@ class TestMCPImageQuery:
 
     @pytest.mark.asyncio
     async def test_image_query_tool_registered_for_multimodal_embedder(
-        self, mcp_db, monkeypatch
+        self, mcp_db, multimodal_embedder, monkeypatch
     ):
         """When the embedder reports supports_images=True, the tool exists
-        and routes a base64 image through ``client.search``."""
-        from haiku.rag.embeddings import EmbedderWrapper
+        and routes the decoded image and the selection through ``client.search``."""
+        seen = {}
 
-        class StubMultimodal(EmbedderWrapper):
-            supports_images = True
+        async def fake_search(self, query, **kwargs):
+            seen.update(query=query, **kwargs)
+            return []
 
-            def __init__(self):
-                super().__init__(embedder=None, vector_dim=2560)
-
-            async def embed_image(self, image):
-                # Produce a deterministic-ish vector of the right dim.
-                return [0.0] * 2560
-
-        monkeypatch.setattr(
-            "haiku.rag.embeddings.get_embedder",
-            lambda *a, **kw: StubMultimodal(),
-        )
+        monkeypatch.setattr(HaikuRAG, "search", fake_search)
 
         mcp = create_mcp_server(mcp_db)
         names = {t.name for t in await mcp.list_tools()}
         assert "search_documents_by_image" in names
 
         search_by_image = await _get_tool(mcp, "search_documents_by_image")
-        # Standalone PNG header (won't decode to a real image but our stub doesn't care).
         import base64
 
-        png_b64 = base64.b64encode(b"\x89PNG\r\n\x1a\n").decode("ascii")
-        results = await search_by_image(image_base64=png_b64)
-        # Empty list is fine (the stub vector won't match the toy fixture).
-        assert isinstance(results, list)
+        png = b"\x89PNG\r\n\x1a\n"
+        results = await search_by_image(
+            image_base64=base64.b64encode(png).decode("ascii"), sources=["alpha"]
+        )
+
+        assert results == []
+        assert seen["query"] == png
+        assert seen["sources"] == ["alpha"]
 
     @pytest.mark.asyncio
     async def test_image_query_returns_empty_on_invalid_base64(
-        self, mcp_db, monkeypatch
+        self, mcp_db, multimodal_embedder
     ):
         """Garbage base64 from the caller is swallowed, returning an empty
         list rather than crashing the MCP server."""
-        from haiku.rag.embeddings import EmbedderWrapper
-
-        class StubMultimodal(EmbedderWrapper):
-            supports_images = True
-
-            def __init__(self):
-                super().__init__(embedder=None, vector_dim=2560)
-
-        monkeypatch.setattr(
-            "haiku.rag.embeddings.get_embedder",
-            lambda *a, **kw: StubMultimodal(),
-        )
-
         mcp = create_mcp_server(mcp_db)
         search_by_image = await _get_tool(mcp, "search_documents_by_image")
 
@@ -255,6 +400,19 @@ class TestMCPImageQuery:
         # in search_documents_by_image rejects it.
         results = await search_by_image(image_base64="!!! not base64 !!!")
         assert results == []
+
+    @pytest.mark.asyncio
+    async def test_image_query_returns_empty_when_the_search_raises(
+        self, mcp_db, multimodal_embedder, monkeypatch
+    ):
+        async def boom(self, *args, **kw):
+            raise RuntimeError("client exploded")
+
+        monkeypatch.setattr(HaikuRAG, "search", boom)
+        mcp = create_mcp_server(mcp_db)
+        search_by_image = await _get_tool(mcp, "search_documents_by_image")
+
+        assert await search_by_image(image_base64="AAAA") == []
 
 
 class TestMCPImageInput:
@@ -264,7 +422,7 @@ class TestMCPImageInput:
 
         captured = {}
 
-        async def fake_ask(self, question, filter=None, images=None):
+        async def fake_ask(self, question, filter=None, images=None, sources=None):
             captured["images"] = images
             return ("answer", [])
 
@@ -284,7 +442,7 @@ class TestMCPImageInput:
 
         captured = {}
 
-        async def fake_analyze(self, question, filter=None, images=None):
+        async def fake_analyze(self, question, filter=None, images=None, sources=None):
             captured["images"] = images
             return SimpleNamespace(answer="answer")
 
@@ -309,7 +467,7 @@ class TestMCPImageInput:
     async def test_ask_question_without_images_passes_none(self, mcp_db, monkeypatch):
         captured = {}
 
-        async def fake_ask(self, question, filter=None, images=None):
+        async def fake_ask(self, question, filter=None, images=None, sources=None):
             captured["images"] = images
             return ("answer", [])
 
@@ -356,7 +514,7 @@ class TestMCPToolsDegradeOnError:
 
     @pytest.mark.asyncio
     async def test_analyze_reports_the_error(self, mcp_db, monkeypatch):
-        async def boom(self, question, filter=None, images=None):
+        async def boom(self, question, filter=None, images=None, sources=None):
             raise RuntimeError("sandbox exploded")
 
         monkeypatch.setattr(HaikuRAG, "analyze", boom)
@@ -377,9 +535,10 @@ class TestMCPToolsDegradeOnError:
             content="cited text",
             document_uri="test://ai-overview",
             document_title="AI Overview",
+            source="alpha",
         )
 
-        async def fake_ask(self, question, filter=None, images=None):
+        async def fake_ask(self, question, filter=None, images=None, sources=None):
             return ("the answer", [citation])
 
         monkeypatch.setattr(HaikuRAG, "ask", fake_ask)
@@ -389,6 +548,8 @@ class TestMCPToolsDegradeOnError:
         with_cite = await ask(question="q", cite=True)
         assert with_cite.startswith("the answer")
         assert "AI Overview" in with_cite
+        # One database: its name adds nothing.
+        assert "alpha" not in with_cite
 
         assert await ask(question="q", cite=False) == "the answer"
 
@@ -498,34 +659,6 @@ class TestMCPClientLifetime:
         titles = {d.title for d in documents}
         assert "AI Overview" in titles
         assert "Zebras" not in titles
-
-    def test_a_scope_covering_a_set_is_refused(self, tmp_path):
-        from haiku.rag.client.scope import DatabaseScope
-        from haiku.rag.config.models import AppConfig, LanceDBConfig
-        from haiku.rag.store.exceptions import AmbiguousDatabaseError
-
-        config = AppConfig(
-            lancedb=LanceDBConfig(
-                databases={"alpha": str(tmp_path / "a"), "beta": str(tmp_path / "b")}
-            )
-        )
-
-        with pytest.raises(AmbiguousDatabaseError, match="alpha, beta"):
-            _mcp_covering(DatabaseScope.resolve(config), config)
-
-    def test_the_public_factory_refuses_a_configured_set_too(self, tmp_path):
-        """It resolves the same scope, so it reaches the same refusal."""
-        from haiku.rag.config.models import AppConfig, LanceDBConfig
-        from haiku.rag.store.exceptions import AmbiguousDatabaseError
-
-        config = AppConfig(
-            lancedb=LanceDBConfig(
-                databases={"alpha": str(tmp_path / "a"), "beta": str(tmp_path / "b")}
-            )
-        )
-
-        with pytest.raises(AmbiguousDatabaseError, match="alpha, beta"):
-            create_mcp_server(config=config)
 
     def test_the_public_factory_refuses_a_path_beside_a_configured_set(self, tmp_path):
         """A path and `lancedb.databases` both place the database."""

@@ -393,11 +393,13 @@ def _citation_label(c: "Citation") -> str:
     return c.document_title or c.document_uri
 
 
-def format_citations(citations: "list[Citation]") -> str:
+def format_citations(citations: "list[Citation]", include_source: bool = False) -> str:
     """Format citations as plain text with preserved formatting.
 
     Used by things like the MCP server where Rich renderables are not available.
     Pictures referenced by the chunk are surfaced as ``[Figure: <ref>]`` markers.
+    ``include_source`` names each citation's database, for a client covering
+    several.
     """
     if not citations:
         return ""
@@ -410,6 +412,8 @@ def format_citations(citations: "list[Citation]") -> str:
         header = f"[{idx}] {title}"
 
         location_parts = []
+        if include_source and c.source:
+            location_parts.append(f"Collection: {c.source}")
         pages = _citation_pages(c)
         if pages:
             location_parts.append(pages)

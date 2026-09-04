@@ -281,9 +281,9 @@ Conversion, chunking, and title generation do not access a database and remain a
 
 Commands use database sets as follows:
 
-- **Set-capable**: `search`, `ask`, `analyze`, and `chat` use the full configured set, or the single database selected by `--db-name`.
+- **Set-capable**: `search`, `ask`, `analyze`, `chat`, and `mcp` use the full configured set, or the single database selected by `--db-name`.
 - **Config-only**: `settings`, `init-config`, and `download-models` do not open a database.
-- **Single-database**: everything else — document writes, `rebuild`, `vacuum`, `migrate`, `init`, `info`, `history`, `tag`, `doctor`, `list`, `inspect`, `visualize`, and `mcp` — works on one database, selected with the global `--db-name` option.
+- **Single-database**: everything else — document writes, `rebuild`, `vacuum`, `migrate`, `init`, `info`, `history`, `tag`, `doctor`, `list`, `inspect`, and `visualize` — works on one database, selected with the global `--db-name` option.
 
 ```bash
 haiku-rag search "query"         # every configured database

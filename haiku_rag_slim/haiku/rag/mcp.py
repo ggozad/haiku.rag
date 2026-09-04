@@ -5,9 +5,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, get_config
+from haiku.rag.store.exceptions import UnknownDatabaseError
 from haiku.rag.store.models import Document, SearchResult
 from haiku.rag.tools.document import DocumentInfo
 from haiku.rag.utils import format_citations
@@ -28,11 +30,11 @@ def create_mcp_server(
     db_path: Path | None = None,
     config: AppConfig | None = None,
 ) -> FastMCP:
-    """Create an MCP server over one database.
+    """Create an MCP server over the databases the configuration places.
 
     Args:
         db_path: Path to the database file, where `config` places none; or
-            None to serve the database the configuration places. Beside
+            None to serve the databases the configuration places. Beside
             `lancedb.databases` a path raises `AmbiguousDatabaseError`.
         config: Configuration to use.
     """
@@ -50,13 +52,6 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
     scope, so the configured name survives, which results and citations carry as
     ``source``.
     """
-    from haiku.rag.store.exceptions import AmbiguousDatabaseError
-
-    if scope.covers_multiple:
-        raise AmbiguousDatabaseError(
-            "an MCP server serves one database, and this scope covers "
-            f"{', '.join(scope.names)}; name the one to serve"
-        )
     client: HaikuRAG | None = None
     stack = AsyncExitStack()
     client_lock = asyncio.Lock()
@@ -95,7 +90,10 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
 
     @mcp.tool()
     async def search_documents(
-        query: str, limit: int | None = None, include_images: bool = True
+        query: str,
+        limit: int | None = None,
+        include_images: bool = True,
+        sources: list[str] | None = None,
     ) -> list[SearchResult]:
         """Search the RAG system for documents using hybrid search (vector similarity + full-text search).
 
@@ -103,10 +101,15 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
         in the result set, ``SearchResult.image_data`` carries base64-encoded
         PNG bytes keyed by self_ref. Set to False to omit the bytes from the
         response (smaller JSON payload for plain-text consumers).
+        ``sources`` names the databases to search, all of them by default.
         """
         try:
             rag = await _client()
-            return await rag.search(query, limit=limit, include_images=include_images)
+            return await rag.search(
+                query, limit=limit, include_images=include_images, sources=sources
+            )
+        except UnknownDatabaseError as e:
+            raise ToolError(str(e)) from e
         except Exception:
             return []
 
@@ -123,6 +126,7 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
             image_base64: str,
             limit: int | None = None,
             include_images: bool = True,
+            sources: list[str] | None = None,
         ) -> list[SearchResult]:
             """Search the RAG system using an image as the query.
 
@@ -130,6 +134,7 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
             image is embedded via the configured multimodal embedder and the
             chunks table is searched vector-only. ``include_images`` controls
             whether picture bytes are attached to picture-labeled results.
+            ``sources`` names the databases to search, all of them by default.
             """
             import base64
 
@@ -139,16 +144,28 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
                 return []
             try:
                 rag = await _client()
-                return await rag.search(raw, limit=limit, include_images=include_images)
+                return await rag.search(
+                    raw, limit=limit, include_images=include_images, sources=sources
+                )
+            except UnknownDatabaseError as e:
+                raise ToolError(str(e)) from e
             except Exception:
                 return []
 
     @mcp.tool()
-    async def get_document(document_id: str) -> Document | None:
-        """Get a document by its ID."""
+    async def get_document(
+        document_id: str, source: str | None = None
+    ) -> Document | None:
+        """Get a document by its ID.
+
+        ``source`` names the database holding it; without one every database
+        is asked.
+        """
         try:
             rag = await _client()
-            return await rag.get_document_by_id(document_id)
+            return await rag.get_document_by_id(document_id, source)
+        except UnknownDatabaseError as e:
+            raise ToolError(str(e)) from e
         except Exception:
             return None
 
@@ -175,6 +192,7 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
                     title=doc.title or "Untitled",
                     uri=doc.uri or "",
                     created=doc.created_at.strftime("%Y-%m-%d"),
+                    source=doc.source,
                 )
                 for doc in documents
             ]
@@ -186,6 +204,7 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
         question: str,
         cite: bool = False,
         images_base64: list[str] | None = None,
+        sources: list[str] | None = None,
     ) -> str:
         """Ask a question using the QA agent.
 
@@ -194,6 +213,7 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
             cite: Whether to include citations in the response.
             images_base64: Base64-encoded images attached to the question
                 (requires a vision-capable QA model).
+            sources: The databases to answer from, all of them by default.
 
         Returns:
             The answer as a string.
@@ -201,10 +221,14 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
         try:
             images = _decode_images(images_base64)
             rag = await _client()
-            answer, citations = await rag.ask(question, images=images)
+            answer, citations = await rag.ask(question, images=images, sources=sources)
             if cite and citations:
-                answer += "\n\n" + format_citations(citations)
+                answer += "\n\n" + format_citations(
+                    citations, include_source=rag.covers_multiple
+                )
             return answer
+        except UnknownDatabaseError as e:
+            raise ToolError(str(e)) from e
         except Exception as e:
             return f"Error answering question: {e!s}"
 
@@ -213,6 +237,7 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
         question: str,
         filter: str | None = None,
         images_base64: list[str] | None = None,
+        sources: list[str] | None = None,
     ) -> str:
         """Answer complex questions using the analysis capability.
 
@@ -225,6 +250,7 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
             filter: Optional SQL WHERE clause to filter documents.
             images_base64: Base64-encoded images attached to the question
                 (requires a vision-capable analysis model).
+            sources: The databases to analyze, all of them by default.
 
         Returns:
             The answer as a string.
@@ -232,8 +258,12 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
         try:
             images = _decode_images(images_base64)
             rag = await _client()
-            result = await rag.analyze(question, filter=filter, images=images)
+            result = await rag.analyze(
+                question, filter=filter, images=images, sources=sources
+            )
             return result.answer
+        except UnknownDatabaseError as e:
+            raise ToolError(str(e)) from e
         except Exception as e:
             return f"Error running analysis capability: {e!s}"
 

@@ -753,6 +753,22 @@ def test_format_citations_sequential_indices():
     assert "[2] Second" in result
 
 
+def test_format_citations_names_the_source_when_asked():
+    from haiku.rag.store.models.citation import Citation
+    from haiku.rag.utils import format_citations
+
+    citation = Citation(
+        document_id="doc1",
+        chunk_id="chunk1",
+        document_uri="test://doc",
+        document_title="Test Doc",
+        content="Content",
+        source="papers",
+    )
+    assert "papers" in format_citations([citation], include_source=True)
+    assert "papers" not in format_citations([citation])
+
+
 # --- format_citations tests (pictures) ---
 
 

@@ -1050,6 +1050,21 @@ def test_mcp_without_stdio_leaves_the_transport_unset(app_stub):
     assert app_stub.run_mcp.call_args.kwargs["transport"] is None
 
 
+def test_mcp_covers_the_configured_set(monkeypatch):
+    seen = {}
+
+    def create_app(db=None, *, covers_set=False):
+        seen["covers_set"] = covers_set
+        return AsyncMock()
+
+    monkeypatch.setattr("haiku.rag.cli.create_app", create_app)
+
+    result = runner.invoke(cli, ["mcp", "--stdio"])
+
+    assert result.exit_code == 0, result.output
+    assert seen["covers_set"] is True
+
+
 def test_version_flag_prints_the_version():
     result = runner.invoke(cli, ["--version"])
 

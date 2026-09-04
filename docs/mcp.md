@@ -27,6 +27,16 @@ e.g. inside a Docker container with port mapping, or on a trusted LAN.
 The server opens the database read-only. Ingestion goes through the CLI
 (`haiku-rag add`, `add-src`, `delete`) or [`haiku-ingester`](ingester.md).
 
+## Collections
+
+With several databases in `lancedb.databases`, the server covers all of
+them, as `haiku-rag search` does. Results, documents and citations name
+theirs in `source`. `sources` on the search and question tools restricts a
+call to a subset; `source` on `get_document` names the database holding the
+document. A name the server does not cover is an error.
+`haiku-rag --db-name NAME mcp` serves one. See
+[Multiple Databases](configuration/storage.md#multiple-databases).
+
 ## Claude Desktop Integration
 
 Add to your Claude Desktop configuration (`claude_desktop_config.json`):
@@ -63,6 +73,7 @@ After restarting Claude Desktop, you can ask Claude to search your documents or 
 
 - **`get_document`** - Retrieve a document by ID
   - `document_id` (required): The document ID
+  - `source` (optional): The database holding it
 
 - **`list_documents`** - List documents with pagination and filtering
   - `limit` (optional): Maximum number to return
@@ -75,11 +86,13 @@ After restarting Claude Desktop, you can ask Claude to search your documents or 
   - `query` (required): Search query
   - `limit` (optional): Maximum results (uses config default if not specified)
   - `include_images` (optional, default `true`): Attach base64-encoded picture bytes to picture-labeled results
+  - `sources` (optional): The databases to search
 
 - **`search_documents_by_image`** - Search using an image as the query (registered only when the configured embedder supports images)
   - `image_base64` (required): Base64-encoded image (PNG/JPEG bytes)
   - `limit` (optional): Maximum results
   - `include_images` (optional, default `true`)
+  - `sources` (optional): The databases to search
 
 ### Question Answering
 
@@ -87,11 +100,13 @@ After restarting Claude Desktop, you can ask Claude to search your documents or 
   - `question` (required): The question to ask
   - `cite` (optional): Include source citations (default: false)
   - `images_base64` (optional): Base64-encoded images attached to the question (requires a vision-capable QA model)
+  - `sources` (optional): The databases to answer from
 
 - **`analyze`** - Answer complex analytical questions via code execution
   - `question` (required): The question to answer
   - `filter` (optional): SQL WHERE clause to restrict document access
   - `images_base64` (optional): Base64-encoded images attached to the question (requires a vision-capable analysis model)
+  - `sources` (optional): The databases to analyze
   - Best for aggregation, computation, and multi-document analysis
 
 ## Continuous ingestion
