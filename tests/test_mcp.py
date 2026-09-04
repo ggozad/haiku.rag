@@ -1,4 +1,5 @@
 import logging
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -98,9 +99,25 @@ async def _call(mcp, name, **kwargs):
         return await client.call_tool(name, kwargs, raise_on_error=False)
 
 
-def _results(search_result) -> list[dict]:
-    """The search results a tool returned, as the client sees them."""
-    return search_result.structured_content["result"]
+def _results(tool_result) -> list[dict]:
+    """A tool's structured result list, as the client sees it."""
+    return tool_result.structured_content["result"]
+
+
+_HEADER = re.compile(r"^\[[^\]]+\] \[rank \d+ of \d+\]$", re.MULTILINE)
+
+
+def _rendered(search_result) -> list[str]:
+    """The result blocks of a search, split from the text the model reads."""
+    text = search_result.content[0].text
+    starts = [match.start() for match in _HEADER.finditer(text)]
+    return [text[a:b].strip() for a, b in zip(starts, starts[1:] + [len(text)])]
+
+
+def _line(block: str, name: str) -> str | None:
+    """The value of a `Name: value` line in a rendered result, if present."""
+    match = re.search(rf"^{re.escape(name)}: (.+)$", block, re.MULTILINE)
+    return match.group(1) if match else None
 
 
 def _png_b64() -> str:
@@ -120,17 +137,17 @@ class TestMCPReadTools:
         mcp = create_mcp_server(mcp_db)
         search = await _get_tool(mcp, "search_documents")
 
-        results = _results(await search(query="artificial intelligence"))
-        assert len(results) > 0
-        assert all(r["chunk_id"] and r["content"] for r in results)
+        blocks = _rendered(await search(query="artificial intelligence"))
+        assert blocks
+        assert all("Content:" in block for block in blocks)
 
     @pytest.mark.asyncio
     async def test_search_documents_with_limit(self, mcp_db):
         mcp = create_mcp_server(mcp_db)
         search = await _get_tool(mcp, "search_documents")
 
-        results = _results(await search(query="artificial intelligence", limit=1))
-        assert len(results) == 1
+        blocks = _rendered(await search(query="artificial intelligence", limit=1))
+        assert len(blocks) == 1
 
     @pytest.mark.asyncio
     @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
@@ -143,18 +160,15 @@ class TestMCPReadTools:
                 {"query": "artificial intelligence", "filter": "title = 'ML Basics'"},
             )
 
-        results = result.structured_content["result"]
-        assert results
-        assert {r["document_title"] for r in results} == {"ML Basics"}
+        blocks = _rendered(result)
+        assert blocks
+        assert all('"ML Basics"' in block for block in blocks)
 
     @pytest.mark.asyncio
     @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
-    async def test_search_documents_preserves_chunk_meta_through_serialization(
-        self, mcp_db
-    ):
-        """Chunk_meta must survive FastMCP's actual wire serialization.
-
-        Calling the tool function directly bypasses that serialization step entirely."""
+    async def test_search_documents_carries_the_matched_chunks_metadata(self, mcp_db):
+        """The chunk's own metadata reaches the text the model reads, over the
+        wire, without haiku.rag's structural keys."""
         from fastmcp import Client
 
         async with HaikuRAG(mcp_db, create=True) as rag:
@@ -176,14 +190,11 @@ class TestMCPReadTools:
                 "search_documents", {"query": "artificial intelligence"}
             )
 
-        results = result.structured_content["result"]
-        assert results
-        assert any(
-            r["chunk_meta"] == {"fake-metadata-for-testing": "42"} for r in results
-        )
         text = result.content[0].text
         assert "fake-metadata-for-testing" in text
         assert "42" in text
+        assert "doc_item_refs" not in text
+        assert result.structured_content is None
 
     @pytest.mark.asyncio
     @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
@@ -196,9 +207,8 @@ class TestMCPReadTools:
 
         result = await _call(_covering_all(config), "search_documents", query="gardens")
 
-        [hit] = _results(result)
-        assert all(sentence in hit["content"] for sentence in sentences)
-        assert all(sentence in result.content[0].text for sentence in sentences)
+        [hit] = _rendered(result)
+        assert all(sentence in hit for sentence in sentences)
 
     @pytest.mark.asyncio
     async def test_get_document(self, mcp_db):
@@ -531,9 +541,12 @@ class TestMCPSearchResultShape:
         assert [
             label for label in labels if "[c3]" in label and "#/pictures/3" in label
         ]
-        structured = _results(result)
-        assert [r["chunk_id"] for r in structured] == ["c1", "c2", "c3"]
-        assert all("image_data" not in r for r in structured)
+        assert [block.split("]")[0] for block in _rendered(result)] == [
+            "[c1",
+            "[c2",
+            "[c3",
+        ]
+        assert result.structured_content is None
 
     @pytest.mark.asyncio
     async def test_an_undecodable_picture_yields_no_image(self, mcp_db, monkeypatch):
@@ -566,7 +579,7 @@ class TestMCPSearchResultShape:
         result = await _call(create_mcp_server(mcp_db), "search_documents", query="q")
 
         assert [block.text for block in result.content] == ["No results found."]
-        assert _results(result) == []
+        assert result.structured_content is None
 
     @pytest.mark.asyncio
     async def test_search_text_alone_drives_the_document_tools(self, two_dbs):
@@ -600,7 +613,7 @@ class TestMCPSearchResultShape:
             r"Document ID: (\S+)\nCollection: (\S+)", search.content[0].text
         )
 
-        assert len(pairs) == len(_results(search)) == 2
+        assert len(pairs) == len(_rendered(search)) == 2
         assert {source for _, source in pairs} == {"alpha", "beta"}
         for document_id, source in pairs:
             outline = await _call(
@@ -747,19 +760,19 @@ class TestMCPCoversTheConfiguredSet:
         mcp = _covering_all(two_dbs)
         search = await _get_tool(mcp, "search_documents")
 
-        results = _results(await search(query="cats"))
+        blocks = _rendered(await search(query="cats"))
 
-        assert {r["source"] for r in results} == {"alpha", "beta"}
+        assert {_line(block, "Collection") for block in blocks} == {"alpha", "beta"}
 
     @pytest.mark.asyncio
     async def test_sources_narrows_the_search(self, two_dbs):
         mcp = _covering_all(two_dbs)
         search = await _get_tool(mcp, "search_documents")
 
-        results = _results(await search(query="cats", sources=["beta"]))
+        blocks = _rendered(await search(query="cats", sources=["beta"]))
 
-        assert results
-        assert {r["source"] for r in results} == {"beta"}
+        assert blocks
+        assert {_line(block, "Collection") for block in blocks} == {"beta"}
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -793,13 +806,13 @@ class TestMCPCoversTheConfiguredSet:
         mcp = _covering_all(two_dbs)
         search = await _get_tool(mcp, "search_documents")
 
-        results = _results(
+        blocks = _rendered(
             await search(query="cats", filter="uri LIKE '%beta%'", sources=["beta"])
         )
-        assert results
-        assert {r["source"] for r in results} == {"beta"}
+        assert blocks
+        assert {_line(block, "Collection") for block in blocks} == {"beta"}
         none = await search(query="cats", filter="uri LIKE '%beta%'", sources=[])
-        assert _results(none) == []
+        assert _rendered(none) == []
 
     @pytest.mark.asyncio
     async def test_the_listing_covers_every_database(self, two_dbs):
@@ -828,9 +841,9 @@ class TestMCPCoversTheConfiguredSet:
         mcp = create_mcp_server(config=two_dbs)
         search = await _get_tool(mcp, "search_documents")
 
-        results = _results(await search(query="cats"))
+        blocks = _rendered(await search(query="cats"))
 
-        assert {r["source"] for r in results} == {"alpha", "beta"}
+        assert {_line(block, "Collection") for block in blocks} == {"alpha", "beta"}
 
     @pytest.mark.asyncio
     async def test_ask_question_names_each_citations_database(
@@ -924,7 +937,7 @@ class TestMCPImageQuery:
             sources=[],
         )
 
-        assert _results(results) == []
+        assert _rendered(results) == []
         assert seen["query"] == png
         assert seen["filter"] == "uri LIKE 'x%'"
         assert seen["sources"] == []
@@ -1036,6 +1049,8 @@ class TestMCPErrorContract:
 
         assert result.is_error
         assert "no_such_column = 1" in result.content[0].text
+        assert "created_at" in result.content[0].text
+        assert "_rowid" not in result.content[0].text
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("filter", [None, "title = 'AI Overview'"])
@@ -1281,12 +1296,12 @@ class TestMCPClientLifetime:
         mcp = _mcp_covering(scope, config)
         async with mcp._lifespan_manager():
             search = await _get_tool(mcp, "search_documents")
-            results = _results(await search(query="artificial intelligence"))
+            blocks = _rendered(await search(query="artificial intelligence"))
             listing = await _get_tool(mcp, "list_documents")
             documents = await listing()
 
-        assert results
-        assert {r["source"] for r in results} == {"alpha"}
+        assert blocks
+        assert {_line(block, "Collection") for block in blocks} == {None}
         titles = {d.title for d in documents}
         assert "AI Overview" in titles
         assert "Zebras" not in titles
@@ -1371,9 +1386,9 @@ class TestMCPClientLifetime:
         assert opens == 1
 
         async with mcp._lifespan_manager():
-            results = _results(await search(query="artificial intelligence"))
+            blocks = _rendered(await search(query="artificial intelligence"))
         assert opens == 2
-        assert len(results) > 0
+        assert blocks
 
     @pytest.mark.asyncio
     async def test_same_dim_drift_starts(self, mcp_db):

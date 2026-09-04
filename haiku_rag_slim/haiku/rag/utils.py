@@ -421,11 +421,12 @@ def format_citations(citations: "list[Citation]", include_source: bool = False) 
         if section:
             location_parts.append(f"Section: {section}")
 
-        source = c.document_uri
+        # The URI is the header when there is no title; do not repeat it.
+        line = f"{header} {c.document_uri}" if c.document_title else header
         if location_parts:
-            source += f" - {', '.join(location_parts)}"
+            line += f" - {', '.join(location_parts)}"
 
-        lines.append(f"{header} {source}")
+        lines.append(line)
         for ref in c.picture_refs:
             lines.append(f"[Figure: {ref}]")
         lines.append(c.content)

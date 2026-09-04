@@ -35,10 +35,10 @@
 - MCP `search_documents` and `search_documents_by_image` expand results to
   their section (`HaikuRAG.expand_context`) and return the agent rendering
   as text (rank, `Document ID`, `Collection` over several databases, title,
-  headings, the matched chunk's metadata, passage), pictures as
-  `ImageContent` blocks, and the `SearchResult` list without `image_data` as
-  structured content. `SearchResult.format_for_agent(include_document_id=,
-  include_chunk_meta=)`; `collect_pictures` in `haiku.rag.tools.search`.
+  headings, the matched chunk's metadata, passage) and pictures as
+  `ImageContent` blocks, with no structured content.
+  `SearchResult.format_for_agent(include_document_id=, include_chunk_meta=)`;
+  `collect_pictures` in `haiku.rag.tools.search`.
 - MCP tools raise on failure; an empty result no longer doubles as an error.
   Unknown document, unknown collection, invalid filter and invalid base64
   carry a message; `ask_question` and `analyze` failures name the exception
@@ -49,6 +49,10 @@
   `analyze`; `source` on `get_document`; an unknown name is a tool error.
   `DocumentInfo.source`; citations name their database when the server
   covers several. `format_citations(citations, include_source=False)`.
+
+### Fixed
+
+- MCP citations no longer repeat the URI of an untitled document.
 
 ### Removed
 

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from importlib import metadata
@@ -89,7 +90,12 @@ async def _check_filter(
     try:
         await selected[0].count_documents(filter=filter)
     except ValueError as e:
-        raise ToolError(f"Invalid filter {filter!r}: {e}") from e
+        # The engine lists its own columns too, lance internals among them.
+        reason = re.sub(r"\s*Valid fields are .*", "", str(e), flags=re.DOTALL)
+        raise ToolError(
+            f"Invalid filter {filter!r}: {reason.rstrip('. ')}. "
+            f"Columns: {_FILTER_COLUMNS}."
+        ) from e
 
 
 def _instructions(scope: "DatabaseScope", config: AppConfig, agents: bool) -> str:
@@ -121,7 +127,8 @@ def _instructions(scope: "DatabaseScope", config: AppConfig, agents: bool) -> st
 def _search_result(results: list[SearchResult], covers_multiple: bool) -> ToolResult:
     """Results as the in-process agents read them, plus the matched chunk's
     metadata, then each distinct picture as an image block labelled with its
-    result, and the results as structured content without the picture bytes."""
+    result. No structured content: a client given both shows the model the
+    JSON and drops the text, or shows both."""
     import base64
 
     total = len(results)
@@ -154,15 +161,7 @@ def _search_result(results: list[SearchResult], covers_multiple: bool) -> ToolRe
                 mime_type="image/png",
             )
         )
-    return ToolResult(
-        content=content,
-        structured_content={
-            "result": [
-                result.model_dump(mode="json", exclude={"image_data"})
-                for result in results
-            ]
-        },
-    )
+    return ToolResult(content=content)
 
 
 def _node(toc: "dict[str, Any]") -> OutlineNode:

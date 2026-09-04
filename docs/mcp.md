@@ -113,8 +113,9 @@ title, section headings, the matched chunk's metadata when it has any, and the
 passage expanded to its section the way the agents get it
 (`search.max_context_chars` caps it). Pictures in the results follow as
 image blocks, one per distinct picture, each preceded by a line naming its
-result; `include_images: false` leaves them out. The structured content is the
-`SearchResult` list without picture bytes. Scores are not comparable across
+result; `include_images: false` leaves them out. Search results carry no
+structured content, so every client shows the model the same text and
+images. Scores are not comparable across
 queries or search types, so rank is the signal. `search_documents_by_image`
 embeds the query image and searches by vector similarity alone.
 
@@ -128,7 +129,9 @@ which is how a client learns what a filter can match.
 `ask_question` runs the RAG agent on the server and returns an answer
 followed by its citations. `analyze` writes and runs Python in a sandbox
 over the documents, for counting, aggregation and computation across
-documents. Both cost a model call.
+documents. Both cost a model call. Claude Code moves a call still running
+after about two minutes to a background task, which a slow local model can
+trigger; `--no-agents` leaves both tools out.
 
 ### Filters
 
