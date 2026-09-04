@@ -32,12 +32,13 @@
 - `processing.conversion_options.picture_description.model` defaults to
   `enable_thinking: false`, and the field now reaches the VLM: docling's
   picture-description request carries `reasoning_effort` in `params`.
-- MCP `search_documents` and `search_documents_by_image` return the agent
-  rendering as text (rank, `Document ID`, `Collection` over several
-  databases, title, headings, passage), pictures as `ImageContent` blocks,
-  and the `SearchResult` list without `image_data` as structured content.
-  `SearchResult.format_for_agent(include_document_id=)`;
-  `collect_pictures` in `haiku.rag.tools.search`.
+- MCP `search_documents` and `search_documents_by_image` expand results to
+  their section (`HaikuRAG.expand_context`) and return the agent rendering
+  as text (rank, `Document ID`, `Collection` over several databases, title,
+  headings, the matched chunk's metadata, passage), pictures as
+  `ImageContent` blocks, and the `SearchResult` list without `image_data` as
+  structured content. `SearchResult.format_for_agent(include_document_id=,
+  include_chunk_meta=)`; `collect_pictures` in `haiku.rag.tools.search`.
 - MCP tools raise on failure; an empty result no longer doubles as an error.
   Unknown document, unknown collection, invalid filter and invalid base64
   carry a message; `ask_question` and `analyze` failures name the exception

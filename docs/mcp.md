@@ -109,7 +109,9 @@ repeating it.
 `search_documents` runs hybrid search, vector and full-text. Its text content
 is the rendering the in-process agents read: results best first, each with its
 rank, `Document ID`, `Collection` when the server covers several, the document
-title, section headings and the passage. Pictures in the results follow as
+title, section headings, the matched chunk's metadata when it has any, and the
+passage expanded to its section the way the agents get it
+(`search.max_context_chars` caps it). Pictures in the results follow as
 image blocks, one per distinct picture, each preceded by a line naming its
 result; `include_images: false` leaves them out. The structured content is the
 `SearchResult` list without picture bytes. Scores are not comparable across

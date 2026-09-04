@@ -119,9 +119,9 @@ def _instructions(scope: "DatabaseScope", config: AppConfig, agents: bool) -> st
 
 
 def _search_result(results: list[SearchResult], covers_multiple: bool) -> ToolResult:
-    """Results as the in-process agents read them, then each distinct picture
-    as an image block labelled with its result, and the results as structured
-    content without the picture bytes."""
+    """Results as the in-process agents read them, plus the matched chunk's
+    metadata, then each distinct picture as an image block labelled with its
+    result, and the results as structured content without the picture bytes."""
     import base64
 
     total = len(results)
@@ -131,6 +131,7 @@ def _search_result(results: list[SearchResult], covers_multiple: bool) -> ToolRe
             total=total,
             include_collection=covers_multiple,
             include_document_id=True,
+            include_chunk_meta=True,
         )
         for rank, result in enumerate(results, 1)
     )
@@ -274,9 +275,10 @@ def _covering(
         Use this first for any question the documents might answer; it needs
         no model and is the cheapest call. Results come best first, each with
         its rank, `Document ID`, `Collection` when the server covers several,
-        the document title, section headings and the matching passage; pass
-        the id and collection to the document tools. Pictures in the results
-        follow as images, each labelled with its result. Ranks, not scores,
+        the document title, section headings, the matched chunk's metadata
+        when it has any, and the matching passage expanded to its section;
+        pass the id and collection to the document tools. Pictures in the
+        results follow as images, each labelled with its result. Ranks, not scores,
         are the signal: scores are not comparable across queries. If nothing
         relevant comes back, rephrase once or narrow with `filter` before
         concluding the material is absent.
@@ -300,7 +302,7 @@ def _covering(
             )
         except UnknownDatabaseError as e:
             raise ToolError(str(e)) from e
-        return _search_result(results, rag.covers_multiple)
+        return _search_result(await rag.expand_context(results), rag.covers_multiple)
 
     # Image-as-query tool, only registered when the configured embedder
     # supports image embeddings. Probed at server-build time when no Store is
@@ -345,7 +347,9 @@ def _covering(
                 )
             except UnknownDatabaseError as e:
                 raise ToolError(str(e)) from e
-            return _search_result(results, rag.covers_multiple)
+            return _search_result(
+                await rag.expand_context(results), rag.covers_multiple
+            )
 
     @mcp.tool(annotations=_read_only("Get document"))
     async def get_document(document_id: str, source: str | None = None) -> Document:

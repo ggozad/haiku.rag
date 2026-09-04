@@ -24,7 +24,8 @@ could be about the user's documents. Say so when it has nothing relevant.
 ## Find
 
 `search_documents` is the first call. Results come best first with the document
-title, section headings and the matching passage. `filter` restricts which
+title, section headings, the matched chunk's metadata when it has any, and the
+passage in its section. `filter` restricts which
 documents are searched, `limit` how many results come back. If it misses,
 rephrase once or narrow with a filter before concluding the material is not
 there.

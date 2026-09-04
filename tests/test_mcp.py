@@ -10,7 +10,7 @@ from haiku.rag.mcp import _covering as _mcp_covering
 from haiku.rag.mcp import create_mcp_server
 from haiku.rag.store.models import Chunk, Document, SearchResult
 from haiku.rag.tools.document import DocumentInfo
-from tests.multi_db.helpers import _config, _seed
+from tests.multi_db.helpers import _config, _seed, _seed_expandable
 
 
 @pytest.fixture(autouse=True)
@@ -181,6 +181,24 @@ class TestMCPReadTools:
         assert any(
             r["chunk_meta"] == {"fake-metadata-for-testing": "42"} for r in results
         )
+        text = result.content[0].text
+        assert "fake-metadata-for-testing" in text
+        assert "42" in text
+
+    @pytest.mark.asyncio
+    @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
+    async def test_search_results_come_expanded(self, tmp_path):
+        """The passage is the hit in its section, as the in-process agents read
+        it, not the chunk that matched."""
+        config = _config(tmp_path, ["alpha"])
+        sentences = ["Gardens need water.", "Roses need pruning.", "Tulips need sun."]
+        await _seed_expandable(config, "alpha", sentences)
+
+        result = await _call(_covering_all(config), "search_documents", query="gardens")
+
+        [hit] = _results(result)
+        assert all(sentence in hit["content"] for sentence in sentences)
+        assert all(sentence in result.content[0].text for sentence in sentences)
 
     @pytest.mark.asyncio
     async def test_get_document(self, mcp_db):

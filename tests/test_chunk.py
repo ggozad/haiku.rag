@@ -264,6 +264,37 @@ def test_search_result_format_for_agent_omits_chunk_meta():
     assert "para_no" not in formatted
 
 
+def test_search_result_format_for_agent_chunk_meta_is_opt_in():
+    """A caller that asks sees the chunk's own metadata, never the structural
+    keys haiku.rag stores beside it."""
+    result = SearchResult(
+        content="Some content.",
+        score=0.9,
+        chunk_id="chunk-1",
+        chunk_meta={
+            "para_no": "12",
+            "doc_item_refs": ["#/texts/0"],
+            "page_numbers": [1],
+            "headings": ["Intro"],
+            "labels": ["paragraph"],
+        },
+    )
+
+    opted = result.format_for_agent(rank=1, total=1, include_chunk_meta=True)
+
+    assert "para_no" in opted
+    assert "12" in opted
+    assert "doc_item_refs" not in opted
+    assert "#/texts/0" not in opted
+
+    structural_only = result.model_copy(
+        update={"chunk_meta": {"doc_item_refs": ["#/texts/0"], "page_numbers": [1]}}
+    )
+    assert structural_only.format_for_agent(
+        rank=1, total=1, include_chunk_meta=True
+    ) == structural_only.format_for_agent(rank=1, total=1)
+
+
 def test_search_result_format_for_agent_omits_document_meta():
     """Document metadata is UI plumbing, never shown to the model."""
     result = SearchResult(

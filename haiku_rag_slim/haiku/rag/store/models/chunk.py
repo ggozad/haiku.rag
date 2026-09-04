@@ -1,3 +1,4 @@
+import json
 from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, PrivateAttr
@@ -143,8 +144,9 @@ class SearchResult(BaseModel):
     consumers (UIs). Never part of ``format_for_agent`` output.
 
     ``chunk_meta`` is the anchor chunk's unparsed ``Chunk.metadata`` and does not
-    include the metadata of any other chunks merged with it. Never part of
-    ``format_for_agent`` output.
+    include the metadata of any other chunks merged with it. Left out of
+    ``format_for_agent`` output unless ``include_chunk_meta`` asks for its custom
+    keys.
 
     ``source`` names the database a result came from: the name from
     ``lancedb.databases`` or a path's stem, never a path or URI, so a location
@@ -203,6 +205,7 @@ class SearchResult(BaseModel):
         *,
         include_collection: bool = False,
         include_document_id: bool = False,
+        include_chunk_meta: bool = False,
     ) -> str:
         """Format this search result for inclusion in agent context.
 
@@ -218,6 +221,9 @@ class SearchResult(BaseModel):
         search spanning one collection has nothing to distinguish, whether or
         not that collection is named. `include_document_id` is for a reader
         that will fetch the document by id from the text alone.
+        `include_chunk_meta` renders the metadata stored with the matched
+        chunk beyond haiku.rag's own structural keys; on an expanded result it
+        locates the hit, not the whole passage.
         """
         if rank is not None and total is not None:
             parts = [f"[{self.chunk_id}] [rank {rank} of {total}]"]
@@ -246,6 +252,16 @@ class SearchResult(BaseModel):
             primary_label = self._get_primary_label()
             if primary_label:
                 parts.append(f"Type: {primary_label}")
+
+        if include_chunk_meta:
+            custom = {
+                key: value
+                for key, value in self.chunk_meta.items()
+                if key not in ChunkMetadata.model_fields
+            }
+            if custom:
+                rendered = json.dumps(custom, ensure_ascii=False, sort_keys=True)
+                parts.append(f"Matched chunk metadata: {rendered}")
 
         # Surface picture captions when present. Order matches the binary
         # attachments emitted by build_image_content_from_results, so the model
