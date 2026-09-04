@@ -110,10 +110,17 @@ For direct agent composition, see the [capabilities documentation](https://ggoza
 
 ## MCP Server
 
-Use with AI assistants like Claude Desktop:
+Use with AI assistants like Claude Code and Claude Desktop:
 
 ```bash
 haiku-rag mcp --stdio
+```
+
+In Claude Code, install the plugin, which registers the server and a skill:
+
+```bash
+claude plugin marketplace add ggozad/haiku.rag
+claude plugin install haiku-rag
 ```
 
 Add to your Claude Desktop configuration:

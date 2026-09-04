@@ -4,6 +4,9 @@
 
 ### Added
 
+- Claude Code plugin under `claude-plugin/`: the server configuration and the
+  `haiku-rag` skill. `claude plugin marketplace add ggozad/haiku.rag`, then
+  `claude plugin install haiku-rag`.
 - `haiku-rag mcp --no-agents` leaves `ask_question` and `analyze`
   unregistered. `create_mcp_server(agents=)`, `HaikuRAGApp.run_mcp(agents=)`.
 - MCP tools `get_document_outline` (heading tree with page numbers) and

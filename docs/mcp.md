@@ -40,6 +40,25 @@ document. A name the server does not cover is an error.
 `haiku-rag --db-name NAME mcp` serves one. See
 [Multiple Databases](configuration/storage.md#multiple-databases).
 
+## Claude Code
+
+The repository ships a plugin that registers the server and a skill telling
+Claude when and how to use it:
+
+```bash
+claude plugin marketplace add ggozad/haiku.rag
+claude plugin install haiku-rag
+```
+
+The plugin runs `haiku-rag mcp --stdio`, so `haiku-rag` must be on the PATH
+and the configuration decides the database. The skill pre-approves every tool
+and is also invocable as `/haiku-rag`. To register the server without the
+plugin:
+
+```bash
+claude mcp add haiku-rag -- haiku-rag mcp --stdio
+```
+
 ## Claude Desktop Integration
 
 Add to your Claude Desktop configuration (`claude_desktop_config.json`):

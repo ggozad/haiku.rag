@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -1120,6 +1121,48 @@ class TestMCPErrorContract:
             r.exc_info and "boom at /secret/path" in str(r.exc_info[1])
             for r in caplog.records
         )
+
+
+class TestClaudeCodePlugin:
+    """The plugin under claude-plugin/ points at the server this module builds."""
+
+    root = Path(__file__).resolve().parents[1]
+
+    def test_the_manifests_name_the_plugin_and_its_server(self):
+        import json
+
+        plugin = json.loads(
+            (self.root / "claude-plugin/.claude-plugin/plugin.json").read_text()
+        )
+        marketplace = json.loads(
+            (self.root / ".claude-plugin/marketplace.json").read_text()
+        )
+        servers = json.loads((self.root / "claude-plugin/.mcp.json").read_text())
+
+        assert plugin["name"] == "haiku-rag"
+        assert plugin["description"]
+        [entry] = marketplace["plugins"]
+        assert entry["name"] == plugin["name"]
+        assert entry["source"] == "./claude-plugin"
+        assert servers["mcpServers"]["haiku-rag"]["args"] == ["mcp", "--stdio"]
+
+    @pytest.mark.asyncio
+    async def test_the_skill_pre_approves_every_tool_the_server_registers(
+        self, mcp_db, multimodal_embedder
+    ):
+        import yaml
+
+        text = (self.root / "claude-plugin/skills/haiku-rag/SKILL.md").read_text()
+        _, frontmatter, _ = text.split("---", 2)
+        skill = yaml.safe_load(frontmatter)
+        prefix = "mcp__plugin_haiku-rag_haiku-rag__"
+
+        assert skill["name"] == "haiku-rag"
+        assert skill["description"]
+        assert all(tool.startswith(prefix) for tool in skill["allowed-tools"])
+        approved = {tool.removeprefix(prefix) for tool in skill["allowed-tools"]}
+        registered = {t.name for t in await create_mcp_server(mcp_db).list_tools()}
+        assert approved == registered
 
 
 class TestMCPClientLifetime:
