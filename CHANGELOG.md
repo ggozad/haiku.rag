@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- MCP server `instructions`, `version`, and read-only `ToolAnnotations` on
+  every tool; every parameter carries a description. `filter` on
+  `search_documents` and `search_documents_by_image`. `DocumentInfo.metadata`.
+
 ### Changed
 
 - Default models are `ollama:qwen3.8`: `ModelConfig`, `qa.model`,

@@ -28,6 +28,7 @@ class DocumentInfo(BaseModel):
     uri: str
     created: str
     source: str | None = None
+    metadata: dict = {}
 
 
 class DocumentListResponse(BaseModel):

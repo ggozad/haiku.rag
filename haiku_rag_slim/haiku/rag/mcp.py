@@ -1,29 +1,79 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
+from importlib import metadata
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+from mcp.types import ToolAnnotations
+from pydantic import Field
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.store.exceptions import UnknownDatabaseError
 from haiku.rag.store.models import Document, SearchResult
+from haiku.rag.store.schema import DocumentMetaRecord
 from haiku.rag.tools.document import DocumentInfo
 from haiku.rag.utils import format_citations
 
 if TYPE_CHECKING:
     from haiku.rag.client.scope import DatabaseScope
 
+_FILTER_COLUMNS = ", ".join(DocumentMetaRecord.model_fields)
+
+Filter = Annotated[
+    str | None,
+    Field(
+        description=(
+            f"SQL WHERE clause over the document columns {_FILTER_COLUMNS}, "
+            "restricting which documents are used. `metadata` is a JSON string, "
+            'so match its keys with LIKE: metadata LIKE \'%"author": "Smith"%\'. '
+            "Also uri LIKE '%.pdf', title = 'Q3 report'."
+        )
+    ),
+]
+Sources = Annotated[
+    list[str] | None,
+    Field(description="Collections to use, by name. All of them by default."),
+]
+
+
+def _read_only(title: str) -> ToolAnnotations:
+    return ToolAnnotations(title=title, readOnlyHint=True, openWorldHint=False)
+
+
+def _decode_image(image_base64: str) -> bytes:
+    import base64
+
+    return base64.b64decode(image_base64, validate=True)
+
 
 def _decode_images(images_base64: list[str] | None) -> list[bytes] | None:
     if not images_base64:
         return None
-    import base64
+    return [_decode_image(b64) for b64 in images_base64]
 
-    return [base64.b64decode(b64, validate=True) for b64 in images_base64]
+
+def _instructions(scope: "DatabaseScope", config: AppConfig) -> str:
+    """What the server is for, naming no tools: the client has every tool's
+    description from the listing."""
+    lines = [
+        "haiku-rag is the user's knowledge base: documents they ingested, "
+        "searchable by meaning and keyword, readable whole, answered with "
+        "citations, or computed across documents.",
+        "Use it whenever a question could be answered from those documents, "
+        "before answering from memory, and say when it had nothing relevant.",
+    ]
+    if scope.covers_multiple:
+        lines.append(
+            f"It holds several collections: {', '.join(scope.names)}. Results "
+            "and citations name theirs in `source`; pass `sources` to use a subset."
+        )
+    if config.prompts.domain_preamble:
+        lines.append(config.prompts.domain_preamble)
+    return "\n".join(lines)
 
 
 def create_mcp_server(
@@ -86,27 +136,45 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
             finally:
                 client = None
 
-    mcp = FastMCP("haiku-rag", lifespan=lifespan)
+    mcp = FastMCP(
+        "haiku-rag",
+        instructions=_instructions(scope, config),
+        version=metadata.version("haiku.rag-slim"),
+        lifespan=lifespan,
+    )
 
-    @mcp.tool()
+    @mcp.tool(annotations=_read_only("Search documents"))
     async def search_documents(
         query: str,
         limit: int | None = None,
         include_images: bool = True,
-        sources: list[str] | None = None,
+        filter: Filter = None,
+        sources: Sources = None,
     ) -> list[SearchResult]:
-        """Search the RAG system for documents using hybrid search (vector similarity + full-text search).
+        """Search the knowledge base by meaning and keyword.
 
-        When include_images is True (default) and a picture-labeled chunk is
-        in the result set, ``SearchResult.image_data`` carries base64-encoded
-        PNG bytes keyed by self_ref. Set to False to omit the bytes from the
-        response (smaller JSON payload for plain-text consumers).
-        ``sources`` names the databases to search, all of them by default.
+        Use this first for any question the documents might answer; it needs
+        no model and is the cheapest call. Results come best first, each with
+        the document's id, title and collection, the section headings and the
+        matching passage. Scores are not comparable across queries, so read
+        the order, not the numbers. If nothing relevant comes back, rephrase
+        once or narrow with `filter` before concluding the material is absent.
+
+        Args:
+            query: What to look for, in natural language or keywords.
+            limit: How many results to return; the server's configured default
+                when omitted.
+            include_images: Attach the bytes of pictures in the results as
+                base64 PNG under `image_data`. False for a smaller response.
         """
         try:
             rag = await _client()
             return await rag.search(
-                query, limit=limit, include_images=include_images, sources=sources
+                query,
+                limit=limit,
+                filter=filter,
+                include_images=include_images,
+                sources=sources,
             )
         except UnknownDatabaseError as e:
             raise ToolError(str(e)) from e
@@ -121,45 +189,57 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
 
     if get_embedder(config).supports_images:
 
-        @mcp.tool()
+        @mcp.tool(annotations=_read_only("Search documents by image"))
         async def search_documents_by_image(
             image_base64: str,
             limit: int | None = None,
             include_images: bool = True,
-            sources: list[str] | None = None,
+            filter: Filter = None,
+            sources: Sources = None,
         ) -> list[SearchResult]:
-            """Search the RAG system using an image as the query.
+            """Search the knowledge base with an image as the query.
 
-            ``image_base64`` is a base64-encoded image (PNG/JPEG bytes). The
-            image is embedded via the configured multimodal embedder and the
-            chunks table is searched vector-only. ``include_images`` controls
-            whether picture bytes are attached to picture-labeled results.
-            ``sources`` names the databases to search, all of them by default.
+            Use this when the question is about a picture rather than words.
+            The image is embedded and matched against document text and
+            figures by vector similarity alone. Results have the shape of
+            `search_documents` results.
+
+            Args:
+                image_base64: The query image, PNG or JPEG bytes as base64.
+                limit: How many results to return; the server's configured
+                    default when omitted.
+                include_images: Attach the bytes of pictures in the results as
+                    base64 PNG under `image_data`. False for a smaller response.
             """
-            import base64
-
             try:
-                raw = base64.b64decode(image_base64)
-            except Exception:
-                return []
-            try:
+                raw = _decode_image(image_base64)
                 rag = await _client()
                 return await rag.search(
-                    raw, limit=limit, include_images=include_images, sources=sources
+                    raw,
+                    limit=limit,
+                    filter=filter,
+                    include_images=include_images,
+                    sources=sources,
                 )
             except UnknownDatabaseError as e:
                 raise ToolError(str(e)) from e
             except Exception:
                 return []
 
-    @mcp.tool()
+    @mcp.tool(annotations=_read_only("Get document"))
     async def get_document(
         document_id: str, source: str | None = None
     ) -> Document | None:
-        """Get a document by its ID.
+        """Read one document whole, in reading order.
 
-        ``source`` names the database holding it; without one every database
-        is asked.
+        Use this after a search when a passage is not enough. Returns the
+        document's content, title, uri and metadata. Ids come from search
+        results and `list_documents`.
+
+        Args:
+            document_id: The document's id.
+            source: The collection holding it. Without one every collection
+                is asked.
         """
         try:
             rag = await _client()
@@ -169,18 +249,21 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
         except Exception:
             return None
 
-    @mcp.tool()
+    @mcp.tool(annotations=_read_only("List documents"))
     async def list_documents(
         limit: int | None = None,
         offset: int | None = None,
-        filter: str | None = None,
+        filter: Filter = None,
     ) -> list[DocumentInfo]:
-        """List all documents with optional pagination and filtering.
+        """List what the knowledge base holds.
+
+        Use this to see which documents exist, their titles, URIs and
+        metadata, and so what a `filter` can match. Not a search: it returns
+        no passages.
 
         Args:
-            limit: Maximum number of documents to return.
-            offset: Number of documents to skip.
-            filter: Optional SQL WHERE clause to filter documents.
+            limit: How many documents to return.
+            offset: How many documents to skip, for paging.
         """
         try:
             rag = await _client()
@@ -193,30 +276,32 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
                     uri=doc.uri or "",
                     created=doc.created_at.strftime("%Y-%m-%d"),
                     source=doc.source,
+                    metadata=doc.metadata,
                 )
                 for doc in documents
             ]
         except Exception:
             return []
 
-    @mcp.tool()
+    @mcp.tool(annotations=_read_only("Ask a question"))
     async def ask_question(
         question: str,
         cite: bool = False,
         images_base64: list[str] | None = None,
-        sources: list[str] | None = None,
+        sources: Sources = None,
     ) -> str:
-        """Ask a question using the QA agent.
+        """Answer a question from the documents with a retrieval agent.
+
+        Use this when the user wants an answer rather than material to read.
+        It runs a model on the server and is slower than a search. Returns
+        the answer, followed by citations to the passages it rests on when
+        `cite` is set.
 
         Args:
-            question: The question to ask.
-            cite: Whether to include citations in the response.
-            images_base64: Base64-encoded images attached to the question
-                (requires a vision-capable QA model).
-            sources: The databases to answer from, all of them by default.
-
-        Returns:
-            The answer as a string.
+            question: The question, in natural language.
+            cite: Append citations to the answer.
+            images_base64: Images to attach to the question, PNG or JPEG
+                bytes as base64. Needs a vision-capable model on the server.
         """
         try:
             images = _decode_images(images_base64)
@@ -232,28 +317,24 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
         except Exception as e:
             return f"Error answering question: {e!s}"
 
-    @mcp.tool()
+    @mcp.tool(annotations=_read_only("Analyze documents"))
     async def analyze(
         question: str,
-        filter: str | None = None,
+        filter: Filter = None,
         images_base64: list[str] | None = None,
-        sources: list[str] | None = None,
+        sources: Sources = None,
     ) -> str:
-        """Answer complex questions using the analysis capability.
+        """Compute an answer across documents with code.
 
-        Use this for questions requiring computation, aggregation, or
-        structural traversal across documents. The capability can write and
-        execute Python code in a sandboxed interpreter.
+        Use this for counting, aggregation, comparison across many documents
+        or arithmetic over tables, where reading passages is not enough. A
+        model writes and runs Python in a sandbox over the selected documents.
+        It is the slowest tool. Returns the answer as text.
 
         Args:
-            question: The question to answer.
-            filter: Optional SQL WHERE clause to filter documents.
-            images_base64: Base64-encoded images attached to the question
-                (requires a vision-capable analysis model).
-            sources: The databases to analyze, all of them by default.
-
-        Returns:
-            The answer as a string.
+            question: The question, in natural language.
+            images_base64: Images to attach to the question, PNG or JPEG
+                bytes as base64. Needs a vision-capable model on the server.
         """
         try:
             images = _decode_images(images_base64)

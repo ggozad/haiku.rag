@@ -67,47 +67,54 @@ With a custom database path:
 
 After restarting Claude Desktop, you can ask Claude to search your documents or answer questions using your knowledge base.
 
-## Available Tools
+## Tools
 
-### Documents
+Every tool is read-only and says so in its annotations. Each parameter carries
+a description in the tool schema, so the listing below names them without
+repeating it.
 
-- **`get_document`** - Retrieve a document by ID
-  - `document_id` (required): The document ID
-  - `source` (optional): The database holding it
+| Tool | Registered | Parameters |
+|---|---|---|
+| `search_documents` | always | `query`, `limit`, `include_images`, `filter`, `sources` |
+| `search_documents_by_image` | multimodal embedder only | `image_base64`, `limit`, `include_images`, `filter`, `sources` |
+| `get_document` | always | `document_id`, `source` |
+| `list_documents` | always | `limit`, `offset`, `filter` |
+| `ask_question` | always | `question`, `cite`, `images_base64`, `sources` |
+| `analyze` | always | `question`, `filter`, `images_base64`, `sources` |
 
-- **`list_documents`** - List documents with pagination and filtering
-  - `limit` (optional): Maximum number to return
-  - `offset` (optional): Number to skip
-  - `filter` (optional): SQL WHERE clause for filtering
+`search_documents` runs hybrid search, vector and full-text, and returns
+results best first. Scores are not comparable across queries or search types.
+Rank is the signal. `include_images` attaches picture bytes as base64 PNG under
+`image_data`. `search_documents_by_image` embeds the query image and searches
+by vector similarity alone.
 
-### Search
+`get_document` returns a document whole, in reading order. `list_documents`
+returns titles, URIs and metadata, which is how a client learns what a filter
+can match.
 
-- **`search_documents`** - Search using hybrid search (vector + full-text)
-  - `query` (required): Search query
-  - `limit` (optional): Maximum results (uses config default if not specified)
-  - `include_images` (optional, default `true`): Attach base64-encoded picture bytes to picture-labeled results
-  - `sources` (optional): The databases to search
+`ask_question` runs the RAG agent on the server and returns an answer, with
+citations when `cite` is set. `analyze` writes and runs Python in a sandbox
+over the documents, for counting, aggregation and computation across
+documents. Both cost a model call.
 
-- **`search_documents_by_image`** - Search using an image as the query (registered only when the configured embedder supports images)
-  - `image_base64` (required): Base64-encoded image (PNG/JPEG bytes)
-  - `limit` (optional): Maximum results
-  - `include_images` (optional, default `true`)
-  - `sources` (optional): The databases to search
+### Filters
 
-### Question Answering
+`filter` is a SQL WHERE clause over the document columns `id`, `uri`, `title`,
+`metadata`, `created_at`, `updated_at`. `metadata` is a JSON string, so match
+its keys with LIKE:
 
-- **`ask_question`** - Ask questions about your documents
-  - `question` (required): The question to ask
-  - `cite` (optional): Include source citations (default: false)
-  - `images_base64` (optional): Base64-encoded images attached to the question (requires a vision-capable QA model)
-  - `sources` (optional): The databases to answer from
+```sql
+metadata LIKE '%"author": "Smith"%'
+uri LIKE '%.pdf'
+title = 'Q3 report'
+```
 
-- **`analyze`** - Answer complex analytical questions via code execution
-  - `question` (required): The question to answer
-  - `filter` (optional): SQL WHERE clause to restrict document access
-  - `images_base64` (optional): Base64-encoded images attached to the question (requires a vision-capable analysis model)
-  - `sources` (optional): The databases to analyze
-  - Best for aggregation, computation, and multi-document analysis
+### Instructions
+
+The server publishes `instructions` describing the knowledge base: what it
+holds, when to reach for it, the collection names when it covers several, and
+`prompts.domain_preamble` when set. Claude Code shows them to the model. Claude
+Desktop does not, so every tool description stands on its own.
 
 ## Continuous ingestion
 

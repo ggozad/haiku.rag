@@ -56,6 +56,7 @@ async def mcp_db(temp_db_path):
             "Artificial intelligence is transforming industries worldwide.",
             title="AI Overview",
             uri="test://ai-overview",
+            metadata={"author": "Ada"},
         )
         await rag.create_document(
             "Machine learning is a subset of artificial intelligence.",
@@ -103,6 +104,21 @@ class TestMCPReadTools:
 
         results = await search(query="artificial intelligence", limit=1)
         assert len(results) == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
+    async def test_search_documents_with_filter(self, mcp_db):
+        from fastmcp import Client
+
+        async with Client(create_mcp_server(mcp_db)) as client:
+            result = await client.call_tool(
+                "search_documents",
+                {"query": "artificial intelligence", "filter": "title = 'ML Basics'"},
+            )
+
+        results = result.structured_content["result"]
+        assert results
+        assert {r["document_title"] for r in results} == {"ML Basics"}
 
     @pytest.mark.asyncio
     @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
@@ -201,6 +217,103 @@ class TestMCPReadTools:
         results = await list_docs(filter="title = 'AI Overview'")
         assert len(results) == 1
         assert results[0].title == "AI Overview"
+
+    @pytest.mark.asyncio
+    @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
+    async def test_list_documents_carries_metadata(self, mcp_db):
+        from fastmcp import Client
+
+        async with Client(create_mcp_server(mcp_db)) as client:
+            result = await client.call_tool("list_documents", {})
+
+        [overview] = [
+            d
+            for d in result.structured_content["result"]
+            if d["title"] == "AI Overview"
+        ]
+        assert overview["metadata"] == {"author": "Ada"}
+
+
+@pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
+class TestMCPDescribesItself:
+    """What a client learns from initialize and list_tools, over the wire."""
+
+    @pytest.mark.asyncio
+    async def test_instructions_and_version_are_set(self, mcp_db):
+        from importlib import metadata
+
+        from fastmcp import Client
+
+        async with Client(create_mcp_server(mcp_db)) as client:
+            init = client.initialize_result
+
+        assert init.instructions
+        assert init.serverInfo.version == metadata.version("haiku.rag-slim")
+
+    @pytest.mark.asyncio
+    async def test_instructions_name_the_collections_when_covering_several(
+        self, two_dbs
+    ):
+        from fastmcp import Client
+
+        from haiku.rag.client.scope import DatabaseScope
+
+        async with Client(_covering_all(two_dbs)) as client:
+            covering_both = client.initialize_result.instructions
+        one = DatabaseScope.resolve(two_dbs, database_name="alpha")
+        async with Client(_mcp_covering(one, two_dbs)) as client:
+            covering_one = client.initialize_result.instructions
+
+        assert "alpha" in covering_both
+        assert "beta" in covering_both
+        assert "beta" not in covering_one
+
+    @pytest.mark.asyncio
+    async def test_instructions_carry_the_domain_preamble(self, mcp_db):
+        from fastmcp import Client
+
+        from haiku.rag.config import get_config
+
+        config = get_config().model_copy(deep=True)
+        config.prompts.domain_preamble = "Everything here is about zebras."
+
+        async with Client(create_mcp_server(mcp_db, config=config)) as client:
+            with_preamble = client.initialize_result.instructions
+        async with Client(create_mcp_server(mcp_db)) as client:
+            without = client.initialize_result.instructions
+
+        assert "Everything here is about zebras." in with_preamble
+        assert "zebras" not in without
+
+    @pytest.mark.asyncio
+    async def test_every_tool_is_annotated_read_only(self, mcp_db, multimodal_embedder):
+        from fastmcp import Client
+
+        async with Client(create_mcp_server(mcp_db)) as client:
+            tools = await client.list_tools()
+
+        assert len(tools) == 6
+        for tool in tools:
+            assert tool.annotations is not None, tool.name
+            assert tool.annotations.readOnlyHint is True, tool.name
+            assert tool.annotations.openWorldHint is False, tool.name
+            assert tool.annotations.title, tool.name
+
+    @pytest.mark.asyncio
+    async def test_every_parameter_is_described(self, mcp_db, multimodal_embedder):
+        from fastmcp import Client
+
+        async with Client(create_mcp_server(mcp_db)) as client:
+            tools = await client.list_tools()
+
+        undescribed = [
+            f"{tool.name}.{name}"
+            for tool in tools
+            for name, schema in tool.inputSchema.get("properties", {}).items()
+            if not schema.get("description")
+        ]
+        assert len(tools) == 6
+        assert undescribed == []
 
 
 class TestMCPToolSet:
@@ -380,12 +493,34 @@ class TestMCPImageQuery:
 
         png = b"\x89PNG\r\n\x1a\n"
         results = await search_by_image(
-            image_base64=base64.b64encode(png).decode("ascii"), sources=["alpha"]
+            image_base64=base64.b64encode(png).decode("ascii"),
+            filter="uri LIKE 'x%'",
+            sources=["alpha"],
         )
 
         assert results == []
         assert seen["query"] == png
+        assert seen["filter"] == "uri LIKE 'x%'"
         assert seen["sources"] == ["alpha"]
+
+    @pytest.mark.asyncio
+    async def test_image_query_rejects_characters_outside_the_alphabet(
+        self, mcp_db, multimodal_embedder, monkeypatch
+    ):
+        """A lenient decoder would drop the stray characters and search."""
+        searched = False
+
+        async def fake_search(self, query, **kwargs):
+            nonlocal searched
+            searched = True
+            return []
+
+        monkeypatch.setattr(HaikuRAG, "search", fake_search)
+        mcp = create_mcp_server(mcp_db)
+        search_by_image = await _get_tool(mcp, "search_documents_by_image")
+
+        assert await search_by_image(image_base64="AAAA!!!!") == []
+        assert not searched
 
     @pytest.mark.asyncio
     async def test_image_query_returns_empty_on_invalid_base64(
