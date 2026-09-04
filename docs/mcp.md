@@ -84,11 +84,15 @@ repeating it.
 | `ask_question` | always | `question`, `images_base64`, `sources` |
 | `analyze` | always | `question`, `filter`, `images_base64`, `sources` |
 
-`search_documents` runs hybrid search, vector and full-text, and returns
-results best first. Scores are not comparable across queries or search types.
-Rank is the signal. `include_images` attaches picture bytes as base64 PNG under
-`image_data`. `search_documents_by_image` embeds the query image and searches
-by vector similarity alone.
+`search_documents` runs hybrid search, vector and full-text. Its text content
+is the rendering the in-process agents read: results best first, each with its
+rank, `Document ID`, `Collection` when the server covers several, the document
+title, section headings and the passage. Pictures in the results follow as
+image blocks, one per distinct picture, each preceded by a line naming its
+result; `include_images: false` leaves them out. The structured content is the
+`SearchResult` list without picture bytes. Scores are not comparable across
+queries or search types, so rank is the signal. `search_documents_by_image`
+embeds the query image and searches by vector similarity alone.
 
 `get_document` returns a document whole, in reading order. For a long one,
 `get_document_outline` returns the heading tree with page numbers and

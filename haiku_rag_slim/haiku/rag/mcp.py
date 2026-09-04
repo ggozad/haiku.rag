@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING, Annotated
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
-from mcp.types import ToolAnnotations
+from fastmcp.tools import ToolResult
+from mcp.types import ContentBlock, ImageContent, TextContent, ToolAnnotations
 from pydantic import Field
 
 from haiku.rag.client import HaikuRAG
@@ -19,6 +20,7 @@ from haiku.rag.store.models import Document, SearchResult
 from haiku.rag.store.models.document_item import DocumentItem
 from haiku.rag.store.schema import DocumentMetaRecord
 from haiku.rag.tools.document import DocumentInfo, DocumentSection, OutlineNode
+from haiku.rag.tools.search import collect_pictures
 from haiku.rag.utils import format_citations
 
 if TYPE_CHECKING:
@@ -108,6 +110,52 @@ def _instructions(scope: "DatabaseScope", config: AppConfig) -> str:
     if config.prompts.domain_preamble:
         lines.append(config.prompts.domain_preamble)
     return "\n".join(lines)
+
+
+def _search_result(results: list[SearchResult], covers_multiple: bool) -> ToolResult:
+    """Results as the in-process agents read them, then each distinct picture
+    as an image block labelled with its result, and the results as structured
+    content without the picture bytes."""
+    import base64
+
+    total = len(results)
+    text = "\n\n".join(
+        result.format_for_agent(
+            rank=rank,
+            total=total,
+            include_collection=covers_multiple,
+            include_document_id=True,
+        )
+        for rank, result in enumerate(results, 1)
+    )
+    content: list[ContentBlock] = [
+        TextContent(type="text", text=text or "No results found.")
+    ]
+    pictures, _ = collect_pictures(results)
+    for source, chunk_id, self_ref, picture in pictures:
+        collection = f" in {source}" if covers_multiple and source else ""
+        content.append(
+            TextContent(
+                type="text",
+                text=f"Picture {self_ref} of search result [{chunk_id}]{collection}",
+            )
+        )
+        content.append(
+            ImageContent(
+                type="image",
+                data=base64.b64encode(picture.data).decode("ascii"),
+                mimeType="image/png",
+            )
+        )
+    return ToolResult(
+        content=content,
+        structured_content={
+            "result": [
+                result.model_dump(mode="json", exclude={"image_data"})
+                for result in results
+            ]
+        },
+    )
 
 
 def _node(toc: "dict[str, Any]") -> OutlineNode:
@@ -207,27 +255,30 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
         include_images: bool = True,
         filter: Filter = None,
         sources: Sources = None,
-    ) -> list[SearchResult]:
+    ) -> ToolResult:
         """Search the knowledge base by meaning and keyword.
 
         Use this first for any question the documents might answer; it needs
         no model and is the cheapest call. Results come best first, each with
-        the document's id, title and collection, the section headings and the
-        matching passage. Scores are not comparable across queries, so read
-        the order, not the numbers. If nothing relevant comes back, rephrase
-        once or narrow with `filter` before concluding the material is absent.
+        its rank, `Document ID`, `Collection` when the server covers several,
+        the document title, section headings and the matching passage; pass
+        the id and collection to the document tools. Pictures in the results
+        follow as images, each labelled with its result. Ranks, not scores,
+        are the signal: scores are not comparable across queries. If nothing
+        relevant comes back, rephrase once or narrow with `filter` before
+        concluding the material is absent.
 
         Args:
             query: What to look for, in natural language or keywords.
             limit: How many results to return; the server's configured default
                 when omitted.
-            include_images: Attach the bytes of pictures in the results as
-                base64 PNG under `image_data`. False for a smaller response.
+            include_images: Return the pictures in the results as images.
+                False for a smaller response.
         """
         rag = await _client()
         try:
             await _check_filter(rag, filter, sources)
-            return await rag.search(
+            results = await rag.search(
                 query,
                 limit=limit,
                 filter=filter,
@@ -236,6 +287,7 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
             )
         except UnknownDatabaseError as e:
             raise ToolError(str(e)) from e
+        return _search_result(results, rag.covers_multiple)
 
     # Image-as-query tool, only registered when the configured embedder
     # supports image embeddings. Probed at server-build time when no Store is
@@ -252,7 +304,7 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
             include_images: bool = True,
             filter: Filter = None,
             sources: Sources = None,
-        ) -> list[SearchResult]:
+        ) -> ToolResult:
             """Search the knowledge base with an image as the query.
 
             Use this when the question is about a picture rather than words.
@@ -264,14 +316,14 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
                 image_base64: The query image, PNG or JPEG bytes as base64.
                 limit: How many results to return; the server's configured
                     default when omitted.
-                include_images: Attach the bytes of pictures in the results as
-                    base64 PNG under `image_data`. False for a smaller response.
+                include_images: Return the pictures in the results as images.
+                    False for a smaller response.
             """
             raw = _decode_image(image_base64)
             rag = await _client()
             try:
                 await _check_filter(rag, filter, sources)
-                return await rag.search(
+                results = await rag.search(
                     raw,
                     limit=limit,
                     filter=filter,
@@ -280,6 +332,7 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
                 )
             except UnknownDatabaseError as e:
                 raise ToolError(str(e)) from e
+            return _search_result(results, rag.covers_multiple)
 
     @mcp.tool(annotations=_read_only("Get document"))
     async def get_document(document_id: str, source: str | None = None) -> Document:

@@ -202,6 +202,7 @@ class SearchResult(BaseModel):
         total: int | None = None,
         *,
         include_collection: bool = False,
+        include_document_id: bool = False,
     ) -> str:
         """Format this search result for inclusion in agent context.
 
@@ -215,7 +216,8 @@ class SearchResult(BaseModel):
 
         `include_collection` is the caller's decision, not this result's: a
         search spanning one collection has nothing to distinguish, whether or
-        not that collection is named.
+        not that collection is named. `include_document_id` is for a reader
+        that will fetch the document by id from the text alone.
         """
         if rank is not None and total is not None:
             parts = [f"[{self.chunk_id}] [rank {rank} of {total}]"]
@@ -223,6 +225,9 @@ class SearchResult(BaseModel):
             parts = [f"[{self.chunk_id}] [rank {rank}]"]
         else:
             parts = [f"[{self.chunk_id}] (score: {self.score:.2f})"]
+
+        if include_document_id and self.document_id:
+            parts.append(f"Document ID: {self.document_id}")
 
         if include_collection and self.source:
             parts.append(f"Collection: {self.source}")

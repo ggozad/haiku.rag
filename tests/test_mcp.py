@@ -97,22 +97,38 @@ async def _call(mcp, name, **kwargs):
         return await client.call_tool(name, kwargs, raise_on_error=False)
 
 
+def _results(search_result) -> list[dict]:
+    """The search results a tool returned, as the client sees them."""
+    return search_result.structured_content["result"]
+
+
+def _png_b64() -> str:
+    import base64
+    from io import BytesIO
+
+    from PIL import Image as PILImage
+
+    buf = BytesIO()
+    PILImage.new("RGB", (4, 4), "red").save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
+
+
 class TestMCPReadTools:
     @pytest.mark.asyncio
     async def test_search_documents(self, mcp_db):
         mcp = create_mcp_server(mcp_db)
         search = await _get_tool(mcp, "search_documents")
 
-        results = await search(query="artificial intelligence")
+        results = _results(await search(query="artificial intelligence"))
         assert len(results) > 0
-        assert all(isinstance(r, SearchResult) for r in results)
+        assert all(r["chunk_id"] and r["content"] for r in results)
 
     @pytest.mark.asyncio
     async def test_search_documents_with_limit(self, mcp_db):
         mcp = create_mcp_server(mcp_db)
         search = await _get_tool(mcp, "search_documents")
 
-        results = await search(query="artificial intelligence", limit=1)
+        results = _results(await search(query="artificial intelligence", limit=1))
         assert len(results) == 1
 
     @pytest.mark.asyncio
@@ -434,6 +450,155 @@ class TestMCPDocumentNavigation:
 
 
 @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
+class TestMCPSearchResultShape:
+    """Text as the in-process agents read it, one image per distinct picture,
+    and the results as structured content without picture bytes."""
+
+    @staticmethod
+    def _serve(monkeypatch, results):
+        async def fake_search(self, *args, **kwargs):
+            return results
+
+        monkeypatch.setattr(HaikuRAG, "search", fake_search)
+
+    @pytest.mark.asyncio
+    async def test_text_ranks_then_one_image_per_distinct_picture(
+        self, mcp_db, monkeypatch
+    ):
+        from mcp.types import ImageContent, TextContent
+
+        shared = {"#/pictures/0": _png_b64()}
+        self._serve(
+            monkeypatch,
+            [
+                SearchResult(
+                    content="a",
+                    score=0.9,
+                    chunk_id="c1",
+                    document_id="d1",
+                    image_data=shared,
+                ),
+                SearchResult(
+                    content="b",
+                    score=0.8,
+                    chunk_id="c2",
+                    document_id="d1",
+                    image_data=shared,
+                ),
+                SearchResult(
+                    content="c",
+                    score=0.7,
+                    chunk_id="c3",
+                    document_id="d2",
+                    image_data={"#/pictures/3": _png_b64()},
+                ),
+            ],
+        )
+
+        result = await _call(create_mcp_server(mcp_db), "search_documents", query="q")
+
+        text, *rest = result.content
+        assert isinstance(text, TextContent)
+        assert "[rank 1 of 3]" in text.text and "[rank 3 of 3]" in text.text
+        assert "score" not in text.text
+        assert "Document ID: d1" in text.text
+        images = [block for block in rest if isinstance(block, ImageContent)]
+        labels = [block.text for block in rest if isinstance(block, TextContent)]
+        assert len(images) == 2
+        assert all(image.mimeType == "image/png" for image in images)
+        assert [
+            label for label in labels if "[c1]" in label and "#/pictures/0" in label
+        ]
+        assert [
+            label for label in labels if "[c3]" in label and "#/pictures/3" in label
+        ]
+        structured = _results(result)
+        assert [r["chunk_id"] for r in structured] == ["c1", "c2", "c3"]
+        assert all("image_data" not in r for r in structured)
+
+    @pytest.mark.asyncio
+    async def test_an_undecodable_picture_yields_no_image(self, mcp_db, monkeypatch):
+        import base64
+
+        self._serve(
+            monkeypatch,
+            [
+                SearchResult(
+                    content="a",
+                    score=0.9,
+                    chunk_id="c1",
+                    document_id="d1",
+                    image_data={
+                        "#/pictures/0": base64.b64encode(b"not a png").decode()
+                    },
+                )
+            ],
+        )
+
+        result = await _call(create_mcp_server(mcp_db), "search_documents", query="q")
+
+        assert len(result.content) == 1
+        assert "[rank 1 of 1]" in result.content[0].text
+
+    @pytest.mark.asyncio
+    async def test_no_results_says_so(self, mcp_db, monkeypatch):
+        self._serve(monkeypatch, [])
+
+        result = await _call(create_mcp_server(mcp_db), "search_documents", query="q")
+
+        assert [block.text for block in result.content] == ["No results found."]
+        assert _results(result) == []
+
+    @pytest.mark.asyncio
+    async def test_search_text_alone_drives_the_document_tools(self, two_dbs):
+        """Over two databases, every result's `Document ID` and `Collection`
+        parsed from the text are working arguments for the outline and
+        section tools."""
+        import re
+
+        from haiku.rag.store.models.document_item import DocumentItem
+
+        for name in ("alpha", "beta"):
+            async with HaikuRAG(config=two_dbs, sources=[name]) as rag:
+                [doc] = await rag.list_documents()
+                await rag.document_item_repository.create_items(
+                    doc.id,
+                    [
+                        DocumentItem(
+                            document_id=doc.id,
+                            position=0,
+                            self_ref="#/texts/0",
+                            label="section_header",
+                            text=f"Heading in {name}",
+                            heading_level=1,
+                        )
+                    ],
+                )
+        mcp = _covering_all(two_dbs)
+
+        search = await _call(mcp, "search_documents", query="cats")
+        pairs = re.findall(
+            r"Document ID: (\S+)\nCollection: (\S+)", search.content[0].text
+        )
+
+        assert len(pairs) == len(_results(search)) == 2
+        assert {source for _, source in pairs} == {"alpha", "beta"}
+        for document_id, source in pairs:
+            outline = await _call(
+                mcp, "get_document_outline", document_id=document_id, source=source
+            )
+            [node] = _results(outline)
+            section = await _call(
+                mcp,
+                "get_document_section",
+                document_id=document_id,
+                section_id=node["id"],
+                source=source,
+            )
+            assert section.structured_content["title"] == f"Heading in {source}"
+
+
+@pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
 class TestMCPDescribesItself:
     """What a client learns from initialize and list_tools, over the wire."""
 
@@ -537,19 +702,19 @@ class TestMCPCoversTheConfiguredSet:
         mcp = _covering_all(two_dbs)
         search = await _get_tool(mcp, "search_documents")
 
-        results = await search(query="cats")
+        results = _results(await search(query="cats"))
 
-        assert {r.source for r in results} == {"alpha", "beta"}
+        assert {r["source"] for r in results} == {"alpha", "beta"}
 
     @pytest.mark.asyncio
     async def test_sources_narrows_the_search(self, two_dbs):
         mcp = _covering_all(two_dbs)
         search = await _get_tool(mcp, "search_documents")
 
-        results = await search(query="cats", sources=["beta"])
+        results = _results(await search(query="cats", sources=["beta"]))
 
         assert results
-        assert {r.source for r in results} == {"beta"}
+        assert {r["source"] for r in results} == {"beta"}
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -583,12 +748,13 @@ class TestMCPCoversTheConfiguredSet:
         mcp = _covering_all(two_dbs)
         search = await _get_tool(mcp, "search_documents")
 
-        results = await search(
-            query="cats", filter="uri LIKE '%beta%'", sources=["beta"]
+        results = _results(
+            await search(query="cats", filter="uri LIKE '%beta%'", sources=["beta"])
         )
         assert results
-        assert {r.source for r in results} == {"beta"}
-        assert await search(query="cats", filter="uri LIKE '%beta%'", sources=[]) == []
+        assert {r["source"] for r in results} == {"beta"}
+        none = await search(query="cats", filter="uri LIKE '%beta%'", sources=[])
+        assert _results(none) == []
 
     @pytest.mark.asyncio
     async def test_the_listing_covers_every_database(self, two_dbs):
@@ -617,9 +783,9 @@ class TestMCPCoversTheConfiguredSet:
         mcp = create_mcp_server(config=two_dbs)
         search = await _get_tool(mcp, "search_documents")
 
-        results = await search(query="cats")
+        results = _results(await search(query="cats"))
 
-        assert {r.source for r in results} == {"alpha", "beta"}
+        assert {r["source"] for r in results} == {"alpha", "beta"}
 
     @pytest.mark.asyncio
     async def test_ask_question_names_each_citations_database(
@@ -713,7 +879,7 @@ class TestMCPImageQuery:
             sources=[],
         )
 
-        assert results == []
+        assert _results(results) == []
         assert seen["query"] == png
         assert seen["filter"] == "uri LIKE 'x%'"
         assert seen["sources"] == []
@@ -1028,12 +1194,12 @@ class TestMCPClientLifetime:
         mcp = _mcp_covering(scope, config)
         async with mcp._lifespan_manager():
             search = await _get_tool(mcp, "search_documents")
-            results = await search(query="artificial intelligence")
+            results = _results(await search(query="artificial intelligence"))
             listing = await _get_tool(mcp, "list_documents")
             documents = await listing()
 
         assert results
-        assert {r.source for r in results} == {"alpha"}
+        assert {r["source"] for r in results} == {"alpha"}
         titles = {d.title for d in documents}
         assert "AI Overview" in titles
         assert "Zebras" not in titles
@@ -1118,7 +1284,7 @@ class TestMCPClientLifetime:
         assert opens == 1
 
         async with mcp._lifespan_manager():
-            results = await search(query="artificial intelligence")
+            results = _results(await search(query="artificial intelligence"))
         assert opens == 2
         assert len(results) > 0
 

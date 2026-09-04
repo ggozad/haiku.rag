@@ -414,6 +414,17 @@ def test_search_result_format_for_agent_source_line(fields, expected_source):
     assert expected_source in result.format_for_agent()
 
 
+def test_search_result_format_for_agent_document_id_is_opt_in():
+    """The capabilities' rendering is unchanged; only a caller that asks gets
+    the id it will fetch the document by."""
+    result = SearchResult(content="x", score=0.5, chunk_id="c1", document_id="doc-1")
+
+    assert "Document ID" not in result.format_for_agent(rank=1, total=1)
+    assert "Document ID: doc-1" in result.format_for_agent(
+        rank=1, total=1, include_document_id=True
+    )
+
+
 @pytest.mark.parametrize(
     "labels,expected",
     [
