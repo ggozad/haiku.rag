@@ -878,7 +878,7 @@ class TestDoclingLocalConverter:
         """
         from haiku.rag.converters.pdf_split import convert_pdf_with_splitting
 
-        pdf_path = Path("tests/data/doclaynet.pdf")
+        pdf_path = Path(__file__).parent / "data" / "doclaynet.pdf"
         config.processing.conversion_options.do_ocr = False
         converter = DoclingLocalConverter(config)
 
