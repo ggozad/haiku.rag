@@ -148,7 +148,14 @@ markers = [
 ]
 
 # pyproject.toml
-filterwarnings = ["error", "ignore::UserWarning", "ignore::DeprecationWarning"]
+filterwarnings = [
+    "error",
+    "ignore::UserWarning",
+    "ignore::DeprecationWarning",
+    # rapidocr 3.9.2 ships LaTeX in a docstring; beartype's import hook
+    # compiles it, and "error" would make the SyntaxWarning fatal.
+    "ignore:invalid escape sequence:SyntaxWarning",
+]
 
 [tool.coverage.run]
 source = ["haiku_rag_slim"]

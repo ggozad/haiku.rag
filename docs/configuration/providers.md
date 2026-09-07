@@ -80,7 +80,7 @@ See the [Pydantic AI thinking documentation](https://ai.pydantic.dev/thinking/) 
 - **Groq**: Models with reasoning capabilities
 - **Bedrock**: Claude, Qwen, and `gpt-oss` models. Bedrock Converse does not serve the proprietary OpenAI models, so configuring one raises an error. Reach those through `provider: bedrock-mantle`.
 - **Ollama**: Any model with a thinking capability. `enable_thinking` maps to `reasoning_effort`: `false` sends `none` (`low` for `gpt-oss`, whose template has no `none` level), `true` sends `high`.
-- **vLLM**: On `provider: vllm`, models whose profile advertises thinking (the Gemma 4 and DeepSeek V4 families, Qwen3 thinking checkpoints). It is dropped for the rest, including Qwen3.8, whose effort levels are `xhigh`, `medium` and `low` rather than the OpenAI ones — drive those with [`extra_body`](#raw-provider-pass-through).
+- **vLLM**: On `provider: vllm`, models whose profile advertises thinking (the Gemma 4 and DeepSeek V4 families, Qwen3 thinking checkpoints), where `true` becomes `reasoning_effort: medium` and `false` becomes `none`. An explicit `-Thinking` checkpoint is marked always-on, so `false` is dropped for it and thinking stays enabled. The field is inert entirely for the rest, Qwen3.8 and Muse Glimmer included, and for a name the profile does not recognise. In every case where the field does not do what you need, `extra_body: {reasoning_effort: …}` reaches the request directly and overrides any derived level.
 - **LM Studio**: Models supporting reasoning (gpt-oss, etc.)
 
 **When to use:**
@@ -377,10 +377,27 @@ qa:
 The provider brings its own model profile, which merges leading system messages
 (some chat templates reject more than one) and sets per-family reasoning and
 tool-choice behaviour. It infers the family from the model name, so an alias
-changes what it infers: `nvidia/Gemma-4-26B-A4B-NVFP4` is recognised as
-Gemma 4 and `gemma4-26b`, the same model under a different name, is not. Where
-the family is not recognised, or is excluded (Qwen3.8, Qwen3-Coder),
-`enable_thinking` does not reach the template and the knob is `extra_body`:
+decides what it infers: `nvidia/Gemma-4-26B-A4B-NVFP4` is recognised as Gemma 4
+and `gemma4-26b`, the same model under a different name, is not — and
+`enable_thinking` works on the first and is inert on the second.
+
+The effort levels differ per model, so no level is chosen for you:
+`Inferact/Qwen3.8-27B-NVFP4` rejects `high` and takes `xhigh`, `medium` or
+`low`. Set the value the server accepts with `extra_body`, which reaches the
+request as a top-level field and overrides any level the profile derived:
+
+```yaml
+qa:
+  model:
+    provider: vllm
+    name: RedHatAI/Muse-Glimmer-30B-NVFP4
+    base_url: http://localhost:11450
+    extra_body:
+      reasoning_effort: xhigh
+```
+
+A template with a switch of its own takes `chat_template_kwargs` instead, as
+Muse Glimmer does — it accepts `reasoning_effort` and ignores it:
 
 ```yaml
 qa:

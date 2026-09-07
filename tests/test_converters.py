@@ -4,6 +4,7 @@ import asyncio
 import tempfile
 import threading
 import time
+from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
@@ -736,7 +737,7 @@ class TestDoclingLocalConverter:
         good_url = "https://cdn.example.com/static/cat.png"
         broken_url = "https://cdn.example.com/missing.png"
 
-        def fake_load_image_data(self, src_loc: str):
+        def fake_load_image_data(self, src_loc: str, base_path=None):
             if src_loc == good_url:
                 return canned_png
             if src_loc == broken_url:
@@ -750,16 +751,16 @@ class TestDoclingLocalConverter:
             return None  # data: and file:// fall back to docling's own path
 
         # Wrap rather than replace so data: URIs still decode through the real
-        # `_load_image_data`. Only intercept when src is one of our test URLs.
-        original = html_backend_module.HTMLDocumentBackend._load_image_data
+        # loader. Only intercept when src is one of our test URLs.
+        original = html_backend_module.ImageResourceLoader.load_image_data
 
-        def wrapped(self, src_loc: str):
+        def wrapped(self, src_loc: str, base_path=None):
             if src_loc in (good_url, broken_url):
-                return fake_load_image_data(self, src_loc)
-            return original(self, src_loc)
+                return fake_load_image_data(self, src_loc, base_path)
+            return original(self, src_loc, base_path)
 
         monkeypatch.setattr(
-            html_backend_module.HTMLDocumentBackend, "_load_image_data", wrapped
+            html_backend_module.ImageResourceLoader, "load_image_data", wrapped
         )
 
         png_b64 = (
@@ -814,19 +815,19 @@ class TestDoclingLocalConverter:
     ):
         """`convert_text(..., source_uri=...)` lets docling resolve a relative
         `<img src="/path">` against the source URL. We patch the docling HTML
-        backend's `_load_image_data` to capture the resolved absolute URL
-        instead of doing a real network fetch."""
+        backend's image loader to capture the resolved absolute URL instead of
+        doing a real network fetch."""
         captured: list[str] = []
 
-        def fake_load_image_data(self, src_loc: str):
+        def fake_load_image_data(self, src_loc: str, base_path=None):
             captured.append(src_loc)
             return None  # docling treats as a fetch failure → placeholder
 
         from docling.backend import html_backend as html_backend_module
 
         monkeypatch.setattr(
-            html_backend_module.HTMLDocumentBackend,
-            "_load_image_data",
+            html_backend_module.ImageResourceLoader,
+            "load_image_data",
             fake_load_image_data,
         )
 
@@ -837,7 +838,7 @@ class TestDoclingLocalConverter:
             html, format="html", source_uri="https://example.com/article"
         )
 
-        assert captured, "_load_image_data should have been invoked"
+        assert captured, "load_image_data should have been invoked"
         assert captured[0] == "https://example.com/static/cat.jpg", (
             f"Expected absolute URL resolved via source_uri, got {captured[0]!r}"
         )
@@ -862,51 +863,70 @@ class TestDoclingLocalConverter:
 
     @pytest.mark.asyncio
     async def test_split_and_merge_matches_single_pass(self, config):
-        """Real-PDF integration test for split_pages: convert the full
-        9-page DocLayNet arXiv paper single-pass, then again via
-        ``convert_pdf_with_splitting`` with slice_size=1 (one slice per
-        page), and assert the merged result is equivalent to single-pass
-        on totals + per-page-number coverage + self_ref uniqueness +
-        markdown export.
+        """Real-PDF test for split_pages, in two parts.
 
-        Slow — runs docling-local 10 times against a multi-page PDF. The
-        contract this pins is the highest-risk one: that splitting at the
-        byte level and merging via DoclingDocument.concatenate produces a
-        document semantically indistinguishable from a single-pass convert.
+        A slice sees only its own pages, so docling orders and joins text
+        within it: a paragraph spanning a boundary stays two items, and a
+        caption near one can order differently against body text. Whether a
+        boundary costs anything depends on what crosses it, so the exact
+        contract holds only with no boundary: a single slice covering every
+        page is byte-identical to single-pass, which pins
+        ``DoclingDocument.concatenate``'s re-indexing and page_delta. A real
+        multi-slice run loses nothing and stays within one text item per
+        boundary.
+
+        Slow — runs docling-local against a multi-page PDF several times.
         """
         from haiku.rag.converters.pdf_split import convert_pdf_with_splitting
 
         pdf_path = Path(__file__).parent / "data" / "doclaynet.pdf"
         config.processing.conversion_options.do_ocr = False
         converter = DoclingLocalConverter(config)
-
         baseline = await converter.convert_file(pdf_path)
+        page_count = len(baseline.pages)
+
+        # No boundary: the merge path must not perturb the document at all.
+        whole = await convert_pdf_with_splitting(
+            converter, pdf_path, source_uri=None, slice_size=page_count
+        )
+        assert whole.export_to_markdown() == baseline.export_to_markdown()
+
+        slice_size = 3
         merged = await convert_pdf_with_splitting(
-            converter, pdf_path, source_uri=None, slice_size=1
+            converter, pdf_path, source_uri=None, slice_size=slice_size
+        )
+        boundaries = -(-page_count // slice_size) - 1
+        assert boundaries > 0, (
+            "fixture must actually be split for this to mean anything"
         )
 
-        # Same totals across every list the consumer cares about.
-        assert len(merged.texts) == len(baseline.texts)
+        # Structure the merger owns, exactly.
         assert len(merged.pictures) == len(baseline.pictures)
         assert len(merged.tables) == len(baseline.tables)
         assert sorted(merged.pages.keys()) == sorted(baseline.pages.keys())
 
-        # Page numbers cover the same range — this is the key thing
-        # concatenate handles via its internal page_delta.
         def _page_nos(doc):
             return {p.page_no for t in doc.texts for p in t.prov}
 
         assert _page_nos(merged) == _page_nos(baseline)
 
-        # self_refs unique across the merged doc — concatenate re-indexes
-        # them per-slice, so a duplicate here is a real merger bug.
+        # concatenate re-indexes self_refs per slice; a duplicate is a real bug.
         merged_refs = [t.self_ref for t in merged.texts]
         assert len(set(merged_refs)) == len(merged_refs)
 
-        # Strongest assertion: rendered markdown matches byte-for-byte.
-        # If this fails, the split/merge introduced ordering or content
-        # drift the count-based asserts above didn't catch.
-        assert merged.export_to_markdown() == baseline.export_to_markdown()
+        # The same words, regrouped: a multiset, since a slice can order a
+        # caption differently against body text.
+        def _words(doc):
+            return Counter(" ".join(t.text or "" for t in doc.texts).split())
+
+        assert _words(merged) == _words(baseline)
+
+        # An unjoined paragraph per boundary is the whole cost.
+        extra = len(merged.texts) - len(baseline.texts)
+        assert 0 <= extra <= boundaries, (
+            f"{extra} extra text items across {boundaries} boundaries; "
+            "more than one per boundary means the split lost or split something else"
+        )
 
     @pytest.mark.asyncio
     async def test_convert_pdf_without_page_images(

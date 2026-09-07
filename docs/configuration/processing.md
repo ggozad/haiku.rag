@@ -150,6 +150,15 @@ bounded by one slice's working set rather than the whole document; in
 docling-serve mode each slice is also an independent task that lets the
 server release task-local state between requests.
 
+A slice sees only its own pages, so the result is not identical to a
+single-pass conversion. docling orders and joins text within the slice it is
+given: a paragraph spanning a boundary stays two items instead of one, and a
+caption near a boundary can order differently against body text. On a 9-page
+document that costs about one text item and one chunk per boundary; no text is
+lost or duplicated. Single-pass is therefore the better output, and
+`split_pages` trades some of that for a bounded memory ceiling. Changing the
+setting re-chunks those boundary regions on the next ingest.
+
 Recommendation: `10` is a sensible starting point for any consistently-large
 PDF workload. Smaller slices reduce peak memory but multiply task overhead
 (per-slice docling startup + HTTP round-trips for docling-serve). Cross-page

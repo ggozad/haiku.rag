@@ -629,12 +629,13 @@ def test_get_model_vllm_forwards_settings():
 
 
 @pytest.mark.parametrize("enable_thinking", [True, False, None])
-def test_get_model_vllm_sends_no_reasoning_effort(enable_thinking):
-    """`enable_thinking` travels as `thinking`, never as `reasoning_effort`.
+def test_get_model_vllm_chooses_no_effort_level(enable_thinking):
+    """`enable_thinking` travels as `thinking`; no effort level is chosen here.
 
-    The effort vocabulary is per-model: Qwen3.8 rejects `high` outright, taking
-    `xhigh`, `medium` or `low`, so no level is chosen here. pydantic-ai drops
-    `thinking` for a model whose profile does not advertise it.
+    The effort vocabulary is per-model — Qwen3.8 rejects `high`, taking `xhigh`,
+    `medium` or `low` — so pydantic-ai derives one from the model's profile,
+    which is what tracks the families taking OpenAI-style values. A config that
+    needs an exact level sets `extra_body`, which overrides the derived one.
     """
     result = get_model(
         ModelConfig(

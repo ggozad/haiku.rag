@@ -26,6 +26,23 @@
 ### Changed
 
 - `pydantic-ai-slim>=2.40.0,<3.0.0`.
+- docling 2.124.0 and docling-core 2.93.0, pinned exactly, and the
+  docling-serve compose images pinned to `v1.32.0`, which is the release
+  bundling that pair. The local and serve converters are asserted to agree,
+  so the client and the server it is tested against move together.
+- Conversion output moves with docling 2.124.0: text items merge and split
+  differently, hyphenated line breaks are joined, a heading or list marker can
+  carry a tab where it carried a space, which reaches `ChunkMetadata.headings`,
+  repeated page headers and footers are labelled furniture rather than body
+  text so they no longer reach `document_items` or chunks, and a table can be
+  recognised as text instead. An existing database is untouched until a
+  document is re-ingested; re-ingesting a corpus produces different chunk ids
+  and content.
+- `processing.split_pages` no longer reproduces single-pass conversion
+  exactly. A slice sees only its own pages, so a paragraph spanning a slice
+  boundary stays two items and a caption near one can order differently:
+  about one text item and one chunk per boundary on a 9-page document.
+  Re-ingesting a PDF after changing `split_pages` re-chunks those places.
 - ruff 0.16.6, ty 0.0.78 and pytest-asyncio 1.4.0 in the dev group.
   `[tool.ruff] include` excludes Markdown, and `evaluations/` extends the
   root ruff config instead of resolving as its own project.

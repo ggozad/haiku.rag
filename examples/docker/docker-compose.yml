@@ -5,7 +5,7 @@ services:
   # supported scaling pattern for docling-serve since the upstream image
   # processes one task at a time per instance by default.
   docling-serve-1:
-    image: quay.io/docling-project/docling-serve:latest
+    image: quay.io/docling-project/docling-serve:v1.32.0
     container_name: docling-serve-1
     ports:
       - "5001:5001"  # exposed on the host for ad-hoc debugging (5001)
@@ -23,7 +23,7 @@ services:
       start_interval: 5s
 
   docling-serve-2:
-    image: quay.io/docling-project/docling-serve:latest
+    image: quay.io/docling-project/docling-serve:v1.32.0
     container_name: docling-serve-2
     ports:
       - "5002:5001"  # host 5002 → container 5001 (debug only)
