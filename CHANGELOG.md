@@ -22,7 +22,12 @@
 
 ### Changed
 
-- `pydantic-monty>=0.0.23`. The analysis sandbox gains `collections`,
+- lancedb 0.38.0.
+- `pyarrow` is a declared dependency, `>=16,<25`.
+- Dependency upper bounds: `typer<0.27.0` (was `<0.22.0`),
+  `transformers<6.0.0` on the `jina` extra, `sentence-transformers<6.0.0` on
+  the `cross-encoder` extra.
+- `pydantic-monty>=0.0.23,<0.0.24`. The analysis sandbox gains `collections`,
   `itertools`, `functools`, `dataclasses`, function decorators and
   `str.format`.
 - `fastmcp>=4.0.2,<5.0.0`, on MCP Python SDK 2. The MCP server answers both the

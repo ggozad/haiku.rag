@@ -41,17 +41,18 @@ dependencies = [
     "httpx>=0.28.1",
     "jinja2>=3.1.0",
     "fastmcp>=4.0.2,<5.0.0",
-    "lancedb==0.37.1",
+    "lancedb==0.38.0",
     "pathspec>=1.0.4",
     "pydantic>=2.12.5",
     "pydantic-ai-slim[openai,logfire,ag-ui]>=2.18.0,<3.0.0",
-    "pydantic-monty>=0.0.23",
+    "pydantic-monty>=0.0.23,<0.0.24",
+    "pyarrow>=16,<25",
     "pypdfium2>=5.0",
     "python-dotenv>=1.2.2",
     "pyyaml>=6.0.3",
     "rich>=14.3.3",
     "textual-image>=0.8.5",
-    "typer>=0.21.0,<0.22.0",
+    "typer>=0.21.0,<0.27.0",
     "watchfiles>=1.1.1",
     "zstandard>=0.23.0; python_version<'3.14'",
 ]
@@ -73,8 +74,8 @@ voyageai = ["pydantic-ai-slim[voyageai]"]
 # Rerankers
 cohere = ["cohere>=5.21.1"]
 zeroentropy = ["zeroentropy>=0.1.0a11"]
-jina = ["transformers>=4.40.0", "torch>=2.0.0"]
-cross-encoder = ["sentence-transformers>=3.0.0"]
+jina = ["transformers>=4.40.0,<6.0.0", "torch>=2.0.0"]
+cross-encoder = ["sentence-transformers>=3.0.0,<6.0.0"]
 # Production ingester (queue, workers, API)
 ingester = [
     "fastapi>=0.125",
