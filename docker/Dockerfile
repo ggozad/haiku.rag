@@ -40,4 +40,4 @@ EXPOSE 8001 8765
 
 # Default command: read-only MCP server. The companion ingester service is
 # launched via docker-compose against the same image.
-CMD ["haiku-rag", "--config", "/app/haiku.rag.yaml", "--read-only", "mcp", "--port", "8001"]
+CMD ["haiku-rag", "--config", "/app/haiku.rag.yaml", "mcp", "--port", "8001"]

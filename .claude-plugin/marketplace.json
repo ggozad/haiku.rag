@@ -1,0 +1,14 @@
+{
+  "name": "haiku-rag",
+  "description": "The haiku.rag knowledge base as Claude Code tools and a skill.",
+  "owner": {
+    "name": "Yiorgis Gozadinos"
+  },
+  "plugins": [
+    {
+      "name": "haiku-rag",
+      "source": "./plugins/haiku-rag",
+      "description": "Search, read and analyze your haiku.rag knowledge base from Claude Code."
+    }
+  ]
+}

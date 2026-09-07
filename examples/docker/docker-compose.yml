@@ -103,7 +103,6 @@ services:
         "haiku-rag",
         "--config",
         "/app/haiku.rag.yaml",
-        "--read-only",
         "mcp",
         "--host",
         "0.0.0.0",

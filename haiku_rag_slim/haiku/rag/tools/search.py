@@ -52,31 +52,16 @@ def decode_picture(data: bytes, self_ref: str) -> BinaryContent | None:
     return BinaryContent(data=data, media_type="image/png", identifier=self_ref)
 
 
-def build_image_content_from_results(
-    results: list[SearchResult],
-    include_collection: bool = False,
-    exclude: AbstractSet[PictureKey] = frozenset(),
-) -> tuple[list[str | BinaryContent], set[PictureKey]]:
-    """Decode and validate picture bytes attached to search results, labelled.
+def collect_pictures(
+    results: list[SearchResult], exclude: AbstractSet[PictureKey] = frozenset()
+) -> tuple[list[tuple[str | None, str | None, str, BinaryContent]], set[PictureKey]]:
+    """Every distinct, decodable picture attached to ``results``, in order.
 
-    Returns the labelled content and the ``PictureKey`` of every picture it
-    emitted. Dedup keyed on ``PictureKey`` so the same picture in
-    different chunks is sent once, and a copy in another collection is its
-    own; ``exclude`` seeds that dedup with pictures already sent. Pictures that fail
-    ``PIL.Image.verify()`` are skipped — the model adapter renders one
-    vision placeholder per ``BinaryContent``, so emitting one for an
-    image the server can't decode leaves the processor with an
-    off-by-one count.
-
-    Every picture is preceded by a line naming the result it belongs to.
-    ``ToolReturn.content`` reaches the model as a user-role message, so
-    retrieved pictures are otherwise indistinguishable from ones the user
-    attached, and models narrate them as part of the question: unlabelled,
-    gemma4-26b answered about a figure from an unrelated document, and with a
-    single note ahead of the batch it still called them "images in the prompt".
-    The label also names the chunk to cite for a figure, which
-    ``BinaryContent.identifier`` cannot do — it does not survive serialization
-    to the vision API.
+    Returns ``(source, chunk_id, self_ref, picture)`` per picture and the
+    ``PictureKey`` of each. Dedup keyed on ``PictureKey`` so the same picture in
+    different chunks is emitted once, and a copy in another collection is its
+    own; ``exclude`` seeds that dedup with pictures already sent. Pictures that
+    fail ``PIL.Image.verify()`` are skipped.
     """
     collected: list[tuple[str | None, str | None, str, BinaryContent]] = []
     seen: set[PictureKey] = set(exclude)
@@ -94,7 +79,33 @@ def build_image_content_from_results(
             collected.append((result.source, result.chunk_id, self_ref, picture))
             seen.add(key)
             emitted.add(key)
+    return collected, emitted
 
+
+def build_image_content_from_results(
+    results: list[SearchResult],
+    include_collection: bool = False,
+    exclude: AbstractSet[PictureKey] = frozenset(),
+) -> tuple[list[str | BinaryContent], set[PictureKey]]:
+    """Decode and validate picture bytes attached to search results, labelled.
+
+    Returns the labelled content and the ``PictureKey`` of every picture it
+    emitted, as ``collect_pictures`` decides them. An undecodable picture is
+    skipped because the model adapter renders one vision placeholder per
+    ``BinaryContent``, so emitting one for an image the server can't decode
+    leaves the processor with an off-by-one count.
+
+    Every picture is preceded by a line naming the result it belongs to.
+    ``ToolReturn.content`` reaches the model as a user-role message, so
+    retrieved pictures are otherwise indistinguishable from ones the user
+    attached, and models narrate them as part of the question: unlabelled,
+    gemma4-26b answered about a figure from an unrelated document, and with a
+    single note ahead of the batch it still called them "images in the prompt".
+    The label also names the chunk to cite for a figure, which
+    ``BinaryContent.identifier`` cannot do — it does not survive serialization
+    to the vision API.
+    """
+    collected, emitted = collect_pictures(results, exclude)
     content: list[str | BinaryContent] = []
     total = len(collected)
     for position, (source, chunk_id, self_ref, picture) in enumerate(collected, 1):

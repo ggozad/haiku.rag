@@ -13,11 +13,11 @@ You can mix the two. The rule: always call `analysis_cite` before answering — 
 Execute Python code in a sandboxed interpreter. Variables persist between calls — you can build state incrementally. Use `print()` to output results.
 
 Inside the code, these functions are available (use `await`):
-- `await search(query, limit=10)` → list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings, doc_item_refs, labels, picture_refs (subset of doc_item_refs labeled `picture`)
-- `await list_documents()` → list of dicts with keys: id, title, uri, created_at
+- `await search(query, limit=10)` → list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings, doc_item_refs, labels, picture_refs (subset of doc_item_refs labeled `picture`), chunk_meta (the matched chunk's stored metadata, custom keys included)
+- `await list_documents()` → list of dicts with keys: id, title, uri, created_at, metadata
 
-Available modules: `json`, `re`, `math`, `pathlib`
-Not supported: class inheritance and metaclasses, generators/yield, match statements, decorators, `collections`, iterating a file object (`for line in f`)
+Useful modules include `json`, `re`, `math`, `pathlib`, `datetime`, `collections`, `itertools`, `functools` and `dataclasses`. `decimal` and `statistics` do not exist.
+Not supported: class inheritance and metaclasses, generators/yield, match statements, iterating a file object (`for line in f`)
 
 ### analysis_search
 Search the knowledge base directly (outside code execution). Each result has a `Type:` (paragraph, table, code, list_item, picture). When the Type is `picture`, the corresponding figure may also be attached to the tool response as an image alongside the text — use it directly to answer questions about figures, diagrams, charts, screenshots.
@@ -39,16 +39,17 @@ All documents are mounted as a virtual filesystem at `/documents/`:
 
 ```
 /documents/{document_id}/
-    metadata.json    # {"id", "title", "uri", "created_at"}
+    metadata.json    # {"id", "title", "uri", "created_at", "metadata"}
     content.txt      # Full document text
     items.jsonl      # Structured items (one JSON object per line)
+    chunks.jsonl     # Chunks in order with their metadata (one JSON object per line)
     toc.json         # Section tree derived from heading_level
 ```
 
 `{document_id}` is an internal identifier, not the user-facing `uri` (filename, URL, etc.). When you only know a document by its URI or title, use `await list_documents()` to enumerate ids and match against `uri` / `title` — that's a single call to the host. Iterating `/documents/` and reading every `metadata.json` works too but is much slower on portal-scale corpora.
 
 ### Reading files
-Read with `Path.read_text()` or `open()` (including `with` blocks); file objects support `.read()`, `.readline()`, and `.readlines()`. A file object cannot be iterated, so read line-wise with `.readlines()` or `.read().split("\n")` instead of `for line in f`. Files are read-only; writing raises `PermissionError`.
+Read with `Path.read_text()` or `open()` (including `with` blocks); file objects support `.read()`, `.readline()`, and `.readlines()`. A file object cannot be iterated, so read line-wise with `.readlines()` or `.read().split("\n")` instead of `for line in f`. Files are read-only; writing raises `PermissionError`. There is no network. A call has a time limit, named in the error when it is hit, and output past a size is cut with an `... (output truncated)` marker.
 
 ```python
 from pathlib import Path
@@ -70,7 +71,7 @@ for line in Path(f'/documents/{doc_id}/items.jsonl').read_text().strip().split("
 ```
 
 ### metadata.json
-Document metadata: `id`, `title`, `uri`, `created_at`.
+Document metadata: `id`, `title`, `uri`, `created_at`, and `metadata`, the keys stored with the document.
 
 ### content.txt
 Full text content. Use for regex or keyword search across a whole document.
@@ -85,6 +86,9 @@ Each row carries:
 - `page_numbers`: list of page numbers where the item appears
 - `chunk_ids`: chunks that contain this item — pass to `analysis_cite()` to ground an answer that read this item directly
 - `heading_level`: H-level for `section_header` rows; `0` on non-header rows
+
+### chunks.jsonl
+The document's chunks in order, one JSON object per line: `chunk_id` and `metadata`, the chunk's stored metadata (`doc_item_refs`, `headings`, `labels`, `page_numbers`, and any custom keys such as paragraph or footnote numbers). To read by chunk metadata, keep the matching rows and take the `items.jsonl` rows whose `chunk_ids` name them.
 
 ### toc.json
 Section tree derived from `heading_level`: `{"doc_id", "title", "tree": [...]}` where each node has `{self_ref, level, title, page_numbers, item_range: [start, end_exclusive], chunk_ids, children}`. `item_range` is a line slice into `items.jsonl` — `items[start:end]`. `chunk_ids` aggregates the citable chunks across all items in the section — pass directly to `analysis_cite()` to ground a section-scoped answer without a corpus-wide `search()` call. `tree: []` for docs with no headers.
@@ -112,6 +116,6 @@ You MUST call `analysis_cite` before producing your final answer, every time, wi
 - Use `print()` to output results — the output is your only feedback
 - When you write code, execute it — don't describe what code would do. But not every question needs code; simple lookups are best answered by `analysis_search → analysis_cite`.
 - Use `await` for all async functions inside `analysis_execute_code` (`search`, `list_documents`)
-- Read files with `Path.read_text()` or `open()`/`with`. For lines use `.readlines()` or `.read().split("\n")`, never `for line in f`. The `collections` module is unavailable.
+- Read files with `Path.read_text()` or `open()`/`with`. For lines use `.readlines()` or `.read().split("\n")`, never `for line in f`.
 - Do NOT include chunk IDs or UUIDs in your answer text — your answer should read naturally. Use the `analysis_cite` tool separately to register citations. `cite{...}` markdown-style inline references do nothing; only an actual `analysis_cite` tool call registers a citation.
 - **Before you write your final answer, invoke the `analysis_cite` tool with the supporting chunk_ids, or with an empty list if there are none.** This is the last tool call before answering, every time.

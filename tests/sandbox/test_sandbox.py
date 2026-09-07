@@ -19,6 +19,18 @@ class TestSandboxBasics:
     """Test basic sandbox functionality."""
 
     @pytest.mark.asyncio
+    async def test_the_documented_modules_import(self, sandbox):
+        """The modules the instructions and the MCP description promise."""
+        result = await sandbox.execute(
+            "import json, re, math, pathlib, datetime\n"
+            "import collections, itertools, functools, dataclasses\n"
+            "print(collections.Counter('aab').most_common(1),"
+            " list(itertools.islice(itertools.count(), 2)))"
+        )
+        assert result.success, result.stderr
+        assert "[('a', 2)] [0, 1]" in result.stdout
+
+    @pytest.mark.asyncio
     async def test_execute_simple_code(self, sandbox):
         """Test executing simple code in the sandbox."""
         result = await sandbox.execute("print('hello world')")
@@ -112,6 +124,41 @@ class TestSandboxListDocuments:
             assert "Test Document" in result.stdout
             assert temp_db_path.stem in result.stdout
 
+    @pytest.mark.asyncio
+    async def test_list_documents_carries_metadata(self, temp_db_path):
+        """Rows carry the document's metadata, so a corpus-wide pass over it is
+        one call rather than a file read per document."""
+        from docling_core.types.doc.document import DoclingDocument
+        from docling_core.types.doc.labels import DocItemLabel
+
+        config = AppConfig()
+        docling = DoclingDocument(name="d")
+        docling.add_text(label=DocItemLabel.TEXT, text="Test content")
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            await client.import_document(
+                docling,
+                [
+                    Chunk(
+                        content="Test content",
+                        embedding=[0.1] * config.embeddings.model.vector_dim,
+                        order=0,
+                    )
+                ],
+                uri="test://doc1",
+                title="Test Document",
+                metadata={"author": "Ada"},
+            )
+
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            result = await sb.execute(
+                "docs = await list_documents()\nprint(docs[0]['metadata']['author'])"
+            )
+        finally:
+            await sb.close()
+        assert result.success, result.stderr
+        assert "Ada" in result.stdout
+
 
 class TestSandboxSearch:
     """Test search function in sandbox."""
@@ -188,6 +235,51 @@ class TestSandboxSearch:
             assert "str" in result.stdout
             assert "True" in result.stdout
 
+    @pytest.mark.asyncio
+    async def test_search_returns_the_matched_chunks_metadata(
+        self, temp_db_path, monkeypatch
+    ):
+        """Results carry the stored metadata of the chunk that matched, custom
+        keys included."""
+        from docling_core.types.doc.document import DoclingDocument
+        from docling_core.types.doc.labels import DocItemLabel
+
+        from haiku.rag.embeddings import EmbedderWrapper
+
+        config = AppConfig()
+        dim = config.embeddings.model.vector_dim
+
+        async def embed_query(self, text):
+            return [0.1] * dim
+
+        monkeypatch.setattr(EmbedderWrapper, "embed_query", embed_query)
+        docling = DoclingDocument(name="d")
+        docling.add_text(label=DocItemLabel.TEXT, text="Paragraph fourteen.")
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            await client.import_document(
+                docling,
+                [
+                    Chunk(
+                        content="Paragraph fourteen.",
+                        embedding=[0.1] * dim,
+                        order=0,
+                        metadata={"para_no": "14"},
+                    )
+                ],
+                uri="test://paras",
+            )
+
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            result = await sb.execute(
+                "results = await search('fourteen', limit=1)\n"
+                "print(results[0]['chunk_meta']['para_no'])"
+            )
+        finally:
+            await sb.close()
+        assert result.success, result.stderr
+        assert "14" in result.stdout
+
 
 class TestSandboxExternalFunctionEdgeCases:
     """Test edge cases in external function dispatch."""
@@ -239,6 +331,23 @@ class TestSandboxExternalFunctionEdgeCases:
         result = await sandbox.execute("await search('hello')")
         assert not result.success
         assert "external error" in result.stderr
+
+    @pytest.mark.asyncio
+    async def test_a_failing_search_keeps_its_message_for_the_program(
+        self, sandbox, monkeypatch
+    ):
+        """A host-side failure inside search() reaches the program with its
+        message, which the agent reads to repair its code."""
+
+        async def boom(self, *args, **kwargs):
+            raise ValueError("failed at /secret/path")
+
+        monkeypatch.setattr(HaikuRAG, "search", boom)
+
+        result = await sandbox.execute("await search('hello')")
+
+        assert not result.success
+        assert "ValueError: failed at /secret/path" in result.stderr
 
 
 class TestSandboxOutputTruncation:
@@ -312,13 +421,14 @@ class TestSandboxVFS:
     @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_metadata_json(self, temp_db_path):
-        """metadata.json contains document title and uri."""
+        """metadata.json contains document title, uri and stored metadata."""
         config = AppConfig()
         async with HaikuRAG(temp_db_path, create=True) as client:
             doc = await client.create_document(
                 content="Test content",
                 uri="test://doc1",
                 title="Test Document",
+                metadata={"author": "Ada"},
             )
 
             context = AnalysisContext()
@@ -328,11 +438,13 @@ class TestSandboxVFS:
                 "import json\n"
                 f"meta = json.loads(Path('/documents/{doc.id}/metadata.json').read_text())\n"
                 "print(meta['title'])\n"
-                "print(meta['uri'])"
+                "print(meta['uri'])\n"
+                "print(meta['metadata']['author'])"
             )
-            assert result.success
+            assert result.success, result.stderr
             assert "Test Document" in result.stdout
             assert "test://doc1" in result.stdout
+            assert "Ada" in result.stdout
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
@@ -387,6 +499,59 @@ class TestSandboxVFS:
             assert result.stdout.count("True") == 6
 
     @pytest.mark.asyncio
+    async def test_chunks_jsonl(self, temp_db_path):
+        """chunks.jsonl lists a document's chunks in order with their stored
+        metadata; a chunk found by its metadata leads to its items through
+        their chunk_ids."""
+        from docling_core.types.doc.document import DoclingDocument
+        from docling_core.types.doc.labels import DocItemLabel
+
+        config = AppConfig()
+        dim = config.embeddings.model.vector_dim
+        docling = DoclingDocument(name="d")
+        docling.add_text(label=DocItemLabel.TEXT, text="Paragraph thirteen.")
+        docling.add_text(label=DocItemLabel.TEXT, text="Paragraph fourteen.")
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.import_document(
+                docling,
+                [
+                    Chunk(
+                        content="Paragraph thirteen.",
+                        embedding=[0.1] * dim,
+                        order=0,
+                        metadata={"para_no": "13", "doc_item_refs": ["#/texts/0"]},
+                    ),
+                    Chunk(
+                        content="Paragraph fourteen.",
+                        embedding=[0.1] * dim,
+                        order=1,
+                        metadata={"para_no": "14", "doc_item_refs": ["#/texts/1"]},
+                    ),
+                ],
+                uri="test://paras",
+            )
+
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            result = await sb.execute(
+                "from pathlib import Path\n"
+                "import json\n"
+                f"root = Path('/documents/{doc.id}')\n"
+                "def rows(name):\n"
+                "    return [json.loads(l) for l in (root / name).read_text().strip().split('\\n')]\n"
+                "chunks = rows('chunks.jsonl')\n"
+                "print(len(chunks))\n"
+                "hit = [c for c in chunks if c['metadata'].get('para_no') == '14']\n"
+                "print(len(hit))\n"
+                "items = rows('items.jsonl')\n"
+                "print([i['text'] for i in items if hit[0]['chunk_id'] in i['chunk_ids']])"
+            )
+        finally:
+            await sb.close()
+        assert result.success, result.stderr
+        assert result.stdout.splitlines() == ["2", "1", "['Paragraph fourteen.']"]
+
+    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_open_read(self, temp_db_path):
         """open() and a with-block read document files through the VFS."""
@@ -433,7 +598,8 @@ class TestSandboxVFS:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "filename", ["content.txt", "items.jsonl", "toc.json", "metadata.json"]
+        "filename",
+        ["content.txt", "items.jsonl", "chunks.jsonl", "toc.json", "metadata.json"],
     )
     async def test_write_denied_for_every_document_file(self, temp_db_path, filename):
         """Every file in the document VFS is read-only, metadata.json included."""
@@ -798,6 +964,61 @@ class TestSandboxReadDeadline:
     enforces the budget itself, before each read."""
 
     @pytest.mark.asyncio
+    async def test_the_deadline_covers_reads_from_memory_and_in_code_calls(
+        self, temp_db_path, monkeypatch
+    ):
+        """Once a call's time is up, a file served from memory and an in-code
+        listing are refused like a database read. A slow first read spends the
+        budget; the watchdog does not count time spent waiting on the host."""
+        from docling_core.types.doc.document import DoclingDocument
+        from docling_core.types.doc.labels import DocItemLabel
+
+        config = AppConfig()
+        config.analysis.code_timeout = 1.0
+        docling = DoclingDocument(name="d")
+        docling.add_text(label=DocItemLabel.TEXT, text="Foxes and dogs.")
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.import_document(
+                docling,
+                [
+                    Chunk(
+                        content="Foxes and dogs.",
+                        embedding=[0.1] * config.embeddings.model.vector_dim,
+                        order=0,
+                    )
+                ],
+                uri="test://deadline-paths",
+            )
+            repository = type(client.document_repository)
+
+        async def slow_content(self, *args, **kwargs):
+            await asyncio.sleep(1.3)
+            return "body"
+
+        monkeypatch.setattr(repository, "get_content", slow_content)
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            result = await sb.execute(
+                "from pathlib import Path\n"
+                f"root = Path('/documents/{doc.id}')\n"
+                "print(len((root / 'content.txt').read_text()))\n"
+                "try:\n"
+                "    (root / 'metadata.json').read_text()\n"
+                "    print('static: read')\n"
+                "except Exception as e:\n"
+                "    print('static:', type(e).__name__)\n"
+                "await list_documents()\n"
+                "print('listed')"
+            )
+        finally:
+            await sb.close()
+
+        assert "static: TimeoutError" in result.stdout
+        assert "listed" not in result.stdout
+        assert not result.success
+        assert "time limit exceeded" in result.stderr
+
+    @pytest.mark.asyncio
     async def test_read_after_deadline_raises_without_scheduling(self, sandbox):
         """A read attempted past the deadline fails instead of querying."""
         scheduled = False
@@ -825,7 +1046,51 @@ class TestSandboxReadDeadline:
 
         sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
 
-        assert sb._session_limits() == {"max_duration_secs": 15.0}
+        limits = sb._session_limits()
+
+        assert limits["max_duration_secs"] == 15.0
+        cap = limits["max_suspensions"]
+        assert cap is not None
+        assert cap >= 1_000_000
+
+    @pytest.mark.asyncio
+    async def test_a_program_may_read_more_than_a_thousand_times(self, temp_db_path):
+        """Monty caps host callbacks per checkout at 1000 unless told otherwise;
+        a corpus-wide pass over documents reads far more than that."""
+        from docling_core.types.doc.document import DoclingDocument
+        from docling_core.types.doc.labels import DocItemLabel
+
+        config = AppConfig()
+        docling = DoclingDocument(name="d")
+        docling.add_text(label=DocItemLabel.TEXT, text="Foxes and dogs.")
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.import_document(
+                docling,
+                [
+                    Chunk(
+                        content="Foxes and dogs.",
+                        embedding=[0.1] * config.embeddings.model.vector_dim,
+                        order=0,
+                    )
+                ],
+                uri="test://many-reads",
+            )
+
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            result = await sb.execute(
+                "from pathlib import Path\n"
+                f"p = Path('/documents/{doc.id}/content.txt')\n"
+                "n = 0\n"
+                "for i in range(1100):\n"
+                "    n += len(p.read_text())\n"
+                "print(n)"
+            )
+        finally:
+            await sb.close()
+
+        assert result.success, result.stderr
+        assert result.stdout.strip() == str(1100 * len("Foxes and dogs."))
 
     @pytest.mark.asyncio
     async def test_refused_read_fails_the_execution(self, temp_db_path, monkeypatch):

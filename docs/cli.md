@@ -24,7 +24,7 @@ The `haiku-rag` CLI provides complete document management functionality.
     haiku-rag add -h
     ```
 
-    With `lancedb.databases` configured, `search`, `ask`, `analyze`, and `chat` use the full set by default. Select one database for other commands with `--db-name` or `--db`. `settings`, `init-config`, and `download-models` do not open a database. See [Multiple Databases](configuration/storage.md#multiple-databases).
+    With `lancedb.databases` configured, `search`, `ask`, `analyze`, `chat`, and `mcp` use the full set by default. Select one database for other commands with `--db-name` or `--db`. `settings`, `init-config`, and `download-models` do not open a database. See [Multiple Databases](configuration/storage.md#multiple-databases).
 
 ## Document Management
 
@@ -477,9 +477,6 @@ haiku-rag mcp --port 9000
 
 # Bind to all interfaces (containers, trusted LAN)
 haiku-rag mcp --host 0.0.0.0
-
-# Read-only mode (no write tools)
-haiku-rag --read-only mcp
 ```
 
 See [MCP](mcp.md) for details. For continuous document ingestion

@@ -196,7 +196,7 @@ writing process per database URI, any number of read-only consumers.
 The recommended layout for production is "different buckets, same account, separate IAM roles per process":
 
 - **Ingestion process** — IAM role with `s3:Get/List` on the documents bucket and `s3:Get/Put/Delete` on the LanceDB bucket. Runs `haiku-ingester serve` (with `ingester.sources[type=s3]` pointing at the documents bucket). Exactly one such process per LanceDB URI.
-- **Consumer processes** (1..N) — IAM role with `s3:Get/List` on the LanceDB bucket only. Run `haiku-rag --read-only mcp`, the chat TUI, etc. They never see the documents bucket.
+- **Consumer processes** (1..N) — IAM role with `s3:Get/List` on the LanceDB bucket only. Run `haiku-rag mcp`, the chat TUI, etc. They never see the documents bucket.
 
 Each process picks up its own credentials from the AWS default chain (env vars, IAM instance role, AWS profile), so no credentials are hard-coded in the configuration files.
 
@@ -281,9 +281,9 @@ Conversion, chunking, and title generation do not access a database and remain a
 
 Commands use database sets as follows:
 
-- **Set-capable**: `search`, `ask`, `analyze`, and `chat` use the full configured set, or the single database selected by `--db-name`.
+- **Set-capable**: `search`, `ask`, `analyze`, `chat`, and `mcp` use the full configured set, or the single database selected by `--db-name`.
 - **Config-only**: `settings`, `init-config`, and `download-models` do not open a database.
-- **Single-database**: everything else — document writes, `rebuild`, `vacuum`, `migrate`, `init`, `info`, `history`, `tag`, `doctor`, `list`, `inspect`, `visualize`, and `mcp` — works on one database, selected with the global `--db-name` option.
+- **Single-database**: everything else — document writes, `rebuild`, `vacuum`, `migrate`, `init`, `info`, `history`, `tag`, `doctor`, `list`, `inspect`, and `visualize` — works on one database, selected with the global `--db-name` option.
 
 ```bash
 haiku-rag search "query"         # every configured database

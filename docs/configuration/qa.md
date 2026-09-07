@@ -20,7 +20,7 @@ Context expansion is automatic and section-aware. For structured documents (with
 
 ## Question Answering Configuration
 
-Configure the RAG capability (used by `client.ask`, `haiku-rag ask`, and the MCP `ask_question` tool):
+Configure the RAG capability (used by `client.ask` and `haiku-rag ask`):
 
 ```yaml
 qa:
@@ -50,13 +50,13 @@ analysis:
     provider: anthropic
     name: claude-sonnet-4-20250514
     temperature: 0.0        # Default: 0.0 (deterministic for code generation)
-  code_timeout: 60.0      # Max seconds a call may spend reading documents
+  code_timeout: 60.0      # Per call: compute stops, no read or search starts past it
   max_output_chars: 50000 # Truncate output after this many chars
   max_executions: 15      # Max execute_code calls per question
 ```
 
 - **model**: LLM configuration (see [Providers](providers.md#model-settings)). When unset, falls back to `qa.model`.
-- **code_timeout**: Seconds a single `execute_code` call may spend reading documents (default: 60). The sandbox refuses further reads past this point. Code that computes without reading is killed by the worker watchdog at the same limit. `code_timeout * max_executions` is the cumulative ceiling across all calls in one question.
+- **code_timeout**: Seconds a single `execute_code` call has (default: 60). Past it the sandbox starts no further host call, a document read or an in-code `search()` / `list_documents()`; one already running finishes. Code that computes without host calls is killed by the worker watchdog at the same limit. `code_timeout * max_executions` is the cumulative ceiling across all calls in one question.
 - **max_output_chars**: Truncate code output after this many characters (default: 50000)
 - **max_executions**: Maximum `execute_code` calls per question before the capability is told to answer from what it has (default: 15)
 

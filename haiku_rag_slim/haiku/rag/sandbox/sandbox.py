@@ -17,8 +17,9 @@ from pydantic_monty import (
 )
 
 from haiku.rag.config.models import AppConfig
+from haiku.rag.context import build_toc
 from haiku.rag.sandbox.dependencies import AnalysisContext
-from haiku.rag.store.models.chunk import SearchResult
+from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX, DocumentItem
 from haiku.rag.utils import gather_all
 
@@ -27,6 +28,9 @@ if TYPE_CHECKING:
 
     from haiku.rag.client import HaikuRAG
     from haiku.rag.client.scope import DatabaseScope
+
+
+_MAX_HOST_CALLS = 10_000_000
 
 
 @dataclass
@@ -38,79 +42,19 @@ class SandboxResult:
     success: bool
 
 
-def _build_toc(
-    items: list["DocumentItem"],
-    chunk_index: dict[str, list[str]],
-) -> list[dict[str, Any]]:
-    """Build a nested section tree from items in position order.
+def recovery_hint(stderr: str) -> str:
+    """Name the workaround for sandbox limits models trip over repeatedly.
 
-    Each ``section_header`` with ``heading_level > 0`` becomes a node. Nesting
-    follows the explicit levels: a header pops the stack until the top is at
-    a strictly shallower level, then becomes a child of that top (or a root).
-
-    ``item_range = [position, end_exclusive]`` where ``end_exclusive`` is the
-    position of the next header whose level is the same or shallower (i.e.
-    the next sibling or ancestor that ends this section), or the total item
-    count if no such header exists.
-
-    ``chunk_ids`` aggregates the chunks covered by all items in the section's
-    ``item_range`` (deduped, order preserved). Pass directly to ``cite()`` to
-    ground a section-scoped answer without a corpus-wide ``search()`` call.
-
-    Items without a section_header label (or with ``heading_level == 0``) are
-    skipped. When all section_headers carry the same level the output is a
-    flat sibling list (see docling-project/docling#2121 for an upstream case
-    where every PDF section_header is emitted at level=1).
+    The instructions already say file objects are not iterable, and models write
+    ``for line in open(...)`` regardless. Carrying the fix in the error gives
+    them something to act on for the retry.
     """
-    # Defensive: every consumer is supposed to pass items in position order,
-    # but the end_exclusive lookahead below silently miscomputes section
-    # boundaries if it's not — better to sort once than trust the caller.
-    items = sorted(items, key=lambda i: i.position)
-    headers: list[DocumentItem] = [
-        i for i in items if i.label == "section_header" and i.heading_level > 0
-    ]
-    if not headers:
-        return []
-
-    total = max((i.position for i in items), default=-1) + 1
-    items_by_position: dict[int, DocumentItem] = {i.position: i for i in items}
-
-    ends: list[int] = []
-    for idx, h in enumerate(headers):
-        end = total
-        for j in range(idx + 1, len(headers)):
-            if headers[j].heading_level <= h.heading_level:
-                end = headers[j].position
-                break
-        ends.append(end)
-
-    roots: list[dict[str, Any]] = []
-    stack: list[tuple[int, dict[str, Any]]] = []
-    for h, end in zip(headers, ends, strict=True):
-        seen: set[str] = set()
-        chunk_ids: list[str] = []
-        for pos in range(h.position, end):
-            item = items_by_position.get(pos)
-            if item is None:
-                continue
-            for cid in chunk_index.get(item.self_ref, []):
-                if cid not in seen:
-                    seen.add(cid)
-                    chunk_ids.append(cid)
-        node: dict[str, Any] = {
-            "self_ref": h.self_ref,
-            "level": h.heading_level,
-            "title": h.text,
-            "page_numbers": list(h.page_numbers),
-            "item_range": [h.position, end],
-            "chunk_ids": chunk_ids,
-            "children": [],
-        }
-        while stack and stack[-1][0] >= h.heading_level:
-            stack.pop()
-        (stack[-1][1]["children"] if stack else roots).append(node)
-        stack.append((h.heading_level, node))
-    return roots
+    if "TextIOWrapper" in stderr and "not iterable" in stderr:
+        return (
+            "\n\nHint: file objects cannot be iterated here. Read lines with "
+            '.readlines() or .read().split("\\n").'
+        )
+    return ""
 
 
 class Sandbox:
@@ -120,7 +64,8 @@ class Sandbox:
     The interpreter runs in a subprocess worker checked out of an ``AsyncMonty``
     pool. External functions (search, list_documents) are called by Monty code
     using ``await`` and resolved asynchronously on the host. Documents are
-    exposed via a virtual filesystem at ``/documents/{id}/``.
+    exposed via a virtual filesystem at ``/documents/{id}/``: ``metadata.json``,
+    ``content.txt``, ``items.jsonl``, ``chunks.jsonl`` and ``toc.json``.
 
     The session persists across ``execute()`` calls within the same Sandbox
     instance — variables carry over. Call ``close()`` to return the worker to
@@ -150,6 +95,7 @@ class Sandbox:
     _doc_items: dict[str, list["DocumentItem"]]
     _doc_chunk_index: dict[str, dict[str, list[str]]]
     _items_jsonl_cache: dict[str, str]
+    _chunks_jsonl_cache: dict[str, str]
     _toc_json_cache: dict[str, str]
     _opened: "HaikuRAG | None"
     _pool: AsyncMonty | None
@@ -216,6 +162,7 @@ class Sandbox:
         self._doc_items = {}
         self._doc_chunk_index = {}
         self._items_jsonl_cache = {}
+        self._chunks_jsonl_cache = {}
         self._toc_json_cache = {}
         self._pool = None
         self._session = None
@@ -328,13 +275,42 @@ class Sandbox:
         assert self._loop is not None, (
             "VFS reads happen during execute(); the loop must be captured first."
         )
-        if self._deadline is not None and self._loop.time() > self._deadline:
+        if self._past_deadline():
             coro.close()
-            raise TimeoutError(
-                "time limit exceeded: no further document reads after "
-                f"{self._config.analysis.code_timeout}s"
-            )
+            raise self._time_limit()
         return asyncio.run_coroutine_threadsafe(coro, self._loop).result()
+
+    def _past_deadline(self) -> bool:
+        return (
+            self._deadline is not None
+            and self._loop is not None
+            and self._loop.time() > self._deadline
+        )
+
+    def _time_limit(self) -> TimeoutError:
+        return TimeoutError(
+            "time limit exceeded: no further document reads or calls after "
+            f"{self._config.analysis.code_timeout}s"
+        )
+
+    def _check_deadline(self) -> None:
+        """Refuse a host call once the call's time is up.
+
+        Monty's watchdog counts only time the worker spends computing, so every
+        host call, a file served from memory and an in-code search included,
+        checks the deadline before it runs.
+        """
+        if self._past_deadline():
+            raise self._time_limit()
+
+    def _timed(
+        self, read: Callable[["PurePosixPath"], str]
+    ) -> Callable[["PurePosixPath"], str]:
+        def call(path: "PurePosixPath") -> str:
+            self._check_deadline()
+            return read(path)
+
+        return call
 
     async def _discard_session(self) -> None:
         """Drop a session whose worker is gone.
@@ -371,6 +347,7 @@ class Sandbox:
         context = self._context
 
         async def search(query: str, limit: int = 10) -> list[dict[str, Any]]:
+            self._check_deadline()
             # Picture bytes are deliberately not attached to in-code search
             # results: the Monty interpreter has no PIL/base64/hashlib, so the
             # agent's Python can't do anything with them. The driving model
@@ -404,11 +381,13 @@ class Sandbox:
                         "doc_item_refs": r.doc_item_refs,
                         "labels": r.labels,
                         "picture_refs": picture_refs,
+                        "chunk_meta": r.chunk_meta,
                     }
                 )
             return out
 
         async def list_documents() -> list[dict[str, Any]]:
+            self._check_deadline()
             docs, _ = await self._documents()
             return [
                 {
@@ -417,6 +396,7 @@ class Sandbox:
                     "uri": d.uri,
                     "created_at": str(d.created_at),
                     "source": d.source,
+                    "metadata": d.metadata,
                 }
                 for d in docs
             ]
@@ -433,6 +413,7 @@ class Sandbox:
         - metadata.json: CallbackFile (eager, small)
         - content.txt: CallbackFile (lazy, can be large)
         - items.jsonl: CallbackFile (lazy, bulk-cached)
+        - chunks.jsonl: CallbackFile (lazy, bulk-cached)
         - toc.json: CallbackFile (lazy, bulk-cached)
         """
         files: list[CallbackFile] = []
@@ -507,6 +488,31 @@ class Sandbox:
 
             return read_items
 
+        def _make_chunks_reader(
+            did: str,
+        ) -> Callable[["PurePosixPath"], str]:
+            def read_chunks(_path: "PurePosixPath") -> str:
+                cached = sandbox._chunks_jsonl_cache.get(did)
+                if cached is not None:
+                    return cached
+
+                async def _fetch() -> list[Chunk]:
+                    async with sandbox._connection(sandbox._owners.get(did)) as rag:
+                        return await rag.chunk_repository.get_by_document_id(did)
+
+                chunks = sandbox._run_on_loop(_fetch())
+                jsonl = "\n".join(
+                    json.dumps(
+                        {"chunk_id": chunk.id, "metadata": chunk.metadata},
+                        ensure_ascii=False,
+                    )
+                    for chunk in chunks
+                )
+                sandbox._chunks_jsonl_cache[did] = jsonl
+                return jsonl
+
+            return read_chunks
+
         def _make_toc_reader(
             did: str,
         ) -> Callable[["PurePosixPath"], str]:
@@ -520,7 +526,7 @@ class Sandbox:
                     {
                         "doc_id": did,
                         "title": doc_titles.get(did),
-                        "tree": _build_toc(items, chunk_index),
+                        "tree": build_toc(items, chunk_index),
                     },
                     ensure_ascii=False,
                 )
@@ -541,6 +547,7 @@ class Sandbox:
                     "title": doc.title,
                     "uri": doc.uri,
                     "created_at": str(doc.created_at),
+                    "metadata": doc.metadata,
                 },
                 ensure_ascii=False,
             )
@@ -550,7 +557,7 @@ class Sandbox:
             files.append(
                 CallbackFile(
                     f"{doc_dir}/metadata.json",
-                    read=lambda _path, text=metadata: text,
+                    read=self._timed(lambda _path, text=metadata: text),
                     write=_deny_write,
                 )
             )
@@ -571,14 +578,21 @@ class Sandbox:
             files.append(
                 CallbackFile(
                     f"{doc_dir}/content.txt",
-                    read=_make_content_reader(doc_id),
+                    read=self._timed(_make_content_reader(doc_id)),
                     write=_deny_write,
                 )
             )
             files.append(
                 CallbackFile(
                     f"{doc_dir}/items.jsonl",
-                    read=_make_items_reader(doc_id),
+                    read=self._timed(_make_items_reader(doc_id)),
+                    write=_deny_write,
+                )
+            )
+            files.append(
+                CallbackFile(
+                    f"{doc_dir}/chunks.jsonl",
+                    read=self._timed(_make_chunks_reader(doc_id)),
                     write=_deny_write,
                 )
             )
@@ -589,7 +603,7 @@ class Sandbox:
                 files.append(
                     CallbackFile(
                         f"{doc_dir}/toc.json",
-                        read=_make_toc_reader(doc_id),
+                        read=self._timed(_make_toc_reader(doc_id)),
                         write=_deny_write,
                     )
                 )
@@ -601,12 +615,19 @@ class Sandbox:
 
         Monty spends ``max_duration_secs`` across the session's whole life, and
         the session is reused so variables persist between calls: the budget
-        covers the whole run. ``code_timeout`` is enforced per call elsewhere: the read
-        deadline in ``_run_on_loop`` bounds a call that reads, and the pool's
-        ``request_timeout`` bounds one that computes.
+        covers the whole run. ``code_timeout`` is enforced per call elsewhere: past
+        its deadline no further host call starts (``_check_deadline``), and the
+        pool's ``request_timeout`` bounds compute.
+
+        ``max_suspensions`` counts host callbacks per session, document reads
+        included, defaults to 1000 and cannot be disabled. The time budgets are
+        the governors here, so it is set where no program reaches it.
         """
         analysis = self._config.analysis
-        return {"max_duration_secs": analysis.code_timeout * analysis.max_executions}
+        return {
+            "max_duration_secs": analysis.code_timeout * analysis.max_executions,
+            "max_suspensions": _MAX_HOST_CALLS,
+        }
 
     async def _ensure_initialized(self) -> tuple[AsyncMontySession, OSAccess]:
         """Check out a worker session and build the VFS on first use."""

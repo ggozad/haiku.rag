@@ -662,117 +662,6 @@ def test_format_bytes():
     assert format_bytes(1125899906842624) == "1.0 PB"
 
 
-# --- format_citations tests ---
-
-
-def test_format_citations_empty():
-    from haiku.rag.utils import format_citations
-
-    assert format_citations([]) == ""
-
-
-def test_format_citations_with_citation():
-    from haiku.rag.store.models.citation import Citation
-    from haiku.rag.utils import format_citations
-
-    citation = Citation(
-        document_id="doc1",
-        chunk_id="chunk1",
-        document_uri="test://doc",
-        document_title="Test Doc",
-        content="Some content",
-        page_numbers=[1],
-        headings=["Intro"],
-    )
-    result = format_citations([citation])
-    assert "[1] Test Doc" in result
-    assert "doc1" not in result
-    assert "chunk1" not in result
-    assert "test://doc" in result
-    assert "p. 1" in result
-    assert "Section: Intro" in result
-    assert "Some content" in result
-
-
-def test_format_citations_multiple_pages():
-    from haiku.rag.store.models.citation import Citation
-    from haiku.rag.utils import format_citations
-
-    citation = Citation(
-        document_id="doc1",
-        chunk_id="chunk1",
-        document_uri="test://doc",
-        content="Content",
-        page_numbers=[1, 2, 3],
-    )
-    result = format_citations([citation])
-    assert "[1] test://doc" in result
-    assert "pp. 1-3" in result
-    # No title: the URI stands in, and the document id never leaks.
-    assert "doc1" not in result
-
-
-def test_format_citations_with_index():
-    from haiku.rag.store.models.citation import Citation
-    from haiku.rag.utils import format_citations
-
-    citation = Citation(
-        index=5,
-        document_id="doc1",
-        chunk_id="chunk1",
-        document_uri="test://doc",
-        document_title="Test Doc",
-        content="Content",
-    )
-    result = format_citations([citation])
-    assert "[5] Test Doc" in result
-
-
-def test_format_citations_sequential_indices():
-    from haiku.rag.store.models.citation import Citation
-    from haiku.rag.utils import format_citations
-
-    citations = [
-        Citation(
-            document_id="doc1",
-            chunk_id="chunk1",
-            document_uri="test://doc1",
-            document_title="First",
-            content="Content 1",
-        ),
-        Citation(
-            document_id="doc2",
-            chunk_id="chunk2",
-            document_uri="test://doc2",
-            document_title="Second",
-            content="Content 2",
-        ),
-    ]
-    result = format_citations(citations)
-    assert "[1] First" in result
-    assert "[2] Second" in result
-
-
-# --- format_citations tests (pictures) ---
-
-
-def test_format_citations_picture_refs_render_as_markers():
-    from haiku.rag.store.models.citation import Citation
-    from haiku.rag.utils import format_citations
-
-    citation = Citation(
-        document_id="doc1",
-        chunk_id="chunk1",
-        document_uri="test://doc",
-        document_title="Test Doc",
-        content="text body",
-        picture_refs=["#/pictures/0", "#/pictures/3"],
-    )
-    result = format_citations([citation])
-    assert "[Figure: #/pictures/0]" in result
-    assert "[Figure: #/pictures/3]" in result
-
-
 # --- format_citations_rich tests ---
 
 
@@ -811,6 +700,22 @@ async def test_format_citations_rich_header_and_footer():
     assert "§Background" in output
     assert "doc: doc-uuid-1" in output
     assert "chunk: chunk-uuid-1" in output
+
+
+async def test_format_citations_rich_names_a_single_page():
+    from haiku.rag.store.models.citation import Citation
+    from haiku.rag.utils import format_citations_rich
+
+    citation = Citation(
+        document_id="doc1",
+        chunk_id="chunk1",
+        document_uri="test://doc",
+        content="Body",
+        page_numbers=[3],
+    )
+    output = _render_rich(await format_citations_rich([citation]))
+    assert "p. 3" in output
+    assert "pp." not in output
 
 
 async def test_format_citations_rich_names_the_database_when_federating():

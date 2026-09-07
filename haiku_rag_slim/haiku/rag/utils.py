@@ -393,43 +393,6 @@ def _citation_label(c: "Citation") -> str:
     return c.document_title or c.document_uri
 
 
-def format_citations(citations: "list[Citation]") -> str:
-    """Format citations as plain text with preserved formatting.
-
-    Used by things like the MCP server where Rich renderables are not available.
-    Pictures referenced by the chunk are surfaced as ``[Figure: <ref>]`` markers.
-    """
-    if not citations:
-        return ""
-
-    lines = ["## Citations\n"]
-
-    for i, c in enumerate(citations):
-        idx = c.index if c.index is not None else (i + 1)
-        title = c.document_title or c.document_uri
-        header = f"[{idx}] {title}"
-
-        location_parts = []
-        pages = _citation_pages(c)
-        if pages:
-            location_parts.append(pages)
-        section = _citation_section(c)
-        if section:
-            location_parts.append(f"Section: {section}")
-
-        source = c.document_uri
-        if location_parts:
-            source += f" - {', '.join(location_parts)}"
-
-        lines.append(f"{header} {source}")
-        for ref in c.picture_refs:
-            lines.append(f"[Figure: {ref}]")
-        lines.append(c.content)
-        lines.append("")
-
-    return "\n".join(lines)
-
-
 def truncated(text: str, limit: int) -> str:
     """The first `limit` characters of `text`, with `…` appended when anything
     was dropped. A cut result is `limit` characters plus the mark."""

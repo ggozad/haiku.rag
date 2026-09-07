@@ -16,7 +16,7 @@ Built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.pydantic.dev/
 - **Hybrid search** — Vector + full-text with Reciprocal Rank Fusion
 - **Multimodal & cross-modal search** — Multimodal embedders (vLLM, VoyageAI, Cohere) put picture vectors in the same space as text; supports text-as-query → figure hits and image-as-query
 - **Question answering** — RAG capability with citations (page numbers, section headings)
-- **Vision QA** — Vision-capable models receive figure bytes alongside chunk text; attach your own images to questions in `ask`, `analyze`, MCP, and the chat TUI
+- **Vision QA** — Vision-capable models receive figure bytes alongside chunk text; attach your own images to questions in `ask`, `analyze` and the chat TUI
 - **Reranking** — local cross-encoders, Cohere, Zero Entropy, or vLLM
 - **Analysis capability** — Complex analytical tasks via sandboxed Python code execution (aggregation, computation, multi-document analysis)
 - **Evidence compaction** — Optional capability that replaces earlier questions' search results on the request with the evidence they cited, so long conversations stop resending everything they retrieved
@@ -110,10 +110,24 @@ For direct agent composition, see the [capabilities documentation](https://ggoza
 
 ## MCP Server
 
-Use with AI assistants like Claude Desktop:
+Use with AI assistants like Claude Code, Codex, and Claude Desktop:
 
 ```bash
 haiku-rag mcp --stdio
+```
+
+In Claude Code, install the plugin, which registers the server and a skill:
+
+```bash
+claude plugin marketplace add ggozad/haiku.rag
+claude plugin install haiku-rag
+```
+
+In Codex, install the same plugin from its marketplace:
+
+```bash
+codex plugin marketplace add ggozad/haiku.rag
+codex plugin add haiku-rag@haiku-rag
 ```
 
 Add to your Claude Desktop configuration:
@@ -129,7 +143,7 @@ Add to your Claude Desktop configuration:
 }
 ```
 
-Provides tools for document management, search, QA, and analysis directly in your AI assistant.
+Provides search, document reading, and analysis tools directly in your AI assistant.
 
 ## Examples
 

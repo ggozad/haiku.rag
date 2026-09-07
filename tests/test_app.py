@@ -31,10 +31,6 @@ def client():
 @pytest.fixture
 def app(tmp_path, client, monkeypatch):
     class StubHaikuRAG:
-        # run_mcp passes db_path positionally; every other caller uses kwargs.
-        def __init__(self, *args, **kwargs):
-            pass
-
         @classmethod
         def _covering(cls, *args, **kwargs):
             return cls()

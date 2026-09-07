@@ -886,7 +886,7 @@ def mcp(
     ),
 ) -> None:
     """Run the MCP server."""
-    app = create_app(db)
+    app = create_app(db, covers_set=True)
 
     transport = "stdio" if stdio else None
 

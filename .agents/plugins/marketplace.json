@@ -1,0 +1,20 @@
+{
+  "name": "haiku-rag",
+  "interface": {
+    "displayName": "haiku.rag"
+  },
+  "plugins": [
+    {
+      "name": "haiku-rag",
+      "source": {
+        "source": "local",
+        "path": "./plugins/haiku-rag"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
