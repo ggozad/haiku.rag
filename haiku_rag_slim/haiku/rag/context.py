@@ -27,17 +27,19 @@ For UNSTRUCTURED documents (no section headers):
 
 In both cases:
   - max_context_chars caps total characters per expanded result
-  - Noise labels (footnote, page_header, page_footer, document_index) are
-    excluded from content AND budget counting in structured documents
+  - Noise labels (page_header, page_footer, document_index) are
+    excluded from content AND budget counting in structured documents,
+    except the items a result matched on
   - Results without doc_item_refs pass through unexpanded
 """
 
+from collections.abc import Set as AbstractSet
 from typing import Any
 
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.document_item import DocumentItem
 
-_NOISE_LABELS = {"footnote", "page_header", "page_footer", "document_index"}
+_NOISE_LABELS = {"page_header", "page_footer", "document_index"}
 _SECTION_BOUNDARY_LABELS = {"section_header", "title"}
 
 # Labels whose pertinent unit is the item plus its own section: expansion
@@ -166,37 +168,43 @@ def _span_in_window(
     return start < win_end and end > win_start
 
 
+def _noise_positions(
+    items: list[DocumentItem], matched_positions: set[int]
+) -> set[int]:
+    """Positions skipped as noise; an item a result matched on never is."""
+    return {
+        item.position for item in items if item.label in _NOISE_LABELS
+    } - matched_positions
+
+
 def _expand_outward(
     items: list[DocumentItem],
     center_idx: int,
     max_chars: int,
-    skip_noise: bool = False,
+    noise: AbstractSet[int] = frozenset(),
     lo_bound: int = 0,
     hi_bound: int | None = None,
 ) -> tuple[int, int]:
     """Expand item-by-item outward from center until char budget is filled.
 
-    When skip_noise is True, noise labels are excluded from char counting
-    (used in structured documents so footnotes don't consume budget).
-
+    Items at ``noise`` positions are excluded from char counting.
     lo_bound and hi_bound constrain expansion (e.g., to section edges).
     """
     if hi_bound is None:
         hi_bound = len(items) - 1
     lo = hi = center_idx
-    center_is_noise = skip_noise and items[center_idx].label in _NOISE_LABELS
-    char_count = 0 if center_is_noise else len(items[center_idx].text)
+    char_count = len(items[center_idx].text)
 
     while char_count < max_chars:
         grew = False
         if lo > lo_bound:
             lo -= 1
-            if not (skip_noise and items[lo].label in _NOISE_LABELS):
+            if items[lo].position not in noise:
                 char_count += len(items[lo].text)
             grew = True
         if hi < hi_bound and char_count < max_chars:
             hi += 1
-            if not (skip_noise and items[hi].label in _NOISE_LABELS):
+            if items[hi].position not in noise:
                 char_count += len(items[hi].text)
             grew = True
         if not grew:
@@ -218,6 +226,8 @@ def _find_expansion_range(
 
     if not has_sections:
         return _expand_outward(items, center_idx, max_chars)
+
+    noise = _noise_positions(items, matched_positions)
 
     # Build section spans: [(start_idx, end_idx), ...]
     headers = [
@@ -241,7 +251,7 @@ def _find_expansion_range(
     sec_chars = sum(
         len(items[i].text)
         for i in range(sec_start, sec_end + 1)
-        if items[i].label not in _NOISE_LABELS
+        if items[i].position not in noise
     )
 
     min_useful = int(max_chars * _MIN_SECTION_BUDGET_RATIO)
@@ -253,12 +263,7 @@ def _find_expansion_range(
     if sec_chars > max_chars:
         # Section too large — expand outward bounded by section edges
         return _expand_outward(
-            items,
-            center_idx,
-            max_chars,
-            skip_noise=True,
-            lo_bound=sec_start,
-            hi_bound=sec_end,
+            items, center_idx, max_chars, noise, lo_bound=sec_start, hi_bound=sec_end
         )
 
     # Picture/table hits stay section-bounded: their pertinent unit is the
@@ -267,7 +272,7 @@ def _find_expansion_range(
         return (items[sec_start].position, items[sec_end].position)
 
     # Section too small (e.g., title+authors) — expand across boundaries
-    return _expand_outward(items, center_idx, max_chars, skip_noise=True)
+    return _expand_outward(items, center_idx, max_chars, noise)
 
 
 def _group_lost_constituent(built: SearchResult, group: list[SearchResult]) -> bool:
@@ -300,7 +305,7 @@ def _build_result(
     range_end: int,
     original_results: list[SearchResult],
     pos_to_item: dict[int, DocumentItem],
-    has_sections: bool,
+    noise: AbstractSet[int],
     max_chars: int,
 ) -> SearchResult:
     """Build one expanded result from the items in ``[range_start, range_end]``."""
@@ -313,9 +318,7 @@ def _build_result(
 
     for pos in range(range_start, range_end + 1):
         item = pos_to_item.get(pos)
-        if item is None:
-            continue
-        if has_sections and item.label in _NOISE_LABELS:
+        if item is None or pos in noise:
             continue
         if item.text:
             if content_parts:
@@ -457,8 +460,21 @@ def expand_with_items(
     ranges: list[tuple[int, int, SearchResult]] = []
     passthrough: list[SearchResult] = []
 
+    def matched_positions(group: list[SearchResult]) -> set[int]:
+        return {
+            ref_positions[ref]
+            for result in group
+            for ref in result.doc_item_refs
+            if ref in ref_positions
+        }
+
+    def noise_for(group: list[SearchResult]) -> set[int]:
+        if not has_sections:
+            return set()
+        return _noise_positions(window_items, matched_positions(group))
+
     for result in results:
-        matched = {ref_positions[r] for r in result.doc_item_refs if r in ref_positions}
+        matched = matched_positions([result])
         if not matched:
             passthrough.append(result)
             continue
@@ -473,7 +489,7 @@ def expand_with_items(
     final_results: list[SearchResult] = []
     for range_start, range_end, group in merged:
         built = _build_result(
-            range_start, range_end, group, pos_to_item, has_sections, max_chars
+            range_start, range_end, group, pos_to_item, noise_for(group), max_chars
         )
         if len(group) > 1 and _group_lost_constituent(built, group):
             # The merged window cannot afford every constituent's evidence:
@@ -483,7 +499,7 @@ def expand_with_items(
                 lo, hi = constituent_range[id(result)]
                 final_results.append(
                     _build_result(
-                        lo, hi, [result], pos_to_item, has_sections, max_chars
+                        lo, hi, [result], pos_to_item, noise_for([result]), max_chars
                     )
                 )
             continue

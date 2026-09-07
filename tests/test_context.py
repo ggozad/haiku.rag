@@ -103,31 +103,19 @@ class TestExpandOutward:
         lo, hi = _expand_outward(items, 9, max_chars=999999)
         assert hi == 9
 
-    def test_skip_noise_excludes_from_char_count(self):
+    def test_noise_positions_excluded_from_char_count(self):
         items = [
             _item(0, text="a" * 100),
-            _item(1, label="footnote", text="f" * 5000),
+            _item(1, label="page_header", text="f" * 5000),
             _item(2, text="b" * 100),
             _item(3, text="c" * 100),
-            _item(4, label="footnote", text="f" * 5000),
+            _item(4, label="page_header", text="f" * 5000),
             _item(5, text="d" * 100),
         ]
-        lo, hi = _expand_outward(items, 2, max_chars=500, skip_noise=True)
-        # Footnotes (5000 chars each) should NOT count toward budget
-        # So we should expand past them
+        lo, hi = _expand_outward(items, 2, max_chars=500, noise={1, 4})
+        # Noise (5000 chars each) does not count, so expansion passes it
         assert lo <= 0
         assert hi >= 5
-
-    def test_noise_center_gets_zero_chars(self):
-        items = [
-            _item(0, text="a" * 200),
-            _item(1, label="document_index", text="x" * 10000),
-            _item(2, text="b" * 200),
-        ]
-        lo, hi = _expand_outward(items, 1, max_chars=500, skip_noise=True)
-        # Center is noise, should start at 0 chars and expand outward
-        assert lo == 0
-        assert hi == 2
 
     def test_respects_bounds(self):
         items = [_item(i, text="x" * 100) for i in range(20)]
@@ -224,15 +212,27 @@ class TestFindExpansionRange:
         items = [
             _item(0, label="section_header", text="Section"),
             _item(1, text="Real content." * 10),
-            _item(2, label="footnote", text="x" * 10000),
+            _item(2, label="page_header", text="x" * 10000),
             _item(3, text="More content." * 10),
         ]
         # Section non-noise chars: ~260 chars (items 0,1,3). Under 5000 budget.
-        # The footnote's 10000 chars should NOT count.
+        # The header's 10000 chars do not count.
         lo, hi = _find_expansion_range(items, {1}, has_sections=True, max_chars=5000)
         # Should return full section (it fits in budget excluding noise)
         assert lo == 0
         assert hi == 3
+
+    def test_matched_noise_item_counts_toward_section_chars(self):
+        items = [
+            _item(0, label="section_header", text="Contents"),
+            _item(1, text="Real content." * 10),
+            _item(2, label="document_index", text="x" * 10000),
+            _item(3, text="More content." * 10),
+        ]
+        lo, hi = _find_expansion_range(items, {2}, has_sections=True, max_chars=5000)
+        # The matched index is 10000 chars: the section is over budget and
+        # expansion stays on the match.
+        assert (lo, hi) == (2, 2)
 
     def test_items_before_first_header_form_section(self):
         items = [
@@ -373,12 +373,11 @@ class TestExpandWithItems:
             assert len(expanded) == 1
             assert expanded[0].content == "original"
 
-    async def test_noise_only_range_preserves_original(self, temp_db_path):
-        """When noise filtering removes all content, original chunk is preserved."""
+    async def test_matched_noise_item_survives_expansion(self, temp_db_path):
+        """A result that matched on a noise-labelled item keeps that item."""
         from haiku.rag.client import HaikuRAG
 
         async with HaikuRAG(temp_db_path, create=True) as rag:
-            # Structured document where the matched item's section has only noise
             items = [
                 DocumentItem(
                     document_id="doc-1",
@@ -421,11 +420,134 @@ class TestExpandWithItems:
                 rag.document_item_repository, "doc-1", [result], 5000
             )
             assert len(expanded) == 1
-            # The TOC section's only non-header item is document_index (noise).
-            # The section_header "Table of Contents" has text but _expand_outward
-            # with skip_noise crosses into the Introduction section which has
-            # real content — so we get expanded content, not the fallback.
-            assert len(expanded[0].content) > 0
+            assert "x" * 2000 in expanded[0].content
+            assert "#/texts/1" in expanded[0].doc_item_refs
+
+    async def test_footnotes_are_kept_in_expanded_content(self, temp_db_path):
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/texts/0",
+                    label="section_header",
+                    text="Chapter 1",
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=1,
+                    self_ref="#/texts/1",
+                    label="text",
+                    text="Body paragraph. " * 80,
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=2,
+                    self_ref="#/texts/2",
+                    label="footnote",
+                    text="1 See Smith v Jones, para 12.",
+                ),
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            result = SearchResult(
+                content="Body paragraph.",
+                score=0.9,
+                document_id="doc-1",
+                doc_item_refs=["#/texts/1"],
+            )
+            expanded = await _fetch_and_expand(
+                rag.document_item_repository, "doc-1", [result], 5000
+            )
+            assert len(expanded) == 1
+            assert "See Smith v Jones" in expanded[0].content
+            assert "#/texts/2" in expanded[0].doc_item_refs
+
+    async def test_unmatched_noise_excluded_in_structured_document(self, temp_db_path):
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/texts/0",
+                    label="section_header",
+                    text="Chapter 1",
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=1,
+                    self_ref="#/texts/1",
+                    label="text",
+                    text="Body paragraph. " * 80,
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=2,
+                    self_ref="#/texts/2",
+                    label="page_header",
+                    text="RUNNING HEADER",
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=3,
+                    self_ref="#/texts/3",
+                    label="text",
+                    text="Closing paragraph.",
+                ),
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            result = SearchResult(
+                content="Body paragraph.",
+                score=0.9,
+                document_id="doc-1",
+                doc_item_refs=["#/texts/1"],
+            )
+            expanded = await _fetch_and_expand(
+                rag.document_item_repository, "doc-1", [result], 5000
+            )
+            assert len(expanded) == 1
+            assert "Closing paragraph." in expanded[0].content
+            assert "RUNNING HEADER" not in expanded[0].content
+            assert "#/texts/2" not in expanded[0].doc_item_refs
+
+    async def test_unstructured_document_keeps_noise_labels(self, temp_db_path):
+        from haiku.rag.client import HaikuRAG
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            items = [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/texts/0",
+                    label="page_header",
+                    text="RUNNING HEADER",
+                ),
+                DocumentItem(
+                    document_id="doc-1",
+                    position=1,
+                    self_ref="#/texts/1",
+                    label="text",
+                    text="Body paragraph.",
+                ),
+            ]
+            await rag.document_item_repository.create_items("doc-1", items)
+
+            result = SearchResult(
+                content="Body paragraph.",
+                score=0.9,
+                document_id="doc-1",
+                doc_item_refs=["#/texts/1"],
+            )
+            expanded = await _fetch_and_expand(
+                rag.document_item_repository, "doc-1", [result], 5000
+            )
+            assert len(expanded) == 1
+            assert "RUNNING HEADER" in expanded[0].content
 
     async def test_picture_expansion_stays_within_section_pages(self, temp_db_path):
         from haiku.rag.client import HaikuRAG
@@ -1559,6 +1681,6 @@ def test_build_result_skips_positions_with_no_item():
         ),
     }
 
-    built = _build_result(0, 3, [original], pos_to_item, False, 5000)
+    built = _build_result(0, 3, [original], pos_to_item, set(), 5000)
 
     assert built.content == "first\n\nlast"

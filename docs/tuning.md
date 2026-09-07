@@ -28,7 +28,7 @@ When configured, a cross-encoder reranker re-scores 10x the requested candidates
 
 `limit` controls how many results reach the LLM. More candidates improve recall but increase token usage. See [Search Settings](configuration/qa.md#search-settings).
 
-Context expansion is automatic and section-aware. Search results are expanded to include surrounding content from the same document section. For structured documents, expansion stays within section boundaries and filters noise (footnotes, page headers). For unstructured documents, expansion grows outward until the character budget is filled. `max_context_chars` caps expansion to prevent context bloat.
+Context expansion is automatic and section-aware. Search results are expanded to include surrounding content from the same document section. For structured documents, expansion stays within section boundaries and filters noise (page headers, page footers and the table of contents). For unstructured documents, expansion grows outward until the character budget is filled. `max_context_chars` caps expansion to prevent context bloat.
 
 ## Tuning Generation
 
@@ -89,7 +89,7 @@ Press `c` on a chunk to see the expanded context that would be fed to the RAG ca
 
 - The expanded text. Section-aware expansion stays within section boundaries on structured documents and fills `max_context_chars` outward on unstructured ones.
 - Source document, content type, and relevance score.
-- Filtered noise. Footnotes, page headers and footers are excluded from structured documents.
+- Filtered noise. Page headers, page footers and the table of contents are excluded from structured documents.
 
 If `qa.model.vision = true` is set, the modal also renders the picture bytes attached to that chunk, so you see exactly what the vision model would receive.
 
