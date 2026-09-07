@@ -1,6 +1,5 @@
 import asyncio
 import json
-import logging
 import os
 from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager, suppress
@@ -31,19 +30,7 @@ if TYPE_CHECKING:
     from haiku.rag.client.scope import DatabaseScope
 
 
-logger = logging.getLogger(__name__)
-
 _MAX_HOST_CALLS = 10_000_000
-
-
-def _host_failure(where: str, e: Exception) -> RuntimeError:
-    """The error a program gets for a failure on the host side of a call.
-
-    The message and traceback go to the log. The program, and through the MCP
-    server its client, learn the exception type only.
-    """
-    logger.exception("%s failed inside the sandbox", where)
-    return RuntimeError(f"{where} failed: {type(e).__name__}")
 
 
 @dataclass
@@ -283,21 +270,47 @@ class Sandbox:
         loop overruns it by however long the outstanding reads take. Raising from
         inside the callback answers the worker's suspension, which keeps the
         session usable — cancelling ``feed_run`` from outside does not, and wedges
-        the protocol. A failed read reaches the program by type only.
+        the protocol.
         """
         assert self._loop is not None, (
             "VFS reads happen during execute(); the loop must be captured first."
         )
-        if self._deadline is not None and self._loop.time() > self._deadline:
+        if self._past_deadline():
             coro.close()
-            raise TimeoutError(
-                "time limit exceeded: no further document reads after "
-                f"{self._config.analysis.code_timeout}s"
-            )
-        try:
-            return asyncio.run_coroutine_threadsafe(coro, self._loop).result()
-        except Exception as e:
-            raise _host_failure("document read", e) from None
+            raise self._time_limit()
+        return asyncio.run_coroutine_threadsafe(coro, self._loop).result()
+
+    def _past_deadline(self) -> bool:
+        return (
+            self._deadline is not None
+            and self._loop is not None
+            and self._loop.time() > self._deadline
+        )
+
+    def _time_limit(self) -> TimeoutError:
+        return TimeoutError(
+            "time limit exceeded: no further document reads or calls after "
+            f"{self._config.analysis.code_timeout}s"
+        )
+
+    def _check_deadline(self) -> None:
+        """Refuse a host call once the call's time is up.
+
+        Monty's watchdog counts only time the worker spends computing, so every
+        host call, a file served from memory and an in-code search included,
+        checks the deadline before it runs.
+        """
+        if self._past_deadline():
+            raise self._time_limit()
+
+    def _timed(
+        self, read: Callable[["PurePosixPath"], str]
+    ) -> Callable[["PurePosixPath"], str]:
+        def call(path: "PurePosixPath") -> str:
+            self._check_deadline()
+            return read(path)
+
+        return call
 
     async def _discard_session(self) -> None:
         """Drop a session whose worker is gone.
@@ -334,6 +347,7 @@ class Sandbox:
         context = self._context
 
         async def search(query: str, limit: int = 10) -> list[dict[str, Any]]:
+            self._check_deadline()
             # Picture bytes are deliberately not attached to in-code search
             # results: the Monty interpreter has no PIL/base64/hashlib, so the
             # agent's Python can't do anything with them. The driving model
@@ -373,6 +387,7 @@ class Sandbox:
             return out
 
         async def list_documents() -> list[dict[str, Any]]:
+            self._check_deadline()
             docs, _ = await self._documents()
             return [
                 {
@@ -387,21 +402,9 @@ class Sandbox:
             ]
 
         return {
-            "search": self._guarded("search()", search),
-            "list_documents": self._guarded("list_documents()", list_documents),
+            "search": search,
+            "list_documents": list_documents,
         }
-
-    @staticmethod
-    def _guarded(
-        where: str, fn: Callable[..., Coroutine[Any, Any, Any]]
-    ) -> Callable[..., Coroutine[Any, Any, Any]]:
-        async def call(*args: Any, **kwargs: Any) -> Any:
-            try:
-                return await fn(*args, **kwargs)
-            except Exception as e:
-                raise _host_failure(where, e) from None
-
-        return call
 
     async def _build_vfs(self) -> OSAccess:
         """Build the virtual filesystem with document data.
@@ -554,7 +557,7 @@ class Sandbox:
             files.append(
                 CallbackFile(
                     f"{doc_dir}/metadata.json",
-                    read=lambda _path, text=metadata: text,
+                    read=self._timed(lambda _path, text=metadata: text),
                     write=_deny_write,
                 )
             )
@@ -575,21 +578,21 @@ class Sandbox:
             files.append(
                 CallbackFile(
                     f"{doc_dir}/content.txt",
-                    read=_make_content_reader(doc_id),
+                    read=self._timed(_make_content_reader(doc_id)),
                     write=_deny_write,
                 )
             )
             files.append(
                 CallbackFile(
                     f"{doc_dir}/items.jsonl",
-                    read=_make_items_reader(doc_id),
+                    read=self._timed(_make_items_reader(doc_id)),
                     write=_deny_write,
                 )
             )
             files.append(
                 CallbackFile(
                     f"{doc_dir}/chunks.jsonl",
-                    read=_make_chunks_reader(doc_id),
+                    read=self._timed(_make_chunks_reader(doc_id)),
                     write=_deny_write,
                 )
             )
@@ -600,7 +603,7 @@ class Sandbox:
                 files.append(
                     CallbackFile(
                         f"{doc_dir}/toc.json",
-                        read=_make_toc_reader(doc_id),
+                        read=self._timed(_make_toc_reader(doc_id)),
                         write=_deny_write,
                     )
                 )
@@ -612,9 +615,9 @@ class Sandbox:
 
         Monty spends ``max_duration_secs`` across the session's whole life, and
         the session is reused so variables persist between calls: the budget
-        covers the whole run. ``code_timeout`` is enforced per call elsewhere: the read
-        deadline in ``_run_on_loop`` bounds a call that reads, and the pool's
-        ``request_timeout`` bounds one that computes.
+        covers the whole run. ``code_timeout`` is enforced per call elsewhere: past
+        its deadline no further host call starts (``_check_deadline``), and the
+        pool's ``request_timeout`` bounds compute.
 
         ``max_suspensions`` counts host callbacks per session, document reads
         included, defaults to 1000 and cannot be disabled. The time budgets are

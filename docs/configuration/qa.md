@@ -50,7 +50,7 @@ analysis:
     provider: anthropic
     name: claude-sonnet-4-20250514
     temperature: 0.0        # Default: 0.0 (deterministic for code generation)
-  code_timeout: 60.0      # Max seconds a call may spend reading documents
+  code_timeout: 60.0      # Per call: compute stops, no read or search starts past it
   max_output_chars: 50000 # Truncate output after this many chars
   max_executions: 15      # Max execute_code calls per question
 ```

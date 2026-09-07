@@ -50,9 +50,6 @@
   Unknown document, unknown collection, invalid filter, invalid base64 and a
   failing program carry a message. Anything else is masked
   (`mask_error_details=True`) and logged server-side.
-- A host-side failure inside the analysis sandbox (a document read or an
-  in-code `search()` raising) reaches the program as
-  `RuntimeError("<call> failed: <ExceptionType>")`; the traceback is logged.
 - `haiku-rag mcp` covers the configured `lancedb.databases` set. `sources` on
   `search_documents`, `search_documents_by_image` and `execute_code`; `source`
   on `get_document`; an unknown name is a tool error. `DocumentInfo.source`.
@@ -61,6 +58,9 @@
 
 - `toc.json` `item_range` in the analysis sandbox is a line slice into
   `items.jsonl`, as documented; it held item positions.
+- Past `analysis.code_timeout` a sandbox program starts no further host call.
+  Files served from memory and in-code `search()` / `list_documents()` were
+  not checked against the deadline.
 
 ### Removed
 

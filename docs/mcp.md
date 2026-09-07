@@ -171,9 +171,10 @@ Useful modules include `json`, `re`, `math`, `pathlib`, `datetime`,
 reached for: `decimal` and `statistics`. No generator functions, class
 inheritance or `match` statements, and a file object cannot be iterated. Files are read-only, and
 there is no network and no filesystem
-beyond `/documents`. `analysis.code_timeout` bounds a call, counted separately
-for compute and for document reads, and `analysis.max_output_chars` bounds its
-output.
+beyond `/documents`. `analysis.code_timeout` is the call's budget: compute is
+stopped at it, and past it no further host call starts, a file read or an
+in-code search alike, though one already running finishes.
+`analysis.max_output_chars` bounds the output.
 
 ### Filters
 
@@ -192,10 +193,8 @@ title = 'Q3 report'
 A failure is an MCP error, never an empty result. Expected failures carry a
 message: a document or section id that matches nothing, a collection the
 server does not cover, a filter the query engine rejects (with its message),
-invalid base64, and a program that fails in `execute_code`. A failure on the
-server inside a program, a database read or an in-code search raising, reaches
-the program and the client as its exception type only; the traceback goes to
-the server log.
+invalid base64, and a program that fails in `execute_code`, with the error the
+program hit.
 Anything else reaches the client as `Error calling tool 'name'` and its
 traceback goes to the server log.
 

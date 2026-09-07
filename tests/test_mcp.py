@@ -1098,25 +1098,22 @@ class TestMCPErrorContract:
         assert "base64" in result.content[0].text
 
     @pytest.mark.asyncio
-    async def test_a_host_failure_inside_a_program_names_only_its_type(
-        self, mcp_db, monkeypatch, caplog
+    async def test_a_host_failure_inside_a_program_carries_its_message(
+        self, mcp_db, monkeypatch
     ):
+        """One contract for the sandbox: the client reads the same error the
+        program did, message included."""
+
         async def boom(self, *args, **kwargs):
             raise RuntimeError("boom at /secret/path")
 
         monkeypatch.setattr(HaikuRAG, "search", boom)
-        with caplog.at_level(logging.ERROR, logger="haiku.rag.sandbox.sandbox"):
-            result = await _call(
-                create_mcp_server(mcp_db), "execute_code", code="await search('x')"
-            )
+        result = await _call(
+            create_mcp_server(mcp_db), "execute_code", code="await search('x')"
+        )
 
         assert result.is_error
-        assert "RuntimeError" in result.content[0].text
-        assert "/secret/path" not in result.content[0].text
-        assert any(
-            r.exc_info and "boom at /secret/path" in str(r.exc_info[1])
-            for r in caplog.records
-        )
+        assert "RuntimeError: boom at /secret/path" in result.content[0].text
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(

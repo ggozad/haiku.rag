@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import threading
 from pathlib import Path
 
@@ -334,69 +333,21 @@ class TestSandboxExternalFunctionEdgeCases:
         assert "external error" in result.stderr
 
     @pytest.mark.asyncio
-    async def test_a_failing_search_reaches_the_program_by_type_only(
-        self, sandbox, monkeypatch, caplog
+    async def test_a_failing_search_keeps_its_message_for_the_program(
+        self, sandbox, monkeypatch
     ):
-        """A host-side failure inside search() names its exception type to
-        the program; the message and traceback go to the log."""
+        """A host-side failure inside search() reaches the program with its
+        message, which the agent reads to repair its code."""
 
         async def boom(self, *args, **kwargs):
             raise ValueError("failed at /secret/path")
 
         monkeypatch.setattr(HaikuRAG, "search", boom)
 
-        with caplog.at_level(logging.ERROR, logger="haiku.rag.sandbox.sandbox"):
-            result = await sandbox.execute("await search('hello')")
+        result = await sandbox.execute("await search('hello')")
 
         assert not result.success
-        assert "search() failed: ValueError" in result.stderr
-        assert "/secret/path" not in result.stderr
-        assert any(
-            r.exc_info and "failed at /secret/path" in str(r.exc_info[1])
-            for r in caplog.records
-        )
-
-    @pytest.mark.asyncio
-    async def test_a_failing_document_read_reaches_the_program_by_type_only(
-        self, temp_db_path, monkeypatch, caplog
-    ):
-        """A program can catch a failed file read, and what it catches names
-        the exception type only."""
-        from haiku.rag.store.models.document import Document
-
-        async with HaikuRAG(temp_db_path, create=True) as client:
-            doc = await client.document_repository.create(
-                Document(content="x", uri="test://read", title="Read")
-            )
-            repository = type(client.document_repository)
-
-        async def boom(self, *args, **kwargs):
-            raise ValueError("failed at /secret/path")
-
-        monkeypatch.setattr(repository, "get_content", boom)
-        sb = Sandbox(
-            db_path=temp_db_path, config=AppConfig(), context=AnalysisContext()
-        )
-        try:
-            with caplog.at_level(logging.ERROR, logger="haiku.rag.sandbox.sandbox"):
-                result = await sb.execute(
-                    "from pathlib import Path\n"
-                    "try:\n"
-                    f"    Path('/documents/{doc.id}/content.txt').read_text()\n"
-                    "except Exception as e:\n"
-                    "    print('caught:', e)"
-                )
-        finally:
-            await sb.close()
-
-        assert result.success, result.stderr
-        assert "caught:" in result.stdout
-        assert "ValueError" in result.stdout
-        assert "/secret/path" not in result.stdout
-        assert any(
-            r.exc_info and "failed at /secret/path" in str(r.exc_info[1])
-            for r in caplog.records
-        )
+        assert "ValueError: failed at /secret/path" in result.stderr
 
 
 class TestSandboxOutputTruncation:
@@ -1013,24 +964,59 @@ class TestSandboxReadDeadline:
     enforces the budget itself, before each read."""
 
     @pytest.mark.asyncio
-    async def test_a_failed_read_reaches_the_program_by_type_only(
-        self, sandbox, caplog
+    async def test_the_deadline_covers_reads_from_memory_and_in_code_calls(
+        self, temp_db_path, monkeypatch
     ):
-        """The bridged read hands the program the exception type, not the
-        message, and logs the traceback."""
-        sandbox._loop = asyncio.get_running_loop()
+        """Once a call's time is up, a file served from memory and an in-code
+        listing are refused like a database read. A slow first read spends the
+        budget; the watchdog does not count time spent waiting on the host."""
+        from docling_core.types.doc.document import DoclingDocument
+        from docling_core.types.doc.labels import DocItemLabel
 
-        async def failing_read():
-            raise ValueError("failed at /secret/path")
+        config = AppConfig()
+        config.analysis.code_timeout = 1.0
+        docling = DoclingDocument(name="d")
+        docling.add_text(label=DocItemLabel.TEXT, text="Foxes and dogs.")
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.import_document(
+                docling,
+                [
+                    Chunk(
+                        content="Foxes and dogs.",
+                        embedding=[0.1] * config.embeddings.model.vector_dim,
+                        order=0,
+                    )
+                ],
+                uri="test://deadline-paths",
+            )
+            repository = type(client.document_repository)
 
-        with caplog.at_level(logging.ERROR, logger="haiku.rag.sandbox.sandbox"):
-            with pytest.raises(RuntimeError, match="document read failed: ValueError"):
-                await asyncio.to_thread(sandbox._run_on_loop, failing_read())
+        async def slow_content(self, *args, **kwargs):
+            await asyncio.sleep(1.3)
+            return "body"
 
-        assert any(
-            r.exc_info and "failed at /secret/path" in str(r.exc_info[1])
-            for r in caplog.records
-        )
+        monkeypatch.setattr(repository, "get_content", slow_content)
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            result = await sb.execute(
+                "from pathlib import Path\n"
+                f"root = Path('/documents/{doc.id}')\n"
+                "print(len((root / 'content.txt').read_text()))\n"
+                "try:\n"
+                "    (root / 'metadata.json').read_text()\n"
+                "    print('static: read')\n"
+                "except Exception as e:\n"
+                "    print('static:', type(e).__name__)\n"
+                "await list_documents()\n"
+                "print('listed')"
+            )
+        finally:
+            await sb.close()
+
+        assert "static: TimeoutError" in result.stdout
+        assert "listed" not in result.stdout
+        assert not result.success
+        assert "time limit exceeded" in result.stderr
 
     @pytest.mark.asyncio
     async def test_read_after_deadline_raises_without_scheduling(self, sandbox):
