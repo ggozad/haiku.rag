@@ -20,7 +20,7 @@ Context expansion is automatic and section-aware. For structured documents (with
 
 ## Question Answering Configuration
 
-Configure the RAG capability (used by `client.ask`, `haiku-rag ask`, and the MCP `ask_question` tool):
+Configure the RAG capability (used by `client.ask` and `haiku-rag ask`):
 
 ```yaml
 qa:

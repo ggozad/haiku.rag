@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager, suppress
@@ -19,7 +20,7 @@ from pydantic_monty import (
 from haiku.rag.config.models import AppConfig
 from haiku.rag.context import build_toc
 from haiku.rag.sandbox.dependencies import AnalysisContext
-from haiku.rag.store.models.chunk import SearchResult
+from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX, DocumentItem
 from haiku.rag.utils import gather_all
 
@@ -28,6 +29,19 @@ if TYPE_CHECKING:
 
     from haiku.rag.client import HaikuRAG
     from haiku.rag.client.scope import DatabaseScope
+
+
+logger = logging.getLogger(__name__)
+
+
+def _host_failure(where: str, e: Exception) -> RuntimeError:
+    """The error a program gets for a failure on the host side of a call.
+
+    The message and traceback go to the log. The program, and through the MCP
+    server its client, learn the exception type only.
+    """
+    logger.exception("%s failed inside the sandbox", where)
+    return RuntimeError(f"{where} failed: {type(e).__name__}")
 
 
 @dataclass
@@ -39,6 +53,21 @@ class SandboxResult:
     success: bool
 
 
+def recovery_hint(stderr: str) -> str:
+    """Name the workaround for sandbox limits models trip over repeatedly.
+
+    The instructions already say file objects are not iterable, and models write
+    ``for line in open(...)`` regardless. Carrying the fix in the error gives
+    them something to act on for the retry.
+    """
+    if "TextIOWrapper" in stderr and "not iterable" in stderr:
+        return (
+            "\n\nHint: file objects cannot be iterated here. Read lines with "
+            '.readlines() or .read().split("\\n").'
+        )
+    return ""
+
+
 class Sandbox:
     """Execute code in a sandboxed Python interpreter.
 
@@ -46,7 +75,8 @@ class Sandbox:
     The interpreter runs in a subprocess worker checked out of an ``AsyncMonty``
     pool. External functions (search, list_documents) are called by Monty code
     using ``await`` and resolved asynchronously on the host. Documents are
-    exposed via a virtual filesystem at ``/documents/{id}/``.
+    exposed via a virtual filesystem at ``/documents/{id}/``: ``metadata.json``,
+    ``content.txt``, ``items.jsonl``, ``chunks.jsonl`` and ``toc.json``.
 
     The session persists across ``execute()`` calls within the same Sandbox
     instance — variables carry over. Call ``close()`` to return the worker to
@@ -76,6 +106,7 @@ class Sandbox:
     _doc_items: dict[str, list["DocumentItem"]]
     _doc_chunk_index: dict[str, dict[str, list[str]]]
     _items_jsonl_cache: dict[str, str]
+    _chunks_jsonl_cache: dict[str, str]
     _toc_json_cache: dict[str, str]
     _opened: "HaikuRAG | None"
     _pool: AsyncMonty | None
@@ -142,6 +173,7 @@ class Sandbox:
         self._doc_items = {}
         self._doc_chunk_index = {}
         self._items_jsonl_cache = {}
+        self._chunks_jsonl_cache = {}
         self._toc_json_cache = {}
         self._pool = None
         self._session = None
@@ -249,7 +281,7 @@ class Sandbox:
         loop overruns it by however long the outstanding reads take. Raising from
         inside the callback answers the worker's suspension, which keeps the
         session usable — cancelling ``feed_run`` from outside does not, and wedges
-        the protocol.
+        the protocol. A failed read reaches the program by type only.
         """
         assert self._loop is not None, (
             "VFS reads happen during execute(); the loop must be captured first."
@@ -260,7 +292,10 @@ class Sandbox:
                 "time limit exceeded: no further document reads after "
                 f"{self._config.analysis.code_timeout}s"
             )
-        return asyncio.run_coroutine_threadsafe(coro, self._loop).result()
+        try:
+            return asyncio.run_coroutine_threadsafe(coro, self._loop).result()
+        except Exception as e:
+            raise _host_failure("document read", e) from None
 
     async def _discard_session(self) -> None:
         """Drop a session whose worker is gone.
@@ -330,6 +365,7 @@ class Sandbox:
                         "doc_item_refs": r.doc_item_refs,
                         "labels": r.labels,
                         "picture_refs": picture_refs,
+                        "chunk_meta": r.chunk_meta,
                     }
                 )
             return out
@@ -343,14 +379,27 @@ class Sandbox:
                     "uri": d.uri,
                     "created_at": str(d.created_at),
                     "source": d.source,
+                    "metadata": d.metadata,
                 }
                 for d in docs
             ]
 
         return {
-            "search": search,
-            "list_documents": list_documents,
+            "search": self._guarded("search()", search),
+            "list_documents": self._guarded("list_documents()", list_documents),
         }
+
+    @staticmethod
+    def _guarded(
+        where: str, fn: Callable[..., Coroutine[Any, Any, Any]]
+    ) -> Callable[..., Coroutine[Any, Any, Any]]:
+        async def call(*args: Any, **kwargs: Any) -> Any:
+            try:
+                return await fn(*args, **kwargs)
+            except Exception as e:
+                raise _host_failure(where, e) from None
+
+        return call
 
     async def _build_vfs(self) -> OSAccess:
         """Build the virtual filesystem with document data.
@@ -359,6 +408,7 @@ class Sandbox:
         - metadata.json: CallbackFile (eager, small)
         - content.txt: CallbackFile (lazy, can be large)
         - items.jsonl: CallbackFile (lazy, bulk-cached)
+        - chunks.jsonl: CallbackFile (lazy, bulk-cached)
         - toc.json: CallbackFile (lazy, bulk-cached)
         """
         files: list[CallbackFile] = []
@@ -433,6 +483,31 @@ class Sandbox:
 
             return read_items
 
+        def _make_chunks_reader(
+            did: str,
+        ) -> Callable[["PurePosixPath"], str]:
+            def read_chunks(_path: "PurePosixPath") -> str:
+                cached = sandbox._chunks_jsonl_cache.get(did)
+                if cached is not None:
+                    return cached
+
+                async def _fetch() -> list[Chunk]:
+                    async with sandbox._connection(sandbox._owners.get(did)) as rag:
+                        return await rag.chunk_repository.get_by_document_id(did)
+
+                chunks = sandbox._run_on_loop(_fetch())
+                jsonl = "\n".join(
+                    json.dumps(
+                        {"chunk_id": chunk.id, "metadata": chunk.metadata},
+                        ensure_ascii=False,
+                    )
+                    for chunk in chunks
+                )
+                sandbox._chunks_jsonl_cache[did] = jsonl
+                return jsonl
+
+            return read_chunks
+
         def _make_toc_reader(
             did: str,
         ) -> Callable[["PurePosixPath"], str]:
@@ -467,6 +542,7 @@ class Sandbox:
                     "title": doc.title,
                     "uri": doc.uri,
                     "created_at": str(doc.created_at),
+                    "metadata": doc.metadata,
                 },
                 ensure_ascii=False,
             )
@@ -505,6 +581,13 @@ class Sandbox:
                 CallbackFile(
                     f"{doc_dir}/items.jsonl",
                     read=_make_items_reader(doc_id),
+                    write=_deny_write,
+                )
+            )
+            files.append(
+                CallbackFile(
+                    f"{doc_dir}/chunks.jsonl",
+                    read=_make_chunks_reader(doc_id),
                     write=_deny_write,
                 )
             )

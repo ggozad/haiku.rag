@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import threading
 from pathlib import Path
 
@@ -112,6 +113,41 @@ class TestSandboxListDocuments:
             assert "Test Document" in result.stdout
             assert temp_db_path.stem in result.stdout
 
+    @pytest.mark.asyncio
+    async def test_list_documents_carries_metadata(self, temp_db_path):
+        """Rows carry the document's metadata, so a corpus-wide pass over it is
+        one call rather than a file read per document."""
+        from docling_core.types.doc.document import DoclingDocument
+        from docling_core.types.doc.labels import DocItemLabel
+
+        config = AppConfig()
+        docling = DoclingDocument(name="d")
+        docling.add_text(label=DocItemLabel.TEXT, text="Test content")
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            await client.import_document(
+                docling,
+                [
+                    Chunk(
+                        content="Test content",
+                        embedding=[0.1] * config.embeddings.model.vector_dim,
+                        order=0,
+                    )
+                ],
+                uri="test://doc1",
+                title="Test Document",
+                metadata={"author": "Ada"},
+            )
+
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            result = await sb.execute(
+                "docs = await list_documents()\nprint(docs[0]['metadata']['author'])"
+            )
+        finally:
+            await sb.close()
+        assert result.success, result.stderr
+        assert "Ada" in result.stdout
+
 
 class TestSandboxSearch:
     """Test search function in sandbox."""
@@ -188,6 +224,51 @@ class TestSandboxSearch:
             assert "str" in result.stdout
             assert "True" in result.stdout
 
+    @pytest.mark.asyncio
+    async def test_search_returns_the_matched_chunks_metadata(
+        self, temp_db_path, monkeypatch
+    ):
+        """Results carry the stored metadata of the chunk that matched, custom
+        keys included."""
+        from docling_core.types.doc.document import DoclingDocument
+        from docling_core.types.doc.labels import DocItemLabel
+
+        from haiku.rag.embeddings import EmbedderWrapper
+
+        config = AppConfig()
+        dim = config.embeddings.model.vector_dim
+
+        async def embed_query(self, text):
+            return [0.1] * dim
+
+        monkeypatch.setattr(EmbedderWrapper, "embed_query", embed_query)
+        docling = DoclingDocument(name="d")
+        docling.add_text(label=DocItemLabel.TEXT, text="Paragraph fourteen.")
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            await client.import_document(
+                docling,
+                [
+                    Chunk(
+                        content="Paragraph fourteen.",
+                        embedding=[0.1] * dim,
+                        order=0,
+                        metadata={"para_no": "14"},
+                    )
+                ],
+                uri="test://paras",
+            )
+
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            result = await sb.execute(
+                "results = await search('fourteen', limit=1)\n"
+                "print(results[0]['chunk_meta']['para_no'])"
+            )
+        finally:
+            await sb.close()
+        assert result.success, result.stderr
+        assert "14" in result.stdout
+
 
 class TestSandboxExternalFunctionEdgeCases:
     """Test edge cases in external function dispatch."""
@@ -239,6 +320,71 @@ class TestSandboxExternalFunctionEdgeCases:
         result = await sandbox.execute("await search('hello')")
         assert not result.success
         assert "external error" in result.stderr
+
+    @pytest.mark.asyncio
+    async def test_a_failing_search_reaches_the_program_by_type_only(
+        self, sandbox, monkeypatch, caplog
+    ):
+        """A host-side failure inside search() names its exception type to
+        the program; the message and traceback go to the log."""
+
+        async def boom(self, *args, **kwargs):
+            raise ValueError("failed at /secret/path")
+
+        monkeypatch.setattr(HaikuRAG, "search", boom)
+
+        with caplog.at_level(logging.ERROR, logger="haiku.rag.sandbox.sandbox"):
+            result = await sandbox.execute("await search('hello')")
+
+        assert not result.success
+        assert "search() failed: ValueError" in result.stderr
+        assert "/secret/path" not in result.stderr
+        assert any(
+            r.exc_info and "failed at /secret/path" in str(r.exc_info[1])
+            for r in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_failing_document_read_reaches_the_program_by_type_only(
+        self, temp_db_path, monkeypatch, caplog
+    ):
+        """A program can catch a failed file read, and what it catches names
+        the exception type only."""
+        from haiku.rag.store.models.document import Document
+
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.document_repository.create(
+                Document(content="x", uri="test://read", title="Read")
+            )
+            repository = type(client.document_repository)
+
+        async def boom(self, *args, **kwargs):
+            raise ValueError("failed at /secret/path")
+
+        monkeypatch.setattr(repository, "get_content", boom)
+        sb = Sandbox(
+            db_path=temp_db_path, config=AppConfig(), context=AnalysisContext()
+        )
+        try:
+            with caplog.at_level(logging.ERROR, logger="haiku.rag.sandbox.sandbox"):
+                result = await sb.execute(
+                    "from pathlib import Path\n"
+                    "try:\n"
+                    f"    Path('/documents/{doc.id}/content.txt').read_text()\n"
+                    "except Exception as e:\n"
+                    "    print('caught:', e)"
+                )
+        finally:
+            await sb.close()
+
+        assert result.success, result.stderr
+        assert "caught:" in result.stdout
+        assert "ValueError" in result.stdout
+        assert "/secret/path" not in result.stdout
+        assert any(
+            r.exc_info and "failed at /secret/path" in str(r.exc_info[1])
+            for r in caplog.records
+        )
 
 
 class TestSandboxOutputTruncation:
@@ -312,13 +458,14 @@ class TestSandboxVFS:
     @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_metadata_json(self, temp_db_path):
-        """metadata.json contains document title and uri."""
+        """metadata.json contains document title, uri and stored metadata."""
         config = AppConfig()
         async with HaikuRAG(temp_db_path, create=True) as client:
             doc = await client.create_document(
                 content="Test content",
                 uri="test://doc1",
                 title="Test Document",
+                metadata={"author": "Ada"},
             )
 
             context = AnalysisContext()
@@ -328,11 +475,13 @@ class TestSandboxVFS:
                 "import json\n"
                 f"meta = json.loads(Path('/documents/{doc.id}/metadata.json').read_text())\n"
                 "print(meta['title'])\n"
-                "print(meta['uri'])"
+                "print(meta['uri'])\n"
+                "print(meta['metadata']['author'])"
             )
-            assert result.success
+            assert result.success, result.stderr
             assert "Test Document" in result.stdout
             assert "test://doc1" in result.stdout
+            assert "Ada" in result.stdout
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
@@ -387,6 +536,59 @@ class TestSandboxVFS:
             assert result.stdout.count("True") == 6
 
     @pytest.mark.asyncio
+    async def test_chunks_jsonl(self, temp_db_path):
+        """chunks.jsonl lists a document's chunks in order with their stored
+        metadata; a chunk found by its metadata leads to its items through
+        their chunk_ids."""
+        from docling_core.types.doc.document import DoclingDocument
+        from docling_core.types.doc.labels import DocItemLabel
+
+        config = AppConfig()
+        dim = config.embeddings.model.vector_dim
+        docling = DoclingDocument(name="d")
+        docling.add_text(label=DocItemLabel.TEXT, text="Paragraph thirteen.")
+        docling.add_text(label=DocItemLabel.TEXT, text="Paragraph fourteen.")
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.import_document(
+                docling,
+                [
+                    Chunk(
+                        content="Paragraph thirteen.",
+                        embedding=[0.1] * dim,
+                        order=0,
+                        metadata={"para_no": "13", "doc_item_refs": ["#/texts/0"]},
+                    ),
+                    Chunk(
+                        content="Paragraph fourteen.",
+                        embedding=[0.1] * dim,
+                        order=1,
+                        metadata={"para_no": "14", "doc_item_refs": ["#/texts/1"]},
+                    ),
+                ],
+                uri="test://paras",
+            )
+
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            result = await sb.execute(
+                "from pathlib import Path\n"
+                "import json\n"
+                f"root = Path('/documents/{doc.id}')\n"
+                "def rows(name):\n"
+                "    return [json.loads(l) for l in (root / name).read_text().strip().split('\\n')]\n"
+                "chunks = rows('chunks.jsonl')\n"
+                "print(len(chunks))\n"
+                "hit = [c for c in chunks if c['metadata'].get('para_no') == '14']\n"
+                "print(len(hit))\n"
+                "items = rows('items.jsonl')\n"
+                "print([i['text'] for i in items if hit[0]['chunk_id'] in i['chunk_ids']])"
+            )
+        finally:
+            await sb.close()
+        assert result.success, result.stderr
+        assert result.stdout.splitlines() == ["2", "1", "['Paragraph fourteen.']"]
+
+    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_open_read(self, temp_db_path):
         """open() and a with-block read document files through the VFS."""
@@ -433,7 +635,8 @@ class TestSandboxVFS:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "filename", ["content.txt", "items.jsonl", "toc.json", "metadata.json"]
+        "filename",
+        ["content.txt", "items.jsonl", "chunks.jsonl", "toc.json", "metadata.json"],
     )
     async def test_write_denied_for_every_document_file(self, temp_db_path, filename):
         """Every file in the document VFS is read-only, metadata.json included."""
@@ -796,6 +999,26 @@ class TestSandboxReadDeadline:
     """The VFS bridge suspends the worker for the length of a read, so Monty
     cannot check its duration budget while one is in flight. The sandbox
     enforces the budget itself, before each read."""
+
+    @pytest.mark.asyncio
+    async def test_a_failed_read_reaches_the_program_by_type_only(
+        self, sandbox, caplog
+    ):
+        """The bridged read hands the program the exception type, not the
+        message, and logs the traceback."""
+        sandbox._loop = asyncio.get_running_loop()
+
+        async def failing_read():
+            raise ValueError("failed at /secret/path")
+
+        with caplog.at_level(logging.ERROR, logger="haiku.rag.sandbox.sandbox"):
+            with pytest.raises(RuntimeError, match="document read failed: ValueError"):
+                await asyncio.to_thread(sandbox._run_on_loop, failing_read())
+
+        assert any(
+            r.exc_info and "failed at /secret/path" in str(r.exc_info[1])
+            for r in caplog.records
+        )
 
     @pytest.mark.asyncio
     async def test_read_after_deadline_raises_without_scheduling(self, sandbox):

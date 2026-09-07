@@ -7,8 +7,13 @@
 - Claude Code plugin under `claude-plugin/`: the server configuration and the
   `haiku-rag` skill. `claude plugin marketplace add ggozad/haiku.rag`, then
   `claude plugin install haiku-rag`.
-- `haiku-rag mcp --no-agents` leaves `ask_question` and `analyze`
-  unregistered. `create_mcp_server(agents=)`, `HaikuRAGApp.run_mcp(agents=)`.
+- MCP tool `execute_code(code, filter, sources)`: runs a program in the
+  analysis sandbox over the selected documents and returns what it printed;
+  one sandbox per call.
+- In the analysis sandbox, `search()` results carry `chunk_meta`,
+  `list_documents()` rows and `metadata.json` carry the document `metadata`,
+  and `/documents/{id}/chunks.jsonl` lists chunk ids with their metadata.
+  `recovery_hint` in `haiku.rag.sandbox`.
 - MCP tools `get_document_outline` (heading tree with page numbers) and
   `get_document_section` (one section's text, subsections included), built
   on `document_items`. `build_toc` in `haiku.rag.context`.
@@ -40,23 +45,20 @@
   `SearchResult.format_for_agent(include_document_id=, include_chunk_meta=)`;
   `collect_pictures` in `haiku.rag.tools.search`.
 - MCP tools raise on failure; an empty result no longer doubles as an error.
-  Unknown document, unknown collection, invalid filter and invalid base64
-  carry a message; `ask_question` and `analyze` failures name the exception
-  type. Anything else is masked (`mask_error_details=True`) and logged
-  server-side.
+  Unknown document, unknown collection, invalid filter, invalid base64 and a
+  failing program carry a message. Anything else is masked
+  (`mask_error_details=True`) and logged server-side.
+- A host-side failure inside the analysis sandbox (a document read or an
+  in-code `search()` raising) reaches the program as
+  `RuntimeError("<call> failed: <ExceptionType>")`; the traceback is logged.
 - `haiku-rag mcp` covers the configured `lancedb.databases` set. `sources` on
-  `search_documents`, `search_documents_by_image`, `ask_question` and
-  `analyze`; `source` on `get_document`; an unknown name is a tool error.
-  `DocumentInfo.source`; citations name their database when the server
-  covers several. `format_citations(citations, include_source=False)`.
-
-### Fixed
-
-- MCP citations no longer repeat the URI of an untitled document.
+  `search_documents`, `search_documents_by_image` and `execute_code`; `source`
+  on `get_document`; an unknown name is a tool error. `DocumentInfo.source`.
 
 ### Removed
 
-- `cite` on the MCP `ask_question` tool; citations are always appended.
+- MCP tools `ask_question` and `analyze`.
+- `format_citations` in `haiku.rag.utils`; `format_citations_rich` stays.
 - MCP write tools `add_document_from_file`, `add_document_from_url`,
   `add_document_from_text` and `delete_document`. The server opens the
   database read-only; ingest with `haiku-rag add`, `add-src`, `delete` or

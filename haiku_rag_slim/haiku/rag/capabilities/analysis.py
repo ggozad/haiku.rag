@@ -19,7 +19,7 @@ from haiku.rag.capabilities._base import (
 )
 from haiku.rag.capabilities._tools import merge_results
 from haiku.rag.config.models import AppConfig
-from haiku.rag.sandbox import AnalysisContext, Sandbox
+from haiku.rag.sandbox import AnalysisContext, Sandbox, recovery_hint
 
 STATE_NAMESPACE = "analysis"
 _CAPABILITY_ID = "haiku-rag-analysis"
@@ -47,21 +47,6 @@ def instructions() -> str:
 def multiple_collections_instructions() -> str:
     """Appended for a run that spans more than one collection."""
     return _multiple_collections_path.read_text().rstrip()
-
-
-def _recovery_hint(stderr: str) -> str:
-    """Name the workaround for sandbox limits models trip over repeatedly.
-
-    The instructions already say file objects are not iterable, and models write
-    ``for line in open(...)`` regardless. Carrying the fix in the error gives
-    them something to act on for the retry.
-    """
-    if "TextIOWrapper" in stderr and "not iterable" in stderr:
-        return (
-            "\n\nHint: file objects cannot be iterated here. Read lines with "
-            '.readlines() or .read().split("\\n").'
-        )
-    return ""
 
 
 @dataclass
@@ -139,7 +124,7 @@ class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
         )
         if not result.success:
             raise ToolFailed(
-                f"{result.stderr}{_recovery_hint(result.stderr)}"
+                f"{result.stderr}{recovery_hint(result.stderr)}"
                 f"\n\nOutput: {result.stdout}"
             )
         return result.stdout or "No output."

@@ -1,7 +1,6 @@
 import logging
 import re
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from fastmcp.exceptions import ToolError
@@ -279,32 +278,6 @@ class TestMCPReadTools:
             if d["title"] == "AI Overview"
         ]
         assert overview["metadata"] == {"author": "Ada"}
-
-    @pytest.mark.asyncio
-    async def test_ask_question_appends_the_citations(self, mcp_db, monkeypatch):
-        from haiku.rag.store.models.citation import Citation
-
-        citation = Citation(
-            chunk_id="c1",
-            document_id="d1",
-            content="cited text",
-            document_uri="test://ai-overview",
-            document_title="AI Overview",
-            source="alpha",
-        )
-
-        async def fake_ask(self, question, filter=None, images=None, sources=None):
-            return ("the answer", [citation])
-
-        monkeypatch.setattr(HaikuRAG, "ask", fake_ask)
-        mcp = create_mcp_server(mcp_db)
-        ask = await _get_tool(mcp, "ask_question")
-
-        answer = await ask(question="q")
-        assert answer.startswith("the answer")
-        assert "AI Overview" in answer
-        # One database: its name adds nothing.
-        assert "alpha" not in answer
 
 
 @pytest.fixture
@@ -667,18 +640,6 @@ class TestMCPDescribesItself:
         assert "beta" not in covering_one
 
     @pytest.mark.asyncio
-    async def test_instructions_without_agents_drop_only_their_clause(self, mcp_db):
-        from fastmcp import Client
-
-        async with Client(create_mcp_server(mcp_db)) as client:
-            full = client.instructions.splitlines()
-        async with Client(create_mcp_server(mcp_db, agents=False)) as client:
-            without = client.instructions.splitlines()
-
-        assert set(without) < set(full)
-        assert len(without) == len(full) - 1
-
-    @pytest.mark.asyncio
     async def test_instructions_carry_the_domain_preamble(self, mcp_db):
         from fastmcp import Client
 
@@ -702,7 +663,7 @@ class TestMCPDescribesItself:
         async with Client(create_mcp_server(mcp_db)) as client:
             tools = await client.list_tools()
 
-        assert len(tools) == 8
+        assert len(tools) == 7
         for tool in tools:
             assert tool.annotations is not None, tool.name
             assert tool.annotations.read_only_hint is True, tool.name
@@ -722,7 +683,7 @@ class TestMCPDescribesItself:
             for name, schema in tool.input_schema.get("properties", {}).items()
             if not schema.get("description")
         ]
-        assert len(tools) == 8
+        assert len(tools) == 7
         assert undescribed == []
 
 
@@ -737,21 +698,138 @@ class TestMCPToolSet:
             "get_document_outline",
             "get_document_section",
             "list_documents",
-            "ask_question",
-            "analyze",
+            "execute_code",
         }
+
+
+_COUNT_DOCUMENTS = (
+    "from pathlib import Path\n"
+    "n = 0\n"
+    "for d in Path('/documents').iterdir():\n"
+    "    n += 1\n"
+    "print(n)"
+)
+
+
+class TestMCPExecuteCode:
+    """`execute_code` runs one program per call in the analysis sandbox over
+    the documents the filter and sources select, and returns what it printed."""
 
     @pytest.mark.asyncio
-    async def test_without_agents_the_agent_tools_are_not_registered(self, mcp_db):
-        mcp = create_mcp_server(mcp_db, agents=False)
+    async def test_a_program_reads_the_documents_and_returns_what_it_printed(
+        self, mcp_db
+    ):
+        result = await _call(
+            create_mcp_server(mcp_db), "execute_code", code=_COUNT_DOCUMENTS
+        )
 
-        assert {t.name for t in await mcp.list_tools()} == {
-            "search_documents",
-            "get_document",
-            "get_document_outline",
-            "get_document_section",
-            "list_documents",
-        }
+        assert not result.is_error
+        assert result.content[0].text.strip() == "2"
+
+    @pytest.mark.asyncio
+    async def test_a_silent_program_says_so(self, mcp_db):
+        result = await _call(create_mcp_server(mcp_db), "execute_code", code="x = 1")
+
+        assert not result.is_error
+        assert result.content[0].text == "No output."
+
+    @pytest.mark.asyncio
+    async def test_filter_narrows_the_documents_a_program_sees(self, mcp_db):
+        result = await _call(
+            create_mcp_server(mcp_db),
+            "execute_code",
+            code=_COUNT_DOCUMENTS,
+            filter="title = 'AI Overview'",
+        )
+
+        assert result.content[0].text.strip() == "1"
+
+    @pytest.mark.asyncio
+    async def test_sources_narrows_the_documents_a_program_sees(self, two_dbs):
+        mcp = _covering_all(two_dbs)
+
+        both = await _call(mcp, "execute_code", code=_COUNT_DOCUMENTS)
+        beta = await _call(mcp, "execute_code", code=_COUNT_DOCUMENTS, sources=["beta"])
+
+        assert both.content[0].text.strip() == "2"
+        assert beta.content[0].text.strip() == "1"
+
+    @pytest.mark.asyncio
+    async def test_a_failing_program_is_an_error_carrying_the_cause_and_its_output(
+        self, mcp_db
+    ):
+        code = (
+            "from pathlib import Path\n"
+            "print('before')\n"
+            "for d in Path('/documents').iterdir():\n"
+            "    for line in open(d / 'items.jsonl'):\n"
+            "        pass"
+        )
+
+        result = await _call(create_mcp_server(mcp_db), "execute_code", code=code)
+
+        assert result.is_error
+        text = result.content[0].text
+        assert "not iterable" in text
+        assert ".readlines()" in text
+        assert "Output: before" in text
+
+    @pytest.mark.asyncio
+    async def test_calls_share_no_state(self, mcp_db):
+        mcp = create_mcp_server(mcp_db)
+
+        first = await _call(mcp, "execute_code", code="x = 1\nprint(x)")
+        second = await _call(mcp, "execute_code", code="print(x)")
+
+        assert first.content[0].text.strip() == "1"
+        assert second.is_error
+        assert "NameError" in second.content[0].text
+
+    @pytest.mark.asyncio
+    async def test_every_call_closes_its_sandbox(self, mcp_db, monkeypatch):
+        from haiku.rag.sandbox import Sandbox
+
+        closed = []
+        close = Sandbox.close
+
+        async def closing(self):
+            closed.append(self)
+            await close(self)
+
+        monkeypatch.setattr(Sandbox, "close", closing)
+        mcp = create_mcp_server(mcp_db)
+
+        await _call(mcp, "execute_code", code="print(1)")
+        await _call(mcp, "execute_code", code="raise ValueError('x')")
+
+        assert len(closed) == 2
+        assert closed[0] is not closed[1]
+
+    @pytest.mark.asyncio
+    async def test_a_program_reaches_chunk_metadata(self, mcp_db):
+        async with HaikuRAG(mcp_db, create=True) as rag:
+            doc = await rag.get_document_by_uri("test://ai-overview")
+            embedding = (await rag.embedder.embed_documents(["x"]))[0]
+            await rag.chunk_repository.create(
+                Chunk(
+                    document_id=doc.id,
+                    content="Paragraph fourteen.",
+                    metadata={"para_no": "14"},
+                    embedding=embedding,
+                )
+            )
+        code = (
+            "from pathlib import Path\n"
+            "import json\n"
+            f"text = Path('/documents/{doc.id}/chunks.jsonl').read_text()\n"
+            "rows = [json.loads(line) for line in text.strip().split('\\n')]\n"
+            "print(len([r for r in rows if r['metadata'].get('para_no') == '14']))"
+        )
+
+        result = await _call(create_mcp_server(mcp_db), "execute_code", code=code)
+
+        assert not result.is_error, result.content[0].text
+        assert result.content[0].text.strip() == "1"
 
 
 class TestMCPCoversTheConfiguredSet:
@@ -784,8 +862,7 @@ class TestMCPCoversTheConfiguredSet:
                 {"image_base64": "AAAA", "sources": ["nope"]},
             ),
             ("get_document", {"document_id": "x", "source": "nope"}),
-            ("ask_question", {"question": "q", "sources": ["nope"]}),
-            ("analyze", {"question": "q", "sources": ["nope"]}),
+            ("execute_code", {"code": "print(1)", "sources": ["nope"]}),
         ],
     )
     async def test_an_unknown_database_is_an_error_not_an_empty_result(
@@ -844,59 +921,6 @@ class TestMCPCoversTheConfiguredSet:
         blocks = _rendered(await search(query="cats"))
 
         assert {_line(block, "Collection") for block in blocks} == {"alpha", "beta"}
-
-    @pytest.mark.asyncio
-    async def test_ask_question_names_each_citations_database(
-        self, two_dbs, monkeypatch
-    ):
-        from haiku.rag.store.models.citation import Citation
-
-        def cited(source):
-            return Citation(
-                chunk_id="c1",
-                document_id="d1",
-                content="cited text",
-                document_uri="test://cats",
-                document_title="Cats",
-                source=source,
-            )
-
-        async def fake_ask(self, question, filter=None, images=None, sources=None):
-            return ("the answer", [cited("alpha"), cited("beta")])
-
-        monkeypatch.setattr(HaikuRAG, "ask", fake_ask)
-        mcp = _covering_all(two_dbs)
-        ask = await _get_tool(mcp, "ask_question")
-
-        answer = await ask(question="q")
-
-        assert "alpha" in answer
-        assert "beta" in answer
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "tool_name,client_method,returns",
-        [
-            ("ask_question", "ask", ("answer", [])),
-            ("analyze", "analyze", SimpleNamespace(answer="answer")),
-        ],
-    )
-    async def test_agents_search_the_selected_databases(
-        self, two_dbs, monkeypatch, tool_name, client_method, returns
-    ):
-        seen = {}
-
-        async def fake(self, question, filter=None, images=None, sources=None):
-            seen["sources"] = sources
-            return returns
-
-        monkeypatch.setattr(HaikuRAG, client_method, fake)
-        mcp = _covering_all(two_dbs)
-        tool = await _get_tool(mcp, tool_name)
-
-        await tool(question="q", sources=["beta"])
-
-        assert seen["sources"] == ["beta"]
 
 
 class TestMCPImageQuery:
@@ -963,63 +987,6 @@ class TestMCPImageQuery:
         assert not searched
 
 
-class TestMCPImageInput:
-    @pytest.mark.asyncio
-    async def test_ask_question_decodes_images(self, mcp_db, monkeypatch):
-        from base64 import b64encode
-
-        captured = {}
-
-        async def fake_ask(self, question, filter=None, images=None, sources=None):
-            captured["images"] = images
-            return ("answer", [])
-
-        monkeypatch.setattr(HaikuRAG, "ask", fake_ask)
-        mcp = create_mcp_server(mcp_db)
-        ask = await _get_tool(mcp, "ask_question")
-
-        png = b"fake image bytes"
-        result = await ask(question="q", images_base64=[b64encode(png).decode()])
-        assert result == "answer"
-        assert captured["images"] == [png]
-
-    @pytest.mark.asyncio
-    async def test_analyze_decodes_images(self, mcp_db, monkeypatch):
-        from base64 import b64encode
-        from types import SimpleNamespace
-
-        captured = {}
-
-        async def fake_analyze(self, question, filter=None, images=None, sources=None):
-            captured["images"] = images
-            return SimpleNamespace(answer="answer")
-
-        monkeypatch.setattr(HaikuRAG, "analyze", fake_analyze)
-        mcp = create_mcp_server(mcp_db)
-        analyze = await _get_tool(mcp, "analyze")
-
-        jpeg = b"fake jpeg bytes"
-        result = await analyze(question="q", images_base64=[b64encode(jpeg).decode()])
-        assert result == "answer"
-        assert captured["images"] == [jpeg]
-
-    @pytest.mark.asyncio
-    async def test_ask_question_without_images_passes_none(self, mcp_db, monkeypatch):
-        captured = {}
-
-        async def fake_ask(self, question, filter=None, images=None, sources=None):
-            captured["images"] = images
-            return ("answer", [])
-
-        monkeypatch.setattr(HaikuRAG, "ask", fake_ask)
-        mcp = create_mcp_server(mcp_db)
-        ask = await _get_tool(mcp, "ask_question")
-
-        result = await ask(question="q")
-        assert result == "answer"
-        assert captured["images"] is None
-
-
 @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
 class TestMCPErrorContract:
     """A failure is an error on the wire, never an empty result. Expected
@@ -1038,7 +1005,11 @@ class TestMCPErrorContract:
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "tool_name,kwargs",
-        [("search_documents", {"query": "x"}), ("list_documents", {})],
+        [
+            ("search_documents", {"query": "x"}),
+            ("list_documents", {}),
+            ("execute_code", {"code": "print(1)"}),
+        ],
     )
     async def test_an_invalid_filter_is_an_error_naming_the_filter(
         self, mcp_db, tool_name, kwargs
@@ -1076,39 +1047,28 @@ class TestMCPErrorContract:
     @pytest.mark.parametrize(
         "payload", ["!!! not base64 !!!", "é"], ids=["outside_alphabet", "non_ascii"]
     )
-    @pytest.mark.parametrize(
-        "tool_name,image_param,many",
-        [
-            ("search_documents_by_image", "image_base64", False),
-            ("ask_question", "images_base64", True),
-            ("analyze", "images_base64", True),
-        ],
-    )
     async def test_invalid_base64_is_an_error(
-        self, mcp_db, multimodal_embedder, tool_name, image_param, many, payload
+        self, mcp_db, multimodal_embedder, payload
     ):
-        kwargs: dict[str, object] = {"question": "q"} if many else {}
-        kwargs[image_param] = [payload] if many else payload
-
-        result = await _call(create_mcp_server(mcp_db), tool_name, **kwargs)
+        result = await _call(
+            create_mcp_server(mcp_db), "search_documents_by_image", image_base64=payload
+        )
 
         assert result.is_error
         assert "base64" in result.content[0].text
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "client_method,tool_name",
-        [("ask", "ask_question"), ("analyze", "analyze")],
-    )
-    async def test_an_agent_failure_names_only_its_type(
-        self, mcp_db, monkeypatch, caplog, client_method, tool_name
+    async def test_a_host_failure_inside_a_program_names_only_its_type(
+        self, mcp_db, monkeypatch, caplog
     ):
-        async def boom(self, question, filter=None, images=None, sources=None):
+        async def boom(self, *args, **kwargs):
             raise RuntimeError("boom at /secret/path")
 
-        monkeypatch.setattr(HaikuRAG, client_method, boom)
-        with caplog.at_level(logging.ERROR, logger="haiku.rag.mcp"):
-            result = await _call(create_mcp_server(mcp_db), tool_name, question="q")
+        monkeypatch.setattr(HaikuRAG, "search", boom)
+        with caplog.at_level(logging.ERROR, logger="haiku.rag.sandbox.sandbox"):
+            result = await _call(
+                create_mcp_server(mcp_db), "execute_code", code="await search('x')"
+            )
 
         assert result.is_error
         assert "RuntimeError" in result.content[0].text

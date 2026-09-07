@@ -16,7 +16,7 @@ When `qa.max_searches` or `analysis.max_executions` runs out, the exhausted tool
 | `analysis_execute_code(code)` | Run Python against the virtual document filesystem. |
 | `analysis_cite(chunk_ids)` | Register retrieved or filesystem-derived chunk IDs. |
 
-The sandbox exposes documents under `/documents/{document_id}/` with `metadata.json`, `content.txt`, `items.jsonl`, and `toc.json`.
+The sandbox exposes documents under `/documents/{document_id}/` with `metadata.json`, `content.txt`, `items.jsonl`, `chunks.jsonl` (chunk ids with their metadata) and `toc.json`. In code, `await search()` results carry `chunk_meta` and `await list_documents()` rows carry `metadata`.
 
 ## Compose an agent
 

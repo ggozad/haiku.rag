@@ -13,8 +13,8 @@ You can mix the two. The rule: always call `analysis_cite` before answering — 
 Execute Python code in a sandboxed interpreter. Variables persist between calls — you can build state incrementally. Use `print()` to output results.
 
 Inside the code, these functions are available (use `await`):
-- `await search(query, limit=10)` → list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings, doc_item_refs, labels, picture_refs (subset of doc_item_refs labeled `picture`)
-- `await list_documents()` → list of dicts with keys: id, title, uri, created_at
+- `await search(query, limit=10)` → list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings, doc_item_refs, labels, picture_refs (subset of doc_item_refs labeled `picture`), chunk_meta (the matched chunk's stored metadata, custom keys included)
+- `await list_documents()` → list of dicts with keys: id, title, uri, created_at, metadata
 
 Available modules: `json`, `re`, `math`, `pathlib`
 Not supported: class inheritance and metaclasses, generators/yield, match statements, decorators, `collections`, iterating a file object (`for line in f`)
@@ -39,9 +39,10 @@ All documents are mounted as a virtual filesystem at `/documents/`:
 
 ```
 /documents/{document_id}/
-    metadata.json    # {"id", "title", "uri", "created_at"}
+    metadata.json    # {"id", "title", "uri", "created_at", "metadata"}
     content.txt      # Full document text
     items.jsonl      # Structured items (one JSON object per line)
+    chunks.jsonl     # Chunks in order with their metadata (one JSON object per line)
     toc.json         # Section tree derived from heading_level
 ```
 
@@ -70,7 +71,7 @@ for line in Path(f'/documents/{doc_id}/items.jsonl').read_text().strip().split("
 ```
 
 ### metadata.json
-Document metadata: `id`, `title`, `uri`, `created_at`.
+Document metadata: `id`, `title`, `uri`, `created_at`, and `metadata`, the keys stored with the document.
 
 ### content.txt
 Full text content. Use for regex or keyword search across a whole document.
@@ -85,6 +86,9 @@ Each row carries:
 - `page_numbers`: list of page numbers where the item appears
 - `chunk_ids`: chunks that contain this item — pass to `analysis_cite()` to ground an answer that read this item directly
 - `heading_level`: H-level for `section_header` rows; `0` on non-header rows
+
+### chunks.jsonl
+The document's chunks in order, one JSON object per line: `chunk_id` and `metadata`, the chunk's stored metadata (`doc_item_refs`, `headings`, `labels`, `page_numbers`, and any custom keys such as paragraph or footnote numbers). To read by chunk metadata, keep the matching rows and take the `items.jsonl` rows whose `chunk_ids` name them.
 
 ### toc.json
 Section tree derived from `heading_level`: `{"doc_id", "title", "tree": [...]}` where each node has `{self_ref, level, title, page_numbers, item_range: [start, end_exclusive], chunk_ids, children}`. `item_range` is a line slice into `items.jsonl` — `items[start:end]`. `chunk_ids` aggregates the citable chunks across all items in the section — pass directly to `analysis_cite()` to ground a section-scoped answer without a corpus-wide `search()` call. `tree: []` for docs with no headers.

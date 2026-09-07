@@ -16,6 +16,7 @@ import pytest
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.sandbox import AnalysisContext, Sandbox
+from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import DocumentItem
 
@@ -433,6 +434,38 @@ class TestVfsReadPaths:
                 PurePosixPath(f"/documents/{doc_id}/content.txt"),
                 "nope",
             )
+
+    async def test_chunks_jsonl_lists_chunks_in_order_with_their_metadata(
+        self, temp_db_path
+    ):
+        """One row per chunk, in chunk order, carrying the stored metadata as
+        is; the second read of a document is served from the sandbox's cache."""
+        config = AppConfig()
+        dim = config.embeddings.model.vector_dim
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc_id = await _empty_doc(client, uri="test://paras", title="Paras")
+            for order, para_no in enumerate(["13", "14"]):
+                await client.chunk_repository.create(
+                    Chunk(
+                        document_id=doc_id,
+                        content=f"Paragraph {para_no}.",
+                        embedding=[0.1] * dim,
+                        order=order,
+                        metadata={"para_no": para_no, "doc_item_refs": []},
+                    )
+                )
+
+        sandbox = Sandbox(temp_db_path, config, AnalysisContext())
+        first = await _read_vfs_text(sandbox, f"/documents/{doc_id}/chunks.jsonl")
+        rows = [json.loads(line) for line in first.split("\n")]
+
+        assert [row["metadata"]["para_no"] for row in rows] == ["13", "14"]
+        assert all(set(row) == {"chunk_id", "metadata"} for row in rows)
+        assert rows[0]["metadata"] == {"para_no": "13", "doc_item_refs": []}
+        assert sandbox._chunks_jsonl_cache[doc_id] == first
+        assert (
+            await _read_vfs_text(sandbox, f"/documents/{doc_id}/chunks.jsonl") == first
+        )
 
     async def test_toc_skips_gaps_in_item_positions(self, temp_db_path):
         """Positions need not be contiguous — a heading's span may cover

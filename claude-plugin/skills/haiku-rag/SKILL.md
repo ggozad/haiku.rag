@@ -1,6 +1,6 @@
 ---
 name: haiku-rag
-description: Search, read and question the user's haiku.rag knowledge base
+description: Search, read and compute over the user's haiku.rag knowledge base
   through the haiku-rag MCP tools. Use whenever a request could be answered
   from the user's ingested documents, when asked to find, look up, check or
   cite something in their documents or knowledge base, or when the question is
@@ -12,8 +12,7 @@ allowed-tools:
   - mcp__plugin_haiku-rag_haiku-rag__get_document_outline
   - mcp__plugin_haiku-rag_haiku-rag__get_document_section
   - mcp__plugin_haiku-rag_haiku-rag__list_documents
-  - mcp__plugin_haiku-rag_haiku-rag__ask_question
-  - mcp__plugin_haiku-rag_haiku-rag__analyze
+  - mcp__plugin_haiku-rag_haiku-rag__execute_code
 ---
 
 # Working with the knowledge base
@@ -38,13 +37,17 @@ whole text in reading order. For a long one, `get_document_outline` gives the
 heading tree with page numbers and `get_document_section` the text of one
 section, subsections included.
 
-## Answer or compute
+## Compute
 
-`ask_question` runs the RAG agent on the server and returns an answer with
-citations; use it when the user wants an answer rather than material.
-`analyze` runs code in a sandbox over the documents; use it for counting,
-aggregation, comparison across many documents or computation over tables. Both
-cost a model call and are slower than a search.
+`execute_code` runs a Python program on the server over the same documents.
+Under `/documents/{id}/` each has `metadata.json`, `content.txt`, `items.jsonl`,
+`chunks.jsonl` and `toc.json`, and the program can `await search(query)` and
+`await list_documents()`. Write code when the answer is a count, an aggregate, a
+comparison across many documents, a lookup by document or chunk metadata, or a
+pattern over whole documents: whatever search cannot rank. Each call is one
+program and variables do not carry over, so gather, compute and `print` a
+compact result in the same program. `filter` and `sources` select the documents
+it sees. Answer and cite from what it printed.
 
 ## Explore
 

@@ -393,48 +393,6 @@ def _citation_label(c: "Citation") -> str:
     return c.document_title or c.document_uri
 
 
-def format_citations(citations: "list[Citation]", include_source: bool = False) -> str:
-    """Format citations as plain text with preserved formatting.
-
-    Used by things like the MCP server where Rich renderables are not available.
-    Pictures referenced by the chunk are surfaced as ``[Figure: <ref>]`` markers.
-    ``include_source`` names each citation's database, for a client covering
-    several.
-    """
-    if not citations:
-        return ""
-
-    lines = ["## Citations\n"]
-
-    for i, c in enumerate(citations):
-        idx = c.index if c.index is not None else (i + 1)
-        title = c.document_title or c.document_uri
-        header = f"[{idx}] {title}"
-
-        location_parts = []
-        if include_source and c.source:
-            location_parts.append(f"Collection: {c.source}")
-        pages = _citation_pages(c)
-        if pages:
-            location_parts.append(pages)
-        section = _citation_section(c)
-        if section:
-            location_parts.append(f"Section: {section}")
-
-        # The URI is the header when there is no title; do not repeat it.
-        line = f"{header} {c.document_uri}" if c.document_title else header
-        if location_parts:
-            line += f" - {', '.join(location_parts)}"
-
-        lines.append(line)
-        for ref in c.picture_refs:
-            lines.append(f"[Figure: {ref}]")
-        lines.append(c.content)
-        lines.append("")
-
-    return "\n".join(lines)
-
-
 def truncated(text: str, limit: int) -> str:
     """The first `limit` characters of `text`, with `…` appended when anything
     was dropped. A cut result is `limit` characters plus the mark."""

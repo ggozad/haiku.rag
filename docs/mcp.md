@@ -19,8 +19,6 @@ haiku-rag mcp --host 0.0.0.0 --port 8001
 # stdio transport (for Claude Desktop)
 haiku-rag mcp --stdio
 
-# Without ask_question and analyze, which run a model on the server
-haiku-rag mcp --stdio --no-agents
 ```
 
 `--host` defaults to `127.0.0.1` (loopback only). Bind to `0.0.0.0` only
@@ -58,6 +56,10 @@ plugin:
 ```bash
 claude mcp add haiku-rag -- haiku-rag mcp --stdio
 ```
+
+The skill works with that registration too: copy `claude-plugin/skills/haiku-rag`
+into `~/.claude/skills/` and change the tool prefix in its `allowed-tools` from
+`mcp__plugin_haiku-rag_haiku-rag__` to `mcp__haiku-rag__`.
 
 ## Claude Desktop Integration
 
@@ -103,8 +105,7 @@ repeating it.
 | `get_document_outline` | always | `document_id`, `source` |
 | `get_document_section` | always | `document_id`, `section_id`, `source` |
 | `list_documents` | always | `limit`, `offset`, `filter` |
-| `ask_question` | unless `--no-agents` | `question`, `images_base64`, `sources` |
-| `analyze` | unless `--no-agents` | `question`, `filter`, `images_base64`, `sources` |
+| `execute_code` | always | `code`, `filter`, `sources` |
 
 `search_documents` runs hybrid search, vector and full-text. Its text content
 is the rendering the in-process agents read: results best first, each with its
@@ -126,12 +127,18 @@ node's `id` in the outline is the `section_id`. A document without headings
 has an empty outline. `list_documents` returns titles, URIs and metadata,
 which is how a client learns what a filter can match.
 
-`ask_question` runs the RAG agent on the server and returns an answer
-followed by its citations. `analyze` writes and runs Python in a sandbox
-over the documents, for counting, aggregation and computation across
-documents. Both cost a model call. Claude Code moves a call still running
-after about two minutes to a background task, which a slow local model can
-trigger; `--no-agents` leaves both tools out.
+`execute_code` runs a Python program in the sandbox of the
+[analysis capability](capabilities/analysis.md), over the documents `filter`
+and `sources` select, and returns what it printed. The program reads
+`/documents/{document_id}/` (`metadata.json`, `content.txt`, `items.jsonl`,
+`chunks.jsonl`, `toc.json`) and can `await search()` and
+`await list_documents()`; the tool description spells out the fields and the
+interpreter's limits. Each call is one program: nothing carries over between
+calls, and the sandbox is created and closed per call. A failing program is a
+tool error carrying the interpreter's message and any output printed before
+it. `analysis.code_timeout` bounds a call and `analysis.max_output_chars` its
+output; no model runs on the server. Claude Code moves a call still running
+after about two minutes to a background task.
 
 ### Filters
 
@@ -150,8 +157,10 @@ title = 'Q3 report'
 A failure is an MCP error, never an empty result. Expected failures carry a
 message: a document or section id that matches nothing, a collection the
 server does not cover, a filter the query engine rejects (with its message),
-invalid base64,
-and an `ask_question` or `analyze` failure naming only the exception type.
+invalid base64, and a program that fails in `execute_code`. A failure on the
+server inside a program, a database read or an in-code search raising, reaches
+the program and the client as its exception type only; the traceback goes to
+the server log.
 Anything else reaches the client as `Error calling tool 'name'` and its
 traceback goes to the server log.
 

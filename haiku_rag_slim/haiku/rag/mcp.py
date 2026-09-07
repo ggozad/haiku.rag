@@ -16,13 +16,13 @@ from pydantic import Field
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.context import build_toc
+from haiku.rag.sandbox import AnalysisContext, Sandbox, recovery_hint
 from haiku.rag.store.exceptions import UnknownDatabaseError
 from haiku.rag.store.models import Document, SearchResult
 from haiku.rag.store.models.document_item import DocumentItem
 from haiku.rag.store.schema import DocumentMetaRecord
 from haiku.rag.tools.document import DocumentInfo, DocumentSection, OutlineNode
 from haiku.rag.tools.search import collect_pictures
-from haiku.rag.utils import format_citations
 
 if TYPE_CHECKING:
     from typing import Any
@@ -65,12 +65,6 @@ def _decode_image(image_base64: str) -> bytes:
         raise ToolError("Invalid base64 image") from e
 
 
-def _decode_images(images_base64: list[str] | None) -> list[bytes] | None:
-    if not images_base64:
-        return None
-    return [_decode_image(b64) for b64 in images_base64]
-
-
 async def _check_filter(
     rag: HaikuRAG, filter: str | None, sources: list[str] | None = None
 ) -> None:
@@ -98,18 +92,14 @@ async def _check_filter(
         ) from e
 
 
-def _instructions(scope: "DatabaseScope", config: AppConfig, agents: bool) -> str:
+def _instructions(scope: "DatabaseScope", config: AppConfig) -> str:
     """What the server is for, naming no tools: the client has every tool's
     description from the listing."""
     lines = [
         "haiku-rag is the user's knowledge base: documents they ingested, "
-        "searchable by meaning and keyword, readable whole or section by section."
+        "searchable by meaning and keyword, readable whole or section by section, "
+        "or computed across with code."
     ]
-    if agents:
-        lines.append(
-            "Questions can be answered from them with citations, or computed "
-            "across them with code."
-        )
     lines.append(
         "Use it whenever a question could be answered from those documents, "
         "before answering from memory, and say when it had nothing relevant."
@@ -185,9 +175,7 @@ def _find(toc: list["dict[str, Any]"], section_id: str) -> "dict[str, Any] | Non
 
 
 def create_mcp_server(
-    db_path: Path | None = None,
-    config: AppConfig | None = None,
-    agents: bool = True,
+    db_path: Path | None = None, config: AppConfig | None = None
 ) -> FastMCP:
     """Create an MCP server over the databases the configuration places.
 
@@ -196,20 +184,14 @@ def create_mcp_server(
             None to serve the databases the configuration places. Beside
             `lancedb.databases` a path raises `AmbiguousDatabaseError`.
         config: Configuration to use.
-        agents: Register `ask_question` and `analyze`, which run a model on
-            the server.
     """
     from haiku.rag.client.scope import DatabaseScope
 
     config = config if config is not None else get_config()
-    return _covering(
-        DatabaseScope.resolve(config, database_path=db_path), config, agents
-    )
+    return _covering(DatabaseScope.resolve(config, database_path=db_path), config)
 
 
-def _covering(
-    scope: "DatabaseScope", config: AppConfig, agents: bool = True
-) -> FastMCP:
+def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
     """An MCP server over databases someone already resolved.
 
     Internal, as ``HaikuRAG._covering`` is: the public factory takes a path and
@@ -255,7 +237,7 @@ def _covering(
     # the traceback goes to the server log. A ToolError reaches the client as is.
     mcp = FastMCP(
         "haiku-rag",
-        instructions=_instructions(scope, config, agents),
+        instructions=_instructions(scope, config),
         version=metadata.version("haiku.rag-slim"),
         lifespan=lifespan,
         mask_error_details=True,
@@ -469,72 +451,51 @@ def _covering(
             for doc in documents
         ]
 
-    if agents:
+    @mcp.tool(annotations=_read_only("Run code over the documents"))
+    async def execute_code(
+        code: str, filter: Filter = None, sources: Sources = None
+    ) -> str:
+        """Run a Python program over the documents and return what it printed.
 
-        @mcp.tool(annotations=_read_only("Ask a question"))
-        async def ask_question(
-            question: str,
-            images_base64: list[str] | None = None,
-            sources: Sources = None,
-        ) -> str:
-            """Answer a question from the documents with a retrieval agent.
+        Use this when the answer is a count, an aggregate, a comparison across
+        many documents, a lookup by document or chunk metadata, or a pattern
+        over whole documents: whatever a search cannot rank. The program runs
+        in a sandboxed interpreter on the server. Each call is one program,
+        nothing carries over between calls, and `print` is the only output.
 
-            Use this when the user wants an answer rather than material to read.
-            It runs a model on the server and is slower than a search. Returns
-            the answer, followed by citations to the passages it rests on.
+        Inside the program, `/documents/{document_id}/` holds `metadata.json`
+        (id, title, uri, created_at, metadata), `content.txt` (the whole text),
+        `items.jsonl` (one item per line: self_ref, label, text, page_numbers,
+        heading_level, chunk_ids), `chunks.jsonl` (one chunk per line: chunk_id,
+        metadata) and `toc.json` (the section tree, each node with an item_range
+        slice into items.jsonl). Read files with `Path.read_text()` or `open()`;
+        a file object cannot be iterated, use `.readlines()`.
+        `await search(query, limit=10)` returns dicts with chunk_id, content,
+        document_id, document_title, document_uri, source, score, page_numbers,
+        headings, doc_item_refs, labels and chunk_meta. `await list_documents()`
+        returns dicts with id, title, uri, created_at, source and metadata.
+        Modules: json, re, math, pathlib. Not available: generators, class
+        inheritance, match statements, decorators, collections.
 
-            Args:
-                question: The question, in natural language.
-                images_base64: Images to attach to the question, PNG or JPEG
-                    bytes as base64. Needs a vision-capable model on the server.
-            """
-            images = _decode_images(images_base64)
-            rag = await _client()
-            try:
-                answer, citations = await rag.ask(
-                    question, images=images, sources=sources
-                )
-            except UnknownDatabaseError as e:
-                raise ToolError(str(e)) from e
-            except Exception as e:
-                logger.exception("ask_question failed")
-                raise ToolError(f"ask_question failed: {type(e).__name__}") from e
-            if citations:
-                answer += "\n\n" + format_citations(
-                    citations, include_source=rag.covers_multiple
-                )
-            return answer
-
-        @mcp.tool(annotations=_read_only("Analyze documents"))
-        async def analyze(
-            question: str,
-            filter: Filter = None,
-            images_base64: list[str] | None = None,
-            sources: Sources = None,
-        ) -> str:
-            """Compute an answer across documents with code.
-
-            Use this for counting, aggregation, comparison across many documents
-            or arithmetic over tables, where reading passages is not enough. A
-            model writes and runs Python in a sandbox over the selected documents.
-            It is the slowest tool. Returns the answer as text.
-
-            Args:
-                question: The question, in natural language.
-                images_base64: Images to attach to the question, PNG or JPEG
-                    bytes as base64. Needs a vision-capable model on the server.
-            """
-            images = _decode_images(images_base64)
-            rag = await _client()
-            try:
-                result = await rag.analyze(
-                    question, filter=filter, images=images, sources=sources
-                )
-            except UnknownDatabaseError as e:
-                raise ToolError(str(e)) from e
-            except Exception as e:
-                logger.exception("analyze failed")
-                raise ToolError(f"analyze failed: {type(e).__name__}") from e
-            return result.answer
+        Args:
+            code: The program. Use `await` on search and list_documents.
+        """
+        rag = await _client()
+        sandbox = Sandbox._covering(
+            scope, config, AnalysisContext(filter=filter, sources=sources), rag=rag
+        )
+        try:
+            await _check_filter(rag, filter, sources)
+            result = await sandbox.execute(code)
+        except UnknownDatabaseError as e:
+            raise ToolError(str(e)) from e
+        finally:
+            await sandbox.close()
+        if not result.success:
+            raise ToolError(
+                f"{result.stderr}{recovery_hint(result.stderr)}"
+                f"\n\nOutput: {result.stdout}"
+            )
+        return result.stdout or "No output."
 
     return mcp

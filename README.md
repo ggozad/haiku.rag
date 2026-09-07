@@ -16,7 +16,7 @@ Built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.pydantic.dev/
 - **Hybrid search** — Vector + full-text with Reciprocal Rank Fusion
 - **Multimodal & cross-modal search** — Multimodal embedders (vLLM, VoyageAI, Cohere) put picture vectors in the same space as text; supports text-as-query → figure hits and image-as-query
 - **Question answering** — RAG capability with citations (page numbers, section headings)
-- **Vision QA** — Vision-capable models receive figure bytes alongside chunk text; attach your own images to questions in `ask`, `analyze`, MCP, and the chat TUI
+- **Vision QA** — Vision-capable models receive figure bytes alongside chunk text; attach your own images to questions in `ask`, `analyze` and the chat TUI
 - **Reranking** — local cross-encoders, Cohere, Zero Entropy, or vLLM
 - **Analysis capability** — Complex analytical tasks via sandboxed Python code execution (aggregation, computation, multi-document analysis)
 - **Evidence compaction** — Optional capability that replaces earlier questions' search results on the request with the evidence they cited, so long conversations stop resending everything they retrieved
