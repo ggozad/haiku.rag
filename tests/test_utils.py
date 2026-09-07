@@ -573,13 +573,96 @@ def test_get_model_accepts_provider_whose_sdk_is_missing(monkeypatch):
     assert result == "cohere:command-r"
 
 
-@pytest.mark.parametrize("provider", ["nonsense", "vllm", "gemini"])
+def test_get_model_vllm_builds_a_vllm_provider():
+    """`provider: vllm` reaches pydantic-ai's own vLLM provider."""
+    from pydantic_ai.providers.vllm import VLLMProvider
+
+    result = get_model(
+        ModelConfig(provider="vllm", name="qwen3-8b", base_url="http://vllm-box:8000")
+    )
+    assert isinstance(result, OpenAIChatModel)
+    assert isinstance(result._provider, VLLMProvider)
+
+
+def test_get_model_vllm_appends_v1_to_base_url():
+    """The endpoint is written with or without /v1, as for the embedder."""
+    result = get_model(
+        ModelConfig(provider="vllm", name="qwen3-8b", base_url="http://vllm-box:8000")
+    )
+    url = str(result.client.base_url).rstrip("/")
+    assert url.endswith("/v1")
+    assert not url.endswith("/v1/v1")
+
+
+def test_get_model_vllm_keeps_the_provider_profile():
+    """The provider profile merges leading system messages; no override here.
+
+    A profile passed at construction would replace it, dropping the per-family
+    reasoning and tool-choice handling that comes with it.
+    """
+    result = get_model(ModelConfig(provider="vllm", name="qwen3-8b"))
+    profile = result.profile
+    read = profile.get if isinstance(profile, dict) else lambda k: getattr(profile, k)
+    assert read("openai_chat_supports_multiple_system_messages") is False
+    # `_OPENAI_COMPAT_PROFILE` carries only the key above, so these separate it
+    # from the provider's own profile.
+    assert read("supports_json_schema_output") is True
+    assert read("native_output_requires_schema_in_instructions") is True
+
+
+def test_get_model_vllm_forwards_settings():
+    """Settings reach the model."""
+    extra = {"chat_template_kwargs": {"reasoning_strength": "high"}}
+    result = get_model(
+        ModelConfig(
+            provider="vllm",
+            name="qwen3-8b",
+            temperature=0.6,
+            max_tokens=16384,
+            extra_body=extra,
+        )
+    )
+    assert result._settings is not None
+    assert result._settings.get("temperature") == 0.6
+    assert result._settings.get("max_tokens") == 16384
+    assert result._settings.get("extra_body") == extra
+
+
+@pytest.mark.parametrize("enable_thinking", [True, False, None])
+def test_get_model_vllm_sends_no_reasoning_effort(enable_thinking):
+    """`enable_thinking` travels as `thinking`, never as `reasoning_effort`.
+
+    The effort vocabulary is per-model: Qwen3.8 rejects `high` outright, taking
+    `xhigh`, `medium` or `low`, so no level is chosen here. pydantic-ai drops
+    `thinking` for a model whose profile does not advertise it.
+    """
+    result = get_model(
+        ModelConfig(
+            provider="vllm",
+            name="Inferact/Qwen3.8-27B-NVFP4",
+            enable_thinking=enable_thinking,
+        )
+    )
+    settings = result._settings or {}
+    assert "openai_reasoning_effort" not in settings
+    assert settings.get("thinking") == enable_thinking
+
+
+def test_get_model_vllm_accepts_api_key():
+    """A per-endpoint key is honored, as on the other branches we build."""
+    result = get_model(
+        ModelConfig(provider="vllm", name="qwen3-8b", api_key="sk-vllm-key")
+    )
+    assert isinstance(result, OpenAIChatModel)
+
+
+@pytest.mark.parametrize("provider", ["nonsense", "gemini"])
 def test_get_model_rejects_unknown_provider(provider):
     """An unknown provider is named here rather than passed through to fail
     inside pydantic-ai, where nothing identifies the config it came from.
 
-    `vllm` and `gemini` get no special case: both were haiku.rag's own
-    vocabulary, and both fail the same way as a typo.
+    `gemini` gets no special case: it was haiku.rag's own vocabulary, and it
+    fails the same way as a typo.
     """
     with pytest.raises(ValueError, match=provider):
         get_model(ModelConfig(provider=provider, name="whatever"))

@@ -44,7 +44,7 @@ dependencies = [
     "lancedb==0.38.0",
     "pathspec>=1.0.4",
     "pydantic>=2.12.5",
-    "pydantic-ai-slim[openai,logfire,ag-ui]>=2.18.0,<3.0.0",
+    "pydantic-ai-slim[openai,logfire,ag-ui]>=2.40.0,<3.0.0",
     "pydantic-monty>=0.0.23,<0.0.24",
     "pyarrow>=16,<25",
     "pypdfium2>=5.0",

@@ -45,7 +45,7 @@ def _retrieval_from_csv(path: str) -> dict[str, list[str]]:
 
 
 def _retrieval_from_trace(trace_id: str) -> dict[str, list[str]]:
-    from logfire.experimental.query_client import LogfireQueryClient
+    from logfire.query_client import LogfireQueryClient
 
     token = os.environ.get("LOGFIRE_READ_TOKEN")
     if not token:

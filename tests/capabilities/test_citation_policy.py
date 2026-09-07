@@ -197,7 +197,7 @@ def test_two_policy_capabilities_fail_fast(temp_db_path):
     async def model(_messages, _info):  # pragma: no cover - never reached
         return ModelResponse(parts=[TextPart("answer")])
 
-    with pytest.raises(UserError, match="unique within a run"):
+    with pytest.raises(UserError, match="haiku-rag-citation-policy"):
         Agent(
             FunctionModel(model),
             deps_type=Deps,

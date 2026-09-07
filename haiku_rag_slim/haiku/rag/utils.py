@@ -65,8 +65,8 @@ def check_api_key_supported(
 def vllm_base_url(base_url: str | None) -> str:
     """Normalize a vLLM endpoint to its OpenAI-compatible `/v1` root.
 
-    Embedders and rerankers take the same endpoint from config, so both accept
-    it written with or without `/v1`.
+    Chat models, embedders and rerankers take the same endpoint from config, so
+    all accept it written with or without `/v1`.
     """
     base_url = base_url or "http://localhost:8000/v1"
     if not base_url.rstrip("/").endswith("/v1"):
@@ -95,8 +95,9 @@ def _check_provider_known(provider: str) -> None:
         raise ValueError(
             f"Unknown model provider '{provider}'. See "
             "https://ai.pydantic.dev/models/ for the providers pydantic-ai "
-            "supports. An OpenAI-compatible server (vLLM, sglang, LM Studio) "
-            "uses provider 'openai' with base_url."
+            "supports. vLLM uses provider 'vllm'; another "
+            "OpenAI-compatible server (sglang, LM Studio) uses provider "
+            "'openai' with base_url."
         ) from None
 
 
@@ -222,7 +223,7 @@ def get_model(
     provider = model_config.provider
     model = model_config.name
     _check_provider_known(provider)
-    check_api_key_supported(model_config, {"openai", "ollama"})
+    check_api_key_supported(model_config, {"openai", "ollama", "vllm"})
 
     if provider == "ollama":
         model_settings = None
@@ -246,6 +247,24 @@ def get_model(
             provider=OllamaProvider(base_url=base_url, api_key=model_config.api_key),
             settings=model_settings,
             profile=_OPENAI_COMPAT_PROFILE,
+        )
+
+    elif provider == "vllm":
+        from pydantic_ai.providers.vllm import VLLMProvider
+
+        # `enable_thinking` travels as the unified `thinking` setting, which
+        # pydantic-ai drops unless the model's profile advertises thinking. The
+        # effort vocabulary is per-model, and the profile is what knows which
+        # models take OpenAI-style values; `extra_body` reaches a template
+        # whose switch is its own. VLLMProvider's profile also carries the
+        # strict-chat-template flag this module applies elsewhere.
+        return OpenAIChatModel(
+            model_name=model,
+            provider=VLLMProvider(
+                base_url=vllm_base_url(model_config.base_url),
+                api_key=model_config.api_key,
+            ),
+            settings=apply_common_settings(None, model_config),
         )
 
     elif provider == "openai":

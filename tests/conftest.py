@@ -127,6 +127,23 @@ def allow_model_requests():
 
 
 @pytest.fixture(autouse=True)
+def allow_expected_model_requests(request):
+    """Let a `vcr` or `integration` test reach a model.
+
+    The request guard sits above VCR's HTTP interception, so it rejects a
+    cassette replay, and an integration test calls a live service by design.
+    An unrecorded call under `vcr` still fails, on `record_mode=none`.
+    """
+    if not any(
+        request.node.get_closest_marker(marker) for marker in ("vcr", "integration")
+    ):
+        yield
+        return
+    with pydantic_ai.models.override_allow_model_requests(True):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def set_mock_api_keys(monkeypatch):
     """Set mock API keys for providers that require them during initialization."""
     if not os.getenv("OPENAI_API_KEY"):

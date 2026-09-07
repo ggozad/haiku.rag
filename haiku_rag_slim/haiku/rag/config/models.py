@@ -22,12 +22,13 @@ class ModelConfig(ConfigModel):
     Attributes:
         provider: Model provider (ollama, openai, anthropic, etc.)
         name: Model name/identifier
-        base_url: Optional base URL for OpenAI-compatible servers (vLLM, LM Studio, etc.)
+        base_url: Base URL for the vllm provider, and for an OpenAI-compatible
+            server reached through the openai provider (LM Studio, sglang).
         api_key: Key sent to the endpoint, overriding the provider's own
             environment variable. Lets several openai-compatible endpoints each
             carry their own key; typically written as `${VENDOR_KEY}`. Honored
-            on the openai and ollama providers, and on the picture-description
-            VLM endpoint.
+            on the openai, ollama and vllm providers, and on the
+            picture-description VLM endpoint.
         enable_thinking: Control reasoning behavior (true/false/None for default)
         temperature: Sampling temperature (0.0 to 1.0+)
         max_tokens: Maximum tokens to generate

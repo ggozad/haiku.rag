@@ -4,6 +4,9 @@
 
 ### Added
 
+- `provider: vllm` on a model config, served by pydantic-ai's
+  `VLLMProvider`. `base_url` is accepted with or without `/v1`, and
+  `api_key` is honored.
 - Claude Code and Codex plugin under `plugins/haiku-rag/`: two client manifests
   sharing the server configuration and the `haiku-rag` Agent Skill.
 - MCP tool `execute_code(code, filter, sources)`: runs a program in the
@@ -22,6 +25,7 @@
 
 ### Changed
 
+- `pydantic-ai-slim>=2.40.0,<3.0.0`.
 - lancedb 0.38.0.
 - `pyarrow` is a declared dependency, `>=16,<25`.
 - Dependency upper bounds: `typer<0.27.0` (was `<0.22.0`),
