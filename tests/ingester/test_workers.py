@@ -1054,16 +1054,23 @@ async def test_breaker_isolates_sources(client, jobs, sync):
     for _ in range(10):
         pool._breaker_for("bad").record_failure()
 
+    async def _good_jobs_drained():
+        while True:
+            done = await jobs.list_jobs(status=JobStatus.SUCCEEDED, limit=50)
+            if len(done) == 3:
+                return done
+            await asyncio.sleep(0.02)
+
     await pool.start()
     try:
-        await asyncio.sleep(0.2)
-        succeeded = await jobs.list_jobs(status=JobStatus.SUCCEEDED, limit=50)
+        succeeded = await asyncio.wait_for(_good_jobs_drained(), timeout=5.0)
         queued = await jobs.list_jobs(status=JobStatus.QUEUED, limit=50)
     finally:
         await pool.stop()
 
     assert {j.uri for j in succeeded} == {"g0", "g1", "g2"}
     assert {j.uri for j in queued} == {"b0", "b1", "b2"}
+    assert [j.attempts for j in queued] == [0, 0, 0]
 
 
 @pytest.mark.asyncio
