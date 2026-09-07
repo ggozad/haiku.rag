@@ -22,6 +22,9 @@
 
 ### Changed
 
+- `pydantic-monty>=0.0.23`. The analysis sandbox gains `collections`,
+  `itertools`, `functools`, `dataclasses`, function decorators and
+  `str.format`.
 - `fastmcp>=4.0.2,<5.0.0`, on MCP Python SDK 2. The MCP server answers both the
   session-based and the sessionless (2026-07-28) protocol.
 - Default models are `ollama:qwen3.8`: `ModelConfig`, `qa.model`,

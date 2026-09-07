@@ -20,6 +20,18 @@ class TestSandboxBasics:
     """Test basic sandbox functionality."""
 
     @pytest.mark.asyncio
+    async def test_the_documented_modules_import(self, sandbox):
+        """The modules the instructions and the MCP description promise."""
+        result = await sandbox.execute(
+            "import json, re, math, pathlib, datetime\n"
+            "import collections, itertools, functools, dataclasses\n"
+            "print(collections.Counter('aab').most_common(1),"
+            " list(itertools.islice(itertools.count(), 2)))"
+        )
+        assert result.success, result.stderr
+        assert "[('a', 2)] [0, 1]" in result.stdout
+
+    @pytest.mark.asyncio
     async def test_execute_simple_code(self, sandbox):
         """Test executing simple code in the sandbox."""
         result = await sandbox.execute("print('hello world')")
@@ -1048,7 +1060,51 @@ class TestSandboxReadDeadline:
 
         sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
 
-        assert sb._session_limits() == {"max_duration_secs": 15.0}
+        limits = sb._session_limits()
+
+        assert limits["max_duration_secs"] == 15.0
+        cap = limits["max_suspensions"]
+        assert cap is not None
+        assert cap >= 1_000_000
+
+    @pytest.mark.asyncio
+    async def test_a_program_may_read_more_than_a_thousand_times(self, temp_db_path):
+        """Monty caps host callbacks per checkout at 1000 unless told otherwise;
+        a corpus-wide pass over documents reads far more than that."""
+        from docling_core.types.doc.document import DoclingDocument
+        from docling_core.types.doc.labels import DocItemLabel
+
+        config = AppConfig()
+        docling = DoclingDocument(name="d")
+        docling.add_text(label=DocItemLabel.TEXT, text="Foxes and dogs.")
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.import_document(
+                docling,
+                [
+                    Chunk(
+                        content="Foxes and dogs.",
+                        embedding=[0.1] * config.embeddings.model.vector_dim,
+                        order=0,
+                    )
+                ],
+                uri="test://many-reads",
+            )
+
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            result = await sb.execute(
+                "from pathlib import Path\n"
+                f"p = Path('/documents/{doc.id}/content.txt')\n"
+                "n = 0\n"
+                "for i in range(1100):\n"
+                "    n += len(p.read_text())\n"
+                "print(n)"
+            )
+        finally:
+            await sb.close()
+
+        assert result.success, result.stderr
+        assert result.stdout.strip() == str(1100 * len("Foxes and dogs."))
 
     @pytest.mark.asyncio
     async def test_refused_read_fails_the_execution(self, temp_db_path, monkeypatch):

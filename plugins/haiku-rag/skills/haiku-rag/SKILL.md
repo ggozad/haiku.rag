@@ -25,10 +25,12 @@ could be about the user's documents. Say so when it has nothing relevant.
 
 `search_documents` is the first call. Results come best first with the document
 title, section headings, the matched chunk's metadata when it has any, and the
-passage in its section. `filter` restricts which
-documents are searched, `limit` how many results come back. If it misses,
-rephrase once or narrow with a filter before concluding the material is not
-there.
+passage in its section. Pictures in the results arrive as images: answer
+figure questions from them. `filter` restricts which documents are searched,
+`limit` how many results come back. If it misses, rephrase once or narrow with
+a filter before concluding the material is not there. When the question is
+about an image rather than words and the server offers
+`search_documents_by_image`, it takes the image as the query.
 
 ## Read
 
@@ -48,7 +50,11 @@ comparison across many documents, a lookup by document or chunk metadata, or a
 pattern over whole documents: whatever search cannot rank. Each call is one
 program and variables do not carry over, so gather, compute and `print` a
 compact result in the same program. `filter` and `sources` select the documents
-it sees. Answer and cite from what it printed.
+it sees. For a known document's structure read its `toc.json` first; `search()`
+ranks across every document. Map a title or URI to an id with one
+`list_documents()` call rather than reading every `metadata.json`; the files
+carry no `source`, so over several collections group by its rows. Answer and
+cite from what it printed.
 
 ## Explore
 
@@ -66,5 +72,6 @@ it with LIKE: `metadata LIKE '%"author": "Smith"%'`. Also `uri LIKE '%.pdf'`,
 
 Rank is the signal; scores are not comparable across queries and are never
 confidence. Cite the document title or URI, the section heading and page
-numbers when present. When results carry `source`, the server covers several
-collections: name it, and pass `sources` to search a subset.
+numbers when present, and the matched chunk's metadata when it carries locators
+such as paragraph or footnote numbers. When results carry `source`, the server
+covers several collections: name it, and pass `sources` to search a subset.

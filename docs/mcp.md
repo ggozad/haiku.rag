@@ -151,18 +151,29 @@ node's `id` in the outline is the `section_id`. A document without headings
 has an empty outline. `list_documents` returns titles, URIs and metadata,
 which is how a client learns what a filter can match.
 
+### Code
+
 `execute_code` runs a Python program in the sandbox of the
 [analysis capability](capabilities/analysis.md), over the documents `filter`
 and `sources` select, and returns what it printed. The program reads
 `/documents/{document_id}/` (`metadata.json`, `content.txt`, `items.jsonl`,
 `chunks.jsonl`, `toc.json`) and can `await search()` and
 `await list_documents()`; the tool description spells out the fields and the
-interpreter's limits. Each call is one program: nothing carries over between
+patterns that matter. Each call is one program: nothing carries over between
 calls, and the sandbox is created and closed per call. A failing program is a
 tool error carrying the interpreter's message and any output printed before
-it. `analysis.code_timeout` bounds a call and `analysis.max_output_chars` its
-output; no model runs on the server. Claude Code moves a call still running
-after about two minutes to a background task.
+it. No model runs on the server. Claude Code moves a call still running after
+about two minutes to a background task.
+
+The interpreter is [Monty](https://github.com/pydantic/monty), a Python subset.
+Useful modules include `json`, `re`, `math`, `pathlib`, `datetime`,
+`collections`, `itertools`, `functools` and `dataclasses`. Absent, and often
+reached for: `decimal` and `statistics`. No generator functions, class
+inheritance or `match` statements, and a file object cannot be iterated. Files are read-only, and
+there is no network and no filesystem
+beyond `/documents`. `analysis.code_timeout` bounds a call, counted separately
+for compute and for document reads, and `analysis.max_output_chars` bounds its
+output.
 
 ### Filters
 

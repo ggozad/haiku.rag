@@ -33,6 +33,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_MAX_HOST_CALLS = 10_000_000
+
 
 def _host_failure(where: str, e: Exception) -> RuntimeError:
     """The error a program gets for a failure on the host side of a call.
@@ -613,9 +615,16 @@ class Sandbox:
         covers the whole run. ``code_timeout`` is enforced per call elsewhere: the read
         deadline in ``_run_on_loop`` bounds a call that reads, and the pool's
         ``request_timeout`` bounds one that computes.
+
+        ``max_suspensions`` counts host callbacks per session, document reads
+        included, defaults to 1000 and cannot be disabled. The time budgets are
+        the governors here, so it is set where no program reaches it.
         """
         analysis = self._config.analysis
-        return {"max_duration_secs": analysis.code_timeout * analysis.max_executions}
+        return {
+            "max_duration_secs": analysis.code_timeout * analysis.max_executions,
+            "max_suspensions": _MAX_HOST_CALLS,
+        }
 
     async def _ensure_initialized(self) -> tuple[AsyncMontySession, OSAccess]:
         """Check out a worker session and build the VFS on first use."""

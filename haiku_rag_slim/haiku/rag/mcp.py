@@ -464,15 +464,31 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
         (id, title, uri, created_at, metadata), `content.txt` (the whole text),
         `items.jsonl` (one item per line: self_ref, label, text, page_numbers,
         heading_level, chunk_ids), `chunks.jsonl` (one chunk per line: chunk_id,
-        metadata) and `toc.json` (the section tree, each node with an item_range
-        slice into items.jsonl). Read files with `Path.read_text()` or `open()`;
-        a file object cannot be iterated, use `.readlines()`.
-        `await search(query, limit=10)` returns dicts with chunk_id, content,
-        document_id, document_title, document_uri, source, score, page_numbers,
-        headings, doc_item_refs, labels and chunk_meta. `await list_documents()`
-        returns dicts with id, title, uri, created_at, source and metadata.
-        Modules: json, re, math, pathlib. Not available: generators, class
-        inheritance, match statements, decorators, collections.
+        metadata) and `toc.json` (`doc_id`, `title`, `tree`; each node has
+        self_ref, level, title, page_numbers, item_range as a slice into
+        items.jsonl, chunk_ids and children; an empty tree means no headings).
+        Read files with `Path.read_text()` or `open()`; a file object cannot be
+        iterated, use `.readlines()`. `await search(query, limit=10)` returns
+        dicts with chunk_id, content, document_id, document_title, document_uri,
+        source, score, page_numbers, headings, doc_item_refs, labels,
+        picture_refs (the doc_item_refs that are pictures) and chunk_meta.
+        `await list_documents()` returns dicts with id, title, uri, created_at,
+        source and metadata. Both see the documents `filter` and `sources`
+        select. Useful modules include json, re, math, pathlib, datetime,
+        collections, itertools, functools and dataclasses; decimal and
+        statistics do not exist. No generator functions, match statements or
+        class inheritance.
+        Files are read-only, there is no network, a call has a time limit named
+        in the error when it is hit, and output past a size is truncated.
+
+        Map a title or URI to a document id with one `list_documents()` call
+        rather than reading every `metadata.json`. The files carry no `source`,
+        so over several collections group by the `source` of `list_documents()`
+        rows. For a known document's structure read its `toc.json` before
+        searching: `search()` ranks across every document. A hit's
+        `doc_item_refs` are `self_ref` values in `items.jsonl`, which places it
+        in its section. `chunk_ids` on items and `chunk_id` in `chunks.jsonl`
+        join the two files; they are not citations.
 
         Args:
             code: The program. Use `await` on search and list_documents.
