@@ -409,15 +409,12 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
         if node is None:
             raise ToolError(f"No section {section_id!r} in document {document_id!r}")
         start, end = node["item_range"]
+        ordered = sorted(items, key=lambda item: item.position)
         return DocumentSection(
             id=node["self_ref"],
             title=node["title"],
             page_numbers=node["page_numbers"],
-            content="\n\n".join(
-                item.text
-                for item in items
-                if start <= item.position < end and item.text
-            ),
+            content="\n\n".join(item.text for item in ordered[start:end] if item.text),
         )
 
     @mcp.tool(annotations=_read_only("List documents"))

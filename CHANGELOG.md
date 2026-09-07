@@ -55,6 +55,11 @@
   `search_documents`, `search_documents_by_image` and `execute_code`; `source`
   on `get_document`; an unknown name is a tool error. `DocumentInfo.source`.
 
+### Fixed
+
+- `toc.json` `item_range` in the analysis sandbox is a line slice into
+  `items.jsonl`, as documented; it held item positions.
+
 ### Removed
 
 - MCP tools `ask_question` and `analyze`.

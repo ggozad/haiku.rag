@@ -32,8 +32,8 @@ The server opens the database read-only. Ingestion goes through the CLI
 
 With several databases in `lancedb.databases`, the server covers all of
 them, as `haiku-rag search` does. Results, documents and citations name
-theirs in `source`. `sources` on the search and question tools restricts a
-call to a subset; `source` on `get_document` names the database holding the
+theirs in `source`. `sources` on `search_documents`, `search_documents_by_image`
+and `execute_code` restricts a call to a subset; `source` on `get_document` names the database holding the
 document. A name the server does not cover is an error.
 `haiku-rag --db-name NAME mcp` serves one. See
 [Multiple Databases](configuration/storage.md#multiple-databases).

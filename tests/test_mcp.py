@@ -380,6 +380,46 @@ class TestMCPDocumentNavigation:
         assert "Methods" not in intro.content
 
     @pytest.mark.asyncio
+    async def test_a_section_stops_at_the_next_heading_across_a_position_gap(
+        self, temp_db_path
+    ):
+        from haiku.rag.store.models.document import Document as DocumentModel
+        from haiku.rag.store.models.document_item import DocumentItem
+
+        def item(pos, label, text, level=0):
+            return DocumentItem(
+                document_id="",
+                position=pos,
+                self_ref=f"#/texts/{pos}",
+                label=label,
+                text=text,
+                heading_level=level,
+            )
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            doc = await rag.document_repository.create(
+                DocumentModel(content="x", uri="test://gapped", title="Gapped")
+            )
+            items = [
+                item(0, "section_header", "Intro", 1),
+                item(1, "paragraph", "para1"),
+                item(3, "section_header", "Methods", 1),
+                item(4, "paragraph", "para4"),
+            ]
+            for i in items:
+                i.document_id = doc.id
+            await rag.document_item_repository.create_items(doc.id, items)
+
+        section = await _call(
+            create_mcp_server(temp_db_path),
+            "get_document_section",
+            document_id=doc.id,
+            section_id="#/texts/0",
+        )
+
+        assert section.structured_content["content"] == "Intro\n\npara1"
+
+    @pytest.mark.asyncio
     async def test_an_unknown_section_or_document_is_an_error(self, outlined_db):
         db, doc_id = outlined_db
         mcp = create_mcp_server(db)

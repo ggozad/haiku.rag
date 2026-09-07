@@ -502,10 +502,12 @@ def build_toc(
     follows the explicit levels: a header pops the stack until the top is at
     a strictly shallower level, then becomes a child of that top (or a root).
 
-    ``item_range = [position, end_exclusive]`` where ``end_exclusive`` is the
-    position of the next header whose level is the same or shallower (i.e.
-    the next sibling or ancestor that ends this section), or the total item
-    count if no such header exists.
+    ``item_range = [start, end_exclusive]`` indexes the position-ordered item
+    list, which is the line numbering of the sandbox's ``items.jsonl``: ``start``
+    is the header's index and ``end_exclusive`` the index of the next header
+    whose level is the same or shallower (the next sibling or ancestor that
+    ends this section), or the item count if no such header exists. Indices,
+    not positions: positions may have gaps.
 
     ``chunk_ids`` aggregates the chunks covered by all items in the section's
     ``item_range`` (deduped, order preserved). Pass directly to ``cite()`` to
@@ -520,33 +522,30 @@ def build_toc(
     # but the end_exclusive lookahead below silently miscomputes section
     # boundaries if it's not — better to sort once than trust the caller.
     items = sorted(items, key=lambda i: i.position)
-    headers: list[DocumentItem] = [
-        i for i in items if i.label == "section_header" and i.heading_level > 0
+    header_indices = [
+        idx
+        for idx, i in enumerate(items)
+        if i.label == "section_header" and i.heading_level > 0
     ]
-    if not headers:
+    if not header_indices:
         return []
 
-    total = max((i.position for i in items), default=-1) + 1
-    items_by_position: dict[int, DocumentItem] = {i.position: i for i in items}
-
     ends: list[int] = []
-    for idx, h in enumerate(headers):
-        end = total
-        for j in range(idx + 1, len(headers)):
-            if headers[j].heading_level <= h.heading_level:
-                end = headers[j].position
+    for n, idx in enumerate(header_indices):
+        end = len(items)
+        for later in header_indices[n + 1 :]:
+            if items[later].heading_level <= items[idx].heading_level:
+                end = later
                 break
         ends.append(end)
 
     roots: list[dict[str, Any]] = []
     stack: list[tuple[int, dict[str, Any]]] = []
-    for h, end in zip(headers, ends, strict=True):
+    for idx, end in zip(header_indices, ends, strict=True):
+        h = items[idx]
         seen: set[str] = set()
         chunk_ids: list[str] = []
-        for pos in range(h.position, end):
-            item = items_by_position.get(pos)
-            if item is None:
-                continue
+        for item in items[idx:end]:
             for cid in chunk_index.get(item.self_ref, []):
                 if cid not in seen:
                     seen.add(cid)
@@ -556,7 +555,7 @@ def build_toc(
             "level": h.heading_level,
             "title": h.text,
             "page_numbers": list(h.page_numbers),
-            "item_range": [h.position, end],
+            "item_range": [idx, end],
             "chunk_ids": chunk_ids,
             "children": [],
         }

@@ -467,6 +467,34 @@ class TestVfsReadPaths:
             await _read_vfs_text(sandbox, f"/documents/{doc_id}/chunks.jsonl") == first
         )
 
+    async def test_item_range_is_a_line_slice_into_items_jsonl(self, temp_db_path):
+        """`item_range` indexes lines of items.jsonl, as documented, not item
+        positions: a gap in positions must not pull the next heading into a
+        section."""
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc_id = await _empty_doc(client, uri="test://slice", title="Slice")
+            items = [
+                _header(doc_id, 0, 1, "Intro"),
+                _para(doc_id, 1),
+                _header(doc_id, 3, 1, "Methods"),
+                _para(doc_id, 4),
+            ]
+            await client.document_item_repository.create_items(doc_id, items)
+
+        sandbox = Sandbox(temp_db_path, AppConfig(), AnalysisContext())
+        toc = await _read_toc(sandbox, doc_id)
+        raw = await _read_vfs_text(sandbox, f"/documents/{doc_id}/items.jsonl")
+        lines = raw.split("\n")
+
+        intro, methods = toc["tree"]
+        assert intro["item_range"] == [0, 2]
+        assert methods["item_range"] == [2, 4]
+        start, end = intro["item_range"]
+        assert [json.loads(line)["self_ref"] for line in lines[start:end]] == [
+            "#/texts/0",
+            "#/texts/1",
+        ]
+
     async def test_toc_skips_gaps_in_item_positions(self, temp_db_path):
         """Positions need not be contiguous — a heading's span may cover
         positions that carry no item."""
