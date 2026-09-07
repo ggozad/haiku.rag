@@ -26,6 +26,9 @@
 ### Changed
 
 - `pydantic-ai-slim>=2.40.0,<3.0.0`.
+- ruff 0.16.6, ty 0.0.78 and pytest-asyncio 1.4.0 in the dev group.
+  `[tool.ruff] include` excludes Markdown, and `evaluations/` extends the
+  root ruff config instead of resolving as its own project.
 - lancedb 0.38.0.
 - `pyarrow` is a declared dependency, `>=16,<25`.
 - Dependency upper bounds: `typer<0.27.0` (was `<0.22.0`),

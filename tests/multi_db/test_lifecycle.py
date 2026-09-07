@@ -206,8 +206,8 @@ class TestClosingASet:
         await _seed(config, "alpha", ["alpha one"])
         await _seed(config, "beta", ["beta one"])
 
-        released: list[str | None] = []
-        drained: list[str | None] = []
+        released: list[str] = []
+        drained: list[str] = []
 
         async with HaikuRAG(config=config, read_only=True) as rag:
             assert isinstance(rag._session, FederatedSession)

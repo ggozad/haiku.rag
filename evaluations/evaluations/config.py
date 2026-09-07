@@ -7,6 +7,7 @@ from datasets import Dataset
 from pydantic import BaseModel, model_validator
 from pydantic_evals import Case
 from pydantic_evals.evaluators import Evaluator
+
 from haiku.rag.config.models import AppConfig
 
 

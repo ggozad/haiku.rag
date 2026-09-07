@@ -31,5 +31,8 @@ packages = ["evaluations"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 
+[tool.ruff]
+extend = "../pyproject.toml"
+
 [tool.ruff.lint.isort]
 known-first-party = ["haiku", "evaluations"]

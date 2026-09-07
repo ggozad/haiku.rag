@@ -4,7 +4,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal, NamedTuple, cast
 
-from pydantic_evals import Case, Dataset as EvalDataset, set_eval_attribute
+from pydantic_evals import Case, set_eval_attribute
+from pydantic_evals import Dataset as EvalDataset
 from pydantic_evals.evaluators import Evaluator
 from pydantic_evals.reporting import ReportCaseFailure
 from rich.console import Console

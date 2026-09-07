@@ -372,9 +372,8 @@ async def test_conversation_carries_one_state_dict_across_turns(tmp_path):
 
 @pytest.mark.parametrize(("compaction", "expected"), [(False, 0), (True, 1)])
 async def test_conversation_compaction_registration(tmp_path, compaction, expected):
-    from haiku.rag.capabilities.compaction import EvidenceCompactionCapability
-
     from evaluations.capability_runner import run_capability_conversation
+    from haiku.rag.capabilities.compaction import EvidenceCompactionCapability
 
     with patch("evaluations.capability_runner.Agent") as agent_cls:
         agent_cls.return_value.run = AsyncMock(
@@ -455,11 +454,10 @@ async def test_gold_prefix_run_answers_with_history(tmp_path):
 
 def test_records_the_database_each_citation_came_from():
     """A run over several databases records which one grounded the answer."""
+    from evaluations.capability_runner import ToolTraffic, _result_from_run
     from haiku.rag.capabilities._base import EvidenceState
     from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
     from haiku.rag.store.models.citation import Citation
-
-    from evaluations.capability_runner import ToolTraffic, _result_from_run
 
     def cited(chunk_id: str, source: str | None) -> Citation:
         return Citation(
@@ -487,11 +485,10 @@ def test_records_the_database_each_citation_came_from():
 
 def test_a_hand_built_citation_without_a_source_records_an_empty_string():
     """A citation built without a source is recorded as an empty string."""
+    from evaluations.capability_runner import ToolTraffic, _result_from_run
     from haiku.rag.capabilities._base import EvidenceState
     from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
     from haiku.rag.store.models.citation import Citation
-
-    from evaluations.capability_runner import ToolTraffic, _result_from_run
 
     state = EvidenceState(
         citations=["c1"],

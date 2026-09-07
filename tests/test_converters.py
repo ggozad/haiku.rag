@@ -208,9 +208,7 @@ async def test_parse_zip_runs_off_event_loop_thread():
     converter = get_converter(config)
     assert isinstance(converter, DoclingServeConverter)
 
-    converter.client.submit_and_poll_zip = AsyncMock(  # ty: ignore[invalid-assignment]
-        return_value=b"zip-bytes"
-    )
+    converter.client.submit_and_poll_zip = AsyncMock(return_value=b"zip-bytes")
 
     event_loop_thread = threading.current_thread()
     called_from: list[threading.Thread] = []

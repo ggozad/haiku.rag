@@ -702,8 +702,9 @@ class TestFrames:
         assert question_is_answerable(kept) is True
 
     def test_questions_carry_stable_ids(self, monkeypatch) -> None:
-        import evaluations.datasets.frames as frames
         from datasets import Dataset
+
+        import evaluations.datasets.frames as frames
 
         rows = Dataset.from_list(
             [
