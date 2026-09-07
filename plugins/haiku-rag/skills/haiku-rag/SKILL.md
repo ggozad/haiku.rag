@@ -5,6 +5,7 @@ description: Search, read and compute over the user's haiku.rag knowledge base
   from the user's ingested documents, when asked to find, look up, check or
   cite something in their documents or knowledge base, or when the question is
   about the user's own material rather than general knowledge.
+compatibility: Requires the haiku-rag MCP server to be registered in the client.
 allowed-tools:
   - mcp__plugin_haiku-rag_haiku-rag__search_documents
   - mcp__plugin_haiku-rag_haiku-rag__search_documents_by_image

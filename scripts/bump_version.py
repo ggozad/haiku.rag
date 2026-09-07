@@ -2,8 +2,8 @@
 """
 Version bumping script for haiku.rag workspace.
 
-Updates version in all pyproject.toml files, the Claude Code plugin manifest
-and CHANGELOG.md.
+Updates version in all pyproject.toml files, both plugin manifests, and
+CHANGELOG.md.
 """
 
 import re
@@ -56,7 +56,7 @@ def update_example_dependencies(file_path: Path, new_version: str) -> None:
 
 
 def update_plugin_version(file_path: Path, new_version: str) -> None:
-    """Update the version in the Claude Code plugin manifest."""
+    """Update the version in a plugin manifest."""
     content = file_path.read_text()
     updated = re.sub(
         r'^(\s*"version": )"[^"]+"',
@@ -136,12 +136,15 @@ def main():
         root / "app" / "backend" / "pyproject.toml",
     ]
 
-    plugin_file = root / "claude-plugin" / ".claude-plugin" / "plugin.json"
+    plugin_files = [
+        root / "plugins" / "haiku-rag" / ".claude-plugin" / "plugin.json",
+        root / "plugins" / "haiku-rag" / ".codex-plugin" / "plugin.json",
+    ]
     changelog_file = root / "CHANGELOG.md"
 
     # Check all files exist
     for file in (
-        pyproject_files + example_pyproject_files + [plugin_file, changelog_file]
+        pyproject_files + example_pyproject_files + plugin_files + [changelog_file]
     ):
         if not file.exists():
             print(f"Error: {file} not found")
@@ -172,7 +175,8 @@ def main():
     for file in example_pyproject_files:
         update_example_dependencies(file, new_version)
 
-    update_plugin_version(plugin_file, new_version)
+    for file in plugin_files:
+        update_plugin_version(file, new_version)
 
     # Update CHANGELOG.md
     update_changelog(changelog_file, new_version)

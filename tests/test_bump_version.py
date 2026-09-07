@@ -27,12 +27,15 @@ def test_update_plugin_version_rewrites_only_the_version_field(tmp_path, monkeyp
     assert manifest.read_text().endswith("}\n")
 
 
-def test_the_shipped_plugin_manifest_carries_the_package_version():
+def test_the_shipped_plugin_manifests_carry_the_package_version():
     root = Path(__file__).resolve().parents[1]
-    plugin = json.loads(
-        (root / "claude-plugin" / ".claude-plugin" / "plugin.json").read_text()
-    )
-
-    assert plugin["version"] == bump_version.get_current_version(
+    package_version = bump_version.get_current_version(
         root / "haiku_rag_slim" / "pyproject.toml"
     )
+    for client in ("claude", "codex"):
+        manifest = json.loads(
+            (
+                root / "plugins" / "haiku-rag" / f".{client}-plugin" / "plugin.json"
+            ).read_text()
+        )
+        assert manifest["version"] == package_version

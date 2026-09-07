@@ -4,9 +4,8 @@
 
 ### Added
 
-- Claude Code plugin under `claude-plugin/`: the server configuration and the
-  `haiku-rag` skill. `claude plugin marketplace add ggozad/haiku.rag`, then
-  `claude plugin install haiku-rag`.
+- Claude Code and Codex plugin under `plugins/haiku-rag/`: two client manifests
+  sharing the server configuration and the `haiku-rag` Agent Skill.
 - MCP tool `execute_code(code, filter, sources)`: runs a program in the
   analysis sandbox over the selected documents and returns what it printed;
   one sandbox per call.

@@ -57,9 +57,33 @@ plugin:
 claude mcp add haiku-rag -- haiku-rag mcp --stdio
 ```
 
-The skill works with that registration too: copy `claude-plugin/skills/haiku-rag`
+The skill works with that registration too: copy `plugins/haiku-rag/skills/haiku-rag`
 into `~/.claude/skills/` and change the tool prefix in its `allowed-tools` from
 `mcp__plugin_haiku-rag_haiku-rag__` to `mcp__haiku-rag__`.
+
+## Codex
+
+The repository's Codex plugin registers the server and installs the same Agent
+Skill:
+
+```bash
+codex plugin marketplace add ggozad/haiku.rag
+codex plugin add haiku-rag@haiku-rag
+```
+
+The plugin runs `haiku-rag mcp --stdio`, so `haiku-rag` must be on the PATH.
+Invoke the skill as `$haiku-rag`. Codex can also select it automatically from
+its description. To register the server without the plugin:
+
+```bash
+codex mcp add haiku-rag -- haiku-rag mcp --stdio
+```
+
+The skill works with that registration too: copy
+`plugins/haiku-rag/skills/haiku-rag` into `~/.agents/skills/`.
+The `allowed-tools` field supplies Claude Code's tool pre-approval and may be
+ignored by other Agent Skills clients. Codex configures MCP tool approvals
+separately in `config.toml`.
 
 ## Claude Desktop Integration
 
@@ -168,8 +192,8 @@ traceback goes to the server log.
 
 The server publishes `instructions` describing the knowledge base: what it
 holds, when to reach for it, the collection names when it covers several, and
-`prompts.domain_preamble` when set. Claude Code shows them to the model. Claude
-Desktop does not, so every tool description stands on its own.
+`prompts.domain_preamble` when set. Claude Code and Codex show them to the
+model. Claude Desktop does not, so every tool description stands on its own.
 
 ## Continuous ingestion
 

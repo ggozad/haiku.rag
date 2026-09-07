@@ -1158,27 +1158,39 @@ class TestMCPErrorContract:
         )
 
 
-class TestClaudeCodePlugin:
-    """The plugin under claude-plugin/ points at the server this module builds."""
+class TestAgentPlugins:
+    """The shared Claude Code and Codex plugin points at this MCP server."""
 
     root = Path(__file__).resolve().parents[1]
 
     def test_the_manifests_name_the_plugin_and_its_server(self):
         import json
 
-        plugin = json.loads(
-            (self.root / "claude-plugin/.claude-plugin/plugin.json").read_text()
+        claude_plugin = json.loads(
+            (self.root / "plugins/haiku-rag/.claude-plugin/plugin.json").read_text()
         )
-        marketplace = json.loads(
+        codex_plugin = json.loads(
+            (self.root / "plugins/haiku-rag/.codex-plugin/plugin.json").read_text()
+        )
+        claude_marketplace = json.loads(
             (self.root / ".claude-plugin/marketplace.json").read_text()
         )
-        servers = json.loads((self.root / "claude-plugin/.mcp.json").read_text())
+        codex_marketplace = json.loads(
+            (self.root / ".agents/plugins/marketplace.json").read_text()
+        )
+        servers = json.loads((self.root / "plugins/haiku-rag/.mcp.json").read_text())
 
-        assert plugin["name"] == "haiku-rag"
-        assert plugin["description"]
-        [entry] = marketplace["plugins"]
-        assert entry["name"] == plugin["name"]
-        assert entry["source"] == "./claude-plugin"
+        assert claude_plugin["name"] == codex_plugin["name"] == "haiku-rag"
+        assert claude_plugin["description"]
+        assert codex_plugin["description"]
+        assert codex_plugin["skills"] == "./skills/"
+        assert codex_plugin["mcpServers"] == "./.mcp.json"
+        [claude_entry] = claude_marketplace["plugins"]
+        assert claude_entry["name"] == claude_plugin["name"]
+        assert claude_entry["source"] == "./plugins/haiku-rag"
+        [codex_entry] = codex_marketplace["plugins"]
+        assert codex_entry["name"] == codex_plugin["name"]
+        assert codex_entry["source"]["path"] == "./plugins/haiku-rag"
         assert servers["mcpServers"]["haiku-rag"]["args"] == ["mcp", "--stdio"]
 
     @pytest.mark.asyncio
@@ -1187,7 +1199,7 @@ class TestClaudeCodePlugin:
     ):
         import yaml
 
-        text = (self.root / "claude-plugin/skills/haiku-rag/SKILL.md").read_text()
+        text = (self.root / "plugins/haiku-rag/skills/haiku-rag/SKILL.md").read_text()
         _, frontmatter, _ = text.split("---", 2)
         skill = yaml.safe_load(frontmatter)
         prefix = "mcp__plugin_haiku-rag_haiku-rag__"

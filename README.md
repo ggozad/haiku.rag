@@ -110,7 +110,7 @@ For direct agent composition, see the [capabilities documentation](https://ggoza
 
 ## MCP Server
 
-Use with AI assistants like Claude Code and Claude Desktop:
+Use with AI assistants like Claude Code, Codex, and Claude Desktop:
 
 ```bash
 haiku-rag mcp --stdio
@@ -121,6 +121,13 @@ In Claude Code, install the plugin, which registers the server and a skill:
 ```bash
 claude plugin marketplace add ggozad/haiku.rag
 claude plugin install haiku-rag
+```
+
+In Codex, install the same plugin from its marketplace:
+
+```bash
+codex plugin marketplace add ggozad/haiku.rag
+codex plugin add haiku-rag@haiku-rag
 ```
 
 Add to your Claude Desktop configuration:
@@ -136,7 +143,7 @@ Add to your Claude Desktop configuration:
 }
 ```
 
-Provides search, document, QA, and analysis tools directly in your AI assistant.
+Provides search, document reading, and analysis tools directly in your AI assistant.
 
 ## Examples
 
