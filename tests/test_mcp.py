@@ -1,4 +1,3 @@
-import logging
 import re
 from pathlib import Path
 
@@ -8,6 +7,7 @@ from fastmcp.exceptions import ToolError
 from haiku.rag.client import HaikuRAG
 from haiku.rag.mcp import _covering as _mcp_covering
 from haiku.rag.mcp import create_mcp_server
+from haiku.rag.store.exceptions import UnknownDatabaseError
 from haiku.rag.store.models import Chunk, Document, SearchResult
 from haiku.rag.tools.document import DocumentInfo
 from tests.multi_db.helpers import _config, _seed, _seed_expandable
@@ -485,7 +485,7 @@ class TestMCPDocumentNavigation:
         assert (
             await section(document_id=doc.id, section_id="#/texts/0", source="beta")
         ).title == "Only in beta"
-        with pytest.raises(ToolError, match="nope"):
+        with pytest.raises(UnknownDatabaseError, match="nope"):
             await outline(document_id=doc.id, source="nope")
         with pytest.raises(ToolError, match=doc.id):
             await outline(document_id=doc.id, source="alpha")
@@ -908,11 +908,10 @@ class TestMCPCoversTheConfiguredSet:
     async def test_an_unknown_database_is_an_error_not_an_empty_result(
         self, two_dbs, multimodal_embedder, tool_name, kwargs
     ):
-        mcp = _covering_all(two_dbs)
-        tool = await _get_tool(mcp, tool_name)
+        result = await _call(_covering_all(two_dbs), tool_name, **kwargs)
 
-        with pytest.raises(ToolError, match="nope"):
-            await tool(**kwargs)
+        assert result.is_error
+        assert "nope" in result.content[0].text
 
     @pytest.mark.asyncio
     async def test_a_filtered_search_touches_only_the_selected_databases(self, two_dbs):
@@ -1029,9 +1028,8 @@ class TestMCPImageQuery:
 
 @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
 class TestMCPErrorContract:
-    """A failure is an error on the wire, never an empty result. Expected
-    failures say what went wrong; anything else is masked and logged on the
-    server."""
+    """A failure is an error on the wire carrying its message, never an empty
+    result."""
 
     @pytest.mark.asyncio
     async def test_an_unknown_document_is_an_error(self, mcp_db):
@@ -1051,37 +1049,13 @@ class TestMCPErrorContract:
             ("execute_code", {"code": "print(1)"}),
         ],
     )
-    async def test_an_invalid_filter_is_an_error_naming_the_filter(
-        self, mcp_db, tool_name, kwargs
-    ):
+    async def test_an_invalid_filter_is_an_error(self, mcp_db, tool_name, kwargs):
         result = await _call(
             create_mcp_server(mcp_db), tool_name, filter="no_such_column = 1", **kwargs
         )
 
         assert result.is_error
-        assert "no_such_column = 1" in result.content[0].text
-        assert "created_at" in result.content[0].text
-        assert "_rowid" not in result.content[0].text
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("filter", [None, "title = 'AI Overview'"])
-    async def test_a_value_error_from_the_read_is_not_an_invalid_filter(
-        self, mcp_db, monkeypatch, filter
-    ):
-        """Only the filter check translates ValueError; one raised by the read
-        itself, with or without a valid filter, stays masked."""
-
-        async def boom(self, *args, **kw):
-            raise ValueError("boom at /secret/path")
-
-        monkeypatch.setattr(HaikuRAG, "search", boom)
-        result = await _call(
-            create_mcp_server(mcp_db), "search_documents", query="x", filter=filter
-        )
-
-        assert result.is_error
-        assert "filter" not in result.content[0].text
-        assert "/secret/path" not in result.content[0].text
+        assert "no_such_column" in result.content[0].text
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -1125,34 +1099,17 @@ class TestMCPErrorContract:
             ("list_documents", "list_documents", {}),
         ],
     )
-    async def test_an_unexpected_failure_is_masked_and_logged(
-        self,
-        mcp_db,
-        multimodal_embedder,
-        monkeypatch,
-        caplog,
-        client_method,
-        tool_name,
-        kwargs,
+    async def test_an_unexpected_failure_carries_its_message(
+        self, mcp_db, multimodal_embedder, monkeypatch, client_method, tool_name, kwargs
     ):
         async def boom(self, *args, **kw):
             raise RuntimeError("boom at /secret/path")
 
         monkeypatch.setattr(HaikuRAG, client_method, boom)
-        # fastmcp's logger does not propagate, so listen to it directly.
-        fastmcp_logger = logging.getLogger("fastmcp")
-        fastmcp_logger.addHandler(caplog.handler)
-        try:
-            result = await _call(create_mcp_server(mcp_db), tool_name, **kwargs)
-        finally:
-            fastmcp_logger.removeHandler(caplog.handler)
+        result = await _call(create_mcp_server(mcp_db), tool_name, **kwargs)
 
         assert result.is_error
-        assert "/secret/path" not in result.content[0].text
-        assert any(
-            r.exc_info and "boom at /secret/path" in str(r.exc_info[1])
-            for r in caplog.records
-        )
+        assert "boom at /secret/path" in result.content[0].text
 
 
 class TestAgentPlugins:

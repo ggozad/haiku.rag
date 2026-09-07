@@ -46,10 +46,8 @@
   `ImageContent` blocks, with no structured content.
   `SearchResult.format_for_agent(include_document_id=, include_chunk_meta=)`;
   `collect_pictures` in `haiku.rag.tools.search`.
-- MCP tools raise on failure; an empty result no longer doubles as an error.
-  Unknown document, unknown collection, invalid filter, invalid base64 and a
-  failing program carry a message. Anything else is masked
-  (`mask_error_details=True`) and logged server-side.
+- MCP tools raise on failure, with the error's message; an empty result no
+  longer doubles as an error.
 - `haiku-rag mcp` covers the configured `lancedb.databases` set. `sources` on
   `search_documents`, `search_documents_by_image` and `execute_code`; `source`
   on `get_document`; an unknown name is a tool error. `DocumentInfo.source`.

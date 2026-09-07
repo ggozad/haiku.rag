@@ -1,6 +1,5 @@
 import asyncio
-import logging
-import re
+import base64
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from importlib import metadata
@@ -17,9 +16,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.context import build_toc
 from haiku.rag.sandbox import AnalysisContext, Sandbox, recovery_hint
-from haiku.rag.store.exceptions import UnknownDatabaseError
 from haiku.rag.store.models import Document, SearchResult
-from haiku.rag.store.models.document_item import DocumentItem
 from haiku.rag.store.schema import DocumentMetaRecord
 from haiku.rag.tools.document import DocumentInfo, DocumentSection, OutlineNode
 from haiku.rag.tools.search import collect_pictures
@@ -28,8 +25,7 @@ if TYPE_CHECKING:
     from typing import Any
 
     from haiku.rag.client.scope import DatabaseScope
-
-logger = logging.getLogger(__name__)
+    from haiku.rag.store.models.document_item import DocumentItem
 
 _FILTER_COLUMNS = ", ".join(DocumentMetaRecord.model_fields)
 
@@ -55,41 +51,12 @@ def _read_only(title: str) -> ToolAnnotations:
 
 
 def _decode_image(image_base64: str) -> bytes:
-    import base64
-
     try:
         return base64.b64decode(image_base64, validate=True)
     except ValueError as e:
         # binascii.Error for characters outside the alphabet or bad padding,
         # ValueError itself for non-ASCII input.
         raise ToolError("Invalid base64 image") from e
-
-
-async def _check_filter(
-    rag: HaikuRAG, filter: str | None, sources: list[str] | None = None
-) -> None:
-    """Evaluate a filter on its own before the read that would use it.
-
-    A filtered count on one selected database runs the same predicate on the
-    same table and nothing else, so a ValueError here is the query engine
-    rejecting the filter; its message names columns and the statement, never
-    a location. A ValueError raised later in the read stays masked. Only the
-    selection is touched: every database shares the schema, so one suffices.
-    """
-    if filter is None:
-        return
-    selected = await rag.clients_covering(sources)
-    if not selected:
-        return
-    try:
-        await selected[0].count_documents(filter=filter)
-    except ValueError as e:
-        # The engine lists its own columns too, lance internals among them.
-        reason = re.sub(r"\s*Valid fields are .*", "", str(e), flags=re.DOTALL)
-        raise ToolError(
-            f"Invalid filter {filter!r}: {reason.rstrip('. ')}. "
-            f"Columns: {_FILTER_COLUMNS}."
-        ) from e
 
 
 def _instructions(scope: "DatabaseScope", config: AppConfig) -> str:
@@ -107,7 +74,7 @@ def _instructions(scope: "DatabaseScope", config: AppConfig) -> str:
     if scope.covers_multiple:
         lines.append(
             f"It holds several collections: {', '.join(scope.names)}. Results "
-            "and citations name theirs in `source`; pass `sources` to use a subset."
+            "name theirs in `source`; pass `sources` to use a subset."
         )
     if config.prompts.domain_preamble:
         lines.append(config.prompts.domain_preamble)
@@ -119,8 +86,6 @@ def _search_result(results: list[SearchResult], covers_multiple: bool) -> ToolRe
     metadata, then each distinct picture as an image block labelled with its
     result. No structured content: a client given both shows the model the
     JSON and drops the text, or shows both."""
-    import base64
-
     total = len(results)
     text = "\n\n".join(
         result.format_for_agent(
@@ -196,8 +161,7 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
 
     Internal, as ``HaikuRAG._covering`` is: the public factory takes a path and
     resolves it, which is its own job. A caller that resolved already passes the
-    scope, so the configured name survives, which results and citations carry as
-    ``source``.
+    scope, so the configured name survives, which results carry as ``source``.
     """
     client: HaikuRAG | None = None
     stack = AsyncExitStack()
@@ -233,14 +197,14 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
             finally:
                 client = None
 
-    # Masking keeps paths and provider URLs out of an unexpected error's text;
-    # the traceback goes to the server log. A ToolError reaches the client as is.
+    # Explicit: the setting is also read from the environment, and the contract
+    # is that every failure reaches the client with its message.
     mcp = FastMCP(
         "haiku-rag",
         instructions=_instructions(scope, config),
         version=metadata.version("haiku.rag-slim"),
         lifespan=lifespan,
-        mask_error_details=True,
+        mask_error_details=False,
     )
 
     @mcp.tool(annotations=_read_only("Search documents"))
@@ -272,17 +236,13 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
                 False for a smaller response.
         """
         rag = await _client()
-        try:
-            await _check_filter(rag, filter, sources)
-            results = await rag.search(
-                query,
-                limit=limit,
-                filter=filter,
-                include_images=include_images,
-                sources=sources,
-            )
-        except UnknownDatabaseError as e:
-            raise ToolError(str(e)) from e
+        results = await rag.search(
+            query,
+            limit=limit,
+            filter=filter,
+            include_images=include_images,
+            sources=sources,
+        )
         return _search_result(await rag.expand_context(results), rag.covers_multiple)
 
     # Image-as-query tool, only registered when the configured embedder
@@ -317,17 +277,13 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
             """
             raw = _decode_image(image_base64)
             rag = await _client()
-            try:
-                await _check_filter(rag, filter, sources)
-                results = await rag.search(
-                    raw,
-                    limit=limit,
-                    filter=filter,
-                    include_images=include_images,
-                    sources=sources,
-                )
-            except UnknownDatabaseError as e:
-                raise ToolError(str(e)) from e
+            results = await rag.search(
+                raw,
+                limit=limit,
+                filter=filter,
+                include_images=include_images,
+                sources=sources,
+            )
             return _search_result(
                 await rag.expand_context(results), rag.covers_multiple
             )
@@ -346,24 +302,18 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
                 is asked.
         """
         rag = await _client()
-        try:
-            document = await rag.get_document_by_id(document_id, source)
-        except UnknownDatabaseError as e:
-            raise ToolError(str(e)) from e
+        document = await rag.get_document_by_id(document_id, source)
         if document is None:
             raise ToolError(f"No document with id {document_id!r}")
         return document
 
-    async def _items_of(document_id: str, source: str | None) -> list[DocumentItem]:
+    async def _items_of(document_id: str, source: str | None) -> list["DocumentItem"]:
         """A document's items in reading order, from the database holding it."""
         rag = await _client()
-        try:
-            document = await rag.get_document_by_id(document_id, source)
-            if document is None:
-                raise ToolError(f"No document with id {document_id!r}")
-            owner = await rag.reader_for(source or document.source)
-        except UnknownDatabaseError as e:
-            raise ToolError(str(e)) from e
+        document = await rag.get_document_by_id(document_id, source)
+        if document is None:
+            raise ToolError(f"No document with id {document_id!r}")
+        owner = await rag.reader_for(source or document.source)
         assert owner is not None, "a stored document names its database"
         return await owner.document_item_repository.get_all_items(document_id)
 
@@ -434,7 +384,6 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
             offset: How many documents to skip, for paging.
         """
         rag = await _client()
-        await _check_filter(rag, filter)
         documents = await rag.list_documents(limit, offset, filter)
         return [
             DocumentInfo(
@@ -498,10 +447,7 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
             scope, config, AnalysisContext(filter=filter, sources=sources), rag=rag
         )
         try:
-            await _check_filter(rag, filter, sources)
             result = await sandbox.execute(code)
-        except UnknownDatabaseError as e:
-            raise ToolError(str(e)) from e
         finally:
             await sandbox.close()
         if not result.success:

@@ -31,8 +31,8 @@ The server opens the database read-only. Ingestion goes through the CLI
 ## Collections
 
 With several databases in `lancedb.databases`, the server covers all of
-them, as `haiku-rag search` does. Results, documents and citations name
-theirs in `source`. `sources` on `search_documents`, `search_documents_by_image`
+them, as `haiku-rag search` does. Results and documents name theirs in
+`source`. `sources` on `search_documents`, `search_documents_by_image`
 and `execute_code` restricts a call to a subset; `source` on `get_document` names the database holding the
 document. A name the server does not cover is an error.
 `haiku-rag --db-name NAME mcp` serves one. See
@@ -190,13 +190,11 @@ title = 'Q3 report'
 
 ### Errors
 
-A failure is an MCP error, never an empty result. Expected failures carry a
-message: a document or section id that matches nothing, a collection the
-server does not cover, a filter the query engine rejects (with its message),
-invalid base64, and a program that fails in `execute_code`, with the error the
-program hit.
-Anything else reaches the client as `Error calling tool 'name'` and its
-traceback goes to the server log.
+A failure is an MCP error carrying its message, never an empty result: a
+document or section id that matches nothing, a collection the server does not
+cover, a filter the query engine rejects, invalid base64, a program that fails
+in `execute_code` with the error it hit, and anything unexpected with its own
+message.
 
 ### Instructions
 
