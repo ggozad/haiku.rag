@@ -51,6 +51,8 @@
 - `haiku-rag mcp` covers the configured `lancedb.databases` set. `sources` on
   `search_documents`, `search_documents_by_image` and `execute_code`; `source`
   on `get_document`; an unknown name is a tool error. `DocumentInfo.source`.
+- `footnote` items are no longer filtered from expanded context. The noise
+  labels are `page_header`, `page_footer` and `document_index`.
 
 ### Fixed
 
@@ -59,6 +61,8 @@
 - Past `analysis.code_timeout` a sandbox program starts no further host call.
   Files served from memory and in-code `search()` / `list_documents()` were
   not checked against the deadline.
+- Context expansion keeps the item a result matched on when it carries a
+  noise label, and counts it toward the character budget.
 
 ### Removed
 
