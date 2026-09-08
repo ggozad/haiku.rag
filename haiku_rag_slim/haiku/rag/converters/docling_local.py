@@ -18,6 +18,7 @@ from haiku.rag.converters.base import (
 from haiku.rag.converters.text_utils import TextFileHandler, docling_safe_name
 
 if TYPE_CHECKING:
+    from docling.backend.abstract_backend import AbstractDocumentBackend
     from docling.datamodel.base_models import InputFormat
     from docling.datamodel.pipeline_options import PdfPipelineOptions
     from docling.document_converter import DocumentConverter as DoclingDocConverter
@@ -36,6 +37,21 @@ _CONVERTERS: dict[str, "DoclingDocConverter"] = {}
 # HTML and Markdown backend options carry the per-document source_uri. Both run
 # SimplePipeline, which loads no models, so they get a converter per call.
 _URI_AWARE_EXTENSIONS = frozenset({".html", ".xhtml", ".md", ".qmd", ".rmd"})
+
+
+def _pdf_backend(name: str) -> "type[AbstractDocumentBackend]":
+    """Resolve `conversion_options.pdf_backend` to its docling backend class."""
+    from docling.backend.docling_parse_backend import (
+        DoclingParseDocumentBackend,
+        ThreadedDoclingParseDocumentBackend,
+    )
+    from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
+
+    return {
+        "threaded_docling_parse": ThreadedDoclingParseDocumentBackend,
+        "docling_parse": DoclingParseDocumentBackend,
+        "pypdfium2": PyPdfiumDocumentBackend,
+    }[name]
 
 
 class DoclingLocalConverter(DocumentConverter):
@@ -180,7 +196,6 @@ class DoclingLocalConverter(DocumentConverter):
             pipeline_options: Wired into every format option; built from
                 configuration when omitted.
         """
-        from docling.backend.docling_parse_backend import DoclingParseDocumentBackend
         from docling.datamodel.backend_options import (
             HTMLBackendOptions,
             MarkdownBackendOptions,
@@ -205,7 +220,7 @@ class DoclingLocalConverter(DocumentConverter):
         return {
             InputFormat.PDF: PdfFormatOption(
                 pipeline_options=pipeline_options,
-                backend=DoclingParseDocumentBackend,
+                backend=_pdf_backend(opts.pdf_backend),
             ),
             InputFormat.IMAGE: ImageFormatOption(pipeline_options=pipeline_options),
             InputFormat.HTML: HTMLFormatOption(
@@ -233,6 +248,8 @@ class DoclingLocalConverter(DocumentConverter):
         """Yield the converter shared by every conversion with these pipeline
         options, holding the lock for the caller's conversion.
 
+        The key covers every input to the converter: the pipeline options, and
+        `pdf_backend`, which is a format option rather than a pipeline one.
         `serialize_as_any` is required for the key: without it pydantic
         serializes the nested option models as their declared type, rendering
         them as `{}` and hiding `table_mode` and the OCR engine.
@@ -243,7 +260,12 @@ class DoclingLocalConverter(DocumentConverter):
 
         pipeline_options = self._build_pipeline_options()
         key = hashlib.md5(
-            pipeline_options.model_dump_json(serialize_as_any=True).encode("utf-8"),
+            b"\0".join(
+                (
+                    pipeline_options.model_dump_json(serialize_as_any=True).encode(),
+                    self.config.processing.conversion_options.pdf_backend.encode(),
+                )
+            ),
             usedforsecurity=False,
         ).hexdigest()
 

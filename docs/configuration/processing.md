@@ -185,6 +185,18 @@ continuously:
 
 The `conversion_options` section allows fine-grained control over document conversion. These options work with both `docling-local` and `docling-serve` converters.
 
+#### PDF Parsing
+
+```yaml
+conversion_options:
+  pdf_backend: threaded_docling_parse   # threaded_docling_parse, docling_parse, pypdfium2
+```
+
+- **pdf_backend**: The parser docling uses to read a PDF. `threaded_docling_parse` is docling's own default and the one docling-serve applies to a request that does not name one. The parsers segment a document differently, so both converters are given this same value: change it and expect different items, chunk boundaries and chunk ids on the next ingest.
+  - `threaded_docling_parse` (default): concurrent page parsing, recommended upstream
+  - `docling_parse`: single-threaded, for serialized page parsing
+  - `pypdfium2`: faster and simpler, less layout detail
+
 #### OCR Settings
 
 ```yaml

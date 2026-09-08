@@ -4,6 +4,12 @@
 
 ### Added
 
+- `processing.conversion_options.pdf_backend`, one of
+  `threaded_docling_parse` (default), `docling_parse` or `pypdfium2`. Both
+  converters use it, so the local one and docling-serve parse a PDF the same
+  way. The local converter previously named `docling_parse` while a request
+  omitting the field left docling-serve on its own default, and the two
+  parsers segment items differently.
 - `provider: vllm` on a model config, served by pydantic-ai's
   `VLLMProvider`. `base_url` is accepted with or without `/v1`, and
   `api_key` is honored.
@@ -26,10 +32,12 @@
 ### Changed
 
 - `pydantic-ai-slim>=2.40.0,<3.0.0`.
-- docling 2.124.0 and docling-core 2.93.0, pinned exactly, and the
-  docling-serve compose images pinned to `v1.32.0`, which is the release
-  bundling that pair. The local and serve converters are asserted to agree,
-  so the client and the server it is tested against move together.
+- The docling stack is pinned exactly to what docling-serve `v1.32.0` ships,
+  read from the image: `docling==2.124.0`, `docling-core==2.93.0`,
+  `docling-ibm-models==4.0.1`, `docling-parse==7.16.0`. The compose images
+  are pinned to `v1.32.0` to match. docling-slim only floors these, so a
+  resolver otherwise lands on a different layout and table-structure model
+  than the server runs.
 - Conversion output moves with docling 2.124.0: text items merge and split
   differently, hyphenated line breaks are joined, a heading or list marker can
   carry a tab where it carried a space, which reaches `ChunkMetadata.headings`,

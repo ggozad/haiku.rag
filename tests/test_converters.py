@@ -660,6 +660,28 @@ class TestDoclingLocalConverter:
                 f"{fmt} must share the PDF pipeline_options instance"
             )
 
+    @pytest.mark.parametrize(
+        ("configured", "expected"),
+        [
+            ("threaded_docling_parse", "ThreadedDoclingParseDocumentBackend"),
+            ("docling_parse", "DoclingParseDocumentBackend"),
+            ("pypdfium2", "PyPdfiumDocumentBackend"),
+        ],
+    )
+    def test_pdf_backend_follows_config(self, config, configured, expected):
+        """The PDF backend is the configured one, not a docling default.
+
+        docling-serve applies its own default to a request that omits
+        `pdf_backend`, and the parsers segment items differently, so the two
+        converters agree only while both are told the same one.
+        """
+        from docling.datamodel.base_models import InputFormat
+
+        config.processing.conversion_options.pdf_backend = configured
+        options = DoclingLocalConverter(config)._build_format_options()
+
+        assert options[InputFormat.PDF].backend.__name__ == expected
+
     def test_build_format_options_propagates_fetch_remote_images(self, config):
         """HTML and Markdown FormatOptions reflect `fetch_remote_images`."""
         from docling.datamodel.backend_options import (
@@ -1181,6 +1203,33 @@ class TestSharedDoclingConverter:
         assert docling_calls.constructions == 1
 
     @pytest.mark.asyncio
+    async def test_each_pdf_backend_gets_its_own_converter(
+        self, config, csv_file, docling_calls
+    ):
+        """Two backends give two converters.
+
+        `pdf_backend` is a format option, so it is absent from the pipeline
+        options the key is otherwise built from.
+        """
+        from docling.datamodel.base_models import InputFormat
+
+        for backend in ("threaded_docling_parse", "docling_parse"):
+            config.processing.conversion_options.pdf_backend = backend
+            await DoclingLocalConverter(config).convert_file(
+                csv_file, source_uri=csv_file.as_uri()
+            )
+
+        assert docling_calls.constructions == 2
+        backends = [
+            options[InputFormat.PDF].backend.__name__
+            for options in docling_calls.format_options
+        ]
+        assert backends == [
+            "ThreadedDoclingParseDocumentBackend",
+            "DoclingParseDocumentBackend",
+        ]
+
+    @pytest.mark.asyncio
     async def test_concurrent_conversions_do_not_overlap(
         self, config, csv_file, docling_calls
     ):
@@ -1279,6 +1328,17 @@ class TestDoclingServeConverter:
     def test_initialization(self, converter):
         """Test converter initialization."""
         assert converter.client.base_url == "http://localhost:5001"
+
+    def test_conversion_data_sends_the_configured_pdf_backend(self, config):
+        """The request names the backend.
+
+        docling-serve applies its own default to a request that omits
+        `pdf_backend`.
+        """
+        config.processing.conversion_options.pdf_backend = "docling_parse"
+        data = DoclingServeConverter(config)._build_conversion_data()
+
+        assert data["pdf_backend"] == "docling_parse"
 
     def test_supported_extensions(self, converter):
         """Test that converter reports correct supported extensions."""

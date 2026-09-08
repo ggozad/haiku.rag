@@ -243,6 +243,13 @@ class ConversionOptions(ConfigModel):
     table_mode: Literal["fast", "accurate"] = "accurate"
     table_cell_matching: bool = True
 
+    # docling's own default, and what docling-serve applies to a request that
+    # omits it. The parsers segment items differently, so the local and serve
+    # converters diverge unless both are told the same one.
+    pdf_backend: Literal["threaded_docling_parse", "docling_parse", "pypdfium2"] = (
+        "threaded_docling_parse"
+    )
+
     # Image options
     images_scale: float = Field(default=2.0, gt=0)
     generate_page_images: bool = True
