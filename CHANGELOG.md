@@ -4,12 +4,16 @@
 
 ### Added
 
-- `processing.conversion_options.pdf_backend`, one of
-  `threaded_docling_parse` (default), `docling_parse` or `pypdfium2`. Both
-  converters use it, so the local one and docling-serve parse a PDF the same
-  way. The local converter previously named `docling_parse` while a request
-  omitting the field left docling-serve on its own default, and the two
-  parsers segment items differently.
+- `processing.conversion_options.pdf_backend`, one of `docling_parse`
+  (default), `threaded_docling_parse` or `pypdfium2`. Both converters send it,
+  so the local one and docling-serve parse a PDF the same way. docling's own
+  default is `threaded_docling_parse`, and it is not ours: on some documents
+  its page producer never delivers and `standard_pdf_pipeline.get_batch` waits
+  on an unclosed queue with no timeout, so the conversion never returns and
+  docling's process-wide converter cache carries the wedged pipeline into
+  every later conversion. Measured over ten arXiv papers against
+  `docling_parse`, it also leaves one table undetected and 7% fewer table
+  cells; `pypdfium2` extracts 7% fewer words and 28% fewer table cells.
 - `provider: vllm` on a model config, served by pydantic-ai's
   `VLLMProvider`. `base_url` is accepted with or without `/v1`, and
   `api_key` is honored.
@@ -38,14 +42,11 @@
   are pinned to `v1.32.0` to match. docling-slim only floors these, so a
   resolver otherwise lands on a different layout and table-structure model
   than the server runs.
-- Conversion output moves with docling 2.124.0: text items merge and split
-  differently, hyphenated line breaks are joined, a heading or list marker can
-  carry a tab where it carried a space, which reaches `ChunkMetadata.headings`,
-  repeated page headers and footers are labelled furniture rather than body
-  text so they no longer reach `document_items` or chunks, and a table can be
-  recognised as text instead. An existing database is untouched until a
-  document is re-ingested; re-ingesting a corpus produces different chunk ids
-  and content.
+- Conversion output moves with docling 2.124.0: adjacent text items merge, so
+  a 9-page paper yields 130 items where it yielded 141, carrying the same
+  text, and chunk boundaries fall in different places. An existing database is
+  untouched until a document is re-ingested; re-ingesting a corpus produces
+  different chunk ids.
 - `processing.split_pages` no longer reproduces single-pass conversion
   exactly. A slice sees only its own pages, so a paragraph spanning a slice
   boundary stays two items and a caption near one can order differently:
