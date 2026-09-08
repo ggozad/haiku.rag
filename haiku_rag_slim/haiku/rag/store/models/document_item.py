@@ -82,11 +82,28 @@ def extract_item_text(
       so pictures carry meaningful prose into chunk text and survive
       ``expand_with_items``' ``if item.text:`` filter; otherwise fall back to
       the picture's caption text.
+    - Items whose own text is empty because docling pushed mixed inline
+      content (e.g. a paragraph or list item containing a code span or link)
+      into a child InlineGroup instead: serialize that group, the same way
+      docling itself renders it back to markdown.
     """
-    from docling_core.types.doc.document import PictureItem, TableItem
+    from docling_core.types.doc.document import InlineGroup, PictureItem, TableItem
 
     if text := getattr(item, "text", None):
         return text
+
+    def _serialize(target: Any) -> str | None:
+        try:
+            serializer = get_serializer() if get_serializer is not None else None
+            if serializer is None:
+                from docling_core.transforms.serializer.markdown import (
+                    MarkdownDocSerializer,
+                )
+
+                serializer = MarkdownDocSerializer(doc=docling_doc)
+            return serializer.serialize(item=target).text
+        except Exception:
+            return None
 
     if isinstance(item, PictureItem):
         if description := _picture_description_text(item):
@@ -94,18 +111,12 @@ def extract_item_text(
         return _picture_caption_text(item, docling_doc)
 
     if isinstance(item, TableItem):
-        try:
-            if get_serializer is None:
-                from docling_core.transforms.serializer.markdown import (
-                    MarkdownDocSerializer,
-                )
+        return _serialize(item)
 
-                serializer = MarkdownDocSerializer(doc=docling_doc)
-            else:
-                serializer = get_serializer()
-            return serializer.serialize(item=item).text
-        except Exception:
-            pass
+    if item.children:
+        first_child = item.children[0].resolve(docling_doc)
+        if isinstance(first_child, InlineGroup):
+            return _serialize(first_child)
 
     return None
 

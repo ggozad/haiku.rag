@@ -891,6 +891,159 @@ async def test_replace_for_document_with_no_items_deletes_existing(temp_db_path)
         assert await repo.get_all_items("doc-1") == []
 
 
+def _doc_with_inline_group_list_item(second_child_group: bool = False):
+    """A ListItem whose content docling pushed into a child InlineGroup
+    (e.g. a list item mixing plain text with a code span). A heading gets
+    the same shape. A body-level paragraph does not: its InlineGroup hangs
+    directly off `#/body` with no owner item to fold the text back into.
+    Optionally add a sibling nested ListGroup, matching a list item that
+    also has sub-items.
+    """
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel, GroupLabel
+
+    doc = DoclingDocument(name="inline")
+    list_group = doc.add_group(label=GroupLabel.LIST)
+    list_item = doc.add_list_item(text="", parent=list_group)
+    inline_group = doc.add_group(label=GroupLabel.INLINE, parent=list_item)
+    doc.add_text(label=DocItemLabel.TEXT, text="Run ", parent=inline_group)
+    doc.add_code(text="pytest", parent=inline_group)
+    doc.add_text(label=DocItemLabel.TEXT, text=" to test.", parent=inline_group)
+    if second_child_group:
+        nested = doc.add_group(label=GroupLabel.LIST, parent=list_item)
+        doc.add_list_item(text="Sub-item.", parent=nested)
+    return doc, list_item
+
+
+class TestExtractItemTextInlineGroup:
+    """A container item's own .text is empty when docling pushes mixed
+    inline content into a child InlineGroup; extract_item_text must recover
+    it from that group instead of leaving the item's row blank.
+    """
+
+    def test_list_item_recovers_text_from_inline_group(self):
+        doc, list_item = _doc_with_inline_group_list_item()
+
+        assert list_item.text == ""
+        text = extract_item_text(list_item, doc)
+        assert text is not None
+        assert "Run" in text
+        assert "pytest" in text
+        assert "to test." in text
+
+    def test_extract_items_stores_non_empty_text_for_inline_group_item(self):
+        doc, _ = _doc_with_inline_group_list_item()
+        items = extract_items("doc-1", doc)
+
+        list_items = [i for i in items if i.label == "list_item"]
+        assert len(list_items) == 1
+        assert list_items[0].text != ""
+
+    def test_nested_list_group_not_folded_into_parent_text(self):
+        """A second child (a nested ListGroup of sub-items) must not be
+        pulled into the parent's serialized text: those sub-items are
+        walked and stored as their own rows by extract_items already, so
+        including them here would duplicate their content.
+        """
+        doc, list_item = _doc_with_inline_group_list_item(second_child_group=True)
+
+        text = extract_item_text(list_item, doc)
+        assert text is not None
+        assert "Sub-item" not in text
+
+    def test_reuses_passed_serializer(self, monkeypatch):
+        import docling_core.transforms.serializer.markdown as md
+
+        count = {"n": 0}
+        base = md.MarkdownDocSerializer
+
+        class Counting(base):
+            def __init__(self, *args, **kwargs):
+                count["n"] += 1
+                super().__init__(*args, **kwargs)
+
+        doc, _ = _doc_with_inline_group_list_item()
+        monkeypatch.setattr(md, "MarkdownDocSerializer", Counting)
+
+        items = extract_items("doc-1", doc)
+        assert any(i.label == "list_item" and i.text for i in items)
+        assert count["n"] == 1
+
+    def test_returns_none_when_serialization_fails(self):
+        """A serializer that raises leaves the item with no extractable text
+        rather than aborting the extraction pass, matching the table path.
+        """
+        doc, list_item = _doc_with_inline_group_list_item()
+
+        class _Boom:
+            def serialize(self, item):
+                raise RuntimeError("serializer exploded")
+
+        assert extract_item_text(list_item, doc, get_serializer=_Boom) is None
+
+    def test_leaf_item_without_children_still_returns_none(self):
+        """A genuinely empty item (no text, no children) is unaffected:
+        this is not the InlineGroup case and must not be treated as one.
+        """
+        from docling_core.types.doc.document import DoclingDocument
+        from docling_core.types.doc.labels import DocItemLabel
+
+        doc = DoclingDocument(name="empty-leaf")
+        item = doc.add_text(label=DocItemLabel.PARAGRAPH, text="")
+        assert item.children == []
+        assert extract_item_text(item, doc) is None
+
+    async def test_import_document_recovers_inline_group_text_without_moving_refs(
+        self, temp_db_path
+    ):
+        """import_document stores the caller's DoclingDocument and chunks as
+        given, never converting or flattening it, so a chunk's doc_item_refs
+        index into that document directly. This is the path #621's
+        conversion-time flatten does not reach, and the one the recovered
+        text needs to survive without renumbering anything.
+        """
+        from haiku.rag.config import get_config
+        from haiku.rag.store.models.chunk import Chunk
+
+        doc, list_item = _doc_with_inline_group_list_item()
+        dim = get_config().embeddings.model.vector_dim
+        chunks = [
+            Chunk(
+                content="Run `pytest` to test.",
+                metadata={"doc_item_refs": [list_item.self_ref]},
+                order=0,
+                embedding=[0.1] * dim,
+            )
+        ]
+
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            imported = await client.import_document(
+                doc, chunks, uri="mem://import-inline"
+            )
+
+            items = await client.document_item_repository.get_all_items(imported.id)
+            by_ref = {item.self_ref: item for item in items}
+
+            recovered = by_ref[list_item.self_ref]
+            assert "Run" in recovered.text
+            assert "pytest" in recovered.text
+            assert "to test." in recovered.text
+
+            # The tradeoff ggozad asked to have written down: the group's
+            # own children are still stored as their own rows, since this
+            # path stores the document as given, so the recovered item and
+            # its fragments both land in expanded context.
+            fragment_texts = {
+                item.text for ref, item in by_ref.items() if ref != list_item.self_ref
+            }
+            assert {"Run ", "pytest", " to test."} <= fragment_texts
+
+            stored_chunk = (
+                await client.chunk_repository.get_by_document_id(imported.id)
+            )[0]
+            assert stored_chunk.metadata["doc_item_refs"] == [list_item.self_ref]
+
+
 class TestExtractItemTextFallbacks:
     def test_table_returns_none_when_serialization_fails(self):
         """A serializer that raises leaves the table with no extractable text
