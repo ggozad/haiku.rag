@@ -34,6 +34,52 @@ def decompress_json(data: bytes) -> str:
     return _zstd_decompress(data).decode("utf-8")
 
 
+# docling-core encodes page and picture images with `cv2.imencode(".png", ...)`,
+# which passes no compression level, so OpenCV uses 1. Remove both callers of
+# this once docling-project/docling-core#758 ships.
+_PNG_COMPRESS_LEVEL = 6
+
+
+def recompress_png(data: bytes) -> bytes:
+    """Re-encode PNG bytes at zlib level 6, returning them unchanged on failure.
+
+    Idempotent, and never larger than its input. Every exception returns the
+    input: PIL raises `DecompressionBombError`, which derives from `Exception`
+    rather than `OSError`, above `MAX_IMAGE_PIXELS`.
+    """
+    from io import BytesIO
+
+    from PIL import Image
+
+    try:
+        with Image.open(BytesIO(data)) as image:
+            if image.format != "PNG":
+                return data
+            buffer = BytesIO()
+            image.save(buffer, format="PNG", compress_level=_PNG_COMPRESS_LEVEL)
+    except Exception:
+        return data
+    recompressed = buffer.getvalue()
+    return recompressed if len(recompressed) < len(data) else data
+
+
+def recompress_png_data_uri(uri: str) -> str:
+    """Re-encode the PNG payload of a ``data:`` URI, or return it unchanged."""
+    import base64
+
+    if not uri.startswith("data:image/png;base64,"):
+        return uri
+    head, _, encoded = uri.partition(",")
+    try:
+        raw = base64.b64decode(encoded, validate=False)
+    except ValueError:
+        return uri
+    recompressed = recompress_png(raw)
+    if recompressed is raw:
+        return uri
+    return f"{head},{base64.b64encode(recompressed).decode('ascii')}"
+
+
 def compress_docling_split(data: dict) -> tuple[bytes, bytes | None]:
     """Split a DoclingDocument dict into structure and pages, compress both with zstd.
 
@@ -52,6 +98,11 @@ def compress_docling_split(data: dict) -> tuple[bytes, bytes | None]:
         document has no page images.
     """
     pages = data.pop("pages", None)
+
+    for page in (pages or {}).values():
+        image = page.get("image") if isinstance(page, dict) else None
+        if isinstance(image, dict) and isinstance(image.get("uri"), str):
+            image["uri"] = recompress_png_data_uri(image["uri"])
 
     for picture in data.get("pictures") or []:
         if isinstance(picture, dict):

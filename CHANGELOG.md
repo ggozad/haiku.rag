@@ -85,6 +85,9 @@
 
 ### Fixed
 
+- Page and picture images are re-encoded at PNG compression level 6 before
+  storage, holding blob sizes where docling-core's OpenCV encoder would have
+  left them 30-60% larger. Ingestion pays one extra encode per image.
 - `toc.json` `item_range` in the analysis sandbox is a line slice into
   `items.jsonl`, as documented; it held item positions.
 - Past `analysis.code_timeout` a sandbox program starts no further host call.

@@ -903,6 +903,43 @@ class TestExtractItemTextFallbacks:
 
         assert extract_item_text(doc.tables[0], doc, get_serializer=_Boom) is None
 
+    def test_picture_bytes_are_recompressed(self):
+        """A picture stores fewer bytes than docling handed us, same pixels."""
+        import base64
+        from io import BytesIO
+
+        import cv2
+        import numpy as np
+        from docling_core.types.doc.document import ImageRef
+        from PIL import Image
+
+        from haiku.rag.store.models.document_item import _decode_picture_bytes
+
+        rng = np.random.default_rng(0)
+        pixels = np.full((240, 200, 3), 255, dtype=np.uint8)
+        for y in range(10, 230, 14):
+            pixels[y : y + 6, 10 : 10 + int(rng.integers(60, 170))] = 30
+        ok, buffer = cv2.imencode(".png", pixels)
+        assert ok
+        raw = buffer.tobytes()
+
+        doc, pic = _doc_with_captioned_picture("caption")
+        pic.image = ImageRef.model_validate(
+            {
+                "mimetype": "image/png",
+                "dpi": 72,
+                "size": {"width": 200, "height": 240},
+                "uri": "data:image/png;base64," + base64.b64encode(raw).decode("ascii"),
+            }
+        )
+
+        stored = _decode_picture_bytes(pic)
+
+        assert stored is not None
+        assert len(stored) < len(raw)
+        with Image.open(BytesIO(raw)) as a, Image.open(BytesIO(stored)) as b:
+            assert a.convert("RGB").tobytes() == b.convert("RGB").tobytes()
+
     def test_file_backed_picture_has_no_inline_bytes(self):
         """A picture whose ImageRef points at a file rather than a data: URI
         carries nothing to decode."""
