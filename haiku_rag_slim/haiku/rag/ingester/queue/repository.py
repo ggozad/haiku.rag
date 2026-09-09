@@ -53,6 +53,7 @@ def _row_to_job(row: Mapping) -> Job:
         attempts=row["attempts"],
         max_attempts=row["max_attempts"],
         last_error=row["last_error"],
+        killed_worker=bool(row["killed_worker"]),
         extra=json.loads(extra_text) if extra_text else None,
         enqueued_at=datetime.fromisoformat(row["enqueued_at"]),
         scheduled_at=datetime.fromisoformat(row["scheduled_at"]),
@@ -96,7 +97,14 @@ class JobRepo:
     ) -> Job | None:
         """Enqueue an upsert/delete job. Returns the inserted Job, or None if a
         live (queued/claimed) job already exists for the same (source_id, uri).
-        The partial unique index enforces atomicity."""
+        The partial unique index enforces atomicity.
+
+        Also returns None for an UPSERT of a URI whose last attempt stalled a
+        conversion and ended the worker: `uq_jobs_blocking_op` keeps that
+        tombstone in the same slot, because the same bytes stall again and a
+        revision-less source has no marker to suppress the sweep with. A DELETE
+        occupies a different slot, so the document can still be removed, and
+        `prune_dead` then clears the tombstone. A DLQ retry clears it too."""
         job_id = str(uuid.uuid4())
         now = _utcnow_iso()
         extra_json = json.dumps(extra) if extra is not None else None
@@ -195,7 +203,14 @@ class JobRepo:
             row = (await conn.execute(stmt)).first()
         return row is not None
 
-    async def mark_dead(self, job_id: str, error: str, claimed_by: str) -> bool:
+    async def mark_dead(
+        self,
+        job_id: str,
+        error: str,
+        claimed_by: str,
+        *,
+        killed_worker: bool = False,
+    ) -> bool:
         """Transition a still-claimed job to `dead`. See `mark_succeeded`
         for the guard semantics."""
         stmt = (
@@ -205,7 +220,12 @@ class JobRepo:
                 jobs.c.status == "claimed",
                 jobs.c.claimed_by == claimed_by,
             )
-            .values(status="dead", completed_at=_utcnow_iso(), last_error=error)
+            .values(
+                status="dead",
+                completed_at=_utcnow_iso(),
+                last_error=error,
+                killed_worker=killed_worker,
+            )
             .returning(jobs.c.id)
         )
         async with self._engine.begin() as conn:
@@ -265,6 +285,7 @@ class JobRepo:
                 last_heartbeat_at=None,
                 completed_at=None,
                 scheduled_at=now,
+                killed_worker=False,
             )
             .returning(*jobs.c)
         )
@@ -485,6 +506,10 @@ class JobRepo:
         stmt = sa.delete(jobs).where(
             jobs.c.status.in_(["succeeded", "dead"]),
             jobs.c.completed_at < threshold,
+            # A worker-killing job's row is what stops discovery re-enqueuing
+            # the document, so age alone must not remove it. `prune_dead` on a
+            # successful DELETE and `retry` both clear it deliberately.
+            jobs.c.killed_worker.is_(False),
         )
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)

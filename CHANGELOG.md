@@ -12,6 +12,14 @@
   carries the first case to the worker, which records the job dead and then
   exits non-zero for a supervisor to replace it. `haiku-ingester` therefore
   requires a restart policy; the example compose file already sets one.
+- Queue schema 3: `jobs.killed_worker` and `uq_jobs_blocking_op`, a partial
+  unique index over `(source_id, uri, op)` covering live jobs and worker-killing
+  dead ones. A document whose conversion stalled and ended the worker keeps its
+  upsert slot, so discovery cannot re-enqueue it and a revision-less source
+  cannot restart the process on the same bytes every sweep. A DELETE holds a
+  different slot and still enqueues; retention leaves the row alone; a DLQ retry
+  or a successful DELETE of the URI clears it. Existing queues migrate in place
+  on open.
 - `processing.conversion_timeout`, seconds one document conversion may take,
   default 600. Past it `convert_file` raises `TimeoutError`. A conversion that
   used the shared docling converter also keeps it, since its thread cannot be

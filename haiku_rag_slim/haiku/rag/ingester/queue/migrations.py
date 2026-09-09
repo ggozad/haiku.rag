@@ -64,6 +64,23 @@ async def apply_migrations(engine: AsyncEngine) -> int:
                         "WHERE status = 'claimed'"
                     )
                 )
+            if current < 3:
+                await conn.execute(
+                    sa.text(
+                        "ALTER TABLE jobs ADD COLUMN killed_worker BOOLEAN "
+                        "NOT NULL DEFAULT FALSE"
+                    )
+                )
+                # create_all made every other index; this one needs the column
+                # that has just been added.
+                await conn.execute(
+                    sa.text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS uq_jobs_blocking_op "
+                        "ON jobs (source_id, uri, op) WHERE status IN "
+                        "('queued', 'claimed') OR (status = 'dead' AND "
+                        "killed_worker)"
+                    )
+                )
             await conn.execute(sa.update(schema_version).values(version=SCHEMA_VERSION))
     return SCHEMA_VERSION
 

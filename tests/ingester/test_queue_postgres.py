@@ -177,3 +177,41 @@ async def test_prune_terminal_removes_old_rows(postgres_dburi):
         pruned = await jobs.prune_terminal(max_age_seconds=0)
         assert pruned == 1
         assert await jobs.get_job(job.id) is None
+
+
+@pytest.mark.asyncio
+async def test_tombstone_conflict_is_enforced_by_the_index(postgres_dburi):
+    """`uq_jobs_blocking_op` refuses a re-enqueued UPSERT while the tombstone
+    holds the URI's upsert slot, and admits a DELETE, which holds a different
+    one. Enforced at the index, so a worker committing `mark_dead` concurrently
+    cannot open a window between a read and the insert."""
+    async with queue_engine(postgres_dburi) as engine:
+        jobs = JobRepo(engine)
+        first = await jobs.enqueue("s", "u", JobOp.UPSERT)
+        assert first is not None
+        claimed = await jobs.claim_next("w")
+        assert claimed is not None
+        assert await jobs.mark_dead(claimed.id, "stalled", "w", killed_worker=True)
+
+        assert await jobs.enqueue("s", "u", JobOp.UPSERT) is None
+        assert await jobs.enqueue("s", "u", JobOp.DELETE) is not None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_mark_dead_cannot_leave_a_poison_upsert_queued(postgres_dburi):
+    """The same invariant under real concurrent connections: whichever order
+    the transition and the sweep commit in, the upsert slot is occupied."""
+    async with queue_engine(postgres_dburi) as engine:
+        jobs = JobRepo(engine)
+        for attempt in range(15):
+            uri = f"u{attempt}"
+            first = await jobs.enqueue("s", uri, JobOp.UPSERT)
+            assert first is not None
+            claimed = await jobs.claim_next("w")
+            assert claimed is not None
+
+            enqueued, _ = await asyncio.gather(
+                jobs.enqueue("s", uri, JobOp.UPSERT),
+                jobs.mark_dead(claimed.id, "stalled", "w", killed_worker=True),
+            )
+            assert enqueued is None, f"attempt {attempt}: poison upsert queued"

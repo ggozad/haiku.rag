@@ -452,6 +452,19 @@ Restarting mid-job is a supported path independently of this: jobs whose owner
 disappears are reset to `queued` by the reaper once their lease expires, and
 their attempt is refunded rather than consumed.
 
+The document that stalled is not tried again on its own. It is recorded dead
+with `killed_worker`, and `uq_jobs_blocking_op` keeps that row in the URI's
+upsert slot so discovery cannot re-enqueue it. A revisioned source suppresses
+the sweep with its revision marker, but a revision-less one has nothing to
+suppress it with, so the sweep would otherwise restart the process on the same
+bytes indefinitely. Retention never removes that row either; only these clear
+it:
+
+- `POST /dlq/{job_id}/retry`, once the document is fixed.
+- Deleting the document. A DELETE is never suppressed, and a successful one
+  prunes the dead rows for the URI, so removing the file at the source is
+  enough.
+
 ### Single-writer constraint
 
 haiku.rag serializes multi-table writes with a process-local lock and rolls

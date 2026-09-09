@@ -2,7 +2,7 @@ import sqlalchemy as sa
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 metadata = sa.MetaData()
 
@@ -26,6 +26,14 @@ jobs = sa.Table(
     sa.Column("claimed_by", sa.Text),
     sa.Column("last_heartbeat_at", sa.Text),
     sa.Column("completed_at", sa.Text),
+    # Dead because the conversion stalled and ended the worker process. The
+    # same bytes will stall again, so discovery must not re-enqueue the URI.
+    sa.Column(
+        "killed_worker",
+        sa.Boolean,
+        nullable=False,
+        server_default=sa.text("FALSE"),
+    ),
 )
 
 # A (source_id, uri) pair can only have one live job (queued or claimed) at a
@@ -44,6 +52,24 @@ sa.Index(
 )
 
 _queued = jobs.c.status == "queued"
+# A worker-killing tombstone occupies the same (source_id, uri, op) slot as a
+# live job, so re-enqueuing that op conflicts and `ON CONFLICT DO NOTHING`
+# drops it. Keyed on op as well, so removing the document is still possible
+# while its failed UPSERT is suppressed. Enforced by the index rather than by
+# a read, which no isolation level makes atomic against a committing worker.
+_blocking = sa.or_(
+    jobs.c.status.in_(["queued", "claimed"]),
+    sa.and_(jobs.c.status == "dead", jobs.c.killed_worker.is_(True)),
+)
+sa.Index(
+    "uq_jobs_blocking_op",
+    jobs.c.source_id,
+    jobs.c.uri,
+    jobs.c.op,
+    unique=True,
+    sqlite_where=_blocking,
+    postgresql_where=_blocking,
+)
 sa.Index(
     "idx_jobs_claimable",
     jobs.c.scheduled_at,

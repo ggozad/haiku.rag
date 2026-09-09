@@ -1215,3 +1215,179 @@ async def test_sync_state_batch_upsert_empty_is_noop(sync):
     """batch_upsert with an empty list does nothing."""
     await sync.batch_upsert([])
     assert await sync.get_revision_snapshot("s") == {}
+
+
+@pytest.mark.asyncio
+async def test_migration_v2_to_v3_adds_killed_worker(tmp_path):
+    """A v2 DB gains `killed_worker`, defaulted false for existing rows."""
+    db = tmp_path / "v2.db"
+    engine = create_async_engine(URL.create("sqlite+aiosqlite", database=str(db)))
+    try:
+        await apply_migrations(engine)
+        async with engine.begin() as conn:
+            await conn.execute(sa.text("UPDATE schema_version SET version = 2"))
+            await conn.execute(sa.text("DROP INDEX uq_jobs_blocking_op"))
+            await conn.execute(sa.text("ALTER TABLE jobs DROP COLUMN killed_worker"))
+            when = "2026-01-01T00:00:00+00:00"
+            await conn.execute(
+                sa.text(
+                    "INSERT INTO jobs (id, source_id, uri, op, status, attempts, "
+                    "max_attempts, enqueued_at, scheduled_at) "
+                    "VALUES ('old-1', 's', 'u1', 'upsert', 'dead', 1, 5, "
+                    f"'{when}', '{when}')"
+                )
+            )
+
+        assert await apply_migrations(engine) == SCHEMA_VERSION
+
+        async with engine.connect() as conn:
+            cols = (await conn.execute(sa.text("PRAGMA table_info(jobs)"))).fetchall()
+            assert "killed_worker" in {c[1] for c in cols}
+            names = (
+                await conn.execute(
+                    sa.text("SELECT name FROM sqlite_master WHERE type = 'index'")
+                )
+            ).scalars()
+            assert "uq_jobs_blocking_op" in set(names)
+            killed = (
+                await conn.execute(
+                    sa.text("SELECT killed_worker FROM jobs WHERE id = 'old-1'")
+                )
+            ).scalar_one()
+            assert not killed
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_a_worker_killing_job_is_not_re_enqueued(jobs):
+    """A revision-less document that stalled a conversion has no suppression
+    marker, so `enqueue` itself must refuse it or every sweep restarts the
+    process on the same bytes."""
+    job = await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT)
+    assert job is not None
+    claimed = await jobs.claim_next("w1")
+    assert claimed is not None
+    assert await jobs.mark_dead(claimed.id, "stalled", "w1", killed_worker=True)
+
+    assert await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT) is None
+
+
+@pytest.mark.asyncio
+async def test_dlq_retry_lifts_the_suppression(jobs):
+    """The operator's escape hatch: a retry clears the flag, so discovery can
+    enqueue the URI again afterwards."""
+    job = await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT)
+    assert job is not None
+    claimed = await jobs.claim_next("w1")
+    assert claimed is not None
+    await jobs.mark_dead(claimed.id, "stalled", "w1", killed_worker=True)
+
+    dead = await jobs.get_job(claimed.id)
+    assert dead is not None and dead.killed_worker is True
+
+    revived = await jobs.retry(claimed.id)
+    assert revived.killed_worker is False
+    assert revived.status is JobStatus.QUEUED
+
+    # Take the revived job to a terminal state so the live-job dedup is not
+    # what answers the next enqueue.
+    again = await jobs.claim_next("w2")
+    assert again is not None and again.id == claimed.id
+    assert await jobs.mark_succeeded(again.id, "w2")
+
+    assert await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT) is not None
+
+
+@pytest.mark.asyncio
+async def test_an_ordinary_dead_job_still_re_enqueues(jobs):
+    """Only a worker-killing failure suppresses; the documented behaviour for
+    every other dead job is unchanged."""
+    job = await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT)
+    assert job is not None
+    claimed = await jobs.claim_next("w1")
+    assert claimed is not None
+    await jobs.mark_dead(claimed.id, "unsupported", "w1")
+
+    assert await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT) is not None
+
+
+@pytest.mark.asyncio
+async def test_retention_never_prunes_a_worker_killing_job(jobs):
+    """The row is what stops rediscovery, so age must not remove it: pruning it
+    would let the poison document restart the process again."""
+    job = await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT)
+    assert job is not None
+    claimed = await jobs.claim_next("w1")
+    assert claimed is not None
+    await jobs.mark_dead(claimed.id, "stalled", "w1", killed_worker=True)
+
+    other = await jobs.enqueue("src", "https://x/z.pdf", JobOp.UPSERT)
+    assert other is not None
+    claimed_other = await jobs.claim_next("w1")
+    assert claimed_other is not None
+    await jobs.mark_dead(claimed_other.id, "unsupported", "w1")
+
+    assert await jobs.prune_terminal(max_age_seconds=-1) == 1
+
+    assert await jobs.get_job(claimed.id) is not None
+    assert await jobs.get_job(claimed_other.id) is None
+
+
+@pytest.mark.asyncio
+async def test_a_worker_killing_job_never_blocks_a_delete(jobs):
+    """Removing the document has to stay possible, and a successful DELETE
+    prunes the row that was suppressing rediscovery."""
+    job = await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT)
+    assert job is not None
+    claimed = await jobs.claim_next("w1")
+    assert claimed is not None
+    await jobs.mark_dead(claimed.id, "stalled", "w1", killed_worker=True)
+
+    deletion = await jobs.enqueue("src", "https://x/y.pdf", JobOp.DELETE)
+    assert deletion is not None
+
+    claimed_delete = await jobs.claim_next("w1")
+    assert claimed_delete is not None
+    assert await jobs.mark_succeeded(claimed_delete.id, "w1")
+    assert await jobs.prune_dead("src", "https://x/y.pdf") == 1
+
+    assert await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT) is not None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_mark_dead_cannot_leave_a_poison_upsert_queued(tmp_path):
+    """`uq_jobs_blocking_op` is what makes this safe: whichever order the
+    transition and the sweep commit in, the URI's upsert slot is occupied — by
+    the claimed row before, by the tombstone after — so the insert conflicts
+    either way. A read-then-insert check cannot promise that on SQLite, whose
+    deferred transaction takes no write lock for the read.
+    """
+    db = tmp_path / "race.db"
+    engine = await open_queue(
+        QueueConfig(dburi=str(URL.create("sqlite+aiosqlite", database=str(db))))
+    )
+    try:
+        jobs = JobRepo(engine)
+        for attempt in range(25):
+            uri = f"https://x/{attempt}.pdf"
+            first = await jobs.enqueue("src", uri, JobOp.UPSERT)
+            assert first is not None
+            claimed = await jobs.claim_next("w1")
+            assert claimed is not None
+
+            enqueued, _ = await asyncio.gather(
+                jobs.enqueue("src", uri, JobOp.UPSERT),
+                jobs.mark_dead(claimed.id, "stalled", "w1", killed_worker=True),
+            )
+            assert enqueued is None, (
+                f"attempt {attempt}: a poison upsert was queued alongside the tombstone"
+            )
+            live = [
+                j
+                for j in await jobs.list_jobs()
+                if j.uri == uri and j.status is not JobStatus.DEAD
+            ]
+            assert live == []
+    finally:
+        await engine.dispose()

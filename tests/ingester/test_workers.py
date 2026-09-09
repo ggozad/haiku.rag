@@ -1330,12 +1330,18 @@ async def test_fatal_permanent_error_terminates_after_the_job_is_dead(
 
     order: list[str] = []
     real_mark_dead = jobs.mark_dead
+    real_upsert = sync.upsert
 
     async def _recording_mark_dead(*args, **kwargs):
         order.append("mark_dead")
         return await real_mark_dead(*args, **kwargs)
 
+    async def _recording_upsert(*args, **kwargs):
+        order.append("marker")
+        return await real_upsert(*args, **kwargs)
+
     monkeypatch.setattr(jobs, "mark_dead", _recording_mark_dead)
+    monkeypatch.setattr(sync, "upsert", _recording_upsert)
     monkeypatch.setattr(
         pool_module, "_terminate_wedged_process", lambda: order.append("exit")
     )
@@ -1343,7 +1349,7 @@ async def test_fatal_permanent_error_terminates_after_the_job_is_dead(
     pool = _pool(client, jobs, sync)
     await pool.drain_once()
 
-    assert order == ["mark_dead", "exit"]
+    assert order == ["mark_dead", "marker", "exit"]
     refreshed = await jobs.get_job(job.id)
     assert refreshed is not None and refreshed.status is JobStatus.DEAD
 

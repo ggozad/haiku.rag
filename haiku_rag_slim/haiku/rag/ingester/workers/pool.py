@@ -31,8 +31,10 @@ def _terminate_wedged_process() -> None:  # pragma: no cover - ends the process
     abandoned conversion thread, so an orderly exit can block forever. The
     caller has already committed the job's terminal state.
     """
-    logging.shutdown()
-    os._exit(1)
+    try:
+        logging.shutdown()
+    finally:
+        os._exit(1)
 
 
 _WORKER_BREAKER_THRESHOLD = 5
@@ -328,7 +330,9 @@ class WorkerPool:
                 logger.info("Job %s released back to queue on cancel", job.id)
             raise
         except PermanentError as e:
-            if not await self._jobs.mark_dead(job.id, str(e), worker_id):
+            if not await self._jobs.mark_dead(
+                job.id, str(e), worker_id, killed_worker=e.fatal_to_process
+            ):
                 logger.warning(
                     "Job %s lost claim before mark_dead (likely reaper race); "
                     "letting the re-claiming worker drive",
