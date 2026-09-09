@@ -1196,6 +1196,28 @@ class TestInlineGroups:
         assert item.text == "left right"
         assert item.prov[0].page_no == 1
 
+    def test_group_carrying_several_provenances_is_left_alone(self):
+        """Merging keeps one record, so a group tracking more than one place
+        in its source stays as it is."""
+        doc = DoclingDocument(name="test")
+        doc.add_page(page_no=1, size=Size(width=100, height=100))
+        doc.add_page(page_no=2, size=Size(width=100, height=100))
+        group = doc.add_inline_group()
+        for page in (1, 2):
+            doc.add_text(
+                label=DocItemLabel.TEXT,
+                text=f"page {page}",
+                prov=ProvenanceItem(
+                    page_no=page,
+                    bbox=BoundingBox(l=0, t=10, r=50, b=0),
+                    charspan=(0, 6),
+                ),
+                parent=group,
+            )
+
+        assert flatten_inline_groups(doc) is False
+        assert [item.text for item in doc.texts] == ["page 1", "page 2"]
+
     @pytest.mark.asyncio
     async def test_inline_picture_group_is_left_alone(self):
         config = AppConfig()
