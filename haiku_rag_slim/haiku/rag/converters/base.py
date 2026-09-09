@@ -78,6 +78,7 @@ def flatten_inline_groups(doc: "DoclingDocument") -> bool:
     )
     from docling_core.types.doc.document import (
         InlineGroup,
+        ProvenanceItem,
         SectionHeaderItem,
         TextItem,
         TitleItem,
@@ -89,12 +90,20 @@ def flatten_inline_groups(doc: "DoclingDocument") -> bool:
         doc=doc, params=MarkdownParams(include_hyperlinks=False)
     )
 
-    flattened: list[tuple[InlineGroup, TextItem | None, TextItem, str]] = []
+    flattened: list[
+        tuple[InlineGroup, TextItem | None, ProvenanceItem | None, str]
+    ] = []
     for item, _ in doc.iterate_items(with_groups=True, traverse_pictures=True):
         if not isinstance(item, InlineGroup):
             continue
-        runs = [child.resolve(doc) for child in item.children]
-        if not runs or not all(isinstance(run, TextItem) for run in runs):
+        children = [child.resolve(doc) for child in item.children]
+        runs = [child for child in children if isinstance(child, TextItem)]
+        if not runs or len(runs) != len(children):
+            continue
+        # One record survives the merge, and a re-rendering carries no offsets
+        # to rebuild the others from, so leave a richer group as it is.
+        provenance = [prov for run in runs for prov in run.prov]
+        if len(provenance) > 1:
             continue
         # The backends parent a paragraph to the heading above it, so only an
         # empty owner is one the group carries the text of.
@@ -103,9 +112,10 @@ def flatten_inline_groups(doc: "DoclingDocument") -> bool:
         # A URL in a heading travels into breadcrumbs and chunk contextualization.
         heading = isinstance(owner, TitleItem | SectionHeaderItem)
         serializer = plain if heading else linked
-        flattened.append((item, owner, runs[0], serializer.serialize(item=item).text))
+        text = serializer.serialize(item=item).text
+        flattened.append((item, owner, provenance[0] if provenance else None, text))
 
-    for group, owner, first_run, text in flattened:
+    for group, owner, prov, text in flattened:
         if owner is not None:
             owner.text = owner.orig = text
         else:
@@ -113,7 +123,7 @@ def flatten_inline_groups(doc: "DoclingDocument") -> bool:
                 sibling=group,
                 label=DocItemLabel.TEXT,
                 text=text,
-                prov=first_run.prov[0] if first_run.prov else None,
+                prov=prov,
                 after=False,
             )
 
