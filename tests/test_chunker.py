@@ -689,6 +689,68 @@ This is content.
 
 @pytest.mark.vcr()
 @pytest.mark.asyncio
+async def test_local_and_serve_converters_and_chunkers_agree(doclaynet_first_page_pdf):
+    """Both stages agree: the two converters segment a PDF the same way, and the
+    two chunkers then cut it the same way.
+
+    Its sibling below converts once and compares only the chunkers, so it cannot
+    see a conversion difference. That is how a `pdf_backend` mismatch went
+    unnoticed: the local converter named a backend, docling-serve defaulted an
+    omitted one to another, and the two parsers segment items differently.
+
+    Labels are not compared. Docling keeps a label when the classifier clears a
+    hard-coded 0.5 confidence cutoff, and no flag moves it, so an element whose
+    confidence sits either side of that cutoff is labelled differently on two
+    platforms running identical versions, options and model weights.
+    """
+    from collections import Counter
+
+    from haiku.rag.chunkers.docling_local import DoclingLocalChunker
+    from haiku.rag.chunkers.docling_serve import DoclingServeChunker
+    from haiku.rag.converters.docling_local import DoclingLocalConverter
+    from haiku.rag.converters.docling_serve import DoclingServeConverter
+    from haiku.rag.store.models.document_item import extract_items
+
+    # One config for both sides: comparing output is only meaningful when the
+    # options behind it are the same, and `get_config()` carries the ambient
+    # docling-serve base_url that the serve converter needs.
+    config = get_config()
+    config.processing.conversion_options.do_ocr = False
+    config.processing.chunk_size = 256
+    config.processing.chunker_type = "hybrid"
+    config.processing.chunking_merge_peers = True
+
+    local_doc = await DoclingLocalConverter(config).convert_file(
+        doclaynet_first_page_pdf
+    )
+    serve_doc = await DoclingServeConverter(config).convert_file(
+        doclaynet_first_page_pdf
+    )
+
+    # `self_ref` is not compared: it indexes the whole DoclingDocument,
+    # including the synthetic text item docling substitutes for a parser cell
+    # left unassigned when a label falls below the cutoff, which
+    # `extract_items` does not return.
+    local_items = extract_items("d", local_doc)
+    serve_items = extract_items("d", serve_doc)
+    assert len(local_items) == len(serve_items)
+    assert [i.text for i in local_items] == [i.text for i in serve_items]
+    assert [i.page_numbers for i in local_items] == [
+        i.page_numbers for i in serve_items
+    ]
+
+    # Stage two: the same chunks out of each document.
+    local_chunks = await DoclingLocalChunker(config).chunk(local_doc)
+    serve_chunks = await DoclingServeChunker(config).chunk(serve_doc)
+    assert len(local_chunks) == len(serve_chunks)
+    assert [c.content for c in local_chunks] == [c.content for c in serve_chunks]
+    assert Counter(" ".join(c.content for c in local_chunks).split()) == Counter(
+        " ".join(c.content for c in serve_chunks).split()
+    )
+
+
+@pytest.mark.vcr()
+@pytest.mark.asyncio
 async def test_local_and_serve_chunkers_produce_same_output(doclaynet_first_page_pdf):
     """Test that local and serve chunkers produce identical output for the same document.
 

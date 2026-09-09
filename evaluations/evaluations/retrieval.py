@@ -4,7 +4,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
-from pydantic_evals import Case, Dataset as EvalDataset
+from pydantic_evals import Case
+from pydantic_evals import Dataset as EvalDataset
 from rich.console import Console
 from rich.progress import Progress
 

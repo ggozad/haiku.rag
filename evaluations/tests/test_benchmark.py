@@ -9,9 +9,9 @@ from evaluations.benchmark import (
     _resolve_dataset,
     evaluate_dataset,
 )
+from evaluations.config import DatasetSpec, DocumentPayload
 from evaluations.experiment import build_experiment_metadata
 from evaluations.qa import run_qa_benchmark
-from evaluations.config import DatasetSpec, DocumentPayload
 from haiku.rag.config.models import AppConfig, ModelConfig
 
 
@@ -1000,9 +1000,9 @@ class TestAttachRelevantUris:
     def test_joins_by_question(self) -> None:
         from pydantic_evals import Case
 
-        from evaluations.qa import _attach_relevant_uris
         from evaluations.config import RetrievalSample
         from evaluations.evaluators import MAPEvaluator
+        from evaluations.qa import _attach_relevant_uris
 
         cases: list[Case[str, str, dict]] = [
             Case(name="c1", inputs="What is X?", expected_output="X is a thing"),
@@ -1118,9 +1118,8 @@ class TestRetrievalTarget:
     async def test_scores_from_search_results_without_reading_documents(
         self, tmp_path: Path
     ) -> None:
-        from haiku.rag.store.models.chunk import SearchResult
-
         from evaluations.benchmark import run_retrieval_benchmark
+        from haiku.rag.store.models.chunk import SearchResult
 
         searches: list[dict] = []
 
@@ -1154,9 +1153,8 @@ class TestRetrievalTarget:
 
     @pytest.mark.asyncio
     async def test_ranks_each_document_once(self, tmp_path: Path) -> None:
-        from haiku.rag.store.models.chunk import SearchResult
-
         from evaluations.benchmark import run_retrieval_benchmark
+        from haiku.rag.store.models.chunk import SearchResult
 
         def _result(uri: str, score: float) -> SearchResult:
             return SearchResult(content="x", score=score, document_uri=uri)
@@ -1202,11 +1200,10 @@ class TestDocumentFilterThreading:
 
     @pytest.mark.asyncio
     async def test_retrieval_search_receives_filter(self, tmp_path: Path) -> None:
-        from haiku.rag.store.models.chunk import SearchResult
-
         from evaluations.benchmark import run_retrieval_benchmark
         from evaluations.config import RetrievalSample
         from evaluations.evaluators import MAPEvaluator
+        from haiku.rag.store.models.chunk import SearchResult
 
         searches: list[dict] = []
 
@@ -1347,10 +1344,10 @@ def test_a_case_filter_that_matches_keeps_those_rows():
 async def test_population_refuses_a_configured_set():
     """Population writes to one database and refuses a configured set."""
     import pytest
-    from haiku.rag.config.models import AppConfig, LanceDBConfig
 
     from evaluations.benchmark import evaluate_dataset
     from evaluations.datasets import DATASETS
+    from haiku.rag.config.models import AppConfig, LanceDBConfig
 
     spec = next(iter(DATASETS.values()))
     config = AppConfig(

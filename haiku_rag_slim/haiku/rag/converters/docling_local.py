@@ -1,10 +1,11 @@
 """Local docling converter implementation."""
 
 import asyncio
+import contextvars
 import hashlib
+import logging
 import threading
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
@@ -15,9 +16,14 @@ from haiku.rag.converters.base import (
     vlm_api_params,
     vlm_api_url,
 )
+from haiku.rag.converters.exceptions import (
+    ConversionTimeoutError,
+    ConverterWedgedError,
+)
 from haiku.rag.converters.text_utils import TextFileHandler, docling_safe_name
 
 if TYPE_CHECKING:
+    from docling.backend.abstract_backend import AbstractDocumentBackend
     from docling.datamodel.base_models import InputFormat
     from docling.datamodel.pipeline_options import PdfPipelineOptions
     from docling.document_converter import DocumentConverter as DoclingDocConverter
@@ -30,12 +36,44 @@ if TYPE_CHECKING:
 # caches pipelines per instance, so a converter per document reloads every model
 # per document. StandardPdfPipeline also keeps per-run state on the instance, so
 # the lock spans the conversion, not just the lookup.
+logger = logging.getLogger(__name__)
+
 _CONVERTER_LOCK = threading.Lock()
 _CONVERTERS: dict[str, "DoclingDocConverter"] = {}
+
+# Set when a conversion is abandoned on timeout. Its thread cannot be cancelled
+# and still holds _CONVERTER_LOCK, so every later shared conversion in this
+# process would block on a lock that is never released.
+_WEDGED = threading.Event()
+
+_WEDGED_MESSAGE = (
+    "A previous conversion timed out and still holds the docling converter; "
+    "restart the process to convert again."
+)
+
+# How long a queued conversion waits for the converter before looking at
+# `_WEDGED` again. A conversion already blocked on the lock when a sibling's
+# deadline fires would otherwise never learn the converter is stranded.
+_LOCK_POLL_SECONDS = 0.5
 
 # HTML and Markdown backend options carry the per-document source_uri. Both run
 # SimplePipeline, which loads no models, so they get a converter per call.
 _URI_AWARE_EXTENSIONS = frozenset({".html", ".xhtml", ".md", ".qmd", ".rmd"})
+
+
+def _pdf_backend(name: str) -> "type[AbstractDocumentBackend]":
+    """Resolve `conversion_options.pdf_backend` to its docling backend class."""
+    from docling.backend.docling_parse_backend import (
+        DoclingParseDocumentBackend,
+        ThreadedDoclingParseDocumentBackend,
+    )
+    from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
+
+    return {
+        "threaded_docling_parse": ThreadedDoclingParseDocumentBackend,
+        "docling_parse": DoclingParseDocumentBackend,
+        "pypdfium2": PyPdfiumDocumentBackend,
+    }[name]
 
 
 class DoclingLocalConverter(DocumentConverter):
@@ -180,7 +218,6 @@ class DoclingLocalConverter(DocumentConverter):
             pipeline_options: Wired into every format option; built from
                 configuration when omitted.
         """
-        from docling.backend.docling_parse_backend import DoclingParseDocumentBackend
         from docling.datamodel.backend_options import (
             HTMLBackendOptions,
             MarkdownBackendOptions,
@@ -205,7 +242,7 @@ class DoclingLocalConverter(DocumentConverter):
         return {
             InputFormat.PDF: PdfFormatOption(
                 pipeline_options=pipeline_options,
-                backend=DoclingParseDocumentBackend,
+                backend=_pdf_backend(opts.pdf_backend),
             ),
             InputFormat.IMAGE: ImageFormatOption(pipeline_options=pipeline_options),
             InputFormat.HTML: HTMLFormatOption(
@@ -228,11 +265,17 @@ class DoclingLocalConverter(DocumentConverter):
             InputFormat.PPTX: PowerpointFormatOption(pipeline_options=pipeline_options),
         }
 
-    @contextmanager
-    def _shared_converter(self) -> Iterator["DoclingDocConverter"]:
-        """Yield the converter shared by every conversion with these pipeline
-        options, holding the lock for the caller's conversion.
+    def _refuse_if_wedged(self) -> None:
+        """Refuse before doing any work if the shared converter is stranded."""
+        if _WEDGED.is_set():
+            raise ConverterWedgedError(_WEDGED_MESSAGE)
 
+    def _cached_converter(self) -> "DoclingDocConverter":
+        """The converter shared by every conversion with these pipeline
+        options. The caller must hold `_CONVERTER_LOCK`.
+
+        The key covers every input to the converter: the pipeline options, and
+        `pdf_backend`, which is a format option rather than a pipeline one.
         `serialize_as_any` is required for the key: without it pydantic
         serializes the nested option models as their declared type, rendering
         them as `{}` and hiding `table_mode` and the OCR engine.
@@ -243,24 +286,29 @@ class DoclingLocalConverter(DocumentConverter):
 
         pipeline_options = self._build_pipeline_options()
         key = hashlib.md5(
-            pipeline_options.model_dump_json(serialize_as_any=True).encode("utf-8"),
+            b"\0".join(
+                (
+                    pipeline_options.model_dump_json(serialize_as_any=True).encode(),
+                    self.config.processing.conversion_options.pdf_backend.encode(),
+                )
+            ),
             usedforsecurity=False,
         ).hexdigest()
 
-        with _CONVERTER_LOCK:
-            converter = _CONVERTERS.get(key)
-            if converter is None:
-                converter = _CONVERTERS[key] = DoclingDocConverter(
-                    format_options=self._build_format_options(
-                        pipeline_options=pipeline_options
-                    )
+        converter = _CONVERTERS.get(key)
+        if converter is None:
+            converter = _CONVERTERS[key] = DoclingDocConverter(
+                format_options=self._build_format_options(
+                    pipeline_options=pipeline_options
                 )
-            yield converter
+            )
+        return converter
 
-    def _sync_convert_docling_file(
+    def _sync_convert_timed(
         self, path: Path, source_uri: str | None = None
     ) -> "DoclingDocument":
-        """Synchronous conversion of docling-supported files."""
+        """The part of a conversion the deadline covers. For shared formats the
+        caller holds `_CONVERTER_LOCK`."""
         if path.suffix.lower() in _URI_AWARE_EXTENSIONS:
             from docling.document_converter import (
                 DocumentConverter as DoclingDocConverter,
@@ -271,8 +319,173 @@ class DoclingLocalConverter(DocumentConverter):
             )
             return converter.convert(path).document
 
-        with self._shared_converter() as converter:
-            return converter.convert(path).document
+        return self._cached_converter().convert(path).document
+
+    async def _convert_docling_file(
+        self, path: Path, source_uri: str | None
+    ) -> "DoclingDocument":
+        """Convert through docling under `processing.conversion_timeout`.
+
+        The deadline starts when the conversion has the converter, not when it
+        was asked for: `worker_count` documents contend for one shared
+        converter, and queueing behind a sibling is not this document's budget.
+
+        The lock belongs to the conversion thread, which cancellation cannot
+        reach, and the deadline is shielded from the caller. A caller that goes
+        away — a disconnected request, a cancelled tool call, shutdown — must
+        not take the watcher with it: a stall would then hold the converter with
+        `_WEDGED` clear, and every later conversion in the process would park on
+        admission with nothing to raise.
+        """
+        timeout = self.config.processing.conversion_timeout
+        shared = path.suffix.lower() not in _URI_AWARE_EXTENSIONS
+        if shared:
+            self._refuse_if_wedged()
+
+        loop = asyncio.get_running_loop()
+        admitted: asyncio.Future[None] = loop.create_future()
+        abandoned = threading.Event()
+
+        def _admit() -> None:
+            if not admitted.done():
+                admitted.set_result(None)
+
+        def _admit_from_thread() -> None:
+            try:
+                loop.call_soon_threadsafe(_admit)
+            except RuntimeError:  # pragma: no cover - loop already closed
+                pass
+
+        # Returned rather than raised: `asyncio.TimeoutError` is `TimeoutError`,
+        # so a deadline handler cannot tell docling's own from its own.
+        def _convert() -> "DoclingDocument | TimeoutError":
+            try:
+                return self._sync_convert_timed(path, source_uri)
+            except TimeoutError as exc:
+                return exc
+
+        def _run() -> "DoclingDocument | TimeoutError | None":
+            if not shared:
+                _admit_from_thread()
+                return _convert()
+
+            # Polled rather than blocking: a conversion parked here when a
+            # sibling's deadline fires has to learn that the converter is
+            # stranded, and its caller has to hear about it.
+            while not _CONVERTER_LOCK.acquire(timeout=_LOCK_POLL_SECONDS):
+                if _WEDGED.is_set():
+                    raise ConverterWedgedError(_WEDGED_MESSAGE)
+                if abandoned.is_set():
+                    return None
+            try:
+                if _WEDGED.is_set():
+                    # The holder returned after its deadline. The converter has
+                    # been declared stranded and nothing may run on it.
+                    raise ConverterWedgedError(_WEDGED_MESSAGE)
+                if abandoned.is_set():
+                    # Nobody is waiting for this document any more, and
+                    # converting it would hold the converter for no one.
+                    return None
+                _admit_from_thread()
+                return _convert()
+            finally:
+                _CONVERTER_LOCK.release()
+
+        # A daemon thread, not the default executor: `asyncio.run`'s teardown
+        # joins that executor and interpreter exit joins its non-daemon
+        # workers, so a conversion that never returns would hold the process
+        # until something killed it. A stall costs a document, not the run.
+        run: asyncio.Future[DoclingDocument | TimeoutError | None] = (
+            loop.create_future()
+        )
+
+        def _deliver(finish: Callable[[], None]) -> None:
+            def _set() -> None:
+                # `wait_for` cancels `run` on the deadline, and a cancelled
+                # future rejects a result.
+                if not run.done():
+                    finish()
+
+            try:
+                loop.call_soon_threadsafe(_set)
+            except RuntimeError:  # pragma: no cover - loop already closed
+                pass
+
+        def _thread() -> None:
+            try:
+                document = _run()
+            except BaseException as exc:  # noqa: BLE001
+                # Bound outside the handler: `except ... as` unbinds the name
+                # when the block ends, and the loop runs the callback later.
+                error = exc
+                _deliver(lambda: run.set_exception(error))
+            else:
+                _deliver(lambda: run.set_result(document))
+
+        threading.Thread(
+            target=contextvars.copy_context().run,
+            args=(_thread,),
+            daemon=True,
+            name=f"docling-convert-{path.name}",
+        ).start()
+
+        def _finished(
+            task: "asyncio.Future[DoclingDocument | TimeoutError | None]",
+        ) -> None:
+            # Also admits, so a thread that dies or declines before signalling
+            # cannot leave the await below hanging.
+            _admit()
+            if not task.cancelled():
+                task.exception()
+
+        run.add_done_callback(_finished)
+
+        async def _guard() -> "DoclingDocument":
+            await admitted
+            try:
+                result = await asyncio.wait_for(run, timeout)
+            except TimeoutError:
+                detail = (
+                    "The conversion thread cannot be cancelled and holds the "
+                    "shared converter, so this process cannot convert again."
+                    if shared
+                    else "The conversion thread cannot be cancelled and runs "
+                    "on for as long as it lasts."
+                )
+                if shared:
+                    _WEDGED.set()
+                if abandoned.is_set():
+                    logger.error(
+                        "Converting %s exceeded processing.conversion_timeout "
+                        "(%ss) after its caller was cancelled; %s",
+                        path,
+                        timeout,
+                        detail,
+                    )
+                raise ConversionTimeoutError(
+                    f"Converting {path} exceeded processing.conversion_timeout "
+                    f"({timeout}s). {detail}",
+                    converter_wedged=shared,
+                ) from None
+            if isinstance(result, TimeoutError):
+                raise result
+            if result is None:
+                raise asyncio.CancelledError
+            return result
+
+        def _guard_done(task: "asyncio.Task[DoclingDocument]") -> None:
+            # An abandoned guard still finishes; retrieving its outcome keeps
+            # the loop from reporting it as never retrieved.
+            if not task.cancelled():
+                task.exception()
+
+        guard = asyncio.ensure_future(_guard())
+        guard.add_done_callback(_guard_done)
+        try:
+            return await asyncio.shield(guard)
+        except asyncio.CancelledError:
+            abandoned.set()
+            raise
 
     async def convert_file(
         self, path: Path, source_uri: str | None = None
@@ -288,15 +501,14 @@ class DoclingLocalConverter(DocumentConverter):
             DoclingDocument representation of the file.
 
         Raises:
-            ValueError: If the file cannot be converted.
+            ValueError: If the file cannot be converted, chaining the cause.
+            TimeoutError: If it exceeds `processing.conversion_timeout`.
         """
         try:
             file_extension = path.suffix.lower()
 
             if file_extension in self.docling_extensions:
-                return await asyncio.to_thread(
-                    self._sync_convert_docling_file, path, source_uri
-                )
+                return await self._convert_docling_file(path, source_uri)
             elif file_extension in TextFileHandler.text_extensions:
                 content = await asyncio.to_thread(path.read_text, encoding="utf-8")
                 prepared_content = TextFileHandler.prepare_text_content(
@@ -312,8 +524,10 @@ class DoclingLocalConverter(DocumentConverter):
                 return await self.convert_text(
                     content, name=f"{path.stem}.md", source_uri=source_uri
                 )
-        except Exception:
-            raise ValueError(f"Failed to parse file: {path}")
+        except (TimeoutError, ConverterWedgedError):
+            raise
+        except Exception as exc:
+            raise ValueError(f"Failed to parse file: {path}") from exc
 
     async def convert_text(
         self,

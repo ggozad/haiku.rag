@@ -10,6 +10,7 @@ from sqlalchemy.dialects import sqlite as sqlite_dialect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from haiku.rag.ingester.exceptions import BlockingTombstoneError
 from haiku.rag.ingester.queue.db import jobs, sync_state
 from haiku.rag.ingester.queue.models import (
     Job,
@@ -53,6 +54,7 @@ def _row_to_job(row: Mapping) -> Job:
         attempts=row["attempts"],
         max_attempts=row["max_attempts"],
         last_error=row["last_error"],
+        conversion_stalled=bool(row["conversion_stalled"]),
         extra=json.loads(extra_text) if extra_text else None,
         enqueued_at=datetime.fromisoformat(row["enqueued_at"]),
         scheduled_at=datetime.fromisoformat(row["scheduled_at"]),
@@ -96,7 +98,12 @@ class JobRepo:
     ) -> Job | None:
         """Enqueue an upsert/delete job. Returns the inserted Job, or None if a
         live (queued/claimed) job already exists for the same (source_id, uri).
-        The partial unique index enforces atomicity."""
+        The partial unique index enforces atomicity.
+
+        Also returns None when a stalled conversion holds the same
+        `uq_jobs_blocking_op` slot, which is (source_id, uri, op, revision): the
+        same bytes stall again. A new revision, a DELETE, a DLQ retry and a
+        successful DELETE's `prune_dead` each free it."""
         job_id = str(uuid.uuid4())
         now = _utcnow_iso()
         extra_json = json.dumps(extra) if extra is not None else None
@@ -195,7 +202,14 @@ class JobRepo:
             row = (await conn.execute(stmt)).first()
         return row is not None
 
-    async def mark_dead(self, job_id: str, error: str, claimed_by: str) -> bool:
+    async def mark_dead(
+        self,
+        job_id: str,
+        error: str,
+        claimed_by: str,
+        *,
+        conversion_stalled: bool = False,
+    ) -> bool:
         """Transition a still-claimed job to `dead`. See `mark_succeeded`
         for the guard semantics."""
         stmt = (
@@ -205,7 +219,12 @@ class JobRepo:
                 jobs.c.status == "claimed",
                 jobs.c.claimed_by == claimed_by,
             )
-            .values(status="dead", completed_at=_utcnow_iso(), last_error=error)
+            .values(
+                status="dead",
+                completed_at=_utcnow_iso(),
+                last_error=error,
+                conversion_stalled=conversion_stalled,
+            )
             .returning(jobs.c.id)
         )
         async with self._engine.begin() as conn:
@@ -265,6 +284,7 @@ class JobRepo:
                 last_heartbeat_at=None,
                 completed_at=None,
                 scheduled_at=now,
+                conversion_stalled=False,
             )
             .returning(*jobs.c)
         )
@@ -283,7 +303,29 @@ class JobRepo:
                 live = await self._live_sibling(target.source_id, target.uri)
                 if live is not None:
                     return live
+                blocking = await self._blocking_tombstone(target)
+                if blocking is not None:
+                    raise BlockingTombstoneError(job_id, blocking)
         raise KeyError(f"Job {job_id!r} not found or not retryable")
+
+    async def _blocking_tombstone(self, target: Job) -> str | None:
+        """The id of the stalled-conversion row holding `target`'s slot."""
+        query = (
+            sa.select(jobs.c.id)
+            .where(
+                jobs.c.source_id == target.source_id,
+                jobs.c.uri == target.uri,
+                jobs.c.op == target.op.value,
+                sa.func.coalesce(jobs.c.revision, "")
+                == sa.func.coalesce(sa.literal(target.revision), ""),
+                jobs.c.status == "dead",
+                jobs.c.conversion_stalled.is_(True),
+                jobs.c.id != target.id,
+            )
+            .limit(1)
+        )
+        async with self._engine.connect() as conn:
+            return (await conn.execute(query)).scalar_one_or_none()
 
     async def _live_sibling(self, source_id: str, uri: str) -> Job | None:
         """The live (queued/claimed) job for a (source_id, uri), if any.
@@ -485,6 +527,9 @@ class JobRepo:
         stmt = sa.delete(jobs).where(
             jobs.c.status.in_(["succeeded", "dead"]),
             jobs.c.completed_at < threshold,
+            # A stalled conversion's row is what stops discovery re-enqueuing
+            # the document, and age is not evidence the document changed.
+            jobs.c.conversion_stalled.is_(False),
         )
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)

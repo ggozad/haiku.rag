@@ -37,21 +37,22 @@ classifiers = [
 ]
 
 dependencies = [
-    "docling-core>=2.82.0,<3.0.0",
+    "docling-core==2.93.0",
     "httpx>=0.28.1",
     "jinja2>=3.1.0",
     "fastmcp>=4.0.2,<5.0.0",
-    "lancedb==0.37.1",
+    "lancedb==0.38.0",
     "pathspec>=1.0.4",
     "pydantic>=2.12.5",
-    "pydantic-ai-slim[openai,logfire,ag-ui]>=2.18.0,<3.0.0",
-    "pydantic-monty>=0.0.23",
+    "pydantic-ai-slim[openai,logfire,ag-ui]>=2.40.0,<3.0.0",
+    "pydantic-monty>=0.0.23,<0.0.24",
+    "pyarrow>=16,<25",
     "pypdfium2>=5.0",
     "python-dotenv>=1.2.2",
     "pyyaml>=6.0.3",
     "rich>=14.3.3",
     "textual-image>=0.8.5",
-    "typer>=0.21.0,<0.22.0",
+    "typer>=0.21.0,<0.27.0",
     "watchfiles>=1.1.1",
     "zstandard>=0.23.0; python_version<'3.14'",
 ]
@@ -65,7 +66,15 @@ Changelog = "https://ggozad.github.io/haiku.rag/changelog/"
 
 [project.optional-dependencies]
 # Document processing
-docling = ["docling>=2.102.2,<3.0.0", "opencv-python-headless>=4.6.0.66,<5.0.0.0"]
+docling = [
+    "docling==2.124.0",
+    # The layout and table-structure models, and the PDF parser, decide item
+    # segmentation. Pinned to what docling-serve v1.32.0 ships, read out of the
+    # image: docling-slim only floors these, so a resolver lands elsewhere.
+    "docling-ibm-models==4.0.1",
+    "docling-parse==7.16.0",
+    "opencv-python-headless>=4.6.0.66,<5.0.0.0",
+]
 # S3 / object-storage monitoring
 s3 = ["obstore>=0.9,<0.10"]
 # Embedding providers
@@ -73,8 +82,8 @@ voyageai = ["pydantic-ai-slim[voyageai]"]
 # Rerankers
 cohere = ["cohere>=5.21.1"]
 zeroentropy = ["zeroentropy>=0.1.0a11"]
-jina = ["transformers>=4.40.0", "torch>=2.0.0"]
-cross-encoder = ["sentence-transformers>=3.0.0"]
+jina = ["transformers>=4.40.0,<6.0.0", "torch>=2.0.0"]
+cross-encoder = ["sentence-transformers>=3.0.0,<6.0.0"]
 # Production ingester (queue, workers, API)
 ingester = [
     "fastapi>=0.125",

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import pypdfium2 as pdfium
 
 from haiku.rag.client.exceptions import UnsupportedSourceError
+from haiku.rag.converters.exceptions import ConverterWedgedError
 from haiku.rag.telemetry import logfire
 
 # pypdfium2 wraps libpdfium, which has global C state and is not thread-safe.
@@ -118,6 +119,8 @@ async def convert_pdf_with_splitting(
                         slice_doc = await converter.convert_file(
                             tmp_path, source_uri=source_uri
                         )
+                    except (TimeoutError, ConverterWedgedError):
+                        raise
                     except Exception as exc:
                         raise ValueError(
                             f"Failed to convert slice pages {start}-{end} of {path}: {exc}"

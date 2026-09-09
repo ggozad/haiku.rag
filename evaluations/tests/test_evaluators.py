@@ -5,7 +5,6 @@ import pytest
 from pydantic_evals.evaluators import EvaluatorContext
 
 from evaluations.evaluators import REFUSAL_RUBRIC, RefusalJudge
-
 from evaluations.evaluators.map import MAPEvaluator
 from evaluations.evaluators.number_match import NumberMatchEvaluator
 from evaluations.evaluators.retrieval import NDCGEvaluator, RecallEvaluator

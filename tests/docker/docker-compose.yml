@@ -20,7 +20,7 @@ services:
       - /var/lib/postgresql/data
 
   docling-serve:
-    image: quay.io/docling-project/docling-serve:latest
+    image: quay.io/docling-project/docling-serve:v1.32.0
     ports:
       - "5001:5001"
     environment:

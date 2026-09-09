@@ -1215,7 +1215,7 @@ class TestSandboxClose:
         )
         session, pool, opened = AsyncMock(), AsyncMock(), AsyncMock()
         session.__aexit__.side_effect = RuntimeError("worker already gone")
-        sb._session, sb._pool = session, pool  # ty: ignore[invalid-assignment]
+        sb._session, sb._pool = session, pool
         sb._opened = opened
 
         await sb.close()

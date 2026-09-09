@@ -4,6 +4,34 @@
 
 ### Added
 
+- `ConversionTimeoutError` and `ConverterWedgedError` in
+  `haiku.rag.converters.exceptions`. The ingester dead-letters the document
+  that exceeded the deadline and retries one refused by a converter another
+  document stranded. `PermanentError` carries `conversion_stalled` and
+  `fatal_to_process`; on the latter the worker records the job dead and exits
+  non-zero, so `haiku-ingester` needs a restart policy. `BlockingTombstoneError`
+  names the row blocking a retry, which the API returns as 409.
+- Queue schema 3: `jobs.conversion_stalled` and `uq_jobs_blocking_op`, a
+  partial unique index over `(source_id, uri, op, COALESCE(revision, ''))`
+  covering live jobs and stalled ones. Discovery cannot re-enqueue a stalled
+  document at the same revision; a changed revision, a different op, a DLQ
+  retry and a successful DELETE all can, and retention leaves the row alone.
+  Existing queues migrate in place on open.
+- `processing.conversion_timeout`, seconds one document conversion may take,
+  default 600. Past it `convert_file` raises `ConversionTimeoutError`. The
+  thread is never cancelled: for PDFs and office formats it keeps the shared
+  docling converter, so later conversions raise `ConverterWedgedError` until
+  the process is restarted; HTML and Markdown keep one OS thread each. Waiting
+  for the shared converter is not counted against the deadline, and a
+  conversion runs on a daemon thread, so an abandoned one does not hold up
+  process exit.
+- `processing.conversion_options.pdf_backend`, one of `docling_parse`
+  (default), `threaded_docling_parse` or `pypdfium2`, sent by both converters.
+  docling's own default is `threaded_docling_parse`; on some documents it never
+  returns, so it is not ours.
+- `provider: vllm` on a model config, served by pydantic-ai's
+  `VLLMProvider`. `base_url` is accepted with or without `/v1`, and
+  `api_key` is honored.
 - Claude Code and Codex plugin under `plugins/haiku-rag/`: two client manifests
   sharing the server configuration and the `haiku-rag` Agent Skill.
 - MCP tool `execute_code(code, filter, sources)`: runs a program in the
@@ -22,7 +50,29 @@
 
 ### Changed
 
-- `pydantic-monty>=0.0.23`. The analysis sandbox gains `collections`,
+- `pydantic-ai-slim>=2.40.0,<3.0.0`.
+- The docling stack is pinned exactly to what docling-serve `v1.32.0` ships,
+  read from the image: `docling==2.124.0`, `docling-core==2.93.0`,
+  `docling-ibm-models==4.0.1`, `docling-parse==7.16.0`. The compose images
+  are pinned to `v1.32.0` to match.
+- Conversion output moves with docling 2.124.0: adjacent text items merge and
+  chunk boundaries fall in different places. An existing database is untouched
+  until a document is re-ingested; re-ingesting a corpus produces different
+  chunk ids.
+- `processing.split_pages` no longer reproduces single-pass conversion
+  exactly. A slice sees only its own pages, so a paragraph spanning a slice
+  boundary stays two items and a caption near one can order differently:
+  about one text item and one chunk per boundary on a 9-page document.
+  Re-ingesting a PDF after changing `split_pages` re-chunks those places.
+- ruff 0.16.6, ty 0.0.78 and pytest-asyncio 1.4.0 in the dev group.
+  `[tool.ruff] include` excludes Markdown, and `evaluations/` extends the
+  root ruff config instead of resolving as its own project.
+- lancedb 0.38.0.
+- `pyarrow` is a declared dependency, `>=16,<25`.
+- Dependency upper bounds: `typer<0.27.0` (was `<0.22.0`),
+  `transformers<6.0.0` on the `jina` extra, `sentence-transformers<6.0.0` on
+  the `cross-encoder` extra.
+- `pydantic-monty>=0.0.23,<0.0.24`. The analysis sandbox gains `collections`,
   `itertools`, `functools`, `dataclasses`, function decorators and
   `str.format`.
 - `fastmcp>=4.0.2,<5.0.0`, on MCP Python SDK 2. The MCP server answers both the
@@ -56,6 +106,10 @@
 
 ### Fixed
 
+- `DoclingLocalConverter.convert_file` chains the exception that caused
+  `Failed to parse file` instead of discarding it.
+- Page and picture images are re-encoded at PNG compression level 6 before
+  storage.
 - `toc.json` `item_range` in the analysis sandbox is a line slice into
   `items.jsonl`, as documented; it held item positions.
 - Past `analysis.code_timeout` a sandbox program starts no further host call.

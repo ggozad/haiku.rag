@@ -464,7 +464,7 @@ def test_two_compactors_fail_fast(temp_db_path):
     """
     rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
 
-    with pytest.raises(UserError, match="unique within a run"):
+    with pytest.raises(UserError, match="haiku-rag-evidence-compaction"):
         Agent(
             FunctionModel(_answer),
             deps_type=Deps,

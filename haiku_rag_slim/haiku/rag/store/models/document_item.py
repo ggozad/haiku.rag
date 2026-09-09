@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
+from haiku.rag.store.compression import recompress_png
+
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument, NodeItem, PictureItem
 
@@ -51,7 +53,7 @@ def _decode_picture_bytes(item: "PictureItem") -> bytes | None:
     if not uri.startswith("data:"):
         return None
     _, encoded = uri.split(",", 1)
-    return base64.b64decode(encoded, validate=False)
+    return recompress_png(base64.b64decode(encoded, validate=False))
 
 
 def _picture_caption_text(item: "PictureItem", docling_doc: "DoclingDocument") -> str:

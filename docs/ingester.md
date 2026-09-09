@@ -435,6 +435,38 @@ haiku-ingester serve --port 9000              # override API port
 The service blocks until SIGINT or SIGTERM. Shutdown drains the API
 server, then pollers, then in-flight workers.
 
+### Run it under a supervisor
+
+A document can stall docling indefinitely. `processing.conversion_timeout`
+abandons it, but the conversion thread is never cancelled and it keeps the
+shared docling converter, so the process cannot convert again. The worker
+records that document dead and then exits non-zero, leaving the process to be
+replaced.
+
+**So the service needs something to restart it.** The example
+`docker-compose.yml` sets `restart: unless-stopped`; a systemd unit needs
+`Restart=always`, and any other supervisor needs its equivalent. Without one,
+the ingester stops for good the first time a document stalls.
+
+Restarting mid-job is a supported path independently of this: jobs whose owner
+disappears are reset to `queued` by the reaper once their lease expires, and
+their attempt is refunded rather than consumed.
+
+The document that stalled is not tried again on its own. It is recorded dead
+with `conversion_stalled`, and `uq_jobs_blocking_op` keeps that row in the slot
+for its (source, URI, op, revision), so discovery cannot re-enqueue the same
+bytes. Retention never removes it. These do:
+
+- The source publishing a new revision of the file, which lands in a different
+  slot.
+- `POST /dlq/{job_id}/retry`, once the document is fixed. Retrying a different
+  dead row for the same slot answers 409 and names the row in the way.
+- Deleting the document. A DELETE holds its own slot, and a successful one
+  prunes the dead rows for the URI.
+
+A stall that did not strand the shared converter — HTML and Markdown build
+their own — is tombstoned the same way but does not end the process.
+
 ### Single-writer constraint
 
 haiku.rag serializes multi-table writes with a process-local lock and rolls

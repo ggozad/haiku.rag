@@ -53,7 +53,7 @@ embeddings:
     api_key: ${VENDOR_B_KEY}
 ```
 
-`api_key` is honored on the `openai` and `ollama` providers, on `vllm` embedders and rerankers, and on the picture-description VLM endpoint (which otherwise falls back to `OPENAI_API_KEY` only for the public OpenAI endpoint, never for a custom `base_url`). Other providers (`anthropic`, `cohere`, `voyageai`, …) reach their vendor SDK by name and read their own environment variable; setting `api_key` there raises rather than being dropped silently.
+`api_key` is honored on the `openai`, `ollama` and `vllm` providers, on `vllm` embedders and rerankers, and on the picture-description VLM endpoint (which otherwise falls back to `OPENAI_API_KEY` only for the public OpenAI endpoint, never for a custom `base_url`). Other providers (`anthropic`, `cohere`, `voyageai`, …) reach their vendor SDK by name and read their own environment variable; setting `api_key` there raises rather than being dropped silently.
 
 ### Thinking Control
 
@@ -80,7 +80,7 @@ See the [Pydantic AI thinking documentation](https://ai.pydantic.dev/thinking/) 
 - **Groq**: Models with reasoning capabilities
 - **Bedrock**: Claude, Qwen, and `gpt-oss` models. Bedrock Converse does not serve the proprietary OpenAI models, so configuring one raises an error. Reach those through `provider: bedrock-mantle`.
 - **Ollama**: Any model with a thinking capability. `enable_thinking` maps to `reasoning_effort`: `false` sends `none` (`low` for `gpt-oss`, whose template has no `none` level), `true` sends `high`.
-- **vLLM**: Models with a pydantic-ai reasoning profile (gpt-oss). Qwen3, Gemma, and similar templates ignore the OpenAI `reasoning_effort` that `enable_thinking` translates to — use [`extra_body`](#raw-provider-pass-through) to drive them.
+- **vLLM**: On `provider: vllm`, models whose profile advertises thinking (the Gemma 4 and DeepSeek V4 families, Qwen3 thinking checkpoints), where `true` becomes `reasoning_effort: medium` and `false` becomes `none`. An explicit `-Thinking` checkpoint is marked always-on, so `false` is dropped for it and thinking stays enabled. The field is inert entirely for the rest, Qwen3.8 and Muse Glimmer included, and for a name the profile does not recognise. In every case where the field does not do what you need, `extra_body: {reasoning_effort: …}` reaches the request directly and overrides any derived level.
 - **LM Studio**: Models supporting reasoning (gpt-oss, etc.)
 
 **When to use:**
@@ -110,7 +110,7 @@ qa:
         enable_thinking: false
 ```
 
-vLLM serves Qwen3 chat templates that read their thinking switch from `chat_template_kwargs.enable_thinking`. The high-level `enable_thinking` setting on the openai provider maps to vLLM's `reasoning_effort` parameter, which Qwen3 templates ignore, so the field is a no-op for this combination. `extra_body` reaches the chat template directly and disables thinking. With it off, Qwen3 returns the answer in `content` immediately instead of emitting a hidden reasoning trace first.
+vLLM serves Qwen3 chat templates that read their thinking switch from `chat_template_kwargs.enable_thinking`. The high-level `enable_thinking` setting sends nothing at all on the openai provider for a vLLM-served model: it becomes `reasoning_effort` only for a model whose pydantic-ai profile advertises reasoning support, which these names do not, so no such field reaches the request. `extra_body` reaches the chat template directly and disables thinking. With it off, Qwen3 returns the answer in `content` immediately instead of emitting a hidden reasoning trace first.
 
 **Example: enable Gemma-family thinking on vLLM:**
 
@@ -127,7 +127,7 @@ qa:
 
 Same mechanism, opposite direction. Without `extra_body` the Gemma-4 chat template defaults to non-thinking and dumps a verbose answer straight into `content`. With it on, vLLM (started with `--reasoning-parser`) populates the parsed `reasoning` field and leaves `content` as the concise final answer.
 
-**Provider support:** honored by openai, ollama, anthropic, and groq via pydantic-ai's `ModelSettings.extra_body`. Silently ignored by google and bedrock.
+**Provider support:** honored by openai, ollama, anthropic, groq and vllm via pydantic-ai's `ModelSettings.extra_body`. Silently ignored by google and bedrock.
 
 ## Embedding Providers
 
@@ -362,19 +362,63 @@ Set your API key via environment variable:
 export ANTHROPIC_API_KEY=your-api-key
 ```
 
-### OpenAI-Compatible Servers (vLLM, LM Studio, etc.)
+### vLLM
 
-For local inference servers with OpenAI-compatible APIs, use the `openai` provider with a custom `base_url`:
+vLLM has its own provider. `base_url` is accepted with or without the `/v1` path:
 
 ```yaml
-# vLLM example
 qa:
   model:
-    provider: openai
+    provider: vllm
     name: Qwen/Qwen3-4B
-    base_url: http://localhost:8002/v1
+    base_url: http://localhost:8002
+```
 
-# LM Studio example
+The provider brings its own model profile, which merges leading system messages
+(some chat templates reject more than one) and sets per-family reasoning and
+tool-choice behaviour. It infers the family from the model name, so an alias
+decides what it infers: `nvidia/Gemma-4-26B-A4B-NVFP4` is recognised as Gemma 4
+and `gemma4-26b`, the same model under a different name, is not — and
+`enable_thinking` works on the first and is inert on the second.
+
+The effort levels differ per model, so no level is chosen for you:
+`Inferact/Qwen3.8-27B-NVFP4` rejects `high` and takes `xhigh`, `medium` or
+`low`. Set the value the server accepts with `extra_body`, which reaches the
+request as a top-level field and overrides any level the profile derived:
+
+```yaml
+qa:
+  model:
+    provider: vllm
+    name: RedHatAI/Muse-Glimmer-30B-NVFP4
+    base_url: http://localhost:11450
+    extra_body:
+      reasoning_effort: xhigh
+```
+
+A template with a switch of its own takes `chat_template_kwargs` instead, as
+Muse Glimmer does — it accepts `reasoning_effort` and ignores it:
+
+```yaml
+qa:
+  model:
+    provider: vllm
+    name: RedHatAI/Muse-Glimmer-30B-NVFP4
+    base_url: http://localhost:11450
+    extra_body:
+      chat_template_kwargs:
+        reasoning_strength: high
+```
+
+`provider: vllm` under `embeddings.model` and `reranking.model` is a different
+implementation: haiku.rag's own client for vLLM's native multimodal endpoints.
+Setting it in one place says nothing about the other.
+
+### Other OpenAI-Compatible Servers (LM Studio, sglang, etc.)
+
+For other local inference servers with OpenAI-compatible APIs, use the `openai` provider with a custom `base_url`:
+
+```yaml
 qa:
   model:
     provider: openai
@@ -383,7 +427,7 @@ qa:
     enable_thinking: false
 ```
 
-**Note:** The server must be running with a model that supports tool calling. The `base_url` must include the `/v1` path.
+**Note:** The server must be running with a model that supports tool calling. On the `openai` provider the `base_url` must include the `/v1` path.
 
 ### Other Providers
 

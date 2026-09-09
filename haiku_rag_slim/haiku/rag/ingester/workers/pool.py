@@ -23,6 +23,19 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+def _terminate_wedged_process() -> None:  # pragma: no cover - ends the process
+    """Leave the process for a supervisor to replace, now, without unwinding.
+
+    The caller has already committed the job's terminal state, and the process
+    cannot convert again, so every further claim is a job it will fail.
+    """
+    try:
+        logging.shutdown()
+    finally:
+        os._exit(1)
+
+
 _WORKER_BREAKER_THRESHOLD = 5
 _WORKER_BREAKER_COOLDOWN_S = 60.0
 
@@ -282,6 +295,45 @@ class WorkerPool:
         finally:
             self._untrack_inflight(job.id, worker_id)
 
+    async def _finish_permanent(
+        self, job: Job, error: PermanentError, worker_id: str
+    ) -> None:
+        """Record a permanent failure: dead, then the suppression marker."""
+        if not await self._jobs.mark_dead(
+            job.id, str(error), worker_id, conversion_stalled=error.conversion_stalled
+        ):
+            logger.warning(
+                "Job %s lost claim before mark_dead (likely reaper race); "
+                "letting the re-claiming worker drive",
+                job.id,
+            )
+            return
+        logger.info("Job %s dead (permanent): %s", job.id, error)
+        # Record the failed revision so discovery treats the unchanged file as
+        # accounted-for and stops re-enqueuing it every sweep. sync_state.revision
+        # means "last accounted-for revision" — ingested OR permanently failed.
+        # Revision-less sources (no ETag) can't be suppressed this way.
+        if job.revision is None:
+            return
+        try:
+            await self._sync.upsert(
+                job.source_id,
+                job.uri,
+                revision=job.revision,
+                content_hash=job.content_hash,
+                ingested=False,
+            )
+        except Exception:
+            # The job is already dead. A failed marker write only means the
+            # next sweep may re-enqueue this URI — not worth crashing the
+            # worker and shrinking the pool over.
+            logger.exception(
+                "Job %s dead but failure marker write failed for %s; "
+                "next sweep may re-enqueue",
+                job.id,
+                job.uri,
+            )
+
     async def _run_job_lifecycle(self, job: Job, worker_id: str) -> None:
         started = time.monotonic()
         logger.info("Processing %s %s (job %s)", job.op.value, job.uri, job.id)
@@ -316,37 +368,21 @@ class WorkerPool:
                 logger.info("Job %s released back to queue on cancel", job.id)
             raise
         except PermanentError as e:
-            if not await self._jobs.mark_dead(job.id, str(e), worker_id):
-                logger.warning(
-                    "Job %s lost claim before mark_dead (likely reaper race); "
-                    "letting the re-claiming worker drive",
-                    job.id,
-                )
-                return
-            logger.info("Job %s dead (permanent): %s", job.id, e)
-            # Record the failed revision so discovery treats the unchanged file as
-            # accounted-for and stops re-enqueuing it every sweep. sync_state.revision
-            # means "last accounted-for revision" — ingested OR permanently failed.
-            # Revision-less sources (no ETag) can't be suppressed this way.
-            if job.revision is not None:
-                try:
-                    await self._sync.upsert(
-                        job.source_id,
-                        job.uri,
-                        revision=job.revision,
-                        content_hash=job.content_hash,
-                        ingested=False,
-                    )
-                except Exception:
-                    # The job is already dead. A failed marker write only means
-                    # the next sweep may re-enqueue this URI — not worth crashing
-                    # the worker and shrinking the pool over.
-                    logger.exception(
-                        "Job %s dead but failure marker write failed for %s; "
-                        "next sweep may re-enqueue",
+            # A process that cannot convert has to go however this branch
+            # ends: `mark_dead` losing the claim or raising must not leave it
+            # claiming jobs it will fail. Persistence still runs first, since
+            # `reap_stale` refunds the attempt of a vanished owner.
+            try:
+                await self._finish_permanent(job, e, worker_id)
+            finally:
+                if e.fatal_to_process:
+                    logger.error(
+                        "Job %s left this process unable to convert; exiting "
+                        "for a supervisor to replace it: %s",
                         job.id,
-                        job.uri,
+                        e,
                     )
+                    _terminate_wedged_process()
             return
         except TransientError as e:
             breaker = self._breaker_for(job.source_id)

@@ -28,6 +28,7 @@ class Job(BaseModel):
     attempts: int
     max_attempts: int
     last_error: str | None = None
+    conversion_stalled: bool = False
     # Free-form per-job payload (e.g. storage_options snapshot). Serialized
     # to a JSON TEXT column.
     extra: dict | None = None

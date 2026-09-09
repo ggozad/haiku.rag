@@ -1,6 +1,7 @@
 """End-to-end ingester tests: poller -> queue -> worker -> sync_state."""
 
 import asyncio
+import inspect
 from unittest.mock import AsyncMock
 
 import pytest
@@ -19,7 +20,7 @@ async def _wait_for(predicate, *, timeout: float = 5.0, interval: float = 0.05):
     deadline = asyncio.get_running_loop().time() + timeout
     while True:
         result = (
-            await predicate() if asyncio.iscoroutinefunction(predicate) else predicate()
+            await predicate() if inspect.iscoroutinefunction(predicate) else predicate()
         )
         if result:
             return result

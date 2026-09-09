@@ -1,7 +1,5 @@
 import asyncio
-
 from pathlib import Path
-from typing import cast
 
 import typer
 from dotenv import find_dotenv, load_dotenv
@@ -9,16 +7,15 @@ from rich.console import Console
 
 from evaluations.artifacts import download_dataset_db, upload_dataset_db
 from evaluations.config import DatasetSpec
+from evaluations.datasets import DATASETS
 from evaluations.population import populate_db
 from evaluations.qa import TARGETS, Target, run_live_qa_benchmark, run_qa_benchmark
 from evaluations.retrieval import run_retrieval_benchmark
-from evaluations.datasets import DATASETS
 from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.logging import configure_cli_logging
 from haiku.rag.telemetry import configure as configure_telemetry
 from haiku.rag.utils import parse_model_option
-
 
 load_dotenv(find_dotenv(usecwd=True))
 
@@ -227,7 +224,7 @@ def run(
         raise typer.BadParameter(
             f"Unknown target {target!r}. Choose from: {', '.join(TARGETS)}"
         )
-    target_value = cast(Target, target)
+    target_value = target
     judge_model_config = app_config.evaluations.judge
     capability_model_config = (
         parse_model_option(capability_model) if capability_model else None

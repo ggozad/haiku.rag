@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 from pydantic_ai import Agent
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -15,8 +16,6 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.models import Model
-
-from pydantic_ai.capabilities import AbstractCapability
 
 from evaluations.config import Turn
 from haiku.rag.capabilities import EvidenceState, RAGCapabilityBase

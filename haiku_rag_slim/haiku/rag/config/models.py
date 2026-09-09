@@ -22,12 +22,13 @@ class ModelConfig(ConfigModel):
     Attributes:
         provider: Model provider (ollama, openai, anthropic, etc.)
         name: Model name/identifier
-        base_url: Optional base URL for OpenAI-compatible servers (vLLM, LM Studio, etc.)
+        base_url: Base URL for the vllm provider, and for an OpenAI-compatible
+            server reached through the openai provider (LM Studio, sglang).
         api_key: Key sent to the endpoint, overriding the provider's own
             environment variable. Lets several openai-compatible endpoints each
             carry their own key; typically written as `${VENDOR_KEY}`. Honored
-            on the openai and ollama providers, and on the picture-description
-            VLM endpoint.
+            on the openai, ollama and vllm providers, and on the
+            picture-description VLM endpoint.
         enable_thinking: Control reasoning behavior (true/false/None for default)
         temperature: Sampling temperature (0.0 to 1.0+)
         max_tokens: Maximum tokens to generate
@@ -36,7 +37,7 @@ class ModelConfig(ConfigModel):
             `ModelSettings.extra_body`. Provider-side escape hatch for
             keys haiku.rag doesn't model explicitly (e.g. vLLM's
             `chat_template_kwargs.enable_thinking: false` for Qwen3).
-            Honored by openai/ollama/anthropic/groq; ignored by google/bedrock.
+            Honored by openai/ollama/anthropic/groq and vllm; ignored by google/bedrock.
     """
 
     provider: str = "ollama"
@@ -242,6 +243,15 @@ class ConversionOptions(ConfigModel):
     table_mode: Literal["fast", "accurate"] = "accurate"
     table_cell_matching: bool = True
 
+    # The parsers segment items differently, so the local and serve converters
+    # diverge unless both are told the same one. `threaded_docling_parse` is
+    # docling's own default and is not ours: on some documents its page
+    # producer never delivers, and `standard_pdf_pipeline.get_batch` waits on
+    # an unclosed queue with no timeout, so the conversion never returns.
+    pdf_backend: Literal["threaded_docling_parse", "docling_parse", "pypdfium2"] = (
+        "docling_parse"
+    )
+
     # Image options
     images_scale: float = Field(default=2.0, gt=0)
     generate_page_images: bool = True
@@ -267,6 +277,16 @@ class ProcessingConfig(ConfigModel):
     chunking_merge_peers: bool = True
     chunking_use_markdown_tables: bool = False
     conversion_options: ConversionOptions = Field(default_factory=ConversionOptions)
+    conversion_timeout: float = Field(
+        default=600.0,
+        gt=0,
+        description=(
+            "Seconds a single document conversion may take before it is "
+            "abandoned. It runs on a daemon thread that is never cancelled; "
+            "abandoning one that used the shared docling converter means the "
+            "process must be replaced to convert again."
+        ),
+    )
     split_pages: int = Field(
         default=0,
         ge=0,

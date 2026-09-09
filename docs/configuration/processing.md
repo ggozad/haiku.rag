@@ -150,6 +150,15 @@ bounded by one slice's working set rather than the whole document; in
 docling-serve mode each slice is also an independent task that lets the
 server release task-local state between requests.
 
+A slice sees only its own pages, so the result is not identical to a
+single-pass conversion. docling orders and joins text within the slice it is
+given: a paragraph spanning a boundary stays two items instead of one, and a
+caption near a boundary can order differently against body text. On a 9-page
+document that costs about one text item and one chunk per boundary; no text is
+lost or duplicated. Single-pass is therefore the better output, and
+`split_pages` trades some of that for a bounded memory ceiling. Changing the
+setting re-chunks those boundary regions on the next ingest.
+
 Recommendation: `10` is a sensible starting point for any consistently-large
 PDF workload. Smaller slices reduce peak memory but multiply task overhead
 (per-slice docling startup + HTTP round-trips for docling-serve). Cross-page
@@ -175,6 +184,18 @@ continuously:
 ### Conversion Options
 
 The `conversion_options` section allows fine-grained control over document conversion. These options work with both `docling-local` and `docling-serve` converters.
+
+#### PDF Parsing
+
+```yaml
+conversion_options:
+  pdf_backend: docling_parse   # docling_parse, threaded_docling_parse, pypdfium2
+```
+
+- **pdf_backend**: The parser docling uses to read a PDF. The parsers segment a document differently, so both converters are given this same value: change it and expect different items, chunk boundaries and chunk ids on the next ingest.
+  - `docling_parse` (default): serialized page parsing
+  - `threaded_docling_parse`: concurrent page parsing, and docling's own default. On some documents its page producer never delivers and the conversion never returns, so it is not ours. Measured over ten arXiv papers against `docling_parse`: one table undetected, 7% fewer table cells, 9% faster.
+  - `pypdfium2`: faster and simpler, less layout detail. Over the same ten papers: 7% fewer words and 28% fewer table cells.
 
 #### OCR Settings
 
@@ -325,6 +346,32 @@ The Embedder column below is driven by `embeddings.model.multimodal`, not the pr
 | Vision QA on figure-rich docs (no cross-modal search) | `image` or `description` | text-only | `true` |
 | Cross-modal search + vision QA | `image` or `description` | multimodal | `true` |
 | Cross-modal search, text QA only | `description` | multimodal | `false` |
+
+### Conversion Timeout
+
+```yaml
+processing:
+  conversion_timeout: 600   # seconds
+```
+
+Only `docling-local` reads this; a docling-serve conversion is bounded by
+`providers.docling_serve.timeout` per HTTP call instead.
+
+- **conversion_timeout**: How long one document may spend in conversion before
+  it is abandoned and `ConversionTimeoutError` is raised. It bounds the
+  caller's wait only. Each conversion runs on its own daemon thread, which is
+  never cancelled, so an abandoned one runs to whatever end it reaches without
+  holding up process exit.
+
+  PDFs and office formats share one docling converter, and an abandoned
+  conversion keeps it, so subsequent conversions raise `ConverterWedgedError`
+  naming the restart. A service that must keep ingesting after a stalled PDF
+  has to replace the process, not retry in it.
+
+  HTML and Markdown build a converter per call, so abandoning one leaves later
+  conversions able to run. It is not free either: the thread is never
+  cancelled, so each stall keeps one OS thread and its memory for the life of
+  the process.
 
 ### Chunking Strategies
 

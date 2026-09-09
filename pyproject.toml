@@ -91,18 +91,21 @@ dev = [
     "pydantic-ai-slim[bedrock]",
     "pydantic-ai-slim[google]",
     "pydantic-ai-slim[groq]",
-    "ty>=0.0.28",
+    "ty>=0.0.78",
     "pytest>=9.0.2",
-    "pytest-asyncio>=1.3.0",
+    "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
     "pytest-recording>=0.13.4",
     "pytest-xdist>=3.8.0",
-    "ruff>=0.15.9",
+    "ruff>=0.16.6",
 ]
 
 [tool.ruff]
 line-length = 88
 src = ["haiku_rag_slim"]
+# ruff 0.16 added "*.md" to the default include set. The packaged capability
+# instructions are Markdown whose wording is measured, so ruff stays off it.
+include = ["*.py", "*.pyi", "*.ipynb", "**/pyproject.toml", "**/ruff.toml", "**/.ruff.toml"]
 # Enable Flake's "E" and "F" codes by default and "I" for sorting imports.
 # Exclude a variety of commonly ignored directories.
 
@@ -145,7 +148,14 @@ markers = [
 ]
 
 # pyproject.toml
-filterwarnings = ["error", "ignore::UserWarning", "ignore::DeprecationWarning"]
+filterwarnings = [
+    "error",
+    "ignore::UserWarning",
+    "ignore::DeprecationWarning",
+    # rapidocr 3.9.2 ships LaTeX in a docstring; beartype's import hook
+    # compiles it, and "error" would make the SyntaxWarning fatal.
+    "ignore:invalid escape sequence:SyntaxWarning",
+]
 
 [tool.coverage.run]
 source = ["haiku_rag_slim"]

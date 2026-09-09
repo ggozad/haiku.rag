@@ -45,7 +45,7 @@ def _retrieval_from_csv(path: str) -> dict[str, list[str]]:
 
 
 def _retrieval_from_trace(trace_id: str) -> dict[str, list[str]]:
-    from logfire.experimental.query_client import LogfireQueryClient
+    from logfire.query_client import LogfireQueryClient
 
     token = os.environ.get("LOGFIRE_READ_TOKEN")
     if not token:
@@ -58,7 +58,7 @@ def _retrieval_from_trace(trace_id: str) -> dict[str, list[str]]:
             "SELECT attributes->>'inputs' AS question, attributes->>'output' AS ranked "
             f"FROM records WHERE trace_id = '{trace_id}' AND span_name LIKE 'case:%'"
         ),
-        min_timestamp=datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc),
+        min_timestamp=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
         limit=10000,
     )["rows"]
     return {r["question"]: json.loads(r["ranked"]) for r in rows if r.get("ranked")}

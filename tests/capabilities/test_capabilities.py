@@ -1619,7 +1619,9 @@ async def test_a_run_pausing_for_deferred_work_leaves_the_question_in_progress(
     async def model(_messages, _info):
         return ModelResponse(parts=[ToolCallPart("external_tool", {})])
 
-    agent = Agent(
+    # ty cannot resolve the deps type parameter through a multi-member
+    # `output_type`; the single-type calls in this file check cleanly.
+    agent = Agent(  # ty: ignore[no-matching-overload]
         FunctionModel(model),
         deps_type=Deps,
         capabilities=[rag],
@@ -1632,7 +1634,10 @@ async def test_a_run_pausing_for_deferred_work_leaves_the_question_in_progress(
 
     deps = Deps()
 
-    result = await agent.run("a question needing external work", deps=deps)
+    result = await agent.run(
+        "a question needing external work",
+        deps=deps,  # ty: ignore[invalid-argument-type]
+    )
 
     assert isinstance(result.output, DeferredToolRequests)
     assert _record(deps, "rag").in_progress is True

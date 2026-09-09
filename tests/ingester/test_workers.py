@@ -1311,3 +1311,133 @@ async def test_reaper_skips_prune_when_retention_none(client, jobs, sync, conn):
     refreshed = await jobs.get_job(job.id)
     assert refreshed is not None
     assert refreshed.status is JobStatus.SUCCEEDED
+
+
+@pytest.mark.asyncio
+async def test_fatal_permanent_error_terminates_after_the_job_is_dead(
+    client, jobs, sync, monkeypatch
+):
+    """The job must be recorded dead before the process goes. `reap_stale`
+    refunds the attempt of a claim whose owner vanished, so terminating first
+    would return the poison document to the queue on every restart."""
+    from haiku.rag.ingester.workers import pool as pool_module
+
+    client.create_document_from_source.side_effect = PermanentError(
+        "conversion deadline: took too long", fatal_to_process=True
+    )
+    job = await jobs.enqueue("src", "file:///x/y.pdf", JobOp.UPSERT, revision="r0")
+    assert job is not None
+
+    order: list[str] = []
+    real_mark_dead = jobs.mark_dead
+    real_upsert = sync.upsert
+
+    async def _recording_mark_dead(*args, **kwargs):
+        order.append("mark_dead")
+        return await real_mark_dead(*args, **kwargs)
+
+    async def _recording_upsert(*args, **kwargs):
+        order.append("marker")
+        return await real_upsert(*args, **kwargs)
+
+    monkeypatch.setattr(jobs, "mark_dead", _recording_mark_dead)
+    monkeypatch.setattr(sync, "upsert", _recording_upsert)
+    monkeypatch.setattr(
+        pool_module, "_terminate_wedged_process", lambda: order.append("exit")
+    )
+
+    pool = _pool(client, jobs, sync)
+    await pool.drain_once()
+
+    assert order == ["mark_dead", "marker", "exit"]
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None and refreshed.status is JobStatus.DEAD
+
+
+@pytest.mark.asyncio
+async def test_ordinary_permanent_error_does_not_terminate(
+    client, jobs, sync, monkeypatch
+):
+    """Only a failure that left the process unable to convert ends it."""
+    from haiku.rag.ingester.workers import pool as pool_module
+
+    client.create_document_from_source.side_effect = PermanentError("encrypted")
+    job = await jobs.enqueue("src", "file:///x/y.pdf", JobOp.UPSERT, revision="r0")
+    assert job is not None
+
+    terminated = False
+
+    def _fake_exit() -> None:
+        nonlocal terminated
+        terminated = True
+
+    monkeypatch.setattr(pool_module, "_terminate_wedged_process", _fake_exit)
+
+    pool = _pool(client, jobs, sync)
+    await pool.drain_once()
+
+    assert terminated is False
+
+
+@pytest.mark.asyncio
+async def test_fatal_error_terminates_when_mark_dead_loses_the_claim(
+    client, jobs, sync, monkeypatch
+):
+    """The reaper can reset the claim first. The process still cannot convert,
+    so it must not carry on claiming jobs it will fail."""
+    from haiku.rag.ingester.workers import pool as pool_module
+
+    client.create_document_from_source.side_effect = PermanentError(
+        "conversion deadline", conversion_stalled=True, fatal_to_process=True
+    )
+    job = await jobs.enqueue("src", "file:///x/y.pdf", JobOp.UPSERT)
+    assert job is not None
+
+    async def _lost_claim(*args, **kwargs):
+        return False
+
+    terminated = False
+
+    def _fake_exit() -> None:
+        nonlocal terminated
+        terminated = True
+
+    monkeypatch.setattr(jobs, "mark_dead", _lost_claim)
+    monkeypatch.setattr(pool_module, "_terminate_wedged_process", _fake_exit)
+
+    pool = _pool(client, jobs, sync)
+    await pool.drain_once()
+
+    assert terminated is True
+
+
+@pytest.mark.asyncio
+async def test_fatal_error_terminates_when_mark_dead_raises(
+    client, jobs, sync, monkeypatch
+):
+    """A failing queue write must not leave a wedged process running either."""
+    from haiku.rag.ingester.workers import pool as pool_module
+
+    client.create_document_from_source.side_effect = PermanentError(
+        "conversion deadline", conversion_stalled=True, fatal_to_process=True
+    )
+    job = await jobs.enqueue("src", "file:///x/y.pdf", JobOp.UPSERT)
+    assert job is not None
+
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("queue is gone")
+
+    terminated = False
+
+    def _fake_exit() -> None:
+        nonlocal terminated
+        terminated = True
+
+    monkeypatch.setattr(jobs, "mark_dead", _boom)
+    monkeypatch.setattr(pool_module, "_terminate_wedged_process", _fake_exit)
+
+    pool = _pool(client, jobs, sync)
+    with pytest.raises(RuntimeError, match="queue is gone"):
+        await pool.drain_once()
+
+    assert terminated is True
