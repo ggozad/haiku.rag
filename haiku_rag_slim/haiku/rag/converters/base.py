@@ -56,7 +56,7 @@ def vlm_api_params(model: "ModelConfig", max_tokens: int) -> dict[str, object]:
     return params
 
 
-def flatten_inline_groups(doc: "DoclingDocument") -> None:
+def flatten_inline_groups(doc: "DoclingDocument") -> bool:
     """Replace every inline group of text runs with the one text item it renders as.
 
     docling's markdown and HTML backends model a paragraph carrying inline
@@ -69,6 +69,8 @@ def flatten_inline_groups(doc: "DoclingDocument") -> None:
     Every group is serialized before any is replaced, and all are deleted in
     one call: a serializer caches the refs it excludes, and a deletion
     renumbers every ref in the document.
+
+    Returns whether the document was changed.
     """
     from docling_core.transforms.serializer.markdown import (
         MarkdownDocSerializer,
@@ -115,8 +117,11 @@ def flatten_inline_groups(doc: "DoclingDocument") -> None:
                 after=False,
             )
 
-    if flattened:
-        doc.delete_items(node_items=[group for group, _, _, _ in flattened])
+    if not flattened:
+        return False
+
+    doc.delete_items(node_items=[group for group, _, _, _ in flattened])
+    return True
 
 
 class DocumentConverter(ABC):

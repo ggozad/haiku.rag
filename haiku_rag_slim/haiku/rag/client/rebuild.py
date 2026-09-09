@@ -16,6 +16,7 @@ from haiku.rag.client.documents import (
 from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.client.titles import generate_title
 from haiku.rag.converters import get_converter
+from haiku.rag.converters.base import flatten_inline_groups
 from haiku.rag.store.compression import compress_docling_split
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
@@ -615,6 +616,12 @@ async def _rebuild_rechunk(
                 "requires it. Run a full rebuild (without --rechunk) instead."
             )
 
+        # A document stored before inline groups were flattened carries them
+        # in its blob; chunks and items both come from it here, so normalize
+        # it first and keep the result.
+        if await asyncio.to_thread(flatten_inline_groups, docling_document):
+            await asyncio.to_thread(_store_structure, docling_document, doc)
+
         # Stored blob has stripped picture URIs; pass the snapshot so
         # build_picture_chunks (inside chunk()) can recover the bytes.
         existing_picture_data = (
@@ -652,18 +659,24 @@ async def _rebuild_rechunk(
         await _flush_rebuild_batch(session, pending_docs, pending_chunks)
 
 
-def _apply_descriptions_sync(
-    docling_doc: "DoclingDocument", doc: Document, descriptions: dict[str, str]
-) -> int:
-    """Patch picture descriptions into the docling document and re-compress.
+def _store_structure(docling_doc: "DoclingDocument", doc: Document) -> None:
+    """Compress the docling document into ``doc.docling_document``.
 
     Updates only docling_document — set_docling would also overwrite
     docling_pages by routing through compress_docling_split, which
     extracts pages from the in-memory JSON and finds none (the pages
     blob is stored separately and is not loaded by get_docling_document).
-    That would silently destroy page rasters for every doc with at
-    least one undescribed picture.
+    That would silently destroy page rasters.
     """
+    structure_bytes, _ = compress_docling_split(docling_doc.model_dump(mode="json"))
+    doc.docling_document = structure_bytes
+    doc.docling_version = docling_doc.version
+
+
+def _apply_descriptions_sync(
+    docling_doc: "DoclingDocument", doc: Document, descriptions: dict[str, str]
+) -> int:
+    """Patch picture descriptions into the docling document and re-compress."""
     for pic in docling_doc.pictures:
         text = descriptions.get(pic.self_ref)
         if not text:
@@ -672,9 +685,7 @@ def _apply_descriptions_sync(
             pic.meta = PictureMeta()
         pic.meta.description = DescriptionMetaField(text=text)
 
-    structure_bytes, _ = compress_docling_split(docling_doc.model_dump(mode="json"))
-    doc.docling_document = structure_bytes
-    doc.docling_version = docling_doc.version
+    _store_structure(docling_doc, doc)
     return len(descriptions)
 
 
