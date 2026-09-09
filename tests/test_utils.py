@@ -655,6 +655,7 @@ def test_get_model_vllm_accepts_api_key():
         ModelConfig(provider="vllm", name="qwen3-8b", api_key="sk-vllm-key")
     )
     assert isinstance(result, OpenAIChatModel)
+    assert result.client.api_key == "sk-vllm-key"
 
 
 @pytest.mark.parametrize("provider", ["nonsense", "gemini"])

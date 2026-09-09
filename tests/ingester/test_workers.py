@@ -1377,3 +1377,67 @@ async def test_ordinary_permanent_error_does_not_terminate(
     await pool.drain_once()
 
     assert terminated is False
+
+
+@pytest.mark.asyncio
+async def test_fatal_error_terminates_when_mark_dead_loses_the_claim(
+    client, jobs, sync, monkeypatch
+):
+    """The reaper can reset the claim first. The process still cannot convert,
+    so it must not carry on claiming jobs it will fail."""
+    from haiku.rag.ingester.workers import pool as pool_module
+
+    client.create_document_from_source.side_effect = PermanentError(
+        "conversion deadline", conversion_stalled=True, fatal_to_process=True
+    )
+    job = await jobs.enqueue("src", "file:///x/y.pdf", JobOp.UPSERT)
+    assert job is not None
+
+    async def _lost_claim(*args, **kwargs):
+        return False
+
+    terminated = False
+
+    def _fake_exit() -> None:
+        nonlocal terminated
+        terminated = True
+
+    monkeypatch.setattr(jobs, "mark_dead", _lost_claim)
+    monkeypatch.setattr(pool_module, "_terminate_wedged_process", _fake_exit)
+
+    pool = _pool(client, jobs, sync)
+    await pool.drain_once()
+
+    assert terminated is True
+
+
+@pytest.mark.asyncio
+async def test_fatal_error_terminates_when_mark_dead_raises(
+    client, jobs, sync, monkeypatch
+):
+    """A failing queue write must not leave a wedged process running either."""
+    from haiku.rag.ingester.workers import pool as pool_module
+
+    client.create_document_from_source.side_effect = PermanentError(
+        "conversion deadline", conversion_stalled=True, fatal_to_process=True
+    )
+    job = await jobs.enqueue("src", "file:///x/y.pdf", JobOp.UPSERT)
+    assert job is not None
+
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("queue is gone")
+
+    terminated = False
+
+    def _fake_exit() -> None:
+        nonlocal terminated
+        terminated = True
+
+    monkeypatch.setattr(jobs, "mark_dead", _boom)
+    monkeypatch.setattr(pool_module, "_terminate_wedged_process", _fake_exit)
+
+    pool = _pool(client, jobs, sync)
+    with pytest.raises(RuntimeError, match="queue is gone"):
+        await pool.drain_once()
+
+    assert terminated is True

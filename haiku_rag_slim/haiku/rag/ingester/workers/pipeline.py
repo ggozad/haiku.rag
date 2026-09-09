@@ -57,7 +57,9 @@ def _classify(exc: BaseException) -> Exception:
         # stall on it again. `converter_wedged` decides whether this process can
         # still convert anything else.
         return PermanentError(
-            f"conversion deadline: {exc}", fatal_to_process=exc.converter_wedged
+            f"conversion deadline: {exc}",
+            conversion_stalled=True,
+            fatal_to_process=exc.converter_wedged,
         )
 
     if isinstance(exc, ConverterWedgedError):

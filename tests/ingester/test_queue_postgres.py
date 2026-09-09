@@ -191,7 +191,7 @@ async def test_tombstone_conflict_is_enforced_by_the_index(postgres_dburi):
         assert first is not None
         claimed = await jobs.claim_next("w")
         assert claimed is not None
-        assert await jobs.mark_dead(claimed.id, "stalled", "w", killed_worker=True)
+        assert await jobs.mark_dead(claimed.id, "stalled", "w", conversion_stalled=True)
 
         assert await jobs.enqueue("s", "u", JobOp.UPSERT) is None
         assert await jobs.enqueue("s", "u", JobOp.DELETE) is not None
@@ -212,6 +212,6 @@ async def test_concurrent_mark_dead_cannot_leave_a_poison_upsert_queued(postgres
 
             enqueued, _ = await asyncio.gather(
                 jobs.enqueue("s", uri, JobOp.UPSERT),
-                jobs.mark_dead(claimed.id, "stalled", "w", killed_worker=True),
+                jobs.mark_dead(claimed.id, "stalled", "w", conversion_stalled=True),
             )
             assert enqueued is None, f"attempt {attempt}: poison upsert queued"

@@ -37,7 +37,7 @@ class ModelConfig(ConfigModel):
             `ModelSettings.extra_body`. Provider-side escape hatch for
             keys haiku.rag doesn't model explicitly (e.g. vLLM's
             `chat_template_kwargs.enable_thinking: false` for Qwen3).
-            Honored by openai/ollama/anthropic/groq; ignored by google/bedrock.
+            Honored by openai/ollama/anthropic/groq and vllm; ignored by google/bedrock.
     """
 
     provider: str = "ollama"
@@ -282,9 +282,9 @@ class ProcessingConfig(ConfigModel):
         gt=0,
         description=(
             "Seconds a single document conversion may take before it is "
-            "abandoned. The conversion runs on in a thread that is never "
-            "cancelled; abandoning one that used the shared docling converter "
-            "means the process must be replaced to convert again."
+            "abandoned. It runs on a daemon thread that is never cancelled; "
+            "abandoning one that used the shared docling converter means the "
+            "process must be replaced to convert again."
         ),
     )
     split_pages: int = Field(

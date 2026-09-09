@@ -23,6 +23,10 @@ from haiku.rag.converters.base import (
 )
 from haiku.rag.converters.docling_local import DoclingLocalConverter
 from haiku.rag.converters.docling_serve import DoclingServeConverter
+from haiku.rag.converters.exceptions import (
+    ConversionTimeoutError,
+    ConverterWedgedError,
+)
 from haiku.rag.converters.text_utils import TextFileHandler, docling_safe_name
 
 
@@ -2086,17 +2090,49 @@ class TestConversionTimeout:
     def config(self):
         return AppConfig()
 
+    @pytest.fixture
+    def stall(self):
+        """A conversion that outlasts the deadlines under test without
+        outliving the test itself.
+
+        The bound keeps threads from piling up across a session: conversions
+        run on daemon threads, so one parked on the event would not hold the
+        interpreter, but it would stay alive until the wait elapsed.
+        """
+        import threading
+
+        release = threading.Event()
+
+        def _stalled(path, source_uri=None):
+            release.wait(1)
+
+        try:
+            yield _stalled
+        finally:
+            release.set()
+
     @pytest.fixture(autouse=True)
-    def _clear_wedged(self):
+    def _reset_converter_state(self, monkeypatch):
+        """A fresh lock per test, and `_WEDGED` cleared.
+
+        Releasing the shared lock instead would release one a stalling stub
+        thread still owns: a later conversion would be admitted while that
+        thread is inside, and the stub's own `with` would raise on exit. `_run`
+        reads the module global when it is called, so a thread left over from
+        an earlier test holds the old lock and cannot reach this one.
+        """
+        import threading
+
         from haiku.rag.converters import docling_local
 
         docling_local._WEDGED.clear()
+        monkeypatch.setattr(docling_local, "_CONVERTER_LOCK", threading.Lock())
         yield
         docling_local._WEDGED.clear()
 
     @pytest.mark.asyncio
     async def test_timeout_raises_and_names_the_setting(
-        self, config, tmp_path, monkeypatch
+        self, config, tmp_path, monkeypatch, stall
     ):
         """A conversion past the deadline raises `TimeoutError`, not `ValueError`."""
         import asyncio
@@ -2106,19 +2142,14 @@ class TestConversionTimeout:
         pdf = tmp_path / "slow.pdf"
         pdf.write_bytes(b"%PDF-1.5\n")
 
-        def _never_returns(path, source_uri=None):
-            import time
-
-            time.sleep(5)
-
-        monkeypatch.setattr(converter, "_sync_convert_docling_file", _never_returns)
+        monkeypatch.setattr(converter, "_sync_convert_timed", stall)
         with pytest.raises(TimeoutError, match="cannot convert again") as excinfo:
             await asyncio.wait_for(converter.convert_file(pdf), 3)
         assert "conversion_timeout" in str(excinfo.value)
 
     @pytest.mark.asyncio
     async def test_later_conversions_fail_fast_after_a_timeout(
-        self, config, tmp_path, monkeypatch
+        self, config, tmp_path, monkeypatch, stall
     ):
         """A timed-out conversion still holds the shared converter, so the next
         one refuses immediately instead of blocking on the lock it will never
@@ -2131,17 +2162,15 @@ class TestConversionTimeout:
         pdf = tmp_path / "slow.pdf"
         pdf.write_bytes(b"%PDF-1.5\n")
 
-        def _never_returns(path, source_uri=None):
-            time.sleep(5)
-
-        monkeypatch.setattr(converter, "_sync_convert_docling_file", _never_returns)
+        monkeypatch.setattr(converter, "_sync_convert_timed", stall)
         with pytest.raises(TimeoutError):
             await asyncio.wait_for(converter.convert_file(pdf), 3)
 
         started = time.monotonic()
-        with pytest.raises(RuntimeError, match="restart"):
-            with DoclingLocalConverter(config)._shared_converter():
-                pass
+        healthy = tmp_path / "fine.pdf"
+        healthy.write_bytes(b"%PDF-1.5\n")
+        with pytest.raises(ConverterWedgedError, match="restart"):
+            await DoclingLocalConverter(config).convert_file(healthy)
         assert time.monotonic() - started < 1.0
 
     @pytest.mark.asyncio
@@ -2153,7 +2182,7 @@ class TestConversionTimeout:
         def _boom(path, source_uri=None):
             raise KeyError("the real problem")
 
-        monkeypatch.setattr(converter, "_sync_convert_docling_file", _boom)
+        monkeypatch.setattr(converter, "_sync_convert_timed", _boom)
         with pytest.raises(ValueError) as excinfo:
             await converter.convert_file(missing)
         assert isinstance(excinfo.value.__cause__, KeyError)
@@ -2174,7 +2203,7 @@ class TestConversionTimeout:
         def _their_timeout(path, source_uri=None):
             raise TimeoutError("docling's own network timeout")
 
-        monkeypatch.setattr(converter, "_sync_convert_docling_file", _their_timeout)
+        monkeypatch.setattr(converter, "_sync_convert_timed", _their_timeout)
         with pytest.raises(TimeoutError, match="docling's own") as excinfo:
             await converter.convert_file(pdf)
         assert not docling_local._WEDGED.is_set()
@@ -2187,11 +2216,10 @@ class TestConversionTimeout:
 
     @pytest.mark.asyncio
     async def test_uri_aware_timeout_leaves_pdfs_alone(
-        self, config, tmp_path, monkeypatch
+        self, config, tmp_path, monkeypatch, stall
     ):
         """HTML and Markdown convert on isolated converters that never take
         `_CONVERTER_LOCK`, so abandoning one does not disable PDF conversion."""
-        import time
 
         from haiku.rag.converters import docling_local
 
@@ -2200,10 +2228,7 @@ class TestConversionTimeout:
         page = tmp_path / "page.html"
         page.write_text("<html><body><p>slow</p></body></html>")
 
-        def _never_returns(path, source_uri=None):
-            time.sleep(5)
-
-        monkeypatch.setattr(converter, "_sync_convert_docling_file", _never_returns)
+        monkeypatch.setattr(converter, "_sync_convert_timed", stall)
         with pytest.raises(TimeoutError) as excinfo:
             await converter.convert_file(page)
         assert not docling_local._WEDGED.is_set()
@@ -2211,11 +2236,10 @@ class TestConversionTimeout:
 
     @pytest.mark.asyncio
     async def test_split_conversion_propagates_the_timeout(
-        self, config, tmp_path, monkeypatch
+        self, config, tmp_path, monkeypatch, stall
     ):
         """`convert_pdf_with_splitting` must not relabel the deadline as a
         parse failure."""
-        import time
 
         from haiku.rag.converters.pdf_split import convert_pdf_with_splitting
 
@@ -2224,10 +2248,7 @@ class TestConversionTimeout:
         converter = DoclingLocalConverter(config)
         pdf_path = Path(__file__).parent / "data" / "doclaynet.pdf"
 
-        def _never_returns(path, source_uri=None):
-            time.sleep(5)
-
-        monkeypatch.setattr(converter, "_sync_convert_docling_file", _never_returns)
+        monkeypatch.setattr(converter, "_sync_convert_timed", stall)
         with pytest.raises(TimeoutError, match="conversion_timeout"):
             await convert_pdf_with_splitting(
                 converter, pdf_path, source_uri=None, slice_size=3
@@ -2238,3 +2259,516 @@ class TestConversionTimeout:
         from haiku.rag.config.models import AppConfig
 
         assert AppConfig().processing.conversion_timeout == 600.0
+
+    @pytest.mark.asyncio
+    async def test_waiting_for_the_converter_is_not_the_waiter_s_deadline(
+        self, config, tmp_path, monkeypatch
+    ):
+        """Documents queue on the shared converter, and `worker_count` defaults
+        to 4. If admission counted against the deadline, the effective budget
+        per document would be the timeout divided by the workers contending —
+        and a document that merely waited would be tombstoned as a stall."""
+        import asyncio
+        import time
+
+        from haiku.rag.converters import docling_local
+
+        config.processing.conversion_timeout = 0.8
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"%PDF-1.5\n")
+
+        def _slow(path, source_uri=None):
+            time.sleep(0.4)
+            return "converted"
+
+        first = DoclingLocalConverter(config)
+        second = DoclingLocalConverter(config)
+        monkeypatch.setattr(first, "_sync_convert_timed", _slow)
+        monkeypatch.setattr(second, "_sync_convert_timed", _slow)
+
+        # Serialized by `_CONVERTER_LOCK`, so the second waits ~0.4s for
+        # admission and then takes 0.4s of its own: 0.8s wall, 0.4s of budget.
+        started = time.monotonic()
+        results = await asyncio.gather(
+            first.convert_file(pdf), second.convert_file(pdf)
+        )
+        elapsed = time.monotonic() - started
+
+        assert results == ["converted", "converted"]
+        assert not docling_local._WEDGED.is_set()
+        # Both halves matter: serialized (so one did wait for admission) and
+        # neither timed out (so waiting cost it no budget). Without the second
+        # assertion the conversions could simply have run in parallel.
+        assert elapsed >= 0.7, f"conversions were not serialized ({elapsed:.2f}s)"
+
+    @pytest.mark.asyncio
+    async def test_cancelling_while_waiting_does_not_leak_the_converter(
+        self, config, tmp_path, monkeypatch
+    ):
+        """Cancellation cannot reach the conversion thread, so the lock has to
+        be owned there. Owned by the coroutine, a cancel landing during the
+        wait would leave it held with `_WEDGED` false: every later shared
+        conversion would block forever with nothing to raise."""
+        import asyncio
+        import threading
+
+        from haiku.rag.converters import docling_local
+
+        config.processing.conversion_timeout = 5
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"%PDF-1.5\n")
+
+        entered = threading.Event()
+        release = threading.Event()
+
+        def _blocks(path, source_uri=None):
+            entered.set()
+            release.wait(5)
+            return "first"
+
+        holder = DoclingLocalConverter(config)
+        monkeypatch.setattr(holder, "_sync_convert_timed", _blocks)
+        first = asyncio.create_task(holder.convert_file(pdf))
+        await asyncio.to_thread(entered.wait, 5)
+
+        waiter = DoclingLocalConverter(config)
+        monkeypatch.setattr(waiter, "_sync_convert_timed", lambda p, s=None: "second")
+        queued = asyncio.create_task(waiter.convert_file(pdf))
+        await asyncio.sleep(0.2)
+        queued.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await queued
+
+        release.set()
+        assert await first == "first"
+
+        # The cancelled waiter's thread took the lock and gave it back.
+        after = DoclingLocalConverter(config)
+        monkeypatch.setattr(after, "_sync_convert_timed", lambda p, s=None: "third")
+        assert await asyncio.wait_for(after.convert_file(pdf), 5) == "third"
+        assert not docling_local._WEDGED.is_set()
+
+    @pytest.mark.asyncio
+    async def test_cancelling_mid_conversion_keeps_the_converter_held(
+        self, config, tmp_path, monkeypatch
+    ):
+        """Releasing on cancel would admit a second conversion into the shared
+        `DocumentConverter` while the first is still inside it, which is the
+        overlap the lock exists to prevent: the pipeline keeps per-run state on
+        the instance."""
+        import asyncio
+        import threading
+
+        config.processing.conversion_timeout = 5
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"%PDF-1.5\n")
+
+        entered = threading.Event()
+        release = threading.Event()
+        second_entered = threading.Event()
+
+        def _blocks(path, source_uri=None):
+            entered.set()
+            release.wait(5)
+            return "first"
+
+        def _second(path, source_uri=None):
+            second_entered.set()
+            return "second"
+
+        running = DoclingLocalConverter(config)
+        monkeypatch.setattr(running, "_sync_convert_timed", _blocks)
+        first = asyncio.create_task(running.convert_file(pdf))
+        await asyncio.to_thread(entered.wait, 5)
+
+        first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+
+        other = DoclingLocalConverter(config)
+        monkeypatch.setattr(other, "_sync_convert_timed", _second)
+        admitted = asyncio.create_task(other.convert_file(pdf))
+        await asyncio.sleep(0.2)
+        assert not second_entered.is_set(), (
+            "a second conversion entered the shared converter while the "
+            "cancelled one was still inside it"
+        )
+
+        release.set()
+        assert await asyncio.wait_for(admitted, 5) == "second"
+
+    @pytest.mark.asyncio
+    async def test_a_stall_is_recorded_even_if_its_caller_is_cancelled(
+        self, config, tmp_path, monkeypatch, caplog
+    ):
+        """The deadline is shielded from the caller. Without that, a cancelled
+        caller takes the watcher with it: the stall holds the converter, nothing
+        sets `_WEDGED`, and every later conversion parks on admission with
+        nothing to raise."""
+        import asyncio
+        import logging
+        import threading
+
+        from haiku.rag.converters import docling_local
+
+        config.processing.conversion_timeout = 0.3
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"%PDF-1.5\n")
+
+        entered = threading.Event()
+        release = threading.Event()
+
+        def _stalls(path, source_uri=None):
+            entered.set()
+            release.wait(5)
+
+        stalling = DoclingLocalConverter(config)
+        monkeypatch.setattr(stalling, "_sync_convert_timed", _stalls)
+        caller = asyncio.create_task(stalling.convert_file(pdf))
+        await asyncio.to_thread(entered.wait, 5)
+
+        caller.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await caller
+
+        # The shielded guard is still watching, so the deadline still lands.
+        # Nothing is left to receive the exception, so the record is the only
+        # account of it and the test owns it.
+        with caplog.at_level(
+            logging.ERROR, logger="haiku.rag.converters.docling_local"
+        ):
+            await asyncio.sleep(0.6)
+
+        assert docling_local._WEDGED.is_set()
+        records = [
+            r
+            for r in caplog.records
+            if r.name == "haiku.rag.converters.docling_local"
+            and r.levelno == logging.ERROR
+        ]
+        assert len(records) == 1
+        message = records[0].getMessage()
+        assert "processing.conversion_timeout" in message
+        assert "caller was cancelled" in message
+
+        after = DoclingLocalConverter(config)
+        with pytest.raises(ConverterWedgedError):
+            await asyncio.wait_for(after.convert_file(pdf), 2)
+        release.set()
+
+    @pytest.mark.asyncio
+    async def test_a_conversion_abandoned_before_admission_never_runs(
+        self, config, tmp_path, monkeypatch
+    ):
+        """A caller cancelled while queueing leaves the thread holding the
+        lock. It must decline rather than convert a document nobody is waiting
+        for."""
+        import asyncio
+        import threading
+
+        config.processing.conversion_timeout = 5
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"%PDF-1.5\n")
+
+        entered = threading.Event()
+        release = threading.Event()
+        orphan_ran = threading.Event()
+
+        def _holds(path, source_uri=None):
+            entered.set()
+            release.wait(5)
+            return "first"
+
+        holder = DoclingLocalConverter(config)
+        monkeypatch.setattr(holder, "_sync_convert_timed", _holds)
+        first = asyncio.create_task(holder.convert_file(pdf))
+        await asyncio.to_thread(entered.wait, 5)
+
+        def _orphan(path, source_uri=None):
+            orphan_ran.set()
+            return "orphan"
+
+        queued_conv = DoclingLocalConverter(config)
+        monkeypatch.setattr(queued_conv, "_sync_convert_timed", _orphan)
+        queued = asyncio.create_task(queued_conv.convert_file(pdf))
+        await asyncio.sleep(0.2)
+        queued.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await queued
+
+        release.set()
+        assert await first == "first"
+        await asyncio.sleep(0.2)
+        assert not orphan_ran.is_set()
+
+        later = DoclingLocalConverter(config)
+        monkeypatch.setattr(later, "_sync_convert_timed", lambda p, s=None: "later")
+        assert await asyncio.wait_for(later.convert_file(pdf), 5) == "later"
+
+    @pytest.mark.asyncio
+    async def test_the_conversion_thread_inherits_the_caller_s_context(
+        self, config, tmp_path, monkeypatch
+    ):
+        """`asyncio.to_thread` copies the context and a bare thread does not,
+        so the conversion runs through `contextvars.copy_context()`. Telemetry
+        and any contextual state depend on it."""
+        import contextvars
+
+        marker: contextvars.ContextVar[str] = contextvars.ContextVar("marker")
+        marker.set("from-the-caller")
+        seen: list[str] = []
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"%PDF-1.5\n")
+
+        def _reads_context(path, source_uri=None):
+            seen.append(marker.get("missing"))
+            return "converted"
+
+        converter = DoclingLocalConverter(config)
+        monkeypatch.setattr(converter, "_sync_convert_timed", _reads_context)
+
+        assert await converter.convert_file(pdf) == "converted"
+        assert seen == ["from-the-caller"]
+
+    @pytest.mark.asyncio
+    async def test_a_queued_conversion_learns_the_converter_is_stranded(
+        self, config, tmp_path, monkeypatch
+    ):
+        """A conversion already waiting for the converter when a sibling's
+        deadline fires has to hear about it. Checking `_WEDGED` only before
+        queueing leaves it parked with no exception and no conversion."""
+        import asyncio
+        import threading
+
+        from haiku.rag.converters import docling_local
+
+        config.processing.conversion_timeout = 0.2
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"%PDF-1.5\n")
+
+        entered = threading.Event()
+        release = threading.Event()
+        second_entered = threading.Event()
+
+        def _stalls(path, source_uri=None):
+            entered.set()
+            release.wait(10)
+
+        def _second(path, source_uri=None):
+            second_entered.set()
+            return "second"
+
+        stalling = DoclingLocalConverter(config)
+        monkeypatch.setattr(stalling, "_sync_convert_timed", _stalls)
+        first = asyncio.create_task(stalling.convert_file(pdf))
+        await asyncio.to_thread(entered.wait, 5)
+
+        # Queued while the first is still inside its deadline.
+        queued = DoclingLocalConverter(config)
+        monkeypatch.setattr(queued, "_sync_convert_timed", _second)
+        second = asyncio.create_task(queued.convert_file(pdf))
+
+        with pytest.raises(ConversionTimeoutError):
+            await first
+        assert docling_local._WEDGED.is_set()
+
+        with pytest.raises(ConverterWedgedError):
+            await asyncio.wait_for(second, 5)
+        assert not second_entered.is_set()
+        release.set()
+
+    @pytest.mark.asyncio
+    async def test_a_late_returning_stall_admits_no_one(
+        self, config, tmp_path, monkeypatch
+    ):
+        """The holder can return after its deadline and hand the lock back. The
+        converter has been declared stranded, so the waiter must be refused
+        even though the lock is free."""
+        import asyncio
+        import threading
+
+        from haiku.rag.converters import docling_local
+
+        config.processing.conversion_timeout = 0.2
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"%PDF-1.5\n")
+
+        entered = threading.Event()
+        release = threading.Event()
+        second_entered = threading.Event()
+
+        def _stalls_then_returns(path, source_uri=None):
+            entered.set()
+            release.wait(10)
+            return "late"
+
+        def _second(path, source_uri=None):
+            second_entered.set()
+            return "second"
+
+        stalling = DoclingLocalConverter(config)
+        monkeypatch.setattr(stalling, "_sync_convert_timed", _stalls_then_returns)
+        first = asyncio.create_task(stalling.convert_file(pdf))
+        await asyncio.to_thread(entered.wait, 5)
+
+        queued = DoclingLocalConverter(config)
+        monkeypatch.setattr(queued, "_sync_convert_timed", _second)
+        second = asyncio.create_task(queued.convert_file(pdf))
+
+        with pytest.raises(ConversionTimeoutError):
+            await first
+        assert docling_local._WEDGED.is_set()
+
+        # The holder now finishes and releases; the lock is free.
+        release.set()
+
+        with pytest.raises(ConverterWedgedError):
+            await asyncio.wait_for(second, 5)
+        assert not second_entered.is_set()
+
+    @pytest.mark.asyncio
+    async def test_an_abandoned_conversion_stops_waiting_for_the_converter(
+        self, config, tmp_path, monkeypatch
+    ):
+        """A cancelled caller's thread gives up at the next poll instead of
+        holding a thread until the converter frees up, which may be a whole
+        conversion away."""
+        import asyncio
+        import threading
+
+        from haiku.rag.converters import docling_local
+
+        config.processing.conversion_timeout = 30
+        holder_pdf = tmp_path / "holder.pdf"
+        holder_pdf.write_bytes(b"%PDF-1.5\n")
+        queued_pdf = tmp_path / "queued.pdf"
+        queued_pdf.write_bytes(b"%PDF-1.5\n")
+
+        entered = threading.Event()
+        release = threading.Event()
+        orphan_ran = threading.Event()
+
+        def _holds(path, source_uri=None):
+            entered.set()
+            release.wait(10)
+            return "holder"
+
+        def _orphan(path, source_uri=None):
+            orphan_ran.set()
+            return "orphan"
+
+        holder = DoclingLocalConverter(config)
+        monkeypatch.setattr(holder, "_sync_convert_timed", _holds)
+        first = asyncio.create_task(holder.convert_file(holder_pdf))
+        await asyncio.to_thread(entered.wait, 5)
+
+        queued_conv = DoclingLocalConverter(config)
+        monkeypatch.setattr(queued_conv, "_sync_convert_timed", _orphan)
+        queued = asyncio.create_task(queued_conv.convert_file(queued_pdf))
+        await asyncio.sleep(0.1)
+        queued.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await queued
+
+        # Its thread is named for the file, so it can be watched directly.
+        deadline = asyncio.get_running_loop().time() + (
+            docling_local._LOCK_POLL_SECONDS * 4
+        )
+        names = {"docling-convert-queued.pdf"}
+        while asyncio.get_running_loop().time() < deadline:
+            if not names & {t.name for t in threading.enumerate()}:
+                break
+            await asyncio.sleep(0.05)
+
+        assert not names & {t.name for t in threading.enumerate()}, (
+            "the abandoned conversion is still waiting for the converter"
+        )
+        # It gave up while the holder still had the converter.
+        assert not first.done()
+        assert not orphan_ran.is_set()
+
+        release.set()
+        assert await asyncio.wait_for(first, 10) == "holder"
+
+
+_SHUTDOWN_PROGRAM = """
+import asyncio, sys, threading
+from pathlib import Path
+
+from haiku.rag.config.models import AppConfig
+from haiku.rag.converters.docling_local import DoclingLocalConverter
+
+
+async def main():
+    config = AppConfig()
+    config.processing.conversion_timeout = 0.2
+    converter = DoclingLocalConverter(config)
+    converter._sync_convert_timed = lambda p, s=None: threading.Event().wait()
+    try:
+        await converter.convert_file(Path(sys.argv[1]))
+    except Exception:
+        pass
+
+
+asyncio.run(main())
+print("EXITED-CLEANLY", flush=True)
+"""
+
+# The control for the test below: the same never-returning work on the default
+# executor, which is what `asyncio.to_thread` uses. `asyncio.run` joins that
+# executor on teardown and interpreter exit joins its non-daemon workers, so
+# this program cannot reach its print.
+_EXECUTOR_CONTROL_PROGRAM = """
+import asyncio, threading
+
+
+async def main():
+    asyncio.ensure_future(asyncio.to_thread(threading.Event().wait))
+    await asyncio.sleep(0.2)
+
+
+asyncio.run(main())
+print("EXITED-CLEANLY", flush=True)
+"""
+
+
+def test_a_stalled_conversion_does_not_hold_the_process(tmp_path):
+    """A stall must cost a document, not the run.
+
+    The conversion runs on a daemon thread, so neither `asyncio.run`'s executor
+    join nor interpreter exit waits for one that never returns.
+    """
+    import subprocess
+    import sys
+
+    pdf = tmp_path / "doc.pdf"
+    pdf.write_bytes(b"%PDF-1.5\n")
+
+    finished = subprocess.run(
+        [sys.executable, "-c", _SHUTDOWN_PROGRAM, str(pdf)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert finished.returncode == 0, finished.stderr[-2000:]
+    assert "EXITED-CLEANLY" in finished.stdout
+
+
+def test_the_shutdown_probe_can_see_a_thread_that_holds_the_process():
+    """The control: the same stall on the default executor must hang, or the
+    test above proves nothing.
+
+    `subprocess.run` kills the child when the timeout expires, so nothing is
+    left behind.
+    """
+    import subprocess
+    import sys
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        subprocess.run(
+            [sys.executable, "-c", _EXECUTOR_CONTROL_PROGRAM],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )

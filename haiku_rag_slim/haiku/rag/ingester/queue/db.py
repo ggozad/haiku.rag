@@ -26,10 +26,10 @@ jobs = sa.Table(
     sa.Column("claimed_by", sa.Text),
     sa.Column("last_heartbeat_at", sa.Text),
     sa.Column("completed_at", sa.Text),
-    # Dead because the conversion stalled and ended the worker process. The
-    # same bytes will stall again, so discovery must not re-enqueue the URI.
+    # Dead because the conversion exceeded its deadline. The same bytes stall
+    # again, so discovery must not re-enqueue that revision of the URI.
     sa.Column(
-        "killed_worker",
+        "conversion_stalled",
         sa.Boolean,
         nullable=False,
         server_default=sa.text("FALSE"),
@@ -52,20 +52,24 @@ sa.Index(
 )
 
 _queued = jobs.c.status == "queued"
-# A worker-killing tombstone occupies the same (source_id, uri, op) slot as a
-# live job, so re-enqueuing that op conflicts and `ON CONFLICT DO NOTHING`
-# drops it. Keyed on op as well, so removing the document is still possible
-# while its failed UPSERT is suppressed. Enforced by the index rather than by
-# a read, which no isolation level makes atomic against a committing worker.
+# A stalled conversion's row occupies the same slot as a live job, so
+# re-enqueuing conflicts and `ON CONFLICT DO NOTHING` drops it. Enforced by the
+# index: a worker can commit `mark_dead` between any read and the insert, on
+# either dialect. The slot carries `op`, so the
+# document can still be deleted, and the revision, so a source that replaced
+# the file is ingested again. `coalesce` because a unique index treats NULLs as
+# distinct in both dialects, and revision-less rows are exactly the ones with
+# no marker to suppress them.
 _blocking = sa.or_(
     jobs.c.status.in_(["queued", "claimed"]),
-    sa.and_(jobs.c.status == "dead", jobs.c.killed_worker.is_(True)),
+    sa.and_(jobs.c.status == "dead", jobs.c.conversion_stalled.is_(True)),
 )
 sa.Index(
     "uq_jobs_blocking_op",
     jobs.c.source_id,
     jobs.c.uri,
     jobs.c.op,
+    sa.func.coalesce(jobs.c.revision, ""),
     unique=True,
     sqlite_where=_blocking,
     postgresql_where=_blocking,

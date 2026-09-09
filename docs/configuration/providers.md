@@ -127,7 +127,7 @@ qa:
 
 Same mechanism, opposite direction. Without `extra_body` the Gemma-4 chat template defaults to non-thinking and dumps a verbose answer straight into `content`. With it on, vLLM (started with `--reasoning-parser`) populates the parsed `reasoning` field and leaves `content` as the concise final answer.
 
-**Provider support:** honored by openai, ollama, anthropic, and groq via pydantic-ai's `ModelSettings.extra_body`. Silently ignored by google and bedrock.
+**Provider support:** honored by openai, ollama, anthropic, groq and vllm via pydantic-ai's `ModelSettings.extra_body`. Silently ignored by google and bedrock.
 
 ## Embedding Providers
 

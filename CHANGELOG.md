@@ -5,38 +5,30 @@
 ### Added
 
 - `ConversionTimeoutError` and `ConverterWedgedError` in
-  `haiku.rag.converters.exceptions`. The ingester classifies the first as
-  permanent, so only the document that exceeded the deadline is dead-lettered,
-  and the second as transient, so documents refused by a converter another
-  document wedged survive to be retried. `PermanentError.fatal_to_process`
-  carries the first case to the worker, which records the job dead and then
-  exits non-zero for a supervisor to replace it. `haiku-ingester` therefore
-  requires a restart policy; the example compose file already sets one.
-- Queue schema 3: `jobs.killed_worker` and `uq_jobs_blocking_op`, a partial
-  unique index over `(source_id, uri, op)` covering live jobs and worker-killing
-  dead ones. A document whose conversion stalled and ended the worker keeps its
-  upsert slot, so discovery cannot re-enqueue it and a revision-less source
-  cannot restart the process on the same bytes every sweep. A DELETE holds a
-  different slot and still enqueues; retention leaves the row alone; a DLQ retry
-  or a successful DELETE of the URI clears it. Existing queues migrate in place
-  on open.
+  `haiku.rag.converters.exceptions`. The ingester dead-letters the document
+  that exceeded the deadline and retries one refused by a converter another
+  document stranded. `PermanentError` carries `conversion_stalled` and
+  `fatal_to_process`; on the latter the worker records the job dead and exits
+  non-zero, so `haiku-ingester` needs a restart policy. `BlockingTombstoneError`
+  names the row blocking a retry, which the API returns as 409.
+- Queue schema 3: `jobs.conversion_stalled` and `uq_jobs_blocking_op`, a
+  partial unique index over `(source_id, uri, op, COALESCE(revision, ''))`
+  covering live jobs and stalled ones. Discovery cannot re-enqueue a stalled
+  document at the same revision; a changed revision, a different op, a DLQ
+  retry and a successful DELETE all can, and retention leaves the row alone.
+  Existing queues migrate in place on open.
 - `processing.conversion_timeout`, seconds one document conversion may take,
-  default 600. Past it `convert_file` raises `TimeoutError`. A conversion that
-  used the shared docling converter also keeps it, since its thread cannot be
-  cancelled, so later conversions in that process raise `RuntimeError` until it
-  is restarted. HTML and Markdown build their own converter, so later
-  conversions still run, but an abandoned thread is never cancelled and holds an
-  executor thread for as long as it lasts.
+  default 600. Past it `convert_file` raises `ConversionTimeoutError`. The
+  thread is never cancelled: for PDFs and office formats it keeps the shared
+  docling converter, so later conversions raise `ConverterWedgedError` until
+  the process is restarted; HTML and Markdown keep one OS thread each. Waiting
+  for the shared converter is not counted against the deadline, and a
+  conversion runs on a daemon thread, so an abandoned one does not hold up
+  process exit.
 - `processing.conversion_options.pdf_backend`, one of `docling_parse`
-  (default), `threaded_docling_parse` or `pypdfium2`. Both converters send it,
-  so the local one and docling-serve parse a PDF the same way. docling's own
-  default is `threaded_docling_parse`, and it is not ours: on some documents
-  its page producer never delivers and `standard_pdf_pipeline.get_batch` waits
-  on an unclosed queue with no timeout, so the conversion never returns and
-  docling's process-wide converter cache carries the wedged pipeline into
-  every later conversion. Measured over ten arXiv papers against
-  `docling_parse`, it also leaves one table undetected and 7% fewer table
-  cells; `pypdfium2` extracts 7% fewer words and 28% fewer table cells.
+  (default), `threaded_docling_parse` or `pypdfium2`, sent by both converters.
+  docling's own default is `threaded_docling_parse`; on some documents it never
+  returns, so it is not ours.
 - `provider: vllm` on a model config, served by pydantic-ai's
   `VLLMProvider`. `base_url` is accepted with or without `/v1`, and
   `api_key` is honored.
@@ -62,14 +54,11 @@
 - The docling stack is pinned exactly to what docling-serve `v1.32.0` ships,
   read from the image: `docling==2.124.0`, `docling-core==2.93.0`,
   `docling-ibm-models==4.0.1`, `docling-parse==7.16.0`. The compose images
-  are pinned to `v1.32.0` to match. docling-slim only floors these, so a
-  resolver otherwise lands on a different layout and table-structure model
-  than the server runs.
-- Conversion output moves with docling 2.124.0: adjacent text items merge, so
-  a 9-page paper yields 130 items where it yielded 141, carrying the same
-  text, and chunk boundaries fall in different places. An existing database is
-  untouched until a document is re-ingested; re-ingesting a corpus produces
-  different chunk ids.
+  are pinned to `v1.32.0` to match.
+- Conversion output moves with docling 2.124.0: adjacent text items merge and
+  chunk boundaries fall in different places. An existing database is untouched
+  until a document is re-ingested; re-ingesting a corpus produces different
+  chunk ids.
 - `processing.split_pages` no longer reproduces single-pass conversion
   exactly. A slice sees only its own pages, so a paragraph spanning a slice
   boundary stays two items and a caption near one can order differently:
@@ -120,8 +109,7 @@
 - `DoclingLocalConverter.convert_file` chains the exception that caused
   `Failed to parse file` instead of discarding it.
 - Page and picture images are re-encoded at PNG compression level 6 before
-  storage, holding blob sizes where docling-core's OpenCV encoder would have
-  left them 30-60% larger. Ingestion pays one extra encode per image.
+  storage.
 - `toc.json` `item_range` in the analysis sandbox is a line slice into
   `items.jsonl`, as documented; it held item positions.
 - Past `analysis.code_timeout` a sandbox program starts no further host call.

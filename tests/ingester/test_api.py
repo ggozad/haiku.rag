@@ -862,3 +862,27 @@ async def test_database_requires_auth(state):
     async with _client(state, auth_token="secret") as client:
         resp = await client.get("/database")
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route", ["/jobs/{id}/retry", "/dlq/{id}/retry"])
+async def test_retry_answers_409_and_names_the_blocking_tombstone(state, jobs, route):
+    """404 would be wrong for a job the operator can see in the DLQ: it exists,
+    another row holds its slot."""
+    first = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert first is not None
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None
+    await jobs.mark_dead(claimed.id, "out of attempts", "w")
+
+    second = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert second is not None
+    claimed_second = await jobs.claim_next("w")
+    assert claimed_second is not None
+    await jobs.mark_dead(claimed_second.id, "stalled", "w", conversion_stalled=True)
+
+    async with _client(state) as client:
+        resp = await client.post(route.format(id=claimed.id))
+
+    assert resp.status_code == 409
+    assert claimed_second.id in resp.json()["detail"]

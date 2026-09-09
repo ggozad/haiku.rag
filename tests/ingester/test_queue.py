@@ -1218,8 +1218,8 @@ async def test_sync_state_batch_upsert_empty_is_noop(sync):
 
 
 @pytest.mark.asyncio
-async def test_migration_v2_to_v3_adds_killed_worker(tmp_path):
-    """A v2 DB gains `killed_worker`, defaulted false for existing rows."""
+async def test_migration_v2_to_v3_adds_conversion_stalled(tmp_path):
+    """A v2 DB gains `conversion_stalled`, defaulted false for existing rows."""
     db = tmp_path / "v2.db"
     engine = create_async_engine(URL.create("sqlite+aiosqlite", database=str(db)))
     try:
@@ -1227,7 +1227,9 @@ async def test_migration_v2_to_v3_adds_killed_worker(tmp_path):
         async with engine.begin() as conn:
             await conn.execute(sa.text("UPDATE schema_version SET version = 2"))
             await conn.execute(sa.text("DROP INDEX uq_jobs_blocking_op"))
-            await conn.execute(sa.text("ALTER TABLE jobs DROP COLUMN killed_worker"))
+            await conn.execute(
+                sa.text("ALTER TABLE jobs DROP COLUMN conversion_stalled")
+            )
             when = "2026-01-01T00:00:00+00:00"
             await conn.execute(
                 sa.text(
@@ -1242,7 +1244,7 @@ async def test_migration_v2_to_v3_adds_killed_worker(tmp_path):
 
         async with engine.connect() as conn:
             cols = (await conn.execute(sa.text("PRAGMA table_info(jobs)"))).fetchall()
-            assert "killed_worker" in {c[1] for c in cols}
+            assert "conversion_stalled" in {c[1] for c in cols}
             names = (
                 await conn.execute(
                     sa.text("SELECT name FROM sqlite_master WHERE type = 'index'")
@@ -1251,7 +1253,7 @@ async def test_migration_v2_to_v3_adds_killed_worker(tmp_path):
             assert "uq_jobs_blocking_op" in set(names)
             killed = (
                 await conn.execute(
-                    sa.text("SELECT killed_worker FROM jobs WHERE id = 'old-1'")
+                    sa.text("SELECT conversion_stalled FROM jobs WHERE id = 'old-1'")
                 )
             ).scalar_one()
             assert not killed
@@ -1260,15 +1262,14 @@ async def test_migration_v2_to_v3_adds_killed_worker(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_a_worker_killing_job_is_not_re_enqueued(jobs):
-    """A revision-less document that stalled a conversion has no suppression
-    marker, so `enqueue` itself must refuse it or every sweep restarts the
-    process on the same bytes."""
+async def test_a_stalled_document_is_not_re_enqueued(jobs):
+    """A revision-less document that stalled has no suppression marker, so the
+    index must refuse the re-enqueue or every sweep pays the deadline again."""
     job = await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT)
     assert job is not None
     claimed = await jobs.claim_next("w1")
     assert claimed is not None
-    assert await jobs.mark_dead(claimed.id, "stalled", "w1", killed_worker=True)
+    assert await jobs.mark_dead(claimed.id, "stalled", "w1", conversion_stalled=True)
 
     assert await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT) is None
 
@@ -1281,13 +1282,13 @@ async def test_dlq_retry_lifts_the_suppression(jobs):
     assert job is not None
     claimed = await jobs.claim_next("w1")
     assert claimed is not None
-    await jobs.mark_dead(claimed.id, "stalled", "w1", killed_worker=True)
+    await jobs.mark_dead(claimed.id, "stalled", "w1", conversion_stalled=True)
 
     dead = await jobs.get_job(claimed.id)
-    assert dead is not None and dead.killed_worker is True
+    assert dead is not None and dead.conversion_stalled is True
 
     revived = await jobs.retry(claimed.id)
-    assert revived.killed_worker is False
+    assert revived.conversion_stalled is False
     assert revived.status is JobStatus.QUEUED
 
     # Take the revived job to a terminal state so the live-job dedup is not
@@ -1313,14 +1314,14 @@ async def test_an_ordinary_dead_job_still_re_enqueues(jobs):
 
 
 @pytest.mark.asyncio
-async def test_retention_never_prunes_a_worker_killing_job(jobs):
-    """The row is what stops rediscovery, so age must not remove it: pruning it
-    would let the poison document restart the process again."""
+async def test_retention_never_prunes_a_stalled_document(jobs):
+    """The row is what stops rediscovery, so age must not remove it: age is not
+    evidence the document changed."""
     job = await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT)
     assert job is not None
     claimed = await jobs.claim_next("w1")
     assert claimed is not None
-    await jobs.mark_dead(claimed.id, "stalled", "w1", killed_worker=True)
+    await jobs.mark_dead(claimed.id, "stalled", "w1", conversion_stalled=True)
 
     other = await jobs.enqueue("src", "https://x/z.pdf", JobOp.UPSERT)
     assert other is not None
@@ -1335,14 +1336,14 @@ async def test_retention_never_prunes_a_worker_killing_job(jobs):
 
 
 @pytest.mark.asyncio
-async def test_a_worker_killing_job_never_blocks_a_delete(jobs):
+async def test_a_stalled_document_never_blocks_a_delete(jobs):
     """Removing the document has to stay possible, and a successful DELETE
     prunes the row that was suppressing rediscovery."""
     job = await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT)
     assert job is not None
     claimed = await jobs.claim_next("w1")
     assert claimed is not None
-    await jobs.mark_dead(claimed.id, "stalled", "w1", killed_worker=True)
+    await jobs.mark_dead(claimed.id, "stalled", "w1", conversion_stalled=True)
 
     deletion = await jobs.enqueue("src", "https://x/y.pdf", JobOp.DELETE)
     assert deletion is not None
@@ -1378,7 +1379,7 @@ async def test_concurrent_mark_dead_cannot_leave_a_poison_upsert_queued(tmp_path
 
             enqueued, _ = await asyncio.gather(
                 jobs.enqueue("src", uri, JobOp.UPSERT),
-                jobs.mark_dead(claimed.id, "stalled", "w1", killed_worker=True),
+                jobs.mark_dead(claimed.id, "stalled", "w1", conversion_stalled=True),
             )
             assert enqueued is None, (
                 f"attempt {attempt}: a poison upsert was queued alongside the tombstone"
@@ -1391,3 +1392,103 @@ async def test_concurrent_mark_dead_cannot_leave_a_poison_upsert_queued(tmp_path
             assert live == []
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_a_changed_revision_is_not_blocked_by_the_tombstone(jobs):
+    """The slot carries the revision, so a source that replaced the file is
+    ingested again."""
+    first = await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT, revision="r0")
+    assert first is not None
+    claimed = await jobs.claim_next("w1")
+    assert claimed is not None
+    await jobs.mark_dead(claimed.id, "stalled", "w1", conversion_stalled=True)
+
+    assert (
+        await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT, revision="r0")
+        is None
+    )
+    assert (
+        await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT, revision="r1")
+        is not None
+    )
+
+
+@pytest.mark.asyncio
+async def test_two_revisionless_stalls_still_collide(jobs):
+    """`coalesce` is what makes this hold: a unique index treats NULLs as
+    distinct, so a bare `revision` column would stop blocking exactly the rows
+    the tombstone exists for."""
+    first = await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT)
+    assert first is not None
+    claimed = await jobs.claim_next("w1")
+    assert claimed is not None
+    await jobs.mark_dead(claimed.id, "stalled", "w1", conversion_stalled=True)
+
+    assert await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT) is None
+
+
+@pytest.mark.asyncio
+async def test_fresh_and_migrated_schemas_agree_on_the_blocking_index(tmp_path):
+    """`create_all` and the v3 migration must produce the same index, or a
+    migrated queue enforces something different from a new one."""
+    fresh_db = tmp_path / "fresh.db"
+    fresh = await open_queue(
+        QueueConfig(dburi=str(URL.create("sqlite+aiosqlite", database=str(fresh_db))))
+    )
+    migrated_db = tmp_path / "migrated.db"
+    migrated = await open_queue(
+        QueueConfig(
+            dburi=str(URL.create("sqlite+aiosqlite", database=str(migrated_db)))
+        )
+    )
+    try:
+        async with migrated.begin() as conn:
+            await conn.execute(sa.text("UPDATE schema_version SET version = 2"))
+            await conn.execute(sa.text("DROP INDEX uq_jobs_blocking_op"))
+            await conn.execute(
+                sa.text("ALTER TABLE jobs DROP COLUMN conversion_stalled")
+            )
+        await apply_migrations(migrated)
+
+        async def _sql(engine):
+            async with engine.connect() as conn:
+                return (
+                    await conn.execute(
+                        sa.text(
+                            "SELECT sql FROM sqlite_master WHERE type = 'index' "
+                            "AND name = 'uq_jobs_blocking_op'"
+                        )
+                    )
+                ).scalar_one()
+
+        def _norm(sql: str) -> str:
+            return " ".join(sql.replace('"', "").lower().split())
+
+        assert _norm(await _sql(fresh)) == _norm(await _sql(migrated))
+    finally:
+        await fresh.dispose()
+        await migrated.dispose()
+
+
+@pytest.mark.asyncio
+async def test_retry_names_the_tombstone_that_blocks_it(jobs):
+    """Both rows can exist: one dead on max attempts, the URI re-enqueued, the
+    next attempt stalled. Retrying the first names the row in the way."""
+    from haiku.rag.ingester.exceptions import BlockingTombstoneError
+
+    first = await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT)
+    assert first is not None
+    claimed = await jobs.claim_next("w1")
+    assert claimed is not None
+    await jobs.mark_dead(claimed.id, "out of attempts", "w1")
+
+    second = await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT)
+    assert second is not None
+    claimed_second = await jobs.claim_next("w1")
+    assert claimed_second is not None
+    await jobs.mark_dead(claimed_second.id, "stalled", "w1", conversion_stalled=True)
+
+    with pytest.raises(BlockingTombstoneError) as excinfo:
+        await jobs.retry(claimed.id)
+    assert excinfo.value.blocking_job_id == claimed_second.id

@@ -1,11 +1,13 @@
 import sqlalchemy as sa
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.schema import CreateIndex
 
 from haiku.rag.config.models import QueueConfig
 from haiku.rag.ingester.queue.db import (
     SCHEMA_VERSION,
     install_sqlite_pragmas,
+    jobs,
     metadata,
     schema_version,
 )
@@ -67,20 +69,18 @@ async def apply_migrations(engine: AsyncEngine) -> int:
             if current < 3:
                 await conn.execute(
                     sa.text(
-                        "ALTER TABLE jobs ADD COLUMN killed_worker BOOLEAN "
-                        "NOT NULL DEFAULT FALSE"
+                        "ALTER TABLE jobs ADD COLUMN conversion_stalled "
+                        "BOOLEAN NOT NULL DEFAULT FALSE"
                     )
                 )
                 # create_all made every other index; this one needs the column
-                # that has just been added.
-                await conn.execute(
-                    sa.text(
-                        "CREATE UNIQUE INDEX IF NOT EXISTS uq_jobs_blocking_op "
-                        "ON jobs (source_id, uri, op) WHERE status IN "
-                        "('queued', 'claimed') OR (status = 'dead' AND "
-                        "killed_worker)"
-                    )
+                # that has just been added. Emitted from the same Index object
+                # create_all uses, so a migrated queue enforces exactly what a
+                # new one does.
+                blocking = next(
+                    i for i in jobs.indexes if i.name == "uq_jobs_blocking_op"
                 )
+                await conn.execute(CreateIndex(blocking, if_not_exists=True))
             await conn.execute(sa.update(schema_version).values(version=SCHEMA_VERSION))
     return SCHEMA_VERSION
 

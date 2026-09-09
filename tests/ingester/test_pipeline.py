@@ -597,6 +597,7 @@ async def test_conversion_deadline_is_permanent_and_fatal_to_the_process():
         await run_job(client, _job())
 
     assert excinfo.value.fatal_to_process is True
+    assert excinfo.value.conversion_stalled is True
 
 
 @pytest.mark.asyncio
@@ -614,6 +615,9 @@ async def test_conversion_deadline_on_its_own_converter_spares_the_process():
         await run_job(client, _job())
 
     assert excinfo.value.fatal_to_process is False
+    # Still tombstoned: the same bytes stall again, and each attempt leaves
+    # another daemon thread and its memory behind.
+    assert excinfo.value.conversion_stalled is True
 
 
 @pytest.mark.asyncio

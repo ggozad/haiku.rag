@@ -453,17 +453,19 @@ disappears are reset to `queued` by the reaper once their lease expires, and
 their attempt is refunded rather than consumed.
 
 The document that stalled is not tried again on its own. It is recorded dead
-with `killed_worker`, and `uq_jobs_blocking_op` keeps that row in the URI's
-upsert slot so discovery cannot re-enqueue it. A revisioned source suppresses
-the sweep with its revision marker, but a revision-less one has nothing to
-suppress it with, so the sweep would otherwise restart the process on the same
-bytes indefinitely. Retention never removes that row either; only these clear
-it:
+with `conversion_stalled`, and `uq_jobs_blocking_op` keeps that row in the slot
+for its (source, URI, op, revision), so discovery cannot re-enqueue the same
+bytes. Retention never removes it. These do:
 
-- `POST /dlq/{job_id}/retry`, once the document is fixed.
-- Deleting the document. A DELETE is never suppressed, and a successful one
-  prunes the dead rows for the URI, so removing the file at the source is
-  enough.
+- The source publishing a new revision of the file, which lands in a different
+  slot.
+- `POST /dlq/{job_id}/retry`, once the document is fixed. Retrying a different
+  dead row for the same slot answers 409 and names the row in the way.
+- Deleting the document. A DELETE holds its own slot, and a successful one
+  prunes the dead rows for the URI.
+
+A stall that did not strand the shared converter — HTML and Markdown build
+their own — is tombstoned the same way but does not end the process.
 
 ### Single-writer constraint
 
