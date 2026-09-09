@@ -23,6 +23,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+def _terminate_wedged_process() -> None:  # pragma: no cover - ends the process
+    """Leave the process for a supervisor to replace.
+
+    `asyncio.run`'s shutdown joins the default executor, which still holds the
+    abandoned conversion thread, so an orderly exit can block forever. The
+    caller has already committed the job's terminal state.
+    """
+    logging.shutdown()
+    os._exit(1)
+
+
 _WORKER_BREAKER_THRESHOLD = 5
 _WORKER_BREAKER_COOLDOWN_S = 60.0
 
@@ -347,6 +359,14 @@ class WorkerPool:
                         job.id,
                         job.uri,
                     )
+            if e.fatal_to_process:
+                logger.error(
+                    "Job %s left this process unable to convert; exiting for a "
+                    "supervisor to replace it: %s",
+                    job.id,
+                    e,
+                )
+                _terminate_wedged_process()
             return
         except TransientError as e:
             breaker = self._breaker_for(job.source_id)

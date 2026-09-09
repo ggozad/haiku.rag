@@ -4,6 +4,14 @@
 
 ### Added
 
+- `ConversionTimeoutError` and `ConverterWedgedError` in
+  `haiku.rag.converters.exceptions`. The ingester classifies the first as
+  permanent, so only the document that exceeded the deadline is dead-lettered,
+  and the second as transient, so documents refused by a converter another
+  document wedged survive to be retried. `PermanentError.fatal_to_process`
+  carries the first case to the worker, which records the job dead and then
+  exits non-zero for a supervisor to replace it. `haiku-ingester` therefore
+  requires a restart policy; the example compose file already sets one.
 - `processing.conversion_timeout`, seconds one document conversion may take,
   default 600. Past it `convert_file` raises `TimeoutError`. A conversion that
   used the shared docling converter also keeps it, since its thread cannot be

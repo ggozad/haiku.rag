@@ -435,6 +435,23 @@ haiku-ingester serve --port 9000              # override API port
 The service blocks until SIGINT or SIGTERM. Shutdown drains the API
 server, then pollers, then in-flight workers.
 
+### Run it under a supervisor
+
+A document can stall docling indefinitely. `processing.conversion_timeout`
+abandons it, but the conversion thread is never cancelled and it keeps the
+shared docling converter, so the process cannot convert again. The worker
+records that document dead and then exits non-zero, leaving the process to be
+replaced.
+
+**So the service needs something to restart it.** The example
+`docker-compose.yml` sets `restart: unless-stopped`; a systemd unit needs
+`Restart=always`, and any other supervisor needs its equivalent. Without one,
+the ingester stops for good the first time a document stalls.
+
+Restarting mid-job is a supported path independently of this: jobs whose owner
+disappears are reset to `queued` by the reaper once their lease expires, and
+their attempt is refunded rather than consumed.
+
 ### Single-writer constraint
 
 haiku.rag serializes multi-table writes with a process-local lock and rolls

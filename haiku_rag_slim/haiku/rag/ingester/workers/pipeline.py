@@ -12,6 +12,10 @@ from obstore.exceptions import (
 from pydantic import BaseModel
 
 from haiku.rag.client.exceptions import UnsupportedSourceError
+from haiku.rag.converters.exceptions import (
+    ConversionTimeoutError,
+    ConverterWedgedError,
+)
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
 from haiku.rag.ingester.queue.models import Job, JobOp
 from haiku.rag.sources.base import FileTooLargeError
@@ -47,6 +51,19 @@ def _classify(exc: BaseException) -> Exception:
     # missing file, unsupported extension, etc.).
     if isinstance(exc, UnsupportedSourceError | FileTooLargeError):
         return PermanentError(str(exc))
+
+    if isinstance(exc, ConversionTimeoutError):
+        # The document exceeded the deadline; a fresh process would very likely
+        # stall on it again. `converter_wedged` decides whether this process can
+        # still convert anything else.
+        return PermanentError(
+            f"conversion deadline: {exc}", fatal_to_process=exc.converter_wedged
+        )
+
+    if isinstance(exc, ConverterWedgedError):
+        # Another document wedged the converter. This one is not at fault and
+        # must survive to be retried after the restart.
+        return TransientError(f"converter wedged: {exc}")
 
     if isinstance(exc, ValueError):
         # Some downstream libraries (e.g. docling) raise plain ValueError

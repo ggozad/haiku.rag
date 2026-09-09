@@ -580,3 +580,55 @@ async def test_other_obstore_errors_classified_transient(exc_class):
     client.create_document_from_source.side_effect = exc_class("upstream hiccup")
     with pytest.raises(TransientError):
         await run_job(client, _job())
+
+
+@pytest.mark.asyncio
+async def test_conversion_deadline_is_permanent_and_fatal_to_the_process():
+    """The document that exceeded the deadline is dead, and the process that
+    abandoned the shared converter cannot convert again."""
+    from haiku.rag.converters.exceptions import ConversionTimeoutError
+
+    client = _mock_client()
+    client.create_document_from_source.side_effect = ConversionTimeoutError(
+        "took too long", converter_wedged=True
+    )
+
+    with pytest.raises(PermanentError) as excinfo:
+        await run_job(client, _job())
+
+    assert excinfo.value.fatal_to_process is True
+
+
+@pytest.mark.asyncio
+async def test_conversion_deadline_on_its_own_converter_spares_the_process():
+    """HTML and Markdown hold no shared converter, so the deadline kills the
+    document only."""
+    from haiku.rag.converters.exceptions import ConversionTimeoutError
+
+    client = _mock_client()
+    client.create_document_from_source.side_effect = ConversionTimeoutError(
+        "took too long", converter_wedged=False
+    )
+
+    with pytest.raises(PermanentError) as excinfo:
+        await run_job(client, _job())
+
+    assert excinfo.value.fatal_to_process is False
+
+
+@pytest.mark.asyncio
+async def test_wedged_converter_is_transient_and_never_kills_the_document():
+    """A document refused by a converter another document wedged is not at
+    fault, so it must not be dead-lettered."""
+    from haiku.rag.converters.exceptions import ConverterWedgedError
+
+    client = _mock_client()
+    client.create_document_from_source.side_effect = ConverterWedgedError(
+        "restart the process"
+    )
+
+    with pytest.raises(TransientError) as excinfo:
+        await run_job(client, _job())
+
+    # classified on its type, not swept up by the unknown-error fallthrough
+    assert not str(excinfo.value).startswith("unexpected:")

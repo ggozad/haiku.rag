@@ -4,7 +4,15 @@ class IngesterError(Exception):
 
 class PermanentError(IngesterError):
     """The job will never succeed without intervention (bad URI, unsupported
-    content type, 410 Gone, etc.). Goes straight to dead — no retry."""
+    content type, 410 Gone, etc.). Goes straight to dead — no retry.
+
+    `fatal_to_process` marks a failure that also left this process unable to
+    convert, so the worker terminates once the job is recorded dead.
+    """
+
+    def __init__(self, message: str, *, fatal_to_process: bool = False):
+        super().__init__(message)
+        self.fatal_to_process = fatal_to_process
 
 
 class TransientError(IngesterError):

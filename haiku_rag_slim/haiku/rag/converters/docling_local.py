@@ -15,6 +15,10 @@ from haiku.rag.converters.base import (
     vlm_api_params,
     vlm_api_url,
 )
+from haiku.rag.converters.exceptions import (
+    ConversionTimeoutError,
+    ConverterWedgedError,
+)
 from haiku.rag.converters.text_utils import TextFileHandler, docling_safe_name
 
 if TYPE_CHECKING:
@@ -260,7 +264,7 @@ class DoclingLocalConverter(DocumentConverter):
         them as `{}` and hiding `table_mode` and the OCR engine.
         """
         if _WEDGED.is_set():
-            raise RuntimeError(
+            raise ConverterWedgedError(
                 "A previous conversion timed out and still holds the docling "
                 "converter; restart the process to convert again."
             )
@@ -337,9 +341,10 @@ class DoclingLocalConverter(DocumentConverter):
             )
             if shared:
                 _WEDGED.set()
-            raise TimeoutError(
+            raise ConversionTimeoutError(
                 f"Converting {path} exceeded processing.conversion_timeout "
-                f"({timeout}s). {detail}"
+                f"({timeout}s). {detail}",
+                converter_wedged=shared,
             ) from None
         if isinstance(result, TimeoutError):
             raise result
