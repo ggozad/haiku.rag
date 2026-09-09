@@ -1170,6 +1170,9 @@ class TestInlineGroups:
         assert (
             "A bullet with `code` and a [link](https://example.com/) inside." in texts
         )
+        # The runs are gone, not kept beside the item that now carries them.
+        assert "By default," not in texts
+        assert "0.68.0" not in texts
 
     @pytest.mark.asyncio
     async def test_body_text_under_a_heading_keeps_its_hyperlinks(self, converter):

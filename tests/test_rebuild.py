@@ -615,6 +615,8 @@ async def test_rebuild_rechunk_normalizes_a_stored_document(temp_db_path, monkey
             item.text for item in items
         ]
         assert "0.68.0 - 2026-07-24" in [item.text for item in items]
+        # The runs are gone, not kept beside the item that now carries them.
+        assert "By default," not in [item.text for item in items]
 
         chunks = await client.chunk_repository.get_by_document_id(doc.id)
         assert any("`haiku.rag`" in chunk.content for chunk in chunks)
