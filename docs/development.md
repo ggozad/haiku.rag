@@ -1,15 +1,16 @@
 # Development
 
-This guide covers setting up a development environment and running tests.
+This guide covers setting up a development environment and running tests. For how to report issues and open pull requests, see [CONTRIBUTING.md](https://github.com/ggozad/haiku.rag/blob/main/CONTRIBUTING.md).
 
 ## Setup
 
-Clone the repository and install dependencies:
+Clone the repository, install dependencies and the pre-commit hooks:
 
 ```bash
 git clone https://github.com/ggozad/haiku.rag.git
 cd haiku.rag
 uv sync
+uv run pre-commit install
 ```
 
 ## Running Tests
