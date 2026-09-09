@@ -283,6 +283,10 @@ async def import_document(
 
     Use this when conversion, chunking, and embedding were done externally.
     Chunks without embeddings will be automatically embedded.
+
+    The document is stored as given, since the chunks' ``doc_item_refs``
+    index into it. Convert through :meth:`HaikuRAG.convert` to get one whose
+    inline groups are flattened.
     """
     document = Document(
         content="",

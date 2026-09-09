@@ -22,8 +22,8 @@
 - Markdown and HTML conversion flattens each inline group of text runs into
   the item that owns it, so a paragraph carrying inline code or a link is one
   item and a heading carrying one is no longer empty. Hyperlinks are dropped
-  from heading text. Existing documents need a full `haiku-rag rebuild`;
-  `--rechunk` re-chunks the stored docling document and does not convert.
+  from heading text. `haiku-rag rebuild --rechunk` flattens a stored document
+  and keeps the result, so existing databases do not need re-conversion.
 
 ## [0.83.0] - 2026-09-09
 
