@@ -4,6 +4,13 @@
 
 ### Added
 
+- `processing.conversion_timeout`, seconds one document conversion may take,
+  default 600. Past it `convert_file` raises `TimeoutError`. A conversion that
+  used the shared docling converter also keeps it, since its thread cannot be
+  cancelled, so later conversions in that process raise `RuntimeError` until it
+  is restarted. HTML and Markdown build their own converter, so later
+  conversions still run, but an abandoned thread is never cancelled and holds an
+  executor thread for as long as it lasts.
 - `processing.conversion_options.pdf_backend`, one of `docling_parse`
   (default), `threaded_docling_parse` or `pypdfium2`. Both converters send it,
   so the local one and docling-serve parse a PDF the same way. docling's own
@@ -94,6 +101,8 @@
 
 ### Fixed
 
+- `DoclingLocalConverter.convert_file` chains the exception that caused
+  `Failed to parse file` instead of discarding it.
 - Page and picture images are re-encoded at PNG compression level 6 before
   storage, holding blob sizes where docling-core's OpenCV encoder would have
   left them 30-60% larger. Ingestion pays one extra encode per image.

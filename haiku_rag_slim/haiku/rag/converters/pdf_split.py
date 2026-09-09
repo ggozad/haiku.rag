@@ -118,6 +118,8 @@ async def convert_pdf_with_splitting(
                         slice_doc = await converter.convert_file(
                             tmp_path, source_uri=source_uri
                         )
+                    except TimeoutError:
+                        raise
                     except Exception as exc:
                         raise ValueError(
                             f"Failed to convert slice pages {start}-{end} of {path}: {exc}"

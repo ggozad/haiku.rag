@@ -277,6 +277,16 @@ class ProcessingConfig(ConfigModel):
     chunking_merge_peers: bool = True
     chunking_use_markdown_tables: bool = False
     conversion_options: ConversionOptions = Field(default_factory=ConversionOptions)
+    conversion_timeout: float = Field(
+        default=600.0,
+        gt=0,
+        description=(
+            "Seconds a single document conversion may take before it is "
+            "abandoned. The conversion runs on in a thread that is never "
+            "cancelled; abandoning one that used the shared docling converter "
+            "means the process must be replaced to convert again."
+        ),
+    )
     split_pages: int = Field(
         default=0,
         ge=0,

@@ -197,6 +197,28 @@ conversion_options:
   - `threaded_docling_parse`: concurrent page parsing, and docling's own default. On some documents its page producer never delivers and the conversion never returns, so it is not ours. Measured over ten arXiv papers against `docling_parse`: one table undetected, 7% fewer table cells, 9% faster.
   - `pypdfium2`: faster and simpler, less layout detail. Over the same ten papers: 7% fewer words and 28% fewer table cells.
 
+#### Conversion Timeout
+
+```yaml
+processing:
+  conversion_timeout: 600   # seconds
+```
+
+- **conversion_timeout**: How long one document may spend in conversion before
+  it is abandoned and `TimeoutError` is raised. It bounds the caller's wait
+  only: the conversion runs on in a thread that is never cancelled, whether or
+  not it ever ends.
+
+  PDFs and office formats share one docling converter, and an abandoned
+  conversion keeps it, so subsequent conversions raise `RuntimeError` naming the
+  restart. A service that must keep ingesting after a stalled PDF has to replace
+  the process, not retry in it.
+
+  HTML and Markdown build a converter per call, so abandoning one leaves later
+  conversions able to run. It is not free either: the thread is never cancelled,
+  and one that never ends holds a thread in the event loop's executor for the
+  life of the process, so repeated stalls will exhaust the pool.
+
 #### OCR Settings
 
 ```yaml

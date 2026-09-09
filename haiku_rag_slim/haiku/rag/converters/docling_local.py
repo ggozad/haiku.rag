@@ -34,6 +34,11 @@ if TYPE_CHECKING:
 _CONVERTER_LOCK = threading.Lock()
 _CONVERTERS: dict[str, "DoclingDocConverter"] = {}
 
+# Set when a conversion is abandoned on timeout. Its thread cannot be cancelled
+# and still holds _CONVERTER_LOCK, so every later shared conversion in this
+# process would block on a lock that is never released.
+_WEDGED = threading.Event()
+
 # HTML and Markdown backend options carry the per-document source_uri. Both run
 # SimplePipeline, which loads no models, so they get a converter per call.
 _URI_AWARE_EXTENSIONS = frozenset({".html", ".xhtml", ".md", ".qmd", ".rmd"})
@@ -254,6 +259,12 @@ class DoclingLocalConverter(DocumentConverter):
         serializes the nested option models as their declared type, rendering
         them as `{}` and hiding `table_mode` and the OCR engine.
         """
+        if _WEDGED.is_set():
+            raise RuntimeError(
+                "A previous conversion timed out and still holds the docling "
+                "converter; restart the process to convert again."
+            )
+
         from docling.document_converter import (
             DocumentConverter as DoclingDocConverter,
         )
@@ -296,6 +307,44 @@ class DoclingLocalConverter(DocumentConverter):
         with self._shared_converter() as converter:
             return converter.convert(path).document
 
+    async def _convert_docling_file(
+        self, path: Path, source_uri: str | None
+    ) -> "DoclingDocument":
+        """Convert through docling under `processing.conversion_timeout`."""
+        timeout = self.config.processing.conversion_timeout
+        # Only the shared converter holds `_CONVERTER_LOCK`, which an abandoned
+        # conversion never releases. HTML and Markdown get their own, so
+        # abandoning one leaves later conversions able to run.
+        shared = path.suffix.lower() not in _URI_AWARE_EXTENSIONS
+
+        # Returned rather than raised: `asyncio.TimeoutError` is `TimeoutError`,
+        # so a deadline handler cannot tell docling's own from its own.
+        def _run() -> "DoclingDocument | TimeoutError":
+            try:
+                return self._sync_convert_docling_file(path, source_uri)
+            except TimeoutError as exc:
+                return exc
+
+        try:
+            result = await asyncio.wait_for(asyncio.to_thread(_run), timeout)
+        except TimeoutError:
+            detail = (
+                "The conversion thread cannot be cancelled and holds the "
+                "shared converter, so this process cannot convert again."
+                if shared
+                else "The conversion thread cannot be cancelled and holds an "
+                "executor thread for as long as it runs."
+            )
+            if shared:
+                _WEDGED.set()
+            raise TimeoutError(
+                f"Converting {path} exceeded processing.conversion_timeout "
+                f"({timeout}s). {detail}"
+            ) from None
+        if isinstance(result, TimeoutError):
+            raise result
+        return result
+
     async def convert_file(
         self, path: Path, source_uri: str | None = None
     ) -> "DoclingDocument":
@@ -310,15 +359,14 @@ class DoclingLocalConverter(DocumentConverter):
             DoclingDocument representation of the file.
 
         Raises:
-            ValueError: If the file cannot be converted.
+            ValueError: If the file cannot be converted, chaining the cause.
+            TimeoutError: If it exceeds `processing.conversion_timeout`.
         """
         try:
             file_extension = path.suffix.lower()
 
             if file_extension in self.docling_extensions:
-                return await asyncio.to_thread(
-                    self._sync_convert_docling_file, path, source_uri
-                )
+                return await self._convert_docling_file(path, source_uri)
             elif file_extension in TextFileHandler.text_extensions:
                 content = await asyncio.to_thread(path.read_text, encoding="utf-8")
                 prepared_content = TextFileHandler.prepare_text_content(
@@ -334,8 +382,10 @@ class DoclingLocalConverter(DocumentConverter):
                 return await self.convert_text(
                     content, name=f"{path.stem}.md", source_uri=source_uri
                 )
-        except Exception:
-            raise ValueError(f"Failed to parse file: {path}")
+        except TimeoutError:
+            raise
+        except Exception as exc:
+            raise ValueError(f"Failed to parse file: {path}") from exc
 
     async def convert_text(
         self,

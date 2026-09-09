@@ -2077,3 +2077,164 @@ async def test_docling_serve_convert_file_wraps_text_read_failure(tmp_path):
 
     with pytest.raises(ValueError, match="Failed to read text file"):
         await converter.convert_file(source)
+
+
+class TestConversionTimeout:
+    """`processing.conversion_timeout` bounds a conversion that never returns."""
+
+    @pytest.fixture
+    def config(self):
+        return AppConfig()
+
+    @pytest.fixture(autouse=True)
+    def _clear_wedged(self):
+        from haiku.rag.converters import docling_local
+
+        docling_local._WEDGED.clear()
+        yield
+        docling_local._WEDGED.clear()
+
+    @pytest.mark.asyncio
+    async def test_timeout_raises_and_names_the_setting(
+        self, config, tmp_path, monkeypatch
+    ):
+        """A conversion past the deadline raises `TimeoutError`, not `ValueError`."""
+        import asyncio
+
+        config.processing.conversion_timeout = 0.05
+        converter = DoclingLocalConverter(config)
+        pdf = tmp_path / "slow.pdf"
+        pdf.write_bytes(b"%PDF-1.5\n")
+
+        def _never_returns(path, source_uri=None):
+            import time
+
+            time.sleep(5)
+
+        monkeypatch.setattr(converter, "_sync_convert_docling_file", _never_returns)
+        with pytest.raises(TimeoutError, match="cannot convert again") as excinfo:
+            await asyncio.wait_for(converter.convert_file(pdf), 3)
+        assert "conversion_timeout" in str(excinfo.value)
+
+    @pytest.mark.asyncio
+    async def test_later_conversions_fail_fast_after_a_timeout(
+        self, config, tmp_path, monkeypatch
+    ):
+        """A timed-out conversion still holds the shared converter, so the next
+        one refuses immediately instead of blocking on the lock it will never
+        release."""
+        import asyncio
+        import time
+
+        config.processing.conversion_timeout = 0.05
+        converter = DoclingLocalConverter(config)
+        pdf = tmp_path / "slow.pdf"
+        pdf.write_bytes(b"%PDF-1.5\n")
+
+        def _never_returns(path, source_uri=None):
+            time.sleep(5)
+
+        monkeypatch.setattr(converter, "_sync_convert_docling_file", _never_returns)
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(converter.convert_file(pdf), 3)
+
+        started = time.monotonic()
+        with pytest.raises(RuntimeError, match="restart"):
+            with DoclingLocalConverter(config)._shared_converter():
+                pass
+        assert time.monotonic() - started < 1.0
+
+    @pytest.mark.asyncio
+    async def test_failure_keeps_its_cause(self, config, tmp_path, monkeypatch):
+        """`Failed to parse file` chains the exception that caused it."""
+        converter = DoclingLocalConverter(config)
+        missing = tmp_path / "nope.pdf"
+
+        def _boom(path, source_uri=None):
+            raise KeyError("the real problem")
+
+        monkeypatch.setattr(converter, "_sync_convert_docling_file", _boom)
+        with pytest.raises(ValueError) as excinfo:
+            await converter.convert_file(missing)
+        assert isinstance(excinfo.value.__cause__, KeyError)
+        assert "the real problem" in str(excinfo.value.__cause__)
+
+    @pytest.mark.asyncio
+    async def test_docling_own_timeout_keeps_its_cause(
+        self, config, tmp_path, monkeypatch
+    ):
+        """A `TimeoutError` from inside docling is not the configured deadline:
+        it keeps its cause and leaves later conversions alone."""
+        from haiku.rag.converters import docling_local
+
+        converter = DoclingLocalConverter(config)
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"%PDF-1.5\n")
+
+        def _their_timeout(path, source_uri=None):
+            raise TimeoutError("docling's own network timeout")
+
+        monkeypatch.setattr(converter, "_sync_convert_docling_file", _their_timeout)
+        with pytest.raises(TimeoutError, match="docling's own") as excinfo:
+            await converter.convert_file(pdf)
+        assert not docling_local._WEDGED.is_set()
+
+        # It reaches the caller as itself, with no carrier of ours in the chain.
+        import traceback
+
+        rendered = "".join(traceback.format_exception(excinfo.value))
+        assert "CalleeTimeout" not in rendered
+
+    @pytest.mark.asyncio
+    async def test_uri_aware_timeout_leaves_pdfs_alone(
+        self, config, tmp_path, monkeypatch
+    ):
+        """HTML and Markdown convert on isolated converters that never take
+        `_CONVERTER_LOCK`, so abandoning one does not disable PDF conversion."""
+        import time
+
+        from haiku.rag.converters import docling_local
+
+        config.processing.conversion_timeout = 0.05
+        converter = DoclingLocalConverter(config)
+        page = tmp_path / "page.html"
+        page.write_text("<html><body><p>slow</p></body></html>")
+
+        def _never_returns(path, source_uri=None):
+            time.sleep(5)
+
+        monkeypatch.setattr(converter, "_sync_convert_docling_file", _never_returns)
+        with pytest.raises(TimeoutError) as excinfo:
+            await converter.convert_file(page)
+        assert not docling_local._WEDGED.is_set()
+        assert "cannot convert again" not in str(excinfo.value)
+
+    @pytest.mark.asyncio
+    async def test_split_conversion_propagates_the_timeout(
+        self, config, tmp_path, monkeypatch
+    ):
+        """`convert_pdf_with_splitting` must not relabel the deadline as a
+        parse failure."""
+        import time
+
+        from haiku.rag.converters.pdf_split import convert_pdf_with_splitting
+
+        config.processing.conversion_timeout = 0.05
+        config.processing.conversion_options.do_ocr = False
+        converter = DoclingLocalConverter(config)
+        pdf_path = Path(__file__).parent / "data" / "doclaynet.pdf"
+
+        def _never_returns(path, source_uri=None):
+            time.sleep(5)
+
+        monkeypatch.setattr(converter, "_sync_convert_docling_file", _never_returns)
+        with pytest.raises(TimeoutError, match="conversion_timeout"):
+            await convert_pdf_with_splitting(
+                converter, pdf_path, source_uri=None, slice_size=3
+            )
+
+    def test_timeout_has_a_default(self):
+        """The bound applies without configuration."""
+        from haiku.rag.config.models import AppConfig
+
+        assert AppConfig().processing.conversion_timeout == 600.0
