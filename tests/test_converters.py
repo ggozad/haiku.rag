@@ -937,9 +937,10 @@ class TestDoclingLocalConverter:
         assert len(set(merged_refs)) == len(merged_refs)
 
         # The same words, regrouped: a multiset, since a slice can order a
-        # caption differently against body text.
+        # caption differently against body text. Taken from the markdown so
+        # table-cell text is covered too, not only `doc.texts`.
         def _words(doc):
-            return Counter(" ".join(t.text or "" for t in doc.texts).split())
+            return Counter(doc.export_to_markdown().split())
 
         assert _words(merged) == _words(baseline)
 
