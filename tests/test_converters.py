@@ -11,12 +11,20 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
-from docling_core.types.doc.document import DoclingDocument
+from docling_core.types.doc.document import (
+    BoundingBox,
+    DoclingDocument,
+    InlineGroup,
+    ProvenanceItem,
+    Size,
+)
+from docling_core.types.doc.labels import DocItemLabel
 
 from haiku.rag.config import AppConfig
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.converters import docling_local, get_converter
 from haiku.rag.converters.base import (
+    flatten_inline_groups,
     vlm_api_headers,
     vlm_api_params,
     vlm_api_url,
@@ -1129,6 +1137,79 @@ class TestDoclingLocalConverter:
 
         assert pictures_with_descriptions, (
             "At least one picture should have a VLM description"
+        )
+
+
+class TestInlineGroups:
+    """Inline markup ends up in the item that owns it."""
+
+    @pytest.fixture
+    def converter(self):
+        return DoclingLocalConverter(AppConfig())
+
+    @pytest.mark.asyncio
+    async def test_inline_markup_flattens_into_one_item(self, converter):
+        md = (
+            "By default, `haiku.rag` uses the configured embedder.\n\n"
+            "## [0.68.0] - 2026-07-24\n\n"
+            "- A bullet with `code` and a [link](https://example.com) inside.\n\n"
+            "[0.68.0]: https://github.com/ggozad/haiku.rag/releases\n"
+        )
+
+        doc = await converter.convert_text(md, name="test.md")
+
+        texts = [getattr(item, "text", None) for item, _ in doc.iterate_items()]
+        assert "" not in texts
+        assert "By default, `haiku.rag` uses the configured embedder." in texts
+        assert "0.68.0 - 2026-07-24" in texts
+        assert (
+            "A bullet with `code` and a [link](https://example.com/) inside." in texts
+        )
+
+    @pytest.mark.asyncio
+    async def test_body_text_under_a_heading_keeps_its_hyperlinks(self, converter):
+        """The HTML backend parents a paragraph to the heading above it."""
+        html = (
+            "<html><body><h2>Section</h2>"
+            '<p>Body text with a <a href="https://example.com">link</a> in it.</p>'
+            "</body></html>"
+        )
+
+        doc = await converter.convert_text(html, format="html")
+
+        texts = [getattr(item, "text", None) for item, _ in doc.iterate_items()]
+        assert "Body text with a [link](https://example.com/) in it." in texts
+
+    def test_flattened_item_keeps_provenance(self):
+        doc = DoclingDocument(name="test")
+        doc.add_page(page_no=1, size=Size(width=100, height=100))
+        group = doc.add_inline_group()
+        prov = ProvenanceItem(
+            page_no=1, bbox=BoundingBox(l=0, t=10, r=50, b=0), charspan=(0, 4)
+        )
+        doc.add_text(label=DocItemLabel.TEXT, text="left", prov=prov, parent=group)
+        doc.add_text(label=DocItemLabel.TEXT, text="right", parent=group)
+
+        flatten_inline_groups(doc)
+
+        item = doc.texts[-1]
+        assert item.text == "left right"
+        assert item.prov[0].page_no == 1
+
+    @pytest.mark.asyncio
+    async def test_inline_picture_group_is_left_alone(self):
+        config = AppConfig()
+        config.processing.conversion_options.fetch_remote_images = False
+        converter = DoclingLocalConverter(config)
+
+        doc = await converter.convert_text(
+            "Text with an ![image](https://example.com/x.png) inline in it.",
+            name="test.md",
+        )
+
+        assert any(
+            isinstance(item, InlineGroup)
+            for item, _ in doc.iterate_items(with_groups=True)
         )
 
 

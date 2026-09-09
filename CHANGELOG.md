@@ -103,6 +103,11 @@
   not checked against the deadline.
 - Context expansion keeps the item a result matched on when it carries a
   noise label, and counts it toward the character budget.
+- Markdown and HTML conversion flattens each inline group of text runs into
+  the item that owns it, so a paragraph carrying inline code or a link is one
+  item and a heading carrying one is no longer empty. Hyperlinks are dropped
+  from heading text. Existing documents need a full `haiku-rag rebuild`;
+  `--rechunk` re-chunks the stored docling document and does not convert.
 
 ### Removed
 

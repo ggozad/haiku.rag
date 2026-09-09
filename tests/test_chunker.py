@@ -282,6 +282,32 @@ Here is some background information.
     assert any("Chapter" in h or "Section" in h for h in all_headings)
 
 
+@pytest.mark.asyncio
+async def test_inline_markup_survives_chunking():
+    """Inline code stays inline in the chunk text, and a heading carrying a
+    link names the breadcrumb."""
+    sample_md = (
+        "# Title\n\n"
+        "## [0.68.0] - 2026-07-24\n\n"
+        "By default, `haiku.rag` uses the configured embedder.\n\n"
+        "[0.68.0]: https://github.com/ggozad/haiku.rag/releases\n"
+    )
+    converter = get_converter(get_config())
+    doc = await converter.convert_text(sample_md, name="test.md")
+
+    chunks = await DoclingLocalChunker().chunk(doc)
+
+    assert any(
+        "By default, `haiku.rag` uses the configured embedder." in chunk.content
+        for chunk in chunks
+    )
+    assert all("```" not in chunk.content for chunk in chunks)
+    headings = [
+        h for chunk in chunks for h in (chunk.get_chunk_metadata().headings or [])
+    ]
+    assert "0.68.0 - 2026-07-24" in headings
+
+
 def test_get_chunker_docling_serve():
     """Test factory returns DoclingServeChunker for docling-serve."""
     config = AppConfig()
