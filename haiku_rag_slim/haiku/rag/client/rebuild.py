@@ -652,24 +652,18 @@ async def _rebuild_rechunk(
         await _flush_rebuild_batch(session, pending_docs, pending_chunks)
 
 
-def _store_structure(docling_doc: "DoclingDocument", doc: Document) -> None:
-    """Compress the docling document into ``doc.docling_document``.
+def _apply_descriptions_sync(
+    docling_doc: "DoclingDocument", doc: Document, descriptions: dict[str, str]
+) -> int:
+    """Patch picture descriptions into the docling document and re-compress.
 
     Updates only docling_document — set_docling would also overwrite
     docling_pages by routing through compress_docling_split, which
     extracts pages from the in-memory JSON and finds none (the pages
     blob is stored separately and is not loaded by get_docling_document).
-    That would silently destroy page rasters.
+    That would silently destroy page rasters for every doc with at
+    least one undescribed picture.
     """
-    structure_bytes, _ = compress_docling_split(docling_doc.model_dump(mode="json"))
-    doc.docling_document = structure_bytes
-    doc.docling_version = docling_doc.version
-
-
-def _apply_descriptions_sync(
-    docling_doc: "DoclingDocument", doc: Document, descriptions: dict[str, str]
-) -> int:
-    """Patch picture descriptions into the docling document and re-compress."""
     for pic in docling_doc.pictures:
         text = descriptions.get(pic.self_ref)
         if not text:
@@ -678,7 +672,9 @@ def _apply_descriptions_sync(
             pic.meta = PictureMeta()
         pic.meta.description = DescriptionMetaField(text=text)
 
-    _store_structure(docling_doc, doc)
+    structure_bytes, _ = compress_docling_split(docling_doc.model_dump(mode="json"))
+    doc.docling_document = structure_bytes
+    doc.docling_version = docling_doc.version
     return len(descriptions)
 
 

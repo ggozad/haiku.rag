@@ -569,7 +569,7 @@ async for doc_id in client.rebuild_database(mode=RebuildMode.DESCRIPTIONS):
 
 **Rebuild modes:**
 
-- `RebuildMode.FULL` - Re-convert from source files, re-chunk, re-embed (default). Re-converts markdown and HTML stored by a version before inline groups were flattened
+- `RebuildMode.FULL` - Re-convert from source files, re-chunk, re-embed (default). Re-converts documents stored by a version before inline groups were flattened
 - `RebuildMode.RECHUNK` - Re-chunk from the stored docling document, re-embed
 - `RebuildMode.EMBED_ONLY` - Keep existing chunks, only regenerate embeddings
 - `RebuildMode.TITLE_ONLY` - Generate titles for untitled documents (no re-chunking or re-embedding)
