@@ -159,4 +159,6 @@ An unknown name raises `UnknownDatabaseError`, an empty list `ValueError`. `sour
 
 The `sources` field of the capability [state](#state) selects among the databases the capability covers, for one question. A question naming a database outside that coverage fails when it searches.
 
+`document_filter` in the same state is a SQL WHERE clause over the document columns (see [Filtering Search Results](../python.md#filtering-search-results)). The host sets it, and it persists until the host changes it. It restricts what the capability's searches retrieve and which documents the analysis sandbox mounts, not what a citation can resolve, so evidence from an earlier question stays citable after the filter narrows.
+
 Passing a client through `rag=` bypasses this selection. The capability uses the databases covered by that client and does not close it.

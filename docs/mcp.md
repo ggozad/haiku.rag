@@ -159,8 +159,10 @@ and `sources` select, and returns what it printed. The program reads
 `/documents/{document_id}/` (`metadata.json`, `content.txt`, `items.jsonl`,
 `chunks.jsonl`, `toc.json`) and can `await search()` and
 `await list_documents()`; the tool description spells out the fields and the
-patterns that matter. Each call is one program: nothing carries over between
-calls, and the sandbox is created and closed per call. A failing program is a
+patterns that matter. Every document `filter` and `sources` admit is mounted
+with its full text, whether or not a search returned it. Each call is one
+program: nothing carries over between calls, and the sandbox is created and
+closed per call. A failing program is a
 tool error carrying the interpreter's message and any output printed before
 it. No model runs on the server. Claude Code moves a call still running after
 about two minutes to a background task.
@@ -187,6 +189,14 @@ metadata LIKE '%"author": "Smith"%'
 uri LIKE '%.pdf'
 title = 'Q3 report'
 ```
+
+`filter` and `sources` are chosen by the client model on each call. What a
+client can reach is bounded by the databases the server was started against,
+not by either parameter: `filter` restricts what `search_documents` and
+`list_documents` return and what `execute_code` mounts, `get_document` and
+`get_document_section` take none, and a document id resolves through them
+whatever filter another call used. Content that must stay out of a client's
+reach belongs in a database the server does not cover.
 
 ### Errors
 
