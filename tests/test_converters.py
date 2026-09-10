@@ -1,6 +1,8 @@
 """Tests for document converters."""
 
 import asyncio
+import copy
+import re
 import tempfile
 import threading
 import time
@@ -11,12 +13,26 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
-from docling_core.types.doc.document import DoclingDocument
+from docling_core.transforms.serializer.markdown import (
+    MarkdownDocSerializer,
+    MarkdownParams,
+)
+from docling_core.types.doc.document import (
+    BoundingBox,
+    DoclingDocument,
+    FloatingItem,
+    InlineGroup,
+    ProvenanceItem,
+    Size,
+    TextItem,
+)
+from docling_core.types.doc.labels import DocItemLabel
 
 from haiku.rag.config import AppConfig
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.converters import docling_local, get_converter
 from haiku.rag.converters.base import (
+    flatten_inline_groups,
     vlm_api_headers,
     vlm_api_params,
     vlm_api_url,
@@ -1135,6 +1151,310 @@ class TestDoclingLocalConverter:
         assert pictures_with_descriptions, (
             "At least one picture should have a VLM description"
         )
+
+
+PROPERTY_MD = """# Release `notes` for [0.1.0](https://example.com/v1)
+
+Use `my_func` for snake_case_name and & stuff, *emphasis* first.
+
+- First `code` bullet with a [ref](https://example.com/a).
+
+  Continuation `code` paragraph.
+
+  - Nested `code` item.
+
+| Command | Note |
+|---|---|
+| run `build` | builds *it* |
+"""
+
+PROPERTY_HTML = """<!doctype html><html><body>
+<h2>A <code>code</code> heading with an <a href="https://example.com/b">anchor</a></h2>
+<p>Use <code>haiku_rag.search</code> for snake_case and an
+<a href="https://example.com">inline link</a> with &amp; entities.</p>
+<figure>
+  <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="/>
+  <figcaption>Figure 1: a <code>code</code> caption</figcaption>
+</figure>
+<table><tr><th>Key</th><td>Value with <code>code</code></td></tr></table>
+</body></html>
+"""
+
+_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_WORD = re.compile(r"[\w\\&;]+")
+_RENDER = MarkdownParams(
+    include_hyperlinks=False, escape_underscores=False, escape_html=False
+)
+
+
+def _words(doc) -> Counter:
+    """Visible words, with link markup unwrapped.
+
+    Flattening bakes `[text](url)` into an item's text, which the serializer
+    cannot render back out, so compare what a reader sees. Words are taken
+    without their punctuation: docling renders two paragraphs of one bullet
+    run together, and flattening separates them.
+    """
+    rendered = MarkdownDocSerializer(doc=doc, params=_RENDER).serialize().text
+    return Counter(_WORD.findall(_LINK.sub(r"\1", rendered)))
+
+
+def _floating_captions(doc) -> list[tuple[str, list[str]]]:
+    """Caption/footnote/reference text per floating item, runs excluded.
+
+    ``CodeItem`` is itself a ``FloatingItem``, so an inline code run would
+    otherwise shift the pairing when it merges away.
+    """
+    out = []
+    for item, _ in doc.iterate_items(with_groups=True, traverse_pictures=True):
+        if not isinstance(item, FloatingItem) or isinstance(item, TextItem):
+            continue
+        out.append(
+            (
+                type(item).__name__,
+                [
+                    getattr(ref.resolve(doc), "text", "")
+                    for ref in (*item.captions, *item.footnotes, *item.references)
+                ],
+            )
+        )
+    return out
+
+
+def _flattenable(doc) -> list[str]:
+    left = []
+    for item, _ in doc.iterate_items(with_groups=True, traverse_pictures=True):
+        if not isinstance(item, InlineGroup):
+            continue
+        children = [child.resolve(doc) for child in item.children]
+        runs = [child for child in children if isinstance(child, TextItem)]
+        if runs and len(runs) == len(children):
+            left.append(item.self_ref)
+    return left
+
+
+def _build_docx(path: Path) -> Path:
+    import docx
+
+    document = docx.Document()
+    heading = document.add_heading("", level=2)
+    heading.add_run("A ")
+    heading.add_run("code").italic = True
+    heading.add_run(" heading with mixed runs")
+    body = document.add_paragraph()
+    body.add_run("Use ")
+    body.add_run("haiku_rag.search").bold = True
+    body.add_run(" for snake_case and & entities.")
+    first = document.add_paragraph(style="List Bullet")
+    first.add_run("First ")
+    first.add_run("code").italic = True
+    first.add_run(" bullet.")
+    second = document.add_paragraph(style="List Bullet")
+    second.add_run("Continuation paragraph with ")
+    second.add_run("more_code").bold = True
+    caption = document.add_paragraph(style="Caption")
+    caption.add_run("Figure 1: a ")
+    caption.add_run("code").italic = True
+    caption.add_run(" caption")
+    document.save(str(path))
+    return path
+
+
+class TestInlineGroups:
+    """Inline markup ends up in the item that owns it."""
+
+    @pytest.fixture
+    def converter(self):
+        return DoclingLocalConverter(AppConfig())
+
+    @pytest.mark.asyncio
+    async def test_inline_markup_flattens_into_one_item(self, converter):
+        md = (
+            "By default, `haiku.rag` uses the configured embedder.\n\n"
+            "## [0.68.0] - 2026-07-24\n\n"
+            "- A bullet with `code` and a [link](https://example.com) inside.\n\n"
+            "[0.68.0]: https://github.com/ggozad/haiku.rag/releases\n"
+        )
+
+        doc = await converter.convert_text(md, name="test.md")
+
+        texts = [getattr(item, "text", None) for item, _ in doc.iterate_items()]
+        assert "" not in texts
+        assert "By default, `haiku.rag` uses the configured embedder." in texts
+        assert "0.68.0 - 2026-07-24" in texts
+        assert (
+            "A bullet with `code` and a [link](https://example.com/) inside." in texts
+        )
+        # The runs are gone, not kept beside the item that now carries them.
+        assert "By default," not in texts
+        assert "0.68.0" not in texts
+
+    @pytest.mark.asyncio
+    async def test_flattened_text_carries_the_source_characters(self, converter):
+        """Underscores and ampersands reach storage as written."""
+        doc = await converter.convert_text(
+            "Use `my_func` for snake_case_name and & stuff.\n", name="test.md"
+        )
+
+        texts = [getattr(item, "text", None) for item, _ in doc.iterate_items()]
+        assert "Use `my_func` for snake_case_name and & stuff." in texts
+
+    @pytest.mark.asyncio
+    async def test_every_paragraph_of_a_list_item_survives(self, converter):
+        doc = await converter.convert_text(
+            "- First `code` paragraph.\n"
+            "  - Nested `code` item.\n\n"
+            "  Second `code` paragraph.\n",
+            name="test.md",
+        )
+
+        texts = [getattr(item, "text", None) for item, _ in doc.iterate_items()]
+        assert texts == [
+            "First `code` paragraph.",
+            "Nested `code` item.",
+            "Second `code` paragraph.",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_body_text_under_a_heading_keeps_its_hyperlinks(self, converter):
+        """The HTML backend parents a paragraph to the heading above it."""
+        html = (
+            "<html><body><h2>Section</h2>"
+            '<p>Body text with a <a href="https://example.com">link</a> in it.</p>'
+            "</body></html>"
+        )
+
+        doc = await converter.convert_text(html, format="html")
+
+        texts = [getattr(item, "text", None) for item, _ in doc.iterate_items()]
+        assert "Body text with a [link](https://example.com/) in it." in texts
+
+    def test_flattened_item_keeps_provenance(self):
+        doc = DoclingDocument(name="test")
+        doc.add_page(page_no=1, size=Size(width=100, height=100))
+        group = doc.add_inline_group()
+        prov = ProvenanceItem(
+            page_no=1, bbox=BoundingBox(l=0, t=10, r=50, b=0), charspan=(0, 4)
+        )
+        doc.add_text(label=DocItemLabel.TEXT, text="left", prov=prov, parent=group)
+        doc.add_text(label=DocItemLabel.TEXT, text="right", parent=group)
+
+        flatten_inline_groups(doc)
+
+        item = doc.texts[-1]
+        assert item.text == "left right"
+        assert item.prov[0].page_no == 1
+
+    def test_folded_owner_takes_the_run_provenance_only_when_it_has_none(self):
+        doc = DoclingDocument(name="test")
+        for page in (1, 2):
+            doc.add_page(page_no=page, size=Size(width=100, height=100))
+
+        def _prov(page: int) -> ProvenanceItem:
+            return ProvenanceItem(
+                page_no=page, bbox=BoundingBox(l=0, t=10, r=50, b=0), charspan=(0, 13)
+            )
+
+        bare = doc.add_heading(text="")
+        doc.add_text(
+            label=DocItemLabel.TEXT,
+            text="Release notes",
+            prov=_prov(2),
+            parent=doc.add_inline_group(parent=bare),
+        )
+        located = doc.add_heading(text="", prov=_prov(1))
+        doc.add_text(
+            label=DocItemLabel.TEXT,
+            text="Upgrade steps",
+            prov=_prov(2),
+            parent=doc.add_inline_group(parent=located),
+        )
+
+        assert flatten_inline_groups(doc) is True
+
+        assert bare.text == "Release notes"
+        assert [prov.page_no for prov in bare.prov] == [2]
+        assert located.text == "Upgrade steps"
+        assert [prov.page_no for prov in located.prov] == [1]
+
+    def test_group_with_a_captioned_run_is_left_alone(self):
+        doc = DoclingDocument(name="test")
+        doc.add_text(label=DocItemLabel.TEXT, text="lead")
+        group = doc.add_inline_group()
+        caption = doc.add_text(label=DocItemLabel.TEXT, text="Figure 1:", parent=group)
+        doc.add_text(label=DocItemLabel.TEXT, text="a caption", parent=group)
+        picture = doc.add_picture(caption=caption)
+
+        assert flatten_inline_groups(doc) is False
+        assert [item.text for item in doc.texts] == ["lead", "Figure 1:", "a caption"]
+        assert picture.caption_text(doc) == "Figure 1:"
+
+    def test_group_carrying_several_provenances_is_left_alone(self):
+        """Merging keeps one record, so a group tracking more than one place
+        in its source stays as it is."""
+        doc = DoclingDocument(name="test")
+        doc.add_page(page_no=1, size=Size(width=100, height=100))
+        doc.add_page(page_no=2, size=Size(width=100, height=100))
+        group = doc.add_inline_group()
+        for page in (1, 2):
+            doc.add_text(
+                label=DocItemLabel.TEXT,
+                text=f"page {page}",
+                prov=ProvenanceItem(
+                    page_no=page,
+                    bbox=BoundingBox(l=0, t=10, r=50, b=0),
+                    charspan=(0, 6),
+                ),
+                parent=group,
+            )
+
+        assert flatten_inline_groups(doc) is False
+        assert [item.text for item in doc.texts] == ["page 1", "page 2"]
+
+    @pytest.mark.asyncio
+    async def test_inline_picture_group_is_left_alone(self):
+        config = AppConfig()
+        config.processing.conversion_options.fetch_remote_images = False
+        converter = DoclingLocalConverter(config)
+
+        doc = await converter.convert_text(
+            "Text with an ![image](https://example.com/x.png) inline in it.",
+            name="test.md",
+        )
+
+        assert any(
+            isinstance(item, InlineGroup)
+            for item, _ in doc.iterate_items(with_groups=True)
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("source", ["md", "html", "docx"])
+    async def test_flattening_loses_nothing(
+        self, converter, tmp_path, monkeypatch, source
+    ):
+        """Every word, caption and item of a converted document survives
+        flattening, with the text stored as written."""
+        monkeypatch.setattr(docling_local, "flatten_inline_groups", lambda doc: False)
+        if source == "docx":
+            doc = await converter.convert_file(_build_docx(tmp_path / "s.docx"))
+        else:
+            doc = await converter.convert_text(
+                PROPERTY_MD if source == "md" else PROPERTY_HTML, format=source
+            )
+
+        monkeypatch.undo()
+        before = copy.deepcopy(doc)
+        assert _flattenable(before), "sample produced no flattenable groups"
+        flatten_inline_groups(doc)
+
+        assert _words(doc) == _words(before)
+        assert _floating_captions(doc) == _floating_captions(before)
+        assert [
+            item.self_ref
+            for item, _ in doc.iterate_items()
+            if isinstance(item, TextItem) and not item.text
+        ] == []
+        assert _flattenable(doc) == []
 
 
 class TestSharedDoclingConverter:

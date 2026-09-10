@@ -56,6 +56,120 @@ def vlm_api_params(model: "ModelConfig", max_tokens: int) -> dict[str, object]:
     return params
 
 
+def flatten_inline_groups(doc: "DoclingDocument") -> bool:
+    """Replace every inline group of text runs with the one text item it renders as.
+
+    A group whose runs are not all text, that carries more than one provenance
+    record, or that another item refers into, is left as it is. Returns
+    whether the document changed.
+    """
+    from docling_core.transforms.serializer.markdown import (
+        MarkdownDocSerializer,
+        MarkdownParams,
+    )
+    from docling_core.types.doc.document import (
+        ContentLayer,
+        DocItem,
+        FloatingItem,
+        InlineGroup,
+        ProvenanceItem,
+        RichTableCell,
+        SectionHeaderItem,
+        TableItem,
+        TextItem,
+        TitleItem,
+    )
+    from docling_core.types.doc.labels import DocItemLabel
+
+    # The rendering is stored as an item's text, not re-parsed as markdown.
+    linked = MarkdownDocSerializer(
+        doc=doc, params=MarkdownParams(escape_underscores=False, escape_html=False)
+    )
+    plain = MarkdownDocSerializer(
+        doc=doc,
+        params=MarkdownParams(
+            escape_underscores=False, escape_html=False, include_hyperlinks=False
+        ),
+    )
+
+    # A ref into a deleted run is renumbered onto another item.
+    referenced: set[str] = set()
+    for item, _ in doc.iterate_items(
+        with_groups=True,
+        traverse_pictures=True,
+        included_content_layers=set(ContentLayer),
+    ):
+        if isinstance(item, DocItem):
+            referenced.update(ref.cref for ref in item.comments)
+        if isinstance(item, FloatingItem):
+            referenced.update(
+                ref.cref for ref in (*item.captions, *item.footnotes, *item.references)
+            )
+        if isinstance(item, TableItem):
+            referenced.update(
+                cell.ref.cref
+                for cell in item.data.table_cells
+                if isinstance(cell, RichTableCell)
+            )
+
+    flattened: list[
+        tuple[InlineGroup, TextItem | None, ProvenanceItem | None, str]
+    ] = []
+    claimed: set[str] = set()
+    for item, _ in doc.iterate_items(with_groups=True, traverse_pictures=True):
+        if not isinstance(item, InlineGroup):
+            continue
+        children = [child.resolve(doc) for child in item.children]
+        runs = [child for child in children if isinstance(child, TextItem)]
+        if not runs or len(runs) != len(children):
+            continue
+        if item.self_ref in referenced or any(
+            run.self_ref in referenced for run in runs
+        ):
+            continue
+        # One provenance record survives the merge.
+        provenance = [prov for run in runs for prov in run.prov]
+        if len(provenance) > 1:
+            continue
+        # Paragraphs are parented to the item above them; an empty parent owns
+        # its first group.
+        parent = item.parent.resolve(doc) if item.parent else None
+        owner = (
+            parent
+            if isinstance(parent, TextItem)
+            and not parent.text
+            and parent.self_ref not in claimed
+            else None
+        )
+        if owner is not None:
+            claimed.add(owner.self_ref)
+        # A URL in a heading travels into breadcrumbs and chunk contextualization.
+        heading = isinstance(owner, TitleItem | SectionHeaderItem)
+        serializer = plain if heading else linked
+        text = serializer.serialize(item=item).text
+        flattened.append((item, owner, provenance[0] if provenance else None, text))
+
+    for group, owner, prov, text in flattened:
+        if owner is not None:
+            owner.text = owner.orig = text
+            if prov is not None and not owner.prov:
+                owner.prov = [prov]
+        else:
+            doc.insert_text(
+                sibling=group,
+                label=DocItemLabel.TEXT,
+                text=text,
+                prov=prov,
+                after=False,
+            )
+
+    if not flattened:
+        return False
+
+    doc.delete_items(node_items=[group for group, _, _, _ in flattened])
+    return True
+
+
 class DocumentConverter(ABC):
     """Abstract base class for document converters.
 

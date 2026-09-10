@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, ClassVar
 from haiku.rag.config import AppConfig
 from haiku.rag.converters.base import (
     DocumentConverter,
+    flatten_inline_groups,
     vlm_api_headers,
     vlm_api_params,
     vlm_api_url,
@@ -186,7 +187,9 @@ class DoclingServeConverter(DocumentConverter):
                 else:
                     page["image"] = None
 
-        return DoclingDocument.model_validate(doc_json)
+        doc = DoclingDocument.model_validate(doc_json)
+        flatten_inline_groups(doc)
+        return doc
 
     async def _make_request(self, files: dict, name: str) -> "DoclingDocument":
         """Make an async request to docling-serve and poll for results.

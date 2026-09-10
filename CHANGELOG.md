@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Conversion flattens each inline group of text runs into the item that owns
+  it. Hyperlinks are dropped from heading text. A full `haiku-rag rebuild`
+  applies the fix to existing databases.
+
 ## [0.84.0] - 2026-09-10
 
 ### Added

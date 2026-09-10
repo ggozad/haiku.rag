@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, ClassVar
 from haiku.rag.config import AppConfig
 from haiku.rag.converters.base import (
     DocumentConverter,
+    flatten_inline_groups,
     vlm_api_headers,
     vlm_api_params,
     vlm_api_url,
@@ -317,9 +318,12 @@ class DoclingLocalConverter(DocumentConverter):
             converter = DoclingDocConverter(
                 format_options=self._build_format_options(source_uri=source_uri)
             )
-            return converter.convert(path).document
+            doc = converter.convert(path).document
+        else:
+            doc = self._cached_converter().convert(path).document
 
-        return self._cached_converter().convert(path).document
+        flatten_inline_groups(doc)
+        return doc
 
     async def _convert_docling_file(
         self, path: Path, source_uri: str | None
@@ -596,6 +600,7 @@ class DoclingLocalConverter(DocumentConverter):
         )
         try:
             result = converter.convert(doc_stream)
-            return result.document
         except ConversionError:
             return TextFileHandler._create_simple_docling_document(text, doc_name)
+        flatten_inline_groups(result.document)
+        return result.document
