@@ -137,6 +137,7 @@ class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
         *,
         defer_loading: bool = True,
         request_limit: int | None = 30,
+        sources: list[str] | None = None,
         vision: bool | None = None,
     ) -> "AnalysisCapability":
         """Build from an agent spec, mirroring the factory's serializable arguments.
@@ -149,6 +150,7 @@ class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
             AppConfig.model_validate(config) if config is not None else None,
             defer_loading=defer_loading,
             request_limit=request_limit,
+            sources=sources,
             vision=vision,
         )
 
@@ -182,13 +184,15 @@ def create_capability(
     defer_loading: bool = True,
     rag: "HaikuRAG | None" = None,
     request_limit: int | None = 30,
+    sources: list[str] | None = None,
     vision: bool | None = None,
 ) -> AnalysisCapability:
     """Create a native Pydantic AI analysis capability.
 
-    ``vision`` gates whether picture chunks are attached to search results as
-    images, and should reflect the model the hosting agent actually runs.
-    Defaults to ``config.analysis.model.vision`` (falling back to
+    ``sources`` names the configured databases the capability covers, all of
+    them when omitted. ``vision`` gates whether picture chunks are attached to
+    search results as images, and should reflect the model the hosting agent
+    actually runs. Defaults to ``config.analysis.model.vision`` (falling back to
     ``config.qa.model.vision``).
     """
     if config is None:
@@ -196,7 +200,7 @@ def create_capability(
 
         config = get_config()
     analysis_model = config.analysis.model or config.qa.model
-    scope = resolve_scope(db_path, config)
+    scope = resolve_scope(db_path, config, sources, rag=rag)
     return AnalysisCapability(
         scope=scope,
         config=config,

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- `sources` on `create_capability` and `from_spec` for the RAG and analysis
+  capabilities, naming the configured databases the capability covers. Refused
+  beside `db_path` or `rag=` with `AmbiguousDatabaseError`.
+
 ### Fixed
 
 - The sandbox holds at most `analysis.max_output_chars` of a program's printed output while it runs.

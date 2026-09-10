@@ -61,6 +61,7 @@ class RAGCapability(RAGCapabilityBase[RAGState]):
         *,
         defer_loading: bool = True,
         request_limit: int | None = 20,
+        sources: list[str] | None = None,
         vision: bool | None = None,
     ) -> "RAGCapability":
         """Build from an agent spec, mirroring the factory's serializable arguments.
@@ -73,6 +74,7 @@ class RAGCapability(RAGCapabilityBase[RAGState]):
             AppConfig.model_validate(config) if config is not None else None,
             defer_loading=defer_loading,
             request_limit=request_limit,
+            sources=sources,
             vision=vision,
         )
 
@@ -102,19 +104,21 @@ def create_capability(
     defer_loading: bool = True,
     rag: "HaikuRAG | None" = None,
     request_limit: int | None = 20,
+    sources: list[str] | None = None,
     vision: bool | None = None,
 ) -> RAGCapability:
     """Create a native Pydantic AI RAG capability.
 
-    ``vision`` gates whether picture chunks are attached to search results as
-    images, and should reflect the model the hosting agent actually runs.
-    Defaults to ``config.qa.model.vision``.
+    ``sources`` names the configured databases the capability covers, all of
+    them when omitted. ``vision`` gates whether picture chunks are attached to
+    search results as images, and should reflect the model the hosting agent
+    actually runs. Defaults to ``config.qa.model.vision``.
     """
     if config is None:
         from haiku.rag.config import get_config
 
         config = get_config()
-    scope = resolve_scope(db_path, config)
+    scope = resolve_scope(db_path, config, sources, rag=rag)
     return RAGCapability(
         scope=scope,
         config=config,

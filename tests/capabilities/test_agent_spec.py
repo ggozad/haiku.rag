@@ -8,6 +8,7 @@ from pydantic_ai.agent import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import UserError
 
+from haiku.rag.capabilities._base import RAGCapabilityBase
 from haiku.rag.capabilities.analysis import AnalysisCapability, AnalysisState
 from haiku.rag.capabilities.compaction import CAPABILITY_ID as COMPACTION_ID
 from haiku.rag.capabilities.compaction import EvidenceCompactionCapability
@@ -88,6 +89,36 @@ def test_a_config_mapping_in_a_spec_is_validated(temp_db_path, temp_yaml_config)
     assert capability.config.qa.max_searches == 9
 
 
+@pytest.mark.parametrize(
+    "name, capability_type",
+    [("RAGCapability", RAGCapability), ("AnalysisCapability", AnalysisCapability)],
+)
+def test_a_spec_narrows_a_capability_to_named_databases(name, capability_type):
+    (capability,) = _from_spec(
+        {
+            "capabilities": [
+                {
+                    name: {
+                        "config": {
+                            "lancedb": {
+                                "databases": {
+                                    "alpha": "/data/alpha.lancedb",
+                                    "beta": "/data/beta.lancedb",
+                                }
+                            }
+                        },
+                        "sources": ["alpha"],
+                    }
+                }
+            ]
+        },
+        [capability_type],
+    )
+
+    assert isinstance(capability, RAGCapabilityBase)
+    assert capability.scope.names == ("alpha",)
+
+
 @pytest.mark.parametrize("form", ["bare", "empty-mapping"])
 def test_the_zero_argument_capabilities_are_built_from_a_spec(form):
     """Their ids must be stamped: pydantic-ai rejects a duplicate id, which is
@@ -127,6 +158,7 @@ def test_the_generated_spec_schema_describes_every_capability():
         "db_path",
         "defer_loading",
         "request_limit",
+        "sources",
         "vision",
     }
     assert params["config"] == {

@@ -37,7 +37,7 @@ from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord, EvidenceRef
 from haiku.rag.client import HaikuRAG, all_found
 from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.config.models import AppConfig
-from haiku.rag.store.exceptions import AmbiguousCitationError
+from haiku.rag.store.exceptions import AmbiguousCitationError, AmbiguousDatabaseError
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.citation import (
     Citation,
@@ -97,9 +97,29 @@ def _nearest_known_id(chunk_id: str, known_ids: list[str]) -> str:
     return match[0] if match else chunk_id
 
 
-def resolve_scope(db_path: Path | str | None, config: AppConfig) -> DatabaseScope:
+def resolve_scope(
+    db_path: Path | str | None,
+    config: AppConfig,
+    sources: list[str] | None = None,
+    *,
+    rag: HaikuRAG | None = None,
+) -> DatabaseScope:
     """The databases a capability covers, resolved once at its entry point."""
-    return DatabaseScope.resolve(config, database_path=db_path)
+    if sources is not None:
+        if db_path is not None:
+            raise AmbiguousDatabaseError(
+                "a path and `sources` both say which databases the capability "
+                f"covers: db_path={Path(db_path)} and sources "
+                f"{', '.join(sources)}; pass one of them"
+            )
+        if rag is not None:
+            raise AmbiguousDatabaseError(
+                "`sources` and a lent client both say which databases the "
+                "capability covers, and the client is what it reads; narrow "
+                "the client instead"
+            )
+    scope = DatabaseScope.resolve(config, database_path=db_path)
+    return scope if sources is None else scope.select(sources)
 
 
 class EvidenceState(BaseModel):
