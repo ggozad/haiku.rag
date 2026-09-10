@@ -41,3 +41,6 @@ CLAUDE.local.md
 .claude/*
 !.claude/skills/
 !.claude/skills/**
+
+# Vacuum investigation scratch: kept on disk, never committed
+vacuum-findings/
