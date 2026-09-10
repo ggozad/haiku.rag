@@ -1185,6 +1185,22 @@ class TestInlineGroups:
         assert "Use `my_func` for snake_case_name and & stuff." in texts
 
     @pytest.mark.asyncio
+    async def test_every_paragraph_of_a_list_item_survives(self, converter):
+        doc = await converter.convert_text(
+            "- First `code` paragraph.\n"
+            "  - Nested `code` item.\n\n"
+            "  Second `code` paragraph.\n",
+            name="test.md",
+        )
+
+        texts = [getattr(item, "text", None) for item, _ in doc.iterate_items()]
+        assert texts == [
+            "First `code` paragraph.",
+            "Nested `code` item.",
+            "Second `code` paragraph.",
+        ]
+
+    @pytest.mark.asyncio
     async def test_body_text_under_a_heading_keeps_its_hyperlinks(self, converter):
         """The HTML backend parents a paragraph to the heading above it."""
         html = (

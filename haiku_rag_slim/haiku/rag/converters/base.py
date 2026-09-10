@@ -89,6 +89,7 @@ def flatten_inline_groups(doc: "DoclingDocument") -> bool:
     flattened: list[
         tuple[InlineGroup, TextItem | None, ProvenanceItem | None, str]
     ] = []
+    claimed: set[str] = set()
     for item, _ in doc.iterate_items(with_groups=True, traverse_pictures=True):
         if not isinstance(item, InlineGroup):
             continue
@@ -100,9 +101,18 @@ def flatten_inline_groups(doc: "DoclingDocument") -> bool:
         provenance = [prov for run in runs for prov in run.prov]
         if len(provenance) > 1:
             continue
-        # The backends parent a paragraph to the heading above it.
+        # Paragraphs are parented to the item above them; an empty parent owns
+        # its first group.
         parent = item.parent.resolve(doc) if item.parent else None
-        owner = parent if isinstance(parent, TextItem) and not parent.text else None
+        owner = (
+            parent
+            if isinstance(parent, TextItem)
+            and not parent.text
+            and parent.self_ref not in claimed
+            else None
+        )
+        if owner is not None:
+            claimed.add(owner.self_ref)
         # A URL in a heading travels into breadcrumbs and chunk contextualization.
         heading = isinstance(owner, TitleItem | SectionHeaderItem)
         serializer = plain if heading else linked
