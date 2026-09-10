@@ -891,13 +891,16 @@ async def test_replace_for_document_with_no_items_deletes_existing(temp_db_path)
         assert await repo.get_all_items("doc-1") == []
 
 
-def _doc_with_inline_group_list_item(second_child_group: bool = False):
+def _doc_with_inline_group_list_item(
+    second_child_group: bool = False, group_before_inline: bool = False
+):
     """A ListItem whose content docling pushed into a child InlineGroup
     (e.g. a list item mixing plain text with a code span). A heading gets
     the same shape. A body-level paragraph does not: its InlineGroup hangs
     directly off `#/body` with no owner item to fold the text back into.
     Optionally add a sibling nested ListGroup, matching a list item that
-    also has sub-items.
+    also has sub-items; `group_before_inline` adds it before the InlineGroup
+    instead of after, so a lookup by child position alone would miss it.
     """
     from docling_core.types.doc.document import DoclingDocument
     from docling_core.types.doc.labels import DocItemLabel, GroupLabel
@@ -905,11 +908,14 @@ def _doc_with_inline_group_list_item(second_child_group: bool = False):
     doc = DoclingDocument(name="inline")
     list_group = doc.add_group(label=GroupLabel.LIST)
     list_item = doc.add_list_item(text="", parent=list_group)
+    if second_child_group and group_before_inline:
+        nested = doc.add_group(label=GroupLabel.LIST, parent=list_item)
+        doc.add_list_item(text="Sub-item.", parent=nested)
     inline_group = doc.add_group(label=GroupLabel.INLINE, parent=list_item)
-    doc.add_text(label=DocItemLabel.TEXT, text="Run ", parent=inline_group)
+    doc.add_text(label=DocItemLabel.TEXT, text="Run snake_case & ", parent=inline_group)
     doc.add_code(text="pytest", parent=inline_group)
     doc.add_text(label=DocItemLabel.TEXT, text=" to test.", parent=inline_group)
-    if second_child_group:
+    if second_child_group and not group_before_inline:
         nested = doc.add_group(label=GroupLabel.LIST, parent=list_item)
         doc.add_list_item(text="Sub-item.", parent=nested)
     return doc, list_item
@@ -931,6 +937,21 @@ class TestExtractItemTextInlineGroup:
         assert "pytest" in text
         assert "to test." in text
 
+    def test_recovered_text_is_not_markdown_escaped(self):
+        """The fallback serializer must not escape underscores or HTML
+        entities: the recovered text is stored for search, not rendered
+        as markdown, and an escaped `snake\\_case` or `&amp;` would not
+        match the original run.
+        """
+        doc, list_item = _doc_with_inline_group_list_item()
+
+        text = extract_item_text(list_item, doc)
+        assert text is not None
+        assert "snake_case" in text
+        assert "\\_" not in text
+        assert " & " in text
+        assert "&amp;" not in text
+
     def test_extract_items_stores_non_empty_text_for_inline_group_item(self):
         doc, _ = _doc_with_inline_group_list_item()
         items = extract_items("doc-1", doc)
@@ -949,6 +970,20 @@ class TestExtractItemTextInlineGroup:
 
         text = extract_item_text(list_item, doc)
         assert text is not None
+        assert "Sub-item" not in text
+
+    def test_inline_group_recovered_regardless_of_child_position(self):
+        """A list item can carry a nested ListGroup of sub-items ordered
+        before its InlineGroup, not only after: the lookup must find the
+        InlineGroup among all children, not assume it sits at position 0.
+        """
+        doc, list_item = _doc_with_inline_group_list_item(
+            second_child_group=True, group_before_inline=True
+        )
+
+        text = extract_item_text(list_item, doc)
+        assert text is not None
+        assert "pytest" in text
         assert "Sub-item" not in text
 
     def test_reuses_passed_serializer(self, monkeypatch):
@@ -1036,7 +1071,7 @@ class TestExtractItemTextInlineGroup:
             fragment_texts = {
                 item.text for ref, item in by_ref.items() if ref != list_item.self_ref
             }
-            assert {"Run ", "pytest", " to test."} <= fragment_texts
+            assert {"Run snake_case & ", "pytest", " to test."} <= fragment_texts
 
             stored_chunk = (
                 await client.chunk_repository.get_by_document_id(imported.id)

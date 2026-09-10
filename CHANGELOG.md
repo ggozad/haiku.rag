@@ -143,12 +143,9 @@
   not checked against the deadline.
 - Context expansion keeps the item a result matched on when it carries a
   noise label, and counts it toward the character budget.
-- `import_document`/`import_documents` store the caller's `DoclingDocument`
-  as given, so a heading or list item docling had pushed into a child
-  `InlineGroup` still landed with an empty `document_items` row there.
-  `extract_item_text` now recovers it from that group. The group's own
-  child rows stay in the table too, so the recovered item and its fragments
-  both land in expanded context.
+- `import_document`/`import_documents` store an item whose text docling
+  placed in a child `InlineGroup` with that group's text. The group's own
+  rows remain.
 
 ### Removed
 

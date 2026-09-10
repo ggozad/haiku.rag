@@ -98,9 +98,13 @@ def extract_item_text(
             if serializer is None:
                 from docling_core.transforms.serializer.markdown import (
                     MarkdownDocSerializer,
+                    MarkdownParams,
                 )
 
-                serializer = MarkdownDocSerializer(doc=docling_doc)
+                serializer = MarkdownDocSerializer(
+                    doc=docling_doc,
+                    params=MarkdownParams(escape_underscores=False, escape_html=False),
+                )
             return serializer.serialize(item=target).text
         except Exception:
             return None
@@ -113,10 +117,10 @@ def extract_item_text(
     if isinstance(item, TableItem):
         return _serialize(item)
 
-    if item.children:
-        first_child = item.children[0].resolve(docling_doc)
-        if isinstance(first_child, InlineGroup):
-            return _serialize(first_child)
+    for child_ref in item.children:
+        child = child_ref.resolve(docling_doc)
+        if isinstance(child, InlineGroup):
+            return _serialize(child)
 
     return None
 
@@ -152,9 +156,13 @@ def extract_items(
         if serializer is None:
             from docling_core.transforms.serializer.markdown import (
                 MarkdownDocSerializer,
+                MarkdownParams,
             )
 
-            serializer = MarkdownDocSerializer(doc=docling_doc)
+            serializer = MarkdownDocSerializer(
+                doc=docling_doc,
+                params=MarkdownParams(escape_underscores=False, escape_html=False),
+            )
         return serializer
 
     for position, (item, level) in enumerate(docling_doc.iterate_items()):
