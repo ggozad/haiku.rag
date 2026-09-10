@@ -253,7 +253,7 @@ IDs are unique within a database, not across databases. Copies of a database the
 
 Citation ambiguity is evaluated against evidence available to the run. A cited chunk ID is rejected with `AmbiguousCitationError` if search returned it from multiple databases, or it was previously cited from another database. If only one retrieved result has the ID, that result is cited. For an ID absent from search results, the fallback checks every selected database and rejects multiple holders. A shared ID that nothing cites is ignored.
 
-`get_document_by_id`, `get_chunk_by_id` and `get_picture_bytes` take an optional `source`, and ask that database alone. A name the client does not cover raises `UnknownDatabaseError`. Without one, the document and chunk lookups ask every covered database and answer from the first that holds the ID; `get_picture_bytes` requires one whenever the client covers a set.
+`get_document_by_id`, `get_chunk_by_id`, `get_picture_bytes` and `visualize_chunk` take an optional `source`, and ask that database alone. A name the client does not cover raises `UnknownDatabaseError`. Without one, the document and chunk lookups ask every covered database and answer from the first that holds the ID; `get_picture_bytes` and `visualize_chunk` require one whenever the client covers a set, since a chunk carries no database identity where `SearchResult.source` and `Citation.source` do.
 
 The analysis sandbox rejects shared document IDs because its mount path is `/documents/{id}/`.
 
