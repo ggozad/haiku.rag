@@ -7,11 +7,10 @@
 - Conversion flattens each inline group of text runs into the item that owns
   it. Hyperlinks are dropped from heading text. A full `haiku-rag rebuild`
   applies the fix to existing databases.
-- `import_document`/`import_documents` store an item whose text docling
+- `import_document` and `import_documents` store an item whose text docling
   placed in a child `InlineGroup` with that group's text. The group's own
-  rows remain. An inline image inside the group is dropped instead of
-  stored as docling's markdown placeholder. Table rows in `document_items`
-  are now stored without markdown escaping too.
+  rows remain. An inline image in the group contributes no text. Table rows
+  in `document_items` are stored without markdown escaping.
 
 ## [0.84.0] - 2026-09-10
 
