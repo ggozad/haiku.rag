@@ -1,6 +1,8 @@
 """Tests for document converters."""
 
 import asyncio
+import copy
+import re
 import tempfile
 import threading
 import time
@@ -11,12 +13,18 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
+from docling_core.transforms.serializer.markdown import (
+    MarkdownDocSerializer,
+    MarkdownParams,
+)
 from docling_core.types.doc.document import (
     BoundingBox,
     DoclingDocument,
+    FloatingItem,
     InlineGroup,
     ProvenanceItem,
     Size,
+    TextItem,
 )
 from docling_core.types.doc.labels import DocItemLabel
 
@@ -1145,6 +1153,113 @@ class TestDoclingLocalConverter:
         )
 
 
+PROPERTY_MD = """# Release `notes` for [0.1.0](https://example.com/v1)
+
+Use `my_func` for snake_case_name and & stuff, *emphasis* first.
+
+- First `code` bullet with a [ref](https://example.com/a).
+
+  Continuation `code` paragraph.
+
+  - Nested `code` item.
+
+| Command | Note |
+|---|---|
+| run `build` | builds *it* |
+"""
+
+PROPERTY_HTML = """<!doctype html><html><body>
+<h2>A <code>code</code> heading with an <a href="https://example.com/b">anchor</a></h2>
+<p>Use <code>haiku_rag.search</code> for snake_case and an
+<a href="https://example.com">inline link</a> with &amp; entities.</p>
+<figure>
+  <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="/>
+  <figcaption>Figure 1: a <code>code</code> caption</figcaption>
+</figure>
+<table><tr><th>Key</th><td>Value with <code>code</code></td></tr></table>
+</body></html>
+"""
+
+_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_WORD = re.compile(r"[\w\\&;]+")
+_RENDER = MarkdownParams(
+    include_hyperlinks=False, escape_underscores=False, escape_html=False
+)
+
+
+def _words(doc) -> Counter:
+    """Visible words, with link markup unwrapped.
+
+    Flattening bakes `[text](url)` into an item's text, which the serializer
+    cannot render back out, so compare what a reader sees. Words are taken
+    without their punctuation: docling renders two paragraphs of one bullet
+    run together, and flattening separates them.
+    """
+    rendered = MarkdownDocSerializer(doc=doc, params=_RENDER).serialize().text
+    return Counter(_WORD.findall(_LINK.sub(r"\1", rendered)))
+
+
+def _floating_captions(doc) -> list[tuple[str, list[str]]]:
+    """Caption/footnote/reference text per floating item, runs excluded.
+
+    ``CodeItem`` is itself a ``FloatingItem``, so an inline code run would
+    otherwise shift the pairing when it merges away.
+    """
+    out = []
+    for item, _ in doc.iterate_items(with_groups=True, traverse_pictures=True):
+        if not isinstance(item, FloatingItem) or isinstance(item, TextItem):
+            continue
+        out.append(
+            (
+                type(item).__name__,
+                [
+                    getattr(ref.resolve(doc), "text", "")
+                    for ref in (*item.captions, *item.footnotes, *item.references)
+                ],
+            )
+        )
+    return out
+
+
+def _flattenable(doc) -> list[str]:
+    left = []
+    for item, _ in doc.iterate_items(with_groups=True, traverse_pictures=True):
+        if not isinstance(item, InlineGroup):
+            continue
+        children = [child.resolve(doc) for child in item.children]
+        runs = [child for child in children if isinstance(child, TextItem)]
+        if runs and len(runs) == len(children):
+            left.append(item.self_ref)
+    return left
+
+
+def _build_docx(path: Path) -> Path:
+    import docx
+
+    document = docx.Document()
+    heading = document.add_heading("", level=2)
+    heading.add_run("A ")
+    heading.add_run("code").italic = True
+    heading.add_run(" heading with mixed runs")
+    body = document.add_paragraph()
+    body.add_run("Use ")
+    body.add_run("haiku_rag.search").bold = True
+    body.add_run(" for snake_case and & entities.")
+    first = document.add_paragraph(style="List Bullet")
+    first.add_run("First ")
+    first.add_run("code").italic = True
+    first.add_run(" bullet.")
+    second = document.add_paragraph(style="List Bullet")
+    second.add_run("Continuation paragraph with ")
+    second.add_run("more_code").bold = True
+    caption = document.add_paragraph(style="Caption")
+    caption.add_run("Figure 1: a ")
+    caption.add_run("code").italic = True
+    caption.add_run(" caption")
+    document.save(str(path))
+    return path
+
+
 class TestInlineGroups:
     """Inline markup ends up in the item that owns it."""
 
@@ -1311,6 +1426,35 @@ class TestInlineGroups:
             isinstance(item, InlineGroup)
             for item, _ in doc.iterate_items(with_groups=True)
         )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("source", ["md", "html", "docx"])
+    async def test_flattening_loses_nothing(
+        self, converter, tmp_path, monkeypatch, source
+    ):
+        """Every word, caption and item of a converted document survives
+        flattening, with the text stored as written."""
+        monkeypatch.setattr(docling_local, "flatten_inline_groups", lambda doc: False)
+        if source == "docx":
+            doc = await converter.convert_file(_build_docx(tmp_path / "s.docx"))
+        else:
+            doc = await converter.convert_text(
+                PROPERTY_MD if source == "md" else PROPERTY_HTML, format=source
+            )
+
+        monkeypatch.undo()
+        before = copy.deepcopy(doc)
+        assert _flattenable(before), "sample produced no flattenable groups"
+        flatten_inline_groups(doc)
+
+        assert _words(doc) == _words(before)
+        assert _floating_captions(doc) == _floating_captions(before)
+        assert [
+            item.self_ref
+            for item, _ in doc.iterate_items()
+            if isinstance(item, TextItem) and not item.text
+        ] == []
+        assert _flattenable(doc) == []
 
 
 class TestSharedDoclingConverter:
