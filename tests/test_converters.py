@@ -1175,6 +1175,16 @@ class TestInlineGroups:
         assert "0.68.0" not in texts
 
     @pytest.mark.asyncio
+    async def test_flattened_text_carries_the_source_characters(self, converter):
+        """Underscores and ampersands reach storage as written."""
+        doc = await converter.convert_text(
+            "Use `my_func` for snake_case_name and & stuff.\n", name="test.md"
+        )
+
+        texts = [getattr(item, "text", None) for item, _ in doc.iterate_items()]
+        assert "Use `my_func` for snake_case_name and & stuff." in texts
+
+    @pytest.mark.asyncio
     async def test_body_text_under_a_heading_keeps_its_hyperlinks(self, converter):
         """The HTML backend parents a paragraph to the heading above it."""
         html = (
@@ -1203,6 +1213,38 @@ class TestInlineGroups:
         item = doc.texts[-1]
         assert item.text == "left right"
         assert item.prov[0].page_no == 1
+
+    def test_folded_owner_takes_the_run_provenance_only_when_it_has_none(self):
+        doc = DoclingDocument(name="test")
+        for page in (1, 2):
+            doc.add_page(page_no=page, size=Size(width=100, height=100))
+
+        def _prov(page: int) -> ProvenanceItem:
+            return ProvenanceItem(
+                page_no=page, bbox=BoundingBox(l=0, t=10, r=50, b=0), charspan=(0, 13)
+            )
+
+        bare = doc.add_heading(text="")
+        doc.add_text(
+            label=DocItemLabel.TEXT,
+            text="Release notes",
+            prov=_prov(2),
+            parent=doc.add_inline_group(parent=bare),
+        )
+        located = doc.add_heading(text="", prov=_prov(1))
+        doc.add_text(
+            label=DocItemLabel.TEXT,
+            text="Upgrade steps",
+            prov=_prov(2),
+            parent=doc.add_inline_group(parent=located),
+        )
+
+        assert flatten_inline_groups(doc) is True
+
+        assert bare.text == "Release notes"
+        assert [prov.page_no for prov in bare.prov] == [2]
+        assert located.text == "Upgrade steps"
+        assert [prov.page_no for prov in located.prov] == [1]
 
     def test_group_carrying_several_provenances_is_left_alone(self):
         """Merging keeps one record, so a group tracking more than one place

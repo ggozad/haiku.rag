@@ -20,10 +20,8 @@
 
 - The sandbox holds at most `analysis.max_output_chars` of a program's printed output while it runs.
 - Markdown and HTML conversion flattens each inline group of text runs into
-  the item that owns it, so a paragraph carrying inline code or a link is one
-  item and a heading carrying one is no longer empty. Hyperlinks are dropped
-  from heading text. `haiku-rag rebuild --rechunk` flattens a stored document
-  and keeps the result, so existing databases do not need re-conversion.
+  the item that owns it. Hyperlinks are dropped from heading text.
+  `haiku-rag rebuild --rechunk` flattens a stored document and keeps the result.
 
 ## [0.83.0] - 2026-09-09
 

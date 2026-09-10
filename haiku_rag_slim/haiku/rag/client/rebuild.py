@@ -616,9 +616,7 @@ async def _rebuild_rechunk(
                 "requires it. Run a full rebuild (without --rechunk) instead."
             )
 
-        # A document stored before inline groups were flattened carries them
-        # in its blob; chunks and items both come from it here, so normalize
-        # it first and keep the result.
+        # The chunks and the item rows below both come from this document.
         if await asyncio.to_thread(flatten_inline_groups, docling_document):
             await asyncio.to_thread(_store_structure, docling_document, doc)
 

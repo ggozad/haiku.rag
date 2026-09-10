@@ -603,7 +603,6 @@ async def test_rebuild_rechunk_normalizes_a_stored_document(temp_db_path, monkey
             "expected the unflattened blob to store empty items"
         )
 
-        monkeypatch.undo()
         processed = [
             doc_id async for doc_id in client.rebuild_database(mode=RebuildMode.RECHUNK)
         ]

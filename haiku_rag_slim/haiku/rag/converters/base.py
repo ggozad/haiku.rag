@@ -59,18 +59,8 @@ def vlm_api_params(model: "ModelConfig", max_tokens: int) -> dict[str, object]:
 def flatten_inline_groups(doc: "DoclingDocument") -> bool:
     """Replace every inline group of text runs with the one text item it renders as.
 
-    docling's markdown and HTML backends model a paragraph carrying inline
-    markup as an ``InlineGroup`` of runs, and leave the heading or list item
-    that owns one with empty text. ``iterate_items()`` skips groups, so
-    consumers see the runs as unrelated items and the owner as blank.
-
-    A group whose runs are not all text (an inline picture) is left alone.
-
-    Every group is serialized before any is replaced, and all are deleted in
-    one call: a serializer caches the refs it excludes, and a deletion
-    renumbers every ref in the document.
-
-    Returns whether the document was changed.
+    A group whose runs are not all text, or that carries more than one
+    provenance record, is left as it is. Returns whether the document changed.
     """
     from docling_core.transforms.serializer.markdown import (
         MarkdownDocSerializer,
@@ -85,9 +75,15 @@ def flatten_inline_groups(doc: "DoclingDocument") -> bool:
     )
     from docling_core.types.doc.labels import DocItemLabel
 
-    linked = MarkdownDocSerializer(doc=doc)
+    # The rendering is stored as an item's text, not re-parsed as markdown.
+    linked = MarkdownDocSerializer(
+        doc=doc, params=MarkdownParams(escape_underscores=False, escape_html=False)
+    )
     plain = MarkdownDocSerializer(
-        doc=doc, params=MarkdownParams(include_hyperlinks=False)
+        doc=doc,
+        params=MarkdownParams(
+            escape_underscores=False, escape_html=False, include_hyperlinks=False
+        ),
     )
 
     flattened: list[
@@ -100,13 +96,11 @@ def flatten_inline_groups(doc: "DoclingDocument") -> bool:
         runs = [child for child in children if isinstance(child, TextItem)]
         if not runs or len(runs) != len(children):
             continue
-        # One record survives the merge, and a re-rendering carries no offsets
-        # to rebuild the others from, so leave a richer group as it is.
+        # One provenance record survives the merge.
         provenance = [prov for run in runs for prov in run.prov]
         if len(provenance) > 1:
             continue
-        # The backends parent a paragraph to the heading above it, so only an
-        # empty owner is one the group carries the text of.
+        # The backends parent a paragraph to the heading above it.
         parent = item.parent.resolve(doc) if item.parent else None
         owner = parent if isinstance(parent, TextItem) and not parent.text else None
         # A URL in a heading travels into breadcrumbs and chunk contextualization.
@@ -118,6 +112,8 @@ def flatten_inline_groups(doc: "DoclingDocument") -> bool:
     for group, owner, prov, text in flattened:
         if owner is not None:
             owner.text = owner.orig = text
+            if prov is not None and not owner.prov:
+                owner.prov = [prov]
         else:
             doc.insert_text(
                 sibling=group,
