@@ -7,6 +7,7 @@ import pytest
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.sandbox import AnalysisContext, Sandbox, SandboxResult
+from haiku.rag.sandbox.sandbox import CappedOutput
 from haiku.rag.store.models.chunk import Chunk
 
 
@@ -379,6 +380,44 @@ class TestSandboxOutputTruncation:
             assert result.success
             assert result.stdout.endswith("... (output truncated)")
             assert len(result.stdout) < 100
+
+    @pytest.mark.asyncio
+    async def test_many_small_prints_past_the_cap_still_report_truncation(
+        self, temp_db_path
+    ):
+        """No single print exceeds the cap, their sum does."""
+        async with HaikuRAG(temp_db_path, create=True):
+            config = AppConfig()
+            config.analysis.max_output_chars = 20
+            context = AnalysisContext()
+            sb = Sandbox(db_path=temp_db_path, config=config, context=context)
+            result = await sb.execute("for i in range(100):\n    print('c' * 5)")
+            assert result.success
+            assert result.stdout.startswith("c" * 5)
+            assert result.stdout.endswith("... (output truncated)")
+            assert len(result.stdout) == 20 + len("\n... (output truncated)")
+
+
+class TestCappedOutput:
+    def test_holds_at_most_the_cap(self):
+        out = CappedOutput(10)
+        for _ in range(1000):
+            out.write("stdout", "abcdef")
+        assert sum(len(p) for p in out.parts) == 10
+        assert len(out.parts) == 2
+        assert out.text() == "abcdefabcd\n... (output truncated)"
+
+    def test_short_output_is_returned_whole(self):
+        out = CappedOutput(10)
+        out.write("stdout", "abc")
+        out.write("stdout", "def")
+        assert out.text() == "abcdef"
+
+    def test_fragment_crossing_the_cap_is_cut(self):
+        out = CappedOutput(10)
+        out.write("stdout", "abcdef")
+        out.write("stdout", "ghijkl")
+        assert out.text() == "abcdefghij\n... (output truncated)"
 
 
 class TestSandboxVFS:
