@@ -5,16 +5,20 @@ from unittest.mock import AsyncMock
 import pytest
 
 from haiku.rag.capabilities._tools import search_corpus
+from haiku.rag.capabilities.analysis import create_capability as create_analysis
 from haiku.rag.capabilities.rag import RAGState, create_capability
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.session import FederatedSession
+from haiku.rag.config.models import AppConfig
 from haiku.rag.sandbox import AnalysisContext, Sandbox
-from haiku.rag.store.exceptions import UnknownDatabaseError
+from haiku.rag.store.exceptions import AmbiguousDatabaseError, UnknownDatabaseError
 from haiku.rag.store.models import SearchResult
 from tests.multi_db.helpers import (
     _config,
     _seed,
 )
+
+_FACTORIES = [create_capability, create_analysis]
 
 
 class TestAskAcrossDatabases:
@@ -142,6 +146,104 @@ class TestAnalyzeAcrossDatabases:
         assert "alpha document" in formatted
         assert "beta document" not in formatted
         assert sandbox._context.sources == ["alpha"]
+
+
+class TestScopingACapabilityToASubset:
+    """`sources` at construction narrows what the capability can reach."""
+
+    @pytest.mark.asyncio
+    async def test_a_scoped_capability_never_reaches_the_other_database(
+        self, tmp_path, query_embedding
+    ):
+        from tests.capabilities.test_capabilities import Deps, make_context
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        capability = create_capability(
+            config=config, sources=["alpha"], defer_loading=False
+        )
+        assert capability.scope.names == ("alpha",)
+        run = await capability.for_run(make_context(Deps()))
+        try:
+            formatted = await run._search("cats", 10, 1)
+        finally:
+            await run._close()
+
+        assert isinstance(formatted, str)
+        assert "alpha document" in formatted
+        assert "beta document" not in formatted
+
+    @pytest.mark.asyncio
+    async def test_a_scoped_analysis_capability_mounts_only_its_databases(
+        self, tmp_path
+    ):
+        from tests.capabilities.test_capabilities import Deps, make_context
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        capability = create_analysis(
+            config=config, sources=["alpha"], defer_loading=False
+        )
+        run = await capability.for_run(make_context(Deps()))
+        try:
+            sandbox = await run._ensure_sandbox()
+            # One database is one connection, which leaves `owners` empty.
+            docs, _ = await sandbox._documents()
+        finally:
+            await run._close()
+
+        assert [doc.uri for doc in docs] == ["test://alpha/alpha document about cats"]
+
+    @pytest.mark.asyncio
+    async def test_a_question_naming_a_database_outside_the_scope_fails(
+        self, tmp_path, query_embedding
+    ):
+        """State `sources` selects within the scope."""
+        from tests.capabilities.test_capabilities import Deps, make_context
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        capability = create_capability(
+            config=config, sources=["alpha"], defer_loading=False
+        )
+        deps = Deps(state={"rag": RAGState(sources=["beta"]).model_dump(mode="json")})
+        run = await capability.for_run(make_context(deps))
+        try:
+            with pytest.raises(UnknownDatabaseError, match="beta"):
+                await run._search("cats", 10, 1)
+        finally:
+            await run._close()
+
+    @pytest.mark.parametrize("factory", _FACTORIES)
+    def test_sources_beside_a_path_is_refused(self, tmp_path, factory):
+        with pytest.raises(AmbiguousDatabaseError, match="alpha"):
+            factory(
+                db_path=tmp_path / "kb.lancedb",
+                config=AppConfig(),
+                sources=["alpha"],
+            )
+
+    @pytest.mark.parametrize("factory", _FACTORIES)
+    def test_selecting_no_database_is_refused(self, tmp_path, factory):
+        """Unlike state `sources=[]`, which selects nothing to search."""
+        with pytest.raises(ValueError, match="pass None for all of them"):
+            factory(config=_config(tmp_path, ["alpha", "beta"]), sources=[])
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("factory", _FACTORIES)
+    async def test_sources_beside_a_lent_client_is_refused(self, tmp_path, factory):
+        """A lent client's coverage is what the capability reads."""
+        config = _config(tmp_path, ["alpha", "beta"])
+
+        async with HaikuRAG(config=config) as rag:
+            with pytest.raises(AmbiguousDatabaseError, match="client"):
+                factory(config=config, rag=rag, sources=["alpha"])
 
 
 class TestCollectionIdentityForTheModel:
