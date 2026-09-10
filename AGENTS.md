@@ -272,6 +272,7 @@ leaves the configuration: it travels in `SearchResult.source`, `Citation.source`
 - `ProvidersConfig` - ollama, docling_serve settings (OllamaConfig, DoclingServeConfig)
 - `PromptsConfig` - prompt configuration
 - `IngesterConfig` - sources, queue (QueueConfig), workers (WorkerConfig), api (APIConfig)
+- `EvaluationsConfig` - judge (ModelConfig | None)
 - `LanceDBConfig` - databases (name → local path or URI), api_key, region, storage_options, read_consistency_interval_seconds, index_cache_size_bytes, metadata_cache_size_bytes
 
 Every model inherits `ConfigModel` (`extra="forbid"`), so an unknown or misspelled key raises at load; converter, chunker and chunker_type are `Literal`s and numeric fields carry bounds, while provider fields stay unrestricted `str` (`get_model` passes an unknown provider through to pydantic-ai). Read config through `get_config()` — there is no module-level `Config` singleton, and capturing the config in a default argument freezes it before `set_config()` runs.
@@ -324,6 +325,13 @@ visualize     Show visual grounding for a chunk
 inspect       Launch TUI to inspect database
 chat          Launch TUI for conversational RAG
 download-models  Download Docling and Ollama models
+```
+
+**haiku-ingester** (separate entry point, `[ingester]` extra):
+```
+serve       Run pollers + workers, and the HTTP API unless --no-api; blocks until SIGINT/SIGTERM
+run-batch   One discover sweep over every source, drain the queue, exit; non-zero on dead-letter or incomplete sweep
+queue       init | migrate the queue DB
 ```
 
 **Tags:** `haiku-rag tag create/list/delete NAME` name database states across all five tables; `tag restore NAME` brings the live database back to a tagged state (creates a `before-restore-*` safety tag first; requires stopped writers; never migrates). Tagged versions survive vacuum: it retains the oldest tagged version and everything newer, while versions older than the oldest tag stay eligible for cleanup.
@@ -506,6 +514,7 @@ Before proposing a commit, read the added comment lines on their own:
 - `textual_image` has two paths: `widget.Image` for Textual TUI apps, `renderable.Image` for Rich consoles (e.g. `format_citations_rich`). Both accept PIL Image objects.
 - `uv run ty check <files>` only checks the files you pass. Pre-commit's ty hook is broader and may surface errors in untargeted files. Run `uv run pre-commit run --files <paths>` before declaring lint clean.
 - Bulk import rewrites: use Python one-liners (`import re; re.sub(...)`), not `sed -i`. macOS BSD sed lacks `\|` alternation in regex and silently no-ops.
+- `git grep` matches recorded HTTP bodies under `tests/cassettes/` and floods the output; pass `-- ':!tests/cassettes'`.
 - `Citation` and `resolve_citations` live in `haiku.rag.store.models.citation` (moved here from `agents.research.models`).
 - Rich-renderer tests: render to string via `Console(record=True, width=200).print(r); console.export_text()` and assert substrings, instead of asserting on `panel.title.plain` etc. Decouples tests from Rich internals.
 - Ingester state lives in TWO databases: LanceDB (documents) and the queue (queue + sync_state). The queue defaults to SQLite `ingester.db` in `storage.data_dir`, but `ingester.queue.dburi` can point it at Postgres instead. Deleting one without the other leaves stale sync_state — discover() reports UNCHANGED for every URI and no jobs queue. For the SQLite default, `rm ingester.db*` (catches `-shm`/`-wal`) before restart.
