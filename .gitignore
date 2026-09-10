@@ -34,7 +34,7 @@ DEVNOTES.md
 site/
 
 # Claude Code personal notes
-.claude.local.md
+CLAUDE.local.md
 
 # Publish shared Claude skills, keep local Claude settings private
 !.claude/
