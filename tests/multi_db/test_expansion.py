@@ -1,10 +1,13 @@
 """Expanding and enriching results through the database each came from."""
 
 import pytest
+from docling_core.types.doc.document import DoclingDocument
 from pydantic_ai import ModelRetry
 
 from haiku.rag.capabilities.rag import create_capability
 from haiku.rag.client import HaikuRAG
+from haiku.rag.config import get_config
+from haiku.rag.store.exceptions import AmbiguousDatabaseError
 from haiku.rag.store.models import Chunk, Document, DocumentItem, SearchResult
 from tests.multi_db.helpers import (
     _config,
@@ -244,3 +247,68 @@ class TestFederatedEdges:
         with patch.object(RAGCapability, "_ensure_rag", AsyncMock(return_value=orphan)):
             with pytest.raises(ModelRetry, match="None of the supplied chunk_ids"):
                 await run._cite(["orphan"])
+
+
+class TestVisualizationRouting:
+    @staticmethod
+    def _visualizable(name):
+        """A one-page document whose only item has a bounding box to draw."""
+        from docling_core.types.doc.base import BoundingBox, Size
+        from docling_core.types.doc.document import ImageRef, ProvenanceItem
+        from docling_core.types.doc.labels import DocItemLabel
+        from PIL import Image as PilImageModule
+
+        doc = DoclingDocument(name=name)
+        doc.add_page(
+            page_no=1,
+            size=Size(width=612.0, height=792.0),
+            image=ImageRef.from_pil(
+                PilImageModule.new("RGB", (612, 792), color="white"), dpi=72
+            ),
+        )
+        doc.add_text(
+            label=DocItemLabel.PARAGRAPH,
+            text=f"{name} content",
+            prov=ProvenanceItem(
+                page_no=1,
+                bbox=BoundingBox(l=50, t=700, r=550, b=650),
+                charspan=(0, len(name) + 8),
+            ),
+        )
+        return doc
+
+    @pytest.mark.asyncio
+    async def test_a_chunk_is_visualized_by_the_database_that_holds_it(self, tmp_path):
+        """A chunk carries no database identity, so the source the caller holds
+        is what reaches the pages and bounding boxes."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        dim = get_config().embeddings.model.vector_dim
+        async with HaikuRAG(config=config, create=True, sources=["beta"]) as beta:
+            document = await beta.import_document(
+                self._visualizable("beta"),
+                [
+                    Chunk(
+                        content="beta content",
+                        embedding=[0.1] * dim,
+                        order=0,
+                        metadata={"doc_item_refs": ["#/texts/0"], "page_numbers": [1]},
+                    )
+                ],
+                uri="test://beta/visualizable",
+            )
+            [chunk] = await beta.chunk_repository.get_by_document_id(document.id)
+
+        async with HaikuRAG(config=config) as rag:
+            assert len(await rag.visualize_chunk(chunk, source="beta")) == 1
+            assert await rag.visualize_chunk(chunk, source="alpha") == []
+
+    @pytest.mark.asyncio
+    async def test_visualizing_without_a_source_is_refused(self, tmp_path):
+        """Federating, nothing in a chunk says which database drew it."""
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+
+        async with HaikuRAG(config=config) as rag:
+            with pytest.raises(AmbiguousDatabaseError, match="source"):
+                await rag.visualize_chunk(Chunk(content="x", document_id="doc-1"))

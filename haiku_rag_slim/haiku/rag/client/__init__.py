@@ -947,9 +947,35 @@ class HaikuRAG:
         chunk: Chunk | Sequence[Chunk],
         refs: list[str] | None = None,
         expand: bool = True,
+        source: str | None = None,
     ) -> list:
+        """Render page images highlighting one or more chunks.
+
+        Args:
+            chunk: The chunk, or the chunks of a merged result.
+            refs: The `doc_item_refs` the model saw, drawn instead of
+                re-expanding.
+            expand: Without `refs`, whether to re-expand the chunks' context.
+            source: The database they came from, which this client must cover.
+                Required when covering a set: a chunk carries no database
+                identity, where `SearchResult.source` and `Citation.source` do.
+
+        Raises:
+            UnknownDatabaseError: If `source` names a database this client does
+                not cover.
+            AmbiguousDatabaseError: If this client covers a set and no `source`
+                names one of them.
+        """
         from haiku.rag.client.search import visualize_chunk
 
+        if source is not None:
+            (owner,) = await self.clients_covering([source])
+            return await owner.visualize_chunk(chunk, refs, expand)
+        if self.covers_multiple:
+            raise AmbiguousDatabaseError(
+                "visualizing a chunk needs the source it came from; this "
+                f"client covers {', '.join(sorted(self.source_names))}"
+            )
         return await visualize_chunk(
             self._single_session("visualize_chunk"), chunk, refs, expand
         )

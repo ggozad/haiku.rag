@@ -8,6 +8,7 @@
   capabilities, naming the configured databases the capability covers. Refused
   beside `db_path` or `rag=` with `AmbiguousDatabaseError`.
 - `storage.compaction_target_bytes` (default 2 GiB): target size for the fragments compaction writes on the tables holding docling blobs.
+- `source` on `HaikuRAG.visualize_chunk`, naming the database the chunk came from. Without one a client covering a set raises `AmbiguousDatabaseError`.
 
 ### Changed
 

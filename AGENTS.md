@@ -197,7 +197,7 @@ async with HaikuRAG(db_path, config, create=True) as rag:
     await rag.store.delete_tag("release-1")
 
     # Visualization
-    images = await rag.visualize_chunk(chunk)
+    images = await rag.visualize_chunk(chunk, source=result.source)  # source required over a set
     # Coverage (see "Multiple Databases")
     rag.covers_multiple      # more than one database
     rag.source_names         # configured names covered, in order
