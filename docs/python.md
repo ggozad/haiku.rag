@@ -330,6 +330,8 @@ results = await client.search(
 - `created_at`, `updated_at` - Timestamps
 - `metadata` - Document metadata (as string, use LIKE for pattern matching)
 
+A filter restricts what a search retrieves. `ask` and `analyze` apply it to every search of the run, and `analyze` mounts only the documents it admits, each with its full text. It does not restrict citations: a chunk id the model already holds, from an earlier turn of a conversation for example, resolves within the databases the question covers whether or not its document passes the filter. The string reaches the query engine as written, so build it from trusted input only. To bound what a run can reach, cover fewer databases with `sources` (see [Searching Multiple Databases](#searching-multiple-databases) and [Database selection](capabilities/index.md#database-selection)).
+
 ### Image queries
 
 `client.search()` accepts an image instead of a text query when the configured embedder is multimodal (`embeddings.model.multimodal: true` on a vLLM, VoyageAI, or Cohere model). The image is embedded once and the chunks table is searched vector-only. Full-text search and reranking don't apply without a text query.
