@@ -1262,6 +1262,18 @@ class TestInlineGroups:
         assert located.text == "Upgrade steps"
         assert [prov.page_no for prov in located.prov] == [1]
 
+    def test_group_with_a_captioned_run_is_left_alone(self):
+        doc = DoclingDocument(name="test")
+        doc.add_text(label=DocItemLabel.TEXT, text="lead")
+        group = doc.add_inline_group()
+        caption = doc.add_text(label=DocItemLabel.TEXT, text="Figure 1:", parent=group)
+        doc.add_text(label=DocItemLabel.TEXT, text="a caption", parent=group)
+        picture = doc.add_picture(caption=caption)
+
+        assert flatten_inline_groups(doc) is False
+        assert [item.text for item in doc.texts] == ["lead", "Figure 1:", "a caption"]
+        assert picture.caption_text(doc) == "Figure 1:"
+
     def test_group_carrying_several_provenances_is_left_alone(self):
         """Merging keeps one record, so a group tracking more than one place
         in its source stays as it is."""

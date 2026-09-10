@@ -59,17 +59,23 @@ def vlm_api_params(model: "ModelConfig", max_tokens: int) -> dict[str, object]:
 def flatten_inline_groups(doc: "DoclingDocument") -> bool:
     """Replace every inline group of text runs with the one text item it renders as.
 
-    A group whose runs are not all text, or that carries more than one
-    provenance record, is left as it is. Returns whether the document changed.
+    A group whose runs are not all text, that carries more than one provenance
+    record, or that another item refers into, is left as it is. Returns
+    whether the document changed.
     """
     from docling_core.transforms.serializer.markdown import (
         MarkdownDocSerializer,
         MarkdownParams,
     )
     from docling_core.types.doc.document import (
+        ContentLayer,
+        DocItem,
+        FloatingItem,
         InlineGroup,
         ProvenanceItem,
+        RichTableCell,
         SectionHeaderItem,
+        TableItem,
         TextItem,
         TitleItem,
     )
@@ -86,6 +92,26 @@ def flatten_inline_groups(doc: "DoclingDocument") -> bool:
         ),
     )
 
+    # A ref into a deleted run is renumbered onto another item.
+    referenced: set[str] = set()
+    for item, _ in doc.iterate_items(
+        with_groups=True,
+        traverse_pictures=True,
+        included_content_layers=set(ContentLayer),
+    ):
+        if isinstance(item, DocItem):
+            referenced.update(ref.cref for ref in item.comments)
+        if isinstance(item, FloatingItem):
+            referenced.update(
+                ref.cref for ref in (*item.captions, *item.footnotes, *item.references)
+            )
+        if isinstance(item, TableItem):
+            referenced.update(
+                cell.ref.cref
+                for cell in item.data.table_cells
+                if isinstance(cell, RichTableCell)
+            )
+
     flattened: list[
         tuple[InlineGroup, TextItem | None, ProvenanceItem | None, str]
     ] = []
@@ -96,6 +122,10 @@ def flatten_inline_groups(doc: "DoclingDocument") -> bool:
         children = [child.resolve(doc) for child in item.children]
         runs = [child for child in children if isinstance(child, TextItem)]
         if not runs or len(runs) != len(children):
+            continue
+        if item.self_ref in referenced or any(
+            run.self_ref in referenced for run in runs
+        ):
             continue
         # One provenance record survives the merge.
         provenance = [prov for run in runs for prov in run.prov]
