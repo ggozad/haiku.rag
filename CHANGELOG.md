@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.84.0] - 2026-09-10
+
 ### Added
 
 - `sources` on `create_capability` and `from_spec` for the RAG and analysis
@@ -2509,7 +2511,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.83.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.84.0...HEAD
+[0.84.0]: https://github.com/ggozad/haiku.rag/compare/0.83.0...0.84.0
 [0.83.0]: https://github.com/ggozad/haiku.rag/compare/0.82.1...0.83.0
 [0.82.1]: https://github.com/ggozad/haiku.rag/compare/0.82.0...0.82.1
 [0.82.0]: https://github.com/ggozad/haiku.rag/compare/0.81.0...0.82.0
