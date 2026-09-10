@@ -569,8 +569,8 @@ async for doc_id in client.rebuild_database(mode=RebuildMode.DESCRIPTIONS):
 
 **Rebuild modes:**
 
-- `RebuildMode.FULL` - Re-convert from source files, re-chunk, re-embed (default)
-- `RebuildMode.RECHUNK` - Re-chunk from the stored docling document, re-embed. Flattens inline groups in markdown, HTML and DOCX documents stored by an earlier version and keeps the flattened document
+- `RebuildMode.FULL` - Re-convert from source files, re-chunk, re-embed (default). Re-converts markdown and HTML stored by a version before inline groups were flattened
+- `RebuildMode.RECHUNK` - Re-chunk from the stored docling document, re-embed
 - `RebuildMode.EMBED_ONLY` - Keep existing chunks, only regenerate embeddings
 - `RebuildMode.TITLE_ONLY` - Generate titles for untitled documents (no re-chunking or re-embedding)
 - `RebuildMode.DESCRIPTIONS` - Run the VLM over picture bytes already stored on `document_items.picture_data`, patch descriptions into the docling blob, re-chunk + re-embed. Skips the docling parse entirely. Idempotent: pictures already carrying `meta.description.text` are not re-described, so the operation is safe to re-run.

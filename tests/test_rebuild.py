@@ -579,66 +579,6 @@ async def test_rebuild_rechunk(qa_corpus: list[dict[str, str]], temp_db_path):
 
 
 @pytest.mark.vcr()
-async def test_rebuild_rechunk_normalizes_a_stored_document(temp_db_path, monkeypatch):
-    """A document stored with inline groups in its blob: rechunk brings its
-    items, chunk text, headings and refs to the flattened document together."""
-    markdown = (
-        "# Sample\n\n"
-        "By default, `haiku.rag` uses the configured embedder.\n\n"
-        "## [0.68.0] - 2026-07-24\n\n"
-        "### Added\n\n"
-        "- A bullet with `code` inside.\n\n"
-        "[0.68.0]: https://github.com/ggozad/haiku.rag/releases\n"
-    )
-    monkeypatch.setattr(
-        "haiku.rag.converters.docling_local.flatten_inline_groups", lambda doc: False
-    )
-
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        doc = await client.create_document(content=markdown)
-        assert doc.id is not None
-
-        stored = await client.document_item_repository.get_all_items(doc.id)
-        assert [item.text for item in stored if not item.text], (
-            "expected the unflattened blob to store empty items"
-        )
-
-        processed = [
-            doc_id async for doc_id in client.rebuild_database(mode=RebuildMode.RECHUNK)
-        ]
-        assert processed == [doc.id]
-
-        items = await client.document_item_repository.get_all_items(doc.id)
-        assert all(item.text for item in items)
-        assert "By default, `haiku.rag` uses the configured embedder." in [
-            item.text for item in items
-        ]
-        assert "0.68.0 - 2026-07-24" in [item.text for item in items]
-        # The runs are gone, not kept beside the item that now carries them.
-        assert "By default," not in [item.text for item in items]
-
-        chunks = await client.chunk_repository.get_by_document_id(doc.id)
-        assert any("`haiku.rag`" in chunk.content for chunk in chunks)
-        assert all("```" not in chunk.content for chunk in chunks)
-
-        headings = [
-            heading
-            for chunk in chunks
-            for heading in (chunk.metadata.get("headings") or [])
-        ]
-        assert headings and all(headings)
-
-        known_refs = {item.self_ref for item in items}
-        cited_refs = {
-            ref
-            for chunk in chunks
-            for ref in (chunk.metadata.get("doc_item_refs") or [])
-        }
-        assert cited_refs
-        assert cited_refs <= known_refs
-
-
-@pytest.mark.vcr()
 async def test_rebuild_full_with_accessible_source(temp_db_path):
     """FULL rebuild re-ingests from source when the URI is accessible.
 

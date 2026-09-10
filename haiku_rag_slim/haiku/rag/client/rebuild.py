@@ -16,7 +16,6 @@ from haiku.rag.client.documents import (
 from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.client.titles import generate_title
 from haiku.rag.converters import get_converter
-from haiku.rag.converters.base import flatten_inline_groups
 from haiku.rag.store.compression import compress_docling_split
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
@@ -615,10 +614,6 @@ async def _rebuild_rechunk(
                 f"Document {doc.id} has no stored docling document; rechunk "
                 "requires it. Run a full rebuild (without --rechunk) instead."
             )
-
-        # The chunks and the item rows below both come from this document.
-        if await asyncio.to_thread(flatten_inline_groups, docling_document):
-            await asyncio.to_thread(_store_structure, docling_document, doc)
 
         # Stored blob has stripped picture URIs; pass the snapshot so
         # build_picture_chunks (inside chunk()) can recover the bytes.

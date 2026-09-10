@@ -442,8 +442,8 @@ haiku-rag rebuild --set-embedder
 
 | Mode | Flag | Use case |
 |------|------|----------|
-| Full | (default) | Changed converter, source files updated |
-| Rechunk | `--rechunk` | Changed chunking strategy or chunk size; flattens inline groups in markdown, HTML and DOCX documents stored by an earlier version |
+| Full | (default) | Changed converter, source files updated; re-converts markdown and HTML stored by a version before inline groups were flattened |
+| Rechunk | `--rechunk` | Changed chunking strategy or chunk size |
 | Embed only | `--embed-only` | Changed embedding model or vector dimensions |
 | Title only | `--title-only` | Generate titles for documents without one |
 | Descriptions | `--descriptions` | Add VLM picture descriptions to an existing database |
