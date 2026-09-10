@@ -1064,10 +1064,10 @@ class TestExtractItemTextInlineGroup:
             assert "pytest" in recovered.text
             assert "to test." in recovered.text
 
-            # The tradeoff ggozad asked to have written down: the group's
-            # own children are still stored as their own rows, since this
-            # path stores the document as given, so the recovered item and
-            # its fragments both land in expanded context.
+            # The group's children are stored as their own rows beside the
+            # recovered item, since this path stores the document as given,
+            # so the recovered item and its fragments both land in expanded
+            # context.
             fragment_texts = {
                 item.text for ref, item in by_ref.items() if ref != list_item.self_ref
             }

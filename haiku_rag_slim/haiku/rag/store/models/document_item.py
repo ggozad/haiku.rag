@@ -103,7 +103,11 @@ def extract_item_text(
 
                 serializer = MarkdownDocSerializer(
                     doc=docling_doc,
-                    params=MarkdownParams(escape_underscores=False, escape_html=False),
+                    params=MarkdownParams(
+                        escape_underscores=False,
+                        escape_html=False,
+                        image_placeholder="",
+                    ),
                 )
             return serializer.serialize(item=target).text
         except Exception:
@@ -161,7 +165,9 @@ def extract_items(
 
             serializer = MarkdownDocSerializer(
                 doc=docling_doc,
-                params=MarkdownParams(escape_underscores=False, escape_html=False),
+                params=MarkdownParams(
+                    escape_underscores=False, escape_html=False, image_placeholder=""
+                ),
             )
         return serializer
 
