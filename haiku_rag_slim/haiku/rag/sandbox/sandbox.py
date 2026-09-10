@@ -42,6 +42,29 @@ class SandboxResult:
     success: bool
 
 
+class CappedOutput:
+    """Collects what a program prints, holding no more than `max_chars`."""
+
+    def __init__(self, max_chars: int) -> None:
+        self.max_chars = max_chars
+        self.parts: list[str] = []
+        self.size = 0
+        self.truncated = False
+
+    def write(self, _stream: Literal["stdout", "stderr"], text: str) -> None:
+        room = self.max_chars - self.size
+        if len(text) > room:
+            self.truncated = True
+            text = text[:room]
+        if text:
+            self.parts.append(text)
+            self.size += len(text)
+
+    def text(self) -> str:
+        text = "".join(self.parts)
+        return text + "\n... (output truncated)" if self.truncated else text
+
+
 def recovery_hint(stderr: str) -> str:
     """Name the workaround for sandbox limits models trip over repeatedly.
 
@@ -659,26 +682,16 @@ class Sandbox:
         session, vfs = await self._ensure_initialized()
         external_fns = self._build_external_functions()
 
-        stdout_lines: list[str] = []
-
-        def print_callback(  # pragma: no cover - runs on Monty's worker thread
-            _stream: Literal["stdout", "stderr"], text: str
-        ) -> None:
-            stdout_lines.append(text)
-
-        max_chars = self._config.analysis.max_output_chars
+        out = CappedOutput(self._config.analysis.max_output_chars)
 
         try:
             output = await session.feed_run(
                 code,
                 external_lookup=external_fns,
-                print_callback=print_callback,
+                print_callback=out.write,
                 os=vfs,
             )
         except (pydantic_monty.MontyError, RuntimeError) as e:
-            stdout = "".join(stdout_lines)
-            if len(stdout) > max_chars:
-                stdout = stdout[:max_chars] + "\n... (output truncated)"
             stderr = str(e)
             # A crash kills the worker, and a protocol error leaves it out of
             # step. Both poison the session. Bad user code does not.
@@ -688,17 +701,8 @@ class Sandbox:
                     f"{stderr}\n\nThe interpreter restarted. Variables from "
                     "earlier calls are gone."
                 )
-            return SandboxResult(stdout=stdout, stderr=stderr, success=False)
+            return SandboxResult(stdout=out.text(), stderr=stderr, success=False)
 
-        stdout = "".join(stdout_lines)
         if output is not None:
-            stdout_with_output = f"{stdout}{output}" if stdout else str(output)
-        else:
-            stdout_with_output = stdout
-
-        if len(stdout_with_output) > max_chars:
-            stdout_with_output = (
-                stdout_with_output[:max_chars] + "\n... (output truncated)"
-            )
-
-        return SandboxResult(stdout=stdout_with_output, stderr="", success=True)
+            out.write("stdout", str(output))
+        return SandboxResult(stdout=out.text(), stderr="", success=True)

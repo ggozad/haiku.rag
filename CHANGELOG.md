@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-## [0.83.0] - 2026-09-09
+### Fixed
+
+- The sandbox holds at most `analysis.max_output_chars` of a program's printed output while it runs.
 
 ## [0.83.0] - 2026-09-09
 
@@ -2496,7 +2498,6 @@ Existing documents without DoclingDocument data will work but won't have provena
 - Initial version tracking
 
 [Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.83.0...HEAD
-[0.83.0]: https://github.com/ggozad/haiku.rag/compare/0.83.0...0.83.0
 [0.83.0]: https://github.com/ggozad/haiku.rag/compare/0.82.1...0.83.0
 [0.82.1]: https://github.com/ggozad/haiku.rag/compare/0.82.0...0.82.1
 [0.82.0]: https://github.com/ggozad/haiku.rag/compare/0.81.0...0.82.0
