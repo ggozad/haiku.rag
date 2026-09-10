@@ -27,8 +27,6 @@
 
 ## [0.83.0] - 2026-09-09
 
-## [0.83.0] - 2026-09-09
-
 ### Added
 
 - `ConversionTimeoutError` and `ConverterWedgedError` in
