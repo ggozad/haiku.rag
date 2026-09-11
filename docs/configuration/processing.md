@@ -268,7 +268,7 @@ Per-image failures (404, timeout, oversized, unreadable) leave that picture as a
 | `.html` / `.xhtml` | n/a (markup-based) | n/a | ✅ on embedded pictures | ✅ |
 | `.md` / `.qmd` / `.rmd` | n/a | n/a | ✅ on embedded pictures | ✅ (only `<img>` HTML blocks; native `![alt](url)` syntax is not fetched by docling) |
 | `.docx` / `.pptx` | n/a | n/a | ✅ on embedded pictures | n/a |
-| Other (`.csv`, `.xlsx`, `.adoc`, `.tex`, `.xml`) | n/a | n/a | n/a | n/a |
+| Other (`.csv`, `.xlsx`, `.adoc`, `.tex`, `.xml`, `.eml`, `.msg`) | n/a | n/a | n/a | n/a |
 
 #### Picture Handling
 

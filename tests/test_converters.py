@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 from collections import Counter
+from email.message import EmailMessage
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
@@ -509,6 +510,25 @@ class TestDoclingLocalConverter:
         assert ".docx" in extensions
         assert ".py" in extensions
         assert ".txt" in extensions
+        assert ".eml" in extensions
+        assert ".msg" in extensions
+
+    @pytest.mark.asyncio
+    async def test_convert_eml_reads_subject_and_body(self, converter, tmp_path):
+        """An .eml file converts to its subject as title and its body as text."""
+        message = EmailMessage()
+        message["From"] = "ada@example.com"
+        message["To"] = "grace@example.com"
+        message["Subject"] = "Q3 pricing review"
+        message.set_content("The London numbers changed.")
+        source = tmp_path / "mail.eml"
+        source.write_bytes(message.as_bytes())
+
+        doc = await converter.convert_file(source)
+
+        titles = [t.text for t in doc.texts if t.label == DocItemLabel.TITLE]
+        assert titles == ["Q3 pricing review"]
+        assert "The London numbers changed." in doc.export_to_markdown()
 
     @pytest.mark.asyncio
     async def test_convert_text(self, converter):
@@ -1714,6 +1734,8 @@ class TestDoclingServeConverter:
         assert ".docx" in extensions
         assert ".py" in extensions
         assert ".md" in extensions
+        assert ".eml" in extensions
+        assert ".msg" in extensions
 
     @pytest.mark.asyncio
     async def test_convert_text_success(self, converter):

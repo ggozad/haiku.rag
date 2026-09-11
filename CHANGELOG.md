@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `.eml` and `.msg` files convert through docling's email backend.
+
 ### Fixed
 
 - FRAMES caches the images its articles reference and inlines them as `data:`
