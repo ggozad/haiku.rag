@@ -2,4 +2,5 @@ allowBuilds:
   '@scarf/scarf': false
   sharp: true
 overrides:
-  sharp: '>=0.35.0'
+  sharp: '>=0.35.4'
+  qs: '>=6.16.0'
