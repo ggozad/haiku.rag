@@ -148,11 +148,11 @@ Emoji test: 🚀 ✅ 📝"""
         ({"provider": "ollama", "name": "llama3"}, None),
         (
             {"provider": "ollama", "name": "gpt-oss", "thinking": False},
-            {"openai_reasoning_effort": "low"},
+            {"openai_reasoning_effort": "none"},
         ),
         (
             {"provider": "ollama", "name": "gpt-oss", "thinking": True},
-            {"openai_reasoning_effort": "high"},
+            {"openai_reasoning_effort": "medium"},
         ),
         (
             {"provider": "ollama", "name": "qwen3.8", "thinking": False},
@@ -160,7 +160,7 @@ Emoji test: 🚀 ✅ 📝"""
         ),
         (
             {"provider": "ollama", "name": "qwen3.8", "thinking": True},
-            {"openai_reasoning_effort": "high"},
+            {"openai_reasoning_effort": "medium"},
         ),
         (
             {
@@ -174,11 +174,11 @@ Emoji test: 🚀 ✅ 📝"""
         ({"provider": "openai", "name": "gpt-4o"}, None),
         (
             {"provider": "openai", "name": "o1", "thinking": True},
-            {"openai_reasoning_effort": "high"},
+            {"thinking": True},
         ),
         (
             {"provider": "openai", "name": "o1", "thinking": False},
-            {"openai_reasoning_effort": "low"},
+            {"thinking": False},
         ),
         (
             {
@@ -188,8 +188,9 @@ Emoji test: 🚀 ✅ 📝"""
                 "temperature": 0.7,
                 "max_tokens": 500,
             },
-            # gpt-4o is not a reasoning model, so only the common settings land.
-            {"temperature": 0.7, "max_tokens": 500},
+            # The vendor path passes `thinking` through; pydantic-ai's profile
+            # drops it at request time for a model without thinking.
+            {"thinking": False, "temperature": 0.7, "max_tokens": 500},
         ),
         (
             {"provider": "ollama", "name": "qwen3.8", "thinking": "low"},
@@ -197,7 +198,7 @@ Emoji test: 🚀 ✅ 📝"""
         ),
         (
             {"provider": "openai", "name": "o1", "thinking": "xhigh"},
-            {"openai_reasoning_effort": "xhigh"},
+            {"thinking": "xhigh"},
         ),
     ],
     ids=[
@@ -216,16 +217,15 @@ Emoji test: 🚀 ✅ 📝"""
     ],
 )
 def test_get_model_openai_chat_settings(kwargs, expected_settings):
-    """Each ollama/openai configuration maps onto the expected model settings."""
+    """Each ollama/openai configuration maps onto exactly the expected settings.
+
+    ollama sends `reasoning_effort` as written; the openai vendor path passes
+    the unified `thinking` through and pydantic-ai maps it per model.
+    """
     result = get_model(ModelConfig(**kwargs))
 
     assert isinstance(result, OpenAIChatModel)
-    if expected_settings is None:
-        assert result.settings is None
-        return
-    assert result.settings is not None
-    for key, value in expected_settings.items():
-        assert result.settings.get(key) == value
+    assert result.settings == expected_settings
 
 
 def test_get_model_ollama_appends_v1_to_per_model_base_url():
@@ -249,34 +249,40 @@ def test_get_model_ollama_does_not_double_append_v1():
     assert not url.endswith("/v1/v1")
 
 
-def test_get_model_openai_non_reasoning_model_ignores_thinking():
-    """Test that non-reasoning OpenAI models don't get reasoning_effort setting."""
-    model_config = ModelConfig(provider="openai", name="gpt-4o-mini", thinking=False)
-    result = get_model(model_config)
-    assert isinstance(result, OpenAIChatModel)
-    # Non-reasoning models should not have reasoning_effort set
-    assert result._settings is None
-
-
-def test_get_model_vllm_model_without_reasoning_profile_sends_no_thinking():
-    """A vLLM-served model with no reasoning profile carries no thinking settings.
-
-    Its chat template reads the switch from `chat_template_kwargs`, which only
-    `extra_body` can reach, and the endpoint rejects `reasoning_effort`.
-    """
-    model_config = ModelConfig(
-        provider="openai",
-        name="Qwen/Qwen3-32B",
-        base_url="http://vllm:8000/v1",
-        thinking=True,
-        temperature=0.2,
+def test_get_model_openai_vendor_never_sets_reasoning_effort():
+    """On api.openai.com pydantic-ai owns the mapping, so only `thinking` travels."""
+    result = get_model(
+        ModelConfig(provider="openai", name="gpt-4o-mini", thinking=False)
     )
-    result = get_model(model_config)
+    assert isinstance(result, OpenAIChatModel)
+    assert result.settings == {"thinking": False}
+
+
+@pytest.mark.parametrize(
+    "thinking,effort",
+    [(True, "medium"), (False, "none"), ("xhigh", "xhigh")],
+    ids=["on", "off", "level"],
+)
+def test_get_model_openai_with_base_url_sends_reasoning_effort_directly(
+    thinking, effort
+):
+    """A self-hosted endpoint gets `reasoning_effort` as written, whatever the name.
+
+    The profile pydantic-ai infers from a served name says nothing about the
+    model, and the server validates the value against its own ladder.
+    """
+    result = get_model(
+        ModelConfig(
+            provider="openai",
+            name="Qwen/Qwen3-32B",
+            base_url="http://vllm:8000/v1",
+            thinking=thinking,
+            temperature=0.2,
+        )
+    )
 
     assert isinstance(result, OpenAIChatModel)
-    assert result._settings is not None
-    assert "thinking" not in result._settings
-    assert "openai_reasoning_effort" not in result._settings
+    assert result.settings == {"openai_reasoning_effort": effort, "temperature": 0.2}
 
 
 def test_get_model_openai_extra_body_forwarded():
@@ -636,15 +642,18 @@ def test_get_model_vllm_forwards_settings():
     assert result._settings.get("extra_body") == extra
 
 
-@pytest.mark.parametrize("thinking", [True, False, "low", None])
-def test_get_model_vllm_chooses_no_effort_level(thinking):
-    """`thinking` travels as `thinking`; no effort level is chosen here.
-
-    The effort vocabulary is per-model — Qwen3.8 rejects `high`, taking `xhigh`,
-    `medium` or `low` — so pydantic-ai derives one from the model's profile,
-    which is what tracks the families taking OpenAI-style values. A config that
-    needs an exact level sets `extra_body`, which overrides the derived one.
-    """
+@pytest.mark.parametrize(
+    "thinking,expected",
+    [
+        (True, {"openai_reasoning_effort": "medium"}),
+        (False, {"openai_reasoning_effort": "none"}),
+        ("low", {"openai_reasoning_effort": "low"}),
+        (None, None),
+    ],
+    ids=["on", "off", "level", "unset"],
+)
+def test_get_model_vllm_sends_reasoning_effort_directly(thinking, expected):
+    """`provider: vllm` sends `reasoning_effort` as written for every served name."""
     result = get_model(
         ModelConfig(
             provider="vllm",
@@ -652,9 +661,7 @@ def test_get_model_vllm_chooses_no_effort_level(thinking):
             thinking=thinking,
         )
     )
-    settings = result._settings or {}
-    assert "openai_reasoning_effort" not in settings
-    assert settings.get("thinking") == thinking
+    assert result.settings == expected
 
 
 def test_get_model_vllm_accepts_api_key():

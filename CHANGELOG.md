@@ -5,9 +5,12 @@
 ### Changed
 
 - `ModelConfig.enable_thinking` renamed to `thinking`, typed `bool | minimal | low |
-  medium | high | xhigh | None` (pydantic-ai's `ThinkingLevel`). A level reaches
-  `reasoning_effort` on `ollama` and `openai`, and the unified `thinking` setting
-  on every other provider.
+  medium | high | xhigh | None` (pydantic-ai's `ThinkingLevel`). On `ollama`,
+  `vllm`, `openai` with a `base_url` and the picture-description VLM it is sent as
+  `reasoning_effort` under every model name: `false` sends `none`, `true` sends
+  `medium`, a level is sent as written. `openai` without a `base_url`,
+  `anthropic`, `google`, `groq` and `bedrock` pass it through as pydantic-ai's
+  unified `thinking` setting. `gpt-oss` with `false` sends `none`, was `low`.
 
 ### Deprecated
 

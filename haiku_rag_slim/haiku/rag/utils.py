@@ -4,12 +4,13 @@ import sys
 from collections.abc import Awaitable
 from importlib import metadata
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
+from typing import TYPE_CHECKING, Any, Literal, NoReturn
 
 from packaging.version import Version, parse
 
 if TYPE_CHECKING:
     from pydantic_ai.messages import BinaryContent
+    from pydantic_ai.models.openai import OpenAIChatModelSettings
     from pydantic_ai.profiles.openai import OpenAIModelProfile
     from rich.console import RenderableType
 
@@ -142,11 +143,11 @@ def apply_common_settings(
     Args:
         settings: Existing settings instance or None
         model_config: ModelConfig with temperature and max_tokens
-        map_thinking: Whether to map `thinking` onto the unified
-            `thinking` setting. The OpenAI-compatible branches opt out and set
-            `openai_reasoning_effort` themselves, so that models whose profile
-            advertises thinking without OpenAI reasoning support (Ollama's
-            deepseek-r1, for one) keep receiving no `reasoning_effort`.
+        map_thinking: Whether to map `thinking` onto the unified `thinking`
+            setting. The self-hosted OpenAI-compatible branches opt out and
+            send `openai_reasoning_effort` themselves: pydantic-ai drops the
+            unified setting for any profile that does not advertise thinking,
+            and the profile it infers from a served name is a name match.
 
     Returns:
         Updated settings instance or None if no settings to apply
@@ -193,16 +194,27 @@ def reasoning_effort(
 ) -> "ThinkingEffort | Literal['none'] | None":
     """OpenAI `reasoning_effort` for a model config, or None when unset.
 
-    "low" is gpt-oss's floor; its template rejects "none".
+    A level is sent as written; the server validates it against the model's
+    own ladder. `True` is `medium`, the one level every endpoint accepts.
     """
     thinking = model_config.thinking
     if thinking is None:
         return None
     if isinstance(thinking, str):
         return thinking
-    if thinking:
-        return "high"
-    return "low" if model_config.name == "gpt-oss" else "none"
+    return "medium" if thinking else "none"
+
+
+def reasoning_effort_settings(
+    model_config: "ModelConfig",
+) -> "OpenAIChatModelSettings | None":
+    """Settings carrying `reasoning_effort` for a self-hosted endpoint, or None."""
+    from pydantic_ai.models.openai import OpenAIChatModelSettings
+
+    effort = reasoning_effort(model_config)
+    if effort is None:
+        return None
+    return OpenAIChatModelSettings(openai_reasoning_effort=effort)
 
 
 def get_model(
@@ -219,7 +231,7 @@ def get_model(
     Returns:
         A configured model instance
     """
-    from pydantic_ai.models.openai import OpenAIChatModel, OpenAIChatModelSettings
+    from pydantic_ai.models.openai import OpenAIChatModel
     from pydantic_ai.providers.ollama import OllamaProvider
     from pydantic_ai.providers.openai import OpenAIProvider
 
@@ -234,14 +246,8 @@ def get_model(
     check_api_key_supported(model_config, {"openai", "ollama", "vllm"})
 
     if provider == "ollama":
-        model_settings = None
-
-        effort = reasoning_effort(model_config)
-        if effort is not None:
-            model_settings = OpenAIChatModelSettings(openai_reasoning_effort=effort)
-
         model_settings = apply_common_settings(
-            model_settings, model_config, map_thinking=False
+            reasoning_effort_settings(model_config), model_config, map_thinking=False
         )
 
         # Ollama's OpenAI-compatible API lives under /v1. Append it if the
@@ -260,56 +266,39 @@ def get_model(
     elif provider == "vllm":
         from pydantic_ai.providers.vllm import VLLMProvider
 
-        # `thinking` travels as the unified `thinking` setting, which
-        # pydantic-ai drops unless the model's profile advertises thinking. The
-        # effort vocabulary is per-model, and the profile is what knows which
-        # models take OpenAI-style values; `extra_body` reaches a template
-        # whose switch is its own. VLLMProvider's profile also carries the
-        # strict-chat-template flag this module applies elsewhere.
+        # VLLMProvider's profile carries the strict-chat-template flag this
+        # module applies elsewhere.
         return OpenAIChatModel(
             model_name=model,
             provider=VLLMProvider(
                 base_url=vllm_base_url(model_config.base_url),
                 api_key=model_config.api_key,
             ),
-            settings=apply_common_settings(None, model_config),
+            settings=apply_common_settings(
+                reasoning_effort_settings(model_config),
+                model_config,
+                map_thinking=False,
+            ),
         )
 
     elif provider == "openai":
-        from pydantic_ai.profiles.openai import OpenAIModelProfile, openai_model_profile
-
-        openai_settings: Any = None
-
-        # Apply thinking control only for reasoning models (o-series, gpt-5)
-        profile = cast(OpenAIModelProfile, openai_model_profile(model))
-        thinking = model_config.thinking
-        if thinking is not None and profile.get("openai_supports_reasoning", False):
-            if isinstance(thinking, str):
-                openai_settings = OpenAIChatModelSettings(
-                    openai_reasoning_effort=thinking
-                )
-            elif thinking is False:
-                openai_settings = OpenAIChatModelSettings(openai_reasoning_effort="low")
-            else:
-                openai_settings = OpenAIChatModelSettings(
-                    openai_reasoning_effort="high"
-                )
-
-        openai_settings = apply_common_settings(
-            openai_settings, model_config, map_thinking=False
-        )
-
-        # Use model-level base_url if set (for vLLM, LM Studio, etc.)
+        # A base_url names a self-hosted server (vLLM, LM Studio, sglang).
         if model_config.base_url:
             return OpenAIChatModel(
                 model_name=model,
                 provider=OpenAIProvider(
                     base_url=model_config.base_url, api_key=model_config.api_key
                 ),
-                settings=openai_settings,
+                settings=apply_common_settings(
+                    reasoning_effort_settings(model_config),
+                    model_config,
+                    map_thinking=False,
+                ),
                 profile=_OPENAI_COMPAT_PROFILE,
             )
 
+        # api.openai.com: pydantic-ai's profile knows these models, so the
+        # unified setting maps `thinking` per model, always-on ones included.
         return OpenAIChatModel(
             model_name=model,
             provider=(
@@ -317,7 +306,7 @@ def get_model(
                 if model_config.api_key
                 else "openai"
             ),
-            settings=openai_settings,
+            settings=apply_common_settings(None, model_config),
         )
 
     elif provider == "anthropic":

@@ -65,7 +65,9 @@ class ModelConfig(ConfigModel):
                 raise ValueError("set one of thinking and enable_thinking, not both")
             warnings.warn(
                 "enable_thinking is deprecated and will be removed in 0.90.0; "
-                "set thinking instead",
+                "set thinking instead. true now selects the model's default "
+                "level (medium on OpenAI-compatible endpoints); write "
+                "thinking: high to keep the previous level",
                 FutureWarning,
                 stacklevel=2,
             )

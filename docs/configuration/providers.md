@@ -73,18 +73,13 @@ qa:
 
 `enable_thinking` is the former name of this setting. It still loads, as `thinking`, with a `FutureWarning`, and is removed in 0.90.0.
 
-**Provider support:**
+**How the value travels:**
 
-See the [Pydantic AI thinking documentation](https://ai.pydantic.dev/thinking/) for detailed provider support. haiku.rag supports thinking control for:
-
-- **OpenAI**: Reasoning models (o-series, gpt-5). A `gpt-oss` name carries a reasoning profile only spelled `openai/gpt-oss-…`.
-- **Anthropic**: All Claude models
-- **Google**: Gemini models with thinking support
-- **Groq**: Models with reasoning capabilities
-- **Bedrock**: Claude, Qwen, and `gpt-oss` models. Bedrock Converse does not serve the proprietary OpenAI models, so configuring one raises an error. Reach those through `provider: bedrock-mantle`.
-- **Ollama**: Any model with a thinking capability. `thinking` maps to `reasoning_effort`: `false` sends `none` (`low` for `gpt-oss`, whose template has no `none` level), `true` sends `high`.
-- **vLLM**: On `provider: vllm`, models whose profile advertises thinking (the Gemma 4 and DeepSeek V4 families, and Qwen3 names other than Qwen3-Coder, Qwen3.8 and `-Instruct` checkpoints), where `true` becomes `reasoning_effort: medium` and `false` becomes `none`. An explicit `-Thinking` checkpoint is marked always-on, so `false` is dropped for it and thinking stays enabled. The field is inert entirely for the rest, Qwen3.8 and Muse Glimmer included, and for a name the profile does not recognise. In every case where the field does not do what you need, `extra_body: {reasoning_effort: …}` reaches the request directly and overrides any derived level.
-- **LM Studio**: Reached through `provider: openai` with a `base_url`, so the field reaches only names with an OpenAI reasoning profile (o-series, gpt-5, `openai/gpt-oss-…`).
+- **Vendor APIs** (`openai` without a `base_url`, `anthropic`, `google`, `groq`, `bedrock`, and any provider reached by name): the value is passed as Pydantic AI's unified `thinking` setting, and Pydantic AI maps it per provider, clamped to what each model offers: `reasoning_effort` on OpenAI reasoning models, adaptive thinking or a token budget on Anthropic, `thinking_level` on Gemini 3. `false` is dropped on always-on models. See the [Pydantic AI thinking documentation](https://ai.pydantic.dev/thinking/) for the per-provider tables. Bedrock Converse does not serve the proprietary OpenAI models, so configuring one raises an error. Reach those through `provider: bedrock-mantle`.
+- **Self-hosted OpenAI-compatible endpoints** (`ollama`, `vllm`, `openai` with a `base_url`, and the picture-description VLM): the value is sent as the request's `reasoning_effort` field under any model name: `false` sends `none`, `true` sends `medium`, a level is sent as written. The server decides what it means, so the accepted levels are the model's own.
+- **Ollama** maps `reasoning_effort` onto its `think` option and never rejects a value: `minimal` becomes `low`, `xhigh` becomes `max`. Gemma 4, Qwen3.8 and Muse Glimmer think by default there. `gpt-oss` cannot be switched off and takes `low`, `medium`, `high`.
+- **vLLM** hands `reasoning_effort` to the chat template, which may reject a value it does not know: `Inferact/Qwen3.8-27B-NVFP4` takes `low`, `medium` and `xhigh` and returns 400 for `minimal` and `high`. The Gemma 4 family reads only on and off, so every level thinks the same. A template with a switch of its own, Muse Glimmer's `reasoning_strength`, ignores the field, see [vLLM](#vllm).
+- **LM Studio** is reached through `openai` with a `base_url` and receives `reasoning_effort`. Its documented chat API lists no reasoning parameter.
 
 **When to use:**
 - Enable for QA, complex reasoning, and mathematical problems
@@ -92,9 +87,6 @@ See the [Pydantic AI thinking documentation](https://ai.pydantic.dev/thinking/) 
 
 !!! note "Anthropic thinking and max_tokens"
     Anthropic requires `max_tokens` to exceed the thinking budget, and `thinking: true` requests Pydantic AI's default budget of 10000 tokens. Set `max_tokens` above 10000 on Claude models that use budget-based thinking, or leave it unset on Sonnet 4.6+ and Opus 4.6+, which use adaptive thinking instead of a budget.
-
-!!! note "vLLM-served models without a reasoning profile"
-    On `provider: openai` with a custom `base_url`, `thinking` only takes effect for models whose pydantic-ai profile advertises reasoning support (o-series, gpt-5, `openai/gpt-oss-…`). For other vLLM-served models (Qwen3, Gemma family, …) the field is a silent no-op. On `provider: vllm` it maps as the bullet above describes. Otherwise reach the chat template's thinking switch directly via [`extra_body`](#raw-provider-pass-through).
 
 ### Raw Provider Pass-through
 
@@ -116,7 +108,7 @@ qa:
 
 These keys land as top-level request fields. Of the three, ollama honors only `top_p`.
 
-Reasoning knobs go the same way, and their accepted values differ per model: see [vLLM](#vllm), where `reasoning_effort` overrides the level `thinking` derives, and a template carrying a switch of its own takes `chat_template_kwargs`.
+`extra_body.reasoning_effort` reaches the request the same way and overrides the value `thinking` sends. A template carrying a switch of its own takes `chat_template_kwargs`, see [vLLM](#vllm).
 
 **Provider support:** honored by openai, ollama, anthropic, groq and vllm via pydantic-ai's `ModelSettings.extra_body`. Silently ignored by google and bedrock.
 
@@ -366,16 +358,14 @@ qa:
 ```
 
 The provider brings its own model profile, which merges leading system messages
-(some chat templates reject more than one) and sets per-family reasoning and
-tool-choice behaviour. It infers the family from the model name, so an alias
-decides what it infers: `nvidia/Gemma-4-26B-A4B-NVFP4` is recognised as Gemma 4
-and `gemma4-26b`, the same model under a different name, is not — and
-`thinking` works on the first and is inert on the second.
+(some chat templates reject more than one) and picks tool-schema behaviour per
+family, inferred from the model name. `thinking` does not depend on that
+inference: it is sent as `reasoning_effort` under any served name.
 
-The effort levels differ per model, so no level is chosen for you:
-`Inferact/Qwen3.8-27B-NVFP4` rejects `high` and takes `xhigh`, `medium` or
-`low`. Set the value the server accepts with `extra_body`, which reaches the
-request as a top-level field and overrides any level the profile derived:
+The accepted levels are the model's, and the server decides:
+`Inferact/Qwen3.8-27B-NVFP4` takes `low`, `medium` and `xhigh` and returns 400
+for `minimal` and `high`. The Gemma 4 family reads only on and off. Write the
+value the model accepts:
 
 ```yaml
 qa:
@@ -383,12 +373,12 @@ qa:
     provider: vllm
     name: Inferact/Qwen3.8-27B-NVFP4
     base_url: http://localhost:11439
-    extra_body:
-      reasoning_effort: xhigh
+    thinking: xhigh
 ```
 
 A template with a switch of its own takes `chat_template_kwargs` instead, as
-Muse Glimmer does — it accepts `reasoning_effort` and ignores it:
+Muse Glimmer does. It accepts `reasoning_effort` and ignores it, so `thinking`
+has no effect on it under vLLM:
 
 ```yaml
 qa:

@@ -37,8 +37,8 @@ qa:
 - **model.vision**: Set to `true` for vision-capable models (`qwen2.5vl`, `qwen3.6`, `gpt-4o`, `claude-sonnet`, …). The capability's `search` tool only attaches picture bytes (`BinaryContent`) to its `ToolReturn` when this is `true`, otherwise picture bytes are withheld. See [Pictures × embedder × QA model](processing.md#pictures-embedder-qa-model-how-the-pieces-compose) for the full matrix.
 - **max_searches**: Maximum number of search units a capability can spend per question (default: 5). Up to three searches emitted in the same model response share one unit, so a model that rephrases its query in one response spends one unit. A search in a later response starts a new unit, as does each further group of three within one response. Shared by the RAG and analysis capabilities. Searches in one response also deduplicate their returns: evidence a sibling search already showed collapses to a reference line, and each picture attaches once per response.
 
-!!! note "Thinking on vLLM"
-    On `provider: openai` with a `base_url`, `thinking` reaches only models with an OpenAI reasoning profile (o-series, gpt-5, `openai/gpt-oss-…`) and is a silent no-op for any other self-hosted model. `provider: vllm` infers a per-family profile from the model name, see [vLLM](providers.md#vllm). Where the field does not reach the model, set `extra_body.reasoning_effort` or the chat template switch via [`extra_body`](providers.md#raw-provider-pass-through).
+!!! note "Thinking on self-hosted models"
+    `thinking` is sent as `reasoning_effort` to every self-hosted endpoint, and the accepted levels are the model's own, see [Thinking Control](providers.md#thinking-control). A template with a switch of its own, Muse Glimmer's `reasoning_strength`, takes [`extra_body`](providers.md#raw-provider-pass-through).
 
 ## Analysis Configuration
 
