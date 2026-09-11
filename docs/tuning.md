@@ -6,7 +6,7 @@ For ingester-side tuning (worker count, lease TTL and heartbeat, retry policy, b
 
 ## Pipeline Overview
 
-Documents flow through: **chunking → embedding → hybrid search (vector + FTS) → reranking → context expansion → LLM generation**. Retrieval tuning (chunking through reranking) is the highest-leverage stage. If the LLM never sees the right chunks, no prompt or model change will help.
+Documents flow through: **chunking → embedding → hybrid search (vector + FTS) → reranking → context expansion → LLM generation**. Retrieval (chunking through reranking) is where tuning matters most. If the LLM never sees the right chunks, no prompt or model change will help.
 
 ## Tuning Retrieval
 
@@ -18,7 +18,7 @@ Documents flow through: **chunking → embedding → hybrid search (vector + FTS
 
 ### Embedding Model
 
-Larger embedding models produce better representations at the cost of slower indexing and more storage. The choice of embedding model has a larger impact on retrieval quality than most other settings. See [Providers](configuration/providers.md) for available options and [Benchmarks](benchmarks.md) for real comparisons across models.
+Larger embedding models produce better representations at the cost of slower indexing and more storage. The choice of embedding model has a larger impact on retrieval quality than most other settings. See [Providers](configuration/providers.md) for available options and [Benchmarks](benchmarks.md) for measured comparisons across models.
 
 ### Reranking
 
@@ -28,7 +28,7 @@ When configured, a cross-encoder reranker re-scores 10x the requested candidates
 
 `limit` controls how many results reach the LLM. More candidates improve recall but increase token usage. See [Search Settings](configuration/qa.md#search-settings).
 
-Context expansion is automatic and section-aware. Search results are expanded to include surrounding content from the same document section. For structured documents, expansion stays within section boundaries and filters noise (page headers, page footers and the table of contents). For unstructured documents, expansion grows outward until the character budget is filled. `max_context_chars` caps expansion to prevent context bloat.
+Context expansion is automatic and section-aware. Search results are expanded to include surrounding content from the same document section. For structured documents, expansion stays within section boundaries and filters noise (page headers, page footers and the table of contents). For unstructured documents, expansion grows outward until the character budget is filled. `max_context_chars` caps the total characters of expanded content.
 
 ## Tuning Generation
 
@@ -95,7 +95,7 @@ If `qa.model.vision = true` is set, the modal also renders the picture bytes att
 
 ### Visual grounding (`v`)
 
-Press `v` to highlight the chunk's bounding box on its page image. Useful for verifying chunk boundaries and seeing how Docling carved up the document.
+Press `v` to highlight the chunk's bounding box on its page image. Useful for verifying chunk boundaries and seeing how Docling split the document.
 
 - `←` / `→` to navigate pages when a chunk spans multiple pages.
 - `Esc` closes the modal.

@@ -75,9 +75,9 @@ AWS_ACCESS_KEY_ID=key AWS_SECRET_ACCESS_KEY=secret AWS_REGION=us-east-1 \
 
 !!! note
     As you add documents to `haiku.rag` the database keeps growing. By default, LanceDB supports versioning
-    of your data. Create/update operations are atomic‑feeling: if anything fails during chunking or embedding,
-    the database rolls back to the pre‑operation snapshot using LanceDB table versioning. You can optimize and
-    compact the database by running the [vacuum](#vacuum-optimize-and-cleanup) command.
+    of your data. Create and update operations are not atomic, but they roll back: if anything fails during
+    chunking or embedding, the database returns to the pre‑operation snapshot using LanceDB table versioning.
+    You can optimize and compact the database by running the [vacuum](#vacuum-optimize-and-cleanup) command.
 
 ### List Documents
 
@@ -262,7 +262,7 @@ Display visual grounding for a chunk - shows page images with highlighted boundi
 haiku-rag visualize <chunk_id>
 ```
 
-This renders the source document pages with the chunk's location highlighted. The chunk itself draws in a strong highlight, while surrounding context swept in by expansion draws fainter. Useful for verifying chunk boundaries and understanding document structure.
+This renders the source document pages with the chunk's location highlighted. The chunk itself draws in a strong highlight, while the surrounding context added by expansion draws fainter. Useful for verifying chunk boundaries and understanding document structure.
 
 Pass `--no-expand` to highlight only the chunk itself, without its expanded context.
 
@@ -369,7 +369,7 @@ Migration completed successfully.
 ```
 
 !!! tip
-    Back up your database before running migrations. While migrations are designed to be safe, having a backup provides peace of mind for production databases.
+    Back up your database before running migrations. They are designed to be safe, but a backup is what lets you recover if one fails.
 
 ### Download Models
 
@@ -530,7 +530,7 @@ haiku-rag tag restore release-1
 
 Restore changes the live state. It is not a read-only view: each table gets a new latest version equal to the tagged one, and reads and writes continue from there. Versions written after the tag remain in history until vacuum removes them.
 
-Before changing anything, restore creates a complete safety tag (`before-restore-<timestamp>`) for the current state and reports it, so you always have a named path back:
+Before changing anything, restore creates a complete safety tag (`before-restore-<timestamp>`) for the current state and reports it, so the pre-restore state can always be restored by name:
 
 ```bash
 haiku-rag tag create release-1 --db /path/to/db.lancedb

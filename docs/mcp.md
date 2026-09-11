@@ -141,7 +141,7 @@ image blocks, one per distinct picture, each preceded by a line naming its
 result; `include_images: false` leaves them out. Search results carry no
 structured content, so every client shows the model the same text and
 images. Scores are not comparable across
-queries or search types, so rank is the signal. `search_documents_by_image`
+queries or search types, so read the rank instead. `search_documents_by_image`
 embeds the query image and searches by vector similarity alone.
 
 `get_document` returns a document whole, in reading order. For a long one,

@@ -23,7 +23,7 @@ haiku-rag ask "what does it conclude?"
 
 **Built for agents.** Native [Pydantic AI](https://ai.pydantic.dev/) capabilities compose into your own agents. An [MCP server](mcp.md) exposes the same database to Claude Desktop and other assistants. The analysis capability runs sandboxed Python across documents for questions that need computation rather than retrieval.
 
-**Measured, not asserted.** Retrieval and answer quality are tracked against public benchmarks with runnable configs. See [Benchmarks](benchmarks.md).
+**Benchmarked.** Retrieval and answer quality are tracked against public benchmarks with runnable configs. See [Benchmarks](benchmarks.md).
 
 ## Start here
 

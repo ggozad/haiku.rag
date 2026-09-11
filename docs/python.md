@@ -352,7 +352,7 @@ results = await client.search(
 )
 ```
 
-Image queries surface picture chunks (synthetic per-figure chunks emitted at ingest under a multimodal embedder) and any text chunks whose vectors land near the image vector in the shared embedding space. Calling `client.search(bytes)` against a text-only embedder raises a `ValueError`.
+Image queries return picture chunks (synthetic per-figure chunks emitted at ingest under a multimodal embedder) and any text chunks whose vectors are near the image vector in the shared embedding space. Calling `client.search(bytes)` against a text-only embedder raises a `ValueError`.
 
 ### Expanding Search Context
 
@@ -369,13 +369,13 @@ for result in expanded_results:
     print(f"Expanded content: {result.content}")
 ```
 
-Context expansion is automatic and section-aware. For structured documents (with section headers), expansion includes the entire section containing the match. For sections that exceed the budget or are too small (e.g., a title+authors area), expansion grows outward item-by-item from the match center, skipping noise labels (page headers, page footers, table of contents). This naturally crosses into adjacent sections until the budget is filled. Picture and table matches are exempt: they return their enclosing section as-is and never cross section boundaries. For unstructured documents, expansion grows outward item-by-item. Results without `doc_item_refs` (e.g., custom chunks passed to `import_document`) pass through unexpanded.
+Context expansion is automatic and section-aware. For structured documents (with section headers), expansion includes the entire section containing the match. For sections that exceed the budget or are too small (e.g., a title+authors area), expansion grows outward item-by-item from the match center, skipping noise labels (page headers, page footers, table of contents). This crosses into adjacent sections until the budget is filled. Picture and table matches are exempt: they return their enclosing section as-is and never cross section boundaries. For unstructured documents, expansion grows outward item-by-item. Results without `doc_item_refs` (e.g., custom chunks passed to `import_document`) pass through unexpanded.
 
 Configuration:
 
 - **search.max_context_chars**: Maximum characters in expanded context. Default: 5000.
 
-**Smart Merging**: When expanded results overlap within the same document, they are automatically merged into a single result with continuous content and the highest relevance score.
+**Merging**: When expanded results overlap within the same document, they are automatically merged into a single result with continuous content and the highest relevance score.
 
 ## Question Answering
 
@@ -432,7 +432,7 @@ result = await client.analyze(
 )
 ```
 
-`client.analyze` runs the [analysis capability](capabilities/analysis.md), which writes and executes Python code in a sandboxed environment to solve problems that traditional RAG struggles with: aggregation, computation, and multi-document analysis.
+`client.analyze` runs the [analysis capability](capabilities/analysis.md), which writes and executes Python code in a sandboxed environment to solve problems that retrieval alone does not: aggregation, computation, and multi-document analysis.
 
 `client.analyze` also accepts `images=` like `client.ask`, requiring `vision: true` on the analysis model (or the QA model when no analysis model is configured).
 
@@ -442,7 +442,7 @@ See [Analysis capability](capabilities/analysis.md) for details and configuratio
 
 `client.ask` and `client.analyze` are convenience wrappers. To build your own Pydantic AI agent, attach the native RAG and analysis capabilities directly. See [Capabilities](capabilities/index.md).
 
-For the low-level toolset factories under `haiku.rag.tools` (one rung below the capability abstraction), see [Toolsets](tools.md).
+For the low-level toolset factories under `haiku.rag.tools`, see [Toolsets](tools.md).
 
 ## Importing Pre-Processed Documents
 
@@ -479,7 +479,7 @@ doc = await client.import_document(
 )
 ```
 
-The `docling_document` provides rich metadata for visual grounding, page numbers, and section headings. Content is automatically extracted from the DoclingDocument.
+The `docling_document` provides metadata for visual grounding, page numbers, and section headings. Content is automatically extracted from the DoclingDocument.
 
 ### Batch Import
 
@@ -516,7 +516,7 @@ Run maintenance to optimize storage and prune old table versions:
 await client.vacuum()
 ```
 
-This compacts tables and removes historical versions to keep disk usage in check. It’s safe to run anytime, for example after bulk imports or periodically in long‑running apps.
+This compacts tables and removes historical versions to reduce disk usage. It’s safe to run anytime, for example after bulk imports or periodically in long‑running apps.
 
 ### Tags
 

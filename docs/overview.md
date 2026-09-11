@@ -80,7 +80,7 @@ the [MCP server](mcp.md).
 
 ## Running it
 
-A laptop needs nothing but the package and Ollama. Production adds the
+A local install needs only the package and Ollama. Production adds the
 [`haiku-ingester`](ingester.md) service, which polls its sources, queues work in
 SQLite or Postgres, and retries with a circuit breaker per source.
 

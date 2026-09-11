@@ -66,7 +66,7 @@ A row larger than the target cannot be sized at all: the target floors at one ro
 - Reduce `images_scale` (see [Image Settings](processing.md#image-settings)). Rendered page rasters dominate the size of `documents`, and their byte cost falls with the square of the scale factor.
 - Set `generate_page_images: false` if visual grounding through `visualize_chunk()` is not needed. This removes page rasters entirely.
 
-Vacuum also folds new rows into the full-text index. Search stays correct without it but scans the uncovered rows on every query. `haiku-rag doctor` reports the coverage.
+Vacuum also adds new rows to the full-text index. Search stays correct without it but scans the uncovered rows on every query. `haiku-rag doctor` reports the coverage.
 
 If fragment sizes are missing from the table metadata, which can happen for databases written by much older versions, compaction is skipped for that table and a warning is logged. Old versions are still pruned.
 
@@ -261,7 +261,7 @@ The chat document filter selects by document and database: the search is narrowe
 
 #### Ranking
 
-Without a reranker, the fused list is ordered by cosine similarity between the query vector and each candidate. The databases in a selection share an embedder, so similarity in that one space is comparable across databases, where retrieval scores are each database's own arithmetic. Ties resolve by the candidate's rank within its own database, and configured order decides only when both tie. Similarities rarely tie exactly, so declaration order decides almost nothing: on MTRAG retrieval benchmarks, reversing it left recall unchanged in every cell. Full-text-only searches have no query vector and order by retrieval score instead.
+Without a reranker, the fused list is ordered by cosine similarity between the query vector and each candidate. The databases in a selection share an embedder, so similarity in that one space is comparable across databases, where retrieval scores are not. Ties resolve by the candidate's rank within its own database, and configured order decides only when both tie. Similarities rarely tie exactly, so declaration order decides almost nothing: on MTRAG retrieval benchmarks, reversing it left recall unchanged in every cell. Full-text-only searches have no query vector and order by retrieval score instead.
 
 Results are not guaranteed to spread across databases: a database with nothing relevant to a query contributes nothing, and a strong database can fill every slot. On MTRAG retrieval benchmarks over two to eight collections, cosine fusion holds recall roughly flat as collections are added, where position-based fusion lost up to half its recall at eight.
 

@@ -7,7 +7,7 @@
 docling-serve is a REST API service that provides:
 
 - Document conversion (PDF, DOCX, PPTX, images, etc.)
-- Intelligent chunking with structure preservation
+- Chunking with structure preservation
 - OCR capabilities for scanned documents
 - Table and figure extraction
 
@@ -30,7 +30,7 @@ docling-serve is a REST API service that provides:
 
 ## Setup
 
-haiku.rag is tested against docling-serve 1.25.0.
+haiku.rag is tested against docling-serve 1.32.0.
 
 ### Docker Compose (Recommended)
 

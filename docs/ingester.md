@@ -93,11 +93,11 @@ ingester:
         allow_http: "true"
 ```
 
-ETags are the cheap-skip key. Each sweep lists the prefix, compares
+ETags decide what a sweep re-fetches. Each sweep lists the prefix, compares
 the listed ETag against the document's stored `metadata["source_revision"]`,
 and only fetches keys whose ETag has changed. If the bytes turn out to
-match the stored MD5 (multipart re-upload landing a new ETag on the
-same content), only the revision is refreshed — no re-chunk.
+match the stored MD5 (a multipart re-upload gives the same content a new
+ETag), only the revision is refreshed — no re-chunk.
 
 `storage_options` follows the same convention as `lancedb.storage_options` —
 the dict is passed straight to obstore (the Rust `object_store` library
@@ -350,7 +350,7 @@ The worker pool runs `worker_count` async workers, each processing one
 job at a time. `worker_count` is therefore also the maximum number of
 concurrent in-flight jobs. Jobs that hit a `TransientError` are
 rescheduled with exponential backoff plus jitter, up to `max_attempts`,
-then land in the dead-letter queue. `PermanentError` (unsupported
+then move to the dead-letter queue. `PermanentError` (unsupported
 extension, 4xx HTTP except 408/429, object-store credential and
 configuration errors, etc.) skips retry entirely.
 
@@ -369,7 +369,7 @@ still flow during a skipped sweep, so new files aren't lost.
 **Graceful shutdown.** On `SIGINT` / `SIGTERM`, pollers stop immediately
 and workers are given `shutdown_grace_s` to finish in-flight jobs. Jobs
 still running after the grace window are cancelled and released back to
-`queued` for immediate re-claim; any release that doesn't land has its
+`queued` for immediate re-claim; any release that fails has its
 lease lapse and is reclaimed by the reaper after `lease_ttl_s`.
 
 **Tuning.**
@@ -457,7 +457,7 @@ with `conversion_stalled`, and `uq_jobs_blocking_op` keeps that row in the slot
 for its (source, URI, op, revision), so discovery cannot re-enqueue the same
 bytes. Retention never removes it. These do:
 
-- The source publishing a new revision of the file, which lands in a different
+- The source publishing a new revision of the file, which takes a different
   slot.
 - `POST /dlq/{job_id}/retry`, once the document is fixed. Retrying a different
   dead row for the same slot answers 409 and names the row in the way.
@@ -502,7 +502,7 @@ token; without one the API stays open and the service logs a warning.
 | `POST` | `/jobs/{id}/retry` | reset attempts to 0, status to queued |
 | `DELETE` | `/jobs/{id}` | cancel a queued/claimed job |
 | `GET` | `/dlq` | dead jobs |
-| `POST` | `/dlq/{id}/retry` | resurrect from DLQ |
+| `POST` | `/dlq/{id}/retry` | re-queue a dead job |
 | `GET` | `/stats` | rolling throughput (5m / 30m / 1h succeeded), worker occupancy, oldest queued age, per-source DLQ + backlog |
 | `GET` | `/database` | LanceDB snapshot — stored version, embeddings, per-table row counts/sizes, vector index status, pending migrations, package versions (same data as `haiku-rag info`) |
 | `GET` | `/config` | full effective configuration (defaults filled in) as YAML, with secrets redacted |
@@ -710,7 +710,7 @@ curl -H "Authorization: Bearer $TOKEN" 'http://localhost:8765/jobs?status=dead'
 curl -H "Authorization: Bearer $TOKEN" -X POST \
     http://localhost:8765/sources/local-docs/refresh
 
-# Resurrect a dead job
+# Retry a dead job
 curl -H "Authorization: Bearer $TOKEN" -X POST \
     http://localhost:8765/jobs/<id>/retry
 ```

@@ -1,12 +1,8 @@
 # Toolsets
 
-For agent integrations, use the native Pydantic AI [capabilities](capabilities/index.md). This page documents the lower-level toolsets used by other haiku.rag surfaces.
-
-For lower-level access, `haiku.rag.tools` provides individual `FunctionToolset` factories used across haiku.rag.
+For agent integrations, use the native Pydantic AI [capabilities](capabilities/index.md). `haiku.rag.tools` provides the lower-level `FunctionToolset` factories used across haiku.rag, which can be reused to build custom agents.
 
 ## Low-Level Toolsets
-
-For advanced use cases, individual toolset factories are available in `haiku.rag.tools` and can be reused to build custom agents.
 
 ### RAGDeps Protocol
 
