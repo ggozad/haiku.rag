@@ -91,41 +91,29 @@ See the [Pydantic AI thinking documentation](https://ai.pydantic.dev/thinking/) 
     Anthropic requires `max_tokens` to exceed the thinking budget, and `enable_thinking: true` requests Pydantic AI's default budget of 10000 tokens. Set `max_tokens` above 10000 on Claude models that use budget-based thinking, or leave it unset on Sonnet 4.6+ and Opus 4.6+, which use adaptive thinking instead of a budget.
 
 !!! note "vLLM-served models without a reasoning profile"
-    On `provider: openai` with a custom `base_url`, `enable_thinking` only takes effect for models whose pydantic-ai profile advertises reasoning support (o-series, gpt-5, gpt-oss). For other vLLM-served models (Qwen3, Gemma family, …) the field is a silent no-op. Reach the chat template's thinking switch directly via [`extra_body`](#raw-provider-pass-through).
+    On `provider: openai` with a custom `base_url`, `enable_thinking` only takes effect for models whose pydantic-ai profile advertises reasoning support (o-series, gpt-5, gpt-oss). For other vLLM-served models (Qwen3, Gemma family, …) the field is a silent no-op. On `provider: vllm` it maps as the bullet above describes; otherwise reach the chat template's thinking switch directly via [`extra_body`](#raw-provider-pass-through).
 
 ### Raw Provider Pass-through
 
 The `extra_body` setting takes a dict that haiku.rag forwards verbatim to the underlying model SDK as `ModelSettings.extra_body`. Use it to reach provider-specific keys that haiku.rag does not model with a dedicated field.
 
-**Example: disable Qwen3 thinking on vLLM:**
+**Example: vLLM sampling parameters:**
 
 ```yaml
 qa:
   model:
-    provider: openai
-    name: qwen3.6-35b
-    base_url: http://localhost:11430/v1
+    provider: vllm
+    name: Inferact/Qwen3.8-27B-NVFP4
+    base_url: http://localhost:11439
     extra_body:
-      chat_template_kwargs:
-        enable_thinking: false
+      top_p: 0.95
+      top_k: 20
+      min_p: 0
 ```
 
-vLLM serves Qwen3 chat templates that read their thinking switch from `chat_template_kwargs.enable_thinking`. The high-level `enable_thinking` setting sends nothing at all on the openai provider for a vLLM-served model: it becomes `reasoning_effort` only for a model whose pydantic-ai profile advertises reasoning support, which these names do not, so no such field reaches the request. `extra_body` reaches the chat template directly and disables thinking. With it off, Qwen3 returns the answer in `content` immediately instead of emitting a hidden reasoning trace first.
+These keys land as top-level request fields. Of the three, ollama honors only `top_p`.
 
-**Example: enable Gemma-family thinking on vLLM:**
-
-```yaml
-qa:
-  model:
-    provider: openai
-    name: nvidia/Gemma-4-26B-A4B-NVFP4
-    base_url: http://localhost:11432/v1
-    extra_body:
-      chat_template_kwargs:
-        enable_thinking: true
-```
-
-Same mechanism, opposite direction. Without `extra_body` the Gemma-4 chat template defaults to non-thinking and dumps a verbose answer straight into `content`. With it on, vLLM (started with `--reasoning-parser`) populates the parsed `reasoning` field and leaves `content` as the concise final answer.
+Reasoning knobs go the same way, and their accepted values differ per model: see [vLLM](#vllm), where `reasoning_effort` overrides the level `enable_thinking` derives, and a template carrying a switch of its own takes `chat_template_kwargs`.
 
 **Provider support:** honored by openai, ollama, anthropic, groq and vllm via pydantic-ai's `ModelSettings.extra_body`. Silently ignored by google and bedrock.
 
@@ -255,7 +243,7 @@ embeddings:
     base_url: http://localhost:1234/v1
 ```
 
-**Note:** The `base_url` must include the `/v1` path for OpenAI-compatible endpoints. This path is text-only. For a vision-language model served by vLLM, use `provider: vllm` with `multimodal: true` (below), not `provider: openai`.
+**Note:** On `provider: openai` the `base_url` must include the `/v1` path. This path is text-only. For a vision-language model served by vLLM, use `provider: vllm` with `multimodal: true` (below), not `provider: openai`.
 
 ### Multimodal embedders
 
@@ -364,7 +352,7 @@ export ANTHROPIC_API_KEY=your-api-key
 
 ### vLLM
 
-vLLM has its own provider. `base_url` is accepted with or without the `/v1` path:
+`provider: vllm` is the spelling for a vLLM-served chat model, and `provider: openai` with a `base_url` also works. `base_url` is accepted with or without the `/v1` path:
 
 ```yaml
 qa:
@@ -409,6 +397,11 @@ qa:
       chat_template_kwargs:
         reasoning_strength: high
 ```
+
+`chat_template_kwargs` does not suppress a derived `reasoning_effort`. On a model
+whose profile advertises thinking, setting `enable_thinking` as well sends both
+switches, which can point in opposite directions. Leave `enable_thinking` unset,
+or set `extra_body.reasoning_effort`, to send one.
 
 `provider: vllm` under `embeddings.model` and `reranking.model` is a different
 implementation: haiku.rag's own client for vLLM's native multimodal endpoints.
