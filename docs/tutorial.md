@@ -15,7 +15,7 @@ ollama pull qwen3-embedding:4b
 ollama pull qwen3.8
 ```
 
-!!! note "Prefer OpenAI?"
+!!! note "Using OpenAI instead"
     Drop this into a `haiku.rag.yaml` next to where you'll run the CLI:
 
     ```yaml

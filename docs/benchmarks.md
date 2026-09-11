@@ -15,7 +15,7 @@ No benchmark database carries a vector index, so every number below reflects exa
 Two approaches are benchmarked separately:
 
 - **Multimodal embedder** (`Qwen/Qwen3-VL-Embedding-8B`, served via vLLM): picture bytes and text live in a shared vector space, no VLM is run at ingest.
-- **Text embedder + VLM picture descriptions** (`qwen3-embedding:4b` + `ollama/ministral-3`): pictures are described at ingest and the descriptions are woven into chunk text. Retrieval runs over text only. See [Picture handling configuration](configuration/processing.md#picture-handling).
+- **Text embedder + VLM picture descriptions** (`qwen3-embedding:4b` + `ollama/ministral-3`): pictures are described at ingest and the descriptions are included in chunk text. Retrieval runs over text only. See [Picture handling configuration](configuration/processing.md#picture-handling).
 
 #### Multimodal embedder
 
@@ -91,7 +91,7 @@ Two approaches are benchmarked separately:
 | `qwen3-embedding:4b` | `Qwen3-Reranker-4B` |  7405 | 0.8202 |
 | `qwen3-embedding:4b` | none                |  7405 | 0.6995 |
 
-The reranker's contribution is larger here than on the single-doc datasets: hybrid search usually surfaces the first-hop document at rank 1, while the second-hop document often needs the reranker to climb into the result window.
+The reranker's contribution is larger here than on the single-doc datasets: hybrid search usually returns the first-hop document at rank 1, while the second-hop document often needs the reranker to reach the result window.
 
 ##### QA accuracy + citation retrieval
 
@@ -100,7 +100,7 @@ The reranker's contribution is larger here than on the single-doc datasets: hybr
 | `vllm:Gemma-4-26B-A4B-NVFP4` | `Qwen3-Reranker-4B` | 0.85        | 0.80             |
 | `vllm:Gemma-4-26B-A4B-NVFP4` | none                | 0.83        | 0.75             |
 
-*Measured on haiku.rag v0.66.0 with `qwen3-embedding:4b` (vLLM, dim 2560), judged by `vllm:Qwen3.6-35B-A3B-NVFP4`, 7,405 cases. The reranker lifts QA accuracy +2.7pts and `cited_map` +4.6pts. Without a reranker, `cited_map` (0.75) still exceeds the no-reranker retrieval MAP (0.70): the skill reformulates queries across search calls, partially recovering second-hop documents that a single query misses.*
+*Measured on haiku.rag v0.66.0 with `qwen3-embedding:4b` (vLLM, dim 2560), judged by `vllm:Qwen3.6-35B-A3B-NVFP4`, 7,405 cases. The reranker lifts QA accuracy +2.7pts and `cited_map` +4.6pts. Without a reranker, `cited_map` (0.75) still exceeds the no-reranker retrieval MAP (0.70): the capability reformulates queries across search calls, partially recovering second-hop documents that a single query misses.*
 
 ### FRAMES
 
@@ -112,7 +112,7 @@ The reranker's contribution is larger here than on the single-doc datasets: hybr
 |----------------------|---------------------|------:|-------:|
 | `qwen3-embedding:4b` | `Qwen3-Reranker-4B` |   822 | 0.5631 |
 
-*Single-query retrieval is capped by FRAMES' indirection: in the zero-MAP queries the gold article's subject is never named in the question ("the year the Titanic sank" → `1912_Summer_Olympics`). The agentic targets recover these through iterative search, passing 55% of the very cases single-shot retrieval scores zero on.*
+*Single-query retrieval is capped by FRAMES' indirection: in the zero-MAP queries the gold article's subject is never named in the question ("the year the Titanic sank" → `1912_Summer_Olympics`). The agentic targets recover these through iterative search, passing 55% of the cases single-shot retrieval scores zero on.*
 
 ##### QA accuracy + citation retrieval
 
@@ -183,7 +183,7 @@ Before that, we picked `qwen3.6` over the previously-pinned `gpt-oss` after a 4-
 
 Alongside QA accuracy, a second metric scores the URIs the capability registered via the `cite` tool against each dataset's gold `expected_uris`, using the same MAP math as raw retrieval. The score key is `cited_map`. Console output also includes the cite rate (% of cases with at least one citation) and the mean number of citations per case.
 
-This is computed alongside QA accuracy from the same capability run, no extra invocations. The signal complements raw retrieval: where raw retrieval measures whether the retriever surfaced the gold document at any rank, citation retrieval measures whether the capability grounded its answer on it.
+This is computed alongside QA accuracy from the same capability run, no extra invocations. The signal complements raw retrieval: where raw retrieval measures whether the retriever returned the gold document at any rank, citation retrieval measures whether the capability grounded its answer on it.
 
 ## Running Evaluations
 
@@ -194,7 +194,7 @@ evaluations run hotpotqa
 evaluations run orb_text
 ```
 
-The evaluation flow is orchestrated with [`pydantic-evals`](https://github.com/pydantic/pydantic-ai/tree/main/libs/pydantic-evals), which we leverage for dataset management, scoring, and report generation.
+The evaluation flow is orchestrated with [`pydantic-evals`](https://github.com/pydantic/pydantic-ai/tree/main/libs/pydantic-evals), which we use for dataset management, scoring, and report generation.
 
 ### Pre-built Databases
 

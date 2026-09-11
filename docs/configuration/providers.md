@@ -106,7 +106,7 @@ qa:
       min_p: 0
 ```
 
-These keys land as top-level request fields. Of the three, ollama honors only `top_p`.
+These keys are sent as top-level request fields. Of the three, ollama honors only `top_p`.
 
 `extra_body.reasoning_effort` reaches the request the same way and overrides the value `thinking` sends. A template carrying a switch of its own takes `chat_template_kwargs`, see [vLLM](#vllm).
 
@@ -497,7 +497,7 @@ export ZEROENTROPY_API_KEY=your-api-key
 
 ### vLLM
 
-For high-performance local reranking using dedicated reranking models:
+For local reranking with a dedicated reranking model:
 
 ```yaml
 reranking:
@@ -526,7 +526,7 @@ Picture chunks are sent as image documents (base64 data URIs) alongside plain te
 
 ### Jina AI
 
-Jina provides high-quality reranking with two deployment options: API mode and local inference.
+Jina reranking has two deployment options: API mode and local inference.
 
 #### API Mode
 

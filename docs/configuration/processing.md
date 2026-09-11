@@ -118,9 +118,9 @@ processes one task at a time (configurable via `DOCLING_SERVE_ENG_LOC_NUM_WORKER
 if you've set it). A reasonable starting point for `worker_count` is **1–2 ×
 the number of `docling_serve.base_url` entries**: enough to overlap fetch /
 embed / store of one job with the convert of another, without piling jobs
-into docling-serve's internal queue beyond what its workers can chew through.
+into docling-serve's internal queue beyond what its workers can process.
 The ingester logs the worker / source / docling-serve counts on startup so
-you can eyeball the ratio.
+you can check the ratio.
 
 Conversion options work identically for both local and remote processing.
 
@@ -176,8 +176,8 @@ continuously:
   restart of one doesn't stop ingest.
 - *docling-local mode*: the leak is inside the `haiku-ingester` process
   itself. Apply the same `mem_limit` + restart policy to the ingester
-  container. Restarts are graceful — in-flight jobs land in the queue's
-  reaper window and resume on next start.
+  container. Restarts are graceful — in-flight jobs are reclaimed by the
+  queue's reaper and resume on next start.
 
 **Note:** When using `chunker: docling-serve`, OCR options (`do_ocr`, `force_ocr`, `ocr_engine`, `ocr_lang`) from `conversion_options` are passed to the chunking API. This is useful when running docling-serve in a read-only container where OCR model downloads fail. Set `do_ocr: false` to disable OCR entirely.
 
@@ -282,7 +282,7 @@ Per-image failures (404, timeout, oversized, unreadable) leave that picture as a
 
 Not every picture becomes a picture chunk. Identical picture bytes within a document produce a single chunk, so a watermark or logo repeated on every page embeds once. Pictures smaller than `processing.min_picture_size` pixels on their smaller side (default 64, `0` disables) are skipped entirely. Filtered pictures keep their bytes in `document_items`, so context expansion and vision QA still see them.
 
-Use `none` when you don't need picture content (e.g. very large reference manuals where RAM is tight). Use `description` to weave VLM-generated text into chunk content and keep bytes for later. Use `image` (default) to keep bytes without paying the VLM cost. The prompt is configurable under `prompts.picture_description`. See [Prompts](prompts.md).
+Use `none` when you don't need picture content (e.g. very large reference manuals where RAM is tight). Use `description` to include VLM-generated text in chunk content and keep bytes for later. Use `image` (default) to keep bytes without paying the VLM cost. The prompt is configurable under `prompts.picture_description`. See [Prompts](prompts.md).
 
 ```yaml
 processing:

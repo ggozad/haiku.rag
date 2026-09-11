@@ -57,7 +57,7 @@ print(result.output)
     state, so the host must expose a `state` dict on its agent dependencies and
     hand the same dict back on every run of a conversation, alongside the message
     history. With only the message history, every run starts from an empty record:
-    compaction refuses rather than replace evidence it cannot retain, and the
+    compaction refuses rather than replacing evidence it cannot retain, and the
     citation policy cannot enforce a follow-up about evidence cited earlier.
 
 Swap `rag` for `analysis` for an analysis agent. Both optional capabilities work the
@@ -67,9 +67,9 @@ same way with either one, and neither exposes tools or takes configuration.
 
     `RAGCapability` and `AnalysisCapability` overlap. Both search the same corpus and
     both register citations, so an agent holding both must choose between two
-    near-identical search tools, and its citations land in whichever capability it
-    happened to call. Each also carries its own request limit and its own search
-    budget, so registering both doubles what a question may spend.
+    near-identical search tools, and its citations are recorded by whichever
+    capability it happened to call. Each also carries its own request limit and its
+    own search budget, so registering both doubles what a question may spend.
 
     Choose by what the questions need. `RAGCapability` answers questions from retrieved
     passages. `AnalysisCapability` adds a Python sandbox and a document filesystem, for
