@@ -21,6 +21,7 @@ from haiku.rag.context import build_toc
 from haiku.rag.sandbox.dependencies import AnalysisContext
 from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX, DocumentItem
+from haiku.rag.telemetry import logfire
 from haiku.rag.utils import gather_all
 
 if TYPE_CHECKING:
@@ -40,6 +41,7 @@ class SandboxResult:
     stdout: str
     stderr: str
     success: bool
+    search_calls: int = 0
 
 
 class CappedOutput:
@@ -115,6 +117,7 @@ class Sandbox:
     _owners: dict[str, "HaikuRAG"]
     _lock: "asyncio.Lock | None"
     _search_results: "list[SearchResult]"
+    _search_calls: int
     _executions: int
     _doc_items: dict[str, list["DocumentItem"]]
     _doc_chunk_index: dict[str, dict[str, list[str]]]
@@ -192,6 +195,7 @@ class Sandbox:
         self._owners = {}
         self._lock = lock
         self._search_results = []
+        self._search_calls = 0
         self._doc_items = {}
         self._doc_chunk_index = {}
         self._items_jsonl_cache = {}
@@ -380,20 +384,24 @@ class Sandbox:
         context = self._context
 
         async def search(query: str, limit: int = 10) -> list[dict[str, Any]]:
-            self._check_deadline()
+            # Counted and traced before the deadline check, so a rejected call
+            # is still a call the program made.
+            self._search_calls += 1
             # Picture bytes are deliberately not attached to in-code search
             # results: the Monty interpreter has no PIL/base64/hashlib, so the
             # agent's Python can't do anything with them. The driving model
             # gets figures through the top-level `search` tool when the
             # question is visual; in-code search is for structural work.
-            async with self._connection() as rag:
-                results = await rag.search(
-                    query,
-                    limit=limit,
-                    filter=context.filter,
-                    sources=context.sources,
-                )
-                expanded = await rag.expand_context(results)
+            with logfire.span("sandbox.search", query=query, limit=limit):
+                self._check_deadline()
+                async with self._connection() as rag:
+                    results = await rag.search(
+                        query,
+                        limit=limit,
+                        filter=context.filter,
+                        sources=context.sources,
+                    )
+                    expanded = await rag.expand_context(results)
             self._search_results.extend(expanded)
             out: list[dict[str, Any]] = []
             for r in expanded:
@@ -690,6 +698,7 @@ class Sandbox:
         # Monty's synchronous file callbacks bridge DB reads back to this loop.
         self._loop = asyncio.get_running_loop()
         self._deadline = self._loop.time() + self._config.sandbox.code_timeout
+        search_calls_before = self._search_calls
         session, vfs = await self._ensure_initialized()
         external_fns = self._build_external_functions()
 
@@ -712,8 +721,18 @@ class Sandbox:
                     f"{stderr}\n\nThe interpreter restarted. Variables from "
                     "earlier calls are gone."
                 )
-            return SandboxResult(stdout=out.text(), stderr=stderr, success=False)
+            return SandboxResult(
+                stdout=out.text(),
+                stderr=stderr,
+                success=False,
+                search_calls=self._search_calls - search_calls_before,
+            )
 
         if output is not None:
             out.write("stdout", str(output))
-        return SandboxResult(stdout=out.text(), stderr="", success=True)
+        return SandboxResult(
+            stdout=out.text(),
+            stderr="",
+            success=True,
+            search_calls=self._search_calls - search_calls_before,
+        )

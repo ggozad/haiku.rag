@@ -5,6 +5,9 @@
 ### Added
 
 - `.eml` and `.msg` files convert through docling's email backend.
+- Each in-code `search()` emits a `sandbox.search` span; `CodeExecutionEntry.search_calls`
+  records how many an execution made, and `evaluations run` records
+  `n_sandbox_search_calls` per case and `turn_n_sandbox_search_calls` per conversation.
 
 ### Changed
 

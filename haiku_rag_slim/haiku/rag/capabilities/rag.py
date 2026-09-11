@@ -684,6 +684,7 @@ class RAGCapability(AbstractCapability[Any]):
                 stdout=result.stdout,
                 stderr=result.stderr,
                 success=result.success,
+                search_calls=result.search_calls,
             )
         )
         if not result.success:
