@@ -1,6 +1,6 @@
 {
   "name": "haiku-rag",
-  "version": "0.84.0",
+  "version": "0.85.0",
   "description": "Search, read and analyze your haiku.rag knowledge base from Claude Code.",
   "author": {
     "name": "Yiorgis Gozadinos",

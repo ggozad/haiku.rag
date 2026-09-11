@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.85.0] - 2026-09-11
+
 ### Changed
 
 - `ModelConfig.enable_thinking` renamed to `thinking`, typed `bool | minimal | low |
@@ -2540,7 +2542,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.84.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.85.0...HEAD
+[0.85.0]: https://github.com/ggozad/haiku.rag/compare/0.84.0...0.85.0
 [0.84.0]: https://github.com/ggozad/haiku.rag/compare/0.83.0...0.84.0
 [0.83.0]: https://github.com/ggozad/haiku.rag/compare/0.82.1...0.83.0
 [0.82.1]: https://github.com/ggozad/haiku.rag/compare/0.82.0...0.82.1
