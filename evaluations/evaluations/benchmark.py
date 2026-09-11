@@ -193,10 +193,7 @@ def run(
     capability_model: str | None = typer.Option(
         None,
         "--capability-model",
-        help=(
-            "Capability model as 'provider:name'. Defaults to qa.model (or "
-            "analysis.model when --target is analysis-capability) from the config."
-        ),
+        help="Capability model as 'provider:name'. Defaults to qa.model from the config.",
     ),
     document_filter: str | None = typer.Option(
         None,

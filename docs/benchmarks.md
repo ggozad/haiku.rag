@@ -248,7 +248,7 @@ evaluations run hotpotqa --config /path/to/haiku.rag.yaml --db /path/to/custom.l
 - `--limit N` - Limit number of test cases
 - `--name NAME` - Override the evaluation name
 - `--target {rag-capability,analysis-capability}` - Choose which [capability](capabilities/index.md) to benchmark end-to-end (default: `rag-capability`). The target names remain stable dataset identifiers.
-- `--capability-model PROVIDER:NAME` - Override the capability model independently from the judge (default: `config.qa.model`, or `config.analysis.model` when set for `--target analysis-capability`).
+- `--capability-model PROVIDER:NAME` - Override the capability model independently from the judge (default: `config.qa.model`).
 - `--filter CLAUSE` / `-f CLAUSE` - Restrict every benchmark search to a subset of the database (see [Restricting the corpus](#restricting-the-corpus)).
 
 If no config file is specified, the script searches standard locations: `./haiku.rag.yaml`, user config directory, then falls back to defaults.

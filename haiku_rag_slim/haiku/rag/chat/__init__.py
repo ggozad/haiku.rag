@@ -40,7 +40,6 @@ def run_chat(
     if model:
         model_config = parse_model_option(model)
         config.qa.model = model_config
-        config.analysis.model = model_config
 
     # The app opens the scope and lends that client to the capabilities, which
     # read what `--db PATH` or `--db-name NAME` selected.
@@ -48,14 +47,9 @@ def run_chat(
     capability_list = []
     defer_loading = len(enabled) > 1
 
-    # One agent drives every attached capability, so a capability's
-    # image-attachment gate must track that single model: analysis.model only
-    # when analysis runs alone, otherwise qa.model. Passing it to every
-    # capability keeps their vision flag aligned with the model actually running.
-    if "rag" not in enabled and "analysis" in enabled:
-        driving_model = config.analysis.model or config.qa.model
-    else:
-        driving_model = config.qa.model
+    # One agent drives every attached capability, so each capability's
+    # image-attachment gate tracks that one model.
+    driving_model = config.qa.model
 
     if "rag" in enabled:
         from haiku.rag.capabilities.rag import create_capability

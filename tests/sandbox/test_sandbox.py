@@ -359,7 +359,7 @@ class TestSandboxOutputTruncation:
         """Test stdout is truncated when a runtime error occurs after large output."""
         async with HaikuRAG(temp_db_path, create=True):
             config = AppConfig()
-            config.analysis.max_output_chars = 20
+            config.sandbox.max_output_chars = 20
             context = AnalysisContext()
             sb = Sandbox(db_path=temp_db_path, config=config, context=context)
             result = await sb.execute("print('a' * 100)\nx = 1/0")
@@ -373,7 +373,7 @@ class TestSandboxOutputTruncation:
         """Test output is truncated on successful execution with large output."""
         async with HaikuRAG(temp_db_path, create=True):
             config = AppConfig()
-            config.analysis.max_output_chars = 20
+            config.sandbox.max_output_chars = 20
             context = AnalysisContext()
             sb = Sandbox(db_path=temp_db_path, config=config, context=context)
             result = await sb.execute("print('b' * 100)")
@@ -388,7 +388,7 @@ class TestSandboxOutputTruncation:
         """No single print exceeds the cap, their sum does."""
         async with HaikuRAG(temp_db_path, create=True):
             config = AppConfig()
-            config.analysis.max_output_chars = 20
+            config.sandbox.max_output_chars = 20
             context = AnalysisContext()
             sb = Sandbox(db_path=temp_db_path, config=config, context=context)
             result = await sb.execute("for i in range(100):\n    print('c' * 5)")
@@ -1013,7 +1013,7 @@ class TestSandboxReadDeadline:
         from docling_core.types.doc.labels import DocItemLabel
 
         config = AppConfig()
-        config.analysis.code_timeout = 1.0
+        config.sandbox.code_timeout = 1.0
         docling = DoclingDocument(name="d")
         docling.add_text(label=DocItemLabel.TEXT, text="Foxes and dogs.")
         async with HaikuRAG(temp_db_path, create=True) as client:
@@ -1080,8 +1080,8 @@ class TestSandboxReadDeadline:
         """Monty spends its duration budget across the session's whole life, so a
         per-call value would let the first call starve the rest."""
         config = AppConfig()
-        config.analysis.code_timeout = 5.0
-        config.analysis.max_executions = 3
+        config.sandbox.code_timeout = 5.0
+        config.qa.max_executions = 3
 
         sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
 
@@ -1221,7 +1221,7 @@ class TestSandboxRequestTimeout:
     ):
         """Code that never reads escapes the read deadline. The watchdog kills it."""
         config = AppConfig()
-        config.analysis.code_timeout = 1.0
+        config.sandbox.code_timeout = 1.0
         async with HaikuRAG(temp_db_path, create=True):
             pass
 

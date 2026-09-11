@@ -198,20 +198,14 @@ class QAConfig(ConfigModel):
         )
     )
     max_searches: int = Field(default=5, ge=0)
+    max_executions: int = Field(default=15, ge=0)
 
 
-class AnalysisConfig(ConfigModel):
-    """Driving model and sandbox limits for the analysis capability.
+class SandboxConfig(ConfigModel):
+    """Limits of one ``execute_code`` call."""
 
-    ``model`` defaults to ``None``, meaning "no override — use ``qa.model``."
-    Consumers resolve via ``config.analysis.model or config.qa.model``. Set
-    explicitly when the analysis workload wants a different model from QA
-    (e.g. a stronger model for computational tasks)."""
-
-    model: ModelConfig | None = None
     code_timeout: float = Field(default=60.0, gt=0)
     max_output_chars: int = Field(default=50_000, gt=0)
-    max_executions: int = Field(default=15, ge=0)
 
 
 class DuplicateDetectionConfig(ConfigModel):
@@ -708,7 +702,7 @@ class AppConfig(ConfigModel):
     embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
     reranking: RerankingConfig = Field(default_factory=RerankingConfig)
     qa: QAConfig = Field(default_factory=QAConfig)
-    analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
+    sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
     doctor: DoctorConfig = Field(default_factory=DoctorConfig)

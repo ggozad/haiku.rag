@@ -6,6 +6,16 @@
 
 - `.eml` and `.msg` files convert through docling's email backend.
 
+### Changed
+
+- `analysis.max_executions` moved to `qa.max_executions`; `analysis.code_timeout`
+  and `analysis.max_output_chars` moved to `sandbox.code_timeout` and
+  `sandbox.max_output_chars`. The `analysis` config block is gone.
+
+### Removed
+
+- `analysis.model`. `qa.model` drives the analysis capability.
+
 ### Fixed
 
 - FRAMES caches the images its articles reference and inlines them as `data:`

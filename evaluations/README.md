@@ -53,8 +53,7 @@ evaluations run hotpotqa --target analysis-capability --capability-model ollama:
 ```
 
 `--capability-model "provider:name"` overrides the capability model independently from
-the judge (defaults to `qa.model`, or `analysis.model` when set for the
-analysis-capability target). A citation retrieval metric (`cited_map`) is computed
+the judge (defaults to `qa.model`). A citation retrieval metric (`cited_map`) is computed
 alongside QA accuracy from the URIs the capability registered via the `cite` tool.
 
 ### Debugging runs in Logfire

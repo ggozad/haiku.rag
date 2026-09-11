@@ -71,7 +71,7 @@ def test_reference_configs_send_no_thinking_settings(path: Path) -> None:
     from haiku.rag.utils import get_model
 
     config = _load(path)
-    models = [config.qa.model, config.evaluations.judge, config.analysis.model]
+    models = [config.qa.model, config.evaluations.judge]
     for model_config in filter(None, models):
         settings = get_model(model_config, config).settings or {}
         assert "thinking" not in settings

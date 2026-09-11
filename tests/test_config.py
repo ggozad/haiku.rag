@@ -286,81 +286,44 @@ processing:
     assert cfg.processing.conversion_options.fetch_remote_images is False
 
 
-def test_analysis_model_defaults_to_none():
-    """``AnalysisConfig.model`` is ``None`` by default; consumers resolve via
-    ``config.analysis.model or config.qa.model``. Keeps the field semantics
-    simple: ``None`` means "no override, inherit from QA"."""
+def test_qa_max_executions_default():
+    assert AppConfig().qa.max_executions == 15
+
+
+def test_sandbox_defaults():
     cfg = AppConfig()
-    assert cfg.analysis.model is None
+    assert cfg.sandbox.code_timeout == 60.0
+    assert cfg.sandbox.max_output_chars == 50_000
 
 
-def test_analysis_model_unset_resolves_to_qa(tmp_path):
-    """When YAML configures ``qa.model`` and omits ``analysis.model``, the
-    resolve idiom yields qa.model."""
+def test_sandbox_yaml_overrides_one_field(tmp_path):
     cfg = AppConfig.model_validate(
         load_yaml_config(
             _write(
                 tmp_path,
                 """
-qa:
-  model:
-    provider: openai
-    name: my/qwen
-    base_url: http://example/v1
-    vision: true
-""",
-            )
-        )
-    )
-    assert cfg.qa.model.name == "my/qwen"
-    assert cfg.analysis.model is None
-    resolved = cfg.analysis.model or cfg.qa.model
-    assert resolved.name == "my/qwen"
-    assert resolved.vision is True
-
-
-def test_analysis_other_fields_keep_defaults_with_unset_model(tmp_path):
-    """``analysis`` may contain non-model overrides (e.g. ``code_timeout``)
-    without a ``model`` key; model stays None, other fields take user values."""
-    cfg = AppConfig.model_validate(
-        load_yaml_config(
-            _write(
-                tmp_path,
-                """
-analysis:
+sandbox:
   code_timeout: 120
 """,
             )
         )
     )
-    assert cfg.analysis.model is None
-    assert cfg.analysis.code_timeout == 120.0
+    assert cfg.sandbox.code_timeout == 120.0
+    assert cfg.sandbox.max_output_chars == 50_000
 
 
-def test_analysis_model_explicit_overrides_qa(tmp_path):
-    """An explicit ``analysis.model`` in YAML wins over the qa fallback."""
-    cfg = AppConfig.model_validate(
-        load_yaml_config(
-            _write(
-                tmp_path,
-                """
-qa:
-  model:
-    name: qa-model
-    provider: openai
+def test_analysis_block_is_rejected(tmp_path):
+    data = load_yaml_config(
+        _write(
+            tmp_path,
+            """
 analysis:
-  model:
-    name: analysis-model
-    provider: ollama
+  code_timeout: 120
 """,
-            )
         )
     )
-    assert cfg.qa.model.name == "qa-model"
-    assert cfg.analysis.model is not None
-    assert cfg.analysis.model.name == "analysis-model"
-    resolved = cfg.analysis.model or cfg.qa.model
-    assert resolved.name == "analysis-model"
+    with pytest.raises(ValidationError, match="analysis"):
+        AppConfig.model_validate(data)
 
 
 def test_redact_secrets_masks_nested_secret_keys():
@@ -687,7 +650,9 @@ def test_finite_switches_reject_unknown_values(data):
         {"embeddings": {"model": {"vector_dim": 0}}},
         {"processing": {"chunk_size": 0}},
         {"storage": {"vacuum_retention_seconds": -1}},
-        {"analysis": {"code_timeout": 0}},
+        {"sandbox": {"code_timeout": 0}},
+        {"sandbox": {"max_output_chars": 0}},
+        {"qa": {"max_executions": -1}},
         {"doctor": {"duplicates": {"similarity_threshold": 1.5}}},
         {"ingester": {"workers": {"worker_count": -1}}},
         {"ingester": {"api": {"port": 70000}}},

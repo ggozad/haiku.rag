@@ -31,33 +31,28 @@ qa:
     temperature: 0.3          # Default: 0.3
     vision: true              # Set false for text-only models
   max_searches: 5       # Maximum search units per question
+  max_executions: 15    # Maximum execute_code calls per question
 ```
 
 - **model**: LLM configuration (see [Providers](providers.md#model-settings))
 - **model.vision**: Set to `true` for vision-capable models (`qwen2.5vl`, `qwen3.6`, `gpt-4o`, `claude-sonnet`, …). The capability's `search` tool only attaches picture bytes (`BinaryContent`) to its `ToolReturn` when this is `true`, otherwise picture bytes are withheld. See [Pictures × embedder × QA model](processing.md#pictures-embedder-qa-model-how-the-pieces-compose) for the full matrix.
 - **max_searches**: Maximum number of search units a capability can spend per question (default: 5). Up to three searches emitted in the same model response share one unit, so a model that rephrases its query in one response spends one unit. A search in a later response starts a new unit, as does each further group of three within one response. Shared by the RAG and analysis capabilities. Searches in one response also deduplicate their returns: evidence a sibling search already showed collapses to a reference line, and each picture attaches once per response.
+- **max_executions**: Maximum `execute_code` calls per question before the capability is told to answer from what it has (default: 15)
 
 !!! note "Thinking on self-hosted models"
     `thinking` is sent as `reasoning_effort` to every self-hosted endpoint, and the accepted levels are the model's own, see [Thinking Control](providers.md#thinking-control). A template with a switch of its own, Muse Glimmer's `reasoning_strength`, takes [`extra_body`](providers.md#raw-provider-pass-through).
 
-## Analysis Configuration
+## Sandbox Configuration
 
-Configure the analysis capability:
+Limits of one `execute_code` call, in the analysis capability and in the MCP `execute_code` tool:
 
 ```yaml
-analysis:
-  model:
-    provider: anthropic
-    name: claude-sonnet-4-20250514
-    temperature: 0.0        # Default: 0.0 (deterministic for code generation)
+sandbox:
   code_timeout: 60.0      # Per call: compute stops, no read or search starts past it
   max_output_chars: 50000 # Truncate output after this many chars
-  max_executions: 15      # Max execute_code calls per question
 ```
 
-- **model**: LLM configuration (see [Providers](providers.md#model-settings)). When unset, falls back to `qa.model`.
-- **code_timeout**: Seconds a single `execute_code` call has (default: 60). Past it the sandbox starts no further host call, a document read or an in-code `search()` / `list_documents()`; one already running finishes. Code that computes without host calls is killed by the worker watchdog at the same limit. `code_timeout * max_executions` is the cumulative ceiling across all calls in one question.
+- **code_timeout**: Seconds a single `execute_code` call has (default: 60). Past it the sandbox starts no further host call, a document read or an in-code `search()` / `list_documents()`; one already running finishes. Code that computes without host calls is killed by the worker watchdog at the same limit. `code_timeout * qa.max_executions` is the cumulative ceiling across all calls in one question.
 - **max_output_chars**: Truncate code output after this many characters (default: 50000)
-- **max_executions**: Maximum `execute_code` calls per question before the capability is told to answer from what it has (default: 15)
 
 See [Analysis capability](../capabilities/analysis.md) for usage details.

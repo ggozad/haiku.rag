@@ -94,7 +94,7 @@ def _active_models(config: AppConfig) -> list[ModelConfig | EmbeddingModelConfig
     doctor checks exactly the providers the next ingest will use.
     """
     models: list[ModelConfig | EmbeddingModelConfig] = [config.embeddings.model]
-    for model in (config.reranking.model, config.qa.model, config.analysis.model):
+    for model in (config.reranking.model, config.qa.model):
         if model is not None:
             models.append(model)
 
