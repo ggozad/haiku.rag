@@ -121,6 +121,7 @@ def extract_item_text(
     if isinstance(item, TableItem):
         return _serialize(item)
 
+    # docling-core #769: an owner's text can live in an InlineGroup child.
     for child_ref in item.children:
         child = child_ref.resolve(docling_doc)
         if isinstance(child, InlineGroup):

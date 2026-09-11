@@ -63,6 +63,7 @@ def flatten_inline_groups(doc: "DoclingDocument") -> bool:
     record, or that another item refers into, is left as it is. Returns
     whether the document changed.
     """
+    # docling-core #769 and #770: the chunkers do not read text from an InlineGroup.
     from docling_core.transforms.serializer.markdown import (
         MarkdownDocSerializer,
         MarkdownParams,
@@ -92,7 +93,7 @@ def flatten_inline_groups(doc: "DoclingDocument") -> bool:
         ),
     )
 
-    # A ref into a deleted run is renumbered onto another item.
+    # docling-core #768: a ref into a deleted run is renumbered onto another item.
     referenced: set[str] = set()
     for item, _ in doc.iterate_items(
         with_groups=True,
