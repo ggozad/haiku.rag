@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `ModelConfig.enable_thinking` renamed to `thinking`, typed `bool | minimal | low |
+  medium | high | xhigh | None` (pydantic-ai's `ThinkingLevel`). On `ollama`,
+  `vllm`, `openai` with a `base_url` and the picture-description VLM it is sent as
+  `reasoning_effort` under every model name: `false` sends `none`, `true` sends
+  `medium`, a level is sent as written. `openai` without a `base_url`,
+  `anthropic`, `google`, `groq` and `bedrock` pass it through as pydantic-ai's
+  unified `thinking` setting. `gpt-oss` with `false` sends `none`, was `low`.
+- `evaluations run` records `capability_thinking`, `judge_thinking` and
+  `capability_model_source` in experiment metadata, and no longer records
+  `qa_provider`, `qa_model`, `qa_temperature`, `qa_max_tokens`,
+  `qa_enable_thinking` or `qa_extra_body`.
+
+### Deprecated
+
+- `enable_thinking` still loads as `thinking` with a `FutureWarning`; removed in
+  0.90.0. Setting both keys is an error.
+
 ### Fixed
 
 - Conversion flattens each inline group of text runs into the item that owns

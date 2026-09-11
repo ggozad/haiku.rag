@@ -82,23 +82,24 @@ class TestVlmApiParams:
         params = vlm_api_params(ModelConfig(provider="ollama", name="qwen3.8"), 200)
         assert params == {"model": "qwen3.8", "max_completion_tokens": 200}
 
-    def test_thinking_off_sends_none(self):
+    @pytest.mark.parametrize("name", ["qwen3.8", "gpt-oss"])
+    def test_thinking_off_sends_none(self, name):
         params = vlm_api_params(
-            ModelConfig(provider="ollama", name="qwen3.8", enable_thinking=False), 200
+            ModelConfig(provider="ollama", name=name, thinking=False), 200
         )
         assert params["reasoning_effort"] == "none"
 
-    def test_thinking_off_sends_gpt_oss_floor(self):
+    def test_thinking_on_sends_medium(self):
         params = vlm_api_params(
-            ModelConfig(provider="ollama", name="gpt-oss", enable_thinking=False), 200
+            ModelConfig(provider="ollama", name="qwen3.8", thinking=True), 200
+        )
+        assert params["reasoning_effort"] == "medium"
+
+    def test_thinking_level_passes_through(self):
+        params = vlm_api_params(
+            ModelConfig(provider="ollama", name="qwen3.8", thinking="low"), 200
         )
         assert params["reasoning_effort"] == "low"
-
-    def test_thinking_on_sends_high(self):
-        params = vlm_api_params(
-            ModelConfig(provider="ollama", name="qwen3.8", enable_thinking=True), 200
-        )
-        assert params["reasoning_effort"] == "high"
 
 
 class TestVlmApiHeaders:

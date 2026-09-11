@@ -59,3 +59,20 @@ def test_judge_pinned_where_the_judge_runs(path: Path) -> None:
     assert judge.temperature == PINNED_JUDGE_SAMPLING["temperature"]
     assert judge.max_tokens == PINNED_JUDGE_SAMPLING["max_tokens"]
     assert judge.extra_body == PINNED_JUDGE_SAMPLING["extra_body"]
+
+
+@pytest.mark.parametrize("path", _config_paths(), ids=lambda p: p.stem)
+def test_reference_configs_send_no_thinking_settings(path: Path) -> None:
+    """No reference config sets `thinking`, so recorded runs carry no such setting.
+
+    Reasoning knobs in these configs travel through `extra_body`. A config that
+    opts in to `thinking` changes what the model receives and is a new arm.
+    """
+    from haiku.rag.utils import get_model
+
+    config = _load(path)
+    models = [config.qa.model, config.evaluations.judge, config.analysis.model]
+    for model_config in filter(None, models):
+        settings = get_model(model_config, config).settings or {}
+        assert "thinking" not in settings
+        assert "openai_reasoning_effort" not in settings
