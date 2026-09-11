@@ -500,3 +500,23 @@ def test_a_hand_built_citation_without_a_source_records_an_empty_string():
     result = _result_from_run("answer", state, ToolTraffic(0, 0, 0, 0))
 
     assert result.cited_sources == [""]
+
+
+def test_in_code_search_calls_are_summed_across_executions():
+    from evaluations.capability_runner import ToolTraffic, _result_from_run
+    from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
+    from haiku.rag.capabilities.rag import CodeExecutionEntry, RAGState
+
+    state = RAGState(
+        executions=[
+            CodeExecutionEntry(code="a", stdout="", search_calls=2),
+            CodeExecutionEntry(code="b", stdout="", search_calls=1),
+            CodeExecutionEntry(code="c", stdout=""),
+        ],
+        evidence=CapabilityEvidenceRecord(question=1),
+    )
+
+    result = _result_from_run("answer", state, ToolTraffic(0, 0, 0, 0))
+
+    assert result.n_executions == 3
+    assert result.n_sandbox_search_calls == 3

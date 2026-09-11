@@ -356,6 +356,7 @@ async def run_qa_benchmark(
         set_eval_attribute("n_rejected_searches", result.n_rejected_searches)
         set_eval_attribute("n_failed_tools", result.n_failed_tools)
         set_eval_attribute("n_executions", result.n_executions)
+        set_eval_attribute("n_sandbox_search_calls", result.n_sandbox_search_calls)
         set_eval_attribute("n_requests", result.n_requests)
         set_eval_attribute("citation_status", result.citation_status)
         return result.answer
@@ -487,6 +488,9 @@ async def run_live_qa_benchmark(
         )
         set_eval_attribute("turn_cited_uris", [r.cited_uris for r in results])
         set_eval_attribute("turn_n_search_calls", [r.n_search_calls for r in results])
+        set_eval_attribute(
+            "turn_n_sandbox_search_calls", [r.n_sandbox_search_calls for r in results]
+        )
         set_eval_attribute(
             "turn_n_rejected_searches", [r.n_rejected_searches for r in results]
         )

@@ -48,6 +48,7 @@ class CapabilityRunResult:
     searched_uris: list[str] = field(default_factory=list)
     n_searches: int = 0
     n_executions: int = 0
+    n_sandbox_search_calls: int = 0
     n_search_calls: int = 0
     n_rejected_searches: int = 0
     n_failed_tools: int = 0
@@ -270,10 +271,11 @@ def _result_from_run(
         searched_uris=searched_uris,
         # Distinct search keys, not searches. Every in-code `search()` is filed
         # under one "_sandbox" key, so twenty sandbox searches read as one here;
-        # `n_search_calls` is the true count of search *tool* calls, and in-code
-        # searches are not counted anywhere.
+        # `n_search_calls` counts search *tool* calls and
+        # `n_sandbox_search_calls` the in-code ones.
         n_searches=len(typed.searches),
         n_executions=len(typed.executions),
+        n_sandbox_search_calls=sum(e.search_calls for e in typed.executions),
         n_search_calls=traffic.n_search_calls,
         n_rejected_searches=traffic.n_rejected_searches,
         n_failed_tools=traffic.n_failed_tools,

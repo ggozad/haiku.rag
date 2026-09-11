@@ -595,6 +595,91 @@ async def test_records_new_sandbox_search_results(temp_db_path):
 
 
 @pytest.mark.asyncio
+async def test_an_execution_records_how_many_times_it_searched(temp_db_path):
+    capability = create_rag(db_path=temp_db_path, config=AppConfig())
+    capability.state = RAGState()
+    sandbox = AsyncMock()
+    sandbox.execute.return_value = SandboxResult(
+        stdout="done", stderr="", success=True, search_calls=2
+    )
+    sandbox._search_results = []
+    capability.sandbox = cast(Sandbox, sandbox)
+
+    await capability._execute_code("await search('a'); await search('b')")
+
+    assert capability.state.executions[-1].search_calls == 2
+
+
+class TestInCodeSearchAccounting:
+    @pytest.mark.asyncio
+    async def test_an_execution_reports_its_in_code_search_calls(self, sandbox_factory):
+        sandbox = sandbox_factory()
+        try:
+            counted = await sandbox.execute(
+                "await search('cats')\nawait search('dogs', limit=1)\nprint('ok')"
+            )
+            quiet = await sandbox.execute("print('no search')")
+        finally:
+            await sandbox.close()
+
+        assert counted.success, counted.stderr
+        assert counted.search_calls == 2
+        assert quiet.search_calls == 0
+
+    @pytest.mark.asyncio
+    async def test_each_in_code_search_opens_a_span(self, sandbox_factory, monkeypatch):
+        from contextlib import nullcontext
+
+        from haiku.rag.sandbox import sandbox as sandbox_module
+
+        spans: list[dict] = []
+
+        def _fake_span(span_name, /, **attrs):
+            spans.append({"span_name": span_name, **attrs})
+            return nullcontext()
+
+        monkeypatch.setattr(sandbox_module.logfire, "span", _fake_span)
+        sandbox = sandbox_factory()
+        try:
+            result = await sandbox.execute("await search('cats', limit=3)")
+        finally:
+            await sandbox.close()
+
+        assert result.success, result.stderr
+        assert spans == [{"span_name": "sandbox.search", "query": "cats", "limit": 3}]
+
+    @pytest.mark.asyncio
+    async def test_a_search_past_the_deadline_is_still_counted_and_traced(
+        self, sandbox_factory, monkeypatch
+    ):
+        from contextlib import nullcontext
+
+        from haiku.rag.sandbox import sandbox as sandbox_module
+
+        spans: list[str] = []
+        monkeypatch.setattr(
+            sandbox_module.logfire,
+            "span",
+            lambda span_name, /, **attrs: spans.append(span_name) or nullcontext(),
+        )
+        sandbox = sandbox_factory()
+
+        def past_deadline() -> None:
+            raise sandbox._time_limit()
+
+        monkeypatch.setattr(sandbox, "_check_deadline", past_deadline)
+        try:
+            result = await sandbox.execute("await search('cats')")
+        finally:
+            await sandbox.close()
+
+        assert result.success is False
+        assert "time limit exceeded" in result.stderr
+        assert result.search_calls == 1
+        assert spans == ["sandbox.search"]
+
+
+@pytest.mark.asyncio
 async def test_failed_tool_reaches_the_model_and_the_run_continues(temp_db_path):
     """A `ToolFailed` tool leaves a failed result in history and answers anyway."""
     config = AppConfig()

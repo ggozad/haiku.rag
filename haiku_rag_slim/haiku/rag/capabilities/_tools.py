@@ -13,6 +13,7 @@ class CodeExecutionEntry(BaseModel):
     stdout: str
     stderr: str = ""
     success: bool = True
+    search_calls: int = 0
 
 
 EvidenceKey = tuple[tuple[str | None, str | None], tuple[str, frozenset]]
