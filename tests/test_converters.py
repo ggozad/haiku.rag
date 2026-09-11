@@ -733,6 +733,47 @@ class TestDoclingLocalConverter:
         assert md_bo.fetch_images is False
         assert md_bo.enable_remote_fetch is False
 
+    def test_build_format_options_sends_a_default_user_agent(self, config):
+        """Remote image fetching carries a descriptive User-Agent by default.
+
+        Wikimedia and other CDNs answer 403 to an absent or library-default
+        agent, which docling reports only as a warning, so every picture
+        silently arrives without bytes.
+        """
+        from docling.datamodel.backend_options import (
+            HTMLBackendOptions,
+            MarkdownBackendOptions,
+        )
+        from docling.datamodel.base_models import InputFormat
+
+        opts = DoclingLocalConverter(config)._build_format_options()
+        html_bo = opts[InputFormat.HTML].backend_options
+        md_bo = opts[InputFormat.MD].backend_options
+        assert isinstance(html_bo, HTMLBackendOptions)
+        assert isinstance(md_bo, MarkdownBackendOptions)
+        agent = (html_bo.headers or {}).get("User-Agent")
+        assert agent, "remote image fetch must identify itself"
+        assert "haiku.rag" in agent
+        # docling's Markdown backend has no headers field and drops the keyword
+        # silently, so markdown remote images cannot carry an agent yet.
+        assert "headers" not in type(md_bo).model_fields
+
+    def test_build_format_options_merges_configured_fetch_headers(self, config):
+        """`fetch_headers` reaches the HTML backend, and overrides the default."""
+        from docling.datamodel.backend_options import HTMLBackendOptions
+        from docling.datamodel.base_models import InputFormat
+
+        config.processing.conversion_options.fetch_headers = {
+            "User-Agent": "mine/1.0",
+            "Referer": "https://example.com/",
+        }
+        opts = DoclingLocalConverter(config)._build_format_options()
+        html_bo = opts[InputFormat.HTML].backend_options
+        assert isinstance(html_bo, HTMLBackendOptions)
+        headers = html_bo.headers or {}
+        assert headers["User-Agent"] == "mine/1.0"
+        assert headers["Referer"] == "https://example.com/"
+
     def test_build_format_options_threads_source_uri(self, config):
         """`_build_format_options(source_uri=...)` plumbs the URI into the
         HTML and Markdown backend options so docling can resolve relative

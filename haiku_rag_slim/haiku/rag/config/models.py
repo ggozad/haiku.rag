@@ -252,6 +252,10 @@ class PictureDescriptionConfig(ConfigModel):
     max_tokens: int = Field(default=200, gt=0)
 
 
+DEFAULT_FETCH_USER_AGENT = "haiku.rag (+https://github.com/ggozad/haiku.rag)"
+"""Hosts with a user-agent policy require an agent naming a contact URL."""
+
+
 class ConversionOptions(ConfigModel):
     """Options for document conversion."""
 
@@ -284,6 +288,11 @@ class ConversionOptions(ConfigModel):
     # Fetch images referenced by URL in HTML and Markdown inputs.
     # docling-local only — docling-serve cannot fetch external images.
     fetch_remote_images: bool = True
+
+    # Hosts with a user-agent policy answer 403 to a library-default agent.
+    fetch_headers: dict[str, str] = Field(
+        default_factory=lambda: {"User-Agent": DEFAULT_FETCH_USER_AGENT}
+    )
 
     picture_description: PictureDescriptionConfig = Field(
         default_factory=PictureDescriptionConfig

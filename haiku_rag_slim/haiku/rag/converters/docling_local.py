@@ -210,7 +210,8 @@ class DoclingLocalConverter(DocumentConverter):
         Every wired FormatOption gets the same `PdfPipelineOptions` instance so
         picture-description / classification / chart settings apply uniformly
         across PDF, IMAGE, HTML, MD, DOCX, PPTX. HTML and Markdown additionally
-        receive backend options gated on `fetch_remote_images`.
+        receive backend options gated on `fetch_remote_images`. Only the HTML
+        backend takes `headers`.
 
         Args:
             source_uri: Origin URI used by the HTML and Markdown backends to
@@ -239,6 +240,7 @@ class DoclingLocalConverter(DocumentConverter):
             pipeline_options = self._build_pipeline_options()
         fetch = opts.fetch_remote_images
         source_url = AnyUrl(source_uri) if source_uri else None
+        headers = dict(opts.fetch_headers) or None
 
         return {
             InputFormat.PDF: PdfFormatOption(
@@ -252,6 +254,7 @@ class DoclingLocalConverter(DocumentConverter):
                     fetch_images=fetch,
                     enable_remote_fetch=fetch,
                     source_uri=source_url,
+                    headers=headers,
                 ),
             ),
             InputFormat.MD: MarkdownFormatOption(
