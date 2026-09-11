@@ -678,7 +678,7 @@ async def test_failed_tool_reaches_the_model_and_the_run_continues(temp_db_path)
 @pytest.mark.asyncio
 async def test_analysis_execution_limit_fails_the_tool(temp_db_path):
     config = AppConfig()
-    config.analysis.max_executions = 0
+    config.qa.max_executions = 0
     capability = create_analysis(db_path=temp_db_path, config=config)
     capability.state = AnalysisState()
 
@@ -690,7 +690,7 @@ async def test_analysis_execution_limit_fails_the_tool(temp_db_path):
 async def test_a_spent_execution_budget_is_not_evidence(temp_db_path):
     """Nothing was produced to ground an answer on, so nothing is recorded."""
     config = AppConfig()
-    config.analysis.max_executions = 0
+    config.qa.max_executions = 0
     capability = create_analysis(db_path=temp_db_path, config=config)
     capability.state = AnalysisState()
     capability.epoch = 5
@@ -828,7 +828,7 @@ async def test_spent_search_notice_points_at_code_while_it_has_budget(temp_db_pa
     assert "analysis_execute_code" in notice
 
     # Once the code budget is gone too there is nowhere left to send it.
-    capability.execute_count = config.analysis.max_executions
+    capability.execute_count = config.qa.max_executions
     notice = capability._budget_notice()
     assert notice is not None
     assert "analysis_execute_code" in notice
@@ -853,7 +853,7 @@ async def test_spent_search_notice_tells_rag_to_answer(temp_db_path):
 @pytest.mark.asyncio
 async def test_spent_execution_budget_joins_the_notice(temp_db_path):
     config = AppConfig()
-    config.analysis.max_executions = 3
+    config.qa.max_executions = 3
     capability = create_analysis(db_path=temp_db_path, config=config)
 
     assert capability._spent_tool_names() == set()

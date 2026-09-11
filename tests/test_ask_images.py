@@ -92,12 +92,9 @@ async def test_analyze_with_images_passes_binary_content(
 
 
 @pytest.mark.asyncio
-async def test_analyze_with_images_checks_analysis_model_vision(temp_db_path: Path):
-    from haiku.rag.config.models import ModelConfig
-
+async def test_analyze_with_images_checks_qa_model_vision(temp_db_path: Path):
     config = AppConfig()
-    config.qa.model.vision = True
-    config.analysis.model = ModelConfig(provider="openai", name="m", vision=False)
+    config.qa.model.vision = False
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         with pytest.raises(ValueError, match="vision"):
             await client.analyze("Does this match?", images=[make_image_bytes("PNG")])

@@ -93,14 +93,14 @@ class AnalysisCapability(RAGCapabilityBase[AnalysisState]):
 
     def _spent_tool_names(self) -> set[str]:
         spent = super()._spent_tool_names()
-        if self.execute_count >= self.config.analysis.max_executions:
+        if self.execute_count >= self.config.qa.max_executions:
             spent.add("analysis_execute_code")
         return spent
 
     async def _execute_code(self, code: str) -> str:
         assert self.state is not None
         self.execute_count += 1
-        if self.execute_count > self.config.analysis.max_executions:
+        if self.execute_count > self.config.qa.max_executions:
             raise ToolFailed(
                 "Code-execution limit reached. Give your final answer now from what "
                 "you already have; do not call analysis_execute_code again."
@@ -192,14 +192,12 @@ def create_capability(
     ``sources`` names the configured databases the capability covers, all of
     them when omitted. ``vision`` gates whether picture chunks are attached to
     search results as images, and should reflect the model the hosting agent
-    actually runs. Defaults to ``config.analysis.model.vision`` (falling back to
-    ``config.qa.model.vision``).
+    actually runs. Defaults to ``config.qa.model.vision``.
     """
     if config is None:
         from haiku.rag.config import get_config
 
         config = get_config()
-    analysis_model = config.analysis.model or config.qa.model
     scope = resolve_scope(db_path, config, sources, rag=rag)
     return AnalysisCapability(
         scope=scope,
@@ -209,7 +207,7 @@ def create_capability(
         state_namespace=STATE_NAMESPACE,
         instruction_text=instructions(),
         collection_instructions=multiple_collections_instructions(),
-        vision=analysis_model.vision if vision is None else vision,
+        vision=config.qa.model.vision if vision is None else vision,
         tool_names=_TOOL_NAMES,
         request_limit=request_limit,
         id=_CAPABILITY_ID,

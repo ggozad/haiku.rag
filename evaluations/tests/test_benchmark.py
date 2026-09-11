@@ -776,38 +776,23 @@ class TestExperimentMetadataTargets:
 class TestResolveCapabilityConfig:
     """The capability model and the record of where it came from."""
 
-    def test_rag_target_falls_back_to_qa_model(self) -> None:
+    def test_falls_back_to_qa_model(self) -> None:
         from evaluations.qa import _resolve_capability_config
 
         config = AppConfig()
-        assert _resolve_capability_config("rag-capability", config, None) == (
+        assert _resolve_capability_config(config, None) == (
             config.qa.model,
             "qa.model",
         )
 
-    def test_analysis_target_prefers_analysis_model(self) -> None:
-        from evaluations.qa import _resolve_capability_config
-
-        config = AppConfig()
-        config.analysis.model = ModelConfig(provider="ollama", name="analyst")
-        assert _resolve_capability_config("analysis-capability", config, None) == (
-            config.analysis.model,
-            "analysis.model",
-        )
-        assert (
-            _resolve_capability_config("analysis-capability", AppConfig(), None)[1]
-            == "qa.model"
-        )
-
-    def test_override_wins_for_every_target(self) -> None:
+    def test_override_wins(self) -> None:
         from evaluations.qa import _resolve_capability_config
 
         override = ModelConfig(provider="openai", name="gpt-5")
-        for target in ("rag-capability", "analysis-capability"):
-            assert _resolve_capability_config(target, AppConfig(), override) == (
-                override,
-                "--capability-model",
-            )
+        assert _resolve_capability_config(AppConfig(), override) == (
+            override,
+            "--capability-model",
+        )
 
 
 class TestEvaluateDatasetTarget:

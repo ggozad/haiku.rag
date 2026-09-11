@@ -173,10 +173,10 @@ Useful modules include `json`, `re`, `math`, `pathlib`, `datetime`,
 reached for: `decimal` and `statistics`. No generator functions, class
 inheritance or `match` statements, and a file object cannot be iterated. Files are read-only, and
 there is no network and no filesystem
-beyond `/documents`. `analysis.code_timeout` is the call's budget: compute is
+beyond `/documents`. `sandbox.code_timeout` is the call's budget: compute is
 stopped at it, and past it no further host call starts, a file read or an
 in-code search alike, though one already running finishes.
-`analysis.max_output_chars` bounds the output.
+`sandbox.max_output_chars` bounds the output.
 
 ### Filters
 

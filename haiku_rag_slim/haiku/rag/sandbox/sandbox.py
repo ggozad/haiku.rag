@@ -313,7 +313,7 @@ class Sandbox:
     def _time_limit(self) -> TimeoutError:
         return TimeoutError(
             "time limit exceeded: no further document reads or calls after "
-            f"{self._config.analysis.code_timeout}s"
+            f"{self._config.sandbox.code_timeout}s"
         )
 
     def _check_deadline(self) -> None:
@@ -646,9 +646,9 @@ class Sandbox:
         included, defaults to 1000 and cannot be disabled. The time budgets are
         the governors here, so it is set where no program reaches it.
         """
-        analysis = self._config.analysis
+        config = self._config
         return {
-            "max_duration_secs": analysis.code_timeout * analysis.max_executions,
+            "max_duration_secs": config.sandbox.code_timeout * config.qa.max_executions,
             "max_suspensions": _MAX_HOST_CALLS,
         }
 
@@ -661,7 +661,7 @@ class Sandbox:
             # read that blocks the worker never trips it. That leaves the two
             # limits disjoint: this one bounds a call that computes, and the read
             # deadline bounds a call that reads.
-            pool = AsyncMonty(request_timeout=self._config.analysis.code_timeout)
+            pool = AsyncMonty(request_timeout=self._config.sandbox.code_timeout)
             await pool.__aenter__()
             self._pool = pool
         if self._session is None:
@@ -678,11 +678,11 @@ class Sandbox:
         """
         # Monty's synchronous file callbacks bridge DB reads back to this loop.
         self._loop = asyncio.get_running_loop()
-        self._deadline = self._loop.time() + self._config.analysis.code_timeout
+        self._deadline = self._loop.time() + self._config.sandbox.code_timeout
         session, vfs = await self._ensure_initialized()
         external_fns = self._build_external_functions()
 
-        out = CappedOutput(self._config.analysis.max_output_chars)
+        out = CappedOutput(self._config.sandbox.max_output_chars)
 
         try:
             output = await session.feed_run(

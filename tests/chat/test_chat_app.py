@@ -111,26 +111,16 @@ def test_run_chat_defers_multiple_capabilities(temp_db_path: Path):
     assert all(capability.defer_loading for capability in attached)
 
 
-@pytest.mark.parametrize(
-    ("enabled", "expected_model", "expected_vision"),
-    [
-        (["analysis"], "analysis-model", False),
-        (["rag"], "qa-model", True),
-        (["rag", "analysis"], "qa-model", True),
-    ],
-)
-def test_run_chat_gates_capability_vision_on_driving_model(
-    temp_db_path: Path, enabled, expected_model, expected_vision
+@pytest.mark.parametrize("enabled", [["analysis"], ["rag"], ["rag", "analysis"]])
+@pytest.mark.parametrize("vision", [True, False])
+def test_run_chat_gates_capability_vision_on_qa_model(
+    temp_db_path: Path, enabled, vision
 ):
-    """Analysis-only chat runs on analysis.model; otherwise on qa.model. Every
-    attached capability's vision gate tracks that one driving model."""
+    """One model drives every attached capability, and each vision gate follows it."""
     from haiku.rag.config.models import AppConfig, ModelConfig
 
     config = AppConfig()
-    config.qa.model = ModelConfig(provider="openai", name="qa-model", vision=True)
-    config.analysis.model = ModelConfig(
-        provider="openai", name="analysis-model", vision=False
-    )
+    config.qa.model = ModelConfig(provider="openai", name="qa-model", vision=vision)
     captured: dict[str, str] = {}
 
     def fake_get_model(model_config, _config):
@@ -146,9 +136,9 @@ def test_run_chat_gates_capability_vision_on_driving_model(
 
         run_chat(db_path=temp_db_path, capabilities=enabled)
 
-    assert captured["name"] == expected_model
+    assert captured["name"] == "qa-model"
     attached = mock_app.call_args.kwargs["capabilities"]
-    assert {capability.vision for capability in attached} == {expected_vision}
+    assert {capability.vision for capability in attached} == {vision}
 
 
 def _make_mock_client():

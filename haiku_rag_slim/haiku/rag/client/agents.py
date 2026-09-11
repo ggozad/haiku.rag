@@ -116,7 +116,7 @@ async def analyze(
         question: The question to answer.
         filter: SQL WHERE clause to filter documents during searches.
         images: Raw image bytes attached to the question (requires a
-            vision-capable analysis model).
+            vision-capable QA model).
         sources: Names of the databases to analyze across. None covers every
             configured database.
 
@@ -144,7 +144,7 @@ async def analyze(
             ).model_dump(mode="json")
         }
     )
-    model_config = client._config.analysis.model or client._config.qa.model
+    model_config = client._config.qa.model
     user_prompt = _build_user_prompt(question, images, model_config)
     model = get_model(model_config, client._config)
     agent = Agent(

@@ -7,6 +7,13 @@
 - HTML content before the first heading is ingested.
   `processing.conversion_options.infer_furniture: true` restores docling's rule
   that files it as page furniture. docling-local only.
+- `analysis.max_executions` moved to `qa.max_executions`; `analysis.code_timeout`
+  and `analysis.max_output_chars` moved to `sandbox.code_timeout` and
+  `sandbox.max_output_chars`. The `analysis` config block is gone.
+
+### Removed
+
+- `analysis.model`. `qa.model` drives the analysis capability.
 
 ## [0.86.0] - 2026-09-16
 
