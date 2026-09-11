@@ -14,7 +14,12 @@ if TYPE_CHECKING:
     from rich.console import RenderableType
 
     from haiku.rag.client import HaikuRAG
-    from haiku.rag.config.models import AppConfig, EmbeddingModelConfig, ModelConfig
+    from haiku.rag.config.models import (
+        AppConfig,
+        EmbeddingModelConfig,
+        ModelConfig,
+        ThinkingEffort,
+    )
     from haiku.rag.store.models.citation import Citation
 
 
@@ -137,7 +142,7 @@ def apply_common_settings(
     Args:
         settings: Existing settings instance or None
         model_config: ModelConfig with temperature and max_tokens
-        map_thinking: Whether to map `enable_thinking` onto the unified
+        map_thinking: Whether to map `thinking` onto the unified
             `thinking` setting. The OpenAI-compatible branches opt out and set
             `openai_reasoning_effort` themselves, so that models whose profile
             advertises thinking without OpenAI reasoning support (Ollama's
@@ -146,7 +151,7 @@ def apply_common_settings(
     Returns:
         Updated settings instance or None if no settings to apply
     """
-    thinking = model_config.enable_thinking if map_thinking else None
+    thinking = model_config.thinking if map_thinking else None
 
     if (
         model_config.temperature is None
@@ -185,14 +190,17 @@ _OPENAI_COMPAT_PROFILE: "OpenAIModelProfile" = {
 
 def reasoning_effort(
     model_config: "ModelConfig",
-) -> Literal["none", "low", "high"] | None:
+) -> "ThinkingEffort | Literal['none'] | None":
     """OpenAI `reasoning_effort` for a model config, or None when unset.
 
     "low" is gpt-oss's floor; its template rejects "none".
     """
-    if model_config.enable_thinking is None:
+    thinking = model_config.thinking
+    if thinking is None:
         return None
-    if model_config.enable_thinking:
+    if isinstance(thinking, str):
+        return thinking
+    if thinking:
         return "high"
     return "low" if model_config.name == "gpt-oss" else "none"
 
@@ -252,7 +260,7 @@ def get_model(
     elif provider == "vllm":
         from pydantic_ai.providers.vllm import VLLMProvider
 
-        # `enable_thinking` travels as the unified `thinking` setting, which
+        # `thinking` travels as the unified `thinking` setting, which
         # pydantic-ai drops unless the model's profile advertises thinking. The
         # effort vocabulary is per-model, and the profile is what knows which
         # models take OpenAI-style values; `extra_body` reaches a template
@@ -274,10 +282,13 @@ def get_model(
 
         # Apply thinking control only for reasoning models (o-series, gpt-5)
         profile = cast(OpenAIModelProfile, openai_model_profile(model))
-        if model_config.enable_thinking is not None and profile.get(
-            "openai_supports_reasoning", False
-        ):
-            if model_config.enable_thinking is False:
+        thinking = model_config.thinking
+        if thinking is not None and profile.get("openai_supports_reasoning", False):
+            if isinstance(thinking, str):
+                openai_settings = OpenAIChatModelSettings(
+                    openai_reasoning_effort=thinking
+                )
+            elif thinking is False:
                 openai_settings = OpenAIChatModelSettings(openai_reasoning_effort="low")
             else:
                 openai_settings = OpenAIChatModelSettings(
@@ -317,7 +328,7 @@ def get_model(
 
         # Unified `thinking=False` omits the request field, which leaves the
         # adaptive-thinking models (Sonnet 4.6+, Opus 4.6+) thinking by default.
-        disable_thinking = model_config.enable_thinking is False
+        disable_thinking = model_config.thinking is False
         if disable_thinking:
             thinking_disabled: BetaThinkingConfigDisabledParam = {"type": "disabled"}
             anthropic_settings = AnthropicModelSettings(
@@ -358,7 +369,7 @@ def get_model(
         # leaves the adaptive-thinking Claude models thinking. Bedrock ids are
         # `[<geo>.]<family>.<model>`, as in `us.anthropic.claude-...`.
         disable_claude_thinking = (
-            model_config.enable_thinking is False and "anthropic." in model
+            model_config.thinking is False and "anthropic." in model
         )
         if disable_claude_thinking:
             bedrock_settings = BedrockModelSettings(

@@ -54,7 +54,7 @@ def build_experiment_metadata(
         "qa_model": config.qa.model.name,
         "qa_temperature": config.qa.model.temperature,
         "qa_max_tokens": config.qa.model.max_tokens,
-        "qa_enable_thinking": config.qa.model.enable_thinking,
+        "qa_enable_thinking": config.qa.model.thinking,
         "qa_extra_body": config.qa.model.extra_body,
         "qa_max_searches": config.qa.max_searches,
         "document_filter": document_filter,
@@ -66,7 +66,7 @@ def build_experiment_metadata(
                 "judge_model": judge_config.name,
                 "judge_temperature": judge_config.temperature,
                 "judge_max_tokens": judge_config.max_tokens,
-                "judge_enable_thinking": judge_config.enable_thinking,
+                "judge_enable_thinking": judge_config.thinking,
                 # Sampling and thinking reach vLLM through extra_body, so
                 # without it a trace cannot tell which judge settings ran.
                 "judge_extra_body": judge_config.extra_body,
@@ -79,7 +79,7 @@ def build_experiment_metadata(
                 "capability_model": capability_config.name,
                 "capability_temperature": capability_config.temperature,
                 "capability_max_tokens": capability_config.max_tokens,
-                "capability_enable_thinking": capability_config.enable_thinking,
+                "capability_enable_thinking": capability_config.thinking,
                 "capability_extra_body": capability_config.extra_body,
             }
         )

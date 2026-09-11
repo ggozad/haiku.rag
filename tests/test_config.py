@@ -828,3 +828,57 @@ def test_an_empty_lancedb_uri_is_refused_with_removal_as_the_remedy():
     assert "lancedb.uri" in message
     assert "remove" in message
     assert "{NAME" not in message
+
+
+def test_thinking_levels_match_pydantic_ai():
+    """The config vocabulary is pydantic-ai's `ThinkingEffort`, value for value."""
+    from typing import get_args
+
+    from pydantic_ai.settings import ThinkingEffort
+
+    from haiku.rag.config import models
+
+    assert get_args(models.ThinkingEffort) == get_args(ThinkingEffort)
+
+
+@pytest.mark.parametrize(
+    "value", [True, False, "minimal", "low", "medium", "high", "xhigh"]
+)
+def test_thinking_accepts_bools_and_levels(value):
+    from haiku.rag.config.models import ModelConfig
+
+    assert ModelConfig(thinking=value).thinking == value
+    assert ModelConfig().thinking is None
+
+
+@pytest.mark.parametrize("value", ["none", "max"])
+def test_thinking_rejects_values_outside_the_vocabulary(value):
+    from haiku.rag.config.models import ModelConfig
+
+    with pytest.raises(ValidationError):
+        ModelConfig(thinking=value)
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_enable_thinking_loads_as_thinking_with_a_warning(value):
+    """The old key still loads, warns once, and takes the `thinking` semantics."""
+    with pytest.warns(FutureWarning, match=r"enable_thinking.*0\.90\.0.*thinking"):
+        config = AppConfig.model_validate({"qa": {"model": {"enable_thinking": value}}})
+
+    assert config.qa.model.thinking is value
+
+
+def test_enable_thinking_beside_thinking_is_rejected():
+    from haiku.rag.config.models import ModelConfig
+
+    with pytest.raises(ValidationError, match="one of"):
+        ModelConfig.model_validate({"thinking": True, "enable_thinking": True})
+
+
+def test_generated_config_carries_thinking_not_the_old_key():
+    """`init-config` and `settings` emit the current key only."""
+    from haiku.rag.config.loader import generate_default_config
+
+    model = generate_default_config()["qa"]["model"]
+    assert model["thinking"] is True
+    assert "enable_thinking" not in model

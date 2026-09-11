@@ -27,7 +27,7 @@ qa:
   model:
     provider: ollama
     name: qwen3.8
-    enable_thinking: true
+    thinking: true
     temperature: 0.3          # Default: 0.3
     vision: true              # Set false for text-only models
   max_searches: 5       # Maximum search units per question
@@ -38,7 +38,7 @@ qa:
 - **max_searches**: Maximum number of search units a capability can spend per question (default: 5). Up to three searches emitted in the same model response share one unit, so a model that rephrases its query in one response spends one unit. A search in a later response starts a new unit, as does each further group of three within one response. Shared by the RAG and analysis capabilities. Searches in one response also deduplicate their returns: evidence a sibling search already showed collapses to a reference line, and each picture attaches once per response.
 
 !!! note "Thinking on vLLM"
-    `enable_thinking` only applies to models with a pydantic-ai reasoning profile (o-series, gpt-5, gpt-oss). For other vLLM-served models such as Qwen3 or the Gemma family, the field is a silent no-op — set the chat template switch via [`extra_body`](providers.md#raw-provider-pass-through) instead.
+    On `provider: openai` with a `base_url`, `thinking` reaches only models with an OpenAI reasoning profile (o-series, gpt-5, `openai/gpt-oss-…`) and is a silent no-op for any other self-hosted model. `provider: vllm` infers a per-family profile from the model name, see [vLLM](providers.md#vllm). Where the field does not reach the model, set `extra_body.reasoning_effort` or the chat template switch via [`extra_body`](providers.md#raw-provider-pass-through).
 
 ## Analysis Configuration
 

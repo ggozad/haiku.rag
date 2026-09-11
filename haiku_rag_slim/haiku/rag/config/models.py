@@ -1,9 +1,13 @@
+import warnings
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from haiku.rag.utils import get_default_data_dir
+
+# pydantic-ai's `ThinkingEffort`; importing it loads the whole package at config import.
+ThinkingEffort = Literal["minimal", "low", "medium", "high", "xhigh"]
 
 
 class ConfigModel(BaseModel):
@@ -29,7 +33,9 @@ class ModelConfig(ConfigModel):
             carry their own key; typically written as `${VENDOR_KEY}`. Honored
             on the openai, ollama and vllm providers, and on the
             picture-description VLM endpoint.
-        enable_thinking: Control reasoning behavior (true/false/None for default)
+        thinking: Reasoning control, pydantic-ai's `ThinkingLevel`: true for the
+            model's default level, false to disable, or one of minimal, low,
+            medium, high, xhigh. None leaves the model's default.
         temperature: Sampling temperature (0.0 to 1.0+)
         max_tokens: Maximum tokens to generate
         vision: True if the model can interpret images. Default False.
@@ -45,11 +51,27 @@ class ModelConfig(ConfigModel):
     base_url: str | None = None
     api_key: str | None = None
 
-    enable_thinking: bool | None = None
+    thinking: bool | ThinkingEffort | None = None
     temperature: float | None = None
     max_tokens: int | None = Field(default=None, gt=0)
     vision: bool = False
     extra_body: dict | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _enable_thinking_is_deprecated(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "enable_thinking" in data:
+            if "thinking" in data:
+                raise ValueError("set one of thinking and enable_thinking, not both")
+            warnings.warn(
+                "enable_thinking is deprecated and will be removed in 0.90.0; "
+                "set thinking instead",
+                FutureWarning,
+                stacklevel=2,
+            )
+            data = {**data, "thinking": data["enable_thinking"]}
+            del data["enable_thinking"]
+        return data
 
 
 class EmbeddingModelConfig(ConfigModel):
@@ -168,7 +190,7 @@ class QAConfig(ConfigModel):
         default_factory=lambda: ModelConfig(
             provider="ollama",
             name="qwen3.8",
-            enable_thinking=True,
+            thinking=True,
             temperature=0.3,
             vision=True,
         )
@@ -220,7 +242,7 @@ class PictureDescriptionConfig(ConfigModel):
         default_factory=lambda: ModelConfig(
             provider="ollama",
             name="qwen3.8",
-            enable_thinking=False,
+            thinking=False,
             temperature=0.0,
         )
     )
@@ -327,7 +349,7 @@ class ProcessingConfig(ConfigModel):
         default_factory=lambda: ModelConfig(
             provider="ollama",
             name="qwen3.8",
-            enable_thinking=False,
+            thinking=False,
             temperature=0.3,
             max_tokens=100,
         )

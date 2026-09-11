@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `ModelConfig.enable_thinking` renamed to `thinking`, typed `bool | minimal | low |
+  medium | high | xhigh | None` (pydantic-ai's `ThinkingLevel`). A level reaches
+  `reasoning_effort` on `ollama` and `openai`, and the unified `thinking` setting
+  on every other provider.
+
+### Deprecated
+
+- `enable_thinking` still loads as `thinking` with a `FutureWarning`; removed in
+  0.90.0. Setting both keys is an error.
+
 ### Fixed
 
 - Conversion flattens each inline group of text runs into the item that owns

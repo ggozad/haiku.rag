@@ -62,7 +62,7 @@ qa:
   model:
     provider: ollama
     name: qwen3.8
-    enable_thinking: true
+    thinking: true
 ```
 
 ## Complete Configuration Example
@@ -106,7 +106,7 @@ qa:
   model:
     provider: ollama
     name: qwen3.8
-    enable_thinking: true
+    thinking: true
     temperature: 0.3
   max_searches: 5
 
@@ -136,7 +136,7 @@ processing:
   title_model:
     provider: ollama
     name: qwen3.8
-    enable_thinking: false
+    thinking: false
     temperature: 0.3
     max_tokens: 100
   conversion_options:

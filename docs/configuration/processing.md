@@ -31,7 +31,7 @@ processing:
   title_model:                               # LLM for title generation (fallback)
     provider: ollama
     name: qwen3.8
-    enable_thinking: false
+    thinking: false
 
   # Conversion options (works with both local and remote converters)
   conversion_options:
@@ -416,7 +416,7 @@ processing:
   title_model:
     provider: ollama
     name: qwen3.8
-    enable_thinking: false
+    thinking: false
 ```
 
 When `auto_title` is enabled, haiku.rag attempts to extract a title for each document during ingestion using a two-tier approach:

@@ -52,7 +52,7 @@ class TestBuildExperimentMetadata:
     def test_with_judge_config(self) -> None:
         config = AppConfig()
         judge = ModelConfig(
-            provider="ollama", name="gpt-oss", enable_thinking=False, temperature=0.0
+            provider="ollama", name="gpt-oss", thinking=False, temperature=0.0
         )
         result = build_experiment_metadata(
             dataset_key="test",
