@@ -260,7 +260,7 @@ evaluations:
   judge:
     provider: openai
     name: Inferact/Qwen3.8-27B-NVFP4
-    base_url: http://localhost:8000/v1   # optional, for OpenAI-compatible servers (vLLM, LM Studio, etc.)
+    base_url: http://localhost:8000/v1   # optional, for OpenAI-compatible servers (LM Studio, sglang, etc.)
     temperature: 0.6
     max_tokens: 16384
     extra_body:
