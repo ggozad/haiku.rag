@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 @dataclass
 class AnalysisContext:
-    """Mutable context accumulating data during analysis execution."""
+    """Mutable context accumulating data during code execution."""
 
     filter: str | None = None
     sources: list[str] | None = None

@@ -1323,12 +1323,24 @@ async def test_client_ask(allow_model_requests, temp_db_path):
             content="Python is a high-level programming language.", uri="test.txt"
         )
 
-        answer, citations = await client.ask("What is Python?")
+        answer, _ = await client.ask("What is Python?")
 
-        # Should return a valid response
-        assert answer is not None
-        assert isinstance(answer, str)
-        assert isinstance(citations, list)
+        # A recorded cite names the recording run's chunk id, which a fresh
+        # database never holds, so only the answer replays faithfully.
+        assert "programming language" in answer.lower()
+
+
+@pytest.mark.vcr()
+async def test_client_ask_runs_code(allow_model_requests, temp_db_path):
+    """A corpus-level question is answered through the capability's sandbox."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.create_document("First document about cats.", title="Doc 1")
+        await client.create_document("Second document about dogs.", title="Doc 2")
+        await client.create_document("Third document about birds.", title="Doc 3")
+
+        answer, _ = await client.ask("How many documents are in the database?")
+
+        assert "3" in answer
 
 
 @pytest.mark.vcr()

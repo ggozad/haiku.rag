@@ -18,12 +18,12 @@ from pydantic_ai.messages import (
 from pydantic_ai.models import Model
 
 from evaluations.config import Turn
-from haiku.rag.capabilities import EvidenceState, RAGCapabilityBase
 from haiku.rag.capabilities.compaction import create_capability as create_compaction
 from haiku.rag.capabilities.ledger import citation_status
+from haiku.rag.capabilities.rag import SEARCH_TOOL, RAGCapability, RAGState
 from haiku.rag.config.models import AppConfig
 
-CapabilityFactory = Callable[..., RAGCapabilityBase[Any]]
+CapabilityFactory = Callable[..., RAGCapability]
 
 
 def prefix_to_messages(turns: Iterable[Turn]) -> list[ModelMessage]:
@@ -63,7 +63,7 @@ class ToolTraffic(NamedTuple):
 
 
 def _count_tool_traffic(
-    messages: list[ModelMessage], namespace: str, tool_names: frozenset[str]
+    messages: list[ModelMessage], tool_names: frozenset[str]
 ) -> ToolTraffic:
     """Count search calls, failed calls and model requests in a run.
 
@@ -82,7 +82,7 @@ def _count_tool_traffic(
     budget only while it stays loaded — a deferred capability skips hooks until
     it loads.
     """
-    search_tool = f"{namespace}_search"
+    search_tool = SEARCH_TOOL
     search_calls = 0
     rejected_searches = 0
     failed_tools = 0
@@ -128,7 +128,7 @@ def _prepare_agent(
     document_filter: str | None,
     request_limit: int | None,
     compaction: bool = False,
-) -> tuple[RAGCapabilityBase[Any], _EvalDeps, Agent[_EvalDeps, str]]:
+) -> tuple[RAGCapability, _EvalDeps, Agent[_EvalDeps, str]]:
     capability = capability_factory(
         db_path=db_path,
         config=config,
@@ -152,10 +152,8 @@ def _prepare_agent(
     return capability, deps, agent
 
 
-def _state_after_run(
-    capability: RAGCapabilityBase[Any], deps: _EvalDeps
-) -> EvidenceState:
-    return capability.state_type.model_validate(deps.state[capability.state_namespace])
+def _state_after_run(capability: RAGCapability, deps: _EvalDeps) -> RAGState:
+    return RAGState.model_validate(deps.state[capability.state_namespace])
 
 
 async def run_capability_question(
@@ -171,12 +169,8 @@ async def run_capability_question(
     """Run a single question through a capability and return answer + retrieval data.
 
     Builds a native capability via ``capability_factory(db_path=..., config=...)``.
-    After the run, citations and searched documents
-    are extracted from the state for downstream eval scoring.
-
-    The capability must produce a state with RAG-capability-shaped fields (citation
-    index, searches, optional document filter) — i.e. ``RAGState`` or
-    ``AnalysisState`` from ``haiku.rag.capabilities``.
+    After the run, citations and searched documents are extracted from the
+    ``RAGState`` for downstream eval scoring.
     """
     capability, deps, agent = _prepare_agent(
         capability_factory,
@@ -187,9 +181,7 @@ async def run_capability_question(
         request_limit,
     )
     agent_result = await agent.run(question, deps=deps, message_history=message_history)
-    traffic = _count_tool_traffic(
-        agent_result.new_messages(), capability.state_namespace, capability.tool_names
-    )
+    traffic = _count_tool_traffic(agent_result.new_messages(), capability.tool_names)
     return _result_from_run(
         agent_result.output, _state_after_run(capability, deps), traffic
     )
@@ -228,9 +220,7 @@ async def run_capability_conversation(
         agent_result = await agent.run(question, deps=deps, message_history=history)
         history = agent_result.all_messages()
         traffic = _count_tool_traffic(
-            agent_result.new_messages(),
-            capability.state_namespace,
-            capability.tool_names,
+            agent_result.new_messages(), capability.tool_names
         )
         results.append(
             _result_from_run(
@@ -241,7 +231,7 @@ async def run_capability_conversation(
 
 
 def _result_from_run(
-    answer: str, typed: EvidenceState, traffic: ToolTraffic
+    answer: str, typed: RAGState, traffic: ToolTraffic
 ) -> CapabilityRunResult:
     cited_chunk_ids: list[str] = list(typed.citations)
     seen_cited: set[str] = set()
@@ -265,9 +255,6 @@ def _result_from_run(
                 seen_searched.add(uri)
                 searched_uris.append(uri)
 
-    executions = getattr(typed, "executions", None)
-    n_executions = len(executions) if executions is not None else 0
-
     record = typed.evidence
     status = (
         citation_status([record], question=record.question)
@@ -281,12 +268,12 @@ def _result_from_run(
         cited_chunk_ids=cited_chunk_ids,
         cited_sources=cited_sources,
         searched_uris=searched_uris,
-        # Distinct search keys, not searches. Analysis files every in-code
-        # `search()` under one "_sandbox" key, so twenty sandbox searches read
-        # as one here; `n_search_calls` is the true count of search *tool*
-        # calls, and in-code searches are not counted anywhere.
+        # Distinct search keys, not searches. Every in-code `search()` is filed
+        # under one "_sandbox" key, so twenty sandbox searches read as one here;
+        # `n_search_calls` is the true count of search *tool* calls, and in-code
+        # searches are not counted anywhere.
         n_searches=len(typed.searches),
-        n_executions=n_executions,
+        n_executions=len(typed.executions),
         n_search_calls=traffic.n_search_calls,
         n_rejected_searches=traffic.n_rejected_searches,
         n_failed_tools=traffic.n_failed_tools,

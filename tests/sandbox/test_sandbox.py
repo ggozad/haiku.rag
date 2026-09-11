@@ -1081,9 +1081,13 @@ class TestSandboxReadDeadline:
         per-call value would let the first call starve the rest."""
         config = AppConfig()
         config.sandbox.code_timeout = 5.0
-        config.qa.max_executions = 3
 
-        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        sb = Sandbox(
+            db_path=temp_db_path,
+            config=config,
+            context=AnalysisContext(),
+            executions=3,
+        )
 
         limits = sb._session_limits()
 
@@ -1091,6 +1095,25 @@ class TestSandboxReadDeadline:
         cap = limits["max_suspensions"]
         assert cap is not None
         assert cap >= 1_000_000
+
+    @pytest.mark.asyncio
+    async def test_a_sandbox_built_for_one_call_ignores_the_execution_budget(
+        self, temp_db_path
+    ):
+        """The MCP tool builds one sandbox per call; a capability budget of zero
+        executions is not its concern."""
+        config = AppConfig()
+        config.qa.max_executions = 0
+        async with HaikuRAG(temp_db_path, create=True):
+            pass
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            result = await sb.execute("print(6 * 7)")
+        finally:
+            await sb.close()
+
+        assert result.success, result.stderr
+        assert "42" in result.stdout
 
     @pytest.mark.asyncio
     async def test_a_program_may_read_more_than_a_thousand_times(self, temp_db_path):
@@ -1225,7 +1248,14 @@ class TestSandboxRequestTimeout:
         async with HaikuRAG(temp_db_path, create=True):
             pass
 
-        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        # A session serving several calls: the killed call must leave budget
+        # for the next one.
+        sb = Sandbox(
+            db_path=temp_db_path,
+            config=config,
+            context=AnalysisContext(),
+            executions=3,
+        )
         try:
             runaway = await sb.execute(
                 "x = 0\nfor i in range(500000000):\n    x += i\nprint(x)"

@@ -68,7 +68,7 @@ def create_app(db: Path | None = None, *, covers_set: bool = False) -> "HaikuRAG
     """The application for a command, on the database(s) it works on.
 
     `covers_set` is the command declaring that it can read multiple: `search`,
-    `ask`, `analyze` and `chat` can, and everything else names one.
+    `ask` and `chat` can, and everything else names one.
 
     Raises:
         AmbiguousDatabaseError: multiple databases are configured and this
@@ -426,44 +426,6 @@ def ask(
     app = create_app(db, covers_set=True)
     asyncio.run(
         app.ask(
-            question=question,
-            filter=filter,
-            images=image,
-            full_citations=full_citations,
-        )
-    )
-
-
-@_cli.command("analyze", help="Answer questions using the analysis capability")
-def analyze(
-    question: str = typer.Argument(
-        help="The question to answer",
-    ),
-    db: Path | None = typer.Option(
-        None,
-        "--db",
-        help="Path to the LanceDB database file",
-    ),
-    filter: str | None = typer.Option(
-        None,
-        "--filter",
-        "-f",
-        help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
-    ),
-    image: list[Path] | None = typer.Option(
-        None,
-        "--image",
-        help="Path to an image to attach to the question (repeatable; requires a vision-capable model)",
-    ),
-    full_citations: bool = typer.Option(
-        False,
-        "--full-citations",
-        help="Show the full text of each citation instead of a truncated preview",
-    ),
-):
-    app = create_app(db, covers_set=True)
-    asyncio.run(
-        app.analyze(
             question=question,
             filter=filter,
             images=image,
@@ -834,24 +796,16 @@ def chat(
         "--model",
         help="Model to use for the chat (e.g. openai-chat:gpt-4o)",
     ),
-    capability: list[str] | None = typer.Option(
-        None,
-        "--capability",
-        "-c",
-        help="Capabilities to enable: rag, analysis (can repeat, default: rag)",
-    ),
 ):
     """Launch the chat TUI for conversational RAG."""
     from haiku.rag.chat import run_chat
 
     scope = resolve_scope(db, covers_set=True)
-    capabilities = capability if capability else ["rag"]
 
     try:
         run_chat(
             read_only=True,
             model=model,
-            capabilities=capabilities,
             scope=scope,
         )
     except ImportError as e:

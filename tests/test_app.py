@@ -332,14 +332,9 @@ async def test_ask_attaches_image_bytes(app, client, monkeypatch, tmp_path):
     assert client.ask.await_args.kwargs["images"] == [b"img"]
 
 
-@pytest.mark.parametrize("verb", ["ask", "analyze"])
-async def test_full_citations_reaches_the_formatter(app, client, monkeypatch, verb):
+async def test_full_citations_reaches_the_formatter(app, client, monkeypatch):
     """The flag has to survive the app layer, or the CLI switch does nothing."""
     client.ask.return_value = ("answer", [])
-    result = AsyncMock()
-    result.answer = "answer"
-    result.citations = []
-    client.analyze.return_value = result
 
     seen = []
 
@@ -349,28 +344,10 @@ async def test_full_citations_reaches_the_formatter(app, client, monkeypatch, ve
 
     monkeypatch.setattr("haiku.rag.app.format_citations_rich", record)
 
-    await getattr(app, verb)("why?", full_citations=True)
-    await getattr(app, verb)("why?")
+    await app.ask("why?", full_citations=True)
+    await app.ask("why?")
 
     assert seen == [True, False]
-
-
-async def test_analyze_prints_the_answer(app, client, monkeypatch):
-    result = AsyncMock()
-    result.answer = "computed answer"
-    result.citations = []
-    client.analyze.return_value = result
-
-    async def no_citations(citations, client=None, full=False):
-        return []
-
-    monkeypatch.setattr("haiku.rag.app.format_citations_rich", no_citations)
-
-    await app.analyze("how many?")
-
-    printed = out(app)
-    assert "how many?" in printed
-    assert "computed answer" in printed
 
 
 async def test_rebuild_set_embedder_reports_settings_updated(app, client):
@@ -977,19 +954,3 @@ async def test_history_limits_the_versions_shown(app, monkeypatch):
     printed = out(app)
     assert "v3" in printed
     assert "v1" not in printed
-
-
-async def test_analyze_prints_citation_renderables(app, client, monkeypatch):
-    result = AsyncMock()
-    result.answer = "computed"
-    result.citations = ["c1"]
-    client.analyze.return_value = result
-
-    async def one_citation(citations, client=None, full=False):
-        return ["citation renderable"]
-
-    monkeypatch.setattr("haiku.rag.app.format_citations_rich", one_citation)
-
-    await app.analyze("how many?")
-
-    assert "citation renderable" in out(app)

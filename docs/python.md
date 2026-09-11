@@ -246,19 +246,17 @@ for result in results:
     print(f"{result.source}: {result.content}")
 ```
 
-`ask` and `analyze` also accept `sources`. Citations include the database name:
+`ask` also accepts `sources`. Citations include the database name:
 
 ```python
 answer, citations = await client.ask("What changed?", sources=["papers", "wiki"])
 for cite in citations:
     print(f"[{cite.source}] {cite.document_title or cite.document_uri}")
-
-result = await client.analyze("How many documents mention it?", sources=["papers"])
 ```
 
-A scoped question can cite only the selected databases. Analysis mounts only their documents.
+A scoped question can cite only the selected databases, and code run by the capability mounts only their documents.
 
-`sources=None` covers every database the client covers. `sources=[]` covers none: `search` returns no results, and `ask` and `analyze` run with no evidence from any database.
+`sources=None` covers every database the client covers. `sources=[]` covers none: `search` returns no results, and `ask` runs with no evidence from any database.
 
 A name no client covers raises `UnknownDatabaseError`, a `KeyError`, wherever it is given: at construction, per query, and when placing a citation.
 
@@ -330,7 +328,7 @@ results = await client.search(
 - `created_at`, `updated_at` - Timestamps
 - `metadata` - Document metadata (as string, use LIKE for pattern matching)
 
-A filter restricts what a search retrieves. `ask` and `analyze` apply it to every search of the run, and `analyze` mounts only the documents it admits, each with its full text. It does not restrict citations: a chunk id the model already holds, from an earlier turn of a conversation for example, resolves within the databases the question covers whether or not its document passes the filter. The string reaches the query engine as written, so build it from trusted input only. To bound what a run can reach, cover fewer databases with `sources` (see [Searching Multiple Databases](#searching-multiple-databases) and [Database selection](capabilities/index.md#database-selection)).
+A filter restricts what a search retrieves. `ask` applies it to every search of the run, and the sandbox mounts only the documents it admits, each with its full text. It does not restrict citations: a chunk id the model already holds, from an earlier turn of a conversation for example, resolves within the databases the question covers whether or not its document passes the filter. The string reaches the query engine as written, so build it from trusted input only. To bound what a run can reach, cover fewer databases with `sources` (see [Searching Multiple Databases](#searching-multiple-databases) and [Database selection](capabilities/index.md#database-selection)).
 
 ### Image queries
 
@@ -414,33 +412,26 @@ The QA provider and model are configured in `haiku.rag.yaml` or can be passed di
 
 See also: [Capabilities](capabilities/index.md) for direct agent composition.
 
-## Analysis
+## Code execution
 
-Answer complex analytical questions via code execution:
+`ask` runs the [RAG capability](capabilities/rag.md), which can also write and execute Python in a sandbox over the documents, for aggregation, computation and multi-document questions:
 
 ```python
 # Aggregation across documents
-result = await client.analyze("Which quarter had the highest revenue?")
-print(result.answer)
-for citation in result.citations:
-    print(citation.uri, citation.title)
+answer, citations = await client.ask("Which quarter had the highest revenue?")
 
 # Computation within a document set
-result = await client.analyze(
+answer, citations = await client.ask(
     "What is the average deal size mentioned in these contracts?",
-    filter="uri LIKE '%contracts%'"
+    filter="uri LIKE '%contracts%'",
 )
 ```
 
-`client.analyze` runs the [analysis capability](capabilities/analysis.md), which writes and executes Python code in a sandboxed environment to solve problems that retrieval alone does not: aggregation, computation, and multi-document analysis.
-
-`client.analyze` also accepts `images=` like `client.ask`, requiring `vision: true` on the analysis model (or the QA model when no analysis model is configured).
-
-See [Analysis capability](capabilities/analysis.md) for details and configuration.
+The model decides when to reach for code; a question one search away from its answer never opens the sandbox.
 
 ## Building custom agents
 
-`client.ask` and `client.analyze` are convenience wrappers. To build your own Pydantic AI agent, attach the native RAG and analysis capabilities directly. See [Capabilities](capabilities/index.md).
+`client.ask` is a convenience wrapper. To build your own Pydantic AI agent, attach the native RAG capability directly. See [Capabilities](capabilities/index.md).
 
 For the low-level toolset factories under `haiku.rag.tools`, see [Toolsets](tools.md).
 

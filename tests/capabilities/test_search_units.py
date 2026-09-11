@@ -30,7 +30,7 @@ class Deps:
 
 
 def burst_model(bursts: list[list[str]]) -> FunctionModel:
-    """Emit one `rag_search` call per query in each burst, then answer."""
+    """Emit one `search` call per query in each burst, then answer."""
     responses = 0
 
     def model_function(_messages, _info) -> ModelResponse:
@@ -39,7 +39,7 @@ def burst_model(bursts: list[list[str]]) -> FunctionModel:
         if responses <= len(bursts):
             return ModelResponse(
                 parts=[
-                    ToolCallPart("rag_search", {"query": query})
+                    ToolCallPart("search", {"query": query})
                     for query in bursts[responses - 1]
                 ]
             )
@@ -65,7 +65,7 @@ def search_returns(result: AgentRunResult[Any]) -> list[ToolReturnPart]:
         part
         for message in result.all_messages()
         for part in message.parts
-        if isinstance(part, ToolReturnPart) and part.tool_name == "rag_search"
+        if isinstance(part, ToolReturnPart) and part.tool_name == "search"
     ]
 
 
@@ -88,7 +88,7 @@ async def test_a_burst_in_one_response_consumes_one_unit(rag_db):
         part
         for message in result.all_messages()
         for part in message.parts
-        if isinstance(part, ToolCallPart) and part.tool_name == "rag_search"
+        if isinstance(part, ToolCallPart) and part.tool_name == "search"
     ]
     assert [part.tool_call_id for part in search_returns(result)] == [
         part.tool_call_id for part in calls
@@ -143,7 +143,7 @@ async def test_unit_tracking_resets_between_runs(rag_db):
             return ModelResponse(parts=[TextPart("done")])
         return ModelResponse(
             parts=[
-                ToolCallPart("rag_search", {"query": query})
+                ToolCallPart("search", {"query": query})
                 for query in ["ai", "machine learning", "deep learning"]
             ]
         )

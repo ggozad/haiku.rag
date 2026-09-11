@@ -21,7 +21,7 @@ haiku-rag ask "what does it conclude?"
 
 **Local-first, no server.** Embedded [LanceDB](https://lancedb.com/) and open models through [Ollama](https://ollama.com/) by default. No database to run and no API keys required. The same code runs against S3, GCS, Azure, LanceDB Cloud, or any provider Pydantic AI supports.
 
-**Built for agents.** Native [Pydantic AI](https://ai.pydantic.dev/) capabilities compose into your own agents. An [MCP server](mcp.md) exposes the same database to Claude Desktop and other assistants. The analysis capability runs sandboxed Python across documents for questions that need computation rather than retrieval.
+**Built for agents.** Native [Pydantic AI](https://ai.pydantic.dev/) capabilities compose into your own agents. An [MCP server](mcp.md) exposes the same database to Claude Desktop and other assistants. The capability runs sandboxed Python across documents for questions that need computation rather than retrieval.
 
 **Benchmarked.** Retrieval and answer quality are tracked against public benchmarks with runnable configs. See [Benchmarks](benchmarks.md).
 
@@ -30,7 +30,7 @@ haiku-rag ask "what does it conclude?"
 - [Quickstart](tutorial.md): install, index, chat.
 - [Installation](installation.md): packages and extras.
 - [Architecture](overview.md): how a document becomes a cited answer.
-- [Capabilities](capabilities/index.md): native RAG and analysis capabilities for Pydantic AI agents.
+- [Capabilities](capabilities/index.md): native capabilities for Pydantic AI agents.
 - [Python API](python.md): use haiku.rag from code.
 - [MCP server](mcp.md): expose haiku.rag to Claude Desktop or other AI assistants.
 - [Configuration](configuration/index.md): every setting.

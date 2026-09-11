@@ -708,18 +708,6 @@ class TestAskAnalyzeImageOption:
             Path("/tmp/b.jpg"),
         ]
 
-    def test_analyze_forwards_image_paths(self):
-        from unittest.mock import AsyncMock
-
-        from haiku.rag.app import HaikuRAGApp
-
-        with patch.object(HaikuRAGApp, "analyze", new_callable=AsyncMock) as mock:
-            result = runner.invoke(cli, ["analyze", "q", "--image", "/tmp/a.png"])
-        assert result.exit_code == 0
-        from pathlib import Path
-
-        assert mock.call_args.kwargs["images"] == [Path("/tmp/a.png")]
-
     @pytest.mark.asyncio
     async def test_app_ask_reads_image_bytes(self, temp_db_path, tmp_path):
         from io import BytesIO
@@ -968,22 +956,26 @@ def test_search_dispatch(app_stub, argv, expected):
     app_stub.search.assert_called_once_with(**expected)
 
 
-@pytest.mark.parametrize("command, method", [("ask", "ask"), ("analyze", "analyze")])
-def test_question_commands_dispatch(app_stub, command, method):
-    result = runner.invoke(cli, [command, "why?"] + DB_ARGS)
+def test_ask_dispatches(app_stub):
+    result = runner.invoke(cli, ["ask", "why?"] + DB_ARGS)
 
     assert result.exit_code == 0, result.output
-    getattr(app_stub, method).assert_called_once_with(
+    app_stub.ask.assert_called_once_with(
         question="why?", filter=None, images=None, full_citations=False
     )
 
 
-@pytest.mark.parametrize("command, method", [("ask", "ask"), ("analyze", "analyze")])
-def test_full_citations_flag_dispatches(app_stub, command, method):
-    result = runner.invoke(cli, [command, "why?", "--full-citations"] + DB_ARGS)
+def test_full_citations_flag_dispatches(app_stub):
+    result = runner.invoke(cli, ["ask", "why?", "--full-citations"] + DB_ARGS)
 
     assert result.exit_code == 0, result.output
-    assert getattr(app_stub, method).call_args.kwargs["full_citations"] is True
+    assert app_stub.ask.call_args.kwargs["full_citations"] is True
+
+
+def test_analyze_is_not_a_command(app_stub):
+    result = runner.invoke(cli, ["analyze", "why?"] + DB_ARGS)
+
+    assert result.exit_code != 0
 
 
 @pytest.mark.parametrize(

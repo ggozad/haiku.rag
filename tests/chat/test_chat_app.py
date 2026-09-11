@@ -31,9 +31,7 @@ def test_run_chat_creates_app_and_runs(temp_db_path: Path):
         run_chat(db_path=temp_db_path)
 
     mock_app.return_value.run.assert_called_once()
-    attached = mock_app.call_args.kwargs["capabilities"]
-    assert len(attached) == 1
-    assert attached[0].defer_loading is False
+    assert mock_app.call_args.kwargs["capability"].defer_loading is False
 
 
 def test_run_chat_covers_a_configured_set(tmp_path, monkeypatch):
@@ -85,38 +83,23 @@ def test_chat_capabilities_read_the_named_database(tmp_path, monkeypatch):
 
         run_chat(scope=DatabaseScope.resolve(config, database_name="b"))
         named_scope = chat_app.call_args.kwargs["scope"]
-        [named] = chat_app.call_args.kwargs["capabilities"]
+        named = chat_app.call_args.kwargs["capability"]
 
         run_chat(scope=DatabaseScope.resolve(config))
         covering_scope = chat_app.call_args.kwargs["scope"]
-        [covering] = chat_app.call_args.kwargs["capabilities"]
+        covering = chat_app.call_args.kwargs["capability"]
 
     # The app opens the scope it is handed and lends that client to the
-    # capabilities, which keep the configuration as the caller named it.
+    # capability, which keeps the configuration as the caller named it.
     assert named_scope.names == ("b",)
     assert covering_scope.names == ("a", "b")
     assert set(named.config.lancedb.databases) == {"a", "b"}
     assert set(covering.config.lancedb.databases) == {"a", "b"}
 
 
-def test_run_chat_defers_multiple_capabilities(temp_db_path: Path):
-    """Test chat only defers capabilities when routing between multiple choices."""
-    with patch("haiku.rag.chat.app.ChatApp") as mock_app:
-        from haiku.rag.chat import run_chat
-
-        run_chat(db_path=temp_db_path, capabilities=["rag", "analysis"])
-
-    attached = mock_app.call_args.kwargs["capabilities"]
-    assert len(attached) == 2
-    assert all(capability.defer_loading for capability in attached)
-
-
-@pytest.mark.parametrize("enabled", [["analysis"], ["rag"], ["rag", "analysis"]])
 @pytest.mark.parametrize("vision", [True, False])
-def test_run_chat_gates_capability_vision_on_qa_model(
-    temp_db_path: Path, enabled, vision
-):
-    """One model drives every attached capability, and each vision gate follows it."""
+def test_run_chat_gates_capability_vision_on_qa_model(temp_db_path: Path, vision):
+    """The capability's vision gate follows the model the chat runs on."""
     from haiku.rag.config.models import AppConfig, ModelConfig
 
     config = AppConfig()
@@ -134,11 +117,12 @@ def test_run_chat_gates_capability_vision_on_qa_model(
     ):
         from haiku.rag.chat import run_chat
 
-        run_chat(db_path=temp_db_path, capabilities=enabled)
+        run_chat(db_path=temp_db_path)
 
     assert captured["name"] == "qa-model"
-    attached = mock_app.call_args.kwargs["capabilities"]
-    assert {capability.vision for capability in attached} == {vision}
+    capability = mock_app.call_args.kwargs["capability"]
+    assert capability.vision is vision
+    assert capability.defer_loading is False
 
 
 def _make_mock_client():
@@ -163,7 +147,7 @@ def _make_app(db_path: Path, mock_client: AsyncMock | None = None):
 
     return ChatApp(
         scope=for_path(db_path),
-        capabilities=[create_capability(db_path=db_path)],
+        capability=create_capability(db_path=db_path),
         read_only=True,
     ), mock_client
 
@@ -177,7 +161,7 @@ def _make_app_with_state(db_path: Path, mock_client: AsyncMock | None = None):
 
     return ChatApp(
         scope=for_path(db_path),
-        capabilities=[create_capability(db_path=db_path)],
+        capability=create_capability(db_path=db_path),
         read_only=True,
     ), mock_client
 
@@ -402,7 +386,7 @@ async def test_citation_expand_collapse_with_enter(temp_db_path: Path):
 @pytest.mark.asyncio
 async def test_show_citations_renders_from_flat_state(temp_db_path: Path):
     """Citations in state (flat list[str]) render into the chat history."""
-    from haiku.rag.chat.app import RAG_STATE_NAMESPACE
+    from haiku.rag.capabilities.rag import STATE_NAMESPACE
     from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
     from haiku.rag.store.models.citation import Citation
 
@@ -413,7 +397,7 @@ async def test_show_citations_renders_from_flat_state(temp_db_path: Path):
         _covering_returns(_stub_rag, mock_client),
     ):
         async with app.run_test() as pilot:
-            rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
+            rag_state = RAGState.model_validate(app._state[STATE_NAMESPACE])
 
             citation = Citation(
                 index=1,
@@ -426,7 +410,7 @@ async def test_show_citations_renders_from_flat_state(temp_db_path: Path):
             )
             rag_state.citation_index["chunk1"] = citation
             rag_state.citations.append("chunk1")
-            app._state[RAG_STATE_NAMESPACE] = rag_state.model_dump(mode="json")
+            app._state[STATE_NAMESPACE] = rag_state.model_dump(mode="json")
 
             chat_history = app.query_one(ChatHistory)
             await app._show_citations_and_programs(chat_history)
@@ -440,7 +424,7 @@ async def test_show_citations_renders_from_flat_state(temp_db_path: Path):
 @pytest.mark.asyncio
 async def test_document_filter_updates_rag_state(temp_db_path: Path):
     """Test that selecting document filters updates RAGState.document_filter."""
-    from haiku.rag.chat.app import RAG_STATE_NAMESPACE
+    from haiku.rag.capabilities.rag import STATE_NAMESPACE
     from haiku.rag.chat.widgets.document_filter_modal import DocumentFilterModal
     from haiku.rag.tools.filters import build_document_id_filter
 
@@ -461,7 +445,7 @@ async def test_document_filter_updates_rag_state(temp_db_path: Path):
             )
 
             # RAGState.document_filter should be set
-            rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
+            rag_state = RAGState.model_validate(app._state[STATE_NAMESPACE])
             expected_filter = build_document_id_filter(
                 [doc_id for _, doc_id in selected]
             )
@@ -479,7 +463,7 @@ async def test_document_filter_updates_rag_state(temp_db_path: Path):
 async def test_document_filter_narrows_sources_to_the_selection(temp_db_path: Path):
     """Over a set, the filter carries ids and `sources` restricts the question
     to the databases the selection names."""
-    from haiku.rag.chat.app import RAG_STATE_NAMESPACE
+    from haiku.rag.capabilities.rag import STATE_NAMESPACE
     from haiku.rag.chat.widgets.document_filter_modal import DocumentFilterModal
 
     app, mock_client = _make_app_with_state(temp_db_path)
@@ -497,7 +481,7 @@ async def test_document_filter_narrows_sources_to_the_selection(temp_db_path: Pa
                     [("alpha", "id-one"), ("alpha", "id-two")]
                 )
             )
-            rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
+            rag_state = RAGState.model_validate(app._state[STATE_NAMESPACE])
             assert rag_state.sources == ["alpha"]
 
             app.on_document_filter_modal_filter_changed(
@@ -505,13 +489,13 @@ async def test_document_filter_narrows_sources_to_the_selection(temp_db_path: Pa
                     [("alpha", "id-one"), ("beta", "id-three")]
                 )
             )
-            rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
+            rag_state = RAGState.model_validate(app._state[STATE_NAMESPACE])
             assert rag_state.sources == ["alpha", "beta"]
 
             app.on_document_filter_modal_filter_changed(
                 DocumentFilterModal.FilterChanged([])
             )
-            rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
+            rag_state = RAGState.model_validate(app._state[STATE_NAMESPACE])
             assert rag_state.sources is None
             assert rag_state.document_filter is None
 
@@ -519,7 +503,7 @@ async def test_document_filter_narrows_sources_to_the_selection(temp_db_path: Pa
 @pytest.mark.asyncio
 async def test_document_filter_cleared_when_empty(temp_db_path: Path):
     """Test that clearing all document filters sets document_filter to None."""
-    from haiku.rag.chat.app import RAG_STATE_NAMESPACE
+    from haiku.rag.capabilities.rag import STATE_NAMESPACE
     from haiku.rag.chat.widgets.document_filter_modal import DocumentFilterModal
 
     app, mock_client = _make_app_with_state(temp_db_path)
@@ -533,14 +517,14 @@ async def test_document_filter_cleared_when_empty(temp_db_path: Path):
             app.on_document_filter_modal_filter_changed(
                 DocumentFilterModal.FilterChanged([("test", "AI Overview")])
             )
-            rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
+            rag_state = RAGState.model_validate(app._state[STATE_NAMESPACE])
             assert rag_state.document_filter is not None
 
             # Then clear it
             app.on_document_filter_modal_filter_changed(
                 DocumentFilterModal.FilterChanged([])
             )
-            rag_state = RAGState.model_validate(app._state[RAG_STATE_NAMESPACE])
+            rag_state = RAGState.model_validate(app._state[STATE_NAMESPACE])
             assert rag_state.document_filter is None
             assert app._state["rag"]["document_filter"] is None
 
@@ -551,7 +535,10 @@ async def test_chat_app_open_failure_surfaces_real_error(tmp_path: Path):
     AttributeError from tearing down a client that never opened."""
     from haiku.rag.chat.app import ChatApp
 
-    app = ChatApp(scope=for_path(tmp_path / "missing.lancedb"), capabilities=[])
+    missing = tmp_path / "missing.lancedb"
+    app = ChatApp(
+        scope=for_path(missing), capability=create_capability(db_path=missing)
+    )
     with pytest.raises(FileNotFoundError):
         async with app.run_test():
             pass
@@ -662,9 +649,9 @@ async def test_visual_grounding_uses_the_database_holding_the_citation(tmp_path)
 
 class TestLendingTheClient:
     @pytest.mark.asyncio
-    async def test_mounting_lends_its_client_to_every_capability(self, temp_db_path):
-        """Capabilities are built before the client exists, and each reads
-        through the one the app opened."""
+    async def test_mounting_lends_its_client_to_the_capability(self, temp_db_path):
+        """The capability is built before the client exists, and reads through
+        the one the app opened."""
         client = _make_mock_client()
         app, _ = _make_app(temp_db_path, client)
 
@@ -673,15 +660,14 @@ class TestLendingTheClient:
             _covering_returns(stub_rag, client),
         ):
             async with app.run_test():
-                borrowed = [c.borrowed_rag for c in app._capabilities]
+                borrowed = app._capability.borrowed_rag
 
-        assert borrowed == [client] * len(app._capabilities)
-        assert borrowed
+        assert borrowed is client
 
     @pytest.mark.asyncio
-    async def test_mounting_gives_every_capability_the_apps_scope(self, tmp_path):
+    async def test_mounting_gives_the_capability_the_apps_scope(self, tmp_path):
         """A capability built over the configured set covers what the chat
-        selected once mounted: the analysis sandbox is built over that scope."""
+        selected once mounted: the sandbox is built over that scope."""
         from haiku.rag.chat.app import ChatApp
         from haiku.rag.client.scope import DatabaseScope
         from haiku.rag.config.models import AppConfig, LanceDBConfig
@@ -699,7 +685,7 @@ class TestLendingTheClient:
         assert capability.scope.covers_multiple
 
         client = _make_mock_client()
-        app = ChatApp(scope=selected, capabilities=[capability], read_only=True)
+        app = ChatApp(scope=selected, capability=capability, read_only=True)
         with (
             patch("haiku.rag.chat.app.HaikuRAG") as stub_rag,
             _covering_returns(stub_rag, client),
@@ -859,7 +845,7 @@ class TestRenderingUnattributedPictures:
     ):
         """A citation without a source has no picture owner across databases.
         It renders with its figure markers."""
-        from haiku.rag.chat.app import RAG_STATE_NAMESPACE
+        from haiku.rag.capabilities.rag import STATE_NAMESPACE
         from haiku.rag.store.models.citation import Citation
 
         covering = _make_mock_client()
@@ -884,7 +870,7 @@ class TestRenderingUnattributedPictures:
             _covering_returns(stub, covering),
         ):
             async with app.run_test() as pilot:
-                app._state[RAG_STATE_NAMESPACE] = {
+                app._state[STATE_NAMESPACE] = {
                     "citations": ["c1"],
                     "citation_index": {"c1": citation.model_dump(mode="json")},
                 }
@@ -897,16 +883,15 @@ class TestRenderingUnattributedPictures:
         covering.get_picture_bytes.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_one_chunk_id_in_two_collections_keeps_its_own_pictures(
+    async def test_citations_from_two_collections_keep_their_own_pictures(
         self, temp_db_path: Path, monkeypatch
     ):
-        """Chunk ids repeat between copies of a database, and both capabilities'
-        citations are gathered into one mapping."""
+        """Pictures are fetched from the collection each citation came from."""
         from io import BytesIO
 
         from PIL import Image as PILImage
 
-        from haiku.rag.chat.app import ANALYSIS_STATE_NAMESPACE, RAG_STATE_NAMESPACE
+        from haiku.rag.capabilities.rag import STATE_NAMESPACE
         from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
         from haiku.rag.store.models.citation import Citation
 
@@ -927,10 +912,10 @@ class TestRenderingUnattributedPictures:
         covering.source_names = ("alpha", "beta")
         covering.reader_for = AsyncMock(side_effect=reader)
 
-        def cited(source: str) -> dict:
+        def cited(source: str, chunk_id: str) -> dict:
             return Citation(
                 document_id="d1",
-                chunk_id="c1",
+                chunk_id=chunk_id,
                 source=source,
                 content="body",
                 document_uri=f"test://{source}",
@@ -952,13 +937,12 @@ class TestRenderingUnattributedPictures:
             _covering_returns(stub, covering),
         ):
             async with app.run_test() as pilot:
-                app._state[RAG_STATE_NAMESPACE] = {
-                    "citations": ["c1"],
-                    "citation_index": {"c1": cited("alpha")},
-                }
-                app._state[ANALYSIS_STATE_NAMESPACE] = {
-                    "citations": ["c1"],
-                    "citation_index": {"c1": cited("beta")},
+                app._state[STATE_NAMESPACE] = {
+                    "citations": ["c1", "c2"],
+                    "citation_index": {
+                        "c1": cited("alpha", "c1"),
+                        "c2": cited("beta", "c2"),
+                    },
                 }
 
                 await app._show_citations_and_programs(app.query_one(ChatHistory))
@@ -974,7 +958,7 @@ class TestNamingACitationsCollection:
     @staticmethod
     async def _titles(temp_db_path, covering, *sources: str | None) -> list[str]:
         """The collapsed titles of one citation per source, all named alike."""
-        from haiku.rag.chat.app import RAG_STATE_NAMESPACE
+        from haiku.rag.capabilities.rag import STATE_NAMESPACE
         from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
         from haiku.rag.store.models.citation import Citation
 
@@ -996,7 +980,7 @@ class TestNamingACitationsCollection:
             _covering_returns(stub, covering),
         ):
             async with app.run_test() as pilot:
-                app._state[RAG_STATE_NAMESPACE] = {
+                app._state[STATE_NAMESPACE] = {
                     "citations": list(index),
                     "citation_index": index,
                 }

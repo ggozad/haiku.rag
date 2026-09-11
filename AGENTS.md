@@ -1,6 +1,6 @@
 # haiku.rag Project Guide
 
-Agentic RAG system built on LanceDB with hybrid search, multiple embedding providers, reranking, and native Pydantic AI RAG + analysis capabilities.
+Agentic RAG system built on LanceDB with hybrid search, multiple embedding providers, reranking, and a native Pydantic AI RAG capability with sandboxed code execution.
 
 ## Quick Reference
 
@@ -34,21 +34,18 @@ haiku_rag_slim/haiku/rag/   # Source code
 │                           # AmbiguousCitationError, SourceUnavailableError, ConfigMismatchError
 ├── embeddings/             # VoyageAI, Cohere, vLLM (ollama/openai via pydantic-ai)
 ├── reranking/              # cross-encoder, Cohere, Zero Entropy, Jina, Jina-local, vLLM
-├── sandbox/                # pydantic-monty sandbox used by AnalysisCapability
+├── sandbox/                # pydantic-monty sandbox used by RAGCapability and MCP execute_code
 │   ├── sandbox.py          # Sandbox, SandboxResult, recovery_hint
-│   ├── dependencies.py     # AnalysisContext (per-invocation filter)
-│   └── models.py           # AnalysisResult (returned by client.analyze)
+│   └── dependencies.py     # AnalysisContext (per-invocation filter)
 ├── providers/              # External service providers
 │   └── docling_serve.py    # Docling serve provider
 ├── capabilities/           # Native Pydantic AI capabilities
-│   ├── _base.py            # Per-run state, resources, question identity and epochs
 │   ├── _tools.py           # Shared capability primitives
 │   ├── ledger.py           # CapabilityEvidenceRecord, citation_status
 │   ├── evidence.py         # discover_evidence(), DiscoveredEvidence
 │   ├── compaction.py       # EvidenceCompactionCapability, build_capsule, compact_history
 │   ├── policy.py           # CitationPolicyCapability, CitationPolicyState
-│   ├── rag.py              # RAGCapability and RAGState
-│   ├── analysis.py         # AnalysisCapability and AnalysisState
+│   ├── rag.py              # RAGCapability, RAGState, create_capability; per-run state, budgets, question identity
 │   └── instructions/       # Deferred model instructions
 ├── tools/                  # Reusable pydantic-ai FunctionToolsets
 │   ├── context.py          # RAGDeps protocol
@@ -68,7 +65,7 @@ haiku_rag_slim/haiku/rag/   # Source code
 │   ├── processing.py       # convert, chunk
 │   ├── titles.py           # generate_title
 │   ├── search.py           # search, expand_context, visualize_chunk
-│   ├── agents.py           # ask, analyze
+│   ├── agents.py           # ask
 │   ├── rebuild.py          # rebuild_database
 │   └── downloads.py        # download_models
 ├── ingester/               # haiku-ingester service (continuous ingestion; own CLI + [ingester] extra)
@@ -102,7 +99,7 @@ evaluations/                # Benchmarking workspace
 │   ├── benchmark.py        # Typer CLI: run, download, upload
 │   ├── population.py       # populate_db
 │   ├── retrieval.py        # run_retrieval_benchmark
-│   ├── qa.py               # run_qa_benchmark, run_live_qa_benchmark, Target
+│   ├── qa.py               # run_qa_benchmark, run_live_qa_benchmark
 │   ├── artifacts.py        # download_dataset_db, upload_dataset_db, HF_REPO_ID
 │   ├── experiment.py       # build_experiment_metadata
 │   ├── config.py           # DatasetSpec, DocumentPayload, RetrievalSample
@@ -138,7 +135,7 @@ app/                        # Conversational RAG application (see below)
 - `get_reranker(config)` → `RerankerBase | None` (reranking/__init__.py)
 - `get_converter(config)` → `DocumentConverter` (converters/__init__.py)
 - `get_chunker(config)` → `DocumentChunker` (chunkers/__init__.py)
-- `create_capability(db_path?, config?, rag=None, defer_loading=True, request_limit=20|30, vision=None)` → `RAGCapability | AnalysisCapability` (capabilities/rag.py, capabilities/analysis.py). `request_limit` is a per-question cap: at the limit only the exhausted capability's tools are removed, except its cite tool, which survives `CITATION_GRACE_REQUESTS` (2) further requests that call one of that capability's tools so an exhausted run can still register citations. Turns spent on another capability do not count against that window. A spent search or code budget does not withdraw the tool — it keeps failing, because withdrawing a tool the model calls anyway costs the agent's unknown-tool retries and aborts the run. `vision` gates image attachment on search results and must reflect the model the hosting agent runs; defaults to the configured model's `vision` flag. Pass `rag` to lend the capability an open client instead of letting it open its own: it lands in `borrowed_rag`, which `_ensure_rag` prefers and `_close` never closes, unlike the `rag` it opens itself. Each capability also overrides `from_spec`, delegating here so pydantic-ai agent specs can declare it; `db_path` accepts a `str`.
+- `create_capability(db_path?, config?, rag=None, defer_loading=True, request_limit=30, sources=None, vision=None)` → `RAGCapability` (capabilities/rag.py), tools `search`, `execute_code`, `cite`, state under `rag`. `request_limit` is a per-question cap: at the limit the capability's tools are removed, except `cite`, which survives `CITATION_GRACE_REQUESTS` (2) further requests that call one of the capability's tools so an exhausted run can still register citations. Turns spent on other tools do not count against that window. A spent search or code budget does not withdraw the tool — it keeps failing, because withdrawing a tool the model calls anyway costs the agent's unknown-tool retries and aborts the run. `vision` gates image attachment on search results and must reflect the model the hosting agent runs; defaults to `qa.model.vision`. Pass `rag` to lend the capability an open client instead of letting it open its own: it lands in `borrowed_rag`, which `_ensure_rag` prefers and `_close` never closes, unlike the `rag` it opens itself. The capability also overrides `from_spec`, delegating here so pydantic-ai agent specs can declare it; `db_path` accepts a `str`.
 - `create_capability()` → `EvidenceCompactionCapability` (capabilities/compaction.py). Optional; registering it is the only switch. Replaces earlier questions' evidence on the *request* with a capsule of what was cited (pictures included, fetched through the owning capability), other earlier evidence returns with a receipt. No config, no budget: cited evidence is kept whole, so this reduces a request without bounding it.
 - `create_capability()` → `CitationPolicyCapability` (capabilities/policy.py). Optional; requires every answer to declare its grounding. Asks once per question, records failures in `CitationPolicyState.violations`, and never asks the model to change its answer. Enforced whenever the question has something to declare: it retrieved evidence, or the conversation already cited something.
 - `create_search_toolset(config)` → `FunctionToolset[RAGDeps]` (tools/search.py)
@@ -179,7 +176,6 @@ async with HaikuRAG(db_path, config, create=True) as rag:
     results = await rag.search(query, limit, filter)
     expanded = await rag.expand_context(results)
     answer, citations = await rag.ask(question, filter=None, images=None)  # images: Sequence[bytes], needs vision: true on the model
-    result = await rag.analyze(question, filter=None, images=None)  # AnalysisResult
 
     # Document resolution
     doc = await rag.resolve_document(id_or_title)
@@ -263,8 +259,8 @@ leaves the configuration: it travels in `SearchResult.source`, `Citation.source`
 - `EmbeddingsConfig` / `EmbeddingModelConfig` - provider, name, vector_dim, multimodal (bool, gates image embedding)
 - `RerankingConfig` - optional reranker model
 - `ModelConfig` - base model configuration (model name)
-- `QAConfig` - model, max_searches, max_executions (default 15). `qa.model` drives both capabilities; `max_searches` (default 5) bounds the search tool of **both**. `max_searches` counts search *units*: searches emitted in one model response (same `RunContext.run_step`) share a unit, up to `FREE_SIBLINGS_PER_ROUND` (3) per unit — searches 1, 4, 7… of a round increment `search_count` — so total searches per run cap at `max_searches × 3` and a sequential searcher pays one unit per search. A budget-rejected round fails its remaining siblings. A separate `analysis.max_searches` was tried and reverted: raising it bought no accuracy for +44% wall-clock
-- `SandboxConfig` - code_timeout, max_output_chars: limits of one `execute_code` call, read by the analysis capability and the MCP `execute_code` tool. Searching from inside `analysis_execute_code` does not count against `qa.max_searches`, so code execution outlives a spent search budget as a way to reach new evidence
+- `QAConfig` - model, max_searches (default 5), max_executions (default 15): the capability's model and per-question budgets. `max_searches` counts search *units*: searches emitted in one model response (same `RunContext.run_step`) share a unit, up to `FREE_SIBLINGS_PER_ROUND` (3) per unit — searches 1, 4, 7… of a round increment `search_count` — so total searches per run cap at `max_searches × 3` and a sequential searcher pays one unit per search. A budget-rejected round fails its remaining siblings. A separate `analysis.max_searches` was tried and reverted: raising it bought no accuracy for +44% wall-clock
+- `SandboxConfig` - code_timeout, max_output_chars: limits of one `execute_code` call, read by the capability and the MCP `execute_code` tool. Searching from inside `execute_code` does not count against `qa.max_searches`, so code execution outlives a spent search budget as a way to reach new evidence
 - `PictureDescriptionConfig` - picture description model settings
 - `ProcessingConfig` - chunk_size, converter, chunker, conversion_options, auto_title, title_model
 - `SearchConfig` - limit, max_context_chars, vector_index_metric, vector_refine_factor, vector_nprobes
@@ -282,7 +278,7 @@ Every model inherits `ConfigModel` (`extra="forbid"`), so an unknown or misspell
 **Global CLI options:** `--db-name NAME` selects one entry from
 `lancedb.databases` and is global, so it precedes the command; `--db PATH` is
 per-subcommand and follows it. They are mutually exclusive. `search`, `ask`,
-`analyze`, `chat` and `mcp` cover the configured set; everything else works on
+`chat` and `mcp` cover the configured set; everything else works on
 one database. `settings`, `init-config` and `download-models` resolve no scope at all,
 so a name is nothing to them.
 
@@ -299,7 +295,6 @@ list          List documents (with optional filter)
 # Search & QA
 search        Hybrid search (vector + full-text)
 ask           QA via the RAG capability (always shows citations; --image PATH repeatable)
-analyze       Analysis via the analysis capability (Python sandbox with document VFS; --image PATH repeatable)
 
 # Maintenance
 init          Initialize new database
@@ -360,7 +355,7 @@ no structured content — see the gotcha below. Every other tool returns a
 pydantic model, whose JSON is the payload.
 
 **`execute_code`** runs one program per call in the same Monty sandbox the
-analysis capability uses, over the documents `filter` and `sources` select, and
+RAG capability uses, over the documents `filter` and `sources` select, and
 returns what it printed. One sandbox per call: a session outliving the call
 would hit Monty's cumulative duration budget and never see documents ingested
 after its first mount. Where the client is already a model the server's value is
@@ -555,7 +550,7 @@ Before proposing a commit, read the added comment lines on their own:
 - Coverage: run `uv run pytest -m "not integration" --cov=haiku` (matches CI `test.yml`). Deep-dotted `--cov=haiku.rag.<module>` crashes beartype (claw circular-import while loading conftest); file-path `--cov=<path>.py` collects no data (source is the `haiku` package). Scope the report by grepping the term-missing output, not by narrowing `--cov`.
 - Test context expansion / `visualize_chunk` without the embedder (no VCR needed): `import_document(docling_doc, [Chunk(..., embedding=[0.1] * vector_dim)])` — a precomputed `embedding` skips `embed_chunks`. Build the `DoclingDocument` with `add_page`/`add_text` + `ProvenanceItem` bboxes for page-image/bounding-box tests.
 - Textual `auto` grid rows ignore margins: `margin-bottom` on a widget in an `auto` grid row collapses the row and clips the widget's children out of view (bit the chat `FlexibleInput`). Use bottom padding for spacing instead. Assert layout in tests with `parent.region.contains_region(child.region)`, not just region heights.
-- User-attached images (`ask`/`analyze` `images=`, chat Ctrl+I) need the capability instructions' "Questions with attached images" section — without it, vision models emit the not-enough-information refusal without searching, because the instructions frame everything as knowledge-base content.
+- User-attached images (`ask` `images=`, chat Ctrl+I) need the capability instructions' "Questions with attached images" section — without it, vision models emit the not-enough-information refusal without searching, because the instructions frame everything as knowledge-base content.
 - A line that executes once per process (module-level lazy init, e.g. `get_config()`'s `_config is None` branch) is covered only if some xdist worker reaches it before an alternative — shard-dependent, so it varies with core count and can read 100% locally and 99.99% on a 2-core runner. Assert such branches directly with the module global reset via `monkeypatch`.
 - `client.update_document` re-chunks and re-embeds, so it needs `@pytest.mark.vcr()` and a cassette. To rewrite stored content without touching the embedder, use `DocumentRepository.update` (writes the row only).
 - Embed-only rebuild recreates the chunks table, so patching `store.chunks_table.add` on the instance is silently discarded — patch `lancedb.AsyncTable.add` at class level and filter on `self.name` (same shape as the `AsyncTags` gotcha). Its phase 2 writes via `chunks_table.add`, NOT `_flush_rebuild_batch`; and a FULL rebuild refreshes source-backed documents in place, keeping the document id (it re-fetches with `force=True`, bypassing the revision and MD5 short-circuits, and falls back to stored content if the fetch fails).
@@ -565,13 +560,13 @@ Before proposing a commit, read the added comment lines on their own:
 - `astral-sh/setup-uv` publishes floating major tags only through v7; v8/v9 exist as exact tags only, so `@v9` fails to resolve and the job dies in seconds. Pin exact (`@v9.0.0`). v4 also predates GitHub's current cache API and gets `400 Failed to restore`, silently redownloading every wheel.
 - A test driving an in-process `fastmcp.Client` needs `@pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")`. Any earlier test in the same xdist worker that runs the CLI calls the real `telemetry.configure()`, which installs logfire's `WarnOnExtractTraceContextPropagator` process-wide; the client then propagates trace context into the server and the propagator warns `RuntimeWarning` on its first extraction per process. `filterwarnings = ["error", ...]` turns that into an exception inside the tool, surfacing as `fastmcp.exceptions.ToolError: Found propagated trace context`. Shard-dependent, so it passes in isolation and on high-core machines: reproduce with `uv run pytest tests/test_cli.py <the test> -n0`.
 
-- Capability state (`RAGState`, `AnalysisState`) shares the flat `EvidenceState` base and is dumped and re-validated at every carry point: `client/agents.py`, `chat/app.py`, `evaluations/capability_runner.py`, and over the wire in `app/backend/main.py`, where the AG-UI client hands the snapshot back on the next turn. Nesting a field under a sub-object or renaming one is a breaking wire change; additions are safe. `begin_invocation()` drops the previous question's working evidence (`citations`, `searches`) and is called only when a new question starts.
+- Capability state (`RAGState`) is flat and is dumped and re-validated at every carry point: `client/agents.py`, `chat/app.py`, `evaluations/capability_runner.py`, and over the wire in `app/backend/main.py`, where the AG-UI client hands the snapshot back on the next turn. Nesting a field under a sub-object or renaming one is a breaking wire change; additions are safe. `begin_invocation()` drops the previous question's working evidence (`citations`, `searches`, `executions`) and is called only when a new question starts.
 - `providers.docling_serve.timeout` bounds each HTTP call (submit, poll, result), not the whole conversion — the status poll is a `while True` loop with no deadline, so a job that never finishes hangs whatever the value.
 - Mutating a pydantic model's `model_config` after class creation has no effect until `Model.model_rebuild(force=True)`; a strictness probe that skips the rebuild silently validates under the old config.
 - `haiku.rag.sources` is importable from core without the `[s3]`/`[ingester]` extras because `obstore` is imported inside `S3Source` methods, not at module level. Hoisting that import breaks a slim install.
 - One-shot directory ingest enumerates through `sources.fs.walk_files`, which never follows directory symlinks and keeps a symlinked file only when its target resolves inside the named root. There is no size cap on that path (the ingester's `max_file_size` applies to `FSSource` only).
 - `run_db_checks` (doctor.py) is an orchestration list over `_check_*` functions that take the already-computed locals. The vector matrix stays a local so the `del vectors` memory ceiling holds — putting it on a shared snapshot object regresses peak RSS.
-- Agent specs construct capabilities through `from_spec`, never `cls()`: `id` must come from `create_capability()`, because `_base.py` filters tools by `tool.capability_id != self.id` and pydantic-ai's duplicate-id rejection is what enforces one compaction/policy capability per run (a bare `cls()` leaves `id=None` and two are accepted silently). pydantic-ai does NOT coerce or validate spec arguments — `load_from_registry` passes raw parsed YAML, so a `db_path` arrives as `str` and a `config` as `dict`. Third-party capabilities are never auto-discovered: the caller passes `custom_capability_types=[...]` (no entry points, no registry hook), so never claim otherwise in docs. A spec always needs a model, in the spec or as a kwarg. Overriding `from_spec` also moves schema generation from `cls.__init__` to the `from_spec` signature; a zero-argument override drops the `spec_params_*` def entirely, which is what keeps compaction's per-run caches out of the schema.
+- Agent specs construct capabilities through `from_spec`, never `cls()`: `id` must come from `create_capability()`, because `rag.py` filters tools by `tool.capability_id != self.id` and pydantic-ai's duplicate-id rejection is what enforces one compaction/policy capability per run (a bare `cls()` leaves `id=None` and two are accepted silently). pydantic-ai does NOT coerce or validate spec arguments — `load_from_registry` passes raw parsed YAML, so a `db_path` arrives as `str` and a `config` as `dict`. Third-party capabilities are never auto-discovered: the caller passes `custom_capability_types=[...]` (no entry points, no registry hook), so never claim otherwise in docs. A spec always needs a model, in the spec or as a kwarg. Overriding `from_spec` also moves schema generation from `cls.__init__` to the `from_spec` signature; a zero-argument override drops the `spec_params_*` def entirely, which is what keeps compaction's per-run caches out of the schema.
 - `is_local_uri` and `uri_to_path` (`uri.py`) own the two decisions "is this local" and "what path is this" — four call sites each had their own copy. `urlparse("C:/docs/a.pdf")` reports the drive letter as scheme `c`, and `urlparse().path` keeps the leading slash before a Windows drive, so `file:///C:/docs/a.pdf` becomes `\C:\docs\a.pdf`; `url2pathname` is the stdlib fix, per platform. A file URI's host is reattached after conversion, not passed to `url2pathname`, which as of 3.14 rejects a non-local authority off Windows. Don't re-derive any of this locally.
 - `tests/test_uri.py` runs in its own CI matrix (ubuntu/macos/windows x py3.13/3.14) **without the project installed**: `uv run --no-project ... --noconftest -o addopts=`. Keep it stdlib-only — a project import, or anything needing the repo conftest, breaks the Windows legs that cover drive-letter conversion.
 - Repeating a search query within a question accumulates: `state.searches[query]` is merged through `merge_results` (`_tools.py`), keyed on `chunk_id`, so a narrower re-search cannot drop what a wider one already showed the model. `SearchResult`s built by hand in tests without a `chunk_id` are indistinguishable and collapse to the first. `search_corpus` returns `"No results found."` rather than an empty string.
@@ -660,8 +655,8 @@ Separate workspace package (`evaluations/`) for benchmarking.
 ```bash
 cd evaluations
 uv sync
-evaluations run <dataset>                    # default --target rag-capability
-evaluations run <dataset> --target analysis-capability --capability-model ollama:qwen3.8
+evaluations run <dataset>
+evaluations run <dataset> --capability-model ollama:qwen3.8
 evaluations run <dataset> --judge-model ollama:gemma4  # independent judge
 evaluations download <dataset|all>           # Pre-built eval DBs from HuggingFace
 evaluations upload <dataset|all>             # Upload eval DBs
@@ -671,15 +666,15 @@ Datasets: `hotpotqa`, `orb_text`, `orb_multimodal`, `orb_multimodal_nemotron`, `
 
 **Multi-turn (MTRAG)**: `mtrag_clapnq` runs gold-prefix QA (`ConversationInput` cases replay the reference prefix as message history) plus lastturn retrieval; `_rewrite` retrieves with the human rewrites; `_live` and `_live_uncompacted` set `spec.live` (one case per conversation, `--limit` counts conversations) and differ only in `spec.compaction`, which registers `EvidenceCompactionCapability` in the runner — the only eval coverage compaction has, since every other dataset is single-turn where it is inert. Live runs carry `all_messages()` and ONE capability-state dict across turns (0.74.0 compaction raises on history with a fresh state dict) and record question-length per-turn arrays (`turn_cited_uris`, `turn_n_search_calls`, `turn_n_rejected_searches`, `turn_n_failed_tools`, `turn_n_requests`, `turn_citation_status`), counted per turn from `new_messages()` so compaction rewriting earlier history cannot skew them. Gold-prefix and live pass rates answer different judge questions and are NOT comparable; the supported comparison is compacted vs uncompacted, paired by turn. `_live_summary`'s macro rate excludes conversations with zero judged turns — a judge outage is an operational exclusion, not a failed conversation.
 
-**Targets:** `rag-capability` (default), `analysis-capability`. Both run end-to-end through native Pydantic AI agents (see `evaluations/capability_runner.py`). `--capability-model` defaults to `config.qa.model` or the configured analysis model.
+**Capability runs** go end-to-end through a native Pydantic AI agent (see `evaluations/capability_runner.py`). `--capability-model` defaults to `config.qa.model`. Benchmark rows measured before the analysis capability merged into the RAG capability carry a `Target` column naming which one ran.
 
 **Citation retrieval metric**: `CitationMAPEvaluator` scores the URIs the capability registers via its citation tool against gold `expected_uris`, alongside the LLMJudge. Score key: `cited_map`.
 
 **The judge is pinned and frozen.** Every reference config under `evaluations/configs/` whose dataset is judged carries the same block (`temperature: 0.6`, `max_tokens: 16384`, `extra_body` with `top_p` 0.95 / `top_k` 20 / `min_p` 0 / `chat_template_kwargs.enable_thinking: true`), guarded by `tests/test_reference_configs.py`. Do not change it without an eval: greedy decoding lost 5-14% of verdicts to repetition spirals on Qwen, and `max_tokens: 32768` measured worse than 16384 (130 lost verdicts vs 36) because the spiral is not budget-bound. `DEFAULT_JUDGE_MODEL` carries only the subset ollama honours (`temperature`, `max_tokens`, `top_p`) — ollama silently ignores `top_k`, `min_p` and `chat_template_kwargs`. `t2_finqa` / `t2_tatdqa` set `qa_evaluator`, which replaces the evaluator list, so no judge is ever constructed for them and a judge block there is dead config.
 
 **Per-case diagnostics**: runs record `cited_chunk_ids`, `searched_uris`, `n_searches`, `n_search_calls`, `n_rejected_searches`, `n_failed_tools`, `n_executions` and `n_requests` as eval attributes. Counted from the message history, since `state.searches` is keyed by query and `for_run` gives the run a `replace()` copy whose counters the host never sees. Reading them:
-- `n_rejected_searches` is search-budget exhaustion; `n_failed_tools` is any failed call of that capability's tools, and a failed `analysis_execute_code` is either an exhausted execution budget or an error in model-written Python
-- `n_searches` counts distinct search *keys*, and analysis files every in-code `search()` under one `_sandbox` key, so sandbox searches are not counted anywhere
+- `n_rejected_searches` is search-budget exhaustion; `n_failed_tools` is any failed call of that capability's tools, and a failed `execute_code` is either an exhausted execution budget or an error in model-written Python
+- `n_searches` counts distinct search *keys*, and every in-code `search()` is filed under one `_sandbox` key, so sandbox searches are not counted anywhere
 - `n_requests` is the run's request count, matching a capability's own budget only while it stays loaded
 - `citation_status` derives `grounded` / `ungrounded` / `missing` from the evidence record via `ledger.citation_status` (an explicit `cite([])` is `ungrounded`, distinct from declaring nothing)
 
@@ -689,7 +684,7 @@ Datasets: `hotpotqa`, `orb_text`, `orb_multimodal`, `orb_multimodal_nemotron`, `
 
 **Eval prompts**: datasets do not carry custom system prompts. Capability targets use packaged instructions plus `config.prompts.domain_preamble`. `DatasetSpec` has no `system_prompt` field.
 
-**Eval-side rules**: don't assert specific phrases in packaged instructions; test behavior instead. `build_experiment_metadata` is additive, with one exception made alongside the `thinking` rename: the `qa_*` model mirrors (`qa_provider`, `qa_model`, `qa_temperature`, `qa_max_tokens`, `qa_enable_thinking`, `qa_extra_body`) were removed because `capability_*` records the model that ran and `qa_*` could record one that did not. `qa_max_searches` stays: it bounds both capabilities and has no `capability_` twin. `capability_model_source` names which of `--capability-model` / `qa.model` produced `capability_*`; `capability_*` is always present on a QA run and absent on a retrieval run. Run targeted tests in `evaluations/` with `uv run pytest`.
+**Eval-side rules**: don't assert specific phrases in packaged instructions; test behavior instead. `build_experiment_metadata` is additive, with one exception made alongside the `thinking` rename: the `qa_*` model mirrors (`qa_provider`, `qa_model`, `qa_temperature`, `qa_max_tokens`, `qa_enable_thinking`, `qa_extra_body`) were removed because `capability_*` records the model that ran and `qa_*` could record one that did not. `qa_max_searches` stays: it bounds the capability and has no `capability_` twin. `capability_model_source` names which of `--capability-model` / `qa.model` produced `capability_*`; `capability_*` is always present on a QA run and absent on a retrieval run. Run targeted tests in `evaluations/` with `uv run pytest`.
 
 **Reasoning knobs on vLLM**: a vLLM server started with `--reasoning-parser` consumes `chat_template_kwargs.enable_thinking` itself — it never reaches the chat template. Muse-Glimmer QA blocks must set `chat_template_kwargs.reasoning_strength: high` instead (the mtrag reference config does); a template defaulting it to low silently cuts search calls ~37% with no error anywhere. Verify a kwarg by RENDERING (`/tokenize` with `return_token_strs`) or by measured behavior, never by HTTP acceptance.
 
@@ -730,7 +725,7 @@ The backend adapts a native `RAGCapability` agent with Pydantic AI's `AGUIAdapte
 
 Section-bounded expansion: sections within `max_context_chars` are returned whole. Too-large sections expand outward bounded by section edges. Too-small sections (< 20% of budget) grow across boundaries. Only truly overlapping ranges merge — adjacent sections stay independent. The expanded result is hard-capped at `max_context_chars`. `visualize_chunk` expands context before resolving bounding boxes to cover all pages.
 
-### Analysis Sandbox (`sandbox/sandbox.py`)
+### Sandbox (`sandbox/sandbox.py`)
 
 pydantic-monty interpreter in a subprocess worker checked out of an `AsyncMonty` pool, with a virtual filesystem at `/documents/{id}/`. Every file is a read-only `CallbackFile`: `metadata.json` returns an already-built string, `content.txt` is lazy per-document, and `items.jsonl`/`chunks.jsonl`/`toc.json` use a lazy bulk cache where the first read triggers one query for all items. One session serves every `execute()` call, so variables persist; `_run_on_loop` bridges sync reads to async DB queries.
 
@@ -740,19 +735,17 @@ pydantic-monty interpreter in a subprocess worker checked out of an `AsyncMonty`
 
 ### Capability Tools
 
-**RAGCapability** exposes `rag_search` and `rag_cite`.
+**RAGCapability** exposes `search`, `execute_code` and `cite`. The sandbox mounts a document VFS at `/documents/{id}/`.
 
-**AnalysisCapability** exposes `analysis_search`, `analysis_execute_code`, and `analysis_cite`. The sandbox mounts a document VFS at `/documents/{id}/`.
+**EvidenceCompactionCapability** exposes no tools. It discovers the evidence capability through `RunContext.capabilities` and rewrites `request_context.messages` in `wrap_model_request` — never the stored history, which is what keeps question identities and epochs (both message counts) meaningful.
 
-**EvidenceCompactionCapability** exposes no tools. It discovers the evidence capabilities through `RunContext.capabilities` and rewrites `request_context.messages` in `wrap_model_request` — never the stored history, which is what keeps question identities and epochs (both message counts) meaningful.
-
-**CitationPolicyCapability** exposes no tools. It reads the same discovered records and acts in `after_model_request` / `after_run`. The cite tools accept an empty `chunk_ids`, recorded as a declaration with no refs that derives `ungrounded` — distinct from an answer that declared nothing (`missing`).
+**CitationPolicyCapability** exposes no tools. It reads the same discovered records and acts in `after_model_request` / `after_run`. The cite tool accepts an empty `chunk_ids`, recorded as a declaration with no refs that derives `ungrounded` — distinct from an answer that declared nothing (`missing`).
 
 | Tool | Purpose |
 |------|---------|
-| `rag_search` / `analysis_search` | Hybrid search with expanded context |
-| `analysis_execute_code` | Run Python in the analysis sandbox |
-| `rag_cite` / `analysis_cite` | Register citations in host state |
+| `search` | Hybrid search with expanded context |
+| `execute_code` | Run Python in the sandbox |
+| `cite` | Register citations in host state |
 
 ### Development
 

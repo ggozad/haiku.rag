@@ -13,11 +13,11 @@ haiku-rag chat --db /path/to/database.lancedb
 haiku-rag chat --model openai:gpt-4o
 ```
 
-![Chat TUI session with the analysis capability](img/chat-qa.png)
+![Chat TUI session](img/chat-qa.png)
 
 ## How it works
 
-The chat is a Pydantic AI agent with the [RAG capability](capabilities/rag.md) attached by default. A single capability loads eagerly; when both RAG and analysis are enabled, they remain deferred until the model chooses which one to load. Each turn the agent decides which tool to call next, runs hybrid search against your documents, expands context around the hits, may issue further searches, and answers with citations. You see streaming text and native tool events directly from Pydantic AI.
+The chat is a Pydantic AI agent with the [RAG capability](capabilities/rag.md) attached and loaded. Each turn the agent decides which tool to call next, runs hybrid search against your documents, expands context around the hits, may issue further searches or run code over the documents, and answers with citations. You see streaming text and native tool events directly from Pydantic AI.
 
 The session is in-memory for the lifetime of the TUI. Conversation history is kept across turns so follow-up questions reuse prior context. Citations are tracked per turn and inspectable via the command palette. Clearing the chat resets the session and the agent's memory.
 
@@ -56,29 +56,16 @@ Retrieval stays text-based; the images are sent to the model alongside your mess
 | Show visual grounding | Visual grounding for a citation |
 | Database info | Document and chunk counts, storage stats |
 
-## Capabilities
+## Code execution
 
-The default capability is `rag`. Enable `analysis` when the question needs computation, aggregation, comparison across documents, or section-scoped reading that a single search can't deliver:
-
-```bash
-# analysis instead of rag
-haiku-rag chat -c analysis
-
-# both, which gives the model duplicate search and cite tools
-haiku-rag chat -c rag -c analysis
-```
-
-Prefer one. `analysis` searches and cites as well as computing, so pairing it with `rag`
-duplicates tools and budgets. See [Capabilities](capabilities/index.md#compose-an-agent).
-
-The `analysis` capability mounts every document as a virtual filesystem at `/documents/{id}/` (with `metadata.json`, `content.txt`, `items.jsonl`, and `toc.json`) and runs Python in a sandboxed interpreter with `search` and `list_documents` as awaitable functions. It's the right choice for questions like:
+The capability mounts every document as a virtual filesystem at `/documents/{id}/` (with `metadata.json`, `content.txt`, `items.jsonl`, `chunks.jsonl` and `toc.json`) and runs Python in a sandboxed interpreter with `search` and `list_documents` as awaitable functions. The model reaches for it on questions like:
 
 - "How many of these documents mention X?"
 - "Summarize Section 5 of paper Y."
 - "Compare the experimental sections across these three reports."
 - "Which section discusses the proof of Theorem 4.10?"
 
-For everyday Q&A, RAG alone is faster and cheaper. Attaching both lets the agent pick. See [Analysis capability](capabilities/analysis.md).
+The program behind an answer is shown under it. See [RAG capability](capabilities/rag.md).
 
 ## Document filter
 

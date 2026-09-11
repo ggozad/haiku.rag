@@ -19,7 +19,6 @@ from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
 
-from haiku.rag.capabilities.analysis import create_capability as create_analysis
 from haiku.rag.capabilities.compaction import (
     RECEIPT,
     Capsule,
@@ -33,7 +32,7 @@ from haiku.rag.capabilities.rag import create_capability as create_rag
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models.chunk import SearchResult
 
-OWNED = frozenset({"rag_search"})
+OWNED = frozenset({"search"})
 PNG = BinaryContent(data=b"fake-image-bytes", media_type="image/png")
 
 
@@ -44,12 +43,12 @@ def retrieved_image(chunk_id: str = "chunk-1", self_ref: str = "#/pictures/0"):
 
 def answered_question(question: str, *, evidence: str, images: bool = False):
     """One settled question: prompt, search, result, answer."""
-    returned: list[Any] = [ToolReturnPart("rag_search", evidence, "call-1")]
+    returned: list[Any] = [ToolReturnPart("search", evidence, "call-1")]
     if images:
         returned.append(retrieved_image())
     return [
         ModelRequest(parts=[UserPromptPart(question)]),
-        ModelResponse(parts=[ToolCallPart("rag_search", {"query": "q"}, "call-1")]),
+        ModelResponse(parts=[ToolCallPart("search", {"query": "q"}, "call-1")]),
         ModelRequest(parts=returned),
         ModelResponse(parts=[TextPart("an answer")]),
     ]
@@ -131,8 +130,8 @@ def test_the_current_question_keeps_its_own_evidence():
     messages = [
         *answered_question("first", evidence="OLD EVIDENCE"),
         ModelRequest(parts=[UserPromptPart("second")]),
-        ModelResponse(parts=[ToolCallPart("rag_search", {"query": "q"}, "call-2")]),
-        ModelRequest(parts=[ToolReturnPart("rag_search", "LIVE EVIDENCE", "call-2")]),
+        ModelResponse(parts=[ToolCallPart("search", {"query": "q"}, "call-2")]),
+        ModelRequest(parts=[ToolReturnPart("search", "LIVE EVIDENCE", "call-2")]),
     ]
 
     compacted = compact_history(
@@ -162,12 +161,8 @@ def test_a_cite_acknowledgement_survives():
     """A receipt of the model's own action, not evidence."""
     messages = [
         ModelRequest(parts=[UserPromptPart("first")]),
-        ModelResponse(
-            parts=[ToolCallPart("rag_cite", {"chunk_ids": ["c1"]}, "call-1")]
-        ),
-        ModelRequest(
-            parts=[ToolReturnPart("rag_cite", "Registered 1 citation.", "c1")]
-        ),
+        ModelResponse(parts=[ToolCallPart("cite", {"chunk_ids": ["c1"]}, "call-1")]),
+        ModelRequest(parts=[ToolReturnPart("cite", "Registered 1 citation.", "c1")]),
         ModelResponse(parts=[TextPart("an answer")]),
         ModelRequest(parts=[UserPromptPart("second")]),
     ]
@@ -236,8 +231,8 @@ def test_a_user_attached_image_is_never_dropped():
     mine = UserPromptPart(content=["look at this", PNG])
     messages = [
         ModelRequest(parts=[mine]),
-        ModelResponse(parts=[ToolCallPart("rag_search", {"query": "q"}, "call-1")]),
-        ModelRequest(parts=[ToolReturnPart("rag_search", "OLD", "call-1")]),
+        ModelResponse(parts=[ToolCallPart("search", {"query": "q"}, "call-1")]),
+        ModelRequest(parts=[ToolReturnPart("search", "OLD", "call-1")]),
         ModelResponse(parts=[TextPart("an answer")]),
         ModelRequest(parts=[UserPromptPart("second")]),
     ]
@@ -303,9 +298,9 @@ def in_flight_history() -> list[Any]:
     """A question already asked and searched, still awaiting its answer."""
     return [
         ModelRequest(parts=[UserPromptPart("what does the supervisor do?")]),
-        ModelResponse(parts=[ToolCallPart("rag_search", {"query": "s"}, "call-1")]),
+        ModelResponse(parts=[ToolCallPart("search", {"query": "s"}, "call-1")]),
         ModelRequest(
-            parts=[ToolReturnPart("rag_search", "EVIDENCE FOR THE LIVE TURN", "call-1")]
+            parts=[ToolReturnPart("search", "EVIDENCE FOR THE LIVE TURN", "call-1")]
         ),
     ]
 
@@ -408,7 +403,7 @@ async def test_compaction_never_reaches_the_stored_message_history(temp_db_path)
     rag, compactor = rag_and_compactor(temp_db_path)
     turns = iter(
         [
-            ModelResponse(parts=[ToolCallPart("rag_search", {"query": "q"}, "call-1")]),
+            ModelResponse(parts=[ToolCallPart("search", {"query": "q"}, "call-1")]),
             ModelResponse(parts=[TextPart("first answer")]),
             ModelResponse(parts=[TextPart("second answer")]),
         ]
@@ -459,8 +454,8 @@ async def _cite_a_picture_chunk(temp_db_path, fetched: bytes | None):
     rag, compactor = rag_and_compactor(temp_db_path)
     calls = iter(
         [
-            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
-            [ToolCallPart("rag_cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
             [TextPart("first answer")],
             [TextPart("second answer")],
         ]
@@ -540,15 +535,13 @@ async def _fanout_question_then_another(temp_db_path, cite: bool) -> list[list[A
     client.source_names = ["main"]
     rag.borrowed_rag = client
     citing = (
-        [[ToolCallPart("rag_cite", {"chunk_ids": ["chunk-1"]}, "call-3")]]
-        if cite
-        else []
+        [[ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-3")]] if cite else []
     )
     calls = iter(
         [
             [
-                ToolCallPart("rag_search", {"query": "figure"}, "call-1"),
-                ToolCallPart("rag_search", {"query": "the figure"}, "call-2"),
+                ToolCallPart("search", {"query": "figure"}, "call-1"),
+                ToolCallPart("search", {"query": "the figure"}, "call-2"),
             ],
             *citing,
             [TextPart("first answer")],
@@ -662,8 +655,8 @@ def test_a_user_quoting_our_wording_keeps_their_picture_and_their_text():
     )
     messages = [
         ModelRequest(parts=[quoted]),
-        ModelResponse(parts=[ToolCallPart("rag_search", {"query": "q"}, "call-1")]),
-        ModelRequest(parts=[ToolReturnPart("rag_search", "OLD", "call-1")]),
+        ModelResponse(parts=[ToolCallPart("search", {"query": "q"}, "call-1")]),
+        ModelRequest(parts=[ToolReturnPart("search", "OLD", "call-1")]),
         ModelResponse(parts=[TextPart("an answer")]),
         ModelRequest(parts=[UserPromptPart("second")]),
     ]
@@ -686,8 +679,8 @@ def test_a_label_of_ours_with_no_picture_after_it_is_kept():
     )
     messages = [
         ModelRequest(parts=[lonely]),
-        ModelResponse(parts=[ToolCallPart("rag_search", {"query": "q"}, "call-1")]),
-        ModelRequest(parts=[ToolReturnPart("rag_search", "OLD", "call-1")]),
+        ModelResponse(parts=[ToolCallPart("search", {"query": "q"}, "call-1")]),
+        ModelRequest(parts=[ToolReturnPart("search", "OLD", "call-1")]),
         ModelResponse(parts=[TextPart("an answer")]),
         ModelRequest(parts=[UserPromptPart("second")]),
     ]
@@ -709,8 +702,8 @@ async def test_a_picture_whose_fetch_raises_costs_the_picture_not_the_answer(
     rag, compactor = rag_and_compactor(temp_db_path)
     calls = iter(
         [
-            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
-            [ToolCallPart("rag_cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
             [TextPart("first answer")],
             [TextPart("second answer")],
         ]
@@ -754,8 +747,8 @@ def test_a_request_is_never_left_with_no_parts():
     )
     messages = [
         ours_alone,
-        ModelResponse(parts=[ToolCallPart("rag_search", {"query": "q"}, "call-1")]),
-        ModelRequest(parts=[ToolReturnPart("rag_search", "OLD", "call-1")]),
+        ModelResponse(parts=[ToolCallPart("search", {"query": "q"}, "call-1")]),
+        ModelRequest(parts=[ToolReturnPart("search", "OLD", "call-1")]),
         ModelResponse(parts=[TextPart("an answer")]),
         ModelRequest(parts=[UserPromptPart("second")]),
     ]
@@ -778,14 +771,14 @@ def test_two_owned_returns_in_one_request_yield_one_capsule():
         ModelRequest(parts=[UserPromptPart("first")]),
         ModelResponse(
             parts=[
-                ToolCallPart("rag_search", {"query": "a"}, "call-1"),
-                ToolCallPart("rag_search", {"query": "b"}, "call-2"),
+                ToolCallPart("search", {"query": "a"}, "call-1"),
+                ToolCallPart("search", {"query": "b"}, "call-2"),
             ]
         ),
         ModelRequest(
             parts=[
-                ToolReturnPart("rag_search", "FIRST EVIDENCE", "call-1"),
-                ToolReturnPart("rag_search", "SECOND EVIDENCE", "call-2"),
+                ToolReturnPart("search", "FIRST EVIDENCE", "call-1"),
+                ToolReturnPart("search", "SECOND EVIDENCE", "call-2"),
             ]
         ),
         ModelResponse(parts=[TextPart("an answer")]),
@@ -804,14 +797,14 @@ def test_the_capsule_is_attached_beside_the_newest_return_of_that_request():
         ModelRequest(parts=[UserPromptPart("first")]),
         ModelResponse(
             parts=[
-                ToolCallPart("rag_search", {"query": "a"}, "call-1"),
-                ToolCallPart("rag_search", {"query": "b"}, "call-2"),
+                ToolCallPart("search", {"query": "a"}, "call-1"),
+                ToolCallPart("search", {"query": "b"}, "call-2"),
             ]
         ),
         ModelRequest(
             parts=[
-                ToolReturnPart("rag_search", "FIRST", "call-1"),
-                ToolReturnPart("rag_search", "SECOND", "call-2"),
+                ToolReturnPart("search", "FIRST", "call-1"),
+                ToolReturnPart("search", "SECOND", "call-2"),
             ]
         ),
         ModelResponse(parts=[TextPart("an answer")]),
@@ -877,93 +870,6 @@ async def test_compaction_proceeds_for_a_host_that_carries_state(temp_db_path):
     assert returns_of(wire[-1]) == [RECEIPT]
 
 
-@pytest.mark.asyncio
-async def test_compaction_refuses_when_one_capability_of_two_lost_its_record(
-    temp_db_path,
-):
-    """One carried record does not vouch for the other capability's evidence.
-
-    A host retaining only the RAG namespace leaves the analysis record empty, and
-    its earlier evidence would be replaced by receipts retaining nothing while the
-    RAG record made the loss look accounted for.
-    """
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
-    analysis = create_analysis(
-        db_path=temp_db_path, config=AppConfig(), defer_loading=False
-    )
-    compactor = create_compaction()
-
-    async def model(_messages, _info):  # pragma: no cover - never reached
-        return ModelResponse(parts=[TextPart("answer")])
-
-    agent = Agent(
-        FunctionModel(model),
-        deps_type=Deps,
-        capabilities=[rag, analysis, compactor],
-    )
-    history: list[Any] = [
-        ModelRequest(parts=[UserPromptPart("an earlier question")]),
-        ModelResponse(
-            parts=[ToolCallPart("analysis_search", {"query": "q"}, "call-1")]
-        ),
-        ModelRequest(
-            parts=[ToolReturnPart("analysis_search", "ANALYSIS EVIDENCE", "call-1")]
-        ),
-        ModelResponse(parts=[TextPart("an answer")]),
-    ]
-    # Only the RAG namespace comes back, as a host whitelisting fields would send.
-    rag_only = Deps(
-        state={
-            "rag": RAGState(
-                evidence=CapabilityEvidenceRecord(question=0, in_progress=False)
-            ).model_dump(mode="json")
-        }
-    )
-
-    with pytest.raises(RuntimeError, match="analysis"):
-        await agent.run("a follow-up", deps=rag_only, message_history=history)
-
-
-@pytest.mark.asyncio
-async def test_compaction_proceeds_when_the_capability_without_a_record_has_no_evidence(
-    temp_db_path,
-):
-    """A capability the earlier question never used has nothing to lose.
-
-    Refusing whenever any record is missing would stop a host that registers both
-    capabilities and only ever uses one, which is the composition the docs
-    recommend against but hosts still have.
-    """
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
-    analysis = create_analysis(
-        db_path=temp_db_path, config=AppConfig(), defer_loading=False
-    )
-    compactor = create_compaction()
-    wire: list[list[Any]] = []
-
-    async def model(messages, _info):
-        wire.append(list(messages))
-        return ModelResponse(parts=[TextPart("answer")])
-
-    agent = Agent(
-        FunctionModel(model),
-        deps_type=Deps,
-        capabilities=[rag, analysis, compactor],
-    )
-    history = answered_question("an earlier question", evidence="RAG EVIDENCE")
-    rag_only = Deps(
-        state={
-            "rag": RAGState(
-                evidence=CapabilityEvidenceRecord(question=0, in_progress=False)
-            ).model_dump(mode="json")
-        }
-    )
-
-    await agent.run("a follow-up", deps=rag_only, message_history=history)
-
-    assert returns_of(wire[-1]) == [RECEIPT]
-
-
 # The exact JSON a 0.75.0 host stored or sent over AG-UI. Capability state is
 # dumped and re-validated at four carry points, one of them a snapshot the
 # browser client sends back on the next turn, so this layout is a wire format.
@@ -985,7 +891,7 @@ _STORED_RAG_STATE = {
 # Fields declared since `_STORED_RAG_STATE` was captured, with the value an
 # older dict loads as. A field may be added here; renaming or re-nesting one of
 # the stored keys is what this test exists to catch.
-_ADDED_SINCE = {"sources": None}
+_ADDED_SINCE = {"sources": None, "executions": []}
 
 
 def test_stored_state_shape_is_unchanged():
@@ -993,8 +899,7 @@ def test_stored_state_shape_is_unchanged():
 
     Compatibility here is semantic JSON-object equivalence: the same keys, the
     same nesting, the same values, plus whatever optional fields were added since.
-    Key *order* is not part of the contract — deriving both states from a shared
-    base reordered `AnalysisState`'s fields, and nothing serializes, hashes or
+    Key *order* is not part of the contract: nothing serializes, hashes or
     string-compares this state; every carry point re-validates it by key.
     """
     from haiku.rag.capabilities.rag import RAGState
@@ -1031,18 +936,15 @@ def _populated(state_type):
     )
 
 
-@pytest.mark.parametrize("namespace", ["rag", "analysis"])
-def test_populated_state_round_trips(namespace):
+def test_populated_state_round_trips():
     """Dump, reload, dump again: a host hands this dict back on the next turn,
     so the second dump has to equal the first, nested values included."""
-    from haiku.rag.capabilities.analysis import AnalysisState
     from haiku.rag.capabilities.rag import RAGState
 
-    state_type = RAGState if namespace == "rag" else AnalysisState
-    state = _populated(state_type)
+    state = _populated(RAGState)
 
     first = state.model_dump(mode="json")
-    second = state_type.model_validate(first).model_dump(mode="json")
+    second = RAGState.model_validate(first).model_dump(mode="json")
 
     assert second == first
     assert second["searches"]["a query"][0]["chunk_id"] == "chunk-1"
@@ -1050,12 +952,11 @@ def test_populated_state_round_trips(namespace):
     assert second["evidence"]["question"] == 3
 
 
-def test_analysis_state_loads_the_old_field_order():
-    """A dict written before AnalysisState derived from the shared base lists its
-    keys in a different order and omits nothing; it still loads."""
-    from haiku.rag.capabilities.analysis import AnalysisState, CodeExecutionEntry
+def test_state_loads_any_field_order():
+    """Key order is not part of the stored shape."""
+    from haiku.rag.capabilities.rag import CodeExecutionEntry, RAGState
 
-    populated = _populated(AnalysisState)
+    populated = _populated(RAGState)
     populated.executions.append(CodeExecutionEntry(code="print(1)", stdout="1"))
     dumped = populated.model_dump(mode="json")
 
@@ -1071,19 +972,10 @@ def test_analysis_state_loads_the_old_field_order():
         )
     }
 
-    reloaded = AnalysisState.model_validate(old_order)
+    reloaded = RAGState.model_validate(old_order)
 
     assert reloaded == populated
     assert reloaded.model_dump(mode="json") == dumped
-
-
-def test_both_states_are_evidence_states():
-    from haiku.rag.capabilities._base import EvidenceState
-    from haiku.rag.capabilities.analysis import AnalysisState
-    from haiku.rag.capabilities.rag import RAGState
-
-    assert issubclass(RAGState, EvidenceState)
-    assert issubclass(AnalysisState, EvidenceState)
 
 
 def test_begin_invocation_drops_the_previous_question_working_set():
@@ -1120,10 +1012,10 @@ def test_begin_invocation_drops_the_previous_question_working_set():
     assert state.citation_index == {"chunk-a": citation}
 
 
-def test_begin_invocation_also_drops_analysis_executions():
-    from haiku.rag.capabilities.analysis import AnalysisState, CodeExecutionEntry
+def test_begin_invocation_also_drops_executions():
+    from haiku.rag.capabilities.rag import CodeExecutionEntry, RAGState
 
-    state = AnalysisState(
+    state = RAGState(
         citations=["chunk-a"],
         executions=[CodeExecutionEntry(code="print(1)", stdout="1")],
     )
@@ -1132,3 +1024,33 @@ def test_begin_invocation_also_drops_analysis_executions():
 
     assert state.executions == []
     assert state.citations == []
+
+
+@pytest.mark.asyncio
+async def test_compaction_proceeds_when_the_earlier_question_used_no_tools(
+    temp_db_path,
+):
+    """A question answered without the capability has no evidence to lose, so a
+    host that carries no state is not refused for it."""
+    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    compactor = create_compaction()
+    wire: list[list[Any]] = []
+
+    async def model(messages, _info):
+        wire.append(list(messages))
+        return ModelResponse(parts=[TextPart("answer")])
+
+    agent = Agent(
+        FunctionModel(model),
+        deps_type=Deps,
+        capabilities=[rag, compactor],
+    )
+    history: list[Any] = [
+        ModelRequest(parts=[UserPromptPart("hello")]),
+        ModelResponse(parts=[TextPart("hello back, no search needed")]),
+    ]
+
+    result = await agent.run("a follow-up", deps=Deps(), message_history=history)
+
+    assert result.output == "answer"
+    assert len(wire) == 1

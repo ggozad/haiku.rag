@@ -4,7 +4,7 @@ interactions:
       accept:
       - application/json
       accept-encoding:
-      - gzip, deflate, zstd
+      - gzip, deflate
       connection:
       - keep-alive
       content-length:
@@ -44,7 +44,7 @@ interactions:
       accept:
       - application/json
       accept-encoding:
-      - gzip, deflate, zstd
+      - gzip, deflate
       connection:
       - keep-alive
       content-length:
@@ -84,7 +84,7 @@ interactions:
       accept:
       - application/json
       accept-encoding:
-      - gzip, deflate, zstd
+      - gzip, deflate
       connection:
       - keep-alive
       content-length:
@@ -124,11 +124,11 @@ interactions:
       accept:
       - application/json
       accept-encoding:
-      - gzip, deflate, zstd
+      - gzip, deflate
       connection:
       - keep-alive
       content-length:
-      - '9665'
+      - '11602'
       content-type:
       - application/json
       host:
@@ -137,34 +137,34 @@ interactions:
     parsed_body:
       messages:
       - content: |-
-          # Analysis
+          # RAG
 
           You answer questions over a document knowledge base. Two common workflows:
 
-          - **`analysis_search → analysis_cite → answer`** when the answer is grounded on specific document content. Call `analysis_cite` with the supporting chunk_ids before writing the answer.
-          - **`analysis_execute_code → answer`** when the answer is a count, aggregation, listing, or structural computation over the corpus (e.g. "how many documents?", "average page count"). No `analysis_cite` is needed when no specific chunks support the answer.
+          - **`search → cite → answer`** when the answer is grounded on specific document content. Call `cite` with the supporting chunk_ids before writing the answer.
+          - **`execute_code → answer`** when the answer is a count, aggregation, listing, or structural computation over the corpus (e.g. "how many documents?", "average page count"). Call `cite` with an empty list when no specific chunks support the answer.
 
-          You can mix the two. The rule: cite when grounded on retrieved evidence; don't fabricate citations for corpus-level computation.
+          You can mix the two. The rule: always call `cite` before answering — pass the grounding chunk_ids, or an empty list for a corpus-level computation. Never fabricate citations.
 
           ## Tools
 
-          ### analysis_execute_code
+          ### execute_code
           Execute Python code in a sandboxed interpreter. Variables persist between calls — you can build state incrementally. Use `print()` to output results.
 
           Inside the code, these functions are available (use `await`):
-          - `await search(query, limit=10)` → list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings, doc_item_refs, labels, picture_refs (subset of doc_item_refs labeled `picture`)
-          - `await list_documents()` → list of dicts with keys: id, title, uri, created_at
+          - `await search(query, limit=10)` → list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings, doc_item_refs, labels, picture_refs (subset of doc_item_refs labeled `picture`), chunk_meta (the matched chunk's stored metadata, custom keys included)
+          - `await list_documents()` → list of dicts with keys: id, title, uri, created_at, metadata
 
-          Available modules: `json`, `re`, `math`, `pathlib`
-          Not supported: class definitions, generators/yield, match statements, decorators, `with` statements
+          Useful modules include `json`, `re`, `math`, `pathlib`, `datetime`, `collections`, `itertools`, `functools` and `dataclasses`. `decimal` and `statistics` do not exist.
+          Not supported: class inheritance and metaclasses, generators/yield, match statements, iterating a file object (`for line in f`)
 
-          ### analysis_search
-          Search the knowledge base directly (outside code execution). Each result has a `Type:` (paragraph, table, code, list_item, picture). When the Type is `picture`, the corresponding figure may also be attached to the tool response as an image alongside the text — use it directly to answer questions about figures, diagrams, charts, screenshots.
+          ### search
+          Search the knowledge base directly, outside code execution. The same search is available inside code as `await search(...)`. Each result has a `Type:` (paragraph, table, code, list_item, picture). When the Type is `picture`, the corresponding figure may also be attached to the tool response as an image alongside the text — use it directly to answer questions about figures, diagrams, charts, screenshots.
 
-          ### analysis_cite
-          Register the chunk IDs that ground your answer. **You must call `analysis_cite` before writing any final answer that uses retrieved evidence — search results, items.jsonl rows, toc.json nodes, or content.txt content.** Skipping `analysis_cite` leaves the answer ungrounded and is treated as a failure.
+          ### cite
+          Register the chunk IDs that ground your answer. **You must call `cite` before writing any final answer that uses retrieved evidence — search results, items.jsonl rows, toc.json nodes, or content.txt content.** Skipping `cite` leaves the answer ungrounded and is treated as a failure.
 
-          `analysis_cite` is **not** required when your answer is a corpus-level computation that doesn't draw on specific chunks — counts, aggregations, listings, averages across documents. Don't fabricate citations for these.
+          When your answer is a corpus-level computation that doesn't draw on specific chunks — counts, aggregations, listings, averages across documents — call `cite` with an empty list. Don't fabricate citations for these.
 
           Chunk IDs come from two places:
           - The `chunk_id` field on `search` / `await search(...)` results
@@ -178,16 +178,17 @@ interactions:
 
           ```
           /documents/{document_id}/
-              metadata.json    # {"id", "title", "uri", "created_at"}
+              metadata.json    # {"id", "title", "uri", "created_at", "metadata"}
               content.txt      # Full document text
               items.jsonl      # Structured items (one JSON object per line)
+              chunks.jsonl     # Chunks in order with their metadata (one JSON object per line)
               toc.json         # Section tree derived from heading_level
           ```
 
           `{document_id}` is an internal identifier, not the user-facing `uri` (filename, URL, etc.). When you only know a document by its URI or title, use `await list_documents()` to enumerate ids and match against `uri` / `title` — that's a single call to the host. Iterating `/documents/` and reading every `metadata.json` works too but is much slower on portal-scale corpora.
 
           ### Reading files
-          Always use `Path.read_text()` — do NOT use `open()` or `with` statements (they are not supported).
+          Read with `Path.read_text()` or `open()` (including `with` blocks); file objects support `.read()`, `.readline()`, and `.readlines()`. A file object cannot be iterated, so read line-wise with `.readlines()` or `.read().split("\n")` instead of `for line in f`. Files are read-only; writing raises `PermissionError`. There is no network. A call has a time limit, named in the error when it is hit, and output past a size is cut with an `... (output truncated)` marker.
 
           ```python
           from pathlib import Path
@@ -202,14 +203,14 @@ interactions:
           content = Path(f'/documents/{doc_id}/content.txt').read_text()
 
           # Read and parse items
-          for line in Path(f'/documents/{doc_id}/items.jsonl').read_text().strip().split(chr(10)):
+          for line in Path(f'/documents/{doc_id}/items.jsonl').read_text().strip().split("\n"):
               item = json.loads(line)
               if item['label'] == 'table':
                   print(item['text'][:200])
           ```
 
           ### metadata.json
-          Document metadata: `id`, `title`, `uri`, `created_at`.
+          Document metadata: `id`, `title`, `uri`, `created_at`, and `metadata`, the keys stored with the document.
 
           ### content.txt
           Full text content. Use for regex or keyword search across a whole document.
@@ -222,46 +223,60 @@ interactions:
           - `label`: item type — one of `"section_header"`, `"text"`, `"table"`, `"list_item"`, `"caption"`, `"formula"`, `"picture"`, `"code"`, `"footnote"`
           - `text`: rendered content (tables are markdown with `|` columns)
           - `page_numbers`: list of page numbers where the item appears
-          - `chunk_ids`: chunks that contain this item — pass to `analysis_cite()` to ground an answer that read this item directly
+          - `chunk_ids`: chunks that contain this item — pass to `cite()` to ground an answer that read this item directly
           - `heading_level`: H-level for `section_header` rows; `0` on non-header rows
 
+          ### chunks.jsonl
+          The document's chunks in order, one JSON object per line: `chunk_id` and `metadata`, the chunk's stored metadata (`doc_item_refs`, `headings`, `labels`, `page_numbers`, and any custom keys such as paragraph or footnote numbers). To read by chunk metadata, keep the matching rows and take the `items.jsonl` rows whose `chunk_ids` name them.
+
           ### toc.json
-          Section tree derived from `heading_level`: `{"doc_id", "title", "tree": [...]}` where each node has `{self_ref, level, title, page_numbers, item_range: [start, end_exclusive], chunk_ids, children}`. `item_range` is a line slice into `items.jsonl` — `items[start:end]`. `chunk_ids` aggregates the citable chunks across all items in the section — pass directly to `analysis_cite()` to ground a section-scoped answer without a corpus-wide `search()` call. `tree: []` for docs with no headers.
+          Section tree derived from `heading_level`: `{"doc_id", "title", "tree": [...]}` where each node has `{self_ref, level, title, page_numbers, item_range: [start, end_exclusive], chunk_ids, children}`. `item_range` is a line slice into `items.jsonl` — `items[start:end]`. `chunk_ids` aggregates the citable chunks across all items in the section — pass directly to `cite()` to ground a section-scoped answer without a corpus-wide `search()` call. `tree: []` for docs with no headers.
 
           ### Cross-referencing search results with items
           Search results include `doc_item_refs` (e.g. `["#/texts/48", "#/tables/0"]`) that correspond to `self_ref` values in `items.jsonl`. To find which section a hit lives in: locate the item by `self_ref`, take its line index, and walk `toc.json` to find the deepest node whose `item_range` contains that index.
 
+          ## Questions with attached images
+
+          The user may attach images to their question. An attached image is part of the question, not knowledge-base content. Search the knowledge base for the criteria, standards, or facts named in the question text, cite them, and apply them to the attached image. Never refuse merely because the image itself is not in the knowledge base.
+
           ## Strategy
 
           1. Search first.
-          2. Identify the chunk_ids from the search results that support your answer and call `analysis_cite` with them. Then write a concise answer.
-          3. Reach for `analysis_execute_code` when search results are insufficient or when the task requires computation, aggregation, traversal across documents, or section-scoped reading. From inside code you can search again with different terms, or read `items.jsonl` / `toc.json` / `content.txt` directly from the document filesystem.
+          2. Identify the chunk_ids from the search results that support your answer and call `cite` with them. Then write a concise answer.
+          3. Reach for `execute_code` when search results are insufficient or when the task requires computation, aggregation, traversal across documents, or section-scoped reading. From inside code you can search again with different terms, or read `items.jsonl` / `toc.json` / `content.txt` directly from the document filesystem.
           4. For questions about a *known document's* structure ("which section contains X", "list the sections of doc Y", "summarise section Z"), read `/documents/{id}/toc.json` first. Each node carries `item_range` (a slice into `items.jsonl`) and `chunk_ids` (citable). Prefer this over `search()` for in-document navigation — `search()` ranks across the whole corpus and can return chunks from unrelated documents.
-          5. Before writing your final response, call `analysis_cite` with the chunk_ids that ground your answer.
+          5. Before writing your final response, call `cite` with the chunk_ids that ground your answer.
 
-          You MUST call `analysis_cite` with at least one chunk ID before producing your final answer **when your answer is grounded on retrieved evidence**. Skip `analysis_cite` in two cases: (a) you are refusing for lack of information, or (b) your answer is a corpus-level computation (count, aggregation, listing) that doesn't draw on specific chunks. In those cases do **not** fabricate citations.
+          You MUST call `cite` before producing your final answer, every time, with no exceptions. Pass the chunk IDs that ground the answer, or an empty list when none do — because you are refusing for lack of information, or because the answer is a corpus-level computation. An answer not preceded by `cite` is a protocol violation.
+
+          ## When search returns irrelevant results
+
+          If your first search returns results that clearly don't match the question:
+          - Try one more search with different keywords
+          - If still irrelevant, report that the knowledge base doesn't contain relevant information
 
           ## Important
 
-          - Variables persist between `analysis_execute_code` calls — you can search in one call and process results in the next
+          - Variables persist between `execute_code` calls — you can search in one call and process results in the next
           - Use `print()` to output results — the output is your only feedback
-          - When you write code, execute it — don't describe what code would do. But not every question needs code; simple lookups are best answered by `analysis_search → analysis_cite`.
-          - Use `await` for all async functions inside `analysis_execute_code` (`search`, `list_documents`)
-          - Use `Path.read_text()` to read files — do NOT use `open()`, `with` statements, or `collections` module
-          - Do NOT include chunk IDs or UUIDs in your answer text — your answer should read naturally. Use the `analysis_cite` tool separately to register citations. `cite{...}` markdown-style inline references do nothing; only an actual `analysis_cite` tool call registers a citation.
-          - **Before you write your final answer, invoke the `analysis_cite` tool with the supporting chunk_ids.** This is the last tool call before answering whenever your answer draws on retrieved evidence.
+          - When you write code, execute it — don't describe what code would do. But not every question needs code; simple lookups are best answered by `search → cite`.
+          - Use `await` for all async functions inside `execute_code` (`search`, `list_documents`)
+          - Read files with `Path.read_text()` or `open()`/`with`. For lines use `.readlines()` or `.read().split("\n")`, never `for line in f`.
+          - If the retrieved documents do not directly address the question, say: "I cannot find enough information in the knowledge base to answer this question." Do not guess or infer from tangentially related content. Refusing does not exempt you from `cite` — call it with an empty list to record that nothing grounds the answer.
+          - Do NOT include chunk IDs or UUIDs in your answer text — your answer should read naturally. Use the `cite` tool separately to register citations. `cite{...}` markdown-style inline references do nothing; only an actual `cite` tool call registers a citation.
+          - **Before you write your final answer, invoke the `cite` tool with the supporting chunk_ids, or with an empty list if there are none.** This is the last tool call before answering, every time.
         role: system
       - content: How many documents are in the database?
         role: user
-      model: gpt-oss
-      reasoning_effort: high
+      model: qwen3.8
+      reasoning_effort: medium
       stream: false
       temperature: 0.3
       tool_choice: auto
       tools:
       - function:
           description: Search the knowledge base for evidence to analyze.
-          name: analysis_search
+          name: search
           parameters:
             additionalProperties: false
             properties:
@@ -278,7 +293,7 @@ interactions:
         type: function
       - function:
           description: Execute Python against the sandboxed document filesystem.
-          name: analysis_execute_code
+          name: execute_code
           parameters:
             additionalProperties: false
             properties:
@@ -290,7 +305,7 @@ interactions:
         type: function
       - function:
           description: Register exact retrieved chunk IDs as citations for the answer.
-          name: analysis_cite
+          name: cite
           parameters:
             additionalProperties: false
             properties:
@@ -306,7 +321,7 @@ interactions:
   response:
     headers:
       content-length:
-      - '1468'
+      - '711'
       content-type:
       - application/json
     parsed_body:
@@ -315,50 +330,27 @@ interactions:
         index: 0
         message:
           content: ''
-          reasoning: |-
-            The user asks: "How many documents are in the database?" We need to compute the number of documents in the corpus. According to instructions, for a corpus-level computation that doesn't draw on specific chunks, we should not use analysis_cite. Instead, we can call analysis_execute_code to count documents.
-
-            We need to run code that uses await list_documents() and counts them. Then print result. That will be our answer. No citations needed.
-
-            Thus: call analysis_execute_code with code:
-
-            ```
-            import json
-            docs = await list_documents()
-            print(len(docs))
-            ```
-
-            But we must use `await` inside the async function. The environment expects us to write a Python snippet that uses await search, etc. So we need to do something like:
-
-            ```
-            docs = await list_documents()
-            print(len(docs))
-            ```
-
-            Yes.
-
-            We should not provide any analysis_cite call. Just output number.
-
-            Thus final answer: "There are X documents." We'll get the number from code.
-
-            Let's run it.
+          reasoning: The user wants a count of documents in the database. This is a corpus-level computation. I should use
+            execute_code to list documents and count them, then cite with an empty list.
           role: assistant
           tool_calls:
           - function:
-              arguments: '{"code":"docs = await list_documents()\nprint(len(docs))"}'
-              name: analysis_execute_code
-            id: call_xsxnvqy8
+              arguments: '{"code":"docs = await list_documents()\nprint(len(docs))\n"}'
+              name: execute_code
+            id: call_w82des4c
             index: 0
             type: function
-      created: 1784300378
-      id: chatcmpl-793
-      model: gpt-oss
+      created: 1789132602
+      id: chatcmpl-176
+      model: qwen3.8
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 241
-        prompt_tokens: 2142
-        total_tokens: 2383
+        completion_tokens: 76
+        prompt_tokens: 2870
+        prompt_tokens_details:
+          cached_tokens: 0
+        total_tokens: 2946
     status:
       code: 200
       message: OK
@@ -367,11 +359,11 @@ interactions:
       accept:
       - application/json
       accept-encoding:
-      - gzip, deflate, zstd
+      - gzip, deflate
       connection:
       - keep-alive
       content-length:
-      - '10929'
+      - '12066'
       content-type:
       - application/json
       host:
@@ -380,34 +372,34 @@ interactions:
     parsed_body:
       messages:
       - content: |-
-          # Analysis
+          # RAG
 
           You answer questions over a document knowledge base. Two common workflows:
 
-          - **`analysis_search → analysis_cite → answer`** when the answer is grounded on specific document content. Call `analysis_cite` with the supporting chunk_ids before writing the answer.
-          - **`analysis_execute_code → answer`** when the answer is a count, aggregation, listing, or structural computation over the corpus (e.g. "how many documents?", "average page count"). No `analysis_cite` is needed when no specific chunks support the answer.
+          - **`search → cite → answer`** when the answer is grounded on specific document content. Call `cite` with the supporting chunk_ids before writing the answer.
+          - **`execute_code → answer`** when the answer is a count, aggregation, listing, or structural computation over the corpus (e.g. "how many documents?", "average page count"). Call `cite` with an empty list when no specific chunks support the answer.
 
-          You can mix the two. The rule: cite when grounded on retrieved evidence; don't fabricate citations for corpus-level computation.
+          You can mix the two. The rule: always call `cite` before answering — pass the grounding chunk_ids, or an empty list for a corpus-level computation. Never fabricate citations.
 
           ## Tools
 
-          ### analysis_execute_code
+          ### execute_code
           Execute Python code in a sandboxed interpreter. Variables persist between calls — you can build state incrementally. Use `print()` to output results.
 
           Inside the code, these functions are available (use `await`):
-          - `await search(query, limit=10)` → list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings, doc_item_refs, labels, picture_refs (subset of doc_item_refs labeled `picture`)
-          - `await list_documents()` → list of dicts with keys: id, title, uri, created_at
+          - `await search(query, limit=10)` → list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings, doc_item_refs, labels, picture_refs (subset of doc_item_refs labeled `picture`), chunk_meta (the matched chunk's stored metadata, custom keys included)
+          - `await list_documents()` → list of dicts with keys: id, title, uri, created_at, metadata
 
-          Available modules: `json`, `re`, `math`, `pathlib`
-          Not supported: class definitions, generators/yield, match statements, decorators, `with` statements
+          Useful modules include `json`, `re`, `math`, `pathlib`, `datetime`, `collections`, `itertools`, `functools` and `dataclasses`. `decimal` and `statistics` do not exist.
+          Not supported: class inheritance and metaclasses, generators/yield, match statements, iterating a file object (`for line in f`)
 
-          ### analysis_search
-          Search the knowledge base directly (outside code execution). Each result has a `Type:` (paragraph, table, code, list_item, picture). When the Type is `picture`, the corresponding figure may also be attached to the tool response as an image alongside the text — use it directly to answer questions about figures, diagrams, charts, screenshots.
+          ### search
+          Search the knowledge base directly, outside code execution. The same search is available inside code as `await search(...)`. Each result has a `Type:` (paragraph, table, code, list_item, picture). When the Type is `picture`, the corresponding figure may also be attached to the tool response as an image alongside the text — use it directly to answer questions about figures, diagrams, charts, screenshots.
 
-          ### analysis_cite
-          Register the chunk IDs that ground your answer. **You must call `analysis_cite` before writing any final answer that uses retrieved evidence — search results, items.jsonl rows, toc.json nodes, or content.txt content.** Skipping `analysis_cite` leaves the answer ungrounded and is treated as a failure.
+          ### cite
+          Register the chunk IDs that ground your answer. **You must call `cite` before writing any final answer that uses retrieved evidence — search results, items.jsonl rows, toc.json nodes, or content.txt content.** Skipping `cite` leaves the answer ungrounded and is treated as a failure.
 
-          `analysis_cite` is **not** required when your answer is a corpus-level computation that doesn't draw on specific chunks — counts, aggregations, listings, averages across documents. Don't fabricate citations for these.
+          When your answer is a corpus-level computation that doesn't draw on specific chunks — counts, aggregations, listings, averages across documents — call `cite` with an empty list. Don't fabricate citations for these.
 
           Chunk IDs come from two places:
           - The `chunk_id` field on `search` / `await search(...)` results
@@ -421,16 +413,17 @@ interactions:
 
           ```
           /documents/{document_id}/
-              metadata.json    # {"id", "title", "uri", "created_at"}
+              metadata.json    # {"id", "title", "uri", "created_at", "metadata"}
               content.txt      # Full document text
               items.jsonl      # Structured items (one JSON object per line)
+              chunks.jsonl     # Chunks in order with their metadata (one JSON object per line)
               toc.json         # Section tree derived from heading_level
           ```
 
           `{document_id}` is an internal identifier, not the user-facing `uri` (filename, URL, etc.). When you only know a document by its URI or title, use `await list_documents()` to enumerate ids and match against `uri` / `title` — that's a single call to the host. Iterating `/documents/` and reading every `metadata.json` works too but is much slower on portal-scale corpora.
 
           ### Reading files
-          Always use `Path.read_text()` — do NOT use `open()` or `with` statements (they are not supported).
+          Read with `Path.read_text()` or `open()` (including `with` blocks); file objects support `.read()`, `.readline()`, and `.readlines()`. A file object cannot be iterated, so read line-wise with `.readlines()` or `.read().split("\n")` instead of `for line in f`. Files are read-only; writing raises `PermissionError`. There is no network. A call has a time limit, named in the error when it is hit, and output past a size is cut with an `... (output truncated)` marker.
 
           ```python
           from pathlib import Path
@@ -445,14 +438,14 @@ interactions:
           content = Path(f'/documents/{doc_id}/content.txt').read_text()
 
           # Read and parse items
-          for line in Path(f'/documents/{doc_id}/items.jsonl').read_text().strip().split(chr(10)):
+          for line in Path(f'/documents/{doc_id}/items.jsonl').read_text().strip().split("\n"):
               item = json.loads(line)
               if item['label'] == 'table':
                   print(item['text'][:200])
           ```
 
           ### metadata.json
-          Document metadata: `id`, `title`, `uri`, `created_at`.
+          Document metadata: `id`, `title`, `uri`, `created_at`, and `metadata`, the keys stored with the document.
 
           ### content.txt
           Full text content. Use for regex or keyword search across a whole document.
@@ -465,85 +458,74 @@ interactions:
           - `label`: item type — one of `"section_header"`, `"text"`, `"table"`, `"list_item"`, `"caption"`, `"formula"`, `"picture"`, `"code"`, `"footnote"`
           - `text`: rendered content (tables are markdown with `|` columns)
           - `page_numbers`: list of page numbers where the item appears
-          - `chunk_ids`: chunks that contain this item — pass to `analysis_cite()` to ground an answer that read this item directly
+          - `chunk_ids`: chunks that contain this item — pass to `cite()` to ground an answer that read this item directly
           - `heading_level`: H-level for `section_header` rows; `0` on non-header rows
 
+          ### chunks.jsonl
+          The document's chunks in order, one JSON object per line: `chunk_id` and `metadata`, the chunk's stored metadata (`doc_item_refs`, `headings`, `labels`, `page_numbers`, and any custom keys such as paragraph or footnote numbers). To read by chunk metadata, keep the matching rows and take the `items.jsonl` rows whose `chunk_ids` name them.
+
           ### toc.json
-          Section tree derived from `heading_level`: `{"doc_id", "title", "tree": [...]}` where each node has `{self_ref, level, title, page_numbers, item_range: [start, end_exclusive], chunk_ids, children}`. `item_range` is a line slice into `items.jsonl` — `items[start:end]`. `chunk_ids` aggregates the citable chunks across all items in the section — pass directly to `analysis_cite()` to ground a section-scoped answer without a corpus-wide `search()` call. `tree: []` for docs with no headers.
+          Section tree derived from `heading_level`: `{"doc_id", "title", "tree": [...]}` where each node has `{self_ref, level, title, page_numbers, item_range: [start, end_exclusive], chunk_ids, children}`. `item_range` is a line slice into `items.jsonl` — `items[start:end]`. `chunk_ids` aggregates the citable chunks across all items in the section — pass directly to `cite()` to ground a section-scoped answer without a corpus-wide `search()` call. `tree: []` for docs with no headers.
 
           ### Cross-referencing search results with items
           Search results include `doc_item_refs` (e.g. `["#/texts/48", "#/tables/0"]`) that correspond to `self_ref` values in `items.jsonl`. To find which section a hit lives in: locate the item by `self_ref`, take its line index, and walk `toc.json` to find the deepest node whose `item_range` contains that index.
 
+          ## Questions with attached images
+
+          The user may attach images to their question. An attached image is part of the question, not knowledge-base content. Search the knowledge base for the criteria, standards, or facts named in the question text, cite them, and apply them to the attached image. Never refuse merely because the image itself is not in the knowledge base.
+
           ## Strategy
 
           1. Search first.
-          2. Identify the chunk_ids from the search results that support your answer and call `analysis_cite` with them. Then write a concise answer.
-          3. Reach for `analysis_execute_code` when search results are insufficient or when the task requires computation, aggregation, traversal across documents, or section-scoped reading. From inside code you can search again with different terms, or read `items.jsonl` / `toc.json` / `content.txt` directly from the document filesystem.
+          2. Identify the chunk_ids from the search results that support your answer and call `cite` with them. Then write a concise answer.
+          3. Reach for `execute_code` when search results are insufficient or when the task requires computation, aggregation, traversal across documents, or section-scoped reading. From inside code you can search again with different terms, or read `items.jsonl` / `toc.json` / `content.txt` directly from the document filesystem.
           4. For questions about a *known document's* structure ("which section contains X", "list the sections of doc Y", "summarise section Z"), read `/documents/{id}/toc.json` first. Each node carries `item_range` (a slice into `items.jsonl`) and `chunk_ids` (citable). Prefer this over `search()` for in-document navigation — `search()` ranks across the whole corpus and can return chunks from unrelated documents.
-          5. Before writing your final response, call `analysis_cite` with the chunk_ids that ground your answer.
+          5. Before writing your final response, call `cite` with the chunk_ids that ground your answer.
 
-          You MUST call `analysis_cite` with at least one chunk ID before producing your final answer **when your answer is grounded on retrieved evidence**. Skip `analysis_cite` in two cases: (a) you are refusing for lack of information, or (b) your answer is a corpus-level computation (count, aggregation, listing) that doesn't draw on specific chunks. In those cases do **not** fabricate citations.
+          You MUST call `cite` before producing your final answer, every time, with no exceptions. Pass the chunk IDs that ground the answer, or an empty list when none do — because you are refusing for lack of information, or because the answer is a corpus-level computation. An answer not preceded by `cite` is a protocol violation.
+
+          ## When search returns irrelevant results
+
+          If your first search returns results that clearly don't match the question:
+          - Try one more search with different keywords
+          - If still irrelevant, report that the knowledge base doesn't contain relevant information
 
           ## Important
 
-          - Variables persist between `analysis_execute_code` calls — you can search in one call and process results in the next
+          - Variables persist between `execute_code` calls — you can search in one call and process results in the next
           - Use `print()` to output results — the output is your only feedback
-          - When you write code, execute it — don't describe what code would do. But not every question needs code; simple lookups are best answered by `analysis_search → analysis_cite`.
-          - Use `await` for all async functions inside `analysis_execute_code` (`search`, `list_documents`)
-          - Use `Path.read_text()` to read files — do NOT use `open()`, `with` statements, or `collections` module
-          - Do NOT include chunk IDs or UUIDs in your answer text — your answer should read naturally. Use the `analysis_cite` tool separately to register citations. `cite{...}` markdown-style inline references do nothing; only an actual `analysis_cite` tool call registers a citation.
-          - **Before you write your final answer, invoke the `analysis_cite` tool with the supporting chunk_ids.** This is the last tool call before answering whenever your answer draws on retrieved evidence.
+          - When you write code, execute it — don't describe what code would do. But not every question needs code; simple lookups are best answered by `search → cite`.
+          - Use `await` for all async functions inside `execute_code` (`search`, `list_documents`)
+          - Read files with `Path.read_text()` or `open()`/`with`. For lines use `.readlines()` or `.read().split("\n")`, never `for line in f`.
+          - If the retrieved documents do not directly address the question, say: "I cannot find enough information in the knowledge base to answer this question." Do not guess or infer from tangentially related content. Refusing does not exempt you from `cite` — call it with an empty list to record that nothing grounds the answer.
+          - Do NOT include chunk IDs or UUIDs in your answer text — your answer should read naturally. Use the `cite` tool separately to register citations. `cite{...}` markdown-style inline references do nothing; only an actual `cite` tool call registers a citation.
+          - **Before you write your final answer, invoke the `cite` tool with the supporting chunk_ids, or with an empty list if there are none.** This is the last tool call before answering, every time.
         role: system
       - content: How many documents are in the database?
         role: user
       - content: null
-        reasoning: |-
-          The user asks: "How many documents are in the database?" We need to compute the number of documents in the corpus. According to instructions, for a corpus-level computation that doesn't draw on specific chunks, we should not use analysis_cite. Instead, we can call analysis_execute_code to count documents.
-
-          We need to run code that uses await list_documents() and counts them. Then print result. That will be our answer. No citations needed.
-
-          Thus: call analysis_execute_code with code:
-
-          ```
-          import json
-          docs = await list_documents()
-          print(len(docs))
-          ```
-
-          But we must use `await` inside the async function. The environment expects us to write a Python snippet that uses await search, etc. So we need to do something like:
-
-          ```
-          docs = await list_documents()
-          print(len(docs))
-          ```
-
-          Yes.
-
-          We should not provide any analysis_cite call. Just output number.
-
-          Thus final answer: "There are X documents." We'll get the number from code.
-
-          Let's run it.
+        reasoning: The user wants a count of documents in the database. This is a corpus-level computation. I should use execute_code
+          to list documents and count them, then cite with an empty list.
         role: assistant
         tool_calls:
         - function:
-            arguments: '{"code":"docs = await list_documents()\nprint(len(docs))"}'
-            name: analysis_execute_code
-          id: call_xsxnvqy8
+            arguments: '{"code":"docs = await list_documents()\nprint(len(docs))\n"}'
+            name: execute_code
+          id: call_w82des4c
           type: function
       - content: |
           3
         role: tool
-        tool_call_id: call_xsxnvqy8
-      model: gpt-oss
-      reasoning_effort: high
+        tool_call_id: call_w82des4c
+      model: qwen3.8
+      reasoning_effort: medium
       stream: false
       temperature: 0.3
       tool_choice: auto
       tools:
       - function:
           description: Search the knowledge base for evidence to analyze.
-          name: analysis_search
+          name: search
           parameters:
             additionalProperties: false
             properties:
@@ -560,7 +542,7 @@ interactions:
         type: function
       - function:
           description: Execute Python against the sandboxed document filesystem.
-          name: analysis_execute_code
+          name: execute_code
           parameters:
             additionalProperties: false
             properties:
@@ -572,7 +554,7 @@ interactions:
         type: function
       - function:
           description: Register exact retrieved chunk IDs as citations for the answer.
-          name: analysis_cite
+          name: cite
           parameters:
             additionalProperties: false
             properties:
@@ -588,7 +570,267 @@ interactions:
   response:
     headers:
       content-length:
-      - '328'
+      - '561'
+      content-type:
+      - application/json
+    parsed_body:
+      choices:
+      - finish_reason: tool_calls
+        index: 0
+        message:
+          content: ''
+          reasoning: The count is 3. This is a corpus-level computation, so I cite with an empty list.
+          role: assistant
+          tool_calls:
+          - function:
+              arguments: '{"chunk_ids":[]}'
+              name: cite
+            id: call_dr9hz9i0
+            index: 0
+            type: function
+      created: 1789132604
+      id: chatcmpl-743
+      model: qwen3.8
+      object: chat.completion
+      system_fingerprint: fp_ollama
+      usage:
+        completion_tokens: 50
+        prompt_tokens: 2963
+        prompt_tokens_details:
+          cached_tokens: 2946
+        total_tokens: 3013
+    status:
+      code: 200
+      message: OK
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '12429'
+      content-type:
+      - application/json
+      host:
+      - localhost:11434
+    method: POST
+    parsed_body:
+      messages:
+      - content: |-
+          # RAG
+
+          You answer questions over a document knowledge base. Two common workflows:
+
+          - **`search → cite → answer`** when the answer is grounded on specific document content. Call `cite` with the supporting chunk_ids before writing the answer.
+          - **`execute_code → answer`** when the answer is a count, aggregation, listing, or structural computation over the corpus (e.g. "how many documents?", "average page count"). Call `cite` with an empty list when no specific chunks support the answer.
+
+          You can mix the two. The rule: always call `cite` before answering — pass the grounding chunk_ids, or an empty list for a corpus-level computation. Never fabricate citations.
+
+          ## Tools
+
+          ### execute_code
+          Execute Python code in a sandboxed interpreter. Variables persist between calls — you can build state incrementally. Use `print()` to output results.
+
+          Inside the code, these functions are available (use `await`):
+          - `await search(query, limit=10)` → list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings, doc_item_refs, labels, picture_refs (subset of doc_item_refs labeled `picture`), chunk_meta (the matched chunk's stored metadata, custom keys included)
+          - `await list_documents()` → list of dicts with keys: id, title, uri, created_at, metadata
+
+          Useful modules include `json`, `re`, `math`, `pathlib`, `datetime`, `collections`, `itertools`, `functools` and `dataclasses`. `decimal` and `statistics` do not exist.
+          Not supported: class inheritance and metaclasses, generators/yield, match statements, iterating a file object (`for line in f`)
+
+          ### search
+          Search the knowledge base directly, outside code execution. The same search is available inside code as `await search(...)`. Each result has a `Type:` (paragraph, table, code, list_item, picture). When the Type is `picture`, the corresponding figure may also be attached to the tool response as an image alongside the text — use it directly to answer questions about figures, diagrams, charts, screenshots.
+
+          ### cite
+          Register the chunk IDs that ground your answer. **You must call `cite` before writing any final answer that uses retrieved evidence — search results, items.jsonl rows, toc.json nodes, or content.txt content.** Skipping `cite` leaves the answer ungrounded and is treated as a failure.
+
+          When your answer is a corpus-level computation that doesn't draw on specific chunks — counts, aggregations, listings, averages across documents — call `cite` with an empty list. Don't fabricate citations for these.
+
+          Chunk IDs come from two places:
+          - The `chunk_id` field on `search` / `await search(...)` results
+          - The `chunk_ids` field on `items.jsonl` rows / `toc.json` nodes (when you ground via direct file reads)
+
+          Do NOT cite `self_ref` (`#/texts/N` style refs), `position`, or any other identifier-shaped field. They are not chunk IDs and the tool will reject them. Copy chunk IDs verbatim — they are opaque UUIDs.
+
+          ## Document Filesystem (inside execute_code)
+
+          All documents are mounted as a virtual filesystem at `/documents/`:
+
+          ```
+          /documents/{document_id}/
+              metadata.json    # {"id", "title", "uri", "created_at", "metadata"}
+              content.txt      # Full document text
+              items.jsonl      # Structured items (one JSON object per line)
+              chunks.jsonl     # Chunks in order with their metadata (one JSON object per line)
+              toc.json         # Section tree derived from heading_level
+          ```
+
+          `{document_id}` is an internal identifier, not the user-facing `uri` (filename, URL, etc.). When you only know a document by its URI or title, use `await list_documents()` to enumerate ids and match against `uri` / `title` — that's a single call to the host. Iterating `/documents/` and reading every `metadata.json` works too but is much slower on portal-scale corpora.
+
+          ### Reading files
+          Read with `Path.read_text()` or `open()` (including `with` blocks); file objects support `.read()`, `.readline()`, and `.readlines()`. A file object cannot be iterated, so read line-wise with `.readlines()` or `.read().split("\n")` instead of `for line in f`. Files are read-only; writing raises `PermissionError`. There is no network. A call has a time limit, named in the error when it is hit, and output past a size is cut with an `... (output truncated)` marker.
+
+          ```python
+          from pathlib import Path
+          import json
+
+          # Discover documents
+          for doc_dir in Path('/documents').iterdir():
+              meta = json.loads((doc_dir / 'metadata.json').read_text())
+              print(meta['title'])
+
+          # Read full text
+          content = Path(f'/documents/{doc_id}/content.txt').read_text()
+
+          # Read and parse items
+          for line in Path(f'/documents/{doc_id}/items.jsonl').read_text().strip().split("\n"):
+              item = json.loads(line)
+              if item['label'] == 'table':
+                  print(item['text'][:200])
+          ```
+
+          ### metadata.json
+          Document metadata: `id`, `title`, `uri`, `created_at`, and `metadata`, the keys stored with the document.
+
+          ### content.txt
+          Full text content. Use for regex or keyword search across a whole document.
+
+          ### items.jsonl
+          Structured document items. One JSON object per line. The row's **line index** is the item's position — `item_range` values in `toc.json` are line-slice bounds into this file.
+
+          Each row carries:
+          - `self_ref`: item reference (e.g. `"#/texts/5"`, `"#/tables/0"`) — used to cross-reference with `doc_item_refs` from search results
+          - `label`: item type — one of `"section_header"`, `"text"`, `"table"`, `"list_item"`, `"caption"`, `"formula"`, `"picture"`, `"code"`, `"footnote"`
+          - `text`: rendered content (tables are markdown with `|` columns)
+          - `page_numbers`: list of page numbers where the item appears
+          - `chunk_ids`: chunks that contain this item — pass to `cite()` to ground an answer that read this item directly
+          - `heading_level`: H-level for `section_header` rows; `0` on non-header rows
+
+          ### chunks.jsonl
+          The document's chunks in order, one JSON object per line: `chunk_id` and `metadata`, the chunk's stored metadata (`doc_item_refs`, `headings`, `labels`, `page_numbers`, and any custom keys such as paragraph or footnote numbers). To read by chunk metadata, keep the matching rows and take the `items.jsonl` rows whose `chunk_ids` name them.
+
+          ### toc.json
+          Section tree derived from `heading_level`: `{"doc_id", "title", "tree": [...]}` where each node has `{self_ref, level, title, page_numbers, item_range: [start, end_exclusive], chunk_ids, children}`. `item_range` is a line slice into `items.jsonl` — `items[start:end]`. `chunk_ids` aggregates the citable chunks across all items in the section — pass directly to `cite()` to ground a section-scoped answer without a corpus-wide `search()` call. `tree: []` for docs with no headers.
+
+          ### Cross-referencing search results with items
+          Search results include `doc_item_refs` (e.g. `["#/texts/48", "#/tables/0"]`) that correspond to `self_ref` values in `items.jsonl`. To find which section a hit lives in: locate the item by `self_ref`, take its line index, and walk `toc.json` to find the deepest node whose `item_range` contains that index.
+
+          ## Questions with attached images
+
+          The user may attach images to their question. An attached image is part of the question, not knowledge-base content. Search the knowledge base for the criteria, standards, or facts named in the question text, cite them, and apply them to the attached image. Never refuse merely because the image itself is not in the knowledge base.
+
+          ## Strategy
+
+          1. Search first.
+          2. Identify the chunk_ids from the search results that support your answer and call `cite` with them. Then write a concise answer.
+          3. Reach for `execute_code` when search results are insufficient or when the task requires computation, aggregation, traversal across documents, or section-scoped reading. From inside code you can search again with different terms, or read `items.jsonl` / `toc.json` / `content.txt` directly from the document filesystem.
+          4. For questions about a *known document's* structure ("which section contains X", "list the sections of doc Y", "summarise section Z"), read `/documents/{id}/toc.json` first. Each node carries `item_range` (a slice into `items.jsonl`) and `chunk_ids` (citable). Prefer this over `search()` for in-document navigation — `search()` ranks across the whole corpus and can return chunks from unrelated documents.
+          5. Before writing your final response, call `cite` with the chunk_ids that ground your answer.
+
+          You MUST call `cite` before producing your final answer, every time, with no exceptions. Pass the chunk IDs that ground the answer, or an empty list when none do — because you are refusing for lack of information, or because the answer is a corpus-level computation. An answer not preceded by `cite` is a protocol violation.
+
+          ## When search returns irrelevant results
+
+          If your first search returns results that clearly don't match the question:
+          - Try one more search with different keywords
+          - If still irrelevant, report that the knowledge base doesn't contain relevant information
+
+          ## Important
+
+          - Variables persist between `execute_code` calls — you can search in one call and process results in the next
+          - Use `print()` to output results — the output is your only feedback
+          - When you write code, execute it — don't describe what code would do. But not every question needs code; simple lookups are best answered by `search → cite`.
+          - Use `await` for all async functions inside `execute_code` (`search`, `list_documents`)
+          - Read files with `Path.read_text()` or `open()`/`with`. For lines use `.readlines()` or `.read().split("\n")`, never `for line in f`.
+          - If the retrieved documents do not directly address the question, say: "I cannot find enough information in the knowledge base to answer this question." Do not guess or infer from tangentially related content. Refusing does not exempt you from `cite` — call it with an empty list to record that nothing grounds the answer.
+          - Do NOT include chunk IDs or UUIDs in your answer text — your answer should read naturally. Use the `cite` tool separately to register citations. `cite{...}` markdown-style inline references do nothing; only an actual `cite` tool call registers a citation.
+          - **Before you write your final answer, invoke the `cite` tool with the supporting chunk_ids, or with an empty list if there are none.** This is the last tool call before answering, every time.
+        role: system
+      - content: How many documents are in the database?
+        role: user
+      - content: null
+        reasoning: The user wants a count of documents in the database. This is a corpus-level computation. I should use execute_code
+          to list documents and count them, then cite with an empty list.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"code":"docs = await list_documents()\nprint(len(docs))\n"}'
+            name: execute_code
+          id: call_w82des4c
+          type: function
+      - content: |
+          3
+        role: tool
+        tool_call_id: call_w82des4c
+      - content: null
+        reasoning: The count is 3. This is a corpus-level computation, so I cite with an empty list.
+        role: assistant
+        tool_calls:
+        - function:
+            arguments: '{"chunk_ids":[]}'
+            name: cite
+          id: call_dr9hz9i0
+          type: function
+      - content: 'Recorded: this answer cites no knowledge-base evidence.'
+        role: tool
+        tool_call_id: call_dr9hz9i0
+      model: qwen3.8
+      reasoning_effort: medium
+      stream: false
+      temperature: 0.3
+      tool_choice: auto
+      tools:
+      - function:
+          description: Search the knowledge base for evidence to analyze.
+          name: search
+          parameters:
+            additionalProperties: false
+            properties:
+              limit:
+                anyOf:
+                - type: integer
+                - type: 'null'
+                default: null
+              query:
+                type: string
+            required:
+            - query
+            type: object
+        type: function
+      - function:
+          description: Execute Python against the sandboxed document filesystem.
+          name: execute_code
+          parameters:
+            additionalProperties: false
+            properties:
+              code:
+                type: string
+            required:
+            - code
+            type: object
+        type: function
+      - function:
+          description: Register exact retrieved chunk IDs as citations for the answer.
+          name: cite
+          parameters:
+            additionalProperties: false
+            properties:
+              chunk_ids:
+                items:
+                  type: string
+                type: array
+            required:
+            - chunk_ids
+            type: object
+        type: function
+    uri: http://localhost:11434/v1/chat/completions
+  response:
+    headers:
+      content-length:
+      - '576'
       content-type:
       - application/json
     parsed_body:
@@ -596,17 +838,21 @@ interactions:
       - finish_reason: stop
         index: 0
         message:
-          content: There are **3 documents** in the database.
+          content: There are 3 documents in the database.
+          reasoning: The user asked a simple count question. I've determined there are 3 documents and registered an empty
+            citation (corpus-level computation). Now I just need to give the final answer concisely.
           role: assistant
-      created: 1784300379
-      id: chatcmpl-543
-      model: gpt-oss
+      created: 1789132608
+      id: chatcmpl-879
+      model: qwen3.8
       object: chat.completion
       system_fingerprint: fp_ollama
       usage:
-        completion_tokens: 14
-        prompt_tokens: 2397
-        total_tokens: 2411
+        completion_tokens: 52
+        prompt_tokens: 3040
+        prompt_tokens_details:
+          cached_tokens: 3013
+        total_tokens: 3092
     status:
       code: 200
       message: OK

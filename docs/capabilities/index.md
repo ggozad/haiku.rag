@@ -4,16 +4,15 @@ haiku.rag provides native [Pydantic AI capabilities](https://ai.pydantic.dev/cap
 
 | Capability | Use it for |
 |---|---|
-| [`RAGCapability`](rag.md) | Grounded document search and citations. |
-| [`AnalysisCapability`](analysis.md) | Corpus computation and structural analysis with sandboxed Python. |
+| [`RAGCapability`](rag.md) | Grounded document search, sandboxed Python over the corpus, and citations. |
 | [`EvidenceCompactionCapability`](compaction.md) | Optional. Shrinking a conversation's history to the evidence that was cited. |
 | [`CitationPolicyCapability`](policy.md) | Optional. Requiring every answer to declare what grounds it. |
 
-The two evidence capabilities are deferred by default. An agent initially sees only their descriptions and the standard `load_capability` tool. Instructions and tools enter the model context only when the model loads a capability.
+The RAG capability is deferred by default. An agent initially sees only its description and the standard `load_capability` tool. Instructions and tools enter the model context only when the model loads it.
 
 ## Compose an agent
 
-Pick one evidence capability, and add both optional capabilities to it:
+Add both optional capabilities to the RAG capability:
 
 ```python
 from dataclasses import dataclass, field
@@ -60,22 +59,7 @@ print(result.output)
     compaction refuses rather than replacing evidence it cannot retain, and the
     citation policy cannot enforce a follow-up about evidence cited earlier.
 
-Swap `rag` for `analysis` for an analysis agent. Both optional capabilities work the
-same way with either one, and neither exposes tools or takes configuration.
-
-!!! note "Register one evidence capability, not both"
-
-    `RAGCapability` and `AnalysisCapability` overlap. Both search the same corpus and
-    both register citations, so an agent holding both must choose between two
-    near-identical search tools, and its citations are recorded by whichever
-    capability it happened to call. Each also carries its own request limit and its
-    own search budget, so registering both doubles what a question may spend.
-
-    Choose by what the questions need. `RAGCapability` answers questions from retrieved
-    passages. `AnalysisCapability` adds a Python sandbox and a document filesystem, for
-    questions that compute over many documents or read their structure, and it can
-    search too. If you need computation, register the analysis capability alone rather
-    than adding it to the RAG one.
+Neither optional capability exposes tools or takes configuration.
 
 ## Agent specs
 
@@ -116,9 +100,9 @@ agent = Agent.from_file(
 through `deps.state` (see [State](#state)). `Agent.from_file` reads YAML, which needs
 `pydantic-ai-slim[spec]`; `Agent.from_spec` takes a dict and needs no YAML parser.
 
-Set `defer_loading: false` when the agent registers a single evidence capability, so its
-tools are visible immediately. Leave it at the default when the model should route among
-multiple capabilities.
+Set `defer_loading: false` when the agent has nothing else to route to, so the tools
+are visible immediately. Leave it at the default when the model should choose among
+several capabilities.
 
 A `config:` block accepts a whole `AppConfig`, for agents in one process that need
 different databases or embedding models:
@@ -139,13 +123,13 @@ full or omit it and let the [configuration file](../configuration/index.md) appl
 
 ## State
 
-Capabilities use a plain `state: dict[str, Any]` attribute on agent dependencies when one is available. RAG state lives under `"rag"`; analysis state lives under `"analysis"`. This keeps state independent of any transport or UI protocol.
+Capabilities use a plain `state: dict[str, Any]` attribute on agent dependencies when one is available. RAG state lives under `"rag"`. This keeps state independent of any transport or UI protocol.
 
 Applications serving AG-UI should adapt the agent with Pydantic AI's `AGUIAdapter`. Native model and tool events require no haiku.rag-specific bridge.
 
 ## Database Selection
 
-RAG and analysis capabilities cover the databases the configuration places: [`lancedb.databases`](../configuration/storage.md#multiple-databases), or with nothing configured the default database `haiku.rag` under `storage.data_dir`. The `db_path` argument places one database where the configuration places none; beside `lancedb.databases` it raises `AmbiguousDatabaseError`.
+The RAG capability covers the databases the configuration places: [`lancedb.databases`](../configuration/storage.md#multiple-databases), or with nothing configured the default database `haiku.rag` under `storage.data_dir`. The `db_path` argument places one database where the configuration places none; beside `lancedb.databases` it raises `AmbiguousDatabaseError`.
 
 `sources` narrows that coverage to the databases it names, in a spec as in the factory:
 
@@ -159,6 +143,6 @@ An unknown name raises `UnknownDatabaseError`, an empty list `ValueError`. `sour
 
 The `sources` field of the capability [state](#state) selects among the databases the capability covers, for one question. A question naming a database outside that coverage fails when it searches.
 
-`document_filter` in the same state is a SQL WHERE clause over the document columns (see [Filtering Search Results](../python.md#filtering-search-results)). The host sets it, and it persists until the host changes it. It restricts what the capability's searches retrieve and which documents the analysis sandbox mounts, not what a citation can resolve, so evidence from an earlier question stays citable after the filter narrows.
+`document_filter` in the same state is a SQL WHERE clause over the document columns (see [Filtering Search Results](../python.md#filtering-search-results)). The host sets it, and it persists until the host changes it. It restricts what the capability's searches retrieve and which documents the sandbox mounts, not what a citation can resolve, so evidence from an earlier question stays citable after the filter narrows.
 
 Passing a client through `rag=` bypasses this selection. The capability uses the databases covered by that client and does not close it.

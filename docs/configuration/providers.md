@@ -7,7 +7,7 @@ haiku.rag supports multiple AI providers for embeddings, question answering, and
 
 ## Model Settings
 
-Configure model behavior for the `qa` and `analysis` capabilities. These settings apply to any provider that supports them.
+Configure model behavior for the `qa` model. These settings apply to any provider that supports them.
 
 ### Basic Settings
 
@@ -22,7 +22,7 @@ qa:
 
 **Available options:**
 
-- **temperature**: Sampling temperature (0.0-1.0+). Defaults vary by task: 0.3 for QA and title generation, 0.0 for analysis and picture description.
+- **temperature**: Sampling temperature (0.0-1.0+). Defaults vary by task: 0.3 for QA and title generation, 0.0 for picture description.
   - Lower (0.0-0.3): Deterministic, focused responses
   - Medium (0.4-0.7): Balanced
   - Higher (0.8-1.0+): Creative, varied responses

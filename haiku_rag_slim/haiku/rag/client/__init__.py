@@ -51,7 +51,6 @@ if TYPE_CHECKING:
     from haiku.rag.embeddings import EmbedderWrapper
     from haiku.rag.ingester.metadata import MetadataProvider
     from haiku.rag.reranking.base import RerankerBase
-    from haiku.rag.sandbox import AnalysisResult
     from haiku.rag.sources.base import Source
     from haiku.rag.store.models.citation import Citation
 
@@ -930,17 +929,6 @@ class HaikuRAG:
         from haiku.rag.client.agents import ask
 
         return await ask(self, question, filter, images, sources)
-
-    async def analyze(
-        self,
-        question: str,
-        filter: str | None = None,
-        images: Sequence[bytes] | None = None,
-        sources: list[str] | None = None,
-    ) -> "AnalysisResult":
-        from haiku.rag.client.agents import analyze
-
-        return await analyze(self, question, filter, images, sources)
 
     async def visualize_chunk(
         self,

@@ -97,36 +97,3 @@ async def test_ask_hands_its_client_to_the_capability(temp_db_path, monkeypatch)
 
         assert await capability._ensure_rag() is client
         assert opens == 0
-
-
-@pytest.mark.asyncio
-async def test_analyze_hands_its_client_to_the_capability(temp_db_path, monkeypatch):
-    from haiku.rag.capabilities import analysis as analysis_capability
-    from haiku.rag.store.engine import Store
-
-    real = analysis_capability.create_capability
-    built = {}
-
-    def spy(**kwargs):
-        built["capability"] = real(**kwargs)
-        raise RuntimeError("stop before running the agent")
-
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        monkeypatch.setattr(analysis_capability, "create_capability", spy)
-
-        with pytest.raises(RuntimeError, match="stop before running the agent"):
-            await client.analyze("anything")
-
-        capability = built["capability"]
-        opens = 0
-        initialize = Store._initialize
-
-        async def counted(self):
-            nonlocal opens
-            opens += 1
-            return await initialize(self)
-
-        monkeypatch.setattr(Store, "_initialize", counted)
-
-        assert await capability._ensure_rag() is client
-        assert opens == 0

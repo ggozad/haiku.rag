@@ -6,7 +6,7 @@ from haiku.rag.config import AppConfig
 from haiku.rag.config.models import ModelConfig
 
 if TYPE_CHECKING:
-    from evaluations.qa import CapabilityModelSource, Target
+    from evaluations.qa import CapabilityModelSource
 
 # Pinned judge model. Decoupled from `config.qa.model` so a user changing
 # their QA model does not inadvertently change the judge — keeps cross-run
@@ -31,7 +31,6 @@ def build_experiment_metadata(
     test_cases: int,
     config: AppConfig,
     judge_config: ModelConfig | None = None,
-    target: "Target" = "rag-capability",
     capability_config: ModelConfig | None = None,
     capability_model_source: "CapabilityModelSource | None" = None,
     document_filter: str | None = None,
@@ -44,7 +43,6 @@ def build_experiment_metadata(
     metadata: dict[str, Any] = {
         "dataset": dataset_key,
         "test_cases": test_cases,
-        "target": target,
         "embedder_provider": config.embeddings.model.provider,
         "embedder_model": config.embeddings.model.name,
         "embedder_dim": config.embeddings.model.vector_dim,

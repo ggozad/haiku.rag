@@ -8,13 +8,20 @@
 
 ### Changed
 
+- `AnalysisCapability` merged into `RAGCapability`: tools `search`, `execute_code`
+  and `cite`; `RAGState.executions`; `request_limit` default 30. State stays under
+  the `rag` namespace.
 - `analysis.max_executions` moved to `qa.max_executions`; `analysis.code_timeout`
   and `analysis.max_output_chars` moved to `sandbox.code_timeout` and
   `sandbox.max_output_chars`. The `analysis` config block is gone.
 
 ### Removed
 
-- `analysis.model`. `qa.model` drives the analysis capability.
+- `analysis.model`. `qa.model` drives the capability.
+- `AnalysisCapability`, `AnalysisState`, `EvidenceState`, `RAGCapabilityBase`,
+  `AGENT_PREAMBLE`, `HaikuRAG.analyze`, `AnalysisResult`, `haiku-rag analyze`,
+  `haiku-rag chat --capability`, `evaluations run --target`, the `analysis` state
+  namespace and the `target` experiment-metadata key.
 
 ### Fixed
 
