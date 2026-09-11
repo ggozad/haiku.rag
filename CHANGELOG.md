@@ -11,6 +11,10 @@
   `medium`, a level is sent as written. `openai` without a `base_url`,
   `anthropic`, `google`, `groq` and `bedrock` pass it through as pydantic-ai's
   unified `thinking` setting. `gpt-oss` with `false` sends `none`, was `low`.
+- `evaluations run` records `capability_thinking`, `judge_thinking` and
+  `capability_model_source` in experiment metadata, and no longer records
+  `qa_provider`, `qa_model`, `qa_temperature`, `qa_max_tokens`,
+  `qa_enable_thinking` or `qa_extra_body`.
 
 ### Deprecated
 

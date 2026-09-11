@@ -82,14 +82,20 @@ def _attach_relevant_uris(
         case.metadata = metadata
 
 
+CapabilityModelSource = Literal["--capability-model", "analysis.model", "qa.model"]
+
+
 def _resolve_capability_config(
     target: Target, config: AppConfig, capability_model: ModelConfig | None
-) -> ModelConfig:
-    if target == "analysis-capability":
-        # Mirror the capability-code resolver: explicit analysis.model wins,
-        # else fall back to qa.model.
-        return capability_model or config.analysis.model or config.qa.model
-    return capability_model or config.qa.model
+) -> tuple[ModelConfig, CapabilityModelSource]:
+    """The model the capability runs on, and which setting supplied it."""
+    if capability_model is not None:
+        return capability_model, "--capability-model"
+    # Mirror the capability-code resolver: explicit analysis.model wins,
+    # else fall back to qa.model.
+    if target == "analysis-capability" and config.analysis.model is not None:
+        return config.analysis.model, "analysis.model"
+    return config.qa.model, "qa.model"
 
 
 def _live_summary(report_cases, report_failures) -> dict[str, float | int] | None:
@@ -236,7 +242,9 @@ def _prepare_qa_run(
     ]
 
     judge_config = judge_model or DEFAULT_JUDGE_MODEL
-    capability_config = _resolve_capability_config(target, config, capability_model)
+    capability_config, capability_model_source = _resolve_capability_config(
+        target, config, capability_model
+    )
 
     eval_name = name if name is not None else f"{spec.key}_qa_evaluation"
     experiment_metadata = build_experiment_metadata(
@@ -246,6 +254,7 @@ def _prepare_qa_run(
         judge_config=judge_config,
         target=target,
         capability_config=capability_config,
+        capability_model_source=capability_model_source,
         document_filter=document_filter,
     )
     experiment_metadata.update(spec.experiment_metadata or {})

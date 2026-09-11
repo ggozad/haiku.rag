@@ -45,8 +45,9 @@ class TestBuildExperimentMetadata:
         assert result["embedder_dim"] == config.embeddings.model.vector_dim
         assert result["chunk_size"] == config.processing.chunk_size
         assert result["search_limit"] == config.search.limit
-        assert result["qa_provider"] == config.qa.model.provider
-        assert result["qa_model"] == config.qa.model.name
+        assert result["qa_max_searches"] == config.qa.max_searches
+        assert "qa_provider" not in result
+        assert "qa_model" not in result
         assert "judge_provider" not in result
 
     def test_with_judge_config(self) -> None:
@@ -64,11 +65,11 @@ class TestBuildExperimentMetadata:
         assert result["judge_provider"] == "ollama"
         assert result["judge_model"] == "gpt-oss"
         assert result["judge_temperature"] == 0.0
-        assert result["judge_enable_thinking"] is False
+        assert result["judge_thinking"] is False
+        assert "judge_enable_thinking" not in result
 
     def test_records_extra_body(self) -> None:
         config = AppConfig()
-        config.qa.model.extra_body = {"top_k": 5}
         judge = ModelConfig(
             provider="openai",
             name="qwen",
@@ -85,7 +86,7 @@ class TestBuildExperimentMetadata:
             capability_config=capability,
         )
 
-        assert result["qa_extra_body"] == {"top_k": 5}
+        assert "qa_extra_body" not in result
         assert result["judge_extra_body"] == {
             "chat_template_kwargs": {"enable_thinking": True}
         }
@@ -753,7 +754,7 @@ class TestExperimentMetadataTargets:
 
     def test_capability_target_includes_capability_config(self) -> None:
         capability = ModelConfig(
-            provider="ollama", name="gpt-oss-large", temperature=0.2
+            provider="ollama", name="gpt-oss-large", temperature=0.2, thinking="low"
         )
         result = build_experiment_metadata(
             dataset_key="test",
@@ -761,11 +762,52 @@ class TestExperimentMetadataTargets:
             config=AppConfig(),
             target="rag-capability",
             capability_config=capability,
+            capability_model_source="qa.model",
         )
         assert result["target"] == "rag-capability"
         assert result["capability_provider"] == "ollama"
         assert result["capability_model"] == "gpt-oss-large"
         assert result["capability_temperature"] == 0.2
+        assert result["capability_thinking"] == "low"
+        assert result["capability_model_source"] == "qa.model"
+        assert "capability_enable_thinking" not in result
+
+
+class TestResolveCapabilityConfig:
+    """The capability model and the record of where it came from."""
+
+    def test_rag_target_falls_back_to_qa_model(self) -> None:
+        from evaluations.qa import _resolve_capability_config
+
+        config = AppConfig()
+        assert _resolve_capability_config("rag-capability", config, None) == (
+            config.qa.model,
+            "qa.model",
+        )
+
+    def test_analysis_target_prefers_analysis_model(self) -> None:
+        from evaluations.qa import _resolve_capability_config
+
+        config = AppConfig()
+        config.analysis.model = ModelConfig(provider="ollama", name="analyst")
+        assert _resolve_capability_config("analysis-capability", config, None) == (
+            config.analysis.model,
+            "analysis.model",
+        )
+        assert (
+            _resolve_capability_config("analysis-capability", AppConfig(), None)[1]
+            == "qa.model"
+        )
+
+    def test_override_wins_for_every_target(self) -> None:
+        from evaluations.qa import _resolve_capability_config
+
+        override = ModelConfig(provider="openai", name="gpt-5")
+        for target in ("rag-capability", "analysis-capability"):
+            assert _resolve_capability_config(target, AppConfig(), override) == (
+                override,
+                "--capability-model",
+            )
 
 
 class TestEvaluateDatasetTarget:
