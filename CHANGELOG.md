@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- FRAMES caches the images its articles reference and inlines them as `data:`
+  URIs, so the corpus carries picture bytes. Parsoid writes protocol-relative
+  `//host/path`, which docling cannot resolve, so every picture was stored
+  empty. Fetches are paced and cached per article with a marker recording what
+  did not resolve.
 - Remote image fetching sends a `User-Agent`. `ConversionOptions.fetch_headers`
   sets the headers for images referenced by URL in HTML input and defaults to
   identifying haiku.rag; hosts with a user-agent policy answered 403 and docling

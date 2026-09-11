@@ -7,8 +7,11 @@ and fetch date.
 """
 
 import ast
+import base64
+import hashlib
 import json
 import logging
+import mimetypes
 import re
 import time
 from collections.abc import Mapping
@@ -31,6 +34,8 @@ USER_AGENT = "haiku.rag-evaluations (https://github.com/ggozad/haiku.rag)"
 FETCH_ATTEMPTS = 3
 THROTTLE_SECONDS = 1.0
 RATE_LIMIT_BACKOFF_SECONDS = 60.0
+# Measured ceiling for Wikimedia thumbnails. 16 a second draws 429s.
+IMAGE_THROTTLE_SECONDS = 0.125
 
 
 # Articles deleted from Wikipedia since FRAMES was authored; the questions
@@ -198,6 +203,7 @@ def fetch_article(
     if meta_path.exists():
         row = json.loads(meta_path.read_text())
         row["path"] = str(cache_dir / f"{base}.{row['format']}")
+        _cache_article_images(row, cache_dir, client)
         return row
 
     assert client is not None
@@ -231,7 +237,131 @@ def fetch_article(
     content_path.write_text(content)
     meta_path.write_text(json.dumps(row))
     row["path"] = str(content_path)
+    _cache_article_images(row, cache_dir, client)
     return row
+
+
+def _cache_article_images(
+    row: dict[str, Any], cache_dir: Path, client: httpx.Client | None
+) -> None:
+    """Populate the image cache for an HTML article.
+
+    Reads the navigation-stripped HTML, so the interface icons that
+    `strip_navigation` discards are never downloaded.
+    """
+    if row["format"] != "html" or client is None:
+        return
+    html = Path(row["path"]).read_text()
+    fetch_article_images(row["uri"], strip_navigation(html), cache_dir, client)
+
+
+def image_urls(html: str) -> list[str]:
+    """Fetchable image URLs referenced by `html`, in document order, deduped.
+
+    Parsoid writes `//host/path`, which docling cannot resolve without a base.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    urls: list[str] = []
+    seen: set[str] = set()
+    for img in soup.find_all("img"):
+        src = str(img.get("src") or "")
+        if src.startswith("//"):
+            src = f"https:{src}"
+        elif not src.startswith(("http://", "https://")):
+            continue
+        if src not in seen:
+            seen.add(src)
+            urls.append(src)
+    return urls
+
+
+def inline_images(html: str, images: Mapping[str, Path | str]) -> str:
+    """Rewrite each cached `<img src>` to a data: URI over its stored bytes.
+
+    docling decodes inline data: URIs, so conversion reaches no network. An
+    image with no cache entry keeps its unresolvable src.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    for img in soup.find_all("img"):
+        src = str(img.get("src") or "")
+        key = f"https:{src}" if src.startswith("//") else src
+        cached = images.get(key)
+        if cached is None:
+            continue
+        path = Path(cached)
+        mime = mimetypes.guess_type(path.name)[0] or "image/png"
+        encoded = base64.b64encode(path.read_bytes()).decode()
+        img["src"] = f"data:{mime};base64,{encoded}"
+    return str(soup)
+
+
+def _image_path(images_dir: Path, url: str) -> Path:
+    digest = hashlib.sha256(url.encode()).hexdigest()
+    suffix = Path(urlsplit(url).path).suffix.lower()
+    if suffix not in {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"}:
+        suffix = ".png"
+    return images_dir / f"{digest}{suffix}"
+
+
+def fetch_article_images(
+    uri: str,
+    html: str,
+    cache_dir: Path,
+    client: httpx.Client | None,
+    throttle: float = IMAGE_THROTTLE_SECONDS,
+    attempts: int = FETCH_ATTEMPTS,
+) -> dict[str, str]:
+    """Cache every image `html` references; return url -> cached path.
+
+    A marker sidecar per article records what resolved and what did not, so a
+    resumed build refetches nothing. An unreachable image is recorded in
+    `failed` rather than discarding the article.
+    """
+    images_dir = cache_dir / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+    marker_path = images_dir / f"{quote(uri, safe='')}.json"
+    if marker_path.exists():
+        marker = json.loads(marker_path.read_text())
+        return {url: str(images_dir / name) for url, name in marker["images"].items()}
+
+    if client is None:
+        return {}
+    images: dict[str, str] = {}
+    failed: list[str] = []
+    for url in image_urls(html):
+        target = _image_path(images_dir, url)
+        if target.exists():
+            images[url] = target.name
+            continue
+        for attempt in range(1, attempts + 1):
+            try:
+                time.sleep(throttle)
+                response = client.get(url)
+                response.raise_for_status()
+                target.write_bytes(response.content)
+                images[url] = target.name
+                break
+            except Exception as e:
+                if attempt == attempts:
+                    logger.info(f"Image unavailable for {uri}: {url}: {e}")
+                    failed.append(url)
+                else:
+                    time.sleep(_backoff_seconds(e, attempt))
+
+    marker_path.write_text(
+        json.dumps(
+            {
+                "images": images,
+                "failed": failed,
+                "fetched_at": datetime.now(UTC).date().isoformat(),
+            }
+        )
+    )
+    if failed:
+        logger.warning(
+            f"{len(failed)}/{len(images) + len(failed)} images unavailable for {uri}"
+        )
+    return {url: str(images_dir / name) for url, name in images.items()}
 
 
 def question_expected_uris(doc: Mapping[str, Any]) -> tuple[str, ...]:
@@ -283,6 +413,9 @@ def map_frames_document(doc: Mapping[str, Any]) -> DocumentPayload:
     content = Path(doc["path"]).read_text()
     if doc["format"] == "html":
         content = strip_navigation(content)
+        content = inline_images(
+            content, fetch_article_images(doc["uri"], content, get_cache_dir(), None)
+        )
     metadata: dict[str, str] = {"fetched_at": doc["fetched_at"]}
     if doc.get("revid"):
         metadata["revid"] = doc["revid"]
