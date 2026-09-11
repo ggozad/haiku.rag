@@ -22,7 +22,7 @@ from haiku.rag.capabilities.compaction import (
 from haiku.rag.capabilities.policy import (
     create_capability as create_citation_policy,
 )
-from haiku.rag.capabilities.rag import AGENT_PREAMBLE, RAGState, create_capability
+from haiku.rag.capabilities.rag import RAGState, create_capability
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.config import get_config
@@ -88,7 +88,6 @@ capability = create_capability(config=config, defer_loading=False)
 
 agent = Agent(
     get_model(config.qa.model, config),
-    instructions=AGENT_PREAMBLE,
     # Conversations here are multi-turn, so earlier questions are reduced to the
     # evidence they cited rather than carried whole, and every answer declares
     # what grounds it so the UI can show citations for all of them.

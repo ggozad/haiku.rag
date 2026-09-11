@@ -8,8 +8,6 @@ from pydantic_ai.agent import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import UserError
 
-from haiku.rag.capabilities._base import RAGCapabilityBase
-from haiku.rag.capabilities.analysis import AnalysisCapability, AnalysisState
 from haiku.rag.capabilities.compaction import CAPABILITY_ID as COMPACTION_ID
 from haiku.rag.capabilities.compaction import EvidenceCompactionCapability
 from haiku.rag.capabilities.policy import CAPABILITY_ID as POLICY_ID
@@ -19,7 +17,6 @@ from haiku.rag.client.scope import DatabaseRef
 
 ALL_CAPABILITIES = [
     RAGCapability,
-    AnalysisCapability,
     EvidenceCompactionCapability,
     CitationPolicyCapability,
 ]
@@ -51,20 +48,7 @@ def test_rag_capability_is_built_from_a_spec(temp_db_path):
     assert capability.scope.databases == (DatabaseRef.at(temp_db_path),)
     assert capability.id == "haiku-rag"
     assert capability.state_type is RAGState
-    assert capability.tool_names == {"rag_search", "rag_cite"}
-    assert capability.request_limit == 20
-
-
-def test_analysis_capability_is_built_from_a_spec(temp_db_path):
-    (capability,) = _from_spec(
-        {"capabilities": [{"AnalysisCapability": {"db_path": str(temp_db_path)}}]},
-        [AnalysisCapability],
-    )
-
-    assert isinstance(capability, AnalysisCapability)
-    assert capability.scope.databases == (DatabaseRef.at(temp_db_path),)
-    assert capability.id == "haiku-rag-analysis"
-    assert capability.state_type is AnalysisState
+    assert capability.tool_names == {"search", "execute_code", "cite"}
     assert capability.request_limit == 30
 
 
@@ -89,16 +73,12 @@ def test_a_config_mapping_in_a_spec_is_validated(temp_db_path, temp_yaml_config)
     assert capability.config.qa.max_searches == 9
 
 
-@pytest.mark.parametrize(
-    "name, capability_type",
-    [("RAGCapability", RAGCapability), ("AnalysisCapability", AnalysisCapability)],
-)
-def test_a_spec_narrows_a_capability_to_named_databases(name, capability_type):
+def test_a_spec_narrows_a_capability_to_named_databases():
     (capability,) = _from_spec(
         {
             "capabilities": [
                 {
-                    name: {
+                    "RAGCapability": {
                         "config": {
                             "lancedb": {
                                 "databases": {
@@ -112,10 +92,10 @@ def test_a_spec_narrows_a_capability_to_named_databases(name, capability_type):
                 }
             ]
         },
-        [capability_type],
+        [RAGCapability],
     )
 
-    assert isinstance(capability, RAGCapabilityBase)
+    assert isinstance(capability, RAGCapability)
     assert capability.scope.names == ("alpha",)
 
 
@@ -170,7 +150,6 @@ def test_the_generated_spec_schema_describes_every_capability():
     # Internal constructor wiring must not become a spec surface.
     for internal in (
         "state_type",
-        "instruction_text",
         "tool_names",
         "state_namespace",
         "borrowed_rag",

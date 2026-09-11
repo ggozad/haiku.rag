@@ -26,26 +26,12 @@ from evaluations.evaluators import (
     TranscriptLLMJudge,
 )
 from evaluations.experiment import DEFAULT_JUDGE_MODEL, build_experiment_metadata
+from haiku.rag.capabilities.rag import create_capability
 from haiku.rag.config import AppConfig
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.utils import get_model
 
 console = Console()
-
-Target = Literal["rag-capability", "analysis-capability"]
-TARGETS: tuple[Target, ...] = ("rag-capability", "analysis-capability")
-
-
-def _capability_factory_for_target(target: Target) -> CapabilityFactory:
-    if target == "rag-capability":
-        from haiku.rag.capabilities.rag import create_capability
-
-        return create_capability
-    if target == "analysis-capability":
-        from haiku.rag.capabilities.analysis import create_capability
-
-        return create_capability
-    raise ValueError(f"target {target!r} is not a capability target")
 
 
 def _attach_relevant_uris(
@@ -221,7 +207,6 @@ def _prepare_qa_run(
     name: str | None,
     db_path: Path | None,
     judge_model: ModelConfig | None,
-    target: Target,
     capability_model: ModelConfig | None,
     case_ids: set[str] | None,
     document_filter: str | None,
@@ -248,7 +233,6 @@ def _prepare_qa_run(
         test_cases=len(cases),
         config=config,
         judge_config=judge_config,
-        target=target,
         capability_config=capability_config,
         capability_model_source=capability_model_source,
         document_filter=document_filter,
@@ -263,7 +247,7 @@ def _prepare_qa_run(
         judge_config=judge_config,
         eval_name=eval_name,
         experiment_metadata=experiment_metadata,
-        capability_factory=_capability_factory_for_target(target),
+        capability_factory=create_capability,
         capability_model=get_model(capability_config, config),
     )
 
@@ -294,7 +278,6 @@ async def run_qa_benchmark(
     name: str | None = None,
     db_path: Path | None = None,
     judge_model: ModelConfig | None = None,
-    target: Target = "rag-capability",
     capability_model: ModelConfig | None = None,
     case_ids: set[str] | None = None,
     document_filter: str | None = None,
@@ -306,7 +289,6 @@ async def run_qa_benchmark(
         name,
         db_path,
         judge_model,
-        target,
         capability_model,
         case_ids,
         document_filter,
@@ -461,7 +443,6 @@ async def run_live_qa_benchmark(
     name: str | None = None,
     db_path: Path | None = None,
     judge_model: ModelConfig | None = None,
-    target: Target = "rag-capability",
     capability_model: ModelConfig | None = None,
     case_ids: set[str] | None = None,
     document_filter: str | None = None,
@@ -478,7 +459,6 @@ async def run_live_qa_benchmark(
         name,
         db_path,
         judge_model,
-        target,
         capability_model,
         case_ids,
         document_filter,

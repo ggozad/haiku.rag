@@ -9,7 +9,7 @@ from evaluations.artifacts import download_dataset_db, upload_dataset_db
 from evaluations.config import DatasetSpec
 from evaluations.datasets import DATASETS
 from evaluations.population import populate_db
-from evaluations.qa import TARGETS, Target, run_live_qa_benchmark, run_qa_benchmark
+from evaluations.qa import run_live_qa_benchmark, run_qa_benchmark
 from evaluations.retrieval import run_retrieval_benchmark
 from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
 from haiku.rag.config.models import ModelConfig
@@ -38,7 +38,6 @@ async def evaluate_dataset(
     vacuum_interval: int = 100,
     multimodal_only: bool = False,
     judge_model: ModelConfig | None = None,
-    target: Target = "rag-capability",
     capability_model: ModelConfig | None = None,
     case_ids: set[str] | None = None,
     document_filter: str | None = None,
@@ -79,9 +78,7 @@ async def evaluate_dataset(
         )
 
     if not skip_qa:
-        console.print(
-            f"\nRunning QA benchmarks (target={target})...", style="bold yellow"
-        )
+        console.print("\nRunning QA benchmarks...", style="bold yellow")
         qa_benchmark = run_live_qa_benchmark if spec.live else run_qa_benchmark
         await qa_benchmark(
             spec,
@@ -90,7 +87,6 @@ async def evaluate_dataset(
             name=name,
             db_path=db_path,
             judge_model=judge_model,
-            target=target,
             capability_model=capability_model,
             case_ids=case_ids,
             document_filter=document_filter,
@@ -185,11 +181,6 @@ def run(
         "--multimodal-only",
         help="Only evaluate queries requiring image understanding.",
     ),
-    target: str = typer.Option(
-        "rag-capability",
-        "--target",
-        help="What to benchmark: rag-capability | analysis-capability.",
-    ),
     capability_model: str | None = typer.Option(
         None,
         "--capability-model",
@@ -217,11 +208,6 @@ def run(
 ) -> None:
     spec = _resolve_dataset(dataset)
     app_config = _load_config(config)
-    if target not in TARGETS:
-        raise typer.BadParameter(
-            f"Unknown target {target!r}. Choose from: {', '.join(TARGETS)}"
-        )
-    target_value = target
     judge_model_config = app_config.evaluations.judge
     capability_model_config = (
         parse_model_option(capability_model) if capability_model else None
@@ -240,7 +226,6 @@ def run(
             vacuum_interval=vacuum_interval,
             multimodal_only=multimodal_only,
             judge_model=judge_model_config,
-            target=target_value,
             capability_model=capability_model_config,
             case_ids=_load_case_ids(filter_ids),
             document_filter=document_filter,

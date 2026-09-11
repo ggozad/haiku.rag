@@ -16,15 +16,15 @@ Built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.pydantic.dev/
 - **Hybrid search** — Vector + full-text with Reciprocal Rank Fusion
 - **Multimodal & cross-modal search** — Multimodal embedders (vLLM, VoyageAI, Cohere) put picture vectors in the same space as text; supports text-as-query → figure hits and image-as-query
 - **Question answering** — RAG capability with citations (page numbers, section headings)
-- **Vision QA** — Vision-capable models receive figure bytes alongside chunk text; attach your own images to questions in `ask`, `analyze` and the chat TUI
+- **Vision QA** — Vision-capable models receive figure bytes alongside chunk text; attach your own images to questions in `ask` and the chat TUI
 - **Reranking** — local cross-encoders, Cohere, Zero Entropy, or vLLM
-- **Analysis capability** — Complex analytical tasks via sandboxed Python code execution (aggregation, computation, multi-document analysis)
+- **Code execution** — The RAG capability runs sandboxed Python over the documents for aggregation, computation and multi-document analysis
 - **Evidence compaction** — Optional capability that replaces earlier questions' search results on the request with the evidence they cited, so long conversations stop resending everything they retrieved
 - **Citation policy** — Optional capability that requires every answer to declare what grounds it, including declaring that nothing does
 - **Conversational RAG** — Chat TUI and web application for multi-turn conversations with session memory
 - **Document structure** — Stores full [DoclingDocument](https://docling-project.github.io/docling/concepts/docling_document/), enabling structure-aware context expansion
 - **Multiple providers** — Embeddings: Ollama, OpenAI, VoyageAI, Cohere, LM Studio, vLLM (multimodal via `multimodal: true` on vLLM/VoyageAI/Cohere). QA: any model supported by Pydantic AI
-- **Multi-database search** — Search, ask, analyze, or chat across named databases with source attribution on results and citations
+- **Multi-database search** — Search, ask, or chat across named databases with source attribution on results and citations
 - **Local-first** — Embedded LanceDB, no servers required. Also supports S3, GCS, Azure, and LanceDB Cloud
 - **CLI & Python API** — Full functionality from command line or code
 - **MCP server** — Expose as tools for AI assistants (Claude Desktop, etc.)
@@ -73,7 +73,7 @@ haiku-rag ask "What datasets were used for evaluation?"
 haiku-rag ask "Does this figure match the spec in the design doc?" --image figure.png
 
 # Analyze — complex analytical tasks via code execution
-haiku-rag analyze "How many documents mention transformers?"
+haiku-rag ask "How many documents mention transformers?"
 
 # Interactive chat — multi-turn conversations with memory
 haiku-rag chat
@@ -161,7 +161,7 @@ Full documentation at: https://ggozad.github.io/haiku.rag/
 - [Configuration](https://ggozad.github.io/haiku.rag/configuration/) - YAML reference
 - [CLI](https://ggozad.github.io/haiku.rag/cli/) - Command reference
 - [Python API](https://ggozad.github.io/haiku.rag/python/) - Complete API docs
-- [Capabilities](https://ggozad.github.io/haiku.rag/capabilities/) - Native Pydantic AI RAG and analysis capabilities
+- [Capabilities](https://ggozad.github.io/haiku.rag/capabilities/) - Native Pydantic AI capabilities
 - [Tuning](https://ggozad.github.io/haiku.rag/tuning/) - Retrieval and answer-quality tuning
 - [Ingester](https://ggozad.github.io/haiku.rag/ingester/) - Production ingester for continuous indexing from FS, HTTP, S3, and WebDAV
 - [MCP](https://ggozad.github.io/haiku.rag/mcp/) - Model Context Protocol integration

@@ -65,13 +65,12 @@ carries its page numbers and headings, which is what makes a citation checkable.
 Two [capabilities](capabilities/index.md) sit on top, both native Pydantic AI
 capabilities you can attach to your own agent:
 
-- The **RAG capability** searches and cites. Its citations carry page numbers and
+- The **RAG capability** searches, cites, and runs a sandboxed Python interpreter
+  with the documents mounted as a filesystem, for questions that need computation
+  across documents rather than retrieval. Its citations carry page numbers and
   headings, and `haiku-rag visualize` draws the cited chunk on the page image.
-- The **analysis capability** adds a sandboxed Python interpreter with the
-  documents mounted as a filesystem, for questions that need computation across
-  documents rather than retrieval.
 
-Two optional capabilities compose with them: evidence compaction replaces older
+Two optional capabilities compose with it: evidence compaction replaces older
 turns' evidence with what was actually cited, and citation policy requires every
 answer to declare what grounds it.
 

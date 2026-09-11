@@ -226,7 +226,7 @@ A location can be a URI or local path.
 
 Results, documents, and citations use the configured name as `source`. An unavailable configured database raises `SourceUnavailableError`, which names the database and not its location, so a location never travels in an error a consumer might render or log. A migration, configuration or read-only failure keeps its own type, with the database named in the message. Commands that report on a database, such as `info`, still show where it is.
 
-Searches spanning multiple databases identify each result with a model-facing `Collection:` line. Searches over one database omit it. Structured `source` fields on results, documents, citations, and analysis dictionaries are unchanged.
+Searches spanning multiple databases identify each result with a model-facing `Collection:` line. Searches over one database omit it. Structured `source` fields on results, documents, citations, and in-code search dictionaries are unchanged.
 
 Embedding compatibility is checked against two different things.
 
@@ -236,7 +236,7 @@ Across a selection, the databases are compared with each other. Vector and hybri
 
 ### Search and Provenance
 
-`search`, `ask`, and `analyze` use the full set by default. Pass `sources` to select a subset:
+`search` and `ask` use the full set by default. Pass `sources` to select a subset:
 
 ```python
 results = await client.search("query")                     # every database
@@ -255,7 +255,7 @@ Citation ambiguity is evaluated against evidence available to the run. A cited c
 
 `get_document_by_id`, `get_chunk_by_id`, `get_picture_bytes` and `visualize_chunk` take an optional `source`, and ask that database alone. A name the client does not cover raises `UnknownDatabaseError`. Without one, the document and chunk lookups ask every covered database and answer from the first that holds the ID; `get_picture_bytes` and `visualize_chunk` require one whenever the client covers a set, since a chunk carries no database identity where `SearchResult.source` and `Citation.source` do.
 
-The analysis sandbox rejects shared document IDs because its mount path is `/documents/{id}/`.
+The sandbox rejects shared document IDs because its mount path is `/documents/{id}/`.
 
 The chat document filter selects by document and database: the search is narrowed to the databases the selection names, and the ID filter applies within them. An ID that copies share still matches in every selected database that holds it.
 
@@ -289,7 +289,7 @@ Conversion, chunking, and title generation do not access a database and remain a
 
 Commands use database sets as follows:
 
-- **Set-capable**: `search`, `ask`, `analyze`, `chat`, and `mcp` use the full configured set, or the single database selected by `--db-name`.
+- **Set-capable**: `search`, `ask`, `chat`, and `mcp` use the full configured set, or the single database selected by `--db-name`.
 - **Config-only**: `settings`, `init-config`, and `download-models` do not open a database.
 - **Single-database**: everything else — document writes, `rebuild`, `vacuum`, `migrate`, `init`, `info`, `history`, `tag`, `doctor`, `list`, `inspect`, and `visualize` — works on one database, selected with the global `--db-name` option.
 

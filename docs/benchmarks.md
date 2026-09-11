@@ -1,6 +1,6 @@
 # Benchmarks
 
-We evaluate `haiku.rag` on a small set of datasets that exercise different parts of the pipeline. OpenRAG Bench (ORB), T²-RAGBench, HotpotQA, FRAMES, and MTRAG are the datasets we currently track. Retrieval, QA accuracy, and citation retrieval are scored end-to-end through the RAG and analysis capabilities.
+We evaluate `haiku.rag` on a small set of datasets that exercise different parts of the pipeline. OpenRAG Bench (ORB), T²-RAGBench, HotpotQA, FRAMES, and MTRAG are the datasets we currently track. Retrieval, QA accuracy, and citation retrieval are scored end-to-end through the RAG capability.
 
 ## Current results
 
@@ -218,7 +218,7 @@ Active datasets:
 | `orb_text` — OpenRAG Bench, text embedder (`qwen3-embedding:4b`) with VLM picture descriptions baked into chunk content | ~18 GB |
 | `orb_multimodal` — OpenRAG Bench, multimodal embedder (`qwen3-vl-embedding-8b`); picture vectors live in the same space as text for cross-modal retrieval | ~16 GB |
 | `orb_multimodal_nemotron` — OpenRAG Bench, multimodal embedder (`nvidia/llama-nemotron-embed-vl-1b-v2`), the embedder behind the published headline results | ~16 GB |
-| `t2_finqa` — T²-RAGBench (FinQA) financial QA, text embedder (`qwen3-embedding:4b`); scored by exact numeric match, run with `--target analysis-capability` | ~2 GB |
+| `t2_finqa` — T²-RAGBench (FinQA) financial QA, text embedder (`qwen3-embedding:4b`); scored by exact numeric match | ~2 GB |
 | `hotpotqa` — HotpotQA multi-hop QA over Wikipedia paragraphs, text embedder (`qwen3-embedding:4b`) | ~1.5 GB |
 | `mtrag_clapnq` — MTRAG multi-turn RAG, ClapNQ (Wikipedia) passages, text embedder (`qwen3-embedding:4b`); also serves the `mtrag_clapnq_rewrite`, `mtrag_clapnq_live` and `mtrag_clapnq_live_uncompacted` keys | ~2.8 GB |
 
@@ -247,7 +247,6 @@ evaluations run hotpotqa --config /path/to/haiku.rag.yaml --db /path/to/custom.l
 - `--skip-qa` - Skip QA benchmark
 - `--limit N` - Limit number of test cases
 - `--name NAME` - Override the evaluation name
-- `--target {rag-capability,analysis-capability}` - Choose which [capability](capabilities/index.md) to benchmark end-to-end (default: `rag-capability`). The target names remain stable dataset identifiers.
 - `--capability-model PROVIDER:NAME` - Override the capability model independently from the judge (default: `config.qa.model`).
 - `--filter CLAUSE` / `-f CLAUSE` - Restrict every benchmark search to a subset of the database (see [Restricting the corpus](#restricting-the-corpus)).
 

@@ -103,7 +103,7 @@ class Sandbox:
     file callbacks are synchronous and run off that loop while ``feed_run`` is
     awaited, so they bridge back to it via ``run_coroutine_threadsafe`` without
     deadlocking. When a ``rag`` connection is supplied it is used for every read,
-    so an analysis run drives a single connection on a single loop. Otherwise a
+    so a run drives a single connection on a single loop. Otherwise a
     scope covering several databases opens a federated client once and holds it
     until ``close()``, and a single database is opened per read.
     """
@@ -115,6 +115,7 @@ class Sandbox:
     _owners: dict[str, "HaikuRAG"]
     _lock: "asyncio.Lock | None"
     _search_results: "list[SearchResult]"
+    _executions: int
     _doc_items: dict[str, list["DocumentItem"]]
     _doc_chunk_index: dict[str, dict[str, list[str]]]
     _items_jsonl_cache: dict[str, str]
@@ -134,6 +135,7 @@ class Sandbox:
         context: AnalysisContext,
         rag: "HaikuRAG | None" = None,
         lock: "asyncio.Lock | None" = None,
+        executions: int = 1,
     ):
         from haiku.rag.client.scope import DatabaseScope
 
@@ -143,6 +145,7 @@ class Sandbox:
             context,
             rag,
             lock,
+            executions,
         )
 
     @classmethod
@@ -153,6 +156,7 @@ class Sandbox:
         context: AnalysisContext,
         rag: "HaikuRAG | None" = None,
         lock: "asyncio.Lock | None" = None,
+        executions: int = 1,
     ) -> "Sandbox":
         """A sandbox over databases someone already resolved.
 
@@ -162,7 +166,7 @@ class Sandbox:
         handed is the only one resolved.
         """
         sandbox = cls.__new__(cls)
-        sandbox._configure(scope, config, context, rag, lock)
+        sandbox._configure(scope, config, context, rag, lock, executions)
         return sandbox
 
     def _configure(
@@ -172,11 +176,17 @@ class Sandbox:
         context: AnalysisContext,
         rag: "HaikuRAG | None",
         lock: "asyncio.Lock | None",
+        executions: int,
     ) -> None:
-        """The state every sandbox starts with, however its scope was reached."""
+        """The state every sandbox starts with, however its scope was reached.
+
+        ``executions`` is how many ``execute()`` calls the session will serve;
+        the session's duration budget is that many ``code_timeout``s.
+        """
         self._scope = scope
         self._config = config
         self._context = context
+        self._executions = executions
         self._rag = rag
         self._opened = None
         self._owners = {}
@@ -275,7 +285,7 @@ class Sandbox:
                 if doc.id in holders:
                     raise ValueError(
                         f"document {doc.id} is in databases {held_by[doc.id]!r} and "
-                        f"{owner.source!r}; analysis mounts one document per id"
+                        f"{owner.source!r}; the sandbox mounts one document per id"
                     )
                 holders[doc.id] = owner
                 held_by[doc.id] = owner.source
@@ -638,7 +648,8 @@ class Sandbox:
 
         Monty spends ``max_duration_secs`` across the session's whole life, and
         the session is reused so variables persist between calls: the budget
-        covers the whole run. ``code_timeout`` is enforced per call elsewhere: past
+        covers every execution the session serves. ``code_timeout`` is enforced per
+        call elsewhere: past
         its deadline no further host call starts (``_check_deadline``), and the
         pool's ``request_timeout`` bounds compute.
 
@@ -648,7 +659,7 @@ class Sandbox:
         """
         config = self._config
         return {
-            "max_duration_secs": config.sandbox.code_timeout * config.qa.max_executions,
+            "max_duration_secs": config.sandbox.code_timeout * self._executions,
             "max_suspensions": _MAX_HOST_CALLS,
         }
 

@@ -27,17 +27,16 @@ from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
 
-from haiku.rag.capabilities._base import (
-    CITATION_GRACE_REQUESTS,
-    _called_own_tool,
-)
-from haiku.rag.capabilities.analysis import AnalysisCapability, AnalysisState
-from haiku.rag.capabilities.analysis import create_capability as create_analysis
 from haiku.rag.capabilities.ledger import (
     CapabilityEvidenceRecord,
     citation_status,
 )
-from haiku.rag.capabilities.rag import AGENT_PREAMBLE, RAGCapability, RAGState
+from haiku.rag.capabilities.rag import (
+    CITATION_GRACE_REQUESTS,
+    RAGCapability,
+    RAGState,
+    _called_own_tool,
+)
 from haiku.rag.capabilities.rag import create_capability as create_rag
 from haiku.rag.client.scope import DatabaseRef
 from haiku.rag.config.models import AppConfig, PromptsConfig
@@ -65,30 +64,12 @@ def test_rag_capability_api(temp_db_path):
     assert isinstance(capability, RAGCapability)
     assert capability.id == "haiku-rag"
     assert capability.defer_loading is True
-    assert set(capability.get_toolset().tools) == {"rag_search", "rag_cite"}
+    assert set(capability.get_toolset().tools) == {"search", "execute_code", "cite"}
     toolset = capability.get_toolset()
     assert toolset.max_retries == 3
     assert toolset.sequential is True
     assert capability.state_type is RAGState
     assert capability.state_namespace == "rag"
-    assert capability.request_limit == 20
-
-
-def test_analysis_capability_api(temp_db_path):
-    capability = create_analysis(db_path=temp_db_path, config=AppConfig())
-
-    assert isinstance(capability, AnalysisCapability)
-    assert capability.id == "haiku-rag-analysis"
-    assert capability.defer_loading is True
-    assert set(capability.get_toolset().tools) == {
-        "analysis_search",
-        "analysis_execute_code",
-        "analysis_cite",
-    }
-    toolset = capability.get_toolset()
-    assert toolset.max_retries == 3
-    assert toolset.sequential is True
-    assert capability.state_type is AnalysisState
     assert capability.request_limit == 30
 
 
@@ -106,14 +87,12 @@ def test_capability_factories_resolve_defaults(temp_db_path, monkeypatch):
         config.storage.data_dir / "haiku.rag.lancedb"
     )
 
-    for factory in (create_rag, create_analysis):
-        db_path = _placed(factory(db_path=str(temp_db_path), config=config))
-        assert db_path == temp_db_path
-        assert isinstance(db_path, Path)
+    db_path = _placed(create_rag(db_path=str(temp_db_path), config=config))
+    assert db_path == temp_db_path
+    assert isinstance(db_path, Path)
 
     with patch("haiku.rag.config.get_config", return_value=config):
         assert create_rag().config is config
-        assert create_analysis().config is config
 
 
 class TestACapabilityFollowsTheConfiguredLocation:
@@ -130,15 +109,14 @@ class TestACapabilityFollowsTheConfiguredLocation:
 
     def test_a_configured_location_is_the_capability_scope(self, tmp_path):
         located = tmp_path / "notes.lancedb"
-        for factory in (create_rag, create_analysis):
-            [local] = factory(
-                config=self._config(tmp_path, str(located))
-            ).scope.databases
-            assert local == DatabaseRef("notes", located)
+        [local] = create_rag(
+            config=self._config(tmp_path, str(located))
+        ).scope.databases
+        assert local == DatabaseRef("notes", located)
 
-            remote = self._config(tmp_path, "s3://bucket/one.lancedb")
-            [ref] = factory(config=remote).scope.databases
-            assert ref == DatabaseRef("notes", "s3://bucket/one.lancedb")
+        remote = self._config(tmp_path, "s3://bucket/one.lancedb")
+        [ref] = create_rag(config=remote).scope.databases
+        assert ref == DatabaseRef("notes", "s3://bucket/one.lancedb")
 
     @pytest.mark.asyncio
     async def test_it_opens_the_database_the_configuration_places(self, tmp_path):
@@ -162,9 +140,8 @@ class TestACapabilityFollowsTheConfiguredLocation:
         config = self._config(tmp_path, str(tmp_path / "notes.lancedb"))
         chosen = tmp_path / "chosen.lancedb"
 
-        for factory in (create_rag, create_analysis):
-            with pytest.raises(AmbiguousDatabaseError, match="notes"):
-                factory(db_path=chosen, config=config)
+        with pytest.raises(AmbiguousDatabaseError, match="notes"):
+            create_rag(db_path=chosen, config=config)
 
 
 @pytest.mark.asyncio
@@ -210,16 +187,7 @@ def _single_database_client() -> AsyncMock:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("factory", "agent_instructions", "heading"),
-    [
-        (create_rag, AGENT_PREAMBLE, "# RAG"),
-        (create_analysis, None, "# Analysis"),
-    ],
-)
-async def test_capability_instructions_are_injected_once(
-    temp_db_path, factory, agent_instructions, heading
-):
+async def test_capability_instructions_are_injected_once(temp_db_path):
     domain = "The corpus contains solar manuals."
     seen_instructions = []
 
@@ -231,9 +199,8 @@ async def test_capability_instructions_are_injected_once(
     agent = Agent(
         FunctionModel(model_function),
         deps_type=Deps,
-        instructions=agent_instructions,
         capabilities=[
-            factory(
+            create_rag(
                 db_path=temp_db_path,
                 config=config,
                 defer_loading=False,
@@ -244,11 +211,11 @@ async def test_capability_instructions_are_injected_once(
     await agent.run("Answer", deps=Deps())
 
     assert seen_instructions[0].count(domain) == 1
-    assert seen_instructions[0].count(heading) == 1
+    assert seen_instructions[0].count("# RAG") == 1
 
 
 @pytest.mark.asyncio
-async def test_request_limit_removes_only_exhausted_capability_tools_per_run(
+async def test_request_limit_removes_the_capability_tools_but_not_the_hosts(
     temp_db_path,
 ):
     calls = 0
@@ -268,12 +235,7 @@ async def test_request_limit_removes_only_exhausted_capability_tools_per_run(
         """Return host-owned context."""
         return "host context"
 
-    rag = create_rag(
-        db_path=temp_db_path,
-        config=AppConfig(),
-        defer_loading=False,
-    )
-    analysis = create_analysis(
+    capability = create_rag(
         db_path=temp_db_path,
         config=AppConfig(),
         defer_loading=False,
@@ -283,7 +245,7 @@ async def test_request_limit_removes_only_exhausted_capability_tools_per_run(
         FunctionModel(model_function),
         deps_type=Deps,
         tools=[host_tool],
-        capabilities=[rag, analysis],
+        capabilities=[capability],
     )
 
     first = await agent.run("Analyze this", deps=Deps())
@@ -291,20 +253,12 @@ async def test_request_limit_removes_only_exhausted_capability_tools_per_run(
 
     assert first.output == "best available answer"
     assert second.output == "best available answer"
-    analysis_tools = {
-        "analysis_search",
-        "analysis_execute_code",
-        "analysis_cite",
-    }
     for initial, exhausted in ((0, 1), (2, 3)):
-        assert analysis_tools <= seen_tools[initial]
-        assert {"analysis_search", "analysis_execute_code"}.isdisjoint(
-            seen_tools[exhausted]
-        )
-        assert "analysis_cite" in seen_tools[exhausted]
-        assert {"host_tool", "rag_search", "rag_cite"} <= seen_tools[exhausted]
+        assert {"search", "execute_code", "cite"} <= seen_tools[initial]
+        assert {"search", "execute_code"}.isdisjoint(seen_tools[exhausted])
+        assert {"host_tool", "cite"} <= seen_tools[exhausted]
         assert (
-            "analysis capability has reached its request limit"
+            "rag capability has reached its request limit"
             in (seen_instructions[exhausted])
         )
 
@@ -322,7 +276,7 @@ async def test_deferred_request_limit_starts_after_capability_load(temp_db_path)
                 parts=[
                     ToolCallPart(
                         "load_capability",
-                        {"id": "haiku-rag-analysis"},
+                        {"id": "haiku-rag"},
                     )
                 ]
             )
@@ -339,7 +293,7 @@ async def test_deferred_request_limit_starts_after_capability_load(temp_db_path)
         deps_type=Deps,
         tools=[host_tool],
         capabilities=[
-            create_analysis(
+            create_rag(
                 db_path=temp_db_path,
                 config=AppConfig(),
                 request_limit=1,
@@ -351,10 +305,10 @@ async def test_deferred_request_limit_starts_after_capability_load(temp_db_path)
 
     assert result.output == "best available answer"
     assert "load_capability" in seen_tools[0]
-    assert "analysis_search" in seen_tools[1]
-    assert "analysis_search" not in seen_tools[2]
+    assert "search" in seen_tools[1]
+    assert "search" not in seen_tools[2]
     assert "host_tool" in seen_tools[2]
-    assert "analysis capability has reached its request limit" in seen_instructions[2]
+    assert "rag capability has reached its request limit" in seen_instructions[2]
 
 
 @pytest.mark.asyncio
@@ -621,11 +575,11 @@ async def test_cite_repairs_chunk_ids_damaged_in_transcription(temp_db_path):
 
 
 @pytest.mark.asyncio
-async def test_analysis_records_new_sandbox_search_results(temp_db_path):
-    capability = create_analysis(db_path=temp_db_path, config=AppConfig())
+async def test_records_new_sandbox_search_results(temp_db_path):
+    capability = create_rag(db_path=temp_db_path, config=AppConfig())
     existing = SearchResult(content="existing", score=1, chunk_id="chunk-1")
     new = SearchResult(content="new", score=1, chunk_id="chunk-2")
-    capability.state = AnalysisState(searches={"_sandbox": [existing]})
+    capability.state = RAGState(searches={"_sandbox": [existing]})
     sandbox = AsyncMock()
     sandbox.execute.return_value = SandboxResult(stdout="done", stderr="", success=True)
     sandbox._search_results = [existing, new]
@@ -651,7 +605,7 @@ async def test_failed_tool_reaches_the_model_and_the_run_continues(temp_db_path)
         nonlocal calls
         calls += 1
         if calls == 1:
-            return ModelResponse(parts=[ToolCallPart("rag_search", {"query": "x"})])
+            return ModelResponse(parts=[ToolCallPart("search", {"query": "x"})])
         return ModelResponse(parts=[TextPart("answered from what I had")])
 
     agent = Agent(
@@ -671,16 +625,53 @@ async def test_failed_tool_reaches_the_model_and_the_run_continues(temp_db_path)
         for part in message.parts
         if isinstance(part, ToolReturnPart) and part.outcome == "failed"
     ]
-    assert [part.tool_name for part in failed] == ["rag_search"]
+    assert [part.tool_name for part in failed] == ["search"]
     assert "Search limit reached" in str(failed[0].content)
 
 
 @pytest.mark.asyncio
-async def test_analysis_execution_limit_fails_the_tool(temp_db_path):
+async def test_execute_code_tool_runs_the_program_and_records_it(rag_db):
+    calls = 0
+
+    def model_function(_messages, _info):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return ModelResponse(
+                parts=[ToolCallPart("execute_code", {"code": "print(6 * 7)"})]
+            )
+        return ModelResponse(parts=[TextPart("42")])
+
+    agent = Agent(
+        FunctionModel(model_function),
+        deps_type=Deps,
+        capabilities=[
+            create_rag(db_path=rag_db, config=AppConfig(), defer_loading=False)
+        ],
+    )
+    deps = Deps()
+
+    result = await agent.run("what is six times seven?", deps=deps)
+
+    assert result.output == "42"
+    returns = [
+        part
+        for message in result.all_messages()
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.tool_name == "execute_code"
+    ]
+    assert [str(part.content).strip() for part in returns] == ["42"]
+    [execution] = deps.state["rag"]["executions"]
+    assert execution["code"] == "print(6 * 7)"
+    assert execution["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_execution_limit_fails_the_tool(temp_db_path):
     config = AppConfig()
     config.qa.max_executions = 0
-    capability = create_analysis(db_path=temp_db_path, config=config)
-    capability.state = AnalysisState()
+    capability = create_rag(db_path=temp_db_path, config=config)
+    capability.state = RAGState()
 
     with pytest.raises(ToolFailed, match="Code-execution limit reached"):
         await capability._execute_code("print('done')")
@@ -691,8 +682,8 @@ async def test_a_spent_execution_budget_is_not_evidence(temp_db_path):
     """Nothing was produced to ground an answer on, so nothing is recorded."""
     config = AppConfig()
     config.qa.max_executions = 0
-    capability = create_analysis(db_path=temp_db_path, config=config)
-    capability.state = AnalysisState()
+    capability = create_rag(db_path=temp_db_path, config=config)
+    capability.state = RAGState()
     capability.epoch = 5
 
     with pytest.raises(ToolFailed):
@@ -719,8 +710,8 @@ async def test_only_a_code_execution_the_model_can_read_is_evidence(
     A failure that printed first does ground an answer, and so does a successful
     run whose outcome is that it printed nothing.
     """
-    capability = create_analysis(db_path=temp_db_path, config=AppConfig())
-    capability.state = AnalysisState(evidence=CapabilityEvidenceRecord(question=0))
+    capability = create_rag(db_path=temp_db_path, config=AppConfig())
+    capability.state = RAGState(evidence=CapabilityEvidenceRecord(question=0))
     capability.epoch = 5
     sandbox = AsyncMock(spec=Sandbox)
     sandbox._search_results = []
@@ -758,7 +749,7 @@ async def test_spent_search_budget_is_announced_but_keeps_the_tool(rag_db):
         seen_instructions.append(info.instructions or "")
         if calls == 1:
             return ModelResponse(
-                parts=[ToolCallPart("rag_search", {"query": "machine learning"})]
+                parts=[ToolCallPart("search", {"query": "machine learning"})]
             )
         return ModelResponse(parts=[TextPart("answered")])
 
@@ -771,73 +762,51 @@ async def test_spent_search_budget_is_announced_but_keeps_the_tool(rag_db):
     result = await agent.run("question", deps=Deps())
 
     assert result.output == "answered"
-    assert {"rag_search", "rag_cite"} <= seen_tools[1]
-    assert "spent its budget for rag_search" in seen_instructions[1]
+    assert {"search", "cite"} <= seen_tools[1]
+    assert "spent its budget for search" in seen_instructions[1]
 
 
-def test_grace_window_ignores_other_capabilities_turns():
+def test_grace_window_ignores_other_tools_turns():
     """Only this capability's own tool calls may spend its cite window.
 
-    A multi-capability agent spends turns elsewhere; those must not expire the
-    window that exists to give this capability a chance to cite.
+    An agent spends turns on host tools too; those must not expire the window
+    that exists to give the capability a chance to cite.
     """
-    rag_tools = frozenset({"rag_search", "rag_cite"})
+    own_tools = frozenset({"search", "execute_code", "cite"})
 
     # Nothing to attribute before the model has responded at all.
     assert not _called_own_tool(
-        [ModelRequest(parts=[UserPromptPart(content="q")])], rag_tools
+        [ModelRequest(parts=[UserPromptPart(content="q")])], own_tools
     )
     assert not _called_own_tool(
-        [ModelResponse(parts=[ToolCallPart("analysis_search", {"query": "x"})])],
-        rag_tools,
+        [ModelResponse(parts=[ToolCallPart("host_tool", {"query": "x"})])],
+        own_tools,
     )
     assert not _called_own_tool(
-        [ModelResponse(parts=[TextPart("just talking")])], rag_tools
+        [ModelResponse(parts=[TextPart("just talking")])], own_tools
     )
     assert _called_own_tool(
-        [ModelResponse(parts=[ToolCallPart("rag_cite", {"chunk_ids": ["a"]})])],
-        rag_tools,
+        [ModelResponse(parts=[ToolCallPart("cite", {"chunk_ids": ["a"]})])],
+        own_tools,
     )
     # Only the most recent response counts, not any earlier one.
     assert not _called_own_tool(
         [
-            ModelResponse(parts=[ToolCallPart("rag_cite", {"chunk_ids": ["a"]})]),
+            ModelResponse(parts=[ToolCallPart("cite", {"chunk_ids": ["a"]})]),
             ModelRequest(parts=[UserPromptPart(content="next")]),
-            ModelResponse(parts=[ToolCallPart("analysis_search", {"query": "x"})]),
+            ModelResponse(parts=[ToolCallPart("host_tool", {"query": "x"})]),
         ],
-        rag_tools,
+        own_tools,
     )
 
 
 @pytest.mark.asyncio
 async def test_spent_search_notice_points_at_code_while_it_has_budget(temp_db_path):
-    """Analysis must be sent to the sandbox, not told to answer, while it can.
+    """The model must be sent to the sandbox, not told to answer, while it can.
 
     In-code `search()` bypasses `qa.max_searches`, and the instructions tell the
     model to escalate to code when search results are insufficient.
     """
-    config = AppConfig()
-    config.qa.max_searches = 2
-    capability = create_analysis(db_path=temp_db_path, config=config)
-    capability.search_count = 2
-
-    notice = capability._budget_notice()
-
-    assert notice is not None
-    assert "analysis_search" in notice
-    assert "analysis_execute_code" in notice
-
-    # Once the code budget is gone too there is nowhere left to send it.
-    capability.execute_count = config.qa.max_executions
-    notice = capability._budget_notice()
-    assert notice is not None
-    assert "analysis_execute_code" in notice
-    assert capability.evidence_tool_names() <= capability._spent_tool_names()
-
-
-@pytest.mark.asyncio
-async def test_spent_search_notice_tells_rag_to_answer(temp_db_path):
-    """Search is the RAG capability's only evidence tool, so stopping is right."""
     config = AppConfig()
     config.qa.max_searches = 2
     capability = create_rag(db_path=temp_db_path, config=config)
@@ -846,24 +815,31 @@ async def test_spent_search_notice_tells_rag_to_answer(temp_db_path):
     notice = capability._budget_notice()
 
     assert notice is not None
-    assert "rag_search" in notice
-    assert capability.evidence_tool_names() == {"rag_search"}
+    assert "search" in notice
+    assert "execute_code" in notice
+
+    # Once the code budget is gone too there is nowhere left to send it.
+    capability.execute_count = config.qa.max_executions
+    notice = capability._budget_notice()
+    assert notice is not None
+    assert "execute_code" in notice
+    assert capability.evidence_tool_names() <= capability._spent_tool_names()
 
 
 @pytest.mark.asyncio
 async def test_spent_execution_budget_joins_the_notice(temp_db_path):
     config = AppConfig()
     config.qa.max_executions = 3
-    capability = create_analysis(db_path=temp_db_path, config=config)
+    capability = create_rag(db_path=temp_db_path, config=config)
 
     assert capability._spent_tool_names() == set()
 
     capability.execute_count = 3
 
-    assert capability._spent_tool_names() == {"analysis_execute_code"}
+    assert capability._spent_tool_names() == {"execute_code"}
     notice = capability._budget_notice()
     assert notice is not None
-    assert "analysis_execute_code" in notice
+    assert "execute_code" in notice
 
 
 @pytest.mark.asyncio
@@ -885,11 +861,11 @@ async def test_exhausted_run_can_still_register_citations(rag_db):
         seen_tools.append({tool.name for tool in info.function_tools})
         if calls == 1:
             return ModelResponse(
-                parts=[ToolCallPart("rag_search", {"query": "machine learning"})]
+                parts=[ToolCallPart("search", {"query": "machine learning"})]
             )
         if calls == 2:
             return ModelResponse(
-                parts=[ToolCallPart("rag_cite", {"chunk_ids": [chunk_id]})]
+                parts=[ToolCallPart("cite", {"chunk_ids": [chunk_id]})]
             )
         return ModelResponse(parts=[TextPart("answered from gathered evidence")])
 
@@ -917,8 +893,8 @@ async def test_exhausted_run_can_still_register_citations(rag_db):
 
     assert chunk_id is not None
     # The limit lands on request 2, where cite must still be offered.
-    assert "rag_search" not in seen_tools[1]
-    assert "rag_cite" in seen_tools[1]
+    assert "search" not in seen_tools[1]
+    assert "cite" in seen_tools[1]
     assert deps.state["rag"]["citations"] == [chunk_id]
 
 
@@ -932,15 +908,15 @@ async def test_cite_tool_is_withdrawn_after_the_grace_window(temp_db_path):
     )
     tool_defs = [
         SimpleNamespace(name=name, capability_id=capability.id)
-        for name in ("rag_search", "rag_cite")
+        for name in ("search", "cite")
     ]
     ctx = make_context(Deps())
 
     capability.request_count = 2
     kept = await capability.prepare_tools(ctx, cast(Any, tool_defs))
-    assert {tool.name for tool in kept} == {"rag_cite"}
+    assert {tool.name for tool in kept} == {"cite"}
     notice = capability._budget_notice()
-    assert notice is not None and "rag_cite" in notice
+    assert notice is not None and "cite" in notice
 
     capability.grace_requests_used = CITATION_GRACE_REQUESTS
     kept = await capability.prepare_tools(ctx, cast(Any, tool_defs))
@@ -950,7 +926,7 @@ async def test_cite_tool_is_withdrawn_after_the_grace_window(temp_db_path):
     # abort the run.
     notice = capability._budget_notice()
     assert notice is not None
-    assert "rag_cite" not in notice
+    assert "cite" not in notice
     assert "no longer available" in notice
 
 
@@ -966,8 +942,8 @@ async def test_sandbox_iteration_failure_carries_the_workaround(
     temp_db_path, stderr, expect_hint
 ):
     """A model that iterates a file object gets told what to do instead."""
-    capability = create_analysis(db_path=temp_db_path, config=AppConfig())
-    capability.state = AnalysisState()
+    capability = create_rag(db_path=temp_db_path, config=AppConfig())
+    capability.state = RAGState()
     sandbox = AsyncMock()
     sandbox.execute.return_value = SandboxResult(
         stdout="", stderr=stderr, success=False
@@ -984,11 +960,11 @@ async def test_sandbox_iteration_failure_carries_the_workaround(
 
 
 @pytest.mark.asyncio
-async def test_analysis_sandbox_failure_records_execution_and_fails_the_tool(
+async def test_sandbox_failure_records_execution_and_fails_the_tool(
     temp_db_path,
 ):
-    capability = create_analysis(db_path=temp_db_path, config=AppConfig())
-    capability.state = AnalysisState()
+    capability = create_rag(db_path=temp_db_path, config=AppConfig())
+    capability.state = RAGState()
     capability.outer_state = {}
     sandbox = AsyncMock()
     sandbox.execute.return_value = SandboxResult(
@@ -1003,7 +979,7 @@ async def test_analysis_sandbox_failure_records_execution_and_fails_the_tool(
     entry = capability.state.executions[-1]
     assert entry.success is False
     assert entry.stderr == "NameError: undefined"
-    assert capability.outer_state["analysis"]["executions"][-1]["code"] == "boom"
+    assert capability.outer_state["rag"]["executions"][-1]["code"] == "boom"
 
 
 @pytest.mark.asyncio
@@ -1063,7 +1039,7 @@ async def test_deferred_capability_loads_native_tools(temp_db_path):
     assert result.output == "loaded"
     assert "# RAG" not in seen_instructions[0]
     assert "# RAG" in loaded_payloads[0]
-    assert "rag_search" in loaded_payloads[0]
+    assert "search" in loaded_payloads[0]
 
 
 def _resuming_deps() -> Deps:
@@ -1086,9 +1062,9 @@ def _in_flight_history() -> list[Any]:
     """A question already asked and searched, still awaiting its answer."""
     return [
         ModelRequest(parts=[UserPromptPart("what does the supervisor do?")]),
-        ModelResponse(parts=[ToolCallPart("rag_search", {"query": "s"}, "call-1")]),
+        ModelResponse(parts=[ToolCallPart("search", {"query": "s"}, "call-1")]),
         ModelRequest(
-            parts=[ToolReturnPart("rag_search", "EVIDENCE FOR THE LIVE TURN", "call-1")]
+            parts=[ToolReturnPart("search", "EVIDENCE FOR THE LIVE TURN", "call-1")]
         ),
     ]
 
@@ -1107,19 +1083,14 @@ async def _stub_search(self, query: str, _limit: int | None, _run_step: int) -> 
 
 
 @pytest.mark.asyncio
-async def test_a_question_takes_its_own_identity_and_both_capabilities_agree(
-    temp_db_path,
-):
+async def test_a_question_takes_its_own_identity(temp_db_path):
     """Identity is derived from the conversation, so no counter is shared."""
     rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
-    analysis = create_analysis(
-        db_path=temp_db_path, config=AppConfig(), defer_loading=False
-    )
 
     async def model(_messages, _info):
         return ModelResponse(parts=[TextPart("answer")])
 
-    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[rag, analysis])
+    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[rag])
     deps = Deps()
 
     first = await agent.run("first question", deps=deps)
@@ -1129,7 +1100,6 @@ async def test_a_question_takes_its_own_identity_and_both_capabilities_agree(
 
     assert first_identity == 0
     assert second_identity is not None and second_identity > 0
-    assert _record(deps, "analysis").question == second_identity
 
 
 @pytest.mark.asyncio
@@ -1201,8 +1171,8 @@ async def test_citing_after_searching_grounds_the_question(temp_db_path):
     rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
     calls = iter(
         [
-            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
-            [ToolCallPart("rag_cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
             [TextPart("answer")],
         ]
     )
@@ -1230,9 +1200,9 @@ async def test_searching_after_citing_leaves_the_question_uncited(temp_db_path):
     rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
     calls = iter(
         [
-            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
-            [ToolCallPart("rag_cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
-            [ToolCallPart("rag_search", {"query": "again"}, "call-3")],
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
+            [ToolCallPart("search", {"query": "again"}, "call-3")],
             [TextPart("answer")],
         ]
     )
@@ -1262,8 +1232,8 @@ async def test_a_citation_in_the_same_request_as_its_search_is_not_current(
     calls = iter(
         [
             [
-                ToolCallPart("rag_search", {"query": "supervisor"}, "call-1"),
-                ToolCallPart("rag_cite", {"chunk_ids": ["chunk-1"]}, "call-2"),
+                ToolCallPart("search", {"query": "supervisor"}, "call-1"),
+                ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2"),
             ],
             [TextPart("answer")],
         ]
@@ -1292,11 +1262,11 @@ async def test_evidence_cited_in_two_questions_keeps_both_in_the_record(temp_db_
     rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
     calls = iter(
         [
-            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
-            [ToolCallPart("rag_cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
             [TextPart("first answer")],
-            [ToolCallPart("rag_search", {"query": "supervisor again"}, "call-3")],
-            [ToolCallPart("rag_cite", {"chunk_ids": ["chunk-1"]}, "call-4")],
+            [ToolCallPart("search", {"query": "supervisor again"}, "call-3")],
+            [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-4")],
             [TextPart("second answer")],
         ]
     )
@@ -1352,7 +1322,7 @@ async def test_citing_without_searching_grounds_the_question(temp_db_path):
     rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
     calls = iter(
         [
-            [ToolCallPart("rag_cite", {"chunk_ids": ["chunk-1"]}, "call-1")],
+            [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-1")],
             [TextPart("answer")],
         ]
     )
@@ -1420,9 +1390,9 @@ async def test_a_resumption_keeps_the_evidence_the_question_already_gathered(
     rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
     calls = iter(
         [
-            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
             [TextPart("partial answer")],
-            [ToolCallPart("rag_cite", {"chunk_ids": ["chunk-1"]}, "call-3")],
+            [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-3")],
             [TextPart("answer")],
         ]
     )
@@ -1679,61 +1649,42 @@ class TestMultipleCollectionsInstructions:
         return client
 
     def test_one_database_is_instructed_as_before(self):
-        from haiku.rag.capabilities.analysis import instructions as analysis_text
-        from haiku.rag.capabilities.rag import instructions as rag_text
+        from haiku.rag.capabilities.rag import instructions
 
-        for factory, baseline in (
-            (create_rag, rag_text),
-            (create_analysis, analysis_text),
-        ):
-            one_at_a_path = factory(db_path=Path("/tmp/x.lancedb"), config=AppConfig())
-            assert one_at_a_path.instruction_text == baseline()
-            one_configured = factory(config=self._config(alpha="/a.lancedb"))
-            assert one_configured.instruction_text == baseline()
+        one_at_a_path = create_rag(db_path=Path("/tmp/x.lancedb"), config=AppConfig())
+        assert one_at_a_path.get_instructions() == instructions()
+        one_configured = create_rag(config=self._config(alpha="/a.lancedb"))
+        assert one_configured.get_instructions() == instructions()
 
     def test_a_path_beside_a_configured_set_is_refused(self):
         from haiku.rag.store.exceptions import AmbiguousDatabaseError
 
         config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
-        for factory in (create_rag, create_analysis):
-            with pytest.raises(AmbiguousDatabaseError, match="alpha, beta"):
-                factory(db_path=Path("/tmp/one.lancedb"), config=config)
+        with pytest.raises(AmbiguousDatabaseError, match="alpha, beta"):
+            create_rag(db_path=Path("/tmp/one.lancedb"), config=config)
 
     def test_a_lent_client_covering_one_database_is_instructed_as_before(self):
-        from haiku.rag.capabilities.analysis import instructions as analysis_text
-        from haiku.rag.capabilities.rag import instructions as rag_text
+        from haiku.rag.capabilities.rag import instructions
 
         config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
-        for factory, baseline in (
-            (create_rag, rag_text),
-            (create_analysis, analysis_text),
-        ):
-            capability = factory(config=config, rag=self._client({}))
-            assert capability.instruction_text == baseline()
+        capability = create_rag(config=config, rag=self._client({}))
+        assert capability.get_instructions() == instructions()
 
     def test_a_lent_client_covering_a_set_is_told_about_it(self):
         config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
         covering = self._client({"alpha": "/a.lancedb", "beta": "/b.lancedb"})
 
-        for factory in (create_rag, create_analysis):
-            capability = factory(config=config, rag=covering)
-            assert "Collection:" in capability.get_instructions()
+        capability = create_rag(config=config, rag=covering)
+        assert "Collection:" in capability.get_instructions()
 
-    def test_the_rag_note_names_the_line_a_result_carries(self):
-        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
-
-        text = create_rag(config=config).get_instructions()
-
-        assert "Collection:" in text
-
-    def test_the_analysis_note_separates_the_interfaces(self):
+    def test_the_note_separates_the_interfaces(self):
         """The three interfaces name a collection differently, and the mounted
         files do not name it at all."""
         config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
 
-        text = create_analysis(config=config).get_instructions()
+        text = create_rag(config=config).get_instructions()
 
-        assert "Collection:" in text  # analysis_search results
+        assert "Collection:" in text  # search results
         assert "source" in text  # in-code search / list_documents
         assert "metadata.json" in text  # the mounted files, which lack it
         assert "list_documents" in text  # how to map ids to collections
@@ -1743,13 +1694,10 @@ class TestMultipleCollectionsInstructions:
         still read one collection."""
         config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
 
-        rag = create_rag(config=config)
-        rag.state = RAGState(sources=["alpha"])
-        analysis = create_analysis(config=config)
-        analysis.state = AnalysisState(sources=["alpha"])
+        capability = create_rag(config=config)
+        capability.state = RAGState(sources=["alpha"])
 
-        assert "Collection:" not in rag.get_instructions()
-        assert "Collection:" not in analysis.get_instructions()
+        assert "Collection:" not in capability.get_instructions()
 
     def test_a_run_narrowed_to_two_collections_keeps_the_note(self):
         config = self._config(alpha="/a.lancedb", beta="/b.lancedb", gamma="/c.lancedb")
@@ -1758,23 +1706,3 @@ class TestMultipleCollectionsInstructions:
         capability.state = RAGState(sources=["alpha", "beta"])
 
         assert "Collection:" in capability.get_instructions()
-
-    def test_an_unnarrowed_run_follows_the_lent_client(self):
-        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
-        one = create_rag(config=config, rag=self._client({}))
-        one.state = RAGState()
-        covering = create_rag(
-            config=config, rag=self._client({"alpha": "/a", "beta": "/b"})
-        )
-        covering.state = RAGState()
-
-        assert "Collection:" not in one.get_instructions()
-        assert "Collection:" in covering.get_instructions()
-
-    def test_the_note_follows_the_preamble_and_the_base(self):
-        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
-        config.prompts.domain_preamble = "PREAMBLE"
-
-        text = create_rag(config=config).get_instructions()
-
-        assert text.index("PREAMBLE") < text.index("# RAG") < text.index("Collection:")

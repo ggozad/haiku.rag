@@ -203,7 +203,7 @@ class TestTheSandboxCoversWhatTheCapabilityCovers:
     async def test_the_capability_hands_over_the_scope_it_resolved(self, tmp_path):
         """The sandbox covers the scope the capability resolved, as handed
         over."""
-        from haiku.rag.capabilities.analysis import AnalysisState, create_capability
+        from haiku.rag.capabilities.rag import RAGState, create_capability
         from haiku.rag.config.models import AppConfig
 
         config = _config(tmp_path, ["alpha", "beta"])
@@ -212,12 +212,15 @@ class TestTheSandboxCoversWhatTheCapabilityCovers:
         capability = create_capability(
             db_path=tmp_path / "alpha.lancedb", config=AppConfig(), defer_loading=False
         )
-        capability.state = AnalysisState()
+        capability.state = RAGState()
 
         sandbox = await capability._ensure_sandbox()
         try:
             assert sandbox._scope is capability.scope
             assert capability.scope.names == ("alpha",)
+            # The capability's session serves up to `qa.max_executions` calls.
+            budget = sandbox._session_limits()["max_duration_secs"]
+            assert budget == config.sandbox.code_timeout * config.qa.max_executions
         finally:
             await capability._close()
 
