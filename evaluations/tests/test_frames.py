@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 from evaluations.datasets.frames import (
+    _fetch_with_retries,
     fetch_article_images,
     image_urls,
     inline_images,
@@ -45,6 +46,35 @@ class StubClient:
     def get(self, url, **kw):
         self.seen.append(url)
         return self.answers.get(url, StubResponse(status=404))
+
+
+def throttled(url: str, retry_after: str = "0") -> httpx.Response:
+    return httpx.Response(
+        429,
+        headers={"retry-after": retry_after},
+        request=httpx.Request("GET", url),
+    )
+
+
+class ThrottlingClient:
+    """Answers 429 a fixed number of times before serving the image."""
+
+    def __init__(self, url: str, refusals: int, content: bytes = b"\x89PNG"):
+        self.url = url
+        self.refusals = refusals
+        self.content = content
+        self.seen: list[str] = []
+
+    def get(self, url, **kw):
+        self.seen.append(url)
+        if url != self.url:
+            return StubResponse(status=404)
+        if self.refusals > 0:
+            self.refusals -= 1
+            return throttled(url)
+        return httpx.Response(
+            200, content=self.content, request=httpx.Request("GET", url)
+        )
 
 
 def test_image_urls_absolutises_protocol_relative_and_dedupes():
@@ -150,7 +180,7 @@ def test_fetch_article_images_records_failures_without_losing_the_article(tmp_pa
 
 
 def test_fetch_article_images_paces_requests(monkeypatch, tmp_path):
-    """8 req/s is the measured ceiling from the build host; 16 draws 429s."""
+    """Every request waits the configured throttle, 429 or not."""
     slept: list[float] = []
     monkeypatch.setattr("evaluations.datasets.frames.time.sleep", slept.append)
     client = StubClient(
@@ -173,3 +203,86 @@ def test_fetch_article_images_paces_requests(monkeypatch, tmp_path):
 def test_image_urls_is_stable_across_calls(size):
     """Order is document order, so a cache key never depends on iteration luck."""
     assert image_urls(HTML) == image_urls(HTML)
+
+
+def test_fetch_article_images_waits_out_a_rate_limit(monkeypatch, tmp_path):
+    """A 429 is the host asking us to wait, so it must not spend an attempt:
+    under sustained throttling every attempt goes on `Retry-After` sleeps and a
+    reachable image lands in `failed` for good."""
+    slept: list[float] = []
+    monkeypatch.setattr("evaluations.datasets.frames.time.sleep", slept.append)
+    url = "https://thumb.wikimedia.org/a/logo.png"
+    client = ThrottlingClient(url, refusals=5)
+    images = fetch_article_images(
+        "https://en.wikipedia.org/wiki/X",
+        HTML,
+        tmp_path,
+        cast(httpx.Client, client),
+        throttle=0,
+        attempts=3,
+    )
+    assert url in images
+    assert Path(images[url]).read_bytes() == b"\x89PNG"
+    marker = json.loads(
+        (
+            tmp_path / "images" / "https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FX.json"
+        ).read_text()
+    )
+    assert url not in marker["failed"]
+
+
+def test_fetch_article_images_stops_waiting_on_a_permanent_rate_limit(
+    monkeypatch, tmp_path
+):
+    """Waiting is bounded, so a host that never lets up still terminates."""
+    monkeypatch.setattr("evaluations.datasets.frames.time.sleep", lambda _: None)
+    monkeypatch.setattr("evaluations.datasets.frames.THROTTLE_RETRIES", 2)
+    url = "https://thumb.wikimedia.org/a/logo.png"
+    client = ThrottlingClient(url, refusals=1000)
+    images = fetch_article_images(
+        "https://en.wikipedia.org/wiki/X",
+        HTML,
+        tmp_path,
+        cast(httpx.Client, client),
+        throttle=0,
+        attempts=2,
+    )
+    assert url not in images
+    marker = json.loads(
+        (
+            tmp_path / "images" / "https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FX.json"
+        ).read_text()
+    )
+    assert url in marker["failed"]
+    assert client.seen.count(url) < 20, "waiting must be bounded"
+
+
+def test_fetch_with_retries_spends_attempts_only_on_real_errors(monkeypatch):
+    monkeypatch.setattr("evaluations.datasets.frames.time.sleep", lambda _: None)
+    calls = {"n": 0}
+
+    def action():
+        calls["n"] += 1
+        raise RuntimeError("connection reset")
+
+    with pytest.raises(RuntimeError):
+        _fetch_with_retries(action, attempts=3)
+    assert calls["n"] == 3
+
+
+def test_fetch_with_retries_returns_the_first_success(monkeypatch):
+    monkeypatch.setattr("evaluations.datasets.frames.time.sleep", lambda _: None)
+    calls = {"n": 0}
+
+    def action():
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise httpx.HTTPStatusError(
+                "429",
+                request=httpx.Request("GET", "https://x/y.png"),
+                response=throttled("https://x/y.png"),
+            )
+        return "done"
+
+    assert _fetch_with_retries(action, attempts=2) == "done"
+    assert calls["n"] == 3

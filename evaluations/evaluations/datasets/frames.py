@@ -14,10 +14,11 @@ import logging
 import mimetypes
 import re
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 import httpx
@@ -34,8 +35,11 @@ USER_AGENT = "haiku.rag-evaluations (https://github.com/ggozad/haiku.rag)"
 FETCH_ATTEMPTS = 3
 THROTTLE_SECONDS = 1.0
 RATE_LIMIT_BACKOFF_SECONDS = 60.0
-# Measured ceiling for Wikimedia thumbnails. 16 a second draws 429s.
-IMAGE_THROTTLE_SECONDS = 0.125
+THROTTLE_RETRIES = 20
+# Measured on the corpus: one thumbnail a second yields 0.90 images a second,
+# where 1.3 yields 0.58 and 2 yields 0.62. Asking for more earns 429s whose
+# `Retry-After: 11` costs more than the extra requests return.
+IMAGE_THROTTLE_SECONDS = 1.0
 
 
 # Articles deleted from Wikipedia since FRAMES was authored; the questions
@@ -182,11 +186,56 @@ def _fetch_article_page(
     return response.text, "html", revid, title
 
 
+def _rate_limited(error: Exception) -> TypeGuard[httpx.HTTPStatusError]:
+    return (
+        isinstance(error, httpx.HTTPStatusError) and error.response.status_code == 429
+    )
+
+
 def _backoff_seconds(error: Exception, attempt: int) -> float:
-    if isinstance(error, httpx.HTTPStatusError) and error.response.status_code == 429:
+    if _rate_limited(error):
         retry_after = error.response.headers.get("retry-after")
         return float(retry_after) if retry_after else RATE_LIMIT_BACKOFF_SECONDS
     return 5.0 * attempt
+
+
+def _fetch_with_retries[T](
+    action: Callable[[], T],
+    *,
+    attempts: int = FETCH_ATTEMPTS,
+    label: str = "",
+) -> T:
+    """Call `action`, retrying failures and waiting out rate limits.
+
+    A 429 costs a wait rather than one of `attempts`, bounded by
+    `THROTTLE_RETRIES`: a throttled host refuses for as long as it likes, and
+    spending attempts on those refusals records a reachable resource as
+    permanently unavailable.
+    """
+    attempt = 0
+    waits = 0
+    while True:
+        try:
+            return action()
+        except Exception as e:
+            if _rate_limited(e) and waits < THROTTLE_RETRIES:
+                waits += 1
+                time.sleep(_backoff_seconds(e, attempt + 1))
+                continue
+            attempt += 1
+            if attempt >= attempts:
+                raise
+            logger.info(f"Retrying {label} after error: {e}")
+            time.sleep(_backoff_seconds(e, attempt))
+
+
+def _download_image(
+    client: httpx.Client, url: str, target: Path, throttle: float
+) -> None:
+    time.sleep(throttle)
+    response = client.get(url)
+    response.raise_for_status()
+    target.write_bytes(response.content)
 
 
 def fetch_article(
@@ -210,21 +259,20 @@ def fetch_article(
     title = unquote(urlsplit(uri).path[len("/wiki/") :])
     # Wikimedia throttles sustained bot traffic; pace uncached fetches.
     time.sleep(THROTTLE_SECONDS)
-    for attempt in range(1, FETCH_ATTEMPTS + 1):
-        try:
-            if title.startswith("Category:"):
-                content, format, revid = _fetch_category_page(
-                    urlsplit(uri).netloc, title, client
-                )
-            else:
-                content, format, revid, title = _fetch_article_page(uri, client)
-            break
-        except Exception as e:
-            if attempt == FETCH_ATTEMPTS:
-                logger.warning(f"Failed to fetch {uri}: {e}")
-                return None
-            logger.info(f"Retrying {uri} after error: {e}")
-            time.sleep(_backoff_seconds(e, attempt))
+
+    def _fetch_page() -> tuple[str, str, str | None, str]:
+        if title.startswith("Category:"):
+            content, format, revid = _fetch_category_page(
+                urlsplit(uri).netloc, title, client
+            )
+            return content, format, revid, title
+        return _fetch_article_page(uri, client)
+
+    try:
+        content, format, revid, title = _fetch_with_retries(_fetch_page, label=uri)
+    except Exception as e:
+        logger.warning(f"Failed to fetch {uri}: {e}")
+        return None
 
     row: dict[str, Any] = {
         "uri": uri,
@@ -333,20 +381,17 @@ def fetch_article_images(
         if target.exists():
             images[url] = target.name
             continue
-        for attempt in range(1, attempts + 1):
-            try:
-                time.sleep(throttle)
-                response = client.get(url)
-                response.raise_for_status()
-                target.write_bytes(response.content)
-                images[url] = target.name
-                break
-            except Exception as e:
-                if attempt == attempts:
-                    logger.info(f"Image unavailable for {uri}: {url}: {e}")
-                    failed.append(url)
-                else:
-                    time.sleep(_backoff_seconds(e, attempt))
+
+        try:
+            _fetch_with_retries(
+                partial(_download_image, client, url, target, throttle),
+                attempts=attempts,
+                label=url,
+            )
+            images[url] = target.name
+        except Exception as e:
+            logger.info(f"Image unavailable for {uri}: {url}: {e}")
+            failed.append(url)
 
     marker_path.write_text(
         json.dumps(
