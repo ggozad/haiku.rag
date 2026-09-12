@@ -1,10 +1,12 @@
 import base64
+import io
 import json
 from pathlib import Path
 from typing import cast
 
 import httpx
 import pytest
+from PIL import Image
 
 from evaluations.datasets.frames import (
     _fetch_with_retries,
@@ -286,3 +288,42 @@ def test_fetch_with_retries_returns_the_first_success(monkeypatch):
 
     assert _fetch_with_retries(action, attempts=2) == "done"
     assert calls["n"] == 3
+
+
+@pytest.mark.parametrize(
+    ("mode", "format"), [("CMYK", "JPEG"), ("YCbCr", "JPEG"), ("F", "TIFF")]
+)
+def test_inline_images_recodes_what_pillow_cannot_write_as_png(mode, format, tmp_path):
+    """docling re-encodes every picture as PNG, so one image in a mode Pillow
+    cannot write fails the whole document and takes the corpus build with it."""
+    source = tmp_path / f"image.{format.lower()}"
+    Image.new(mode, (80, 80)).save(source, format=format)
+
+    out = inline_images(HTML, {"https://thumb.wikimedia.org/a/logo.png": source})
+
+    encoded = out.split("base64,")[1].split('"')[0]
+    with Image.open(io.BytesIO(base64.b64decode(encoded))) as im:
+        assert im.mode == "RGB"
+        assert im.size == (80, 80)
+
+
+def test_inline_images_leaves_a_writable_image_untouched(tmp_path):
+    png = tmp_path / "rgb.png"
+    Image.new("RGB", (20, 20), (1, 2, 3)).save(png, format="PNG")
+    raw = png.read_bytes()
+
+    out = inline_images(HTML, {"https://thumb.wikimedia.org/a/logo.png": png})
+
+    encoded = out.split("base64,")[1].split('"')[0]
+    assert base64.b64decode(encoded) == raw
+
+
+def test_inline_images_passes_through_what_pillow_cannot_open(tmp_path):
+    """SVG is a normal Wikimedia image and is not a raster Pillow can parse."""
+    svg = tmp_path / "icon.svg"
+    svg.write_bytes(b"<svg xmlns='http://www.w3.org/2000/svg'/>")
+
+    out = inline_images(HTML, {"https://thumb.wikimedia.org/a/logo.png": svg})
+
+    encoded = out.split("base64,")[1].split('"')[0]
+    assert base64.b64decode(encoded) == svg.read_bytes()

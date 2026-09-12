@@ -17,6 +17,7 @@ import time
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from functools import partial
+from io import BytesIO
 from pathlib import Path
 from typing import Any, TypeGuard
 from urllib.parse import parse_qs, quote, unquote, urlsplit
@@ -24,6 +25,7 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 import httpx
 from bs4 import BeautifulSoup
 from datasets import Dataset, load_dataset
+from PIL import Image as PILImage
 from pydantic_evals import Case
 
 from evaluations.config import DatasetSpec, DocumentPayload, RetrievalSample
@@ -323,6 +325,32 @@ def image_urls(html: str) -> list[str]:
     return urls
 
 
+# Pillow refuses to write these as PNG, and `I` is deprecated for removal in
+# Pillow 13. docling re-encodes every picture it extracts as PNG, and the
+# refusal fails the whole document, not just the picture.
+UNWRITABLE_PNG_MODES = frozenset({"CMYK", "YCbCr", "PA", "F", "I"})
+
+
+def _png_writable(path: Path) -> tuple[bytes, str]:
+    """The image's bytes and media type, recoded if Pillow cannot write it.
+
+    Anything Pillow cannot open at all, SVG included, is passed through
+    untouched.
+    """
+    data = path.read_bytes()
+    mime = mimetypes.guess_type(path.name)[0] or "image/png"
+    try:
+        with PILImage.open(BytesIO(data)) as image:
+            if image.mode not in UNWRITABLE_PNG_MODES:
+                return data, mime
+            buffer = BytesIO()
+            image.convert("RGB").save(buffer, format="PNG")
+            return buffer.getvalue(), "image/png"
+    except Exception as e:
+        logger.info(f"Leaving {path.name} as it is: {e}")
+        return data, mime
+
+
 def inline_images(html: str, images: Mapping[str, Path | str]) -> str:
     """Rewrite each cached `<img src>` to a data: URI over its stored bytes.
 
@@ -336,9 +364,8 @@ def inline_images(html: str, images: Mapping[str, Path | str]) -> str:
         cached = images.get(key)
         if cached is None:
             continue
-        path = Path(cached)
-        mime = mimetypes.guess_type(path.name)[0] or "image/png"
-        encoded = base64.b64encode(path.read_bytes()).decode()
+        data, mime = _png_writable(Path(cached))
+        encoded = base64.b64encode(data).decode()
         img["src"] = f"data:{mime};base64,{encoded}"
     return str(soup)
 
