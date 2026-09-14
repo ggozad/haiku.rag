@@ -903,6 +903,7 @@ class TestMCPCoversTheConfiguredSet:
             ),
             ("get_document", {"document_id": "x", "source": "nope"}),
             ("execute_code", {"code": "print(1)", "sources": ["nope"]}),
+            ("list_documents", {"sources": ["nope"]}),
         ],
     )
     async def test_an_unknown_database_is_an_error_not_an_empty_result(
@@ -938,6 +939,23 @@ class TestMCPCoversTheConfiguredSet:
         documents = await list_docs()
 
         assert {d.source for d in documents} == {"alpha", "beta"}
+
+    @pytest.mark.asyncio
+    async def test_a_restricted_listing_touches_only_the_selected_databases(
+        self, two_dbs
+    ):
+        """alpha is gone; a listing selecting beta must not notice."""
+        import shutil
+
+        shutil.rmtree(two_dbs.lancedb.databases["alpha"])
+        mcp = _covering_all(two_dbs)
+        list_docs = await _get_tool(mcp, "list_documents")
+
+        documents = await list_docs(sources=["beta"])
+
+        assert documents
+        assert {d.source for d in documents} == {"beta"}
+        assert await list_docs(sources=[]) == []
 
     @pytest.mark.asyncio
     async def test_get_document_reaches_whichever_database_holds_it(self, two_dbs):
