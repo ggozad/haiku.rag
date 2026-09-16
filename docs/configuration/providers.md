@@ -53,7 +53,7 @@ embeddings:
     api_key: ${VENDOR_B_KEY}
 ```
 
-`api_key` is honored on the `openai`, `ollama` and `vllm` providers, on `vllm` and `openrouter` embedders and rerankers, and on the picture-description VLM endpoint (which otherwise falls back to `OPENAI_API_KEY` only for the public OpenAI endpoint, never for a custom `base_url`). Other providers (`anthropic`, `cohere`, `voyageai`, …) reach their vendor SDK by name and read their own environment variable; setting `api_key` there raises rather than being dropped silently.
+`api_key` is honored on the `openai`, `ollama`, `openrouter` and `vllm` providers, on `vllm` and `openrouter` embedders and rerankers, and on the picture-description VLM endpoint (which otherwise falls back to `OPENAI_API_KEY` only for the public OpenAI endpoint, never for a custom `base_url`). Other providers (`anthropic`, `cohere`, `voyageai`, …) reach their vendor SDK by name and read their own environment variable; setting `api_key` there raises rather than being dropped silently.
 
 ### Thinking Control
 
@@ -110,7 +110,7 @@ These keys are sent as top-level request fields. Of the three, ollama honors onl
 
 `extra_body.reasoning_effort` reaches the request the same way and overrides the value `thinking` sends. A template carrying a switch of its own takes `chat_template_kwargs`, see [vLLM](#vllm).
 
-**Provider support:** honored by openai, ollama, anthropic, groq and vllm via pydantic-ai's `ModelSettings.extra_body`. Silently ignored by google and bedrock.
+**Provider support:** honored by openai, ollama, openrouter, anthropic, groq and vllm via pydantic-ai's `ModelSettings.extra_body`. Silently ignored by google and bedrock.
 
 ## Embedding Providers
 
@@ -435,6 +435,18 @@ qa:
 ```
 
 **Note:** The server must be running with a model that supports tool calling. On the `openai` provider the `base_url` must include the `/v1` path.
+
+### OpenRouter
+
+One hosted endpoint in front of many vendors, reached with `OPENROUTER_API_KEY` or `api_key` on the model. `temperature`, `max_tokens`, `extra_body` and `thinking` apply; `thinking` is sent as OpenRouter's `reasoning` field, and the model decides what it honors.
+
+```yaml
+qa:
+  model:
+    provider: openrouter
+    name: openai/gpt-4o-mini
+    temperature: 0.2
+```
 
 ### Other Providers
 

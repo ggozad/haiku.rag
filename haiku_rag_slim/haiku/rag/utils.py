@@ -257,7 +257,7 @@ def get_model(
     provider = model_config.provider
     model = model_config.name
     _check_provider_known(provider)
-    check_api_key_supported(model_config, {"openai", "ollama", "vllm"})
+    check_api_key_supported(model_config, {"openai", "ollama", "openrouter", "vllm"})
 
     if provider == "ollama":
         model_settings = apply_common_settings(
@@ -319,6 +319,22 @@ def get_model(
                 OpenAIProvider(api_key=model_config.api_key)
                 if model_config.api_key
                 else "openai"
+            ),
+            settings=apply_common_settings(None, model_config),
+        )
+
+    elif provider == "openrouter":
+        from pydantic_ai.models.openrouter import OpenRouterModel
+        from pydantic_ai.providers.openrouter import OpenRouterProvider
+
+        # OpenRouterModel maps the unified `thinking` onto its own `reasoning`
+        # field, with the profile inferred from the vendor prefix of the name.
+        return OpenRouterModel(
+            model,
+            provider=(
+                OpenRouterProvider(api_key=model_config.api_key)
+                if model_config.api_key
+                else "openrouter"
             ),
             settings=apply_common_settings(None, model_config),
         )

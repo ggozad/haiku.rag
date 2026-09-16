@@ -10,11 +10,14 @@
   `OPENROUTER_API_KEY`. `doctor` reports it missing.
 - `provider: openrouter` under `reranking.model`, including
   `reranking.multimodal`. `base_url` and key default as above.
+- `api_key` on an `openrouter` chat model.
 - An embedding whose length is not `embeddings.model.vector_dim` raises on the
   `vllm` and `openrouter` providers, naming the model and the returned length.
 
 ### Fixed
 
+- `temperature`, `max_tokens`, `extra_body` and `thinking` on an `openrouter` chat
+  model reach the model.
 - Rerank candidates with nothing to score are skipped. `RerankerBase._scoreable`
   is text for every reranker, text or picture bytes for `vllm` and `openrouter`.
 - Image data URIs carry the media type sniffed from the bytes. JPEG, GIF and
