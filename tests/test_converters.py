@@ -368,6 +368,44 @@ class TestTextToDoclingWithFormat:
         assert len(items) > 3
 
     @pytest.mark.asyncio
+    async def test_html_content_before_the_first_heading_is_kept(self):
+        """A paragraph above the first heading reaches the document body."""
+        html_content = (
+            "<p>Lucille Frances Ryan (born 29 March 1968) is an actress.</p>"
+            "<h2>Early life</h2><p>She grew up in Auckland.</p>"
+        )
+        converter = DoclingLocalConverter(AppConfig())
+
+        doc = await converter.convert_text(
+            html_content, name="lead.html", format="html"
+        )
+
+        texts = [
+            item.text for item, _ in doc.iterate_items() if isinstance(item, TextItem)
+        ]
+        assert any("born 29 March 1968" in text for text in texts)
+
+    @pytest.mark.asyncio
+    async def test_infer_furniture_drops_content_before_the_first_heading(self):
+        """With `infer_furniture` on, docling files that paragraph as furniture."""
+        html_content = (
+            "<p>Lucille Frances Ryan (born 29 March 1968) is an actress.</p>"
+            "<h2>Early life</h2><p>She grew up in Auckland.</p>"
+        )
+        config = AppConfig()
+        config.processing.conversion_options.infer_furniture = True
+        converter = DoclingLocalConverter(config)
+
+        doc = await converter.convert_text(
+            html_content, name="lead.html", format="html"
+        )
+
+        texts = [
+            item.text for item, _ in doc.iterate_items() if isinstance(item, TextItem)
+        ]
+        assert not any("born 29 March 1968" in text for text in texts)
+
+    @pytest.mark.asyncio
     async def test_md_format_is_default(self):
         """Test that md format is used by default."""
         config = AppConfig()
@@ -752,6 +790,19 @@ class TestDoclingLocalConverter:
         assert isinstance(md_bo, MarkdownBackendOptions)
         assert md_bo.fetch_images is False
         assert md_bo.enable_remote_fetch is False
+
+    @pytest.mark.parametrize("value", [False, True])
+    def test_build_format_options_propagates_infer_furniture(self, config, value):
+        """The HTML FormatOption reflects `infer_furniture`."""
+        from docling.datamodel.backend_options import HTMLBackendOptions
+        from docling.datamodel.base_models import InputFormat
+
+        config.processing.conversion_options.infer_furniture = value
+        opts = DoclingLocalConverter(config)._build_format_options()
+        html_bo = opts[InputFormat.HTML].backend_options
+
+        assert isinstance(html_bo, HTMLBackendOptions)
+        assert html_bo.infer_furniture is value
 
     def test_build_format_options_sends_a_default_user_agent(self, config):
         """Remote image fetching carries a descriptive User-Agent by default.
@@ -1231,6 +1282,8 @@ Use `my_func` for snake_case_name and & stuff, *emphasis* first.
 """
 
 PROPERTY_HTML = """<!doctype html><html><body>
+<p>The <b>haiku.rag</b> guide (<a href="https://example.com/v1">version 0.1.0</a>)
+opens before its first heading and links to <a href="https://example.com/s">search</a>.</p>
 <h2>A <code>code</code> heading with an <a href="https://example.com/b">anchor</a></h2>
 <p>Use <code>haiku_rag.search</code> for snake_case and an
 <a href="https://example.com">inline link</a> with &amp; entities.</p>

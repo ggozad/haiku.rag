@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Changed
+
+- HTML content before the first heading is ingested.
+  `processing.conversion_options.infer_furniture: true` restores docling's rule
+  that files it as page furniture. docling-local only.
+
 ## [0.86.0] - 2026-09-16
 
 ### Added

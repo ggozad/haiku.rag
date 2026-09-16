@@ -296,6 +296,10 @@ class ConversionOptions(ConfigModel):
         default_factory=lambda: {"User-Agent": DEFAULT_FETCH_USER_AGENT}
     )
 
+    # docling's rule that HTML content before the first heading is page
+    # furniture, left out of the document. docling-local only.
+    infer_furniture: bool = False
+
     picture_description: PictureDescriptionConfig = Field(
         default_factory=PictureDescriptionConfig
     )
