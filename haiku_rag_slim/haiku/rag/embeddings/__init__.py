@@ -202,6 +202,28 @@ def get_embedder(config: AppConfig | None = None) -> EmbedderWrapper:
     vector_dim = embedding_model.vector_dim
     check_api_key_supported(embedding_model, {"openai", "ollama", "openrouter", "vllm"})
 
+    if provider == "vllm":
+        from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+        return VLLMMultimodalEmbedder(
+            model_name,
+            vector_dim,
+            base_url=vllm_base_url(embedding_model.base_url),
+            api_key=embedding_model.api_key,
+            supports_images=embedding_model.multimodal,
+        )
+
+    if provider == "openrouter":
+        from haiku.rag.embeddings.openrouter import BASE_URL, OpenRouterEmbedder
+
+        return OpenRouterEmbedder(
+            model_name,
+            vector_dim,
+            base_url=embedding_model.base_url or BASE_URL,
+            api_key=embedding_model.api_key,
+            supports_images=embedding_model.multimodal,
+        )
+
     if embedding_model.multimodal:
         return _get_multimodal_embedder(embedding_model)
 
@@ -239,66 +261,20 @@ def get_embedder(config: AppConfig | None = None) -> EmbedderWrapper:
             Embedder(f"sentence-transformers:{model_name}"), vector_dim
         )
 
-    if provider == "vllm":
-        from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
-
-        base_url = vllm_base_url(embedding_model.base_url)
-        return VLLMMultimodalEmbedder(
-            model_name,
-            vector_dim,
-            base_url=base_url,
-            api_key=embedding_model.api_key,
-            supports_images=False,
-        )
-
-    if provider == "openrouter":
-        from haiku.rag.embeddings.openrouter import BASE_URL, OpenRouterEmbedder
-
-        return OpenRouterEmbedder(
-            model_name,
-            vector_dim,
-            base_url=embedding_model.base_url or BASE_URL,
-            api_key=embedding_model.api_key,
-            supports_images=False,
-        )
-
     raise ValueError(f"Unsupported embedding provider: {provider}")
 
 
 def _get_multimodal_embedder(
     embedding_model: "EmbeddingModelConfig",
 ) -> EmbedderWrapper:
-    """Build an image-capable embedder for providers that support multimodal.
+    """Build an image-capable embedder for the vendor SDK providers.
 
-    Each provider passes images in its own wire format, so the capability lives
-    in a per-provider embedder rather than a generic flag.
+    Each passes images in its own wire format, so the capability lives in a
+    per-provider embedder.
     """
     provider = embedding_model.provider
     model_name = embedding_model.name
     vector_dim = embedding_model.vector_dim
-
-    if provider == "vllm":
-        from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
-
-        base_url = vllm_base_url(embedding_model.base_url)
-        return VLLMMultimodalEmbedder(
-            model_name,
-            vector_dim,
-            base_url=base_url,
-            api_key=embedding_model.api_key,
-            supports_images=True,
-        )
-
-    if provider == "openrouter":
-        from haiku.rag.embeddings.openrouter import BASE_URL, OpenRouterEmbedder
-
-        return OpenRouterEmbedder(
-            model_name,
-            vector_dim,
-            base_url=embedding_model.base_url or BASE_URL,
-            api_key=embedding_model.api_key,
-            supports_images=True,
-        )
 
     if provider == "voyageai":
         from haiku.rag.embeddings.voyageai import VoyageMultimodalEmbedder
