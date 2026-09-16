@@ -1,27 +1,8 @@
-import base64
-
 import httpx
 
 from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk
-from haiku.rag.utils import vllm_base_url
-
-
-def _document(chunk: Chunk) -> str | dict:
-    """Rerank document for a chunk: plain text, or content parts carrying the
-    picture bytes as a data URI when the chunk has them (multimodal rerank)."""
-    data = chunk._picture_data
-    if data is None:
-        return chunk.content
-
-    mime = "image/jpeg" if data.startswith(b"\xff\xd8") else "image/png"
-    encoded = base64.b64encode(data).decode("ascii")
-    parts: list[dict] = [
-        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{encoded}"}}
-    ]
-    if chunk.content:
-        parts.append({"type": "text", "text": chunk.content})
-    return {"content": parts}
+from haiku.rag.utils import image_data_uri, vllm_base_url
 
 
 class VLLMReranker(RerankerBase):
@@ -42,10 +23,27 @@ class VLLMReranker(RerankerBase):
     async def aclose(self) -> None:
         await self._client.aclose()
 
+    def _scoreable(self, chunk: Chunk) -> bool:
+        return bool(chunk.content or chunk._picture_data)
+
+    def _document(self, chunk: Chunk) -> str | dict:
+        """Rerank document for a chunk: plain text, or content parts carrying
+        the picture bytes as a data URI when the chunk has them."""
+        data = chunk._picture_data
+        if data is None:
+            return chunk.content
+
+        parts: list[dict] = [
+            {"type": "image_url", "image_url": {"url": image_data_uri(data)}}
+        ]
+        if chunk.content:
+            parts.append({"type": "text", "text": chunk.content})
+        return {"content": parts}
+
     async def _rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10
     ) -> list[tuple[Chunk, float]]:
-        documents = [_document(chunk) for chunk in chunks]
+        documents = [self._document(chunk) for chunk in chunks]
 
         response = await self._client.post(
             f"{self._base_url}/rerank",

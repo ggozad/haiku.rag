@@ -15,10 +15,13 @@ def get_reranker(config: AppConfig | None = None) -> RerankerBase | None:
     if model is None:
         return None
 
-    check_api_key_supported(model, {"vllm"})
+    check_api_key_supported(model, {"openrouter", "vllm"})
 
-    if config.reranking.multimodal and model.provider != "vllm":
-        raise ValueError("reranking.multimodal is only supported on the vllm provider")
+    if config.reranking.multimodal and model.provider not in ("openrouter", "vllm"):
+        raise ValueError(
+            "reranking.multimodal is only supported on the vllm and openrouter "
+            "providers"
+        )
 
     if model.provider == "cohere":
         from haiku.rag.reranking.cohere import CohereReranker
@@ -31,6 +34,11 @@ def get_reranker(config: AppConfig | None = None) -> RerankerBase | None:
         from haiku.rag.reranking.vllm import VLLMReranker
 
         return VLLMReranker(model.name, model.base_url, api_key=model.api_key)
+
+    if model.provider == "openrouter":
+        from haiku.rag.reranking.openrouter import OpenRouterReranker
+
+        return OpenRouterReranker(model.name, model.base_url, api_key=model.api_key)
 
     if model.provider == "zeroentropy":
         from haiku.rag.reranking.zeroentropy import ZeroEntropyReranker

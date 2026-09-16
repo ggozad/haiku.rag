@@ -1330,3 +1330,22 @@ async def test_many_unembedded_chunks_are_sampled(temp_db_path):
     details = _result(report, "unembedded_chunks").details
     assert len(details) == 6
     assert details[-1] == "... (+3 more)"
+
+
+def test_api_key_required_for_openrouter():
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="openrouter",
+                name="nvidia/llama-nemotron-embed-vl-1b-v2:free",
+                vector_dim=2048,
+            )
+        )
+    )
+    result = _check_api_keys(config, {})
+    assert result.severity is Severity.FAIL
+    assert any("OPENROUTER_API_KEY" in d for d in result.details)
+    assert (
+        _check_api_keys(config, {"OPENROUTER_API_KEY": "sk-or-x"}).severity
+        is Severity.OK
+    )

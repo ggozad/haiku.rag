@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import math
 import sys
 from collections.abc import Awaitable
@@ -115,6 +116,26 @@ def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
     if norm1 == 0 or norm2 == 0:
         return 0.0
     return dot_product / (norm1 * norm2)
+
+
+def image_media_type(data: bytes) -> str:
+    """Media type of raw image bytes, PNG for anything unrecognized.
+
+    Labels; never rejects.
+    """
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith(b"GIF87a") or data.startswith(b"GIF89a"):
+        return "image/gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return "image/png"
+
+
+def image_data_uri(data: bytes) -> str:
+    """Raw image bytes as a ``data:`` URI carrying their sniffed media type."""
+    encoded = base64.b64encode(data).decode("ascii")
+    return f"data:{image_media_type(data)};base64,{encoded}"
 
 
 def image_binary_content(data: bytes) -> "BinaryContent":
@@ -243,7 +264,7 @@ def get_model(
     provider = model_config.provider
     model = model_config.name
     _check_provider_known(provider)
-    check_api_key_supported(model_config, {"openai", "ollama", "vllm"})
+    check_api_key_supported(model_config, {"openai", "ollama", "openrouter", "vllm"})
 
     if provider == "ollama":
         model_settings = apply_common_settings(
@@ -305,6 +326,22 @@ def get_model(
                 OpenAIProvider(api_key=model_config.api_key)
                 if model_config.api_key
                 else "openai"
+            ),
+            settings=apply_common_settings(None, model_config),
+        )
+
+    elif provider == "openrouter":
+        from pydantic_ai.models.openrouter import OpenRouterModel
+        from pydantic_ai.providers.openrouter import OpenRouterProvider
+
+        # OpenRouterModel maps the unified `thinking` onto its own `reasoning`
+        # field, with the profile inferred from the vendor prefix of the name.
+        return OpenRouterModel(
+            model,
+            provider=(
+                OpenRouterProvider(api_key=model_config.api_key)
+                if model_config.api_key
+                else "openrouter"
             ),
             settings=apply_common_settings(None, model_config),
         )

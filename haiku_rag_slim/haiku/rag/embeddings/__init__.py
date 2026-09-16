@@ -8,7 +8,7 @@ from pydantic_ai.providers.ollama import OllamaProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from haiku.rag.config import AppConfig, get_config
-from haiku.rag.utils import check_api_key_supported, vllm_base_url
+from haiku.rag.utils import check_api_key_supported, image_data_uri, vllm_base_url
 
 if TYPE_CHECKING:
     from PIL import Image as PILImage
@@ -71,7 +71,8 @@ class EmbedderWrapper:
         """
         raise NotImplementedError(
             f"{type(self).__name__} does not support image embedding. Set "
-            "embeddings.model.multimodal: true on a vllm, voyageai, or cohere model."
+            "embeddings.model.multimodal: true on a vllm, openrouter, voyageai, or "
+            "cohere model."
         )
 
     async def aclose(self) -> None:
@@ -80,9 +81,9 @@ class EmbedderWrapper:
 
 
 def _to_data_uri(image: "bytes | PILImage.Image") -> str:
-    """Render an image as a ``data:image/png;base64,...`` URI."""
+    """Render an image as a ``data:<media type>;base64,...`` URI."""
     if isinstance(image, bytes):
-        return f"data:image/png;base64,{base64.b64encode(image).decode('ascii')}"
+        return image_data_uri(image)
 
     from PIL import Image as PILImageModule
 
@@ -157,8 +158,8 @@ async def embed_chunks(
         if not embedder.supports_images:
             raise ValueError(
                 "Picture chunks require a multimodal embedder. Set "
-                "embeddings.model.multimodal: true on a vllm, voyageai, or cohere "
-                "model, or omit picture chunks."
+                "embeddings.model.multimodal: true on a vllm, openrouter, "
+                "voyageai, or cohere model, or omit picture chunks."
             )
         for chunk in picture_chunks:
             picture_embeddings.append(await embedder.embed_image(chunk._picture_data))
@@ -199,7 +200,29 @@ def get_embedder(config: AppConfig | None = None) -> EmbedderWrapper:
     provider = embedding_model.provider
     model_name = embedding_model.name
     vector_dim = embedding_model.vector_dim
-    check_api_key_supported(embedding_model, {"openai", "ollama", "vllm"})
+    check_api_key_supported(embedding_model, {"openai", "ollama", "openrouter", "vllm"})
+
+    if provider == "vllm":
+        from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+        return VLLMMultimodalEmbedder(
+            model_name,
+            vector_dim,
+            base_url=vllm_base_url(embedding_model.base_url),
+            api_key=embedding_model.api_key,
+            supports_images=embedding_model.multimodal,
+        )
+
+    if provider == "openrouter":
+        from haiku.rag.embeddings.openrouter import BASE_URL, OpenRouterEmbedder
+
+        return OpenRouterEmbedder(
+            model_name,
+            vector_dim,
+            base_url=embedding_model.base_url or BASE_URL,
+            api_key=embedding_model.api_key,
+            supports_images=embedding_model.multimodal,
+        )
 
     if embedding_model.multimodal:
         return _get_multimodal_embedder(embedding_model)
@@ -238,44 +261,20 @@ def get_embedder(config: AppConfig | None = None) -> EmbedderWrapper:
             Embedder(f"sentence-transformers:{model_name}"), vector_dim
         )
 
-    if provider == "vllm":
-        from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
-
-        base_url = vllm_base_url(embedding_model.base_url)
-        return VLLMMultimodalEmbedder(
-            model_name,
-            vector_dim,
-            base_url=base_url,
-            api_key=embedding_model.api_key,
-            supports_images=False,
-        )
-
     raise ValueError(f"Unsupported embedding provider: {provider}")
 
 
 def _get_multimodal_embedder(
     embedding_model: "EmbeddingModelConfig",
 ) -> EmbedderWrapper:
-    """Build an image-capable embedder for providers that support multimodal.
+    """Build an image-capable embedder for the vendor SDK providers.
 
-    Each provider passes images in its own wire format, so the capability lives
-    in a per-provider embedder rather than a generic flag.
+    Each passes images in its own wire format, so the capability lives in a
+    per-provider embedder.
     """
     provider = embedding_model.provider
     model_name = embedding_model.name
     vector_dim = embedding_model.vector_dim
-
-    if provider == "vllm":
-        from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
-
-        base_url = vllm_base_url(embedding_model.base_url)
-        return VLLMMultimodalEmbedder(
-            model_name,
-            vector_dim,
-            base_url=base_url,
-            api_key=embedding_model.api_key,
-            supports_images=True,
-        )
 
     if provider == "voyageai":
         from haiku.rag.embeddings.voyageai import VoyageMultimodalEmbedder
@@ -289,5 +288,6 @@ def _get_multimodal_embedder(
 
     raise ValueError(
         f"Provider '{provider}' does not support multimodal embedding. Set "
-        "embeddings.model.multimodal: true on a vllm, voyageai, or cohere model."
+        "embeddings.model.multimodal: true on a vllm, openrouter, voyageai, or "
+        "cohere model."
     )

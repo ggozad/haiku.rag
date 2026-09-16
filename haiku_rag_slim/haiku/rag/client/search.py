@@ -297,8 +297,8 @@ async def _embed_query(
     if not embedder.supports_images:
         raise ValueError(
             "Image queries require a multimodal embedder. Set "
-            "embeddings.model.multimodal: true on a vllm, voyageai, or cohere "
-            "model."
+            "embeddings.model.multimodal: true on a vllm, openrouter, voyageai, "
+            "or cohere model."
         )
     return await embedder.embed_image(query)
 

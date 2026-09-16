@@ -1236,3 +1236,51 @@ def test_get_model_anthropic_thinking_level_passes_through():
     assert isinstance(result, AnthropicModel)
     assert result.settings is not None
     assert result.settings.get("thinking") == "high"
+
+
+def test_get_model_openrouter_applies_settings():
+    """The bare `provider:name` string carries no settings, so an explicit
+    branch is what lets temperature and max_tokens reach the model."""
+    from pydantic_ai.models.openrouter import OpenRouterModel
+
+    result = get_model(
+        ModelConfig(
+            provider="openrouter",
+            name="openai/gpt-4o-mini",
+            temperature=0.2,
+            max_tokens=64,
+        )
+    )
+    assert isinstance(result, OpenRouterModel)
+    assert result.model_name == "openai/gpt-4o-mini"
+    assert result.settings == {"temperature": 0.2, "max_tokens": 64}
+
+
+def test_get_model_openrouter_thinking_travels_unified():
+    """OpenRouterModel maps unified `thinking` onto its own `reasoning` field."""
+    result = get_model(
+        ModelConfig(provider="openrouter", name="openai/gpt-5", thinking=False)
+    )
+    assert result.settings == {"thinking": False}
+
+
+def test_get_model_openrouter_api_key_from_config(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-env")
+    result = get_model(
+        ModelConfig(provider="openrouter", name="openai/gpt-4o-mini", api_key="sk-or-x")
+    )
+    assert result.client.api_key == "sk-or-x"
+
+
+def test_get_model_openrouter_api_key_from_environment(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-env")
+    result = get_model(ModelConfig(provider="openrouter", name="openai/gpt-4o-mini"))
+    assert result.client.api_key == "sk-or-env"
+
+
+def test_get_model_openrouter_extra_body_forwarded():
+    extra = {"transforms": ["middle-out"]}
+    result = get_model(
+        ModelConfig(provider="openrouter", name="openai/gpt-4o-mini", extra_body=extra)
+    )
+    assert result.settings == {"extra_body": extra}

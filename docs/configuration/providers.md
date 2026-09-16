@@ -53,7 +53,7 @@ embeddings:
     api_key: ${VENDOR_B_KEY}
 ```
 
-`api_key` is honored on the `openai`, `ollama` and `vllm` providers, on `vllm` embedders and rerankers, and on the picture-description VLM endpoint (which otherwise falls back to `OPENAI_API_KEY` only for the public OpenAI endpoint, never for a custom `base_url`). Other providers (`anthropic`, `cohere`, `voyageai`, …) reach their vendor SDK by name and read their own environment variable; setting `api_key` there raises rather than being dropped silently.
+`api_key` is honored on the `openai`, `ollama`, `openrouter` and `vllm` providers, on `vllm` and `openrouter` embedders and rerankers, and on the picture-description VLM endpoint (which otherwise falls back to `OPENAI_API_KEY` only for the public OpenAI endpoint, never for a custom `base_url`). Other providers (`anthropic`, `cohere`, `voyageai`, …) reach their vendor SDK by name and read their own environment variable; setting `api_key` there raises rather than being dropped silently.
 
 ### Thinking Control
 
@@ -110,7 +110,7 @@ These keys are sent as top-level request fields. Of the three, ollama honors onl
 
 `extra_body.reasoning_effort` reaches the request the same way and overrides the value `thinking` sends. A template carrying a switch of its own takes `chat_template_kwargs`, see [vLLM](#vllm).
 
-**Provider support:** honored by openai, ollama, anthropic, groq and vllm via pydantic-ai's `ModelSettings.extra_body`. Silently ignored by google and bedrock.
+**Provider support:** honored by openai, ollama, openrouter, anthropic, groq and vllm via pydantic-ai's `ModelSettings.extra_body`. Silently ignored by google and bedrock.
 
 ## Embedding Providers
 
@@ -242,7 +242,7 @@ embeddings:
 
 ### Multimodal embedders
 
-For cross-modal retrieval (text and pictures share a single vector space), set `embeddings.model.multimodal: true`. Capability is decided by this flag, not the provider name: each provider passes images in its own wire format, so multimodal is supported only on `vllm`, `voyageai`, and `cohere`. Setting it on any other provider raises at startup.
+For cross-modal retrieval (text and pictures share a single vector space), set `embeddings.model.multimodal: true`. Capability is decided by this flag, not the provider name: each provider passes images in its own wire format, so multimodal is supported only on `vllm`, `openrouter`, `voyageai`, and `cohere`. Setting it on any other provider raises at startup.
 
 A model produces picture chunks at ingest only when its embedder is multimodal. Without the flag, an image-only document produces zero chunks and is not retrievable. Switching `multimodal` on or off does not change the stored embedding identity, so it raises no drift error; re-ingest or `rebuild` to add or drop picture chunks.
 
@@ -257,6 +257,23 @@ embeddings:
     base_url: http://localhost:8000/v1
     multimodal: true
 ```
+
+**OpenRouter** — a hosted multimodal embedding model, no local GPU. Text inputs use the standard OpenAI `input` field; image inputs wrap content parts in an `input` element. `base_url` defaults to `https://openrouter.ai/api/v1`. Tested with `nvidia/llama-nemotron-embed-vl-1b-v2:free` (2048-dim), `voyageai/voyage-multimodal-3.5` (1024-dim) and `google/gemini-embedding-2` (3072-dim).
+
+```yaml
+embeddings:
+  model:
+    provider: openrouter
+    name: nvidia/llama-nemotron-embed-vl-1b-v2:free
+    vector_dim: 2048
+    multimodal: true
+```
+
+The key comes from `OPENROUTER_API_KEY` in the environment, or from `api_key` on the model, which wins.
+
+OpenRouter's embedding models are absent from `/v1/models`. List them at `/v1/embeddings/models`.
+
+`vector_dim` must be the model's own output dimension. A model that serves reduced dimensions does so through an API parameter haiku.rag does not send, and a length the schema cannot hold is rejected at embed time.
 
 **VoyageAI** — `voyage-multimodal-3` (1024-dim) via the `voyageai` extra. Reads `VOYAGE_API_KEY` from the environment.
 
@@ -280,7 +297,9 @@ embeddings:
     multimodal: true
 ```
 
-A text-only model served by vLLM uses `provider: vllm` without the flag (or `provider: openai` with a `base_url`).
+A text-only model uses the same provider without the flag: `provider: vllm`, `provider: openrouter`, or `provider: openai` with a `base_url`.
+
+A data URI passed as a plain string is embedded as text by these endpoints rather than rejected, so an image must go through a multimodal embedder to reach the image path.
 
 Picture chunks for retrieval are emitted at ingest under any multimodal embedder. See [Picture Handling](processing.md#picture-handling).
 
@@ -417,6 +436,18 @@ qa:
 
 **Note:** The server must be running with a model that supports tool calling. On the `openai` provider the `base_url` must include the `/v1` path.
 
+### OpenRouter
+
+One hosted endpoint in front of many vendors, reached with `OPENROUTER_API_KEY` or `api_key` on the model. `temperature`, `max_tokens`, `extra_body` and `thinking` apply; `thinking` is sent as OpenRouter's `reasoning` field, and the model decides what it honors.
+
+```yaml
+qa:
+  model:
+    provider: openrouter
+    name: openai/gpt-4o-mini
+    temperature: 0.2
+```
+
 ### Other Providers
 
 Any provider supported by Pydantic AI can be used. Examples:
@@ -522,7 +553,23 @@ reranking:
     base_url: http://localhost:8001/v1
 ```
 
-Picture chunks are sent as image documents (base64 data URIs) alongside plain text documents in the same rerank request. The flag is supported on the vllm provider only, and the served model must accept multimodal inputs.
+Picture chunks are sent as image documents (base64 data URIs) alongside plain text documents in the same rerank request. A chunk with nothing to score, meaning no text and no picture bytes attached, is not sent to any reranker. The flag is supported on the vllm and openrouter providers, and the served model must accept multimodal inputs.
+
+### OpenRouter
+
+A hosted reranker, no local GPU. `base_url` defaults to `https://openrouter.ai/api/v1` and the key comes from `OPENROUTER_API_KEY`, or from `api_key` on the model, which wins.
+
+```yaml
+reranking:
+  multimodal: true
+  model:
+    provider: openrouter
+    name: nvidia/llama-nemotron-rerank-vl-1b-v2:free
+```
+
+`nvidia/llama-nemotron-rerank-vl-1b-v2:free` is the only OpenRouter reranker that takes images; `cohere/rerank-4-pro`, `cohere/rerank-4-fast`, `cohere/rerank-v3.5`, `qwen/qwen3-reranker-8b`, `voyageai/rerank-2.5` and `voyageai/rerank-2.5-lite` are text-only and reject a document carrying no text. A document is `{"text", "image"}` here, where vLLM takes a `content` array of parts.
+
+Rerank models are absent from `/v1/models`. List them at `/v1/models?output_modalities=rerank`.
 
 ### Jina AI
 

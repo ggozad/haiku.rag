@@ -1,0 +1,67 @@
+interactions:
+- request:
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '2619'
+      content-type:
+      - application/json
+      host:
+      - openrouter.ai
+    method: POST
+    parsed_body:
+      documents:
+      - image: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUAAAAB4CAIAAAAMrLyJAAADHUlEQVR4nO3ZsSt2CwDH8eNGYrJ4VoN63liExSI3ExmMRimTv8HM8qwWDAaDQUmRkMGgjM8iRW+RUjYLhfTcuk+5y+2tq3uPfu7nM53nnPPUb/l2Tp2WRqNRAJl+++oBwOcJGIIJGIIJGIIJGIIJGIIJGIIJGIIJGIK1/vryz56espZk6L29/eoJ8BdPYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgm4PKsra0NDQ2NjY1NTU3d3d19nF9fX29vb394eCiKYmdn5/c/tba2Ng+2t7dL3EiYlkaj8YvLP3t6ShwToPf29nN/PD4+Xl5e3t/f7+joODg4qNVqJycnzUvT09PVarW/v39ubu7j/q6ursfHx39pNd+WJ3BJarXa0tJSR0dHURSTk5O9vb1vb29FUTw/Pz89Pc3Pz+/t7ZW1he9DwCW5uLgYHBz8+Lm6utrW1lYUxeHh4cTExI8fP25ubl5fX8uawzch4JK8v7//7fnd3d3Nzc2RkZH7+/vT09Oy5vBNCLgk1Wq1Xq83jxuNxuzsbLPqq6urer1+fn6+sbHhLZp/SsAlWVhYWFxcfHl5KYpia2ureXB2djYwMNC8YXR09OjoqKw5fBOtXz3g/2JmZub6+np4eLi7u7tSqaysrDTfn8fHx5s3dHZ2ViqVy8vLvr6+rx5LDJ+RSvqMBP8Fr9AQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQrKXRaHz1BuCTPIEhmIAhmIAhmIAhmIAhmIAhmIAhmIAhmIAhmIAhmIAhmIAhmIAhmIAhmIAhmIAhmIAhmIChyPUHzMqXmUXk4QsAAAAASUVORK5CYII=
+      - image: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUAAAAB4CAIAAAAMrLyJAAADiUlEQVR4nO3YsUtVfRzH8XPVmxcFu3MhDSKIYosQZARX2iL8C9zcBAkavFshOJhBW4sg2V9QBA4OghAiONyhpekOgrR2lyCuxmm48DzP8jRE3NvneV6v6Zzf4cAXDm9+/E6lLMsCyDQ06AGAXydgCCZgCCZgCCZgCCZgCCZgCCZgCCZgCDby88e37rf7NUmG8w9Tgx4B/mYHhmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAC7p+xsbFGo7G0tHTv3r39/f3e4uvXrxcWFu7evbuwsPDmzZve4u7u7p07dxYXFx8+fHhxcdHHGQkzMugB/keuXbt2fHxcFMXXr1+Xl5fHx8cnJib29vaOjo7q9Xqn03n06NHNmzfLsnz79u3JyUm1Wn3+/Pnq6urh4eGgZ+cPJeABGB8f39nZefz4ca1We/HiRb1eL4qiXq/v7Ow8e/ZsaGhoa2urWq0WRbG2tnZ6evr9+/fh4eFBTMqfrlKW5U8e37rf7uMwAc4/TP3yu71ttnd9eXk5OTk5PDzcbrdrtVpv8du3b1NTU5VKpd1uj46O/qaR+S9zBh6Mq6ur3h77T2VZViqVq6ur3u3Lly8bjcbMzMwgBiSDgAfj7Oxsfn5+dna21Wr9tdhqtebm5qanpz9+/FgUxZMnT969e3d+fj6gGQngDDwAX758aTab29vb3W53Y2Pj4ODg+vXrnU6n2Wxubm5+/vz56dOn79+/r1arr169cvrlJwTcP91ut9FoVCqVy8vLZrPZaDSKori4uFhaWhodHe12u+vr6w8ePCjL8tOnT7dv375x48bKysrIiG/Ev/ITq38/seC3cwaGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYJWyLAc9A/CL7MAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMBQ5PoB32mxTy/ZtAsAAAAASUVORK5CYII=
+      - Bananas are yellow
+      model: nvidia/llama-nemotron-rerank-vl-1b-v2:free
+      query: a red square labelled CAT
+    uri: https://openrouter.ai/api/v1/rerank
+  response:
+    headers:
+      access-control-allow-origin:
+      - '*'
+      access-control-expose-headers:
+      - X-Generation-Id,X-Provider-Name,request-id,cf-ray
+      connection:
+      - keep-alive
+      content-length:
+      - '2892'
+      content-type:
+      - application/json
+      permissions-policy:
+      - payment=(self "https://checkout.stripe.com" "https://connect-js.stripe.com" "https://js.stripe.com" "https://*.js.stripe.com"
+        "https://hooks.stripe.com")
+      referrer-policy:
+      - no-referrer, strict-origin-when-cross-origin
+      transfer-encoding:
+      - chunked
+    parsed_body:
+      id: gen-rerank-1789545538-GZikjBKhWkXH5cdPG1Sb
+      model: nvidia/llama-nemotron-rerank-vl-1b-v2
+      provider: Nvidia
+      results:
+      - document:
+          image: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUAAAAB4CAIAAAAMrLyJAAADHUlEQVR4nO3ZsSt2CwDH8eNGYrJ4VoN63liExSI3ExmMRimTv8HM8qwWDAaDQUmRkMGgjM8iRW+RUjYLhfTcuk+5y+2tq3uPfu7nM53nnPPUb/l2Tp2WRqNRAJl+++oBwOcJGIIJGIIJGIIJGIIJGIIJGIIJGIIJGIK1/vryz56espZk6L29/eoJ8BdPYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgmYAgm4PKsra0NDQ2NjY1NTU3d3d19nF9fX29vb394eCiKYmdn5/c/tba2Ng+2t7dL3EiYlkaj8YvLP3t6ShwToPf29nN/PD4+Xl5e3t/f7+joODg4qNVqJycnzUvT09PVarW/v39ubu7j/q6ursfHx39pNd+WJ3BJarXa0tJSR0dHURSTk5O9vb1vb29FUTw/Pz89Pc3Pz+/t7ZW1he9DwCW5uLgYHBz8+Lm6utrW1lYUxeHh4cTExI8fP25ubl5fX8uawzch4JK8v7//7fnd3d3Nzc2RkZH7+/vT09Oy5vBNCLgk1Wq1Xq83jxuNxuzsbLPqq6urer1+fn6+sbHhLZp/SsAlWVhYWFxcfHl5KYpia2ureXB2djYwMNC8YXR09OjoqKw5fBOtXz3g/2JmZub6+np4eLi7u7tSqaysrDTfn8fHx5s3dHZ2ViqVy8vLvr6+rx5LDJ+RSvqMBP8Fr9AQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQrKXRaHz1BuCTPIEhmIAhmIAhmIAhmIAhmIAhmIAhmIAhmIAhmIAhmIAhmIAhmIAhmIAhmIAhmIAhmIAhmIChyPUHzMqXmUXk4QsAAAAASUVORK5CYII=
+        index: 0
+        relevance_score: 0.23091976292927177
+      - document:
+          image: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUAAAAB4CAIAAAAMrLyJAAADiUlEQVR4nO3YsUtVfRzH8XPVmxcFu3MhDSKIYosQZARX2iL8C9zcBAkavFshOJhBW4sg2V9QBA4OghAiONyhpekOgrR2lyCuxmm48DzP8jRE3NvneV6v6Zzf4cAXDm9+/E6lLMsCyDQ06AGAXydgCCZgCCZgCCZgCCZgCCZgCCZgCCZgCDby88e37rf7NUmG8w9Tgx4B/mYHhmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAChmAC7p+xsbFGo7G0tHTv3r39/f3e4uvXrxcWFu7evbuwsPDmzZve4u7u7p07dxYXFx8+fHhxcdHHGQkzMugB/keuXbt2fHxcFMXXr1+Xl5fHx8cnJib29vaOjo7q9Xqn03n06NHNmzfLsnz79u3JyUm1Wn3+/Pnq6urh4eGgZ+cPJeABGB8f39nZefz4ca1We/HiRb1eL4qiXq/v7Ow8e/ZsaGhoa2urWq0WRbG2tnZ6evr9+/fh4eFBTMqfrlKW5U8e37rf7uMwAc4/TP3yu71ttnd9eXk5OTk5PDzcbrdrtVpv8du3b1NTU5VKpd1uj46O/qaR+S9zBh6Mq6ur3h77T2VZViqVq6ur3u3Lly8bjcbMzMwgBiSDgAfj7Oxsfn5+dna21Wr9tdhqtebm5qanpz9+/FgUxZMnT969e3d+fj6gGQngDDwAX758aTab29vb3W53Y2Pj4ODg+vXrnU6n2Wxubm5+/vz56dOn79+/r1arr169cvrlJwTcP91ut9FoVCqVy8vLZrPZaDSKori4uFhaWhodHe12u+vr6w8ePCjL8tOnT7dv375x48bKysrIiG/Ev/ITq38/seC3cwaGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYAKGYJWyLAc9A/CL7MAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMAQTMBQ5PoB32mxTy/ZtAsAAAAASUVORK5CYII=
+        index: 1
+        relevance_score: 0.0053849379617779605
+      - document:
+          text: Bananas are yellow
+        index: 2
+        relevance_score: 0.0011247574231557356
+      usage:
+        cost: 0
+        total_tokens: 2086
+    status:
+      code: 200
+      message: OK
+version: 1

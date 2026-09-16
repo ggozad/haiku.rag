@@ -374,7 +374,7 @@ async def test_vllm_embed_text_request_shape(monkeypatch):
 
     embedder = VLLMMultimodalEmbedder(
         model_name="Qwen/Qwen3-VL-Embedding-2B",
-        vector_dim=2048,
+        vector_dim=3,
         base_url="http://localhost:8000/v1",
     )
     vecs = await embedder.embed_documents(["a photo of a cat", "a sleeping dog"])
@@ -1047,3 +1047,260 @@ async def test_cohere_embed_text_and_image_end_to_end():
     image_vec = await embedder.embed_image(Image.new("RGB", (64, 64), (255, 0, 0)))
     assert len(image_vec) == 1536
     assert any(abs(x) > 1e-6 for x in image_vec), "image embedding is all zeros"
+
+
+def _openrouter_config(
+    multimodal: bool = True, base_url: str | None = None, vector_dim: int = 1024
+):
+    return AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="openrouter",
+                name="nvidia/llama-nemotron-embed-vl-1b-v2:free",
+                vector_dim=vector_dim,
+                base_url=base_url,
+                api_key="sk-or-test",
+                multimodal=multimodal,
+            )
+        )
+    )
+
+
+def _capturing_client(monkeypatch, captured: dict, embeddings: list[list[float]]):
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"data": [{"embedding": e} for e in embeddings]}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def post(self, url, json, headers):
+            captured["url"] = url
+            captured["body"] = json
+            captured["headers"] = headers
+            return FakeResponse()
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+
+async def test_openrouter_embed_image_request_shape(monkeypatch):
+    """OpenRouter carries image parts inside an ``input`` element, where vLLM
+    uses a top-level ``messages`` array."""
+    captured: dict = {}
+    _capturing_client(monkeypatch, captured, [[0.5] * 4])
+
+    embedder = get_embedder(_openrouter_config(vector_dim=4))
+    vec = await embedder.embed_image(b"\x89PNG\r\n\x1a\nfake")
+
+    assert vec == [0.5] * 4
+    assert captured["url"] == "https://openrouter.ai/api/v1/embeddings"
+    body = captured["body"]
+    assert "messages" not in body
+    content = body["input"][0]["content"]
+    assert content[0]["type"] == "image_url"
+    assert content[0]["image_url"]["url"].startswith("data:image/png;base64,")
+    assert captured["headers"]["Authorization"] == "Bearer sk-or-test"
+
+
+async def test_openrouter_embed_text_request_shape(monkeypatch):
+    """Text embedding stays on the plain OpenAI ``input`` array of strings.
+
+    OpenRouter rejects an ``input`` mixing strings with content objects.
+    """
+    captured: dict = {}
+    _capturing_client(monkeypatch, captured, [[0.1], [0.2]])
+
+    embedder = get_embedder(_openrouter_config(vector_dim=1))
+    vecs = await embedder.embed_documents(["a cat", "a dog"])
+
+    assert vecs == [[0.1], [0.2]]
+    assert captured["body"]["input"] == ["a cat", "a dog"]
+
+
+async def test_openrouter_text_only_provider(monkeypatch):
+    captured: dict = {}
+    _capturing_client(monkeypatch, captured, [[0.3]])
+
+    embedder = get_embedder(_openrouter_config(multimodal=False, vector_dim=1))
+
+    assert embedder.supports_images is False
+    assert await embedder.embed_query("a cat") == [0.3]
+    with pytest.raises(NotImplementedError, match="multimodal"):
+        await embedder.embed_image(b"\x89PNG\r\n\x1a\n")
+
+
+async def test_openrouter_base_url_override(monkeypatch):
+    captured: dict = {}
+    _capturing_client(monkeypatch, captured, [[0.3]])
+
+    embedder = get_embedder(
+        _openrouter_config(base_url="https://proxy.test/api/v1", vector_dim=1)
+    )
+    await embedder.embed_query("a cat")
+
+    assert captured["url"] == "https://proxy.test/api/v1/embeddings"
+
+
+async def test_openrouter_errors_name_openrouter(monkeypatch):
+    """Connection failures name the endpoint the config points at."""
+    import httpx
+
+    class FailingClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def post(self, url, json, headers):
+            raise httpx.ConnectError("nope")
+
+    monkeypatch.setattr("httpx.AsyncClient", FailingClient)
+
+    embedder = get_embedder(_openrouter_config())
+    with pytest.raises(ValueError, match="OpenRouter"):
+        await embedder.embed_query("a cat")
+
+
+async def test_vllm_wrong_vector_dim_raises(monkeypatch):
+    """A vector of a length the schema cannot hold is rejected where the model
+    and the config key are still known."""
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"data": [{"embedding": [0.1] * 512}]}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def post(self, url, json, headers):
+            return FakeResponse()
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="some-model",
+        vector_dim=1024,
+        base_url="http://localhost:8000/v1",
+    )
+    with pytest.raises(ValueError, match="vector_dim"):
+        await embedder.embed_query("a cat")
+
+
+async def test_openrouter_wrong_vector_dim_raises(monkeypatch):
+    captured: dict = {}
+    _capturing_client(monkeypatch, captured, [[0.1] * 512])
+
+    embedder = get_embedder(_openrouter_config())
+    with pytest.raises(ValueError, match="1024.*512|512.*1024"):
+        await embedder.embed_image(b"\x89PNG\r\n\x1a\nfake")
+
+
+@pytest.mark.parametrize(
+    "data,expected",
+    [
+        (b"\x89PNG\r\n\x1a\npayload", "image/png"),
+        (b"\xff\xd8\xffpayload", "image/jpeg"),
+        (b"GIF89apayload", "image/gif"),
+        (b"RIFF\x00\x00\x00\x00WEBPVP8 ", "image/webp"),
+        (b"not an image at all", "image/png"),
+    ],
+)
+def test_image_media_type(data, expected):
+    from haiku.rag.utils import image_media_type
+
+    assert image_media_type(data) == expected
+
+
+def test_to_data_uri_labels_jpeg_bytes():
+    """A JPEG is declared as JPEG; the same URI reaches Cohere and vLLM."""
+    from haiku.rag.embeddings import _to_data_uri
+    from haiku.rag.utils import image_data_uri
+
+    assert image_data_uri(b"GIF89a") == "data:image/gif;base64,R0lGODlh"
+    assert _to_data_uri(b"\xff\xd8\xffpayload").startswith("data:image/jpeg;base64,")
+    assert _to_data_uri(b"\x89PNG\r\n\x1a\nx").startswith("data:image/png;base64,")
+
+
+async def test_openrouter_reads_api_key_from_environment(monkeypatch):
+    """The chat provider takes OPENROUTER_API_KEY from the environment, so the
+    embedder on the same key must too."""
+    captured: dict = {}
+    _capturing_client(monkeypatch, captured, [[0.3]])
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-from-env")
+
+    config = _openrouter_config(vector_dim=1)
+    config.embeddings.model.api_key = None
+    embedder = get_embedder(config)
+    await embedder.embed_query("a cat")
+
+    assert captured["headers"]["Authorization"] == "Bearer sk-or-from-env"
+
+
+async def test_openrouter_config_api_key_wins_over_environment(monkeypatch):
+    captured: dict = {}
+    _capturing_client(monkeypatch, captured, [[0.3]])
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-from-env")
+
+    embedder = get_embedder(_openrouter_config(vector_dim=1))
+    await embedder.embed_query("a cat")
+
+    assert captured["headers"]["Authorization"] == "Bearer sk-or-test"
+
+
+async def test_openrouter_without_any_key_sends_no_auth_header(monkeypatch):
+    captured: dict = {}
+    _capturing_client(monkeypatch, captured, [[0.3]])
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    config = _openrouter_config(vector_dim=1)
+    config.embeddings.model.api_key = None
+    embedder = get_embedder(config)
+    await embedder.embed_query("a cat")
+
+    assert "Authorization" not in captured["headers"]
+
+
+@pytest.mark.vcr()
+async def test_openrouter_embedder_end_to_end():
+    """Text and images reach one vector space over OpenRouter's wire format.
+
+    Recorded against ``nvidia/llama-nemotron-embed-vl-1b-v2:free``. To
+    re-record, export ``OPENROUTER_API_KEY`` and run with
+    ``--record-mode=rewrite``.
+    """
+    from PIL import Image
+
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="openrouter",
+                name="nvidia/llama-nemotron-embed-vl-1b-v2:free",
+                vector_dim=2048,
+                multimodal=True,
+            )
+        )
+    )
+    embedder = get_embedder(config)
+
+    text = await embedder.embed_documents(
+        ["a red square labelled CAT", "a blue square labelled DOG"]
+    )
+    assert len(text) == 2
+    assert all(len(v) == 2048 for v in text)
+
+    image = Image.new("RGB", (64, 64), color=(220, 30, 30))
+    image_vec = await embedder.embed_image(image)
+    assert len(image_vec) == 2048
+    assert any(abs(x) > 1e-6 for x in image_vec), "image embedding is all zeros"
+
+    # cross-modal: the picture is nearer the text that describes it
+    assert similarities([text[0]], image_vec)[0] > similarities([text[1]], image_vec)[0]
+
+    await embedder.aclose()
