@@ -8,13 +8,15 @@
 - `provider: openrouter` under `embeddings.model`, text and `multimodal: true`.
   `base_url` defaults to `https://openrouter.ai/api/v1`, the key to
   `OPENROUTER_API_KEY`. `doctor` reports it missing.
+- `provider: openrouter` under `reranking.model`, including
+  `reranking.multimodal`. `base_url` and key default as above.
 - An embedding whose length is not `embeddings.model.vector_dim` raises on the
   `vllm` and `openrouter` providers, naming the model and the returned length.
 
 ### Fixed
 
 - Rerank candidates with nothing to score are skipped. `RerankerBase._scoreable`
-  is text for every reranker, text or picture bytes for `vllm`.
+  is text for every reranker, text or picture bytes for `vllm` and `openrouter`.
 - Image data URIs carry the media type sniffed from the bytes. JPEG, GIF and
   WebP pictures were declared `image/png` to the `vllm`, `openrouter` and
   `cohere` embedders.

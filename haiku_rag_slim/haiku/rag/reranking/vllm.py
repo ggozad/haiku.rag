@@ -7,21 +7,10 @@ from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.utils import image_media_type, vllm_base_url
 
 
-def _document(chunk: Chunk) -> str | dict:
-    """Rerank document for a chunk: plain text, or content parts carrying the
-    picture bytes as a data URI when the chunk has them (multimodal rerank)."""
-    data = chunk._picture_data
-    if data is None:
-        return chunk.content
-
-    mime = image_media_type(data)
+def data_uri(data: bytes) -> str:
+    """Picture bytes as a ``data:`` URI carrying their sniffed media type."""
     encoded = base64.b64encode(data).decode("ascii")
-    parts: list[dict] = [
-        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{encoded}"}}
-    ]
-    if chunk.content:
-        parts.append({"type": "text", "text": chunk.content})
-    return {"content": parts}
+    return f"data:{image_media_type(data)};base64,{encoded}"
 
 
 class VLLMReranker(RerankerBase):
@@ -45,10 +34,24 @@ class VLLMReranker(RerankerBase):
     def _scoreable(self, chunk: Chunk) -> bool:
         return bool(chunk.content or chunk._picture_data)
 
+    def _document(self, chunk: Chunk) -> str | dict:
+        """Rerank document for a chunk: plain text, or content parts carrying
+        the picture bytes as a data URI when the chunk has them."""
+        data = chunk._picture_data
+        if data is None:
+            return chunk.content
+
+        parts: list[dict] = [
+            {"type": "image_url", "image_url": {"url": data_uri(data)}}
+        ]
+        if chunk.content:
+            parts.append({"type": "text", "text": chunk.content})
+        return {"content": parts}
+
     async def _rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10
     ) -> list[tuple[Chunk, float]]:
-        documents = [_document(chunk) for chunk in chunks]
+        documents = [self._document(chunk) for chunk in chunks]
 
         response = await self._client.post(
             f"{self._base_url}/rerank",

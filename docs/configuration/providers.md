@@ -53,7 +53,7 @@ embeddings:
     api_key: ${VENDOR_B_KEY}
 ```
 
-`api_key` is honored on the `openai`, `ollama` and `vllm` providers, on `vllm` and `openrouter` embedders and `vllm` rerankers, and on the picture-description VLM endpoint (which otherwise falls back to `OPENAI_API_KEY` only for the public OpenAI endpoint, never for a custom `base_url`). Other providers (`anthropic`, `cohere`, `voyageai`, …) reach their vendor SDK by name and read their own environment variable; setting `api_key` there raises rather than being dropped silently.
+`api_key` is honored on the `openai`, `ollama` and `vllm` providers, on `vllm` and `openrouter` embedders and rerankers, and on the picture-description VLM endpoint (which otherwise falls back to `OPENAI_API_KEY` only for the public OpenAI endpoint, never for a custom `base_url`). Other providers (`anthropic`, `cohere`, `voyageai`, …) reach their vendor SDK by name and read their own environment variable; setting `api_key` there raises rather than being dropped silently.
 
 ### Thinking Control
 
@@ -541,7 +541,23 @@ reranking:
     base_url: http://localhost:8001/v1
 ```
 
-Picture chunks are sent as image documents (base64 data URIs) alongside plain text documents in the same rerank request. A chunk with nothing to score, meaning no text and no picture bytes attached, is not sent to any reranker. The flag is supported on the vllm provider only, and the served model must accept multimodal inputs.
+Picture chunks are sent as image documents (base64 data URIs) alongside plain text documents in the same rerank request. A chunk with nothing to score, meaning no text and no picture bytes attached, is not sent to any reranker. The flag is supported on the vllm and openrouter providers, and the served model must accept multimodal inputs.
+
+### OpenRouter
+
+A hosted reranker, no local GPU. `base_url` defaults to `https://openrouter.ai/api/v1` and the key comes from `OPENROUTER_API_KEY`, or from `api_key` on the model, which wins.
+
+```yaml
+reranking:
+  multimodal: true
+  model:
+    provider: openrouter
+    name: nvidia/llama-nemotron-rerank-vl-1b-v2:free
+```
+
+`nvidia/llama-nemotron-rerank-vl-1b-v2:free` is the only OpenRouter reranker that takes images; `cohere/rerank-4-pro`, `cohere/rerank-4-fast`, `cohere/rerank-v3.5`, `qwen/qwen3-reranker-8b`, `voyageai/rerank-2.5` and `voyageai/rerank-2.5-lite` are text-only and reject a document carrying no text. A document is `{"text", "image"}` here, where vLLM takes a `content` array of parts.
+
+Rerank models are absent from `/v1/models`. List them at `/v1/models?output_modalities=rerank`.
 
 ### Jina AI
 
