@@ -240,11 +240,13 @@ conversion_options:
   images_scale: 2.0               # Image resolution scale factor
   generate_page_images: true      # Include rendered page images
   fetch_remote_images: true       # Fetch external <img src> URLs in HTML/MD
+  infer_furniture: false          # Keep HTML content before the first heading
 ```
 
 - **images_scale**: Scale factor for extracted images. Higher values = better quality but larger size. Typical range: 1.0-3.0.
 - **generate_page_images**: When `true` (default), rendered images of each PDF page are included in the document. Required for `visualize_chunk()` to show visual grounding. When `false`, page images are excluded to reduce document size.
 - **fetch_remote_images**: When `true` (default), HTML and Markdown inputs have their external `<img src="https://...">` URLs fetched and stored as picture bytes. Set `false` for air-gapped ingest. Applies only to `docling-local`. **docling-serve doesn't fetch external `<img>` URLs** (the `ConvertDocumentsOptions` API exposes no equivalent flag, and HTML falls through to docling's `fetch_images=False` default); HTML ingested via docling-serve produces picture items with `picture_data=NULL`. Use `converter: docling-local` if you need image bytes from HTML/Markdown.
+- **infer_furniture**: When `false` (default), everything in an HTML page is document content. When `true`, docling files whatever precedes the first heading as page furniture and leaves it out of the document, which removes site banners and navigation on web pages but also removes an article's lead paragraph and infobox. Applies only to `docling-local`; docling-serve keeps docling's rule, so HTML converted there loses the content before its first heading.
 
 #### External image fetching
 
@@ -261,14 +263,14 @@ Per-image failures (404, timeout, oversized, unreadable) leave that picture as a
 
 **Scope of conversion options across formats:**
 
-| Input | OCR / table options | `images_scale` / `generate_page_images` | `pictures` | `fetch_remote_images` |
-|---|---|---|---|---|
-| `.pdf` | ✅ | ✅ | ✅ | n/a |
-| `.png` / `.jpg` / `.jpeg` / `.bmp` / `.tiff` / `.webp` | ✅ | ✅ | ✅ | n/a |
-| `.html` / `.xhtml` | n/a (markup-based) | n/a | ✅ on embedded pictures | ✅ |
-| `.md` / `.qmd` / `.rmd` | n/a | n/a | ✅ on embedded pictures | ✅ (only `<img>` HTML blocks; native `![alt](url)` syntax is not fetched by docling) |
-| `.docx` / `.pptx` | n/a | n/a | ✅ on embedded pictures | n/a |
-| Other (`.csv`, `.xlsx`, `.adoc`, `.tex`, `.xml`, `.eml`, `.msg`) | n/a | n/a | n/a | n/a |
+| Input | OCR / table options | `images_scale` / `generate_page_images` | `pictures` | `fetch_remote_images` | `infer_furniture` |
+|---|---|---|---|---|---|
+| `.pdf` | ✅ | ✅ | ✅ | n/a | n/a |
+| `.png` / `.jpg` / `.jpeg` / `.bmp` / `.tiff` / `.webp` | ✅ | ✅ | ✅ | n/a | n/a |
+| `.html` / `.xhtml` | n/a (markup-based) | n/a | ✅ on embedded pictures | ✅ | ✅ |
+| `.md` / `.qmd` / `.rmd` | n/a | n/a | ✅ on embedded pictures | ✅ (only `<img>` HTML blocks; native `![alt](url)` syntax is not fetched by docling) | n/a |
+| `.docx` / `.pptx` | n/a | n/a | ✅ on embedded pictures | n/a | n/a |
+| Other (`.csv`, `.xlsx`, `.adoc`, `.tex`, `.xml`, `.eml`, `.msg`) | n/a | n/a | n/a | n/a | n/a |
 
 #### Picture Handling
 

@@ -286,6 +286,34 @@ processing:
     assert cfg.processing.conversion_options.fetch_remote_images is False
 
 
+def test_infer_furniture_default_false():
+    """`infer_furniture` defaults to False and round-trips through YAML."""
+    from haiku.rag.config.models import ConversionOptions
+
+    assert ConversionOptions().infer_furniture is False
+
+    cfg = AppConfig()
+    assert cfg.processing.conversion_options.infer_furniture is False
+
+    data = generate_default_config()
+    assert data["processing"]["conversion_options"]["infer_furniture"] is False
+
+
+def test_infer_furniture_override_via_yaml(tmp_path):
+    """A host can opt back into docling's furniture rule via YAML."""
+    config_file = _write(
+        tmp_path,
+        """
+processing:
+  conversion_options:
+    infer_furniture: true
+""",
+    )
+    data = load_yaml_config(config_file)
+    cfg = AppConfig.model_validate(data)
+    assert cfg.processing.conversion_options.infer_furniture is True
+
+
 def test_analysis_model_defaults_to_none():
     """``AnalysisConfig.model`` is ``None`` by default; consumers resolve via
     ``config.analysis.model or config.qa.model``. Keeps the field semantics

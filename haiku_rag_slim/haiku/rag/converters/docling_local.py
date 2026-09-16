@@ -257,6 +257,7 @@ class DoclingLocalConverter(DocumentConverter):
                     enable_remote_fetch=fetch,
                     source_uri=source_url,
                     headers=headers,
+                    infer_furniture=opts.infer_furniture,
                 ),
             ),
             InputFormat.MD: MarkdownFormatOption(
