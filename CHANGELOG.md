@@ -14,8 +14,9 @@
   `processing.conversion_options.infer_furniture: true` restores docling's rule
   that files it as page furniture. docling-local only.
 - `AnalysisCapability` merged into `RAGCapability`: tools `search`, `execute_code`
-  and `cite`; `RAGState.executions`; `request_limit` default 30. State stays under
-  the `rag` namespace.
+  and `cite`; `RAGState.executions`; `request_limit` default 30; the analysis
+  capability's instructions, without the refusal instruction for questions the
+  retrieved documents do not address. State stays under the `rag` namespace.
 - `analysis.max_executions` moved to `qa.max_executions`; `analysis.code_timeout`
   and `analysis.max_output_chars` moved to `sandbox.code_timeout` and
   `sandbox.max_output_chars`. The `analysis` config block is gone.
