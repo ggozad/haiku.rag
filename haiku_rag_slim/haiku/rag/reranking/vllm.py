@@ -4,7 +4,7 @@ import httpx
 
 from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk
-from haiku.rag.utils import vllm_base_url
+from haiku.rag.utils import image_media_type, vllm_base_url
 
 
 def _document(chunk: Chunk) -> str | dict:
@@ -14,7 +14,7 @@ def _document(chunk: Chunk) -> str | dict:
     if data is None:
         return chunk.content
 
-    mime = "image/jpeg" if data.startswith(b"\xff\xd8") else "image/png"
+    mime = image_media_type(data)
     encoded = base64.b64encode(data).decode("ascii")
     parts: list[dict] = [
         {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{encoded}"}}

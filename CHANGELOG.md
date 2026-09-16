@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- Image data URIs carry the media type sniffed from the bytes. JPEG, GIF and
+  WebP pictures were declared `image/png` to the `vllm` and `cohere` embedders.
 - FRAMES caches the images its articles reference and inlines them as `data:`
   URIs, so the corpus carries picture bytes. Parsoid writes protocol-relative
   `//host/path`, which docling cannot resolve, so every picture was stored

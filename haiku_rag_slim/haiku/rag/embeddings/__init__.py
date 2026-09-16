@@ -80,9 +80,12 @@ class EmbedderWrapper:
 
 
 def _to_data_uri(image: "bytes | PILImage.Image") -> str:
-    """Render an image as a ``data:image/png;base64,...`` URI."""
+    """Render an image as a ``data:<media type>;base64,...`` URI."""
     if isinstance(image, bytes):
-        return f"data:image/png;base64,{base64.b64encode(image).decode('ascii')}"
+        from haiku.rag.utils import image_media_type
+
+        encoded = base64.b64encode(image).decode("ascii")
+        return f"data:{image_media_type(image)};base64,{encoded}"
 
     from PIL import Image as PILImageModule
 

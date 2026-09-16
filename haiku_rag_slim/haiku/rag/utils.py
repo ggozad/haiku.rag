@@ -117,6 +117,20 @@ def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
     return dot_product / (norm1 * norm2)
 
 
+def image_media_type(data: bytes) -> str:
+    """Media type of raw image bytes, PNG for anything unrecognized.
+
+    Labels; never rejects.
+    """
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith(b"GIF87a") or data.startswith(b"GIF89a"):
+        return "image/gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return "image/png"
+
+
 def image_binary_content(data: bytes) -> "BinaryContent":
     """Wrap raw image bytes as BinaryContent with the sniffed media type."""
     from io import BytesIO

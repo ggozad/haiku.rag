@@ -1047,3 +1047,27 @@ async def test_cohere_embed_text_and_image_end_to_end():
     image_vec = await embedder.embed_image(Image.new("RGB", (64, 64), (255, 0, 0)))
     assert len(image_vec) == 1536
     assert any(abs(x) > 1e-6 for x in image_vec), "image embedding is all zeros"
+
+
+@pytest.mark.parametrize(
+    "data,expected",
+    [
+        (b"\x89PNG\r\n\x1a\npayload", "image/png"),
+        (b"\xff\xd8\xffpayload", "image/jpeg"),
+        (b"GIF89apayload", "image/gif"),
+        (b"RIFF\x00\x00\x00\x00WEBPVP8 ", "image/webp"),
+        (b"not an image at all", "image/png"),
+    ],
+)
+def test_image_media_type(data, expected):
+    from haiku.rag.utils import image_media_type
+
+    assert image_media_type(data) == expected
+
+
+def test_to_data_uri_labels_jpeg_bytes():
+    """A JPEG is declared as JPEG; the same URI reaches Cohere and vLLM."""
+    from haiku.rag.embeddings import _to_data_uri
+
+    assert _to_data_uri(b"\xff\xd8\xffpayload").startswith("data:image/jpeg;base64,")
+    assert _to_data_uri(b"\x89PNG\r\n\x1a\nx").startswith("data:image/png;base64,")
