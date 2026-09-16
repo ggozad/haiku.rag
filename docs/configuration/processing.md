@@ -314,7 +314,7 @@ Three independent settings drive ingest, retrieval, and QA:
 | Setting | Question it answers | Values |
 |---|---|---|
 | `processing.pictures` | Generate and/or describe pictures at ingest? | `none` / `description` / `image` (default) |
-| `embeddings.model.multimodal` | Can the embedder index image content? | `false` (default, text-only) / `true` (supported on `vllm`, `voyageai`, `cohere`) |
+| `embeddings.model.multimodal` | Can the embedder index image content? | `false` (default, text-only) / `true` (supported on `vllm`, `openrouter`, `voyageai`, `cohere`) |
 | `qa.model.vision` | Can the QA model interpret images? | `false` / `true` (default) |
 
 The Embedder column below is driven by `embeddings.model.multimodal`, not the provider name — a vision-capable model under a text-only configuration still indexes no images, and an image-only document then produces zero chunks. See [Multimodal embedders](providers.md#multimodal-embedders).

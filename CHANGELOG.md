@@ -5,13 +5,19 @@
 ### Added
 
 - `.eml` and `.msg` files convert through docling's email backend.
+- `provider: openrouter` under `embeddings.model`, text and `multimodal: true`.
+  `base_url` defaults to `https://openrouter.ai/api/v1`, the key to
+  `OPENROUTER_API_KEY`. `doctor` reports it missing.
+- An embedding whose length is not `embeddings.model.vector_dim` raises on the
+  `vllm` and `openrouter` providers, naming the model and the returned length.
 
 ### Fixed
 
 - Rerank candidates with nothing to score are skipped. `RerankerBase._scoreable`
   is text for every reranker, text or picture bytes for `vllm`.
 - Image data URIs carry the media type sniffed from the bytes. JPEG, GIF and
-  WebP pictures were declared `image/png` to the `vllm` and `cohere` embedders.
+  WebP pictures were declared `image/png` to the `vllm`, `openrouter` and
+  `cohere` embedders.
 - FRAMES caches the images its articles reference and inlines them as `data:`
   URIs, so the corpus carries picture bytes. Parsoid writes protocol-relative
   `//host/path`, which docling cannot resolve, so every picture was stored

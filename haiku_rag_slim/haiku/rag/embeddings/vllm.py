@@ -22,6 +22,10 @@ if TYPE_CHECKING:
 
 
 class VLLMMultimodalEmbedder(EmbedderWrapper):
+    # Subclasses serving another endpoint override these; errors quote them.
+    _service_name = "vLLM"
+    _connect_hint = "Ensure the service is running."
+
     def __init__(
         self,
         model_name: str,
@@ -63,24 +67,35 @@ class VLLMMultimodalEmbedder(EmbedderWrapper):
             payload = response.json()
         except httpx.ConnectError as e:
             raise ValueError(
-                f"Could not connect to vLLM at {self._base_url}. "
-                f"Ensure the service is running. Error: {e}"
+                f"Could not connect to {self._service_name} at {self._base_url}. "
+                f"{self._connect_hint} Error: {e}"
             ) from e
         except httpx.TimeoutException as e:
             raise ValueError(
-                f"Request to vLLM timed out after {self._timeout}s. Error: {e}"
+                f"Request to {self._service_name} timed out after "
+                f"{self._timeout}s. Error: {e}"
             ) from e
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 raise ValueError(
-                    "Authentication failed against vLLM. Check the API key."
+                    f"Authentication failed against {self._service_name}. "
+                    "Check the API key."
                 ) from e
-            raise ValueError(f"HTTP error from vLLM: {e}") from e
+            raise ValueError(f"HTTP error from {self._service_name}: {e}") from e
 
         data = payload.get("data") or []
         if not data:
-            raise ValueError(f"vLLM returned no embeddings: {payload}")
-        return [list(d["embedding"]) for d in data]
+            raise ValueError(f"{self._service_name} returned no embeddings: {payload}")
+        rows = [list(d["embedding"]) for d in data]
+        for row in rows:
+            if len(row) != self._vector_dim:
+                raise ValueError(
+                    f"{self._service_name} model '{self._model_name}' returned a "
+                    f"{len(row)}-dimensional embedding, but "
+                    f"embeddings.model.vector_dim is {self._vector_dim}. Set "
+                    "vector_dim to the model's own dimension."
+                )
+        return rows
 
     async def embed_query(self, text: str) -> list[float]:
         rows = await self._post(
@@ -101,27 +116,29 @@ class VLLMMultimodalEmbedder(EmbedderWrapper):
             }
         )
 
+    def _image_request(self, image: "bytes | PILImage.Image") -> dict[str, Any]:
+        """Request body that embeds one picture."""
+        return {
+            "model": self._model_name,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": _to_data_uri(image)},
+                        }
+                    ],
+                }
+            ],
+            "encoding_format": "float",
+        }
+
     async def embed_image(self, image: "bytes | PILImage.Image") -> list[float]:
         if not self.supports_images:
             raise NotImplementedError(
-                "This vLLM embedder is text-only. Set "
+                f"This {self._service_name} embedder is text-only. Set "
                 "embeddings.model.multimodal: true to embed images."
             )
-        rows = await self._post(
-            {
-                "model": self._model_name,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": _to_data_uri(image)},
-                            }
-                        ],
-                    }
-                ],
-                "encoding_format": "float",
-            }
-        )
+        rows = await self._post(self._image_request(image))
         return rows[0]

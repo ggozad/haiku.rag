@@ -80,16 +80,17 @@ class EmbeddingModelConfig(ConfigModel):
     """Configuration for an embedding model.
 
     Attributes:
-        provider: Model provider (ollama, openai, voyageai, cohere, sentence-transformers, vllm)
+        provider: Model provider (ollama, openai, openrouter, voyageai, cohere,
+            sentence-transformers, vllm)
         name: Model name/identifier
         vector_dim: Vector dimensions produced by the model
         base_url: Optional base URL for OpenAI-compatible servers (vLLM, LM Studio, etc.)
         api_key: Key sent to the endpoint, overriding the provider's own
-            environment variable. Honored on the openai, ollama and vllm
-            providers.
+            environment variable. Honored on the openai, ollama, openrouter and
+            vllm providers.
         multimodal: Whether the model embeds images into the same vector space as
-            text. Supported on the vllm, voyageai, and cohere providers; other
-            providers raise when this is set.
+            text. Supported on the vllm, openrouter, voyageai, and cohere
+            providers; other providers raise when this is set.
     """
 
     provider: str = "ollama"

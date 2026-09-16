@@ -26,6 +26,7 @@ _SAMPLE_LIMIT = 5
 # API providers and the environment variable that carries their key.
 _PROVIDER_ENV_VARS: dict[str, str] = {
     "openai": "OPENAI_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",
     "cohere": "CO_API_KEY",
     "voyageai": "VOYAGE_API_KEY",
@@ -208,8 +209,8 @@ def _classify_unchunked(
                     "a text-only embedder cannot index images."
                 ),
                 remediation=(
-                    "Set embeddings.model.multimodal: true on a vllm, voyageai, or "
-                    "cohere model and rebuild to index images."
+                    "Set embeddings.model.multimodal: true on a vllm, openrouter, "
+                    "voyageai, or cohere model and rebuild to index images."
                 ),
                 details=_sample(sorted(picture_docs)),
             )

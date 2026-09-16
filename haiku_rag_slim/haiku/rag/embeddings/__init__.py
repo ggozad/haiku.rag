@@ -71,7 +71,8 @@ class EmbedderWrapper:
         """
         raise NotImplementedError(
             f"{type(self).__name__} does not support image embedding. Set "
-            "embeddings.model.multimodal: true on a vllm, voyageai, or cohere model."
+            "embeddings.model.multimodal: true on a vllm, openrouter, voyageai, or "
+            "cohere model."
         )
 
     async def aclose(self) -> None:
@@ -160,8 +161,8 @@ async def embed_chunks(
         if not embedder.supports_images:
             raise ValueError(
                 "Picture chunks require a multimodal embedder. Set "
-                "embeddings.model.multimodal: true on a vllm, voyageai, or cohere "
-                "model, or omit picture chunks."
+                "embeddings.model.multimodal: true on a vllm, openrouter, "
+                "voyageai, or cohere model, or omit picture chunks."
             )
         for chunk in picture_chunks:
             picture_embeddings.append(await embedder.embed_image(chunk._picture_data))
@@ -202,7 +203,7 @@ def get_embedder(config: AppConfig | None = None) -> EmbedderWrapper:
     provider = embedding_model.provider
     model_name = embedding_model.name
     vector_dim = embedding_model.vector_dim
-    check_api_key_supported(embedding_model, {"openai", "ollama", "vllm"})
+    check_api_key_supported(embedding_model, {"openai", "ollama", "openrouter", "vllm"})
 
     if embedding_model.multimodal:
         return _get_multimodal_embedder(embedding_model)
@@ -253,6 +254,17 @@ def get_embedder(config: AppConfig | None = None) -> EmbedderWrapper:
             supports_images=False,
         )
 
+    if provider == "openrouter":
+        from haiku.rag.embeddings.openrouter import BASE_URL, OpenRouterEmbedder
+
+        return OpenRouterEmbedder(
+            model_name,
+            vector_dim,
+            base_url=embedding_model.base_url or BASE_URL,
+            api_key=embedding_model.api_key,
+            supports_images=False,
+        )
+
     raise ValueError(f"Unsupported embedding provider: {provider}")
 
 
@@ -280,6 +292,17 @@ def _get_multimodal_embedder(
             supports_images=True,
         )
 
+    if provider == "openrouter":
+        from haiku.rag.embeddings.openrouter import BASE_URL, OpenRouterEmbedder
+
+        return OpenRouterEmbedder(
+            model_name,
+            vector_dim,
+            base_url=embedding_model.base_url or BASE_URL,
+            api_key=embedding_model.api_key,
+            supports_images=True,
+        )
+
     if provider == "voyageai":
         from haiku.rag.embeddings.voyageai import VoyageMultimodalEmbedder
 
@@ -292,5 +315,6 @@ def _get_multimodal_embedder(
 
     raise ValueError(
         f"Provider '{provider}' does not support multimodal embedding. Set "
-        "embeddings.model.multimodal: true on a vllm, voyageai, or cohere model."
+        "embeddings.model.multimodal: true on a vllm, openrouter, voyageai, or "
+        "cohere model."
     )
