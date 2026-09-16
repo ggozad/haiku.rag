@@ -1,7 +1,8 @@
 import os
 
-from haiku.rag.reranking.vllm import VLLMReranker, data_uri
+from haiku.rag.reranking.vllm import VLLMReranker
 from haiku.rag.store.models.chunk import Chunk
+from haiku.rag.utils import image_data_uri
 
 BASE_URL = "https://openrouter.ai/api/v1"
 API_KEY_ENV = "OPENROUTER_API_KEY"
@@ -33,7 +34,7 @@ class OpenRouterReranker(VLLMReranker):
         if data is None:
             return chunk.content
 
-        document: dict = {"image": data_uri(data)}
+        document: dict = {"image": image_data_uri(data)}
         if chunk.content:
             document["text"] = chunk.content
         return document

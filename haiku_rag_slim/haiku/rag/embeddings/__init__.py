@@ -8,7 +8,7 @@ from pydantic_ai.providers.ollama import OllamaProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from haiku.rag.config import AppConfig, get_config
-from haiku.rag.utils import check_api_key_supported, vllm_base_url
+from haiku.rag.utils import check_api_key_supported, image_data_uri, vllm_base_url
 
 if TYPE_CHECKING:
     from PIL import Image as PILImage
@@ -83,10 +83,7 @@ class EmbedderWrapper:
 def _to_data_uri(image: "bytes | PILImage.Image") -> str:
     """Render an image as a ``data:<media type>;base64,...`` URI."""
     if isinstance(image, bytes):
-        from haiku.rag.utils import image_media_type
-
-        encoded = base64.b64encode(image).decode("ascii")
-        return f"data:{image_media_type(image)};base64,{encoded}"
+        return image_data_uri(image)
 
     from PIL import Image as PILImageModule
 

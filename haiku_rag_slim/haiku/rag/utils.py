@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import math
 import sys
 from collections.abc import Awaitable
@@ -129,6 +130,12 @@ def image_media_type(data: bytes) -> str:
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return "image/webp"
     return "image/png"
+
+
+def image_data_uri(data: bytes) -> str:
+    """Raw image bytes as a ``data:`` URI carrying their sniffed media type."""
+    encoded = base64.b64encode(data).decode("ascii")
+    return f"data:{image_media_type(data)};base64,{encoded}"
 
 
 def image_binary_content(data: bytes) -> "BinaryContent":

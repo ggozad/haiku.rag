@@ -1221,7 +1221,9 @@ def test_image_media_type(data, expected):
 def test_to_data_uri_labels_jpeg_bytes():
     """A JPEG is declared as JPEG; the same URI reaches Cohere and vLLM."""
     from haiku.rag.embeddings import _to_data_uri
+    from haiku.rag.utils import image_data_uri
 
+    assert image_data_uri(b"GIF89a") == "data:image/gif;base64,R0lGODlh"
     assert _to_data_uri(b"\xff\xd8\xffpayload").startswith("data:image/jpeg;base64,")
     assert _to_data_uri(b"\x89PNG\r\n\x1a\nx").startswith("data:image/png;base64,")
 

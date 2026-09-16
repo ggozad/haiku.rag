@@ -1,16 +1,8 @@
-import base64
-
 import httpx
 
 from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk
-from haiku.rag.utils import image_media_type, vllm_base_url
-
-
-def data_uri(data: bytes) -> str:
-    """Picture bytes as a ``data:`` URI carrying their sniffed media type."""
-    encoded = base64.b64encode(data).decode("ascii")
-    return f"data:{image_media_type(data)};base64,{encoded}"
+from haiku.rag.utils import image_data_uri, vllm_base_url
 
 
 class VLLMReranker(RerankerBase):
@@ -42,7 +34,7 @@ class VLLMReranker(RerankerBase):
             return chunk.content
 
         parts: list[dict] = [
-            {"type": "image_url", "image_url": {"url": data_uri(data)}}
+            {"type": "image_url", "image_url": {"url": image_data_uri(data)}}
         ]
         if chunk.content:
             parts.append({"type": "text", "text": chunk.content})
