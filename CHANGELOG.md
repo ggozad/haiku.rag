@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- Rerank candidates with nothing to score are skipped. `RerankerBase._scoreable`
+  is text for every reranker, text or picture bytes for `vllm`.
 - Image data URIs carry the media type sniffed from the bytes. JPEG, GIF and
   WebP pictures were declared `image/png` to the `vllm` and `cohere` embedders.
 - FRAMES caches the images its articles reference and inlines them as `data:`

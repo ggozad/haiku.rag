@@ -644,3 +644,86 @@ def test_installed_reranker_extra_is_importable():
     import haiku.rag.reranking.cohere as cohere_module
 
     assert cohere_module.CohereReranker is not None
+
+
+def _capturing_rerank_client(monkeypatch, captured, n_results: int):
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {
+                "results": [
+                    {"index": i, "relevance_score": 1.0 - i / 10}
+                    for i in range(n_results)
+                ]
+            }
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def post(self, url, json, headers):
+            captured["url"] = url
+            captured["json"] = json
+            captured["headers"] = headers
+            return FakeResponse()
+
+        async def aclose(self):
+            pass
+
+    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+
+
+@pytest.mark.asyncio
+async def test_vllm_reranker_skips_chunks_with_nothing_to_score(monkeypatch):
+    from haiku.rag.reranking.vllm import VLLMReranker
+
+    captured: dict = {}
+    _capturing_rerank_client(monkeypatch, captured, 1)
+
+    empty = Chunk(content="", document_id="b")
+    scored = Chunk(content="Paris is the capital", document_id="a")
+
+    reranker = VLLMReranker(model="m", base_url="http://localhost:8000")
+    ranked = await reranker.rerank("q", [empty, scored])
+
+    assert captured["json"]["documents"] == ["Paris is the capital"]
+    assert [c.document_id for c, _ in ranked] == ["a"]
+
+
+@pytest.mark.asyncio
+async def test_base_reranker_filters_unscoreable_before_dispatch():
+    """Every backend indexes its results back into the list it was given, so
+    the filter happens once, before dispatch."""
+    received: list[list[Chunk]] = []
+
+    class StubReranker(RerankerBase):
+        async def _rerank(self, query, chunks, top_n=10):
+            received.append(chunks)
+            return [(chunk, 1.0) for chunk in chunks]
+
+    keep = Chunk(content="Paris is the capital", document_id="a")
+    empty = Chunk(content="", document_id="b")
+    ranked = await StubReranker().rerank("q", [keep, empty])
+
+    assert [c.document_id for c in received[0]] == ["a"]
+    assert [c.document_id for c, _ in ranked] == ["a"]
+
+
+@pytest.mark.asyncio
+async def test_base_reranker_cannot_score_a_picture_without_text():
+    """A text-only backend has nothing to send for a picture chunk; the
+    multimodal ones override this."""
+
+    class StubReranker(RerankerBase):
+        async def _rerank(self, query, chunks, top_n=10):
+            return [(chunk, 1.0) for chunk in chunks]
+
+    picture = Chunk(content="", document_id="p")
+    picture._picture_data = b"\x89PNG\r\n\x1a\n"
+    assert await StubReranker().rerank("q", [picture]) == []
+
+    from haiku.rag.reranking.vllm import VLLMReranker
+
+    assert VLLMReranker(model="m", base_url="http://x:8000")._scoreable(picture)

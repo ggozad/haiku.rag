@@ -7,9 +7,18 @@ class RerankerBase:
     async def rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10
     ) -> list[tuple[Chunk, float]]:
+        chunks = [chunk for chunk in chunks if self._scoreable(chunk)]
         if not chunks:
             return []
         return await self._rerank(query, chunks, top_n)
+
+    def _scoreable(self, chunk: Chunk) -> bool:
+        """Whether this reranker has anything to send for `chunk`.
+
+        A picture chunk has no text, and its bytes are attached only under
+        reranking.multimodal, so it can arrive with nothing to score.
+        """
+        return bool(chunk.content)
 
     async def _rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10

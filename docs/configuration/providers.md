@@ -522,7 +522,7 @@ reranking:
     base_url: http://localhost:8001/v1
 ```
 
-Picture chunks are sent as image documents (base64 data URIs) alongside plain text documents in the same rerank request. The flag is supported on the vllm provider only, and the served model must accept multimodal inputs.
+Picture chunks are sent as image documents (base64 data URIs) alongside plain text documents in the same rerank request. A chunk with nothing to score, meaning no text and no picture bytes attached, is not sent to any reranker. The flag is supported on the vllm provider only, and the served model must accept multimodal inputs.
 
 ### Jina AI
 

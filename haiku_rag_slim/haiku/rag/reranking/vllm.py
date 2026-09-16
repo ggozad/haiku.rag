@@ -42,6 +42,9 @@ class VLLMReranker(RerankerBase):
     async def aclose(self) -> None:
         await self._client.aclose()
 
+    def _scoreable(self, chunk: Chunk) -> bool:
+        return bool(chunk.content or chunk._picture_data)
+
     async def _rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10
     ) -> list[tuple[Chunk, float]]:
