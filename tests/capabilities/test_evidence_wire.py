@@ -278,7 +278,7 @@ class Deps:
 
 def rag_and_compactor(temp_db_path):
     return (
-        create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False),
+        create_rag(db_path=temp_db_path, config=AppConfig()),
         create_compaction(),
     )
 
@@ -319,7 +319,7 @@ def resuming_deps(question: int = 0) -> Deps:
 @pytest.mark.asyncio
 async def test_without_the_compactor_the_history_is_untouched(temp_db_path):
     """Omission is the switch: there is no flag to test, only absence."""
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     wire: list[list[Any]] = []
 
     async def model(messages, _info):
@@ -526,9 +526,7 @@ def _burst_result() -> SearchResult:
 
 async def _fanout_question_then_another(temp_db_path, cite: bool) -> list[list[Any]]:
     """Question 1 fans out over one picture chunk; question 2 follows compacted."""
-    rag = create_rag(
-        db_path=temp_db_path, config=AppConfig(), defer_loading=False, vision=True
-    )
+    rag = create_rag(db_path=temp_db_path, config=AppConfig(), vision=True)
     client = AsyncMock()
     client.search.side_effect = [[_burst_result()], [_burst_result()]]
     client.expand_context.side_effect = lambda results: results
@@ -1032,7 +1030,7 @@ async def test_compaction_proceeds_when_the_earlier_question_used_no_tools(
 ):
     """A question answered without the capability has no evidence to lose, so a
     host that carries no state is not refused for it."""
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     compactor = create_compaction()
     wire: list[list[Any]] = []
 

@@ -20,6 +20,8 @@
 - `analysis.max_executions` moved to `qa.max_executions`; `analysis.code_timeout`
   and `analysis.max_output_chars` moved to `sandbox.code_timeout` and
   `sandbox.max_output_chars`. The `analysis` config block is gone.
+- `create_capability` and the `RAGCapability` agent spec default to
+  `defer_loading=False`.
 
 ### Removed
 

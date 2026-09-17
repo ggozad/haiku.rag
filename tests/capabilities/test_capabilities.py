@@ -63,7 +63,7 @@ def test_rag_capability_api(temp_db_path):
 
     assert isinstance(capability, RAGCapability)
     assert capability.id == "haiku-rag"
-    assert capability.defer_loading is True
+    assert capability.defer_loading is False
     assert set(capability.get_toolset().tools) == {"search", "execute_code", "cite"}
     toolset = capability.get_toolset()
     assert toolset.max_retries == 3
@@ -203,7 +203,6 @@ async def test_capability_instructions_are_injected_once(temp_db_path):
             create_rag(
                 db_path=temp_db_path,
                 config=config,
-                defer_loading=False,
             )
         ],
     )
@@ -238,7 +237,6 @@ async def test_request_limit_removes_the_capability_tools_but_not_the_hosts(
     capability = create_rag(
         db_path=temp_db_path,
         config=AppConfig(),
-        defer_loading=False,
         request_limit=1,
     )
     agent = Agent(
@@ -296,6 +294,7 @@ async def test_deferred_request_limit_starts_after_capability_load(temp_db_path)
             create_rag(
                 db_path=temp_db_path,
                 config=AppConfig(),
+                defer_loading=True,
                 request_limit=1,
             )
         ],
@@ -696,9 +695,7 @@ async def test_failed_tool_reaches_the_model_and_the_run_continues(temp_db_path)
     agent = Agent(
         FunctionModel(model_function),
         deps_type=Deps,
-        capabilities=[
-            create_rag(db_path=temp_db_path, config=config, defer_loading=False)
-        ],
+        capabilities=[create_rag(db_path=temp_db_path, config=config)],
     )
 
     result = await agent.run("question", deps=Deps())
@@ -730,9 +727,7 @@ async def test_execute_code_tool_runs_the_program_and_records_it(rag_db):
     agent = Agent(
         FunctionModel(model_function),
         deps_type=Deps,
-        capabilities=[
-            create_rag(db_path=rag_db, config=AppConfig(), defer_loading=False)
-        ],
+        capabilities=[create_rag(db_path=rag_db, config=AppConfig())],
     )
     deps = Deps()
 
@@ -841,7 +836,7 @@ async def test_spent_search_budget_is_announced_but_keeps_the_tool(rag_db):
     agent = Agent(
         FunctionModel(model_function),
         deps_type=Deps,
-        capabilities=[create_rag(db_path=rag_db, config=config, defer_loading=False)],
+        capabilities=[create_rag(db_path=rag_db, config=config)],
     )
 
     result = await agent.run("question", deps=Deps())
@@ -957,7 +952,6 @@ async def test_exhausted_run_can_still_register_citations(rag_db):
     capability = create_rag(
         db_path=rag_db,
         config=config,
-        defer_loading=False,
         request_limit=1,
     )
     agent = Agent(
@@ -988,7 +982,6 @@ async def test_cite_tool_is_withdrawn_after_the_grace_window(temp_db_path):
     capability = create_rag(
         db_path=temp_db_path,
         config=AppConfig(),
-        defer_loading=False,
         request_limit=2,
     )
     tool_defs = [
@@ -1072,7 +1065,6 @@ async def test_native_agent_composition_initializes_host_state(temp_db_path):
     capability = create_rag(
         db_path=temp_db_path,
         config=AppConfig(),
-        defer_loading=False,
     )
     deps = Deps()
     agent = Agent(
@@ -1116,7 +1108,9 @@ async def test_deferred_capability_loads_native_tools(temp_db_path):
     agent = Agent(
         FunctionModel(model_function),
         deps_type=Deps,
-        capabilities=[create_rag(db_path=temp_db_path, config=AppConfig())],
+        capabilities=[
+            create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=True)
+        ],
     )
 
     result = await agent.run("Use RAG", deps=Deps())
@@ -1170,7 +1164,7 @@ async def _stub_search(self, query: str, _limit: int | None, _run_step: int) -> 
 @pytest.mark.asyncio
 async def test_a_question_takes_its_own_identity(temp_db_path):
     """Identity is derived from the conversation, so no counter is shared."""
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
 
     async def model(_messages, _info):
         return ModelResponse(parts=[TextPart("answer")])
@@ -1191,7 +1185,7 @@ async def test_a_question_takes_its_own_identity(temp_db_path):
 async def test_a_resumption_keeps_the_identity_of_the_question_in_progress(
     temp_db_path,
 ):
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
 
     async def model(_messages, _info):
         return ModelResponse(parts=[TextPart("answer")])
@@ -1229,7 +1223,7 @@ async def test_resuming_without_a_stored_identity_fails_instead_of_guessing(
     wrong question, silently. This state is not one the design produces, so it is
     reported rather than repaired.
     """
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
 
     async def model(_messages, _info):  # pragma: no cover - never reached
         return ModelResponse(parts=[TextPart("answer")])
@@ -1253,7 +1247,7 @@ async def test_resuming_without_a_stored_identity_fails_instead_of_guessing(
 @pytest.mark.asyncio
 async def test_citing_after_searching_grounds_the_question(temp_db_path):
     """The whole rule, end to end, with no compactor and no policy capability."""
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     calls = iter(
         [
             [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
@@ -1282,7 +1276,7 @@ async def test_citing_after_searching_grounds_the_question(temp_db_path):
 
 @pytest.mark.asyncio
 async def test_searching_after_citing_leaves_the_question_uncited(temp_db_path):
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     calls = iter(
         [
             [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
@@ -1313,7 +1307,7 @@ async def test_a_citation_in_the_same_request_as_its_search_is_not_current(
     temp_db_path,
 ):
     """Two calls in one response share an epoch, and citing must follow seeing."""
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     calls = iter(
         [
             [
@@ -1344,7 +1338,7 @@ async def test_a_citation_in_the_same_request_as_its_search_is_not_current(
 @pytest.mark.asyncio
 async def test_evidence_cited_in_two_questions_keeps_both_in_the_record(temp_db_path):
     """Occurrences outlive the question that wrote them, through the state dict."""
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     calls = iter(
         [
             [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
@@ -1384,7 +1378,7 @@ async def test_a_run_with_no_prompt_and_no_history_starts_a_question(temp_db_pat
     There is no question in progress to keep an identity for, so nothing is
     missing and the run proceeds with a fresh one.
     """
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
 
     async def model(_messages, _info):
         return ModelResponse(parts=[TextPart("answer")])
@@ -1404,7 +1398,7 @@ async def test_citing_without_searching_grounds_the_question(temp_db_path):
     Epochs count messages and so start above zero, which is what lets a
     declaration made in the first request still beat an empty evidence horizon.
     """
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     calls = iter(
         [
             [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-1")],
@@ -1445,7 +1439,7 @@ async def test_a_host_seeded_record_does_not_pass_for_a_resumption(temp_db_path)
     the state of a question in progress, and answering as question zero would
     silently relabel it.
     """
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
 
     async def model(_messages, _info):  # pragma: no cover - never reached
         return ModelResponse(parts=[TextPart("answer")])
@@ -1472,7 +1466,7 @@ async def test_a_resumption_keeps_the_evidence_the_question_already_gathered(
     A citation after the resumption then records no provenance, and cannot resolve
     against the expanded search result the model actually saw.
     """
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     calls = iter(
         [
             [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
@@ -1576,7 +1570,7 @@ async def test_a_promptless_run_on_a_settled_history_is_a_new_question(temp_db_p
     history ends with the user's own request. Reading either as a continuation
     fails every AG-UI host on its first message.
     """
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
 
     async def model(_messages, _info):
         return ModelResponse(parts=[TextPart("answer")])
@@ -1597,7 +1591,7 @@ async def test_a_promptless_run_on_an_unfinished_tail_is_still_a_continuation(
     temp_db_path,
 ):
     """A suspended run resumes without a prompt, and must keep its question."""
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
 
     async def model(_messages, _info):
         return ModelResponse(parts=[TextPart("answer")])
@@ -1632,7 +1626,7 @@ async def test_a_structured_answer_does_not_leave_the_question_in_progress(
     class Answer(BaseModel):
         text: str
 
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
 
     async def model(_messages, info):
         return ModelResponse(
@@ -1669,7 +1663,7 @@ async def test_a_run_pausing_for_deferred_work_leaves_the_question_in_progress(
     A deferred tool call ends the run with `DeferredToolRequests` rather than an
     answer. Closing the question here would let the resumption relabel it.
     """
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
 
     async def model(_messages, _info):
         return ModelResponse(parts=[ToolCallPart("external_tool", {})])
@@ -1701,7 +1695,7 @@ async def test_a_run_pausing_for_deferred_work_leaves_the_question_in_progress(
 @pytest.mark.asyncio
 async def test_an_answered_question_is_no_longer_in_progress(temp_db_path):
     """The flag is what tells the next run it is asking something new."""
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
 
     async def model(_messages, _info):
         return ModelResponse(parts=[TextPart("answer")])

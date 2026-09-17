@@ -71,7 +71,6 @@ instructions: You are a research assistant with access to a document knowledge b
 capabilities:
   - RAGCapability:
       db_path: /data/kb.lancedb
-      defer_loading: false
   - EvidenceCompactionCapability
   - CitationPolicyCapability
 ```
@@ -100,9 +99,8 @@ agent = Agent.from_file(
 through `deps.state` (see [State](#state)). `Agent.from_file` reads YAML, which needs
 `pydantic-ai-slim[spec]`; `Agent.from_spec` takes a dict and needs no YAML parser.
 
-Set `defer_loading: false` when the agent has nothing else to route to, so the tools
-are visible immediately. Leave it at the default when the model should choose among
-several capabilities.
+The tools are visible immediately. Set `defer_loading: true` when the model should
+choose among several capabilities and load this one on demand.
 
 A `config:` block accepts a whole `AppConfig`, for agents in one process that need
 different databases or embedding models:

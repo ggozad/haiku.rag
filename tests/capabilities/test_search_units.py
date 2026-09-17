@@ -56,7 +56,7 @@ def burst_agent(
     return Agent(
         burst_model(bursts),
         deps_type=Deps,
-        capabilities=[create_rag(db_path=db_path, config=config, defer_loading=False)],
+        capabilities=[create_rag(db_path=db_path, config=config)],
     )
 
 
@@ -153,7 +153,7 @@ async def test_unit_tracking_resets_between_runs(rag_db):
     agent = Agent(
         FunctionModel(model_function),
         deps_type=Deps,
-        capabilities=[create_rag(db_path=rag_db, config=config, defer_loading=False)],
+        capabilities=[create_rag(db_path=rag_db, config=config)],
     )
     deps = Deps()
 

@@ -133,7 +133,6 @@ def _prepare_agent(
     capability = capability_factory(
         db_path=db_path,
         config=config,
-        defer_loading=False,
     )
     if request_limit is not None:
         capability.request_limit = request_limit

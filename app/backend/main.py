@@ -84,7 +84,7 @@ class AppDeps:
     state: dict[str, Any] = field(default_factory=dict)
 
 
-capability = create_capability(config=config, defer_loading=False)
+capability = create_capability(config=config)
 
 agent = Agent(
     get_model(config.qa.model, config),

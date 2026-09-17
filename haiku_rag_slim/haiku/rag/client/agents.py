@@ -66,7 +66,6 @@ async def ask(
     capability = create_capability(
         config=client._config,
         rag=client,
-        defer_loading=False,
     )
     deps = _AgentDeps(
         state={

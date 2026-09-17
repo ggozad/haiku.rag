@@ -43,7 +43,6 @@ def run_chat(
     # reads what `--db PATH` or `--db-name NAME` selected.
     capability = create_capability(
         config=config,
-        defer_loading=False,
         vision=config.qa.model.vision,
     )
 

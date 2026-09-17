@@ -418,7 +418,7 @@ async def _answer(_messages, _info):
 async def test_the_compactor_discovers_the_evidence_capability(temp_db_path):
     """Discovery runs one way through the registry, so nothing needs wiring."""
     compactor = create_compaction()
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     found: list[list[DiscoveredEvidence]] = []
 
     with _spy_discovery(found):
@@ -438,7 +438,7 @@ async def test_the_compactor_discovers_the_evidence_capability(temp_db_path):
 async def test_discovery_sees_the_run_instances_not_the_registered_ones(temp_db_path):
     """A registered capability holds no state; only its per-run copy does."""
     compactor = create_compaction()
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     found: list[list[DiscoveredEvidence]] = []
 
     with _spy_discovery(found):
@@ -457,7 +457,7 @@ def test_two_compactors_fail_fast(temp_db_path):
     They share this capability's id, so pydantic-ai refuses at construction and
     nothing here has to police it.
     """
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
 
     with pytest.raises(UserError, match="haiku-rag-evidence-compaction"):
         Agent(
@@ -490,7 +490,7 @@ async def test_a_deferred_capability_the_model_never_loaded_has_an_empty_record(
     Nothing was retrieved under it, so its record contributes no entries and the
     compactor needs no special case for it.
     """
-    deferred = create_rag(db_path=temp_db_path, config=AppConfig())
+    deferred = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=True)
     found: list[list[DiscoveredEvidence]] = []
 
     with _spy_discovery(found):

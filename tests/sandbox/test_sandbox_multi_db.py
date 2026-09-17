@@ -210,7 +210,7 @@ class TestTheSandboxCoversWhatTheCapabilityCovers:
         await _seed(config, "alpha", ["alpha document about cats"])
 
         capability = create_capability(
-            db_path=tmp_path / "alpha.lancedb", config=AppConfig(), defer_loading=False
+            db_path=tmp_path / "alpha.lancedb", config=AppConfig()
         )
         capability.state = RAGState()
 

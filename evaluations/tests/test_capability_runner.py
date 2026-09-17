@@ -138,7 +138,6 @@ async def test_the_capability_applies_request_limit(tmp_path, override, expected
     capability = create_rag(
         db_path=tmp_path / "rag.lancedb",
         config=AppConfig(),
-        defer_loading=False,
     )
     with patch(
         "evaluations.capability_runner.Agent.run", new_callable=AsyncMock
@@ -257,7 +256,6 @@ async def test_message_history_passed_to_agent_run(tmp_path):
     capability = create_rag(
         db_path=tmp_path / "rag.lancedb",
         config=AppConfig(),
-        defer_loading=False,
     )
     with patch(
         "evaluations.capability_runner.Agent.run", new_callable=AsyncMock
@@ -284,7 +282,6 @@ async def test_conversation_threads_own_messages_across_turns(tmp_path):
     capability = create_rag(
         db_path=tmp_path / "rag.lancedb",
         config=AppConfig(),
-        defer_loading=False,
     )
     histories: list[object] = []
 

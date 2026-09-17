@@ -47,9 +47,7 @@ def prompts_of(messages) -> list[str]:
 
 async def run_with_policy(temp_db_path, responses, *, policy=True, config=None):
     """Answer one question with the given model responses, policy optional."""
-    rag = create_rag(
-        db_path=temp_db_path, config=config or AppConfig(), defer_loading=False
-    )
+    rag = create_rag(db_path=temp_db_path, config=config or AppConfig())
     capabilities: list[Any] = [rag]
     if policy:
         capabilities.append(create_policy())
@@ -160,7 +158,7 @@ async def test_without_the_policy_capability_nothing_is_enforced(temp_db_path):
 
 
 def test_two_policy_capabilities_fail_fast(temp_db_path):
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
 
     async def model(_messages, _info):  # pragma: no cover - never reached
         return ModelResponse(parts=[TextPart("answer")])
@@ -184,7 +182,7 @@ def test_the_policy_state_round_trips():
 @pytest.mark.asyncio
 async def test_a_second_question_can_be_redirected_again(temp_db_path):
     """The redirect fires once per question, not once per conversation."""
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     turns = iter(
         [
             [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
@@ -223,7 +221,7 @@ class StatelessDeps:
 async def test_a_violation_with_nowhere_to_record_it_does_not_fail_the_run(
     temp_db_path,
 ):
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     turns = iter(
         [
             [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
@@ -260,7 +258,7 @@ async def test_a_follow_up_answered_from_retained_evidence_is_enforced(temp_db_p
     still on the wire, whether in a capsule or in full — so requiring a fresh
     evidence outcome let exactly those answers through undeclared.
     """
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     turns = iter(
         [
             [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
@@ -309,7 +307,7 @@ async def test_a_resumed_question_is_not_redirected_twice(temp_db_path):
     Tracking it on the run instance forgot it at the next `for_run`, so resuming an
     interrupted question asked for the citation again.
     """
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     turns = iter(
         [
             [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
@@ -358,7 +356,7 @@ async def test_a_user_quoting_the_redirect_does_not_suppress_enforcement(temp_db
     Matching the wording let a question that merely mentioned it pass as already
     asked, which silently switches enforcement off.
     """
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     turns = iter(
         [
             [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
@@ -398,7 +396,7 @@ async def test_a_structured_output_answer_does_not_escape_enforcement(temp_db_pa
     Treating every tool call as intermediate let a model search, skip citing, emit
     its structured answer and finish with neither a redirect nor a violation.
     """
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     turns = iter(
         [
             [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
@@ -444,7 +442,7 @@ async def test_a_question_asked_once_and_still_undeclared_is_recorded(temp_db_pa
     and then finished — with the cite tool possibly gone by that point — was neither
     redirected again nor recorded anywhere.
     """
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     turns = iter(
         [
             [ToolCallPart("search", {"query": "supervisor"}, "call-1")],

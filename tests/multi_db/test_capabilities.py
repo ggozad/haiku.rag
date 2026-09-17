@@ -27,7 +27,7 @@ class TestAskAcrossDatabases:
         await _seed(config, "beta", ["beta document about cats"])
 
         async with HaikuRAG(config=config) as rag:
-            capability = create_capability(config=config, rag=rag, defer_loading=False)
+            capability = create_capability(config=config, rag=rag)
             capability.state = RAGState(sources=["alpha"])
 
             formatted = await capability._search("cats", 10, 1)
@@ -44,7 +44,7 @@ class TestAskAcrossDatabases:
         await _seed(config, "beta", ["beta document about cats"])
 
         async with HaikuRAG(config=config) as rag:
-            capability = create_capability(config=config, rag=rag, defer_loading=False)
+            capability = create_capability(config=config, rag=rag)
             capability.state = RAGState()
 
             formatted = await capability._search("cats", 10, 1)
@@ -68,7 +68,7 @@ class TestStandaloneCapabilities:
         await _seed(config, "alpha", ["alpha document about cats"])
         await _seed(config, "beta", ["beta document about cats"])
 
-        capability = create_capability(config=config, defer_loading=False)
+        capability = create_capability(config=config)
         assert capability.scope.names == ("alpha", "beta")
         run = await capability.for_run(make_context(Deps()))
         try:
@@ -88,7 +88,7 @@ class TestStandaloneCapabilities:
         await _seed(config, "alpha", ["alpha document about cats"])
         await _seed(config, "beta", ["beta document about cats"])
 
-        capability = create_capability(config=config, defer_loading=False)
+        capability = create_capability(config=config)
         run = await capability.for_run(make_context(Deps()))
         try:
             sandbox = await run._ensure_sandbox()
@@ -105,7 +105,7 @@ class TestStandaloneCapabilities:
         config = _config(tmp_path, ["alpha"])
         await _seed(config, "alpha", ["alpha document about cats"])
 
-        capability = create_capability(config=config, defer_loading=False)
+        capability = create_capability(config=config)
         rag = await capability._ensure_rag()
         try:
             assert rag.source == "alpha"
@@ -122,7 +122,7 @@ class TestTheSandboxAcrossDatabases:
         await _seed(config, "beta", ["beta document about cats"])
 
         async with HaikuRAG(config=config) as rag:
-            capability = create_capability(config=config, rag=rag, defer_loading=False)
+            capability = create_capability(config=config, rag=rag)
             capability.state = RAGState(sources=["alpha"])
 
             formatted = await capability._search("cats", 10, 1)
@@ -148,9 +148,7 @@ class TestScopingACapabilityToASubset:
         await _seed(config, "alpha", ["alpha document about cats"])
         await _seed(config, "beta", ["beta document about cats"])
 
-        capability = create_capability(
-            config=config, sources=["alpha"], defer_loading=False
-        )
+        capability = create_capability(config=config, sources=["alpha"])
         assert capability.scope.names == ("alpha",)
         run = await capability.for_run(make_context(Deps()))
         try:
@@ -170,9 +168,7 @@ class TestScopingACapabilityToASubset:
         await _seed(config, "alpha", ["alpha document about cats"])
         await _seed(config, "beta", ["beta document about cats"])
 
-        capability = create_capability(
-            config=config, sources=["alpha"], defer_loading=False
-        )
+        capability = create_capability(config=config, sources=["alpha"])
         run = await capability.for_run(make_context(Deps()))
         try:
             sandbox = await run._ensure_sandbox()
@@ -194,9 +190,7 @@ class TestScopingACapabilityToASubset:
         await _seed(config, "alpha", ["alpha document about cats"])
         await _seed(config, "beta", ["beta document about cats"])
 
-        capability = create_capability(
-            config=config, sources=["alpha"], defer_loading=False
-        )
+        capability = create_capability(config=config, sources=["alpha"])
         deps = Deps(state={"rag": RAGState(sources=["beta"]).model_dump(mode="json")})
         run = await capability.for_run(make_context(deps))
         try:
@@ -333,7 +327,7 @@ class TestLendingANamedClient:
 
         # What `run_chat` builds: the capability's own scope is the set, and
         # the lent client is what narrows it.
-        capability = create_capability(config=config, defer_loading=False)
+        capability = create_capability(config=config)
 
         async with HaikuRAG(config=config, sources=["alpha"]) as client:
             # What `ChatApp.on_mount` does.

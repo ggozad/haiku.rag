@@ -35,7 +35,7 @@ async def main(db_path: str) -> None:
     agent = Agent(
         "anthropic:claude-haiku-4-5-20251001",
         capabilities=[
-            rag(db_path=Path(db_path), defer_loading=False),
+            rag(db_path=Path(db_path)),
             compaction(),
             citation_policy(),
         ],
