@@ -84,6 +84,8 @@ class DatasetSpec:
     live: bool = False
     compaction: bool = False
     experiment_metadata: dict[str, Any] | None = None
+    # The case-metadata key two runs of this dataset pair on.
+    pair_key: str = "question_id"
 
     def uses_configured_databases(
         self, config: AppConfig, override_path: Path | None = None

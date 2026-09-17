@@ -1,7 +1,7 @@
 import asyncio
 import os
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import typer
@@ -13,11 +13,13 @@ from evaluations.artifacts import download_dataset_db, upload_dataset_db
 from evaluations.config import DatasetSpec
 from evaluations.datasets import DATASETS
 from evaluations.experiment import code_revision, config_hash
+from evaluations.pairing import check_pair_rows, orient, pair_outcomes, render
 from evaluations.population import populate_db
 from evaluations.preflight import run_preflight
 from evaluations.qa import run_live_qa_benchmark, run_qa_benchmark
 from evaluations.registry import Registry, default_registry_path, launch_record
 from evaluations.retrieval import run_retrieval_benchmark
+from evaluations.traces import case_outcomes, query_logfire
 from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.logging import configure_cli_logging
@@ -371,6 +373,62 @@ def arms_void(
         console.print(str(error), style="red")
         raise typer.Exit(code=1) from None
     console.print(f"{name} marked void: {reason}")
+
+
+@arms_app.command("pair")
+def arms_pair(a: str, b: str, registry: Path | None = REGISTRY_OPTION) -> None:
+    """The standard paired table for two registered arms. Treated and baseline
+    come from the recorded comparator, never from argument order."""
+    store = _registry(registry)
+    records = []
+    for name in (a, b):
+        record = store.get(name)
+        if record is None:
+            console.print(f"no arm named {name}", style="red")
+            raise typer.Exit(code=1)
+        records.append(record)
+    try:
+        treated, baseline = orient(records[0], records[1])
+    except ValueError as error:
+        console.print(str(error), style="red")
+        raise typer.Exit(code=1) from None
+    problems = check_pair_rows(treated, baseline)
+    if problems:
+        for problem in problems:
+            console.print(problem, style="red")
+        raise typer.Exit(code=1)
+    spec = DATASETS.get(treated.dataset)
+    if spec is None:
+        console.print(f"unknown dataset {treated.dataset}", style="red")
+        raise typer.Exit(code=1)
+    started = min(
+        datetime.fromisoformat(record.started_at) for record in (treated, baseline)
+    )
+    since = (
+        (started - timedelta(hours=1)).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    )
+    outcomes = {
+        record.name: case_outcomes(
+            record.trace_id or "",
+            spec.pair_key,
+            query=query_logfire,
+            min_timestamp=since,
+        )
+        for record in (treated, baseline)
+    }
+    result = pair_outcomes(
+        spec.pair_key,
+        treated.name,
+        outcomes[treated.name],
+        baseline.name,
+        outcomes[baseline.name],
+    )
+    console.print(
+        render(result, decision_rule=treated.decision_rule),
+        soft_wrap=True,
+        highlight=False,
+        markup=False,
+    )
 
 
 @arms_app.command("export")

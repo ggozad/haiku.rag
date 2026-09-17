@@ -63,6 +63,11 @@ class ArmSpec(BaseModel):
         return argv + list(self.flags)
 
 
+def same_commit(a: str, b: str) -> bool:
+    """Whether two sha prefixes name one commit."""
+    return a.startswith(b) or b.startswith(a)
+
+
 _PATH_FIELDS = ("worktree", "config", "db", "filter_ids", "smoke_ids", "comparator")
 
 

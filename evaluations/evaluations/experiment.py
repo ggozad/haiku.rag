@@ -106,6 +106,7 @@ def build_experiment_metadata(
     capability_config: ModelConfig | None = None,
     capability_model_source: "CapabilityModelSource | None" = None,
     document_filter: str | None = None,
+    pair_key: str | None = None,
 ) -> dict[str, Any]:
     """Build experiment metadata for Logfire tracking.
 
@@ -130,6 +131,7 @@ def build_experiment_metadata(
         "sandbox_code_timeout": config.sandbox.code_timeout,
         "sandbox_max_output_chars": config.sandbox.max_output_chars,
         "document_filter": document_filter,
+        "pair_key": pair_key,
         "config_hash": config_hash(config),
         **code_revision(),
     }

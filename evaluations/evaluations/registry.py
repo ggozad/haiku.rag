@@ -42,6 +42,7 @@ class ArmRecord:
     limit_cases: int | None = None
     filter_ids: str | None = None
     comparator: str | None = None
+    differences: str | None = None
     decision_rule: str | None = None
     operator: str | None = None
     concurrency: int | None = None
@@ -257,6 +258,7 @@ def launch_record(
         limit_cases=arm.limit,
         filter_ids=None if arm.filter_ids is None else str(arm.filter_ids),
         comparator=None if arm.comparator is None else load_arm(arm.comparator).name,
+        differences=None if arm.comparator is None else json.dumps(arm.differences),
         decision_rule=arm.decision_rule,
         operator=arm.operator,
     )

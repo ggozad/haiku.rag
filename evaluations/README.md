@@ -102,6 +102,24 @@ evaluations arms export arms.jsonl     # sorted keys, one arm per line, diffable
 evaluations arms import arms.jsonl     # upserts by name
 ```
 
+### Pairing two arms
+
+`evaluations arms pair A B` prints the standard table for two registered
+arms. Treated and baseline are read from the recorded comparator, not from
+argument order. The command refuses a void arm, an arm without a trace, two
+datasets, a pairing key that is NULL on either side, and a pair whose rows do
+not show the differences the arm file names.
+
+Cases join on the dataset's `pair_key`: `question_id` for FRAMES and
+HotpotQA, `query_id` for ORB, `id` for T2, `task_id` and `conversation_id`
+for MTRAG. Per-case outcomes come from Logfire through the read key in
+`~/.logfire-read-key` or `LOGFIRE_READ_KEY`. The table shows per arm the
+cases, accuracy over judged cases, floor over all cases, cite rate, mean
+`cited_map`, aborts and unjudged cases. For the pair it shows the discordant
+counts with the exact McNemar p-value, the `cited_map` sign test, the
+smallest |b - c| the test rejects at p < 0.05 with that many discordant
+pairs, and the recorded decision rule.
+
 ### Debugging runs in Logfire
 
 With `LOGFIRE_TOKEN` set, runs ship spans under `service_name = 'evals'`. The

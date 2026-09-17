@@ -104,6 +104,18 @@ class TestBuildExperimentMetadata:
         assert result["rerank_provider"] is None
         assert result["rerank_model"] is None
 
+    def test_records_the_pair_key(self) -> None:
+        result = build_experiment_metadata(
+            dataset_key="test", test_cases=1, config=AppConfig(), pair_key="query_id"
+        )
+        assert result["pair_key"] == "query_id"
+        assert (
+            build_experiment_metadata(
+                dataset_key="test", test_cases=1, config=AppConfig()
+            )["pair_key"]
+            is None
+        )
+
     def test_with_reranker(self) -> None:
         config = AppConfig()
         config.reranking.model = ModelConfig(

@@ -257,6 +257,28 @@ class TestLaunchRecord:
         assert record.operator == "evaluations"
         assert record.started_at == "2026-01-01T00:00:00+00:00"
         assert record.trace_id is None
+        assert record.comparator is None
+        assert record.differences is None
+
+    def test_records_the_comparator_and_named_differences(self, arm_file: Path) -> None:
+        import json
+
+        base = arm_file.with_name("frames-base.yaml")
+        base.write_text(
+            arm_file.read_text().replace("name: frames-main", "name: frames-base")
+        )
+        treated = arm_file.with_name("frames-treated.yaml")
+        treated.write_text(
+            arm_file.read_text().replace("name: frames-main", "name: frames-treated")
+            + "comparator: frames-base.yaml\ndifferences: [sha]\n"
+            + "decision_rule: McNemar exact\n"
+        )
+        arm = load_arm(treated)
+        config = AppConfig.model_validate(yaml.safe_load(arm.config.read_text()))
+        record = launch_record(arm, config, _fingerprint(arm.db), started_at="t")
+        assert record.comparator == "frames-base"
+        assert json.loads(record.differences or "null") == ["sha"]
+        assert record.decision_rule == "McNemar exact"
 
     def test_capability_model_flag_overrides_the_config(self, arm_file: Path) -> None:
         arm = load_arm(arm_file).model_copy(

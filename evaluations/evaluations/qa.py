@@ -240,6 +240,7 @@ async def _prepare_qa_run(
         capability_config=capability_config,
         capability_model_source=capability_model_source,
         document_filter=document_filter,
+        pair_key=spec.pair_key,
     )
     experiment_metadata.update(spec.experiment_metadata or {})
     db = (

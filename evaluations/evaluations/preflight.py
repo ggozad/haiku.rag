@@ -8,7 +8,7 @@ import yaml
 from dotenv import dotenv_values
 from pydantic import ValidationError
 
-from evaluations.arm import ArmSpec, load_arm
+from evaluations.arm import ArmSpec, load_arm, same_commit
 from evaluations.datasets import DATASETS
 from evaluations.experiment import code_revision, config_hash, corpus_fingerprint
 from haiku.rag.config import load_yaml_config
@@ -192,10 +192,6 @@ def _options(flags: list[str]) -> dict[str, tuple[str, ...]]:
     return {option: tuple(values) for option, values in grouped.items()}
 
 
-def _same_commit(a: str, b: str) -> bool:
-    return a.startswith(b) or b.startswith(a)
-
-
 def arm_differences(
     arm: ArmSpec,
     other: ArmSpec,
@@ -207,7 +203,7 @@ def arm_differences(
     names: list[str] = []
     if arm.dataset != other.dataset:
         names.append("dataset")
-    if not _same_commit(arm.sha, other.sha):
+    if not same_commit(arm.sha, other.sha):
         names.append("sha")
     if arm.limit != other.limit:
         names.append("limit")

@@ -23,6 +23,17 @@
   --register` writes the launch row when every check passes.
 - `evaluations arms list | show | void | export | import`. Export is JSONL
   with sorted keys, one arm per line; import upserts by name.
+- `evaluations arms pair A B`: the standard paired table for two registered
+  arms. Per arm: cases, accuracy, floor, cite rate, mean `cited_map`, aborts,
+  unjudged. For the pair: discordant counts with the exact McNemar p-value,
+  the `cited_map` sign test and the smallest significant swing. Treated and
+  baseline come from the recorded comparator. Refuses a void arm, a missing
+  trace, two datasets, a NULL pairing key, and named differences the rows do
+  not show.
+- `DatasetSpec.pair_key`: the case-metadata key two runs of a dataset pair on
+  (`question_id`, `query_id`, `id`, `task_id`, `conversation_id`), recorded
+  as `pair_key` in experiment metadata.
+- Registry rows carry `differences`, the named differences from the arm file.
 
 ## [0.87.0] - 2026-09-17
 
