@@ -1,5 +1,7 @@
 import asyncio
 import os
+from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
@@ -14,6 +16,7 @@ from evaluations.experiment import code_revision, config_hash
 from evaluations.population import populate_db
 from evaluations.preflight import run_preflight
 from evaluations.qa import run_live_qa_benchmark, run_qa_benchmark
+from evaluations.registry import Registry, default_registry_path, launch_record
 from evaluations.retrieval import run_retrieval_benchmark
 from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
 from haiku.rag.config.models import ModelConfig
@@ -120,12 +123,7 @@ def _load_config(config_path: Path | None) -> AppConfig:
 
 
 def require_telemetry(no_telemetry: bool) -> None:
-    """Refuse a run that would report no per-case results.
-
-    Logfire ships spans only when LOGFIRE_TOKEN is set, and a run without it
-    exits 0 with nothing recorded. An operator who wants that passes
-    --no-telemetry.
-    """
+    """Exit 1 without LOGFIRE_TOKEN: Logfire ships spans only when it is set."""
     if no_telemetry or os.environ.get("LOGFIRE_TOKEN"):
         return
     console.print(
@@ -273,20 +271,120 @@ def run(
     )
 
 
+REGISTRY_OPTION = typer.Option(
+    None,
+    "--registry",
+    help="Registry file. Defaults to registry.sqlite in the evaluations data directory.",
+)
+
+
+def _registry(path: Path | None) -> Registry:
+    return Registry(path or default_registry_path())
+
+
 @app.command()
 def preflight(
     arm: Path = typer.Argument(..., help="Arm file to check before it starts."),
+    register: bool = typer.Option(
+        False,
+        "--register",
+        help="On success, record the launch in the registry.",
+    ),
+    registry: Path | None = REGISTRY_OPTION,
 ) -> None:
     """Print every check an arm must pass; exit 1 when one fails."""
-    checks = asyncio.run(run_preflight(arm))
-    for check in checks:
+    result = asyncio.run(run_preflight(arm))
+    for check in result.checks:
         colour, label = ("green", "ok  ") if check.ok else ("red", "FAIL")
         console.print(
             f"[{colour}]{label}[/{colour}] {check.name}: {escape(check.detail)}",
             soft_wrap=True,
         )
-    if not all(check.ok for check in checks):
+    if not result.ok:
         raise typer.Exit(code=1)
+    if register:
+        assert result.arm is not None and result.config is not None
+        record = launch_record(
+            result.arm,
+            result.config,
+            result.fingerprint,
+            started_at=datetime.now(UTC).isoformat(timespec="seconds"),
+            git_sha=result.git_sha,
+        )
+        _registry(registry).register_launch(record)
+        console.print(f"registered {record.name}")
+
+
+arms_app = typer.Typer(help="The registry of evaluation arms.")
+app.add_typer(arms_app, name="arms")
+
+
+@arms_app.command("list")
+def arms_list(
+    registry: Path | None = REGISTRY_OPTION,
+    dataset: str | None = typer.Option(None, "--dataset", help="Only this dataset."),
+    db: str | None = typer.Option(
+        None, "--db", help="Only arms on this database path."
+    ),
+    status: str | None = typer.Option(
+        None, "--status", help="Only launched, valid or void arms."
+    ),
+) -> None:
+    """One line per arm, oldest first."""
+    for record in _registry(registry).list(dataset=dataset, db_path=db, status=status):
+        sha = (record.git_sha or "")[:12]
+        accuracy = "" if record.accuracy is None else f" acc={record.accuracy:.4f}"
+        cited = "" if record.cited_map is None else f" cited_map={record.cited_map:.4f}"
+        cases = "" if record.cases is None else f" cases={record.cases}"
+        db_name = Path(record.db_path).name if record.db_path else "-"
+        console.print(
+            f"{record.started_at}  {record.name}  {record.dataset}  {record.status}  "
+            f"{sha}  {record.capability_model or '-'}  {db_name}{cases}{accuracy}{cited}",
+            soft_wrap=True,
+            highlight=False,
+        )
+
+
+@arms_app.command("show")
+def arms_show(name: str, registry: Path | None = REGISTRY_OPTION) -> None:
+    """Every field of one arm."""
+    record = _registry(registry).get(name)
+    if record is None:
+        console.print(f"no arm named {name}", style="red")
+        raise typer.Exit(code=1)
+    for field_name, value in asdict(record).items():
+        console.print(f"{field_name}: {value}", soft_wrap=True, highlight=False)
+
+
+@arms_app.command("void")
+def arms_void(
+    name: str,
+    reason: str = typer.Option(
+        ..., "--reason", help="Why the arm's numbers must not be used."
+    ),
+    registry: Path | None = REGISTRY_OPTION,
+) -> None:
+    """Mark an arm void; its rows stay, its numbers are never paired."""
+    try:
+        _registry(registry).mark_void(name, reason)
+    except ValueError as error:
+        console.print(str(error), style="red")
+        raise typer.Exit(code=1) from None
+    console.print(f"{name} marked void: {reason}")
+
+
+@arms_app.command("export")
+def arms_export(path: Path, registry: Path | None = REGISTRY_OPTION) -> None:
+    """Write the registry as JSONL, one arm per line, diffable."""
+    count = _registry(registry).export_jsonl(path)
+    console.print(f"exported {count} arms to {path}")
+
+
+@arms_app.command("import")
+def arms_import(path: Path, registry: Path | None = REGISTRY_OPTION) -> None:
+    """Upsert arms from a JSONL export."""
+    count = _registry(registry).import_jsonl(path)
+    console.print(f"imported {count} arms from {path}")
 
 
 @app.command()

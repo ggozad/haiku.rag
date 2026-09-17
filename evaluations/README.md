@@ -83,6 +83,25 @@ config's embedder, the filter files exist, and every difference from the
 comparator (arm fields, flags by option, config keys by dotted path) is named
 in `differences`. A named difference that does not differ fails too.
 
+### The registry of arms
+
+Every arm gets one row in `registry.sqlite` under the evaluations data
+directory (`--registry PATH` points elsewhere). `evaluations preflight ARM
+--register` writes the launch row when every check passes: dataset, commit,
+config path and hash, database path and fingerprint, capability model and
+endpoint, judge, reranker, embedder, case selection, comparator, decision rule
+and operator. Completion fills the trace id, cases, accuracy, cite rate, mean
+`cited_map`, aborts and wall time and sets the status to `valid`. A void arm
+keeps its row and carries the reason, and its numbers are never paired.
+
+```bash
+evaluations arms list [--dataset frames] [--db PATH] [--status void]
+evaluations arms show frames-main-150
+evaluations arms void frames-main-150 --reason "wrong target"
+evaluations arms export arms.jsonl     # sorted keys, one arm per line, diffable
+evaluations arms import arms.jsonl     # upserts by name
+```
+
 ### Debugging runs in Logfire
 
 With `LOGFIRE_TOKEN` set, runs ship spans under `service_name = 'evals'`. The
@@ -90,8 +109,8 @@ With `LOGFIRE_TOKEN` set, runs ship spans under `service_name = 'evals'`. The
 queries (recent runs, per-case pass rate and `cited_map`, failing and slowest
 cases) for use from Claude Code.
 
-A run refuses to start when `LOGFIRE_TOKEN` is not set, because without it no
-per-case result is recorded anywhere. Pass `--no-telemetry` to run without it.
+A run refuses to start when `LOGFIRE_TOKEN` is not set. Pass `--no-telemetry`
+to run without it.
 Every run prints its git commit and the SHA-256 of its resolved config at start
 and records them in the experiment metadata (`git_sha`, `git_dirty`,
 `config_hash`) together with the database it read (`db_path`, `db_documents`,

@@ -18,6 +18,11 @@
   cleanliness, `.env` token, config validity, database presence and stored
   embedder, filter files, and the differences against the comparator. Exits 1
   on any failure.
+- Registry of evaluation arms (`evaluations/registry.py`): one SQLite row per
+  arm at `<data dir>/evaluations/registry.sqlite`. `evaluations preflight ARM
+  --register` writes the launch row when every check passes.
+- `evaluations arms list | show | void | export | import`. Export is JSONL
+  with sorted keys, one arm per line; import upserts by name.
 
 ## [0.87.0] - 2026-09-17
 
