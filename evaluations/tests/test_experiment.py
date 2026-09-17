@@ -48,6 +48,8 @@ class TestCodeRevision:
             "init",
         )
         assert code_revision(tmp_path)["git_dirty"] is False
+        (tmp_path / "untracked.log").write_text("noise")
+        assert code_revision(tmp_path)["git_dirty"] is False
         (tmp_path / "a.txt").write_text("b")
         assert code_revision(tmp_path)["git_dirty"] is True
 

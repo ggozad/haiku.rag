@@ -11,6 +11,13 @@
   `db_documents`, `db_chunks`, `db_embedder_provider`, `db_embedder_model`,
   `db_embedder_dim` and `db_version` in experiment metadata, and prints the
   code revision and config hash at start.
+- Arm files: one YAML file per evaluation arm naming the dataset, checkout,
+  pinned sha, config, database, case selection, flags, comparator, named
+  differences and decision rule (`evaluations/arm.py`).
+- `evaluations preflight ARM`: checks the arm file, dataset, checkout sha and
+  cleanliness, `.env` token, config validity, database presence and stored
+  embedder, filter files, and the differences against the comparator. Exits 1
+  on any failure.
 
 ## [0.87.0] - 2026-09-17
 

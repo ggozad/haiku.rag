@@ -54,6 +54,35 @@ evaluations run hotpotqa --capability-model ollama:qwen3.8
 the judge (defaults to `qa.model`). A citation retrieval metric (`cited_map`) is computed
 alongside QA accuracy from the URIs the capability registered via the `cite` tool.
 
+### Declaring and checking an arm
+
+An arm file declares one run: the dataset, the checkout and its pinned commit,
+the config, the database, the case selection and the flags passed through to
+`evaluations run`. A paired arm also names its comparator, the differences the
+operator expects between the two, and the decision rule.
+
+```yaml
+name: frames-main-150
+dataset: frames
+worktree: ~/wt/frames-main
+sha: 0123456789ab
+config: configs/frames.yaml
+db: ~/.local/share/haiku.rag/evaluations/dbs/frames.lancedb
+limit: 150
+flags: [--skip-db, --skip-retrieval]
+comparator: frames-branch-150.yaml
+differences: [sha]
+decision_rule: McNemar exact on answer_equivalent, two-sided, p < 0.05 fails
+```
+
+Relative paths resolve against the arm file. `evaluations preflight ARM` prints
+one line per check and exits 1 when any fails: the checkout is at the pinned
+commit with no uncommitted changes to tracked files, its `.env` carries
+`LOGFIRE_TOKEN`, the config validates, the database exists and stores the
+config's embedder, the filter files exist, and every difference from the
+comparator (arm fields, flags by option, config keys by dotted path) is named
+in `differences`. A named difference that does not differ fails too.
+
 ### Debugging runs in Logfire
 
 With `LOGFIRE_TOKEN` set, runs ship spans under `service_name = 'evals'`. The

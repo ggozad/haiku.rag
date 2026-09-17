@@ -31,8 +31,10 @@ DEFAULT_JUDGE_MODEL = ModelConfig(
 
 
 def code_revision(path: Path | None = None) -> dict[str, Any]:
-    """The commit the running code is checked out at, and whether its tree has
-    uncommitted changes. Both None when the code is not in a git checkout."""
+    """The commit the running code is checked out at, and whether tracked files
+    carry uncommitted changes. Untracked files do not count: `.env`, logs and
+    scripts sit in a worktree without changing the code that runs. Both None
+    when the code is not in a git checkout."""
     root = Path(__file__).resolve().parent if path is None else path
 
     def git(*args: str) -> str | None:
@@ -50,7 +52,7 @@ def code_revision(path: Path | None = None) -> dict[str, Any]:
     sha = git("rev-parse", "HEAD")
     if sha is None:
         return {"git_sha": None, "git_dirty": None}
-    status = git("status", "--porcelain")
+    status = git("status", "--porcelain", "--untracked-files=no")
     return {
         "git_sha": sha.strip(),
         "git_dirty": None if status is None else bool(status.strip()),

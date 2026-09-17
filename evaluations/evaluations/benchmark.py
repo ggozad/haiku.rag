@@ -5,12 +5,14 @@ from pathlib import Path
 import typer
 from dotenv import find_dotenv, load_dotenv
 from rich.console import Console
+from rich.markup import escape
 
 from evaluations.artifacts import download_dataset_db, upload_dataset_db
 from evaluations.config import DatasetSpec
 from evaluations.datasets import DATASETS
 from evaluations.experiment import code_revision, config_hash
 from evaluations.population import populate_db
+from evaluations.preflight import run_preflight
 from evaluations.qa import run_live_qa_benchmark, run_qa_benchmark
 from evaluations.retrieval import run_retrieval_benchmark
 from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
@@ -269,6 +271,22 @@ def run(
             document_filter=document_filter,
         )
     )
+
+
+@app.command()
+def preflight(
+    arm: Path = typer.Argument(..., help="Arm file to check before it starts."),
+) -> None:
+    """Print every check an arm must pass; exit 1 when one fails."""
+    checks = asyncio.run(run_preflight(arm))
+    for check in checks:
+        colour, label = ("green", "ok  ") if check.ok else ("red", "FAIL")
+        console.print(
+            f"[{colour}]{label}[/{colour}] {check.name}: {escape(check.detail)}",
+            soft_wrap=True,
+        )
+    if not all(check.ok for check in checks):
+        raise typer.Exit(code=1)
 
 
 @app.command()
