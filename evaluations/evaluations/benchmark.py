@@ -1,4 +1,5 @@
 import asyncio
+import os
 from pathlib import Path
 
 import typer
@@ -8,6 +9,7 @@ from rich.console import Console
 from evaluations.artifacts import download_dataset_db, upload_dataset_db
 from evaluations.config import DatasetSpec
 from evaluations.datasets import DATASETS
+from evaluations.experiment import code_revision, config_hash
 from evaluations.population import populate_db
 from evaluations.qa import run_live_qa_benchmark, run_qa_benchmark
 from evaluations.retrieval import run_retrieval_benchmark
@@ -115,6 +117,32 @@ def _load_config(config_path: Path | None) -> AppConfig:
     return AppConfig()
 
 
+def require_telemetry(no_telemetry: bool) -> None:
+    """Refuse a run that would report no per-case results.
+
+    Logfire ships spans only when LOGFIRE_TOKEN is set, and a run without it
+    exits 0 with nothing recorded. An operator who wants that passes
+    --no-telemetry.
+    """
+    if no_telemetry or os.environ.get("LOGFIRE_TOKEN"):
+        return
+    console.print(
+        "LOGFIRE_TOKEN is not set: this run would record no per-case results. "
+        "Put the token in .env, or pass --no-telemetry to run without telemetry.",
+        style="red",
+    )
+    raise typer.Exit(code=1)
+
+
+def _print_run_identity(config: AppConfig) -> None:
+    revision = code_revision()
+    sha = revision["git_sha"] or "unknown"
+    dirty = " (uncommitted changes)" if revision["git_dirty"] else ""
+    console.print(
+        f"Code: {sha}{dirty} | config hash: {config_hash(config)}", style="dim"
+    )
+
+
 def _load_case_ids(path: Path | None) -> set[str] | None:
     """Read a newline-delimited case-id file into a set (None when no path)."""
     if path is None:
@@ -205,9 +233,19 @@ def run(
             "(failure-subset rerun). Filters QA only; retrieval is unaffected."
         ),
     ),
+    no_telemetry: bool = typer.Option(
+        False,
+        "--no-telemetry",
+        help=(
+            "Run without Logfire telemetry. Without this flag a run refuses to "
+            "start when LOGFIRE_TOKEN is not set."
+        ),
+    ),
 ) -> None:
+    require_telemetry(no_telemetry)
     spec = _resolve_dataset(dataset)
     app_config = _load_config(config)
+    _print_run_identity(app_config)
     judge_model_config = app_config.evaluations.judge
     capability_model_config = (
         parse_model_option(capability_model) if capability_model else None

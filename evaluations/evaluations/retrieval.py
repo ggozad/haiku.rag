@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.progress import Progress
 
 from evaluations.config import DatasetSpec
-from evaluations.experiment import build_experiment_metadata
+from evaluations.experiment import build_experiment_metadata, corpus_fingerprint
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig
 
@@ -106,6 +106,7 @@ async def run_retrieval_benchmark(
             config=config,
             document_filter=document_filter,
         )
+        experiment_metadata.update(await corpus_fingerprint(db, config))
 
         report = await dataset.evaluate(
             retrieval_target,

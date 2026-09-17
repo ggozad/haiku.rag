@@ -61,6 +61,14 @@ With `LOGFIRE_TOKEN` set, runs ship spans under `service_name = 'evals'`. The
 queries (recent runs, per-case pass rate and `cited_map`, failing and slowest
 cases) for use from Claude Code.
 
+A run refuses to start when `LOGFIRE_TOKEN` is not set, because without it no
+per-case result is recorded anywhere. Pass `--no-telemetry` to run without it.
+Every run prints its git commit and the SHA-256 of its resolved config at start
+and records them in the experiment metadata (`git_sha`, `git_dirty`,
+`config_hash`) together with the database it read (`db_path`, `db_documents`,
+`db_chunks`, `db_embedder_provider`, `db_embedder_model`, `db_embedder_dim`,
+`db_version`).
+
 ### Pre-built Databases
 
 Download pre-built evaluation databases from HuggingFace:

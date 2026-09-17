@@ -5,6 +5,12 @@
 ### Added
 
 - `sources` on the `list_documents` MCP tool and `HaikuRAG.list_documents`.
+- `evaluations run --no-telemetry`. Without it a run refuses to start when
+  `LOGFIRE_TOKEN` is not set.
+- `evaluations run` records `git_sha`, `git_dirty`, `config_hash`, `db_path`,
+  `db_documents`, `db_chunks`, `db_embedder_provider`, `db_embedder_model`,
+  `db_embedder_dim` and `db_version` in experiment metadata, and prints the
+  code revision and config hash at start.
 
 ## [0.87.0] - 2026-09-17
 

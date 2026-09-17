@@ -598,6 +598,12 @@ Before proposing a commit, read the added comment lines on their own:
 - `UnknownDatabaseError` subclasses `KeyError` and overrides `__str__`, so
   `pytest.raises(KeyError)` still catches it — which means a broad `KeyError`
   assertion cannot tell the contract from a bare one. Assert the specific type.
+- A worktree needs `.env` (it holds `LOGFIRE_TOKEN`): without it a run ships no
+  spans and reports no error. `evaluations run` refuses to start without the
+  token unless `--no-telemetry` is passed; every other entry point stays silent.
+- The progress of an eval run is the count of `case:` spans in Logfire and
+  nothing else: the progress bar renders only to a terminal, so a redirected
+  log and a tmux pane are always empty.
 
 ## Planning and Commits
 
@@ -663,7 +669,7 @@ evaluations download <dataset|all>           # Pre-built eval DBs from HuggingFa
 evaluations upload <dataset|all>             # Upload eval DBs
 ```
 
-Datasets: `hotpotqa`, `orb_text`, `orb_multimodal`, `orb_multimodal_nemotron`, `t2_finqa`, `t2_tatdqa`, `mtrag_clapnq`, `mtrag_clapnq_rewrite`, `mtrag_clapnq_live`, `mtrag_clapnq_live_uncompacted` (the four mtrag keys share one DB).
+Datasets: `frames`, `hotpotqa`, `orb_text`, `orb_multimodal`, `orb_multimodal_nemotron`, `t2_finqa`, `t2_tatdqa`, `mtrag_clapnq`, `mtrag_clapnq_rewrite`, `mtrag_clapnq_live`, `mtrag_clapnq_live_uncompacted` (the four mtrag keys share one DB).
 
 **Multi-turn (MTRAG)**: `mtrag_clapnq` runs gold-prefix QA (`ConversationInput` cases replay the reference prefix as message history) plus lastturn retrieval; `_rewrite` retrieves with the human rewrites; `_live` and `_live_uncompacted` set `spec.live` (one case per conversation, `--limit` counts conversations) and differ only in `spec.compaction`, which registers `EvidenceCompactionCapability` in the runner — the only eval coverage compaction has, since every other dataset is single-turn where it is inert. Live runs carry `all_messages()` and ONE capability-state dict across turns (0.74.0 compaction raises on history with a fresh state dict) and record question-length per-turn arrays (`turn_cited_uris`, `turn_n_search_calls`, `turn_n_sandbox_search_calls`, `turn_n_rejected_searches`, `turn_n_failed_tools`, `turn_n_executions`, `turn_n_requests`, `turn_citation_status`), counted per turn from `new_messages()` so compaction rewriting earlier history cannot skew them. Gold-prefix and live pass rates answer different judge questions and are NOT comparable; the supported comparison is compacted vs uncompacted, paired by turn. `_live_summary`'s macro rate excludes conversations with zero judged turns — a judge outage is an operational exclusion, not a failed conversation.
 
@@ -686,6 +692,8 @@ Datasets: `hotpotqa`, `orb_text`, `orb_multimodal`, `orb_multimodal_nemotron`, `
 **Eval prompts**: datasets do not carry custom system prompts. Capability targets use packaged instructions plus `config.prompts.domain_preamble`. `DatasetSpec` has no `system_prompt` field.
 
 **Eval-side rules**: don't assert specific phrases in packaged instructions; test behavior instead. `build_experiment_metadata` is additive, with one exception made alongside the `thinking` rename: the `qa_*` model mirrors (`qa_provider`, `qa_model`, `qa_temperature`, `qa_max_tokens`, `qa_enable_thinking`, `qa_extra_body`) were removed because `capability_*` records the model that ran and `qa_*` could record one that did not. `qa_max_searches`, `qa_max_executions`, `sandbox_code_timeout` and `sandbox_max_output_chars` stay: they bound the capability and have no `capability_` twin. `capability_model_source` names which of `--capability-model` / `qa.model` produced `capability_*`; `capability_*` is always present on a QA run and absent on a retrieval run. Run targeted tests in `evaluations/` with `uv run pytest`.
+
+**Run identity**: experiment metadata carries `git_sha` and `git_dirty` of the checkout the code ran from, `config_hash` (SHA-256 of the resolved `AppConfig`, so it changes when `populate_db` flips `storage.auto_vacuum`), and the corpus fingerprint `db_path`, `db_documents`, `db_chunks`, `db_embedder_provider`, `db_embedder_model`, `db_embedder_dim`, `db_version` (all None when `lancedb.databases` places the set, counts None when the path does not exist). `evaluations run` prints the revision and hash at start and refuses to start without `LOGFIRE_TOKEN` unless `--no-telemetry` is passed.
 
 **Reasoning knobs on vLLM**: a vLLM server started with `--reasoning-parser` consumes `chat_template_kwargs.enable_thinking` itself — it never reaches the chat template. Muse-Glimmer QA blocks must set `chat_template_kwargs.reasoning_strength: high` instead (the mtrag reference config does); a template defaulting it to low silently cuts search calls ~37% with no error anywhere. Verify a kwarg by RENDERING (`/tokenize` with `return_token_strs`) or by measured behavior, never by HTTP acceptance.
 

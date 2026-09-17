@@ -8,6 +8,7 @@ from evaluations.benchmark import (
     _load_config,
     _resolve_dataset,
     evaluate_dataset,
+    require_telemetry,
 )
 from evaluations.config import DatasetSpec, DocumentPayload
 from evaluations.experiment import build_experiment_metadata
@@ -627,6 +628,87 @@ class TestLoadConfig:
         with patch("evaluations.benchmark.find_config_file", return_value=None):
             config = _load_config(None)
         assert config == AppConfig()
+
+
+class TestRequireTelemetry:
+    def test_refuses_without_a_token(self, monkeypatch) -> None:
+        monkeypatch.delenv("LOGFIRE_TOKEN", raising=False)
+        with pytest.raises(typer.Exit):
+            require_telemetry(no_telemetry=False)
+
+    def test_an_empty_token_counts_as_absent(self, monkeypatch) -> None:
+        monkeypatch.setenv("LOGFIRE_TOKEN", "")
+        with pytest.raises(typer.Exit):
+            require_telemetry(no_telemetry=False)
+
+    def test_a_token_passes(self, monkeypatch) -> None:
+        monkeypatch.setenv("LOGFIRE_TOKEN", "pylf_v1_eu_test")
+        require_telemetry(no_telemetry=False)
+
+    def test_an_explicit_opt_out_passes_without_a_token(self, monkeypatch) -> None:
+        monkeypatch.delenv("LOGFIRE_TOKEN", raising=False)
+        require_telemetry(no_telemetry=True)
+
+
+class TestRunsRecordTheirCorpus:
+    @pytest.mark.asyncio
+    async def test_qa_run_metadata_names_the_database(self, tmp_path: Path) -> None:
+        from evaluations.qa import _prepare_qa_run
+
+        path = tmp_path / "test.lancedb"
+        run = await _prepare_qa_run(
+            _stub_spec(),
+            AppConfig(),
+            limit=None,
+            name=None,
+            db_path=path,
+            judge_model=None,
+            capability_model=None,
+            case_ids=None,
+            document_filter=None,
+        )
+        assert run.experiment_metadata["db_path"] == str(path)
+        assert run.experiment_metadata["git_sha"] is not None
+        assert "config_hash" in run.experiment_metadata
+
+    @pytest.mark.asyncio
+    async def test_retrieval_run_metadata_names_the_database(
+        self, tmp_path: Path
+    ) -> None:
+        from types import SimpleNamespace
+
+        from evaluations.benchmark import run_retrieval_benchmark
+        from evaluations.config import RetrievalSample
+        from evaluations.evaluators import MAPEvaluator
+        from haiku.rag.store.models.chunk import SearchResult
+
+        class FakeRag:
+            async def search(self, **kwargs) -> list[SearchResult]:
+                return [SearchResult(content="x", score=1.0, document_uri="uri-x")]
+
+        spec = _stub_spec(
+            retrieval_loader=lambda: [{"q": "What is X?", "uris": ("uri-x",)}],
+            retrieval_mapper=lambda d: RetrievalSample(
+                question=d["q"], expected_uris=d["uris"]
+            ),
+            retrieval_evaluators=[MAPEvaluator()],
+        )
+        captured: dict = {}
+
+        async def capture_evaluate(self, task, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(cases=[])
+
+        path = tmp_path / "test.lancedb"
+        with (
+            patch("evaluations.retrieval.HaikuRAG") as mock_haiku,
+            patch("evaluations.retrieval.EvalDataset.evaluate", capture_evaluate),
+        ):
+            mock_haiku.return_value.__aenter__.return_value = FakeRag()
+            await run_retrieval_benchmark(spec, AppConfig(), db_path=path)
+
+        assert captured["metadata"]["db_path"] == str(path)
+        assert captured["metadata"]["git_sha"] is not None
 
 
 class TestRunQaBenchmarkJudgeModel:
