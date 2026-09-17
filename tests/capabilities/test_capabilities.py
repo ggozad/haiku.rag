@@ -581,7 +581,7 @@ async def test_records_new_sandbox_search_results(temp_db_path):
     capability.state = RAGState(searches={"_sandbox": [existing]})
     sandbox = AsyncMock()
     sandbox.execute.return_value = SandboxResult(stdout="done", stderr="", success=True)
-    sandbox._search_results = [existing, new]
+    sandbox.search_results = (existing, new)
     capability.sandbox = cast(Sandbox, sandbox)
 
     result = await capability._execute_code("print('done')")
@@ -601,7 +601,7 @@ async def test_an_execution_records_how_many_times_it_searched(temp_db_path):
     sandbox.execute.return_value = SandboxResult(
         stdout="done", stderr="", success=True, search_calls=2
     )
-    sandbox._search_results = []
+    sandbox.search_results = ()
     capability.sandbox = cast(Sandbox, sandbox)
 
     await capability._execute_code("await search('a'); await search('b')")
@@ -794,7 +794,7 @@ async def test_only_a_code_execution_the_model_can_read_is_evidence(
     capability.state = RAGState(evidence=CapabilityEvidenceRecord(question=0))
     capability.epoch = 5
     sandbox = AsyncMock(spec=Sandbox)
-    sandbox._search_results = []
+    sandbox.search_results = ()
     sandbox.execute.return_value = SandboxResult(
         stdout=stdout, stderr="" if success else "boom", success=success
     )
@@ -1026,7 +1026,7 @@ async def test_sandbox_iteration_failure_carries_the_workaround(
     sandbox.execute.return_value = SandboxResult(
         stdout="", stderr=stderr, success=False
     )
-    sandbox._search_results = []
+    sandbox.search_results = ()
     capability.sandbox = cast(Sandbox, sandbox)
 
     with pytest.raises(ToolFailed) as failure:
@@ -1048,7 +1048,7 @@ async def test_sandbox_failure_records_execution_and_fails_the_tool(
     sandbox.execute.return_value = SandboxResult(
         stdout="partial", stderr="NameError: undefined", success=False
     )
-    sandbox._search_results = []
+    sandbox.search_results = ()
     capability.sandbox = cast(Sandbox, sandbox)
 
     with pytest.raises(ToolFailed, match="NameError: undefined"):

@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Awaitable
 from dataclasses import dataclass, field, replace
 from difflib import get_close_matches
 from functools import cache
@@ -56,29 +57,13 @@ CITE_TOOL = "cite"
 TOOL_NAMES = frozenset({SEARCH_TOOL, EXECUTE_CODE_TOOL, CITE_TOOL})
 
 CITATION_GRACE_REQUESTS = 2
-"""Requests calling this capability's tools that its cite tool outlives the rest by.
-
-A loop guard, not a budget: cite consumes no retry budget and raises nothing, so
-left available forever a stuck model calls it until the agent's own request limit
-raises ``UsageLimitExceeded`` and the question returns no answer at all. Only
-engagement can loop, which is why other tools' turns do not spend it.
-"""
+"""Requests calling this capability's tools that its cite tool outlives the rest by."""
 
 CHUNK_ID_MATCH_CUTOFF = 0.75
-"""Similarity a cited chunk id needs to be treated as a corrupted known id.
-
-Calibration knob. Two unrelated UUID4s reach about 0.5, while dropping or
-duplicating a character or a whole group stays above 0.75, so the gap is wide.
-"""
+"""Similarity a cited chunk id needs to be treated as a corrupted known id."""
 
 FREE_SIBLINGS_PER_ROUND = 3
-"""Searches one budget unit covers when emitted in the same model response.
-
-Calibration knob, sized to the measured modal burst. ``qa.max_searches``
-counts units, so a model rephrasing its query a few times in one response
-spends one unit, while every search of a sequential searcher is a unit of its
-own.
-"""
+"""Searches one budget unit covers when emitted in the same model response."""
 
 _instructions_path = Path(__file__).parent / "instructions" / "rag.md"
 _multiple_collections_path = (
@@ -557,7 +542,7 @@ class RAGCapability(AbstractCapability[Any]):
         if self.outer_state is not None and self.state is not None:
             self.outer_state[self.state_namespace] = self.state.model_dump(mode="json")
 
-    async def _with_state(self, operation: Any) -> Any:
+    async def _with_state[T](self, operation: Awaitable[T]) -> T:
         """Execute an operation and copy its state back to the host dependencies.
 
         A failing tool still syncs, so evidence it gathered before the failure
@@ -673,10 +658,10 @@ class RAGCapability(AbstractCapability[Any]):
         result = await sandbox.execute(code)
         if result.success or result.stdout:
             self._note_evidence()
-        if sandbox._search_results:
+        if sandbox.search_results:
             merge_results(
                 self.state.searches.setdefault("_sandbox", []),
-                sandbox._search_results,
+                list(sandbox.search_results),
             )
         self.state.executions.append(
             CodeExecutionEntry(
@@ -815,11 +800,11 @@ class RAGCapability(AbstractCapability[Any]):
             """Search the knowledge base for evidence to analyze."""
             return await self._with_state(self._search(query, limit, ctx.run_step))
 
-        async def execute_code(ctx: RunContext[Any], code: str) -> Any:
+        async def execute_code(ctx: RunContext[Any], code: str) -> str:
             """Execute Python against the sandboxed document filesystem."""
             return await self._with_state(self._execute_code(code))
 
-        async def cite(ctx: RunContext[Any], chunk_ids: list[str]) -> Any:
+        async def cite(ctx: RunContext[Any], chunk_ids: list[str]) -> str:
             """Register exact retrieved chunk IDs as citations for the answer."""
             return await self._with_state(self._cite(chunk_ids))
 

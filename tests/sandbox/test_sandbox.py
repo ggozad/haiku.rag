@@ -186,6 +186,12 @@ class TestSandboxSearch:
             )
             assert result.success
             assert "True" in result.stdout or "1" in result.stdout
+            found = sb.search_results
+            assert isinstance(found, tuple)
+            assert found and all(item.chunk_id for item in found)
+            assert "fox" in found[0].content.lower()
+            with pytest.raises(AttributeError):
+                setattr(sb, "search_results", ())
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()

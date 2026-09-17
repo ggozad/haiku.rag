@@ -690,6 +690,11 @@ class Sandbox:
         assert self._session is not None and self._vfs is not None
         return self._session, self._vfs
 
+    @property
+    def search_results(self) -> tuple[SearchResult, ...]:
+        """Every result the session's in-code ``search()`` calls returned, in order."""
+        return tuple(self._search_results)
+
     async def execute(self, code: str) -> SandboxResult:
         """Execute Python code in the Monty worker session.
 
