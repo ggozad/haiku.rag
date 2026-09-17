@@ -8,7 +8,7 @@ haiku.rag provides native [Pydantic AI capabilities](https://ai.pydantic.dev/cap
 | [`EvidenceCompactionCapability`](compaction.md) | Optional. Shrinking a conversation's history to the evidence that was cited. |
 | [`CitationPolicyCapability`](policy.md) | Optional. Requiring every answer to declare what grounds it. |
 
-The RAG capability is deferred by default. An agent initially sees only its description and the standard `load_capability` tool. Instructions and tools enter the model context only when the model loads it.
+The RAG capability loads eagerly by default. With `defer_loading=True` an agent initially sees only its description and the standard `load_capability` tool, and the instructions and tools enter the model context when the model loads it.
 
 ## Compose an agent
 

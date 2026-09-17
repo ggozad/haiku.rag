@@ -68,7 +68,7 @@ def create_app(db: Path | None = None, *, covers_set: bool = False) -> "HaikuRAG
     """The application for a command, on the database(s) it works on.
 
     `covers_set` is the command declaring that it can read multiple: `search`,
-    `ask` and `chat` can, and everything else names one.
+    `ask`, `chat` and `mcp` can, and everything else names one.
 
     Raises:
         AmbiguousDatabaseError: multiple databases are configured and this

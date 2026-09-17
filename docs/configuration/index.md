@@ -109,6 +109,11 @@ qa:
     thinking: true
     temperature: 0.3
   max_searches: 5
+  max_executions: 15
+
+sandbox:
+  code_timeout: 60.0           # Seconds one execute_code call may run
+  max_output_chars: 50000      # Stdout returned per call
 
 search:
   limit: 5                     # Default number of results to return

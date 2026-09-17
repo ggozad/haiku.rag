@@ -1,6 +1,6 @@
 # RAG Capability
 
-`RAGCapability` adds grounded document search, sandboxed Python over the documents, and citations to a Pydantic AI agent. It is deferred by default, so its instructions and tools do not consume model context until loaded.
+`RAGCapability` adds grounded document search, sandboxed Python over the documents, and citations to a Pydantic AI agent. It loads eagerly by default. Set `defer_loading=True` to keep its instructions and tools out of the model context until the model loads it.
 
 ## Tools
 

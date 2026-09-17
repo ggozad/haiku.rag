@@ -210,7 +210,7 @@ def _called_own_tool(messages: list[ModelMessage], tool_names: frozenset[str]) -
 
 @dataclass
 class RAGCapability(AbstractCapability[Any]):
-    """Deferred, native Pydantic AI capability for grounded answers over a corpus.
+    """Native Pydantic AI capability for grounded answers over a corpus.
 
     Search, sandboxed Python over the documents, and citations, in one place.
     """
