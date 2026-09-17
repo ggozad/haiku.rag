@@ -1,11 +1,10 @@
-"""Asking and analyzing across the databases a question covers."""
+"""Asking across the databases a question covers."""
 
 from unittest.mock import AsyncMock
 
 import pytest
 
 from haiku.rag.capabilities._tools import search_corpus
-from haiku.rag.capabilities.analysis import create_capability as create_analysis
 from haiku.rag.capabilities.rag import RAGState, create_capability
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.session import FederatedSession
@@ -18,8 +17,6 @@ from tests.multi_db.helpers import (
     _seed,
 )
 
-_FACTORIES = [create_capability, create_analysis]
-
 
 class TestAskAcrossDatabases:
     @pytest.mark.asyncio
@@ -30,7 +27,7 @@ class TestAskAcrossDatabases:
         await _seed(config, "beta", ["beta document about cats"])
 
         async with HaikuRAG(config=config) as rag:
-            capability = create_capability(config=config, rag=rag, defer_loading=False)
+            capability = create_capability(config=config, rag=rag)
             capability.state = RAGState(sources=["alpha"])
 
             formatted = await capability._search("cats", 10, 1)
@@ -47,7 +44,7 @@ class TestAskAcrossDatabases:
         await _seed(config, "beta", ["beta document about cats"])
 
         async with HaikuRAG(config=config) as rag:
-            capability = create_capability(config=config, rag=rag, defer_loading=False)
+            capability = create_capability(config=config, rag=rag)
             capability.state = RAGState()
 
             formatted = await capability._search("cats", 10, 1)
@@ -71,7 +68,7 @@ class TestStandaloneCapabilities:
         await _seed(config, "alpha", ["alpha document about cats"])
         await _seed(config, "beta", ["beta document about cats"])
 
-        capability = create_capability(config=config, defer_loading=False)
+        capability = create_capability(config=config)
         assert capability.scope.names == ("alpha", "beta")
         run = await capability.for_run(make_context(Deps()))
         try:
@@ -84,17 +81,14 @@ class TestStandaloneCapabilities:
         assert "beta document" in formatted
 
     @pytest.mark.asyncio
-    async def test_an_analysis_capability_mounts_the_configured_set(self, tmp_path):
-        from haiku.rag.capabilities.analysis import (
-            create_capability as create_analysis,
-        )
+    async def test_the_capability_mounts_the_configured_set(self, tmp_path):
         from tests.capabilities.test_capabilities import Deps, make_context
 
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
         await _seed(config, "beta", ["beta document about cats"])
 
-        capability = create_analysis(config=config, defer_loading=False)
+        capability = create_capability(config=config)
         run = await capability.for_run(make_context(Deps()))
         try:
             sandbox = await run._ensure_sandbox()
@@ -111,7 +105,7 @@ class TestStandaloneCapabilities:
         config = _config(tmp_path, ["alpha"])
         await _seed(config, "alpha", ["alpha document about cats"])
 
-        capability = create_capability(config=config, defer_loading=False)
+        capability = create_capability(config=config)
         rag = await capability._ensure_rag()
         try:
             assert rag.source == "alpha"
@@ -119,24 +113,17 @@ class TestStandaloneCapabilities:
             await capability._close()
 
 
-class TestAnalyzeAcrossDatabases:
+class TestTheSandboxAcrossDatabases:
     @pytest.mark.asyncio
     @pytest.mark.vcr()
-    async def test_the_capability_searches_the_selected_databases(self, tmp_path):
-        """`analysis_search` is the same tool as the RAG one, and the sandbox is
-        scoped by the same selection."""
-        from haiku.rag.capabilities.analysis import AnalysisState
-        from haiku.rag.capabilities.analysis import (
-            create_capability as create_analysis,
-        )
-
+    async def test_the_sandbox_is_scoped_by_the_search_selection(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
         await _seed(config, "beta", ["beta document about cats"])
 
         async with HaikuRAG(config=config) as rag:
-            capability = create_analysis(config=config, rag=rag, defer_loading=False)
-            capability.state = AnalysisState(sources=["alpha"])
+            capability = create_capability(config=config, rag=rag)
+            capability.state = RAGState(sources=["alpha"])
 
             formatted = await capability._search("cats", 10, 1)
             sandbox = await capability._ensure_sandbox()
@@ -161,9 +148,7 @@ class TestScopingACapabilityToASubset:
         await _seed(config, "alpha", ["alpha document about cats"])
         await _seed(config, "beta", ["beta document about cats"])
 
-        capability = create_capability(
-            config=config, sources=["alpha"], defer_loading=False
-        )
+        capability = create_capability(config=config, sources=["alpha"])
         assert capability.scope.names == ("alpha",)
         run = await capability.for_run(make_context(Deps()))
         try:
@@ -176,18 +161,14 @@ class TestScopingACapabilityToASubset:
         assert "beta document" not in formatted
 
     @pytest.mark.asyncio
-    async def test_a_scoped_analysis_capability_mounts_only_its_databases(
-        self, tmp_path
-    ):
+    async def test_a_scoped_capability_mounts_only_its_databases(self, tmp_path):
         from tests.capabilities.test_capabilities import Deps, make_context
 
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
         await _seed(config, "beta", ["beta document about cats"])
 
-        capability = create_analysis(
-            config=config, sources=["alpha"], defer_loading=False
-        )
+        capability = create_capability(config=config, sources=["alpha"])
         run = await capability.for_run(make_context(Deps()))
         try:
             sandbox = await run._ensure_sandbox()
@@ -209,9 +190,7 @@ class TestScopingACapabilityToASubset:
         await _seed(config, "alpha", ["alpha document about cats"])
         await _seed(config, "beta", ["beta document about cats"])
 
-        capability = create_capability(
-            config=config, sources=["alpha"], defer_loading=False
-        )
+        capability = create_capability(config=config, sources=["alpha"])
         deps = Deps(state={"rag": RAGState(sources=["beta"]).model_dump(mode="json")})
         run = await capability.for_run(make_context(deps))
         try:
@@ -220,30 +199,27 @@ class TestScopingACapabilityToASubset:
         finally:
             await run._close()
 
-    @pytest.mark.parametrize("factory", _FACTORIES)
-    def test_sources_beside_a_path_is_refused(self, tmp_path, factory):
+    def test_sources_beside_a_path_is_refused(self, tmp_path):
         with pytest.raises(AmbiguousDatabaseError, match="alpha"):
-            factory(
+            create_capability(
                 db_path=tmp_path / "kb.lancedb",
                 config=AppConfig(),
                 sources=["alpha"],
             )
 
-    @pytest.mark.parametrize("factory", _FACTORIES)
-    def test_selecting_no_database_is_refused(self, tmp_path, factory):
+    def test_selecting_no_database_is_refused(self, tmp_path):
         """Unlike state `sources=[]`, which selects nothing to search."""
         with pytest.raises(ValueError, match="pass None for all of them"):
-            factory(config=_config(tmp_path, ["alpha", "beta"]), sources=[])
+            create_capability(config=_config(tmp_path, ["alpha", "beta"]), sources=[])
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("factory", _FACTORIES)
-    async def test_sources_beside_a_lent_client_is_refused(self, tmp_path, factory):
+    async def test_sources_beside_a_lent_client_is_refused(self, tmp_path):
         """A lent client's coverage is what the capability reads."""
         config = _config(tmp_path, ["alpha", "beta"])
 
         async with HaikuRAG(config=config) as rag:
             with pytest.raises(AmbiguousDatabaseError, match="client"):
-                factory(config=config, rag=rag, sources=["alpha"])
+                create_capability(config=config, rag=rag, sources=["alpha"])
 
 
 class TestCollectionIdentityForTheModel:
@@ -274,8 +250,8 @@ class TestCollectionIdentityForTheModel:
     @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_in_code_search_names_the_collection(self, tmp_path):
-        """The dictionaries analysis code reads carry `source` whatever the
-        formatted output renders, since grouping by it is computation."""
+        """The dictionaries code reads carry `source` whatever the formatted
+        output renders, since grouping by it is computation."""
 
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -318,15 +294,6 @@ class TestNamingDatabasesBeforeTheModelRuns:
                 await rag.ask("what about cats?", sources=["typo"])
 
     @pytest.mark.asyncio
-    async def test_analyze_refuses_an_unknown_source_before_the_model(self, tmp_path):
-        config = _config(tmp_path, ["alpha", "beta"])
-        await _seed(config, "alpha", ["alpha document about cats"])
-
-        async with HaikuRAG(config=config) as rag:
-            with pytest.raises(UnknownDatabaseError, match="typo"):
-                await rag.analyze("how many?", sources=["typo"])
-
-    @pytest.mark.asyncio
     async def test_checking_a_name_opens_nothing(self, tmp_path):
         """Validating a name reads the configured set; no database opens for
         it."""
@@ -360,7 +327,7 @@ class TestLendingANamedClient:
 
         # What `run_chat` builds: the capability's own scope is the set, and
         # the lent client is what narrows it.
-        capability = create_capability(config=config, defer_loading=False)
+        capability = create_capability(config=config)
 
         async with HaikuRAG(config=config, sources=["alpha"]) as client:
             # What `ChatApp.on_mount` does.

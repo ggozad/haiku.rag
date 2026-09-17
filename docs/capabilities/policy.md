@@ -1,7 +1,8 @@
 # Citation policy capability
 
-`CitationPolicyCapability` requires every answer to declare what grounds it. Citing is
-always available and always recorded without it, but nothing makes the model do it.
+`CitationPolicyCapability` requires every answer to declare what grounds it. The RAG
+capability's instructions ask the model to cite and record what it cites, but nothing
+enforces the declaration without this capability.
 
 Register it alongside an evidence capability:
 

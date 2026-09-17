@@ -114,6 +114,24 @@ function MessageIcon() {
 	);
 }
 
+function CodeIcon() {
+	return (
+		<svg
+			width="14"
+			height="14"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="2"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+		>
+			<polyline points="16 18 22 12 16 6" />
+			<polyline points="8 6 2 12 8 18" />
+		</svg>
+	);
+}
+
 function ToolCallIndicator({
 	toolName,
 	status,
@@ -127,9 +145,11 @@ function ToolCallIndicator({
 
 	const getToolIcon = () => {
 		switch (toolName) {
-			case "rag_search":
+			case "search":
 				return <SearchIcon />;
-			case "rag_cite":
+			case "execute_code":
+				return <CodeIcon />;
+			case "cite":
 				return <MessageIcon />;
 			default:
 				return <SearchIcon />;
@@ -138,9 +158,11 @@ function ToolCallIndicator({
 
 	const getToolLabel = () => {
 		switch (toolName) {
-			case "rag_search":
+			case "search":
 				return "Search";
-			case "rag_cite":
+			case "execute_code":
+				return "Code";
+			case "cite":
 				return "Cite";
 			default:
 				return toolName;
@@ -149,11 +171,19 @@ function ToolCallIndicator({
 
 	const getDescription = () => {
 		switch (toolName) {
-			case "rag_search": {
+			case "search": {
 				const query = args.query as string;
 				return <span className="tool-query">{query}</span>;
 			}
-			case "rag_cite":
+			case "execute_code": {
+				const code = (args.code as string) ?? "";
+				return (
+					<code className="tool-query">
+						{code.length > 120 ? `${code.slice(0, 120)}…` : code}
+					</code>
+				);
+			}
+			case "cite":
 				return <span className="tool-query">Registering citations</span>;
 			default:
 				return <span>Processing...</span>;

@@ -24,7 +24,7 @@ The `haiku-rag` CLI provides complete document management functionality.
     haiku-rag add -h
     ```
 
-    With `lancedb.databases` configured, `search`, `ask`, `analyze`, `chat`, and `mcp` use the full set by default. Select one database for other commands with `--db-name` or `--db`. `settings`, `init-config`, and `download-models` do not open a database. See [Multiple Databases](configuration/storage.md#multiple-databases).
+    With `lancedb.databases` configured, `search`, `ask`, `chat`, and `mcp` use the full set by default. Select one database for other commands with `--db-name` or `--db`. `settings`, `init-config`, and `download-models` do not open a database. See [Multiple Databases](configuration/storage.md#multiple-databases).
 
 ## Document Management
 
@@ -183,28 +183,6 @@ Flags:
 - `--image`: Path to an image attached to the question (repeatable). Retrieval stays text-based; the model must have `vision: true` configured.
 - `--full-citations`: Show the full text of each citation instead of a truncated preview
 
-## Analyze
-
-Answer complex analytical questions via code execution:
-
-```bash
-haiku-rag analyze "How many documents mention security?"
-```
-
-Filter to specific documents:
-
-```bash
-haiku-rag analyze "What is the total revenue?" --filter "title LIKE '%Financial%'"
-```
-
-Flags:
-
-- `--filter` / `-f`: SQL WHERE clause to restrict document access
-- `--image`: Path to an image attached to the question (repeatable). Requires `vision: true` on the analysis model.
-- `--full-citations`: Show the full text of each citation instead of a truncated preview
-
-See [Analysis capability](capabilities/analysis.md) for details and configuration.
-
 ## Chat
 
 Launch an interactive chat session for multi-turn conversations:
@@ -212,17 +190,10 @@ Launch an interactive chat session for multi-turn conversations:
 ```bash
 haiku-rag chat
 haiku-rag chat --db /path/to/database.lancedb
-
-# Enable the analysis capability (code execution)
-haiku-rag chat -c rag -c analysis
 ```
 
 !!! note
     Requires the `tui` extra: `pip install haiku.rag-slim[tui]` (included in full `haiku.rag` package)
-
-Flags:
-
-- `--capability` / `-c`: Capabilities to enable. `rag` (default), `analysis`. Can be repeated.
 
 The chat interface provides:
 

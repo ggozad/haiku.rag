@@ -1,6 +1,6 @@
 import asyncio
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -23,10 +23,8 @@ from textual.binding import Binding
 from textual.widgets import Footer, Header
 from textual.worker import Worker
 
-from haiku.rag.capabilities._base import RAGCapabilityBase
-from haiku.rag.capabilities.analysis import AnalysisState
 from haiku.rag.capabilities.compaction import create_capability as create_compaction
-from haiku.rag.capabilities.rag import AGENT_PREAMBLE, RAGState
+from haiku.rag.capabilities.rag import STATE_NAMESPACE, RAGCapability, RAGState
 from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
 from haiku.rag.chat.widgets.image_select import ImageAdded
 from haiku.rag.chat.widgets.prompt import (
@@ -45,10 +43,6 @@ if TYPE_CHECKING:
     from textual.app import ComposeResult
 
     from haiku.rag.client.scope import DatabaseScope
-
-
-RAG_STATE_NAMESPACE = "rag"
-ANALYSIS_STATE_NAMESPACE = "analysis"
 
 
 @dataclass
@@ -88,14 +82,14 @@ class ChatApp(App):
 
     def __init__(
         self,
-        capabilities: Sequence[RAGCapabilityBase[Any]],
+        capability: RAGCapability,
         scope: "DatabaseScope",
         read_only: bool = False,
         model: str | None = None,
     ) -> None:
         super().__init__()
         self.scope = scope
-        self._capabilities = capabilities
+        self._capability = capability
         self.read_only = read_only
         self._model = model
         self.client: HaikuRAG | None = None
@@ -148,26 +142,19 @@ class ChatApp(App):
         # a client whose __aenter__ failed.
         await client.__aenter__()
         self.client = client
-        # Lent to the capabilities, with the scope it covers: one connection
-        # per database however many capabilities read it, and the analysis
-        # sandbox is built over the same selection.
-        for capability in self._capabilities:
-            capability.borrowed_rag = client
-            capability.scope = self.scope
+        # Lent to the capability, with the scope it covers, so the sandbox is
+        # built over the same selection the searches read.
+        self._capability.borrowed_rag = client
+        self._capability.scope = self.scope
 
         self._agent = Agent(
             self._model,
             deps_type=ChatDeps,
-            instructions=AGENT_PREAMBLE,
             # A chat is multi-turn by definition, so earlier questions are reduced
             # to the evidence they cited rather than carried whole.
-            capabilities=[*self._capabilities, create_compaction()],
+            capabilities=[self._capability, create_compaction()],
         )
-        self._state = {}
-        for capability in self._capabilities:
-            self._state[capability.state_namespace] = (
-                capability.state_type().model_dump(mode="json")
-            )
+        self._state = {STATE_NAMESPACE: RAGState().model_dump(mode="json")}
 
         self.query_one(FlexibleInput).focus()
 
@@ -282,17 +269,16 @@ class ChatApp(App):
             chat_input.focus()
 
     async def _show_citations_and_programs(self, chat_history: "ChatHistory") -> None:
-        """Show citations and programs from capability states after a response."""
-        citations = []
-        for namespace in (RAG_STATE_NAMESPACE, ANALYSIS_STATE_NAMESPACE):
-            state_data = self._state.get(namespace)
-            if not state_data:
-                continue
-            state_type = RAGState if namespace == RAG_STATE_NAMESPACE else AnalysisState
-            state = state_type.model_validate(state_data)
-            for cid in state.citations:
-                if cid in state.citation_index:
-                    citations.append(state.citation_index[cid])
+        """Show the citations and the program behind a response."""
+        state = RAGState.model_validate(self._state.get(STATE_NAMESPACE) or {})
+        successful = [e for e in state.executions if e.success]
+        if successful:
+            await chat_history.add_program(successful[-1].code)
+        citations = [
+            state.citation_index[cid]
+            for cid in state.citations
+            if cid in state.citation_index
+        ]
         if not citations:
             return
 
@@ -323,21 +309,12 @@ class ChatApp(App):
             include_collection=self.client is not None and self.client.covers_multiple,
         )
 
-        if analysis_data := self._state.get(ANALYSIS_STATE_NAMESPACE):
-            analysis_state = AnalysisState.model_validate(analysis_data)
-            successful = [e for e in analysis_state.executions if e.success]
-            if successful:
-                await chat_history.add_program(successful[-1].code)
-
     async def action_clear_chat(self) -> None:
         """Clear the chat history and reset session."""
         chat_history = self.query_one(ChatHistory)
         await chat_history.clear_messages()
         self._messages.clear()
-        self._state = {
-            capability.state_namespace: capability.state_type().model_dump(mode="json")
-            for capability in self._capabilities
-        }
+        self._state = {STATE_NAMESPACE: RAGState().model_dump(mode="json")}
         # Cleared chat starts a fresh Logfire conversation.
         self._conversation_id = str(uuid.uuid4())
 
@@ -440,12 +417,7 @@ class ChatApp(App):
         selected_sources = sorted({source for source, _ in event.selected if source})
         covers_multiple = self.client is not None and self.client.covers_multiple
         sources = selected_sources if covers_multiple and selected_sources else None
-        for namespace, state_type in (
-            (RAG_STATE_NAMESPACE, RAGState),
-            (ANALYSIS_STATE_NAMESPACE, AnalysisState),
-        ):
-            if namespace in self._state:
-                state = state_type.model_validate(self._state[namespace])
-                state.document_filter = doc_filter
-                state.sources = sources
-                self._state[namespace] = state.model_dump(mode="json")
+        state = RAGState.model_validate(self._state.get(STATE_NAMESPACE) or {})
+        state.document_filter = doc_filter
+        state.sources = sources
+        self._state[STATE_NAMESPACE] = state.model_dump(mode="json")

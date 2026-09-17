@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 class Citation(BaseModel):
     """Resolved citation with full metadata for display/visual grounding.
 
-    Used by the RAG and analysis capabilities and rendered by the CLI / chat
+    Used by the RAG capability and rendered by the CLI / chat
     application. The optional index field supports UI display ordering.
 
     ``picture_refs`` lists the ``self_ref`` values of picture items in the

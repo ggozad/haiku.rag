@@ -74,30 +74,3 @@ async def test_ask_with_images_requires_vision_model(temp_db_path: Path):
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         with pytest.raises(ValueError, match="vision"):
             await client.ask("What is this?", images=[make_image_bytes("PNG")])
-
-
-@pytest.mark.asyncio
-async def test_analyze_with_images_passes_binary_content(
-    temp_db_path: Path, captured_run
-):
-    config = AppConfig()
-    config.qa.model.vision = True
-    jpeg = make_image_bytes("JPEG")
-    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
-        await client.analyze("Does this image match?", images=[jpeg])
-    prompt = captured_run["user_prompt"]
-    assert prompt[0] == "Does this image match?"
-    assert isinstance(prompt[1], BinaryContent)
-    assert prompt[1].media_type == "image/jpeg"
-
-
-@pytest.mark.asyncio
-async def test_analyze_with_images_checks_analysis_model_vision(temp_db_path: Path):
-    from haiku.rag.config.models import ModelConfig
-
-    config = AppConfig()
-    config.qa.model.vision = True
-    config.analysis.model = ModelConfig(provider="openai", name="m", vision=False)
-    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
-        with pytest.raises(ValueError, match="vision"):
-            await client.analyze("Does this match?", images=[make_image_bytes("PNG")])

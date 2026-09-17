@@ -34,7 +34,7 @@ Context expansion is automatic and section-aware. Search results are expanded to
 
 Model and temperature selection affect answer quality directly. See [Providers](configuration/providers.md#model-settings) for options.
 
-`domain_preamble` prepends domain context to the RAG and analysis capability instructions. Use it to describe what the knowledge base contains and clarify domain-specific terminology. See [Prompt Customization](configuration/prompts.md).
+`domain_preamble` prepends domain context to the RAG capability instructions. Use it to describe what the knowledge base contains and clarify domain-specific terminology. See [Prompt Customization](configuration/prompts.md).
 
 ## What Requires a Rebuild
 

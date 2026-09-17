@@ -21,6 +21,7 @@ from haiku.rag.context import build_toc
 from haiku.rag.sandbox.dependencies import AnalysisContext
 from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX, DocumentItem
+from haiku.rag.telemetry import logfire
 from haiku.rag.utils import gather_all
 
 if TYPE_CHECKING:
@@ -40,6 +41,7 @@ class SandboxResult:
     stdout: str
     stderr: str
     success: bool
+    search_calls: int = 0
 
 
 class CappedOutput:
@@ -103,7 +105,7 @@ class Sandbox:
     file callbacks are synchronous and run off that loop while ``feed_run`` is
     awaited, so they bridge back to it via ``run_coroutine_threadsafe`` without
     deadlocking. When a ``rag`` connection is supplied it is used for every read,
-    so an analysis run drives a single connection on a single loop. Otherwise a
+    so a run drives a single connection on a single loop. Otherwise a
     scope covering several databases opens a federated client once and holds it
     until ``close()``, and a single database is opened per read.
     """
@@ -115,6 +117,8 @@ class Sandbox:
     _owners: dict[str, "HaikuRAG"]
     _lock: "asyncio.Lock | None"
     _search_results: "list[SearchResult]"
+    _search_calls: int
+    _executions: int
     _doc_items: dict[str, list["DocumentItem"]]
     _doc_chunk_index: dict[str, dict[str, list[str]]]
     _items_jsonl_cache: dict[str, str]
@@ -134,6 +138,7 @@ class Sandbox:
         context: AnalysisContext,
         rag: "HaikuRAG | None" = None,
         lock: "asyncio.Lock | None" = None,
+        executions: int = 1,
     ):
         from haiku.rag.client.scope import DatabaseScope
 
@@ -143,6 +148,7 @@ class Sandbox:
             context,
             rag,
             lock,
+            executions,
         )
 
     @classmethod
@@ -153,6 +159,7 @@ class Sandbox:
         context: AnalysisContext,
         rag: "HaikuRAG | None" = None,
         lock: "asyncio.Lock | None" = None,
+        executions: int = 1,
     ) -> "Sandbox":
         """A sandbox over databases someone already resolved.
 
@@ -162,7 +169,7 @@ class Sandbox:
         handed is the only one resolved.
         """
         sandbox = cls.__new__(cls)
-        sandbox._configure(scope, config, context, rag, lock)
+        sandbox._configure(scope, config, context, rag, lock, executions)
         return sandbox
 
     def _configure(
@@ -172,16 +179,23 @@ class Sandbox:
         context: AnalysisContext,
         rag: "HaikuRAG | None",
         lock: "asyncio.Lock | None",
+        executions: int,
     ) -> None:
-        """The state every sandbox starts with, however its scope was reached."""
+        """The state every sandbox starts with, however its scope was reached.
+
+        ``executions`` is how many ``execute()`` calls the session will serve;
+        the session's duration budget is that many ``code_timeout``s.
+        """
         self._scope = scope
         self._config = config
         self._context = context
+        self._executions = executions
         self._rag = rag
         self._opened = None
         self._owners = {}
         self._lock = lock
         self._search_results = []
+        self._search_calls = 0
         self._doc_items = {}
         self._doc_chunk_index = {}
         self._items_jsonl_cache = {}
@@ -275,7 +289,7 @@ class Sandbox:
                 if doc.id in holders:
                     raise ValueError(
                         f"document {doc.id} is in databases {held_by[doc.id]!r} and "
-                        f"{owner.source!r}; analysis mounts one document per id"
+                        f"{owner.source!r}; the sandbox mounts one document per id"
                     )
                 holders[doc.id] = owner
                 held_by[doc.id] = owner.source
@@ -313,7 +327,7 @@ class Sandbox:
     def _time_limit(self) -> TimeoutError:
         return TimeoutError(
             "time limit exceeded: no further document reads or calls after "
-            f"{self._config.analysis.code_timeout}s"
+            f"{self._config.sandbox.code_timeout}s"
         )
 
     def _check_deadline(self) -> None:
@@ -370,20 +384,24 @@ class Sandbox:
         context = self._context
 
         async def search(query: str, limit: int = 10) -> list[dict[str, Any]]:
-            self._check_deadline()
+            # Counted and traced before the deadline check, so a rejected call
+            # is still a call the program made.
+            self._search_calls += 1
             # Picture bytes are deliberately not attached to in-code search
             # results: the Monty interpreter has no PIL/base64/hashlib, so the
             # agent's Python can't do anything with them. The driving model
             # gets figures through the top-level `search` tool when the
             # question is visual; in-code search is for structural work.
-            async with self._connection() as rag:
-                results = await rag.search(
-                    query,
-                    limit=limit,
-                    filter=context.filter,
-                    sources=context.sources,
-                )
-                expanded = await rag.expand_context(results)
+            with logfire.span("sandbox.search", query=query, limit=limit):
+                self._check_deadline()
+                async with self._connection() as rag:
+                    results = await rag.search(
+                        query,
+                        limit=limit,
+                        filter=context.filter,
+                        sources=context.sources,
+                    )
+                    expanded = await rag.expand_context(results)
             self._search_results.extend(expanded)
             out: list[dict[str, Any]] = []
             for r in expanded:
@@ -638,7 +656,8 @@ class Sandbox:
 
         Monty spends ``max_duration_secs`` across the session's whole life, and
         the session is reused so variables persist between calls: the budget
-        covers the whole run. ``code_timeout`` is enforced per call elsewhere: past
+        covers every execution the session serves. ``code_timeout`` is enforced per
+        call elsewhere: past
         its deadline no further host call starts (``_check_deadline``), and the
         pool's ``request_timeout`` bounds compute.
 
@@ -646,9 +665,9 @@ class Sandbox:
         included, defaults to 1000 and cannot be disabled. The time budgets are
         the governors here, so it is set where no program reaches it.
         """
-        analysis = self._config.analysis
+        config = self._config
         return {
-            "max_duration_secs": analysis.code_timeout * analysis.max_executions,
+            "max_duration_secs": config.sandbox.code_timeout * self._executions,
             "max_suspensions": _MAX_HOST_CALLS,
         }
 
@@ -661,7 +680,7 @@ class Sandbox:
             # read that blocks the worker never trips it. That leaves the two
             # limits disjoint: this one bounds a call that computes, and the read
             # deadline bounds a call that reads.
-            pool = AsyncMonty(request_timeout=self._config.analysis.code_timeout)
+            pool = AsyncMonty(request_timeout=self._config.sandbox.code_timeout)
             await pool.__aenter__()
             self._pool = pool
         if self._session is None:
@@ -671,6 +690,11 @@ class Sandbox:
         assert self._session is not None and self._vfs is not None
         return self._session, self._vfs
 
+    @property
+    def search_results(self) -> tuple[SearchResult, ...]:
+        """Every result the session's in-code ``search()`` calls returned, in order."""
+        return tuple(self._search_results)
+
     async def execute(self, code: str) -> SandboxResult:
         """Execute Python code in the Monty worker session.
 
@@ -678,11 +702,12 @@ class Sandbox:
         """
         # Monty's synchronous file callbacks bridge DB reads back to this loop.
         self._loop = asyncio.get_running_loop()
-        self._deadline = self._loop.time() + self._config.analysis.code_timeout
+        self._deadline = self._loop.time() + self._config.sandbox.code_timeout
+        search_calls_before = self._search_calls
         session, vfs = await self._ensure_initialized()
         external_fns = self._build_external_functions()
 
-        out = CappedOutput(self._config.analysis.max_output_chars)
+        out = CappedOutput(self._config.sandbox.max_output_chars)
 
         try:
             output = await session.feed_run(
@@ -701,8 +726,18 @@ class Sandbox:
                     f"{stderr}\n\nThe interpreter restarted. Variables from "
                     "earlier calls are gone."
                 )
-            return SandboxResult(stdout=out.text(), stderr=stderr, success=False)
+            return SandboxResult(
+                stdout=out.text(),
+                stderr=stderr,
+                success=False,
+                search_calls=self._search_calls - search_calls_before,
+            )
 
         if output is not None:
             out.write("stdout", str(output))
-        return SandboxResult(stdout=out.text(), stderr="", success=True)
+        return SandboxResult(
+            stdout=out.text(),
+            stderr="",
+            success=True,
+            search_calls=self._search_calls - search_calls_before,
+        )

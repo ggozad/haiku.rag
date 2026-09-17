@@ -46,6 +46,9 @@ class TestBuildExperimentMetadata:
         assert result["chunk_size"] == config.processing.chunk_size
         assert result["search_limit"] == config.search.limit
         assert result["qa_max_searches"] == config.qa.max_searches
+        assert result["qa_max_executions"] == config.qa.max_executions
+        assert result["sandbox_code_timeout"] == config.sandbox.code_timeout
+        assert result["sandbox_max_output_chars"] == config.sandbox.max_output_chars
         assert "qa_provider" not in result
         assert "qa_model" not in result
         assert "judge_provider" not in result
@@ -538,6 +541,7 @@ class TestLiveConversationDispatch:
                 n_search_calls=2,
                 n_rejected_searches=1,
                 n_failed_tools=1,
+                n_executions=3,
                 n_requests=4,
                 citation_status="grounded",
             ),
@@ -574,6 +578,7 @@ class TestLiveConversationDispatch:
         assert recorded["turn_n_search_calls"] == [2, 0]
         assert recorded["turn_n_rejected_searches"] == [1, 0]
         assert recorded["turn_n_failed_tools"] == [1, 0]
+        assert recorded["turn_n_executions"] == [3, 0]
         assert recorded["turn_n_requests"] == [4, 0]
         assert recorded["turn_citation_status"] == ["grounded", None]
         questions = 2
@@ -743,16 +748,16 @@ async def test_a_db_path_beside_configured_databases_is_refused(tmp_path) -> Non
         )
 
 
-class TestExperimentMetadataTargets:
-    def test_default_target_is_rag_capability(self) -> None:
+class TestExperimentMetadataCapability:
+    def test_a_retrieval_run_records_no_capability(self) -> None:
         result = build_experiment_metadata(
             dataset_key="test", test_cases=1, config=AppConfig()
         )
-        assert result["target"] == "rag-capability"
+        assert "target" not in result
         assert "capability_provider" not in result
         assert "capability_model" not in result
 
-    def test_capability_target_includes_capability_config(self) -> None:
+    def test_a_qa_run_records_the_capability_config(self) -> None:
         capability = ModelConfig(
             provider="ollama", name="gpt-oss-large", temperature=0.2, thinking="low"
         )
@@ -760,11 +765,9 @@ class TestExperimentMetadataTargets:
             dataset_key="test",
             test_cases=1,
             config=AppConfig(),
-            target="rag-capability",
             capability_config=capability,
             capability_model_source="qa.model",
         )
-        assert result["target"] == "rag-capability"
         assert result["capability_provider"] == "ollama"
         assert result["capability_model"] == "gpt-oss-large"
         assert result["capability_temperature"] == 0.2
@@ -776,38 +779,23 @@ class TestExperimentMetadataTargets:
 class TestResolveCapabilityConfig:
     """The capability model and the record of where it came from."""
 
-    def test_rag_target_falls_back_to_qa_model(self) -> None:
+    def test_falls_back_to_qa_model(self) -> None:
         from evaluations.qa import _resolve_capability_config
 
         config = AppConfig()
-        assert _resolve_capability_config("rag-capability", config, None) == (
+        assert _resolve_capability_config(config, None) == (
             config.qa.model,
             "qa.model",
         )
 
-    def test_analysis_target_prefers_analysis_model(self) -> None:
-        from evaluations.qa import _resolve_capability_config
-
-        config = AppConfig()
-        config.analysis.model = ModelConfig(provider="ollama", name="analyst")
-        assert _resolve_capability_config("analysis-capability", config, None) == (
-            config.analysis.model,
-            "analysis.model",
-        )
-        assert (
-            _resolve_capability_config("analysis-capability", AppConfig(), None)[1]
-            == "qa.model"
-        )
-
-    def test_override_wins_for_every_target(self) -> None:
+    def test_override_wins(self) -> None:
         from evaluations.qa import _resolve_capability_config
 
         override = ModelConfig(provider="openai", name="gpt-5")
-        for target in ("rag-capability", "analysis-capability"):
-            assert _resolve_capability_config(target, AppConfig(), override) == (
-                override,
-                "--capability-model",
-            )
+        assert _resolve_capability_config(AppConfig(), override) == (
+            override,
+            "--capability-model",
+        )
 
 
 class TestEvaluateDatasetTarget:
@@ -822,7 +810,7 @@ class TestEvaluateDatasetTarget:
         )
 
     @pytest.mark.asyncio
-    async def test_threads_target_and_capability_model(self) -> None:
+    async def test_threads_the_capability_model(self) -> None:
         capability = ModelConfig(provider="ollama", name="gpt-oss")
         with patch(
             "evaluations.benchmark.run_qa_benchmark", new_callable=AsyncMock
@@ -836,16 +824,14 @@ class TestEvaluateDatasetTarget:
                 limit=None,
                 name=None,
                 db_path=None,
-                target="rag-capability",
                 capability_model=capability,
             )
 
         mock_qa.assert_called_once()
-        assert mock_qa.call_args[1]["target"] == "rag-capability"
         assert mock_qa.call_args[1]["capability_model"] is capability
 
     @pytest.mark.asyncio
-    async def test_default_target_is_rag_capability(self) -> None:
+    async def test_the_capability_model_defaults_to_none(self) -> None:
         with patch(
             "evaluations.benchmark.run_qa_benchmark", new_callable=AsyncMock
         ) as mock_qa:
@@ -859,11 +845,10 @@ class TestEvaluateDatasetTarget:
                 name=None,
                 db_path=None,
             )
-        assert mock_qa.call_args[1]["target"] == "rag-capability"
         assert mock_qa.call_args[1]["capability_model"] is None
 
 
-class TestRunQaBenchmarkCapabilityTarget:
+class TestRunQaBenchmarkCapability:
     def _spec(self, tmp_path: Path) -> DatasetSpec:
         return DatasetSpec(
             key="test",
@@ -875,9 +860,7 @@ class TestRunQaBenchmarkCapabilityTarget:
         )
 
     @pytest.mark.asyncio
-    async def test_rag_capability_target_uses_run_capability_question(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_uses_run_capability_question(self, tmp_path: Path) -> None:
         from evaluations.capability_runner import CapabilityRunResult
 
         capability_run = AsyncMock(
@@ -894,7 +877,6 @@ class TestRunQaBenchmarkCapabilityTarget:
                 self._spec(tmp_path),
                 AppConfig(),
                 db_path=tmp_path / "test.lancedb",
-                target="rag-capability",
             )
 
         # The capability manages its own client, so the QA runner never opens
@@ -907,21 +889,6 @@ class TestRunQaBenchmarkCapabilityTarget:
             call[0][0] == AppConfig().qa.model for call in mock_get_model.call_args_list
         )
         assert mock_run_capability is capability_run
-
-    @pytest.mark.asyncio
-    async def test_analysis_capability_target_resolves_factory(
-        self, tmp_path: Path
-    ) -> None:
-        from evaluations.qa import _capability_factory_for_target
-        from haiku.rag.capabilities.analysis import (
-            create_capability as analysis_factory,
-        )
-        from haiku.rag.capabilities.rag import create_capability as rag_factory
-
-        assert _capability_factory_for_target("rag-capability") is rag_factory
-        assert _capability_factory_for_target("analysis-capability") is analysis_factory
-        with pytest.raises(ValueError, match="not a capability target"):
-            _capability_factory_for_target("unknown")  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
 
 class TestCitationEvaluatorWiring:

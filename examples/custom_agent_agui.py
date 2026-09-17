@@ -30,7 +30,7 @@ from haiku.rag.capabilities.compaction import create_capability as compaction
 from haiku.rag.capabilities.policy import create_capability as citation_policy
 from haiku.rag.capabilities.rag import RAGState, create_capability
 
-capability = create_capability(defer_loading=False)
+capability = create_capability()
 
 
 @dataclass

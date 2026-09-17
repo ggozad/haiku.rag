@@ -2,7 +2,7 @@
 # T²-RAGBench (FinQA) financial QA, scored by exact numeric match.
 # No `evaluations.judge` block: the spec sets `NumberMatchEvaluator`, which
 # replaces the evaluator list, so no LLM judge is constructed for this dataset.
-# Run: evaluations run t2_finqa --skip-db --target analysis-capability --config configs/t2_finqa.yaml
+# Run: evaluations run t2_finqa --skip-db --config configs/t2_finqa.yaml
 # base_url uses the `vllm` host serving each model over an OpenAI-compatible API.
 
 environment: development

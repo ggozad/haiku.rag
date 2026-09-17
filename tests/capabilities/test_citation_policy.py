@@ -9,7 +9,6 @@ from pydantic_ai.exceptions import UserError
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import FunctionModel
 
-from haiku.rag.capabilities.analysis import create_capability as create_analysis
 from haiku.rag.capabilities.policy import (
     CITATION_REDIRECT_TAG,
     REDIRECT_HINT,
@@ -48,9 +47,7 @@ def prompts_of(messages) -> list[str]:
 
 async def run_with_policy(temp_db_path, responses, *, policy=True, config=None):
     """Answer one question with the given model responses, policy optional."""
-    rag = create_rag(
-        db_path=temp_db_path, config=config or AppConfig(), defer_loading=False
-    )
+    rag = create_rag(db_path=temp_db_path, config=config or AppConfig())
     capabilities: list[Any] = [rag]
     if policy:
         capabilities.append(create_policy())
@@ -74,9 +71,9 @@ async def test_an_answer_without_a_citation_is_sent_back_once(temp_db_path):
     result, deps, sent = await run_with_policy(
         temp_db_path,
         [
-            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
             [TextPart("an answer with no citation")],
-            [ToolCallPart("rag_cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
+            [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
             [TextPart("an answer with no citation")],
         ],
     )
@@ -92,8 +89,8 @@ async def test_a_grounded_answer_is_left_alone(temp_db_path):
     _, _, sent = await run_with_policy(
         temp_db_path,
         [
-            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
-            [ToolCallPart("rag_cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
             [TextPart("a grounded answer")],
         ],
     )
@@ -107,8 +104,8 @@ async def test_an_explicitly_ungrounded_answer_is_left_alone(temp_db_path):
     _, deps, sent = await run_with_policy(
         temp_db_path,
         [
-            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
-            [ToolCallPart("rag_cite", {"chunk_ids": []}, "call-2")],
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("cite", {"chunk_ids": []}, "call-2")],
             [TextPart("I cannot find this in the knowledge base")],
         ],
     )
@@ -129,13 +126,13 @@ async def test_a_question_that_gathered_no_evidence_is_left_alone(temp_db_path):
 async def test_a_violation_is_recorded_when_the_cite_tool_is_gone(temp_db_path):
     """Asking for a withdrawn tool costs the agent's unknown-tool retries."""
     with patch(
-        "haiku.rag.capabilities._base.RAGCapabilityBase.cite_available",
+        "haiku.rag.capabilities.rag.RAGCapability.cite_available",
         new_callable=lambda: property(lambda self: False),
     ):
         _, deps, sent = await run_with_policy(
             temp_db_path,
             [
-                [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
+                [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
                 [TextPart("an answer with no citation")],
             ],
         )
@@ -150,7 +147,7 @@ async def test_without_the_policy_capability_nothing_is_enforced(temp_db_path):
     _, deps, sent = await run_with_policy(
         temp_db_path,
         [
-            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
             [TextPart("an answer with no citation")],
         ],
         policy=False,
@@ -160,39 +157,8 @@ async def test_without_the_policy_capability_nothing_is_enforced(temp_db_path):
     assert "citation_policy" not in deps.state
 
 
-@pytest.mark.asyncio
-async def test_one_decision_is_made_with_both_evidence_capabilities(temp_db_path):
-    """Two capabilities must not each demand a citation for one answer."""
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
-    analysis = create_analysis(
-        db_path=temp_db_path, config=AppConfig(), defer_loading=False
-    )
-    turns = iter(
-        [
-            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
-            [TextPart("an answer with no citation")],
-            [TextPart("an answer with no citation")],
-        ]
-    )
-    sent: list[list[Any]] = []
-
-    async def model(messages, _info):
-        sent.append(list(messages))
-        return ModelResponse(parts=next(turns))
-
-    agent = Agent(
-        FunctionModel(model),
-        deps_type=Deps,
-        capabilities=[rag, analysis, create_policy()],
-    )
-    with patch.object(RAGCapability, "_search", stub_search):
-        await agent.run("what does the supervisor do?", deps=Deps())
-
-    assert len([p for p in prompts_of(sent[-1]) if REDIRECT_HINT in p]) == 1
-
-
 def test_two_policy_capabilities_fail_fast(temp_db_path):
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
 
     async def model(_messages, _info):  # pragma: no cover - never reached
         return ModelResponse(parts=[TextPart("answer")])
@@ -216,13 +182,13 @@ def test_the_policy_state_round_trips():
 @pytest.mark.asyncio
 async def test_a_second_question_can_be_redirected_again(temp_db_path):
     """The redirect fires once per question, not once per conversation."""
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     turns = iter(
         [
-            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
             [TextPart("first, uncited")],
             [TextPart("first, uncited")],
-            [ToolCallPart("rag_search", {"query": "again"}, "call-2")],
+            [ToolCallPart("search", {"query": "again"}, "call-2")],
             [TextPart("second, uncited")],
             [TextPart("second, uncited")],
         ]
@@ -255,10 +221,10 @@ class StatelessDeps:
 async def test_a_violation_with_nowhere_to_record_it_does_not_fail_the_run(
     temp_db_path,
 ):
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     turns = iter(
         [
-            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
             [TextPart("an answer with no citation")],
         ]
     )
@@ -274,7 +240,7 @@ async def test_a_violation_with_nowhere_to_record_it_does_not_fail_the_run(
 
     with (
         patch(
-            "haiku.rag.capabilities._base.RAGCapabilityBase.cite_available",
+            "haiku.rag.capabilities.rag.RAGCapability.cite_available",
             new_callable=lambda: property(lambda self: False),
         ),
         patch.object(RAGCapability, "_search", stub_search),
@@ -292,11 +258,11 @@ async def test_a_follow_up_answered_from_retained_evidence_is_enforced(temp_db_p
     still on the wire, whether in a capsule or in full — so requiring a fresh
     evidence outcome let exactly those answers through undeclared.
     """
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     turns = iter(
         [
-            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
-            [ToolCallPart("rag_cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
             [TextPart("first answer")],
             [TextPart("a follow-up answered from what is already here")],
             [TextPart("a follow-up answered from what is already here")],
@@ -341,10 +307,10 @@ async def test_a_resumed_question_is_not_redirected_twice(temp_db_path):
     Tracking it on the run instance forgot it at the next `for_run`, so resuming an
     interrupted question asked for the citation again.
     """
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     turns = iter(
         [
-            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
             [TextPart("uncited")],
             [TextPart("uncited again")],
             [TextPart("uncited a third time")],
@@ -390,10 +356,10 @@ async def test_a_user_quoting_the_redirect_does_not_suppress_enforcement(temp_db
     Matching the wording let a question that merely mentioned it pass as already
     asked, which silently switches enforcement off.
     """
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     turns = iter(
         [
-            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
             [TextPart("uncited")],
             [TextPart("uncited again")],
         ]
@@ -430,10 +396,10 @@ async def test_a_structured_output_answer_does_not_escape_enforcement(temp_db_pa
     Treating every tool call as intermediate let a model search, skip citing, emit
     its structured answer and finish with neither a redirect nor a violation.
     """
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     turns = iter(
         [
-            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
             [
                 ToolCallPart(
                     "final_result", {"text": "uncited structured answer"}, "out"
@@ -476,10 +442,10 @@ async def test_a_question_asked_once_and_still_undeclared_is_recorded(temp_db_pa
     and then finished — with the cite tool possibly gone by that point — was neither
     redirected again nor recorded anywhere.
     """
-    rag = create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=False)
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
     turns = iter(
         [
-            [ToolCallPart("rag_search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
             [TextPart("uncited")],
             [TextPart("still uncited after being asked")],
         ]

@@ -125,6 +125,7 @@ class TestFlexibleInput:
 class TestChatAppImageAttach:
     @pytest.mark.asyncio
     async def test_image_added_inserts_token_and_stores_bytes(self, temp_db_path):
+        from haiku.rag.capabilities.rag import create_capability
         from haiku.rag.chat.app import ChatApp
         from haiku.rag.chat.widgets.image_select import ImageAdded
         from haiku.rag.client import HaikuRAG
@@ -132,7 +133,10 @@ class TestChatAppImageAttach:
         async with HaikuRAG(temp_db_path, create=True):
             pass
 
-        app = ChatApp(scope=for_path(temp_db_path), capabilities=[])
+        app = ChatApp(
+            scope=for_path(temp_db_path),
+            capability=create_capability(db_path=temp_db_path),
+        )
         async with app.run_test() as pilot:
             data = make_image_bytes()
             app.post_message(ImageAdded(Path("img.png"), data))
@@ -144,6 +148,7 @@ class TestChatAppImageAttach:
 class TestChatAppLayout:
     @pytest.mark.asyncio
     async def test_prompt_stays_compact_and_history_visible(self, temp_db_path):
+        from haiku.rag.capabilities.rag import create_capability
         from haiku.rag.chat.app import ChatApp
         from haiku.rag.chat.widgets.chat_history import ChatHistory
         from haiku.rag.client import HaikuRAG
@@ -151,7 +156,10 @@ class TestChatAppLayout:
         async with HaikuRAG(temp_db_path, create=True):
             pass
 
-        app = ChatApp(scope=for_path(temp_db_path), capabilities=[])
+        app = ChatApp(
+            scope=for_path(temp_db_path),
+            capability=create_capability(db_path=temp_db_path),
+        )
         async with app.run_test() as pilot:
             await pilot.pause()
             prompt = app.query_one(FlexibleInput)

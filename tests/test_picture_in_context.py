@@ -1016,7 +1016,6 @@ async def test_rag_capability_attaches_images_for_vision_model(temp_db_path):
     capability = create_capability(
         db_path=temp_db_path,
         config=config,
-        defer_loading=False,
     )
     capability.state = RAGState()
     capability.rag = fake_client

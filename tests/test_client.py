@@ -9,6 +9,8 @@ import httpx
 import pytest
 from docling_core.types.doc.document import DoclingDocument
 from docling_core.types.doc.labels import DocItemLabel
+from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolReturnPart
+from pydantic_ai.models.function import FunctionModel
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.documents import (
@@ -1323,12 +1325,72 @@ async def test_client_ask(allow_model_requests, temp_db_path):
             content="Python is a high-level programming language.", uri="test.txt"
         )
 
-        answer, citations = await client.ask("What is Python?")
+        answer, _ = await client.ask("What is Python?")
 
-        # Should return a valid response
-        assert answer is not None
-        assert isinstance(answer, str)
-        assert isinstance(citations, list)
+        # A recorded cite names the recording run's chunk id, which a fresh
+        # database never holds, so only the answer replays faithfully.
+        assert "programming language" in answer.lower()
+
+
+@pytest.mark.asyncio
+async def test_ask_returns_the_cited_chunk_with_its_provenance(
+    temp_db_path, monkeypatch
+):
+    """`ask` resolves what the model cites into citations naming the chunk and
+    its document."""
+    from haiku.rag import utils as rag_utils
+
+    text = "Lucy Lawless was born on 29 March 1968."
+
+    def model_function(messages, info):
+        cited = any(
+            isinstance(part, ToolReturnPart) and part.tool_name == "cite"
+            for message in messages
+            for part in message.parts
+        )
+        if not cited:
+            return ModelResponse(
+                parts=[ToolCallPart("cite", {"chunk_ids": [chunk.id]})]
+            )
+        return ModelResponse(parts=[TextPart("She was born in 1968.")])
+
+    monkeypatch.setattr(
+        rag_utils, "get_model", lambda *args, **kwargs: FunctionModel(model_function)
+    )
+    dim = get_config().embeddings.model.vector_dim
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = DoclingDocument(name="Lucy Lawless")
+        doc.add_text(label=DocItemLabel.TEXT, text=text)
+        document = await client.import_document(
+            doc,
+            [Chunk(content=text, embedding=[0.1] * dim, order=0)],
+            uri="test://lawless",
+            title="Lucy Lawless",
+        )
+        (chunk,) = await client.chunk_repository.get_by_document_id(document.id)
+
+        answer, citations = await client.ask("When was Lucy Lawless born?")
+
+    assert answer == "She was born in 1968."
+    (citation,) = citations
+    assert citation.chunk_id == chunk.id
+    assert citation.document_id == document.id
+    assert citation.document_uri == "test://lawless"
+    assert citation.document_title == "Lucy Lawless"
+    assert citation.content == text
+
+
+@pytest.mark.vcr()
+async def test_client_ask_runs_code(allow_model_requests, temp_db_path):
+    """A corpus-level question is answered through the capability's sandbox."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.create_document("First document about cats.", title="Doc 1")
+        await client.create_document("Second document about dogs.", title="Doc 2")
+        await client.create_document("Third document about birds.", title="Doc 3")
+
+        answer, _ = await client.ask("How many documents are in the database?")
+
+        assert "3" in answer
 
 
 @pytest.mark.vcr()

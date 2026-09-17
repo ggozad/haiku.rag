@@ -18,24 +18,20 @@ from evaluations.capability_runner import (
     _count_tool_traffic,
     run_capability_question,
 )
-from haiku.rag.capabilities.analysis import create_capability as create_analysis
+from haiku.rag.capabilities.rag import TOOL_NAMES
 from haiku.rag.capabilities.rag import create_capability as create_rag
 from haiku.rag.config.models import AppConfig
-
-ANALYSIS_TOOLS = frozenset(
-    {"analysis_search", "analysis_execute_code", "analysis_cite"}
-)
 
 
 def test_count_tool_traffic_sees_a_rejected_cite_call():
     """`_cite` rejects with ModelRetry, which is not a failed ToolReturnPart."""
     messages = [
         ModelRequest(parts=[UserPromptPart(content="q")]),
-        ModelResponse(parts=[ToolCallPart("analysis_cite", {"chunk_ids": []})]),
+        ModelResponse(parts=[ToolCallPart("cite", {"chunk_ids": []})]),
         ModelRequest(
             parts=[
                 RetryPromptPart(
-                    tool_name="analysis_cite",
+                    tool_name="cite",
                     content="No citations registered: chunk_ids was empty.",
                     tool_call_id="1",
                 )
@@ -44,7 +40,7 @@ def test_count_tool_traffic_sees_a_rejected_cite_call():
         ModelResponse(parts=[TextPart("done")]),
     ]
 
-    traffic = _count_tool_traffic(messages, "analysis", ANALYSIS_TOOLS)
+    traffic = _count_tool_traffic(messages, TOOL_NAMES)
 
     assert traffic.n_failed_tools == 1
     assert traffic.n_rejected_searches == 0
@@ -54,11 +50,11 @@ def test_count_tool_traffic_separates_search_rejections_from_code_errors():
     """A crash in model-written Python must not read as budget exhaustion."""
     messages = [
         ModelRequest(parts=[UserPromptPart(content="q")]),
-        ModelResponse(parts=[ToolCallPart("analysis_execute_code", {"code": "1/0"})]),
+        ModelResponse(parts=[ToolCallPart("execute_code", {"code": "1/0"})]),
         ModelRequest(
             parts=[
                 ToolReturnPart(
-                    tool_name="analysis_execute_code",
+                    tool_name="execute_code",
                     content="ZeroDivisionError",
                     tool_call_id="1",
                     outcome="failed",
@@ -68,7 +64,7 @@ def test_count_tool_traffic_separates_search_rejections_from_code_errors():
         ModelResponse(parts=[TextPart("done")]),
     ]
 
-    traffic = _count_tool_traffic(messages, "analysis", ANALYSIS_TOOLS)
+    traffic = _count_tool_traffic(messages, TOOL_NAMES)
 
     assert traffic.n_search_calls == 0
     assert traffic.n_rejected_searches == 0
@@ -82,17 +78,15 @@ def test_count_tool_traffic_counts_attempts_not_distinct_queries():
         ModelRequest(parts=[UserPromptPart(content="q")]),
         ModelResponse(
             parts=[
-                ToolCallPart("analysis_search", {"query": "same"}),
-                ToolCallPart("analysis_search", {"query": "same"}),
+                ToolCallPart("search", {"query": "same"}),
+                ToolCallPart("search", {"query": "same"}),
             ]
         ),
         ModelRequest(
             parts=[
+                ToolReturnPart(tool_name="search", content="results", tool_call_id="1"),
                 ToolReturnPart(
-                    tool_name="analysis_search", content="results", tool_call_id="1"
-                ),
-                ToolReturnPart(
-                    tool_name="analysis_search",
+                    tool_name="search",
                     content="Search limit reached.",
                     tool_call_id="2",
                     outcome="failed",
@@ -102,7 +96,7 @@ def test_count_tool_traffic_counts_attempts_not_distinct_queries():
         ModelResponse(parts=[TextPart("done")]),
     ]
 
-    traffic = _count_tool_traffic(messages, "analysis", ANALYSIS_TOOLS)
+    traffic = _count_tool_traffic(messages, TOOL_NAMES)
 
     assert traffic.n_search_calls == 2
     assert traffic.n_rejected_searches == 1
@@ -125,9 +119,9 @@ async def test_runs_rag_capability_without_legacy_capability_layer(tmp_path):
     assert result.citation_status == "missing"
 
 
-async def test_runs_analysis_capability_without_legacy_capability_layer(tmp_path):
+async def test_runs_the_capability_with_a_request_limit(tmp_path):
     result = await run_capability_question(
-        create_analysis,
+        create_rag,
         tmp_path / "rag.lancedb",
         AppConfig(),
         "hello",
@@ -140,11 +134,10 @@ async def test_runs_analysis_capability_without_legacy_capability_layer(tmp_path
 
 
 @pytest.mark.parametrize(("override", "expected"), [(None, 30), (5, 5)])
-async def test_analysis_capability_applies_request_limit(tmp_path, override, expected):
-    capability = create_analysis(
+async def test_the_capability_applies_request_limit(tmp_path, override, expected):
+    capability = create_rag(
         db_path=tmp_path / "rag.lancedb",
         config=AppConfig(),
-        defer_loading=False,
     )
     with patch(
         "evaluations.capability_runner.Agent.run", new_callable=AsyncMock
@@ -263,7 +256,6 @@ async def test_message_history_passed_to_agent_run(tmp_path):
     capability = create_rag(
         db_path=tmp_path / "rag.lancedb",
         config=AppConfig(),
-        defer_loading=False,
     )
     with patch(
         "evaluations.capability_runner.Agent.run", new_callable=AsyncMock
@@ -290,7 +282,6 @@ async def test_conversation_threads_own_messages_across_turns(tmp_path):
     capability = create_rag(
         db_path=tmp_path / "rag.lancedb",
         config=AppConfig(),
-        defer_loading=False,
     )
     histories: list[object] = []
 
@@ -455,8 +446,8 @@ async def test_gold_prefix_run_answers_with_history(tmp_path):
 def test_records_the_database_each_citation_came_from():
     """A run over several databases records which one grounded the answer."""
     from evaluations.capability_runner import ToolTraffic, _result_from_run
-    from haiku.rag.capabilities._base import EvidenceState
     from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
+    from haiku.rag.capabilities.rag import RAGState
     from haiku.rag.store.models.citation import Citation
 
     def cited(chunk_id: str, source: str | None) -> Citation:
@@ -468,7 +459,7 @@ def test_records_the_database_each_citation_came_from():
             source=source,
         )
 
-    state = EvidenceState(
+    state = RAGState(
         citations=["a1", "b1", "a2"],
         citation_index={
             "a1": cited("a1", "alpha"),
@@ -486,11 +477,11 @@ def test_records_the_database_each_citation_came_from():
 def test_a_hand_built_citation_without_a_source_records_an_empty_string():
     """A citation built without a source is recorded as an empty string."""
     from evaluations.capability_runner import ToolTraffic, _result_from_run
-    from haiku.rag.capabilities._base import EvidenceState
     from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
+    from haiku.rag.capabilities.rag import RAGState
     from haiku.rag.store.models.citation import Citation
 
-    state = EvidenceState(
+    state = RAGState(
         citations=["c1"],
         citation_index={
             "c1": Citation(
@@ -506,3 +497,23 @@ def test_a_hand_built_citation_without_a_source_records_an_empty_string():
     result = _result_from_run("answer", state, ToolTraffic(0, 0, 0, 0))
 
     assert result.cited_sources == [""]
+
+
+def test_in_code_search_calls_are_summed_across_executions():
+    from evaluations.capability_runner import ToolTraffic, _result_from_run
+    from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
+    from haiku.rag.capabilities.rag import CodeExecutionEntry, RAGState
+
+    state = RAGState(
+        executions=[
+            CodeExecutionEntry(code="a", stdout="", search_calls=2),
+            CodeExecutionEntry(code="b", stdout="", search_calls=1),
+            CodeExecutionEntry(code="c", stdout=""),
+        ],
+        evidence=CapabilityEvidenceRecord(question=1),
+    )
+
+    result = _result_from_run("answer", state, ToolTraffic(0, 0, 0, 0))
+
+    assert result.n_executions == 3
+    assert result.n_sandbox_search_calls == 3

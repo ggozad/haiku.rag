@@ -4,8 +4,8 @@ from typing import Any
 
 from pydantic_ai import RunContext
 
-from haiku.rag.capabilities._base import RAGCapabilityBase
 from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
+from haiku.rag.capabilities.rag import RAGCapability
 from haiku.rag.store.models.citation import Citation
 
 
@@ -29,14 +29,14 @@ def discover_evidence(ctx: RunContext[Any]) -> list[DiscoveredEvidence]:
     """Read what each evidence capability recorded, without writing anything.
 
     Discovery runs one way through the run's capability registry, so no capability
-    holds a reference to another, and a host running one, both, or neither needs no
-    wiring change. The registry holds the per-run instances, which are the ones
+    holds a reference to another, and a host running it or not needs no wiring
+    change. The registry holds the per-run instances, which are the ones
     carrying state; the registered objects never do. That includes a deferred
     capability the model has not loaded, whose record is simply empty.
     """
     discovered = []
     for capability in ctx.capabilities.values():
-        if not isinstance(capability, RAGCapabilityBase):
+        if not isinstance(capability, RAGCapability):
             continue
         discovered.append(
             DiscoveredEvidence(

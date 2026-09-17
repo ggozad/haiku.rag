@@ -186,6 +186,12 @@ class TestSandboxSearch:
             )
             assert result.success
             assert "True" in result.stdout or "1" in result.stdout
+            found = sb.search_results
+            assert isinstance(found, tuple)
+            assert found and all(item.chunk_id for item in found)
+            assert "fox" in found[0].content.lower()
+            with pytest.raises(AttributeError):
+                setattr(sb, "search_results", ())
 
     @pytest.mark.asyncio
     @pytest.mark.vcr()
@@ -359,7 +365,7 @@ class TestSandboxOutputTruncation:
         """Test stdout is truncated when a runtime error occurs after large output."""
         async with HaikuRAG(temp_db_path, create=True):
             config = AppConfig()
-            config.analysis.max_output_chars = 20
+            config.sandbox.max_output_chars = 20
             context = AnalysisContext()
             sb = Sandbox(db_path=temp_db_path, config=config, context=context)
             result = await sb.execute("print('a' * 100)\nx = 1/0")
@@ -373,7 +379,7 @@ class TestSandboxOutputTruncation:
         """Test output is truncated on successful execution with large output."""
         async with HaikuRAG(temp_db_path, create=True):
             config = AppConfig()
-            config.analysis.max_output_chars = 20
+            config.sandbox.max_output_chars = 20
             context = AnalysisContext()
             sb = Sandbox(db_path=temp_db_path, config=config, context=context)
             result = await sb.execute("print('b' * 100)")
@@ -388,7 +394,7 @@ class TestSandboxOutputTruncation:
         """No single print exceeds the cap, their sum does."""
         async with HaikuRAG(temp_db_path, create=True):
             config = AppConfig()
-            config.analysis.max_output_chars = 20
+            config.sandbox.max_output_chars = 20
             context = AnalysisContext()
             sb = Sandbox(db_path=temp_db_path, config=config, context=context)
             result = await sb.execute("for i in range(100):\n    print('c' * 5)")
@@ -1013,7 +1019,7 @@ class TestSandboxReadDeadline:
         from docling_core.types.doc.labels import DocItemLabel
 
         config = AppConfig()
-        config.analysis.code_timeout = 1.0
+        config.sandbox.code_timeout = 1.0
         docling = DoclingDocument(name="d")
         docling.add_text(label=DocItemLabel.TEXT, text="Foxes and dogs.")
         async with HaikuRAG(temp_db_path, create=True) as client:
@@ -1080,10 +1086,14 @@ class TestSandboxReadDeadline:
         """Monty spends its duration budget across the session's whole life, so a
         per-call value would let the first call starve the rest."""
         config = AppConfig()
-        config.analysis.code_timeout = 5.0
-        config.analysis.max_executions = 3
+        config.sandbox.code_timeout = 5.0
 
-        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        sb = Sandbox(
+            db_path=temp_db_path,
+            config=config,
+            context=AnalysisContext(),
+            executions=3,
+        )
 
         limits = sb._session_limits()
 
@@ -1091,6 +1101,25 @@ class TestSandboxReadDeadline:
         cap = limits["max_suspensions"]
         assert cap is not None
         assert cap >= 1_000_000
+
+    @pytest.mark.asyncio
+    async def test_a_sandbox_built_for_one_call_ignores_the_execution_budget(
+        self, temp_db_path
+    ):
+        """The MCP tool builds one sandbox per call; a capability budget of zero
+        executions is not its concern."""
+        config = AppConfig()
+        config.qa.max_executions = 0
+        async with HaikuRAG(temp_db_path, create=True):
+            pass
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            result = await sb.execute("print(6 * 7)")
+        finally:
+            await sb.close()
+
+        assert result.success, result.stderr
+        assert "42" in result.stdout
 
     @pytest.mark.asyncio
     async def test_a_program_may_read_more_than_a_thousand_times(self, temp_db_path):
@@ -1221,11 +1250,18 @@ class TestSandboxRequestTimeout:
     ):
         """Code that never reads escapes the read deadline. The watchdog kills it."""
         config = AppConfig()
-        config.analysis.code_timeout = 1.0
+        config.sandbox.code_timeout = 1.0
         async with HaikuRAG(temp_db_path, create=True):
             pass
 
-        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        # A session serving several calls: the killed call must leave budget
+        # for the next one.
+        sb = Sandbox(
+            db_path=temp_db_path,
+            config=config,
+            context=AnalysisContext(),
+            executions=3,
+        )
         try:
             runaway = await sb.execute(
                 "x = 0\nfor i in range(500000000):\n    x += i\nprint(x)"

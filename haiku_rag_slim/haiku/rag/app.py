@@ -651,44 +651,6 @@ class HaikuRAGApp:
             ):
                 self.console.print(renderable)
 
-    async def analyze(
-        self,
-        question: str,
-        filter: str | None = None,
-        images: list[Path] | None = None,
-        full_citations: bool = False,
-    ):
-        """Answer a question using the analysis capability.
-
-        Args:
-            question: The question to answer
-            filter: SQL WHERE clause to filter documents
-            images: Paths of images to attach to the question
-            full_citations: Render citation text without truncating it
-        """
-        async with HaikuRAG._covering(
-            self.scope, self.config, read_only=True
-        ) as self.client:
-            self.console.print(f"[bold blue]Question:[/bold blue] {question}")
-            self.console.print()
-            self.console.print(
-                "[dim]Running analysis capability with code execution...[/dim]"
-            )
-            self.console.print()
-
-            result = await self.client.analyze(
-                question,
-                filter=filter,
-                images=[path.read_bytes() for path in images] if images else None,
-            )
-
-            self.console.print("[bold green]Answer:[/bold green]")
-            self.console.print(Markdown(result.answer))
-            for renderable in await format_citations_rich(
-                result.citations, client=self.client, full=full_citations
-            ):
-                self.console.print(renderable)
-
     async def rebuild(self, mode: RebuildMode = RebuildMode.FULL):
         async with HaikuRAG._covering(
             self.scope, self.config, skip_validation=True, read_only=self.read_only

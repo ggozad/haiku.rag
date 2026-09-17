@@ -14,12 +14,12 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models import ModelRequestContext
 
-from haiku.rag.capabilities._base import RAGCapabilityBase
 from haiku.rag.capabilities.evidence import (
     DiscoveredEvidence,
     discover_evidence,
     question_in_progress,
 )
+from haiku.rag.capabilities.rag import RAGCapability
 from haiku.rag.store.models.citation import Citation
 from haiku.rag.tools.search import RETRIEVED_IMAGE_TAG, decode_picture
 
@@ -419,7 +419,7 @@ class EvidenceCompactionCapability(AbstractCapability[Any]):
         owners = {
             capability.state_namespace: capability
             for capability in ctx.capabilities.values()
-            if isinstance(capability, RAGCapabilityBase)
+            if isinstance(capability, RAGCapability)
         }
         content: list[str | BinaryContent] = []
         for retained in self.capsule.pictures:

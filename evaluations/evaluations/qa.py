@@ -26,26 +26,12 @@ from evaluations.evaluators import (
     TranscriptLLMJudge,
 )
 from evaluations.experiment import DEFAULT_JUDGE_MODEL, build_experiment_metadata
+from haiku.rag.capabilities.rag import create_capability
 from haiku.rag.config import AppConfig
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.utils import get_model
 
 console = Console()
-
-Target = Literal["rag-capability", "analysis-capability"]
-TARGETS: tuple[Target, ...] = ("rag-capability", "analysis-capability")
-
-
-def _capability_factory_for_target(target: Target) -> CapabilityFactory:
-    if target == "rag-capability":
-        from haiku.rag.capabilities.rag import create_capability
-
-        return create_capability
-    if target == "analysis-capability":
-        from haiku.rag.capabilities.analysis import create_capability
-
-        return create_capability
-    raise ValueError(f"target {target!r} is not a capability target")
 
 
 def _attach_relevant_uris(
@@ -82,19 +68,15 @@ def _attach_relevant_uris(
         case.metadata = metadata
 
 
-CapabilityModelSource = Literal["--capability-model", "analysis.model", "qa.model"]
+CapabilityModelSource = Literal["--capability-model", "qa.model"]
 
 
 def _resolve_capability_config(
-    target: Target, config: AppConfig, capability_model: ModelConfig | None
+    config: AppConfig, capability_model: ModelConfig | None
 ) -> tuple[ModelConfig, CapabilityModelSource]:
     """The model the capability runs on, and which setting supplied it."""
     if capability_model is not None:
         return capability_model, "--capability-model"
-    # Mirror the capability-code resolver: explicit analysis.model wins,
-    # else fall back to qa.model.
-    if target == "analysis-capability" and config.analysis.model is not None:
-        return config.analysis.model, "analysis.model"
     return config.qa.model, "qa.model"
 
 
@@ -225,7 +207,6 @@ def _prepare_qa_run(
     name: str | None,
     db_path: Path | None,
     judge_model: ModelConfig | None,
-    target: Target,
     capability_model: ModelConfig | None,
     case_ids: set[str] | None,
     document_filter: str | None,
@@ -243,7 +224,7 @@ def _prepare_qa_run(
 
     judge_config = judge_model or DEFAULT_JUDGE_MODEL
     capability_config, capability_model_source = _resolve_capability_config(
-        target, config, capability_model
+        config, capability_model
     )
 
     eval_name = name if name is not None else f"{spec.key}_qa_evaluation"
@@ -252,7 +233,6 @@ def _prepare_qa_run(
         test_cases=len(cases),
         config=config,
         judge_config=judge_config,
-        target=target,
         capability_config=capability_config,
         capability_model_source=capability_model_source,
         document_filter=document_filter,
@@ -267,7 +247,7 @@ def _prepare_qa_run(
         judge_config=judge_config,
         eval_name=eval_name,
         experiment_metadata=experiment_metadata,
-        capability_factory=_capability_factory_for_target(target),
+        capability_factory=create_capability,
         capability_model=get_model(capability_config, config),
     )
 
@@ -298,7 +278,6 @@ async def run_qa_benchmark(
     name: str | None = None,
     db_path: Path | None = None,
     judge_model: ModelConfig | None = None,
-    target: Target = "rag-capability",
     capability_model: ModelConfig | None = None,
     case_ids: set[str] | None = None,
     document_filter: str | None = None,
@@ -310,7 +289,6 @@ async def run_qa_benchmark(
         name,
         db_path,
         judge_model,
-        target,
         capability_model,
         case_ids,
         document_filter,
@@ -378,6 +356,7 @@ async def run_qa_benchmark(
         set_eval_attribute("n_rejected_searches", result.n_rejected_searches)
         set_eval_attribute("n_failed_tools", result.n_failed_tools)
         set_eval_attribute("n_executions", result.n_executions)
+        set_eval_attribute("n_sandbox_search_calls", result.n_sandbox_search_calls)
         set_eval_attribute("n_requests", result.n_requests)
         set_eval_attribute("citation_status", result.citation_status)
         return result.answer
@@ -465,7 +444,6 @@ async def run_live_qa_benchmark(
     name: str | None = None,
     db_path: Path | None = None,
     judge_model: ModelConfig | None = None,
-    target: Target = "rag-capability",
     capability_model: ModelConfig | None = None,
     case_ids: set[str] | None = None,
     document_filter: str | None = None,
@@ -482,7 +460,6 @@ async def run_live_qa_benchmark(
         name,
         db_path,
         judge_model,
-        target,
         capability_model,
         case_ids,
         document_filter,
@@ -512,9 +489,13 @@ async def run_live_qa_benchmark(
         set_eval_attribute("turn_cited_uris", [r.cited_uris for r in results])
         set_eval_attribute("turn_n_search_calls", [r.n_search_calls for r in results])
         set_eval_attribute(
+            "turn_n_sandbox_search_calls", [r.n_sandbox_search_calls for r in results]
+        )
+        set_eval_attribute(
             "turn_n_rejected_searches", [r.n_rejected_searches for r in results]
         )
         set_eval_attribute("turn_n_failed_tools", [r.n_failed_tools for r in results])
+        set_eval_attribute("turn_n_executions", [r.n_executions for r in results])
         set_eval_attribute("turn_n_requests", [r.n_requests for r in results])
         set_eval_attribute("turn_citation_status", [r.citation_status for r in results])
         return [r.answer for r in results]

@@ -9,7 +9,6 @@ def run_chat(
     db_path: Path | None = None,
     read_only: bool = False,
     model: str | None = None,
-    capabilities: list[str] | None = None,
     scope: "DatabaseScope | None" = None,
 ) -> None:
     """Run the chat TUI.
@@ -19,7 +18,6 @@ def run_chat(
         scope: The databases to cover, resolved by the caller.
         read_only: Whether to open the database in read-only mode.
         model: Model to use for the chat.
-        capabilities: Capabilities to enable ("rag", "analysis"). Defaults to ["rag"].
     """
     try:
         from haiku.rag.chat.app import ChatApp
@@ -28,6 +26,7 @@ def run_chat(
             "textual is not installed. Please install it with `pip install 'haiku.rag-slim[tui]'` or use the full haiku.rag package."
         ) from e
 
+    from haiku.rag.capabilities.rag import create_capability
     from haiku.rag.config import get_config
     from haiku.rag.utils import get_model, parse_model_option
 
@@ -38,51 +37,19 @@ def run_chat(
         scope = DatabaseScope.resolve(config, database_path=db_path)
 
     if model:
-        model_config = parse_model_option(model)
-        config.qa.model = model_config
-        config.analysis.model = model_config
+        config.qa.model = parse_model_option(model)
 
-    # The app opens the scope and lends that client to the capabilities, which
-    # read what `--db PATH` or `--db-name NAME` selected.
-    enabled = capabilities or ["rag"]
-    capability_list = []
-    defer_loading = len(enabled) > 1
-
-    # One agent drives every attached capability, so a capability's
-    # image-attachment gate must track that single model: analysis.model only
-    # when analysis runs alone, otherwise qa.model. Passing it to every
-    # capability keeps their vision flag aligned with the model actually running.
-    if "rag" not in enabled and "analysis" in enabled:
-        driving_model = config.analysis.model or config.qa.model
-    else:
-        driving_model = config.qa.model
-
-    if "rag" in enabled:
-        from haiku.rag.capabilities.rag import create_capability
-
-        capability_list.append(
-            create_capability(
-                config=config,
-                defer_loading=defer_loading,
-                vision=driving_model.vision,
-            )
-        )
-
-    if "analysis" in enabled:
-        from haiku.rag.capabilities.analysis import create_capability
-
-        capability_list.append(
-            create_capability(
-                config=config,
-                defer_loading=defer_loading,
-                vision=driving_model.vision,
-            )
-        )
+    # The app opens the scope and lends that client to the capability, which
+    # reads what `--db PATH` or `--db-name NAME` selected.
+    capability = create_capability(
+        config=config,
+        vision=config.qa.model.vision,
+    )
 
     app = ChatApp(
-        capabilities=capability_list,
+        capability=capability,
         read_only=read_only,
-        model=model or get_model(driving_model, config),
+        model=model or get_model(config.qa.model, config),
         scope=scope,
     )
     app.run()

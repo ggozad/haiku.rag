@@ -137,7 +137,7 @@ class TestSharedChunkIds:
             [aardvark] = [c for c in chunks if "aardvark" in c.content]
             assert aardvark.id is not None
 
-            capability = create_capability(config=config, rag=rag, defer_loading=False)
+            capability = create_capability(config=config, rag=rag)
             capability.state = RAGState()
 
             # No search ran, so the id can only resolve through the fallback.
@@ -162,7 +162,7 @@ class TestSharedChunkIds:
             [aardvark] = [c for c in chunks if "aardvark" in c.content]
             assert aardvark.id is not None
 
-            capability = create_capability(config=config, rag=rag, defer_loading=False)
+            capability = create_capability(config=config, rag=rag)
             run = await capability.for_run(make_context(Deps()))
 
             await run._cite([aardvark.id])
@@ -173,9 +173,7 @@ class TestSharedChunkIds:
 
     @pytest.mark.asyncio
     async def test_cite_asks_for_other_evidence(self, tmp_path):
-        capability = create_capability(
-            config=_config(tmp_path, ["alpha", "beta"]), defer_loading=False
-        )
+        capability = create_capability(config=_config(tmp_path, ["alpha", "beta"]))
         capability.state = RAGState(
             searches={
                 "cats": [
@@ -201,9 +199,7 @@ class TestSharedChunkIds:
     ):
         """The citation index outlives the question, so the collision can
         arrive a turn after the search."""
-        capability = create_capability(
-            config=_config(tmp_path, ["alpha", "beta"]), defer_loading=False
-        )
+        capability = create_capability(config=_config(tmp_path, ["alpha", "beta"]))
         capability.state = RAGState(
             citation_index={
                 "c1": Citation(
@@ -243,7 +239,7 @@ class TestSharedChunkIds:
         from tests.capabilities.test_capabilities import Deps, make_context
 
         config = _config(tmp_path, ["alpha", "beta"])
-        capability = create_capability(config=config, defer_loading=False)
+        capability = create_capability(config=config)
         deps = Deps(state={"rag": RAGState().model_dump(mode="json")})
         run = await capability.for_run(make_context(deps))
         assert run.state is not None
@@ -336,7 +332,7 @@ class TestCiteFallback:
             [aardvark] = [c for c in chunks if "aardvark" in c.content]
             assert aardvark.id is not None
 
-            capability = create_capability(config=config, rag=rag, defer_loading=False)
+            capability = create_capability(config=config, rag=rag)
             deps = Deps(
                 state={"rag": RAGState(sources=["alpha"]).model_dump(mode="json")}
             )
@@ -369,7 +365,7 @@ class TestCiteFallback:
             [outside] = await beta.chunk_repository.list_all(limit=1)
             assert outside.id is not None
 
-            capability = create_capability(config=config, rag=rag, defer_loading=False)
+            capability = create_capability(config=config, rag=rag)
             deps = Deps(
                 state={"rag": RAGState(sources=["alpha"]).model_dump(mode="json")}
             )
@@ -394,7 +390,7 @@ class TestCiteFallback:
             [chunk] = await alpha.chunk_repository.list_all(limit=1)
             assert chunk.id is not None
 
-            capability = create_capability(config=config, rag=rag, defer_loading=False)
+            capability = create_capability(config=config, rag=rag)
             deps = Deps(state={"rag": RAGState(sources=[]).model_dump(mode="json")})
             run = await capability.for_run(make_context(deps))
 

@@ -20,7 +20,7 @@ prompts:
 
 ## Domain Preamble
 
-The `domain_preamble` field provides **domain context** prepended to the RAG and analysis capability instructions. Use this to:
+The `domain_preamble` field provides **domain context** prepended to the RAG capability instructions. Use this to:
 
 - Describe what the knowledge base contains
 - Clarify domain-specific terminology

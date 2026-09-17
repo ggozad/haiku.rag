@@ -41,20 +41,17 @@ evaluations run hotpotqa --skip-qa
 evaluations run hotpotqa --limit 100
 ```
 
-### Choosing the target
+### Choosing the capability model
 
-`evaluations run` benchmarks `--target rag-capability` by default. Use
-`--target analysis-capability` to benchmark the analysis capability against the same
-datasets and judge:
+`evaluations run` benchmarks the RAG capability end to end:
 
 ```bash
-evaluations run hotpotqa --target rag-capability
-evaluations run hotpotqa --target analysis-capability --capability-model ollama:qwen3.8
+evaluations run hotpotqa
+evaluations run hotpotqa --capability-model ollama:qwen3.8
 ```
 
 `--capability-model "provider:name"` overrides the capability model independently from
-the judge (defaults to `qa.model`, or `analysis.model` when set for the
-analysis-capability target). A citation retrieval metric (`cited_map`) is computed
+the judge (defaults to `qa.model`). A citation retrieval metric (`cited_map`) is computed
 alongside QA accuracy from the URIs the capability registered via the `cite` tool.
 
 ### Debugging runs in Logfire

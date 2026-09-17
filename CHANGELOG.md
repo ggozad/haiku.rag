@@ -2,11 +2,36 @@
 
 ## [Unreleased]
 
+### Added
+
+- Each in-code `search()` emits a `sandbox.search` span; `CodeExecutionEntry.search_calls`
+  records how many an execution made, and `evaluations run` records
+  `n_sandbox_search_calls` per case and `turn_n_sandbox_search_calls` per conversation.
+- Experiment metadata records `qa_max_executions`, `sandbox_code_timeout` and
+  `sandbox_max_output_chars`. Live conversations record `turn_n_executions`.
+
 ### Changed
 
 - HTML content before the first heading is ingested.
   `processing.conversion_options.infer_furniture: true` restores docling's rule
   that files it as page furniture. docling-local only.
+- `AnalysisCapability` merged into `RAGCapability`: tools `search`, `execute_code`
+  and `cite`; `RAGState.executions`; `request_limit` default 30; the analysis
+  capability's instructions, without the refusal instruction for questions the
+  retrieved documents do not address. State stays under the `rag` namespace.
+- `analysis.max_executions` moved to `qa.max_executions`; `analysis.code_timeout`
+  and `analysis.max_output_chars` moved to `sandbox.code_timeout` and
+  `sandbox.max_output_chars`. The `analysis` config block is gone.
+- `create_capability` and the `RAGCapability` agent spec default to
+  `defer_loading=False`.
+
+### Removed
+
+- `analysis.model`. `qa.model` drives the capability.
+- `AnalysisCapability`, `AnalysisState`, `EvidenceState`, `RAGCapabilityBase`,
+  `AGENT_PREAMBLE`, `HaikuRAG.analyze`, `AnalysisResult`, `haiku-rag analyze`,
+  `haiku-rag chat --capability`, `evaluations run --target`, the `analysis` state
+  namespace and the `target` experiment-metadata key.
 
 ## [0.86.0] - 2026-09-16
 
