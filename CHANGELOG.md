@@ -34,6 +34,9 @@
   (`question_id`, `query_id`, `id`, `task_id`, `conversation_id`), recorded
   as `pair_key` in experiment metadata.
 - Registry rows carry `differences`, the named differences from the arm file.
+- `evaluations arms complete NAME [--trace ID]`: fills an arm's result fields
+  from its trace, found by run name within the launch window. An arm with no
+  trace is void with reason `no telemetry`.
 
 ## [0.87.0] - 2026-09-17
 

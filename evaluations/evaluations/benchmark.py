@@ -1,7 +1,7 @@
 import asyncio
 import os
 from dataclasses import asdict
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
@@ -10,6 +10,7 @@ from rich.console import Console
 from rich.markup import escape
 
 from evaluations.artifacts import download_dataset_db, upload_dataset_db
+from evaluations.completion import complete_arm, window_start
 from evaluations.config import DatasetSpec
 from evaluations.datasets import DATASETS
 from evaluations.experiment import code_revision, config_hash
@@ -401,11 +402,10 @@ def arms_pair(a: str, b: str, registry: Path | None = REGISTRY_OPTION) -> None:
     if spec is None:
         console.print(f"unknown dataset {treated.dataset}", style="red")
         raise typer.Exit(code=1)
-    started = min(
-        datetime.fromisoformat(record.started_at) for record in (treated, baseline)
-    )
-    since = (
-        (started - timedelta(hours=1)).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    since = window_start(
+        min(
+            datetime.fromisoformat(record.started_at) for record in (treated, baseline)
+        ).isoformat()
     )
     outcomes = {
         record.name: case_outcomes(
@@ -429,6 +429,39 @@ def arms_pair(a: str, b: str, registry: Path | None = REGISTRY_OPTION) -> None:
         highlight=False,
         markup=False,
     )
+
+
+@arms_app.command("complete")
+def arms_complete(
+    name: str,
+    trace: str | None = typer.Option(
+        None, "--trace", help="Trace id, when the run name alone does not find it."
+    ),
+    registry: Path | None = REGISTRY_OPTION,
+) -> None:
+    """Fill an arm's result fields from its trace; void it when no trace exists."""
+    store = _registry(registry)
+    try:
+        summary = complete_arm(store, name, query=query_logfire, trace_id=trace)
+    except ValueError as error:
+        console.print(str(error), style="red")
+        raise typer.Exit(code=1) from None
+    record = store.get(name)
+    assert record is not None
+    if summary is None:
+        console.print(f"{name} marked void: {record.void_reason}", style="red")
+        raise typer.Exit(code=1)
+    console.print(
+        f"{name} completed from trace {record.trace_id}: {summary.cases} cases, "
+        f"accuracy {_rate(summary.accuracy)}, cite rate {_rate(summary.cite_rate)}, "
+        f"cited_map {_rate(summary.cited_map)}, aborts {summary.aborts}",
+        soft_wrap=True,
+        highlight=False,
+    )
+
+
+def _rate(value: float | None) -> str:
+    return "-" if value is None else f"{value:.4f}"
 
 
 @arms_app.command("export")

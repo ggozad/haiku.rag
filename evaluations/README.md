@@ -93,6 +93,9 @@ endpoint, judge, reranker, embedder, case selection, comparator, decision rule
 and operator. Completion fills the trace id, cases, accuracy, cite rate, mean
 `cited_map`, aborts and wall time and sets the status to `valid`. A void arm
 keeps its row and carries the reason, and its numbers are never paired.
+`evaluations arms complete NAME` fills those fields from Logfire, finding the
+trace by run name within the launch window or by `--trace ID`. With no trace
+the arm is void with reason `no telemetry`.
 
 ```bash
 evaluations arms list [--dataset frames] [--db PATH] [--status void]
