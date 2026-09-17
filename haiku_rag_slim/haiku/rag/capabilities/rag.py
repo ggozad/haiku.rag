@@ -658,11 +658,9 @@ class RAGCapability(AbstractCapability[Any]):
         result = await sandbox.execute(code)
         if result.success or result.stdout:
             self._note_evidence()
-        if sandbox.search_results:
-            merge_results(
-                self.state.searches.setdefault("_sandbox", []),
-                list(sandbox.search_results),
-            )
+        found = sandbox.search_results
+        if found:
+            merge_results(self.state.searches.setdefault("_sandbox", []), found)
         self.state.executions.append(
             CodeExecutionEntry(
                 code=code,
