@@ -2,6 +2,8 @@
 
 We evaluate `haiku.rag` on a small set of datasets that exercise different parts of the pipeline. OpenRAG Bench (ORB), T²-RAGBench, HotpotQA, FRAMES, and MTRAG are the datasets we currently track. Retrieval, QA accuracy, and citation retrieval are scored end-to-end through the RAG capability.
 
+Rows with a `Target` column were measured before the analysis capability merged into the RAG capability in v0.87.0. The label names the path that ran. `evaluations run` no longer takes a `--target` flag, and every run on this release goes through the one capability.
+
 ## Current results
 
 Numbers below were measured on a recent `haiku.rag` version. Most rows were judged by `Qwen3.6-35B-A3B-NVFP4`; the `Qwen3.8-27B` rows were judged by the currently pinned `qwen3.8`, as their footnote states. Rows are not re-judged when the pinned judge changes, so compare rows judged by the same judge and treat cross-judge differences as unmeasured.
