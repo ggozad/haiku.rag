@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.87.0] - 2026-09-17
+
 ### Added
 
 - Each in-code `search()` emits a `sandbox.search` span; `CodeExecutionEntry.search_calls`
@@ -2607,7 +2609,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.86.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.87.0...HEAD
+[0.87.0]: https://github.com/ggozad/haiku.rag/compare/0.86.0...0.87.0
 [0.86.0]: https://github.com/ggozad/haiku.rag/compare/0.85.0...0.86.0
 [0.85.0]: https://github.com/ggozad/haiku.rag/compare/0.84.0...0.85.0
 [0.84.0]: https://github.com/ggozad/haiku.rag/compare/0.83.0...0.84.0
