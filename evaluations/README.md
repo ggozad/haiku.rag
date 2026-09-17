@@ -41,6 +41,14 @@ evaluations run hotpotqa --skip-qa
 evaluations run hotpotqa --limit 100
 ```
 
+Population prints a line every 50 ingested documents and one at the end:
+documents seen and ingested, elapsed time, documents per minute over the
+whole run, and the ETA at that rate. Documents skipped on resume count as
+seen, not ingested. The progress bar renders only on a terminal, so a
+redirected log carries these lines and nothing else. Python buffers redirected
+output, so run with `PYTHONUNBUFFERED=1` to read them as they appear; the
+queue sets it.
+
 ### Choosing the capability model
 
 `evaluations run` benchmarks the RAG capability end to end:

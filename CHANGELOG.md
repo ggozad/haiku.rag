@@ -44,6 +44,10 @@
   completed from its trace. A missing worktree is provisioned from `--repo` at
   the pinned sha with `--env` copied. `--detach NAME` runs the queue in a tmux
   session.
+- Database population prints cumulative throughput every 50 ingested documents
+  and at the end: documents seen and ingested, elapsed time, documents per
+  minute over the whole run, ETA. Documents skipped on resume count as seen,
+  not ingested.
 
 ## [0.87.0] - 2026-09-17
 
