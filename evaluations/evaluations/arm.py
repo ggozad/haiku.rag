@@ -43,8 +43,9 @@ class ArmSpec(BaseModel):
             raise ValueError("differences need a comparator to differ from")
         return self
 
-    def command(self) -> list[str]:
-        """The `evaluations run` invocation this arm stands for."""
+    def command(self, smoke: bool = False) -> list[str]:
+        """The `evaluations run` invocation this arm stands for. The smoke
+        variant runs `smoke_ids` under the name `<name>-smoke`."""
         argv = [
             "evaluations",
             "run",
@@ -52,14 +53,19 @@ class ArmSpec(BaseModel):
             "--config",
             str(self.config),
             "--name",
-            self.name,
+            f"{self.name}-smoke" if smoke else self.name,
         ]
         if self.db is not None:
             argv += ["--db", str(self.db)]
-        if self.limit is not None:
-            argv += ["--limit", str(self.limit)]
-        if self.filter_ids is not None:
-            argv += ["--filter-ids", str(self.filter_ids)]
+        if smoke:
+            if self.smoke_ids is None:
+                raise ValueError(f"{self.name} has no smoke_ids")
+            argv += ["--filter-ids", str(self.smoke_ids)]
+        else:
+            if self.limit is not None:
+                argv += ["--limit", str(self.limit)]
+            if self.filter_ids is not None:
+                argv += ["--filter-ids", str(self.filter_ids)]
         return argv + list(self.flags)
 
 

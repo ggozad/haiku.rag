@@ -105,6 +105,24 @@ evaluations arms export arms.jsonl     # sorted keys, one arm per line, diffable
 evaluations arms import arms.jsonl     # upserts by name
 ```
 
+### Running a queue of arms
+
+`evaluations queue a.yaml b.yaml` runs the arm files in order. For each arm it
+runs the preflight, runs the smoke set named by `smoke_ids` under the name
+`<name>-smoke` and confirms a case span reached Logfire, registers the launch,
+runs the arm from its worktree with output appended to `logs/<name>.log` under
+the evaluations data directory, kills the run at `deadline_hours`, and
+completes the registry row from the trace. A failed step skips the arm and the
+queue continues. When the arm's worktree does not exist and `--repo` names a
+checkout, the queue provisions it at the pinned sha with `uv sync` and copies
+`--env` into it. `--detach NAME` starts the queue inside a detached tmux
+session, so it survives a lost ssh connection.
+
+```bash
+evaluations queue arms/frames-main.yaml arms/frames-branch.yaml \
+  --repo ~/dev/haiku.rag --env ~/dev/haiku.rag/.env --detach night
+```
+
 ### Pairing two arms
 
 `evaluations arms pair A B` prints the standard table for two registered

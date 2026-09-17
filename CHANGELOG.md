@@ -37,6 +37,13 @@
 - `evaluations arms complete NAME [--trace ID]`: fills an arm's result fields
   from its trace, found by run name within the launch window. An arm with no
   trace is void with reason `no telemetry`.
+- `evaluations queue ARM...`: runs arm files in order. Each arm is
+  preflighted, smoked on `smoke_ids` with its case span confirmed in Logfire,
+  registered, run from its worktree with output in
+  `<data dir>/evaluations/logs/<name>.log`, killed at `deadline_hours`, and
+  completed from its trace. A missing worktree is provisioned from `--repo` at
+  the pinned sha with `--env` copied. `--detach NAME` runs the queue in a tmux
+  session.
 
 ## [0.87.0] - 2026-09-17
 

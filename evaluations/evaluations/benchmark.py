@@ -1,5 +1,7 @@
 import asyncio
 import os
+import subprocess
+import sys
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,6 +20,7 @@ from evaluations.pairing import check_pair_rows, orient, pair_outcomes, render
 from evaluations.population import populate_db
 from evaluations.preflight import run_preflight
 from evaluations.qa import run_live_qa_benchmark, run_qa_benchmark
+from evaluations.queue import Queue, default_logs_path, tmux_command
 from evaluations.registry import Registry, default_registry_path, launch_record
 from evaluations.retrieval import run_retrieval_benchmark
 from evaluations.traces import case_outcomes, query_logfire
@@ -316,6 +319,81 @@ def preflight(
         )
         _registry(registry).register_launch(record)
         console.print(f"registered {record.name}")
+
+
+def _without_detach(argv: list[str]) -> list[str]:
+    """`argv` with the --detach option and its value removed."""
+    kept: list[str] = []
+    skip = False
+    for token in argv:
+        if skip:
+            skip = False
+            continue
+        if token == "--detach":
+            skip = True
+            continue
+        if token.startswith("--detach="):
+            continue
+        kept.append(token)
+    return kept
+
+
+@app.command()
+def queue(
+    arms: list[Path] = typer.Argument(..., help="Arm files, run in this order."),
+    registry: Path | None = REGISTRY_OPTION,
+    logs: Path | None = typer.Option(
+        None,
+        "--logs",
+        help="Log directory. Defaults to logs/ in the evaluations data directory.",
+    ),
+    repo: Path | None = typer.Option(
+        None,
+        "--repo",
+        help="Checkout that provisions a missing worktree at the arm's sha.",
+    ),
+    env_file: Path | None = typer.Option(
+        None, "--env", help=".env copied into a provisioned worktree."
+    ),
+    settle_minutes: float = typer.Option(
+        15.0,
+        "--settle-minutes",
+        help="How long to wait for a run's spans to reach Logfire after it exits.",
+    ),
+    prefix: list[str] = typer.Option(
+        ["uv", "run"],
+        "--prefix",
+        help="Command that runs `evaluations` in the worktree.",
+    ),
+    detach: str | None = typer.Option(
+        None, "--detach", help="Run inside a detached tmux session of this name."
+    ),
+) -> None:
+    """Run arms in order: preflight, smoke, register, run, complete."""
+    if detach:
+        argv = [sys.argv[0], *_without_detach(sys.argv[1:])]
+        subprocess.run(tmux_command(detach, argv, Path.cwd()), check=True)
+        console.print(f"queue running in tmux session {detach}")
+        return
+    runner = Queue(
+        registry=_registry(registry),
+        logs=logs or default_logs_path(),
+        query=query_logfire,
+        prefix=list(prefix),
+        repo=repo,
+        env_source=env_file,
+        settle_seconds=settle_minutes * 60,
+    )
+    outcomes = runner.run(list(arms))
+    for outcome in outcomes:
+        console.print(
+            f"{outcome.name}: {outcome.status}: {outcome.detail}",
+            soft_wrap=True,
+            highlight=False,
+            markup=False,
+        )
+    if any(outcome.status != "valid" for outcome in outcomes):
+        raise typer.Exit(code=1)
 
 
 arms_app = typer.Typer(help="The registry of evaluation arms.")
