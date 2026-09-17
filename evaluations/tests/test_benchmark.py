@@ -46,6 +46,9 @@ class TestBuildExperimentMetadata:
         assert result["chunk_size"] == config.processing.chunk_size
         assert result["search_limit"] == config.search.limit
         assert result["qa_max_searches"] == config.qa.max_searches
+        assert result["qa_max_executions"] == config.qa.max_executions
+        assert result["sandbox_code_timeout"] == config.sandbox.code_timeout
+        assert result["sandbox_max_output_chars"] == config.sandbox.max_output_chars
         assert "qa_provider" not in result
         assert "qa_model" not in result
         assert "judge_provider" not in result
@@ -538,6 +541,7 @@ class TestLiveConversationDispatch:
                 n_search_calls=2,
                 n_rejected_searches=1,
                 n_failed_tools=1,
+                n_executions=3,
                 n_requests=4,
                 citation_status="grounded",
             ),
@@ -574,6 +578,7 @@ class TestLiveConversationDispatch:
         assert recorded["turn_n_search_calls"] == [2, 0]
         assert recorded["turn_n_rejected_searches"] == [1, 0]
         assert recorded["turn_n_failed_tools"] == [1, 0]
+        assert recorded["turn_n_executions"] == [3, 0]
         assert recorded["turn_n_requests"] == [4, 0]
         assert recorded["turn_citation_status"] == ["grounded", None]
         questions = 2

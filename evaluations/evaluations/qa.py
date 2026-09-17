@@ -495,6 +495,7 @@ async def run_live_qa_benchmark(
             "turn_n_rejected_searches", [r.n_rejected_searches for r in results]
         )
         set_eval_attribute("turn_n_failed_tools", [r.n_failed_tools for r in results])
+        set_eval_attribute("turn_n_executions", [r.n_executions for r in results])
         set_eval_attribute("turn_n_requests", [r.n_requests for r in results])
         set_eval_attribute("turn_citation_status", [r.citation_status for r in results])
         return [r.answer for r in results]

@@ -54,6 +54,9 @@ def build_experiment_metadata(
         else None,
         "rerank_model": config.reranking.model.name if config.reranking.model else None,
         "qa_max_searches": config.qa.max_searches,
+        "qa_max_executions": config.qa.max_executions,
+        "sandbox_code_timeout": config.sandbox.code_timeout,
+        "sandbox_max_output_chars": config.sandbox.max_output_chars,
         "document_filter": document_filter,
     }
     if judge_config is not None:

@@ -7,6 +7,8 @@
 - Each in-code `search()` emits a `sandbox.search` span; `CodeExecutionEntry.search_calls`
   records how many an execution made, and `evaluations run` records
   `n_sandbox_search_calls` per case and `turn_n_sandbox_search_calls` per conversation.
+- Experiment metadata records `qa_max_executions`, `sandbox_code_timeout` and
+  `sandbox_max_output_chars`. Live conversations record `turn_n_executions`.
 
 ### Changed
 
