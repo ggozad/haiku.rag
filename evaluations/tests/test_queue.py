@@ -37,9 +37,17 @@ FAKE_RUN = textwrap.dedent(
              "cited_map": 0.5, "aborted": False, "trace_id": trace}
             for i in range(3)
         ]
+        partial = directory / f"{name}.partial.jsonl"
+        with partial.open("a") as out:
+            for row in rows:
+                out.write(json.dumps(row) + "\\n")
+                out.flush()
+        if "-stall" in name:
+            time.sleep(30)
         (directory / f"{name}.{trace[:12]}.jsonl").write_text(
             "".join(json.dumps(row) + "\\n" for row in rows)
         )
+        partial.unlink()
     if "-flaky" in name:
         sys.exit(3)
     """
@@ -334,6 +342,27 @@ class TestQueue:
         assert (
             "arm-missing: failed" in (workspace.tmp / "logs" / "queue.log").read_text()
         )
+
+    def test_a_run_that_stops_finishing_cases_is_called_out(
+        self, workspace: SimpleNamespace
+    ) -> None:
+        arm = _arm(workspace, "arm-stall", smoke_ids=None, deadline_hours=3 / 3600)
+        queue = _queue(
+            workspace,
+            {},
+            {RUN_TRACE: []},
+            results_dir=workspace.tmp / "results",
+            stall_seconds=0.3,
+        )
+
+        outcomes = queue.run([arm])
+
+        log = (workspace.tmp / "logs" / "queue.log").read_text()
+        assert "arm-stall: no case finished in" in log
+        assert outcomes[0].status == "void"
+        assert "deadline" in outcomes[0].detail
+        record = queue.registry.get("arm-stall")
+        assert record is not None and record.cases == 3
 
     def test_a_deadline_kills_the_run_and_voids_the_row(
         self, workspace: SimpleNamespace

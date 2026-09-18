@@ -30,7 +30,7 @@ from evaluations.experiment import (
     build_experiment_metadata,
     corpus_fingerprint,
 )
-from evaluations.results import write_results
+from evaluations.results import case_writer, write_results
 from haiku.rag.capabilities.rag import create_capability
 from haiku.rag.config import AppConfig
 from haiku.rag.config.models import ModelConfig
@@ -360,6 +360,11 @@ async def run_qa_benchmark(
         max_concurrency=1,
         progress=True,
         metadata=run.experiment_metadata,
+        lifecycle=(
+            None
+            if results_dir is None
+            else case_writer(results_dir, name=run.eval_name, pair_key=spec.pair_key)
+        ),
     )
     if results_dir is not None:
         results_path = write_results(

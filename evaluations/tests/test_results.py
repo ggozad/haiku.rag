@@ -114,6 +114,60 @@ class TestWriteResults:
         assert failed["attributes"] == {} and failed["task_duration"] is None
         assert by_name["4_d"]["key"] is None
 
+    async def test_rows_are_written_as_cases_finish(self, tmp_path: Path) -> None:
+        """A killed run keeps what it finished, and a watcher can see it move."""
+        from evaluations.results import case_writer, partial_path
+
+        dataset = Dataset(
+            name="run-x",
+            cases=[
+                Case(name="1_a", inputs="cite", expected_output="answer"),
+                Case(name="2_b", inputs="boom", expected_output="answer"),
+            ],
+            evaluators=[Judge()],
+        )
+        partial = partial_path(tmp_path, "run-x")
+
+        report = await dataset.evaluate(
+            _task,
+            name="run-x",
+            max_concurrency=1,
+            progress=False,
+            lifecycle=case_writer(tmp_path, name="run-x", pair_key="query_id"),
+        )
+
+        rows = [json.loads(line) for line in partial.read_text().splitlines()]
+        assert {row["case_name"] for row in rows} == {"1_a", "2_b"}
+        assert [row["aborted"] for row in rows if row["case_name"] == "2_b"] == [True]
+        assert read_results(partial)[1][0].case_name in {"1_a", "2_b"}
+
+        final = write_results(
+            report, name="run-x", pair_key="query_id", directory=tmp_path
+        )
+        assert not partial.exists()
+        assert find_results(tmp_path, "run-x") == final
+
+    async def test_a_partial_file_is_the_result_when_nothing_finished_the_run(
+        self, tmp_path: Path
+    ) -> None:
+        partial = tmp_path / "run-x.partial.jsonl"
+        partial.write_text(
+            json.dumps(
+                {
+                    "case_name": "1_a",
+                    "key": "a",
+                    "passed": True,
+                    "cited": True,
+                    "cited_map": 0.5,
+                    "aborted": False,
+                    "trace_id": TRACE,
+                }
+            )
+            + "\n"
+        )
+        assert find_results(tmp_path, "run-x") == partial
+        assert read_results(partial)[1][0].case_name == "1_a"
+
     async def test_a_name_that_is_not_a_file_name_is_refused(
         self, tmp_path: Path
     ) -> None:

@@ -372,6 +372,11 @@ def queue(
         "--settle-minutes",
         help="How long to wait for a run's spans to reach Logfire after it exits.",
     ),
+    stall_minutes: float = typer.Option(
+        10.0,
+        "--stall-minutes",
+        help="Call out a run that finishes no case for this long. It is not killed.",
+    ),
     prefix: list[str] = typer.Option(
         ["uv", "run"],
         "--prefix",
@@ -396,6 +401,7 @@ def queue(
         repo=repo,
         env_source=env_file,
         settle_seconds=settle_minutes * 60,
+        stall_seconds=stall_minutes * 60,
         results_dir=results or default_results_path(),
     )
     outcomes = runner.run(list(arms))

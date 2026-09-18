@@ -52,8 +52,9 @@
   cleanly with cases, registered, run from its worktree with output in
   `<data dir>/evaluations/logs/<name>.log`, killed at `deadline_hours`, and
   completed from its trace. A missing worktree is provisioned from `--repo` at
-  the pinned sha with `--env` copied. A failure ends that arm only. `--detach
-  NAME` runs the queue in a tmux session.
+  the pinned sha with `--env` copied. A failure ends that arm only. A run that
+  finishes no case for `--stall-minutes` (10) is called out in the queue log
+  and left running. `--detach NAME` runs the queue in a tmux session.
 - `evaluations run` writes per-case results to
   `<data dir>/evaluations/results/<name>.<trace>.jsonl` (`--results DIR` or
   `HAIKU_RAG_EVAL_RESULTS`): case name, pairing key, verdict, citation flag,
@@ -61,7 +62,9 @@
   attributes and task duration. `evaluations arms pair`, `arms complete` and
   the queue's smoke check and completion read that file when present and
   Logfire otherwise. Live conversation runs write none. `--name` must be a
-  file name: letters, digits, dot, dash and underscore.
+  file name: letters, digits, dot, dash and underscore. Rows are appended as
+  each case finishes, to `<name>.partial.jsonl` until the run ends, so a run
+  that is killed keeps the cases it completed.
 - Database population prints cumulative throughput every 50 ingested documents
   and at the end: documents seen and ingested, elapsed time, documents per
   minute over the whole run, ETA. Documents skipped on resume count as seen,

@@ -63,10 +63,12 @@ operator: <who>
 deadline_hours: <derived, see below>
 ```
 
-The null arm is the third file, and it replicates the baseline: same
-`dataset`, `worktree`, `sha`, `config`, `db` and case selection, a new `name`,
-`comparator` pointing at the baseline, `differences: []`, and the same
-`decision_rule` and `hypothesis`. Its claim is that the instrument is stable,
+The null pair is two more files that replicate each other: same `dataset`,
+`worktree`, `sha`, `config` and `db`, two new names, one naming the other as
+its `comparator`, `differences: []`, and the same `decision_rule` and
+`hypothesis`. They may run a smaller `limit` than the pair under test, as long
+as both of them run the same one, which is how an expensive dataset gets a
+noise floor without paying for the full set twice. Its claim is that the instrument is stable,
 so a rejection there means the pair cannot resolve the effect the treated arm
 is testing, whatever the treated arm's own p-value says.
 
@@ -160,9 +162,15 @@ that gets forgotten.
 
 ## 5. Watching a run
 
-- **Progress is the count of `case:` spans in Logfire and nothing else.** The
-  progress bar renders only to a terminal; a redirected log and a tmux pane
-  are empty until the run ends. The `debug-evals` skill has the query.
+- **Progress is the run's result file, and `case:` spans in Logfire.** The
+  file gains a row per finished case at
+  `<data dir>/evaluations/results/<name>.partial.jsonl`, so `wc -l` on it is
+  the progress count and it works with telemetry off. The progress bar renders
+  only to a terminal; a redirected log and a tmux pane are empty until the run
+  ends. The `debug-evals` skill has the span query.
+- **The queue calls out a run that finishes no case for ten minutes** and does
+  not touch it. Read the queue log for that line before deciding a run is
+  healthy, and section 6 when it appears.
 - **A rate needs a baseline of thirty minutes or the whole run so far**, and
   the report states the baseline with the rate. Two readings a few minutes
   apart catch a burst or a flat stretch and are wrong either way. Builds print

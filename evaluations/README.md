@@ -131,8 +131,9 @@ runs the preflight, runs the smoke set named by `smoke_ids` under the name
 `<name>-smoke` and requires it to exit cleanly with at least one case,
 registers the launch,
 runs the arm from its worktree with output appended to `logs/<name>.log` under
-the evaluations data directory, kills the run at `deadline_hours`, and
-completes the registry row from the trace. A failed step ends that arm and the
+the evaluations data directory, calls out a run that finishes no case for
+`--stall-minutes` (10) without touching it, kills the run at `deadline_hours`,
+and completes the registry row from the trace. A failed step ends that arm and the
 queue continues; an arm that fails after it was registered keeps its launched
 row, to complete by hand. When the arm's worktree does not exist and `--repo` names a
 checkout, the queue provisions it at the pinned sha with `uv sync` and copies
@@ -151,7 +152,9 @@ evaluations queue arms/frames-main.yaml arms/frames-branch.yaml \
 (`--results DIR` or `HAIKU_RAG_EVAL_RESULTS` point elsewhere): case name,
 pairing key, verdict, whether the case cited anything, `cited_map`, whether
 it aborted, the trace id, the answer, the judge's reason, the run's per-case
-attributes and the task duration. A run without a trace writes
+attributes and the task duration. Rows are appended as each case finishes, to
+`<name>.partial.jsonl`, which the finished file replaces at the end, so a run
+that is killed keeps what it completed. A run without a trace writes
 `<name>.notrace-<time>.jsonl`. `arms pair`, `arms complete` and the queue's
 smoke check and completion read this file when it exists and fall back to
 Logfire, so the registry and the result files are the record and Logfire is

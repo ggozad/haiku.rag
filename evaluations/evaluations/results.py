@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from pydantic_evals.lifecycle import CaseLifecycle
 from pydantic_evals.reporting import EvaluationReport, ReportCase, ReportCaseFailure
 
 from evaluations.traces import CaseOutcome
@@ -88,6 +89,36 @@ def _failure_row(
     }
 
 
+def partial_path(directory: Path, name: str) -> Path:
+    """Where a run appends its cases while it is still running."""
+    return directory / f"{name}.partial.jsonl"
+
+
+def case_writer(directory: Path, *, name: str, pair_key: str) -> type[CaseLifecycle]:
+    """A pydantic-evals lifecycle that appends one row per case as it finishes.
+
+    A run that is killed or crashes keeps the cases it completed, and a watcher
+    has something that grows without reading telemetry.
+    """
+    check_run_name(name)
+    path = partial_path(directory, name)
+
+    class Writer(CaseLifecycle):
+        async def teardown(self, result: ReportCase | ReportCaseFailure | None) -> None:
+            if result is None:
+                return
+            row = (
+                _failure_row(result, pair_key, None)
+                if isinstance(result, ReportCaseFailure)
+                else _case_row(result, pair_key, None)
+            )
+            directory.mkdir(parents=True, exist_ok=True)
+            with path.open("a") as out:
+                out.write(json.dumps(row) + "\n")
+
+    return Writer
+
+
 def write_results(
     report: EvaluationReport, *, name: str, pair_key: str, directory: Path
 ) -> Path:
@@ -109,19 +140,25 @@ def write_results(
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{name}.{tag}.jsonl"
     path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    partial_path(directory, name).unlink(missing_ok=True)
     return path
 
 
 def find_results(directory: Path, name: str) -> Path | None:
-    """The result file of the run named `name`; more than one is an error."""
+    """The result file of the run named `name`, the partial one when the run
+    wrote no other. More than one finished file is an error."""
     check_run_name(name)
     matches = sorted(directory.glob(f"{name}.*.jsonl")) if directory.is_dir() else []
-    if len(matches) > 1:
-        listed = ", ".join(path.name for path in matches)
+    partial = partial_path(directory, name)
+    finished = [path for path in matches if path != partial]
+    if len(finished) > 1:
+        listed = ", ".join(path.name for path in finished)
         raise ValueError(
-            f"{len(matches)} result files for {name!r} in {directory}: {listed}"
+            f"{len(finished)} result files for {name!r} in {directory}: {listed}"
         )
-    return matches[0] if matches else None
+    if finished:
+        return finished[0]
+    return partial if partial in matches else None
 
 
 def read_results(path: Path) -> tuple[str | None, list[CaseOutcome]]:

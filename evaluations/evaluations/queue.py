@@ -21,7 +21,12 @@ from evaluations.completion import (
 from evaluations.datasets import DATASETS
 from evaluations.preflight import run_preflight
 from evaluations.registry import Registry, launch_record
-from evaluations.results import RESULTS_ENV, find_results, read_results
+from evaluations.results import (
+    RESULTS_ENV,
+    find_results,
+    partial_path,
+    read_results,
+)
 from evaluations.traces import QueryFn, case_outcomes
 from haiku.rag.utils import get_default_data_dir
 
@@ -84,7 +89,10 @@ class Queue:
     `smoke_ids`, registered, run from its worktree with output appended to
     `logs/<name>.log`, killed at its deadline, and completed from its trace.
     A failed step ends that arm and the queue continues; an arm that fails
-    after it was registered keeps its launched row, to complete by hand."""
+    after it was registered keeps its launched row, to complete by hand.
+    A run that finishes no case for `stall_seconds` is called out in the log
+    and left alone: a stall is for a person to read, not for the queue to act
+    on."""
 
     registry: Registry
     logs: Path
@@ -94,6 +102,7 @@ class Queue:
     env_source: Path | None = None
     settle_seconds: float = 900.0
     poll_seconds: float = 30.0
+    stall_seconds: float = 600.0
     results_dir: Path | None = None
 
     def run(self, arm_paths: list[Path]) -> list[ArmOutcome]:
@@ -248,11 +257,22 @@ class Queue:
                 },
                 start_new_session=True,
             )
+            cases_bytes = 0
+            moved_at = time.monotonic()
             while True:
                 try:
                     return process.wait(timeout=self.poll_seconds)
                 except subprocess.TimeoutExpired:
                     pass
+                written = self._cases_written(log_name)
+                if written != cases_bytes:
+                    cases_bytes, moved_at = written, time.monotonic()
+                elif written and time.monotonic() - moved_at >= self.stall_seconds:
+                    self._log(
+                        f"{log_name}: no case finished in "
+                        f"{self.stall_seconds / 60:.0f} min"
+                    )
+                    moved_at = time.monotonic()
                 if deadline is not None and time.monotonic() >= deadline:
                     os.killpg(process.pid, signal.SIGTERM)
                     try:
@@ -261,6 +281,16 @@ class Queue:
                         os.killpg(process.pid, signal.SIGKILL)
                         process.wait()
                     return None
+
+    def _cases_written(self, name: str) -> int:
+        """Bytes the run has appended to its result file. Zero before its first
+        case, which is not a stall: a build or an ingest writes no case."""
+        if self.results_dir is None:
+            return 0
+        try:
+            return partial_path(self.results_dir, name).stat().st_size
+        except OSError:
+            return 0
 
     def _await_trace(self, name: str, since: str) -> str | None:
         """The run's trace, polled until spans arrive or `settle_seconds` pass."""
