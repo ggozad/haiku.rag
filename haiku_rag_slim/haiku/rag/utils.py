@@ -81,6 +81,32 @@ def vllm_base_url(base_url: str | None) -> str:
     return base_url
 
 
+# The `get_model` branches that read `base_url`. Every other provider reaches
+# its vendor endpoint, so a `base_url` beside it never leaves the config.
+BASE_URL_PROVIDERS = ("ollama", "vllm", "openai")
+
+
+def model_base_url(
+    model_config: "ModelConfig", app_config: "AppConfig | None" = None
+) -> str | None:
+    """The endpoint `get_model` opens for this model, None where the vendor's
+    own is used. Recording it is what tells one host's run from another's."""
+    if model_config.provider not in BASE_URL_PROVIDERS:
+        return None
+    if model_config.provider == "ollama":
+        if app_config is None:
+            from haiku.rag.config import get_config
+
+            app_config = get_config()
+        base_url = model_config.base_url or app_config.providers.ollama.base_url
+        if not base_url.rstrip("/").endswith("/v1"):
+            base_url = base_url.rstrip("/") + "/v1"
+        return base_url
+    if model_config.provider == "vllm":
+        return vllm_base_url(model_config.base_url)
+    return model_config.base_url or None
+
+
 def _check_provider_known(provider: str) -> None:
     """Reject a chat provider pydantic-ai cannot resolve.
 
@@ -271,11 +297,9 @@ def get_model(
             reasoning_effort_settings(model_config), model_config, map_thinking=False
         )
 
-        # Ollama's OpenAI-compatible API lives under /v1. Append it if the
-        # configured base_url doesn't already include it.
-        base_url = model_config.base_url or app_config.providers.ollama.base_url
-        if not base_url.rstrip("/").endswith("/v1"):
-            base_url = base_url.rstrip("/") + "/v1"
+        # Ollama's OpenAI-compatible API lives under /v1.
+        base_url = model_base_url(model_config, app_config)
+        assert base_url is not None
 
         return OpenAIChatModel(
             model_name=model,

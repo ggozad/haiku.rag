@@ -63,6 +63,13 @@
   minute over the whole run, ETA. Documents skipped on resume count as seen,
   not ingested.
 
+### Removed
+
+- `evaluations run --capability-model` and the `capability_model_source`
+  experiment metadata key. Name the capability model in `qa.model`, which
+  carries its `base_url`: the flag built a model with none, so an `openai:`
+  override reached api.openai.com instead of the configured endpoint.
+
 ## [0.87.0] - 2026-09-17
 
 ### Added

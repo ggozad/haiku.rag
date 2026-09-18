@@ -4,17 +4,14 @@ import hashlib
 import json
 import subprocess
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from haiku.rag.config import AppConfig
 from haiku.rag.config.models import ModelConfig
 
-if TYPE_CHECKING:
-    from evaluations.qa import CapabilityModelSource
-
 # Pinned judge model. Decoupled from `config.qa.model` so a user changing
 # their QA model does not inadvertently change the judge — keeps cross-run
-# comparisons stable. Override per-run with `--judge-model provider:name`.
+# comparisons stable. Set `evaluations.judge` in the config to override it.
 #
 # Sampling follows Qwen's recommendation for thinking mode; its model cards
 # forbid greedy decoding. Only the keys ollama honours are set: it silently
@@ -104,14 +101,12 @@ def build_experiment_metadata(
     config: AppConfig,
     judge_config: ModelConfig | None = None,
     capability_config: ModelConfig | None = None,
-    capability_model_source: "CapabilityModelSource | None" = None,
     document_filter: str | None = None,
     pair_key: str | None = None,
 ) -> dict[str, Any]:
     """Build experiment metadata for Logfire tracking.
 
-    `capability_*` is the model that ran the capability and
-    `capability_model_source` the setting that supplied it.
+    `capability_*` is the model that ran the capability.
     """
     metadata: dict[str, Any] = {
         "dataset": dataset_key,
@@ -157,7 +152,6 @@ def build_experiment_metadata(
                 "capability_max_tokens": capability_config.max_tokens,
                 "capability_thinking": capability_config.thinking,
                 "capability_extra_body": capability_config.extra_body,
-                "capability_model_source": capability_model_source,
             }
         )
     return metadata

@@ -6,10 +6,10 @@ import pytest
 from pydantic_ai.models.openai import OpenAIChatModel
 
 from haiku.rag.config import get_config
-from haiku.rag.config.models import ModelConfig
+from haiku.rag.config.models import AppConfig, ModelConfig
 from haiku.rag.converters import get_converter
 from haiku.rag.store.exceptions import ReadOnlyError
-from haiku.rag.utils import gather_all, get_model
+from haiku.rag.utils import gather_all, get_model, model_base_url
 
 # Check for optional dependencies
 HAS_ANTHROPIC = importlib.util.find_spec("anthropic") is not None
@@ -247,6 +247,39 @@ def test_get_model_ollama_does_not_double_append_v1():
     url = str(result.client.base_url).rstrip("/")
     assert url.endswith("/v1")
     assert not url.endswith("/v1/v1")
+
+
+def test_model_base_url_is_what_get_model_opens():
+    """The recorded endpoint is the one the client talks to."""
+    config = AppConfig()
+    for model_config in (
+        ModelConfig(provider="ollama", name="qwen3.6"),
+        ModelConfig(provider="ollama", name="qwen3.6", base_url="http://box:11434"),
+        ModelConfig(provider="vllm", name="qwen3.6"),
+        ModelConfig(provider="vllm", name="qwen3.6", base_url="http://box:11450"),
+        ModelConfig(provider="openai", name="x", base_url="http://box:8000/v1"),
+    ):
+        resolved = model_base_url(model_config, config)
+        opened = str(get_model(model_config, config).client.base_url)
+        assert resolved is not None
+        assert opened.rstrip("/") == resolved.rstrip("/"), model_config
+
+
+def test_model_base_url_is_none_where_the_vendor_owns_the_endpoint():
+    config = AppConfig()
+    assert model_base_url(ModelConfig(provider="openai", name="gpt-4o"), config) is None
+    assert model_base_url(ModelConfig(provider="anthropic", name="s"), config) is None
+
+
+def test_model_base_url_ignores_a_url_the_provider_ignores():
+    """Only the ollama, vllm and openai branches of `get_model` read
+    `base_url`; anywhere else it never reaches the wire."""
+    config = AppConfig()
+    for provider in ("anthropic", "google", "groq", "bedrock", "openrouter"):
+        model_config = ModelConfig(
+            provider=provider, name="m", base_url="http://nowhere:1234"
+        )
+        assert model_base_url(model_config, config) is None, provider
 
 
 def test_get_model_openai_vendor_never_sets_reasoning_effort():

@@ -59,7 +59,7 @@ Rules the file must satisfy, all enforced by `evaluations preflight`:
 
 - `differences` names every difference from the comparator and nothing that
   does not differ: arm fields by field (`sha`, `limit`, `db`, `filter_ids`,
-  `dataset`), flags by option (`--capability-model`), config keys by dotted
+  `dataset`), flags by option (`--target`), config keys by dotted
   path (`qa.max_searches`). An unnamed difference stops the launch. So does a
   named one that does not exist.
 - `flags` may not carry `--config`, `--name`, `--db`, `--limit` or

@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Literal, NamedTuple, cast
+from typing import Any, NamedTuple, cast
 
 from pydantic_evals import Case, set_eval_attribute
 from pydantic_evals import Dataset as EvalDataset
@@ -71,18 +71,6 @@ def _attach_relevant_uris(
         metadata = case.metadata if case.metadata is not None else {}
         metadata["relevant_uris"] = list(uris)
         case.metadata = metadata
-
-
-CapabilityModelSource = Literal["--capability-model", "qa.model"]
-
-
-def _resolve_capability_config(
-    config: AppConfig, capability_model: ModelConfig | None
-) -> tuple[ModelConfig, CapabilityModelSource]:
-    """The model the capability runs on, and which setting supplied it."""
-    if capability_model is not None:
-        return capability_model, "--capability-model"
-    return config.qa.model, "qa.model"
 
 
 def _live_summary(report_cases, report_failures) -> dict[str, float | int] | None:
@@ -212,7 +200,6 @@ async def _prepare_qa_run(
     name: str | None,
     db_path: Path | None,
     judge_model: ModelConfig | None,
-    capability_model: ModelConfig | None,
     case_ids: set[str] | None,
     document_filter: str | None,
 ) -> _QARun:
@@ -228,9 +215,7 @@ async def _prepare_qa_run(
     ]
 
     judge_config = judge_model or DEFAULT_JUDGE_MODEL
-    capability_config, capability_model_source = _resolve_capability_config(
-        config, capability_model
-    )
+    capability_config = config.qa.model
 
     eval_name = name if name is not None else f"{spec.key}_qa_evaluation"
     experiment_metadata = build_experiment_metadata(
@@ -239,7 +224,6 @@ async def _prepare_qa_run(
         config=config,
         judge_config=judge_config,
         capability_config=capability_config,
-        capability_model_source=capability_model_source,
         document_filter=document_filter,
         pair_key=spec.pair_key,
     )
@@ -288,7 +272,6 @@ async def run_qa_benchmark(
     name: str | None = None,
     db_path: Path | None = None,
     judge_model: ModelConfig | None = None,
-    capability_model: ModelConfig | None = None,
     case_ids: set[str] | None = None,
     document_filter: str | None = None,
     results_dir: Path | None = None,
@@ -300,7 +283,6 @@ async def run_qa_benchmark(
         name,
         db_path,
         judge_model,
-        capability_model,
         case_ids,
         document_filter,
     )
@@ -460,7 +442,6 @@ async def run_live_qa_benchmark(
     name: str | None = None,
     db_path: Path | None = None,
     judge_model: ModelConfig | None = None,
-    capability_model: ModelConfig | None = None,
     case_ids: set[str] | None = None,
     document_filter: str | None = None,
     results_dir: Path | None = None,
@@ -480,7 +461,6 @@ async def run_live_qa_benchmark(
         name,
         db_path,
         judge_model,
-        capability_model,
         case_ids,
         document_filter,
     )

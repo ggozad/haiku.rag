@@ -55,12 +55,12 @@ queue sets it.
 
 ```bash
 evaluations run hotpotqa
-evaluations run hotpotqa --capability-model ollama:qwen3.8
 ```
 
-`--capability-model "provider:name"` overrides the capability model independently from
-the judge (defaults to `qa.model`). A citation retrieval metric (`cited_map`) is computed
-alongside QA accuracy from the URIs the capability registered via the `cite` tool.
+The capability runs on `qa.model` and the judge on `evaluations.judge`, both
+from the config, so a run's models travel with the file its hash covers. A
+citation retrieval metric (`cited_map`) is computed alongside QA accuracy from
+the URIs the capability registered via the `cite` tool.
 
 ### Declaring and checking an arm
 
@@ -102,9 +102,10 @@ which is what the run itself requires.
 Every arm gets one row in `registry.sqlite` under the evaluations data
 directory (`--registry PATH` points elsewhere). `evaluations preflight ARM
 --register` writes the launch row when every check passes: dataset, commit,
-config path and hash, database path and fingerprint, capability model and
-endpoint, judge, reranker, embedder, case selection, comparator, decision rule
-and operator. Completion fills the trace id, cases, accuracy, cite rate, mean
+config path and hash, database path and fingerprint, the capability model and
+the endpoint it opens, judge, reranker, embedder, case selection, comparator,
+decision rule and operator. A run that skips QA records no capability and no
+judge. Completion fills the trace id, cases, accuracy, cite rate, mean
 `cited_map`, aborts and wall time and sets the status to `valid`. A void arm
 keeps its row and carries the reason, and its numbers are never paired.
 `evaluations arms complete NAME` fills those fields from Logfire, finding the

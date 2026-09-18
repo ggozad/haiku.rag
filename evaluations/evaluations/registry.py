@@ -6,11 +6,11 @@ from dataclasses import MISSING, asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
 
-from evaluations.arm import ArmSpec, flag_options, load_arm
+from evaluations.arm import ArmSpec, load_arm
 from evaluations.datasets import DATASETS
 from evaluations.experiment import DEFAULT_JUDGE_MODEL, config_hash
 from haiku.rag.config.models import AppConfig
-from haiku.rag.utils import get_default_data_dir
+from haiku.rag.utils import get_default_data_dir, model_base_url
 
 
 @dataclass
@@ -187,13 +187,12 @@ class Registry:
         return count
 
 
-def _capability(arm: ArmSpec, config: AppConfig) -> tuple[str, str | None]:
-    """The capability model an arm runs, and its endpoint when the config names it."""
-    override = flag_options(arm.flags).get("--capability-model")
-    if override:
-        _, _, name = override[0].rpartition(":")
-        return name, None
-    return config.qa.model.name, config.qa.model.base_url
+def _capability(config: AppConfig, kind: str) -> tuple[str | None, str | None]:
+    """The model a QA arm runs its capability on and the endpoint it opens.
+    A retrieval or build arm runs no capability."""
+    if kind != "qa":
+        return None, None
+    return config.qa.model.name, model_base_url(config.qa.model, config)
 
 
 def _kind(flags: list[str]) -> str:
@@ -224,7 +223,7 @@ def launch_record(
     """The row an arm gets when it launches, from its file, its resolved
     config and the fingerprint of the database it reads."""
     kind = _kind(arm.flags)
-    model, endpoint = _capability(arm, config)
+    capability_model, capability_endpoint = _capability(config, kind)
     embed = config.embeddings.model
     corpus = fingerprint or {}
     db_embedder = (
@@ -248,8 +247,8 @@ def launch_record(
         db_chunks=corpus.get("db_chunks"),
         db_embedder=db_embedder,
         db_version=corpus.get("db_version"),
-        capability_model=model,
-        capability_endpoint=endpoint,
+        capability_model=capability_model,
+        capability_endpoint=capability_endpoint,
         judge_model=_judge(arm, config, kind),
         reranker=config.reranking.model.name if config.reranking.model else None,
         embedder=f"{embed.provider}/{embed.name} dim {embed.vector_dim}",

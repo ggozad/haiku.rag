@@ -34,7 +34,6 @@ from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.logging import configure_cli_logging
 from haiku.rag.telemetry import configure as configure_telemetry
-from haiku.rag.utils import parse_model_option
 
 load_dotenv(find_dotenv(usecwd=True))
 
@@ -65,7 +64,6 @@ async def evaluate_dataset(
     vacuum_interval: int = 100,
     multimodal_only: bool = False,
     judge_model: ModelConfig | None = None,
-    capability_model: ModelConfig | None = None,
     case_ids: set[str] | None = None,
     document_filter: str | None = None,
     results_dir: Path | None = None,
@@ -115,7 +113,6 @@ async def evaluate_dataset(
             name=name,
             db_path=db_path,
             judge_model=judge_model,
-            capability_model=capability_model,
             case_ids=case_ids,
             document_filter=document_filter,
             results_dir=results_dir,
@@ -231,11 +228,6 @@ def run(
         "--multimodal-only",
         help="Only evaluate queries requiring image understanding.",
     ),
-    capability_model: str | None = typer.Option(
-        None,
-        "--capability-model",
-        help="Capability model as 'provider:name'. Defaults to qa.model from the config.",
-    ),
     document_filter: str | None = typer.Option(
         None,
         "--filter",
@@ -283,9 +275,6 @@ def run(
     app_config = _load_config(config)
     _print_run_identity(app_config)
     judge_model_config = app_config.evaluations.judge
-    capability_model_config = (
-        parse_model_option(capability_model) if capability_model else None
-    )
 
     asyncio.run(
         evaluate_dataset(
@@ -300,7 +289,6 @@ def run(
             vacuum_interval=vacuum_interval,
             multimodal_only=multimodal_only,
             judge_model=judge_model_config,
-            capability_model=capability_model_config,
             case_ids=_load_case_ids(filter_ids),
             document_filter=document_filter,
             results_dir=results or default_results_path(),

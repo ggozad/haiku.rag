@@ -280,24 +280,25 @@ class TestLaunchRecord:
         assert json.loads(record.differences or "null") == ["sha"]
         assert record.decision_rule == "McNemar exact"
 
-    def test_capability_model_flag_overrides_the_config(self, arm_file: Path) -> None:
-        arm = load_arm(arm_file).model_copy(
-            update={"flags": ["--skip-db", "--capability-model", "openai:gemma4"]}
-        )
+    def test_the_endpoint_is_the_one_the_run_opens(self, arm_file: Path) -> None:
+        arm = load_arm(arm_file)
         config = AppConfig.model_validate(yaml.safe_load(arm.config.read_text()))
-        record = launch_record(arm, config, _fingerprint(arm.db), started_at="t")
-        assert record.capability_model == "gemma4"
-        assert record.capability_endpoint is None
+        config.qa.model = ModelConfig(provider="ollama", name="gpt-oss")
+        config.providers.ollama.base_url = "http://box:11434"
 
-    def test_capability_model_is_read_from_an_attached_value(
-        self, arm_file: Path
-    ) -> None:
+        record = launch_record(arm, config, _fingerprint(arm.db), started_at="t")
+
+        assert record.capability_model == "gpt-oss"
+        assert record.capability_endpoint == "http://box:11434/v1"
+
+    def test_a_run_without_qa_records_no_capability(self, arm_file: Path) -> None:
         arm = load_arm(arm_file).model_copy(
-            update={"flags": ["--skip-db", "--capability-model=openai:gemma4"]}
+            update={"flags": ["--skip-db", "--skip-qa"]}
         )
         config = AppConfig.model_validate(yaml.safe_load(arm.config.read_text()))
         record = launch_record(arm, config, _fingerprint(arm.db), started_at="t")
-        assert record.capability_model == "gemma4"
+        assert record.kind == "retrieval"
+        assert record.capability_model is None
         assert record.capability_endpoint is None
 
     def test_judge_comes_from_the_config_when_set(self, arm_file: Path) -> None:

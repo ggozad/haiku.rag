@@ -106,7 +106,7 @@ class TestArmSpec:
     def test_flags_that_set_nothing_the_arm_pins_are_kept(
         self, checkout: Path, arm_dir: Path
     ) -> None:
-        flags = ["--skip-db", "--no-telemetry", "--capability-model", "ollama:gpt-oss"]
+        flags = ["--skip-db", "--no-telemetry", "--vacuum-interval", "50"]
         arm = load_arm(_write_arm(arm_dir / "a.yaml", _fields(checkout, flags=flags)))
         assert arm.command()[-len(flags) :] == flags
 
