@@ -707,6 +707,8 @@ Datasets: `frames`, `hotpotqa`, `orb_text`, `orb_multimodal`, `orb_multimodal_ne
 
 **Build throughput**: `population.Throughput` prints `<seen>/<total> documents, <n> ingested in H:MM:SS: <rate> documents/min over the whole run, ETA <H:MM:SS>` every `report_every` (50) ingested documents and once at the end. `_ingest_batched`'s `on_document(ingested: bool)` tells a converted document from one skipped on resume, and only ingested ones enter the rate. The Rich progress bar is a terminal-only display and is absent from a redirected log.
 
+**Operator skills**: `.claude/skills/eval-launch` (launching arms through the harness) and `.claude/skills/eval-analysis` (reading and pairing results) hold procedure only; `evaluations/tests/test_skills.py` refuses a commit sha, trace id or date in them above their change log. Machine facts (endpoints, databases, checkouts, arm files, configs, smoke sets, registry exports) live in the private `haiku.rag-evaluations-data` repository.
+
 **Reasoning knobs on vLLM**: a vLLM server started with `--reasoning-parser` consumes `chat_template_kwargs.enable_thinking` itself — it never reaches the chat template. Muse-Glimmer QA blocks must set `chat_template_kwargs.reasoning_strength: high` instead (the mtrag reference config does); a template defaulting it to low silently cuts search calls ~37% with no error anywhere. Verify a kwarg by RENDERING (`/tokenize` with `return_token_strs`) or by measured behavior, never by HTTP acceptance.
 
 ## haiku.rag.app (Conversational RAG Application)
