@@ -59,7 +59,7 @@ Rules the file must satisfy, all enforced by `evaluations preflight`:
 
 - `differences` names every difference from the comparator and nothing that
   does not differ: arm fields by field (`sha`, `limit`, `db`, `filter_ids`,
-  `dataset`), flags by option (`--target`), config keys by dotted
+  `dataset`), flags by option (`--vacuum-interval`), config keys by dotted
   path (`qa.max_searches`). An unnamed difference stops the launch. So does a
   named one that does not exist.
 - `flags` may not carry `--config`, `--name`, `--db`, `--limit` or
@@ -136,6 +136,10 @@ that gets forgotten.
 - **Concurrency changes wall time.** Arms sharing an endpoint cost more per
   case than one arm alone. The registry records how many `evaluations run`
   processes were live at launch; quote it with any timing.
+- **Wait on exit status, never on a pattern in stderr.** A connection error
+  read as a result has happened. Branch on the command's status, and make a
+  watcher report every terminal state: silence from one that greps for the
+  happy path looks exactly like progress.
 - **Snapshot the endpoints before and after**:
   `docker inspect <container> --format '{{.RestartCount}} {{.State.StartedAt}}'`.
   A restart voids the pair, not just the arm: both sides rerun on the

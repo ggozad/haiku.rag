@@ -113,7 +113,7 @@ class TestCompleteArm:
         assert record.trace_id == TRACE
         assert record.cases == 4
         assert record.accuracy == pytest.approx(2 / 3)
-        assert record.cite_rate == pytest.approx(0.5)
+        assert record.cite_rate_all_cases == pytest.approx(0.5)
         assert record.cited_map == pytest.approx(0.5)
         assert record.aborts == 1
         assert record.wall_seconds == pytest.approx(7200.0)

@@ -44,14 +44,14 @@ class ArmSummary:
     passed: int
     accuracy: float | None
     floor: float | None
-    cite_rate: float | None
+    cite_rate_all_cases: float | None
     cited_map: float | None
     aborts: int
     unjudged: int
 
 
 def summarize(name: str, outcomes: list[CaseOutcome]) -> ArmSummary:
-    """Accuracy over judged cases, floor over all cases, cite rate and mean
+    """Accuracy over judged cases, floor and cite rate over all cases, mean
     cited_map over the cases that carry one."""
     cases = len(outcomes)
     judged = [outcome for outcome in outcomes if outcome.passed is not None]
@@ -64,7 +64,7 @@ def summarize(name: str, outcomes: list[CaseOutcome]) -> ArmSummary:
         passed=passed,
         accuracy=passed / len(judged) if judged else None,
         floor=passed / cases if cases else None,
-        cite_rate=sum(1 for outcome in outcomes if outcome.cited) / cases
+        cite_rate_all_cases=sum(1 for outcome in outcomes if outcome.cited) / cases
         if cases
         else None,
         cited_map=sum(maps) / len(maps) if maps else None,
@@ -176,7 +176,7 @@ def render(result: PairResult, decision_rule: str | None = None) -> str:
     for arm in (result.treated, result.baseline):
         lines.append(
             f"{arm.name:<{width}}  {arm.cases:>5}  {_rate(arm.accuracy):>8}  "
-            f"{_rate(arm.floor):>7}  {_rate(arm.cite_rate):>9}  {_rate(arm.cited_map):>9}  "
+            f"{_rate(arm.floor):>7}  {_rate(arm.cite_rate_all_cases):>9}  {_rate(arm.cited_map):>9}  "
             f"{arm.aborts:>6}  {arm.unjudged:>8}"
         )
     treated, baseline = result.treated.name, result.baseline.name
@@ -205,6 +205,10 @@ def render(result: PairResult, decision_rule: str | None = None) -> str:
             f"resolution: {discordant} discordant pairs; the exact test rejects at "
             f"|b - c| >= {delta}{share}"
         )
+    lines.append(
+        "denominators: accuracy over judged cases; floor and cite rate over all "
+        "cases; cited_map over the cases that carry one"
+    )
     if decision_rule:
         lines.append(f"decision rule: {decision_rule}")
     return "\n".join(lines)
@@ -266,6 +270,14 @@ def check_pair_rows(treated: ArmRecord, baseline: ArmRecord) -> list[str]:
         problems.append("config hashes differ and no config key is named")
     if ("limit" in named) != (treated.limit_cases != baseline.limit_cases):
         problems.append("limit named and equal, or different and not named")
-    if ("db" in named) != (treated.db_path != baseline.db_path):
-        problems.append("db named and equal, or different and not named")
+    paths_differ = treated.db_path != baseline.db_path
+    rewritten = not paths_differ and treated.db_written_at != baseline.db_written_at
+    if ("db" in named) != (paths_differ or rewritten):
+        problems.append(
+            f"one database {treated.db_path} was rewritten between the runs "
+            f"({baseline.db_written_at} then {treated.db_written_at}) "
+            "and db is not named"
+            if rewritten
+            else "db named and equal, or different and not named"
+        )
     return problems

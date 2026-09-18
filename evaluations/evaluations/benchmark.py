@@ -570,7 +570,7 @@ def arms_complete(
         raise typer.Exit(code=1)
     console.print(
         f"{name} completed from trace {record.trace_id}: {summary.cases} cases, "
-        f"accuracy {_rate(summary.accuracy)}, cite rate {_rate(summary.cite_rate)}, "
+        f"accuracy {_rate(summary.accuracy)}, cite rate {_rate(summary.cite_rate_all_cases)}, "
         f"cited_map {_rate(summary.cited_map)}, aborts {summary.aborts}",
         soft_wrap=True,
         highlight=False,

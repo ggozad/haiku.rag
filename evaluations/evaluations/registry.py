@@ -34,6 +34,7 @@ class ArmRecord:
     db_chunks: int | None = None
     db_embedder: str | None = None
     db_version: str | None = None
+    db_written_at: str | None = None
     capability_model: str | None = None
     capability_endpoint: str | None = None
     judge_model: str | None = None
@@ -49,7 +50,7 @@ class ArmRecord:
     trace_id: str | None = None
     cases: int | None = None
     accuracy: float | None = None
-    cite_rate: float | None = None
+    cite_rate_all_cases: float | None = None
     cited_map: float | None = None
     aborts: int | None = None
     wall_seconds: float | None = None
@@ -65,6 +66,9 @@ _DDL = ", ".join(
     for field in fields(ArmRecord)
 )
 _INSERT = f"({', '.join(_COLUMNS)}) VALUES ({', '.join('?' * len(_COLUMNS))})"
+# Every field added after a registry file was written. All are nullable, so an
+# older file takes them as columns without a migration of its rows.
+_ADDABLE = [field.name for field in fields(ArmRecord) if field.default is not MISSING]
 
 
 def default_registry_path() -> Path:
@@ -87,6 +91,12 @@ class Registry:
         self._db.row_factory = sqlite3.Row
         with self._db:
             self._db.execute(f"CREATE TABLE IF NOT EXISTS arms ({_DDL})")
+            present = {
+                row["name"] for row in self._db.execute("PRAGMA table_info(arms)")
+            }
+            for column in _ADDABLE:
+                if column not in present:
+                    self._db.execute(f"ALTER TABLE arms ADD COLUMN {column}")
 
     def register_launch(self, record: ArmRecord) -> None:
         try:
@@ -129,7 +139,7 @@ class Registry:
         trace_id: str | None,
         cases: int | None,
         accuracy: float | None,
-        cite_rate: float | None = None,
+        cite_rate_all_cases: float | None = None,
         cited_map: float | None = None,
         aborts: int | None = None,
         wall_seconds: float | None = None,
@@ -141,7 +151,7 @@ class Registry:
             trace_id=trace_id,
             cases=cases,
             accuracy=accuracy,
-            cite_rate=cite_rate,
+            cite_rate_all_cases=cite_rate_all_cases,
             cited_map=cited_map,
             aborts=aborts,
             wall_seconds=wall_seconds,
@@ -247,6 +257,7 @@ def launch_record(
         db_chunks=corpus.get("db_chunks"),
         db_embedder=db_embedder,
         db_version=corpus.get("db_version"),
+        db_written_at=corpus.get("db_written_at"),
         capability_model=capability_model,
         capability_endpoint=capability_endpoint,
         judge_model=_judge(arm, config, kind),

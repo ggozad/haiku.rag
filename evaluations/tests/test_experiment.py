@@ -90,6 +90,7 @@ class TestCorpusFingerprint:
             "db_embedder_model": None,
             "db_embedder_dim": None,
             "db_version": None,
+            "db_written_at": None,
         }
 
     async def test_missing_database_reports_only_its_path(self, tmp_path: Path) -> None:
@@ -123,3 +124,27 @@ class TestCorpusFingerprint:
         assert fingerprint["db_embedder_model"] == config.embeddings.model.name
         assert fingerprint["db_embedder_dim"] == dim
         assert fingerprint["db_version"] not in (None, "unknown")
+        assert fingerprint["db_written_at"] is not None
+
+    async def test_a_rewrite_moves_the_write_time_at_equal_counts(
+        self, tmp_path: Path
+    ) -> None:
+        """Counts read a rebuilt corpus as the one it replaced. The write does not."""
+        config = AppConfig()
+        dim = config.embeddings.model.vector_dim
+        path = tmp_path / "corpus.lancedb"
+        document = DoclingDocument(name="doc")
+        document.add_text(label=DocItemLabel.TEXT, text="alpha")
+        async with HaikuRAG(path, config=config, create=True) as rag:
+            doc = await rag.import_document(
+                document, [Chunk(content="alpha", embedding=[0.1] * dim)], uri="d://1"
+            )
+            before = await corpus_fingerprint(path, config)
+            assert doc.id is not None
+            doc.content = "rewritten"
+            await rag.document_repository.update_meta(doc)
+            after = await corpus_fingerprint(path, config)
+
+        assert after["db_documents"] == before["db_documents"]
+        assert after["db_chunks"] == before["db_chunks"]
+        assert after["db_written_at"] > before["db_written_at"]

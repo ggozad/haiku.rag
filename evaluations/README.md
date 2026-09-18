@@ -105,9 +105,11 @@ directory (`--registry PATH` points elsewhere). `evaluations preflight ARM
 config path and hash, database path and fingerprint, the capability model and
 the endpoint it opens, judge, reranker, embedder, case selection, comparator,
 decision rule and operator. A run that skips QA records no capability and no
-judge. Completion fills the trace id, cases, accuracy, cite rate, mean
-`cited_map`, aborts and wall time and sets the status to `valid`. A void arm
-keeps its row and carries the reason, and its numbers are never paired.
+judge. Completion fills the trace id, cases, accuracy, `cite_rate_all_cases`,
+mean `cited_map`, aborts and wall time and sets the status to `valid`. Two arms
+on one database whose `db_written_at` differ read different corpora, and
+`arms pair` refuses them unless the arm file names `db` as a difference. A void
+arm keeps its row and carries the reason, and its numbers are never paired.
 `evaluations arms complete NAME` fills those fields from Logfire, finding the
 trace by run name within the launch window or by `--trace ID`. With no trace
 the arm is void with reason `no telemetry`.
@@ -166,10 +168,11 @@ Cases join on the dataset's `pair_key`: `question_id` for FRAMES and
 HotpotQA, `query_id` for ORB, `id` for T2, `task_id` and `conversation_id`
 for MTRAG. Per-case outcomes come from each run's result file, and from
 Logfire through the read key in `~/.logfire-read-key` or `LOGFIRE_READ_KEY`
-when there is none. The table shows per arm the
-cases, accuracy over judged cases, floor over all cases, cite rate, mean
-`cited_map`, aborts and unjudged cases. For the pair it shows the discordant
-counts with the exact McNemar p-value, the `cited_map` sign test, the
+when there is none. The table shows per arm the cases, accuracy over judged
+cases, floor over all cases, cite rate over all cases, mean `cited_map` over
+the cases that carry one, aborts and unjudged cases, and prints those
+denominators under it. For the pair it shows the discordant counts with the
+exact McNemar p-value, the `cited_map` sign test, the
 smallest |b - c| the test rejects at p < 0.05 with that many discordant
 pairs, and the recorded decision rule.
 

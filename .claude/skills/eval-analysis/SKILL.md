@@ -24,8 +24,12 @@ If it refuses, the pair is not ready; do not compute it by hand.
 Per-case rows come from the run's result file under the evaluations data
 directory when it exists, and from Logfire otherwise.
 
-Per arm: cases, accuracy over judged cases, floor over all cases, cite rate,
-mean `cited_map`, aborts, unjudged. For the pair: discordant counts with the
+Per arm: cases, accuracy over judged cases, floor over all cases, cite rate
+over all cases, mean `cited_map` over the cases that carry one, aborts,
+unjudged. The table prints those denominators under it, and the registry column
+is `cite_rate_all_cases`. Published tables have quoted a cite rate over scored
+cases instead, so never compare one against the other without converting:
+scored rate times scored cases, over all cases. For the pair: discordant counts with the
 exact McNemar p-value, the `cited_map` sign test, the smallest |b - c| the
 test rejects at p < 0.05 with that many discordant pairs, and the recorded
 decision rule. Quote the table whole. The resolution line is the power
@@ -38,6 +42,10 @@ and saying so is part of the report.
   experiment metadata. Never choose the column yourself. A join on a key the
   cases do not carry is NULL on both sides and returns nothing or a cross
   product that looks like a plausible table.
+- Read the first line before the p-value. A join that matched a fraction of
+  the cases prints a normal-looking table, so compare the paired count with
+  each arm's cases and with the case selection the arm file names. The
+  one-sided counts beside it say which arm the missing cases came from.
 - Check that the paired count equals the cases you expected. A join that
   silently matches a fraction produces a verdict that looks normal.
 - A pair is unreadable without a null pair beside it. Identical code takes a
@@ -63,8 +71,13 @@ and saying so is part of the report.
 A corpus rebuild ends an era. Numbers from before and after do not compare,
 and a trace cannot tell you which corpus it used unless its metadata carries
 the fingerprint. Every registry row carries the database path, document and
-chunk counts and the stored embedder. State them with any number you quote,
-and never quote a benchmark number without naming the corpus it came from.
+chunk counts, the stored embedder and `db_written_at`, the newest table
+version time. Counts alone do not separate two states of one corpus: a
+content fix at a constant document count, or a schema migration that rewrites
+no rows, leave them identical while `db_written_at` moves. `db_version` is the
+schema marker and says nothing about content. State them with any number you
+quote, and never quote a benchmark number without naming the corpus it came
+from.
 `reference.md` in the `haiku.rag-evaluations-data` repository lists the
 current eras.
 

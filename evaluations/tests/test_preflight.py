@@ -439,7 +439,7 @@ class TestPreflightComparator:
                 checkout,
                 name="frames-main",
                 config="main.yaml",
-                flags=["--skip-db", "--target", "analysis-capability"],
+                flags=["--skip-db", "--vacuum-interval", "50"],
             ),
         )
         fields = _fields(
@@ -459,10 +459,12 @@ class TestPreflightComparator:
         check = _by_name((await run_preflight(arm)).checks)["comparator"]
         assert check.ok is False
         assert "qa.max_searches" in check.detail
-        assert "--target" in check.detail
+        assert "--vacuum-interval" in check.detail
 
     async def test_named_differences_pass(self, checkout: Path, arm_dir: Path) -> None:
-        arm = self._pair(checkout, arm_dir, differences=["qa.max_searches", "--target"])
+        arm = self._pair(
+            checkout, arm_dir, differences=["qa.max_searches", "--vacuum-interval"]
+        )
         check = _by_name((await run_preflight(arm)).checks)["comparator"]
         assert check.ok is True
         assert "qa.max_searches" in check.detail
@@ -473,7 +475,7 @@ class TestPreflightComparator:
         arm = self._pair(
             checkout,
             arm_dir,
-            differences=["qa.max_searches", "--target", "qa.model.name"],
+            differences=["qa.max_searches", "--vacuum-interval", "qa.model.name"],
         )
         check = _by_name((await run_preflight(arm)).checks)["comparator"]
         assert check.ok is False
@@ -486,7 +488,7 @@ class TestPreflightComparator:
             checkout,
             arm_dir,
             sha="a" * 12,
-            differences=["qa.max_searches", "--target"],
+            differences=["qa.max_searches", "--vacuum-interval"],
         )
         check = _by_name((await run_preflight(arm)).checks)["comparator"]
         assert check.ok is False
@@ -498,12 +500,12 @@ class TestPreflightComparator:
         arm = self._pair(
             checkout,
             arm_dir,
-            flags=["--skip-db", "--target", "rag-capability"],
+            flags=["--skip-db", "--vacuum-interval", "10"],
             differences=["qa.max_searches"],
         )
         check = _by_name((await run_preflight(arm)).checks)["comparator"]
         assert check.ok is False
-        assert "--target" in check.detail
+        assert "--vacuum-interval" in check.detail
 
     async def test_an_attached_flag_value_is_named_by_its_option(
         self, checkout: Path, arm_dir: Path
@@ -511,8 +513,8 @@ class TestPreflightComparator:
         arm = self._pair(
             checkout,
             arm_dir,
-            flags=["--skip-db", "--target=rag-capability"],
-            differences=["qa.max_searches", "--target"],
+            flags=["--skip-db", "--vacuum-interval=10"],
+            differences=["qa.max_searches", "--vacuum-interval"],
         )
         check = _by_name((await run_preflight(arm)).checks)["comparator"]
         assert check.ok is True, check.detail

@@ -74,6 +74,7 @@ async def corpus_fingerprint(db_path: Path | None, config: AppConfig) -> dict[st
         "db_embedder_model": None,
         "db_embedder_dim": None,
         "db_version": None,
+        "db_written_at": None,
     }
     if db_path is None or not Path(db_path).exists():
         return fingerprint
@@ -84,9 +85,13 @@ async def corpus_fingerprint(db_path: Path | None, config: AppConfig) -> dict[st
     if not info.exists:
         return fingerprint
     rows = {table.name: table.num_rows for table in info.tables}
+    written = [
+        table.latest_version_at for table in info.tables if table.latest_version_at
+    ]
     fingerprint.update(
         db_documents=rows.get("documents"),
         db_chunks=rows.get("chunks"),
+        db_written_at=max(written) if written else None,
         db_embedder_provider=info.embeddings.provider,
         db_embedder_model=info.embeddings.name,
         db_embedder_dim=info.embeddings.vector_dim,

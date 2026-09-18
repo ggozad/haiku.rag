@@ -10,8 +10,10 @@
   to start when `LOGFIRE_TOKEN` is not set.
 - `evaluations run` records `git_sha`, `git_dirty`, `config_hash`, `db_path`,
   `db_documents`, `db_chunks`, `db_embedder_provider`, `db_embedder_model`,
-  `db_embedder_dim` and `db_version` in experiment metadata, and prints the
-  code revision and config hash at start.
+  `db_embedder_dim`, `db_version` and `db_written_at` in experiment metadata,
+  and prints the code revision and config hash at start.
+- `TableInfo.latest_version_at`: the newest table version time, from the
+  version list `haiku-rag info` already reads.
 - Arm files: one YAML file per evaluation arm naming the dataset, checkout,
   pinned sha, config, database, case selection, flags, comparator, named
   differences and decision rule (`evaluations/arm.py`). `flags` may not carry
@@ -30,8 +32,8 @@
 - `evaluations arms list | show | void | export | import`. Export is JSONL
   with sorted keys, one arm per line; import upserts by name.
 - `evaluations arms pair A B`: the standard paired table for two registered
-  arms. Per arm: cases, accuracy, floor, cite rate, mean `cited_map`, aborts,
-  unjudged. For the pair: discordant counts with the exact McNemar p-value,
+  arms. Per arm: cases, accuracy, floor, `cite_rate_all_cases`, mean
+  `cited_map`, aborts, unjudged. For the pair: discordant counts with the exact McNemar p-value,
   the `cited_map` sign test and the smallest significant swing. Treated and
   baseline come from the recorded comparator. Refuses an arm that is not a
   completed valid run, an unrecorded commit, two datasets, a NULL pairing key,

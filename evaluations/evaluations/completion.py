@@ -107,7 +107,7 @@ def complete_arm(
         trace_id=trace_id,
         cases=summary.cases,
         accuracy=summary.accuracy,
-        cite_rate=summary.cite_rate,
+        cite_rate_all_cases=summary.cite_rate_all_cases,
         cited_map=summary.cited_map,
         aborts=summary.aborts,
         wall_seconds=wall_seconds,

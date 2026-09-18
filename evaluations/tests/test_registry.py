@@ -63,7 +63,7 @@ class TestRegistry:
             trace_id="0" * 32,
             cases=150,
             accuracy=0.78,
-            cite_rate=0.9,
+            cite_rate_all_cases=0.9,
             cited_map=0.41,
             aborts=2,
             wall_seconds=23400.0,
@@ -216,7 +216,46 @@ def _fingerprint(db: Path | None) -> dict:
         "db_embedder_model": "nemo-embed",
         "db_embedder_dim": 2048,
         "db_version": "0.86.0",
+        "db_written_at": "2026-09-01T10:00:00",
     }
+
+
+class TestOlderRegistryFile:
+    def test_a_file_written_before_a_field_gains_its_column(
+        self, tmp_path: Path
+    ) -> None:
+        import sqlite3
+
+        path = tmp_path / "old.sqlite"
+        con = sqlite3.connect(path)
+        con.execute(
+            "CREATE TABLE arms (name TEXT PRIMARY KEY, dataset, kind, status, "
+            "started_at, source)"
+        )
+        con.execute(
+            "INSERT INTO arms VALUES ('old-arm', 'frames', 'qa', 'valid', 't', 'log')"
+        )
+        con.commit()
+        con.close()
+
+        registry = Registry(path)
+
+        old = registry.get("old-arm")
+        assert old is not None
+        assert old.dataset == "frames" and old.db_written_at is None
+        registry.register_launch(
+            ArmRecord(
+                name="new-arm",
+                dataset="frames",
+                kind="qa",
+                status="launched",
+                started_at="t",
+                source="harness",
+                db_written_at="2026-09-01T10:00:00",
+            )
+        )
+        fresh = registry.get("new-arm")
+        assert fresh is not None and fresh.db_written_at == "2026-09-01T10:00:00"
 
 
 class TestLaunchRecord:
@@ -245,6 +284,7 @@ class TestLaunchRecord:
         assert record.db_chunks == 464150
         assert record.db_embedder == "vllm/nemo-embed dim 2048"
         assert record.db_version == "0.86.0"
+        assert record.db_written_at == "2026-09-01T10:00:00"
         assert record.capability_model == "glimmer"
         assert record.capability_endpoint == "http://vllm:11450"
         assert record.judge_model == DEFAULT_JUDGE_MODEL.name

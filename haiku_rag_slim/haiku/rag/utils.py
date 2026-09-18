@@ -86,18 +86,12 @@ def vllm_base_url(base_url: str | None) -> str:
 BASE_URL_PROVIDERS = ("ollama", "vllm", "openai")
 
 
-def model_base_url(
-    model_config: "ModelConfig", app_config: "AppConfig | None" = None
-) -> str | None:
+def model_base_url(model_config: "ModelConfig", app_config: "AppConfig") -> str | None:
     """The endpoint `get_model` opens for this model, None where the vendor's
     own is used. Recording it is what tells one host's run from another's."""
     if model_config.provider not in BASE_URL_PROVIDERS:
         return None
     if model_config.provider == "ollama":
-        if app_config is None:
-            from haiku.rag.config import get_config
-
-            app_config = get_config()
         base_url = model_config.base_url or app_config.providers.ollama.base_url
         if not base_url.rstrip("/").endswith("/v1"):
             base_url = base_url.rstrip("/") + "/v1"

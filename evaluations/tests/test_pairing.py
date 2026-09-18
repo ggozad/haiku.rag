@@ -146,7 +146,7 @@ class TestSummarize:
         assert summary.judged == 3
         assert summary.accuracy == pytest.approx(2 / 3)
         assert summary.floor == pytest.approx(0.5)
-        assert summary.cite_rate == pytest.approx(0.5)
+        assert summary.cite_rate_all_cases == pytest.approx(0.5)
         assert summary.cited_map == pytest.approx(0.5)
         assert summary.aborts == 1
         assert summary.unjudged == 1
@@ -296,6 +296,25 @@ class TestPairRows:
             "branch", comparator="main", differences='["qa.max_searches"]'
         )
         assert any("qa.max_searches" in p for p in check_pair_rows(stale_config, main))
+
+    def test_a_corpus_rewritten_between_the_runs_must_be_named(self) -> None:
+        main = _record("main", db_written_at="2026-09-01T10:00:00")
+        branch = _record(
+            "branch",
+            comparator="main",
+            differences="[]",
+            db_written_at="2026-09-10T12:00:00",
+        )
+        problems = check_pair_rows(branch, main)
+        assert any("rewritten" in p for p in problems)
+
+        named = _record(
+            "branch",
+            comparator="main",
+            differences='["db"]',
+            db_written_at="2026-09-10T12:00:00",
+        )
+        assert check_pair_rows(named, main) == []
 
     def test_a_null_pair_and_a_named_pair_pass(self) -> None:
         main = _record("main")
