@@ -82,6 +82,45 @@ class TestListingAcrossDatabases:
         assert [d.uri for d in docs] == ["test://beta/beta one"]
 
 
+class TestSourcesRestrictListing:
+    """`sources` narrows `list_documents` the same way it narrows `search`, on
+    a client covering a set and on one covering a single database alike."""
+
+    @pytest.mark.asyncio
+    async def test_sources_restricts_the_multi_database_listing(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+
+        async with HaikuRAG(config=config) as rag:
+            docs = await rag.list_documents(sources=["alpha"])
+
+        assert {d.uri for d in docs} == {"test://alpha/alpha one"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "names", [["alpha", "beta"], ["alpha"]], ids=["multi", "single"]
+    )
+    async def test_selecting_nothing_returns_nothing(self, tmp_path, names):
+        config = _config(tmp_path, names)
+        await _seed(config, "alpha", ["alpha one"])
+
+        async with HaikuRAG(config=config) as rag:
+            assert await rag.list_documents(sources=[]) == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "names", [["alpha", "beta"], ["alpha"]], ids=["multi", "single"]
+    )
+    async def test_an_unknown_source_is_rejected(self, tmp_path, names):
+        config = _config(tmp_path, names)
+        await _seed(config, "alpha", ["alpha one"])
+
+        async with HaikuRAG(config=config) as rag:
+            with pytest.raises(UnknownDatabaseError):
+                await rag.list_documents(sources=["nope"])
+
+
 class TestLookupByIdentifier:
     """An id or a URI says nothing about which database holds it, and a client
     covering a set has no repositories of its own."""

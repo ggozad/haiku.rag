@@ -780,6 +780,7 @@ class HaikuRAG:
         offset: int | None = None,
         filter: str | None = None,
         include_content: bool = False,
+        sources: list[str] | None = None,
     ) -> list[Document]:
         """List all documents with optional pagination and filtering.
 
@@ -789,6 +790,7 @@ class HaikuRAG:
             filter: Optional SQL WHERE clause to filter documents.
             include_content: Whether to load the text content. Defaults to
                 False. A listing never loads the docling blobs.
+            sources: Collections to list, by name. All of them by default.
 
         Returns:
             List of Document instances matching the criteria.
@@ -803,7 +805,7 @@ class HaikuRAG:
                     owner.list_documents(
                         limit=wanted, filter=filter, include_content=include_content
                     )
-                    for owner in await self.clients_covering()
+                    for owner in await self.clients_covering(sources)
                 )
             )
             # Round-robin: a window shows every database.
@@ -812,6 +814,8 @@ class HaikuRAG:
             ]
             start = offset or 0
             return merged[start:] if limit is None else merged[start : start + limit]
+        if not await self.clients_covering(sources):
+            return []
         return await self._single_session("list_documents").list_documents(
             limit=limit, offset=offset, filter=filter, include_content=include_content
         )

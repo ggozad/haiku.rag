@@ -372,6 +372,7 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
         limit: int | None = None,
         offset: int | None = None,
         filter: Filter = None,
+        sources: Sources = None,
     ) -> list[DocumentInfo]:
         """List what the knowledge base holds.
 
@@ -384,7 +385,7 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
             offset: How many documents to skip, for paging.
         """
         rag = await _client()
-        documents = await rag.list_documents(limit, offset, filter)
+        documents = await rag.list_documents(limit, offset, filter, sources=sources)
         return [
             DocumentInfo(
                 id=doc.id,

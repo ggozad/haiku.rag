@@ -128,7 +128,7 @@ repeating it.
 | `get_document` | always | `document_id`, `source` |
 | `get_document_outline` | always | `document_id`, `source` |
 | `get_document_section` | always | `document_id`, `section_id`, `source` |
-| `list_documents` | always | `limit`, `offset`, `filter` |
+| `list_documents` | always | `limit`, `offset`, `filter`, `sources` |
 | `execute_code` | always | `code`, `filter`, `sources` |
 
 `search_documents` runs hybrid search, vector and full-text. Its text content
