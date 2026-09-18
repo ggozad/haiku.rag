@@ -814,6 +814,8 @@ class HaikuRAG:
             ]
             start = offset or 0
             return merged[start:] if limit is None else merged[start : start + limit]
+        if not await self.clients_covering(sources):
+            return []
         return await self._single_session("list_documents").list_documents(
             limit=limit, offset=offset, filter=filter, include_content=include_content
         )

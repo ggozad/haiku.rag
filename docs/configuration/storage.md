@@ -236,7 +236,7 @@ Across a selection, the databases are compared with each other. Vector and hybri
 
 ### Search and Provenance
 
-`search` and `ask` use the full set by default. Pass `sources` to select a subset:
+`search`, `ask`, and `list_documents` use the full set by default. Pass `sources` to select a subset:
 
 ```python
 results = await client.search("query")                     # every database
