@@ -55,12 +55,11 @@ db: ~/.local/share/haiku.rag/evaluations/dbs/<database>.lancedb
 limit: 150                           # or filter_ids: ../smoke/<ids>.txt
 flags: [--skip-db, --skip-retrieval]
 smoke_ids: ../smoke/<dataset>-<kind>.txt
-comparator: <baseline arm>.yaml      # the arm this one is measured against
+comparator: <baseline arm>           # a registered arm name, or a file ending .yaml
 differences: [sha]                   # every way the two arms differ
 decision_rule: McNemar exact on answer_equivalent, two-sided, treated worse at p < 0.05 fails
 hypothesis: <the claim this pair tests, one line>
 operator: <who>
-deadline_hours: <derived, see below>
 ```
 
 The null pair is two more files that replicate each other: same `dataset`,
@@ -72,14 +71,18 @@ noise floor without paying for the full set twice. Its claim is that the instrum
 so a rejection there means the pair cannot resolve the effect the treated arm
 is testing, whatever the treated arm's own p-value says.
 
-`deadline_hours` bounds the run and kills it at the limit; the killed arm is
-void and a void arm is never paired, so a deadline set too low costs the whole
-run. Derive it, never copy it: take a completed row on the same dataset
-(`evaluations arms list --dataset <dataset>`, then `arms show <name>` for
-`wall_seconds` and `cases`), multiply the seconds per case by your case count,
-and double it when arms share an endpoint, since each one slows the others.
-Datasets differ by a factor of three in seconds per case, and the same dataset
-differs by more than that between models.
+`comparator` is the arm this one is measured against. A registered name pairs
+against a run that already happened, which is the usual case and needs no file
+for it. A row records no flags and only a hash of its config, so a flag
+difference is taken on trust and a config difference can be named only while
+the config the row points at is still on disk; the check says what it could
+not compare. A path ending in `.yaml` reads that arm file instead and compares
+everything.
+
+Nothing kills a run. The queue calls out a run that finishes no case for ten
+minutes and leaves it alone, so an arm that is slower than you guessed costs
+time rather than the whole result. Killing one is an operator's decision:
+section 6 for the instruments, and the PID from the queue log.
 
 `limit: N` is a deterministic prefix, `select(range(N))` over the dataset's
 own order after `filter_ids` has been applied. Two arms with equal limits run
@@ -150,7 +153,7 @@ only fail.
 For each arm the queue: preflights, runs the smoke and requires it to exit
 cleanly with cases, registers the launch row, runs the arm from its worktree with output in
 `~/.local/share/haiku.rag/evaluations/logs/<name>.log`, kills it at
-`deadline_hours`, and completes the registry row from the trace. A missing
+and completes the registry row from the trace. A missing
 worktree is provisioned at the pinned sha with `uv sync` and the `.env`
 copied. A failed step ends that arm; the queue moves on. An arm that fails
 after it was registered keeps its launched row: complete it by hand with
@@ -220,8 +223,8 @@ evaluations arms export registry/arms.jsonl
 Commit the export and the arm files in the data repository. The registry
 database itself never enters git.
 
-If the queue voided an arm, the row says why: `no telemetry`, `exit code N`,
-`deadline of N h exceeded`. A void arm is never paired.
+If the queue voided an arm, the row says why: `no telemetry` or `exit code N`.
+A void arm is never paired.
 
 ## 8. Reporting
 

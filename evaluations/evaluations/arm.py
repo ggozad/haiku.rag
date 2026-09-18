@@ -17,7 +17,8 @@ class ArmSpec(BaseModel):
     Paths are resolved by `load_arm` against the file that declares them.
     `flags` pass through to `evaluations run` unchanged and may not repeat an
     option the arm's own fields fill (`PINNED_OPTIONS`). `comparator` names the
-    arm file this arm is paired against, `hypothesis` the claim the pair tests,
+    arm this arm is paired against, as a file when it ends in `.yaml` or `.yml`
+    and as a registered arm name otherwise, `hypothesis` the claim the pair tests,
     and `differences` names every way the two arms differ; the preflight stops
     the launch on a difference it does not find in that list.
     """
@@ -34,12 +35,11 @@ class ArmSpec(BaseModel):
     filter_ids: Path | None = None
     flags: list[str] = []
     smoke_ids: Path | None = None
-    comparator: Path | None = None
+    comparator: str | None = None
     differences: list[str] = []
     decision_rule: str | None = None
     hypothesis: str | None = None
     operator: str | None = None
-    deadline_hours: float | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
     def _flags_leave_the_pinned_options_alone(self) -> Self:
@@ -108,7 +108,10 @@ def same_commit(a: str, b: str) -> bool:
     return bool(a) and bool(b) and (a.startswith(b) or b.startswith(a))
 
 
-_PATH_FIELDS = ("worktree", "config", "db", "filter_ids", "smoke_ids", "comparator")
+_PATH_FIELDS = ("worktree", "config", "db", "filter_ids", "smoke_ids")
+# A comparator written as a file resolves like one; anything else is the name
+# of an arm the registry already holds.
+_ARM_FILE_SUFFIXES = (".yaml", ".yml")
 
 
 def load_arm(path: Path) -> ArmSpec:
@@ -122,4 +125,7 @@ def load_arm(path: Path) -> ArmSpec:
         value = data.get(field)
         if value is not None:
             data[field] = str(base / Path(str(value)).expanduser())
+    comparator = data.get("comparator")
+    if comparator is not None and str(comparator).endswith(_ARM_FILE_SUFFIXES):
+        data["comparator"] = str(base / Path(str(comparator)).expanduser())
     return ArmSpec.model_validate(data)

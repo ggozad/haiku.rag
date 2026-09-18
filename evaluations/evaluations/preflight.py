@@ -8,9 +8,16 @@ import yaml
 from dotenv import dotenv_values
 from pydantic import ValidationError
 
-from evaluations.arm import ArmSpec, flag_options, load_arm, same_commit
+from evaluations.arm import (
+    _ARM_FILE_SUFFIXES,
+    ArmSpec,
+    flag_options,
+    load_arm,
+    same_commit,
+)
 from evaluations.datasets import DATASETS
 from evaluations.experiment import code_revision, config_hash, corpus_fingerprint
+from evaluations.registry import ArmRecord, Registry
 from haiku.rag.config import load_yaml_config
 from haiku.rag.config.models import AppConfig
 from haiku.rag.utils import locate_database
@@ -278,34 +285,119 @@ def arm_differences(
     return names
 
 
-def _check_comparator(arm: ArmSpec, config: AppConfig | None) -> Check:
-    assert arm.comparator is not None
-    if not arm.comparator.is_file():
-        return Check("comparator", False, f"{arm.comparator} does not exist")
-    try:
-        other = load_arm(arm.comparator)
-    except (ValidationError, ValueError, yaml.YAMLError) as error:
-        return Check("comparator", False, f"{arm.comparator}: {error}")
-    other_config_check, other_config = _check_config(other)
+def record_differences(
+    arm: ArmSpec,
+    config: AppConfig | None,
+    record: ArmRecord,
+    other_config: AppConfig | None,
+) -> tuple[list[str], list[str]]:
+    """Differences from a registered arm, and what its row cannot show.
 
-    actual = set(arm_differences(arm, other, config, other_config))
-    named = set(arm.differences)
+    A row records no flags, so a flag difference is invisible to it. Config
+    keys are visible only while the config the row names is still on disk.
+    """
+    names: list[str] = []
+    blind: list[str] = ["flags, which a row does not record"]
+    if arm.dataset != record.dataset:
+        names.append("dataset")
+    if not record.git_sha:
+        blind.append("sha, which the row leaves unrecorded")
+    elif not same_commit(arm.sha, record.git_sha):
+        names.append("sha")
+    if arm.limit != record.limit_cases:
+        names.append("limit")
+    if str(arm.db) != str(record.db_path):
+        names.append("db")
+    if str(arm.filter_ids) != str(record.filter_ids):
+        names.append("filter_ids")
+    if config is not None and other_config is not None:
+        flat = _flatten(config.model_dump(mode="json"))
+        other_flat = _flatten(other_config.model_dump(mode="json"))
+        names += sorted(
+            key
+            for key in set(flat) | set(other_flat)
+            if flat.get(key) != other_flat.get(key)
+        )
+    return names, blind
+
+
+def _unverifiable(name: str, blind: list[str]) -> bool:
+    """Whether a named difference is one the comparison could not check."""
+    if not blind:
+        return False
+    kind = "flags" if name.startswith("-") else "config keys" if "." in name else name
+    return any(reason.startswith(kind) for reason in blind)
+
+
+def _check_comparator(
+    arm: ArmSpec, config: AppConfig | None, registry: "Registry | None"
+) -> Check:
+    assert arm.comparator is not None
+    blind: list[str] = []
     problems: list[str] = []
+    if arm.comparator.endswith(_ARM_FILE_SUFFIXES):
+        path = Path(arm.comparator)
+        if not path.is_file():
+            return Check("comparator", False, f"{path} does not exist")
+        try:
+            other = load_arm(path)
+        except (ValidationError, ValueError, yaml.YAMLError) as error:
+            return Check("comparator", False, f"{path}: {error}")
+        other_config_check, other_config = _check_config(other)
+        other_name = other.name
+        actual = set(arm_differences(arm, other, config, other_config))
+        if other_config is None:
+            problems.append(f"configs not compared: {other_config_check.detail}")
+    else:
+        if registry is None:
+            return Check(
+                "comparator",
+                False,
+                f"{arm.comparator} names a registered arm and there is no registry "
+                "to read it from",
+            )
+        record = registry.get(arm.comparator)
+        if record is None:
+            return Check(
+                "comparator", False, f"no arm named {arm.comparator} in the registry"
+            )
+        other_name = record.name
+        other_config: AppConfig | None = None
+        if record.config_path and Path(record.config_path).is_file():
+            _, other_config = _check_config(
+                arm.model_copy(update={"config": Path(record.config_path)})
+            )
+        found, blind = record_differences(arm, config, record, other_config)
+        actual = set(found)
+        if other_config is None:
+            if config is not None and config_hash(config) != (record.config_hash or ""):
+                problems.append(
+                    f"the configs differ and {record.config_path} is gone, so the "
+                    "keys cannot be named"
+                )
+            else:
+                blind.append(f"config keys, since {record.config_path} is gone")
+
+    named = set(arm.differences)
+    # A difference the row cannot show is taken on trust: the operator names it
+    # and nothing here can contradict them.
+    trusted = {name for name in named if _unverifiable(name, blind)}
     if unnamed := sorted(actual - named):
         problems.append("unnamed differences: " + ", ".join(unnamed))
-    if stale := sorted(named - actual):
+    if stale := sorted(named - actual - trusted):
         problems.append("named but not different: " + ", ".join(stale))
     if config is None:
         problems.append("configs not compared: this arm's config did not validate")
-    elif other_config is None:
-        problems.append(f"configs not compared: {other_config_check.detail}")
     if problems:
         return Check("comparator", False, "; ".join(problems))
     listed = ", ".join(sorted(actual)) or "nothing (a null pair)"
-    return Check("comparator", True, f"differs from {other.name} in: {listed}")
+    detail = f"differs from {other_name} in: {listed}"
+    if blind:
+        detail += "; not compared: " + ", ".join(blind)
+    return Check("comparator", True, detail)
 
 
-async def run_preflight(arm_path: Path) -> Preflight:
+async def run_preflight(arm_path: Path, registry: Registry | None = None) -> Preflight:
     """Every check an arm must pass before it starts, in the order an operator
     reads them. An arm file that does not validate is the only check."""
     try:
@@ -328,5 +420,5 @@ async def run_preflight(arm_path: Path) -> Preflight:
     result.checks.append(database_check)
     result.checks.append(_check_filter_files(arm))
     if arm.comparator is not None:
-        result.checks.append(_check_comparator(arm, result.config))
+        result.checks.append(_check_comparator(arm, result.config, registry))
     return result

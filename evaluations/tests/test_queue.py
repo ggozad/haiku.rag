@@ -2,7 +2,6 @@ import asyncio
 import subprocess
 import sys
 import textwrap
-import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -17,14 +16,12 @@ from evaluations.registry import ArmRecord, Registry
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 
-# Stands in for `evaluations run`: prints its name, hangs or fails on demand.
+# Stands in for `evaluations run`: prints its name, stalls or fails on demand.
 FAKE_RUN = textwrap.dedent(
     """
     import json, os, pathlib, sys, time
     name = sys.argv[sys.argv.index("--name") + 1]
     print("fake run", name, flush=True)
-    if name.endswith("-hang"):
-        time.sleep(30)
     if name.endswith("-fail"):
         sys.exit(3)
     results = os.environ.get("HAIKU_RAG_EVAL_RESULTS")
@@ -43,7 +40,7 @@ FAKE_RUN = textwrap.dedent(
                 out.write(json.dumps(row) + "\\n")
                 out.flush()
         if "-stall" in name:
-            time.sleep(30)
+            time.sleep(1)
         (directory / f"{name}.{trace[:12]}.jsonl").write_text(
             "".join(json.dumps(row) + "\\n" for row in rows)
         )
@@ -129,7 +126,6 @@ def _arm(ws: SimpleNamespace, name: str, **overrides: Any) -> Path:
         "limit": 10,
         "flags": ["--skip-db", "--skip-retrieval"],
         "smoke_ids": "smoke.txt",
-        "deadline_hours": 1,
     }
     fields.update(overrides)
     fields = {key: value for key, value in fields.items() if value is not None}
@@ -346,42 +342,23 @@ class TestQueue:
     def test_a_run_that_stops_finishing_cases_is_called_out(
         self, workspace: SimpleNamespace
     ) -> None:
-        arm = _arm(workspace, "arm-stall", smoke_ids=None, deadline_hours=3 / 3600)
+        """The queue says so and leaves the run alone; a person decides."""
+        arm = _arm(workspace, "arm-stall", smoke_ids=None)
         queue = _queue(
             workspace,
             {},
             {RUN_TRACE: []},
             results_dir=workspace.tmp / "results",
-            stall_seconds=0.3,
+            stall_seconds=0.2,
         )
 
         outcomes = queue.run([arm])
 
         log = (workspace.tmp / "logs" / "queue.log").read_text()
         assert "arm-stall: no case finished in" in log
-        assert outcomes[0].status == "void"
-        assert "deadline" in outcomes[0].detail
+        assert outcomes[0].status == "valid", outcomes[0].detail
         record = queue.registry.get("arm-stall")
         assert record is not None and record.cases == 3
-
-    def test_a_deadline_kills_the_run_and_voids_the_row(
-        self, workspace: SimpleNamespace
-    ) -> None:
-        arm = _arm(workspace, "arm-hang", deadline_hours=1 / 3600)
-        queue = _queue(
-            workspace, _both("arm-hang"), {SMOKE_TRACE: _cases(3), RUN_TRACE: []}
-        )
-
-        started = time.monotonic()
-        outcomes = queue.run([arm])
-
-        assert time.monotonic() - started < 20
-        assert outcomes[0].status == "void"
-        assert "deadline" in outcomes[0].detail
-        record = queue.registry.get("arm-hang")
-        assert record is not None
-        assert record.status == "void"
-        assert record.void_reason is not None and "deadline" in record.void_reason
 
     def test_a_non_zero_exit_voids_with_the_code_and_keeps_metrics(
         self, workspace: SimpleNamespace

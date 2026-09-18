@@ -6,7 +6,7 @@ from dataclasses import MISSING, asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
 
-from evaluations.arm import ArmSpec, load_arm
+from evaluations.arm import _ARM_FILE_SUFFIXES, ArmSpec, load_arm
 from evaluations.datasets import DATASETS
 from evaluations.experiment import DEFAULT_JUDGE_MODEL, config_hash
 from haiku.rag.config.models import AppConfig
@@ -198,6 +198,15 @@ class Registry:
         return count
 
 
+def _comparator_name(comparator: str | None) -> str | None:
+    """The arm name a comparator points at: a file's `name`, or the name itself."""
+    if comparator is None:
+        return None
+    if comparator.endswith(_ARM_FILE_SUFFIXES):
+        return load_arm(Path(comparator)).name
+    return comparator
+
+
 def _capability(config: AppConfig, kind: str) -> tuple[str | None, str | None]:
     """The model a QA arm runs its capability on and the endpoint it opens.
     A retrieval or build arm runs no capability."""
@@ -266,7 +275,7 @@ def launch_record(
         embedder=f"{embed.provider}/{embed.name} dim {embed.vector_dim}",
         limit_cases=arm.limit,
         filter_ids=None if arm.filter_ids is None else str(arm.filter_ids),
-        comparator=None if arm.comparator is None else load_arm(arm.comparator).name,
+        comparator=_comparator_name(arm.comparator),
         differences=None if arm.comparator is None else json.dumps(arm.differences),
         decision_rule=arm.decision_rule,
         hypothesis=arm.hypothesis,

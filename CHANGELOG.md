@@ -17,7 +17,10 @@
 - Arm files: one YAML file per evaluation arm naming the dataset, checkout,
   pinned sha, config, database, case selection, flags, comparator, named
   differences, decision rule and hypothesis (`evaluations/arm.py`). An arm with
-  a comparator carries both a `decision_rule` and a `hypothesis`. `flags` may not carry
+  a comparator carries both a `decision_rule` and a `hypothesis`. `comparator`
+  is a registered arm name, or a file when it ends in `.yaml`: a row records no
+  flags and only a config hash, so what it cannot compare is named in the
+  check's line. `flags` may not carry
   `--config`, `--name`, `--db`, `--limit` or `--filter-ids`, which the arm's
   own fields pin.
 - `evaluations preflight ARM`: checks the arm file, dataset, checkout sha and
@@ -50,8 +53,7 @@
 - `evaluations queue ARM...`: runs arm files in order. Each arm is
   preflighted, smoked on `smoke_ids` and dropped unless the smoke exits
   cleanly with cases, registered, run from its worktree with output in
-  `<data dir>/evaluations/logs/<name>.log`, killed at `deadline_hours`, and
-  completed from its trace. A missing worktree is provisioned from `--repo` at
+  `<data dir>/evaluations/logs/<name>.log`, and completed from its trace. A missing worktree is provisioned from `--repo` at
   the pinned sha with `--env` copied. A failure ends that arm only. A run that
   finishes no case for `--stall-minutes` (10) is called out in the queue log
   and left running. `--detach NAME` runs the queue in a tmux session.

@@ -1,10 +1,9 @@
-"""Run arms in order: preflight, smoke, register, run under a deadline, complete."""
+"""Run arms in order: preflight, smoke, register, run, complete."""
 
 import asyncio
 import os
 import shlex
 import shutil
-import signal
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -69,10 +68,8 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
-def _failure_reason(code: int | None, deadline_hours: float | None) -> str | None:
+def _failure_reason(code: int) -> str | None:
     """Why a run counts as failed, or None when it exited cleanly."""
-    if code is None:
-        return f"deadline of {deadline_hours} h exceeded"
     return None if code == 0 else f"exit code {code}"
 
 
@@ -87,7 +84,7 @@ class ArmOutcome:
 class Queue:
     """Runs arm files in order. Each arm is preflighted, smoked when it names
     `smoke_ids`, registered, run from its worktree with output appended to
-    `logs/<name>.log`, killed at its deadline, and completed from its trace.
+    `logs/<name>.log`, and completed from its trace.
     A failed step ends that arm and the queue continues; an arm that fails
     after it was registered keeps its launched row, to complete by hand.
     A run that finishes no case for `stall_seconds` is called out in the log
@@ -137,7 +134,7 @@ class Queue:
         if not arm.worktree.exists() and self.repo is not None:
             provision_worktree(self.repo, arm.sha, arm.worktree, self.env_source)
             self._log(f"{arm.name}: provisioned {arm.worktree} at {arm.sha}")
-        preflight = asyncio.run(run_preflight(arm_path))
+        preflight = asyncio.run(run_preflight(arm_path, self.registry))
         for check in preflight.checks:
             label = "ok  " if check.ok else "FAIL"
             self._log(f"{arm.name}: {label} {check.name}: {check.detail}")
@@ -150,10 +147,8 @@ class Queue:
         if arm.smoke_ids is not None:
             smoke_name = f"{arm.name}-smoke"
             since = window_start(_now())
-            code = self._execute(
-                arm, arm.command(smoke=True), smoke_name, arm.deadline_hours
-            )
-            failed = _failure_reason(code, arm.deadline_hours)
+            code = self._execute(arm, arm.command(smoke=True), smoke_name)
+            failed = _failure_reason(code)
             if failed is not None:
                 return ArmOutcome(arm.name, "skipped", f"smoke failed: {failed}")
             outcomes = self._file_outcomes(smoke_name)
@@ -189,8 +184,8 @@ class Queue:
         self.registry.register_launch(record)
         self._log(f"registered {arm.name} (concurrency {record.concurrency})")
 
-        code = self._execute(arm, arm.command(), arm.name, arm.deadline_hours)
-        void_reason = _failure_reason(code, arm.deadline_hours)
+        code = self._execute(arm, arm.command(), arm.name)
+        void_reason = _failure_reason(code)
         try:
             if self._file_outcomes(arm.name) is not None:
                 complete_arm(
@@ -233,15 +228,11 @@ class Queue:
         path = find_results(self.results_dir, name)
         return None if path is None else read_results(path)[1]
 
-    def _execute(
-        self, arm: ArmSpec, argv: list[str], log_name: str, deadline_hours: float | None
-    ) -> int | None:
+    def _execute(self, arm: ArmSpec, argv: list[str], log_name: str) -> int:
         """Run `argv` from the arm's worktree with output appended to
-        `logs/<log_name>.log`. The exit code, or None when the deadline killed it."""
+        `logs/<log_name>.log`, and return its exit code. Nothing kills the run:
+        a stall is called out for a person to act on."""
         self._log(f"{log_name}: {' '.join(argv)}")
-        deadline = (
-            None if deadline_hours is None else time.monotonic() + deadline_hours * 3600
-        )
         with (self.logs / f"{log_name}.log").open("ab") as log:
             process = subprocess.Popen(
                 [*self.prefix, *argv],
@@ -273,14 +264,6 @@ class Queue:
                         f"{self.stall_seconds / 60:.0f} min"
                     )
                     moved_at = time.monotonic()
-                if deadline is not None and time.monotonic() >= deadline:
-                    os.killpg(process.pid, signal.SIGTERM)
-                    try:
-                        process.wait(timeout=30)
-                    except subprocess.TimeoutExpired:
-                        os.killpg(process.pid, signal.SIGKILL)
-                        process.wait()
-                    return None
 
     def _cases_written(self, name: str) -> int:
         """Bytes the run has appended to its result file. Zero before its first

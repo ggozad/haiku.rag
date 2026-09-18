@@ -79,7 +79,7 @@ config: configs/frames.yaml
 db: ~/.local/share/haiku.rag/evaluations/dbs/frames.lancedb
 limit: 150
 flags: [--skip-db, --skip-retrieval]
-comparator: frames-branch-150.yaml
+comparator: frames-branch-150         # a registered arm name, or a .yaml file
 differences: [sha]
 decision_rule: McNemar exact on answer_equivalent, two-sided, p < 0.05 fails
 hypothesis: the branch does not lose accuracy on multi-hop questions
@@ -132,8 +132,8 @@ runs the preflight, runs the smoke set named by `smoke_ids` under the name
 registers the launch,
 runs the arm from its worktree with output appended to `logs/<name>.log` under
 the evaluations data directory, calls out a run that finishes no case for
-`--stall-minutes` (10) without touching it, kills the run at `deadline_hours`,
-and completes the registry row from the trace. A failed step ends that arm and the
+`--stall-minutes` (10) without touching it, and completes the registry row
+from the trace. Nothing kills a run: killing one is an operator's decision. A failed step ends that arm and the
 queue continues; an arm that fails after it was registered keeps its launched
 row, to complete by hand. When the arm's worktree does not exist and `--repo` names a
 checkout, the queue provisions it at the pinned sha with `uv sync` and copies

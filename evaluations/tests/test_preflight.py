@@ -1,5 +1,6 @@
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -7,6 +8,7 @@ from pydantic import ValidationError
 
 from evaluations.arm import load_arm, same_commit
 from evaluations.preflight import Check, run_preflight
+from evaluations.registry import Registry, launch_record
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 
@@ -534,6 +536,82 @@ class TestPreflightComparator:
         )
         check = _by_name((await run_preflight(arm)).checks)["comparator"]
         assert check.ok is True, check.detail
+
+    def _registered(self, arm_dir: Path, tmp_path: Path, **overrides: Any) -> Registry:
+        """A registry holding the row `main.arm.yaml` would have written."""
+        registry = Registry(tmp_path / "registry.sqlite")
+        arm = load_arm(arm_dir / "main.arm.yaml")
+        config = AppConfig.model_validate(yaml.safe_load(arm.config.read_text()))
+        record = launch_record(
+            arm,
+            config,
+            {"db_path": str(arm.db)},
+            started_at="t",
+            git_sha=arm.sha,
+        )
+        for field, value in overrides.items():
+            setattr(record, field, value)
+        registry.register_launch(record)
+        return registry
+
+    async def test_a_comparator_may_name_a_registered_arm(
+        self, checkout: Path, arm_dir: Path, tmp_path: Path
+    ) -> None:
+        arm = self._pair(
+            checkout,
+            arm_dir,
+            comparator="frames-main",
+            differences=["qa.max_searches", "--vacuum-interval"],
+        )
+        registry = self._registered(arm_dir, tmp_path)
+
+        check = _by_name((await run_preflight(arm, registry=registry)).checks)[
+            "comparator"
+        ]
+
+        assert check.ok is True, check.detail
+        assert "frames-main" in check.detail
+        assert "flags" in check.detail
+
+    async def test_a_comparator_naming_no_registered_arm_fails(
+        self, checkout: Path, arm_dir: Path, tmp_path: Path
+    ) -> None:
+        arm = self._pair(checkout, arm_dir, comparator="ghost", differences=[])
+        registry = self._registered(arm_dir, tmp_path)
+        check = _by_name((await run_preflight(arm, registry=registry)).checks)[
+            "comparator"
+        ]
+        assert check.ok is False
+        assert "ghost" in check.detail
+
+    async def test_a_comparator_by_name_needs_the_registry(
+        self, checkout: Path, arm_dir: Path
+    ) -> None:
+        arm = self._pair(checkout, arm_dir, comparator="frames-main", differences=[])
+        check = _by_name((await run_preflight(arm)).checks)["comparator"]
+        assert check.ok is False
+        assert "registry" in check.detail
+
+    async def test_a_row_whose_config_is_gone_cannot_name_the_keys(
+        self, checkout: Path, arm_dir: Path, tmp_path: Path
+    ) -> None:
+        arm = self._pair(
+            checkout,
+            arm_dir,
+            comparator="frames-main",
+            differences=["qa.max_searches", "--vacuum-interval"],
+        )
+        registry = self._registered(
+            arm_dir, tmp_path, config_path=str(arm_dir / "gone.yaml")
+        )
+
+        check = _by_name((await run_preflight(arm, registry=registry)).checks)[
+            "comparator"
+        ]
+
+        assert check.ok is False
+        assert "gone.yaml" in check.detail
+        assert "keys" in check.detail
 
     async def test_a_missing_comparator_file_fails(
         self, checkout: Path, arm_dir: Path

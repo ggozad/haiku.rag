@@ -311,7 +311,7 @@ def preflight(
     registry: Path | None = REGISTRY_OPTION,
 ) -> None:
     """Print every check an arm must pass; exit 1 when one fails."""
-    result = asyncio.run(run_preflight(arm))
+    result = asyncio.run(run_preflight(arm, _registry(registry)))
     for check in result.checks:
         colour, label = ("green", "ok  ") if check.ok else ("red", "FAIL")
         console.print(
