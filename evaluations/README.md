@@ -67,7 +67,8 @@ the URIs the capability registered via the `cite` tool.
 An arm file declares one run: the dataset, the checkout and its pinned commit,
 the config, the database, the case selection and the flags passed through to
 `evaluations run`. A paired arm also names its comparator, the differences the
-operator expects between the two, and the decision rule.
+operator expects between the two, the decision rule and the hypothesis, so the
+row says what the arm was testing and not only how it was judged.
 
 ```yaml
 name: frames-main-150
@@ -81,6 +82,7 @@ flags: [--skip-db, --skip-retrieval]
 comparator: frames-branch-150.yaml
 differences: [sha]
 decision_rule: McNemar exact on answer_equivalent, two-sided, p < 0.05 fails
+hypothesis: the branch does not lose accuracy on multi-hop questions
 ```
 
 Relative paths resolve against the arm file. `flags` may not carry `--config`,
@@ -104,8 +106,8 @@ directory (`--registry PATH` points elsewhere). `evaluations preflight ARM
 --register` writes the launch row when every check passes: dataset, commit,
 config path and hash, database path and fingerprint, the capability model and
 the endpoint it opens, judge, reranker, embedder, case selection, comparator,
-decision rule and operator. A run that skips QA records no capability and no
-judge. Completion fills the trace id, cases, accuracy, `cite_rate_all_cases`,
+decision rule, hypothesis and operator. A run that skips QA records no
+capability and no judge. Completion fills the trace id, cases, accuracy, `cite_rate_all_cases`,
 mean `cited_map`, aborts and wall time and sets the status to `valid`. Two arms
 on one database whose `db_written_at` differ read different corpora, and
 `arms pair` refuses them unless the arm file names `db` as a difference. A void
@@ -160,9 +162,10 @@ where you read a transcript. Live conversation runs write no file.
 `evaluations arms pair A B` prints the standard table for two registered
 arms. Treated and baseline are read from the recorded comparator, not from
 argument order. The command refuses an arm that is not a completed valid run,
-a commit that either row leaves unrecorded, two datasets, a pairing key that is
-NULL on either side, and a pair whose rows do not show the differences the arm
-file names.
+a commit that either row leaves unrecorded, two datasets, two kinds, a kind
+other than `qa` since the paired tests are over per-case verdicts, a pairing
+key that is NULL on either side, and a pair whose rows do not show the
+differences the arm file names.
 
 Cases join on the dataset's `pair_key`: `question_id` for FRAMES and
 HotpotQA, `query_id` for ORB, `id` for T2, `task_id` and `conversation_id`

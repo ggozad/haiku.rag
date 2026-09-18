@@ -242,6 +242,13 @@ def check_pair_rows(treated: ArmRecord, baseline: ArmRecord) -> list[str]:
             problems.append(f"{record.name} is not complete: {record.status}")
     if treated.dataset != baseline.dataset:
         problems.append(f"datasets differ: {treated.dataset} vs {baseline.dataset}")
+    if treated.kind != baseline.kind:
+        problems.append(f"kinds differ: {treated.kind} vs {baseline.kind}")
+    elif treated.kind != "qa":
+        problems.append(
+            f"a {treated.kind} arm carries no per-case verdict, and the paired "
+            "tests are over verdicts"
+        )
 
     named = set(json.loads(treated.differences)) if treated.differences else set()
     if not treated.git_sha or not baseline.git_sha:

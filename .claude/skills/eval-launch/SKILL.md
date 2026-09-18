@@ -32,6 +32,13 @@ box; this file holds only how to do things.
    and the diff reads as empty.
 5. **Name the revision pair in the sentence** whenever you report a diff, and
    never assert a diff you did not run in this session.
+6. **Read both configs before writing either file.** `differences` names every
+   config key that differs by dotted path, and the comparison is over the
+   resolved configuration, not the file text, so two files that read
+   differently and resolve the same show no difference at all.
+7. **Write the claim down first.** `hypothesis` is one line saying what the
+   pair would show, and the file will not load without it once it names a
+   comparator. A claim written after the numbers is not a claim.
 
 ## 2. The arm file
 
@@ -51,9 +58,31 @@ smoke_ids: ../smoke/<dataset>-<kind>.txt
 comparator: <baseline arm>.yaml      # the arm this one is measured against
 differences: [sha]                   # every way the two arms differ
 decision_rule: McNemar exact on answer_equivalent, two-sided, treated worse at p < 0.05 fails
+hypothesis: <the claim this pair tests, one line>
 operator: <who>
-deadline_hours: 10
+deadline_hours: <derived, see below>
 ```
+
+The null arm is the third file, and it replicates the baseline: same
+`dataset`, `worktree`, `sha`, `config`, `db` and case selection, a new `name`,
+`comparator` pointing at the baseline, `differences: []`, and the same
+`decision_rule` and `hypothesis`. Its claim is that the instrument is stable,
+so a rejection there means the pair cannot resolve the effect the treated arm
+is testing, whatever the treated arm's own p-value says.
+
+`deadline_hours` bounds the run and kills it at the limit; the killed arm is
+void and a void arm is never paired, so a deadline set too low costs the whole
+run. Derive it, never copy it: take a completed row on the same dataset
+(`evaluations arms list --dataset <dataset>`, then `arms show <name>` for
+`wall_seconds` and `cases`), multiply the seconds per case by your case count,
+and double it when arms share an endpoint, since each one slows the others.
+Datasets differ by a factor of three in seconds per case, and the same dataset
+differs by more than that between models.
+
+`limit: N` is a deterministic prefix, `select(range(N))` over the dataset's
+own order after `filter_ids` has been applied. Two arms with equal limits run
+exactly the same cases, and a smaller limit is a prefix of a larger one. It
+never samples, so a pair may differ in `limit` only when `differences` says so.
 
 Rules the file must satisfy, all enforced by `evaluations preflight`:
 
@@ -109,6 +138,12 @@ completion, so no arm waits for a person to notice the previous one finished.
 tmux is the process supervisor and nothing more: `tmux attach -t <session>`
 to watch, detach with `C-b d`. Run it from the checkout that has the
 harness, never from `/tmp`.
+
+A fresh arm's `worktree` does not exist yet: the queue provisions it from
+`--repo` at the pinned sha, then preflights it. So run `evaluations preflight`
+by hand only against a checkout that already exists, and queue a fresh arm
+straight away rather than preflighting it first, where the worktree check can
+only fail.
 
 For each arm the queue: preflights, runs the smoke and requires it to exit
 cleanly with cases, registers the launch row, runs the arm from its worktree with output in

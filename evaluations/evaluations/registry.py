@@ -45,6 +45,7 @@ class ArmRecord:
     comparator: str | None = None
     differences: str | None = None
     decision_rule: str | None = None
+    hypothesis: str | None = None
     operator: str | None = None
     concurrency: int | None = None
     trace_id: str | None = None
@@ -268,5 +269,6 @@ def launch_record(
         comparator=None if arm.comparator is None else load_arm(arm.comparator).name,
         differences=None if arm.comparator is None else json.dumps(arm.differences),
         decision_rule=arm.decision_rule,
+        hypothesis=arm.hypothesis,
         operator=arm.operator,
     )

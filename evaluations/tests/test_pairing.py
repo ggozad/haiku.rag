@@ -297,6 +297,24 @@ class TestPairRows:
         )
         assert any("qa.max_searches" in p for p in check_pair_rows(stale_config, main))
 
+    def test_a_retrieval_arm_does_not_pair_with_a_qa_arm(self) -> None:
+        """A retrieval run has no verdicts, so the table would be all nulls."""
+        main = _record("main")
+        branch = _record(
+            "branch", comparator="main", differences="[]", kind="retrieval"
+        )
+        problems = check_pair_rows(branch, main)
+        assert any("kind" in p for p in problems)
+
+    def test_two_retrieval_arms_do_not_pair_either(self) -> None:
+        """The paired tests are over per-case verdicts, which retrieval has none of."""
+        main = _record("main", kind="retrieval")
+        branch = _record(
+            "branch", comparator="main", differences="[]", kind="retrieval"
+        )
+        problems = check_pair_rows(branch, main)
+        assert any("retrieval" in p and "verdict" in p for p in problems)
+
     def test_a_corpus_rewritten_between_the_runs_must_be_named(self) -> None:
         main = _record("main", db_written_at="2026-09-01T10:00:00")
         branch = _record(

@@ -135,6 +135,21 @@ class TestArmSpec:
                 )
             )
 
+    def test_a_comparator_needs_a_hypothesis(
+        self, checkout: Path, arm_dir: Path
+    ) -> None:
+        with pytest.raises(ValidationError, match="hypothesis"):
+            load_arm(
+                _write_arm(
+                    arm_dir / "a.yaml",
+                    _fields(
+                        checkout,
+                        comparator="b.yaml",
+                        decision_rule="McNemar exact",
+                    ),
+                )
+            )
+
     def test_a_comparator_needs_a_decision_rule(
         self, checkout: Path, arm_dir: Path
     ) -> None:
@@ -447,6 +462,7 @@ class TestPreflightComparator:
             name="frames-branch",
             comparator="main.arm.yaml",
             decision_rule="McNemar exact, two-sided, fail below p 0.05",
+            hypothesis="the branch does not lose accuracy",
             flags=["--skip-db"],
         )
         fields.update(treated)
@@ -524,7 +540,12 @@ class TestPreflightComparator:
     ) -> None:
         arm = _write_arm(
             arm_dir / "a.yaml",
-            _fields(checkout, comparator="gone.yaml", decision_rule="sign test"),
+            _fields(
+                checkout,
+                comparator="gone.yaml",
+                decision_rule="sign test",
+                hypothesis="the branch does not lose citations",
+            ),
         )
         check = _by_name((await run_preflight(arm)).checks)["comparator"]
         assert check.ok is False

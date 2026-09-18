@@ -312,11 +312,13 @@ class TestLaunchRecord:
             arm_file.read_text().replace("name: frames-main", "name: frames-treated")
             + "comparator: frames-base.yaml\ndifferences: [sha]\n"
             + "decision_rule: McNemar exact\n"
+            + "hypothesis: the branch does not lose accuracy\n"
         )
         arm = load_arm(treated)
         config = AppConfig.model_validate(yaml.safe_load(arm.config.read_text()))
         record = launch_record(arm, config, _fingerprint(arm.db), started_at="t")
         assert record.comparator == "frames-base"
+        assert record.hypothesis == "the branch does not lose accuracy"
         assert json.loads(record.differences or "null") == ["sha"]
         assert record.decision_rule == "McNemar exact"
 

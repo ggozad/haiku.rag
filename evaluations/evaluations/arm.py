@@ -17,9 +17,9 @@ class ArmSpec(BaseModel):
     Paths are resolved by `load_arm` against the file that declares them.
     `flags` pass through to `evaluations run` unchanged and may not repeat an
     option the arm's own fields fill (`PINNED_OPTIONS`). `comparator` names the
-    arm file this arm is paired against, and `differences` names every way the
-    two arms differ; the preflight stops the launch on a difference it does not
-    find in that list.
+    arm file this arm is paired against, `hypothesis` the claim the pair tests,
+    and `differences` names every way the two arms differ; the preflight stops
+    the launch on a difference it does not find in that list.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -37,6 +37,7 @@ class ArmSpec(BaseModel):
     comparator: Path | None = None
     differences: list[str] = []
     decision_rule: str | None = None
+    hypothesis: str | None = None
     operator: str | None = None
     deadline_hours: float | None = Field(default=None, gt=0)
 
@@ -54,6 +55,8 @@ class ArmSpec(BaseModel):
     def _pairing_fields_agree(self) -> Self:
         if self.comparator is not None and self.decision_rule is None:
             raise ValueError("an arm with a comparator needs a decision_rule")
+        if self.comparator is not None and not self.hypothesis:
+            raise ValueError("an arm with a comparator needs a hypothesis")
         if self.differences and self.comparator is None:
             raise ValueError("differences need a comparator to differ from")
         return self

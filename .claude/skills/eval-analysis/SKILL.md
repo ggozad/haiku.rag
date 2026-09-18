@@ -17,8 +17,10 @@ evaluations arms pair <arm A> <arm B>
 Treated and baseline come from the recorded comparator, never from argument
 order or from the order of a result listing. The command refuses an arm that
 is not a completed valid run, a commit that either row leaves unrecorded, two
-datasets, a pairing key that is NULL on either side, and a pair whose rows do
-not show the differences the arm file names.
+datasets, two kinds, a pairing key that is NULL on either side, and a pair
+whose rows do not show the differences the arm file names. The paired tests
+are over per-case verdicts, so only QA arms pair: a retrieval or build arm is
+refused, and read its numbers from the rows instead.
 If it refuses, the pair is not ready; do not compute it by hand.
 
 Per-case rows come from the run's result file under the evaluations data
