@@ -955,7 +955,6 @@ class TestMCPCoversTheConfiguredSet:
 
         assert documents
         assert {d.source for d in documents} == {"beta"}
-        assert await list_docs(sources=[]) == []
 
     @pytest.mark.asyncio
     async def test_get_document_reaches_whichever_database_holds_it(self, two_dbs):

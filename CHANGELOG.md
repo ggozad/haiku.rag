@@ -4,8 +4,7 @@
 
 ### Added
 
-- The `list_documents` tool now has a `sources` parameter, similar to
-  the `search_documents` and `execute_code` tools.
+- `sources` on the `list_documents` MCP tool and `HaikuRAG.list_documents`.
 
 ## [0.87.0] - 2026-09-17
 
