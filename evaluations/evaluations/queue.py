@@ -64,6 +64,13 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
+def _failure_reason(code: int | None, deadline_hours: float | None) -> str | None:
+    """Why a run counts as failed, or None when it exited cleanly."""
+    if code is None:
+        return f"deadline of {deadline_hours} h exceeded"
+    return None if code == 0 else f"exit code {code}"
+
+
 @dataclass
 class ArmOutcome:
     name: str
@@ -76,7 +83,8 @@ class Queue:
     """Runs arm files in order. Each arm is preflighted, smoked when it names
     `smoke_ids`, registered, run from its worktree with output appended to
     `logs/<name>.log`, killed at its deadline, and completed from its trace.
-    A failed step skips the arm and the queue continues."""
+    A failed step ends that arm and the queue continues; an arm that fails
+    after it was registered keeps its launched row, to complete by hand."""
 
     registry: Registry
     logs: Path
@@ -92,7 +100,12 @@ class Queue:
         self.logs.mkdir(parents=True, exist_ok=True)
         outcomes: list[ArmOutcome] = []
         for path in arm_paths:
-            outcome = self._run_one(path)
+            try:
+                outcome = self._run_one(path)
+            except Exception as error:  # one arm's failure ends that arm only
+                outcome = ArmOutcome(
+                    path.stem, "failed", f"{type(error).__name__}: {error}"
+                )
             self._log(f"{outcome.name}: {outcome.status}: {outcome.detail}")
             outcomes.append(outcome)
         return outcomes
@@ -128,7 +141,12 @@ class Queue:
         if arm.smoke_ids is not None:
             smoke_name = f"{arm.name}-smoke"
             since = window_start(_now())
-            self._execute(arm, arm.command(smoke=True), smoke_name, arm.deadline_hours)
+            code = self._execute(
+                arm, arm.command(smoke=True), smoke_name, arm.deadline_hours
+            )
+            failed = _failure_reason(code, arm.deadline_hours)
+            if failed is not None:
+                return ArmOutcome(arm.name, "skipped", f"smoke failed: {failed}")
             outcomes = self._file_outcomes(smoke_name)
             if outcomes is None:
                 trace = self._await_trace(smoke_name, since)
@@ -163,11 +181,7 @@ class Queue:
         self._log(f"registered {arm.name} (concurrency {record.concurrency})")
 
         code = self._execute(arm, arm.command(), arm.name, arm.deadline_hours)
-        void_reason = None
-        if code is None:
-            void_reason = f"deadline of {arm.deadline_hours} h exceeded"
-        elif code != 0:
-            void_reason = f"exit code {code}"
+        void_reason = _failure_reason(code, arm.deadline_hours)
         try:
             if self._file_outcomes(arm.name) is not None:
                 complete_arm(

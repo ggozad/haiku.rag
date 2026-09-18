@@ -3,6 +3,7 @@ a pairing or a completion needs no telemetry service."""
 
 import json
 import os
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,17 @@ from evaluations.traces import CaseOutcome
 from haiku.rag.utils import get_default_data_dir
 
 RESULTS_ENV = "HAIKU_RAG_EVAL_RESULTS"
+
+# A run name is one path component, and quotes into SQL as it stands.
+RUN_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def check_run_name(name: str) -> str:
+    """The name, when it is a run name: letters, digits, dot, dash and
+    underscore, opening with a letter or digit."""
+    if not RUN_NAME.match(name):
+        raise ValueError(f"not a run name: {name!r}")
+    return name
 
 
 def default_results_path() -> Path:
@@ -83,6 +95,7 @@ def write_results(
     name: the `CaseOutcome` fields, the trace id, the answer, the judge's
     reason and the run's per-case attributes. The file is
     `<name>.<trace id prefix>.jsonl`, or `notrace-<time>` without a trace."""
+    check_run_name(name)
     rows = [_case_row(case, pair_key, report.trace_id) for case in report.cases]
     rows += [
         _failure_row(failure, pair_key, report.trace_id) for failure in report.failures
@@ -101,6 +114,7 @@ def write_results(
 
 def find_results(directory: Path, name: str) -> Path | None:
     """The result file of the run named `name`; more than one is an error."""
+    check_run_name(name)
     matches = sorted(directory.glob(f"{name}.*.jsonl")) if directory.is_dir() else []
     if len(matches) > 1:
         listed = ", ".join(path.name for path in matches)

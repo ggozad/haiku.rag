@@ -10,10 +10,9 @@ from typing import Any
 from evaluations.datasets import DATASETS
 from evaluations.pairing import ArmSummary, summarize
 from evaluations.registry import Registry
-from evaluations.results import find_results, read_results
+from evaluations.results import check_run_name, find_results, read_results
 from evaluations.traces import QueryFn, case_outcomes
 
-_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _RUN = re.compile(r"\bevaluations run\b")
 
 
@@ -30,8 +29,7 @@ def window_start(started_at: str, hours: int = 1) -> str:
 def find_trace(run_name: str, since: str, *, query: QueryFn) -> str | None:
     """The trace of the experiment span named `run_name` started at or after
     `since`. None when there is none; more than one is an error."""
-    if not _NAME.match(run_name):
-        raise ValueError(f"not a run name: {run_name!r}")
+    check_run_name(run_name)
     rows = query(
         "SELECT trace_id FROM records WHERE service_name = 'evals' "
         "AND span_name = 'evaluate {name}' "
@@ -93,7 +91,12 @@ def complete_arm(
         outcomes = case_outcomes(trace_id, key, query=query, min_timestamp=since)
     summary = summarize(name, outcomes)
     wall_seconds = ended_at = None
-    span = _experiment_span(trace_id, since, query=query) if trace_id else None
+    span = None
+    if trace_id:
+        try:
+            span = _experiment_span(trace_id, since, query=query)
+        except Exception:  # the span carries only timing; the results are what count
+            span = None
     if span is not None:
         start = datetime.fromisoformat(str(span["start_timestamp"]))
         end = datetime.fromisoformat(str(span["end_timestamp"]))

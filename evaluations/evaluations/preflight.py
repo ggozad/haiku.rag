@@ -8,11 +8,12 @@ import yaml
 from dotenv import dotenv_values
 from pydantic import ValidationError
 
-from evaluations.arm import ArmSpec, load_arm, same_commit
+from evaluations.arm import ArmSpec, flag_options, load_arm, same_commit
 from evaluations.datasets import DATASETS
 from evaluations.experiment import code_revision, config_hash, corpus_fingerprint
 from haiku.rag.config import load_yaml_config
 from haiku.rag.config.models import AppConfig
+from haiku.rag.utils import locate_database
 
 
 @dataclass
@@ -72,6 +73,23 @@ def _check_worktree(arm: ArmSpec) -> tuple[Check, str | None]:
 
 
 def _check_telemetry(arm: ArmSpec) -> Check:
+    if "--no-telemetry" in arm.flags:
+        spec = DATASETS.get(arm.dataset)
+        if "--skip-qa" in arm.flags:
+            return Check(
+                "telemetry",
+                False,
+                "--no-telemetry with --skip-qa records nothing: the QA run is "
+                "what writes a result file",
+            )
+        if spec is not None and spec.live:
+            return Check(
+                "telemetry",
+                False,
+                f"--no-telemetry on {arm.dataset}: a live conversation run "
+                "writes no result file",
+            )
+        return Check("telemetry", True, "--no-telemetry: the result file is the record")
     env_file = arm.worktree / ".env"
     token = dotenv_values(env_file).get("LOGFIRE_TOKEN") if env_file.is_file() else None
     if not token:
@@ -94,14 +112,79 @@ def _check_config(arm: ArmSpec) -> tuple[Check, AppConfig | None]:
     return Check("config", True, f"{arm.config} hash {config_hash(config)}"), config
 
 
+async def _database_problem(
+    db: Path, config: AppConfig
+) -> tuple[str | None, dict[str, Any] | None]:
+    """Why `db` cannot back this config, and what it holds."""
+    if not db.exists():
+        return f"{db} does not exist", None
+    fingerprint = await corpus_fingerprint(db, config)
+    if fingerprint["db_documents"] is None:
+        return f"{db} holds no haiku.rag tables", fingerprint
+    model = config.embeddings.model
+    stored = (
+        fingerprint["db_embedder_provider"],
+        fingerprint["db_embedder_model"],
+        fingerprint["db_embedder_dim"],
+    )
+    wanted = (model.provider, model.name, model.vector_dim)
+    if stored != wanted:
+        return (
+            f"{db} stores embedder {stored[0]}/{stored[1]} dim {stored[2]}, "
+            f"the config names {wanted[0]}/{wanted[1]} dim {wanted[2]}",
+            fingerprint,
+        )
+    return None, fingerprint
+
+
 async def _check_database(
     arm: ArmSpec, config: AppConfig | None
 ) -> tuple[Check, Path | None, dict[str, Any] | None]:
     if config is None:
         return Check("database", False, "config did not validate"), None, None
-    if arm.db is None and config.lancedb.databases:
+    if config.lancedb.databases:
         names = ", ".join(sorted(config.lancedb.databases))
-        return Check("database", True, f"configured set: {names}"), None, None
+        if arm.db is not None:
+            return (
+                Check(
+                    "database",
+                    False,
+                    f"lancedb.databases names {names} and the arm names {arm.db}; "
+                    "a run refuses the two together",
+                ),
+                None,
+                None,
+            )
+        if "--skip-db" not in arm.flags:
+            return (
+                Check(
+                    "database",
+                    False,
+                    f"lancedb.databases names {names}, which a run reads but "
+                    "population does not write; the arm needs --skip-db",
+                ),
+                None,
+                None,
+            )
+        problems = []
+        remote = []
+        for name, location in sorted(config.lancedb.databases.items()):
+            placed = locate_database(location)
+            if not isinstance(placed, Path):
+                remote.append(name)
+                continue
+            # A relative location resolves where the run reads it, its worktree.
+            problem, _ = await _database_problem(
+                arm.worktree / placed.expanduser(), config
+            )
+            if problem is not None:
+                problems.append(f"{name}: {problem}")
+        if problems:
+            return Check("database", False, "; ".join(problems)), None, None
+        detail = f"configured set: {names}"
+        if remote:
+            detail += f"; {', '.join(remote)} not opened, a URI carries no path"
+        return Check("database", True, detail), None, None
     spec = DATASETS.get(arm.dataset)
     if arm.db is not None:
         db = arm.db
@@ -113,29 +196,11 @@ async def _check_database(
             None,
             None,
         )
-    if not db.exists():
-        return Check("database", False, f"{db} does not exist"), db, None
-    fingerprint = await corpus_fingerprint(db, config)
-    if fingerprint["db_documents"] is None:
-        return Check("database", False, f"{db} holds no haiku.rag tables"), db, None
+    problem, fingerprint = await _database_problem(db, config)
+    if problem is not None:
+        return Check("database", False, problem), db, fingerprint
+    assert fingerprint is not None
     model = config.embeddings.model
-    stored = (
-        fingerprint["db_embedder_provider"],
-        fingerprint["db_embedder_model"],
-        fingerprint["db_embedder_dim"],
-    )
-    wanted = (model.provider, model.name, model.vector_dim)
-    if stored != wanted:
-        return (
-            Check(
-                "database",
-                False,
-                f"{db} stores embedder {stored[0]}/{stored[1]} dim {stored[2]}, "
-                f"the config names {wanted[0]}/{wanted[1]} dim {wanted[2]}",
-            ),
-            db,
-            fingerprint,
-        )
     return (
         Check(
             "database",
@@ -178,20 +243,6 @@ def _flatten(data: Any, prefix: str = "") -> dict[str, Any]:
     return {prefix[:-1]: data}
 
 
-def _options(flags: list[str]) -> dict[str, tuple[str, ...]]:
-    """Group flag tokens by the option they belong to, so a difference is
-    named by the option and not by a bare value."""
-    grouped: dict[str, list[str]] = {}
-    current = ""
-    for token in flags:
-        if token.startswith("-"):
-            current = token
-            grouped.setdefault(current, [])
-        else:
-            grouped.setdefault(current, []).append(token)
-    return {option: tuple(values) for option, values in grouped.items()}
-
-
 def arm_differences(
     arm: ArmSpec,
     other: ArmSpec,
@@ -210,7 +261,7 @@ def arm_differences(
     for field_name in ("db", "filter_ids"):
         if str(getattr(arm, field_name)) != str(getattr(other, field_name)):
             names.append(field_name)
-    ours, theirs = _options(arm.flags), _options(other.flags)
+    ours, theirs = flag_options(arm.flags), flag_options(other.flags)
     names += sorted(
         option
         for option in set(ours) | set(theirs)

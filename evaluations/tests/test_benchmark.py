@@ -1,8 +1,10 @@
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import typer
+from typer.testing import CliRunner
 
 from evaluations.benchmark import (
     _load_config,
@@ -660,6 +662,72 @@ class TestRequireTelemetry:
     def test_an_explicit_opt_out_passes_without_a_token(self, monkeypatch) -> None:
         monkeypatch.delenv("LOGFIRE_TOKEN", raising=False)
         require_telemetry(no_telemetry=True)
+
+
+class TestRunTelemetry:
+    def _stub(self, monkeypatch: pytest.MonkeyPatch) -> list[dict]:
+        import evaluations.benchmark as benchmark
+
+        configured: list[dict] = []
+        monkeypatch.setattr(
+            benchmark, "configure_telemetry", lambda **kw: configured.append(kw)
+        )
+
+        async def nothing(**kwargs) -> None:
+            return None
+
+        monkeypatch.setattr(benchmark, "evaluate_dataset", nothing)
+        return configured
+
+    def test_an_opt_out_sends_nothing_even_with_a_token(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import evaluations.benchmark as benchmark
+
+        monkeypatch.setenv("LOGFIRE_TOKEN", "pylf_v1_eu_test")
+        monkeypatch.setenv("LOGFIRE_IGNORE_NO_CONFIG", "0")
+        configured = self._stub(monkeypatch)
+
+        result = CliRunner().invoke(
+            benchmark.app, ["run", "frames", "--no-telemetry", "--skip-db"]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert configured == []
+        assert os.environ["LOGFIRE_IGNORE_NO_CONFIG"] == "1"
+
+    def test_a_run_that_keeps_telemetry_configures_it(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import evaluations.benchmark as benchmark
+
+        monkeypatch.setenv("LOGFIRE_TOKEN", "pylf_v1_eu_test")
+        configured = self._stub(monkeypatch)
+
+        result = CliRunner().invoke(benchmark.app, ["run", "frames", "--skip-db"])
+
+        assert result.exit_code == 0, result.output
+        assert configured == [{"service_name": "evals", "scrubbing": False}]
+
+
+class TestRunRefusesAnUnusableName:
+    def test_a_name_that_is_not_a_file_name_stops_the_run(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import evaluations.benchmark as benchmark
+
+        monkeypatch.setenv("LOGFIRE_TOKEN", "pylf_v1_eu_test")
+
+        def never(**kwargs):
+            raise AssertionError("must not start an evaluation")
+
+        monkeypatch.setattr(benchmark, "evaluate_dataset", never)
+        result = CliRunner().invoke(
+            benchmark.app, ["run", "frames", "--name", "../escape"]
+        )
+
+        assert result.exit_code == 1
+        assert "run name" in result.output
 
 
 class TestRunsRecordTheirCorpus:

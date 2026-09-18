@@ -40,6 +40,8 @@ FAKE_RUN = textwrap.dedent(
         (directory / f"{name}.{trace[:12]}.jsonl").write_text(
             "".join(json.dumps(row) + "\\n" for row in rows)
         )
+    if "-flaky" in name:
+        sys.exit(3)
     """
 )
 PYPROJECT = (
@@ -136,7 +138,7 @@ def _cases(n: int) -> list[dict]:
             "answer_equivalent": "true" if i % 2 else "false",
             "number_match": None,
             "cited_map": 0.5,
-            "n_cited": 1,
+            "cited_uris": '["u1"]',
             "is_exception": False,
         }
         for i in range(n)
@@ -287,6 +289,51 @@ class TestQueue:
         assert "smoke" in outcomes[0].detail
         assert queue.registry.get("arm-ok") is None
         assert not (workspace.tmp / "logs" / "arm-ok.log").exists()
+
+    def test_a_smoke_that_exits_non_zero_stops_the_arm(
+        self, workspace: SimpleNamespace
+    ) -> None:
+        arm = _arm(workspace, "arm-flaky")
+        queue = _queue(
+            workspace, {}, {RUN_TRACE: []}, results_dir=workspace.tmp / "results"
+        )
+
+        outcomes = queue.run([arm])
+
+        assert outcomes[0].status == "skipped"
+        assert "smoke" in outcomes[0].detail and "exit code 3" in outcomes[0].detail
+        assert queue.registry.get("arm-flaky") is None
+        assert not (workspace.tmp / "logs" / "arm-flaky.log").exists()
+
+    def test_an_unexpected_failure_skips_the_arm_and_the_queue_continues(
+        self, workspace: SimpleNamespace
+    ) -> None:
+        missing = _arm(
+            workspace,
+            "arm-missing",
+            worktree=str(workspace.tmp / "absent"),
+            sha="0" * 40,
+            smoke_ids=None,
+        )
+        good = _arm(workspace, "arm-ok", smoke_ids=None)
+        queue = _queue(
+            workspace,
+            {"arm-ok": RUN_TRACE},
+            {RUN_TRACE: _cases(2)},
+            repo=workspace.repo,
+        )
+
+        outcomes = queue.run([missing, good])
+
+        assert [(o.name, o.status) for o in outcomes] == [
+            ("arm-missing", "failed"),
+            ("arm-ok", "valid"),
+        ]
+        assert "CalledProcessError" in outcomes[0].detail
+        assert queue.registry.get("arm-missing") is None
+        assert (
+            "arm-missing: failed" in (workspace.tmp / "logs" / "queue.log").read_text()
+        )
 
     def test_a_deadline_kills_the_run_and_voids_the_row(
         self, workspace: SimpleNamespace

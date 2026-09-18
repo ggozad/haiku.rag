@@ -15,9 +15,10 @@ evaluations arms pair <arm A> <arm B>
 ```
 
 Treated and baseline come from the recorded comparator, never from argument
-order or from the order of a result listing. The command refuses a void arm,
-an arm without a trace, two datasets, a pairing key that is NULL on either
-side, and a pair whose rows do not show the differences the arm file names.
+order or from the order of a result listing. The command refuses an arm that
+is not a completed valid run, a commit that either row leaves unrecorded, two
+datasets, a pairing key that is NULL on either side, and a pair whose rows do
+not show the differences the arm file names.
 If it refuses, the pair is not ready; do not compute it by hand.
 
 Per-case rows come from the run's result file under the evaluations data

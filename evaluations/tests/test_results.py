@@ -114,6 +114,17 @@ class TestWriteResults:
         assert failed["attributes"] == {} and failed["task_duration"] is None
         assert by_name["4_d"]["key"] is None
 
+    async def test_a_name_that_is_not_a_file_name_is_refused(
+        self, tmp_path: Path
+    ) -> None:
+        report = await _report()
+        for name in ("../escape", "a/b", "/abs", ".hidden", ""):
+            with pytest.raises(ValueError, match="run name"):
+                write_results(
+                    report, name=name, pair_key="query_id", directory=tmp_path
+                )
+        assert list(tmp_path.iterdir()) == []
+
     async def test_number_match_scores_pass_at_one(self, tmp_path: Path) -> None:
         report = await _report(Numbers())
         path = write_results(

@@ -62,6 +62,9 @@ Rules the file must satisfy, all enforced by `evaluations preflight`:
   `dataset`), flags by option (`--capability-model`), config keys by dotted
   path (`qa.max_searches`). An unnamed difference stops the launch. So does a
   named one that does not exist.
+- `flags` may not carry `--config`, `--name`, `--db`, `--limit` or
+  `--filter-ids`. The fields above pin them, and a flag would run something
+  else than the registry records.
 - A pair carries its `decision_rule` before launch, including which
   direction fails. A rule written after the data exists is not a rule.
 - A pair needs a null pair beside it: the same code and config run twice on
@@ -70,8 +73,14 @@ Rules the file must satisfy, all enforced by `evaluations preflight`:
   effect. One null replicate is one draw, not a variance estimate.
 - The config's embedder must be the database's stored embedder. The preflight
   compares provider, name and dimension.
-- The worktree's `.env` must carry `LOGFIRE_TOKEN`. Without it a run exits 0
-  having recorded nothing, and `evaluations run` refuses to start.
+- The worktree's `.env` must carry `LOGFIRE_TOKEN`, unless `flags` carries
+  `--no-telemetry` and the result file is the record. Without either a run
+  exits 0 having recorded nothing, and `evaluations run` refuses to start.
+  `--no-telemetry` is refused for a live dataset or `--skip-qa`: only a QA run
+  over a static corpus writes a result file.
+- An arm whose config fills `lancedb.databases` evaluates that set: it carries
+  `--skip-db` and no `db`. Population writes to a database such a run does not
+  read.
 
 ## 3. The smoke set
 
@@ -80,8 +89,8 @@ sampled: at least three must be of the kind the change is supposed to affect.
 A random ten from several hundred has a fair chance of holding none of a
 one-in-eight kind, so the smoke would pass while testing nothing.
 
-The queue runs the smoke first and requires a case span in Logfire before the
-full arm starts. The precondition you check by hand: at least one of the
+The queue runs the smoke first. The full arm starts only when the smoke exits
+cleanly and records at least one case. The precondition you check by hand: at least one of the
 affected cases resolves its answer from a tool result. Read the tool output in
 Logfire (`execute_tool` spans under the case), not the answer text. A model
 can answer from memory, so the answer alone does not show the corpus supplied
@@ -101,12 +110,14 @@ tmux is the process supervisor and nothing more: `tmux attach -t <session>`
 to watch, detach with `C-b d`. Run it from the checkout that has the
 harness, never from `/tmp`.
 
-For each arm the queue: preflights, runs the smoke and checks its span,
-registers the launch row, runs the arm from its worktree with output in
+For each arm the queue: preflights, runs the smoke and requires it to exit
+cleanly with cases, registers the launch row, runs the arm from its worktree with output in
 `~/.local/share/haiku.rag/evaluations/logs/<name>.log`, kills it at
 `deadline_hours`, and completes the registry row from the trace. A missing
 worktree is provisioned at the pinned sha with `uv sync` and the `.env`
-copied. A failed step skips the arm; the queue moves on.
+copied. A failed step ends that arm; the queue moves on. An arm that fails
+after it was registered keeps its launched row: complete it by hand with
+`evaluations arms complete <name>`.
 
 Provisioning by hand, when you must: `git worktree add --detach <path> <sha>`,
 `uv sync` inside it, copy `.env` from a sibling. The third step is the one

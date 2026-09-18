@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Any
 
@@ -37,7 +38,7 @@ def _case(
         "answer_equivalent": None if passed is None else str(passed).lower(),
         "number_match": None,
         "cited_map": cited_map,
-        "n_cited": 1 if cited_map else 0,
+        "cited_uris": '["u1"]' if cited_map else "[]",
         "is_exception": aborted,
     }
 
@@ -141,6 +142,44 @@ class TestCompleteArm:
         assert record is not None
         assert record.status == "void"
         assert record.void_reason == "no telemetry"
+
+    def test_a_result_file_completes_while_logfire_is_unreachable(
+        self, tmp_path: Path
+    ) -> None:
+        registry = Registry(tmp_path / "registry.sqlite")
+        registry.register_launch(_record())
+        results = tmp_path / "results"
+        results.mkdir()
+        rows = [
+            {
+                "case_name": f"{i}_{i}",
+                "key": str(i),
+                "passed": i % 2 == 0,
+                "cited": True,
+                "cited_map": 0.5,
+                "aborted": False,
+                "trace_id": TRACE,
+            }
+            for i in range(2)
+        ]
+        (results / f"orb-branch.{TRACE[:12]}.jsonl").write_text(
+            "".join(json.dumps(row) + "\n" for row in rows)
+        )
+
+        def unreachable(sql: str, *, min_timestamp: str) -> list[dict]:
+            raise OSError("logfire is unreachable")
+
+        summary = complete_arm(
+            registry, "orb-branch", query=unreachable, results_dir=results
+        )
+
+        assert summary is not None and summary.cases == 2
+        record = registry.get("orb-branch")
+        assert record is not None
+        assert record.status == "valid"
+        assert record.trace_id == TRACE
+        assert record.cases == 2
+        assert record.wall_seconds is None
 
     def test_an_ambiguous_name_leaves_the_row_alone(self, tmp_path: Path) -> None:
         registry = Registry(tmp_path / "registry.sqlite")

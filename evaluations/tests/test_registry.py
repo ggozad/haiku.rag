@@ -289,6 +289,17 @@ class TestLaunchRecord:
         assert record.capability_model == "gemma4"
         assert record.capability_endpoint is None
 
+    def test_capability_model_is_read_from_an_attached_value(
+        self, arm_file: Path
+    ) -> None:
+        arm = load_arm(arm_file).model_copy(
+            update={"flags": ["--skip-db", "--capability-model=openai:gemma4"]}
+        )
+        config = AppConfig.model_validate(yaml.safe_load(arm.config.read_text()))
+        record = launch_record(arm, config, _fingerprint(arm.db), started_at="t")
+        assert record.capability_model == "gemma4"
+        assert record.capability_endpoint is None
+
     def test_judge_comes_from_the_config_when_set(self, arm_file: Path) -> None:
         arm = load_arm(arm_file)
         config = AppConfig.model_validate(yaml.safe_load(arm.config.read_text()))

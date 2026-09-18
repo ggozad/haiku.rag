@@ -227,27 +227,33 @@ _ARM_FIELDS = {"sha", "limit", "db", "dataset", "filter_ids"}
 
 
 def check_pair_rows(treated: ArmRecord, baseline: ArmRecord) -> list[str]:
-    """Everything that stops a pair before any case is fetched: a void arm, a
-    missing trace, different datasets, and named differences that the two
-    rows do not show or unnamed ones they do."""
+    """Everything that stops a pair before any case is fetched: an arm that is
+    not a completed valid run, an unrecorded commit, different datasets, and
+    named differences that the two rows do not show or unnamed ones they do."""
     problems: list[str] = []
     for record in (treated, baseline):
         if record.status == "void":
             problems.append(f"{record.name} is void: {record.void_reason}")
-        if not record.trace_id:
-            problems.append(f"{record.name} has no trace id")
+        elif record.status != "valid":
+            problems.append(f"{record.name} is not complete: {record.status}")
     if treated.dataset != baseline.dataset:
         problems.append(f"datasets differ: {treated.dataset} vs {baseline.dataset}")
 
     named = set(json.loads(treated.differences)) if treated.differences else set()
-    commits_differ = not same_commit(treated.git_sha or "", baseline.git_sha or "")
-    if "sha" in named and not commits_differ:
-        problems.append("sha is named as a difference but the commits agree")
-    if commits_differ and "sha" not in named:
-        problems.append(
-            f"commits differ ({(treated.git_sha or '')[:12]} vs "
-            f"{(baseline.git_sha or '')[:12]}) and sha is not named"
+    if not treated.git_sha or not baseline.git_sha:
+        missing = ", ".join(
+            record.name for record in (treated, baseline) if not record.git_sha
         )
+        problems.append(f"no commit recorded for {missing}")
+    else:
+        commits_differ = not same_commit(treated.git_sha, baseline.git_sha)
+        if "sha" in named and not commits_differ:
+            problems.append("sha is named as a difference but the commits agree")
+        if commits_differ and "sha" not in named:
+            problems.append(
+                f"commits differ ({treated.git_sha[:12]} vs "
+                f"{baseline.git_sha[:12]}) and sha is not named"
+            )
     config_keys = sorted(
         name for name in named if name not in _ARM_FIELDS and not name.startswith("-")
     )

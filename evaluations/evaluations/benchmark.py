@@ -22,7 +22,12 @@ from evaluations.preflight import run_preflight
 from evaluations.qa import run_live_qa_benchmark, run_qa_benchmark
 from evaluations.queue import Queue, default_logs_path, tmux_command
 from evaluations.registry import Registry, default_registry_path, launch_record
-from evaluations.results import default_results_path, find_results, read_results
+from evaluations.results import (
+    check_run_name,
+    default_results_path,
+    find_results,
+    read_results,
+)
 from evaluations.retrieval import run_retrieval_benchmark
 from evaluations.traces import case_outcomes, query_logfire
 from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
@@ -33,9 +38,6 @@ from haiku.rag.utils import parse_model_option
 
 load_dotenv(find_dotenv(usecwd=True))
 
-# Scrubbing off: eval outputs are financial answers with words like "authorized"
-# that trip Logfire's secret scrubber and redact the model's answer text.
-configure_telemetry(service_name="evals", scrubbing=False)
 configure_cli_logging()
 console = Console()
 
@@ -264,6 +266,19 @@ def run(
     results: Path | None = RESULTS_OPTION,
 ) -> None:
     require_telemetry(no_telemetry)
+    if name is not None:
+        try:
+            check_run_name(name)
+        except ValueError as error:
+            console.print(str(error), style="red")
+            raise typer.Exit(code=1) from None
+    if no_telemetry:
+        # Unconfigured, logfire creates no span and warns once per process.
+        os.environ["LOGFIRE_IGNORE_NO_CONFIG"] = "1"
+    else:
+        # Scrubbing off: eval outputs are financial answers with words like
+        # "authorized" that trip Logfire's scrubber and redact the answer text.
+        configure_telemetry(service_name="evals", scrubbing=False)
     spec = _resolve_dataset(dataset)
     app_config = _load_config(config)
     _print_run_identity(app_config)
@@ -470,9 +485,11 @@ def _outcomes(record, key: str, since: str, results_dir: Path):
     path = find_results(results_dir, record.name)
     if path is not None:
         return read_results(path)[1]
-    return case_outcomes(
-        record.trace_id or "", key, query=query_logfire, min_timestamp=since
-    )
+    if not record.trace_id:
+        raise ValueError(
+            f"{record.name}: no result file in {results_dir} and no trace id"
+        )
+    return case_outcomes(record.trace_id, key, query=query_logfire, min_timestamp=since)
 
 
 @arms_app.command("pair")
@@ -512,10 +529,14 @@ def arms_pair(
         ).isoformat()
     )
     results_dir = results or default_results_path()
-    outcomes = {
-        record.name: _outcomes(record, spec.pair_key, since, results_dir)
-        for record in (treated, baseline)
-    }
+    try:
+        outcomes = {
+            record.name: _outcomes(record, spec.pair_key, since, results_dir)
+            for record in (treated, baseline)
+        }
+    except ValueError as error:
+        console.print(str(error), style="red")
+        raise typer.Exit(code=1) from None
     result = pair_outcomes(
         spec.pair_key,
         treated.name,

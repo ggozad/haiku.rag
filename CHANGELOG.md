@@ -5,19 +5,25 @@
 ### Added
 
 - `sources` on the `list_documents` MCP tool and `HaikuRAG.list_documents`.
-- `evaluations run --no-telemetry`. Without it a run refuses to start when
-  `LOGFIRE_TOKEN` is not set.
+- `evaluations run --no-telemetry`: Logfire stays unconfigured, so the run
+  sends nothing whatever the environment holds. Without the flag a run refuses
+  to start when `LOGFIRE_TOKEN` is not set.
 - `evaluations run` records `git_sha`, `git_dirty`, `config_hash`, `db_path`,
   `db_documents`, `db_chunks`, `db_embedder_provider`, `db_embedder_model`,
   `db_embedder_dim` and `db_version` in experiment metadata, and prints the
   code revision and config hash at start.
 - Arm files: one YAML file per evaluation arm naming the dataset, checkout,
   pinned sha, config, database, case selection, flags, comparator, named
-  differences and decision rule (`evaluations/arm.py`).
+  differences and decision rule (`evaluations/arm.py`). `flags` may not carry
+  `--config`, `--name`, `--db`, `--limit` or `--filter-ids`, which the arm's
+  own fields pin.
 - `evaluations preflight ARM`: checks the arm file, dataset, checkout sha and
-  cleanliness, `.env` token, config validity, database presence and stored
-  embedder, filter files, and the differences against the comparator. Exits 1
-  on any failure.
+  cleanliness, `.env` token unless the arm passes `--no-telemetry`, config
+  validity, the presence and stored embedder of every local database the run
+  reads, filter files, and the differences against the comparator. An arm over
+  `lancedb.databases` needs `--skip-db` and no `db`. `--no-telemetry` is
+  refused for a live dataset or `--skip-qa`, which write no result file.
+  Exits 1 on any failure.
 - Registry of evaluation arms (`evaluations/registry.py`): one SQLite row per
   arm at `<data dir>/evaluations/registry.sqlite`. `evaluations preflight ARM
   --register` writes the launch row when every check passes.
@@ -27,9 +33,9 @@
   arms. Per arm: cases, accuracy, floor, cite rate, mean `cited_map`, aborts,
   unjudged. For the pair: discordant counts with the exact McNemar p-value,
   the `cited_map` sign test and the smallest significant swing. Treated and
-  baseline come from the recorded comparator. Refuses a void arm, a missing
-  trace, two datasets, a NULL pairing key, and named differences the rows do
-  not show.
+  baseline come from the recorded comparator. Refuses an arm that is not a
+  completed valid run, an unrecorded commit, two datasets, a NULL pairing key,
+  and named differences the rows do not show.
 - `DatasetSpec.pair_key`: the case-metadata key two runs of a dataset pair on
   (`question_id`, `query_id`, `id`, `task_id`, `conversation_id`), recorded
   as `pair_key` in experiment metadata.
@@ -38,19 +44,20 @@
   from its trace, found by run name within the launch window. An arm with no
   trace is void with reason `no telemetry`.
 - `evaluations queue ARM...`: runs arm files in order. Each arm is
-  preflighted, smoked on `smoke_ids` with its case span confirmed in Logfire,
-  registered, run from its worktree with output in
+  preflighted, smoked on `smoke_ids` and dropped unless the smoke exits
+  cleanly with cases, registered, run from its worktree with output in
   `<data dir>/evaluations/logs/<name>.log`, killed at `deadline_hours`, and
   completed from its trace. A missing worktree is provisioned from `--repo` at
-  the pinned sha with `--env` copied. `--detach NAME` runs the queue in a tmux
-  session.
+  the pinned sha with `--env` copied. A failure ends that arm only. `--detach
+  NAME` runs the queue in a tmux session.
 - `evaluations run` writes per-case results to
   `<data dir>/evaluations/results/<name>.<trace>.jsonl` (`--results DIR` or
   `HAIKU_RAG_EVAL_RESULTS`): case name, pairing key, verdict, citation flag,
   `cited_map`, abort flag, trace id, answer, judge reason, the per-case
   attributes and task duration. `evaluations arms pair`, `arms complete` and
   the queue's smoke check and completion read that file when present and
-  Logfire otherwise. Live conversation runs write none.
+  Logfire otherwise. Live conversation runs write none. `--name` must be a
+  file name: letters, digits, dot, dash and underscore.
 - Database population prints cumulative throughput every 50 ingested documents
   and at the end: documents seen and ingested, elapsed time, documents per
   minute over the whole run, ETA. Documents skipped on resume count as seen,

@@ -3,6 +3,8 @@
 import json
 import os
 import re
+import time
+import urllib.error
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -29,10 +31,15 @@ def read_key() -> str:
     return key
 
 
+# Seconds to wait before each retry of a rate-limited query.
+BACKOFF = (2.0, 4.0, 8.0, 16.0, 32.0)
+
+
 def query_logfire(
     sql: str, *, min_timestamp: str, key: str | None = None
 ) -> list[dict[str, Any]]:
-    """Run SQL against the Logfire query API. The key's prefix names the region."""
+    """Run SQL against the Logfire query API. The key's prefix names the
+    region. A 429 is retried with backoff; any other error is raised."""
     key = key or read_key()
     region = key.split("_")[2] if key.startswith("pylf_") else "eu"
     request = urllib.request.Request(
@@ -40,8 +47,15 @@ def query_logfire(
         data=json.dumps({"sql": sql, "min_timestamp": min_timestamp}).encode(),
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(request, timeout=120) as response:
-        return json.load(response)["data"]
+    for attempt, nap in enumerate((*BACKOFF, None)):
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                return json.load(response)["data"]
+        except urllib.error.HTTPError as error:
+            if error.code != 429 or nap is None:
+                raise
+            time.sleep(nap)
+    raise AssertionError("unreachable")  # pragma: no cover
 
 
 @dataclass
@@ -68,6 +82,13 @@ def _passed(row: dict[str, Any]) -> bool | None:
     return None
 
 
+def _cited(value: Any) -> bool:
+    """Whether the case registered a citation. `cited_uris` arrives as JSON
+    text; a query over `json_length` returns nothing once any case lacks the
+    key, so the text is read and compared instead."""
+    return value is not None and str(value) not in ("", "[]", "null")
+
+
 def _outcome(row: dict[str, Any]) -> CaseOutcome:
     key = row.get("pair_key")
     cited_map = row.get("cited_map")
@@ -75,7 +96,7 @@ def _outcome(row: dict[str, Any]) -> CaseOutcome:
         case_name=str(row["case_name"]),
         key=None if key is None else str(key),
         passed=_passed(row),
-        cited=int(row.get("n_cited") or 0) > 0,
+        cited=_cited(row.get("cited_uris")),
         cited_map=None if cited_map is None else float(cited_map),
         aborted=_true(row.get("is_exception")),
     )
@@ -105,7 +126,7 @@ def case_outcomes(
             "attributes->'assertions'->'answer_equivalent'->>'value' AS answer_equivalent, "
             "attributes->'scores'->'number_match'->>'value' AS number_match, "
             "attributes->'scores'->'cited_map'->>'value' AS cited_map, "
-            "json_length(attributes, 'attributes', 'cited_uris') AS n_cited, "
+            "attributes->'attributes'->>'cited_uris' AS cited_uris, "
             "is_exception "
             f"FROM records WHERE {scope} ORDER BY case_name LIMIT {PAGE} OFFSET {offset}",
             min_timestamp=min_timestamp,

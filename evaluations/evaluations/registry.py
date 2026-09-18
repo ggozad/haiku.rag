@@ -6,7 +6,7 @@ from dataclasses import MISSING, asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
 
-from evaluations.arm import ArmSpec, load_arm
+from evaluations.arm import ArmSpec, flag_options, load_arm
 from evaluations.datasets import DATASETS
 from evaluations.experiment import DEFAULT_JUDGE_MODEL, config_hash
 from haiku.rag.config.models import AppConfig
@@ -189,12 +189,10 @@ class Registry:
 
 def _capability(arm: ArmSpec, config: AppConfig) -> tuple[str, str | None]:
     """The capability model an arm runs, and its endpoint when the config names it."""
-    flags = arm.flags
-    if "--capability-model" in flags:
-        position = flags.index("--capability-model") + 1
-        if position < len(flags):
-            _, _, name = flags[position].rpartition(":")
-            return name, None
+    override = flag_options(arm.flags).get("--capability-model")
+    if override:
+        _, _, name = override[0].rpartition(":")
+        return name, None
     return config.qa.model.name, config.qa.model.base_url
 
 

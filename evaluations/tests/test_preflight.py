@@ -5,7 +5,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from evaluations.arm import load_arm
+from evaluations.arm import load_arm, same_commit
 from evaluations.preflight import Check, run_preflight
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
@@ -84,6 +84,32 @@ def _by_name(checks: list[Check]) -> dict[str, Check]:
 
 
 class TestArmSpec:
+    def test_a_missing_sha_matches_no_commit(self) -> None:
+        assert same_commit("abc123def456", "abc123def4567890")
+        assert not same_commit("", "abc123def456")
+        assert not same_commit("abc123def456", "")
+
+    def test_flags_may_not_repeat_a_pinned_option(
+        self, checkout: Path, arm_dir: Path
+    ) -> None:
+        for flag in (
+            ["--config", "other.yaml"],
+            ["--name", "other"],
+            ["--db", "other.lancedb"],
+            ["--limit", "5"],
+            ["--limit=5"],
+            ["--filter-ids", "other.txt"],
+        ):
+            with pytest.raises(ValidationError, match="flags"):
+                load_arm(_write_arm(arm_dir / "a.yaml", _fields(checkout, flags=flag)))
+
+    def test_flags_that_set_nothing_the_arm_pins_are_kept(
+        self, checkout: Path, arm_dir: Path
+    ) -> None:
+        flags = ["--skip-db", "--no-telemetry", "--capability-model", "ollama:gpt-oss"]
+        arm = load_arm(_write_arm(arm_dir / "a.yaml", _fields(checkout, flags=flags)))
+        assert arm.command()[-len(flags) :] == flags
+
     def test_relative_paths_resolve_against_the_arm_file(
         self, checkout: Path, arm_dir: Path
     ) -> None:
@@ -264,13 +290,127 @@ class TestPreflight:
     async def test_a_configured_set_needs_no_database_path(
         self, checkout: Path, arm_dir: Path
     ) -> None:
+        for name in ("a", "b"):
+            await _database(arm_dir / f"{name}.lancedb", AppConfig())
         (arm_dir / "frames.yaml").write_text(
-            "lancedb:\n  databases:\n    a: /a.lancedb\n    b: /b.lancedb\n"
+            f"lancedb:\n  databases:\n"
+            f"    a: {arm_dir / 'a.lancedb'}\n    b: {arm_dir / 'b.lancedb'}\n"
         )
         arm = _write_arm(arm_dir / "a.yaml", _fields(checkout, db=None))
         checks = _by_name((await run_preflight(arm)).checks)
-        assert checks["database"].ok is True
+        assert checks["database"].ok is True, checks["database"].detail
         assert "a" in checks["database"].detail and "b" in checks["database"].detail
+
+    async def test_every_database_of_a_configured_set_is_opened(
+        self, checkout: Path, arm_dir: Path
+    ) -> None:
+        await _database(arm_dir / "a.lancedb", AppConfig())
+        (arm_dir / "frames.yaml").write_text(
+            f"lancedb:\n  databases:\n"
+            f"    a: {arm_dir / 'a.lancedb'}\n    b: {arm_dir / 'gone.lancedb'}\n"
+        )
+        arm = _write_arm(arm_dir / "a.yaml", _fields(checkout, db=None))
+        checks = _by_name((await run_preflight(arm)).checks)
+        assert checks["database"].ok is False
+        assert "gone.lancedb" in checks["database"].detail
+
+    async def test_a_configured_database_must_store_the_config_embedder(
+        self, checkout: Path, arm_dir: Path
+    ) -> None:
+        await _database(arm_dir / "a.lancedb", AppConfig())
+        (arm_dir / "frames.yaml").write_text(
+            f"embeddings:\n  model:\n    vector_dim: 8\n"
+            f"lancedb:\n  databases:\n    a: {arm_dir / 'a.lancedb'}\n"
+        )
+        arm = _write_arm(arm_dir / "a.yaml", _fields(checkout, db=None))
+        checks = _by_name((await run_preflight(arm)).checks)
+        assert checks["database"].ok is False
+        assert "8" in checks["database"].detail
+
+    async def test_a_remote_database_is_named_and_not_opened(
+        self, checkout: Path, arm_dir: Path
+    ) -> None:
+        await _database(arm_dir / "a.lancedb", AppConfig())
+        (arm_dir / "frames.yaml").write_text(
+            f"lancedb:\n  databases:\n"
+            f"    a: {arm_dir / 'a.lancedb'}\n    b: s3://bucket/b.lancedb\n"
+        )
+        arm = _write_arm(arm_dir / "a.yaml", _fields(checkout, db=None))
+        check = _by_name((await run_preflight(arm)).checks)["database"]
+        assert check.ok is True, check.detail
+        assert "b" in check.detail
+
+    async def test_a_relative_location_resolves_against_the_worktree(
+        self, checkout: Path, arm_dir: Path
+    ) -> None:
+        await _database(checkout / "rel.lancedb", AppConfig())
+        (arm_dir / "frames.yaml").write_text(
+            "lancedb:\n  databases:\n    a: rel.lancedb\n"
+        )
+        arm = _write_arm(arm_dir / "a.yaml", _fields(checkout, db=None))
+        check = _by_name((await run_preflight(arm)).checks)["database"]
+        assert check.ok is True, check.detail
+
+    async def test_an_offline_arm_that_writes_no_result_file_fails(
+        self, checkout: Path, arm_dir: Path
+    ) -> None:
+        skipping_qa = _write_arm(
+            arm_dir / "a.yaml",
+            _fields(checkout, flags=["--skip-db", "--skip-qa", "--no-telemetry"]),
+        )
+        check = _by_name((await run_preflight(skipping_qa)).checks)["telemetry"]
+        assert check.ok is False
+        assert "--skip-qa" in check.detail
+
+        live = _write_arm(
+            arm_dir / "b.yaml",
+            _fields(
+                checkout,
+                dataset="mtrag_clapnq_live",
+                flags=["--skip-db", "--no-telemetry"],
+            ),
+        )
+        check = _by_name((await run_preflight(live)).checks)["telemetry"]
+        assert check.ok is False
+        assert "mtrag_clapnq_live" in check.detail
+
+    async def test_a_configured_set_needs_skip_db(
+        self, checkout: Path, arm_dir: Path
+    ) -> None:
+        (arm_dir / "frames.yaml").write_text(
+            "lancedb:\n  databases:\n    a: /a.lancedb\n"
+        )
+        arm = _write_arm(
+            arm_dir / "a.yaml",
+            _fields(checkout, db=None, flags=["--skip-retrieval"]),
+        )
+        checks = _by_name((await run_preflight(arm)).checks)
+        assert checks["database"].ok is False
+        assert "--skip-db" in checks["database"].detail
+
+    async def test_a_configured_set_refuses_a_database_path(
+        self, checkout: Path, arm_dir: Path
+    ) -> None:
+        (arm_dir / "frames.yaml").write_text(
+            "lancedb:\n  databases:\n    a: /a.lancedb\n"
+        )
+        await _database(arm_dir / "frames.lancedb", AppConfig())
+        arm = _write_arm(arm_dir / "a.yaml", _fields(checkout))
+        checks = _by_name((await run_preflight(arm)).checks)
+        assert checks["database"].ok is False
+        assert "lancedb.databases" in checks["database"].detail
+
+    async def test_an_arm_that_runs_without_telemetry_needs_no_token(
+        self, checkout: Path, arm_dir: Path
+    ) -> None:
+        (checkout / ".env").unlink()
+        arm = _write_arm(
+            arm_dir / "a.yaml",
+            _fields(checkout, flags=["--skip-db", "--no-telemetry"]),
+        )
+        check = _by_name((await run_preflight(arm)).checks)["telemetry"]
+        assert check.ok is True
+        assert "--no-telemetry" in check.detail
 
     async def test_a_missing_filter_file_fails(
         self, checkout: Path, arm_dir: Path
@@ -364,6 +504,18 @@ class TestPreflightComparator:
         check = _by_name((await run_preflight(arm)).checks)["comparator"]
         assert check.ok is False
         assert "--target" in check.detail
+
+    async def test_an_attached_flag_value_is_named_by_its_option(
+        self, checkout: Path, arm_dir: Path
+    ) -> None:
+        arm = self._pair(
+            checkout,
+            arm_dir,
+            flags=["--skip-db", "--target=rag-capability"],
+            differences=["qa.max_searches", "--target"],
+        )
+        check = _by_name((await run_preflight(arm)).checks)["comparator"]
+        assert check.ok is True, check.detail
 
     async def test_a_missing_comparator_file_fails(
         self, checkout: Path, arm_dir: Path

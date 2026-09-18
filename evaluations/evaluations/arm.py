@@ -6,12 +6,17 @@ from typing import Self
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+# The `evaluations run` options `ArmSpec.command` fills from the arm's own
+# fields. A flag repeating one of these wins over the pinned value.
+PINNED_OPTIONS = ("--config", "--name", "--db", "--limit", "--filter-ids")
+
 
 class ArmSpec(BaseModel):
     """One evaluation arm.
 
     Paths are resolved by `load_arm` against the file that declares them.
-    `flags` pass through to `evaluations run` unchanged. `comparator` names the
+    `flags` pass through to `evaluations run` unchanged and may not repeat an
+    option the arm's own fields fill (`PINNED_OPTIONS`). `comparator` names the
     arm file this arm is paired against, and `differences` names every way the
     two arms differ; the preflight stops the launch on a difference it does not
     find in that list.
@@ -34,6 +39,16 @@ class ArmSpec(BaseModel):
     decision_rule: str | None = None
     operator: str | None = None
     deadline_hours: float | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def _flags_leave_the_pinned_options_alone(self) -> Self:
+        clash = sorted(set(flag_options(self.flags)) & set(PINNED_OPTIONS))
+        if clash:
+            raise ValueError(
+                f"flags may not set {', '.join(clash)}: the arm file pins it, "
+                "and a flag would run something else than the registry records"
+            )
+        return self
 
     @model_validator(mode="after")
     def _pairing_fields_agree(self) -> Self:
@@ -69,9 +84,25 @@ class ArmSpec(BaseModel):
         return argv + list(self.flags)
 
 
+def flag_options(flags: list[str]) -> dict[str, tuple[str, ...]]:
+    """Flag tokens grouped by the option they belong to, `--option value` and
+    `--option=value` alike."""
+    grouped: dict[str, list[str]] = {}
+    current = ""
+    for token in flags:
+        if token.startswith("-"):
+            current, _, attached = token.partition("=")
+            grouped.setdefault(current, [])
+            if attached:
+                grouped[current].append(attached)
+        else:
+            grouped.setdefault(current, []).append(token)
+    return {option: tuple(values) for option, values in grouped.items()}
+
+
 def same_commit(a: str, b: str) -> bool:
-    """Whether two sha prefixes name one commit."""
-    return a.startswith(b) or b.startswith(a)
+    """Whether two sha prefixes name one commit. An unknown sha names none."""
+    return bool(a) and bool(b) and (a.startswith(b) or b.startswith(a))
 
 
 _PATH_FIELDS = ("worktree", "config", "db", "filter_ids", "smoke_ids", "comparator")

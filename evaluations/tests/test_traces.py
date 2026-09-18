@@ -1,4 +1,5 @@
 import re
+from email.message import Message
 
 import pytest
 
@@ -12,7 +13,7 @@ def _row(i: int, **overrides) -> dict:
         "answer_equivalent": "true" if i % 3 else "false",
         "number_match": None,
         "cited_map": 0.5 if i % 5 else None,
-        "n_cited": 2 if i % 7 else 0,
+        "cited_uris": '["u1", "u2"]' if i % 7 else "[]",
         "is_exception": i % 50 == 0,
     }
     row.update(overrides)
@@ -95,3 +96,75 @@ class TestCaseOutcomes:
             case_outcomes("not-a-trace", "id", query=query, min_timestamp="t")
         with pytest.raises(ValueError, match="key"):
             case_outcomes("0" * 32, "id; drop", query=query, min_timestamp="t")
+
+
+class TestQueryLogfireBackoff:
+    def test_retries_on_429_with_backoff(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import io
+        import json
+        import urllib.error
+
+        from evaluations import traces
+
+        attempts: list[str] = []
+        naps: list[float] = []
+
+        def fake_urlopen(request, timeout):
+            attempts.append(request.full_url)
+            if len(attempts) < 3:
+                raise urllib.error.HTTPError(
+                    request.full_url,
+                    429,
+                    "Too Many Requests",
+                    Message(),
+                    io.BytesIO(b"slow down"),
+                )
+            return io.BytesIO(json.dumps({"schema": {}, "data": [{"n": 1}]}).encode())
+
+        monkeypatch.setattr(traces.urllib.request, "urlopen", fake_urlopen)
+        monkeypatch.setattr(traces.time, "sleep", naps.append)
+
+        rows = traces.query_logfire("SELECT 1", min_timestamp="t", key="pylf_v2_eu_x")
+
+        assert rows == [{"n": 1}]
+        assert len(attempts) == 3
+        assert naps == [2.0, 4.0]
+
+    def test_gives_up_after_the_last_retry(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import io
+        import urllib.error
+
+        from evaluations import traces
+
+        def always_429(request, timeout):
+            raise urllib.error.HTTPError(
+                request.full_url, 429, "Too Many Requests", Message(), io.BytesIO(b"")
+            )
+
+        monkeypatch.setattr(traces.urllib.request, "urlopen", always_429)
+        monkeypatch.setattr(traces.time, "sleep", lambda seconds: None)
+        with pytest.raises(urllib.error.HTTPError):
+            traces.query_logfire("SELECT 1", min_timestamp="t", key="pylf_v2_eu_x")
+
+    def test_other_errors_are_not_retried(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import io
+        import urllib.error
+
+        from evaluations import traces
+
+        attempts: list[int] = []
+
+        def unauthorized(request, timeout):
+            attempts.append(1)
+            raise urllib.error.HTTPError(
+                request.full_url, 401, "Unauthorized", Message(), io.BytesIO(b"")
+            )
+
+        monkeypatch.setattr(traces.urllib.request, "urlopen", unauthorized)
+        with pytest.raises(urllib.error.HTTPError):
+            traces.query_logfire("SELECT 1", min_timestamp="t", key="pylf_v2_eu_x")
+        assert len(attempts) == 1

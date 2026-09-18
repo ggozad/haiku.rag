@@ -264,10 +264,21 @@ class TestPairRows:
         assert any("void" in p and "no telemetry" in p for p in problems)
         assert any("dataset" in p for p in problems)
 
-    def test_a_missing_trace_is_refused(self) -> None:
-        main = _record("main", trace_id=None)
+    def test_an_arm_that_is_not_complete_is_refused(self) -> None:
+        main = _record("main", status="launched", trace_id=None)
         branch = _record("branch", comparator="main", differences="[]")
-        assert any("trace" in p for p in check_pair_rows(branch, main))
+        assert any("not complete" in p for p in check_pair_rows(branch, main))
+
+    def test_a_completed_arm_needs_no_trace(self) -> None:
+        main = _record("main", trace_id=None)
+        branch = _record("branch", comparator="main", differences="[]", trace_id=None)
+        assert check_pair_rows(branch, main) == []
+
+    def test_an_unrecorded_commit_is_refused(self) -> None:
+        main = _record("main", git_sha=None)
+        branch = _record("branch", comparator="main", differences="[]")
+        problems = check_pair_rows(branch, main)
+        assert any("commit" in p and "main" in p for p in problems)
 
     def test_named_differences_must_match_the_rows(self) -> None:
         main = _record("main")
@@ -320,7 +331,7 @@ class TestPairCommand:
                 "answer_equivalent": "true" if passed else "false",
                 "number_match": None,
                 "cited_map": 0.5,
-                "n_cited": 1,
+                "cited_uris": '["u1"]',
                 "is_exception": False,
             }
             for i, passed in enumerate(verdicts)
@@ -365,6 +376,99 @@ class TestPairCommand:
         assert "branch" in result.output and "main" in result.output
         assert "McNemar" in result.output
         assert "p < 0.05 fails" in result.output
+
+    def _results(self, directory: Path, name: str, verdicts: list[bool]) -> None:
+        directory.mkdir(parents=True, exist_ok=True)
+        rows = [
+            {
+                "case_name": f"{i}_{i}",
+                "key": str(i),
+                "passed": passed,
+                "cited": True,
+                "cited_map": 0.5,
+                "aborted": False,
+                "trace_id": None,
+            }
+            for i, passed in enumerate(verdicts)
+        ]
+        stamp = "notrace-20260101T000000Z"
+        (directory / f"{name}.{stamp}.jsonl").write_text(
+            "".join(json.dumps(row) + "\n" for row in rows)
+        )
+
+    def test_pairs_arms_that_ran_without_telemetry(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import evaluations.benchmark as benchmark
+
+        registry_path = tmp_path / "registry.sqlite"
+        registry = Registry(registry_path)
+        registry.register_launch(_record("main", trace_id=None))
+        registry.register_launch(
+            _record(
+                "branch",
+                comparator="main",
+                git_sha="b" * 40,
+                differences='["sha"]',
+                trace_id=None,
+            )
+        )
+        results = tmp_path / "results"
+        self._results(results, "main", [True, False, True, False])
+        self._results(results, "branch", [True, True, True, False])
+
+        def never(sql: str, *, min_timestamp: str) -> list[dict]:
+            raise AssertionError("must not query Logfire when result files exist")
+
+        monkeypatch.setattr(benchmark, "query_logfire", never)
+        result = CliRunner().invoke(
+            benchmark.app,
+            [
+                "arms",
+                "pair",
+                "main",
+                "branch",
+                "--registry",
+                str(registry_path),
+                "--results",
+                str(results),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "paired on query_id" in result.output
+
+    def test_an_arm_with_neither_a_file_nor_a_trace_is_named(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import evaluations.benchmark as benchmark
+
+        registry_path = tmp_path / "registry.sqlite"
+        registry = Registry(registry_path)
+        registry.register_launch(_record("main", trace_id=None))
+        registry.register_launch(
+            _record("branch", comparator="main", differences="[]", trace_id="2" * 32)
+        )
+        results = tmp_path / "results"
+        self._results(results, "branch", [True, True])
+
+        monkeypatch.setattr(benchmark, "query_logfire", self._fake_query({}))
+        result = CliRunner().invoke(
+            benchmark.app,
+            [
+                "arms",
+                "pair",
+                "main",
+                "branch",
+                "--registry",
+                str(registry_path),
+                "--results",
+                str(results),
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "main" in result.output and "no trace id" in result.output
 
     def test_refuses_a_void_arm_before_fetching(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

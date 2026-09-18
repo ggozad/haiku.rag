@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from evaluations.config import DatasetSpec, DocumentPayload
+from evaluations.experiment import config_hash
 from evaluations.population import Throughput, _ingest_batched, populate_db
 from haiku.rag.config.models import AppConfig
 
@@ -124,3 +125,19 @@ class TestIngestReportsWhatItIngested:
         assert "1/4 documents, 1 ingested" in out
         assert "4/4 documents, 2 ingested" in out
         assert out.count("documents/min") == 3
+
+    @pytest.mark.asyncio
+    async def test_population_leaves_the_caller_config_alone(
+        self, tmp_path: Path
+    ) -> None:
+        config = AppConfig()
+        before = config_hash(config)
+        with patch("evaluations.population.HaikuRAG") as haiku:
+            haiku.return_value.__aenter__.return_value = _rag(complete_uris=[])
+            await populate_db(
+                _spec(batch_size=10), config, db_path=tmp_path / "test.lancedb"
+            )
+
+        assert config.storage.auto_vacuum is True
+        assert config_hash(config) == before
+        assert haiku.call_args.kwargs["config"].storage.auto_vacuum is False

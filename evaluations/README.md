@@ -83,13 +83,19 @@ differences: [sha]
 decision_rule: McNemar exact on answer_equivalent, two-sided, p < 0.05 fails
 ```
 
-Relative paths resolve against the arm file. `evaluations preflight ARM` prints
-one line per check and exits 1 when any fails: the checkout is at the pinned
-commit with no uncommitted changes to tracked files, its `.env` carries
-`LOGFIRE_TOKEN`, the config validates, the database exists and stores the
-config's embedder, the filter files exist, and every difference from the
-comparator (arm fields, flags by option, config keys by dotted path) is named
-in `differences`. A named difference that does not differ fails too.
+Relative paths resolve against the arm file. `flags` may not carry `--config`,
+`--name`, `--db`, `--limit` or `--filter-ids`: the fields above pin them, and a
+flag would run something else than the registry records. `evaluations preflight
+ARM` prints one line per check and exits 1 when any fails: the checkout is at
+the pinned commit with no uncommitted changes to tracked files, its `.env`
+carries `LOGFIRE_TOKEN` unless the arm passes `--no-telemetry`, the config
+validates, every local database the run reads exists and stores the config's
+embedder (a configured location carrying a scheme is a URI, which the preflight
+names and does not open), the filter files exist, and every difference from the comparator (arm fields, flags by
+option, config keys by dotted path) is named in `differences`. A named
+difference that does not differ fails too. An arm whose config fills
+`lancedb.databases` evaluates that set: it carries `--skip-db` and no `db`,
+which is what the run itself requires.
 
 ### The registry of arms
 
@@ -117,11 +123,13 @@ evaluations arms import arms.jsonl     # upserts by name
 
 `evaluations queue a.yaml b.yaml` runs the arm files in order. For each arm it
 runs the preflight, runs the smoke set named by `smoke_ids` under the name
-`<name>-smoke` and confirms a case span reached Logfire, registers the launch,
+`<name>-smoke` and requires it to exit cleanly with at least one case,
+registers the launch,
 runs the arm from its worktree with output appended to `logs/<name>.log` under
 the evaluations data directory, kills the run at `deadline_hours`, and
-completes the registry row from the trace. A failed step skips the arm and the
-queue continues. When the arm's worktree does not exist and `--repo` names a
+completes the registry row from the trace. A failed step ends that arm and the
+queue continues; an arm that fails after it was registered keeps its launched
+row, to complete by hand. When the arm's worktree does not exist and `--repo` names a
 checkout, the queue provisions it at the pinned sha with `uv sync` and copies
 `--env` into it. `--detach NAME` starts the queue inside a detached tmux
 session, so it survives a lost ssh connection.
@@ -148,14 +156,16 @@ where you read a transcript. Live conversation runs write no file.
 
 `evaluations arms pair A B` prints the standard table for two registered
 arms. Treated and baseline are read from the recorded comparator, not from
-argument order. The command refuses a void arm, an arm without a trace, two
-datasets, a pairing key that is NULL on either side, and a pair whose rows do
-not show the differences the arm file names.
+argument order. The command refuses an arm that is not a completed valid run,
+a commit that either row leaves unrecorded, two datasets, a pairing key that is
+NULL on either side, and a pair whose rows do not show the differences the arm
+file names.
 
 Cases join on the dataset's `pair_key`: `question_id` for FRAMES and
 HotpotQA, `query_id` for ORB, `id` for T2, `task_id` and `conversation_id`
-for MTRAG. Per-case outcomes come from Logfire through the read key in
-`~/.logfire-read-key` or `LOGFIRE_READ_KEY`. The table shows per arm the
+for MTRAG. Per-case outcomes come from each run's result file, and from
+Logfire through the read key in `~/.logfire-read-key` or `LOGFIRE_READ_KEY`
+when there is none. The table shows per arm the
 cases, accuracy over judged cases, floor over all cases, cite rate, mean
 `cited_map`, aborts and unjudged cases. For the pair it shows the discordant
 counts with the exact McNemar p-value, the `cited_map` sign test, the
@@ -169,8 +179,10 @@ With `LOGFIRE_TOKEN` set, runs ship spans under `service_name = 'evals'`. The
 queries (recent runs, per-case pass rate and `cited_map`, failing and slowest
 cases) for use from Claude Code.
 
-A run refuses to start when `LOGFIRE_TOKEN` is not set. Pass `--no-telemetry`
-to run without it.
+A run refuses to start when `LOGFIRE_TOKEN` is not set. `--no-telemetry` runs
+without it and leaves Logfire unconfigured, so the run sends nothing whatever
+the environment holds and its result file is the record. A live dataset and
+`--skip-qa` write no result file, so the preflight refuses the flag for them.
 Every run prints its git commit and the SHA-256 of its resolved config at start
 and records them in the experiment metadata (`git_sha`, `git_dirty`,
 `config_hash`) together with the database it read (`db_path`, `db_documents`,
