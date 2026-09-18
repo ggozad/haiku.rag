@@ -48,6 +48,10 @@ and saying so is part of the report.
   the cases prints a normal-looking table, so compare the paired count with
   each arm's cases and with the case selection the arm file names. The
   one-sided counts beside it say which arm the missing cases came from.
+- Read the sign test's tie count the same way. A sign test drops every tie, and
+  scores on a coarse lattice tie often, so the surviving pairs can be a small
+  fraction of the cases. Forty surviving pairs print exactly like eight
+  hundred.
 - Check that the paired count equals the cases you expected. A join that
   silently matches a fraction produces a verdict that looks normal.
 - A pair is unreadable without a null pair beside it. Identical code takes a
