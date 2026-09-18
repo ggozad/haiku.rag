@@ -21,6 +21,7 @@ from evaluations.completion import (
 from evaluations.datasets import DATASETS
 from evaluations.preflight import run_preflight
 from evaluations.registry import Registry, launch_record
+from evaluations.results import RESULTS_ENV, find_results, read_results
 from evaluations.traces import QueryFn, case_outcomes
 from haiku.rag.utils import get_default_data_dir
 
@@ -85,6 +86,7 @@ class Queue:
     env_source: Path | None = None
     settle_seconds: float = 900.0
     poll_seconds: float = 30.0
+    results_dir: Path | None = None
 
     def run(self, arm_paths: list[Path]) -> list[ArmOutcome]:
         self.logs.mkdir(parents=True, exist_ok=True)
@@ -127,15 +129,21 @@ class Queue:
             smoke_name = f"{arm.name}-smoke"
             since = window_start(_now())
             self._execute(arm, arm.command(smoke=True), smoke_name, arm.deadline_hours)
-            trace = self._await_trace(smoke_name, since)
-            outcomes = (
-                []
-                if trace is None
-                else case_outcomes(trace, key, query=self.query, min_timestamp=since)
-            )
+            outcomes = self._file_outcomes(smoke_name)
+            if outcomes is None:
+                trace = self._await_trace(smoke_name, since)
+                outcomes = (
+                    []
+                    if trace is None
+                    else case_outcomes(
+                        trace, key, query=self.query, min_timestamp=since
+                    )
+                )
             if not outcomes:
                 return ArmOutcome(
-                    arm.name, "skipped", "smoke produced no case span in Logfire"
+                    arm.name,
+                    "skipped",
+                    "smoke produced no result file and no case span",
                 )
             for outcome in outcomes:
                 self._log(
@@ -161,22 +169,31 @@ class Queue:
         elif code != 0:
             void_reason = f"exit code {code}"
         try:
-            trace = self._await_trace(arm.name, window_start(record.started_at))
-            if trace is None:
-                reason = (
-                    "no telemetry"
-                    if void_reason is None
-                    else f"no telemetry; {void_reason}"
-                )
-                self.registry.mark_void(arm.name, reason)
-            else:
+            if self._file_outcomes(arm.name) is not None:
                 complete_arm(
                     self.registry,
                     arm.name,
                     query=self.query,
-                    trace_id=trace,
                     void_reason=void_reason,
+                    results_dir=self.results_dir,
                 )
+            else:
+                trace = self._await_trace(arm.name, window_start(record.started_at))
+                if trace is None:
+                    reason = (
+                        "no telemetry"
+                        if void_reason is None
+                        else f"no telemetry; {void_reason}"
+                    )
+                    self.registry.mark_void(arm.name, reason)
+                else:
+                    complete_arm(
+                        self.registry,
+                        arm.name,
+                        query=self.query,
+                        trace_id=trace,
+                        void_reason=void_reason,
+                    )
         except ValueError as error:
             self.registry.mark_void(arm.name, str(error))
         final = self.registry.get(arm.name)
@@ -185,6 +202,13 @@ class Queue:
             f"{final.cases} cases, accuracy {final.accuracy}, trace {final.trace_id}"
         )
         return ArmOutcome(arm.name, final.status, detail)
+
+    def _file_outcomes(self, name: str):
+        """The run's result file rows, or None when no file exists."""
+        if self.results_dir is None:
+            return None
+        path = find_results(self.results_dir, name)
+        return None if path is None else read_results(path)[1]
 
     def _execute(
         self, arm: ArmSpec, argv: list[str], log_name: str, deadline_hours: float | None
@@ -201,7 +225,13 @@ class Queue:
                 cwd=arm.worktree,
                 stdout=log,
                 stderr=subprocess.STDOUT,
-                env={**os.environ, "PYTHONUNBUFFERED": "1"},
+                env={
+                    **os.environ,
+                    "PYTHONUNBUFFERED": "1",
+                    **(
+                        {RESULTS_ENV: str(self.results_dir)} if self.results_dir else {}
+                    ),
+                },
                 start_new_session=True,
             )
             while True:

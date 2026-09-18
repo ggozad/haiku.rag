@@ -30,6 +30,7 @@ from evaluations.experiment import (
     build_experiment_metadata,
     corpus_fingerprint,
 )
+from evaluations.results import write_results
 from haiku.rag.capabilities.rag import create_capability
 from haiku.rag.config import AppConfig
 from haiku.rag.config.models import ModelConfig
@@ -290,6 +291,7 @@ async def run_qa_benchmark(
     capability_model: ModelConfig | None = None,
     case_ids: set[str] | None = None,
     document_filter: str | None = None,
+    results_dir: Path | None = None,
 ) -> ReportCaseFailure[str, str, dict[str, str]] | None:
     run = await _prepare_qa_run(
         spec,
@@ -377,6 +379,11 @@ async def run_qa_benchmark(
         progress=True,
         metadata=run.experiment_metadata,
     )
+    if results_dir is not None:
+        results_path = write_results(
+            report, name=run.eval_name, pair_key=spec.pair_key, directory=results_dir
+        )
+        console.print(f"Per-case results: {results_path}", style="dim")
 
     total_processed = len(report.cases)
     failures = report.failures
@@ -456,8 +463,12 @@ async def run_live_qa_benchmark(
     capability_model: ModelConfig | None = None,
     case_ids: set[str] | None = None,
     document_filter: str | None = None,
+    results_dir: Path | None = None,
 ) -> None:
     """Replay conversations turn by turn through one capability session.
+
+    `results_dir` is accepted for the shared call site and ignored: a
+    conversation has per-turn verdicts, not one per case, so no result file.
 
     One case per conversation; ``limit`` counts conversations. Answers carry
     forward as real message history, so prior-turn compaction is exercised.

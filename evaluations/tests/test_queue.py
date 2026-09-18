@@ -20,13 +20,26 @@ from haiku.rag.config.models import AppConfig
 # Stands in for `evaluations run`: prints its name, hangs or fails on demand.
 FAKE_RUN = textwrap.dedent(
     """
-    import sys, time
+    import json, os, pathlib, sys, time
     name = sys.argv[sys.argv.index("--name") + 1]
     print("fake run", name, flush=True)
     if name.endswith("-hang"):
         time.sleep(30)
     if name.endswith("-fail"):
         sys.exit(3)
+    results = os.environ.get("HAIKU_RAG_EVAL_RESULTS")
+    if results:
+        trace = ("1" if name.endswith("-smoke") else "2") * 32
+        directory = pathlib.Path(results)
+        directory.mkdir(parents=True, exist_ok=True)
+        rows = [
+            {"case_name": f"{i}_{i}", "key": str(i), "passed": True, "cited": True,
+             "cited_map": 0.5, "aborted": False, "trace_id": trace}
+            for i in range(3)
+        ]
+        (directory / f"{name}.{trace[:12]}.jsonl").write_text(
+            "".join(json.dumps(row) + "\\n" for row in rows)
+        )
     """
 )
 PYPROJECT = (
@@ -217,6 +230,27 @@ class TestQueue:
         queue_log = (workspace.tmp / "logs" / "queue.log").read_text()
         assert "registered arm-ok" in queue_log
         assert "smoke 0_0" in queue_log
+
+    def test_result_files_replace_the_span_checks(
+        self, workspace: SimpleNamespace
+    ) -> None:
+        arm = _arm(workspace, "arm-ok")
+        queue = _queue(
+            workspace, {}, {RUN_TRACE: []}, results_dir=workspace.tmp / "results"
+        )
+
+        outcomes = queue.run([arm])
+
+        assert [(o.name, o.status) for o in outcomes] == [("arm-ok", "valid")]
+        record = queue.registry.get("arm-ok")
+        assert record is not None
+        assert record.trace_id == RUN_TRACE
+        assert record.cases == 3
+        assert record.wall_seconds == pytest.approx(3600.0)
+        assert (
+            workspace.tmp / "results" / f"arm-ok-smoke.{SMOKE_TRACE[:12]}.jsonl"
+        ).exists()
+        assert "smoke 0_0" in (workspace.tmp / "logs" / "queue.log").read_text()
 
     def test_the_smoke_is_optional(self, workspace: SimpleNamespace) -> None:
         arm = _arm(workspace, "arm-ok", smoke_ids=None)

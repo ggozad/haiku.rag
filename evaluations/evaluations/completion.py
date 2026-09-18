@@ -4,11 +4,13 @@ import re
 import subprocess
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from evaluations.datasets import DATASETS
 from evaluations.pairing import ArmSummary, summarize
 from evaluations.registry import Registry
+from evaluations.results import find_results, read_results
 from evaluations.traces import QueryFn, case_outcomes
 
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -64,26 +66,34 @@ def complete_arm(
     query: QueryFn,
     trace_id: str | None = None,
     void_reason: str | None = None,
+    results_dir: Path | None = None,
 ) -> ArmSummary | None:
-    """Fill an arm's result fields from its trace. Without a trace the arm is
-    void with reason "no telemetry" and None is returned. `void_reason` voids
-    the arm after recording its metrics, for a run that did not finish."""
+    """Fill an arm's result fields from its result file when `results_dir`
+    holds one, else from its trace. Without either the arm is void with
+    reason "no telemetry" and None is returned. `void_reason` voids the arm
+    after recording its metrics, for a run that did not finish."""
     record = registry.get(name)
     if record is None:
         raise ValueError(f"no arm named {name!r}")
     since = window_start(record.started_at)
-    if trace_id is None:
-        trace_id = find_trace(name, since, query=query)
-    if trace_id is None:
-        registry.mark_void(name, "no telemetry")
-        return None
-    spec = DATASETS.get(record.dataset)
-    key = spec.pair_key if spec is not None else "question_id"
-    summary = summarize(
-        name, case_outcomes(trace_id, key, query=query, min_timestamp=since)
-    )
+    outcomes = None
+    if results_dir is not None:
+        path = find_results(results_dir, name)
+        if path is not None:
+            file_trace, outcomes = read_results(path)
+            trace_id = trace_id or file_trace
+    if outcomes is None:
+        if trace_id is None:
+            trace_id = find_trace(name, since, query=query)
+        if trace_id is None:
+            registry.mark_void(name, "no telemetry")
+            return None
+        spec = DATASETS.get(record.dataset)
+        key = spec.pair_key if spec is not None else "question_id"
+        outcomes = case_outcomes(trace_id, key, query=query, min_timestamp=since)
+    summary = summarize(name, outcomes)
     wall_seconds = ended_at = None
-    span = _experiment_span(trace_id, since, query=query)
+    span = _experiment_span(trace_id, since, query=query) if trace_id else None
     if span is not None:
         start = datetime.fromisoformat(str(span["start_timestamp"]))
         end = datetime.fromisoformat(str(span["end_timestamp"]))

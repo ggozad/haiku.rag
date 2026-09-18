@@ -131,6 +131,19 @@ evaluations queue arms/frames-main.yaml arms/frames-branch.yaml \
   --repo ~/dev/haiku.rag --env ~/dev/haiku.rag/.env --detach night
 ```
 
+### Per-case result files
+
+`evaluations run` writes one JSON line per case to
+`<name>.<trace>.jsonl` under `results/` in the evaluations data directory
+(`--results DIR` or `HAIKU_RAG_EVAL_RESULTS` point elsewhere): case name,
+pairing key, verdict, whether the case cited anything, `cited_map`, whether
+it aborted, the trace id, the answer, the judge's reason, the run's per-case
+attributes and the task duration. A run without a trace writes
+`<name>.notrace-<time>.jsonl`. `arms pair`, `arms complete` and the queue's
+smoke check and completion read this file when it exists and fall back to
+Logfire, so the registry and the result files are the record and Logfire is
+where you read a transcript. Live conversation runs write no file.
+
 ### Pairing two arms
 
 `evaluations arms pair A B` prints the standard table for two registered

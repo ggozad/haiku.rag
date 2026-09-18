@@ -20,6 +20,9 @@ an arm without a trace, two datasets, a pairing key that is NULL on either
 side, and a pair whose rows do not show the differences the arm file names.
 If it refuses, the pair is not ready; do not compute it by hand.
 
+Per-case rows come from the run's result file under the evaluations data
+directory when it exists, and from Logfire otherwise.
+
 Per arm: cases, accuracy over judged cases, floor over all cases, cite rate,
 mean `cited_map`, aborts, unjudged. For the pair: discordant counts with the
 exact McNemar p-value, the `cited_map` sign test, the smallest |b - c| the
@@ -66,8 +69,11 @@ current eras.
 
 ## 4. Logfire, without the traps
 
-Project `haiku`, service `evals`. The `debug-evals` skill has the queries;
-these are the rules that make them true.
+The registry and the result files are the record; nothing in the standard
+table needs Logfire. Logfire is where you read a transcript: what the model
+saw, what a tool returned, why a case died. Project `haiku`, service `evals`.
+The `debug-evals` skill has the queries; these are the rules that make them
+true.
 
 - Read a value as text with `attributes->>'key'`. The subtree form
   `attributes->'key'` returns NULL on some span attributes with no error, so

@@ -44,6 +44,13 @@
   completed from its trace. A missing worktree is provisioned from `--repo` at
   the pinned sha with `--env` copied. `--detach NAME` runs the queue in a tmux
   session.
+- `evaluations run` writes per-case results to
+  `<data dir>/evaluations/results/<name>.<trace>.jsonl` (`--results DIR` or
+  `HAIKU_RAG_EVAL_RESULTS`): case name, pairing key, verdict, citation flag,
+  `cited_map`, abort flag, trace id, answer, judge reason, the per-case
+  attributes and task duration. `evaluations arms pair`, `arms complete` and
+  the queue's smoke check and completion read that file when present and
+  Logfire otherwise. Live conversation runs write none.
 - Database population prints cumulative throughput every 50 ingested documents
   and at the end: documents seen and ingested, elapsed time, documents per
   minute over the whole run, ETA. Documents skipped on resume count as seen,

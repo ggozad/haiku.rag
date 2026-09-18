@@ -22,6 +22,7 @@ from evaluations.preflight import run_preflight
 from evaluations.qa import run_live_qa_benchmark, run_qa_benchmark
 from evaluations.queue import Queue, default_logs_path, tmux_command
 from evaluations.registry import Registry, default_registry_path, launch_record
+from evaluations.results import default_results_path, find_results, read_results
 from evaluations.retrieval import run_retrieval_benchmark
 from evaluations.traces import case_outcomes, query_logfire
 from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
@@ -37,6 +38,17 @@ load_dotenv(find_dotenv(usecwd=True))
 configure_telemetry(service_name="evals", scrubbing=False)
 configure_cli_logging()
 console = Console()
+
+REGISTRY_OPTION = typer.Option(
+    None,
+    "--registry",
+    help="Registry file. Defaults to registry.sqlite in the evaluations data directory.",
+)
+RESULTS_OPTION = typer.Option(
+    None,
+    "--results",
+    help="Per-case result files. Defaults to results/ in the evaluations data directory.",
+)
 
 
 async def evaluate_dataset(
@@ -54,6 +66,7 @@ async def evaluate_dataset(
     capability_model: ModelConfig | None = None,
     case_ids: set[str] | None = None,
     document_filter: str | None = None,
+    results_dir: Path | None = None,
 ) -> None:
     if document_filter is not None:
         console.print(f"Document filter: {document_filter}", style="dim")
@@ -103,6 +116,7 @@ async def evaluate_dataset(
             capability_model=capability_model,
             case_ids=case_ids,
             document_filter=document_filter,
+            results_dir=results_dir,
         )
 
 
@@ -247,6 +261,7 @@ def run(
             "start when LOGFIRE_TOKEN is not set."
         ),
     ),
+    results: Path | None = RESULTS_OPTION,
 ) -> None:
     require_telemetry(no_telemetry)
     spec = _resolve_dataset(dataset)
@@ -273,15 +288,9 @@ def run(
             capability_model=capability_model_config,
             case_ids=_load_case_ids(filter_ids),
             document_filter=document_filter,
+            results_dir=results or default_results_path(),
         )
     )
-
-
-REGISTRY_OPTION = typer.Option(
-    None,
-    "--registry",
-    help="Registry file. Defaults to registry.sqlite in the evaluations data directory.",
-)
 
 
 def _registry(path: Path | None) -> Registry:
@@ -368,6 +377,7 @@ def queue(
     detach: str | None = typer.Option(
         None, "--detach", help="Run inside a detached tmux session of this name."
     ),
+    results: Path | None = RESULTS_OPTION,
 ) -> None:
     """Run arms in order: preflight, smoke, register, run, complete."""
     if detach:
@@ -383,6 +393,7 @@ def queue(
         repo=repo,
         env_source=env_file,
         settle_seconds=settle_minutes * 60,
+        results_dir=results or default_results_path(),
     )
     outcomes = runner.run(list(arms))
     for outcome in outcomes:
@@ -454,8 +465,23 @@ def arms_void(
     console.print(f"{name} marked void: {reason}")
 
 
+def _outcomes(record, key: str, since: str, results_dir: Path):
+    """Per-case outcomes from the run's result file, else from Logfire."""
+    path = find_results(results_dir, record.name)
+    if path is not None:
+        return read_results(path)[1]
+    return case_outcomes(
+        record.trace_id or "", key, query=query_logfire, min_timestamp=since
+    )
+
+
 @arms_app.command("pair")
-def arms_pair(a: str, b: str, registry: Path | None = REGISTRY_OPTION) -> None:
+def arms_pair(
+    a: str,
+    b: str,
+    registry: Path | None = REGISTRY_OPTION,
+    results: Path | None = RESULTS_OPTION,
+) -> None:
     """The standard paired table for two registered arms. Treated and baseline
     come from the recorded comparator, never from argument order."""
     store = _registry(registry)
@@ -485,13 +511,9 @@ def arms_pair(a: str, b: str, registry: Path | None = REGISTRY_OPTION) -> None:
             datetime.fromisoformat(record.started_at) for record in (treated, baseline)
         ).isoformat()
     )
+    results_dir = results or default_results_path()
     outcomes = {
-        record.name: case_outcomes(
-            record.trace_id or "",
-            spec.pair_key,
-            query=query_logfire,
-            min_timestamp=since,
-        )
+        record.name: _outcomes(record, spec.pair_key, since, results_dir)
         for record in (treated, baseline)
     }
     result = pair_outcomes(
@@ -516,11 +538,19 @@ def arms_complete(
         None, "--trace", help="Trace id, when the run name alone does not find it."
     ),
     registry: Path | None = REGISTRY_OPTION,
+    results: Path | None = RESULTS_OPTION,
 ) -> None:
-    """Fill an arm's result fields from its trace; void it when no trace exists."""
+    """Fill an arm's result fields from its result file or its trace; void it
+    when neither exists."""
     store = _registry(registry)
     try:
-        summary = complete_arm(store, name, query=query_logfire, trace_id=trace)
+        summary = complete_arm(
+            store,
+            name,
+            query=query_logfire,
+            trace_id=trace,
+            results_dir=results or default_results_path(),
+        )
     except ValueError as error:
         console.print(str(error), style="red")
         raise typer.Exit(code=1) from None
