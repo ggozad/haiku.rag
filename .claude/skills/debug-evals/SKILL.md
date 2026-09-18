@@ -19,10 +19,21 @@ single case. Read-only.
    The same SQL works pasted into Logfire's Explore UI.
 3. Read span attributes as JSON: `attributes->>'key'`, nested as
    `attributes->'a'->'b'->>'c'`. Cast when needed: `(...)::float`, `(...)::int`.
+   Read a value you intend to search as text with `->>`. The subtree form
+   `attributes->'key'` returns NULL on some span attributes with no error
+   (`gen_ai.output.messages` on `chat` spans, `metadata` on case spans), so a
+   phrase count over thousands of spans comes back a clean zero. Before
+   reporting a zero from a text scan, run a control on the same expression
+   that must match (the word "the") and check `max(length(...))` is not NULL.
 4. Hand back a clickable trace with
    `mcp__logfire__project_logfire_link(trace_id, project="haiku")`.
 
 ## When the Logfire MCP is not available
+
+The MCP query tool has returned only a rolling window of recent records while
+the HTTP API below returned the full retention for the same project. When a
+run older than an hour comes back empty through the MCP, query it through the
+HTTP API before concluding anything about the data.
 
 The `mcp__logfire__*` tools are not loaded in every session. The HTTP query API is
 the fallback and needs no MCP:
@@ -70,6 +81,23 @@ json_get_str(attributes,'attributes','citation_status')
 Prefer the `json_get_*` form inside aggregates — it yields a typed value, so no cast
 is needed and `sum(CASE WHEN ...)` behaves.
 
+## Scoping an evidence search
+
+Per-case data hangs off the case span through a parent chain: `case: {case_name}`,
+then `execute {task}`, then `invoke_agent agent`, then `execute_tool *`. Tool
+results are in `gen_ai.tool.call.result`; model thinking and tool calls are in
+`gen_ai.output.messages`, which never contains tool results and is therefore
+safe for phrase counts.
+
+Exclude the sibling `invoke_agent judge_input_output_expected` subtree from any
+evidence search: the judge is given the gold answer, so including it marks
+every case as grounded.
+
+A time window (`start_timestamp` bounds, the API's `min_timestamp`) applies to
+every table scan in the query, including a subquery that supplies ids. A window
+tight enough for one arm silently returns no ids for another. Scope by the full
+32-character `trace_id` and set the window to cover every arm in the query.
+
 ## Counting cases, not spans
 
 **One exception appears once per span level.** A single failing case emits the same
@@ -105,6 +133,11 @@ A run is one experiment span; its cases are direct children sharing its
   - `attributes->'scores'->'cited_map'->>'value'` — citation average precision (0..1).
   - `attributes->'scores'->'number_match'->>'value'` — numeric-answer match (datasets that use it).
   - `duration` — task time in seconds.
+  - `attributes->'metadata'->>'<pair_key>'` — the case's pairing key. The
+    experiment metadata's `pair_key` names it per dataset (`question_id`,
+    `query_id`, `id`, `task_id`, `conversation_id`). `evaluations arms pair`
+    joins two registered arms on it and prints the standard table; do not
+    join by hand. `evaluations arms complete` fills a registry row from a trace.
 - Inside each case the capability under test emits agent spans (scope `pydantic-ai`):
   `execute {task}`, `invoke_agent agent`, `execute_tool {tool_name}`, `chat {model}`.
 

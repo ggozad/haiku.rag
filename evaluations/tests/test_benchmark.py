@@ -1,13 +1,16 @@
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import typer
+from typer.testing import CliRunner
 
 from evaluations.benchmark import (
     _load_config,
     _resolve_dataset,
     evaluate_dataset,
+    require_telemetry,
 )
 from evaluations.config import DatasetSpec, DocumentPayload
 from evaluations.experiment import build_experiment_metadata
@@ -102,6 +105,18 @@ class TestBuildExperimentMetadata:
         )
         assert result["rerank_provider"] is None
         assert result["rerank_model"] is None
+
+    def test_records_the_pair_key(self) -> None:
+        result = build_experiment_metadata(
+            dataset_key="test", test_cases=1, config=AppConfig(), pair_key="query_id"
+        )
+        assert result["pair_key"] == "query_id"
+        assert (
+            build_experiment_metadata(
+                dataset_key="test", test_cases=1, config=AppConfig()
+            )["pair_key"]
+            is None
+        )
 
     def test_with_reranker(self) -> None:
         config = AppConfig()
@@ -629,6 +644,153 @@ class TestLoadConfig:
         assert config == AppConfig()
 
 
+class TestRequireTelemetry:
+    def test_refuses_without_a_token(self, monkeypatch) -> None:
+        monkeypatch.delenv("LOGFIRE_TOKEN", raising=False)
+        with pytest.raises(typer.Exit):
+            require_telemetry(no_telemetry=False)
+
+    def test_an_empty_token_counts_as_absent(self, monkeypatch) -> None:
+        monkeypatch.setenv("LOGFIRE_TOKEN", "")
+        with pytest.raises(typer.Exit):
+            require_telemetry(no_telemetry=False)
+
+    def test_a_token_passes(self, monkeypatch) -> None:
+        monkeypatch.setenv("LOGFIRE_TOKEN", "pylf_v1_eu_test")
+        require_telemetry(no_telemetry=False)
+
+    def test_an_explicit_opt_out_passes_without_a_token(self, monkeypatch) -> None:
+        monkeypatch.delenv("LOGFIRE_TOKEN", raising=False)
+        require_telemetry(no_telemetry=True)
+
+
+class TestRunTelemetry:
+    def _stub(self, monkeypatch: pytest.MonkeyPatch) -> list[dict]:
+        import evaluations.benchmark as benchmark
+
+        configured: list[dict] = []
+        monkeypatch.setattr(
+            benchmark, "configure_telemetry", lambda **kw: configured.append(kw)
+        )
+
+        async def nothing(**kwargs) -> None:
+            return None
+
+        monkeypatch.setattr(benchmark, "evaluate_dataset", nothing)
+        return configured
+
+    def test_an_opt_out_sends_nothing_even_with_a_token(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import evaluations.benchmark as benchmark
+
+        monkeypatch.setenv("LOGFIRE_TOKEN", "pylf_v1_eu_test")
+        monkeypatch.setenv("LOGFIRE_IGNORE_NO_CONFIG", "0")
+        configured = self._stub(monkeypatch)
+
+        result = CliRunner().invoke(
+            benchmark.app, ["run", "frames", "--no-telemetry", "--skip-db"]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert configured == []
+        assert os.environ["LOGFIRE_IGNORE_NO_CONFIG"] == "1"
+
+    def test_a_run_that_keeps_telemetry_configures_it(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import evaluations.benchmark as benchmark
+
+        monkeypatch.setenv("LOGFIRE_TOKEN", "pylf_v1_eu_test")
+        configured = self._stub(monkeypatch)
+
+        result = CliRunner().invoke(benchmark.app, ["run", "frames", "--skip-db"])
+
+        assert result.exit_code == 0, result.output
+        assert configured == [{"service_name": "evals", "scrubbing": False}]
+
+
+class TestRunRefusesAnUnusableName:
+    def test_a_name_that_is_not_a_file_name_stops_the_run(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import evaluations.benchmark as benchmark
+
+        monkeypatch.setenv("LOGFIRE_TOKEN", "pylf_v1_eu_test")
+
+        def never(**kwargs):
+            raise AssertionError("must not start an evaluation")
+
+        monkeypatch.setattr(benchmark, "evaluate_dataset", never)
+        result = CliRunner().invoke(
+            benchmark.app, ["run", "frames", "--name", "../escape"]
+        )
+
+        assert result.exit_code == 1
+        assert "run name" in result.output
+
+
+class TestRunsRecordTheirCorpus:
+    @pytest.mark.asyncio
+    async def test_qa_run_metadata_names_the_database(self, tmp_path: Path) -> None:
+        from evaluations.qa import _prepare_qa_run
+
+        path = tmp_path / "test.lancedb"
+        run = await _prepare_qa_run(
+            _stub_spec(),
+            AppConfig(),
+            limit=None,
+            name=None,
+            db_path=path,
+            judge_model=None,
+            case_ids=None,
+            document_filter=None,
+        )
+        assert run.experiment_metadata["db_path"] == str(path)
+        assert run.experiment_metadata["git_sha"] is not None
+        assert "config_hash" in run.experiment_metadata
+        assert run.experiment_metadata["capability_model"] == AppConfig().qa.model.name
+
+    @pytest.mark.asyncio
+    async def test_retrieval_run_metadata_names_the_database(
+        self, tmp_path: Path
+    ) -> None:
+        from types import SimpleNamespace
+
+        from evaluations.benchmark import run_retrieval_benchmark
+        from evaluations.config import RetrievalSample
+        from evaluations.evaluators import MAPEvaluator
+        from haiku.rag.store.models.chunk import SearchResult
+
+        class FakeRag:
+            async def search(self, **kwargs) -> list[SearchResult]:
+                return [SearchResult(content="x", score=1.0, document_uri="uri-x")]
+
+        spec = _stub_spec(
+            retrieval_loader=lambda: [{"q": "What is X?", "uris": ("uri-x",)}],
+            retrieval_mapper=lambda d: RetrievalSample(
+                question=d["q"], expected_uris=d["uris"]
+            ),
+            retrieval_evaluators=[MAPEvaluator()],
+        )
+        captured: dict = {}
+
+        async def capture_evaluate(self, task, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(cases=[])
+
+        path = tmp_path / "test.lancedb"
+        with (
+            patch("evaluations.retrieval.HaikuRAG") as mock_haiku,
+            patch("evaluations.retrieval.EvalDataset.evaluate", capture_evaluate),
+        ):
+            mock_haiku.return_value.__aenter__.return_value = FakeRag()
+            await run_retrieval_benchmark(spec, AppConfig(), db_path=path)
+
+        assert captured["metadata"]["db_path"] == str(path)
+        assert captured["metadata"]["git_sha"] is not None
+
+
 class TestRunQaBenchmarkJudgeModel:
     def _make_spec(self) -> DatasetSpec:
         return DatasetSpec(
@@ -766,36 +928,12 @@ class TestExperimentMetadataCapability:
             test_cases=1,
             config=AppConfig(),
             capability_config=capability,
-            capability_model_source="qa.model",
         )
         assert result["capability_provider"] == "ollama"
         assert result["capability_model"] == "gpt-oss-large"
         assert result["capability_temperature"] == 0.2
         assert result["capability_thinking"] == "low"
-        assert result["capability_model_source"] == "qa.model"
         assert "capability_enable_thinking" not in result
-
-
-class TestResolveCapabilityConfig:
-    """The capability model and the record of where it came from."""
-
-    def test_falls_back_to_qa_model(self) -> None:
-        from evaluations.qa import _resolve_capability_config
-
-        config = AppConfig()
-        assert _resolve_capability_config(config, None) == (
-            config.qa.model,
-            "qa.model",
-        )
-
-    def test_override_wins(self) -> None:
-        from evaluations.qa import _resolve_capability_config
-
-        override = ModelConfig(provider="openai", name="gpt-5")
-        assert _resolve_capability_config(AppConfig(), override) == (
-            override,
-            "--capability-model",
-        )
 
 
 class TestEvaluateDatasetTarget:
@@ -810,42 +948,26 @@ class TestEvaluateDatasetTarget:
         )
 
     @pytest.mark.asyncio
-    async def test_threads_the_capability_model(self) -> None:
-        capability = ModelConfig(provider="ollama", name="gpt-oss")
+    async def test_the_qa_run_gets_the_configured_model(self) -> None:
+        config = AppConfig()
+        config.qa.model = ModelConfig(provider="ollama", name="gpt-oss")
         with patch(
             "evaluations.benchmark.run_qa_benchmark", new_callable=AsyncMock
         ) as mock_qa:
             await evaluate_dataset(
                 spec=self._spec(),
-                config=AppConfig(),
+                config=config,
                 skip_db=True,
                 skip_retrieval=True,
                 skip_qa=False,
                 limit=None,
                 name=None,
                 db_path=None,
-                capability_model=capability,
             )
 
         mock_qa.assert_called_once()
-        assert mock_qa.call_args[1]["capability_model"] is capability
-
-    @pytest.mark.asyncio
-    async def test_the_capability_model_defaults_to_none(self) -> None:
-        with patch(
-            "evaluations.benchmark.run_qa_benchmark", new_callable=AsyncMock
-        ) as mock_qa:
-            await evaluate_dataset(
-                spec=self._spec(),
-                config=AppConfig(),
-                skip_db=True,
-                skip_retrieval=True,
-                skip_qa=False,
-                limit=None,
-                name=None,
-                db_path=None,
-            )
-        assert mock_qa.call_args[1]["capability_model"] is None
+        assert "capability_model" not in mock_qa.call_args[1]
+        assert mock_qa.call_args[0][1].qa.model.name == "gpt-oss"
 
 
 class TestRunQaBenchmarkCapability:

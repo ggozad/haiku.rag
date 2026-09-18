@@ -84,6 +84,7 @@ async def test_gather_database_info_reports_tables_and_settings(temp_db_path):
     assert tables["document_items"].exists
     assert tables["documents"].num_versions >= 1
     assert tables["chunks"].num_versions >= 1
+    assert tables["documents"].latest_version_at is not None
 
     # Only one chunk: no vector index.
     assert info.vector_index.exists is False
@@ -141,3 +142,29 @@ async def test_gather_database_info_connects_to_the_location_it_is_given():
     assert mock_connect.call_args.args[0] == "s3://bucket/papers.lancedb"
     assert info.path == "s3://bucket/papers.lancedb"
     assert info.exists is False
+
+
+@pytest.mark.asyncio
+async def test_the_latest_version_time_moves_with_a_write(temp_db_path):
+    """Row counts read two states of a corpus as one; the write time does not."""
+    await _seed(temp_db_path, version="1.2.3")
+    before = {
+        t.name: t
+        for t in (await gather_database_info(temp_db_path, AppConfig())).tables
+    }
+
+    import lancedb
+
+    db = await lancedb.connect_async(temp_db_path)
+    docs_tbl = await db.open_table("documents")
+    await docs_tbl.update(where="id = 'doc-1'", updates={"content": "rewritten"})
+
+    after = {
+        t.name: t
+        for t in (await gather_database_info(temp_db_path, AppConfig())).tables
+    }
+
+    assert after["documents"].num_rows == before["documents"].num_rows
+    assert after["documents"].latest_version_at is not None
+    assert before["documents"].latest_version_at is not None
+    assert after["documents"].latest_version_at > before["documents"].latest_version_at

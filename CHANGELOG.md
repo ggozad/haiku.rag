@@ -5,6 +5,79 @@
 ### Added
 
 - `sources` on the `list_documents` MCP tool and `HaikuRAG.list_documents`.
+- `evaluations run --no-telemetry`: Logfire stays unconfigured, so the run
+  sends nothing whatever the environment holds. Without the flag a run refuses
+  to start when `LOGFIRE_TOKEN` is not set.
+- `evaluations run` records `git_sha`, `git_dirty`, `config_hash`, `db_path`,
+  `db_documents`, `db_chunks`, `db_embedder_provider`, `db_embedder_model`,
+  `db_embedder_dim`, `db_version` and `db_written_at` in experiment metadata,
+  and prints the code revision and config hash at start.
+- `TableInfo.latest_version_at`: the newest table version time, from the
+  version list `haiku-rag info` already reads.
+- Arm files: one YAML file per evaluation arm naming the dataset, checkout,
+  pinned sha, config, database, case selection, flags, comparator, named
+  differences, decision rule and hypothesis (`evaluations/arm.py`). An arm with
+  a comparator carries both a `decision_rule` and a `hypothesis`. `comparator`
+  is a registered arm name, or a file when it ends in `.yaml`: a row records no
+  flags and only a config hash, so what it cannot compare is named in the
+  check's line. `flags` may not carry
+  `--config`, `--name`, `--db`, `--limit` or `--filter-ids`, which the arm's
+  own fields pin.
+- `evaluations preflight ARM`: checks the arm file, dataset, checkout sha and
+  cleanliness, `.env` token unless the arm passes `--no-telemetry`, config
+  validity, the presence and stored embedder of every local database the run
+  reads, filter files, and the differences against the comparator. An arm over
+  `lancedb.databases` needs `--skip-db` and no `db`. `--no-telemetry` is
+  refused for a live dataset or `--skip-qa`, which write no result file.
+  Exits 1 on any failure.
+- Registry of evaluation arms (`evaluations/registry.py`): one SQLite row per
+  arm at `<data dir>/evaluations/registry.sqlite`. `evaluations preflight ARM
+  --register` writes the launch row when every check passes.
+- `evaluations arms list | show | void | export | import`. Export is JSONL
+  with sorted keys, one arm per line; import upserts by name.
+- `evaluations arms pair A B`: the standard paired table for two registered
+  arms. Per arm: cases, accuracy, floor, `cite_rate_all_cases`, mean
+  `cited_map`, aborts, unjudged. For the pair: discordant counts with the exact
+  McNemar p-value, the `cited_map` sign test and the smallest significant
+  swing. Treated and baseline come from the recorded comparator. Refuses an arm
+  that is not a completed valid run, an unrecorded commit, two datasets, two
+  kinds, a kind other than `qa`, a NULL pairing key, and named differences the
+  rows do not show.
+- `DatasetSpec.pair_key`: the case-metadata key two runs of a dataset pair on
+  (`question_id`, `query_id`, `id`, `task_id`, `conversation_id`), recorded
+  as `pair_key` in experiment metadata.
+- Registry rows carry `differences`, the named differences from the arm file.
+- `evaluations arms complete NAME [--trace ID]`: fills an arm's result fields
+  from its trace, found by run name within the launch window. An arm with no
+  trace is void with reason `no telemetry`.
+- `evaluations queue ARM...`: runs arm files in order. Each arm is
+  preflighted, smoked on `smoke_ids` and dropped unless the smoke exits
+  cleanly with cases, registered, run from its worktree with output in
+  `<data dir>/evaluations/logs/<name>.log`, and completed from its trace. A missing worktree is provisioned from `--repo` at
+  the pinned sha with `--env` copied. A failure ends that arm only. A run that
+  finishes no case for `--stall-minutes` (10) is called out in the queue log
+  and left running. `--detach NAME` runs the queue in a tmux session.
+- `evaluations run` writes per-case results to
+  `<data dir>/evaluations/results/<name>.<trace>.jsonl` (`--results DIR` or
+  `HAIKU_RAG_EVAL_RESULTS`): case name, pairing key, verdict, citation flag,
+  `cited_map`, abort flag, trace id, answer, judge reason, the per-case
+  attributes and task duration. `evaluations arms pair`, `arms complete` and
+  the queue's smoke check and completion read that file when present and
+  Logfire otherwise. Live conversation runs write none. `--name` must be a
+  file name: letters, digits, dot, dash and underscore. Rows are appended as
+  each case finishes, to `<name>.partial.jsonl` until the run ends, so a run
+  that is killed keeps the cases it completed.
+- Database population prints cumulative throughput every 50 ingested documents
+  and at the end: documents seen and ingested, elapsed time, documents per
+  minute over the whole run, ETA. Documents skipped on resume count as seen,
+  not ingested.
+
+### Removed
+
+- `evaluations run --capability-model` and the `capability_model_source`
+  experiment metadata key. Name the capability model in `qa.model`, which
+  carries its `base_url`: the flag built a model with none, so an `openai:`
+  override reached api.openai.com instead of the configured endpoint.
 
 ## [0.87.0] - 2026-09-17
 
