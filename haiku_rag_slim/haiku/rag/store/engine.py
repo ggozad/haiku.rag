@@ -31,6 +31,7 @@ from haiku.rag.store.schema import (
     has_payload_columns,
     query_to_pydantic,
 )
+from haiku.rag.telemetry import logfire
 
 logger = logging.getLogger(__name__)
 
@@ -790,25 +791,33 @@ class Store:
         In-process coordination only: a writer in another process can commit
         between the version snapshot and the mutation.
 
+        Emits a `store.write_txn` span covering only the post-lock work, with
+        the time spent queued behind another writer on `lock_wait_ms`. A
+        caller's own span therefore measures lock wait plus write, while this
+        one isolates the write itself.
+
         Raises:
             ReadOnlyError: If the store is in read-only mode.
         """
         self._assert_writable()
+        waiting_since = monotonic()
         async with self._write_lock:
-            versions = await self.current_table_versions()
-            try:
-                yield
-            except BaseException as exc:
-                failures, cancelled = await self._rollback_to_snapshot(versions)
-                if failures:
-                    raise RuntimeError(
-                        f"Write failed ({exc!r}) and rollback failed on: "
-                        f"{', '.join(name for name, _ in failures)}. Tables may "
-                        "be left inconsistent."
-                    ) from exc
-                if cancelled and not isinstance(exc, asyncio.CancelledError):
-                    raise asyncio.CancelledError()
-                raise
+            lock_wait_ms = (monotonic() - waiting_since) * 1000
+            with logfire.span("store.write_txn", lock_wait_ms=lock_wait_ms):
+                versions = await self.current_table_versions()
+                try:
+                    yield
+                except BaseException as exc:
+                    failures, cancelled = await self._rollback_to_snapshot(versions)
+                    if failures:
+                        raise RuntimeError(
+                            f"Write failed ({exc!r}) and rollback failed on: "
+                            f"{', '.join(name for name, _ in failures)}. Tables "
+                            "may be left inconsistent."
+                        ) from exc
+                    if cancelled and not isinstance(exc, asyncio.CancelledError):
+                        raise asyncio.CancelledError()
+                    raise
 
     async def create_tag(self, name: str) -> None:
         """Tag the current version of every table with the given name.
