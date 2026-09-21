@@ -2,8 +2,6 @@
 
 We evaluate `haiku.rag` on a small set of datasets that exercise different parts of the pipeline. OpenRAG Bench (ORB), T²-RAGBench, HotpotQA, FRAMES, and MTRAG are the datasets we currently track. Retrieval, QA accuracy, and citation retrieval are scored end-to-end through the RAG capability.
 
-Rows with a `Target` column were measured before the analysis capability merged into the RAG capability in v0.87.0. The label names the path that ran. `evaluations run` no longer takes a `--target` flag, and every run on this release goes through the one capability.
-
 ## Current results
 
 Numbers below were measured on a recent `haiku.rag` version. Most rows were judged by `Qwen3.6-35B-A3B-NVFP4`; the `Qwen3.8-27B` rows were judged by the currently pinned `qwen3.8`, as their footnote states. Rows are not re-judged when the pinned judge changes, so compare rows judged by the same judge and treat cross-judge differences as unmeasured.
@@ -27,28 +25,24 @@ Two approaches are benchmarked separately:
 |------------------------------------------|------------------------------------------------------|------:|-------:|
 | `Qwen/Qwen3-VL-Embedding-8B`             | none                                                 |  3045 | 0.9774 |
 | `nvidia/llama-nemotron-embed-vl-1b-v2`   | none                                                 |  3045 | 0.9798 |
-| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `nvidia/llama-nemotron-rerank-vl-1b-v2` (multimodal) |  3045 | 0.9913 |
+| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `nvidia/llama-nemotron-rerank-vl-1b-v2` (multimodal) |  3045 | 0.9899 |
 
-*The nemotron row without a reranker is measured on this release. The reranked row uses `reranking.multimodal: true`: picture chunks reach the vision reranker as images alongside their description text, measured on haiku.rag main post-v0.67.3.*
+*The reranked row is measured on this release and is the stack the QA rows below use, so the two are directly comparable. It sets `reranking.multimodal: true`, so picture chunks reach the vision reranker as images alongside their description text. The two rows without a reranker isolate the embedder and were measured earlier, the Qwen3-VL row on v0.52.0.*
 
 ##### QA accuracy + citation retrieval
 
-| Embedding Model                          | Target          | Capability model                       | Cases | QA accuracy | Mean `cited_map` |
-|------------------------------------------|-----------------|-----------------------------------|------:|-------------|------------------|
-| `Qwen/Qwen3-VL-Embedding-8B`             | `rag-capability`     | `vllm:Gemma-4-26B-A4B-NVFP4`      |  1409 | 0.89        | —                |
-| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `rag-capability`     | `vllm:Gemma-4-26B-A4B-NVFP4`      |  3039 | 0.9263      | 0.9761           |
-| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `analysis-capability`| `vllm:Gemma-4-26B-A4B-NVFP4`      |  3040 | 0.9362      | 0.9343           |
-| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `analysis-capability`| `vllm:Qwen3.6-35B-A3B-NVFP4`      |  3045 | 0.95        | 0.93             |
-| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `rag-capability`     | `vllm:Muse-Glimmer-30B-NVFP4`     |  3045 | 0.9494      | 0.9771           |
-| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `analysis-capability`| `vllm:Muse-Glimmer-30B-NVFP4`     |  3017 | 0.9718      | 0.9837           |
-| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `rag-capability`     | `vllm:Qwen3.8-27B-NVFP4`          |  3045 | 0.9514      | 0.9817           |
-| `nvidia/llama-nemotron-embed-vl-1b-v2`   | `analysis-capability`| `vllm:Qwen3.8-27B-NVFP4`          |  3042 | 0.9629      | 0.9835           |
+| Capability model | Cases | QA accuracy | Mean `cited_map` |
+|------------------|------:|-------------|------------------|
+| `vllm:Muse-Glimmer-30B-NVFP4-W4A4` | 3045 | 0.9620 | 0.9847 |
+| `vllm:Qwen3.8-27B-NVFP4` | 3045 | 0.9688 | 0.9907 |
 
-*The `Muse-Glimmer-30B` rows run at `chat_template_kwargs.reasoning_strength: high`, no reranker, same judge.*
+*Both rows measured on this release over the same corpus, embedder and reranker as the retrieval row above, judged by `Qwen3.8-27B` at `reasoning_effort: low`. Accuracy is over judged cases, 3028 and 3043 of 3045; counting the unjudged as failures the floors are 0.9566 and 0.9682. Those cases are lost to the search tool exhausting its retry limit. Cite rate is 99.64% and 99.93%, at 1.05 and 1.12 citations per case. Mean 26.15s and 13.95s per case.*
 
-*The `Qwen3.8-27B` rows run at `chat_template_kwargs.reasoning_effort: low`, no reranker, and are **judged by `Qwen3.8-27B` itself** — the pinned judge, and the same model that produced the answers. A 120-case cross-check by an independent judge agreed on 95% and was never stricter, but the incumbent `Qwen3.6` judge is no longer hosted, so the older rows cannot be re-judged for a like-for-like comparison. `rag-capability` cites on 99.34% of cases with 1.09 citations each; `analysis-capability` on 99.70% with 1.12, at 0.13 code executions per case. Case counts exclude 0 and 3 provider errors respectively.*
+*The two are paired on the 3023 cases judged in both. Accuracy is not separable: `Qwen3.8` wins 53 and `Muse-Glimmer` 36, McNemar exact two-sided p = 0.09. Citation retrieval is: `cited_map` improves on 44 cases and worsens on 19, sign test p = 0.0025. So `Qwen3.8` matches on answers, grounds them better, and does it in 53% of the wall time. The aggregate accuracy gap of 0.68pp overstates the paired one because the two runs scored slightly different case sets.*
 
-*Both nemotron `Gemma-4` rows are measured on this release, no reranker, judged by `vllm:Qwen3.6-35B-A3B-NVFP4` with thinking on, and exclude the cases that errored (6 of 3045 for `rag-capability`, 5 for `analysis-capability`). The `rag-capability` row cites at 99.64% with a mean of 1.08 citations per case, at a median 4.7s per case against 5.0s for `analysis-capability`. Citation coverage is what moved on this release: 4.9% of analysis cases register no citation, against 26.3% before, at unchanged searches and code executions per case. The remaining rows are from haiku.rag v0.52.0, where Qwen3-VL covered 1409 / 3045 cases.*
+*The `Qwen3.8` row is self-judged, since the same model answers and judges. A 120-case cross-check by an independent judge agreed on 95% and was never stricter. `Muse-Glimmer` runs at `chat_template_kwargs.reasoning_strength: high` and `Qwen3.8` at `reasoning_effort: low`, which is the per-model spelling of the same control rather than a different setting.*
+
+*Rows measured before the analysis capability merged into the RAG capability in v0.87.0 have been removed rather than carried forward: they ran a different capability architecture, most without a reranker, and several on an embedder these rows do not use.*
 
 #### Text embedder + VLM picture descriptions
 
@@ -76,9 +70,9 @@ Two approaches are benchmarked separately:
 
 ##### QA accuracy + citation retrieval
 
-| Embedding Model      | Reranker               | Target           | Capability model                  | Cases | QA accuracy | Mean `cited_map` |
-|----------------------|------------------------|------------------|------------------------------|------:|-------------|------------------|
-| `qwen3-embedding:4b` | `mxbai-rerank-base-v2` | `analysis-capability` | `vllm:Qwen3.6-35B-A3B-NVFP4` |  7939 | 0.77        | 0.78             |
+| Embedding Model      | Reranker               | Capability model             | Cases | QA accuracy | Mean `cited_map` |
+|----------------------|------------------------|------------------------------|------:|-------------|------------------|
+| `qwen3-embedding:4b` | `mxbai-rerank-base-v2` | `vllm:Qwen3.6-35B-A3B-NVFP4` |  7939 | 0.77        | 0.78             |
 
 *Measured on haiku.rag v0.55.0, deterministic Number-Match scoring (ε=0.01), 2560-dim `qwen3-embedding:4b` (vLLM) with `mxbai-rerank-base-v2`. 341 / 8281 cases excluded as nulls (analysis spirals from the request limit and in-generation loops). Accuracy and `cited_map` are over the 7939 scored cases. Mean 16.0s/case.*
 
@@ -97,7 +91,7 @@ The reranker's contribution is larger here than on the single-doc datasets: hybr
 
 ##### QA accuracy + citation retrieval
 
-| Skill model                  | Reranker            | QA accuracy | Mean `cited_map` |
+| Capability model             | Reranker            | QA accuracy | Mean `cited_map` |
 |------------------------------|---------------------|-------------|------------------|
 | `vllm:Gemma-4-26B-A4B-NVFP4` | `Qwen3-Reranker-4B` | 0.85        | 0.80             |
 | `vllm:Gemma-4-26B-A4B-NVFP4` | none                | 0.83        | 0.75             |
@@ -106,24 +100,30 @@ The reranker's contribution is larger here than on the single-doc datasets: hybr
 
 ### FRAMES
 
-[FRAMES](https://huggingface.co/datasets/google/frames-benchmark) is Google's multi-hop QA benchmark: 824 questions, each grounded in 2–23 Wikipedia articles, exercising temporal, numerical, and tabular reasoning across documents. We evaluate 822 questions (2 excluded: a linked article was deleted from Wikipedia) over a fixed corpus of the 2,521 linked articles fetched at current revision. There is no official FRAMES evaluation setup; our protocol — fixed corpus, agentic retrieval, judged accuracy — corresponds to the paper's *multi-step retrieval* setting, where [the paper](https://arxiv.org/abs/2409.12941) reports 0.66 with Gemini-Pro-1.5 (0.729 in its oracle setting, with gold articles provided). Answers were authored against ~2024 revisions and may have drifted with article content.
+[FRAMES](https://huggingface.co/datasets/google/frames-benchmark) is Google's multi-hop QA benchmark: 824 questions, each grounded in 2–23 Wikipedia articles, exercising temporal, numerical, and tabular reasoning across documents. We evaluate 822 questions (2 excluded: a linked article was deleted from Wikipedia) over a fixed corpus of the 2,500 linked articles fetched at current revision. There is no official FRAMES evaluation setup; our protocol — fixed corpus, agentic retrieval, judged accuracy — corresponds to the paper's *multi-step retrieval* setting, where [the paper](https://arxiv.org/abs/2409.12941) reports 0.66 with Gemini-Pro-1.5 (0.729 in its oracle setting, with gold articles provided). Answers were authored against ~2024 revisions and may have drifted with article content.
 
 ##### Retrieval (MAP)
 
-| Embedding Model      | Reranker            | Cases | MAP    |
-|----------------------|---------------------|------:|-------:|
-| `qwen3-embedding:4b` | `Qwen3-Reranker-4B` |   822 | 0.5631 |
+| Embedding Model                        | Reranker                                 | Cases | MAP    |
+|----------------------------------------|------------------------------------------|------:|-------:|
+| `nvidia/llama-nemotron-embed-vl-1b-v2` | `nvidia/llama-nemotron-rerank-vl-1b-v2` |   822 | 0.5966 |
 
-*Single-query retrieval is capped by FRAMES' indirection: in the zero-MAP queries the gold article's subject is never named in the question ("the year the Titanic sank" → `1912_Summer_Olympics`). The agentic targets recover these through iterative search, passing 55% of the cases single-shot retrieval scores zero on.*
+*Measured on this release against the same corpus and stack as the QA row below, so the two are directly comparable. MAP is structurally capped well below 1 because gold sets span 2-23 articles while the result window holds a few, so a query that retrieves every gold article it can still scores partial credit. FRAMES' indirection costs less than it used to: single-query retrieval scores zero on 11 of the 822 questions, the cases where the gold article's subject is never named in the question ("the year the Titanic sank" → `1912_Summer_Olympics`), and the agentic run answers 6 of those 11 correctly through iterative search. At that count the recovery rate is a count, not a rate worth quoting.*
 
 ##### QA accuracy + citation retrieval
 
-| Capability model | Target | QA accuracy | Mean `cited_map` |
-|------------------|--------|-------------|------------------|
-| `vllm:Muse-Glimmer-30B-NVFP4` | `analysis-capability` | 0.7506 | 0.5852 |
-| `vllm:Qwen3.8-27B-NVFP4` | `analysis-capability` | 0.8095 | 0.6847 |
+| Capability model | Cases | QA accuracy | Mean `cited_map` |
+|------------------|------:|-------------|------------------|
+| `vllm:Muse-Glimmer-30B-NVFP4-W4A4` | 822 | 0.8938 | 0.7342 |
+| `vllm:Qwen3.8-27B-NVFP4` | 822 | 0.9077 | 0.7312 |
 
-*Both rows use `qwen3-embedding:4b` (vLLM, dim 2560), `Qwen3-Reranker-4B`, and are judged by `Qwen3.8-27B`. QA accuracy is over judged cases; counting unanswered cases as failures, the floors are 0.7397 (`Muse-Glimmer`, 1.5% lost to provider errors) and 0.7701 (`Qwen3.8`, 4.87% lost to answers truncated at `max_tokens: 16384`). The `Qwen3.8` row is self-judged — a 100-case paired cross-judge (Glimmer as judge, difference-in-differences) measured the self-preference at +1.0pp with 99% judge agreement. Cite rates are 90.1% (`Muse-Glimmer`) and 99.3% (`Qwen3.8`); `cited_map` is structurally capped below 1 on FRAMES because gold sets span 2–23 articles while answering typically uses a subset. `Qwen3.8` reaches its score on substantially less tool traffic than `Muse-Glimmer` (4.0 searches and 3.9 code executions per case vs 7.0 and 9.5, measured identically from tool spans).*
+*Both rows measured on this release with `nvidia/llama-nemotron-embed-vl-1b-v2` (vLLM, dim 2048) and the `nvidia/llama-nemotron-rerank-vl-1b-v2` reranker, judged by `Qwen3.8-27B` at `reasoning_effort: low`. Accuracy is over judged cases, 810 and 802 of 822; counting the unjudged as failures the floors are 0.8808 and 0.8856. Those cases are lost to the search tool exhausting its retry limit. Cite rate is 97.90% and 99.75% of judged cases, at 2.30 and 2.34 citations per case, and `cited_map` is eligible on every judged case. Mean 62.56s and 30.21s per case. `cited_map` is structurally capped below 1 on FRAMES because gold sets span 2-23 articles while answering typically uses a subset.*
+
+*The two are paired on the 791 cases judged in both, and neither metric separates them: `Qwen3.8` wins 32 answers and `Muse-Glimmer` 29, McNemar exact two-sided p = 0.80, while `cited_map` improves on 131 cases and worsens on 156, sign test p = 0.16. The aggregate accuracy gap of 1.39pp is an artefact of the two runs scoring different case sets. What separates them is cost: `Qwen3.8` does the same work in 48% of the wall time. Note that 61 of the 791 pairs are discordant against 36 for two runs of the same model, so changing the model changes which cases pass by more than run-to-run variation does, in both directions equally.*
+
+*The `Qwen3.8` row is self-judged, since the same model answers and judges.*
+
+*These rows are not comparable with the pre-v0.87.0 FRAMES numbers they replace, and the difference is not attributable to the capability merge. Four things changed together: the corpus was rebuilt after a converter fix (content before a document's first heading was filed as furniture and dropped, so most articles lost their lead section and infobox), the embedder and reranker both moved to the nemotron vision-language pair, and the two capabilities became one.*
 
 ### MTRAG (ClapNQ)
 
