@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added
+
+- `document.items` span.
+- `document.embed` reports `chunks_embedded`, `images` and `batch_size`, and is
+  emitted when no chunk needs embedding.
+- `document.store` reports `chunks`, `items` and `lock_wait_ms`; the batch path
+  reports `op=create_batch` and `documents`.
+
+### Changed
+
+- `document.store` covers the LanceDB write only; dashboards and alerts on
+  `document.store` duration need re-baselining.
+
+### Fixed
+
+- `document.embed` carries `scope.name = haiku.rag`.
+
 ## [0.88.1] - 2026-09-23
 
 ### Added
