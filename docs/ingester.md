@@ -232,8 +232,9 @@ across calls. When a document's source revision is unchanged, the
 ingester keeps the existing cheap HEAD short-circuit and preserves the
 stored provider metadata; the provider runs again when the document is
 fetched for a new or changed revision. The source-derived keys (`md5`,
-`source_revision`, `content_type`) are stripped from provider output, so
-a provider cannot override them. A `metadata_provider` name with no
+`source_revision`, `content_type`, `source_id`) are stripped from
+provider output, so a provider cannot override them. A
+`metadata_provider` name with no
 installed entry point fails at startup. A provider exception is
 classified like any other ingestion error (network and timeout errors
 retry; others go to the DLQ).
@@ -598,6 +599,159 @@ Orphan deletion compares each source against `sync_state` in the queue DB,
 so persist `ingester.db` between runs for deletions to be detected. It exits
 non-zero if any job dead-letters or a source's discovery sweep does not
 complete.
+
+### Which source a document came from
+
+Every document the ingester fetches carries `metadata["source_id"]`, the
+id of the source that ingested it. Documents added by hand with
+`haiku-rag add-src` carry no such key, and neither do documents derived
+from a fetched one rather than fetched themselves — PDF attachments are
+attributed through the parent they hang off, which deleting the parent
+removes with it.
+
+`source_id` is set by ingestion, and otherwise only by the named
+operation `HaikuRAG.set_document_source`, which startup reconciliation
+uses to attribute a document the queue already records. Passing one as
+document metadata does nothing, and updating a document's metadata
+leaves it in place, so re-adding an ingested document by hand cannot
+detach it from its source.
+
+A source id is an identity. An `fs` source without an `id` derives one
+from its root (`fs:{resolved_root}`), so moving a watched directory, or
+renaming a source that sets `id`, detaches every document already
+ingested under the old id. Set `id` explicitly on a source whose
+location may move:
+
+```yaml
+ingester:
+  sources:
+    - type: fs
+      id: handbook
+      root: /srv/handbook
+```
+
+Where two sources cover the same URI (nested `fs` roots, nested S3
+prefixes, one URL in two `http` source lists), the most recent ingestion
+takes ownership and the change is logged at WARNING. Overlapping sources
+are a configuration error; the warning names both ids.
+
+### Reconciliation at startup
+
+Ingester state lives in two databases: the documents in LanceDB and the
+queue's `sync_state`, which records what each source has ingested and is
+what delete detection diffs the source against. Either can be restored,
+rebuilt or lost without the other — a queue file on container-local
+storage, a restore of one backup, a rebuilt index — and the two then
+disagree.
+
+Every `serve` and `run-batch` reconciles them before the first sweep. Per
+source:
+
+- A document the source owns with no `sync_state` row gets one back, so
+  the next sweep decides whether it is still at the source. Without this,
+  a document whose file is gone stays in the index forever.
+- A stored revision for a URI the index no longer holds is cleared, so
+  the next sweep re-ingests instead of reporting the file unchanged.
+- A document with no `source_id` that this source successfully ingested
+  is attributed. This is how a database written before attribution
+  existed acquires it, without a fetch or a re-conversion.
+
+The last two act only on a URI the source has actually ingested. A
+permanently failed job also stores a revision, to stop discovery
+re-enqueuing an unchanged file forever, and reconciliation leaves that
+marker alone: clearing it would retry the poison document on every
+restart, and the document sitting at that URI came from somewhere else.
+
+A document that two sources both ingested is left unattributed, with a
+warning naming them. Their order in the configuration is not evidence of
+ownership; separate the sources instead.
+
+Drift is logged per source. Documents belonging to a `source_id` that is
+no longer configured are counted in a warning and otherwise left alone:
+no configured source sweeps them, so nothing can say whether they are
+still current.
+
+Reconciliation lists `document_meta` once per process start and writes
+each repair in one transaction: one for the rows it restores, one for
+the revisions it clears, and one `document_meta` version for the
+documents it attributes. It reads no content and no docling blobs, but
+on a large index the listing is not free.
+
+One gap: `run-batch --dry-run` opens no document store, so a manifest
+generated while the two databases disagreed omits the orphan deletes, and
+`run-batch --manifest` replays the frozen changeset without sweeping.
+Replay reconciles `sync_state`, so an ordinary sweep afterwards emits
+what the manifest missed, but a workflow built only on dry-run and replay
+never runs one.
+
+### Documents with no source attribution
+
+Reconciliation warns at startup when the index holds documents that
+remain without source attribution:
+
+```
+14 document(s) remain without source attribution. Review whether they are
+intentionally unmanaged or have ambiguous or lost ownership.
+```
+
+Commonly they are one of two kinds. One was added by hand with
+`haiku-rag add-src`, which is fine and permanent. The other was ingested
+before `source_id` existed, by a source whose queue rows were lost before
+the upgrade, so neither database records that the source wrote it. While
+its file is still at the source the next sweep picks it up and attributes
+it. Once the file is gone, nothing can identify it and it stays in the
+index.
+
+A third kind is deliberate: a URI that two sources both ingested is left
+unattributed, and named in its own warning. Separate the sources rather
+than deleting the document.
+
+To clear them:
+
+**1. Run one batch and check it succeeds.**
+
+```bash
+haiku-ingester --config /etc/haiku/haiku.rag.yaml run-batch
+echo $?    # must be 0
+```
+
+This attributes what the ingester can still account for: reconciliation
+writes attribution directly wherever the queue records an ingestion, and
+the sweep attributes the rest as it picks them up. An unchanged document
+costs no body fetch, conversion, chunking or embedding; one whose bytes
+have changed is re-ingested normally. A non-zero exit means a source
+failed to sweep or a job died, so some live documents were not
+attributed; fix that and re-run before going on, or step 2 will offer
+them for deletion.
+
+**2. List what is left.**
+
+```bash
+haiku-rag --config /etc/haiku/haiku.rag.yaml list \
+  -f "metadata NOT LIKE '%\"source_id\"%'"
+```
+
+Narrow it on a database that also holds hand-added documents:
+
+```bash
+  -f "metadata NOT LIKE '%\"source_id\"%' AND uri LIKE 'file:///srv/handbook/%'"
+```
+
+This is a practical filter, not an exact one. `metadata` is stored as
+JSON and matched as text, so a document whose own metadata contains the
+string `source_id` drops out of the list. The error runs toward omission:
+an orphan goes unlisted rather than a live document being offered for
+deletion.
+
+**3. Delete what you confirm.**
+
+```bash
+haiku-rag --config /etc/haiku/haiku.rag.yaml delete <id>
+```
+
+Read the URIs before deleting. Step 2 lists candidates, not a verdict:
+a document you added by hand whose file has since moved looks exactly
+like one the ingester lost track of.
 
 ### The queue
 

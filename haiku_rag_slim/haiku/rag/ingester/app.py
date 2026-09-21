@@ -15,6 +15,7 @@ from haiku.rag.ingester.pollers.manager import PollerManager
 from haiku.rag.ingester.queue.migrations import open_queue
 from haiku.rag.ingester.queue.models import Job, JobStatus
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
+from haiku.rag.ingester.reconcile import reconcile
 from haiku.rag.ingester.workers.pool import WorkerPool
 from haiku.rag.ingester.workers.retry import RetryPolicy
 
@@ -159,6 +160,14 @@ class IngesterApp:
                     # HTTP / WebDAV / S3 fetches reuse credentials.
                     sources=self._pollers.sources,
                     metadata_providers=metadata_providers,
+                )
+                # Between process lifetimes either database can be restored,
+                # rebuilt or lost on its own, so the two are brought back in
+                # step before any sweep reads sync_state.
+                await reconcile(
+                    client,
+                    self._sync,
+                    [source.source_id for source in self._pollers.sources],
                 )
                 yield
         finally:

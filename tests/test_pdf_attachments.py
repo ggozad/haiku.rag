@@ -35,6 +35,7 @@ async def fake_ingest_fetch_result(
     user_metadata,
     stored_uri,
     existing_doc,
+    source_id=None,
     depth=0,
     filename=None,
 ):
@@ -50,6 +51,8 @@ async def fake_ingest_fetch_result(
     }
     if result.revision is not None:
         final_metadata["source_revision"] = result.revision
+    if source_id is not None:
+        final_metadata["source_id"] = source_id
 
     if existing_doc:
         existing_doc.content = ""
@@ -393,6 +396,33 @@ async def test_create_document_from_source_extracts_attachments(
         children = await client.list_documents(filter=parent_uri_filter(parent.uri))
         assert len(children) == 2
         assert {c.metadata["parent_uri"] for c in children} == {parent.uri}
+
+
+async def test_attachment_children_carry_no_source_id(
+    tmp_path, temp_db_path, monkeypatch
+):
+    """Only the fetched document is attributed; derived children are not."""
+    from haiku.rag.sources.fs import FSSource
+
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(build_pdf([("notes.txt", b"plain text")]))
+    source = FSSource(root=tmp_path, source_id="fs:attachments")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent = await client.create_document_from_source(
+            pdf_path, sources=[source], source_id=source.source_id
+        )
+
+    async with HaikuRAG(temp_db_path) as client:
+        assert isinstance(parent, Document)
+        assert parent.metadata["source_id"] == source.source_id
+        children = await client.list_documents(filter=parent_uri_filter(parent.uri))
+        assert len(children) == 1
+        assert "source_id" not in children[0].metadata
 
 
 async def test_create_document_from_source_reingest_after_attachment_edit(

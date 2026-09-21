@@ -600,6 +600,44 @@ class HaikuRAG:
             metadata_provider=metadata_provider,
         )
 
+    async def _ingest_observed(
+        self,
+        source: str | Path,
+        *,
+        sources: "list[Source] | None" = None,
+        source_id: str | None = None,
+        metadata_provider: "MetadataProvider | None" = None,
+        observed_revision: str | None = None,
+    ) -> Document | list[Document]:
+        """The ingester's entry: `observed_revision` is what discovery read
+        when it enqueued the job, and stands in for the freshness probe.
+
+        Not on the public method: a caller passing the stored revision would
+        suppress reading content that has changed.
+        """
+        from haiku.rag.client.documents import create_document_from_source
+
+        session = self._single_session("create_document_from_source")
+
+        return await create_document_from_source(
+            session,
+            source,
+            sources=sources,
+            source_id=source_id,
+            metadata_provider=metadata_provider,
+            observed_revision=observed_revision,
+        )
+
+    async def set_document_source(
+        self, document_ids: list[str], source_id: str
+    ) -> list[Document]:
+        """Attribute documents to a source, the one write that may set it."""
+        from haiku.rag.client.documents import set_document_source
+
+        session = self._single_session("set_document_source")
+
+        return await set_document_source(session, document_ids, source_id)
+
     async def update_document(
         self,
         document_id: str,

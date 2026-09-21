@@ -5,9 +5,26 @@
 ### Added
 
 - `sources` on the `list_documents` MCP tool and `HaikuRAG.list_documents`.
+- `document.metadata["source_id"]` records the configured source that ingested a
+  document. Reserved, so a metadata provider cannot set it. Ad-hoc ingestion
+  writes no key and preserves an existing one; a second source ingesting the same
+  URI takes ownership and logs at WARNING.
+- `haiku-ingester serve` and `run-batch` reconcile `sync_state` against the
+  document store at startup: a document with no row gets one, a revision for a
+  URI the store lost is cleared, and a document with no `source_id` that a
+  source ingested is attributed. Documents of an unconfigured `source_id`, and
+  documents two sources both ingested, are reported and left alone.
+- Reconciliation warns when documents remain without source attribution,
+  counted after the attribution it just wrote.
+- `HaikuRAG.set_document_source(document_ids, source_id)`,
+  `DocumentRepository.update_meta_all`, `SyncStateRepo.invalidate(source_id,
+  uris)` and `SyncStateRepo.list_ingested_uris`.
 
 ### Changed
 
+- An UPSERT carrying an observed revision no longer re-reads it from the source:
+  the ingester passes what discovery saw at enqueue time. Manifest replay still
+  revalidates its frozen revision before ingesting.
 - `haiku.rag.client` exports `HaikuRAG`, `RebuildMode`, `DatabaseScope`,
   `DocumentImport` and `all_found`, each imported on first use; `HaikuRAG` is
   defined in `haiku.rag.client.client`. Import any other name from the module
@@ -17,6 +34,9 @@
 
 - Importing a source, a converter or the ingester no longer loads lancedb,
   pyarrow and pydantic_ai through `haiku.rag.client`.
+- Losing the ingester queue database no longer strands documents in the index:
+  files removed from a source while the queue was gone are deleted on the next
+  sweep instead of accumulating (#643).
 
 ## [0.87.0] - 2026-09-17
 

@@ -159,3 +159,33 @@ async def test_get_by_uri_with_orphan_meta_returns_none(temp_db_path):
             [DocumentMetaRecord(id="ghost", uri="u-ghost", metadata="{}")]
         )
         assert await repo.get_by_uri("u-ghost") is None
+
+
+@pytest.mark.asyncio
+async def test_update_meta_all_writes_one_version(temp_db_path):
+    async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
+        repo = DocumentRepository(store)
+        docs = [
+            await repo.create(Document(content=f"c{n}", uri=f"mem://{n}"))
+            for n in range(3)
+        ]
+        before = await store.document_meta_table.version()
+
+        for doc in docs:
+            doc.metadata = {"tag": "batch"}
+        await repo.update_meta_all(docs)
+
+        assert await store.document_meta_table.version() - before == 1
+        assert all(d.metadata == {"tag": "batch"} for d in await repo.list_all())
+
+
+@pytest.mark.asyncio
+async def test_update_meta_all_writes_nothing_for_no_documents(temp_db_path):
+    async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
+        repo = DocumentRepository(store)
+        await repo.create(Document(content="c", uri="mem://a"))
+        before = await store.document_meta_table.version()
+
+        assert await repo.update_meta_all([]) == []
+
+        assert await store.document_meta_table.version() == before

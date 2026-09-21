@@ -45,7 +45,7 @@ def _mock_client(docs_root) -> AsyncMock:
             metadata={"content_type": "text/markdown", "md5": f"md5-{counter['n']}"},
         )
 
-    client.create_document_from_source.side_effect = _fake_create
+    client._ingest_observed.side_effect = _fake_create
     return client
 
 
@@ -96,11 +96,9 @@ async def test_e2e_initial_sweep_lands_succeeded_jobs(tmp_path, jobs, sync):
     assert counts.get("queued", 0) == 0
     assert counts.get("dead", 0) == 0
 
-    # The worker called create_document_from_source exactly twice — once per file.
-    assert client.create_document_from_source.await_count == 2
-    ingested_uris = {
-        call.args[0] for call in client.create_document_from_source.await_args_list
-    }
+    # The worker ingested exactly twice, once per file.
+    assert client._ingest_observed.await_count == 2
+    ingested_uris = {call.args[0] for call in client._ingest_observed.await_args_list}
     assert ingested_uris == {
         (tmp_path / "a.md").as_uri(),
         (tmp_path / "b.md").as_uri(),
@@ -164,7 +162,7 @@ async def test_e2e_handles_url_encoded_special_chars_in_path(tmp_path, jobs, syn
     assert counts.get("dead", 0) == 0  # no PermanentError("File does not exist")
 
     # The URI in the queue is URL-encoded; the worker still finds the file.
-    [call] = client.create_document_from_source.await_args_list
+    [call] = client._ingest_observed.await_args_list
     assert "%5Bchunk_id%5D" in call.args[0]
 
 
@@ -256,7 +254,7 @@ async def test_pre_existing_job_resolves_through_configured_source(
         await pool.stop()
         await manager.stop()
 
-    kwargs = client.create_document_from_source.await_args.kwargs
+    kwargs = client._ingest_observed.await_args.kwargs
     sources = kwargs.get("sources")
     assert sources is not None and len(sources) == 1
     assert isinstance(sources[0], HTTPSource)

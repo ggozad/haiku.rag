@@ -7,6 +7,7 @@ from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from haiku.rag.config import QueueConfig
+from haiku.rag.ingester.queue import repository
 from haiku.rag.ingester.queue.db import SCHEMA_VERSION
 from haiku.rag.ingester.queue.db import jobs as jobs_table
 from haiku.rag.ingester.queue.migrations import (
@@ -1492,3 +1493,57 @@ async def test_retry_names_the_tombstone_that_blocks_it(jobs):
     with pytest.raises(BlockingTombstoneError) as excinfo:
         await jobs.retry(claimed.id)
     assert excinfo.value.blocking_job_id == claimed_second.id
+
+
+@pytest.mark.asyncio
+async def test_sync_state_invalidate_clears_revision_and_hash(sync):
+    """invalidate() drops what upsert() coalesces, keeping the row."""
+    await sync.upsert("s", "u", revision="v1", content_hash="hash-v1", ingested=True)
+
+    await sync.invalidate("s", ["u"])
+
+    row = await sync.get_row("s", "u")
+    assert row is not None
+    assert row.revision is None
+    assert row.content_hash is None
+    assert await sync.get_revision_snapshot("s") == {}
+    assert await sync.list_known_uris("s") == {"u"}
+
+
+@pytest.mark.asyncio
+async def test_sync_state_invalidate_ignores_unknown_row(sync):
+    await sync.invalidate("s", ["missing"])
+    assert await sync.list_known_uris("s") == set()
+
+
+@pytest.mark.asyncio
+async def test_sync_state_invalidate_batches_beyond_the_bind_limit(sync, monkeypatch):
+    """One transaction, bounded statements: a rebuilt database can invalidate
+    more URIs than a dialect allows bind parameters for."""
+    monkeypatch.setattr(repository, "INVALIDATE_BATCH", 2)
+    uris = [f"u{n}" for n in range(5)]
+    for uri in uris:
+        await sync.upsert("s", uri, revision="v1")
+
+    await sync.invalidate("s", uris)
+
+    assert await sync.get_revision_snapshot("s") == {}
+    assert await sync.list_known_uris("s") == set(uris)
+
+
+@pytest.mark.asyncio
+async def test_sync_state_invalidate_accepts_no_uris(sync):
+    await sync.upsert("s", "u", revision="v1")
+    await sync.invalidate("s", [])
+    assert await sync.get_revision_snapshot("s") == {"u": "v1"}
+
+
+@pytest.mark.asyncio
+async def test_sync_state_lists_only_ingested_uris(sync):
+    """A revision is written for a dead job too; last_ingested_at is not."""
+    await sync.upsert("s", "done", revision="v1", ingested=True)
+    await sync.upsert("s", "dead", revision="v1", ingested=False)
+    await sync.upsert("s", "queued")
+
+    assert await sync.list_ingested_uris("s") == {"done"}
+    assert await sync.get_revision_snapshot("s") == {"done": "v1", "dead": "v1"}
