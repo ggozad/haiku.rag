@@ -384,7 +384,7 @@ async def test_reranker_built_once_across_searches(temp_db_path, monkeypatch):
         build_count += 1
         return StubReranker()
 
-    monkeypatch.setattr("haiku.rag.client.get_reranker", fake_get_reranker)
+    monkeypatch.setattr("haiku.rag.client.client.get_reranker", fake_get_reranker)
 
     async def fake_chunk_search(query, limit, search_type, filter, query_vector):
         return [(Chunk(content="x", metadata={}), 0.5)]
