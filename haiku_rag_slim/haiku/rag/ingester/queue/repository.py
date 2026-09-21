@@ -1,7 +1,7 @@
 import asyncio
 import json
 import uuid
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime, timedelta
 
 import sqlalchemy as sa
@@ -19,6 +19,10 @@ from haiku.rag.ingester.queue.models import (
     SyncRow,
     SyncStateRow,
 )
+
+# URIs per UPDATE. SQLite and Postgres both cap bind parameters per statement,
+# and a rebuilt database can invalidate a whole corpus in one call.
+INVALIDATE_BATCH = 500
 
 
 def _utcnow_iso() -> str:
@@ -694,6 +698,42 @@ class SyncStateRepo:
                     now if ingested else None,
                 )
                 await conn.execute(stmt)
+
+    async def list_ingested_uris(self, source_id: str) -> set[str]:
+        """Every URI this source has successfully written a document for.
+
+        Narrower than `list_known_uris` and than the revision snapshot: a
+        revision is also written for a permanently failed job, to suppress
+        re-enqueue, so only `last_ingested_at` distinguishes a document the
+        source produced from one it gave up on.
+        """
+        query = sa.select(sync_state.c.uri).where(
+            sync_state.c.source_id == source_id,
+            sync_state.c.last_ingested_at.is_not(None),
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(query)).all()
+        return {uri for (uri,) in rows}
+
+    async def invalidate(self, source_id: str, uris: Iterable[str]) -> None:
+        """Clear the stored revision and content hash, keeping the rows.
+
+        `upsert` cannot: it coalesces both columns so the watch path can
+        enqueue without claiming a revision the worker has not written yet.
+        """
+        targets = list(uris)
+        if not targets:
+            return
+        async with self._engine.begin() as conn:
+            for start in range(0, len(targets), INVALIDATE_BATCH):
+                await conn.execute(
+                    sa.update(sync_state)
+                    .where(
+                        sync_state.c.source_id == source_id,
+                        sync_state.c.uri.in_(targets[start : start + INVALIDATE_BATCH]),
+                    )
+                    .values(revision=None, content_hash=None)
+                )
 
     async def delete(self, source_id: str, uri: str) -> None:
         stmt = sa.delete(sync_state).where(

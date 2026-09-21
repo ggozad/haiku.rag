@@ -61,31 +61,52 @@ def _config(tmp_path, **worker_kwargs) -> AppConfig:
 def _mock_client() -> AsyncMock:
     """A HaikuRAG mock whose upserts return a fresh Document (with an md5 so
     the worker records sync_state) and whose lookups return a Document with a
-    deterministic id so the DELETE path resolves."""
+    deterministic id so the DELETE path resolves.
+
+    It keeps the documents it was told to write, so `list_documents` answers
+    what the store holds: startup reconciliation reads it, and a double that
+    always answered "nothing" would invalidate every revision.
+    """
     client = AsyncMock(spec=HaikuRAG)
     counter = {"n": 0}
+    stored: dict[str, Document] = {}
 
-    async def _create(uri, *_, **__):
+    async def _create(uri, *_, source_id=None, **__):
         counter["n"] += 1
         # Mirror the real client: persist the FS revision (mtime_ns) so the
         # poller's change-detection skips unchanged files on the next sweep.
         path = Path(unquote(urlparse(uri).path))
-        return Document(
-            id=f"doc-{counter['n']}",
-            content="x",
-            uri=uri,
-            metadata={
-                "content_type": "text/markdown",
-                "md5": f"md5-{counter['n']}",
-                "source_revision": str(path.stat().st_mtime_ns),
-            },
+        metadata = {
+            "content_type": "text/markdown",
+            "md5": f"md5-{counter['n']}",
+            "source_revision": str(path.stat().st_mtime_ns),
+        }
+        if source_id is not None:
+            metadata["source_id"] = source_id
+        document = Document(
+            id=f"doc-{counter['n']}", content="x", uri=uri, metadata=metadata
         )
+        stored[uri] = document
+        return document
 
     async def _get_by_uri(uri):
-        return Document(id=f"doc-for-{uri}", content="x", uri=uri, metadata={})
+        return stored.get(uri) or Document(
+            id=f"doc-for-{uri}", content="x", uri=uri, metadata={}
+        )
+
+    async def _delete(document_id):
+        for uri, document in list(stored.items()):
+            if document.id == document_id:
+                del stored[uri]
+        return True
+
+    async def _list_documents(*_, **__):
+        return list(stored.values())
 
     client.create_document_from_source.side_effect = _create
     client.get_document_by_uri.side_effect = _get_by_uri
+    client.delete_document.side_effect = _delete
+    client.list_documents.side_effect = _list_documents
     return client
 
 

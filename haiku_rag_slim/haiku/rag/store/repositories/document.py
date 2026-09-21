@@ -290,6 +290,26 @@ class DocumentRepository:
         )
         return entity
 
+    async def update_meta_all(self, entities: list[Document]) -> list[Document]:
+        """`update_meta` for many documents, in one table version."""
+        self.store._assert_writable()
+        if not entities:
+            return entities
+
+        now = datetime.now(UTC).isoformat()
+        records = []
+        for entity in entities:
+            assert entity.id, "Document ID is required for update"
+            entity.updated_at = datetime.fromisoformat(now)
+            created = entity.created_at.isoformat() if entity.created_at else now
+            records.append(self._to_meta_record(entity, entity.id, created, now))
+        await (
+            self.store.document_meta_table.merge_insert("id")
+            .when_matched_update_all()
+            .execute(records)
+        )
+        return entities
+
     async def update(self, entity: Document) -> Document:
         """Update a document's content+blobs (genuine re-conversion) and its
         mutable attributes. Rewrites the `documents` row, so use only when the

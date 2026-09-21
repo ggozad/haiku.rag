@@ -609,10 +609,12 @@ from a fetched one rather than fetched themselves — PDF attachments are
 attributed through the parent they hang off, which deleting the parent
 removes with it.
 
-`source_id` is set by ingestion alone. Passing one as document metadata
-does nothing, and updating a document's metadata leaves it in place, so
-re-adding an ingested document by hand cannot detach it from its
-source.
+`source_id` is set by ingestion, and otherwise only by the named
+operation `HaikuRAG.set_document_source`, which startup reconciliation
+uses to attribute a document the queue already records. Passing one as
+document metadata does nothing, and updating a document's metadata
+leaves it in place, so re-adding an ingested document by hand cannot
+detach it from its source.
 
 A source id is an identity. An `fs` source without an `id` derives one
 from its root (`fs:{resolved_root}`), so moving a watched directory, or
@@ -632,6 +634,55 @@ Where two sources cover the same URI (nested `fs` roots, nested S3
 prefixes, one URL in two `http` source lists), the most recent ingestion
 takes ownership and the change is logged at WARNING. Overlapping sources
 are a configuration error; the warning names both ids.
+
+### Reconciliation at startup
+
+Ingester state lives in two databases: the documents in LanceDB and the
+queue's `sync_state`, which records what each source has ingested and is
+what delete detection diffs the source against. Either can be restored,
+rebuilt or lost without the other — a queue file on container-local
+storage, a restore of one backup, a rebuilt index — and the two then
+disagree.
+
+Every `serve` and `run-batch` reconciles them before the first sweep. Per
+source:
+
+- A document the source owns with no `sync_state` row gets one back, so
+  the next sweep decides whether it is still at the source. Without this,
+  a document whose file is gone stays in the index forever.
+- A stored revision for a URI the index no longer holds is cleared, so
+  the next sweep re-ingests instead of reporting the file unchanged.
+- A document with no `source_id` that this source successfully ingested
+  is attributed. This is how a database written before attribution
+  existed acquires it, without a fetch or a re-conversion.
+
+The last two act only on a URI the source has actually ingested. A
+permanently failed job also stores a revision, to stop discovery
+re-enqueuing an unchanged file forever, and reconciliation leaves that
+marker alone: clearing it would retry the poison document on every
+restart, and the document sitting at that URI came from somewhere else.
+
+A document that two sources both ingested is left unattributed, with a
+warning naming them. Their order in the configuration is not evidence of
+ownership; separate the sources instead.
+
+Drift is logged per source. Documents belonging to a `source_id` that is
+no longer configured are counted in a warning and otherwise left alone:
+no configured source sweeps them, so nothing can say whether they are
+still current.
+
+Reconciliation lists `document_meta` once per process start and writes
+each repair in one transaction: one for the rows it restores, one for
+the revisions it clears, and one `document_meta` version for the
+documents it attributes. It reads no content and no docling blobs, but
+on a large index the listing is not free.
+
+One gap: `run-batch --dry-run` opens no document store, so a manifest
+generated while the two databases disagreed omits the orphan deletes, and
+`run-batch --manifest` replays the frozen changeset without sweeping.
+Replay reconciles `sync_state`, so an ordinary sweep afterwards emits
+what the manifest missed, but a workflow built only on dry-run and replay
+never runs one.
 
 ### The queue
 

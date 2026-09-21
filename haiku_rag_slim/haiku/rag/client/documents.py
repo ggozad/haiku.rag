@@ -56,6 +56,10 @@ class DocumentImport:
 # and is skipped.
 MAX_ATTACHMENT_DEPTH = 3
 
+# Documents resolved per id-filter query, bounding the filter expression a
+# corpus-wide migration builds.
+ID_LOOKUP_BATCH = 500
+
 # Keys the source pipeline owns: content_type/md5/source_revision drive
 # sync_state, source_id records which configured source ingested the document
 # and drives orphan reconciliation. Stripped from provider output before it is
@@ -892,6 +896,45 @@ async def create_document_from_source(
     finally:
         if owns_fetcher:
             await fetcher.aclose()
+
+
+async def set_document_source(
+    session: SingleDatabaseSession, document_ids: list[str], source_id: str
+) -> list[Document]:
+    """Attribute documents to a source, in one table version.
+
+    The one door for `source_id` outside ingestion: every other write path
+    strips it, so reconciliation uses this to carry attribution the queue
+    already records onto the documents themselves.
+    """
+    from haiku.rag.tools.filters import build_document_id_filter
+
+    docs = []
+    previous_owners = []
+    for start in range(0, len(document_ids), ID_LOOKUP_BATCH):
+        batch = document_ids[start : start + ID_LOOKUP_BATCH]
+        found = {
+            doc.id: doc
+            for doc in await session.document_repository.list_all(
+                filter=build_document_id_filter(batch)
+            )
+        }
+        for document_id in batch:
+            doc = found.get(document_id)
+            if doc is None:
+                raise ValueError(f"Document with ID {document_id} not found")
+            previous_owners.append((doc.metadata or {}).get("source_id"))
+            doc.metadata = {**(doc.metadata or {}), "source_id": source_id}
+            docs.append(doc)
+
+    async with session.store._write_lock:
+        updated = await session.document_repository.update_meta_all(docs)
+    for doc, previous in zip(updated, previous_owners, strict=True):
+        _note_source_change(doc, previous)
+        session.name(doc)
+    if session.config.storage.auto_vacuum:
+        session.schedule_vacuum()
+    return updated
 
 
 async def update_document(

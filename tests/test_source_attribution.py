@@ -8,12 +8,13 @@ import pytest
 from docling_core.types.doc.document import DoclingDocument
 from docling_core.types.doc.labels import DocItemLabel
 
-from haiku.rag.client import HaikuRAG
+from haiku.rag.client import HaikuRAG, documents
 from haiku.rag.client.documents import DocumentImport
 from haiku.rag.sources.fs import FSSource
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
+from haiku.rag.store.repositories.document import DocumentRepository
 
 from .conftest import capture_logs
 
@@ -391,3 +392,58 @@ async def test_second_source_takes_ownership_and_warns(temp_db_path):
             assert second.metadata["source_id"] == inner.source_id
             messages = [record.getMessage() for record in records]
             assert any("fs:outer" in m and "fs:inner" in m for m in messages)
+
+
+async def test_set_document_source_attributes_an_unattributed_document(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        vector_dim = client.store.embedder.vector_dim
+        doc = await client.import_document(
+            _docling_document("Content the queue knows a source for."),
+            [Chunk(content="Content.", embedding=[0.1] * vector_dim)],
+            uri="test://legacy",
+        )
+        assert doc.id is not None
+        assert "source_id" not in doc.metadata
+
+        (updated,) = await client.set_document_source([doc.id], "fs:handbook")
+
+        assert updated.metadata["source_id"] == "fs:handbook"
+        refetched = await client.get_document_by_id(doc.id)
+        assert refetched is not None
+        assert refetched.metadata["source_id"] == "fs:handbook"
+
+
+async def test_set_document_source_batches_id_lookups(temp_db_path, monkeypatch):
+    """A whole-corpus migration resolves ids in bounded queries, not one each."""
+    monkeypatch.setattr(documents, "ID_LOOKUP_BATCH", 2)
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        vector_dim = client.store.embedder.vector_dim
+        ids = []
+        for n in range(5):
+            doc = await client.import_document(
+                _docling_document(f"Content {n}."),
+                [Chunk(content=f"Content {n}.", embedding=[0.1] * vector_dim)],
+                uri=f"test://batched-{n}",
+            )
+            assert doc.id is not None
+            ids.append(doc.id)
+
+        queries = []
+        original = DocumentRepository.list_all
+
+        async def counting_list_all(self, *args, **kwargs):
+            queries.append(kwargs.get("filter"))
+            return await original(self, *args, **kwargs)
+
+        monkeypatch.setattr(DocumentRepository, "list_all", counting_list_all)
+        updated = await client.set_document_source(ids, "fs:handbook")
+
+        assert [doc.metadata["source_id"] for doc in updated] == ["fs:handbook"] * 5
+        assert {doc.id for doc in updated} == set(ids)
+        assert len(queries) == 3
+
+
+async def test_set_document_source_rejects_unknown_id(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with pytest.raises(ValueError, match="not found"):
+            await client.set_document_source(["no-such-document"], "fs:handbook")

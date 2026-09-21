@@ -600,6 +600,16 @@ class HaikuRAG:
             metadata_provider=metadata_provider,
         )
 
+    async def set_document_source(
+        self, document_ids: list[str], source_id: str
+    ) -> list[Document]:
+        """Attribute documents to a source, the one write that may set it."""
+        from haiku.rag.client.documents import set_document_source
+
+        session = self._single_session("set_document_source")
+
+        return await set_document_source(session, document_ids, source_id)
+
     async def update_document(
         self,
         document_id: str,
