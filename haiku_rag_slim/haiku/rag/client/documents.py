@@ -56,11 +56,13 @@ class DocumentImport:
 # and is skipped.
 MAX_ATTACHMENT_DEPTH = 3
 
-# Keys the source pipeline owns (content_type/md5/source_revision, which drive
-# sync_state). A provider must not set them, or the metadata-only refresh path
-# would let provider values overwrite the real source-derived ones. Stripped
-# before provider metadata is merged into the document.
-_RESERVED_METADATA_KEYS = frozenset({"content_type", "md5", "source_revision"})
+# Keys the source pipeline owns: content_type/md5/source_revision drive
+# sync_state, source_id records which configured source ingested the document
+# and drives orphan reconciliation. Stripped from provider output before it is
+# merged into the document, so only the pipeline sets them.
+_RESERVED_METADATA_KEYS = frozenset(
+    {"content_type", "md5", "source_revision", "source_id"}
+)
 
 
 def _prepare_document_from_docling_sync(
@@ -146,6 +148,9 @@ async def _store_document_with_chunks(
         session.config, chunks, session.store.embedder
     )
     items = await asyncio.to_thread(extract_items, "", docling_document)
+    # A racing writer's document is only visible under the lock, so a transfer
+    # to this one is resolved here and reported once the write commits.
+    replaced_owner: str | None = None
 
     async with session.store.write_transaction():
         # A concurrent ingestion of the same URI may have created the document
@@ -161,6 +166,8 @@ async def _store_document_with_chunks(
         if existing is not None:
             document.id = existing.id
             document.created_at = existing.created_at
+            replaced_owner = (existing.metadata or {}).get("source_id")
+            document.metadata = _keep_source_id(document.metadata, existing.metadata)
             stored_doc = await session.document_repository.update(document)
         else:
             stored_doc = await session.document_repository.create(document)
@@ -180,6 +187,8 @@ async def _store_document_with_chunks(
         else:
             await session.chunk_repository.create(chunks)
             await session.document_item_repository.create_items(stored_doc.id, items)
+
+    _note_source_change(stored_doc, replaced_owner)
 
     if session.config.storage.auto_vacuum:
         session.schedule_vacuum()
@@ -262,7 +271,7 @@ async def create_document(
         content="",
         uri=uri,
         title=title,
-        metadata=metadata or {},
+        metadata=_caller_metadata(metadata),
     )
     await _prepare_and_title(session, document, docling_document)
 
@@ -292,7 +301,7 @@ async def import_document(
         content="",
         uri=uri,
         title=title,
-        metadata=metadata or {},
+        metadata=_caller_metadata(metadata),
     )
     await _prepare_and_title(session, document, docling_document)
 
@@ -371,7 +380,7 @@ async def import_documents(
             content="",
             uri=item.uri,
             title=item.title,
-            metadata=item.metadata or {},
+            metadata=_caller_metadata(item.metadata),
         )
         await _prepare_and_title(session, document, item.docling_document)
         prepared.append((document, item.chunks, item.docling_document))
@@ -414,6 +423,32 @@ async def _refresh_doc_metadata(
     return doc
 
 
+def _caller_metadata(metadata: dict | None) -> dict:
+    """Caller-supplied metadata without `source_id`, which only ingestion sets."""
+    return {k: v for k, v in (metadata or {}).items() if k != "source_id"}
+
+
+def _keep_source_id(metadata: dict, previous_metadata: dict | None) -> dict:
+    """``metadata`` with the stored source_id restored when it names none."""
+    previous = (previous_metadata or {}).get("source_id")
+    if previous is None or metadata.get("source_id") is not None:
+        return metadata
+    return {**metadata, "source_id": previous}
+
+
+def _note_source_change(doc: Document, previous: str | None) -> Document:
+    """Log an ownership transfer, at the write boundary that made it."""
+    current = (doc.metadata or {}).get("source_id")
+    if previous is not None and current is not None and current != previous:
+        logger.warning(
+            "Source of %s changed from %s to %s; both sources cover this URI",
+            doc.uri,
+            previous,
+            current,
+        )
+    return doc
+
+
 async def _provider_metadata(
     provider: "MetadataProvider | None",
     source_id: str,
@@ -442,6 +477,7 @@ async def _ingest_fetch_result(
     user_metadata: dict,
     stored_uri: str,
     existing_doc: Document | None,
+    source_id: str | None = None,
     depth: int = 0,
     filename: str | None = None,
 ) -> Document:
@@ -473,6 +509,8 @@ async def _ingest_fetch_result(
     }
     if result.revision is not None:
         source_metadata["source_revision"] = result.revision
+    if source_id is not None:
+        source_metadata["source_id"] = source_id
 
     if result.disk_path is not None:
         target_path = result.disk_path
@@ -687,7 +725,7 @@ async def create_document_from_source(
 
     Returns a single Document for files/URLs, a list for directories.
     """
-    metadata = metadata or {}
+    metadata = _caller_metadata(metadata)
 
     source_str = str(source)
     parsed_url = urlparse(source_str)
@@ -773,6 +811,11 @@ async def create_document_from_source(
             stored_uri = source_str
 
         existing_doc = await session.get_document_by_uri(stored_uri)
+        previous_owner = (
+            (existing_doc.metadata or {}).get("source_id") if existing_doc else None
+        )
+        owner = source_id if source_id is not None else previous_owner
+        owner_metadata = {"source_id": owner} if owner is not None else {}
 
         # Cheap revision-based short-circuit: only worth a HEAD when we have a
         # stored revision to compare against. All sources persist their native
@@ -786,12 +829,15 @@ async def create_document_from_source(
         if existing_doc and stored_revision and not force:
             current_revision = await fetcher.head(source_str)
             if current_revision == stored_revision:
-                return await _refresh_doc_metadata(
-                    session,
-                    existing_doc,
-                    title=title,
-                    user_metadata=metadata,
-                    source_metadata=None,
+                return _note_source_change(
+                    await _refresh_doc_metadata(
+                        session,
+                        existing_doc,
+                        title=title,
+                        user_metadata=metadata,
+                        source_metadata=owner_metadata,
+                    ),
+                    previous_owner,
                 )
 
         with logfire.span("document.fetch", uri=source_str) as fetch_span:
@@ -816,24 +862,32 @@ async def create_document_from_source(
                 "content_type": result.content_type,
                 "md5": result.content_hash,
                 **result.extra_metadata,
+                **owner_metadata,
             }
             if result.revision is not None:
                 source_meta["source_revision"] = result.revision
-            return await _refresh_doc_metadata(
-                session,
-                existing_doc,
-                title=title,
-                user_metadata=user_metadata,
-                source_metadata=source_meta,
+            return _note_source_change(
+                await _refresh_doc_metadata(
+                    session,
+                    existing_doc,
+                    title=title,
+                    user_metadata=user_metadata,
+                    source_metadata=source_meta,
+                ),
+                previous_owner,
             )
 
-        return await _ingest_fetch_result(
-            session,
-            result,
-            title=title,
-            user_metadata=user_metadata,
-            stored_uri=stored_uri,
-            existing_doc=existing_doc,
+        return _note_source_change(
+            await _ingest_fetch_result(
+                session,
+                result,
+                title=title,
+                user_metadata=user_metadata,
+                stored_uri=stored_uri,
+                existing_doc=existing_doc,
+                source_id=owner,
+            ),
+            previous_owner,
         )
     finally:
         if owns_fetcher:
@@ -878,7 +932,9 @@ async def update_document(
     if title is not None:
         existing_doc.title = title
     if metadata is not None:
-        existing_doc.metadata = metadata
+        existing_doc.metadata = _keep_source_id(
+            _caller_metadata(metadata), existing_doc.metadata
+        )
     if uri is not None:
         existing_doc.uri = uri
 

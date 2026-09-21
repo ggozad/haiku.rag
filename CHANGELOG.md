@@ -5,6 +5,10 @@
 ### Added
 
 - `sources` on the `list_documents` MCP tool and `HaikuRAG.list_documents`.
+- `document.metadata["source_id"]` records the configured source that ingested a
+  document. Reserved, so a metadata provider cannot set it. Ad-hoc ingestion
+  writes no key and preserves an existing one; a second source ingesting the same
+  URI takes ownership and logs at WARNING.
 
 ### Changed
 

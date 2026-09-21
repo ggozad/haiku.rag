@@ -232,8 +232,9 @@ across calls. When a document's source revision is unchanged, the
 ingester keeps the existing cheap HEAD short-circuit and preserves the
 stored provider metadata; the provider runs again when the document is
 fetched for a new or changed revision. The source-derived keys (`md5`,
-`source_revision`, `content_type`) are stripped from provider output, so
-a provider cannot override them. A `metadata_provider` name with no
+`source_revision`, `content_type`, `source_id`) are stripped from
+provider output, so a provider cannot override them. A
+`metadata_provider` name with no
 installed entry point fails at startup. A provider exception is
 classified like any other ingestion error (network and timeout errors
 retry; others go to the DLQ).
@@ -598,6 +599,39 @@ Orphan deletion compares each source against `sync_state` in the queue DB,
 so persist `ingester.db` between runs for deletions to be detected. It exits
 non-zero if any job dead-letters or a source's discovery sweep does not
 complete.
+
+### Which source a document came from
+
+Every document the ingester fetches carries `metadata["source_id"]`, the
+id of the source that ingested it. Documents added by hand with
+`haiku-rag add-src` carry no such key, and neither do documents derived
+from a fetched one rather than fetched themselves — PDF attachments are
+attributed through the parent they hang off, which deleting the parent
+removes with it.
+
+`source_id` is set by ingestion alone. Passing one as document metadata
+does nothing, and updating a document's metadata leaves it in place, so
+re-adding an ingested document by hand cannot detach it from its
+source.
+
+A source id is an identity. An `fs` source without an `id` derives one
+from its root (`fs:{resolved_root}`), so moving a watched directory, or
+renaming a source that sets `id`, detaches every document already
+ingested under the old id. Set `id` explicitly on a source whose
+location may move:
+
+```yaml
+ingester:
+  sources:
+    - type: fs
+      id: handbook
+      root: /srv/handbook
+```
+
+Where two sources cover the same URI (nested `fs` roots, nested S3
+prefixes, one URL in two `http` source lists), the most recent ingestion
+takes ownership and the change is logged at WARNING. Overlapping sources
+are a configuration error; the warning names both ids.
 
 ### The queue
 
