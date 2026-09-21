@@ -58,7 +58,8 @@ haiku_rag_slim/haiku/rag/   # Source code
 ├── chat/                   # Chat TUI (app.py, widgets/)
 ├── inspector/              # Inspector TUI (app.py, widgets/)
 ├── client/                 # HaikuRAG high-level API
-│   ├── __init__.py         # HaikuRAG class, RebuildMode
+│   ├── __init__.py         # Lazy facade: HaikuRAG, RebuildMode, DatabaseScope, DocumentImport, all_found
+│   ├── client.py           # HaikuRAG class, RebuildMode
 │   ├── scope.py            # DatabaseScope, DatabaseRef (which databases an operation covers)
 │   ├── session.py          # SingleDatabaseSession, FederatedSession
 │   ├── documents.py        # create/import/update_document(s), create_document_from_source, DocumentImport
@@ -120,7 +121,7 @@ app/                        # Conversational RAG application (see below)
 
 | Class | Location | Purpose |
 |-------|----------|---------|
-| `HaikuRAG` | client/__init__.py | High-level API (main entry point) |
+| `HaikuRAG` | client/client.py | High-level API (main entry point) |
 | `HaikuRAGApp` | app.py | CLI application layer |
 | `Store` | store/engine.py | Async LanceDB connection, tables, upgrades |
 | `DatabaseScope` | client/scope.py | The databases an operation covers, resolved once |
@@ -153,7 +154,7 @@ app/                        # Conversational RAG application (see below)
 
 ## HaikuRAG Client API
 
-Key methods on `HaikuRAG` (client/__init__.py):
+Key methods on `HaikuRAG` (client/client.py):
 
 ```python
 async with HaikuRAG(db_path, config, create=True) as rag:

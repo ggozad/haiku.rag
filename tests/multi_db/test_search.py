@@ -355,7 +355,7 @@ class TestOneReranker:
         databases must build one, not one each."""
         built = []
         monkeypatch.setattr(
-            "haiku.rag.client.get_reranker",
+            "haiku.rag.client.client.get_reranker",
             lambda config: built.append(config) or StubReranker(),
         )
 
@@ -376,7 +376,7 @@ class TestOneReranker:
         model weights for a local one on first access."""
         built = []
         monkeypatch.setattr(
-            "haiku.rag.client.get_reranker",
+            "haiku.rag.client.client.get_reranker",
             lambda config: built.append(config) or StubReranker(),
         )
 
@@ -412,7 +412,7 @@ class TestOneReranker:
                 closes.append(1)
 
         monkeypatch.setattr(
-            "haiku.rag.client.get_reranker", lambda config: CountingReranker()
+            "haiku.rag.client.client.get_reranker", lambda config: CountingReranker()
         )
 
         config = _config(tmp_path, ["alpha", "beta"])

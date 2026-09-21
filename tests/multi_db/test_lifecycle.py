@@ -377,7 +377,7 @@ class TestSharingTheReranker:
     async def test_the_set_builds_and_closes_one_reranker(self, tmp_path, monkeypatch):
         """A local reranker loads model weights; the set builds one and shares
         it."""
-        import haiku.rag.client as client_module
+        import haiku.rag.client.client as client_module
 
         built: list[object] = []
         closed: list[object] = []

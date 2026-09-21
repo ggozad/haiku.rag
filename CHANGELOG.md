@@ -6,6 +6,18 @@
 
 - `sources` on the `list_documents` MCP tool and `HaikuRAG.list_documents`.
 
+### Changed
+
+- `haiku.rag.client` exports `HaikuRAG`, `RebuildMode`, `DatabaseScope`,
+  `DocumentImport` and `all_found`, each imported on first use; `HaikuRAG` is
+  defined in `haiku.rag.client.client`. Import any other name from the module
+  that defines it.
+
+### Fixed
+
+- Importing a source, a converter or the ingester no longer loads lancedb,
+  pyarrow and pydantic_ai through `haiku.rag.client`.
+
 ## [0.87.0] - 2026-09-17
 
 ### Added
