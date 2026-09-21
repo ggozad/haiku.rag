@@ -11,11 +11,11 @@ from obstore.exceptions import (
 )
 from pydantic import BaseModel
 
-from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.converters.exceptions import (
     ConversionTimeoutError,
     ConverterWedgedError,
 )
+from haiku.rag.exceptions import UnsupportedSourceError
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
 from haiku.rag.ingester.queue.models import Job, JobOp
 from haiku.rag.sources.base import FileTooLargeError

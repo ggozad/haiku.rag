@@ -1,3 +1,5 @@
+import subprocess
+import sys
 from datetime import UTC, datetime
 
 from haiku.rag.sources.base import (
@@ -72,3 +74,20 @@ def test_source_protocol_runtime_checkable():
             raise NotImplementedError
 
     assert isinstance(Dummy(), Source)
+
+
+def test_importing_registry_does_not_load_heavy_dependencies():
+    """Same invariant as test_cli.py's test_importing_cli_does_not_load_heavy_dependencies:
+    registry only needs UnsupportedSourceError, not the client package it lives under."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import haiku.rag.sources.registry, sys; "
+            "loaded = {'lancedb', 'pyarrow', 'pydantic_ai'} & sys.modules.keys(); "
+            "assert not loaded, loaded",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr

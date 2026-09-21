@@ -6,6 +6,14 @@
 
 - `sources` on the `list_documents` MCP tool and `HaikuRAG.list_documents`.
 
+### Fixed
+
+- `UnsupportedSourceError` moved out of `haiku.rag.client.exceptions` into a new
+  top-level `haiku.rag.exceptions`, so importing a source or converter no longer
+  pulls in the client package's `lancedb`/`pyarrow`/`pydantic_ai` dependencies.
+  `client.exceptions.UnsupportedSourceError` still works, re-exported from the
+  new location.
+
 ## [0.87.0] - 2026-09-17
 
 ### Added

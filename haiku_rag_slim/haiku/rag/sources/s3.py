@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from urllib.parse import urlparse
 
-from haiku.rag.client.exceptions import UnsupportedSourceError
+from haiku.rag.exceptions import UnsupportedSourceError
 from haiku.rag.sources.base import (
     FetchResult,
     RevisionSnapshot,

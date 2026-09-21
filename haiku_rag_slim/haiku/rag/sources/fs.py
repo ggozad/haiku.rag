@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 
-from haiku.rag.client.exceptions import UnsupportedSourceError
+from haiku.rag.exceptions import UnsupportedSourceError
 from haiku.rag.sources.base import (
     FetchResult,
     RevisionSnapshot,

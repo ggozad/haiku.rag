@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING
 
 import pypdfium2 as pdfium
 
-from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.converters.exceptions import ConverterWedgedError
+from haiku.rag.exceptions import UnsupportedSourceError
 from haiku.rag.telemetry import logfire
 
 # pypdfium2 wraps libpdfium, which has global C state and is not thread-safe.

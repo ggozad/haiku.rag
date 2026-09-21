@@ -2,7 +2,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from urllib.parse import urlparse
 
-from haiku.rag.client.exceptions import UnsupportedSourceError
+from haiku.rag.exceptions import UnsupportedSourceError
 from haiku.rag.sources.base import Source
 from haiku.rag.sources.fs import FSSource
 from haiku.rag.sources.http import HTTPSource
