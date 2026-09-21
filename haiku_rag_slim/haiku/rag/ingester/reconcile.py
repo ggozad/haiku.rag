@@ -11,6 +11,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+ATTRIBUTION_DOCS = "https://ggozad.github.io/haiku.rag/ingester/"
+
 
 @dataclass
 class SourceReconciliation:
@@ -172,7 +174,21 @@ async def reconcile(
                 )
             reports.append(report)
 
+        attributed = sum(r.attributed for r in reports)
+        # The listing predates the attribution pass, so subtract what this run
+        # claimed. What is left includes URIs several sources ingested.
+        unattributed = len(index.unattributed) - attributed
+        if unattributed:
+            logger.warning(
+                "%d document(s) remain without source attribution. Review "
+                "whether they are intentionally unmanaged or have ambiguous "
+                "or lost ownership. See %s",
+                unattributed,
+                ATTRIBUTION_DOCS,
+            )
+
         span.set_attribute("recovered", sum(r.recovered for r in reports))
         span.set_attribute("invalidated", sum(r.invalidated for r in reports))
-        span.set_attribute("attributed", sum(r.attributed for r in reports))
+        span.set_attribute("attributed", attributed)
+        span.set_attribute("unattributed", unattributed)
         return reports

@@ -166,6 +166,9 @@ async def test_leaves_a_document_two_sources_ingested_unattributed(client, sync)
     assert all(report.attributed == 0 for report in reports)
     messages = [record.getMessage() for record in records]
     assert [m for m in messages if "fs:outer" in m and "fs:inner" in m]
+    assert [
+        m for m in messages if "1 document(s) remain without source attribution" in m
+    ]
 
 
 async def test_keeps_a_revision_for_a_document_another_source_owns(client, sync):
@@ -220,6 +223,57 @@ async def test_unattributed_documents_are_left_alone(client, sync):
 
     assert not reports[0].drifted
     assert await sync.list_known_uris("fs:corpus") == set()
+
+
+async def test_warns_about_unattributed_documents(client, sync):
+    await _document(client, "file:///corpus/handmade.md")
+
+    with capture_logs(RECONCILE_LOGGER, logging.WARNING) as records:
+        await reconcile(client, sync, ["fs:corpus"])
+
+    messages = [record.getMessage() for record in records]
+    assert [
+        m for m in messages if "1 document(s) remain without source attribution" in m
+    ]
+
+
+async def test_does_not_warn_when_every_document_is_attributed(client, sync):
+    await _document(client, "file:///corpus/a.md", "fs:corpus")
+
+    with capture_logs(RECONCILE_LOGGER, logging.WARNING) as records:
+        await reconcile(client, sync, ["fs:corpus"])
+
+    messages = [record.getMessage() for record in records]
+    assert not [m for m in messages if "without source attribution" in m]
+
+
+async def test_warning_counts_net_of_this_runs_attributions(client, sync):
+    """The store listing is read before the attribution pass, so the raw
+    unattributed count overstates."""
+    await _document(client, "file:///corpus/backfilled.md")
+    await _document(client, "file:///corpus/handmade.md")
+    await sync.upsert("fs:corpus", "file:///corpus/backfilled.md", ingested=True)
+
+    with capture_logs(RECONCILE_LOGGER, logging.WARNING) as records:
+        reports = await reconcile(client, sync, ["fs:corpus"])
+
+    assert reports[0].attributed == 1
+    messages = [record.getMessage() for record in records]
+    assert [
+        m for m in messages if "1 document(s) remain without source attribution" in m
+    ]
+
+
+async def test_does_not_warn_when_the_run_attributes_everything(client, sync):
+    await _document(client, "file:///corpus/backfilled.md")
+    await sync.upsert("fs:corpus", "file:///corpus/backfilled.md", ingested=True)
+
+    with capture_logs(RECONCILE_LOGGER, logging.WARNING) as records:
+        reports = await reconcile(client, sync, ["fs:corpus"])
+
+    assert reports[0].attributed == 1
+    messages = [record.getMessage() for record in records]
+    assert not [m for m in messages if "without source attribution" in m]
 
 
 async def test_ignores_documents_without_a_uri(client, sync):

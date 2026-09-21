@@ -14,6 +14,8 @@
   URI the store lost is cleared, and a document with no `source_id` that a
   source ingested is attributed. Documents of an unconfigured `source_id`, and
   documents two sources both ingested, are reported and left alone.
+- Reconciliation warns when documents remain without source attribution,
+  counted after the attribution it just wrote.
 - `HaikuRAG.set_document_source(document_ids, source_id)`,
   `DocumentRepository.update_meta_all`, `SyncStateRepo.invalidate(source_id,
   uris)` and `SyncStateRepo.list_ingested_uris`.

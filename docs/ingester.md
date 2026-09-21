@@ -684,6 +684,75 @@ Replay reconciles `sync_state`, so an ordinary sweep afterwards emits
 what the manifest missed, but a workflow built only on dry-run and replay
 never runs one.
 
+### Documents with no source attribution
+
+Reconciliation warns at startup when the index holds documents that
+remain without source attribution:
+
+```
+14 document(s) remain without source attribution. Review whether they are
+intentionally unmanaged or have ambiguous or lost ownership.
+```
+
+Commonly they are one of two kinds. One was added by hand with
+`haiku-rag add-src`, which is fine and permanent. The other was ingested
+before `source_id` existed, by a source whose queue rows were lost before
+the upgrade, so neither database records that the source wrote it. While
+its file is still at the source the next sweep picks it up and attributes
+it. Once the file is gone, nothing can identify it and it stays in the
+index.
+
+A third kind is deliberate: a URI that two sources both ingested is left
+unattributed, and named in its own warning. Separate the sources rather
+than deleting the document.
+
+To clear them:
+
+**1. Run one batch and check it succeeds.**
+
+```bash
+haiku-ingester --config /etc/haiku/haiku.rag.yaml run-batch
+echo $?    # must be 0
+```
+
+This attributes what the ingester can still account for: reconciliation
+writes attribution directly wherever the queue records an ingestion, and
+the sweep attributes the rest as it picks them up. An unchanged document
+costs no body fetch, conversion, chunking or embedding; one whose bytes
+have changed is re-ingested normally. A non-zero exit means a source
+failed to sweep or a job died, so some live documents were not
+attributed; fix that and re-run before going on, or step 2 will offer
+them for deletion.
+
+**2. List what is left.**
+
+```bash
+haiku-rag --config /etc/haiku/haiku.rag.yaml list \
+  -f "metadata NOT LIKE '%\"source_id\"%'"
+```
+
+Narrow it on a database that also holds hand-added documents:
+
+```bash
+  -f "metadata NOT LIKE '%\"source_id\"%' AND uri LIKE 'file:///srv/handbook/%'"
+```
+
+This is a practical filter, not an exact one. `metadata` is stored as
+JSON and matched as text, so a document whose own metadata contains the
+string `source_id` drops out of the list. The error runs toward omission:
+an orphan goes unlisted rather than a live document being offered for
+deletion.
+
+**3. Delete what you confirm.**
+
+```bash
+haiku-rag --config /etc/haiku/haiku.rag.yaml delete <id>
+```
+
+Read the URIs before deleting. Step 2 lists candidates, not a verdict:
+a document you added by hand whose file has since moved looks exactly
+like one the ingester lost track of.
+
 ### The queue
 
 The ingester's SQLite queue lives at
