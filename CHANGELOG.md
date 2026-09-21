@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.88.0] - 2026-09-21
+
 ### Added
 
 - `sources` on the `list_documents` MCP tool and `HaikuRAG.list_documents`.
@@ -2645,7 +2647,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.87.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.88.0...HEAD
+[0.88.0]: https://github.com/ggozad/haiku.rag/compare/0.87.0...0.88.0
 [0.87.0]: https://github.com/ggozad/haiku.rag/compare/0.86.0...0.87.0
 [0.86.0]: https://github.com/ggozad/haiku.rag/compare/0.85.0...0.86.0
 [0.85.0]: https://github.com/ggozad/haiku.rag/compare/0.84.0...0.85.0
