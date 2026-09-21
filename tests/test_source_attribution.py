@@ -10,6 +10,7 @@ from docling_core.types.doc.labels import DocItemLabel
 
 from haiku.rag.client import HaikuRAG, documents
 from haiku.rag.client.documents import DocumentImport
+from haiku.rag.embeddings import EmbedderWrapper
 from haiku.rag.sources.fs import FSSource
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
@@ -447,3 +448,128 @@ async def test_set_document_source_rejects_unknown_id(temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as client:
         with pytest.raises(ValueError, match="not found"):
             await client.set_document_source(["no-such-document"], "fs:handbook")
+
+
+class _FixedEmbedder(EmbedderWrapper):
+    """Deterministic vectors, so ingestion needs no embedding service."""
+
+    def __init__(self, vector_dim: int):
+        super().__init__(None, vector_dim)
+
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [[0.1] * self.vector_dim for _ in texts]
+
+
+def _counting_head(calls: list[str]):
+    original = FSSource.head
+
+    async def head(self, uri):
+        calls.append(uri)
+        return await original(self, uri)
+
+    return head
+
+
+async def _ingested(client: HaikuRAG, path: Path, source: FSSource) -> Document:
+    client.store.embedder = _FixedEmbedder(client.store.embedder.vector_dim)
+    doc = await client._ingest_observed(
+        path, sources=[source], source_id=source.source_id
+    )
+    assert isinstance(doc, Document)
+    return doc
+
+
+async def test_observed_revision_skips_the_head_probe(temp_db_path, monkeypatch):
+    """A matching observed revision short-circuits without asking the source."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = root / "unchanged.txt"
+            path.write_text("Content the source has already delivered.")
+            source = fs_source(root)
+            first = await _ingested(client, path, source)
+            stored = first.metadata["source_revision"]
+
+            calls: list[str] = []
+            monkeypatch.setattr(FSSource, "head", _counting_head(calls))
+            second = await client._ingest_observed(
+                path,
+                sources=[source],
+                source_id=source.source_id,
+                observed_revision=stored,
+            )
+
+            assert isinstance(second, Document)
+            assert second.id == first.id
+            assert calls == []
+
+
+async def test_head_probe_runs_without_an_observed_revision(temp_db_path, monkeypatch):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = root / "unchanged.txt"
+            path.write_text("Content the source has already delivered.")
+            source = fs_source(root)
+            await _ingested(client, path, source)
+
+            calls: list[str] = []
+            monkeypatch.setattr(FSSource, "head", _counting_head(calls))
+            await client._ingest_observed(
+                path, sources=[source], source_id=source.source_id
+            )
+
+            assert calls == [str(path)]
+
+
+async def test_mismatched_observed_revision_still_ingests(temp_db_path):
+    """The revision decides only whether to skip. One that differs from the
+    stored revision falls through to the ordinary fetch."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = root / "changed.txt"
+            path.write_text("First revision.")
+            source = fs_source(root)
+            first = await _ingested(client, path, source)
+
+            path.write_text("Second revision, longer than the first.")
+            second = await client._ingest_observed(
+                path,
+                sources=[source],
+                source_id=source.source_id,
+                observed_revision=str(path.stat().st_mtime_ns),
+            )
+
+            assert isinstance(second, Document)
+            assert second.id == first.id
+            assert second.content == "Second revision, longer than the first."
+
+
+async def test_force_ignores_a_matching_observed_revision(temp_db_path, monkeypatch):
+    """`force` re-ingests whatever the revision says, so the short-circuit the
+    revision would take is never reached."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = root / "forced.txt"
+            path.write_text("Content stored once.")
+            source = fs_source(root)
+            first = await _ingested(client, path, source)
+            stored = first.metadata["source_revision"]
+
+            path.write_text("Content rewritten under the same check.")
+            calls: list[str] = []
+            monkeypatch.setattr(FSSource, "head", _counting_head(calls))
+            second = await documents.create_document_from_source(
+                client._single_session("t"),
+                path,
+                sources=[source],
+                source_id=source.source_id,
+                observed_revision=stored,
+                force=True,
+            )
+
+            assert isinstance(second, Document)
+            assert second.content == "Content rewritten under the same check."
+            assert calls == []

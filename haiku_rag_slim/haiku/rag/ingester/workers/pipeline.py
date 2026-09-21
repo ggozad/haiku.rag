@@ -180,11 +180,13 @@ async def run_job(
                         f"current {current_revision!r}"
                     )
 
-            result = await client.create_document_from_source(
+            result = await client._ingest_observed(
                 job.uri,
                 sources=sources,
                 source_id=job.source_id,
                 metadata_provider=(metadata_providers or {}).get(job.source_id),
+                # The revision observed when the UPSERT was enqueued.
+                observed_revision=job.revision,
             )
             # Directory ingestion returns list[Document] — workers ingest single
             # resources, so a list here is a programming error in the caller.

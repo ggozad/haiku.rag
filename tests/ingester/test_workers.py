@@ -69,7 +69,7 @@ async def test_worker_ids_are_unique_across_pools(client, jobs, sync):
 async def test_idle_worker_picks_up_job_quickly(client, jobs, sync):
     """An idle worker should wake up well under poll_idle_s when a job is
     enqueued, thanks to the job_available condition notification."""
-    client.create_document_from_source.return_value = Document(
+    client._ingest_observed.return_value = Document(
         id="d", content="x", uri="u", metadata={"md5": "m", "source_revision": "r"}
     )
     pool = _pool(client, jobs, sync, worker_count=1, poll_idle_interval_s=5.0)
@@ -106,7 +106,7 @@ async def test_stop_completes_with_idle_workers(client, jobs, sync):
 
 @pytest.mark.asyncio
 async def test_drain_marks_job_succeeded_and_writes_sync_state(client, jobs, sync):
-    client.create_document_from_source.return_value = Document(
+    client._ingest_observed.return_value = Document(
         id="doc-1",
         content="x",
         uri="s3://b/k.md",
@@ -181,7 +181,7 @@ async def test_permanent_error_without_revision_writes_no_marker(client, jobs, s
     """A permanent failure on a revision-less job (e.g. HTTP without ETag) writes
     no suppression marker — get_revision_snapshot omits revision-less rows, so it
     would re-enqueue on the next sweep. Documents the revision-less caveat."""
-    client.create_document_from_source.side_effect = PermanentError("unsupported")
+    client._ingest_observed.side_effect = PermanentError("unsupported")
     job = await jobs.enqueue("src", "https://x/y.bin", JobOp.UPSERT)
     assert job is not None
 
@@ -200,7 +200,7 @@ async def test_permanent_error_with_revision_records_marker(client, jobs, sync):
     """A permanent failure on a revisioned job records the failed revision in
     sync_state (ingested=False) so discovery sees it as UNCHANGED and stops
     re-enqueuing it every sweep, until the file's revision changes."""
-    client.create_document_from_source.side_effect = PermanentError("encrypted")
+    client._ingest_observed.side_effect = PermanentError("encrypted")
     job = await jobs.enqueue("src", "file:///x/y.pdf", JobOp.UPSERT, revision="r0")
     assert job is not None
 
@@ -225,7 +225,7 @@ async def test_transient_exhausted_writes_no_marker(client, jobs, sync):
     """A transient failure that exhausts max_attempts goes dead but records no
     suppression marker, so it stays re-attemptable on the next sweep (transient =
     keep retrying once the service recovers)."""
-    client.create_document_from_source.side_effect = TransientError("blip")
+    client._ingest_observed.side_effect = TransientError("blip")
     job = await jobs.enqueue(
         "src", "file:///x/y.pdf", JobOp.UPSERT, revision="r0", max_attempts=1
     )
@@ -243,7 +243,7 @@ async def test_transient_exhausted_writes_no_marker(client, jobs, sync):
 
 @pytest.mark.asyncio
 async def test_transient_error_reschedules_below_max_attempts(client, jobs, sync):
-    client.create_document_from_source.side_effect = TransientError("blip")
+    client._ingest_observed.side_effect = TransientError("blip")
     job = await jobs.enqueue("src", "u", JobOp.UPSERT, max_attempts=3)
     assert job is not None
 
@@ -265,7 +265,7 @@ async def test_transient_error_reschedules_below_max_attempts(client, jobs, sync
 
 @pytest.mark.asyncio
 async def test_transient_error_at_max_attempts_marks_dead(client, jobs, sync, conn):
-    client.create_document_from_source.side_effect = TransientError("blip")
+    client._ingest_observed.side_effect = TransientError("blip")
     job = await jobs.enqueue("src", "u", JobOp.UPSERT, max_attempts=1)
     assert job is not None
 
@@ -290,7 +290,7 @@ async def test_unknown_exception_caught_and_marked_dead(client, jobs, sync):
     class _Weird(Exception):
         pass
 
-    client.create_document_from_source.side_effect = _Weird("surprise")
+    client._ingest_observed.side_effect = _Weird("surprise")
     job = await jobs.enqueue("src", "u", JobOp.UPSERT, max_attempts=1)
     assert job is not None
 
@@ -307,7 +307,7 @@ async def test_unknown_exception_caught_and_marked_dead(client, jobs, sync):
 async def test_keyboard_interrupt_propagates_not_classified(client, jobs, sync):
     """KeyboardInterrupt / SystemExit / CancelledError signal runtime shutdown.
     The pipeline must not wrap them — the job stays 'claimed' for the reaper."""
-    client.create_document_from_source.side_effect = KeyboardInterrupt("ctrl-c")
+    client._ingest_observed.side_effect = KeyboardInterrupt("ctrl-c")
     job = await jobs.enqueue("src", "u", JobOp.UPSERT)
     assert job is not None
 
@@ -323,11 +323,11 @@ async def test_keyboard_interrupt_propagates_not_classified(client, jobs, sync):
 @pytest.mark.asyncio
 async def test_drain_passes_configured_sources_to_client(client, jobs, sync):
     """The pool's `sources` list flows through run_job to
-    client.create_document_from_source so resolve_fetcher can pick the
+    client._ingest_observed so resolve_fetcher can pick the
     configured authenticated source over an adhoc adapter."""
     from haiku.rag.sources.http import HTTPSource
 
-    client.create_document_from_source.return_value = Document(
+    client._ingest_observed.return_value = Document(
         id="d", content="x", uri="u", metadata={"md5": "m", "source_revision": "r"}
     )
     configured = HTTPSource(source_id="urls", headers={"Authorization": "Bearer abc"})
@@ -336,7 +336,7 @@ async def test_drain_passes_configured_sources_to_client(client, jobs, sync):
     pool = _pool(client, jobs, sync, sources=[configured])
     await pool.drain_once()
 
-    kwargs = client.create_document_from_source.await_args.kwargs
+    kwargs = client._ingest_observed.await_args.kwargs
     assert kwargs["sources"] == [configured]
 
 
@@ -345,7 +345,7 @@ async def test_drain_passes_configured_sources_to_client(client, jobs, sync):
 
 @pytest.mark.asyncio
 async def test_workers_drain_queue_after_start(client, jobs, sync):
-    client.create_document_from_source.return_value = Document(
+    client._ingest_observed.return_value = Document(
         id="doc", content="x", uri="u", metadata={"md5": "m", "source_revision": "e"}
     )
     for i in range(5):
@@ -383,7 +383,7 @@ async def test_shutdown_grace_lets_inflight_job_complete(client, jobs, sync):
             metadata={"md5": "m", "source_revision": "e"},
         )
 
-    client.create_document_from_source.side_effect = _slow_then_finish
+    client._ingest_observed.side_effect = _slow_then_finish
     await jobs.enqueue("src", "u", JobOp.UPSERT)
 
     pool = _pool(client, jobs, sync, worker_count=1)
@@ -412,7 +412,7 @@ async def test_shutdown_grace_timeout_releases_claim(client, jobs, sync):
             raise
         return Document(id="doc", content="x", uri="u")
 
-    client.create_document_from_source.side_effect = _hangs_forever
+    client._ingest_observed.side_effect = _hangs_forever
     job = await jobs.enqueue("src", "u", JobOp.UPSERT)
     assert job is not None
 
@@ -452,7 +452,7 @@ async def test_heartbeat_keeps_long_job_from_being_reaped(client, jobs, sync):
             id="d", content="x", uri="u", metadata={"md5": "m", "source_revision": "r"}
         )
 
-    client.create_document_from_source.side_effect = _slow
+    client._ingest_observed.side_effect = _slow
     job = await jobs.enqueue("src", "u", JobOp.UPSERT)
     assert job is not None
 
@@ -493,7 +493,7 @@ async def test_heartbeat_continues_during_graceful_stop(client, jobs, sync):
             id="d", content="x", uri="u", metadata={"md5": "m", "source_revision": "r"}
         )
 
-    client.create_document_from_source.side_effect = _block
+    client._ingest_observed.side_effect = _block
     job = await jobs.enqueue("src", "u", JobOp.UPSERT)
     assert job is not None
 
@@ -568,7 +568,7 @@ async def test_forced_shutdown_cancels_heartbeat(client, jobs, sync):
         await asyncio.sleep(60)
         return Document(id="d", content="x", uri="u")
 
-    client.create_document_from_source.side_effect = _hangs_forever
+    client._ingest_observed.side_effect = _hangs_forever
     job = await jobs.enqueue("src", "u", JobOp.UPSERT)
     assert job is not None
 
@@ -598,7 +598,7 @@ async def test_heartbeat_survives_a_renewal_failure(
             id="d", content="x", uri="u", metadata={"md5": "m", "source_revision": "r"}
         )
 
-    client.create_document_from_source.side_effect = _block
+    client._ingest_observed.side_effect = _block
 
     calls = 0
 
@@ -710,7 +710,7 @@ async def test_worker_loses_claim_to_reaper_does_not_write_sync_state(
     the job, the original worker's mark_succeeded must be a no-op and its
     sync_state.upsert must not run — otherwise we'd overwrite freshly-written
     state from the re-claiming worker."""
-    client.create_document_from_source.return_value = Document(
+    client._ingest_observed.return_value = Document(
         id="doc-A", content="x", uri="u", metadata={"md5": "A", "source_revision": "A"}
     )
     job = await jobs.enqueue("src", "u", JobOp.UPSERT)
@@ -742,7 +742,7 @@ async def test_permanent_error_loses_claim_to_reaper_writes_no_marker(
     permanent failure is recorded, the original worker's mark_dead is a no-op
     and it writes no failure marker — the re-claiming worker drives the
     outcome, so the stale worker must not stamp sync_state."""
-    client.create_document_from_source.side_effect = PermanentError("encrypted")
+    client._ingest_observed.side_effect = PermanentError("encrypted")
     job = await jobs.enqueue("src", "u", JobOp.UPSERT, revision="r0")
     assert job is not None
     claimed_by_a = await jobs.claim_next("worker-A")
@@ -789,7 +789,7 @@ async def test_cancel_cleanup_survives_second_cancel(client, jobs, sync, monkeyp
         await asyncio.sleep(60)
         return Document(id="doc", content="x", uri="u")
 
-    client.create_document_from_source.side_effect = _hangs_forever
+    client._ingest_observed.side_effect = _hangs_forever
     job = await jobs.enqueue("src", "u", JobOp.UPSERT)
     assert job is not None
 
@@ -838,7 +838,7 @@ async def test_drain_pending_releases_waits_for_orphan_releases(
         await asyncio.sleep(60)
         return Document(id="doc", content="x", uri="u")
 
-    client.create_document_from_source.side_effect = _hangs_forever
+    client._ingest_observed.side_effect = _hangs_forever
     job = await jobs.enqueue("src", "u", JobOp.UPSERT)
     assert job is not None
 
@@ -912,7 +912,7 @@ async def test_breaker_opens_after_n_consecutive_transient_failures(client, jobs
     claim_next so its other jobs don't burn attempts during the same outage."""
     from haiku.rag.ingester.workers.pool import _WORKER_BREAKER_THRESHOLD
 
-    client.create_document_from_source.side_effect = TransientError("downstream down")
+    client._ingest_observed.side_effect = TransientError("downstream down")
     # Enough jobs to trip the breaker on attempt 1 of each, with one extra
     # that should remain unclaimed.
     for i in range(_WORKER_BREAKER_THRESHOLD + 1):
@@ -949,7 +949,7 @@ async def test_breaker_open_emits_logfire_event(client, jobs, sync, monkeypatch)
 
     monkeypatch.setattr(pool_module.logfire, "warn", _capture)
 
-    client.create_document_from_source.side_effect = TransientError("downstream down")
+    client._ingest_observed.side_effect = TransientError("downstream down")
     for i in range(_WORKER_BREAKER_THRESHOLD + 2):
         await jobs.enqueue("src", f"u{i}", JobOp.UPSERT, max_attempts=5)
 
@@ -991,7 +991,7 @@ async def test_breaker_pauses_worker_loop_claims(client, jobs, sync):
 async def test_breaker_closes_on_successful_probe(client, jobs, sync):
     """After cooldown, the next probe is allowed through; if it succeeds,
     record_success clears the breaker so workers fully resume."""
-    client.create_document_from_source.return_value = Document(
+    client._ingest_observed.return_value = Document(
         id="d", content="x", uri="u", metadata={"md5": "m", "source_revision": "r"}
     )
     pool = _pool(client, jobs, sync)
@@ -1015,7 +1015,7 @@ async def test_breaker_closes_on_successful_probe(client, jobs, sync):
 async def test_breaker_closes_when_success_lands_while_open(client, jobs, sync, caplog):
     """A job that succeeds while the source's breaker is still open (drained
     directly, bypassing the paused-source skip) closes it and logs recovery."""
-    client.create_document_from_source.return_value = Document(
+    client._ingest_observed.return_value = Document(
         id="d", content="x", uri="u", metadata={"md5": "m", "source_revision": "r"}
     )
     pool = _pool(client, jobs, sync)
@@ -1036,14 +1036,21 @@ async def test_breaker_isolates_sources(client, jobs, sync):
     """An open breaker pauses only the failing source. Workers keep draining
     a healthy source's jobs while the failing source's jobs stay queued."""
 
-    def _route(uri, *, sources=None, source_id=None, metadata_provider=None):
+    def _route(
+        uri,
+        *,
+        sources=None,
+        source_id=None,
+        metadata_provider=None,
+        observed_revision=None,
+    ):
         if source_id == "bad":
             raise TransientError("downstream down")
         return Document(
             id="d", content="x", uri=uri, metadata={"md5": "m", "source_revision": "r"}
         )
 
-    client.create_document_from_source.side_effect = _route
+    client._ingest_observed.side_effect = _route
 
     for i in range(3):
         await jobs.enqueue("bad", f"b{i}", JobOp.UPSERT)
@@ -1079,7 +1086,7 @@ async def test_breaker_ignores_permanent_errors(client, jobs, sync):
     shouldn't poison the breaker against unrelated jobs."""
     from haiku.rag.ingester.workers.pool import _WORKER_BREAKER_THRESHOLD
 
-    client.create_document_from_source.side_effect = PermanentError("bad URI")
+    client._ingest_observed.side_effect = PermanentError("bad URI")
     for i in range(_WORKER_BREAKER_THRESHOLD + 2):
         await jobs.enqueue("src", f"u{i}", JobOp.UPSERT)
 
@@ -1100,7 +1107,7 @@ async def test_sync_state_write_failure_does_not_crash_worker(
     log the error and continue rather than crashing. The job is already
     marked succeeded — a stale sync_state just means a redundant re-ingest
     on the next sweep."""
-    client.create_document_from_source.return_value = Document(
+    client._ingest_observed.return_value = Document(
         id="d", content="x", uri="u", metadata={"md5": "m", "source_revision": "r"}
     )
     await jobs.enqueue("src", "u", JobOp.UPSERT)
@@ -1132,7 +1139,7 @@ async def test_permanent_failure_marker_write_failure_does_not_crash_worker(
     """If the permanent-failure sync_state marker write fails after mark_dead,
     the worker logs and continues rather than crashing. The job is already dead;
     a missing marker just means the file may re-enqueue on the next sweep."""
-    client.create_document_from_source.side_effect = PermanentError("encrypted")
+    client._ingest_observed.side_effect = PermanentError("encrypted")
     await jobs.enqueue("src", "file:///x/y.pdf", JobOp.UPSERT, revision="r0")
 
     async def _failing_upsert(*args, **kwargs):
@@ -1322,7 +1329,7 @@ async def test_fatal_permanent_error_terminates_after_the_job_is_dead(
     would return the poison document to the queue on every restart."""
     from haiku.rag.ingester.workers import pool as pool_module
 
-    client.create_document_from_source.side_effect = PermanentError(
+    client._ingest_observed.side_effect = PermanentError(
         "conversion deadline: took too long", fatal_to_process=True
     )
     job = await jobs.enqueue("src", "file:///x/y.pdf", JobOp.UPSERT, revision="r0")
@@ -1361,7 +1368,7 @@ async def test_ordinary_permanent_error_does_not_terminate(
     """Only a failure that left the process unable to convert ends it."""
     from haiku.rag.ingester.workers import pool as pool_module
 
-    client.create_document_from_source.side_effect = PermanentError("encrypted")
+    client._ingest_observed.side_effect = PermanentError("encrypted")
     job = await jobs.enqueue("src", "file:///x/y.pdf", JobOp.UPSERT, revision="r0")
     assert job is not None
 
@@ -1387,7 +1394,7 @@ async def test_fatal_error_terminates_when_mark_dead_loses_the_claim(
     so it must not carry on claiming jobs it will fail."""
     from haiku.rag.ingester.workers import pool as pool_module
 
-    client.create_document_from_source.side_effect = PermanentError(
+    client._ingest_observed.side_effect = PermanentError(
         "conversion deadline", conversion_stalled=True, fatal_to_process=True
     )
     job = await jobs.enqueue("src", "file:///x/y.pdf", JobOp.UPSERT)
@@ -1418,7 +1425,7 @@ async def test_fatal_error_terminates_when_mark_dead_raises(
     """A failing queue write must not leave a wedged process running either."""
     from haiku.rag.ingester.workers import pool as pool_module
 
-    client.create_document_from_source.side_effect = PermanentError(
+    client._ingest_observed.side_effect = PermanentError(
         "conversion deadline", conversion_stalled=True, fatal_to_process=True
     )
     job = await jobs.enqueue("src", "file:///x/y.pdf", JobOp.UPSERT)

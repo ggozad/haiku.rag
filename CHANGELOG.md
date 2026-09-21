@@ -22,6 +22,9 @@
 
 ### Changed
 
+- An UPSERT carrying an observed revision no longer re-reads it from the source:
+  the ingester passes what discovery saw at enqueue time. Manifest replay still
+  revalidates its frozen revision before ingesting.
 - `haiku.rag.client` exports `HaikuRAG`, `RebuildMode`, `DatabaseScope`,
   `DocumentImport` and `all_found`, each imported on first use; `HaikuRAG` is
   defined in `haiku.rag.client.client`. Import any other name from the module

@@ -709,6 +709,7 @@ async def create_document_from_source(
     sources: "list[Source] | None" = None,
     source_id: str | None = None,
     metadata_provider: "MetadataProvider | None" = None,
+    observed_revision: str | None = None,
     force: bool = False,
 ) -> Document | list[Document]:
     """Create or update document(s) from a file path, directory, or URL.
@@ -831,7 +832,11 @@ async def create_document_from_source(
             else None
         )
         if existing_doc and stored_revision and not force:
-            current_revision = await fetcher.head(source_str)
+            current_revision = (
+                observed_revision
+                if observed_revision is not None
+                else await fetcher.head(source_str)
+            )
             if current_revision == stored_revision:
                 return _note_source_change(
                     await _refresh_doc_metadata(

@@ -103,7 +103,7 @@ def _mock_client() -> AsyncMock:
     async def _list_documents(*_, **__):
         return list(stored.values())
 
-    client.create_document_from_source.side_effect = _create
+    client._ingest_observed.side_effect = _create
     client.get_document_by_uri.side_effect = _get_by_uri
     client.delete_document.side_effect = _delete
     client.list_documents.side_effect = _list_documents
@@ -148,10 +148,8 @@ async def test_run_batch_drains_upserts(tmp_path, use_client):
 
     assert report.succeeded == 2
     assert report.dead == 0
-    assert client.create_document_from_source.await_count == 2
-    ingested = {
-        call.args[0] for call in client.create_document_from_source.await_args_list
-    }
+    assert client._ingest_observed.await_count == 2
+    ingested = {call.args[0] for call in client._ingest_observed.await_args_list}
     assert ingested == {
         (tmp_path / "a.md").as_uri(),
         (tmp_path / "b.md").as_uri(),
@@ -209,7 +207,7 @@ async def test_run_batch_prunes_orphans(tmp_path, use_client):
 
     # a.md is unchanged (same mtime) so it's not re-ingested; only the orphan
     # delete runs.
-    assert client.create_document_from_source.await_count == 2
+    assert client._ingest_observed.await_count == 2
     client.delete_document.assert_awaited_once()
     assert second.succeeded == 1
     assert second.dead == 0
@@ -220,7 +218,7 @@ async def test_run_batch_reports_dead_on_permanent_failure(tmp_path, use_client)
     (tmp_path / "a.md").write_text("hello")
 
     client = _mock_client()
-    client.create_document_from_source.side_effect = UnsupportedSourceError("nope")
+    client._ingest_observed.side_effect = UnsupportedSourceError("nope")
     use_client(client)
 
     report = await IngesterApp(
@@ -241,7 +239,7 @@ async def test_run_batch_recovered_doc_is_not_counted_as_dead(tmp_path, use_clie
     db_path = tmp_path / "db.lancedb"
 
     failing = _mock_client()
-    failing.create_document_from_source.side_effect = UnsupportedSourceError("nope")
+    failing._ingest_observed.side_effect = UnsupportedSourceError("nope")
     use_client(failing)
     first = await IngesterApp(
         config=config, scope=DatabaseScope.at(db_path)
@@ -301,7 +299,7 @@ async def test_run_batch_empty_source_returns_immediately(tmp_path, use_client):
 
     assert report.succeeded == 0
     assert report.dead == 0
-    client.create_document_from_source.assert_not_awaited()
+    client._ingest_observed.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -369,7 +367,7 @@ async def test_run_batch_from_manifest_drains_changes_without_sweeping(
 
     assert report.succeeded == 1
     assert report.dead == 0
-    client.create_document_from_source.assert_awaited_once()
+    client._ingest_observed.assert_awaited_once()
     sweep_all.assert_not_awaited()
 
 
@@ -397,7 +395,7 @@ async def test_run_batch_from_manifest_rejects_stale_upsert_revision(
 
     assert report.succeeded == 0
     assert report.dead == 1
-    client.create_document_from_source.assert_not_awaited()
+    client._ingest_observed.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -468,7 +466,7 @@ async def test_run_batch_from_manifest_resumes_same_manifest_work(tmp_path, use_
 
     assert report.succeeded == 1
     assert report.dead == 0
-    client.create_document_from_source.assert_awaited_once()
+    client._ingest_observed.assert_awaited_once()
 
 
 @pytest.mark.asyncio

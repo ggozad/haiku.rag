@@ -49,9 +49,9 @@ def _mock_client() -> AsyncMock:
 
 
 @pytest.mark.asyncio
-async def test_upsert_calls_create_document_from_source_and_returns_metadata():
+async def test_upsert_ingests_and_returns_metadata():
     client = _mock_client()
-    client.create_document_from_source.return_value = Document(
+    client._ingest_observed.return_value = Document(
         id="doc-42",
         content="x",
         uri="https://example.com/a.pdf",
@@ -68,11 +68,12 @@ async def test_upsert_calls_create_document_from_source_and_returns_metadata():
     assert result.revision == "xyz"
     assert result.content_hash == "abcd"
     assert result.deleted is False
-    client.create_document_from_source.assert_awaited_once_with(
+    client._ingest_observed.assert_awaited_once_with(
         "https://example.com/a.pdf",
         sources=None,
         source_id="src",
         metadata_provider=None,
+        observed_revision=None,
     )
 
 
@@ -83,17 +84,18 @@ async def test_upsert_threads_configured_sources_to_client():
     from haiku.rag.sources.http import HTTPSource
 
     client = _mock_client()
-    client.create_document_from_source.return_value = Document(
+    client._ingest_observed.return_value = Document(
         id="d", content="x", uri="u", metadata={}
     )
     configured = HTTPSource(source_id="urls", headers={"Authorization": "Bearer abc"})
 
     await run_job(client, _job(), sources=[configured])
-    client.create_document_from_source.assert_awaited_once_with(
+    client._ingest_observed.assert_awaited_once_with(
         "https://example.com/a.pdf",
         sources=[configured],
         source_id="src",
         metadata_provider=None,
+        observed_revision=None,
     )
 
 
@@ -113,7 +115,7 @@ class _MetadataProvider:
 @pytest.mark.asyncio
 async def test_provider_passed_to_client():
     client = _mock_client()
-    client.create_document_from_source.return_value = Document(
+    client._ingest_observed.return_value = Document(
         id="d", content="x", uri="u", metadata={}
     )
     provider = _MetadataProvider({"classification": "secret"})
@@ -121,11 +123,12 @@ async def test_provider_passed_to_client():
 
     await run_job(client, _job(), metadata_providers=providers)
 
-    client.create_document_from_source.assert_awaited_once_with(
+    client._ingest_observed.assert_awaited_once_with(
         "https://example.com/a.pdf",
         sources=None,
         source_id="src",
         metadata_provider=provider,
+        observed_revision=None,
     )
 
 
@@ -134,7 +137,7 @@ async def test_provider_not_called_in_pipeline():
     """Provider execution happens inside create_document_from_source after
     fetch, where FetchResult exists."""
     client = _mock_client()
-    client.create_document_from_source.return_value = Document(
+    client._ingest_observed.return_value = Document(
         id="d", content="x", uri="u", metadata={}
     )
     provider = _MetadataProvider(
@@ -143,11 +146,12 @@ async def test_provider_not_called_in_pipeline():
 
     await run_job(client, _job(), metadata_providers={"src": provider})
 
-    client.create_document_from_source.assert_awaited_once_with(
+    client._ingest_observed.assert_awaited_once_with(
         "https://example.com/a.pdf",
         sources=None,
         source_id="src",
         metadata_provider=provider,
+        observed_revision=None,
     )
 
 
@@ -155,31 +159,32 @@ async def test_provider_not_called_in_pipeline():
 async def test_no_provider_for_source_passes_no_metadata():
     """A provider registered for a different source must not apply here."""
     client = _mock_client()
-    client.create_document_from_source.return_value = Document(
+    client._ingest_observed.return_value = Document(
         id="d", content="x", uri="u", metadata={}
     )
     providers = {"other": _MetadataProvider({"classification": "secret"})}
 
     await run_job(client, _job(), metadata_providers=providers)
 
-    client.create_document_from_source.assert_awaited_once_with(
+    client._ingest_observed.assert_awaited_once_with(
         "https://example.com/a.pdf",
         sources=None,
         source_id="src",
         metadata_provider=None,
+        observed_revision=None,
     )
 
 
 @pytest.mark.asyncio
 async def test_provider_error_from_client_is_classified_and_blocks_ingest():
     client = _mock_client()
-    client.create_document_from_source.side_effect = httpx.ConnectError("provider down")
+    client._ingest_observed.side_effect = httpx.ConnectError("provider down")
     providers = {"src": _MetadataProvider()}
 
     with pytest.raises(TransientError):
         await run_job(client, _job(), metadata_providers=providers)
 
-    client.create_document_from_source.assert_awaited_once()
+    client._ingest_observed.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -231,11 +236,13 @@ class _StubSource:
         self.source_id = source_id
         self._revision = revision
         self._head_error = head_error
+        self.head_calls = 0
 
     def supports(self, uri: str) -> bool:
         return True
 
     async def head(self, uri: str) -> str | None:
+        self.head_calls += 1
         if self._head_error is not None:
             raise self._head_error
         return self._revision
@@ -305,13 +312,13 @@ async def test_manifest_upsert_rejects_stale_revision_before_fetch():
             sources=sources,
         )
 
-    client.create_document_from_source.assert_not_awaited()
+    client._ingest_observed.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_manifest_upsert_ingests_when_revision_matches():
     client = _mock_client()
-    client.create_document_from_source.return_value = Document(
+    client._ingest_observed.return_value = Document(
         id="doc-42",
         content="x",
         uri="https://example.com/a.pdf",
@@ -326,7 +333,7 @@ async def test_manifest_upsert_ingests_when_revision_matches():
     )
 
     assert result.document_id == "doc-42"
-    client.create_document_from_source.assert_awaited_once()
+    client._ingest_observed.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -360,7 +367,7 @@ async def test_unsupported_extension_classified_permanent():
     from haiku.rag.client.exceptions import UnsupportedSourceError
 
     client = _mock_client()
-    client.create_document_from_source.side_effect = UnsupportedSourceError(
+    client._ingest_observed.side_effect = UnsupportedSourceError(
         "Unsupported file extension: .xyz"
     )
 
@@ -373,7 +380,7 @@ async def test_unsupported_content_type_classified_permanent():
     from haiku.rag.client.exceptions import UnsupportedSourceError
 
     client = _mock_client()
-    client.create_document_from_source.side_effect = UnsupportedSourceError(
+    client._ingest_observed.side_effect = UnsupportedSourceError(
         "Unsupported content type/extension: application/octet-stream/.bin"
     )
     with pytest.raises(PermanentError):
@@ -385,7 +392,7 @@ async def test_invalid_s3_uri_classified_permanent():
     from haiku.rag.client.exceptions import UnsupportedSourceError
 
     client = _mock_client()
-    client.create_document_from_source.side_effect = UnsupportedSourceError(
+    client._ingest_observed.side_effect = UnsupportedSourceError(
         "Invalid S3 URI: s3:///bad"
     )
     with pytest.raises(PermanentError):
@@ -397,7 +404,7 @@ async def test_missing_file_classified_permanent():
     from haiku.rag.client.exceptions import UnsupportedSourceError
 
     client = _mock_client()
-    client.create_document_from_source.side_effect = UnsupportedSourceError(
+    client._ingest_observed.side_effect = UnsupportedSourceError(
         "File does not exist: /nope"
     )
     with pytest.raises(PermanentError):
@@ -407,7 +414,7 @@ async def test_missing_file_classified_permanent():
 @pytest.mark.asyncio
 async def test_other_value_error_classified_transient():
     client = _mock_client()
-    client.create_document_from_source.side_effect = ValueError("DB busy")
+    client._ingest_observed.side_effect = ValueError("DB busy")
     with pytest.raises(TransientError):
         await run_job(client, _job())
 
@@ -419,7 +426,7 @@ async def test_http_4xx_classified_permanent(status):
     response = httpx.Response(
         status, request=httpx.Request("GET", "https://example.com/a")
     )
-    client.create_document_from_source.side_effect = httpx.HTTPStatusError(
+    client._ingest_observed.side_effect = httpx.HTTPStatusError(
         "err", request=response.request, response=response
     )
     with pytest.raises(PermanentError):
@@ -433,7 +440,7 @@ async def test_http_408_429_5xx_classified_transient(status):
     response = httpx.Response(
         status, request=httpx.Request("GET", "https://example.com/a")
     )
-    client.create_document_from_source.side_effect = httpx.HTTPStatusError(
+    client._ingest_observed.side_effect = httpx.HTTPStatusError(
         "err", request=response.request, response=response
     )
     with pytest.raises(TransientError):
@@ -443,7 +450,7 @@ async def test_http_408_429_5xx_classified_transient(status):
 @pytest.mark.asyncio
 async def test_connect_error_classified_transient():
     client = _mock_client()
-    client.create_document_from_source.side_effect = httpx.ConnectError("boom")
+    client._ingest_observed.side_effect = httpx.ConnectError("boom")
     with pytest.raises(TransientError):
         await run_job(client, _job())
 
@@ -460,7 +467,7 @@ async def test_timeout_and_io_errors_classified_transient(exc_factory):
     """TimeoutError / OSError both classify as transient. Without this
     branch they'd fall through to the generic "unexpected" wrapper."""
     client = _mock_client()
-    client.create_document_from_source.side_effect = exc_factory()
+    client._ingest_observed.side_effect = exc_factory()
     with pytest.raises(TransientError, match="timeout/io"):
         await run_job(client, _job())
 
@@ -481,7 +488,7 @@ async def test_transport_subclasses_classified_transient(exc_factory):
     layer subclass routes to TransientError, not the generic 'unexpected'
     fallback."""
     client = _mock_client()
-    client.create_document_from_source.side_effect = exc_factory()
+    client._ingest_observed.side_effect = exc_factory()
     with pytest.raises(TransientError, match="network"):
         await run_job(client, _job())
 
@@ -489,7 +496,7 @@ async def test_transport_subclasses_classified_transient(exc_factory):
 @pytest.mark.asyncio
 async def test_unknown_exception_classified_transient():
     client = _mock_client()
-    client.create_document_from_source.side_effect = RuntimeError("???")
+    client._ingest_observed.side_effect = RuntimeError("???")
     with pytest.raises(TransientError):
         await run_job(client, _job())
 
@@ -497,7 +504,7 @@ async def test_unknown_exception_classified_transient():
 @pytest.mark.asyncio
 async def test_directory_result_classified_permanent():
     client = _mock_client()
-    client.create_document_from_source.return_value = [
+    client._ingest_observed.return_value = [
         Document(id="a", content="", uri="u1"),
         Document(id="b", content="", uri="u2"),
     ]
@@ -509,7 +516,7 @@ async def test_directory_result_classified_permanent():
 async def test_existing_permanent_error_passes_through_unchanged():
     client = _mock_client()
     sentinel = PermanentError("explicit")
-    client.create_document_from_source.side_effect = sentinel
+    client._ingest_observed.side_effect = sentinel
     with pytest.raises(PermanentError) as excinfo:
         await run_job(client, _job())
     assert excinfo.value is sentinel
@@ -519,7 +526,7 @@ async def test_existing_permanent_error_passes_through_unchanged():
 async def test_file_not_found_classified_as_permanent():
     """A deleted file should go straight to the DLQ, not retry."""
     client = _mock_client()
-    client.create_document_from_source.side_effect = FileNotFoundError("gone")
+    client._ingest_observed.side_effect = FileNotFoundError("gone")
     with pytest.raises(PermanentError, match="file not found"):
         await run_job(client, _job())
 
@@ -528,7 +535,7 @@ async def test_file_not_found_classified_as_permanent():
 async def test_permission_error_classified_as_permanent():
     """An unreadable file should go straight to the DLQ, not retry."""
     client = _mock_client()
-    client.create_document_from_source.side_effect = PermissionError("no access")
+    client._ingest_observed.side_effect = PermissionError("no access")
     with pytest.raises(PermanentError, match="permission denied"):
         await run_job(client, _job())
 
@@ -538,7 +545,7 @@ async def test_permission_error_classified_as_permanent():
 async def test_directory_errors_classified_as_permanent(exc_class):
     """Pointing at a directory instead of a file should DLQ immediately."""
     client = _mock_client()
-    client.create_document_from_source.side_effect = exc_class("not a file")
+    client._ingest_observed.side_effect = exc_class("not a file")
     with pytest.raises(PermanentError, match="path error"):
         await run_job(client, _job())
 
@@ -546,7 +553,7 @@ async def test_directory_errors_classified_as_permanent(exc_class):
 @pytest.mark.asyncio
 async def test_file_too_large_classified_as_permanent():
     client = _mock_client()
-    client.create_document_from_source.side_effect = FileTooLargeError("too big")
+    client._ingest_observed.side_effect = FileTooLargeError("too big")
     with pytest.raises(PermanentError, match="too big"):
         await run_job(client, _job())
 
@@ -563,7 +570,7 @@ async def test_file_too_large_classified_as_permanent():
 @pytest.mark.asyncio
 async def test_obstore_config_errors_classified_permanent(exc_class):
     client = _mock_client()
-    client.create_document_from_source.side_effect = exc_class("bad config")
+    client._ingest_observed.side_effect = exc_class("bad config")
     with pytest.raises(PermanentError, match="object store"):
         await run_job(client, _job())
 
@@ -577,7 +584,7 @@ async def test_other_obstore_errors_classified_transient(exc_class):
     """Only the credential/configuration errors are permanent; umbrellaing on
     obstore's BaseError would sweep up retryable failures too."""
     client = _mock_client()
-    client.create_document_from_source.side_effect = exc_class("upstream hiccup")
+    client._ingest_observed.side_effect = exc_class("upstream hiccup")
     with pytest.raises(TransientError):
         await run_job(client, _job())
 
@@ -589,7 +596,7 @@ async def test_conversion_deadline_is_permanent_and_fatal_to_the_process():
     from haiku.rag.converters.exceptions import ConversionTimeoutError
 
     client = _mock_client()
-    client.create_document_from_source.side_effect = ConversionTimeoutError(
+    client._ingest_observed.side_effect = ConversionTimeoutError(
         "took too long", converter_wedged=True
     )
 
@@ -607,7 +614,7 @@ async def test_conversion_deadline_on_its_own_converter_spares_the_process():
     from haiku.rag.converters.exceptions import ConversionTimeoutError
 
     client = _mock_client()
-    client.create_document_from_source.side_effect = ConversionTimeoutError(
+    client._ingest_observed.side_effect = ConversionTimeoutError(
         "took too long", converter_wedged=False
     )
 
@@ -627,12 +634,55 @@ async def test_wedged_converter_is_transient_and_never_kills_the_document():
     from haiku.rag.converters.exceptions import ConverterWedgedError
 
     client = _mock_client()
-    client.create_document_from_source.side_effect = ConverterWedgedError(
-        "restart the process"
-    )
+    client._ingest_observed.side_effect = ConverterWedgedError("restart the process")
 
     with pytest.raises(TransientError) as excinfo:
         await run_job(client, _job())
 
     # classified on its type, not swept up by the unknown-error fallthrough
     assert not str(excinfo.value).startswith("unexpected:")
+
+
+@pytest.mark.asyncio
+async def test_upsert_passes_the_observed_revision():
+    """Discovery already read the revision, so ingestion need not ask again."""
+    client = _mock_client()
+    client._ingest_observed.return_value = Document(
+        id="doc-1", content="x", uri="https://example.com/a.pdf", metadata={}
+    )
+
+    await run_job(client, _job(revision="etag-2"))
+
+    kwargs = client._ingest_observed.await_args.kwargs
+    assert kwargs["observed_revision"] == "etag-2"
+
+
+@pytest.mark.asyncio
+async def test_upsert_without_a_revision_passes_none():
+    client = _mock_client()
+    client._ingest_observed.return_value = Document(
+        id="doc-1", content="x", uri="https://example.com/a.pdf", metadata={}
+    )
+
+    await run_job(client, _job(revision=None))
+
+    kwargs = client._ingest_observed.await_args.kwargs
+    assert kwargs["observed_revision"] is None
+
+
+@pytest.mark.asyncio
+async def test_manifest_replay_still_revalidates_before_ingesting():
+    """The manifest's revision is frozen, so it is checked against the source
+    even though the hint is passed on."""
+    client = _mock_client()
+    client._ingest_observed.return_value = Document(
+        id="doc-1", content="x", uri="https://example.com/a.pdf", metadata={}
+    )
+    source = _StubSource("src", "etag-2")
+    job = _job(revision="etag-2", extra={"_manifest": {"generated_at": "now"}})
+
+    await run_job(client, job, sources=[source])
+
+    assert source.head_calls == 1
+    kwargs = client._ingest_observed.await_args.kwargs
+    assert kwargs["observed_revision"] == "etag-2"
