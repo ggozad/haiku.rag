@@ -1,4 +1,3 @@
-from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -9,11 +8,6 @@ from haiku.rag.chunkers.docling_local import DoclingLocalChunker
 from haiku.rag.chunkers.docling_serve import DoclingServeChunker
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.converters import get_converter
-
-
-@pytest.fixture(scope="module")
-def vcr_cassette_dir():
-    return str(Path(__file__).parent / "cassettes" / "test_chunker")
 
 
 async def test_local_chunker(qa_corpus: list[dict[str, str]]):

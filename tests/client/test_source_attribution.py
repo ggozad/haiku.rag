@@ -16,8 +16,7 @@ from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
-
-from .conftest import capture_logs
+from tests.conftest import capture_logs
 
 DOCUMENTS_LOGGER = logging.getLogger("haiku.rag.client.documents")
 

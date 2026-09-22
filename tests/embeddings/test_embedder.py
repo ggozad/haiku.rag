@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import numpy as np
 import pytest
 
@@ -16,11 +14,6 @@ from haiku.rag.embeddings import (
     get_embedder,
 )
 from haiku.rag.store.models.chunk import Chunk
-
-
-@pytest.fixture(scope="module")
-def vcr_cassette_dir():
-    return str(Path(__file__).parent / "cassettes" / "test_embedder")
 
 
 def similarities(embeddings, test_embedding):

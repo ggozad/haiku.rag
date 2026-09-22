@@ -44,6 +44,19 @@ if TYPE_CHECKING:
 setattr(pydantic_ai.models, "ALLOW_MODEL_REQUESTS", False)
 logging.getLogger("vcr.cassette").setLevel(logging.WARNING)
 
+_CENTRAL_CASSETTE_SUITES = frozenset(
+    {
+        "client",
+        "chunkers",
+        "converters",
+        "embeddings",
+        "interfaces",
+        "providers",
+        "reranking",
+        "store",
+    }
+)
+
 
 @contextmanager
 def capture_logs(
@@ -191,6 +204,15 @@ def pytest_recording_configure(config: Any, vcr: "VCR"):
     from . import json_body_serializer
 
     vcr.register_serializer("yaml", json_body_serializer)
+
+
+@pytest.fixture(scope="module")
+def vcr_cassette_dir(request: pytest.FixtureRequest) -> str:
+    module_path = Path(str(request.node.path))
+    cassette_root = module_path.parent / "cassettes"
+    if module_path.parent.name in _CENTRAL_CASSETTE_SUITES:
+        cassette_root = Path(__file__).parent / "cassettes"
+    return str(cassette_root / module_path.stem)
 
 
 @pytest.fixture(scope="module")

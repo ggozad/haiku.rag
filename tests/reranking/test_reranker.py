@@ -1,4 +1,3 @@
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -15,12 +14,6 @@ HEAVY_LOADERS = {
     "jina-local": "AutoModel",
     "cross-encoder": "CrossEncoder",
 }
-
-
-@pytest.fixture(scope="module")
-def vcr_cassette_dir():
-    return str(Path(__file__).parent / "cassettes" / "test_reranker")
-
 
 chunks = [
     Chunk(content=content, document_id=str(i))

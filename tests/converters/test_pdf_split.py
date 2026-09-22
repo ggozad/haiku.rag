@@ -1,7 +1,7 @@
 """Unit tests for haiku.rag.converters.pdf_split.
 
 The integration test that pins split-and-merge against a real-PDF baseline
-lives in tests/test_converters.py — that path requires docling installed and
+lives in tests/converters/test_converters.py — that path requires docling installed and
 is gated accordingly. These tests cover the byte-level split mechanism and
 the docling-core concatenate contract in isolation.
 """

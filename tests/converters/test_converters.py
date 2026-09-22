@@ -138,11 +138,6 @@ class TestVlmApiHeaders:
         assert headers == {"Authorization": "Bearer sk-vlm"}
 
 
-@pytest.fixture(scope="module")
-def vcr_cassette_dir():
-    return str(Path(__file__).parent / "cassettes" / "test_converters")
-
-
 def create_mock_docling_document(name: str = "test") -> dict:
     """Create a minimal valid DoclingDocument JSON structure for mocking."""
     return {
@@ -1010,7 +1005,7 @@ class TestDoclingLocalConverter:
         """
         from haiku.rag.converters.pdf_split import convert_pdf_with_splitting
 
-        pdf_path = Path(__file__).parent / "data" / "doclaynet.pdf"
+        pdf_path = Path(__file__).parent.parent / "data" / "doclaynet.pdf"
         config.processing.conversion_options.do_ocr = False
         converter = DoclingLocalConverter(config)
         baseline = await converter.convert_file(pdf_path)
@@ -2659,7 +2654,7 @@ class TestConversionTimeout:
         config.processing.conversion_timeout = 0.05
         config.processing.conversion_options.do_ocr = False
         converter = DoclingLocalConverter(config)
-        pdf_path = Path(__file__).parent / "data" / "doclaynet.pdf"
+        pdf_path = Path(__file__).parent.parent / "data" / "doclaynet.pdf"
 
         monkeypatch.setattr(converter, "_sync_convert_timed", stall)
         with pytest.raises(TimeoutError, match="conversion_timeout"):

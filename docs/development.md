@@ -132,8 +132,8 @@ including ones whose service you do not have running.
 
 ```bash
 # Ollama-backed cassettes need no key, only a running Ollama
-uv run pytest tests/test_embedder.py::test_ollama_embedder -n0 --record-mode=rewrite
+uv run pytest tests/embeddings/test_embedder.py::test_ollama_embedder -n0 --record-mode=rewrite
 
 # A keyed provider reads its own variable. Cohere's SDK reads CO_API_KEY
-CO_API_KEY=... uv run pytest tests/test_reranker.py::test_cohere_reranker -n0 --record-mode=rewrite
+CO_API_KEY=... uv run pytest tests/reranking/test_reranker.py::test_cohere_reranker -n0 --record-mode=rewrite
 ```

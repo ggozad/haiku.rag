@@ -1080,7 +1080,7 @@ class TestMCPErrorContract:
 class TestAgentPlugins:
     """The shared Claude Code and Codex plugin points at this MCP server."""
 
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
 
     def test_the_manifests_name_the_plugin_and_its_server(self):
         import json

@@ -28,11 +28,6 @@ from haiku.rag.store.models.document import Document
 from tests.locks import ObservedLock, assert_waiting_for_lock
 
 
-@pytest.fixture(scope="module")
-def vcr_cassette_dir():
-    return str(Path(__file__).parent / "cassettes" / "test_client")
-
-
 async def test_a_string_db_path_is_accepted(temp_db_path):
     """The documented `HaikuRAG("knowledge.lancedb")` form: Store calls
     `exists()` and `absolute()` on db_path, which a str lacks."""
