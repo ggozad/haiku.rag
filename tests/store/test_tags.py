@@ -1,4 +1,5 @@
 import asyncio
+from datetime import timedelta
 
 import pytest
 from lancedb.table import AsyncTags
@@ -8,6 +9,14 @@ from haiku.rag.store.engine import Store
 from haiku.rag.store.models import Document
 from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.schema import REQUIRED_TABLES
+from tests.locks import ObservedLock, assert_waiting_for_lock
+
+
+@pytest.fixture
+def short_retention_margin(monkeypatch):
+    monkeypatch.setattr(
+        "haiku.rag.store.engine.TAG_RETENTION_MARGIN", timedelta(milliseconds=1)
+    )
 
 
 async def test_create_and_list_tags(temp_db_path):
@@ -144,30 +153,32 @@ async def test_delete_tag_reports_failed_tables(temp_db_path, monkeypatch):
         assert await store.list_tags() == {}
 
 
-async def test_create_tag_waits_for_write_lock(temp_db_path):
+async def test_create_tag_waits_for_write_lock(temp_db_path, monkeypatch):
     """create_tag serializes with client writes so a write cannot land
     between the version snapshot and the per-table tag creation."""
     async with Store(temp_db_path, create=True) as store:
-        async with store._write_lock:
+        lock = ObservedLock()
+        monkeypatch.setattr(store, "_write_lock", lock)
+        async with lock:
             task = asyncio.create_task(store.create_tag("release-1"))
-            await asyncio.sleep(0.1)
-            assert not task.done()
+            await assert_waiting_for_lock(task, lock)
         await task
 
         tags = await store.list_tags()
         assert tags["release-1"].complete is True
 
 
-async def test_delete_tag_waits_for_write_lock(temp_db_path):
+async def test_delete_tag_waits_for_write_lock(temp_db_path, monkeypatch):
     """delete_tag serializes with create_tag and client writes so it cannot
     remove tags out from under a concurrent create_tag."""
     async with Store(temp_db_path, create=True) as store:
         await store.create_tag("release-1")
 
-        async with store._write_lock:
+        lock = ObservedLock()
+        monkeypatch.setattr(store, "_write_lock", lock)
+        async with lock:
             task = asyncio.create_task(store.delete_tag("release-1"))
-            await asyncio.sleep(0.1)
-            assert not task.done()
+            await assert_waiting_for_lock(task, lock)
         await task
 
         assert await store.list_tags() == {}
@@ -249,7 +260,9 @@ async def test_vacuum_reraises_runtime_error(temp_db_path, monkeypatch):
         await store.vacuum(retention_seconds=0)
 
 
-async def test_vacuum_multiple_tags_uses_oldest_cutoff(temp_db_path):
+async def test_vacuum_multiple_tags_uses_oldest_cutoff(
+    temp_db_path, short_retention_margin
+):
     """With several tags the retention clamp must key off the oldest one;
     clamping to a newer tag would put the older tagged version inside the
     cleanup window and lance would hard-error."""
@@ -258,7 +271,7 @@ async def test_vacuum_multiple_tags_uses_oldest_cutoff(temp_db_path):
         await repo.create(Document(content="First document"))
         await store.create_tag("old")
 
-        await asyncio.sleep(1.5)
+        await asyncio.sleep(0.05)
 
         await repo.create(Document(content="Second document"))
         await store.create_tag("new")
@@ -271,7 +284,9 @@ async def test_vacuum_multiple_tags_uses_oldest_cutoff(temp_db_path):
         assert tags["new"].tables["documents"] in remaining
 
 
-async def test_vacuum_partial_tag_protects_its_tables(temp_db_path):
+async def test_vacuum_partial_tag_protects_its_tables(
+    temp_db_path, short_retention_margin
+):
     """A partial tag still protects the versions of the tables it exists on,
     while untagged tables clean up normally."""
     async with Store(temp_db_path, create=True) as store:
@@ -284,7 +299,7 @@ async def test_vacuum_partial_tag_protects_its_tables(temp_db_path):
             v["version"] for v in await store.list_table_versions("documents")
         ]
 
-        await asyncio.sleep(1.5)
+        await asyncio.sleep(0.05)
 
         await repo.create(Document(content="Second document"))
         await store.vacuum(retention_seconds=0)
@@ -347,14 +362,15 @@ async def test_tag_operations_rejected_during_rebuild(temp_db_path):
         assert set(await store.list_tags()) == {"release-1"}
 
 
-async def test_vacuum_waits_for_write_lock(temp_db_path):
+async def test_vacuum_waits_for_write_lock(temp_db_path, monkeypatch):
     """Vacuum serializes with writers and tag operations so a tag cannot be
     created between _tag_safe_retention's read and the optimize call."""
     async with Store(temp_db_path, create=True) as store:
-        async with store._write_lock:
+        lock = ObservedLock()
+        monkeypatch.setattr(store, "_write_lock", lock)
+        async with lock:
             task = asyncio.create_task(store.vacuum(retention_seconds=0))
-            await asyncio.sleep(0.1)
-            assert not task.done()
+            await assert_waiting_for_lock(task, lock)
         await task
 
 

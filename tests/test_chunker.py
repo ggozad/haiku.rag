@@ -484,6 +484,7 @@ class TestDoclingServeChunker:
         """Test handling of connection errors."""
         import httpx
 
+        chunker.client._retry_base_delay = 0
         mock_client = AsyncMock()
         mock_client.post.side_effect = httpx.ConnectError("Connection failed")
         mock_client_class.return_value.__aenter__.return_value = mock_client
@@ -499,6 +500,7 @@ class TestDoclingServeChunker:
         """Test handling of timeout errors."""
         import httpx
 
+        chunker.client._retry_base_delay = 0
         mock_client = AsyncMock()
         mock_client.post.side_effect = httpx.TimeoutException("Timeout")
         mock_client_class.return_value.__aenter__.return_value = mock_client
@@ -694,21 +696,12 @@ This is content.
 
 @pytest.mark.slow
 @pytest.mark.vcr()
-async def test_local_and_serve_converters_and_chunkers_agree(doclaynet_first_page_pdf):
-    """Both stages agree: the two converters segment a PDF the same way, and the
-    two chunkers then cut it the same way.
+async def test_local_and_serve_chunkers_produce_same_output(doclaynet_first_page_pdf):
+    """Pin converter and chunker parity across local and serve backends.
 
-    Its sibling below converts once and compares only the chunkers, so it cannot
-    see a conversion difference. That is how a `pdf_backend` mismatch went
-    unnoticed: the local converter named a backend, docling-serve defaulted an
-    omitted one to another, and the two parsers segment items differently.
-
-    Labels are not compared. Docling keeps a label when the classifier clears a
-    hard-coded 0.5 confidence cutoff, and no flag moves it, so an element whose
-    confidence sits either side of that cutoff is labelled differently on two
-    platforms running identical versions, options and model weights.
+    Converter equality covers stable text and page fields; whole-document refs
+    and classifier-threshold labels vary across platforms.
     """
-    from collections import Counter
 
     from haiku.rag.chunkers.docling_local import DoclingLocalChunker
     from haiku.rag.chunkers.docling_serve import DoclingServeChunker
@@ -716,14 +709,12 @@ async def test_local_and_serve_converters_and_chunkers_agree(doclaynet_first_pag
     from haiku.rag.converters.docling_serve import DoclingServeConverter
     from haiku.rag.store.models.document_item import extract_items
 
-    # One config for both sides: comparing output is only meaningful when the
-    # options behind it are the same, and `get_config()` carries the ambient
-    # docling-serve base_url that the serve converter needs.
-    config = get_config()
+    config = get_config().model_copy(deep=True)
     config.processing.conversion_options.do_ocr = False
     config.processing.chunk_size = 256
     config.processing.chunker_type = "hybrid"
     config.processing.chunking_merge_peers = True
+    config.processing.chunking_use_markdown_tables = True
 
     local_doc = await DoclingLocalConverter(config).convert_file(
         doclaynet_first_page_pdf
@@ -732,95 +723,33 @@ async def test_local_and_serve_converters_and_chunkers_agree(doclaynet_first_pag
         doclaynet_first_page_pdf
     )
 
-    # `self_ref` is not compared: it indexes the whole DoclingDocument,
-    # including the synthetic text item docling substitutes for a parser cell
-    # left unassigned when a label falls below the cutoff, which
-    # `extract_items` does not return.
     local_items = extract_items("d", local_doc)
     serve_items = extract_items("d", serve_doc)
     assert len(local_items) == len(serve_items)
-    assert [i.text for i in local_items] == [i.text for i in serve_items]
-    assert [i.page_numbers for i in local_items] == [
-        i.page_numbers for i in serve_items
+    assert [item.text for item in local_items] == [item.text for item in serve_items]
+    assert [item.page_numbers for item in local_items] == [
+        item.page_numbers for item in serve_items
     ]
-
-    # Stage two: the same chunks out of each document.
-    local_chunks = await DoclingLocalChunker(config).chunk(local_doc)
-    serve_chunks = await DoclingServeChunker(config).chunk(serve_doc)
-    assert len(local_chunks) == len(serve_chunks)
-    assert [c.content for c in local_chunks] == [c.content for c in serve_chunks]
-    assert Counter(" ".join(c.content for c in local_chunks).split()) == Counter(
-        " ".join(c.content for c in serve_chunks).split()
-    )
-
-
-@pytest.mark.slow
-@pytest.mark.vcr()
-async def test_local_and_serve_chunkers_produce_same_output(doclaynet_first_page_pdf):
-    """Test that local and serve chunkers produce identical output for the same document.
-
-    Note: Labels are resolved from the DoclingDocument since docling-serve API
-    only returns ref strings, not labels. See:
-    https://github.com/docling-project/docling-serve/issues/448
-    """
-    from haiku.rag.chunkers.docling_local import DoclingLocalChunker
-    from haiku.rag.chunkers.docling_serve import DoclingServeChunker
-    from haiku.rag.converters.docling_serve import DoclingServeConverter
-
-    # Use docling-serve to convert the PDF (ensures same conversion for both chunkers)
-    converter = DoclingServeConverter(get_config())
-    pdf_path = doclaynet_first_page_pdf
-    doc = await converter.convert_file(pdf_path)
-
-    # Create both chunkers with same config
-    config = AppConfig()
-    config.processing.chunk_size = 256
-    config.processing.chunker_type = "hybrid"
-    config.processing.chunking_merge_peers = True
-    config.processing.chunking_use_markdown_tables = True
 
     local_chunker = DoclingLocalChunker(config)
     serve_chunker = DoclingServeChunker(config)
+    local_chunks = await local_chunker.chunk(local_doc)
+    local_serve_doc_chunks = await local_chunker.chunk(serve_doc)
+    serve_chunks = await serve_chunker.chunk(serve_doc)
 
-    # Chunk with both
-    local_chunks = await local_chunker.chunk(doc)
-    serve_chunks = await serve_chunker.chunk(doc)
+    assert [chunk.content for chunk in local_chunks] == [
+        chunk.content for chunk in serve_chunks
+    ]
+    assert len(local_serve_doc_chunks) == len(serve_chunks)
 
-    # Same number of chunks
-    assert len(local_chunks) == len(serve_chunks), (
-        f"Chunk count mismatch: local={len(local_chunks)}, serve={len(serve_chunks)}"
-    )
-
-    for i, (local, serve) in enumerate(zip(local_chunks, serve_chunks)):
-        # Text should match
-        assert local.content == serve.content, f"Chunk {i} content mismatch"
-
+    for local, serve in zip(local_serve_doc_chunks, serve_chunks, strict=True):
+        assert local.content == serve.content
         local_meta = local.get_chunk_metadata()
         serve_meta = serve.get_chunk_metadata()
-
-        # doc_item_refs should match
-        assert local_meta.doc_item_refs == serve_meta.doc_item_refs, (
-            f"Chunk {i} doc_item_refs mismatch: "
-            f"local={local_meta.doc_item_refs}, serve={serve_meta.doc_item_refs}"
-        )
-
-        # Labels should match (now that serve resolves from document)
-        assert local_meta.labels == serve_meta.labels, (
-            f"Chunk {i} labels mismatch: "
-            f"local={local_meta.labels}, serve={serve_meta.labels}"
-        )
-
-        # Headings should match
-        assert local_meta.headings == serve_meta.headings, (
-            f"Chunk {i} headings mismatch: "
-            f"local={local_meta.headings}, serve={serve_meta.headings}"
-        )
-
-        # Page numbers should match
-        assert local_meta.page_numbers == serve_meta.page_numbers, (
-            f"Chunk {i} page_numbers mismatch: "
-            f"local={local_meta.page_numbers}, serve={serve_meta.page_numbers}"
-        )
+        assert local_meta.doc_item_refs == serve_meta.doc_item_refs
+        assert local_meta.labels == serve_meta.labels
+        assert local_meta.headings == serve_meta.headings
+        assert local_meta.page_numbers == serve_meta.page_numbers
 
 
 @pytest.mark.slow

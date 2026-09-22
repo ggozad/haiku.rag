@@ -25,6 +25,7 @@ from haiku.rag.sources.base import FetchResult
 from haiku.rag.store.compression import decompress_json
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
+from tests.locks import ObservedLock, assert_waiting_for_lock
 
 
 @pytest.fixture(scope="module")
@@ -2533,7 +2534,7 @@ async def test_rebuild_rechunk_with_url_prefixed_stored_content(
         assert "Stored" in doc_after.content
 
 
-async def test_metadata_only_update_waits_for_write_lock(temp_db_path):
+async def test_metadata_only_update_waits_for_write_lock(temp_db_path, monkeypatch):
     """The metadata-only update path serializes with other writers so it
     cannot land inside another writer's critical section (e.g. between
     create_tag's version snapshot and its per-table tag creation)."""
@@ -2550,12 +2551,13 @@ async def test_metadata_only_update_waits_for_write_lock(temp_db_path):
             uri="mem://meta",
         )
 
-        async with client.store._write_lock:
+        lock = ObservedLock()
+        monkeypatch.setattr(client.store, "_write_lock", lock)
+        async with lock:
             task = asyncio.create_task(
                 client.update_document(document_id=doc.id, metadata={"k": "v"})
             )
-            await asyncio.sleep(0.1)
-            assert not task.done()
+            await assert_waiting_for_lock(task, lock)
         updated = await task
         assert updated.metadata == {"k": "v"}
 

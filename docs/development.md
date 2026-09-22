@@ -52,13 +52,16 @@ Tests use [pytest-recording](https://github.com/kiwicom/pytest-recording) (VCR.p
 2. On subsequent runs, HTTP calls are replayed from cassettes instead of hitting real services
 3. Cassettes are committed to the repository so CI can run tests without external dependencies
 
+Docling-serve polling and retry delays are skipped during cassette playback.
+Recording and `--disable-recording` runs retain the real delays.
+
 ### Recording New Cassettes
 
 When adding a new test that makes HTTP calls:
 
 1. Add the `@pytest.mark.vcr()` decorator to your test
-2. Run the test with the required services available (e.g., Ollama running)
-3. The cassette is automatically created on first run
+2. Run the test with the required services available and `--record-mode=once`
+3. Commit the generated cassette
 
 ### Re-recording Cassettes
 

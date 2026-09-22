@@ -116,7 +116,7 @@ async def test_pending_task_is_polled_again(monkeypatch):
     async def record_delay(delay: float) -> None:
         delays.append(delay)
 
-    monkeypatch.setattr(docling_serve_module.asyncio, "sleep", record_delay)
+    monkeypatch.setattr(docling_serve_module, "sleep", record_delay)
     client = DoclingServeClient(
         base_urls="http://pending:5001",
         transport=httpx.MockTransport(handler),

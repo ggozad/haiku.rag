@@ -344,13 +344,18 @@ async def test_aexit_awaits_all_background_vacuums(temp_db_path, monkeypatch):
 
     monkeypatch.setattr(get_config().storage, "auto_vacuum", True)
 
+    first_vacuum_started = asyncio.Event()
+    release_first_vacuum = asyncio.Event()
     first_vacuum_completed = asyncio.Event()
-
-    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
+    client = HaikuRAG(db_path=temp_db_path, create=True)
+    await client.__aenter__()
+    exit_task = None
+    try:
         call_count = 0
 
-        async def slow_vacuum(*_args, **_kwargs):
+        async def slow_vacuum(retention_seconds: int | None = None) -> None:
             nonlocal call_count
+            del retention_seconds
             call_count += 1
             my_num = call_count
             # Mimic the real vacuum's skip-if-running behavior.
@@ -358,18 +363,27 @@ async def test_aexit_awaits_all_background_vacuums(temp_db_path, monkeypatch):
                 return
             async with client.store._vacuum_lock:
                 if my_num == 1:
-                    # Hold the lock longer than any other operation in the
-                    # test so Task A cannot finish incidentally. __aexit__
-                    # must explicitly wait for this task.
-                    await asyncio.sleep(2.0)
+                    first_vacuum_started.set()
+                    await release_first_vacuum.wait()
                     first_vacuum_completed.set()
 
-        client.store.vacuum = slow_vacuum
+        monkeypatch.setattr(client.store, "vacuum", slow_vacuum)
 
         await client.create_document(content="triggers first vacuum")
-        # Let Task A start and acquire the vacuum lock before scheduling B.
-        await asyncio.sleep(0.02)
+        await first_vacuum_started.wait()
         await client.create_document(content="triggers second vacuum")
+
+        exit_task = asyncio.create_task(client.__aexit__(None, None, None))
+        await asyncio.sleep(0)
+        assert not exit_task.done()
+        release_first_vacuum.set()
+        await exit_task
+    finally:
+        release_first_vacuum.set()
+        if exit_task is None:
+            await client.__aexit__(None, None, None)
+        elif not exit_task.done():
+            await exit_task
 
     assert first_vacuum_completed.is_set(), (
         "__aexit__ returned before the first vacuum task finished"

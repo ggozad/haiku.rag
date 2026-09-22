@@ -1945,6 +1945,7 @@ class TestDoclingServeConverter:
 
     async def test_convert_text_connection_error(self, converter):
         """Test handling of connection errors."""
+        converter.client._retry_base_delay = 0
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
             mock_client.post = AsyncMock(
@@ -1959,6 +1960,7 @@ class TestDoclingServeConverter:
 
     async def test_convert_text_timeout_error(self, converter):
         """Test handling of timeout errors."""
+        converter.client._retry_base_delay = 0
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
             mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("Timeout"))

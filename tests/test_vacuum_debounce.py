@@ -6,6 +6,7 @@ from haiku.rag.client.documents import _refresh_doc_metadata
 from haiku.rag.config import get_config
 from haiku.rag.store.models.chunk import Chunk
 from tests.conftest import writing
+from tests.locks import ObservedLock, assert_waiting_for_lock
 
 
 def _docling_doc(name: str, text: str):
@@ -90,7 +91,7 @@ async def test_metadata_refresh_sweep_schedules_vacuum(temp_db_path):
         assert client._session._vacuum_dirty is True
 
 
-async def test_metadata_refresh_waits_for_write_lock(temp_db_path):
+async def test_metadata_refresh_waits_for_write_lock(temp_db_path, monkeypatch):
     """The revision/MD5 short-circuit write serializes with other writers so
     it cannot land inside another writer's critical section (e.g. between
     create_tag's version snapshot and its per-table tag creation)."""
@@ -103,7 +104,9 @@ async def test_metadata_refresh_waits_for_write_lock(temp_db_path):
             metadata={"source_revision": "r1"},
         )
 
-        async with client.store._write_lock:
+        lock = ObservedLock()
+        monkeypatch.setattr(client.store, "_write_lock", lock)
+        async with lock:
             task = asyncio.create_task(
                 _refresh_doc_metadata(
                     writing(client),
@@ -113,7 +116,6 @@ async def test_metadata_refresh_waits_for_write_lock(temp_db_path):
                     source_metadata={"source_revision": "r2", "md5": "same"},
                 )
             )
-            await asyncio.sleep(0.1)
-            assert not task.done()
+            await assert_waiting_for_lock(task, lock)
         refreshed = await task
         assert refreshed.metadata["source_revision"] == "r2"

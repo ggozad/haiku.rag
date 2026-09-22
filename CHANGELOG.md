@@ -5,7 +5,8 @@
 ### Changed
 
 - Tests use pytest-asyncio auto mode and separate fast, slow end-to-end, live
-  integration and evaluations lanes.
+  integration and evaluations lanes, with request delays removed from
+  docling-serve cassette playback.
 
 ## [0.88.0] - 2026-09-21
 

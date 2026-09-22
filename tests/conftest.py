@@ -144,6 +144,27 @@ def allow_expected_model_requests(request):
 
 
 @pytest.fixture(autouse=True)
+def skip_docling_serve_delays_during_replay(
+    request, record_mode, disable_recording, monkeypatch
+):
+    """Skip docling-serve polling delays during cassette playback."""
+    if (
+        request.node.get_closest_marker("vcr") is None
+        or request.node.get_closest_marker("integration") is not None
+        or record_mode != "none"
+        or disable_recording
+    ):
+        yield
+        return
+
+    async def no_delay(_seconds: float) -> None:
+        pass
+
+    monkeypatch.setattr("haiku.rag.providers.docling_serve.sleep", no_delay)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def set_mock_api_keys(monkeypatch):
     """Set mock API keys for providers that require them during initialization."""
     if not os.getenv("OPENAI_API_KEY"):

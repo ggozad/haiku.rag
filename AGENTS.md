@@ -422,6 +422,8 @@ CO_API_KEY=... pytest tests/test_reranker.py::test_cohere_reranker -n0 --record-
 
 To add VCR to a new test, add `@pytest.mark.vcr()`, then record its cassette with `pytest <path> -n0 --record-mode=once` against the real service. The default `record_mode` is `none` (none is set in pyproject), so without `--record-mode` an unrecorded call errors with a connection-style failure instead of recording. Recording reaches the real service, so it needs network.
 
+Docling-serve polling and retry delays are skipped only during cassette playback (`record_mode=none`). Recording and `--disable-recording` runs retain the real delays.
+
 ## Code Conventions
 
 - Python 3.12+ native typing (no `from __future__ import annotations`)
