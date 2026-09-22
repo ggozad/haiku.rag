@@ -1,10 +1,9 @@
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from transformers import AutoTokenizer
 
 from haiku.rag.chunkers import get_chunker
-from haiku.rag.chunkers.docling_local import DoclingLocalChunker
+from haiku.rag.chunkers.docling_local import DoclingLocalChunker, _get_tokenizer
 from haiku.rag.chunkers.docling_serve import DoclingServeChunker
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.converters import get_converter
@@ -25,8 +24,7 @@ async def test_local_chunker(qa_corpus: list[dict[str, str]]):
     assert len(chunks) > 1
 
     # Load tokenizer for verification
-    tokenizer = AutoTokenizer.from_pretrained(chunker.tokenizer_name)
-    assert tokenizer is not None
+    tokenizer = _get_tokenizer(chunker.tokenizer_name)
 
     # Ensure that chunks are reasonably sized (allowing more flexibility for structure-aware chunking)
     total_tokens = 0
@@ -119,8 +117,6 @@ def test_tokenizer_cached_across_chunker_instances():
     chunker per document, which without caching hits HF Hub's 1000-per-5min
     limit and crashes with HTTP 429.
     """
-    from haiku.rag.chunkers.docling_local import _get_tokenizer
-
     _get_tokenizer.cache_clear()
 
     DoclingLocalChunker()

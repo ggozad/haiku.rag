@@ -1,12 +1,14 @@
-"""Tests for haiku.rag.client.processing helpers."""
-
 import logging
+import tempfile
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from haiku.rag.client import HaikuRAG
 from haiku.rag.client.processing import _warn_if_descriptions_missing, convert
 from haiku.rag.config import AppConfig
+from haiku.rag.store.models.chunk import Chunk
 from tests.conftest import capture_logs
 
 
@@ -270,3 +272,250 @@ async def test_convert_percent_encoded_file_uri(tmp_path):
     doc = await convert(AppConfig(), target.as_uri())
 
     assert "Heading" in doc.export_to_markdown()
+
+
+@pytest.mark.vcr()
+async def test_client_convert_text(temp_db_path):
+    from docling_core.types.doc.document import DoclingDocument
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        text = "This is some test content for conversion."
+        docling_doc = await client.convert(text)
+
+        assert isinstance(docling_doc, DoclingDocument)
+        markdown = docling_doc.export_to_markdown()
+        assert "test content" in markdown
+
+
+@pytest.mark.vcr()
+async def test_client_convert_file(temp_db_path):
+    from docling_core.types.doc.document import DoclingDocument
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / "test.txt"
+            temp_path.write_text("File content for conversion test.")
+
+            docling_doc = await client.convert(temp_path)
+
+            assert isinstance(docling_doc, DoclingDocument)
+            markdown = docling_doc.export_to_markdown()
+            assert "File content" in markdown
+
+
+@pytest.mark.vcr()
+async def test_client_convert_file_not_found(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with pytest.raises(ValueError, match="File does not exist"):
+            await client.convert(Path("/nonexistent/path/file.txt"))
+
+
+async def test_client_convert_from_url(temp_db_path):
+    from docling_core.types.doc.document import DoclingDocument
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        mock_response = AsyncMock()
+        mock_response.content = (
+            b"<html><body><p>URL convert path content.</p></body></html>"
+        )
+        mock_response.headers = {"content-type": "text/html"}
+        mock_response.raise_for_status = AsyncMock()
+
+        with patch("httpx.AsyncClient.get", return_value=mock_response):
+            docling_doc = await client.convert("https://example.com/page.html")
+
+        assert isinstance(docling_doc, DoclingDocument)
+        markdown = docling_doc.export_to_markdown()
+        assert "URL convert path content" in markdown
+
+
+async def test_client_convert_from_url_unsupported_content_type(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        mock_response = AsyncMock()
+        mock_response.content = b"\x00\x01\x02binary"
+        mock_response.headers = {"content-type": "application/octet-stream"}
+        mock_response.raise_for_status = AsyncMock()
+
+        with patch("httpx.AsyncClient.get", return_value=mock_response):
+            with pytest.raises(ValueError, match="Unsupported content type"):
+                await client.convert("https://example.com/blob.bin")
+
+
+@pytest.mark.vcr()
+async def test_client_convert_unsupported_extension(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / "test.xyz"
+            temp_path.write_text("content")
+
+            with pytest.raises(ValueError, match="Unsupported file extension"):
+                await client.convert(temp_path)
+
+
+@pytest.mark.vcr()
+async def test_client_convert_file_uri(temp_db_path):
+    from docling_core.types.doc.document import DoclingDocument
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / "test.txt"
+            temp_path.write_text("URI file content.")
+            file_uri = temp_path.as_uri()
+
+            docling_doc = await client.convert(file_uri)
+
+            assert isinstance(docling_doc, DoclingDocument)
+            markdown = docling_doc.export_to_markdown()
+            assert "URI file content" in markdown
+
+
+@pytest.mark.vcr()
+async def test_client_chunk_basic(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        docling_doc = await client.convert("This is test content for chunking.")
+        chunks = await client.chunk(docling_doc)
+
+        assert isinstance(chunks, list)
+        assert len(chunks) > 0
+        assert all(isinstance(c, Chunk) for c in chunks)
+        assert all(c.content for c in chunks)
+        assert all(c.embedding is None for c in chunks)
+        assert all(c.document_id is None for c in chunks)
+
+
+@pytest.mark.vcr()
+async def test_client_chunk_preserves_metadata(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        markdown = """# Chapter 1
+
+This is the first paragraph.
+
+## Section 1.1
+
+This is a subsection.
+"""
+        docling_doc = await client.convert(markdown)
+        chunks = await client.chunk(docling_doc)
+
+        assert len(chunks) > 0
+
+        has_metadata = False
+        for chunk in chunks:
+            meta = chunk.get_chunk_metadata()
+            if meta.doc_item_refs or meta.headings:
+                has_metadata = True
+                break
+
+        assert has_metadata, "Chunks should have structured metadata"
+
+
+@pytest.mark.vcr()
+async def test_client_chunk_empty_document(temp_db_path):
+    from docling_core.types.doc.document import DoclingDocument
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        empty_doc = DoclingDocument(name="empty")
+
+        chunks = await client.chunk(empty_doc)
+
+        assert isinstance(chunks, list)
+        assert len(chunks) == 0
+
+
+@pytest.mark.vcr()
+async def test_import_document_embeds_chunks_without_embeddings(temp_db_path):
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        docling_doc = DoclingDocument(name="test")
+        docling_doc.add_text(
+            label=DocItemLabel.TEXT, text="Document with unembedded chunks"
+        )
+
+        chunks = [
+            Chunk(content="First chunk without embedding", order=0),
+            Chunk(content="Second chunk without embedding", order=1),
+        ]
+
+        doc = await client.import_document(
+            docling_document=docling_doc,
+            chunks=chunks,
+        )
+        assert doc.id is not None
+
+        stored_chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        assert len(stored_chunks) == 2
+
+        results = await client.search("First chunk", search_type="vector")
+        assert len(results) > 0
+        assert results[0].content == "First chunk without embedding"
+
+
+@pytest.mark.vcr()
+async def test_update_document_embeds_chunks_without_embeddings(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document(content="Initial content")
+        assert doc.id is not None
+
+        new_chunks = [
+            Chunk(content="Updated chunk without embedding", order=0),
+        ]
+        await client.update_document(
+            document_id=doc.id,
+            content="Updated content",
+            chunks=new_chunks,
+        )
+
+        stored_chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        assert len(stored_chunks) == 1
+        assert stored_chunks[0].content == "Updated chunk without embedding"
+
+        results = await client.search("Updated chunk", search_type="vector")
+        assert len(results) > 0
+        assert results[0].content == "Updated chunk without embedding"
+
+
+@pytest.mark.vcr()
+async def test_client_create_document_with_html_format(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        html_content = """
+        <h1>Main Title</h1>
+        <p>Introduction paragraph.</p>
+        <h2>Section Header</h2>
+        <ul>
+            <li>Item 1</li>
+            <li>Item 2</li>
+        </ul>
+        """
+
+        doc = await client.create_document(
+            content=html_content,
+            uri="test://html-doc",
+            format="html",
+        )
+
+        assert doc.id is not None
+        assert doc.docling_document is not None
+
+        docling_doc = doc.get_docling_document()
+        assert docling_doc is not None
+
+        items = list(docling_doc.iterate_items())
+        labels = [str(getattr(item, "label", "")) for item, _ in items]
+
+        assert "title" in labels or "section_header" in labels
+        assert "list_item" in labels
+
+
+@pytest.mark.vcr()
+async def test_client_convert_with_html_format(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        html_content = "<h1>Title</h1><p>Text</p>"
+
+        docling_doc = await client.convert(html_content, format="html")
+
+        items = list(docling_doc.iterate_items())
+        labels = [str(getattr(item, "label", "")) for item, _ in items]
+
+        assert "title" in labels

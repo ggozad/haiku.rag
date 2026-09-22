@@ -222,7 +222,7 @@ class TestVectorIndexByConnectionMode:
                 await store._ensure_vector_index()
                 store.chunks_table.count_rows.assert_not_awaited()
 
-    async def test_object_storage_runs_index_creation(self):
+    async def test_object_storage_checks_index_threshold(self):
         with (
             patch(
                 "haiku.rag.store.engine.lancedb.connect_async", new_callable=AsyncMock
@@ -233,6 +233,7 @@ class TestVectorIndexByConnectionMode:
                 store.chunks_table.count_rows = AsyncMock(return_value=0)
                 await store._ensure_vector_index()
                 store.chunks_table.count_rows.assert_awaited_once()
+                store.chunks_table.create_index.assert_not_awaited()
 
 
 class TestLocationIsFixed:
@@ -306,31 +307,30 @@ class TestInitFailureCleanup:
 class TestVectorIndexCreation:
     """_ensure_vector_index needs 256 rows of training data before it builds."""
 
-    @staticmethod
-    async def _seed_chunks(store, count: int) -> None:
-        import random
-
-        records = [
-            store.ChunkRecord(
-                document_id="doc-1",
-                content=f"row {i}",
-                content_fts=f"row {i}",
-                metadata="{}",
-                order=i,
-                vector=[random.random() for _ in range(store.embedder.vector_dim)],
-            )
-            for i in range(count)
-        ]
-        await store.chunks_table.add(records)
-
     async def test_builds_index_once_enough_rows_exist(self, temp_db_path):
         async with Store(temp_db_path, create=True) as store:
-            await self._seed_chunks(store, 256)
+            count_rows = AsyncMock(return_value=256)
+            create_index = AsyncMock()
+            wait_for_index = AsyncMock()
 
-            await store._ensure_vector_index()
+            with (
+                patch.object(store.chunks_table, "count_rows", count_rows),
+                patch.object(store.chunks_table, "create_index", create_index),
+                patch.object(store.chunks_table, "wait_for_index", wait_for_index),
+            ):
+                await store._ensure_vector_index()
 
-            indexes = await store.chunks_table.list_indices()
-            assert any("vector" in idx.columns for idx in indexes)
+            count_rows.assert_awaited_once_with()
+            create_index.assert_awaited_once()
+            call = create_index.await_args
+            assert call is not None
+            args, kwargs = call
+            assert args == ("vector",)
+            assert kwargs["config"].distance_type == "cosine"
+            assert kwargs["replace"] is True
+            wait_for_index.assert_awaited_once_with(
+                ["vector_idx"], timeout=timedelta(hours=1)
+            )
 
     async def test_index_failure_is_warned_not_raised(self, temp_db_path):
         import logging
@@ -339,18 +339,22 @@ class TestVectorIndexCreation:
         from tests.conftest import capture_logs
 
         async with Store(temp_db_path, create=True) as store:
-            await self._seed_chunks(store, 256)
 
             async def boom(*_args, **_kwargs):
                 raise RuntimeError("index build failed")
 
-            with patch.object(store.chunks_table, "create_index", boom):
+            with (
+                patch.object(
+                    store.chunks_table,
+                    "count_rows",
+                    AsyncMock(return_value=256),
+                ),
+                patch.object(store.chunks_table, "create_index", boom),
+            ):
                 with capture_logs(engine_module.logger, logging.WARNING) as records:
                     await store._ensure_vector_index()
 
             assert any("index build failed" in r.getMessage() for r in records)
-            indexes = await store.chunks_table.list_indices()
-            assert not any("vector" in idx.columns for idx in indexes)
 
 
 class TestStoreMiscellany:

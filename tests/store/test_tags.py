@@ -337,7 +337,6 @@ async def test_deleting_oldest_tag_advances_cleanup(temp_db_path):
         assert new_version in remaining
 
         await store.delete_tag("old")
-        await asyncio.sleep(1.5)
         await store.vacuum(retention_seconds=0)
 
         remaining = [v["version"] for v in await store.list_table_versions("documents")]
