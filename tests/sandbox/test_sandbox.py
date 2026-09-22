@@ -1078,6 +1078,7 @@ class TestSandboxReadDeadline:
         assert result.success, result.stderr
         assert "42" in result.stdout
 
+    @pytest.mark.slow
     async def test_a_program_may_read_more_than_a_thousand_times(self, temp_db_path):
         """Monty caps host callbacks per checkout at 1000 unless told otherwise;
         a corpus-wide pass over documents reads far more than that."""

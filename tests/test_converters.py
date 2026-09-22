@@ -974,6 +974,7 @@ class TestDoclingLocalConverter:
             f"Expected absolute URL resolved via source_uri, got {captured[0]!r}"
         )
 
+    @pytest.mark.slow
     async def test_convert_pdf_with_picture_images(
         self, config, doclaynet_first_page_pdf
     ):
@@ -991,6 +992,7 @@ class TestDoclingLocalConverter:
                 "Pictures should carry image data after conversion"
             )
 
+    @pytest.mark.slow
     async def test_split_and_merge_matches_single_pass(self, config):
         """Real-PDF test for split_pages, in two parts.
 
@@ -1058,6 +1060,7 @@ class TestDoclingLocalConverter:
             "more than one per boundary means the split lost or split something else"
         )
 
+    @pytest.mark.slow
     async def test_convert_pdf_without_page_images(
         self, config, doclaynet_first_page_pdf
     ):
@@ -1075,6 +1078,7 @@ class TestDoclingLocalConverter:
                 "Pages should not have image data when generate_page_images=False"
             )
 
+    @pytest.mark.slow
     async def test_convert_pdf_with_page_images(self, config, doclaynet_first_page_pdf):
         """Test PDF conversion includes page images when enabled."""
         pdf_path = doclaynet_first_page_pdf
@@ -1196,6 +1200,7 @@ class TestDoclingLocalConverter:
             "Authorization": "Bearer sk-vlm"
         }
 
+    @pytest.mark.slow
     @pytest.mark.vcr()
     async def test_picture_description_end_to_end(
         self, config, doclaynet_first_page_pdf
@@ -2173,6 +2178,7 @@ async def _skip_without_ollama_model(model: str) -> None:
         pytest.skip(f"Ollama model '{model}' not pulled (run `ollama pull {model}`)")
 
 
+@pytest.mark.slow
 class TestDoclingServeConverterIntegration:
     """Integration tests with real docling-serve recorded via VCR."""
 
@@ -2425,6 +2431,44 @@ class TestDoclingServeZipParsing:
 
         with pytest.raises(ValidationError):
             converter._parse_zip_to_docling(blob, "doc.pdf")
+
+    @pytest.mark.parametrize("keep_page_image", [False, True])
+    def test_page_images_follow_conversion_config(self, converter, keep_page_image):
+        import json as _json
+
+        converter.config.processing.conversion_options.generate_page_images = (
+            keep_page_image
+        )
+        page_image = {
+            "mimetype": "image/png",
+            "dpi": 72,
+            "size": {"width": 1, "height": 1},
+            "uri": "artifacts/page.png",
+        }
+        doc_json = self._doc_json(
+            pages={
+                "1": {
+                    "page_no": 1,
+                    "size": {"width": 1, "height": 1},
+                    "image": page_image,
+                }
+            }
+        )
+        blob = self._zip(
+            {
+                "document.json": _json.dumps(doc_json).encode(),
+                "artifacts/page.png": b"page-image",
+            }
+        )
+
+        doc = converter._parse_zip_to_docling(blob, "doc.pdf")
+
+        image = doc.pages[1].image
+        if keep_page_image:
+            assert image is not None
+            assert str(image.uri).startswith("data:image/png;base64,")
+        else:
+            assert image is None
 
     async def test_convert_text_rejects_unsupported_format(self, converter):
         with pytest.raises(ValueError, match="Unsupported format"):
@@ -3113,6 +3157,7 @@ def test_a_stalled_conversion_does_not_hold_the_process(tmp_path):
     assert "EXITED-CLEANLY" in finished.stdout
 
 
+@pytest.mark.slow
 def test_the_shutdown_probe_can_see_a_thread_that_holds_the_process():
     """The control: the same stall on the default executor must hang, or the
     test above proves nothing.

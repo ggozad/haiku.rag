@@ -528,6 +528,7 @@ async def test_expand_context_no_base64_images(temp_db_path):
             )
 
 
+@pytest.mark.slow
 @pytest.mark.vcr()
 async def test_expand_context_no_base64_images_docling_local(
     temp_db_path, doclaynet_first_page_pdf
@@ -562,6 +563,7 @@ async def test_expand_context_no_base64_images_docling_local(
                 )
 
 
+@pytest.mark.slow
 @pytest.mark.vcr()
 async def test_expand_context_no_base64_images_docling_serve(
     temp_db_path, doclaynet_first_page_pdf

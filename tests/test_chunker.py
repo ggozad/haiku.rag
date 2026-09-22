@@ -692,6 +692,7 @@ This is content.
         )
 
 
+@pytest.mark.slow
 @pytest.mark.vcr()
 async def test_local_and_serve_converters_and_chunkers_agree(doclaynet_first_page_pdf):
     """Both stages agree: the two converters segment a PDF the same way, and the
@@ -753,6 +754,7 @@ async def test_local_and_serve_converters_and_chunkers_agree(doclaynet_first_pag
     )
 
 
+@pytest.mark.slow
 @pytest.mark.vcr()
 async def test_local_and_serve_chunkers_produce_same_output(doclaynet_first_page_pdf):
     """Test that local and serve chunkers produce identical output for the same document.
@@ -821,6 +823,7 @@ async def test_local_and_serve_chunkers_produce_same_output(doclaynet_first_page
         )
 
 
+@pytest.mark.slow
 @pytest.mark.vcr()
 async def test_serve_chunker_accepts_picture_laden_docling(doclaynet_first_page_pdf):
     """Round-trip a picture-bearing PDF through docling-serve's chunker.

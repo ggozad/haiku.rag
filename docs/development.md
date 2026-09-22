@@ -19,16 +19,28 @@ uv run pre-commit install
 uv run pytest
 ```
 
+This runs the complete core suite, including deterministic end-to-end tests and
+tests marked `integration`. Integration tests skip when their services are not
+available. Start them before running the suite:
+
+```bash
+docker compose -f tests/docker/docker-compose.yml up -d
+```
+
+The evaluations suite is separate: `uv run pytest evaluations/tests -n0`.
+
 ### Test Markers
 
 Tests use pytest markers to categorize them:
 
 - `@pytest.mark.integration` - Tests requiring local services (Docling models, etc.) that aren't available in CI
+- `@pytest.mark.slow` - Deterministic end-to-end tests run in a separate CI job
 - `@pytest.mark.vcr()` - Tests with HTTP call recording
 
 Async tests are detected automatically through pytest-asyncio's auto mode.
 
-CI runs `pytest -m "not integration"` to skip integration tests.
+CI runs the fast, slow and evaluations suites as separate jobs. Live integration
+tests are exercised locally against the services in `tests/docker/`.
 
 ## HTTP Recording with VCR
 
@@ -95,7 +107,8 @@ async def test_pdf_visualization(temp_db_path):
     pass
 ```
 
-Integration tests are skipped in CI but run locally when you have the required services.
+Integration tests are skipped in CI. Start the required services and they run as
+part of the core suite; they skip when a service is unreachable.
 
 ## Linting and Formatting
 

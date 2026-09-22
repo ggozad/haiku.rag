@@ -95,6 +95,40 @@ async def test_task_lifecycle_pinned_to_same_url():
     assert len(set(seen)) == 1
 
 
+async def test_pending_task_is_polled_again(monkeypatch):
+    from haiku.rag.providers import docling_serve as docling_serve_module
+
+    poll_count = 0
+    delays: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal poll_count
+        if request.url.path == "/v1/convert/file/async":
+            return httpx.Response(200, json={"task_id": "pending-task"})
+        if request.url.path == "/v1/status/poll/pending-task":
+            poll_count += 1
+            status = "started" if poll_count == 1 else "success"
+            return httpx.Response(200, json={"task_status": status})
+        if request.url.path == "/v1/result/pending-task":
+            return httpx.Response(200, json={"done": True})
+        return httpx.Response(404)
+
+    async def record_delay(delay: float) -> None:
+        delays.append(delay)
+
+    monkeypatch.setattr(docling_serve_module.asyncio, "sleep", record_delay)
+    client = DoclingServeClient(
+        base_urls="http://pending:5001",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await _poll(client)
+
+    assert result == {"done": True}
+    assert poll_count == 2
+    assert delays == [1]
+
+
 def test_round_robin_shared_across_fresh_clients():
     """get_converter / get_chunker build a NEW DoclingServeClient per job.
     The cycle has to live outside the instance so successive jobs (each

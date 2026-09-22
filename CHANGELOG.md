@@ -4,7 +4,8 @@
 
 ### Changed
 
-- Async tests use pytest-asyncio auto mode without per-test markers.
+- Tests use pytest-asyncio auto mode and separate fast, slow end-to-end, live
+  integration and evaluations lanes.
 
 ## [0.88.0] - 2026-09-21
 
