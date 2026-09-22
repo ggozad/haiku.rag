@@ -52,7 +52,6 @@ def test_trailing_slashes_stripped():
     assert client.base_urls == ["http://a:5001", "http://b:5001"]
 
 
-@pytest.mark.asyncio
 async def test_round_robin_across_three_urls():
     transport, seen = _scripted_transport(_success_routes("t", {"ok": True}))
     client = DoclingServeClient(
@@ -77,7 +76,6 @@ async def test_round_robin_across_three_urls():
     assert hosts_picked == ["a", "b", "c", "a", "b", "c"]
 
 
-@pytest.mark.asyncio
 async def test_task_lifecycle_pinned_to_same_url():
     """A single submit/poll/result trio must all hit the same instance —
     task IDs are local to the instance that issued them."""
@@ -111,7 +109,6 @@ def test_round_robin_shared_across_fresh_clients():
     assert picks == [urls[0], urls[1], urls[2], urls[0]]
 
 
-@pytest.mark.asyncio
 async def test_zip_endpoint_uses_round_robin_too():
     transport, seen = _scripted_transport(
         {
@@ -164,7 +161,6 @@ async def _poll(client: DoclingServeClient):
     )
 
 
-@pytest.mark.asyncio
 async def test_retry_fails_over_to_healthy_instance():
     """A crashed instance (connection error) is retried on another instance and
     the call succeeds without surfacing the failure."""
@@ -183,7 +179,6 @@ async def test_retry_fails_over_to_healthy_instance():
     assert seen[-3:] == ["up-a", "up-a", "up-a"]
 
 
-@pytest.mark.asyncio
 async def test_retry_5xx_fails_over():
     """A 5xx from a struggling instance is retried elsewhere (status-based
     retryability, distinct from the transport-error path)."""
@@ -208,7 +203,6 @@ async def test_retry_5xx_fails_over():
     assert "ok-b" in seen
 
 
-@pytest.mark.asyncio
 async def test_retry_429_fails_over():
     """A 429 (transient overload) is retried elsewhere — the status-set
     membership branch of retryability, distinct from 5xx."""
@@ -233,7 +227,6 @@ async def test_retry_429_fails_over():
     assert "free-g" in seen
 
 
-@pytest.mark.asyncio
 async def test_retry_exhausts_all_instances_then_raises():
     """When every instance is down, the call retries up to max_attempts and then
     surfaces the transport error."""
@@ -252,7 +245,6 @@ async def test_retry_exhausts_all_instances_then_raises():
     assert seen == ["down-c", "down-d"]
 
 
-@pytest.mark.asyncio
 async def test_4xx_is_not_retried():
     """A 4xx (other than 408/429) is the caller's fault — not retried on another
     instance; it propagates after a single attempt."""
@@ -274,7 +266,6 @@ async def test_4xx_is_not_retried():
     assert seen == ["e"]
 
 
-@pytest.mark.asyncio
 async def test_task_failure_is_not_retried():
     """A docling-serve task 'failure' status raises ValueError and is NOT
     retried — a document problem, not an instance one."""
@@ -301,7 +292,6 @@ async def test_task_failure_is_not_retried():
     assert set(seen) == {"h"}
 
 
-@pytest.mark.asyncio
 async def test_request_span_records_instance_per_attempt(monkeypatch):
     """Each attempt opens a docling_serve.request span tagged with the
     instance URL, so failover is traceable in Logfire."""
@@ -339,7 +329,6 @@ def test_pick_url_skips_excluded_instances():
     assert client._pick_url(exclude=frozenset({urls[1], urls[2]})) == urls[0]
 
 
-@pytest.mark.asyncio
 async def test_retryable_failure_fails_over_and_trips_breaker():
     """A retryable failure does both jobs at once: the request fails over to a
     healthy instance AND the failure counts against the crashed instance's
@@ -362,7 +351,6 @@ async def test_retryable_failure_fails_over_and_trips_breaker():
     assert not client._breaker_for(trip_b).is_open
 
 
-@pytest.mark.asyncio
 async def test_open_breaker_skips_crashed_instance():
     """Once an instance's breaker has opened, later requests route straight to a
     healthy instance without even attempting the dead one."""
@@ -386,7 +374,6 @@ async def test_open_breaker_skips_crashed_instance():
     assert set(seen) == {"live-x"}
 
 
-@pytest.mark.asyncio
 async def test_breaker_recovers_after_cooldown():
     """An open breaker auto-probes after its cooldown; once the instance is
     healthy again a successful request closes the breaker."""
@@ -419,7 +406,6 @@ async def test_breaker_recovers_after_cooldown():
     assert not client._breaker_for(flip).is_open
 
 
-@pytest.mark.asyncio
 async def test_4xx_does_not_trip_breaker():
     """A 4xx is the caller's fault — it must not count against instance health,
     even at a 1-failure threshold."""
@@ -485,7 +471,6 @@ def test_from_config_wires_retry_and_breaker():
         assert client._breaker_config.cooldown_s == 90.0
 
 
-@pytest.mark.asyncio
 async def test_submit_without_task_id_raises():
     """A 200 that carries no task_id is a protocol violation, not a silent pass."""
     import httpx

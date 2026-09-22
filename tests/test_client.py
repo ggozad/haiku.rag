@@ -32,7 +32,6 @@ def vcr_cassette_dir():
     return str(Path(__file__).parent / "cassettes" / "test_client")
 
 
-@pytest.mark.asyncio
 async def test_a_string_db_path_is_accepted(temp_db_path):
     """The documented `HaikuRAG("knowledge.lancedb")` form: Store calls
     `exists()` and `absolute()` on db_path, which a str lacks."""
@@ -41,7 +40,6 @@ async def test_a_string_db_path_is_accepted(temp_db_path):
         assert isinstance(client.store.db_path, Path)
 
 
-@pytest.mark.asyncio
 async def test_prepare_document_from_docling_runs_off_event_loop_thread(monkeypatch):
     import haiku.rag.client.documents as documents
 
@@ -71,7 +69,6 @@ async def test_prepare_document_from_docling_runs_off_event_loop_thread(monkeypa
     )
 
 
-@pytest.mark.asyncio
 async def test_write_fetch_body_runs_off_event_loop_thread(monkeypatch):
     import haiku.rag.client.processing as processing
 
@@ -1332,7 +1329,6 @@ async def test_client_ask(allow_model_requests, temp_db_path):
         assert "programming language" in answer.lower()
 
 
-@pytest.mark.asyncio
 async def test_ask_returns_the_cited_chunk_with_its_provenance(
     temp_db_path, monkeypatch
 ):
@@ -2390,7 +2386,6 @@ async def test_client_convert_with_html_format(temp_db_path):
         assert "title" in labels
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_sql_injection_is_blocked_with_escaping(temp_db_path):
     """SQL injection is blocked when using escape_sql_string.
@@ -2697,7 +2692,6 @@ def _bbox_doc(*, with_page_image: bool, pages: tuple[int, ...] = (1,)):
     return doc
 
 
-@pytest.mark.asyncio
 async def test_visualize_chunk_returns_empty_without_page_rasters(temp_db_path):
     """Boxes resolve, but a document ingested without page images has nothing
     to render them onto."""
@@ -2722,7 +2716,6 @@ async def test_visualize_chunk_returns_empty_without_page_rasters(temp_db_path):
         assert await client.visualize_chunk(stored[0]) == []
 
 
-@pytest.mark.asyncio
 async def test_visualize_chunk_skips_pages_without_a_raster(temp_db_path):
     """A document where only some pages carry a raster renders just those."""
     from docling_core.types.doc.base import BoundingBox, Size
@@ -2774,7 +2767,6 @@ async def test_visualize_chunk_skips_pages_without_a_raster(temp_db_path):
     assert len(images) == 1
 
 
-@pytest.mark.asyncio
 async def test_visualize_chunk_returns_empty_when_pages_row_missing(temp_db_path):
     docling_doc = _bbox_doc(with_page_image=True)
     chunks = [
@@ -2802,7 +2794,6 @@ async def test_visualize_chunk_returns_empty_when_pages_row_missing(temp_db_path
         assert await client.visualize_chunk(stored[0]) == []
 
 
-@pytest.mark.asyncio
 async def test_visualize_chunk_skips_box_on_unstored_page(temp_db_path):
     """A bounding box referencing a page the document never registered is
     skipped rather than raising."""
@@ -2850,7 +2841,6 @@ async def test_visualize_chunk_skips_box_on_unstored_page(temp_db_path):
         assert await client.visualize_chunk(stored[0]) == []
 
 
-@pytest.mark.asyncio
 async def test_visualize_chunk_without_refs_falls_back_to_chunk_metadata(temp_db_path):
     """A chunk carrying no doc_item_refs has nothing to expand from."""
     docling_doc = _bbox_doc(with_page_image=True)
@@ -2870,7 +2860,6 @@ async def test_visualize_chunk_without_refs_falls_back_to_chunk_metadata(temp_db
         assert await client.visualize_chunk(stored[0]) == []
 
 
-@pytest.mark.asyncio
 async def test_visualize_chunk_falls_back_when_expansion_drops_refs(temp_db_path):
     """If expansion returns results carrying no refs, the original search
     results' refs are used instead."""

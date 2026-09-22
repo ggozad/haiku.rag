@@ -316,7 +316,6 @@ def resuming_deps(question: int = 0) -> Deps:
     )
 
 
-@pytest.mark.asyncio
 async def test_without_the_compactor_the_history_is_untouched(temp_db_path):
     """Omission is the switch: there is no flag to test, only absence."""
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
@@ -336,7 +335,6 @@ async def test_without_the_compactor_the_history_is_untouched(temp_db_path):
     assert returns_of(wire[-1]) == ["EVIDENCE FOR THE LIVE TURN"]
 
 
-@pytest.mark.asyncio
 async def test_with_the_compactor_a_new_question_compacts_the_previous_one(
     temp_db_path,
 ):
@@ -366,7 +364,6 @@ async def test_with_the_compactor_a_new_question_compacts_the_previous_one(
         ),
     ],
 )
-@pytest.mark.asyncio
 async def test_a_resumed_question_keeps_the_evidence_it_is_answering_from(
     temp_db_path, resume_kwargs
 ):
@@ -397,7 +394,6 @@ async def test_a_resumed_question_keeps_the_evidence_it_is_answering_from(
     assert returns_of(wire[-1]) == [RECEIPT, "EVIDENCE FOR THE LIVE TURN"]
 
 
-@pytest.mark.asyncio
 async def test_compaction_never_reaches_the_stored_message_history(temp_db_path):
     """Rewriting is for the wire; hosts keep the evidence they gathered."""
     rag, compactor = rag_and_compactor(temp_db_path)
@@ -482,7 +478,6 @@ async def _cite_a_picture_chunk(temp_db_path, fetched: bytes | None):
     return wire
 
 
-@pytest.mark.asyncio
 async def test_a_cited_picture_is_fetched_and_attached_with_its_label(temp_db_path):
     wire = await _cite_a_picture_chunk(temp_db_path, REAL_PNG)
 
@@ -490,7 +485,6 @@ async def test_a_cited_picture_is_fetched_and_attached_with_its_label(temp_db_pa
     assert texts_of(wire[-1]) == [picture_label("chunk-1", "#/pictures/0")]
 
 
-@pytest.mark.asyncio
 async def test_a_picture_that_cannot_be_fetched_emits_neither_image_nor_label(
     temp_db_path,
 ):
@@ -501,7 +495,6 @@ async def test_a_picture_that_cannot_be_fetched_emits_neither_image_nor_label(
     assert texts_of(wire[-1]) == []
 
 
-@pytest.mark.asyncio
 async def test_a_picture_that_will_not_decode_emits_neither_image_nor_label(
     temp_db_path,
 ):
@@ -569,7 +562,6 @@ async def _fanout_question_then_another(temp_db_path, cite: bool) -> list[list[A
     return wire
 
 
-@pytest.mark.asyncio
 async def test_a_burst_deduplicated_picture_survives_compaction_when_cited(
     temp_db_path,
 ):
@@ -581,7 +573,6 @@ async def test_a_burst_deduplicated_picture_survives_compaction_when_cited(
     assert [picture.data for picture in images_of(wire[-1])] == [REAL_PNG]
 
 
-@pytest.mark.asyncio
 async def test_a_burst_deduplicated_picture_is_dropped_by_compaction_uncited(
     temp_db_path,
 ):
@@ -591,7 +582,6 @@ async def test_a_burst_deduplicated_picture_is_dropped_by_compaction_uncited(
     assert images_of(wire[-1]) == []
 
 
-@pytest.mark.asyncio
 async def test_the_capsule_is_built_once_per_request_and_again_for_the_next(
     temp_db_path,
 ):
@@ -693,7 +683,6 @@ def test_a_label_of_ours_with_no_picture_after_it_is_kept():
     ]
 
 
-@pytest.mark.asyncio
 async def test_a_picture_whose_fetch_raises_costs_the_picture_not_the_answer(
     temp_db_path,
 ):
@@ -822,7 +811,6 @@ def test_the_capsule_is_attached_beside_the_newest_return_of_that_request():
     assert returns_of(compacted) == [RECEIPT, "CAPSULE"]
 
 
-@pytest.mark.asyncio
 async def test_compaction_refuses_to_strip_evidence_it_cannot_replace(temp_db_path):
     """A host that does not carry state has no record to build a capsule from.
 
@@ -842,7 +830,6 @@ async def test_compaction_refuses_to_strip_evidence_it_cannot_replace(temp_db_pa
         await agent.run("a follow-up", deps=Deps(), message_history=history)
 
 
-@pytest.mark.asyncio
 async def test_compaction_proceeds_for_a_host_that_carries_state(temp_db_path):
     """The same history, with the record the earlier question left behind."""
     rag, compactor = rag_and_compactor(temp_db_path)
@@ -1024,7 +1011,6 @@ def test_begin_invocation_also_drops_executions():
     assert state.citations == []
 
 
-@pytest.mark.asyncio
 async def test_compaction_proceeds_when_the_earlier_question_used_no_tools(
     temp_db_path,
 ):

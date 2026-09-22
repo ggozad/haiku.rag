@@ -37,7 +37,6 @@ chunks = [
 ]
 
 
-@pytest.mark.asyncio
 async def test_reranker_base():
     reranker = RerankerBase()
     # The base carries no model: each reranker takes its own from the factory.
@@ -51,7 +50,6 @@ async def test_reranker_base():
         await reranker.rerank("query", chunks)
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_cohere_reranker():
     try:
@@ -70,7 +68,6 @@ async def test_cohere_reranker():
         pytest.skip("Cohere package not installed")
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_zeroentropy_reranker():
     try:
@@ -322,7 +319,6 @@ class _PoolStats:
         self.client_class = FakeAsyncClient
 
 
-@pytest.mark.asyncio
 async def test_vllm_reranker_reuses_pooled_client(monkeypatch):
     """One httpx client is built and reused across rerank calls; aclose
     releases it."""
@@ -341,7 +337,6 @@ async def test_vllm_reranker_reuses_pooled_client(monkeypatch):
     assert stats.closed == 1
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "base_url", ["http://localhost:8000", "http://localhost:8000/v1"]
 )
@@ -360,7 +355,6 @@ async def test_vllm_reranker_accepts_base_url_with_or_without_v1(monkeypatch, ba
     await reranker.aclose()
 
 
-@pytest.mark.asyncio
 async def test_vllm_reranker_builds_multimodal_documents(monkeypatch):
     """Chunks carrying picture bytes are sent as content-parts documents
     (data-URI image plus text when the chunk has content); plain text chunks
@@ -426,7 +420,6 @@ async def test_vllm_reranker_builds_multimodal_documents(monkeypatch):
     assert [c for c, _ in reranked] == [text_chunk, described, undescribed]
 
 
-@pytest.mark.asyncio
 async def test_jina_reranker_reuses_pooled_client(monkeypatch):
     """One httpx client is built and reused across rerank calls; aclose
     releases it."""
@@ -446,7 +439,6 @@ async def test_jina_reranker_reuses_pooled_client(monkeypatch):
     assert stats.closed == 1
 
 
-@pytest.mark.asyncio
 async def test_reranker_base_aclose_is_noop():
     """Base aclose exists so client teardown can close any reranker."""
 
@@ -466,7 +458,6 @@ def test_jina_reranker_missing_api_key(monkeypatch):
         JinaReranker("jina-reranker-v3")
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_jina_reranker(monkeypatch):
     import os
@@ -489,7 +480,6 @@ async def test_jina_reranker(monkeypatch):
     assert "0" in top_ids or "2" in top_ids  # These chunks mention the book/author
 
 
-@pytest.mark.asyncio
 @pytest.mark.integration
 async def test_jina_local_reranker():
     try:
@@ -509,7 +499,6 @@ async def test_jina_local_reranker():
         pytest.skip("Jina local dependencies not installed")
 
 
-@pytest.mark.asyncio
 @pytest.mark.integration
 async def test_cross_encoder_reranker():
     try:
@@ -528,7 +517,6 @@ async def test_cross_encoder_reranker():
         pytest.skip("sentence-transformers not installed")
 
 
-@pytest.mark.asyncio
 @pytest.mark.integration
 async def test_cross_encoder_separates_saturated_scores():
     """`mxbai-rerank-base-v2` ships a Sigmoid it evaluates in bf16, where every
@@ -563,7 +551,6 @@ async def test_cross_encoder_separates_saturated_scores():
         pytest.skip("sentence-transformers not installed")
 
 
-@pytest.mark.asyncio
 async def test_cross_encoder_reranks_via_model_ranking(monkeypatch):
     """The rank() results map back onto the input chunks by corpus_id."""
     import math
@@ -719,7 +706,6 @@ class TestOpenRouterRerankerFactory:
         assert isinstance(reranker, OpenRouterReranker)
 
 
-@pytest.mark.asyncio
 async def test_openrouter_reranker_builds_documents(monkeypatch):
     """OpenRouter takes `text` and `image` keys on a document, where vLLM takes
     a `content` array of parts."""
@@ -758,7 +744,6 @@ async def test_openrouter_reranker_builds_documents(monkeypatch):
 
 
 @pytest.mark.vcr()
-@pytest.mark.asyncio
 async def test_openrouter_reranker_end_to_end():
     """Picture chunks are scored by their pixels alongside text chunks.
 
@@ -798,7 +783,6 @@ async def test_openrouter_reranker_end_to_end():
     await reranker.aclose()
 
 
-@pytest.mark.asyncio
 async def test_reranker_skips_chunks_with_nothing_to_score(monkeypatch):
     """A chunk with neither text nor picture bytes is not sent."""
     captured: dict = {}
@@ -819,7 +803,6 @@ async def test_reranker_skips_chunks_with_nothing_to_score(monkeypatch):
     assert [c.document_id for c, _ in ranked] == ["a", "c"]
 
 
-@pytest.mark.asyncio
 async def test_vllm_reranker_skips_chunks_with_nothing_to_score(monkeypatch):
     from haiku.rag.reranking.vllm import VLLMReranker
 
@@ -836,7 +819,6 @@ async def test_vllm_reranker_skips_chunks_with_nothing_to_score(monkeypatch):
     assert [c.document_id for c, _ in ranked] == ["a"]
 
 
-@pytest.mark.asyncio
 async def test_reranker_with_nothing_scoreable_returns_empty(monkeypatch):
     captured: dict = {}
     _capturing_rerank_client(monkeypatch, captured, 0)
@@ -847,7 +829,6 @@ async def test_reranker_with_nothing_scoreable_returns_empty(monkeypatch):
     assert "json" not in captured, "no request when nothing is scoreable"
 
 
-@pytest.mark.asyncio
 async def test_base_reranker_filters_unscoreable_before_dispatch():
     """Every backend indexes its results back into the list it was given, so
     the filter happens once, before dispatch."""
@@ -866,7 +847,6 @@ async def test_base_reranker_filters_unscoreable_before_dispatch():
     assert [c.document_id for c, _ in ranked] == ["a"]
 
 
-@pytest.mark.asyncio
 async def test_base_reranker_cannot_score_a_picture_without_text():
     """A text-only backend has nothing to send for a picture chunk; the
     multimodal ones override this."""

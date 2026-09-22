@@ -19,7 +19,6 @@ from tests.multi_db.helpers import (
 class TestSharedChunkIds:
     """A database copied from another holds the same chunk ids."""
 
-    @pytest.mark.asyncio
     async def test_a_shared_id_does_not_confuse_the_fused_order(self, tmp_path):
         """Arrival order breaks score ties, so it has to tell two databases'
         identically-numbered chunks apart."""
@@ -119,7 +118,6 @@ class TestSharedChunkIds:
 
         assert citation.source == "alpha"
 
-    @pytest.mark.asyncio
     async def test_an_unsearched_shared_id_is_refused_by_the_fallback(self, tmp_path):
         """The direct lookup is the only place a collision shows for an id no
         search returned, so it asks every database."""
@@ -144,7 +142,6 @@ class TestSharedChunkIds:
             with pytest.raises(ModelRetry, match="more than one database"):
                 await capability._cite([aardvark.id])
 
-    @pytest.mark.asyncio
     async def test_an_unsearched_id_in_one_database_still_resolves(self, tmp_path):
         """The refusal is for a collision, not for looking through several
         databases: an id only one of them holds still resolves."""
@@ -171,7 +168,6 @@ class TestSharedChunkIds:
         [citation] = list(run.state.citation_index.values())
         assert citation.source == "alpha"
 
-    @pytest.mark.asyncio
     async def test_cite_asks_for_other_evidence(self, tmp_path):
         capability = create_capability(config=_config(tmp_path, ["alpha", "beta"]))
         capability.state = RAGState(
@@ -193,7 +189,6 @@ class TestSharedChunkIds:
         with pytest.raises(ModelRetry, match="appears once"):
             await capability._cite(["c1"])
 
-    @pytest.mark.asyncio
     async def test_cite_refuses_an_id_already_cited_from_another_database(
         self, tmp_path
     ):
@@ -227,7 +222,6 @@ class TestSharedChunkIds:
         with pytest.raises(ModelRetry, match="another database"):
             await capability._cite(["c1"])
 
-    @pytest.mark.asyncio
     async def test_one_retrieved_copy_of_a_shared_id_cites_where_it_came_from(
         self, tmp_path
     ):
@@ -310,7 +304,6 @@ class TestCitationSource:
 
 
 class TestCiteFallback:
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_an_id_from_a_selected_database_resolves_with_its_source(
         self, tmp_path
@@ -347,7 +340,6 @@ class TestCiteFallback:
         assert citation.chunk_id == aardvark.id
         assert citation.source == "alpha"
 
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_an_id_outside_the_selected_databases_does_not_resolve(
         self, tmp_path
@@ -375,7 +367,6 @@ class TestCiteFallback:
             with pytest.raises(ModelRetry, match="None of the supplied chunk_ids"):
                 await run._cite([outside.id])
 
-    @pytest.mark.asyncio
     async def test_selecting_no_databases_cites_nothing(self, tmp_path):
         """`sources=[]` selected nothing, which is not the same as everything:
         the fallback must not go looking where the question never looked."""

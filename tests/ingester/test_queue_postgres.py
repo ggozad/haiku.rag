@@ -49,7 +49,6 @@ async def queue_engine(dburi: str):
         await engine.dispose()
 
 
-@pytest.mark.asyncio
 async def test_enqueue_dedup_via_partial_unique_index(postgres_dburi):
     """ON CONFLICT DO NOTHING against uq_jobs_live drops a second live job for
     the same (source_id, uri), regardless of op."""
@@ -61,7 +60,6 @@ async def test_enqueue_dedup_via_partial_unique_index(postgres_dburi):
         assert second is None
 
 
-@pytest.mark.asyncio
 async def test_enqueue_after_terminal_succeeds(postgres_dburi):
     """Once a job is terminal it no longer satisfies the partial index, so a
     re-enqueue for the same URI is allowed."""
@@ -76,7 +74,6 @@ async def test_enqueue_after_terminal_succeeds(postgres_dburi):
         assert second is not None and second.id != first.id
 
 
-@pytest.mark.asyncio
 async def test_skip_locked_claims_each_job_once(postgres_dburi):
     """FOR UPDATE SKIP LOCKED: many concurrent claims over real Postgres
     connections each take a distinct job, with none claimed twice. Without
@@ -97,7 +94,6 @@ async def test_skip_locked_claims_each_job_once(postgres_dburi):
         assert {c.id for c in claimed} == {j.id for j in enqueued}
 
 
-@pytest.mark.asyncio
 async def test_reap_stale_clamps_attempts(postgres_dburi):
     """The attempts-1 clamp (CASE) renders and runs on Postgres."""
     async with queue_engine(postgres_dburi) as engine:
@@ -114,7 +110,6 @@ async def test_reap_stale_clamps_attempts(postgres_dburi):
         assert refreshed.attempts == 0
 
 
-@pytest.mark.asyncio
 async def test_renew_claims_survives_reap_on_postgres(postgres_dburi):
     """The COALESCE lease threshold and the OR-of-(id, claimed_by) renewal
     predicate render and run on Postgres: a renewed claim outlives a reap even
@@ -137,7 +132,6 @@ async def test_renew_claims_survives_reap_on_postgres(postgres_dburi):
         assert refreshed is not None and refreshed.status is JobStatus.CLAIMED
 
 
-@pytest.mark.asyncio
 async def test_sync_state_upsert_coalesce_preserves_revision(postgres_dburi):
     """ON CONFLICT DO UPDATE with COALESCE leaves an existing revision in place
     when a later upsert passes revision=None."""
@@ -152,7 +146,6 @@ async def test_sync_state_upsert_coalesce_preserves_revision(postgres_dburi):
         assert row.last_ingested_at is not None
 
 
-@pytest.mark.asyncio
 async def test_sync_state_batch_upsert(postgres_dburi):
     async with queue_engine(postgres_dburi) as engine:
         sync = SyncStateRepo(engine)
@@ -165,7 +158,6 @@ async def test_sync_state_batch_upsert(postgres_dburi):
         assert await sync.get_revision_snapshot("s") == {"u1": "r1", "u2": "r2"}
 
 
-@pytest.mark.asyncio
 async def test_prune_terminal_removes_old_rows(postgres_dburi):
     async with queue_engine(postgres_dburi) as engine:
         jobs = JobRepo(engine)
@@ -179,7 +171,6 @@ async def test_prune_terminal_removes_old_rows(postgres_dburi):
         assert await jobs.get_job(job.id) is None
 
 
-@pytest.mark.asyncio
 async def test_tombstone_conflict_is_enforced_by_the_index(postgres_dburi):
     """`uq_jobs_blocking_op` refuses a re-enqueued UPSERT while the tombstone
     holds the URI's upsert slot, and admits a DELETE, which holds a different
@@ -197,7 +188,6 @@ async def test_tombstone_conflict_is_enforced_by_the_index(postgres_dburi):
         assert await jobs.enqueue("s", "u", JobOp.DELETE) is not None
 
 
-@pytest.mark.asyncio
 async def test_concurrent_mark_dead_cannot_leave_a_poison_upsert_queued(postgres_dburi):
     """The same invariant under real concurrent connections: whichever order
     the transition and the sweep commit in, the upsert slot is occupied."""

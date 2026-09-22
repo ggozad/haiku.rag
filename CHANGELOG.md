@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Async tests use pytest-asyncio auto mode without per-test markers.
+
 ## [0.88.0] - 2026-09-21
 
 ### Added

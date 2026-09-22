@@ -134,7 +134,6 @@ class TestResolveDataset:
 
 
 class TestConversationInputDispatch:
-    @pytest.mark.asyncio
     async def test_prefix_rides_as_message_history(self, tmp_path: Path) -> None:
         """A ConversationInput case reaches the capability as final question
         plus the prefix converted to message history."""
@@ -192,7 +191,6 @@ class TestConversationInputDispatch:
         assert history[0].parts[0].content == "q1"
         assert history[1].parts[0].content == "a1"
 
-    @pytest.mark.asyncio
     async def test_records_citation_status_attribute(self, tmp_path: Path) -> None:
         from dataclasses import dataclass
 
@@ -434,7 +432,6 @@ class TestLiveSummary:
 
 
 class TestLiveConversationDispatch:
-    @pytest.mark.asyncio
     async def test_live_spec_replays_conversation(self, tmp_path: Path) -> None:
         from pydantic_evals import Case
 
@@ -502,7 +499,6 @@ class TestLiveConversationDispatch:
             == "uri = 'manual.pdf'"
         )
 
-    @pytest.mark.asyncio
     async def test_live_records_per_turn_traffic_arrays(self, tmp_path: Path) -> None:
         """Per-turn tool traffic is recorded as question-length arrays, in the
         same list-indexed-by-turn shape as turn_cited_uris."""
@@ -640,7 +636,6 @@ class TestRunQaBenchmarkJudgeModel:
             qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         )
 
-    @pytest.mark.asyncio
     async def test_uses_custom_judge_model(self, tmp_path: Path) -> None:
         custom_judge = ModelConfig(provider="openai", name="gpt-4o")
 
@@ -658,7 +653,6 @@ class TestRunQaBenchmarkJudgeModel:
 
         mock_get_model.assert_any_call(custom_judge, AppConfig())
 
-    @pytest.mark.asyncio
     async def test_defaults_to_pinned_judge_model(self, tmp_path: Path) -> None:
         from evaluations.experiment import DEFAULT_JUDGE_MODEL
 
@@ -685,7 +679,6 @@ class TestRunQaBenchmarkJudgeModel:
 
 
 class TestEvaluateDatasetJudgeModel:
-    @pytest.mark.asyncio
     async def test_threads_judge_model_to_qa_benchmark(self) -> None:
         custom_judge = ModelConfig(
             provider="anthropic", name="claude-sonnet-4-20250514"
@@ -717,7 +710,6 @@ class TestEvaluateDatasetJudgeModel:
         assert mock_qa.call_args[1]["judge_model"] is custom_judge
 
 
-@pytest.mark.asyncio
 async def test_a_db_path_beside_configured_databases_is_refused(tmp_path) -> None:
     """`--db` places the database where the configuration places none; beside
     `lancedb.databases` the run refuses before touching anything."""
@@ -809,7 +801,6 @@ class TestEvaluateDatasetTarget:
             qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         )
 
-    @pytest.mark.asyncio
     async def test_threads_the_capability_model(self) -> None:
         capability = ModelConfig(provider="ollama", name="gpt-oss")
         with patch(
@@ -830,7 +821,6 @@ class TestEvaluateDatasetTarget:
         mock_qa.assert_called_once()
         assert mock_qa.call_args[1]["capability_model"] is capability
 
-    @pytest.mark.asyncio
     async def test_the_capability_model_defaults_to_none(self) -> None:
         with patch(
             "evaluations.benchmark.run_qa_benchmark", new_callable=AsyncMock
@@ -859,7 +849,6 @@ class TestRunQaBenchmarkCapability:
             qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         )
 
-    @pytest.mark.asyncio
     async def test_uses_run_capability_question(self, tmp_path: Path) -> None:
         from evaluations.capability_runner import CapabilityRunResult
 
@@ -948,7 +937,6 @@ class TestBatchedIngest:
             qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         )
 
-    @pytest.mark.asyncio
     async def test_imports_in_bounded_batches(self) -> None:
         from evaluations.population import _ingest_batched
 
@@ -963,7 +951,6 @@ class TestBatchedIngest:
         ]
         assert batch_uris == [["u0", "u1"], ["u2", "u3"], ["u4"]]
 
-    @pytest.mark.asyncio
     async def test_resume_skips_complete_uris(self) -> None:
         from evaluations.population import _ingest_batched
 
@@ -977,7 +964,6 @@ class TestBatchedIngest:
         assert rag.convert.await_count == 2
         rag.delete_document.assert_not_awaited()
 
-    @pytest.mark.asyncio
     async def test_resume_reimports_chunkless_documents(self) -> None:
         """A crash between the document and chunk writes leaves a document
         without chunks; resume must delete and re-import it, not skip it."""
@@ -992,7 +978,6 @@ class TestBatchedIngest:
         (batch,), _ = rag.import_documents.call_args
         assert [imp.uri for imp in batch] == ["u1"]
 
-    @pytest.mark.asyncio
     async def test_unmapped_documents_skipped(self) -> None:
         from evaluations.population import _ingest_batched
 
@@ -1123,7 +1108,6 @@ class TestRetrievalTarget:
             retrieval_evaluators=[MAPEvaluator()],
         )
 
-    @pytest.mark.asyncio
     async def test_scores_from_search_results_without_reading_documents(
         self, tmp_path: Path
     ) -> None:
@@ -1160,7 +1144,6 @@ class TestRetrievalTarget:
         assert result["map"] == 1.0
         assert searches[0]["include_images"] is False
 
-    @pytest.mark.asyncio
     async def test_ranks_each_document_once(self, tmp_path: Path) -> None:
         from evaluations.benchmark import run_retrieval_benchmark
         from haiku.rag.store.models.chunk import SearchResult
@@ -1207,7 +1190,6 @@ class TestDocumentFilterThreading:
         )
         assert result["document_filter"] is None
 
-    @pytest.mark.asyncio
     async def test_retrieval_search_receives_filter(self, tmp_path: Path) -> None:
         from evaluations.benchmark import run_retrieval_benchmark
         from evaluations.config import RetrievalSample
@@ -1240,7 +1222,6 @@ class TestDocumentFilterThreading:
 
         assert searches[0]["filter"] == "uri LIKE '%arxiv%'"
 
-    @pytest.mark.asyncio
     async def test_qa_capability_run_receives_filter(self, tmp_path: Path) -> None:
         from pydantic_evals import Case
 
@@ -1273,7 +1254,6 @@ class TestDocumentFilterThreading:
         mock_run.assert_awaited_once()
         assert mock_run.call_args[1]["document_filter"] == "uri LIKE '%arxiv%'"
 
-    @pytest.mark.asyncio
     async def test_evaluate_dataset_passes_filter_to_both_phases(self) -> None:
         expected = """metadata LIKE '%"corpus": "orb_text"%'"""
 
@@ -1305,7 +1285,6 @@ class TestEvaluateDatasetCaseIds:
     def _spec(self) -> DatasetSpec:
         return _stub_spec()
 
-    @pytest.mark.asyncio
     async def test_threads_case_ids_to_qa_benchmark(self) -> None:
         from evaluations.benchmark import evaluate_dataset
 

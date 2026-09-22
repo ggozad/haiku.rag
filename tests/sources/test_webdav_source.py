@@ -83,7 +83,6 @@ def test_base_url_trailing_slash_normalised():
     assert src.supports("https://nc.example.com/dav/x.md")
 
 
-@pytest.mark.asyncio
 async def test_fetch_returns_bytes_md5_revision_and_content_type():
     body = b"hello dav"
 
@@ -112,7 +111,6 @@ async def test_fetch_returns_bytes_md5_revision_and_content_type():
     assert result.extra_metadata == {"last_modified": "Wed, 21 Oct 2025 07:28:00 GMT"}
 
 
-@pytest.mark.asyncio
 async def test_fetch_falls_back_to_last_modified_when_no_etag():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -133,7 +131,6 @@ async def test_fetch_falls_back_to_last_modified_when_no_etag():
     assert result.revision == "Wed, 21 Oct 2025 07:28:00 GMT"
 
 
-@pytest.mark.asyncio
 async def test_head_returns_etag_from_propfind_depth_zero():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "PROPFIND"
@@ -153,7 +150,6 @@ async def test_head_returns_etag_from_propfind_depth_zero():
     assert await src.head("https://nc.example.com/dav/a.md") == "rev-9"
 
 
-@pytest.mark.asyncio
 async def test_head_returns_none_on_404():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(404)
@@ -166,7 +162,6 @@ async def test_head_returns_none_on_404():
     assert await src.head("https://nc.example.com/dav/missing.md") is None
 
 
-@pytest.mark.asyncio
 async def test_discover_yields_upserts_and_skips_collections_and_unsupported():
     multistatus = _multistatus(
         {"href": "/dav/", "collection": True},
@@ -197,7 +192,6 @@ async def test_discover_yields_upserts_and_skips_collections_and_unsupported():
     assert by_uri["https://nc.example.com/dav/a.md"].revision == "rev-a"
 
 
-@pytest.mark.asyncio
 async def test_discover_emits_unchanged_when_snapshot_matches():
     multistatus = _multistatus(
         {"href": "/dav/", "collection": True},
@@ -217,7 +211,6 @@ async def test_discover_emits_unchanged_when_snapshot_matches():
     assert [e.kind for e in events] == [SourceEventKind.UNCHANGED]
 
 
-@pytest.mark.asyncio
 async def test_discover_emits_delete_for_files_no_longer_listed():
     multistatus = _multistatus(
         {"href": "/dav/", "collection": True},
@@ -245,7 +238,6 @@ async def test_discover_emits_delete_for_files_no_longer_listed():
     }
 
 
-@pytest.mark.asyncio
 async def test_discover_uses_last_modified_when_etag_absent():
     multistatus = _multistatus(
         {
@@ -267,7 +259,6 @@ async def test_discover_uses_last_modified_when_etag_absent():
     assert events[0].revision == "Wed, 21 Oct 2025 07:28:00 GMT"
 
 
-@pytest.mark.asyncio
 async def test_discover_raises_on_malformed_xml():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(207, content=b"<not></valid xml")
@@ -281,7 +272,6 @@ async def test_discover_raises_on_malformed_xml():
         [event async for event in src.discover()]
 
 
-@pytest.mark.asyncio
 async def test_discover_propagates_http_error():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(401)
@@ -295,7 +285,6 @@ async def test_discover_propagates_http_error():
         [event async for event in src.discover()]
 
 
-@pytest.mark.asyncio
 async def test_basic_auth_sent_when_credentials_configured():
     seen_auth: list[str | None] = []
 
@@ -318,7 +307,6 @@ async def test_basic_auth_sent_when_credentials_configured():
     assert seen_auth[0].startswith("Basic ")
 
 
-@pytest.mark.asyncio
 async def test_custom_headers_forwarded():
     seen: list[str | None] = []
 
@@ -339,7 +327,6 @@ async def test_custom_headers_forwarded():
     assert seen == ["Bearer tok-123"]
 
 
-@pytest.mark.asyncio
 async def test_discover_resolves_absolute_href():
     """Some servers return absolute URLs in href, others return server paths.
     Both must produce the same stored URI."""
@@ -363,7 +350,6 @@ async def test_discover_resolves_absolute_href():
     assert [e.uri for e in events] == ["https://nc.example.com/dav/a.md"]
 
 
-@pytest.mark.asyncio
 async def test_discover_url_decodes_href_path():
     """PROPFIND hrefs are percent-encoded per RFC 3986. We unquote them so
     the stored URI matches what a user types in `add-src`."""
@@ -389,7 +375,6 @@ async def test_discover_url_decodes_href_path():
     ]
 
 
-@pytest.mark.asyncio
 async def test_discover_emits_unchanged_for_known_uri_without_revision():
     """A WebDAV entry with no ETag or Last-Modified should not cause
     re-ingestion every sweep once the URI has been ingested."""
@@ -415,7 +400,6 @@ async def test_discover_emits_unchanged_for_known_uri_without_revision():
     assert non_delete[0].kind is SourceEventKind.UNCHANGED
 
 
-@pytest.mark.asyncio
 async def test_discover_emits_upsert_for_unknown_uri_without_revision():
     """A brand-new WebDAV entry with no revision should UPSERT on first sight."""
     multistatus = _multistatus(
@@ -437,7 +421,6 @@ async def test_discover_emits_upsert_for_unknown_uri_without_revision():
     assert non_delete[0].kind is SourceEventKind.UPSERT
 
 
-@pytest.mark.asyncio
 async def test_fetch_follows_redirect():
     """Plone commonly 301s (trailing-slash normalisation, VHM rewrites); the
     client must follow to fetch the real bytes instead of returning the 3xx."""
@@ -465,7 +448,6 @@ async def test_fetch_follows_redirect():
     assert result.revision == "rev-1"
 
 
-@pytest.mark.asyncio
 async def test_discover_follows_redirect_preserving_propfind():
     """A 302 on PROPFIND is followed with the method preserved (httpx would
     downgrade it to GET). A same-path scheme upgrade is transparent, and hrefs
@@ -493,7 +475,6 @@ async def test_discover_follows_redirect_preserving_propfind():
     assert [e.uri for e in events] == ["http://nc.example.com/dav/a.md"]
 
 
-@pytest.mark.asyncio
 async def test_discover_raises_when_collection_relocates():
     """If the collection root redirects to a different path, the multistatus
     hrefs fall outside base_url. Resolving them against base_url would skip
@@ -518,7 +499,6 @@ async def test_discover_raises_when_collection_relocates():
         [event async for event in src.discover()]
 
 
-@pytest.mark.asyncio
 async def test_discover_refuses_cross_host_redirect_without_sending_credentials():
     """A PROPFIND redirected to another host must not have the configured
     credentials replayed to that host (httpx only strips auth cross-host for
@@ -543,7 +523,6 @@ async def test_discover_refuses_cross_host_redirect_without_sending_credentials(
     assert "evil.example.com" not in seen_hosts
 
 
-@pytest.mark.asyncio
 async def test_head_follows_redirect_preserving_propfind():
     methods: list[str] = []
 
@@ -564,7 +543,6 @@ async def test_head_follows_redirect_preserving_propfind():
     assert methods == ["PROPFIND", "PROPFIND"]
 
 
-@pytest.mark.asyncio
 async def test_propfind_redirect_loop_is_bounded():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(302, headers={"location": "https://nc.example.com/loop/"})
@@ -578,7 +556,6 @@ async def test_propfind_redirect_loop_is_bounded():
         [event async for event in src.discover()]
 
 
-@pytest.mark.asyncio
 async def test_fetch_rejects_file_exceeding_max_size():
     def handler(request: httpx.Request) -> httpx.Response:
         if request.method == "HEAD":
@@ -595,7 +572,6 @@ async def test_fetch_rejects_file_exceeding_max_size():
         await src.fetch("https://nc.example.com/dav/big.bin")
 
 
-@pytest.mark.asyncio
 async def test_fetch_allows_file_within_max_size():
     body = b"small"
 
@@ -614,7 +590,6 @@ async def test_fetch_allows_file_within_max_size():
     assert result.body == body
 
 
-@pytest.mark.asyncio
 async def test_fetch_skips_head_when_no_max_size():
     """When max_file_size is None, no HEAD request is made."""
     calls = []
@@ -682,7 +657,6 @@ _STATUS_WITHOUT_PROP = """  <d:response>
   </d:response>"""
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "block",
     [_NO_HREF, _EMPTY_HREF, _NO_STATUS, _NOT_FOUND_STATUS],
@@ -700,7 +674,6 @@ async def test_head_returns_none_for_undecodable_response(block):
     assert await src.head("https://nc.example.com/dav/a.md") is None
 
 
-@pytest.mark.asyncio
 async def test_head_returns_none_for_empty_multistatus():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(207, content=_raw_multistatus())
@@ -725,7 +698,6 @@ def test_entry_with_status_but_no_prop_has_no_revision():
     assert _parse_multistatus(_raw_multistatus(_NO_HREF)) == []
 
 
-@pytest.mark.asyncio
 async def test_discover_skips_base_url_reported_as_file():
     """Broken servers list the base URL itself as a non-collection; it and any
     href outside the base are skipped."""
@@ -747,7 +719,6 @@ async def test_discover_skips_base_url_reported_as_file():
     assert {e.uri for e in events} == {"https://nc.example.com/dav/keep.md"}
 
 
-@pytest.mark.asyncio
 async def test_aclose_closes_the_http_client():
     src = WebDAVSource(
         source_id="nc",

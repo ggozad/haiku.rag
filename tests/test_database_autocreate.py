@@ -59,7 +59,6 @@ def test_default_db_path_comes_from_storage_data_dir(tmp_path):
     assert ref.name == "haiku.rag"
 
 
-@pytest.mark.asyncio
 async def test_vacuum_optimizes_tables_without_losing_rows(temp_db_path):
     """The public vacuum() runs the store's optimize pass over real rows."""
     from haiku.rag.store.models.document import Document

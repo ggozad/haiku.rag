@@ -1,4 +1,3 @@
-import pytest
 from lancedb.index import BTree
 
 from haiku.rag.store.engine import Store
@@ -29,7 +28,6 @@ async def _make_legacy(store: Store) -> None:
             await table.drop_index(index)
 
 
-@pytest.mark.asyncio
 async def test_adds_the_missing_indexes(temp_db_path):
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
         await store.chunks_table.add(
@@ -62,7 +60,6 @@ async def test_adds_the_missing_indexes(temp_db_path):
         }
 
 
-@pytest.mark.asyncio
 async def test_keeps_every_row(temp_db_path):
     """Indexing must not touch data."""
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
@@ -76,7 +73,6 @@ async def test_keeps_every_row(temp_db_path):
         assert [d.content for d in docs] == ["Kept"]
 
 
-@pytest.mark.asyncio
 async def test_is_a_no_op_on_an_already_indexed_database(temp_db_path):
     """A second run must not re-index: replace=True rebuilds."""
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
@@ -90,7 +86,6 @@ async def test_is_a_no_op_on_an_already_indexed_database(temp_db_path):
         )
 
 
-@pytest.mark.asyncio
 async def test_replaces_a_wrong_typed_legacy_index(temp_db_path):
     """A BTree on `label` does not satisfy the declared Bitmap."""
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
@@ -104,7 +99,6 @@ async def test_replaces_a_wrong_typed_legacy_index(temp_db_path):
         assert indexed["label"] == "Bitmap"
 
 
-@pytest.mark.asyncio
 async def test_leaves_undeclared_indexes_alone(temp_db_path):
     """Indexes haiku.rag never declared are not dropped."""
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:

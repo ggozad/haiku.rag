@@ -45,7 +45,6 @@ def item_queries(monkeypatch):
     return tally
 
 
-@pytest.mark.asyncio
 async def test_pictures_grouped_keeps_documents_apart(temp_db_path, item_queries):
     async with Store(temp_db_path, create=True) as store:
         repo = DocumentItemRepository(store)
@@ -68,7 +67,6 @@ async def test_pictures_grouped_keeps_documents_apart(temp_db_path, item_queries
         }
 
 
-@pytest.mark.asyncio
 async def test_pictures_grouped_fetches_only_requested_documents(temp_db_path):
     async with Store(temp_db_path, create=True) as store:
         repo = DocumentItemRepository(store)
@@ -80,7 +78,6 @@ async def test_pictures_grouped_fetches_only_requested_documents(temp_db_path):
         assert blobs == {"doc-a": {"#/pictures/0": b"bytes-doc-a"}}
 
 
-@pytest.mark.asyncio
 async def test_caption_picture_refs_grouped_uses_two_queries(
     temp_db_path, item_queries
 ):
@@ -101,7 +98,6 @@ async def test_caption_picture_refs_grouped_uses_two_queries(
             assert got[document_id] == {"#/texts/1": "#/pictures/0"}
 
 
-@pytest.mark.asyncio
 async def test_grouped_calls_with_nothing_asked_for_do_not_query(
     temp_db_path, item_queries
 ):
@@ -116,7 +112,6 @@ async def test_grouped_calls_with_nothing_asked_for_do_not_query(
         assert item_queries["n"] == 0
 
 
-@pytest.mark.asyncio
 async def test_caption_picture_refs_grouped_ignores_non_picture_predecessors(
     temp_db_path,
 ):
@@ -158,7 +153,6 @@ async def test_caption_picture_refs_grouped_ignores_non_picture_predecessors(
         assert got == {}
 
 
-@pytest.mark.asyncio
 async def test_pictures_grouped_omits_text_unless_asked(temp_db_path, item_queries):
     """Text is dead weight for a caller that only scores pixels."""
     async with Store(temp_db_path, create=True) as store:

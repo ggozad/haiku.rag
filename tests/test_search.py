@@ -298,7 +298,6 @@ def _pil_image_query():
     return PILImageModule.new("RGB", (8, 8), "red")
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "make_query",
     [_png_bytes_query, _pil_image_query],
@@ -367,7 +366,6 @@ async def test_search_with_image_query_uses_multimodal_embedder(
     assert received_kwargs["query"] == ""
 
 
-@pytest.mark.asyncio
 async def test_reranker_built_once_across_searches(temp_db_path, monkeypatch):
     """The reranker is constructed once per client and reused across searches,
     rather than rebuilt (reloading model weights) on every query."""
@@ -398,7 +396,6 @@ async def test_reranker_built_once_across_searches(temp_db_path, monkeypatch):
     assert build_count == 1
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("multimodal", [True, False])
 async def test_search_attaches_picture_bytes_for_multimodal_reranker(
     temp_db_path, multimodal
@@ -466,7 +463,6 @@ async def test_search_attaches_picture_bytes_for_multimodal_reranker(
         assert reranked_picture._picture_data is None
 
 
-@pytest.mark.asyncio
 async def test_search_with_bytes_query_raises_for_text_only_embedder(
     temp_db_path,
 ):
@@ -546,7 +542,6 @@ def test_dedup_does_not_collapse_across_documents():
 # visualize_chunk short-circuits
 
 
-@pytest.mark.asyncio
 async def test_expand_context_passes_through_results_without_document(temp_db_path):
     """A result with no document_id can't be expanded; it is returned as-is."""
     async with HaikuRAG(temp_db_path, create=True) as rag:
@@ -554,13 +549,11 @@ async def test_expand_context_passes_through_results_without_document(temp_db_pa
         assert await rag.expand_context([orphan]) == [orphan]
 
 
-@pytest.mark.asyncio
 async def test_visualize_chunk_returns_empty_for_no_chunks(temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as rag:
         assert await rag.visualize_chunk([]) == []
 
 
-@pytest.mark.asyncio
 async def test_visualize_chunk_returns_empty_without_document_id(temp_db_path):
     from haiku.rag.store.models.chunk import Chunk
 
@@ -568,7 +561,6 @@ async def test_visualize_chunk_returns_empty_without_document_id(temp_db_path):
         assert await rag.visualize_chunk(Chunk(content="x", metadata={})) == []
 
 
-@pytest.mark.asyncio
 async def test_visualize_chunk_returns_empty_when_document_missing(temp_db_path):
     from haiku.rag.store.models.chunk import Chunk
 
@@ -577,7 +569,6 @@ async def test_visualize_chunk_returns_empty_when_document_missing(temp_db_path)
         assert await rag.visualize_chunk(chunk) == []
 
 
-@pytest.mark.asyncio
 async def test_visualize_chunk_returns_empty_when_docling_blob_absent(temp_db_path):
     """A markdown-ingested document has no docling structure to resolve boxes in."""
     from haiku.rag.store.models.chunk import Chunk

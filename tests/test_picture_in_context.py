@@ -33,7 +33,6 @@ PICTURE_BYTES = _make_png("red")
 PICTURE_B64 = base64.b64encode(PICTURE_BYTES).decode("ascii")
 
 
-@pytest.mark.asyncio
 async def test_populate_image_data_attaches_base64(temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as rag:
         await rag.document_item_repository.create_items(
@@ -80,7 +79,6 @@ async def test_populate_image_data_attaches_base64(temp_db_path):
         assert with_picture.image_data == {"#/pictures/0": PICTURE_B64}
 
 
-@pytest.mark.asyncio
 async def test_populate_image_data_attaches_picture_via_caption(temp_db_path):
     """A result whose matched refs include a figure's caption (but not the
     picture itself) gets the picture bytes attached, resolved through the
@@ -122,7 +120,6 @@ async def test_populate_image_data_attaches_picture_via_caption(temp_db_path):
         assert via_caption.picture_captions == {"#/pictures/0": "Figure 1. The layout."}
 
 
-@pytest.mark.asyncio
 async def test_client_search_include_images_false_skips_lookup(temp_db_path):
     """include_images=False must short-circuit the picture-bytes lookup."""
     async with HaikuRAG(temp_db_path, create=True) as rag:
@@ -169,7 +166,6 @@ async def test_client_search_include_images_false_skips_lookup(temp_db_path):
         rag.document_item_repository.get_pictures_grouped.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_expand_context_preserves_picture_refs_with_empty_text(temp_db_path):
     """A picture item with empty text must keep its self_ref through expansion."""
     async with HaikuRAG(temp_db_path, create=True) as rag:
@@ -232,7 +228,6 @@ async def test_expand_context_preserves_picture_refs_with_empty_text(temp_db_pat
 
 
 @pytest.mark.vcr()
-@pytest.mark.asyncio
 async def test_rechunk_preserves_picture_data(temp_db_path):
     """``rebuild --rechunk`` keeps ``picture_data`` for every picture row."""
     from haiku.rag.client import RebuildMode
@@ -259,7 +254,6 @@ async def test_rechunk_preserves_picture_data(temp_db_path):
         assert after.get("#/pictures/0") == before.get("#/pictures/0")
 
 
-@pytest.mark.asyncio
 async def test_embed_only_preserves_picture_vectors(temp_db_path, monkeypatch):
     """``rebuild --embed-only`` must re-embed picture chunks through the image
     path. With a multimodal embedder, picture vectors must survive the rebuild
@@ -325,7 +319,6 @@ async def test_embed_only_preserves_picture_vectors(temp_db_path, monkeypatch):
         assert after["id"] == before["id"]
 
 
-@pytest.mark.asyncio
 async def test_expand_context_does_not_attach_expansion_added_pictures(temp_db_path):
     """expand_context preserves picture bytes from the pre-expansion result and
     does NOT re-fetch bytes for picture self_refs swept in by section
@@ -380,7 +373,6 @@ class _Deps:
     client: object
 
 
-@pytest.mark.asyncio
 async def test_search_tool_returns_multimodal_when_picture_present():
     """The agent-facing search tool must wrap text + BinaryContent in ToolReturn
     whenever a result carries picture image_data AND the QA model is vision-capable."""
@@ -425,7 +417,6 @@ async def test_search_tool_returns_multimodal_when_picture_present():
     assert part.data == PICTURE_BYTES
 
 
-@pytest.mark.asyncio
 async def test_search_tool_attaches_same_self_ref_from_different_documents():
     """Two different documents both have ``#/pictures/0`` — the dedup must
     key on ``(document_id, self_ref)`` so each document's figure reaches
@@ -621,7 +612,6 @@ def test_build_picture_chunks_keeps_unmeasurable_bytes():
     assert len(chunks) == 1
 
 
-@pytest.mark.asyncio
 async def test_chunk_filters_small_pictures_by_config(monkeypatch):
     """``chunk()`` applies ``processing.min_picture_size`` — with the default
     config, icon-sized pictures don't become picture chunks."""
@@ -651,7 +641,6 @@ async def test_chunk_filters_small_pictures_by_config(monkeypatch):
     assert not any("picture" in (c.metadata or {}).get("labels", []) for c in chunks)
 
 
-@pytest.mark.asyncio
 async def test_chunk_interleaves_picture_in_structural_order(monkeypatch):
     """``chunk()`` merges text and picture chunks by their first
     ``doc_item_ref``'s position in ``iterate_items()``, so picture chunks
@@ -712,7 +701,6 @@ async def test_chunk_interleaves_picture_in_structural_order(monkeypatch):
         assert c.order == i
 
 
-@pytest.mark.asyncio
 async def test_embed_chunks_dispatches_text_vs_picture():
     """embed_chunks routes text chunks through embed_documents (batched) and
     picture chunks through embed_image (one at a time), reassembling
@@ -757,7 +745,6 @@ async def test_embed_chunks_dispatches_text_vs_picture():
     assert image_calls == [b"PNGBYTES"]
 
 
-@pytest.mark.asyncio
 async def test_embed_chunks_raises_on_picture_chunks_with_text_only_embedder():
     from haiku.rag.embeddings import EmbedderWrapper, embed_chunks
     from haiku.rag.store.models.chunk import Chunk
@@ -775,7 +762,6 @@ async def test_embed_chunks_raises_on_picture_chunks_with_text_only_embedder():
         await embed_chunks([pic_chunk], TextOnlyEmbedder())
 
 
-@pytest.mark.asyncio
 async def test_ingest_emits_picture_chunks_with_multimodal_embedder(
     temp_db_path, monkeypatch
 ):
@@ -834,7 +820,6 @@ async def test_ingest_emits_picture_chunks_with_multimodal_embedder(
         )
 
 
-@pytest.mark.asyncio
 async def test_search_tool_skips_binary_content_when_qa_model_is_text_only():
     """The agent search tool must NOT attach picture bytes when the QA model
     is text-only (``qa.model.vision = False``). Sending image
@@ -871,7 +856,6 @@ async def test_search_tool_skips_binary_content_when_qa_model_is_text_only():
     assert isinstance(result, str)
 
 
-@pytest.mark.asyncio
 async def test_search_tool_drops_invalid_image_bytes():
     """A picture whose bytes cannot be decoded by PIL must not produce a
     BinaryContent part. Otherwise the model adapter emits a vision
@@ -928,7 +912,6 @@ async def test_search_tool_drops_invalid_image_bytes():
     )
 
 
-@pytest.mark.asyncio
 async def test_search_tool_drops_all_invalid_returns_plain_text():
     """If every picture in the result set fails decode, fall back to a
     plain string return — there's nothing to attach, so wrapping in
@@ -965,7 +948,6 @@ async def test_search_tool_drops_all_invalid_returns_plain_text():
     assert isinstance(result, str)
 
 
-@pytest.mark.asyncio
 async def test_search_tool_returns_plain_string_when_no_pictures():
     """When no result carries image_data the tool returns a plain str (no
     ToolReturn wrapper) so non-vision flows are unaffected."""
@@ -997,7 +979,6 @@ async def test_search_tool_returns_plain_string_when_no_pictures():
     assert "rank 1" in result
 
 
-@pytest.mark.asyncio
 async def test_rag_capability_attaches_images_for_vision_model(temp_db_path):
     picture_result = SearchResult(
         content="A figure",

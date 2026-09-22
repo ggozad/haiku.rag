@@ -172,7 +172,6 @@ def _stub_provider_probe(monkeypatch):
     monkeypatch.setattr("haiku.rag.doctor._probe_endpoint", probe)
 
 
-@pytest.mark.asyncio
 async def test_healthy_db_all_ok(temp_db_path):
     await _build_db(temp_db_path)
     report = await run_doctor(_config(), temp_db_path, {})
@@ -181,7 +180,6 @@ async def test_healthy_db_all_ok(temp_db_path):
     assert all(r.severity is Severity.OK for r in report.results)
 
 
-@pytest.mark.asyncio
 async def test_doctor_reports_progress(temp_db_path):
     await _build_db(temp_db_path)
     labels: list[str] = []
@@ -192,14 +190,12 @@ async def test_doctor_reports_progress(temp_db_path):
     assert "Probing provider endpoints" in labels
 
 
-@pytest.mark.asyncio
 async def test_empty_db_fails(temp_db_path):
     report = await run_doctor(_config(), temp_db_path, {})
     assert report.failed
     assert _result(report, "tables_present").message == "Database is empty."
 
 
-@pytest.mark.asyncio
 async def test_missing_table_fails_without_opening_store(temp_db_path):
     db = await lancedb.connect_async(temp_db_path)
     await db.create_table("settings", schema=SettingsRecord)
@@ -210,7 +206,6 @@ async def test_missing_table_fails_without_opening_store(temp_db_path):
     assert "documents" in tables.details
 
 
-@pytest.mark.asyncio
 async def test_missing_fts_index_fails(temp_db_path):
     """optimize indexes the rows of an index that exists; it never creates a
     missing one, so the remediation has to build it."""
@@ -225,7 +220,6 @@ async def test_missing_fts_index_fails(temp_db_path):
     assert report.failed
 
 
-@pytest.mark.asyncio
 async def test_fts_index_covering_no_rows_fails(temp_db_path):
     """The state a bulk write without a closing vacuum leaves behind."""
     await _build_db(temp_db_path, fts_index="empty")
@@ -236,7 +230,6 @@ async def test_fts_index_covering_no_rows_fails(temp_db_path):
     assert "vacuum" in (result.remediation or "")
 
 
-@pytest.mark.asyncio
 async def test_fts_coverage_passes_an_empty_table(temp_db_path):
     db = await _build_db(temp_db_path)
     chunks_tbl = await db.open_table("chunks")
@@ -245,7 +238,6 @@ async def test_fts_coverage_passes_an_empty_table(temp_db_path):
     assert _result(report, "fts_index_coverage").severity is Severity.OK
 
 
-@pytest.mark.asyncio
 async def test_orphaned_chunk_fails(temp_db_path):
     db = await _build_db(temp_db_path)
     chunks_tbl = await db.open_table("chunks")
@@ -266,7 +258,6 @@ async def test_orphaned_chunk_fails(temp_db_path):
     assert report.failed
 
 
-@pytest.mark.asyncio
 async def test_orphaned_document_item_fails(temp_db_path):
     db = await _build_db(temp_db_path)
     items_tbl = await db.open_table("document_items")
@@ -298,7 +289,6 @@ async def _add_doc(db, doc_id, *, items, metadata=None, chunks=None):
         await chunks_tbl.add(chunks)
 
 
-@pytest.mark.asyncio
 async def test_document_with_text_but_no_chunks_warns(temp_db_path):
     db = await _build_db(temp_db_path)
     await _add_doc(
@@ -321,7 +311,6 @@ async def test_document_with_text_but_no_chunks_warns(temp_db_path):
     assert report.count(Severity.FAIL) == 0
 
 
-@pytest.mark.asyncio
 async def test_empty_document_no_chunks_is_ok(temp_db_path):
     db = await _build_db(temp_db_path)
     await _add_doc(db, "d2", items=[])
@@ -329,7 +318,6 @@ async def test_empty_document_no_chunks_is_ok(temp_db_path):
     assert _result(report, "documents_without_chunks").severity is Severity.OK
 
 
-@pytest.mark.asyncio
 async def test_heading_only_document_no_chunks_is_ok(temp_db_path):
     db = await _build_db(temp_db_path)
     await _add_doc(
@@ -350,7 +338,6 @@ async def test_heading_only_document_no_chunks_is_ok(temp_db_path):
     assert all(r.name != "documents_text_no_chunks" for r in report.results)
 
 
-@pytest.mark.asyncio
 async def test_image_only_document_text_embedder_warns(temp_db_path):
     db = await _build_db(temp_db_path)
     await _add_doc(
@@ -368,7 +355,6 @@ async def test_image_only_document_text_embedder_warns(temp_db_path):
     assert "d2" in result.details
 
 
-@pytest.mark.asyncio
 async def test_image_only_document_multimodal_embedder_warns(temp_db_path):
     db = await _build_db(temp_db_path, provider="vllm", name="qwen-vl")
     await _add_doc(
@@ -388,7 +374,6 @@ async def test_image_only_document_multimodal_embedder_warns(temp_db_path):
     assert "d2" in result.details
 
 
-@pytest.mark.asyncio
 async def test_document_meta_parity_fails(temp_db_path):
     db = await _build_db(temp_db_path)
     docs_tbl = await db.open_table("documents")
@@ -399,7 +384,6 @@ async def test_document_meta_parity_fails(temp_db_path):
     assert any("d2" in d for d in result.details)
 
 
-@pytest.mark.asyncio
 async def test_dangling_doc_item_ref_fails(temp_db_path):
     db = await _build_db(temp_db_path)
     chunks_tbl = await db.open_table("chunks")
@@ -420,7 +404,6 @@ async def test_dangling_doc_item_ref_fails(temp_db_path):
     assert "c2" in result.details
 
 
-@pytest.mark.asyncio
 async def test_unembedded_chunk_warns(temp_db_path):
     db = await _build_db(temp_db_path)
     chunks_tbl = await db.open_table("chunks")
@@ -442,7 +425,6 @@ async def test_unembedded_chunk_warns(temp_db_path):
     assert not report.failed
 
 
-@pytest.mark.asyncio
 async def test_chunked_document_without_items_warns(temp_db_path):
     db = await _build_db(temp_db_path)
     await _add_doc(
@@ -461,7 +443,6 @@ async def test_chunked_document_without_items_warns(temp_db_path):
     assert "d2" in result.details
 
 
-@pytest.mark.asyncio
 async def test_empty_document_without_items_is_ok(temp_db_path):
     db = await _build_db(temp_db_path)
     await _add_doc(db, "d2", items=[])
@@ -469,7 +450,6 @@ async def test_empty_document_without_items_is_ok(temp_db_path):
     assert _result(report, "documents_without_items").severity is Severity.OK
 
 
-@pytest.mark.asyncio
 async def test_missing_picture_data_in_text_document_is_ok(temp_db_path):
     db = await _build_db(temp_db_path)
     await _add_doc(
@@ -490,7 +470,6 @@ async def test_missing_picture_data_in_text_document_is_ok(temp_db_path):
     assert _result(report, "picture_data").severity is Severity.OK
 
 
-@pytest.mark.asyncio
 async def test_missing_picture_data_in_pdf_document_warns(temp_db_path):
     db = await _build_db(temp_db_path)
     await _add_doc(
@@ -513,7 +492,6 @@ async def test_missing_picture_data_in_pdf_document_warns(temp_db_path):
     assert "d2" in result.details
 
 
-@pytest.mark.asyncio
 async def test_missing_picture_data_warns(temp_db_path):
     db = await _build_db(temp_db_path)
     items_tbl = await db.open_table("document_items")
@@ -533,7 +511,6 @@ async def test_missing_picture_data_warns(temp_db_path):
     assert not report.failed
 
 
-@pytest.mark.asyncio
 async def test_picture_with_data_ok(temp_db_path):
     db = await _build_db(temp_db_path)
     items_tbl = await db.open_table("document_items")
@@ -552,7 +529,6 @@ async def test_picture_with_data_ok(temp_db_path):
     assert _result(report, "picture_data").severity is Severity.OK
 
 
-@pytest.mark.asyncio
 async def test_embedding_name_drift_warns(temp_db_path):
     await _build_db(temp_db_path, name="test")
     report = await run_doctor(_config(name="different"), temp_db_path, {})
@@ -561,7 +537,6 @@ async def test_embedding_name_drift_warns(temp_db_path):
     assert not report.failed
 
 
-@pytest.mark.asyncio
 async def test_embedding_dim_drift_fails(temp_db_path):
     await _build_db(temp_db_path, vector_dim=VECTOR_DIM)
     report = await run_doctor(_config(vector_dim=VECTOR_DIM + 1), temp_db_path, {})
@@ -569,7 +544,6 @@ async def test_embedding_dim_drift_fails(temp_db_path):
     assert report.failed
 
 
-@pytest.mark.asyncio
 async def test_embedding_provider_drift_warns(temp_db_path):
     await _build_db(temp_db_path, provider="ollama")
     report = await run_doctor(_config(provider="vllm"), temp_db_path, {})
@@ -578,7 +552,6 @@ async def test_embedding_provider_drift_warns(temp_db_path):
     assert any("provider" in d for d in result.details)
 
 
-@pytest.mark.asyncio
 async def test_vector_dimension_mismatch_fails(temp_db_path):
     await _build_db(
         temp_db_path, vector_dim=VECTOR_DIM, stored_vector_dim=VECTOR_DIM + 1
@@ -589,7 +562,6 @@ async def test_vector_dimension_mismatch_fails(temp_db_path):
     assert report.failed
 
 
-@pytest.mark.asyncio
 async def test_pending_migration_warns(temp_db_path):
     await _build_db(temp_db_path, version="0.40.0")
     report = await run_doctor(_config(), temp_db_path, {})
@@ -597,7 +569,6 @@ async def test_pending_migration_warns(temp_db_path):
     assert not report.failed
 
 
-@pytest.mark.asyncio
 async def test_missing_api_key_fails(temp_db_path):
     await _build_db(temp_db_path, provider="openai", name="text-embedding-3-small")
     config = _config(provider="openai", name="text-embedding-3-small")
@@ -607,7 +578,6 @@ async def test_missing_api_key_fails(temp_db_path):
     assert any("OPENAI_API_KEY" in d for d in result.details)
 
 
-@pytest.mark.asyncio
 async def test_present_api_key_ok(temp_db_path):
     await _build_db(temp_db_path, provider="openai", name="text-embedding-3-small")
     config = _config(provider="openai", name="text-embedding-3-small")
@@ -615,7 +585,6 @@ async def test_present_api_key_ok(temp_db_path):
     assert _result(report, "api_keys").severity is Severity.OK
 
 
-@pytest.mark.asyncio
 async def test_settings_row_missing_fails(temp_db_path):
     db = await _build_db(temp_db_path)
     settings_tbl = await db.open_table("settings")
@@ -625,7 +594,6 @@ async def test_settings_row_missing_fails(temp_db_path):
     assert report.failed
 
 
-@pytest.mark.asyncio
 async def test_many_orphans_are_sampled(temp_db_path):
     db = await _build_db(temp_db_path)
     chunks_tbl = await db.open_table("chunks")
@@ -908,7 +876,6 @@ def _fake_probe(result):
     return probe
 
 
-@pytest.mark.asyncio
 async def test_provider_check_ok_when_models_present(monkeypatch):
     monkeypatch.setattr(
         "haiku.rag.doctor._probe_endpoint",
@@ -929,7 +896,6 @@ async def test_provider_check_ok_when_models_present(monkeypatch):
     assert all(r.severity is Severity.OK for r in results)
 
 
-@pytest.mark.asyncio
 async def test_provider_check_warns_on_missing_model(monkeypatch):
     monkeypatch.setattr(
         "haiku.rag.doctor._probe_endpoint",
@@ -941,7 +907,6 @@ async def test_provider_check_warns_on_missing_model(monkeypatch):
     assert result.details
 
 
-@pytest.mark.asyncio
 async def test_provider_check_fails_when_unreachable(monkeypatch):
     monkeypatch.setattr(
         "haiku.rag.doctor._probe_endpoint",
@@ -953,7 +918,6 @@ async def test_provider_check_fails_when_unreachable(monkeypatch):
     assert "Connection refused" in result.details
 
 
-@pytest.mark.asyncio
 async def test_provider_check_reports_local_provider(monkeypatch):
     monkeypatch.setattr(
         "haiku.rag.doctor._probe_endpoint",
@@ -972,7 +936,6 @@ async def test_provider_check_reports_local_provider(monkeypatch):
     assert "local" in local.message
 
 
-@pytest.mark.asyncio
 async def test_run_doctor_includes_provider_results(temp_db_path, monkeypatch):
     await _build_db(temp_db_path)
     monkeypatch.setattr(
@@ -994,7 +957,6 @@ async def _probe_with_handler(handler, headers: dict[str, str] | None = None):
         return await _probe_endpoint(client, "http://x", headers or {})
 
 
-@pytest.mark.asyncio
 async def test_probe_endpoint_success_with_json():
     import httpx
 
@@ -1004,7 +966,6 @@ async def test_probe_endpoint_success_with_json():
     assert reachable and error is None and payload == {"models": []}
 
 
-@pytest.mark.asyncio
 async def test_probe_endpoint_success_non_json():
     import httpx
 
@@ -1014,7 +975,6 @@ async def test_probe_endpoint_success_non_json():
     assert reachable and payload is None
 
 
-@pytest.mark.asyncio
 async def test_probe_endpoint_http_error_status():
     import httpx
 
@@ -1025,7 +985,6 @@ async def test_probe_endpoint_http_error_status():
     assert error is not None and "503" in error
 
 
-@pytest.mark.asyncio
 async def test_probe_endpoint_sends_headers():
     """A secured endpoint needs its key on the probe request too."""
     import httpx
@@ -1041,7 +1000,6 @@ async def test_probe_endpoint_sends_headers():
     assert seen["authorization"] == "Bearer sk-probe"
 
 
-@pytest.mark.asyncio
 async def test_probe_endpoint_connection_error():
     import httpx
 
@@ -1267,7 +1225,6 @@ async def _build_dup_db(path, docs: dict[str, list[int]], *, vector_dim: int = 8
     return db
 
 
-@pytest.mark.asyncio
 async def test_duplicate_documents_check_warns_end_to_end(temp_db_path):
     await _build_dup_db(temp_db_path, {"a": [0, 1, 2, 3], "b": [0, 1, 2, 3]})
     report = await run_doctor(_config(vector_dim=8), temp_db_path, {})
@@ -1277,14 +1234,12 @@ async def test_duplicate_documents_check_warns_end_to_end(temp_db_path):
     assert "test://a" in blob and "test://b" in blob
 
 
-@pytest.mark.asyncio
 async def test_duplicate_documents_check_ok_when_distinct(temp_db_path):
     await _build_dup_db(temp_db_path, {"a": [0, 1, 2], "b": [3, 4, 5]})
     report = await run_doctor(_config(vector_dim=8), temp_db_path, {})
     assert _result(report, "duplicate_documents").severity is Severity.OK
 
 
-@pytest.mark.asyncio
 async def test_duplicate_documents_check_reads_config(temp_db_path):
     # Share 3 of 5 -> centroid cosine 0.6, below the default 0.97 cutoff.
     await _build_dup_db(temp_db_path, {"a": [0, 1, 2, 3, 4], "b": [0, 1, 2, 5, 6]})
@@ -1309,7 +1264,6 @@ async def test_duplicate_documents_check_reads_config(temp_db_path):
     )
 
 
-@pytest.mark.asyncio
 async def test_many_unembedded_chunks_are_sampled(temp_db_path):
     """Beyond the sample limit the detail list ends with a count of the rest."""
     db = await _build_db(temp_db_path)

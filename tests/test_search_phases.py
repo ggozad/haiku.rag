@@ -15,7 +15,6 @@ def exploding_reranker(monkeypatch):
     monkeypatch.setattr(HaikuRAG, "reranker", property(boom), raising=True)
 
 
-@pytest.mark.asyncio
 async def test_image_ranking_never_builds_the_reranker(
     temp_db_path, exploding_reranker
 ):
@@ -32,7 +31,6 @@ async def test_image_ranking_never_builds_the_reranker(
         assert [c.id for c, _ in ranked] == ["a"]
 
 
-@pytest.mark.asyncio
 async def test_image_fetch_never_builds_the_reranker(
     temp_db_path, exploding_reranker, monkeypatch
 ):
@@ -60,7 +58,6 @@ async def test_image_fetch_never_builds_the_reranker(
         assert seen["limit"] == 5
 
 
-@pytest.mark.asyncio
 async def test_an_image_query_ignores_a_full_text_search_type(
     temp_db_path, monkeypatch
 ):

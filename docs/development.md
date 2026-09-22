@@ -24,8 +24,9 @@ uv run pytest
 Tests use pytest markers to categorize them:
 
 - `@pytest.mark.integration` - Tests requiring local services (Docling models, etc.) that aren't available in CI
-- `@pytest.mark.asyncio` - Async tests (applied automatically via pytest-asyncio)
 - `@pytest.mark.vcr()` - Tests with HTTP call recording
+
+Async tests are detected automatically through pytest-asyncio's auto mode.
 
 CI runs `pytest -m "not integration"` to skip integration tests.
 
@@ -76,7 +77,6 @@ import pytest
 from haiku.rag.client import HaikuRAG
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_my_feature(temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -90,7 +90,6 @@ For tests requiring local services that can't be mocked via VCR:
 
 ```python
 @pytest.mark.integration
-@pytest.mark.asyncio
 async def test_pdf_visualization(temp_db_path):
     # Test code that needs local PDF processing
     pass

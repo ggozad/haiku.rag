@@ -69,7 +69,6 @@ def test_iter_pdf_slices_rejects_zero_slice_size(tmp_path):
         list(iter_pdf_slices(src, slice_size=0))
 
 
-@pytest.mark.asyncio
 async def test_convert_unlinks_slice_tempfile_on_write_failure(tmp_path, monkeypatch):
     """If writing the slice bytes to the tempfile raises (e.g. ENOSPC), the
     tempfile is created on disk but never reaches the converter. The original
@@ -116,7 +115,6 @@ async def test_convert_unlinks_slice_tempfile_on_write_failure(tmp_path, monkeyp
     assert leftover == [], f"tempfiles leaked after write failure: {leftover}"
 
 
-@pytest.mark.asyncio
 async def test_convert_aborts_and_cleans_up_on_mid_stream_slice_failure(
     tmp_path, monkeypatch
 ):
@@ -157,7 +155,6 @@ async def test_convert_aborts_and_cleans_up_on_mid_stream_slice_failure(
     assert len(calls) == 2
 
 
-@pytest.mark.asyncio
 async def test_concatenate_runs_off_event_loop_thread(tmp_path, monkeypatch):
     """DoclingDocument.concatenate merges slice documents that carry inlined
     base64 page/picture images — CPU-heavy and proportional to total document

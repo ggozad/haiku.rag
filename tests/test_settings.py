@@ -6,7 +6,6 @@ from haiku.rag.config import AppConfig, get_config
 from haiku.rag.store.exceptions import ConfigMismatchError
 
 
-@pytest.mark.asyncio
 async def test_settings_table_populated_on_store_init(temp_db_path):
     """Test that settings table is populated with current config when store is initialized."""
     from haiku.rag.store.engine import Store
@@ -25,7 +24,6 @@ async def test_settings_table_populated_on_store_init(temp_db_path):
         assert db_settings_without_version == config_dict
 
 
-@pytest.mark.asyncio
 async def test_settings_save_and_retrieve(temp_db_path):
     """Test saving and retrieving settings after config change."""
     from haiku.rag.store.engine import Store
@@ -44,7 +42,6 @@ async def test_settings_save_and_retrieve(temp_db_path):
         get_config().processing.chunk_size = original_chunk_size
 
 
-@pytest.mark.asyncio
 async def test_set_haiku_version_recreates_row_from_store_config(temp_db_path):
     """Recreating a missing settings row stamps the store's own config, not the
     process-global one."""
@@ -72,7 +69,6 @@ async def test_set_haiku_version_recreates_row_from_store_config(temp_db_path):
 class TestValidateConfigCompatibility:
     """Tests for validate_config_compatibility method."""
 
-    @pytest.mark.asyncio
     async def test_empty_settings_does_not_write(self, temp_db_path):
         """Validation never writes on open, even when the settings row is missing."""
         from haiku.rag.store.engine import Store
@@ -90,7 +86,6 @@ class TestValidateConfigCompatibility:
 
             assert await settings_repo.get_current_settings() == {}
 
-    @pytest.mark.asyncio
     async def test_compatible_config_no_error(self, temp_db_path):
         """Compatible config does not raise error."""
         from haiku.rag.store.engine import Store
@@ -102,7 +97,6 @@ class TestValidateConfigCompatibility:
             # Should not raise - same config
             await settings_repo.validate_config_compatibility()
 
-    @pytest.mark.asyncio
     async def test_provider_drift_read_only_warns_without_writing(
         self, temp_db_path, caplog, monkeypatch
     ):
@@ -146,7 +140,6 @@ class TestValidateConfigCompatibility:
             saved = await settings_repo.get_current_settings()
             assert saved["embeddings"]["model"]["provider"] == "ollama"
 
-    @pytest.mark.asyncio
     async def test_provider_drift_writable_raises_without_writing(
         self, temp_db_path, caplog, monkeypatch
     ):
@@ -185,7 +178,6 @@ class TestValidateConfigCompatibility:
             saved = await settings_repo.get_current_settings()
             assert saved["embeddings"]["model"]["provider"] == "ollama"
 
-    @pytest.mark.asyncio
     async def test_model_drift_read_only_warns_without_writing(
         self, temp_db_path, caplog, monkeypatch
     ):
@@ -217,7 +209,6 @@ class TestValidateConfigCompatibility:
             saved = await settings_repo.get_current_settings()
             assert saved["embeddings"]["model"]["name"] != "different-model"
 
-    @pytest.mark.asyncio
     async def test_vector_dim_mismatch_raises_error(self, temp_db_path):
         """Different vector dimension raises ConfigMismatchError."""
         from haiku.rag.store.engine import Store
@@ -242,7 +233,6 @@ class TestValidateConfigCompatibility:
             assert "vector dimension" in str(exc_info.value)
             assert "9999" in str(exc_info.value)
 
-    @pytest.mark.asyncio
     async def test_vector_dim_mismatch_raises_error_read_only(self, temp_db_path):
         """vector_dim mismatch raises even read-only — search cannot work."""
         from haiku.rag.store.engine import Store
@@ -265,7 +255,6 @@ class TestValidateConfigCompatibility:
             assert "9999" in str(exc_info.value)
 
 
-@pytest.mark.asyncio
 async def test_save_current_settings_recreates_a_deleted_row(temp_db_path):
     from haiku.rag.store.engine import Store
     from haiku.rag.store.repositories.settings import SettingsRepository

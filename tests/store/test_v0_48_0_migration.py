@@ -1,7 +1,5 @@
 import json
 
-import pytest
-
 from haiku.rag.store.compression import compress_docling_split
 from haiku.rag.store.engine import Store
 from haiku.rag.store.schema import DocumentItemRecord, DocumentRecord
@@ -21,7 +19,6 @@ def _docling_with_levels():
     return doc
 
 
-@pytest.mark.asyncio
 class TestV0_48_0Migration:
     """v0.48.0 backfills heading_level + tree_depth on existing items rows."""
 
@@ -155,7 +152,6 @@ class TestV0_48_0Migration:
             assert rows[0]["tree_depth"] == 0
 
 
-@pytest.mark.asyncio
 class TestV0_48_0FreshSchema:
     """A newly-created DB has the new columns from the start."""
 

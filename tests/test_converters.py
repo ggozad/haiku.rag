@@ -217,7 +217,6 @@ def create_async_workflow_zip_mocks(
     return submit_response, poll_response, result_response
 
 
-@pytest.mark.asyncio
 async def test_parse_zip_runs_off_event_loop_thread():
     """_parse_zip_to_docling does zip decompress, per-image base64 re-encoding,
     and DoclingDocument.model_validate — all synchronous and CPU-heavy (full-
@@ -340,7 +339,6 @@ class TestConverterFactory:
 class TestTextToDoclingWithFormat:
     """Tests for format parameter in text to DoclingDocument conversion."""
 
-    @pytest.mark.asyncio
     async def test_html_format_preserves_structure(self):
         """Test that HTML content parsed with html format preserves document structure."""
         html_content = """
@@ -367,7 +365,6 @@ class TestTextToDoclingWithFormat:
         assert "list_item" in labels
         assert len(items) > 3
 
-    @pytest.mark.asyncio
     async def test_html_content_before_the_first_heading_is_kept(self):
         """A paragraph above the first heading reaches the document body."""
         html_content = (
@@ -385,7 +382,6 @@ class TestTextToDoclingWithFormat:
         ]
         assert any("born 29 March 1968" in text for text in texts)
 
-    @pytest.mark.asyncio
     async def test_infer_furniture_drops_content_before_the_first_heading(self):
         """With `infer_furniture` on, docling files that paragraph as furniture."""
         html_content = (
@@ -405,7 +401,6 @@ class TestTextToDoclingWithFormat:
         ]
         assert not any("born 29 March 1968" in text for text in texts)
 
-    @pytest.mark.asyncio
     async def test_md_format_is_default(self):
         """Test that md format is used by default."""
         config = AppConfig()
@@ -417,7 +412,6 @@ class TestTextToDoclingWithFormat:
 
         assert len(items) >= 2
 
-    @pytest.mark.asyncio
     async def test_html_as_md_loses_structure(self):
         """Test that HTML parsed as markdown loses semantic structure."""
         html_content = "<h1>Title</h1><p>Text</p><ul><li>Item</li></ul>"
@@ -432,7 +426,6 @@ class TestTextToDoclingWithFormat:
         # (markdown parser will interpret some HTML)
         assert len(items) >= 1
 
-    @pytest.mark.asyncio
     async def test_invalid_format_raises_error(self):
         """Test that invalid format raises ValueError."""
         config = AppConfig()
@@ -441,7 +434,6 @@ class TestTextToDoclingWithFormat:
         with pytest.raises(ValueError, match="Unsupported format"):
             await converter.convert_text("content", format="invalid")
 
-    @pytest.mark.asyncio
     async def test_plain_format(self):
         """Test that format='plain' creates DoclingDocument directly."""
         config = AppConfig()
@@ -456,7 +448,6 @@ class TestTextToDoclingWithFormat:
         exported = doc.export_to_markdown()
         assert "MZ Wallace" in exported
 
-    @pytest.mark.asyncio
     async def test_text_starting_with_magic_bytes_parses_as_markdown(self):
         """Text whose first bytes collide with a binary magic signature
         ("BM" = BMP, "ID3" = MP3) must still be parsed as markdown, not
@@ -474,7 +465,6 @@ class TestTextToDoclingWithFormat:
             assert "section_header" in labels
             assert "list_item" in labels
 
-    @pytest.mark.asyncio
     async def test_dotfile_derived_name_parses_as_markdown(self):
         """Docling ignores the extension of a stream name starting with a dot,
         so a name derived from a dotfile (".customrc" -> ".customrc.md") must
@@ -489,7 +479,6 @@ class TestTextToDoclingWithFormat:
         assert "section_header" in labels
         assert "list_item" in labels
 
-    @pytest.mark.asyncio
     async def test_plain_text_without_markdown_syntax_fallback(self):
         """Test that plain text without markdown syntax falls back gracefully.
 
@@ -525,7 +514,6 @@ class TestDoclingLocalConverter:
         """Create DoclingLocalConverter instance."""
         return DoclingLocalConverter(config)
 
-    @pytest.mark.asyncio
     async def test_docling_document_serialization_roundtrip(self, converter):
         """Test that DoclingDocument can be serialized and parsed back.
 
@@ -551,7 +539,6 @@ class TestDoclingLocalConverter:
         assert ".eml" in extensions
         assert ".msg" in extensions
 
-    @pytest.mark.asyncio
     async def test_convert_eml_reads_subject_and_body(self, converter, tmp_path):
         """An .eml file converts to its subject as title and its body as text."""
         message = EmailMessage()
@@ -568,14 +555,12 @@ class TestDoclingLocalConverter:
         assert titles == ["Q3 pricing review"]
         assert "The London numbers changed." in doc.export_to_markdown()
 
-    @pytest.mark.asyncio
     async def test_convert_text(self, converter):
         """Test converting text to DoclingDocument."""
         doc = await converter.convert_text("# Test\n\nContent here", name="test.md")
         assert isinstance(doc, DoclingDocument)
         assert doc.name == "test"
 
-    @pytest.mark.asyncio
     async def test_convert_file_reads_unknown_extension_as_text(
         self, converter, tmp_path
     ):
@@ -588,7 +573,6 @@ class TestDoclingLocalConverter:
         assert isinstance(doc, DoclingDocument)
         assert "Plain body for an unknown extension." in doc.export_to_markdown()
 
-    @pytest.mark.asyncio
     async def test_convert_file_raises_for_undecodable_file(self, converter, tmp_path):
         source = tmp_path / "binary.xyz"
         source.write_bytes(b"\xff\xfe\x00\x01 not utf-8")
@@ -596,7 +580,6 @@ class TestDoclingLocalConverter:
         with pytest.raises(ValueError, match="Failed to parse file"):
             await converter.convert_file(source)
 
-    @pytest.mark.asyncio
     async def test_convert_text_wraps_conversion_failure(self, converter, monkeypatch):
         def boom(*_args, **_kwargs):
             raise RuntimeError("docling exploded")
@@ -606,7 +589,6 @@ class TestDoclingLocalConverter:
         with pytest.raises(ValueError, match="Failed to convert text"):
             await converter.convert_text("# Test", name="test.md")
 
-    @pytest.mark.asyncio
     async def test_convert_text_falls_back_when_format_not_inferable(self, converter):
         """docling raises ConversionError for an extension it has no backend
         for; the simple-document fallback keeps the text."""
@@ -615,7 +597,6 @@ class TestDoclingLocalConverter:
         assert isinstance(doc, DoclingDocument)
         assert "just some prose" in doc.export_to_markdown()
 
-    @pytest.mark.asyncio
     async def test_convert_code_file(self, converter):
         """Test that code files are wrapped in code blocks."""
         python_code = "def hello():\n    print('Hello')"
@@ -645,7 +626,6 @@ class TestDoclingLocalConverter:
             converter.config.processing.conversion_options.generate_page_images is False
         )
 
-    @pytest.mark.asyncio
     async def test_convert_text_html_fetches_data_uri_image(self, config):
         """`fetch_remote_images=True` decodes inline `data:` URIs into picture
         bytes via the HTML backend. Default behavior."""
@@ -664,7 +644,6 @@ class TestDoclingLocalConverter:
             "All <img> with valid data: URIs should have decoded bytes"
         )
 
-    @pytest.mark.asyncio
     async def test_convert_text_html_no_fetch_when_disabled(self, config):
         """`fetch_remote_images=False` produces placeholder pictures with no
         bytes — even for inline `data:` URIs (docling's `fetch_images` gates
@@ -685,7 +664,6 @@ class TestDoclingLocalConverter:
                 "fetch_remote_images=False must leave picture.image=None"
             )
 
-    @pytest.mark.asyncio
     async def test_convert_text_md_html_block_fetches_data_uri_image(self, config):
         """Markdown with an embedded `<img>` HTML block produces picture bytes
         — proves the MarkdownBackendOptions wiring delegates to the HTML
@@ -874,7 +852,6 @@ class TestDoclingLocalConverter:
         assert isinstance(md_bo, MarkdownBackendOptions)
         assert md_bo.source_uri is None
 
-    @pytest.mark.asyncio
     async def test_convert_text_html_mixed_img_sources(self, config, monkeypatch):
         """End-to-end: HTML with a mix of remote http, data:, broken http, and
         file:// `<img>` sources. Remote and data: URIs land as picture bytes;
@@ -964,7 +941,6 @@ class TestDoclingLocalConverter:
         assert pdf_pipe.do_ocr is False
         assert pdf_pipe.images_scale == 3.5
 
-    @pytest.mark.asyncio
     async def test_convert_text_html_source_uri_resolves_relative_img(
         self, config, monkeypatch
     ):
@@ -998,7 +974,6 @@ class TestDoclingLocalConverter:
             f"Expected absolute URL resolved via source_uri, got {captured[0]!r}"
         )
 
-    @pytest.mark.asyncio
     async def test_convert_pdf_with_picture_images(
         self, config, doclaynet_first_page_pdf
     ):
@@ -1016,7 +991,6 @@ class TestDoclingLocalConverter:
                 "Pictures should carry image data after conversion"
             )
 
-    @pytest.mark.asyncio
     async def test_split_and_merge_matches_single_pass(self, config):
         """Real-PDF test for split_pages, in two parts.
 
@@ -1084,7 +1058,6 @@ class TestDoclingLocalConverter:
             "more than one per boundary means the split lost or split something else"
         )
 
-    @pytest.mark.asyncio
     async def test_convert_pdf_without_page_images(
         self, config, doclaynet_first_page_pdf
     ):
@@ -1102,7 +1075,6 @@ class TestDoclingLocalConverter:
                 "Pages should not have image data when generate_page_images=False"
             )
 
-    @pytest.mark.asyncio
     async def test_convert_pdf_with_page_images(self, config, doclaynet_first_page_pdf):
         """Test PDF conversion includes page images when enabled."""
         pdf_path = doclaynet_first_page_pdf
@@ -1224,7 +1196,6 @@ class TestDoclingLocalConverter:
             "Authorization": "Bearer sk-vlm"
         }
 
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_picture_description_end_to_end(
         self, config, doclaynet_first_page_pdf
@@ -1382,7 +1353,6 @@ class TestInlineGroups:
     def converter(self):
         return DoclingLocalConverter(AppConfig())
 
-    @pytest.mark.asyncio
     async def test_inline_markup_flattens_into_one_item(self, converter):
         md = (
             "By default, `haiku.rag` uses the configured embedder.\n\n"
@@ -1404,7 +1374,6 @@ class TestInlineGroups:
         assert "By default," not in texts
         assert "0.68.0" not in texts
 
-    @pytest.mark.asyncio
     async def test_flattened_text_carries_the_source_characters(self, converter):
         """Underscores and ampersands reach storage as written."""
         doc = await converter.convert_text(
@@ -1414,7 +1383,6 @@ class TestInlineGroups:
         texts = [getattr(item, "text", None) for item, _ in doc.iterate_items()]
         assert "Use `my_func` for snake_case_name and & stuff." in texts
 
-    @pytest.mark.asyncio
     async def test_every_paragraph_of_a_list_item_survives(self, converter):
         doc = await converter.convert_text(
             "- First `code` paragraph.\n"
@@ -1430,7 +1398,6 @@ class TestInlineGroups:
             "Second `code` paragraph.",
         ]
 
-    @pytest.mark.asyncio
     async def test_body_text_under_a_heading_keeps_its_hyperlinks(self, converter):
         """The HTML backend parents a paragraph to the heading above it."""
         html = (
@@ -1526,7 +1493,6 @@ class TestInlineGroups:
         assert flatten_inline_groups(doc) is False
         assert [item.text for item in doc.texts] == ["page 1", "page 2"]
 
-    @pytest.mark.asyncio
     async def test_inline_picture_group_is_left_alone(self):
         config = AppConfig()
         config.processing.conversion_options.fetch_remote_images = False
@@ -1542,7 +1508,6 @@ class TestInlineGroups:
             for item, _ in doc.iterate_items(with_groups=True)
         )
 
-    @pytest.mark.asyncio
     @pytest.mark.parametrize("source", ["md", "html", "docx"])
     async def test_flattening_loses_nothing(
         self, converter, tmp_path, monkeypatch, source
@@ -1628,7 +1593,6 @@ class TestSharedDoclingConverter:
         source.write_text("a,b\n1,2\n")
         return source
 
-    @pytest.mark.asyncio
     async def test_converter_is_reused_across_documents(
         self, config, csv_file, docling_calls
     ):
@@ -1642,7 +1606,6 @@ class TestSharedDoclingConverter:
 
         assert docling_calls.constructions == 1
 
-    @pytest.mark.asyncio
     async def test_each_pdf_backend_gets_its_own_converter(
         self, config, csv_file, docling_calls
     ):
@@ -1669,7 +1632,6 @@ class TestSharedDoclingConverter:
             "DoclingParseDocumentBackend",
         ]
 
-    @pytest.mark.asyncio
     async def test_concurrent_conversions_do_not_overlap(
         self, config, csv_file, docling_calls
     ):
@@ -1687,7 +1649,6 @@ class TestSharedDoclingConverter:
         assert docling_calls.constructions == 1
         assert docling_calls.overlaps == 0
 
-    @pytest.mark.asyncio
     async def test_markup_conversion_keeps_its_own_source_uri(
         self, config, tmp_path, docling_calls
     ):
@@ -1710,7 +1671,6 @@ class TestSharedDoclingConverter:
         assert uris[0].endswith("one.md")
         assert uris[1].endswith("two.md")
 
-    @pytest.mark.asyncio
     @pytest.mark.parametrize("mode", ["fast", "accurate"])
     async def test_differing_pipeline_options_get_their_own_converter(
         self, config, csv_file, docling_calls, mode
@@ -1730,7 +1690,6 @@ class TestSharedDoclingConverter:
 
         assert docling_calls.constructions == 2
 
-    @pytest.mark.asyncio
     async def test_config_differences_outside_the_pipeline_still_reuse(
         self, config, csv_file, docling_calls, tmp_path
     ):
@@ -1790,7 +1749,6 @@ class TestDoclingServeConverter:
         assert ".eml" in extensions
         assert ".msg" in extensions
 
-    @pytest.mark.asyncio
     async def test_convert_text_success(self, converter):
         """Test successful text conversion via docling-serve async workflow."""
         doc_json = create_mock_docling_document("test")
@@ -1809,7 +1767,6 @@ class TestDoclingServeConverter:
             assert doc.version == "1.10.0"
             mock_client.post.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_convert_text_with_api_key(self, config):
         """Test that API key is included in request headers."""
         config.providers.docling_serve.api_key = "test-key"
@@ -1832,7 +1789,6 @@ class TestDoclingServeConverter:
             assert "headers" in call_kwargs
             assert call_kwargs["headers"]["X-Api-Key"] == "test-key"
 
-    @pytest.mark.asyncio
     async def test_conversion_options_passed_to_api(self, config):
         """Test that conversion options are passed to docling-serve API."""
         config.processing.conversion_options.do_ocr = False
@@ -1871,7 +1827,6 @@ class TestDoclingServeConverter:
             assert data["image_export_mode"] == "referenced"
             assert data["target_type"] == "zip"
 
-    @pytest.mark.asyncio
     async def test_ocr_engine_passed_to_api(self, config):
         """Test that ocr_engine is passed to docling-serve API."""
         config.processing.conversion_options.ocr_engine = "rapidocr"
@@ -1983,7 +1938,6 @@ class TestDoclingServeConverter:
         assert doc.pictures[0].image is not None
         assert str(doc.pictures[0].image.uri) == "artifacts/missing.png"
 
-    @pytest.mark.asyncio
     async def test_convert_text_connection_error(self, converter):
         """Test handling of connection errors."""
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -1998,7 +1952,6 @@ class TestDoclingServeConverter:
             with pytest.raises(httpx.ConnectError):
                 await converter.convert_text("# Test")
 
-    @pytest.mark.asyncio
     async def test_convert_text_timeout_error(self, converter):
         """Test handling of timeout errors."""
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -2011,7 +1964,6 @@ class TestDoclingServeConverter:
             with pytest.raises(httpx.TimeoutException):
                 await converter.convert_text("# Test")
 
-    @pytest.mark.asyncio
     async def test_convert_text_auth_error(self, converter):
         """Auth failures surface as httpx.HTTPStatusError(401) so the
         ingester's pipeline classifier can route them to PermanentError —
@@ -2034,7 +1986,6 @@ class TestDoclingServeConverter:
                 await converter.convert_text("# Test")
             assert exc_info.value.response.status_code == 401
 
-    @pytest.mark.asyncio
     async def test_convert_file_pdf(self, converter):
         """Test converting PDF file via docling-serve async workflow."""
         doc_json = create_mock_docling_document("test")
@@ -2057,7 +2008,6 @@ class TestDoclingServeConverter:
             assert isinstance(doc, DoclingDocument)
             mock_client.post.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_convert_file_text(self, converter):
         """Test converting text file (reads locally, sends to docling-serve)."""
         doc_json = create_mock_docling_document("test")
@@ -2082,7 +2032,6 @@ class TestDoclingServeConverter:
             call_kwargs = mock_client.post.call_args.kwargs
             assert "files" in call_kwargs
 
-    @pytest.mark.asyncio
     async def test_dotfile_uploads_with_detectable_name(self, converter):
         """docling-serve runs the same format detection on the uploaded
         filename, which ignores the extension of any name starting with a dot.
@@ -2102,7 +2051,6 @@ class TestDoclingServeConverter:
             uploaded_name = mock_client.post.call_args.kwargs["files"]["files"][0]
             assert uploaded_name == "customrc.md"
 
-    @pytest.mark.asyncio
     async def test_dotfile_path_uploads_with_detectable_name(self, converter, tmp_path):
         """A dotfile with no extension is uploaded under a name docling can
         still probe by content rather than one it refuses to classify.
@@ -2136,7 +2084,6 @@ class TestDoclingServeConverterPictureDescription:
         config.providers.docling_serve.api_key = ""
         return config
 
-    @pytest.mark.asyncio
     async def test_picture_description_options_passed_to_api(self, config):
         """Picture-description options reach the docling-serve API when the
         VLM is enabled."""
@@ -2188,7 +2135,6 @@ class TestDoclingServeConverterPictureDescription:
             assert api_config["timeout"] == 120
             assert api_config["headers"] == {"Authorization": "Bearer sk-vlm"}
 
-    @pytest.mark.asyncio
     async def test_picture_description_disabled_by_default(self, config):
         """Test that picture description is disabled by default."""
         converter = DoclingServeConverter(config)
@@ -2243,14 +2189,12 @@ class TestDoclingServeConverterIntegration:
         return DoclingServeConverter(config)
 
     @pytest.mark.vcr()
-    @pytest.mark.asyncio
     async def test_convert_text_real_service(self, converter):
         """Test text conversion with real docling-serve."""
         doc = await converter.convert_text("# Test Document\n\nThis is a test.")
         assert isinstance(doc, DoclingDocument)
 
     @pytest.mark.vcr()
-    @pytest.mark.asyncio
     async def test_convert_code_file_real_service(self, converter):
         """Test code file conversion with real docling-serve."""
         code = "def test():\n    return 42"
@@ -2264,7 +2208,6 @@ class TestDoclingServeConverterIntegration:
         result = doc.export_to_markdown()
         assert "def test():" in result
 
-    @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_picture_description_end_to_end(
         self, config, docling_serve_url, doclaynet_first_page_pdf
@@ -2307,7 +2250,6 @@ class TestDoclingServeConverterIntegration:
         )
 
     @pytest.mark.vcr()
-    @pytest.mark.asyncio
     async def test_convert_pdf_without_page_images(
         self, config, doclaynet_first_page_pdf
     ):
@@ -2326,7 +2268,6 @@ class TestDoclingServeConverterIntegration:
             )
 
     @pytest.mark.vcr()
-    @pytest.mark.asyncio
     async def test_convert_pdf_with_page_images(self, config, doclaynet_first_page_pdf):
         """Test PDF conversion includes page images when enabled."""
         pdf_path = doclaynet_first_page_pdf
@@ -2343,7 +2284,6 @@ class TestDoclingServeConverterIntegration:
         )
 
     @pytest.mark.vcr()
-    @pytest.mark.asyncio
     async def test_convert_pdf_with_ocr_engine(self, config, doclaynet_first_page_pdf):
         """Test PDF conversion with explicit OCR engine selection."""
         pdf_path = doclaynet_first_page_pdf
@@ -2356,7 +2296,6 @@ class TestDoclingServeConverterIntegration:
         assert len(doc.export_to_markdown().strip()) > 100
 
     @pytest.mark.vcr()
-    @pytest.mark.asyncio
     async def test_convert_pdf_with_picture_images(
         self, config, doclaynet_first_page_pdf
     ):
@@ -2487,12 +2426,10 @@ class TestDoclingServeZipParsing:
         with pytest.raises(ValidationError):
             converter._parse_zip_to_docling(blob, "doc.pdf")
 
-    @pytest.mark.asyncio
     async def test_convert_text_rejects_unsupported_format(self, converter):
         with pytest.raises(ValueError, match="Unsupported format"):
             await converter.convert_text("body", format="pdf")
 
-    @pytest.mark.asyncio
     async def test_convert_text_plain_builds_document_locally(self, converter):
         """format="plain" never reaches the network."""
         converter.client.submit_and_poll_zip = AsyncMock(
@@ -2505,7 +2442,6 @@ class TestDoclingServeZipParsing:
         assert "just text" in doc.export_to_markdown()
 
 
-@pytest.mark.asyncio
 async def test_docling_serve_convert_file_wraps_text_read_failure(tmp_path):
     """An undecodable text file surfaces as a ValueError naming the path."""
     config = AppConfig()
@@ -2567,7 +2503,6 @@ class TestConversionTimeout:
         yield
         docling_local._WEDGED.clear()
 
-    @pytest.mark.asyncio
     async def test_timeout_raises_and_names_the_setting(
         self, config, tmp_path, monkeypatch, stall
     ):
@@ -2584,7 +2519,6 @@ class TestConversionTimeout:
             await asyncio.wait_for(converter.convert_file(pdf), 3)
         assert "conversion_timeout" in str(excinfo.value)
 
-    @pytest.mark.asyncio
     async def test_later_conversions_fail_fast_after_a_timeout(
         self, config, tmp_path, monkeypatch, stall
     ):
@@ -2610,7 +2544,6 @@ class TestConversionTimeout:
             await DoclingLocalConverter(config).convert_file(healthy)
         assert time.monotonic() - started < 1.0
 
-    @pytest.mark.asyncio
     async def test_failure_keeps_its_cause(self, config, tmp_path, monkeypatch):
         """`Failed to parse file` chains the exception that caused it."""
         converter = DoclingLocalConverter(config)
@@ -2625,7 +2558,6 @@ class TestConversionTimeout:
         assert isinstance(excinfo.value.__cause__, KeyError)
         assert "the real problem" in str(excinfo.value.__cause__)
 
-    @pytest.mark.asyncio
     async def test_docling_own_timeout_keeps_its_cause(
         self, config, tmp_path, monkeypatch
     ):
@@ -2651,7 +2583,6 @@ class TestConversionTimeout:
         rendered = "".join(traceback.format_exception(excinfo.value))
         assert "CalleeTimeout" not in rendered
 
-    @pytest.mark.asyncio
     async def test_uri_aware_timeout_leaves_pdfs_alone(
         self, config, tmp_path, monkeypatch, stall
     ):
@@ -2671,7 +2602,6 @@ class TestConversionTimeout:
         assert not docling_local._WEDGED.is_set()
         assert "cannot convert again" not in str(excinfo.value)
 
-    @pytest.mark.asyncio
     async def test_split_conversion_propagates_the_timeout(
         self, config, tmp_path, monkeypatch, stall
     ):
@@ -2697,7 +2627,6 @@ class TestConversionTimeout:
 
         assert AppConfig().processing.conversion_timeout == 600.0
 
-    @pytest.mark.asyncio
     async def test_waiting_for_the_converter_is_not_the_waiter_s_deadline(
         self, config, tmp_path, monkeypatch
     ):
@@ -2738,7 +2667,6 @@ class TestConversionTimeout:
         # assertion the conversions could simply have run in parallel.
         assert elapsed >= 0.7, f"conversions were not serialized ({elapsed:.2f}s)"
 
-    @pytest.mark.asyncio
     async def test_cancelling_while_waiting_does_not_leak_the_converter(
         self, config, tmp_path, monkeypatch
     ):
@@ -2785,7 +2713,6 @@ class TestConversionTimeout:
         assert await asyncio.wait_for(after.convert_file(pdf), 5) == "third"
         assert not docling_local._WEDGED.is_set()
 
-    @pytest.mark.asyncio
     async def test_cancelling_mid_conversion_keeps_the_converter_held(
         self, config, tmp_path, monkeypatch
     ):
@@ -2834,7 +2761,6 @@ class TestConversionTimeout:
         release.set()
         assert await asyncio.wait_for(admitted, 5) == "second"
 
-    @pytest.mark.asyncio
     async def test_a_stall_is_recorded_even_if_its_caller_is_cancelled(
         self, config, tmp_path, monkeypatch, caplog
     ):
@@ -2893,7 +2819,6 @@ class TestConversionTimeout:
             await asyncio.wait_for(after.convert_file(pdf), 2)
         release.set()
 
-    @pytest.mark.asyncio
     async def test_a_conversion_abandoned_before_admission_never_runs(
         self, config, tmp_path, monkeypatch
     ):
@@ -2942,7 +2867,6 @@ class TestConversionTimeout:
         monkeypatch.setattr(later, "_sync_convert_timed", lambda p, s=None: "later")
         assert await asyncio.wait_for(later.convert_file(pdf), 5) == "later"
 
-    @pytest.mark.asyncio
     async def test_the_conversion_thread_inherits_the_caller_s_context(
         self, config, tmp_path, monkeypatch
     ):
@@ -2967,7 +2891,6 @@ class TestConversionTimeout:
         assert await converter.convert_file(pdf) == "converted"
         assert seen == ["from-the-caller"]
 
-    @pytest.mark.asyncio
     async def test_a_queued_conversion_learns_the_converter_is_stranded(
         self, config, tmp_path, monkeypatch
     ):
@@ -3014,7 +2937,6 @@ class TestConversionTimeout:
         assert not second_entered.is_set()
         release.set()
 
-    @pytest.mark.asyncio
     async def test_a_late_returning_stall_admits_no_one(
         self, config, tmp_path, monkeypatch
     ):
@@ -3063,7 +2985,6 @@ class TestConversionTimeout:
             await asyncio.wait_for(second, 5)
         assert not second_entered.is_set()
 
-    @pytest.mark.asyncio
     async def test_an_abandoned_conversion_stops_waiting_for_the_converter(
         self, config, tmp_path, monkeypatch
     ):

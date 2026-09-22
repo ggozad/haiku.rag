@@ -395,11 +395,10 @@ Agent Skills client ignores it.
 - `allow_model_requests` - Enables pydantic-ai model calls (disabled by default)
 
 **Markers:**
-- `@pytest.mark.asyncio` - Async tests
 - `@pytest.mark.integration` - External service tests. CI excludes them (`-m "not integration"`); they RUN locally by default. Start services with `docker compose -f tests/docker/docker-compose.yml up -d` (postgres, docling-serve, seaweedfs); each test skips if its service isn't reachable.
 - `@pytest.mark.vcr()` - HTTP call recording/replay
 
-Tests run under xdist (`-n auto` in addopts); pass `-n0` to disable when debugging races or container lifecycle. asyncio fixtures default to **session** loop scope (`asyncio_default_fixture_loop_scope = "session"`).
+Tests run under xdist (`-n auto` in addopts); pass `-n0` to disable when debugging races or container lifecycle. Async tests are detected automatically through pytest-asyncio's auto mode, and asyncio fixtures default to **session** loop scope (`asyncio_default_fixture_loop_scope = "session"`).
 
 **Coverage is enforced at 100%** (`fail_under = 100` in `[tool.coverage.report]`). New code needs a test or a `# pragma: no cover - <short reason>` on one line (never a wrapped multi-line comment). CI prints term-missing, so a gate failure names the line.
 
@@ -612,7 +611,6 @@ When planning work, break the plan into **self-consistent, commitable chunks**. 
 
 **Test with VCR recording:**
 ```python
-@pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_my_feature(temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as client:

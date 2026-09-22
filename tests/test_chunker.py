@@ -16,7 +16,6 @@ def vcr_cassette_dir():
     return str(Path(__file__).parent / "cassettes" / "test_chunker")
 
 
-@pytest.mark.asyncio
 async def test_local_chunker(qa_corpus: list[dict[str, str]]):
     """Test DoclingLocalChunker with real document."""
     chunker = DoclingLocalChunker()
@@ -56,14 +55,12 @@ async def test_local_chunker(qa_corpus: list[dict[str, str]]):
     assert abs(total_tokens - original_tokens) <= original_tokens * 0.1
 
 
-@pytest.mark.asyncio
 async def test_local_chunker_none_document():
     """Test DoclingLocalChunker returns empty list for None document."""
     chunker = DoclingLocalChunker()
     assert await chunker.chunk(None) == []
 
 
-@pytest.mark.asyncio
 async def test_local_chunker_runs_off_event_loop_thread():
     """Chunking is CPU-bound; verify it runs in a worker thread."""
     import threading
@@ -92,7 +89,6 @@ async def test_local_chunker_runs_off_event_loop_thread():
     )
 
 
-@pytest.mark.asyncio
 async def test_local_chunker_custom_config():
     """Test DoclingLocalChunker with custom configuration."""
     config = AppConfig()
@@ -142,7 +138,6 @@ def test_tokenizer_cached_across_chunker_instances():
     assert info.hits == 2
 
 
-@pytest.mark.asyncio
 async def test_local_chunker_hierarchical(qa_corpus: list[dict[str, str]]):
     """Test DoclingLocalChunker with hierarchical chunking."""
     config = AppConfig()
@@ -170,7 +165,6 @@ def test_local_chunker_invalid_type():
         DoclingLocalChunker(config)
 
 
-@pytest.mark.asyncio
 async def test_local_chunker_markdown_tables():
     """Test DoclingLocalChunker with markdown table serialization."""
     markdown_with_table = """# Test Document
@@ -208,7 +202,6 @@ async def test_local_chunker_markdown_tables():
     assert "," in table_content and "|" not in table_content
 
 
-@pytest.mark.asyncio
 async def test_local_chunker_sets_order():
     """Test that DoclingLocalChunker sets sequential order on chunks."""
     sample_md = """# Introduction
@@ -235,7 +228,6 @@ Third paragraph.
         assert chunk.order == i, f"Chunk {i} has order {chunk.order}, expected {i}"
 
 
-@pytest.mark.asyncio
 async def test_local_chunker_metadata_extraction():
     """Test that DoclingLocalChunker extracts metadata correctly."""
     sample_md = """# Chapter 1: Introduction
@@ -282,7 +274,6 @@ Here is some background information.
     assert any("Chapter" in h or "Section" in h for h in all_headings)
 
 
-@pytest.mark.asyncio
 async def test_inline_markup_survives_chunking():
     """Inline code stays inline in the chunk text, and a heading carrying a
     link names the breadcrumb."""
@@ -356,7 +347,6 @@ class TestDoclingServeChunker:
         """Create DoclingServeChunker instance."""
         return DoclingServeChunker(config)
 
-    @pytest.mark.asyncio
     @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_success(self, mock_client_class, chunker):
         """Test successful chunking via docling-serve async workflow."""
@@ -383,7 +373,6 @@ class TestDoclingServeChunker:
         assert chunks[1].content == "Chunk 2"
         mock_client.post.assert_called_once()
 
-    @pytest.mark.asyncio
     @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_with_api_key(self, mock_client_class, config):
         """Test that API key is included in request headers."""
@@ -406,7 +395,6 @@ class TestDoclingServeChunker:
         assert "headers" in call_kwargs
         assert call_kwargs["headers"]["X-Api-Key"] == "test-key"
 
-    @pytest.mark.asyncio
     @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_hierarchical_endpoint(self, mock_client_class, config):
         """Test that hierarchical chunker uses correct endpoint."""
@@ -428,7 +416,6 @@ class TestDoclingServeChunker:
         call_args = mock_client.post.call_args
         assert "/v1/chunk/hierarchical/file/async" in call_args[0][0]
 
-    @pytest.mark.asyncio
     @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_passes_config_parameters(self, mock_client_class, config):
         """Test that all config parameters are passed to API."""
@@ -464,7 +451,6 @@ class TestDoclingServeChunker:
         assert data["convert_ocr_engine"] == "tesseract"
         assert data["convert_ocr_lang"] == ["en", "de"]
 
-    @pytest.mark.asyncio
     @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_omits_empty_ocr_lang(self, mock_client_class, config):
         """Test that ocr_lang is omitted when empty (default)."""
@@ -493,7 +479,6 @@ class TestDoclingServeChunker:
         # ocr_lang should NOT be present when empty
         assert "convert_ocr_lang" not in data
 
-    @pytest.mark.asyncio
     @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_connection_error(self, mock_client_class, chunker):
         """Test handling of connection errors."""
@@ -509,7 +494,6 @@ class TestDoclingServeChunker:
         with pytest.raises(httpx.ConnectError):
             await chunker.chunk(doc)
 
-    @pytest.mark.asyncio
     @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_timeout_error(self, mock_client_class, chunker):
         """Test handling of timeout errors."""
@@ -525,7 +509,6 @@ class TestDoclingServeChunker:
         with pytest.raises(httpx.TimeoutException):
             await chunker.chunk(doc)
 
-    @pytest.mark.asyncio
     @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_auth_error(self, mock_client_class, chunker):
         """Auth failures surface as httpx.HTTPStatusError(401) so the
@@ -551,7 +534,6 @@ class TestDoclingServeChunker:
             await chunker.chunk(doc)
         assert exc_info.value.response.status_code == 401
 
-    @pytest.mark.asyncio
     @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_document_failure_status(self, mock_client_class, chunker):
         """Test that document-level failure status raises ValueError."""
@@ -578,7 +560,6 @@ class TestDoclingServeChunker:
         with pytest.raises(ValueError, match="Chunking failed"):
             await chunker.chunk(doc)
 
-    @pytest.mark.asyncio
     @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_document_success_empty_chunks(
         self, mock_client_class, chunker
@@ -607,7 +588,6 @@ class TestDoclingServeChunker:
         chunks = await chunker.chunk(doc)
         assert chunks == []
 
-    @pytest.mark.asyncio
     @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_metadata_extraction(self, mock_client_class, chunker):
         """Test that metadata is correctly extracted from API response.
@@ -673,7 +653,6 @@ This is content.
         assert meta1.headings == ["Chapter 1", "Section 1.1"]
         assert meta1.page_numbers == [1, 2]
 
-    @pytest.mark.asyncio
     @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_serializes_document_off_event_loop_thread(
         self, mock_client_class, chunker
@@ -714,7 +693,6 @@ This is content.
 
 
 @pytest.mark.vcr()
-@pytest.mark.asyncio
 async def test_local_and_serve_converters_and_chunkers_agree(doclaynet_first_page_pdf):
     """Both stages agree: the two converters segment a PDF the same way, and the
     two chunkers then cut it the same way.
@@ -776,7 +754,6 @@ async def test_local_and_serve_converters_and_chunkers_agree(doclaynet_first_pag
 
 
 @pytest.mark.vcr()
-@pytest.mark.asyncio
 async def test_local_and_serve_chunkers_produce_same_output(doclaynet_first_page_pdf):
     """Test that local and serve chunkers produce identical output for the same document.
 
@@ -845,7 +822,6 @@ async def test_local_and_serve_chunkers_produce_same_output(doclaynet_first_page
 
 
 @pytest.mark.vcr()
-@pytest.mark.asyncio
 async def test_serve_chunker_accepts_picture_laden_docling(doclaynet_first_page_pdf):
     """Round-trip a picture-bearing PDF through docling-serve's chunker.
 
@@ -938,11 +914,9 @@ class TestDoclingServeChunkerRefResolution:
 
         assert _resolve_label_from_document("#/texts/0", document) == "paragraph"
 
-    @pytest.mark.asyncio
     async def test_chunk_of_none_returns_empty(self, chunker):
         assert await chunker.chunk(None) == []
 
-    @pytest.mark.asyncio
     async def test_dict_shaped_doc_items_are_decoded(self, chunker, document):
         """docling-serve returns refs as strings today; the dict shape is
         accepted in case the API changes."""

@@ -48,7 +48,6 @@ def test_load_is_empty_when_none_registered(monkeypatch):
     assert load_metadata_providers() == {}
 
 
-@pytest.mark.asyncio
 async def test_callable_object_satisfies_protocol():
     class Provider:
         async def __call__(self, source_id: str, uri: str, result: FetchResult) -> dict:

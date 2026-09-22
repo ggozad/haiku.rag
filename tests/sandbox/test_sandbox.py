@@ -19,7 +19,6 @@ def vcr_cassette_dir():
 class TestSandboxBasics:
     """Test basic sandbox functionality."""
 
-    @pytest.mark.asyncio
     async def test_the_documented_modules_import(self, sandbox):
         """The modules the instructions and the MCP description promise."""
         result = await sandbox.execute(
@@ -31,7 +30,6 @@ class TestSandboxBasics:
         assert result.success, result.stderr
         assert "[('a', 2)] [0, 1]" in result.stdout
 
-    @pytest.mark.asyncio
     async def test_execute_simple_code(self, sandbox):
         """Test executing simple code in the sandbox."""
         result = await sandbox.execute("print('hello world')")
@@ -40,14 +38,12 @@ class TestSandboxBasics:
         assert "hello world" in result.stdout
         assert result.stderr == ""
 
-    @pytest.mark.asyncio
     async def test_execute_expression_output(self, sandbox):
         """Test that expression values are captured."""
         result = await sandbox.execute("1 + 2")
         assert result.success
         assert "3" in result.stdout
 
-    @pytest.mark.asyncio
     async def test_execute_print_and_expression(self, sandbox):
         """Test print output combined with expression value."""
         result = await sandbox.execute("print('hello')\n42")
@@ -59,28 +55,24 @@ class TestSandboxBasics:
 class TestSandboxErrors:
     """Test error handling in sandbox."""
 
-    @pytest.mark.asyncio
     async def test_syntax_error(self, sandbox):
         """Test that syntax errors are reported."""
         result = await sandbox.execute("def foo(")
         assert not result.success
         assert result.stderr != ""
 
-    @pytest.mark.asyncio
     async def test_runtime_error(self, sandbox):
         """Test that runtime errors are reported."""
         result = await sandbox.execute("x = 1/0")
         assert not result.success
         assert "ZeroDivisionError" in result.stderr
 
-    @pytest.mark.asyncio
     async def test_name_error(self, sandbox):
         """Test that name errors are reported."""
         result = await sandbox.execute("print(undefined_variable)")
         assert not result.success
         assert "NameError" in result.stderr
 
-    @pytest.mark.asyncio
     async def test_multi_module_import(self, sandbox):
         """Test that unsupported multi-module imports are caught gracefully."""
         result = await sandbox.execute("import json, string")
@@ -91,7 +83,6 @@ class TestSandboxErrors:
 class TestSandboxListDocuments:
     """Test list_documents function in sandbox."""
 
-    @pytest.mark.asyncio
     async def test_list_documents_empty(self, sandbox):
         """list_documents returns empty list for empty database."""
         result = await sandbox.execute(
@@ -100,7 +91,6 @@ class TestSandboxListDocuments:
         assert result.success
         assert "list 0" in result.stdout
 
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_list_documents_with_data(self, temp_db_path):
         """list_documents returns documents when populated."""
@@ -125,7 +115,6 @@ class TestSandboxListDocuments:
             assert "Test Document" in result.stdout
             assert temp_db_path.stem in result.stdout
 
-    @pytest.mark.asyncio
     async def test_list_documents_carries_metadata(self, temp_db_path):
         """Rows carry the document's metadata, so a corpus-wide pass over it is
         one call rather than a file read per document."""
@@ -164,7 +153,6 @@ class TestSandboxListDocuments:
 class TestSandboxSearch:
     """Test search function in sandbox."""
 
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_search_with_data(self, temp_db_path):
         """Test search function works."""
@@ -193,7 +181,6 @@ class TestSandboxSearch:
             with pytest.raises(AttributeError):
                 setattr(sb, "search_results", ())
 
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_search_returns_doc_item_refs_and_labels(self, temp_db_path):
         """Search results include doc_item_refs and labels."""
@@ -219,7 +206,6 @@ class TestSandboxSearch:
             assert "True\nTrue" in result.stdout
             assert "list\nlist" in result.stdout
 
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_search_returns_expanded_content(self, temp_db_path):
         """search() returns context-expanded results."""
@@ -242,7 +228,6 @@ class TestSandboxSearch:
             assert "str" in result.stdout
             assert "True" in result.stdout
 
-    @pytest.mark.asyncio
     async def test_search_returns_the_matched_chunks_metadata(
         self, temp_db_path, monkeypatch
     ):
@@ -291,7 +276,6 @@ class TestSandboxSearch:
 class TestSandboxExternalFunctionEdgeCases:
     """Test edge cases in external function dispatch."""
 
-    @pytest.mark.asyncio
     async def test_unknown_external_function(self, sandbox):
         """Test that calling an unregistered external function resumes with KeyError."""
         original_build = sandbox._build_external_functions
@@ -314,7 +298,6 @@ class TestSandboxExternalFunctionEdgeCases:
         assert "caught" in result.stdout
         assert "done" in result.stdout
 
-    @pytest.mark.asyncio
     async def test_external_function_raises_exception(self, sandbox):
         """Test that exceptions from async external functions surface as errors.
 
@@ -339,7 +322,6 @@ class TestSandboxExternalFunctionEdgeCases:
         assert not result.success
         assert "external error" in result.stderr
 
-    @pytest.mark.asyncio
     async def test_a_failing_search_keeps_its_message_for_the_program(
         self, sandbox, monkeypatch
     ):
@@ -360,7 +342,6 @@ class TestSandboxExternalFunctionEdgeCases:
 class TestSandboxOutputTruncation:
     """Test output truncation behavior."""
 
-    @pytest.mark.asyncio
     async def test_truncate_stdout_on_runtime_error(self, temp_db_path):
         """Test stdout is truncated when a runtime error occurs after large output."""
         async with HaikuRAG(temp_db_path, create=True):
@@ -374,7 +355,6 @@ class TestSandboxOutputTruncation:
             assert result.stdout.endswith("... (output truncated)")
             assert len(result.stdout) < 100
 
-    @pytest.mark.asyncio
     async def test_truncate_successful_output(self, temp_db_path):
         """Test output is truncated on successful execution with large output."""
         async with HaikuRAG(temp_db_path, create=True):
@@ -387,7 +367,6 @@ class TestSandboxOutputTruncation:
             assert result.stdout.endswith("... (output truncated)")
             assert len(result.stdout) < 100
 
-    @pytest.mark.asyncio
     async def test_many_small_prints_past_the_cap_still_report_truncation(
         self, temp_db_path
     ):
@@ -429,7 +408,6 @@ class TestCappedOutput:
 class TestSandboxVFS:
     """Test virtual filesystem for document access."""
 
-    @pytest.mark.asyncio
     async def test_empty_database_has_no_documents(self, sandbox):
         """Empty database has no document directories."""
         result = await sandbox.execute(
@@ -439,7 +417,6 @@ class TestSandboxVFS:
         # /documents dir may or may not exist when empty, both are valid
         # The key is it doesn't error
 
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_iterdir_discovers_documents(self, temp_db_path):
         """Path('/documents').iterdir() lists document directories."""
@@ -463,7 +440,6 @@ class TestSandboxVFS:
             assert "1" in result.stdout
             assert "True" in result.stdout
 
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_metadata_json(self, temp_db_path):
         """metadata.json contains document title, uri and stored metadata."""
@@ -491,7 +467,6 @@ class TestSandboxVFS:
             assert "test://doc1" in result.stdout
             assert "Ada" in result.stdout
 
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_content_txt(self, temp_db_path):
         """content.txt returns full document text (lazy loaded)."""
@@ -513,7 +488,6 @@ class TestSandboxVFS:
             assert result.success
             assert "True" in result.stdout
 
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_items_jsonl(self, temp_db_path):
         """items.jsonl returns document items as JSONL (lazy loaded)."""
@@ -543,7 +517,6 @@ class TestSandboxVFS:
             assert result.success
             assert result.stdout.count("True") == 6
 
-    @pytest.mark.asyncio
     async def test_chunks_jsonl(self, temp_db_path):
         """chunks.jsonl lists a document's chunks in order with their stored
         metadata; a chunk found by its metadata leads to its items through
@@ -596,7 +569,6 @@ class TestSandboxVFS:
         assert result.success, result.stderr
         assert result.stdout.splitlines() == ["2", "1", "['Paragraph fourteen.']"]
 
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_open_read(self, temp_db_path):
         """open() and a with-block read document files through the VFS."""
@@ -618,7 +590,6 @@ class TestSandboxVFS:
             assert result.success
             assert "True" in result.stdout
 
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_open_readlines(self, temp_db_path):
         """readlines() splits a newline-delimited VFS file into lines."""
@@ -641,7 +612,6 @@ class TestSandboxVFS:
             assert result.success
             assert result.stdout.count("True") == 2
 
-    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "filename",
         ["content.txt", "items.jsonl", "chunks.jsonl", "toc.json", "metadata.json"],
@@ -684,7 +654,6 @@ class TestSandboxVFS:
         finally:
             await sb.close()
 
-    @pytest.mark.asyncio
     async def test_open_for_writing_is_denied(self, temp_db_path):
         """`open()` in write mode is refused, not only `Path.write_text`."""
         from docling_core.types.doc.document import DoclingDocument
@@ -723,7 +692,6 @@ class TestSandboxVFS:
         finally:
             await sb.close()
 
-    @pytest.mark.asyncio
     async def test_open_file_objects_are_not_iterable(self, temp_db_path):
         """Pins the limitation the instructions warn about: pydantic/monty#490.
 
@@ -766,7 +734,6 @@ class TestSandboxVFS:
         finally:
             await sb.close()
 
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_context_filter_limits_vfs(self, temp_db_path):
         """Context filter restricts which documents appear in VFS."""
@@ -806,7 +773,6 @@ class TestSandboxHeldConnection:
     for the whole turn while sandboxed code reads the document VFS.
     """
 
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_vfs_reads_while_connection_held(self, temp_db_path):
         """All three VFS readers work while another connection to the DB is open."""
@@ -838,7 +804,6 @@ class TestSandboxHeldConnection:
             finally:
                 await sb.close()
 
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_vfs_reads_use_injected_connection(self, temp_db_path):
         """An injected connection services VFS reads on the calling loop.
@@ -870,7 +835,6 @@ class TestSandboxHeldConnection:
             assert "Foxes" in result.stdout
             assert not any(t.name == "sandbox-vfs" for t in threading.enumerate())
 
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_vfs_read_concurrent_with_connection_read(self, temp_db_path):
         """A VFS read and a direct read on the shared connection run together.
@@ -913,7 +877,6 @@ class TestSandboxHeldConnection:
             assert "Foxes" in exec_result.stdout
             assert content and "Foxes" in content
 
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_vfs_reads_repeatable_across_executes(self, temp_db_path):
         """Repeated VFS reads across execute() calls return consistent content."""
@@ -942,7 +905,6 @@ class TestSandboxHeldConnection:
         finally:
             await sb.close()
 
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_variables_persist_across_executes_after_vfs_read(self, temp_db_path):
         """REPL state persists across execute() calls, including after a VFS read."""
@@ -969,7 +931,6 @@ class TestSandboxHeldConnection:
         finally:
             await sb.close()
 
-    @pytest.mark.asyncio
     async def test_close_is_safe_without_vfs_read(self, temp_db_path):
         """close() is safe and idempotent before any code has run."""
         async with HaikuRAG(temp_db_path, create=True):
@@ -978,7 +939,6 @@ class TestSandboxHeldConnection:
             await sb.close()
             await sb.close()
 
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_close_is_idempotent_after_vfs_read(self, temp_db_path):
         """close() tears down the worker and is idempotent; no thread lingers."""
@@ -1008,7 +968,6 @@ class TestSandboxReadDeadline:
     cannot check its duration budget while one is in flight. The sandbox
     enforces the budget itself, before each read."""
 
-    @pytest.mark.asyncio
     async def test_the_deadline_covers_reads_from_memory_and_in_code_calls(
         self, temp_db_path, monkeypatch
     ):
@@ -1063,7 +1022,6 @@ class TestSandboxReadDeadline:
         assert not result.success
         assert "time limit exceeded" in result.stderr
 
-    @pytest.mark.asyncio
     async def test_read_after_deadline_raises_without_scheduling(self, sandbox):
         """A read attempted past the deadline fails instead of querying."""
         scheduled = False
@@ -1102,7 +1060,6 @@ class TestSandboxReadDeadline:
         assert cap is not None
         assert cap >= 1_000_000
 
-    @pytest.mark.asyncio
     async def test_a_sandbox_built_for_one_call_ignores_the_execution_budget(
         self, temp_db_path
     ):
@@ -1121,7 +1078,6 @@ class TestSandboxReadDeadline:
         assert result.success, result.stderr
         assert "42" in result.stdout
 
-    @pytest.mark.asyncio
     async def test_a_program_may_read_more_than_a_thousand_times(self, temp_db_path):
         """Monty caps host callbacks per checkout at 1000 unless told otherwise;
         a corpus-wide pass over documents reads far more than that."""
@@ -1160,7 +1116,6 @@ class TestSandboxReadDeadline:
         assert result.success, result.stderr
         assert result.stdout.strip() == str(1100 * len("Foxes and dogs."))
 
-    @pytest.mark.asyncio
     async def test_refused_read_fails_the_execution(self, temp_db_path, monkeypatch):
         """The refusal surfaces as a failed result, not a raised exception."""
         from docling_core.types.doc.document import DoclingDocument
@@ -1205,7 +1160,6 @@ class TestSandboxReadDeadline:
 class TestSandboxWorkerCrash:
     """A dead worker must not poison every later call in the run."""
 
-    @pytest.mark.asyncio
     async def test_crashed_worker_is_replaced(self, temp_db_path):
         """The crash fails one call. The next call gets a fresh session."""
         import os
@@ -1244,7 +1198,6 @@ class TestSandboxWorkerCrash:
 class TestSandboxRequestTimeout:
     """The pool watchdog bounds a call that never reads."""
 
-    @pytest.mark.asyncio
     async def test_runaway_compute_is_killed_and_the_next_call_recovers(
         self, temp_db_path
     ):
@@ -1277,7 +1230,6 @@ class TestSandboxRequestTimeout:
 
 
 class TestSandboxClose:
-    @pytest.mark.asyncio
     async def test_a_failing_teardown_still_releases_the_rest(self, tmp_path):
         """Each of the session, the pool and the held connection is released,
         whichever of them fails."""

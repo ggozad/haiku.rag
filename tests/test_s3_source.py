@@ -65,7 +65,6 @@ def test_make_s3_store_missing_obstore_raises_actionable_error(monkeypatch):
         make_s3_store("my-bucket", {})
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_create_document_from_s3_new(fake_obstore_io, temp_db_path):
     head_async, get_async = fake_obstore_io
@@ -84,7 +83,6 @@ async def test_create_document_from_s3_new(fake_obstore_io, temp_db_path):
     get_async.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_create_document_from_s3_skips_when_etag_unchanged(
     fake_obstore_io, temp_db_path
@@ -107,7 +105,6 @@ async def test_create_document_from_s3_skips_when_etag_unchanged(
     get_async.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_create_document_from_s3_etag_changed_md5_same_skips_rechunk(
     fake_obstore_io, temp_db_path
@@ -139,7 +136,6 @@ async def test_create_document_from_s3_etag_changed_md5_same_skips_rechunk(
     assert get_async.await_count == 2  # initial create + etag-changed compare
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_create_document_from_s3_etag_changed_md5_changed_rechunks(
     fake_obstore_io, temp_db_path
@@ -162,7 +158,6 @@ async def test_create_document_from_s3_etag_changed_md5_changed_rechunks(
     assert "different text now" in second.content
 
 
-@pytest.mark.asyncio
 async def test_create_document_from_s3_rejects_invalid_uri(
     fake_obstore_io, temp_db_path
 ):
@@ -171,7 +166,6 @@ async def test_create_document_from_s3_rejects_invalid_uri(
             await client.create_document_from_source("s3://only-bucket-no-key")
 
 
-@pytest.mark.asyncio
 async def test_create_document_from_s3_rejects_unsupported_extension(
     fake_obstore_io, temp_db_path
 ):
@@ -183,7 +177,6 @@ async def test_create_document_from_s3_rejects_unsupported_extension(
             await client.create_document_from_source("s3://my-bucket/file.unsupported")
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_create_document_from_s3_uri_override(fake_obstore_io, temp_db_path):
     """`uri=` kwarg overrides the s3:// URL as the stored document identifier."""

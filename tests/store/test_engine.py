@@ -1,11 +1,8 @@
-import pytest
-
 from haiku.rag.store.engine import Store
 from haiku.rag.store.info import get_database_stats
 
 
 class TestStoredSettings:
-    @pytest.mark.asyncio
     async def test_a_new_database_carries_the_version_it_was_created_with(
         self, temp_db_path
     ):
@@ -17,7 +14,6 @@ class TestStoredSettings:
                 "haiku.rag-slim"
             )
 
-    @pytest.mark.asyncio
     async def test_an_existing_database_carries_its_stored_settings(self, temp_db_path):
         """Read once on open: reporting on a database reads them from
         here."""
@@ -30,7 +26,6 @@ class TestStoredSettings:
 
 
 class TestGetDatabaseStats:
-    @pytest.mark.asyncio
     async def test_empty_database_stats(self, temp_db_path):
         """get_database_stats() on a fresh database reports zero rows and no vector index."""
         async with Store(temp_db_path, create=True) as store:
@@ -46,7 +41,6 @@ class TestGetDatabaseStats:
             assert stats["chunks"]["num_rows"] == 0
             assert stats["chunks"]["has_vector_index"] is False
 
-    @pytest.mark.asyncio
     async def test_missing_tables_report_absent(self, temp_db_path):
         """Tables that don't exist on the connection are reported as absent."""
         import lancedb
@@ -67,7 +61,6 @@ class TestGetDatabaseStats:
         assert stats["chunks"] == {"exists": False}
         assert stats["document_items"] == {"exists": False}
 
-    @pytest.mark.asyncio
     async def test_stats_after_adding_document(self, temp_db_path):
         """get_database_stats() reflects document and chunk counts after inserts."""
         from haiku.rag.store.models import Chunk, Document
@@ -93,7 +86,6 @@ class TestGetDatabaseStats:
             assert stats["documents"]["num_rows"] == 1
             assert stats["chunks"]["num_rows"] == 1
 
-    @pytest.mark.asyncio
     async def test_stats_with_vector_index(self, temp_db_path):
         """get_database_stats() reports vector index details once an index exists."""
         from datetime import timedelta

@@ -17,7 +17,6 @@ from tests.multi_db.helpers import (
 
 
 class TestExpansionRouting:
-    @pytest.mark.asyncio
     async def test_expansion_routes_each_result_to_its_database(self, tmp_path):
         """A federating client has no repositories of its own, so expansion has
         to go through the database each result came from."""
@@ -34,7 +33,6 @@ class TestExpansionRouting:
             assert r.source is not None
             assert r.source in r.content
 
-    @pytest.mark.asyncio
     async def test_an_expanded_result_keeps_its_source(self, tmp_path):
         """Expansion rebuilds the result, and the rebuilt one has to name the
         database it was expanded through."""
@@ -51,7 +49,6 @@ class TestExpansionRouting:
         assert "cats also hunt" in expanded[0].content, "expansion did not run"
         assert expanded[0].source == "alpha"
 
-    @pytest.mark.asyncio
     async def test_a_federated_result_is_expanded_by_its_own_database(self, tmp_path):
         """Routing is not enough: each result has to come back carrying the
         neighbours of the database it was expanded through, and only those."""
@@ -70,7 +67,6 @@ class TestExpansionRouting:
         assert "beta follows on" not in content["alpha"]
         assert "beta follows on" in content["beta"]
 
-    @pytest.mark.asyncio
     async def test_expansion_keeps_tied_results_in_fused_order(self, tmp_path):
         """Fused scores tie often, so grouping by database must not reorder
         them: the tiebreak is the order they arrived in."""
@@ -130,7 +126,6 @@ class TestPictureDeduplication:
 
 
 class TestPictureRouting:
-    @pytest.mark.asyncio
     async def test_a_picture_is_fetched_from_the_database_that_holds_it(self, tmp_path):
         """A `self_ref` repeats across databases, so the citation's source is
         what decides where the bytes come from."""
@@ -164,7 +159,6 @@ class TestPictureRouting:
                 is None
             )
 
-    @pytest.mark.asyncio
     async def test_a_single_database_needs_no_source(self, temp_db_path):
         """One database is where the picture is, named or not."""
         async with HaikuRAG(temp_db_path, create=True) as rag:
@@ -190,7 +184,6 @@ class TestPictureRouting:
                 == b"the-picture"
             )
 
-    @pytest.mark.asyncio
     async def test_a_picture_lookup_without_a_source_is_refused(self, tmp_path):
         """Federating, nothing can say which database holds an unqualified
         reference."""
@@ -203,7 +196,6 @@ class TestPictureRouting:
 
 
 class TestFederatedEdges:
-    @pytest.mark.asyncio
     async def test_expansion_passes_through_results_without_a_source(self, tmp_path):
         """A caller can hand `expand_context` results it built itself. Those name
         no database, so there is nowhere to expand them from."""
@@ -221,7 +213,6 @@ class TestFederatedEdges:
         scores = [r.score for r in expanded]
         assert scores == sorted(scores, reverse=True), "merged in score order"
 
-    @pytest.mark.asyncio
     async def test_a_chunk_without_a_document_is_not_cited(self, tmp_path):
         """`Chunk.document_id` is optional, and a citation without a document has
         nothing to point at."""
@@ -277,7 +268,6 @@ class TestVisualizationRouting:
         )
         return doc
 
-    @pytest.mark.asyncio
     async def test_a_chunk_is_visualized_by_the_database_that_holds_it(self, tmp_path):
         """A chunk carries no database identity, so the source the caller holds
         is what reaches the pages and bounding boxes."""
@@ -303,7 +293,6 @@ class TestVisualizationRouting:
             assert len(await rag.visualize_chunk(chunk, source="beta")) == 1
             assert await rag.visualize_chunk(chunk, source="alpha") == []
 
-    @pytest.mark.asyncio
     async def test_visualizing_without_a_source_is_refused(self, tmp_path):
         """Federating, nothing in a chunk says which database drew it."""
         config = _config(tmp_path, ["alpha", "beta"])

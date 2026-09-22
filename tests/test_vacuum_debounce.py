@@ -1,7 +1,5 @@
 import asyncio
 
-import pytest
-
 import haiku.rag.client.session as session_mod
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.documents import _refresh_doc_metadata
@@ -19,7 +17,6 @@ def _docling_doc(name: str, text: str):
     return doc
 
 
-@pytest.mark.asyncio
 async def test_schedule_vacuum_is_debounced(temp_db_path, monkeypatch):
     """Rapid writes within the throttle window schedule only one background
     vacuum; once the interval elapses, a new one is scheduled."""
@@ -45,7 +42,6 @@ async def test_schedule_vacuum_is_debounced(temp_db_path, monkeypatch):
         assert len(calls) == 2  # interval elapsed -> a new vacuum scheduled
 
 
-@pytest.mark.asyncio
 async def test_debounced_writes_still_collapse_on_close(temp_db_path, monkeypatch):
     """Even when scheduled vacuums after the first are debounced, the writes are
     marked dirty so the close-time drain runs a final collapse."""
@@ -69,7 +65,6 @@ async def test_debounced_writes_still_collapse_on_close(temp_db_path, monkeypatc
         assert client._session._vacuum_dirty is False
 
 
-@pytest.mark.asyncio
 async def test_metadata_refresh_sweep_schedules_vacuum(temp_db_path):
     """A source re-sweep that only rolls source_revision (MD5/revision
     short-circuit) writes document_meta and must still schedule the (debounced)
@@ -95,7 +90,6 @@ async def test_metadata_refresh_sweep_schedules_vacuum(temp_db_path):
         assert client._session._vacuum_dirty is True
 
 
-@pytest.mark.asyncio
 async def test_metadata_refresh_waits_for_write_lock(temp_db_path):
     """The revision/MD5 short-circuit write serializes with other writers so
     it cannot land inside another writer's critical section (e.g. between

@@ -36,7 +36,6 @@ class TestConnectionMode:
 
 
 class TestConnectLancedb:
-    @pytest.mark.asyncio
     async def test_local_passes_absolute_db_path(self, temp_db_path):
         with patch(
             "haiku.rag.store.engine.lancedb.connect_async", new_callable=AsyncMock
@@ -45,7 +44,6 @@ class TestConnectLancedb:
             mock_connect.assert_awaited_once()
             assert mock_connect.call_args.args == (temp_db_path.absolute(),)
 
-    @pytest.mark.asyncio
     async def test_local_resolves_relative_db_path(self, tmp_path, monkeypatch):
         from pathlib import Path
 
@@ -58,7 +56,6 @@ class TestConnectLancedb:
             mock_connect.assert_awaited_once()
             assert mock_connect.call_args.args == (relative.absolute(),)
 
-    @pytest.mark.asyncio
     async def test_the_configured_uri_is_not_consulted(self, temp_db_path):
         """Storage connects to the location it is handed; placement is the
         caller's, and the configuration's own `uri` never redirects it."""
@@ -72,7 +69,6 @@ class TestConnectLancedb:
             assert mock_connect.call_args.args == (temp_db_path.absolute(),)
             assert "uri" not in mock_connect.call_args.kwargs
 
-    @pytest.mark.asyncio
     async def test_cloud_passes_uri_api_key_region(self):
         config = AppConfig(
             lancedb=LanceDBConfig(api_key="test-key", region="us-west-2")
@@ -87,7 +83,6 @@ class TestConnectLancedb:
             assert kwargs["api_key"] == "test-key"
             assert kwargs["region"] == "us-west-2"
 
-    @pytest.mark.asyncio
     async def test_object_storage_passes_uri_and_storage_options(self):
         config = AppConfig(
             lancedb=LanceDBConfig(
@@ -109,7 +104,6 @@ class TestConnectLancedb:
                 "region": "us-east-1",
             }
 
-    @pytest.mark.asyncio
     async def test_object_storage_without_storage_options(self):
         with patch(
             "haiku.rag.store.engine.lancedb.connect_async", new_callable=AsyncMock
@@ -133,14 +127,12 @@ def _remote_store(location: str, config: AppConfig | None = None) -> Store:
 
 
 class TestStoreConnectionMode:
-    @pytest.mark.asyncio
     async def test_store_connection_mode_local(self, temp_db_path):
         async with Store(temp_db_path, create=True) as store:
             assert store._connection_mode == ConnectionMode.LOCAL
             assert store.location == temp_db_path
             assert store.db_path == temp_db_path
 
-    @pytest.mark.asyncio
     async def test_a_local_store_ignores_the_configured_uri(self, temp_db_path):
         config = AppConfig(
             lancedb=LanceDBConfig(databases={"elsewhere": "s3://elsewhere/db.lancedb"})
@@ -149,7 +141,6 @@ class TestStoreConnectionMode:
             assert store._connection_mode == ConnectionMode.LOCAL
             assert store.db_path == temp_db_path
 
-    @pytest.mark.asyncio
     async def test_store_connection_mode_cloud(self):
         config = AppConfig(lancedb=LanceDBConfig(api_key="key", region="us-east-1"))
         with (
@@ -163,7 +154,6 @@ class TestStoreConnectionMode:
                 assert store.location == "db://test-database"
                 assert store.db_path is None
 
-    @pytest.mark.asyncio
     async def test_store_connection_mode_object_storage(self):
         with (
             patch(
@@ -185,7 +175,6 @@ def _remote_store_with_mock_tables(location: str) -> Store:
 
 
 class TestVacuumByConnectionMode:
-    @pytest.mark.asyncio
     async def test_cloud_skips_vacuum(self):
         with (
             patch(
@@ -197,7 +186,6 @@ class TestVacuumByConnectionMode:
                 await store.vacuum()
                 store.chunks_table.optimize.assert_not_awaited()
 
-    @pytest.mark.asyncio
     async def test_object_storage_runs_vacuum(self):
         with (
             patch(
@@ -213,7 +201,6 @@ class TestVacuumByConnectionMode:
                     await store.vacuum()
                 store.chunks_table.optimize.assert_awaited_once()
 
-    @pytest.mark.asyncio
     async def test_local_runs_vacuum(self, temp_db_path):
         async with Store(temp_db_path, create=True) as store:
             with patch.object(
@@ -224,7 +211,6 @@ class TestVacuumByConnectionMode:
 
 
 class TestVectorIndexByConnectionMode:
-    @pytest.mark.asyncio
     async def test_cloud_skips_index_creation(self):
         with (
             patch(
@@ -236,7 +222,6 @@ class TestVectorIndexByConnectionMode:
                 await store._ensure_vector_index()
                 store.chunks_table.count_rows.assert_not_awaited()
 
-    @pytest.mark.asyncio
     async def test_object_storage_runs_index_creation(self):
         with (
             patch(
@@ -251,7 +236,6 @@ class TestVectorIndexByConnectionMode:
 
 
 class TestLocationIsFixed:
-    @pytest.mark.asyncio
     async def test_a_store_keeps_the_location_it_opened(self, temp_db_path):
         """`db_path` and the connection mode derive from the location once; a
         store cannot be pointed elsewhere after it is built."""
@@ -263,7 +247,6 @@ class TestLocationIsFixed:
 
 
 class TestInitFailureCleanup:
-    @pytest.mark.asyncio
     async def test_store_aenter_closes_connection_on_init_failure(
         self, temp_db_path, monkeypatch
     ):
@@ -290,7 +273,6 @@ class TestInitFailureCleanup:
             "AsyncConnection.close() was not called on init failure"
         )
 
-    @pytest.mark.asyncio
     async def test_client_aenter_closes_store_on_init_failure(
         self, temp_db_path, monkeypatch
     ):
@@ -341,7 +323,6 @@ class TestVectorIndexCreation:
         ]
         await store.chunks_table.add(records)
 
-    @pytest.mark.asyncio
     async def test_builds_index_once_enough_rows_exist(self, temp_db_path):
         async with Store(temp_db_path, create=True) as store:
             await self._seed_chunks(store, 256)
@@ -351,7 +332,6 @@ class TestVectorIndexCreation:
             indexes = await store.chunks_table.list_indices()
             assert any("vector" in idx.columns for idx in indexes)
 
-    @pytest.mark.asyncio
     async def test_index_failure_is_warned_not_raised(self, temp_db_path):
         import logging
 
@@ -374,7 +354,6 @@ class TestVectorIndexCreation:
 
 
 class TestStoreMiscellany:
-    @pytest.mark.asyncio
     async def test_create_makes_missing_parent_directories(self, tmp_path):
         nested = tmp_path / "a" / "b" / "db.lancedb"
 
@@ -383,7 +362,6 @@ class TestStoreMiscellany:
 
         assert nested.exists()
 
-    @pytest.mark.asyncio
     async def test_stored_vector_dim_is_none_for_corrupt_settings(self, temp_db_path):
         async with Store(temp_db_path, create=True) as store:
             await store.settings_table.update(
@@ -392,7 +370,6 @@ class TestStoreMiscellany:
 
             assert await store._read_stored_settings() == {}
 
-    @pytest.mark.asyncio
     async def test_vacuum_skips_when_already_running(self, temp_db_path):
         import asyncio
 
@@ -402,7 +379,6 @@ class TestStoreMiscellany:
                 # timeout turns that deadlock into a clean failure.
                 await asyncio.wait_for(store.vacuum(), timeout=5)
 
-    @pytest.mark.asyncio
     async def test_history_rejects_unknown_table(self, temp_db_path):
         async with Store(temp_db_path, create=True) as store:
             with pytest.raises(ValueError, match="Unknown table"):
@@ -410,7 +386,6 @@ class TestStoreMiscellany:
 
 
 class TestSessionAndConsistency:
-    @pytest.mark.asyncio
     async def test_session_is_shared_across_connections(self):
         config = AppConfig()
         with patch(
@@ -422,7 +397,6 @@ class TestSessionAndConsistency:
         sessions = [c.kwargs["session"] for c in mock_connect.call_args_list]
         assert sessions[0] is sessions[1]
 
-    @pytest.mark.asyncio
     async def test_cache_sizes_select_distinct_sessions(self):
         small = AppConfig(lancedb=LanceDBConfig(index_cache_size_bytes=1 << 20))
         large = AppConfig(lancedb=LanceDBConfig(index_cache_size_bytes=1 << 30))
@@ -435,7 +409,6 @@ class TestSessionAndConsistency:
         sessions = [c.kwargs["session"] for c in mock_connect.call_args_list]
         assert sessions[0] is not sessions[1]
 
-    @pytest.mark.asyncio
     async def test_both_cache_sizes_are_applied(self):
         config = AppConfig(
             lancedb=LanceDBConfig(
@@ -455,7 +428,6 @@ class TestSessionAndConsistency:
             index_cache_size_bytes=2 << 20, metadata_cache_size_bytes=4 << 20
         )
 
-    @pytest.mark.asyncio
     async def test_read_consistency_interval_is_forwarded(self):
         config = AppConfig(lancedb=LanceDBConfig(read_consistency_interval_seconds=5))
         with patch(
@@ -467,7 +439,6 @@ class TestSessionAndConsistency:
             seconds=5
         )
 
-    @pytest.mark.asyncio
     async def test_read_consistency_interval_omitted_when_disabled(self):
         config = AppConfig(
             lancedb=LanceDBConfig(read_consistency_interval_seconds=None)
@@ -479,7 +450,6 @@ class TestSessionAndConsistency:
 
         assert mock_connect.call_args.kwargs["read_consistency_interval"] is None
 
-    @pytest.mark.asyncio
     async def test_local_connection_also_gets_session_and_consistency(self, tmp_path):
         config = AppConfig()
         with patch(

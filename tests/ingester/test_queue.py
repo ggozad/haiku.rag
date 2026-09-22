@@ -21,7 +21,6 @@ from haiku.rag.ingester.queue.repository import JobRepo, _insert
 # --- migrations / schema ---
 
 
-@pytest.mark.asyncio
 async def test_apply_migrations_sets_schema_version(conn):
     cursor = await conn.execute("SELECT version FROM schema_version")
     row = await cursor.fetchone()
@@ -29,7 +28,6 @@ async def test_apply_migrations_sets_schema_version(conn):
     assert row["version"] >= 1
 
 
-@pytest.mark.asyncio
 async def test_apply_migrations_is_idempotent(engine, conn):
     await apply_migrations(engine)
     await apply_migrations(engine)
@@ -60,7 +58,6 @@ CREATE TABLE jobs (
 """
 
 
-@pytest.mark.asyncio
 async def test_migration_v1_to_v2_adds_and_backfills_heartbeat(tmp_path):
     """A real v1 DB (no last_heartbeat_at, schema_version=1) gains the column
     and has it backfilled from claimed_at for in-flight rows only."""
@@ -113,7 +110,6 @@ async def test_migration_v1_to_v2_adds_and_backfills_heartbeat(tmp_path):
         await engine.dispose()
 
 
-@pytest.mark.asyncio
 async def test_open_queue_creates_file_and_schema(tmp_path):
     path = tmp_path / "subdir" / "queue.db"
     eng = await open_queue(QueueConfig(path=path))
@@ -128,7 +124,6 @@ async def test_open_queue_creates_file_and_schema(tmp_path):
         await eng.dispose()
 
 
-@pytest.mark.asyncio
 async def test_make_engine_postgres_is_pre_ping():
     """The Postgres branch builds a pre-ping engine without connecting."""
     engine = make_engine(QueueConfig(dburi="postgresql+asyncpg://u:p@localhost/db"))
@@ -139,7 +134,6 @@ async def test_make_engine_postgres_is_pre_ping():
         await engine.dispose()
 
 
-@pytest.mark.asyncio
 async def test_sqlite_engine_serves_concurrent_connections(tmp_path):
     """The SQLite queue pool hands out more than one connection at a time so an
     API read does not starve while a worker holds a connection. WAL mode makes
@@ -175,7 +169,6 @@ def test_insert_uses_dialect_specific_construct():
     assert isinstance(_insert(jobs_table, "sqlite"), SqliteInsert)
 
 
-@pytest.mark.asyncio
 async def test_open_queue_handles_path_with_url_chars(tmp_path):
     """A `?` (or `#`) is a valid POSIX filename char but has URL meaning.
     The queue must open the literal file, not a truncated one."""
@@ -191,7 +184,6 @@ async def test_open_queue_handles_path_with_url_chars(tmp_path):
 # --- enqueue ---
 
 
-@pytest.mark.asyncio
 async def test_enqueue_creates_queued_job(jobs):
     job = await jobs.enqueue(
         "fs:/tmp",
@@ -213,7 +205,6 @@ async def test_enqueue_creates_queued_job(jobs):
     assert job.enqueued_at.tzinfo is not None
 
 
-@pytest.mark.asyncio
 async def test_enqueue_returns_none_on_live_conflict(jobs):
     first = await jobs.enqueue("s", "u", JobOp.UPSERT)
     second = await jobs.enqueue("s", "u", JobOp.UPSERT)
@@ -221,7 +212,6 @@ async def test_enqueue_returns_none_on_live_conflict(jobs):
     assert second is None
 
 
-@pytest.mark.asyncio
 async def test_enqueue_after_dead_succeeds(jobs):
     first = await jobs.enqueue("s", "u", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
@@ -232,7 +222,6 @@ async def test_enqueue_after_dead_succeeds(jobs):
     assert second.id != first.id
 
 
-@pytest.mark.asyncio
 async def test_enqueue_after_succeeded_succeeds(jobs):
     await jobs.enqueue("s", "u", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
@@ -242,25 +231,21 @@ async def test_enqueue_after_succeeded_succeeds(jobs):
     assert second is not None
 
 
-@pytest.mark.asyncio
 async def test_has_pending_returns_false_on_empty_queue(jobs):
     assert await jobs.has_pending("src") is False
 
 
-@pytest.mark.asyncio
 async def test_has_pending_true_for_queued_job(jobs):
     await jobs.enqueue("src", "u", JobOp.UPSERT)
     assert await jobs.has_pending("src") is True
 
 
-@pytest.mark.asyncio
 async def test_has_pending_true_for_claimed_job(jobs):
     await jobs.enqueue("src", "u", JobOp.UPSERT)
     await jobs.claim_next("w")
     assert await jobs.has_pending("src") is True
 
 
-@pytest.mark.asyncio
 async def test_has_pending_false_for_terminal_states(jobs):
     await jobs.enqueue("src", "u-ok", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
@@ -275,7 +260,6 @@ async def test_has_pending_false_for_terminal_states(jobs):
     assert await jobs.has_pending("src") is False
 
 
-@pytest.mark.asyncio
 async def test_has_pending_is_per_source(jobs):
     """A backed-up source must not block an idle one."""
     await jobs.enqueue("busy", "u", JobOp.UPSERT)
@@ -283,7 +267,6 @@ async def test_has_pending_is_per_source(jobs):
     assert await jobs.has_pending("idle") is False
 
 
-@pytest.mark.asyncio
 async def test_enqueue_drops_delete_when_upsert_is_live(jobs):
     """Stops a DELETE worker from removing a document a sibling UPSERT
     just ingested."""
@@ -293,7 +276,6 @@ async def test_enqueue_drops_delete_when_upsert_is_live(jobs):
     assert delete is None
 
 
-@pytest.mark.asyncio
 async def test_enqueue_drops_upsert_when_delete_is_live(jobs):
     """Symmetric: live DELETE for a URI blocks a fresh UPSERT for the
     same URI. The next sweep after DELETE completes will re-emit the
@@ -304,7 +286,6 @@ async def test_enqueue_drops_upsert_when_delete_is_live(jobs):
     assert upsert is None
 
 
-@pytest.mark.asyncio
 async def test_enqueue_different_uris_independent_of_op(jobs):
     """Uniqueness is per-(source_id, uri), not per-(source_id, uri, op).
     Different URIs can be queued regardless of which op each one is."""
@@ -317,12 +298,10 @@ async def test_enqueue_different_uris_independent_of_op(jobs):
 # --- claim_next ---
 
 
-@pytest.mark.asyncio
 async def test_claim_next_returns_none_when_empty(jobs):
     assert await jobs.claim_next("w") is None
 
 
-@pytest.mark.asyncio
 async def test_claim_next_increments_attempts_and_records_worker(jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     assert job.attempts == 0
@@ -335,7 +314,6 @@ async def test_claim_next_increments_attempts_and_records_worker(jobs):
     assert claimed.claimed_at is not None
 
 
-@pytest.mark.asyncio
 async def test_claim_next_returns_oldest_first(jobs):
     j1 = await jobs.enqueue("s", "u1", JobOp.UPSERT)
     j2 = await jobs.enqueue("s", "u2", JobOp.UPSERT)
@@ -347,7 +325,6 @@ async def test_claim_next_returns_oldest_first(jobs):
     assert second.id == j2.id
 
 
-@pytest.mark.asyncio
 async def test_claim_next_excludes_source_ids(jobs):
     a = await jobs.enqueue("a", "u", JobOp.UPSERT)
     b = await jobs.enqueue("b", "u", JobOp.UPSERT)
@@ -360,7 +337,6 @@ async def test_claim_next_excludes_source_ids(jobs):
     assert await jobs.claim_next("w", exclude_source_ids={"a"}) is None
 
 
-@pytest.mark.asyncio
 async def test_claim_next_empty_exclude_is_noop(jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     assert job is not None
@@ -369,7 +345,6 @@ async def test_claim_next_empty_exclude_is_noop(jobs):
     assert claimed.id == job.id
 
 
-@pytest.mark.asyncio
 async def test_claim_next_skips_future_scheduled(conn, jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     # Push scheduled_at into the future.
@@ -381,7 +356,6 @@ async def test_claim_next_skips_future_scheduled(conn, jobs):
     assert await jobs.claim_next("w") is None
 
 
-@pytest.mark.asyncio
 async def test_claim_next_atomic_under_concurrency(jobs):
     enqueued = []
     for i in range(5):
@@ -396,7 +370,6 @@ async def test_claim_next_atomic_under_concurrency(jobs):
     assert {c.id for c in claimed} == {j.id for j in enqueued}
 
 
-@pytest.mark.asyncio
 async def test_claim_next_atomic_across_independent_engines(tmp_path):
     """Two engines on one SQLite file stand in for two ingester processes.
     The claim is a single UPDATE...WHERE id=(subquery), so it stays atomic
@@ -436,7 +409,6 @@ async def test_claim_next_atomic_across_independent_engines(tmp_path):
 # --- terminal transitions ---
 
 
-@pytest.mark.asyncio
 async def test_mark_succeeded(jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
@@ -448,7 +420,6 @@ async def test_mark_succeeded(jobs):
     assert refreshed.completed_at is not None
 
 
-@pytest.mark.asyncio
 async def test_mark_dead_records_error(jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
@@ -460,7 +431,6 @@ async def test_mark_dead_records_error(jobs):
     assert refreshed.last_error == "permanent failure"
 
 
-@pytest.mark.asyncio
 async def test_mark_succeeded_with_claimed_by_guard_skips_when_resurrected(jobs):
     """Reaper race: A claims, reaper resets, B re-claims, A finishes. A's
     mark_succeeded must be a no-op so B's in-flight work isn't clobbered."""
@@ -482,7 +452,6 @@ async def test_mark_succeeded_with_claimed_by_guard_skips_when_resurrected(jobs)
     assert await jobs.mark_succeeded(job.id, "worker-B") is True
 
 
-@pytest.mark.asyncio
 async def test_mark_dead_with_claimed_by_guard_skips_when_resurrected(jobs):
     """Same guard semantics as mark_succeeded for the dead transition."""
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
@@ -498,7 +467,6 @@ async def test_mark_dead_with_claimed_by_guard_skips_when_resurrected(jobs):
     assert refreshed.last_error is None
 
 
-@pytest.mark.asyncio
 async def test_reschedule_with_claimed_by_guard_skips_when_resurrected(jobs):
     """Worker A times out → reaper resets → worker B re-claims → A surfaces
     with a TransientError and calls reschedule. The guard turns A's call
@@ -517,7 +485,6 @@ async def test_reschedule_with_claimed_by_guard_skips_when_resurrected(jobs):
     assert refreshed.last_error is None
 
 
-@pytest.mark.asyncio
 async def test_release_if_claimed_with_claimed_by_guard_skips_when_resurrected(jobs):
     """Cancel-cleanup path: worker A is cancelled while reaper-resurrected.
     release_if_claimed must not strip worker B's fresh claim."""
@@ -537,7 +504,6 @@ async def test_release_if_claimed_with_claimed_by_guard_skips_when_resurrected(j
 # --- reschedule + retry ---
 
 
-@pytest.mark.asyncio
 async def test_reschedule_pushes_scheduled_at_into_future(jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
@@ -552,7 +518,6 @@ async def test_reschedule_pushes_scheduled_at_into_future(jobs):
     assert refreshed.scheduled_at > datetime.now(UTC)
 
 
-@pytest.mark.asyncio
 async def test_reschedule_then_claim_skips_until_due(conn, jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
@@ -567,7 +532,6 @@ async def test_reschedule_then_claim_skips_until_due(conn, jobs):
     assert await jobs.claim_next("w") is not None
 
 
-@pytest.mark.asyncio
 async def test_retry_revives_dead_job(jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
@@ -583,13 +547,11 @@ async def test_retry_revives_dead_job(jobs):
     assert revived.completed_at is None
 
 
-@pytest.mark.asyncio
 async def test_retry_unknown_raises(jobs):
     with pytest.raises(KeyError):
         await jobs.retry("not-a-real-id")
 
 
-@pytest.mark.asyncio
 async def test_retry_refuses_claimed_job(jobs):
     """Resetting a `claimed` row would race with the worker still
     processing it: claim_next would re-claim and a second worker would
@@ -609,7 +571,6 @@ async def test_retry_refuses_claimed_job(jobs):
     assert refreshed.attempts == 1
 
 
-@pytest.mark.asyncio
 async def test_retry_returns_live_sibling_instead_of_colliding(jobs):
     """Retrying a dead job when a live job already exists for the same
     (source_id, uri) is idempotent: it returns the live sibling rather than
@@ -634,7 +595,6 @@ async def test_retry_returns_live_sibling_instead_of_colliding(jobs):
     assert refreshed.status is JobStatus.DEAD
 
 
-@pytest.mark.asyncio
 async def test_retry_refuses_succeeded_job(jobs):
     """Succeeded rows should be re-ingested through the UPSERT path, not
     re-run from the queue."""
@@ -654,14 +614,12 @@ async def test_retry_refuses_succeeded_job(jobs):
 # --- cancel ---
 
 
-@pytest.mark.asyncio
 async def test_cancel_queued_removes_row(jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     assert await jobs.cancel(job.id) is True
     assert await jobs.get_job(job.id) is None
 
 
-@pytest.mark.asyncio
 async def test_cancel_succeeded_returns_false(jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
@@ -673,7 +631,6 @@ async def test_cancel_succeeded_returns_false(jobs):
 # --- reap_stale ---
 
 
-@pytest.mark.asyncio
 async def test_reap_stale_resets_old_claims(conn, jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
@@ -701,7 +658,6 @@ async def test_reap_stale_resets_old_claims(conn, jobs):
     assert refreshed.attempts == 0
 
 
-@pytest.mark.asyncio
 async def test_reap_stale_falls_back_to_claimed_at_when_no_heartbeat(conn, jobs):
     """A claim made by a process that doesn't write the lease (an older version
     sharing the queue) has last_heartbeat_at IS NULL. Reaping must fall back to
@@ -724,7 +680,6 @@ async def test_reap_stale_falls_back_to_claimed_at_when_no_heartbeat(conn, jobs)
     assert refreshed.status is JobStatus.QUEUED
 
 
-@pytest.mark.asyncio
 async def test_reap_stale_leaves_fresh_claims_alone(jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
@@ -737,7 +692,6 @@ async def test_reap_stale_leaves_fresh_claims_alone(jobs):
     assert refreshed.status is JobStatus.CLAIMED
 
 
-@pytest.mark.asyncio
 async def test_claim_next_sets_both_timestamps(jobs):
     await jobs.enqueue("s", "u", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
@@ -746,7 +700,6 @@ async def test_claim_next_sets_both_timestamps(jobs):
     assert claimed.last_heartbeat_at is not None
 
 
-@pytest.mark.asyncio
 async def test_renew_claims_keeps_a_stale_claim_alive(conn, jobs):
     """A claim whose claimed_at is old but whose lease was just renewed must
     not be reaped — this is the slow-but-alive worker the reaper used to kill."""
@@ -770,7 +723,6 @@ async def test_renew_claims_keeps_a_stale_claim_alive(conn, jobs):
     assert refreshed.status is JobStatus.CLAIMED
 
 
-@pytest.mark.asyncio
 async def test_renew_claims_invariant_only_touches_heartbeat(conn, jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")
@@ -792,7 +744,6 @@ async def test_renew_claims_invariant_only_touches_heartbeat(conn, jobs):
     assert after.last_heartbeat_at > before.last_heartbeat_at
 
 
-@pytest.mark.asyncio
 async def test_renew_claims_skips_reclaimed_job(jobs):
     """Renewal is guarded on claimed_by: a job reaped and re-claimed by another
     worker must not be renewed by the original (lost) claimant."""
@@ -806,7 +757,6 @@ async def test_renew_claims_skips_reclaimed_job(jobs):
     assert await jobs.renew_claims({job.id: "worker-A"}) == 0
 
 
-@pytest.mark.asyncio
 async def test_renew_claims_empty_is_noop(jobs):
     assert await jobs.renew_claims({}) == 0
 
@@ -814,7 +764,6 @@ async def test_renew_claims_empty_is_noop(jobs):
 # --- prune_dead ---
 
 
-@pytest.mark.asyncio
 async def test_prune_dead_removes_matching_dead_rows(jobs):
     """A dead UPSERT becomes stale once a sibling DELETE has resolved the URI;
     prune_dead() removes it so the DLQ stops showing resolved entries."""
@@ -829,7 +778,6 @@ async def test_prune_dead_removes_matching_dead_rows(jobs):
     assert await jobs.get_job(job.id) is None
 
 
-@pytest.mark.asyncio
 async def test_prune_dead_leaves_non_dead_rows_alone(jobs):
     """Queued/claimed/succeeded rows for the same (source, uri) are not
     touched — only `dead` is purged."""
@@ -842,7 +790,6 @@ async def test_prune_dead_leaves_non_dead_rows_alone(jobs):
     assert refreshed is not None and refreshed.status is JobStatus.QUEUED
 
 
-@pytest.mark.asyncio
 async def test_prune_dead_scoped_to_matching_uri(jobs):
     """Dead rows for other URIs (and other sources) survive."""
     j1 = await jobs.enqueue("s", "u1", JobOp.UPSERT)
@@ -862,7 +809,6 @@ async def test_prune_dead_scoped_to_matching_uri(jobs):
 # --- prune_terminal ---
 
 
-@pytest.mark.asyncio
 async def test_prune_terminal_deletes_old_terminal_rows(jobs, conn):
     """Succeeded and dead rows whose completed_at is older than the window
     are deleted so the table doesn't grow without bound."""
@@ -887,7 +833,6 @@ async def test_prune_terminal_deletes_old_terminal_rows(jobs, conn):
     assert await jobs.get_job(bad.id) is None
 
 
-@pytest.mark.asyncio
 async def test_prune_terminal_keeps_recent_terminal_rows(jobs):
     """A freshly-completed succeeded row survives — only rows past the
     retention window are removed."""
@@ -901,7 +846,6 @@ async def test_prune_terminal_keeps_recent_terminal_rows(jobs):
     assert refreshed is not None and refreshed.status is JobStatus.SUCCEEDED
 
 
-@pytest.mark.asyncio
 async def test_prune_terminal_ignores_non_terminal_rows(jobs):
     """Queued/claimed rows have no completed_at and are never pruned,
     regardless of the window."""
@@ -918,7 +862,6 @@ async def test_prune_terminal_ignores_non_terminal_rows(jobs):
 # --- release_if_claimed ---
 
 
-@pytest.mark.asyncio
 async def test_release_if_claimed_resets_claimed_job_and_decrements_attempts(jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     assert job is not None
@@ -937,7 +880,6 @@ async def test_release_if_claimed_resets_claimed_job_and_decrements_attempts(job
     assert refreshed.attempts == 0
 
 
-@pytest.mark.asyncio
 async def test_release_if_claimed_noop_on_already_queued(jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     assert job is not None
@@ -950,7 +892,6 @@ async def test_release_if_claimed_noop_on_already_queued(jobs):
     assert refreshed.attempts == 0
 
 
-@pytest.mark.asyncio
 async def test_release_if_claimed_noop_on_succeeded(jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     assert job is not None
@@ -968,7 +909,6 @@ async def test_release_if_claimed_noop_on_succeeded(jobs):
 # --- list / counts ---
 
 
-@pytest.mark.asyncio
 async def test_list_jobs_with_filters(jobs):
     j1 = await jobs.enqueue("s1", "u1", JobOp.UPSERT)
     j2 = await jobs.enqueue("s2", "u2", JobOp.UPSERT)
@@ -990,7 +930,6 @@ async def test_list_jobs_with_filters(jobs):
     assert {j.id for j in by_uri} == {j3.id}
 
 
-@pytest.mark.asyncio
 async def test_counts_by_status(jobs):
     await jobs.enqueue("s", "u1", JobOp.UPSERT)
     j2 = await jobs.enqueue("s", "u2", JobOp.UPSERT)
@@ -1011,7 +950,6 @@ async def test_counts_by_status(jobs):
 # --- stats ---
 
 
-@pytest.mark.asyncio
 async def test_count_succeeded_since_only_includes_recent(jobs, conn):
     await jobs.enqueue("s", "old", JobOp.UPSERT)
     await jobs.enqueue("s", "new", JobOp.UPSERT)
@@ -1033,12 +971,10 @@ async def test_count_succeeded_since_only_includes_recent(jobs, conn):
     assert await jobs.count_succeeded_since(86400) == 2
 
 
-@pytest.mark.asyncio
 async def test_oldest_queued_age_seconds_none_when_empty(jobs):
     assert await jobs.oldest_queued_age_seconds() is None
 
 
-@pytest.mark.asyncio
 async def test_oldest_queued_age_seconds_returns_oldest(jobs, conn):
     old = await jobs.enqueue("s", "old", JobOp.UPSERT)
     await jobs.enqueue("s", "new", JobOp.UPSERT)
@@ -1054,7 +990,6 @@ async def test_oldest_queued_age_seconds_returns_oldest(jobs, conn):
     assert 119 <= age <= 125
 
 
-@pytest.mark.asyncio
 async def test_oldest_queued_age_seconds_ignores_future_scheduled(jobs, conn):
     """A job whose scheduled_at is in the future (e.g. after a backoff
     reschedule) isn't ready to run, so it shouldn't count toward backlog age."""
@@ -1066,7 +1001,6 @@ async def test_oldest_queued_age_seconds_ignores_future_scheduled(jobs, conn):
     assert await jobs.oldest_queued_age_seconds() is None
 
 
-@pytest.mark.asyncio
 async def test_counts_by_source_groups_correctly(jobs):
     # Enqueue s2 first so claim_next picks it up before the s1 rows; then
     # mark_dead routes through the production claim→terminal transition.
@@ -1083,7 +1017,6 @@ async def test_counts_by_source_groups_correctly(jobs):
     assert await jobs.counts_by_source("queued", "claimed") == {"s1": 2}
 
 
-@pytest.mark.asyncio
 async def test_counts_by_source_no_statuses_returns_empty(jobs):
     await jobs.enqueue("s", "u", JobOp.UPSERT)
     assert await jobs.counts_by_source() == {}
@@ -1092,33 +1025,28 @@ async def test_counts_by_source_no_statuses_returns_empty(jobs):
 # --- sync state ---
 
 
-@pytest.mark.asyncio
 async def test_sync_state_get_revision_snapshot_empty(sync):
     assert await sync.get_revision_snapshot("unknown") == {}
 
 
-@pytest.mark.asyncio
 async def test_sync_state_upsert_and_get(sync):
     await sync.upsert("s", "u1", revision="abc", content_hash="m1")
     await sync.upsert("s", "u2", revision="def", content_hash="m2")
     assert await sync.get_revision_snapshot("s") == {"u1": "abc", "u2": "def"}
 
 
-@pytest.mark.asyncio
 async def test_sync_state_upsert_overwrites(sync):
     await sync.upsert("s", "u1", revision="abc", content_hash="m1")
     await sync.upsert("s", "u1", revision="def", content_hash="m2", ingested=True)
     assert await sync.get_revision_snapshot("s") == {"u1": "def"}
 
 
-@pytest.mark.asyncio
 async def test_sync_state_delete_removes_entry(sync):
     await sync.upsert("s", "u1", revision="abc", content_hash="m1")
     await sync.delete("s", "u1")
     assert await sync.get_revision_snapshot("s") == {}
 
 
-@pytest.mark.asyncio
 async def test_sync_state_snapshot_scoped_per_source(sync):
     await sync.upsert("s1", "u", revision="abc", content_hash="m")
     await sync.upsert("s2", "u", revision="def", content_hash="m")
@@ -1126,7 +1054,6 @@ async def test_sync_state_snapshot_scoped_per_source(sync):
     assert await sync.get_revision_snapshot("s2") == {"u": "def"}
 
 
-@pytest.mark.asyncio
 async def test_sync_state_revision_snapshot_excludes_null_revision_rows(sync):
     """get_revision_snapshot returns only rows with a stored revision —
     sources compare against this for UPSERT/UNCHANGED. Rows without a
@@ -1137,7 +1064,6 @@ async def test_sync_state_revision_snapshot_excludes_null_revision_rows(sync):
     assert await sync.list_known_uris("s") == {"u"}
 
 
-@pytest.mark.asyncio
 async def test_sync_state_upsert_preserves_revision_when_none(sync):
     """upsert(revision=None) leaves an existing revision in place."""
     await sync.upsert("s", "u", revision="v1", content_hash="hash-v1")
@@ -1149,7 +1075,6 @@ async def test_sync_state_upsert_preserves_revision_when_none(sync):
     assert await sync.get_revision_snapshot("s") == {"u": "v1"}
 
 
-@pytest.mark.asyncio
 async def test_sync_state_upsert_replaces_revision_when_provided(sync):
     """upsert with a non-None revision overwrites the existing one."""
     await sync.upsert("s", "u", revision="v1", content_hash="hash-v1")
@@ -1161,7 +1086,6 @@ async def test_sync_state_upsert_replaces_revision_when_provided(sync):
     assert row.last_ingested_at is not None
 
 
-@pytest.mark.asyncio
 async def test_sync_state_batch_upsert_inserts_multiple_rows(sync):
     """batch_upsert writes many rows in a single transaction."""
     await sync.batch_upsert(
@@ -1181,7 +1105,6 @@ async def test_sync_state_batch_upsert_inserts_multiple_rows(sync):
     assert row.last_ingested_at is not None
 
 
-@pytest.mark.asyncio
 async def test_sync_state_batch_upsert_updates_existing(sync):
     """batch_upsert applies ON CONFLICT update semantics like upsert()."""
     await sync.upsert("s", "u1", revision="old", content_hash="old-hash")
@@ -1196,7 +1119,6 @@ async def test_sync_state_batch_upsert_updates_existing(sync):
     assert row.content_hash == "new-hash"
 
 
-@pytest.mark.asyncio
 async def test_sync_state_batch_upsert_preserves_revision_when_none(sync):
     """batch_upsert with revision=None leaves existing revision in place."""
     await sync.upsert("s", "u1", revision="keep", content_hash="keep-hash")
@@ -1211,14 +1133,12 @@ async def test_sync_state_batch_upsert_preserves_revision_when_none(sync):
     assert row.content_hash == "keep-hash"
 
 
-@pytest.mark.asyncio
 async def test_sync_state_batch_upsert_empty_is_noop(sync):
     """batch_upsert with an empty list does nothing."""
     await sync.batch_upsert([])
     assert await sync.get_revision_snapshot("s") == {}
 
 
-@pytest.mark.asyncio
 async def test_migration_v2_to_v3_adds_conversion_stalled(tmp_path):
     """A v2 DB gains `conversion_stalled`, defaulted false for existing rows."""
     db = tmp_path / "v2.db"
@@ -1262,7 +1182,6 @@ async def test_migration_v2_to_v3_adds_conversion_stalled(tmp_path):
         await engine.dispose()
 
 
-@pytest.mark.asyncio
 async def test_a_stalled_document_is_not_re_enqueued(jobs):
     """A revision-less document that stalled has no suppression marker, so the
     index must refuse the re-enqueue or every sweep pays the deadline again."""
@@ -1275,7 +1194,6 @@ async def test_a_stalled_document_is_not_re_enqueued(jobs):
     assert await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT) is None
 
 
-@pytest.mark.asyncio
 async def test_dlq_retry_lifts_the_suppression(jobs):
     """The operator's escape hatch: a retry clears the flag, so discovery can
     enqueue the URI again afterwards."""
@@ -1301,7 +1219,6 @@ async def test_dlq_retry_lifts_the_suppression(jobs):
     assert await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT) is not None
 
 
-@pytest.mark.asyncio
 async def test_an_ordinary_dead_job_still_re_enqueues(jobs):
     """Only a worker-killing failure suppresses; the documented behaviour for
     every other dead job is unchanged."""
@@ -1314,7 +1231,6 @@ async def test_an_ordinary_dead_job_still_re_enqueues(jobs):
     assert await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT) is not None
 
 
-@pytest.mark.asyncio
 async def test_retention_never_prunes_a_stalled_document(jobs):
     """The row is what stops rediscovery, so age must not remove it: age is not
     evidence the document changed."""
@@ -1336,7 +1252,6 @@ async def test_retention_never_prunes_a_stalled_document(jobs):
     assert await jobs.get_job(claimed_other.id) is None
 
 
-@pytest.mark.asyncio
 async def test_a_stalled_document_never_blocks_a_delete(jobs):
     """Removing the document has to stay possible, and a successful DELETE
     prunes the row that was suppressing rediscovery."""
@@ -1357,7 +1272,6 @@ async def test_a_stalled_document_never_blocks_a_delete(jobs):
     assert await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT) is not None
 
 
-@pytest.mark.asyncio
 async def test_concurrent_mark_dead_cannot_leave_a_poison_upsert_queued(tmp_path):
     """`uq_jobs_blocking_op` is what makes this safe: whichever order the
     transition and the sweep commit in, the URI's upsert slot is occupied — by
@@ -1395,7 +1309,6 @@ async def test_concurrent_mark_dead_cannot_leave_a_poison_upsert_queued(tmp_path
         await engine.dispose()
 
 
-@pytest.mark.asyncio
 async def test_a_changed_revision_is_not_blocked_by_the_tombstone(jobs):
     """The slot carries the revision, so a source that replaced the file is
     ingested again."""
@@ -1415,7 +1328,6 @@ async def test_a_changed_revision_is_not_blocked_by_the_tombstone(jobs):
     )
 
 
-@pytest.mark.asyncio
 async def test_two_revisionless_stalls_still_collide(jobs):
     """`coalesce` is what makes this hold: a unique index treats NULLs as
     distinct, so a bare `revision` column would stop blocking exactly the rows
@@ -1429,7 +1341,6 @@ async def test_two_revisionless_stalls_still_collide(jobs):
     assert await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT) is None
 
 
-@pytest.mark.asyncio
 async def test_fresh_and_migrated_schemas_agree_on_the_blocking_index(tmp_path):
     """`create_all` and the v3 migration must produce the same index, or a
     migrated queue enforces something different from a new one."""
@@ -1472,7 +1383,6 @@ async def test_fresh_and_migrated_schemas_agree_on_the_blocking_index(tmp_path):
         await migrated.dispose()
 
 
-@pytest.mark.asyncio
 async def test_retry_names_the_tombstone_that_blocks_it(jobs):
     """Both rows can exist: one dead on max attempts, the URI re-enqueued, the
     next attempt stalled. Retrying the first names the row in the way."""
@@ -1495,7 +1405,6 @@ async def test_retry_names_the_tombstone_that_blocks_it(jobs):
     assert excinfo.value.blocking_job_id == claimed_second.id
 
 
-@pytest.mark.asyncio
 async def test_sync_state_invalidate_clears_revision_and_hash(sync):
     """invalidate() drops what upsert() coalesces, keeping the row."""
     await sync.upsert("s", "u", revision="v1", content_hash="hash-v1", ingested=True)
@@ -1510,13 +1419,11 @@ async def test_sync_state_invalidate_clears_revision_and_hash(sync):
     assert await sync.list_known_uris("s") == {"u"}
 
 
-@pytest.mark.asyncio
 async def test_sync_state_invalidate_ignores_unknown_row(sync):
     await sync.invalidate("s", ["missing"])
     assert await sync.list_known_uris("s") == set()
 
 
-@pytest.mark.asyncio
 async def test_sync_state_invalidate_batches_beyond_the_bind_limit(sync, monkeypatch):
     """One transaction, bounded statements: a rebuilt database can invalidate
     more URIs than a dialect allows bind parameters for."""
@@ -1531,14 +1438,12 @@ async def test_sync_state_invalidate_batches_beyond_the_bind_limit(sync, monkeyp
     assert await sync.list_known_uris("s") == set(uris)
 
 
-@pytest.mark.asyncio
 async def test_sync_state_invalidate_accepts_no_uris(sync):
     await sync.upsert("s", "u", revision="v1")
     await sync.invalidate("s", [])
     assert await sync.get_revision_snapshot("s") == {"u": "v1"}
 
 
-@pytest.mark.asyncio
 async def test_sync_state_lists_only_ingested_uris(sync):
     """A revision is written for a dead job too; last_ingested_at is not."""
     await sync.upsert("s", "done", revision="v1", ingested=True)

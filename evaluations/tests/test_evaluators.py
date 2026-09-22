@@ -154,7 +154,6 @@ def _evaluator_ctx(inputs: object, metadata: dict | None = None) -> EvaluatorCon
 
 
 class TestTranscriptLLMJudge:
-    @pytest.mark.asyncio
     async def test_conversation_inputs_judged_as_transcript(self) -> None:
         from evaluations.config import ConversationInput, Turn
         from evaluations.evaluators import TranscriptLLMJudge
@@ -183,7 +182,6 @@ class TestTranscriptLLMJudge:
         assert judge_call.await_args is not None
         assert judge_call.await_args.args[0] == "user: q1\nagent: a1\nuser: q2"
 
-    @pytest.mark.asyncio
     async def test_string_inputs_pass_through(self) -> None:
         from evaluations.evaluators import TranscriptLLMJudge
 
@@ -213,7 +211,6 @@ class TestRefusalJudge:
             assertion={"evaluation_name": "refused", "include_reason": False},
         )
 
-    @pytest.mark.asyncio
     @pytest.mark.parametrize("label", ["ANSWERABLE", "UNANSWERABLE"])
     async def test_judges_eligible_labels(self, label: str) -> None:
         grading = MagicMock(score=None, pass_=True, reason=None)
@@ -229,7 +226,6 @@ class TestRefusalJudge:
         judge_call.assert_awaited_once()
         assert result == {"refused": True}
 
-    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "metadata", [{"answerability": "PARTIAL"}, {"answerability": None}, {}, None]
     )

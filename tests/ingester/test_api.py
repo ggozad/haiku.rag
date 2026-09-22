@@ -38,7 +38,6 @@ def _client(
 # --- /health ---
 
 
-@pytest.mark.asyncio
 async def test_health_ok_with_counts(state, jobs):
     # Enqueue j2 first so claim_next reaches it before u1; then transition
     # via claim → mark_dead matches the production path.
@@ -61,7 +60,6 @@ async def test_health_ok_with_counts(state, jobs):
     assert body["pollers_alive"] == 0
 
 
-@pytest.mark.asyncio
 async def test_health_degraded_when_worker_died(jobs, sync):
     """If a worker task crashed (live_workers < worker_count), /health must
     flip to status='degraded' so uptime monitors notice."""
@@ -84,7 +82,6 @@ async def test_health_degraded_when_worker_died(jobs, sync):
     assert body["workers_alive"] == 3
 
 
-@pytest.mark.asyncio
 async def test_health_degraded_when_worker_breaker_open(jobs, sync):
     """The pool-wide breaker opens after a streak of transient job failures.
     /health must surface that and flip status='degraded' even when worker
@@ -110,7 +107,6 @@ async def test_health_degraded_when_worker_breaker_open(jobs, sync):
     assert body["worker_breaker_consecutive_failures"] == 7
 
 
-@pytest.mark.asyncio
 async def test_health_skips_auth(state):
     async with _client(state, auth_token="secret") as client:
         resp = await client.get("/health")
@@ -120,35 +116,30 @@ async def test_health_skips_auth(state):
 # --- auth ---
 
 
-@pytest.mark.asyncio
 async def test_protected_endpoint_rejects_without_token(state):
     async with _client(state, auth_token="secret") as client:
         resp = await client.get("/jobs")
     assert resp.status_code == 401
 
 
-@pytest.mark.asyncio
 async def test_protected_endpoint_rejects_wrong_token(state):
     async with _client(state, auth_token="secret") as client:
         resp = await client.get("/jobs", headers={"Authorization": "Bearer nope"})
     assert resp.status_code == 401
 
 
-@pytest.mark.asyncio
 async def test_protected_endpoint_accepts_correct_token(state):
     async with _client(state, auth_token="secret") as client:
         resp = await client.get("/jobs", headers={"Authorization": "Bearer secret"})
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_no_auth_token_allows_everything(state):
     async with _client(state, auth_token=None) as client:
         assert (await client.get("/jobs")).status_code == 200
         assert (await client.get("/health")).status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_mutation_endpoints_require_auth(state, jobs):
     """Existing tests prove auth gates GETs; this pins that the *mutation*
     endpoints (retry, cancel, DLQ requeue, source refresh) also require the
@@ -184,7 +175,6 @@ async def test_mutation_endpoints_require_auth(state, jobs):
 # --- /jobs ---
 
 
-@pytest.mark.asyncio
 async def test_list_jobs_returns_recent_first(state, jobs):
     j1 = await jobs.enqueue("a", "u1", JobOp.UPSERT)
     j2 = await jobs.enqueue("b", "u2", JobOp.UPSERT)
@@ -197,7 +187,6 @@ async def test_list_jobs_returns_recent_first(state, jobs):
     assert [j["id"] for j in payload] == [j2.id, j1.id]
 
 
-@pytest.mark.asyncio
 async def test_list_jobs_rejects_out_of_range_limit_and_offset(state):
     """Limit is capped at 500 and >=1; offset is >=0. Without bounds a
     malicious or careless ?limit=10000000 would block the event loop on
@@ -211,7 +200,6 @@ async def test_list_jobs_rejects_out_of_range_limit_and_offset(state):
             assert resp.status_code == 422, q
 
 
-@pytest.mark.asyncio
 async def test_list_jobs_filters_by_source_and_status(state, jobs):
     # Enqueue b first so claim_next reaches it before the a row.
     j = await jobs.enqueue("b", "u", JobOp.UPSERT)
@@ -228,7 +216,6 @@ async def test_list_jobs_filters_by_source_and_status(state, jobs):
     assert payload[0]["id"] == j.id
 
 
-@pytest.mark.asyncio
 async def test_get_job_returns_record(state, jobs):
     job = await jobs.enqueue("src", "u", JobOp.UPSERT)
     assert job is not None
@@ -238,14 +225,12 @@ async def test_get_job_returns_record(state, jobs):
     assert resp.json()["id"] == job.id
 
 
-@pytest.mark.asyncio
 async def test_get_job_404(state):
     async with _client(state) as client:
         resp = await client.get("/jobs/nope")
     assert resp.status_code == 404
 
 
-@pytest.mark.asyncio
 async def test_retry_revives_dead_job(state, jobs):
     job = await jobs.enqueue("src", "u", JobOp.UPSERT)
     assert job is not None
@@ -261,14 +246,12 @@ async def test_retry_revives_dead_job(state, jobs):
     assert body["attempts"] == 0
 
 
-@pytest.mark.asyncio
 async def test_retry_404(state):
     async with _client(state) as client:
         resp = await client.post("/jobs/missing/retry")
     assert resp.status_code == 404
 
 
-@pytest.mark.asyncio
 async def test_cancel_queued_job(state, jobs):
     job = await jobs.enqueue("src", "u", JobOp.UPSERT)
     assert job is not None
@@ -280,7 +263,6 @@ async def test_cancel_queued_job(state, jobs):
     assert await jobs.get_job(job.id) is None
 
 
-@pytest.mark.asyncio
 async def test_cancel_succeeded_returns_404(state, jobs):
     job = await jobs.enqueue("src", "u", JobOp.UPSERT)
     assert job is not None
@@ -296,7 +278,6 @@ async def test_cancel_succeeded_returns_404(state, jobs):
 # --- /dlq ---
 
 
-@pytest.mark.asyncio
 async def test_dlq_lists_dead_jobs_only(state, jobs):
     # Enqueue j2 first so claim_next picks it before j1.
     j2 = await jobs.enqueue("src", "u2", JobOp.UPSERT)
@@ -314,7 +295,6 @@ async def test_dlq_lists_dead_jobs_only(state, jobs):
     assert payload[0]["id"] == j2.id
 
 
-@pytest.mark.asyncio
 async def test_dlq_retry_resurrects(state, jobs):
     job = await jobs.enqueue("src", "u", JobOp.UPSERT)
     assert job is not None
@@ -328,14 +308,12 @@ async def test_dlq_retry_resurrects(state, jobs):
     assert resp.json()["status"] == JobStatus.QUEUED.value
 
 
-@pytest.mark.asyncio
 async def test_dlq_retry_404_on_missing_job(state):
     async with _client(state) as client:
         resp = await client.post("/dlq/missing/retry")
     assert resp.status_code == 404
 
 
-@pytest.mark.asyncio
 async def test_dlq_retry_with_live_sibling_returns_200(state, jobs):
     """Retrying a dead job when a live job already exists for the same
     (source_id, uri) returns 200 with the live job, not a 500."""
@@ -393,7 +371,6 @@ def _build_pollers_state(tmp_path, jobs, sync, source_id: str = "local"):
     return state, manager
 
 
-@pytest.mark.asyncio
 async def test_sources_empty_when_no_pollers(state):
     async with _client(state) as client:
         resp = await client.get("/sources")
@@ -401,7 +378,6 @@ async def test_sources_empty_when_no_pollers(state):
     assert resp.json() == []
 
 
-@pytest.mark.asyncio
 async def test_sources_lists_configured(tmp_path, jobs, sync):
     state, _ = _build_pollers_state(tmp_path, jobs, sync)
     async with _client(state) as client:
@@ -413,7 +389,6 @@ async def test_sources_lists_configured(tmp_path, jobs, sync):
     assert payload[0]["circuit_breaker_open"] is False
 
 
-@pytest.mark.asyncio
 async def test_source_refresh_triggers_sweep(tmp_path, jobs, sync):
     state, manager = _build_pollers_state(tmp_path, jobs, sync)
     # Replace the real source with a stub that records the sweep + emits an event.
@@ -444,7 +419,6 @@ async def test_source_refresh_triggers_sweep(tmp_path, jobs, sync):
     assert len(queued) == 1
 
 
-@pytest.mark.asyncio
 async def test_source_refresh_unknown_id_404(tmp_path, jobs, sync):
     state, _ = _build_pollers_state(tmp_path, jobs, sync)
     async with _client(state) as client:
@@ -452,7 +426,6 @@ async def test_source_refresh_unknown_id_404(tmp_path, jobs, sync):
     assert resp.status_code == 404
 
 
-@pytest.mark.asyncio
 async def test_source_refresh_503_when_pollers_absent(state):
     async with _client(state) as client:
         resp = await client.post("/sources/anything/refresh")
@@ -462,7 +435,6 @@ async def test_source_refresh_503_when_pollers_absent(state):
 # --- /stats ---
 
 
-@pytest.mark.asyncio
 async def test_stats_returns_shape_on_empty_queue(state):
     async with _client(state) as client:
         resp = await client.get("/stats")
@@ -479,7 +451,6 @@ async def test_stats_returns_shape_on_empty_queue(state):
     assert body["queue_depth_by_source"] == {}
 
 
-@pytest.mark.asyncio
 async def test_stats_aggregates_real_queue(state, jobs):
     j1 = await jobs.enqueue("s1", "u1", JobOp.UPSERT)
     j2 = await jobs.enqueue("s1", "u2", JobOp.UPSERT)
@@ -506,7 +477,6 @@ async def test_stats_aggregates_real_queue(state, jobs):
     assert body["dlq_by_source"] == {"s1": 1}
 
 
-@pytest.mark.asyncio
 async def test_stats_requires_auth(state):
     async with _client(state, auth_token="secret") as client:
         resp = await client.get("/stats")
@@ -516,7 +486,6 @@ async def test_stats_requires_auth(state):
 # --- providers ---
 
 
-@pytest.mark.asyncio
 async def test_providers_probes_each_docling_serve_url(state, monkeypatch):
     """Reachable URLs come back with status_code from the probe; unreachable
     URLs come back with reachable=False and the httpx error message."""
@@ -553,7 +522,6 @@ async def test_providers_probes_each_docling_serve_url(state, monkeypatch):
     assert "Name or service not known" in body["docling_serve"][1]["error"]
 
 
-@pytest.mark.asyncio
 async def test_providers_skips_docling_serve_when_not_in_use(state, monkeypatch):
     """With docling-local for both converter and chunker, /providers
     returns an empty docling_serve list — and crucially does not probe."""
@@ -575,7 +543,6 @@ async def test_providers_skips_docling_serve_when_not_in_use(state, monkeypatch)
     assert probed == []
 
 
-@pytest.mark.asyncio
 async def test_providers_probes_when_only_chunker_uses_docling_serve(
     state, monkeypatch
 ):
@@ -596,7 +563,6 @@ async def test_providers_probes_when_only_chunker_uses_docling_serve(
     assert len(resp.json()["docling_serve"]) == 1
 
 
-@pytest.mark.asyncio
 async def test_providers_probe_with_real_httpx_transport():
     """End-to-end through the actual _probe — MockTransport drives the
     branches: 200, non-2xx, and a transport error all map to the right
@@ -630,7 +596,6 @@ async def test_providers_probe_with_real_httpx_transport():
         assert dead.error is not None and "boom" in dead.error
 
 
-@pytest.mark.asyncio
 async def test_providers_requires_auth(state):
     async with _client(state, auth_token="secret") as client:
         resp = await client.get("/providers")
@@ -640,7 +605,6 @@ async def test_providers_requires_auth(state):
 # --- dashboard ---
 
 
-@pytest.mark.asyncio
 async def test_dashboard_served_unauthenticated(state):
     """The dashboard is markup-only. The JS it serves attaches the bearer
     token to its own JSON fetches, so the page itself must load without one
@@ -678,7 +642,6 @@ def test_api_access_log_gated_on_debug():
         haiku_logger.setLevel(original)
 
 
-@pytest.mark.asyncio
 async def test_dashboard_wires_database_and_config_panels(state):
     """The on-demand Database and Configuration panels are present and call
     their endpoints lazily (not in the POLL_MS loop)."""
@@ -693,7 +656,6 @@ async def test_dashboard_wires_database_and_config_panels(state):
     assert "loadConfig" in body
 
 
-@pytest.mark.asyncio
 async def test_dashboard_base_href_defaults_to_root(state):
     """With no root_path the dashboard's <base href> is the origin root, so its
     relative fetches resolve at the top level exactly as before."""
@@ -704,7 +666,6 @@ async def test_dashboard_base_href_defaults_to_root(state):
     assert '<base href="/" />' in resp.text
 
 
-@pytest.mark.asyncio
 async def test_dashboard_base_href_reflects_root_path(state):
     """When served under a root_path (reverse-proxied sub-path), the injected
     <base href> carries the prefix so the relative fetches hit /ingester/..."""
@@ -715,7 +676,6 @@ async def test_dashboard_base_href_reflects_root_path(state):
     assert '<base href="/ingester/" />' in resp.text
 
 
-@pytest.mark.asyncio
 async def test_api_routes_unchanged_under_root_path(state):
     """root_path only affects URL generation/base-href; the routes themselves
     still answer at their declared paths (the proxy strips the prefix)."""
@@ -728,7 +688,6 @@ async def test_api_routes_unchanged_under_root_path(state):
 # --- config ---
 
 
-@pytest.mark.asyncio
 async def test_config_returns_full_yaml_with_redacted_secrets(jobs, sync):
     from haiku.rag.config import APIConfig, IngesterConfig
 
@@ -746,7 +705,6 @@ async def test_config_returns_full_yaml_with_redacted_secrets(jobs, sync):
     assert "auth_token: '***'" in text
 
 
-@pytest.mark.asyncio
 async def test_config_requires_auth(state):
     async with _client(state, auth_token="secret") as client:
         resp = await client.get("/config")
@@ -807,7 +765,6 @@ async def _seed_lancedb(path):
     )
 
 
-@pytest.mark.asyncio
 async def test_database_reports_info(tmp_path, jobs, sync):
     db_path = tmp_path / "docs.lancedb"
     await _seed_lancedb(db_path)
@@ -829,14 +786,12 @@ async def test_database_reports_info(tmp_path, jobs, sync):
     assert body["vector_index"]["exists"] is False
 
 
-@pytest.mark.asyncio
 async def test_database_503_when_no_database_is_configured(state):
     async with _client(state) as client:
         resp = await client.get("/database")
     assert resp.status_code == 503
 
 
-@pytest.mark.asyncio
 async def test_the_report_follows_a_configured_uri(tmp_path, jobs, sync):
     """A configured location places the database, so the report opens that
     and not the local default."""
@@ -857,14 +812,12 @@ async def test_the_report_follows_a_configured_uri(tmp_path, jobs, sync):
     assert resp.json()["stored_version"] == "1.2.3"
 
 
-@pytest.mark.asyncio
 async def test_database_requires_auth(state):
     async with _client(state, auth_token="secret") as client:
         resp = await client.get("/database")
     assert resp.status_code == 401
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("route", ["/jobs/{id}/retry", "/dlq/{id}/retry"])
 async def test_retry_answers_409_and_names_the_blocking_tombstone(state, jobs, route):
     """404 would be wrong for a job the operator can see in the DLQ: it exists,

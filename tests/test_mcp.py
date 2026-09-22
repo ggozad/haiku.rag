@@ -131,7 +131,6 @@ def _png_b64() -> str:
 
 
 class TestMCPReadTools:
-    @pytest.mark.asyncio
     async def test_search_documents(self, mcp_db):
         mcp = create_mcp_server(mcp_db)
         search = await _get_tool(mcp, "search_documents")
@@ -140,7 +139,6 @@ class TestMCPReadTools:
         assert blocks
         assert all("Content:" in block for block in blocks)
 
-    @pytest.mark.asyncio
     async def test_search_documents_with_limit(self, mcp_db):
         mcp = create_mcp_server(mcp_db)
         search = await _get_tool(mcp, "search_documents")
@@ -148,7 +146,6 @@ class TestMCPReadTools:
         blocks = _rendered(await search(query="artificial intelligence", limit=1))
         assert len(blocks) == 1
 
-    @pytest.mark.asyncio
     @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
     async def test_search_documents_with_filter(self, mcp_db):
         from fastmcp import Client
@@ -163,7 +160,6 @@ class TestMCPReadTools:
         assert blocks
         assert all('"ML Basics"' in block for block in blocks)
 
-    @pytest.mark.asyncio
     @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
     async def test_search_documents_carries_the_matched_chunks_metadata(self, mcp_db):
         """The chunk's own metadata reaches the text the model reads, over the
@@ -195,7 +191,6 @@ class TestMCPReadTools:
         assert "doc_item_refs" not in text
         assert result.structured_content is None
 
-    @pytest.mark.asyncio
     @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
     async def test_search_results_come_expanded(self, tmp_path):
         """The passage is the hit in its section, as the in-process agents read
@@ -209,7 +204,6 @@ class TestMCPReadTools:
         [hit] = _rendered(result)
         assert all(sentence in hit for sentence in sentences)
 
-    @pytest.mark.asyncio
     async def test_get_document(self, mcp_db):
         mcp = create_mcp_server(mcp_db)
         get_doc = await _get_tool(mcp, "get_document")
@@ -224,7 +218,6 @@ class TestMCPReadTools:
         assert result.content != ""
         assert result.title is not None
 
-    @pytest.mark.asyncio
     async def test_get_document_excludes_docling_fields(self, mcp_db):
         mcp = create_mcp_server(mcp_db)
         get_doc = await _get_tool(mcp, "get_document")
@@ -238,7 +231,6 @@ class TestMCPReadTools:
         assert "docling_document" not in serialized
         assert "docling_version" not in serialized
 
-    @pytest.mark.asyncio
     async def test_list_documents(self, mcp_db):
         mcp = create_mcp_server(mcp_db)
         list_docs = await _get_tool(mcp, "list_documents")
@@ -247,7 +239,6 @@ class TestMCPReadTools:
         assert len(results) == 2
         assert all(isinstance(r, DocumentInfo) for r in results)
 
-    @pytest.mark.asyncio
     async def test_list_documents_with_limit(self, mcp_db):
         mcp = create_mcp_server(mcp_db)
         list_docs = await _get_tool(mcp, "list_documents")
@@ -255,7 +246,6 @@ class TestMCPReadTools:
         results = await list_docs(limit=1)
         assert len(results) == 1
 
-    @pytest.mark.asyncio
     async def test_list_documents_with_filter(self, mcp_db):
         mcp = create_mcp_server(mcp_db)
         list_docs = await _get_tool(mcp, "list_documents")
@@ -264,7 +254,6 @@ class TestMCPReadTools:
         assert len(results) == 1
         assert results[0].title == "AI Overview"
 
-    @pytest.mark.asyncio
     @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
     async def test_list_documents_carries_metadata(self, mcp_db):
         from fastmcp import Client
@@ -333,7 +322,6 @@ async def outlined_db(temp_db_path):
 
 
 class TestMCPDocumentNavigation:
-    @pytest.mark.asyncio
     async def test_the_outline_nests_headings_by_level(self, outlined_db):
         db, doc_id = outlined_db
         outline = await _get_tool(create_mcp_server(db), "get_document_outline")
@@ -348,7 +336,6 @@ class TestMCPDocumentNavigation:
         assert intro.children[0].children[0].level == 3
         assert roots[1].children == []
 
-    @pytest.mark.asyncio
     async def test_a_document_without_headings_has_an_empty_outline(self, mcp_db):
         mcp = create_mcp_server(mcp_db)
         [doc] = await (await _get_tool(mcp, "list_documents"))(limit=1)
@@ -356,7 +343,6 @@ class TestMCPDocumentNavigation:
 
         assert await outline(document_id=doc.id) == []
 
-    @pytest.mark.asyncio
     async def test_a_section_covers_its_subsections_and_stops_at_its_sibling(
         self, outlined_db
     ):
@@ -379,7 +365,6 @@ class TestMCPDocumentNavigation:
         assert "para7" in intro.content
         assert "Methods" not in intro.content
 
-    @pytest.mark.asyncio
     async def test_a_section_stops_at_the_next_heading_across_a_position_gap(
         self, temp_db_path
     ):
@@ -419,7 +404,6 @@ class TestMCPDocumentNavigation:
 
         assert section.structured_content["content"] == "Intro\n\npara1"
 
-    @pytest.mark.asyncio
     async def test_an_unknown_section_or_document_is_an_error(self, outlined_db):
         db, doc_id = outlined_db
         mcp = create_mcp_server(db)
@@ -433,7 +417,6 @@ class TestMCPDocumentNavigation:
         with pytest.raises(ToolError, match="nonexistent-id"):
             await section(document_id="nonexistent-id", section_id="#/texts/0")
 
-    @pytest.mark.asyncio
     @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
     async def test_outline_and_section_serialize_over_the_wire(self, outlined_db):
         db, doc_id = outlined_db
@@ -456,7 +439,6 @@ class TestMCPDocumentNavigation:
         }
         assert section.structured_content["content"] == "Methods\n\npara9"
 
-    @pytest.mark.asyncio
     async def test_source_routes_to_the_database_holding_the_document(self, two_dbs):
         from haiku.rag.store.models.document_item import DocumentItem
 
@@ -503,7 +485,6 @@ class TestMCPSearchResultShape:
 
         monkeypatch.setattr(HaikuRAG, "search", fake_search)
 
-    @pytest.mark.asyncio
     async def test_text_ranks_then_one_image_per_distinct_picture(
         self, mcp_db, monkeypatch
     ):
@@ -561,7 +542,6 @@ class TestMCPSearchResultShape:
         ]
         assert result.structured_content is None
 
-    @pytest.mark.asyncio
     async def test_an_undecodable_picture_yields_no_image(self, mcp_db, monkeypatch):
         import base64
 
@@ -585,7 +565,6 @@ class TestMCPSearchResultShape:
         assert len(result.content) == 1
         assert "[rank 1 of 1]" in result.content[0].text
 
-    @pytest.mark.asyncio
     async def test_no_results_says_so(self, mcp_db, monkeypatch):
         self._serve(monkeypatch, [])
 
@@ -594,7 +573,6 @@ class TestMCPSearchResultShape:
         assert [block.text for block in result.content] == ["No results found."]
         assert result.structured_content is None
 
-    @pytest.mark.asyncio
     async def test_search_text_alone_drives_the_document_tools(self, two_dbs):
         """Over two databases, every result's `Document ID` and `Collection`
         parsed from the text are working arguments for the outline and
@@ -647,7 +625,6 @@ class TestMCPSearchResultShape:
 class TestMCPDescribesItself:
     """What a client learns from initialize and list_tools, over the wire."""
 
-    @pytest.mark.asyncio
     async def test_instructions_and_version_are_set(self, mcp_db):
         from importlib import metadata
 
@@ -661,7 +638,6 @@ class TestMCPDescribesItself:
         assert server_info is not None
         assert server_info.version == metadata.version("haiku.rag-slim")
 
-    @pytest.mark.asyncio
     async def test_instructions_name_the_collections_when_covering_several(
         self, two_dbs
     ):
@@ -679,7 +655,6 @@ class TestMCPDescribesItself:
         assert "beta" in covering_both
         assert "beta" not in covering_one
 
-    @pytest.mark.asyncio
     async def test_instructions_carry_the_domain_preamble(self, mcp_db):
         from fastmcp import Client
 
@@ -696,7 +671,6 @@ class TestMCPDescribesItself:
         assert "Everything here is about zebras." in with_preamble
         assert "zebras" not in without
 
-    @pytest.mark.asyncio
     async def test_every_tool_is_annotated_read_only(self, mcp_db, multimodal_embedder):
         from fastmcp import Client
 
@@ -710,7 +684,6 @@ class TestMCPDescribesItself:
             assert tool.annotations.open_world_hint is False, tool.name
             assert tool.annotations.title, tool.name
 
-    @pytest.mark.asyncio
     async def test_every_parameter_is_described(self, mcp_db, multimodal_embedder):
         from fastmcp import Client
 
@@ -728,7 +701,6 @@ class TestMCPDescribesItself:
 
 
 class TestMCPToolSet:
-    @pytest.mark.asyncio
     async def test_the_server_registers_read_tools_only(self, mcp_db):
         mcp = create_mcp_server(mcp_db)
 
@@ -755,7 +727,6 @@ class TestMCPExecuteCode:
     """`execute_code` runs one program per call in the analysis sandbox over
     the documents the filter and sources select, and returns what it printed."""
 
-    @pytest.mark.asyncio
     async def test_a_program_reads_the_documents_and_returns_what_it_printed(
         self, mcp_db
     ):
@@ -766,14 +737,12 @@ class TestMCPExecuteCode:
         assert not result.is_error
         assert result.content[0].text.strip() == "2"
 
-    @pytest.mark.asyncio
     async def test_a_silent_program_says_so(self, mcp_db):
         result = await _call(create_mcp_server(mcp_db), "execute_code", code="x = 1")
 
         assert not result.is_error
         assert result.content[0].text == "No output."
 
-    @pytest.mark.asyncio
     async def test_filter_narrows_the_documents_a_program_sees(self, mcp_db):
         result = await _call(
             create_mcp_server(mcp_db),
@@ -784,7 +753,6 @@ class TestMCPExecuteCode:
 
         assert result.content[0].text.strip() == "1"
 
-    @pytest.mark.asyncio
     async def test_sources_narrows_the_documents_a_program_sees(self, two_dbs):
         mcp = _covering_all(two_dbs)
 
@@ -794,7 +762,6 @@ class TestMCPExecuteCode:
         assert both.content[0].text.strip() == "2"
         assert beta.content[0].text.strip() == "1"
 
-    @pytest.mark.asyncio
     async def test_a_failing_program_is_an_error_carrying_the_cause_and_its_output(
         self, mcp_db
     ):
@@ -814,7 +781,6 @@ class TestMCPExecuteCode:
         assert ".readlines()" in text
         assert "Output: before" in text
 
-    @pytest.mark.asyncio
     async def test_calls_share_no_state(self, mcp_db):
         mcp = create_mcp_server(mcp_db)
 
@@ -825,7 +791,6 @@ class TestMCPExecuteCode:
         assert second.is_error
         assert "NameError" in second.content[0].text
 
-    @pytest.mark.asyncio
     async def test_every_call_closes_its_sandbox(self, mcp_db, monkeypatch):
         from haiku.rag.sandbox import Sandbox
 
@@ -845,7 +810,6 @@ class TestMCPExecuteCode:
         assert len(closed) == 2
         assert closed[0] is not closed[1]
 
-    @pytest.mark.asyncio
     async def test_a_program_reaches_chunk_metadata(self, mcp_db):
         async with HaikuRAG(mcp_db, create=True) as rag:
             doc = await rag.get_document_by_uri("test://ai-overview")
@@ -873,7 +837,6 @@ class TestMCPExecuteCode:
 
 
 class TestMCPCoversTheConfiguredSet:
-    @pytest.mark.asyncio
     async def test_results_name_the_database_they_came_from(self, two_dbs):
         mcp = _covering_all(two_dbs)
         search = await _get_tool(mcp, "search_documents")
@@ -882,7 +845,6 @@ class TestMCPCoversTheConfiguredSet:
 
         assert {_line(block, "Collection") for block in blocks} == {"alpha", "beta"}
 
-    @pytest.mark.asyncio
     async def test_sources_narrows_the_search(self, two_dbs):
         mcp = _covering_all(two_dbs)
         search = await _get_tool(mcp, "search_documents")
@@ -892,7 +854,6 @@ class TestMCPCoversTheConfiguredSet:
         assert blocks
         assert {_line(block, "Collection") for block in blocks} == {"beta"}
 
-    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "tool_name,kwargs",
         [
@@ -914,7 +875,6 @@ class TestMCPCoversTheConfiguredSet:
         assert result.is_error
         assert "nope" in result.content[0].text
 
-    @pytest.mark.asyncio
     async def test_a_filtered_search_touches_only_the_selected_databases(self, two_dbs):
         """alpha is gone; a filtered search selecting beta must not notice."""
         import shutil
@@ -931,7 +891,6 @@ class TestMCPCoversTheConfiguredSet:
         none = await search(query="cats", filter="uri LIKE '%beta%'", sources=[])
         assert _rendered(none) == []
 
-    @pytest.mark.asyncio
     async def test_the_listing_covers_every_database(self, two_dbs):
         mcp = _covering_all(two_dbs)
         list_docs = await _get_tool(mcp, "list_documents")
@@ -940,7 +899,6 @@ class TestMCPCoversTheConfiguredSet:
 
         assert {d.source for d in documents} == {"alpha", "beta"}
 
-    @pytest.mark.asyncio
     async def test_a_restricted_listing_touches_only_the_selected_databases(
         self, two_dbs
     ):
@@ -956,7 +914,6 @@ class TestMCPCoversTheConfiguredSet:
         assert documents
         assert {d.source for d in documents} == {"beta"}
 
-    @pytest.mark.asyncio
     async def test_get_document_reaches_whichever_database_holds_it(self, two_dbs):
         mcp = _covering_all(two_dbs)
         list_docs = await _get_tool(mcp, "list_documents")
@@ -969,7 +926,6 @@ class TestMCPCoversTheConfiguredSet:
         assert found.id == named.id == beta.id
         assert found.source == named.source == "beta"
 
-    @pytest.mark.asyncio
     async def test_the_public_factory_covers_a_configured_set(self, two_dbs):
         mcp = create_mcp_server(config=two_dbs)
         search = await _get_tool(mcp, "search_documents")
@@ -982,14 +938,12 @@ class TestMCPCoversTheConfiguredSet:
 class TestMCPImageQuery:
     """search_documents_by_image is registered only when the embedder is multimodal."""
 
-    @pytest.mark.asyncio
     async def test_image_query_tool_absent_for_text_only_embedder(self, mcp_db):
         """Default text-only embedder must not expose the image-query tool."""
         mcp = create_mcp_server(mcp_db)
         names = {t.name for t in await mcp.list_tools()}
         assert "search_documents_by_image" not in names
 
-    @pytest.mark.asyncio
     async def test_image_query_tool_registered_for_multimodal_embedder(
         self, mcp_db, multimodal_embedder, monkeypatch
     ):
@@ -1022,7 +976,6 @@ class TestMCPImageQuery:
         assert seen["filter"] == "uri LIKE 'x%'"
         assert seen["sources"] == []
 
-    @pytest.mark.asyncio
     async def test_image_query_rejects_characters_outside_the_alphabet(
         self, mcp_db, multimodal_embedder, monkeypatch
     ):
@@ -1048,7 +1001,6 @@ class TestMCPErrorContract:
     """A failure is an error on the wire carrying its message, never an empty
     result."""
 
-    @pytest.mark.asyncio
     async def test_an_unknown_document_is_an_error(self, mcp_db):
         result = await _call(
             create_mcp_server(mcp_db), "get_document", document_id="nonexistent-id"
@@ -1057,7 +1009,6 @@ class TestMCPErrorContract:
         assert result.is_error
         assert "nonexistent-id" in result.content[0].text
 
-    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "tool_name,kwargs",
         [
@@ -1074,7 +1025,6 @@ class TestMCPErrorContract:
         assert result.is_error
         assert "no_such_column" in result.content[0].text
 
-    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "payload", ["!!! not base64 !!!", "é"], ids=["outside_alphabet", "non_ascii"]
     )
@@ -1088,7 +1038,6 @@ class TestMCPErrorContract:
         assert result.is_error
         assert "base64" in result.content[0].text
 
-    @pytest.mark.asyncio
     async def test_a_host_failure_inside_a_program_carries_its_message(
         self, mcp_db, monkeypatch
     ):
@@ -1106,7 +1055,6 @@ class TestMCPErrorContract:
         assert result.is_error
         assert "RuntimeError: boom at /secret/path" in result.content[0].text
 
-    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "client_method,tool_name,kwargs",
         [
@@ -1164,7 +1112,6 @@ class TestAgentPlugins:
         assert codex_entry["source"]["path"] == "./plugins/haiku-rag"
         assert servers["mcpServers"]["haiku-rag"]["args"] == ["mcp", "--stdio"]
 
-    @pytest.mark.asyncio
     async def test_the_skill_pre_approves_every_tool_the_server_registers(
         self, mcp_db, multimodal_embedder
     ):
@@ -1184,7 +1131,6 @@ class TestAgentPlugins:
 
 
 class TestMCPClientLifetime:
-    @pytest.mark.asyncio
     async def test_tool_calls_share_one_database_open(self, mcp_db, monkeypatch):
         from haiku.rag.store.engine import Store
 
@@ -1207,7 +1153,6 @@ class TestMCPClientLifetime:
 
         assert opens == 1
 
-    @pytest.mark.asyncio
     async def test_concurrent_reads_share_one_open(self, mcp_db, monkeypatch):
         import asyncio
 
@@ -1231,7 +1176,6 @@ class TestMCPClientLifetime:
         assert opens == 1
         assert all(len(r) == 2 for r in results)
 
-    @pytest.mark.asyncio
     async def test_lifespan_opens_and_closes_once(self, mcp_db, monkeypatch):
         from haiku.rag.store.engine import Store
 
@@ -1256,7 +1200,6 @@ class TestMCPClientLifetime:
 
         assert opens == 1
 
-    @pytest.mark.asyncio
     async def test_the_scope_decides_the_database_and_names_its_results(
         self, mcp_db, tmp_path
     ):
@@ -1301,7 +1244,6 @@ class TestMCPClientLifetime:
         with pytest.raises(AmbiguousDatabaseError, match="alpha"):
             create_mcp_server(tmp_path / "other.lancedb", config=config)
 
-    @pytest.mark.asyncio
     async def test_the_command_hands_the_server_its_resolved_database(
         self, monkeypatch
     ):
@@ -1337,7 +1279,6 @@ class TestMCPClientLifetime:
         # The caller's configuration, not one derived from the ref.
         assert seen["config"].lancedb.databases == {"prod": "s3://bucket/prod.lancedb"}
 
-    @pytest.mark.asyncio
     async def test_startup_fails_when_the_database_cannot_open(self, tmp_path):
         mcp = create_mcp_server(tmp_path / "does-not-exist.lancedb")
 
@@ -1345,7 +1286,6 @@ class TestMCPClientLifetime:
             async with mcp._lifespan_manager():
                 pass
 
-    @pytest.mark.asyncio
     async def test_a_second_lifespan_cycle_opens_a_fresh_client(
         self, mcp_db, monkeypatch
     ):
@@ -1373,7 +1313,6 @@ class TestMCPClientLifetime:
         assert opens == 2
         assert blocks
 
-    @pytest.mark.asyncio
     async def test_same_dim_drift_starts(self, mcp_db):
         """Same-dimension identity drift warns on a read-only open and raises
         on a writable one; the server starts, so it opened read-only."""

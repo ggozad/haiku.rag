@@ -29,7 +29,6 @@ def test_source_id_is_user_provided():
     assert HTTPSource(source_id="arxiv").source_id == "arxiv"
 
 
-@pytest.mark.asyncio
 async def test_head_returns_etag():
     transport = _transport(
         {
@@ -42,7 +41,6 @@ async def test_head_returns_etag():
     assert await src.head("https://example.com/a.md") == "rev-7"
 
 
-@pytest.mark.asyncio
 async def test_head_falls_back_to_last_modified():
     transport = _transport(
         {
@@ -55,7 +53,6 @@ async def test_head_falls_back_to_last_modified():
     assert await src.head("https://example.com/a.md") == "Wed, 21 Oct 2025 07:28:00 GMT"
 
 
-@pytest.mark.asyncio
 async def test_head_returns_none_on_error_status():
     transport = _transport(
         {("HEAD", "https://example.com/missing"): httpx.Response(404)}
@@ -64,14 +61,12 @@ async def test_head_returns_none_on_error_status():
     assert await src.head("https://example.com/missing") is None
 
 
-@pytest.mark.asyncio
 async def test_head_returns_none_when_no_revision_headers():
     transport = _transport({("HEAD", "https://example.com/a"): httpx.Response(200)})
     src = HTTPSource(source_id="default", transport=transport)
     assert await src.head("https://example.com/a") is None
 
 
-@pytest.mark.asyncio
 async def test_fetch_returns_bytes_and_md5_and_etag():
     body = b"hello world"
     transport = _transport(
@@ -99,7 +94,6 @@ async def test_fetch_returns_bytes_and_md5_and_etag():
     assert result.extra_metadata["last_modified"] == "Wed, 21 Oct 2025 07:28:00 GMT"
 
 
-@pytest.mark.asyncio
 async def test_fetch_falls_back_to_last_modified_when_no_etag():
     transport = _transport(
         {
@@ -118,7 +112,6 @@ async def test_fetch_falls_back_to_last_modified_when_no_etag():
     assert result.revision == "Wed, 21 Oct 2025 07:28:00 GMT"
 
 
-@pytest.mark.asyncio
 async def test_fetch_no_revision_when_neither_header_present():
     transport = _transport(
         {
@@ -132,7 +125,6 @@ async def test_fetch_no_revision_when_neither_header_present():
     assert result.revision is None
 
 
-@pytest.mark.asyncio
 async def test_fetch_strips_content_type_parameters():
     transport = _transport(
         {
@@ -148,14 +140,12 @@ async def test_fetch_strips_content_type_parameters():
     assert result.content_type == "text/html"
 
 
-@pytest.mark.asyncio
 async def test_fetch_raises_on_error_status():
     src = HTTPSource(source_id="default", transport=_transport({}))
     with pytest.raises(httpx.HTTPStatusError):
         await src.fetch("https://example.com/missing")
 
 
-@pytest.mark.asyncio
 async def test_fetch_sends_configured_headers():
     seen: dict[str, str] = {}
 
@@ -172,13 +162,11 @@ async def test_fetch_sends_configured_headers():
     assert seen.get("authorization") == "Bearer abc"
 
 
-@pytest.mark.asyncio
 async def test_discover_empty_when_no_urls_configured():
     src = HTTPSource(source_id="default")
     assert [e async for e in src.discover()] == []
 
 
-@pytest.mark.asyncio
 async def test_discover_yields_upsert_for_each_configured_url():
     transport = _transport(
         {
@@ -204,7 +192,6 @@ async def test_discover_yields_upsert_for_each_configured_url():
     assert {e.revision for e in events} == {"abc", "def"}
 
 
-@pytest.mark.asyncio
 async def test_discover_unchanged_against_matching_snapshot():
     transport = _transport(
         {
@@ -221,7 +208,6 @@ async def test_discover_unchanged_against_matching_snapshot():
     assert events[0].kind is SourceEventKind.UNCHANGED
 
 
-@pytest.mark.asyncio
 async def test_discover_emits_delete_on_410_gone():
     transport = _transport(
         {
@@ -241,7 +227,6 @@ async def test_discover_emits_delete_on_410_gone():
 
 
 @pytest.mark.parametrize("status", [404, 401, 403, 405, 500, 502, 503])
-@pytest.mark.asyncio
 async def test_discover_treats_non_410_errors_as_upsert(status):
     transport = _transport(
         {
@@ -257,7 +242,6 @@ async def test_discover_treats_non_410_errors_as_upsert(status):
     assert events[0].revision is None
 
 
-@pytest.mark.asyncio
 async def test_discover_treats_network_errors_as_upsert():
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("boom")
@@ -273,7 +257,6 @@ async def test_discover_treats_network_errors_as_upsert():
     assert events[0].revision is None
 
 
-@pytest.mark.asyncio
 async def test_discover_emits_delete_for_removed_url():
     """A URI that was previously in config (and therefore in the snapshot)
     but is no longer configured emits DELETE so the poller can clean up
@@ -301,7 +284,6 @@ async def test_discover_emits_delete_for_removed_url():
     assert by_uri["https://example.com/gone.md"].revision is None
 
 
-@pytest.mark.asyncio
 async def test_discover_emits_delete_for_removed_url_with_no_revision_tracked():
     """known_uris alone determines config-removal DELETE — a URL the
     source has seen before but never had a revision for (HTTP without
@@ -326,7 +308,6 @@ async def test_discover_emits_delete_for_removed_url_with_no_revision_tracked():
     assert by_uri["https://example.com/no-etag.md"].kind is SourceEventKind.DELETE
 
 
-@pytest.mark.asyncio
 async def test_discover_propagates_non_transport_errors():
     """Programming errors (TypeError, etc.) should propagate instead of
     being silently swallowed as UPSERT events."""
@@ -344,7 +325,6 @@ async def test_discover_propagates_non_transport_errors():
             pass
 
 
-@pytest.mark.asyncio
 async def test_discover_emits_unchanged_for_known_url_without_revision():
     """A server that returns no ETag or Last-Modified should not cause
     re-ingestion every sweep once the URL has been ingested."""
@@ -358,7 +338,6 @@ async def test_discover_emits_unchanged_for_known_url_without_revision():
     assert events[0].revision is None
 
 
-@pytest.mark.asyncio
 async def test_discover_emits_upsert_for_unknown_url_without_revision():
     """A brand-new URL with no revision should still UPSERT on first sight."""
     transport = _transport(
@@ -372,7 +351,6 @@ async def test_discover_emits_upsert_for_unknown_url_without_revision():
     assert events[0].kind is SourceEventKind.UPSERT
 
 
-@pytest.mark.asyncio
 async def test_fetch_rejects_file_exceeding_max_size():
     transport = _transport(
         {
@@ -386,7 +364,6 @@ async def test_fetch_rejects_file_exceeding_max_size():
         await src.fetch("https://example.com/big.bin")
 
 
-@pytest.mark.asyncio
 async def test_fetch_allows_file_within_max_size():
     body = b"small"
     transport = _transport(
@@ -404,7 +381,6 @@ async def test_fetch_allows_file_within_max_size():
     assert result.body == body
 
 
-@pytest.mark.asyncio
 async def test_fetch_skips_head_when_no_max_size():
     """When max_file_size is None, no HEAD request is made."""
     calls = []
@@ -424,7 +400,6 @@ async def test_fetch_skips_head_when_no_max_size():
     assert calls == ["GET"]
 
 
-@pytest.mark.asyncio
 async def test_aclose_closes_the_http_client():
     src = HTTPSource(
         source_id="urls",

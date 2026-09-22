@@ -1,5 +1,3 @@
-import pytest
-
 from haiku.rag.client.documents import _store_document_with_chunks
 from haiku.rag.context import (
     _clip_to_budget,
@@ -329,7 +327,6 @@ class TestClipToBudget:
         assert marker in clipped
 
 
-@pytest.mark.asyncio
 async def _fetch_and_expand(repo, document_id, results, max_chars):
     """Do the fetching `expand_context` does, for tests exercising the
     expansion logic rather than the batched fetch."""
@@ -1374,7 +1371,6 @@ class TestExpandWithItems:
             assert "M" * 500 in expanded[0].content
 
 
-@pytest.mark.asyncio
 class TestExpandWithItemsPictureBytes:
     """Picture bytes only ride along for refs present in the pre-expansion
     chunk. Pictures swept in by section expansion are still referenced in
@@ -1555,7 +1551,6 @@ class TestSpanInWindow:
         assert _span_in_window((30, 30, item), 0, 20) is False
 
 
-@pytest.mark.asyncio
 class TestExpandWithItemsWindowEdges:
     async def test_empty_window_returns_original_results(
         self, temp_db_path, monkeypatch

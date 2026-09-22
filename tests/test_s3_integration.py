@@ -91,7 +91,6 @@ async def _remote_client(config: AppConfig):
         yield rag
 
 
-@pytest.mark.asyncio
 async def test_store_connect_and_create(tmp_path, config):
     from haiku.rag.store.info import get_database_stats
 
@@ -101,13 +100,11 @@ async def test_store_connect_and_create(tmp_path, config):
         assert stats["chunks"]["exists"]
 
 
-@pytest.mark.asyncio
 async def test_store_vacuum(tmp_path, config):
     async with Store(_uri(config), config=config, create=True) as store:
         await store.vacuum()
 
 
-@pytest.mark.asyncio
 async def test_store_add_document(tmp_path, config):
     from haiku.rag.store.info import get_database_stats
     from haiku.rag.store.schema import DocumentRecord
@@ -120,7 +117,6 @@ async def test_store_add_document(tmp_path, config):
         assert stats["documents"]["num_rows"] == 1
 
 
-@pytest.mark.asyncio
 async def test_client_create_document(config):
     async with _remote_client(config) as rag:
         doc = await rag.create_document(
@@ -130,7 +126,6 @@ async def test_client_create_document(config):
         assert doc.uri == "test://python"
 
 
-@pytest.mark.asyncio
 async def test_client_list_documents(config):
     async with _remote_client(config) as rag:
         await rag.create_document("First document.", uri="test://first")
@@ -140,7 +135,6 @@ async def test_client_list_documents(config):
         assert len(docs) == 2
 
 
-@pytest.mark.asyncio
 async def test_client_search(config):
     async with _remote_client(config) as rag:
         await rag.create_document(
@@ -151,7 +145,6 @@ async def test_client_search(config):
         assert "Eiffel" in results[0].content
 
 
-@pytest.mark.asyncio
 async def test_client_delete_document(config):
     async with _remote_client(config) as rag:
         doc = await rag.create_document("Temporary document.", uri="test://temp")
@@ -160,7 +153,6 @@ async def test_client_delete_document(config):
         assert len(docs) == 0
 
 
-@pytest.mark.asyncio
 async def test_app_info(capsys, config):
     async with _remote_client(config) as rag:
         await rag.create_document("Info test document.", uri="test://info")
@@ -174,7 +166,6 @@ async def test_app_info(capsys, config):
     assert "documents: 1" in out
 
 
-@pytest.mark.asyncio
 async def test_app_info_empty_db(capsys, config):
     app = HaikuRAGApp(scope=_remote_scope(config), config=config)
     await app.info()

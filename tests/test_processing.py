@@ -114,7 +114,6 @@ def test_no_warning_when_at_least_one_description_came_back(caplog_warnings):
     assert caplog_warnings == []
 
 
-@pytest.mark.asyncio
 async def test_convert_emits_warning_via_chokepoint(
     monkeypatch, tmp_path, caplog_warnings
 ):
@@ -159,7 +158,6 @@ async def test_convert_emits_warning_via_chokepoint(
     )
 
 
-@pytest.mark.asyncio
 async def test_convert_text_path_also_warns(monkeypatch, caplog_warnings):
     """Raw text input (HTML, markdown) can still produce pictures via
     docling, so the description-missing check must run on the
@@ -213,7 +211,6 @@ def test_merge_picture_chunks_no_pictures_returns_text_chunks():
     assert [c.order for c in result] == [0, 1]
 
 
-@pytest.mark.asyncio
 async def test_convert_dispatches_large_pdfs_through_split_and_merge(
     tmp_path, monkeypatch
 ):
@@ -250,7 +247,6 @@ def _write_unsupported(directory):
     return target.as_uri()
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "make_source,match",
     [
@@ -266,7 +262,6 @@ async def test_convert_rejects_bad_file_uris(tmp_path, make_source, match):
         await convert(AppConfig(), make_source(tmp_path))
 
 
-@pytest.mark.asyncio
 async def test_convert_percent_encoded_file_uri(tmp_path):
     """`Path.as_uri()` encodes brackets and spaces; convert must decode them."""
     target = tmp_path / "a[b] c.md"

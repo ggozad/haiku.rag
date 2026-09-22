@@ -46,14 +46,12 @@ def captured_run(monkeypatch):
     return captured
 
 
-@pytest.mark.asyncio
 async def test_ask_without_images_passes_plain_string(temp_db_path: Path, captured_run):
     async with HaikuRAG(temp_db_path, config=AppConfig(), create=True) as client:
         await client.ask("What is this?")
     assert captured_run["user_prompt"] == "What is this?"
 
 
-@pytest.mark.asyncio
 async def test_ask_with_images_passes_binary_content(temp_db_path: Path, captured_run):
     config = AppConfig()
     config.qa.model.vision = True
@@ -67,7 +65,6 @@ async def test_ask_with_images_passes_binary_content(temp_db_path: Path, capture
     assert prompt[1].media_type == "image/png"
 
 
-@pytest.mark.asyncio
 async def test_ask_with_images_requires_vision_model(temp_db_path: Path):
     config = AppConfig()
     config.qa.model.vision = False

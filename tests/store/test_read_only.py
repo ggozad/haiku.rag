@@ -30,7 +30,6 @@ class TestReadOnlyError:
 
 
 class TestStoreReadOnly:
-    @pytest.mark.asyncio
     async def test_store_read_only_raises_on_empty_directory(self, tmp_path):
         """Opening an empty directory in read-only mode raises ReadOnlyError."""
         empty_dir = tmp_path / "empty_db"
@@ -47,13 +46,11 @@ class TestStoreReadOnly:
             ):
                 pass
 
-    @pytest.mark.asyncio
     async def test_store_default_is_not_read_only(self, temp_db_path):
         """Store defaults to not read-only."""
         async with Store(temp_db_path, create=True) as store:
             assert store.is_read_only is False
 
-    @pytest.mark.asyncio
     async def test_store_can_be_created_read_only(self, temp_db_path):
         """Store can be created with read_only=True."""
         # First create a normal store to initialize the database
@@ -64,7 +61,6 @@ class TestStoreReadOnly:
         async with Store(temp_db_path, read_only=True) as store:
             assert store.is_read_only is True
 
-    @pytest.mark.asyncio
     async def test_assert_writable_raises_when_read_only(self, temp_db_path):
         """_assert_writable() raises ReadOnlyError when read_only=True."""
         async with Store(temp_db_path, create=True):
@@ -74,13 +70,11 @@ class TestStoreReadOnly:
             with pytest.raises(ReadOnlyError):
                 store._assert_writable()
 
-    @pytest.mark.asyncio
     async def test_assert_writable_passes_when_not_read_only(self, temp_db_path):
         """_assert_writable() does not raise when read_only=False."""
         async with Store(temp_db_path, create=True) as store:
             store._assert_writable()  # Should not raise
 
-    @pytest.mark.asyncio
     async def test_vacuum_raises_when_read_only(self, temp_db_path):
         """vacuum() raises ReadOnlyError when read_only=True."""
         async with Store(temp_db_path, create=True):
@@ -90,7 +84,6 @@ class TestStoreReadOnly:
             with pytest.raises(ReadOnlyError):
                 await store.vacuum()
 
-    @pytest.mark.asyncio
     async def test_set_haiku_version_raises_when_read_only(self, temp_db_path):
         """set_haiku_version() raises ReadOnlyError when read_only=True."""
         async with Store(temp_db_path, create=True):
@@ -100,7 +93,6 @@ class TestStoreReadOnly:
             with pytest.raises(ReadOnlyError):
                 await store.set_haiku_version("1.0.0")
 
-    @pytest.mark.asyncio
     async def test_recreate_embeddings_table_raises_when_read_only(self, temp_db_path):
         """recreate_embeddings_table() raises ReadOnlyError when read_only=True."""
         async with Store(temp_db_path, create=True):
@@ -110,7 +102,6 @@ class TestStoreReadOnly:
             with pytest.raises(ReadOnlyError):
                 await store.recreate_embeddings_table()
 
-    @pytest.mark.asyncio
     async def test_write_transaction_raises_when_read_only(self, temp_db_path):
         """write_transaction() raises ReadOnlyError when read_only=True."""
         async with Store(temp_db_path, create=True):
@@ -123,7 +114,6 @@ class TestStoreReadOnly:
 
 
 class TestDocumentRepositoryReadOnly:
-    @pytest.mark.asyncio
     async def test_create_raises_when_read_only(self, temp_db_path):
         """DocumentRepository.create() raises ReadOnlyError when read_only=True."""
         async with Store(temp_db_path, create=True):
@@ -136,7 +126,6 @@ class TestDocumentRepositoryReadOnly:
             with pytest.raises(ReadOnlyError):
                 await repo.create(doc)
 
-    @pytest.mark.asyncio
     async def test_update_raises_when_read_only(self, temp_db_path):
         """DocumentRepository.update() raises ReadOnlyError when read_only=True."""
         # First create a document
@@ -153,7 +142,6 @@ class TestDocumentRepositoryReadOnly:
             with pytest.raises(ReadOnlyError):
                 await repo.update(created_doc)
 
-    @pytest.mark.asyncio
     async def test_delete_raises_when_read_only(self, temp_db_path):
         """DocumentRepository.delete() raises ReadOnlyError when read_only=True."""
         # First create a document
@@ -171,7 +159,6 @@ class TestDocumentRepositoryReadOnly:
             with pytest.raises(ReadOnlyError):
                 await repo.delete(doc_id)
 
-    @pytest.mark.asyncio
     async def test_delete_all_raises_when_read_only(self, temp_db_path):
         """DocumentRepository.delete_all() raises ReadOnlyError when read_only=True."""
         async with Store(temp_db_path, create=True):
@@ -185,7 +172,6 @@ class TestDocumentRepositoryReadOnly:
 
 
 class TestChunkRepositoryReadOnly:
-    @pytest.mark.asyncio
     async def test_create_raises_when_read_only(self, temp_db_path):
         """ChunkRepository.create() raises ReadOnlyError when read_only=True."""
         # First create a document to have a valid document_id
@@ -205,7 +191,6 @@ class TestChunkRepositoryReadOnly:
             with pytest.raises(ReadOnlyError):
                 await repo.create(chunk)
 
-    @pytest.mark.asyncio
     async def test_delete_by_document_id_raises_when_read_only(self, temp_db_path):
         """ChunkRepository.delete_by_document_id() raises ReadOnlyError when read_only=True."""
         async with Store(temp_db_path, create=True):
@@ -217,7 +202,6 @@ class TestChunkRepositoryReadOnly:
             with pytest.raises(ReadOnlyError):
                 await repo.delete_by_document_id("some-id")
 
-    @pytest.mark.asyncio
     async def test_delete_all_raises_when_read_only(self, temp_db_path):
         """ChunkRepository.delete_all() raises ReadOnlyError when read_only=True."""
         async with Store(temp_db_path, create=True):
@@ -231,7 +215,6 @@ class TestChunkRepositoryReadOnly:
 
 
 class TestSettingsRepositoryReadOnly:
-    @pytest.mark.asyncio
     async def test_save_current_settings_raises_when_read_only(self, temp_db_path):
         """SettingsRepository.save_current_settings() raises ReadOnlyError when read_only=True."""
         async with Store(temp_db_path, create=True):
@@ -245,13 +228,11 @@ class TestSettingsRepositoryReadOnly:
 
 
 class TestClientReadOnly:
-    @pytest.mark.asyncio
     async def test_client_default_is_not_read_only(self, temp_db_path):
         """Client defaults to not read-only."""
         async with HaikuRAG(temp_db_path, create=True) as client:
             assert client.is_read_only is False
 
-    @pytest.mark.asyncio
     async def test_client_can_be_created_read_only(self, temp_db_path):
         """Client can be created with read_only=True."""
         async with HaikuRAG(temp_db_path, create=True):
@@ -304,7 +285,6 @@ class TestClientReadOnly:
 
 
 class TestAppReadVerbsDoNotWrite:
-    @pytest.mark.asyncio
     async def test_read_verb_leaves_settings_and_version_unchanged_on_drift(
         self, temp_db_path
     ):
@@ -334,7 +314,6 @@ class TestAppReadVerbsDoNotWrite:
         assert stored_name_after == stored_name_before
         assert version_after == version_before
 
-    @pytest.mark.asyncio
     async def test_list_works_with_mismatched_embeddings_config(self, temp_db_path):
         """list skips the embeddings compatibility check and never writes."""
         from haiku.rag.app import HaikuRAGApp
@@ -355,7 +334,6 @@ class TestAppReadVerbsDoNotWrite:
             settings_after = await SettingsRepository(store).get_current_settings()
         assert settings_after == settings_before
 
-    @pytest.mark.asyncio
     async def test_get_works_with_mismatched_embeddings_config(self, temp_db_path):
         """get skips the embeddings compatibility check."""
         from haiku.rag.app import HaikuRAGApp
@@ -373,7 +351,6 @@ class TestAppReadVerbsDoNotWrite:
         assert doc.id is not None
         await app.get_document(doc.id)
 
-    @pytest.mark.asyncio
     async def test_visualize_works_with_mismatched_embeddings_config(
         self, temp_db_path
     ):
@@ -390,7 +367,6 @@ class TestAppReadVerbsDoNotWrite:
         app = HaikuRAGApp(scope=for_path(temp_db_path, drift), config=drift)
         await app.visualize_chunk("missing-chunk-id")
 
-    @pytest.mark.asyncio
     async def test_write_verb_raises_on_drift_without_writing(self, temp_db_path):
         """A write CLI verb opens writable: drift raises before any write."""
         from haiku.rag.app import HaikuRAGApp

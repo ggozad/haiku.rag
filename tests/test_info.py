@@ -1,15 +1,12 @@
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from haiku.rag.app import HaikuRAGApp
 from haiku.rag.config.models import AppConfig, LanceDBConfig
 from haiku.rag.store.schema import DocumentItemRecord
 from tests.conftest import for_path
 
 
-@pytest.mark.asyncio
 async def test_app_info_outputs(temp_db_path, capsys):
     # Build a minimal LanceDB with settings, documents, and chunks without using Store
     import lancedb
@@ -92,7 +89,6 @@ async def test_app_info_outputs(temp_db_path, capsys):
     assert "pydantic-ai:" in out
 
 
-@pytest.mark.asyncio
 async def test_app_info_with_vector_index(temp_db_path, capsys):
     # Build a database with enough chunks to create a vector index
     import lancedb
@@ -164,7 +160,6 @@ async def test_app_info_with_vector_index(temp_db_path, capsys):
     assert "chunks: 512" in out
 
 
-@pytest.mark.asyncio
 async def test_app_info_opens_a_named_remote_database(tmp_path):
     """A database named in `lancedb.databases` can sit behind a URI while the
     configuration's own `uri` is empty; info derives and opens the URI."""
@@ -232,7 +227,6 @@ async def test_app_info_uses_connect_lancedb_for_remote(tmp_path):
     assert mock_connect.call_args.args[0] == "s3://bucket/path"
 
 
-@pytest.mark.asyncio
 async def test_app_info_with_missing_document_items_table(temp_db_path, capsys):
     """info() should still output database info and report pending migrations
     when a required table is absent (as for a DB created before 0.40.0)."""
@@ -303,7 +297,6 @@ async def test_app_info_with_missing_document_items_table(temp_db_path, capsys):
     assert "haiku-rag migrate" in out
 
 
-@pytest.mark.asyncio
 async def test_app_info_reports_up_to_date(temp_db_path, capsys):
     """info() should report the database is up to date when no migrations
     are pending."""
@@ -363,7 +356,6 @@ async def test_app_info_reports_up_to_date(temp_db_path, capsys):
     assert "migration(s) pending" not in out
 
 
-@pytest.mark.asyncio
 async def test_app_init_skips_exists_check_for_remote(tmp_path):
     """init() should not check db_path.exists() for remote URIs."""
     config = AppConfig(
@@ -384,7 +376,6 @@ async def test_app_init_skips_exists_check_for_remote(tmp_path):
         mock_client_cls._covering.assert_called_once()
 
 
-@pytest.mark.asyncio
 async def test_app_history_skips_exists_check_for_remote(tmp_path):
     """history() should not check db_path.exists() for remote URIs."""
     config = AppConfig(
@@ -405,7 +396,6 @@ async def test_app_history_skips_exists_check_for_remote(tmp_path):
         mock_store_cls.assert_called_once()
 
 
-@pytest.mark.asyncio
 async def test_app_tag_rendering_escapes_markup(tmp_path):
     """lance forbids markup characters in ref names, but externally created
     tags are rendered defensively: markup-looking names must come out as
@@ -442,7 +432,6 @@ async def test_app_tag_rendering_escapes_markup(tmp_path):
     assert output.count(hostile) == 2
 
 
-@pytest.mark.asyncio
 async def test_app_history_survives_tag_annotation_failure(tmp_path):
     """history degrades to version history without annotations, with a
     warning, when aggregate tag loading fails."""

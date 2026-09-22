@@ -55,7 +55,6 @@ def test_inspect_command():
         mock_inspector.assert_called_once()
 
 
-@pytest.mark.asyncio
 async def test_document_list_loads_initial_batch():
     """Test that DocumentList loads only the initial batch on startup."""
     from textual.app import App
@@ -89,7 +88,6 @@ async def test_document_list_loads_initial_batch():
         assert call_kwargs.kwargs.get("limit") is not None
 
 
-@pytest.mark.asyncio
 async def test_document_list_load_more():
     """Test that DocumentList can load more documents."""
     from textual.app import App
@@ -130,7 +128,6 @@ async def test_document_list_load_more():
         assert second_call.kwargs.get("offset") == 50
 
 
-@pytest.mark.asyncio
 async def test_document_list_tracks_has_more():
     """Test that DocumentList tracks whether more documents are available."""
     from textual.app import App
@@ -167,7 +164,6 @@ async def test_document_list_tracks_has_more():
         assert doc_list.has_more is False
 
 
-@pytest.mark.asyncio
 async def test_detail_view_shows_chunk_metadata():
     """show_chunk renders metadata keys _format_provenance doesn't already
     cover, but not a duplicate of the standard fields it does (headings,
@@ -197,7 +193,6 @@ async def test_detail_view_shows_chunk_metadata():
         assert "headings:" not in source  # already shown as **Section:**
 
 
-@pytest.mark.asyncio
 async def test_detail_view_omits_metadata_block_when_only_standard_fields():
     """No **Metadata:** block at all when chunk.metadata holds nothing
     beyond what _format_provenance already renders."""
@@ -224,7 +219,6 @@ async def test_detail_view_omits_metadata_block_when_only_standard_fields():
         assert "**Metadata:**" not in source
 
 
-@pytest.mark.asyncio
 async def test_detail_view_shows_search_result_chunk_meta():
     """show_search_result renders SearchResult.chunk_meta's non-standard
     keys, the anchor chunk's own metadata carried through search/expansion."""
@@ -261,7 +255,6 @@ async def test_detail_view_shows_search_result_chunk_meta():
         assert "doc_item_refs:" not in source
 
 
-@pytest.mark.asyncio
 async def test_context_modal_renders_pictures_when_vision_enabled():
     """ContextModal must mount one TextualImage per attached picture
     when qa.model.vision is True — that's what the LLM actually sees."""
@@ -291,7 +284,6 @@ async def test_context_modal_renders_pictures_when_vision_enabled():
         assert len(images) == 2
 
 
-@pytest.mark.asyncio
 async def test_context_modal_suppresses_pictures_when_vision_disabled():
     """ContextModal must NOT mount picture widgets when vision is off,
     even if expansion attached image_data — text-only models would never
@@ -321,7 +313,6 @@ async def test_context_modal_suppresses_pictures_when_vision_disabled():
         assert list(modal.query(TextualImage)) == []
 
 
-@pytest.mark.asyncio
 async def test_inspector_open_failure_surfaces_real_error(tmp_path):
     """A failed database open must surface its own error, not an
     AttributeError from tearing down a client that never opened."""
@@ -361,7 +352,6 @@ class TestReportedLocation:
 
 
 class TestReportingReusesTheConnection:
-    @pytest.mark.asyncio
     async def test_statistics_come_from_the_open_connection(
         self, tmp_path, monkeypatch
     ):
@@ -395,7 +385,6 @@ class TestReportingReusesTheConnection:
         assert asked == [connection]
         assert any("documents" in line for line in lines)
 
-    @pytest.mark.asyncio
     async def test_settings_come_from_the_store_that_parsed_them(
         self, tmp_path, monkeypatch
     ):
@@ -430,7 +419,6 @@ class TestReportingReusesTheConnection:
 
 
 class TestReportingEachDatabase:
-    @pytest.mark.asyncio
     async def test_a_database_that_cannot_be_opened_reports_itself(self):
         """One unreachable database must not cost the report on the others."""
         from haiku.rag.inspector.widgets.info_modal import InfoModal
@@ -448,7 +436,6 @@ class TestReportingEachDatabase:
         assert lines[0] == "[bold]beta[/bold]"
         assert "could not be opened" in lines[1]
 
-    @pytest.mark.asyncio
     async def test_a_failure_with_bracketed_text_renders_literally(self):
         """Error text and database names render verbatim, not as Rich markup."""
         from rich.text import Text
@@ -467,7 +454,6 @@ class TestReportingEachDatabase:
         assert Text.from_markup(lines[0]).plain == "beta [prod]"
         assert message in Text.from_markup(lines[1]).plain
 
-    @pytest.mark.asyncio
     async def test_an_open_failure_with_bracketed_text_renders_literally(
         self, tmp_path
     ):

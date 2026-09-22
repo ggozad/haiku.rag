@@ -1,5 +1,3 @@
-import pytest
-
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.documents import (
     _store_document_with_chunks,
@@ -247,7 +245,6 @@ class TestExtractItemsTableSerializer:
         assert extract_item_text(doc.tables[0], doc) == expected
 
 
-@pytest.mark.asyncio
 class TestDocumentItemRepository:
     async def test_create_and_get_range(self, temp_db_path):
         async with HaikuRAG(temp_db_path, create=True) as rag:
@@ -400,7 +397,6 @@ class TestDocumentItemRepository:
             assert positions == sorted(positions)
 
 
-@pytest.mark.asyncio
 class TestDocumentItemPopulation:
     async def test_store_document_populates_items(self, temp_db_path):
         """Test that _store_document_with_chunks populates items when given a docling_document."""
@@ -485,7 +481,6 @@ class TestDocumentItemPopulation:
             assert await rag.document_item_repository.get_item_count(created.id) == 0
 
 
-@pytest.mark.asyncio
 class TestDocumentItemMigration:
     async def test_migration_populates_items_for_existing_documents(self, temp_db_path):
         """Test that the v0.40.0 migration populates items for pre-existing documents."""
@@ -554,7 +549,6 @@ class TestDocumentItemMigration:
             assert await store.document_items_table.count_rows() == 0
 
 
-@pytest.mark.asyncio
 class TestPictureDataStorage:
     async def test_create_and_get_picture_bytes(self, temp_db_path):
         """Round-trip picture bytes through DocumentItem and the repository."""
@@ -740,7 +734,6 @@ class TestCompressDoclingSplitStripsPictureUris:
         assert pages_bytes is None  # no pages in this fixture
 
 
-@pytest.mark.asyncio
 class TestPictureDataMigrationBackfill:
     """0.45.0 migration backfills picture_data and strips URIs from blobs."""
 
@@ -832,7 +825,6 @@ class TestPictureDataMigrationBackfill:
             assert decoded["pictures"][0]["image"] is None
 
 
-@pytest.mark.asyncio
 class TestPictureDataPreservedThroughRoundTrip:
     """Snapshot/merge keeps picture bytes through update / rebuild cycles."""
 
@@ -874,7 +866,6 @@ class TestPictureDataPreservedThroughRoundTrip:
             assert after.get("#/pictures/0") == original.get("#/pictures/0")
 
 
-@pytest.mark.asyncio
 async def test_replace_for_document_with_no_items_deletes_existing(temp_db_path):
     """Replacing with an empty list clears the document's items."""
     from haiku.rag.store.engine import Store

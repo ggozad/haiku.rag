@@ -122,7 +122,6 @@ class TestExtractStructuralTitle:
 
 
 class TestResolveTitle:
-    @pytest.mark.asyncio
     async def test_auto_title_disabled_returns_none(self):
         """When auto_title is False, returns None (no title generation)."""
         doc = DoclingDocument(name="test")
@@ -132,7 +131,6 @@ class TestResolveTitle:
         result = await resolve_title(config, doc, "some content")
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_structural_title_extracted(self):
         """Structural title is extracted when auto_title is enabled."""
         doc = DoclingDocument(name="test")
@@ -142,7 +140,6 @@ class TestResolveTitle:
         result = await resolve_title(config, doc, "some content")
         assert result == "Auto Extracted Title"
 
-    @pytest.mark.asyncio
     async def test_llm_failure_returns_none(self, monkeypatch):
         """LLM failure during ingestion returns None instead of raising."""
         doc = DoclingDocument(name="test")
@@ -165,7 +162,6 @@ class TestResolveTitle:
 
 
 class TestCreateDocumentAutoTitle:
-    @pytest.mark.asyncio
     async def test_auto_title_from_structural(self, temp_db_path):
         """create_document with auto_title=True extracts title from docling."""
         config = AppConfig(processing=ProcessingConfig(auto_title=True))
@@ -175,7 +171,6 @@ class TestCreateDocumentAutoTitle:
             )
             assert doc.title == "My Document"
 
-    @pytest.mark.asyncio
     async def test_auto_title_disabled(self, temp_db_path):
         """create_document with auto_title=False leaves title as None."""
         config = AppConfig(processing=ProcessingConfig(auto_title=False))
@@ -185,7 +180,6 @@ class TestCreateDocumentAutoTitle:
             )
             assert doc.title is None
 
-    @pytest.mark.asyncio
     async def test_explicit_title_not_overridden(self, temp_db_path):
         """Explicit title is never overridden by auto-generation."""
         config = AppConfig(processing=ProcessingConfig(auto_title=True))
@@ -204,7 +198,6 @@ class TestCreateDocumentAutoTitle:
 
 
 class TestImportDocumentAutoTitle:
-    @pytest.mark.asyncio
     async def test_auto_title_from_structural(self, temp_db_path):
         """import_document with auto_title=True extracts title from docling."""
         config = AppConfig(processing=ProcessingConfig(auto_title=True))
@@ -216,7 +209,6 @@ class TestImportDocumentAutoTitle:
             )
             assert doc.title == "Imported Doc"
 
-    @pytest.mark.asyncio
     async def test_explicit_title_preserved(self, temp_db_path):
         """import_document explicit title is not overridden."""
         config = AppConfig(processing=ProcessingConfig(auto_title=True))
@@ -238,7 +230,6 @@ class TestImportDocumentAutoTitle:
 
 
 class TestGenerateTitle:
-    @pytest.mark.asyncio
     async def test_structural_title(self, temp_db_path):
         """generate_title extracts structural title from document."""
         config = AppConfig(processing=ProcessingConfig(auto_title=True))
@@ -249,7 +240,6 @@ class TestGenerateTitle:
             title = await client.generate_title(doc)
             assert title == "Great Heading"
 
-    @pytest.mark.asyncio
     async def test_no_structural_title_no_llm(self, temp_db_path):
         """generate_title raises when no structural title and LLM unavailable."""
         async with HaikuRAG(temp_db_path, create=True) as client:
@@ -261,7 +251,6 @@ class TestGenerateTitle:
             with pytest.raises(RuntimeError):
                 await client.generate_title(doc)
 
-    @pytest.mark.asyncio
     async def test_bypasses_auto_title_config(self, temp_db_path):
         """generate_title works even when auto_title is False."""
         config = AppConfig(processing=ProcessingConfig(auto_title=False))
@@ -279,7 +268,6 @@ class TestGenerateTitle:
 
 
 class TestRebuildTitleOnly:
-    @pytest.mark.asyncio
     async def test_generates_titles_for_untitled_docs(self, temp_db_path):
         """TITLE_ONLY mode generates titles for documents without one."""
         from haiku.rag.client import RebuildMode
@@ -313,7 +301,6 @@ class TestRebuildTitleOnly:
             assert updated_doc1 is not None
             assert updated_doc1.title == "Doc With Heading"
 
-    @pytest.mark.asyncio
     async def test_skips_already_titled_docs(self, temp_db_path):
         """TITLE_ONLY mode skips documents that already have titles."""
         from haiku.rag.client import RebuildMode
@@ -331,7 +318,6 @@ class TestRebuildTitleOnly:
 
             assert len(processed_ids) == 0
 
-    @pytest.mark.asyncio
     async def test_continues_on_per_document_failure(self, temp_db_path, monkeypatch):
         """TITLE_ONLY mode continues when generate_title fails for a document."""
         from haiku.rag.client import RebuildMode
@@ -375,7 +361,6 @@ class TestRebuildTitleOnly:
             assert len(processed_ids) == 1
 
 
-@pytest.mark.asyncio
 async def test_generate_title_with_llm_returns_model_output(monkeypatch):
     """The agent's output is stripped and returned."""
     from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
@@ -394,7 +379,6 @@ async def test_generate_title_with_llm_returns_model_output(monkeypatch):
     assert await generate_title_with_llm(AppConfig(), "body") == "A Generated Title"
 
 
-@pytest.mark.asyncio
 async def test_generate_title_with_llm_returns_none_for_blank_output(monkeypatch):
     from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
     from pydantic_ai.models.function import AgentInfo, FunctionModel

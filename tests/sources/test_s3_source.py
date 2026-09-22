@@ -75,7 +75,6 @@ def test_invalid_uri_raises():
         S3Source(uri="s3:///key")
 
 
-@pytest.mark.asyncio
 async def test_head_returns_etag(fake_obstore_io):
     head_async, _ = fake_obstore_io
     head_async.return_value = {"e_tag": '"abc123"'}
@@ -84,7 +83,6 @@ async def test_head_returns_etag(fake_obstore_io):
     head_async.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_head_returns_none_when_no_etag(fake_obstore_io):
     head_async, _ = fake_obstore_io
     head_async.return_value = {}
@@ -92,7 +90,6 @@ async def test_head_returns_none_when_no_etag(fake_obstore_io):
     assert await src.head("s3://bucket/file.txt") is None
 
 
-@pytest.mark.asyncio
 async def test_fetch_returns_bytes_md5_etag(fake_obstore_io):
     head_async, get_async = fake_obstore_io
     body = b"S3 hosted content"
@@ -112,7 +109,6 @@ async def test_fetch_returns_bytes_md5_etag(fake_obstore_io):
     get_async.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_fetch_handles_missing_etag(fake_obstore_io):
     head_async, get_async = fake_obstore_io
     head_async.return_value = {}
@@ -124,14 +120,12 @@ async def test_fetch_handles_missing_etag(fake_obstore_io):
     assert result.extra_metadata == {}
 
 
-@pytest.mark.asyncio
 async def test_fetch_invalid_uri_raises(fake_obstore_io):
     src = S3Source(uri="s3://bucket/")
     with pytest.raises(ValueError):
         await src.fetch("s3:///no-bucket")
 
 
-@pytest.mark.asyncio
 async def test_discover_yields_upsert_for_new_keys(fake_s3_listing):
     fake_s3_listing(
         [
@@ -153,7 +147,6 @@ async def test_discover_yields_upsert_for_new_keys(fake_s3_listing):
     assert {e.revision for e in events} == {"abc", "def"}
 
 
-@pytest.mark.asyncio
 async def test_discover_unchanged_against_matching_snapshot(fake_s3_listing):
     fake_s3_listing([[_meta("file1.md", "abc")]])
     src = S3Source(uri="s3://bucket/", supported_extensions=[".md"])
@@ -162,7 +155,6 @@ async def test_discover_unchanged_against_matching_snapshot(fake_s3_listing):
     assert events[0].kind is SourceEventKind.UNCHANGED
 
 
-@pytest.mark.asyncio
 async def test_discover_emits_delete_for_missing_keys(fake_s3_listing):
     fake_s3_listing([[_meta("file1.md", "abc")]])
     src = S3Source(uri="s3://bucket/", supported_extensions=[".md"])
@@ -172,7 +164,6 @@ async def test_discover_emits_delete_for_missing_keys(fake_s3_listing):
     assert deletes[0].uri == "s3://bucket/gone.md"
 
 
-@pytest.mark.asyncio
 async def test_discover_respects_prefix(fake_s3_listing):
     fake_s3_listing([[_meta("incoming/file1.md", "abc")]])
     src = S3Source(uri="s3://bucket/incoming/", supported_extensions=[".md"])
@@ -181,7 +172,6 @@ async def test_discover_respects_prefix(fake_s3_listing):
     assert events[0].uri == "s3://bucket/incoming/file1.md"
 
 
-@pytest.mark.asyncio
 async def test_discover_respects_extension_filter(fake_s3_listing):
     fake_s3_listing(
         [
@@ -196,7 +186,6 @@ async def test_discover_respects_extension_filter(fake_s3_listing):
     assert {e.uri for e in events} == {"s3://bucket/a.md"}
 
 
-@pytest.mark.asyncio
 async def test_discover_respects_ignore_patterns(fake_s3_listing):
     fake_s3_listing(
         [
@@ -215,7 +204,6 @@ async def test_discover_respects_ignore_patterns(fake_s3_listing):
     assert {e.uri for e in events} == {"s3://bucket/a.md"}
 
 
-@pytest.mark.asyncio
 async def test_discover_emits_unchanged_for_known_key_without_etag(fake_s3_listing):
     """An S3 object with no ETag should not cause re-ingestion every sweep
     once the key has been ingested."""
@@ -227,7 +215,6 @@ async def test_discover_emits_unchanged_for_known_key_without_etag(fake_s3_listi
     assert non_delete[0].kind is SourceEventKind.UNCHANGED
 
 
-@pytest.mark.asyncio
 async def test_discover_emits_upsert_for_unknown_key_without_etag(fake_s3_listing):
     """A brand-new S3 key with no ETag should UPSERT on first sight."""
     fake_s3_listing([[{"path": "new.md", "size": 0, "last_modified": None}]])
@@ -237,7 +224,6 @@ async def test_discover_emits_upsert_for_unknown_key_without_etag(fake_s3_listin
     assert events[0].kind is SourceEventKind.UPSERT
 
 
-@pytest.mark.asyncio
 async def test_fetch_rejects_file_exceeding_max_size(fake_obstore_io):
     head_async, get_async = fake_obstore_io
     head_async.return_value = {"e_tag": '"abc"', "size": 5000}
@@ -248,7 +234,6 @@ async def test_fetch_rejects_file_exceeding_max_size(fake_obstore_io):
     get_async.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_fetch_allows_file_within_max_size(fake_obstore_io):
     head_async, get_async = fake_obstore_io
     body = b"small"
@@ -260,7 +245,6 @@ async def test_fetch_allows_file_within_max_size(fake_obstore_io):
     assert result.body == body
 
 
-@pytest.mark.asyncio
 async def test_fetch_no_limit_when_max_size_is_none(fake_obstore_io):
     head_async, get_async = fake_obstore_io
     body = b"any size"

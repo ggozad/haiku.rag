@@ -16,7 +16,6 @@ async def _doc_contents(store: Store) -> set[str]:
     return {d.content for d in docs}
 
 
-@pytest.mark.asyncio
 async def test_restore_tag_restores_all_tables(temp_db_path):
     """A complete tag restores every table; rows added after the tag are
     absent from the restored latest state, which stays writable."""
@@ -39,7 +38,6 @@ async def test_restore_tag_restores_all_tables(temp_db_path):
         assert await _doc_contents(store) == {"First document", "Third document"}
 
 
-@pytest.mark.asyncio
 async def test_restore_safety_tag_matches_pre_restore_state(temp_db_path):
     """The safety tag records the exact pre-restore version map, and
     restoring it returns the database to its prior logical state."""
@@ -60,7 +58,6 @@ async def test_restore_safety_tag_matches_pre_restore_state(temp_db_path):
         assert await _doc_contents(store) == {"First document", "Second document"}
 
 
-@pytest.mark.asyncio
 async def test_restore_missing_tag_makes_no_changes(temp_db_path):
     async with Store(temp_db_path, create=True) as store:
         await DocumentRepository(store).create(Document(content="First document"))
@@ -73,7 +70,6 @@ async def test_restore_missing_tag_makes_no_changes(temp_db_path):
         assert await store.list_tags() == {}
 
 
-@pytest.mark.asyncio
 async def test_restore_partial_tag_makes_no_changes(temp_db_path):
     """A partial tag can never be restored; the error lists every missing
     table and no safety tag is created."""
@@ -93,7 +89,6 @@ async def test_restore_partial_tag_makes_no_changes(temp_db_path):
         assert set(await store.list_tags()) == {"stale"}
 
 
-@pytest.mark.asyncio
 async def test_restore_safety_tag_name_collision(temp_db_path, monkeypatch):
     """A colliding safety-tag name gets a numeric suffix."""
     import haiku.rag.store.engine as engine_mod
@@ -118,7 +113,6 @@ async def test_restore_safety_tag_name_collision(temp_db_path, monkeypatch):
         assert safety_tag == "before-restore-20260715T143012Z-3"
 
 
-@pytest.mark.asyncio
 async def test_restore_safety_tag_failure_leaves_state_untouched(
     temp_db_path, monkeypatch
 ):
@@ -150,7 +144,6 @@ async def test_restore_safety_tag_failure_leaves_state_untouched(
         assert set(await store.list_tags()) == {"release-1"}
 
 
-@pytest.mark.asyncio
 async def test_restore_midway_failure_rolls_back(temp_db_path, monkeypatch):
     """A restore failure after some tables were restored rolls every table
     back to the pre-restore snapshot; the error names the failed table and
@@ -185,7 +178,6 @@ async def test_restore_midway_failure_rolls_back(temp_db_path, monkeypatch):
         assert any(t.startswith("before-restore-") for t in await store.list_tags())
 
 
-@pytest.mark.asyncio
 async def test_restore_rollback_failure_reports_inconsistency(
     temp_db_path, monkeypatch
 ):
@@ -219,7 +211,6 @@ async def test_restore_rollback_failure_reports_inconsistency(
             assert table_name in msg
 
 
-@pytest.mark.asyncio
 async def test_restore_cancellation_rolls_back(temp_db_path, monkeypatch):
     """Cancellation mid-restore must not bypass rollback: the tables return
     to the pre-restore snapshot and the cancellation re-raises."""
@@ -250,7 +241,6 @@ async def test_restore_cancellation_rolls_back(temp_db_path, monkeypatch):
         assert any(t.startswith("before-restore-") for t in await store.list_tags())
 
 
-@pytest.mark.asyncio
 async def test_restore_cancellation_with_failed_rollback_reports(
     temp_db_path, monkeypatch
 ):
@@ -286,7 +276,6 @@ async def test_restore_cancellation_with_failed_rollback_reports(
         assert "before-restore-" in msg
 
 
-@pytest.mark.asyncio
 async def test_restore_read_only_raises(temp_db_path):
     async with Store(temp_db_path, create=True) as store:
         await store.create_tag("release-1")
@@ -296,7 +285,6 @@ async def test_restore_read_only_raises(temp_db_path):
             await store.restore_tag("release-1")
 
 
-@pytest.mark.asyncio
 async def test_restore_rejected_during_rebuild(temp_db_path):
     async with Store(temp_db_path, create=True) as store:
         await store.create_tag("release-1")
@@ -306,7 +294,6 @@ async def test_restore_rejected_during_rebuild(temp_db_path):
                 await store.restore_tag("release-1")
 
 
-@pytest.mark.asyncio
 async def test_restore_old_version_marker_requires_explicit_migration(temp_db_path):
     """Restore never migrates: restoring a tag whose settings carry an old
     version marker completes, the next normal open hits the migration gate,
@@ -340,7 +327,6 @@ async def test_restore_old_version_marker_requires_explicit_migration(temp_db_pa
         assert await _doc_contents(store) == {"First document", "Second document"}
 
 
-@pytest.mark.asyncio
 async def test_restore_failure_rollback_survives_cancellation(
     temp_db_path, monkeypatch
 ):
@@ -385,7 +371,6 @@ async def test_restore_failure_rollback_survives_cancellation(
         assert await _doc_contents(store) == {"First document", "Second document"}
 
 
-@pytest.mark.asyncio
 async def test_wait_protected_returns_result_on_same_tick_cancellation():
     """A cancellation landing after the recovery task completed but before
     the waiter resumed must not discard the recovery result."""
@@ -410,7 +395,6 @@ async def test_wait_protected_returns_result_on_same_tick_cancellation():
     assert cancelled is True
 
 
-@pytest.mark.asyncio
 async def test_wait_protected_reraises_when_recovery_itself_is_cancelled():
     """If the recovery coroutine ends cancelled there is nothing to wait for,
     so the cancellation propagates instead of looping forever."""

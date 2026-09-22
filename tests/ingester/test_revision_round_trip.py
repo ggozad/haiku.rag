@@ -19,7 +19,6 @@ def vcr_cassette_dir():
     return str(Path(__file__).parent.parent / "cassettes" / "test_revision_round_trip")
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_fs_ingest_writes_source_revision_to_metadata(temp_db_path, tmp_path):
     file_path = tmp_path / "doc.md"
@@ -32,7 +31,6 @@ async def test_fs_ingest_writes_source_revision_to_metadata(temp_db_path, tmp_pa
     assert doc.metadata["source_revision"] == expected_revision
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_fs_second_sweep_emits_unchanged_after_ingest(temp_db_path, tmp_path):
     """The full round-trip: ingest a file, build a sync_state-shaped snapshot
@@ -57,7 +55,6 @@ async def test_fs_second_sweep_emits_unchanged_after_ingest(temp_db_path, tmp_pa
     assert kinds == [SourceEventKind.UNCHANGED]
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_fs_second_sweep_emits_upsert_when_file_changes(temp_db_path, tmp_path):
     """Counterpart to the unchanged test: a file modified after ingest still
@@ -86,7 +83,6 @@ async def test_fs_second_sweep_emits_upsert_when_file_changes(temp_db_path, tmp_
     assert kinds == [SourceEventKind.UPSERT]
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_fs_head_short_circuit_skips_fetch_for_unchanged_revision(
     temp_db_path, tmp_path, monkeypatch
@@ -114,7 +110,6 @@ async def test_fs_head_short_circuit_skips_fetch_for_unchanged_revision(
     assert fetch_calls == []
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_provider_backed_unchanged_revision_keeps_head_short_circuit(
     temp_db_path, tmp_path, monkeypatch
@@ -168,7 +163,6 @@ async def test_provider_backed_unchanged_revision_keeps_head_short_circuit(
     assert second.metadata["content_type"] == first.metadata["content_type"]
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_metadata_provider_applies_to_fresh_create(temp_db_path, tmp_path):
     """Fresh ingests pass FetchResult to the provider, merge provider metadata,
@@ -209,7 +203,6 @@ async def test_metadata_provider_applies_to_fresh_create(temp_db_path, tmp_path)
     assert doc.metadata["content_type"] == seen["content_type"]
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_provider_mutating_fetch_result_cannot_corrupt_source_metadata(
     temp_db_path, tmp_path
@@ -238,7 +231,6 @@ async def test_provider_mutating_fetch_result_cannot_corrupt_source_metadata(
     assert "injected" not in doc.metadata
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_directory_ingest_threads_configured_source_to_provider(
     temp_db_path, tmp_path

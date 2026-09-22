@@ -22,7 +22,6 @@ from tests.multi_db.helpers import (
 
 
 class TestOpeningDatabases:
-    @pytest.mark.asyncio
     async def test_missing_databases_open_together(self, tmp_path):
         """A cold fan-out costs one open, not their sum. On object storage a
         serial loop is the difference between one round trip and N."""
@@ -46,7 +45,6 @@ class TestOpeningDatabases:
 
         assert {client.source for client in clients} == set(names)
 
-    @pytest.mark.asyncio
     async def test_a_failed_open_does_not_leak_the_ones_that_worked(self, tmp_path):
         """Opening together means a failure has siblings already open. They are
         tracked before it is reported, so closing the set closes them."""
@@ -61,7 +59,6 @@ class TestOpeningDatabases:
             assert isinstance(rag._session, FederatedSession)
             assert set(rag._session._sessions) == {"alpha"}
 
-    @pytest.mark.asyncio
     async def test_a_cancelled_open_does_not_leak_the_ones_that_worked(self, tmp_path):
         """Cancellation discards the fan-out's results, so a database that
         opened while a sibling was still pending is reachable only through the
@@ -93,7 +90,6 @@ class TestOpeningDatabases:
 
         assert not alpha.store.db.is_open()
 
-    @pytest.mark.asyncio
     async def test_a_client_keeps_the_databases_it_first_covered(self, tmp_path):
         """Resolution happens once, so a configuration edited afterwards does not
         change what an already-entered client covers."""
@@ -110,7 +106,6 @@ class TestOpeningDatabases:
         async with rag:
             assert rag.source_names == ("alpha", "beta")
 
-    @pytest.mark.asyncio
     async def test_a_failing_read_leaves_no_sibling_reading(
         self, tmp_path, monkeypatch
     ):
@@ -142,7 +137,6 @@ class TestOpeningDatabases:
 
             assert unwound.is_set()
 
-    @pytest.mark.asyncio
     async def test_a_database_named_twice_is_opened_once(self, tmp_path):
         """Fusion counts rank lists per database, so a repeated name
         contributes one."""
@@ -155,7 +149,6 @@ class TestOpeningDatabases:
 
         assert [client.source for client in clients] == ["alpha", "beta"]
 
-    @pytest.mark.asyncio
     async def test_a_database_named_twice_returns_each_result_once(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -168,7 +161,6 @@ class TestOpeningDatabases:
 
         assert [r.source for r in results] == ["alpha"]
 
-    @pytest.mark.asyncio
     async def test_one_database_named_twice_is_still_that_database(self, tmp_path):
         """A client covering a single named database compares the selection
         against its own name, so repeats have to collapse first."""
@@ -182,7 +174,6 @@ class TestOpeningDatabases:
 
 
 class TestReportingWhereADatabaseIs:
-    @pytest.mark.asyncio
     async def test_one_database_reports_its_location_and_a_set_none(self, tmp_path):
         """A set has no single location to report. What the CLI and the info
         modal print comes from here."""
@@ -198,7 +189,6 @@ class TestReportingWhereADatabaseIs:
 
 
 class TestClosingASet:
-    @pytest.mark.asyncio
     async def test_every_database_opened_is_released(self, tmp_path):
         """A covered database owns an embedder and may owe a vacuum; closing
         releases both."""
@@ -234,7 +224,6 @@ class TestClosingASet:
 class TestBorrowedDatabases:
     """A client for one of a set wraps a database the set opened."""
 
-    @pytest.mark.asyncio
     async def test_closing_a_borrowed_client_leaves_the_set_working(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -255,7 +244,6 @@ class TestBorrowedDatabases:
         assert {r.source for r in results} == {"alpha", "beta"}
         assert not store.db.is_open(), "the set left a database open"
 
-    @pytest.mark.asyncio
     async def test_entering_a_borrowed_client_reuses_its_database(self, tmp_path):
         """`async with` on a borrowed client is a plausible thing to write. It
         reuses the borrowed session: teardown declines to close what this client
@@ -276,7 +264,6 @@ class TestBorrowedDatabases:
 
         assert not borrowed.db.is_open(), "the set left a database open"
 
-    @pytest.mark.asyncio
     async def test_a_borrowed_client_releases_what_it_built(self, tmp_path):
         """Its reranker is its own; the database it wraps is not."""
         config = _config(tmp_path, ["alpha", "beta"])
@@ -299,7 +286,6 @@ class TestReleasingAClient:
     """`async with` is the usual lifecycle, and `aclose` is it for a caller that
     owns the client some other way. `close` is a connection, not a lifecycle."""
 
-    @pytest.mark.asyncio
     async def test_aclose_releases_a_set(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -315,7 +301,6 @@ class TestReleasingAClient:
         assert not alpha.store.db.is_open()
         assert not beta.store.db.is_open()
 
-    @pytest.mark.asyncio
     async def test_aclose_releases_one_database(self, tmp_path):
         config = _config(tmp_path, ["alpha"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -328,7 +313,6 @@ class TestReleasingAClient:
 
         assert not rag.store.db.is_open()
 
-    @pytest.mark.asyncio
     async def test_aclose_before_entering_does_nothing(self, tmp_path):
         """Nothing was opened, so there is nothing to release and no error."""
         config = _config(tmp_path, ["alpha"])
@@ -336,7 +320,6 @@ class TestReleasingAClient:
 
         await HaikuRAG(config=config).aclose()
 
-    @pytest.mark.asyncio
     async def test_aclose_twice_releases_once(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -362,7 +345,6 @@ class TestReleasingAClient:
         assert closed == ["set"]
         assert not alpha.store.db.is_open()
 
-    @pytest.mark.asyncio
     async def test_close_refuses_a_set_and_names_aclose(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -373,7 +355,6 @@ class TestReleasingAClient:
 
 
 class TestSharingTheReranker:
-    @pytest.mark.asyncio
     async def test_the_set_builds_and_closes_one_reranker(self, tmp_path, monkeypatch):
         """A local reranker loads model weights; the set builds one and shares
         it."""
@@ -405,7 +386,6 @@ class TestSharingTheReranker:
 
 
 class TestLazyOpening:
-    @pytest.mark.asyncio
     async def test_entering_opens_nothing(self, tmp_path):
         """25 configured databases queried a few at a time must not all open."""
         config = _config(tmp_path, ["alpha", "beta"])
@@ -415,7 +395,6 @@ class TestLazyOpening:
         async with HaikuRAG(config=config) as rag:
             assert rag._clients == {}
 
-    @pytest.mark.asyncio
     async def test_only_the_selected_database_opens(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -425,7 +404,6 @@ class TestLazyOpening:
             await rag.search("cats", search_type="fts", sources=["alpha"])
             assert list(rag._clients) == ["alpha"]
 
-    @pytest.mark.asyncio
     async def test_an_unselected_broken_database_does_not_break_a_query(self, tmp_path):
         """A database nobody asked for cannot fail a query."""
         config = _config(tmp_path, ["alpha", "missing"])
@@ -436,7 +414,6 @@ class TestLazyOpening:
 
         assert [r.source for r in results] == ["alpha"]
 
-    @pytest.mark.asyncio
     async def test_a_selected_broken_database_fails_the_query(self, tmp_path):
         config = _config(tmp_path, ["alpha", "missing"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -447,7 +424,6 @@ class TestLazyOpening:
 
 
 class TestReadOnlyMode:
-    @pytest.mark.asyncio
     async def test_a_client_covering_a_set_reports_its_mode(self, tmp_path):
         """A client covering a set has no store of its own to ask."""
         config = _config(tmp_path, ["alpha", "beta"])
@@ -461,7 +437,6 @@ class TestReadOnlyMode:
 
 
 class TestFailureNaming:
-    @pytest.mark.asyncio
     async def test_a_single_named_database_is_reported_by_name(self, tmp_path):
         """One configured database is still a named one: it must not fall back to
         the raw error, which spells out the path."""
@@ -474,7 +449,6 @@ class TestFailureNaming:
         assert str(tmp_path) not in str(caught.value)
         assert caught.value.__cause__ is None
 
-    @pytest.mark.asyncio
     async def test_a_missing_default_database_names_the_remedy(self, tmp_path):
         """The location stays out of the message; the way to create the
         database does not."""
@@ -493,14 +467,12 @@ class TestFailureNaming:
         assert str(tmp_path) not in message
         assert caught.value.__cause__ is None
 
-    @pytest.mark.asyncio
     async def test_a_database_given_as_a_path_keeps_its_error(self, tmp_path):
         """The caller gave the path, so the error may name it."""
         with pytest.raises(FileNotFoundError):
             async with HaikuRAG(tmp_path / "nope.lancedb"):
                 pass
 
-    @pytest.mark.asyncio
     async def test_the_location_is_absent_from_the_whole_chain(self, tmp_path):
         config = _config(tmp_path, ["alpha", "missing"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -520,7 +492,6 @@ class TestCreatingNeedsOneDatabase:
     and was accepted anyway, leaving the first query to fail on whichever
     database turned out to be missing."""
 
-    @pytest.mark.asyncio
     async def test_creating_a_set_is_refused(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
 
@@ -528,7 +499,6 @@ class TestCreatingNeedsOneDatabase:
             async with HaikuRAG(config=config, create=True):
                 pass
 
-    @pytest.mark.asyncio
     async def test_naming_one_of_the_set_creates_it(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
 
@@ -538,7 +508,6 @@ class TestCreatingNeedsOneDatabase:
         assert (tmp_path / "alpha.lancedb").exists()
         assert not (tmp_path / "beta.lancedb").exists()
 
-    @pytest.mark.asyncio
     async def test_covering_a_set_without_creating_is_unaffected(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha one"])
@@ -549,7 +518,6 @@ class TestCreatingNeedsOneDatabase:
 
 
 class TestOperationsThatNeedOneDatabase:
-    @pytest.mark.asyncio
     async def test_writing_names_the_databases_it_covers(self, tmp_path):
         """A domain error, so a caller can tell an unsupported selection from a
         missing attribute."""
@@ -565,7 +533,6 @@ class TestOperationsThatNeedOneDatabase:
             with pytest.raises(AmbiguousDatabaseError, match="close"):
                 rag.close()
 
-    @pytest.mark.asyncio
     async def test_a_set_has_no_store_of_its_own(self, tmp_path):
         """A store and its repositories belong to one database. `clients_for`
         reaches the one holding a given database."""
@@ -582,7 +549,6 @@ class TestOperationsThatNeedOneDatabase:
                 with pytest.raises(AttributeError, match=name):
                     getattr(rag, name)
 
-    @pytest.mark.asyncio
     async def test_a_selected_database_is_still_writable(self, tmp_path):
         """Naming one of the set is how a write picks its database."""
         config = _config(tmp_path, ["alpha", "beta"])
@@ -610,7 +576,6 @@ class TestDatabaseIndependentWork:
     """Converting, chunking and titling are functions of the configuration, not
     of a database, so covering a set does not stop them."""
 
-    @pytest.mark.asyncio
     async def test_chunking_opens_no_database(self, tmp_path, monkeypatch):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha one"])
@@ -635,7 +600,6 @@ class TestDatabaseIndependentWork:
         assert opened == []
         assert [c.content for c in chunks]
 
-    @pytest.mark.asyncio
     async def test_the_embedder_is_built_once_and_closed_once(
         self, tmp_path, monkeypatch
     ):
@@ -662,7 +626,6 @@ class TestDatabaseIndependentWork:
 
         assert closed == [built]
 
-    @pytest.mark.asyncio
     async def test_re_entering_a_set_builds_a_fresh_embedder(self, tmp_path):
         """Teardown closes the embedder; re-entry builds a fresh one."""
         config = _config(tmp_path, ["alpha", "beta"])
@@ -674,7 +637,6 @@ class TestDatabaseIndependentWork:
         async with rag:
             assert rag.embedder is not first
 
-    @pytest.mark.asyncio
     async def test_re_entering_one_database_builds_a_fresh_embedder(self, temp_db_path):
         """One database opens a new store on re-entry, and the embedder is that
         store's."""
@@ -685,7 +647,6 @@ class TestDatabaseIndependentWork:
             assert rag.embedder is rag.store.embedder
             assert rag.embedder is not first
 
-    @pytest.mark.asyncio
     async def test_a_set_nobody_asked_anything_of_builds_no_embedder(self, tmp_path):
         """Built on first use, so a client that answered nothing holds nothing."""
         config = _config(tmp_path, ["alpha", "beta"])
@@ -694,7 +655,6 @@ class TestDatabaseIndependentWork:
         async with HaikuRAG(config=config, read_only=True) as rag:
             assert "embedder" not in rag.__dict__
 
-    @pytest.mark.asyncio
     async def test_one_database_still_uses_its_store_s_embedder(self, temp_db_path):
         async with HaikuRAG(temp_db_path, create=True) as rag:
             assert rag.embedder is rag.store.embedder

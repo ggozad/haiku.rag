@@ -12,7 +12,6 @@ from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.repositories.document_item import DocumentItemRepository
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("include_content", [False, True])
 async def test_document_list_all(
     qa_corpus: list[dict[str, str]], temp_db_path, include_content
@@ -40,7 +39,6 @@ async def test_document_list_all(
         assert docs[0].docling_document is None
 
 
-@pytest.mark.asyncio
 async def test_document_list_all_content_skips_docling_blobs(temp_db_path):
     """include_content loads content only; the docling blobs (page rasters run
     to hundreds of MB per document) are never materialized."""
@@ -63,7 +61,6 @@ async def test_document_list_all_content_skips_docling_blobs(temp_db_path):
         assert all(d.docling_pages is None for d in docs)
 
 
-@pytest.mark.asyncio
 async def test_document_list_all_content_spans_batches(temp_db_path, monkeypatch):
     """Every document gets its content when the lookup spans several batches."""
     monkeypatch.setattr(document_repository, "_CONTENT_BATCH", 2)
@@ -78,7 +75,6 @@ async def test_document_list_all_content_spans_batches(temp_db_path, monkeypatch
         assert {d.content for d in docs} == contents
 
 
-@pytest.mark.asyncio
 async def test_document_list_with_filter(qa_corpus: list[dict[str, str]], temp_db_path):
     """Test listing documents with filter clause."""
     async with Store(temp_db_path, create=True) as store:
@@ -122,7 +118,6 @@ async def test_document_list_with_filter(qa_corpus: list[dict[str, str]], temp_d
         }
 
 
-@pytest.mark.asyncio
 async def test_document_create_batch(qa_corpus: list[dict[str, str]], temp_db_path):
     """create accepts a list of documents and writes them in a single version."""
     async with Store(temp_db_path, create=True) as store:
@@ -149,7 +144,6 @@ async def test_document_create_batch(qa_corpus: list[dict[str, str]], temp_db_pa
         assert round_b is not None and round_b.title == "B"
 
 
-@pytest.mark.asyncio
 async def test_document_create_empty_batch(temp_db_path):
     """create([]) is a no-op returning an empty list with no version bump."""
     async with Store(temp_db_path, create=True) as store:
@@ -163,7 +157,6 @@ async def test_document_create_empty_batch(temp_db_path):
         assert after == before
 
 
-@pytest.mark.asyncio
 async def test_document_item_create_all(temp_db_path):
     """create_all writes items spanning multiple documents in a single version."""
     async with Store(temp_db_path, create=True) as store:
@@ -193,7 +186,6 @@ async def test_document_item_create_all(temp_db_path):
         assert [i.text for i in doc2_items] == ["c"]
 
 
-@pytest.mark.asyncio
 async def test_document_item_create_all_empty(temp_db_path):
     """create_all([]) is a no-op with no version bump."""
     async with Store(temp_db_path, create=True) as store:
@@ -369,7 +361,6 @@ def test_get_page_images():
     assert doc_no_pages.get_page_images([1]) == {}
 
 
-@pytest.mark.asyncio
 async def test_get_docling_data_loads_only_docling_columns(
     qa_corpus: list[dict[str, str]], temp_db_path
 ):
@@ -417,7 +408,6 @@ async def test_get_docling_data_loads_only_docling_columns(
         assert await doc_repo.get_docling_data("nonexistent-id") is None
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "with_pages",
     # Markdown documents have no page images, so their pages blob stays None.
@@ -461,7 +451,6 @@ async def test_get_pages_data_loads_only_pages_column(
         assert await doc_repo.get_pages_data("nonexistent-id") is None
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("include_blobs", [False, True])
 async def test_document_get_by_id_docling_blobs(temp_db_path, include_blobs):
     """get_by_id leaves the docling blobs out unless asked for them: a single
@@ -499,7 +488,6 @@ async def test_document_get_by_id_docling_blobs(temp_db_path, include_blobs):
             assert doc.docling_pages is None
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("include_blobs", [False, True])
 async def test_document_get_by_uri_docling_blobs(temp_db_path, include_blobs):
     """get_by_uri has the same projection as get_by_id."""
@@ -530,7 +518,6 @@ async def test_document_get_by_uri_docling_blobs(temp_db_path, include_blobs):
             assert doc.docling_pages is None
 
 
-@pytest.mark.asyncio
 async def test_document_get_by_uri_with_special_characters(
     qa_corpus: list[dict[str, str]], temp_db_path
 ):

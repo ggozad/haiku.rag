@@ -925,7 +925,6 @@ async def test_rebuild_descriptions_skips_already_described(temp_db_path, monkey
 
 
 @pytest.mark.vcr()
-@pytest.mark.asyncio
 async def test_patch_picture_descriptions_returns_zero_for_doc_without_pictures(
     temp_db_path,
 ):
@@ -943,7 +942,6 @@ async def test_patch_picture_descriptions_returns_zero_for_doc_without_pictures(
         assert n == 0
 
 
-@pytest.mark.asyncio
 async def test_patch_picture_descriptions_warns_on_missing_bytes(temp_db_path):
     """When the docling blob has pictures but document_items.picture_data is
     empty (e.g. legacy DB ingested before A2b), the helper logs a warning
@@ -984,7 +982,6 @@ async def test_patch_picture_descriptions_warns_on_missing_bytes(temp_db_path):
         assert any("no stored picture bytes" in r.getMessage() for r in records)
 
 
-@pytest.mark.asyncio
 async def test_patch_picture_descriptions_skips_when_all_already_described(
     temp_db_path, monkeypatch
 ):
@@ -1031,7 +1028,6 @@ async def test_patch_picture_descriptions_skips_when_all_already_described(
         assert called is False
 
 
-@pytest.mark.asyncio
 async def test_rebuild_descriptions_raises_when_blob_is_missing(
     temp_db_path, monkeypatch
 ):
@@ -1297,7 +1293,6 @@ async def test_apply_descriptions_writes_only_non_empty_text(
     assert document.docling_document is not None
 
 
-@pytest.mark.asyncio
 async def test_patch_picture_descriptions_returns_zero_without_descriptions(
     temp_db_path, monkeypatch
 ):

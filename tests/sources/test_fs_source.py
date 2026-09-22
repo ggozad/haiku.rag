@@ -36,7 +36,6 @@ def test_fs_source_source_id_is_canonical(fs_root: Path):
     assert src.source_id == f"fs:{fs_root.resolve()}"
 
 
-@pytest.mark.asyncio
 async def test_fs_source_fetch_returns_bytes_and_md5(fs_root: Path):
     src = FSSource(root=fs_root)
     target = fs_root / "a.md"
@@ -51,20 +50,17 @@ async def test_fs_source_fetch_returns_bytes_and_md5(fs_root: Path):
     assert result.disk_path == target
 
 
-@pytest.mark.asyncio
 async def test_fs_source_head_returns_mtime(fs_root: Path):
     src = FSSource(root=fs_root)
     target = fs_root / "a.md"
     assert await src.head(target.as_uri()) == str(target.stat().st_mtime_ns)
 
 
-@pytest.mark.asyncio
 async def test_fs_source_head_returns_none_for_missing_file(fs_root: Path):
     src = FSSource(root=fs_root)
     assert await src.head((fs_root / "missing.md").as_uri()) is None
 
 
-@pytest.mark.asyncio
 async def test_fs_source_fetch_accepts_bare_path(fs_root: Path):
     src = FSSource(root=fs_root)
     target = fs_root / "a.md"
@@ -72,14 +68,12 @@ async def test_fs_source_fetch_accepts_bare_path(fs_root: Path):
     assert result.uri == target.as_uri()
 
 
-@pytest.mark.asyncio
 async def test_fs_source_fetch_missing_file_raises(fs_root: Path):
     src = FSSource(root=fs_root)
     with pytest.raises(FileNotFoundError):
         await src.fetch((fs_root / "missing.md").as_uri())
 
 
-@pytest.mark.asyncio
 async def test_fs_source_discover_initial_scan_yields_upsert(fs_root: Path):
     src = FSSource(root=fs_root, supported_extensions=[".md", ".txt"])
     events = [e async for e in src.discover(since=None)]
@@ -94,7 +88,6 @@ async def test_fs_source_discover_initial_scan_yields_upsert(fs_root: Path):
     assert all(e.revision is not None for e in events)
 
 
-@pytest.mark.asyncio
 async def test_fs_source_discover_unchanged_against_snapshot(fs_root: Path):
     src = FSSource(root=fs_root, supported_extensions=[".md", ".txt"])
     initial = {e.uri: e.revision or "" async for e in src.discover(since=None)}
@@ -103,7 +96,6 @@ async def test_fs_source_discover_unchanged_against_snapshot(fs_root: Path):
     assert all(e.kind is SourceEventKind.UNCHANGED for e in again)
 
 
-@pytest.mark.asyncio
 async def test_fs_source_discover_changed_yields_upsert(fs_root: Path):
     src = FSSource(root=fs_root, supported_extensions=[".md", ".txt"])
     initial = {e.uri: e.revision or "" async for e in src.discover(since=None)}
@@ -112,7 +104,6 @@ async def test_fs_source_discover_changed_yields_upsert(fs_root: Path):
     assert {e.kind for e in events} == {SourceEventKind.UPSERT}
 
 
-@pytest.mark.asyncio
 async def test_fs_source_discover_emits_delete_for_missing(fs_root: Path):
     src = FSSource(root=fs_root, supported_extensions=[".md", ".txt"])
     known = {(fs_root / "ghost.md").as_uri()}
@@ -123,7 +114,6 @@ async def test_fs_source_discover_emits_delete_for_missing(fs_root: Path):
     assert deletes[0].revision is None
 
 
-@pytest.mark.asyncio
 async def test_fs_source_discover_respects_extension_filter(fs_root: Path):
     src = FSSource(root=fs_root, supported_extensions=[".md"])
     uris = {e.uri async for e in src.discover(since=None)}
@@ -131,7 +121,6 @@ async def test_fs_source_discover_respects_extension_filter(fs_root: Path):
     assert (fs_root / "b.txt").as_uri() not in uris
 
 
-@pytest.mark.asyncio
 async def test_fs_source_discover_skips_file_deleted_during_stat(
     fs_root: Path, monkeypatch
 ):
@@ -162,7 +151,6 @@ async def test_fs_source_discover_skips_file_deleted_during_stat(
     assert victim.as_uri() not in uris
 
 
-@pytest.mark.asyncio
 async def test_fs_source_discover_respects_ignore_patterns(fs_root: Path):
     src = FSSource(
         root=fs_root,
@@ -174,7 +162,6 @@ async def test_fs_source_discover_respects_ignore_patterns(fs_root: Path):
     assert (fs_root / "a.md").as_uri() in uris
 
 
-@pytest.mark.asyncio
 async def test_fs_source_discover_respects_include_patterns(fs_root: Path):
     src = FSSource(
         root=fs_root,
@@ -199,7 +186,6 @@ def test_fs_source_supports_rejects_paths_outside_root(fs_root: Path, tmp_path: 
     assert src.supports(outside.as_uri()) is False
 
 
-@pytest.mark.asyncio
 async def test_fs_source_fetch_rejects_paths_outside_root(
     fs_root: Path, tmp_path: Path
 ):
@@ -210,7 +196,6 @@ async def test_fs_source_fetch_rejects_paths_outside_root(
         await src.fetch(outside.as_uri())
 
 
-@pytest.mark.asyncio
 async def test_fs_source_fetch_rejects_symlink_to_outside_file(
     fs_root: Path, tmp_path: Path
 ):
@@ -225,7 +210,6 @@ async def test_fs_source_fetch_rejects_symlink_to_outside_file(
         await src.fetch(link.as_uri())
 
 
-@pytest.mark.asyncio
 async def test_fs_source_discover_skips_symlinks_pointing_outside_root(
     fs_root: Path, tmp_path: Path
 ):
@@ -245,7 +229,6 @@ async def test_fs_source_discover_skips_symlinks_pointing_outside_root(
     assert (fs_root / "a.md").as_uri() in uris
 
 
-@pytest.mark.asyncio
 async def test_fs_source_discover_follows_within_root_symlinks(fs_root: Path):
     """A symlink whose target lives inside root is legitimate — supports/
     head/fetch all accept it (resolve-then-check), so discover() must too,
@@ -264,7 +247,6 @@ async def test_fs_source_discover_follows_within_root_symlinks(fs_root: Path):
     assert (fs_root / "alias.md").as_uri() not in uris
 
 
-@pytest.mark.asyncio
 async def test_fs_source_discover_skips_symlinked_directories(
     fs_root: Path, tmp_path: Path
 ):
@@ -281,28 +263,24 @@ async def test_fs_source_discover_skips_symlinked_directories(
     assert not any("escape" in u for u in uris)
 
 
-@pytest.mark.asyncio
 async def test_fs_source_fetch_rejects_file_exceeding_max_size(fs_root: Path):
     src = FSSource(root=fs_root, max_file_size=3)
     with pytest.raises(FileTooLargeError):
         await src.fetch((fs_root / "a.md").as_uri())  # "alpha" = 5 bytes
 
 
-@pytest.mark.asyncio
 async def test_fs_source_fetch_allows_file_within_max_size(fs_root: Path):
     src = FSSource(root=fs_root, max_file_size=100)
     result = await src.fetch((fs_root / "a.md").as_uri())
     assert result.body == b"alpha"
 
 
-@pytest.mark.asyncio
 async def test_fs_source_fetch_no_limit_when_max_size_is_none(fs_root: Path):
     src = FSSource(root=fs_root, max_file_size=None)
     result = await src.fetch((fs_root / "a.md").as_uri())
     assert result.body == b"alpha"
 
 
-@pytest.mark.asyncio
 async def test_fs_source_fetch_reads_off_event_loop_thread(fs_root: Path):
     """The file read and md5 are both proportional to file size and must run
     off the event-loop thread, or a large file would freeze every other
@@ -332,7 +310,6 @@ async def test_fs_source_fetch_reads_off_event_loop_thread(fs_root: Path):
     )
 
 
-@pytest.mark.asyncio
 async def test_fetch_rejects_foreign_scheme(tmp_path):
     """`supports()` short-circuits on scheme, but fetch/head resolve directly,
     so the unsupported-scheme path must be handled there too."""
@@ -349,7 +326,6 @@ async def test_fetch_rejects_foreign_scheme(tmp_path):
     assert await src.head("s3://bucket/key.md") is None
 
 
-@pytest.mark.asyncio
 async def test_fetch_falls_back_to_octet_stream_for_unknown_extension(tmp_path):
     target = tmp_path / "data.unknownext"
     target.write_bytes(b"payload")
@@ -363,7 +339,6 @@ async def test_fetch_falls_back_to_octet_stream_for_unknown_extension(tmp_path):
     assert result.body == b"payload"
 
 
-@pytest.mark.asyncio
 async def test_discover_skips_symlink_to_missing_in_root_target(tmp_path):
     """A broken symlink inside the root resolves to a path that is not a file."""
     (tmp_path / "real.md").write_text("real")

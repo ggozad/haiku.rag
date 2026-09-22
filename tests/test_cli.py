@@ -708,7 +708,6 @@ class TestAskAnalyzeImageOption:
             Path("/tmp/b.jpg"),
         ]
 
-    @pytest.mark.asyncio
     async def test_app_ask_reads_image_bytes(self, temp_db_path, tmp_path):
         from io import BytesIO
         from unittest.mock import AsyncMock

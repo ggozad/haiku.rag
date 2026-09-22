@@ -7,8 +7,6 @@ import pytest
 from haiku.rag.client import HaikuRAG
 from haiku.rag.store.models.document import Document
 
-pytestmark = pytest.mark.asyncio
-
 
 @pytest.mark.vcr()
 async def test_concurrent_same_uri_ingestion_creates_single_document(temp_db_path):
