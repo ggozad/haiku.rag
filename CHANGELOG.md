@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.88.1] - 2026-09-23
+
 ### Added
 
 - `evaluations run` records `git_sha`, `git_dirty`, `config_hash`, `db_path`,
@@ -2694,7 +2696,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.88.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.88.1...HEAD
+[0.88.1]: https://github.com/ggozad/haiku.rag/compare/0.88.0...0.88.1
 [0.88.0]: https://github.com/ggozad/haiku.rag/compare/0.87.0...0.88.0
 [0.87.0]: https://github.com/ggozad/haiku.rag/compare/0.86.0...0.87.0
 [0.86.0]: https://github.com/ggozad/haiku.rag/compare/0.85.0...0.86.0
