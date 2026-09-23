@@ -6,9 +6,7 @@ pruning, not embedding."""
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
-from urllib.parse import unquote, urlparse
 
 import pytest
 
@@ -32,6 +30,7 @@ from haiku.rag.ingester.queue.models import JobOp
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
 from haiku.rag.ingester.workers.pool import WorkerPool
 from haiku.rag.store.models.document import Document
+from haiku.rag.uri import uri_to_path
 
 
 def _config(tmp_path, **worker_kwargs) -> AppConfig:
@@ -75,7 +74,7 @@ def _mock_client() -> AsyncMock:
         counter["n"] += 1
         # Mirror the real client: persist the FS revision (mtime_ns) so the
         # poller's change-detection skips unchanged files on the next sweep.
-        path = Path(unquote(urlparse(uri).path))
+        path = uri_to_path(uri)
         metadata = {
             "content_type": "text/markdown",
             "md5": f"md5-{counter['n']}",

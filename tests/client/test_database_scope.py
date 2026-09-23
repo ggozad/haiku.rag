@@ -41,7 +41,7 @@ class TestResolution:
             DatabaseScope.resolve(config, database_path=Path("/data/other.lancedb"))
 
         message = str(raised.value)
-        assert "/data/other.lancedb" in message
+        assert str(Path("/data/other.lancedb")) in message
         assert "alpha" in message and "beta" in message
         assert "lancedb.databases" in message
 

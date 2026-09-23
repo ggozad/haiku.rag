@@ -546,7 +546,7 @@ async def test_document_get_by_uri_with_special_characters(
 def test_naive_timestamp_is_converted_from_local_time():
     original_tz = os.environ.get("TZ")
     os.environ["TZ"] = "Europe/Athens"
-    time.tzset()
+    time.tzset()  # ty: ignore[unresolved-attribute]
     try:
         created = datetime(2026, 1, 1, 14, 0, 0)  # January is EET, UTC+2
         updated = datetime(2026, 1, 1, 14, 30, 0)
@@ -558,7 +558,7 @@ def test_naive_timestamp_is_converted_from_local_time():
             os.environ.pop("TZ", None)
         else:
             os.environ["TZ"] = original_tz
-        time.tzset()
+        time.tzset()  # ty: ignore[unresolved-attribute]
 
 
 def test_created_at_serializes_with_timezone_offset():

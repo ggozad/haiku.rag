@@ -1086,18 +1086,24 @@ class TestAgentPlugins:
         import json
 
         claude_plugin = json.loads(
-            (self.root / "plugins/haiku-rag/.claude-plugin/plugin.json").read_text()
+            (self.root / "plugins/haiku-rag/.claude-plugin/plugin.json").read_text(
+                encoding="utf-8"
+            )
         )
         codex_plugin = json.loads(
-            (self.root / "plugins/haiku-rag/.codex-plugin/plugin.json").read_text()
+            (self.root / "plugins/haiku-rag/.codex-plugin/plugin.json").read_text(
+                encoding="utf-8"
+            )
         )
         claude_marketplace = json.loads(
-            (self.root / ".claude-plugin/marketplace.json").read_text()
+            (self.root / ".claude-plugin/marketplace.json").read_text(encoding="utf-8")
         )
         codex_marketplace = json.loads(
-            (self.root / ".agents/plugins/marketplace.json").read_text()
+            (self.root / ".agents/plugins/marketplace.json").read_text(encoding="utf-8")
         )
-        servers = json.loads((self.root / "plugins/haiku-rag/.mcp.json").read_text())
+        servers = json.loads(
+            (self.root / "plugins/haiku-rag/.mcp.json").read_text(encoding="utf-8")
+        )
 
         assert claude_plugin["name"] == codex_plugin["name"] == "haiku-rag"
         assert claude_plugin["description"]
@@ -1117,7 +1123,9 @@ class TestAgentPlugins:
     ):
         import yaml
 
-        text = (self.root / "plugins/haiku-rag/skills/haiku-rag/SKILL.md").read_text()
+        text = (self.root / "plugins/haiku-rag/skills/haiku-rag/SKILL.md").read_text(
+            encoding="utf-8"
+        )
         _, frontmatter, _ = text.split("---", 2)
         skill = yaml.safe_load(frontmatter)
         prefix = "mcp__plugin_haiku-rag_haiku-rag__"

@@ -1178,7 +1178,9 @@ class TestSandboxWorkerCrash:
             pid = sb._session.worker_pid
             assert pid is not None
 
-            os.kill(pid, signal.SIGKILL)
+            # Windows has no SIGKILL; os.kill there calls TerminateProcess for
+            # any signal but the console-event ones, so SIGTERM kills outright.
+            os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
 
             crashed = await sb.execute("print(2)")
             assert crashed.success is False

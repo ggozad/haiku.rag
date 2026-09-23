@@ -466,7 +466,7 @@ def init_config(
     config_data = generate_default_config()
 
     # Write YAML with comments
-    with open(output, "w") as f:
+    with open(output, "w", encoding="utf-8") as f:
         f.write("# haiku.rag configuration file\n")
         f.write(
             "# See https://ggozad.github.io/haiku.rag/configuration/ for details\n\n"

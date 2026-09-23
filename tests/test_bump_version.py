@@ -36,6 +36,6 @@ def test_the_shipped_plugin_manifests_carry_the_package_version():
         manifest = json.loads(
             (
                 root / "plugins" / "haiku-rag" / f".{client}-plugin" / "plugin.json"
-            ).read_text()
+            ).read_text(encoding="utf-8")
         )
         assert manifest["version"] == package_version

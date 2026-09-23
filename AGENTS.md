@@ -433,6 +433,8 @@ is Claude Code's pre-approval and other Agent Skills clients ignore it.
 
 **Core coverage is enforced at 100%** (`fail_under = 100`, `source = ["haiku_rag_slim"]`); the evaluations workspace enforces 85%. New code needs a test or a `# pragma: no cover - <short reason>` on one line. CI prints term-missing, so a gate failure names the line. Run coverage with `--cov` and scope the report by grepping it: a deep-dotted `--cov=haiku.rag.<module>` crashes beartype, and a file-path `--cov=<path>.py` collects nothing.
 
+**On Windows**, creating a symlink needs Administrator or Developer Mode. Without the privilege the `requires_symlinks` tests (`tests/platform.py`) skip, and the symlink branch of `sources/fs.py` goes uncovered, so the 100% gate lands at 99.95%. Turning Developer Mode on runs them and restores it. Read and write repo files with an explicit `encoding="utf-8"`: text mode otherwise follows the host locale, which is cp1252 there. Build an assertion on a rendered path with `pathlib` rather than a hard-coded `/`, and write a file under test through `tmp_path` rather than an open `NamedTemporaryFile`, which Windows forbids reopening.
+
 **VCR Recording:**
 Tests use pytest-recording (VCR.py). Cassettes are committed: the suites in `_CENTRAL_CASSETTE_SUITES` (client, chunkers, converters, embeddings, interfaces, providers, reranking, store) record under `tests/cassettes/<module>/`, every other suite under `<suite>/cassettes/<module>/`.
 

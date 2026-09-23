@@ -18,6 +18,15 @@
 ### Fixed
 
 - `document.embed` carries `scope.name = haiku.rag`.
+- `haiku.rag.yaml` is read as UTF-8, and `init-config` writes UTF-8. Both used
+  the host locale encoding, so on Windows a config carrying any non-ASCII
+  failed to load.
+- The packaged RAG capability instructions are read as UTF-8.
+- The test suite runs on Windows: repo files are read as UTF-8, path
+  assertions are built with `pathlib`, the ingester batch double resolves
+  `file://` URIs with `uri_to_path`, files under test are written through
+  `tmp_path` rather than an open `NamedTemporaryFile`, and the symlink tests
+  are skipped where the platform withholds the privilege.
 
 ## [0.88.1] - 2026-09-23
 

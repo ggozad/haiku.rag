@@ -88,8 +88,10 @@ def test_find_config_file_env_var_tilde_expansion(tmp_path, monkeypatch):
     config_file = tmp_path / "from-env.yaml"
     config_file.write_text("environment: production")
 
-    # Point HOME to tmp_path so ~ expands there
+    # Point the home directory at tmp_path so ~ expands there. ntpath.expanduser
+    # reads USERPROFILE and never HOME, so both are set.
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setenv("HAIKU_RAG_CONFIG_PATH", "~/from-env.yaml")
 
     found = find_config_file()
@@ -217,7 +219,9 @@ def test_init_config_writes_a_loadable_config(tmp_path):
     result = CliRunner().invoke(cli, ["init-config", str(config_file)])
 
     assert result.exit_code == 0, result.output
-    config = AppConfig.model_validate(yaml.safe_load(config_file.read_text()))
+    config = AppConfig.model_validate(
+        yaml.safe_load(config_file.read_text(encoding="utf-8"))
+    )
     assert config.environment == "production"
 
 
@@ -234,7 +238,7 @@ def test_init_config_refuses_to_overwrite(tmp_path):
 
     assert result.exit_code == 1
     assert "already exists" in result.output
-    assert config_file.read_text() == "environment: development\n"
+    assert config_file.read_text(encoding="utf-8") == "environment: development\n"
 
 
 def _write(tmp_path, body: str):
@@ -576,7 +580,7 @@ def test_example_configs_are_present():
     "path", _EXAMPLE_CONFIGS, ids=lambda p: p.parent.name + "/" + p.name
 )
 def test_example_config_validates(path: Path):
-    AppConfig.model_validate(yaml.safe_load(path.read_text()) or {})
+    AppConfig.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")) or {})
 
 
 def _use_config(monkeypatch, cfg):
@@ -711,7 +715,7 @@ def _documented_config_blocks() -> list[tuple[str, int, str]]:
     for path in sources:
         if not path.exists():
             continue
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         for match in re.finditer(r"```yaml\n(.*?)```", text, re.S):
             data = yaml.safe_load(match.group(1))
             if not isinstance(data, dict) or not (set(data) & known):
@@ -739,7 +743,9 @@ def test_documented_config_block_validates(rel_path, line, block):
 
 def test_documented_search_limit_matches_the_default():
     """Prose that states a default drifts silently; pin the ones that are stated."""
-    qa_doc = (_DOCS_ROOT / "docs" / "configuration" / "qa.md").read_text()
+    qa_doc = (_DOCS_ROOT / "docs" / "configuration" / "qa.md").read_text(
+        encoding="utf-8"
+    )
     assert f"Default: {AppConfig().search.limit}" in qa_doc
 
 
@@ -781,7 +787,9 @@ def test_complete_example_matches_the_defaults():
     """The complete configuration example doubles as the default reference, so
     every value in it either is the default or is listed as a deliberate
     deviation. This is what catches `limit: 10` when the default is 5."""
-    text = (_DOCS_ROOT / "docs" / "configuration" / "index.md").read_text()
+    text = (_DOCS_ROOT / "docs" / "configuration" / "index.md").read_text(
+        encoding="utf-8"
+    )
     blocks = re.findall(r"```yaml\n(.*?)```", text, re.S)
     documented = _flatten(yaml.safe_load(max(blocks, key=len)))
     defaults = _flatten(AppConfig().model_dump(mode="json"))
