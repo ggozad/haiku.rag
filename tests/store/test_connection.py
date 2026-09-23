@@ -307,6 +307,35 @@ class TestInitFailureCleanup:
 class TestVectorIndexCreation:
     """_ensure_vector_index needs 256 rows of training data before it builds."""
 
+    @staticmethod
+    async def _seed_chunks(store: Store, count: int) -> None:
+        records = [
+            store.ChunkRecord(
+                document_id="doc-1",
+                content=f"row {i}",
+                content_fts=f"row {i}",
+                metadata="{}",
+                order=i,
+                vector=[
+                    float(i % 7) + 0.01 * j for j in range(store.embedder.vector_dim)
+                ],
+            )
+            for i in range(count)
+        ]
+        await store.chunks_table.add(records)
+
+    @pytest.mark.slow
+    async def test_builds_a_real_index_once_enough_rows_exist(
+        self, temp_db_path
+    ) -> None:
+        async with Store(temp_db_path, create=True) as store:
+            await self._seed_chunks(store, 256)
+
+            await store._ensure_vector_index()
+
+            indexes = await store.chunks_table.list_indices()
+            assert any("vector" in index.columns for index in indexes)
+
     async def test_builds_index_once_enough_rows_exist(self, temp_db_path):
         async with Store(temp_db_path, create=True) as store:
             count_rows = AsyncMock(return_value=256)

@@ -1,5 +1,7 @@
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import create_autospec, patch
+
+from huggingface_hub import HfApi
 
 from evaluations.artifacts import (
     HF_REPO_ID,
@@ -119,7 +121,7 @@ class TestUploadDatasetDb:
             uploaded["root"] = (staged / "root.lance").read_text()
             uploaded["part"] = (staged / "nested" / "part.lance").read_text()
 
-        api = MagicMock()
+        api = create_autospec(HfApi, instance=True)
         api.upload_large_folder.side_effect = capture_upload
         with (
             patch("haiku.rag.utils.get_default_data_dir", return_value=tmp_path),
@@ -141,7 +143,7 @@ class TestUploadDatasetDb:
         db = _db_path(tmp_path)
         db.mkdir(parents=True)
         (db / "data").write_text("content")
-        api = MagicMock()
+        api = create_autospec(HfApi, instance=True)
         api.delete_folder.side_effect = RuntimeError("not found")
 
         with (

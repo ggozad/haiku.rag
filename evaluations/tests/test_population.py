@@ -1,12 +1,15 @@
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, create_autospec, patch
 
 from datasets import Dataset
 
 from evaluations.config import DatasetSpec, DocumentPayload
 from evaluations.population import populate_db
+from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig
+from haiku.rag.store.engine import Store
+from haiku.rag.store.repositories import ChunkRepository, DocumentRepository
 
 
 def _spec(corpus: Dataset, **kwargs: object) -> DatasetSpec:
@@ -32,6 +35,14 @@ def _contexts(rag: MagicMock, progress: MagicMock) -> tuple[MagicMock, MagicMock
     return haiku, progress_cls
 
 
+def _rag() -> MagicMock:
+    rag = create_autospec(HaikuRAG, instance=True)
+    rag.store = create_autospec(Store, instance=True)
+    rag.chunk_repository = create_autospec(ChunkRepository, instance=True)
+    rag.document_repository = create_autospec(DocumentRepository, instance=True)
+    return rag
+
+
 async def test_populate_batched_limits_corpus_and_vacuums(tmp_path: Path) -> None:
     corpus = Dataset.from_list(
         [
@@ -41,8 +52,7 @@ async def test_populate_batched_limits_corpus_and_vacuums(tmp_path: Path) -> Non
         ]
     )
     spec = _spec(corpus, document_limit=2, ingest_batch_size=10)
-    rag = MagicMock()
-    rag.store.vacuum = AsyncMock()
+    rag = _rag()
     progress = MagicMock()
     haiku, progress_cls = _contexts(rag, progress)
 
@@ -93,20 +103,14 @@ async def test_populate_resumes_and_handles_both_document_sources(
         )
 
     spec = _spec(corpus, document_mapper=map_document)
-    rag = MagicMock()
-    rag.get_document_by_uri = AsyncMock(
-        side_effect=[
-            SimpleNamespace(id="complete-id"),
-            SimpleNamespace(id="chunkless-id"),
-            None,
-            None,
-        ]
-    )
-    rag.chunk_repository.get_by_document_id = AsyncMock(side_effect=[[object()], []])
-    rag.document_repository.delete = AsyncMock()
-    rag.create_document_from_source = AsyncMock()
-    rag.create_document = AsyncMock()
-    rag.store.vacuum = AsyncMock()
+    rag = _rag()
+    rag.get_document_by_uri.side_effect = [
+        SimpleNamespace(id="complete-id"),
+        SimpleNamespace(id="chunkless-id"),
+        None,
+        None,
+    ]
+    rag.chunk_repository.get_by_document_id.side_effect = [[object()], []]
     progress = MagicMock()
     haiku, progress_cls = _contexts(rag, progress)
 
