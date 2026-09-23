@@ -144,11 +144,7 @@ async def _extract_items_observed(
     docling_document: "DoclingDocument",
     existing_picture_data: dict[str, bytes] | None = None,
 ) -> list[DocumentItem]:
-    """`extract_items` on a worker thread, under a `document.items` span.
-
-    Kept separate from the write so a picture-heavy document's item
-    extraction is not billed to `document.store`.
-    """
+    """`extract_items` on a worker thread, under a `document.items` span."""
     with logfire.span(
         "document.items", uri=uri, pictures=len(docling_document.pictures)
     ) as span:
@@ -164,21 +160,25 @@ async def _store_document_with_chunks(
     document: Document,
     chunks: list[Chunk],
     docling_document: "DoclingDocument",
+    observed_uri: str | None = None,
 ) -> Document:
     """Store a document with chunks, embedding any that lack embeddings.
 
-    Handles versioning/rollback on failure.
+    Handles versioning/rollback on failure. ``observed_uri`` is the URI the
+    other phase spans report; it differs from ``document.uri``, which is the
+    URI the document is stored under.
     """
+    span_uri = observed_uri if observed_uri is not None else document.uri
     chunks = await ensure_chunks_embedded(
         session.config, chunks, session.store.embedder
     )
-    items = await _extract_items_observed(document.uri, "", docling_document)
+    items = await _extract_items_observed(span_uri, "", docling_document)
     # A racing writer's document is only visible under the lock, so a transfer
     # to this one is resolved here and reported once the write commits.
     replaced_owner: str | None = None
 
     with logfire.span(
-        "document.store", uri=document.uri, chunks=len(chunks), items=len(items)
+        "document.store", uri=span_uri, chunks=len(chunks), items=len(items)
     ) as store_span:
         async with session.store.write_transaction():
             # A concurrent ingestion of the same URI may have created the
@@ -225,8 +225,7 @@ async def _store_document_with_chunks(
                     stored_doc.id, items
                 )
 
-        # `op` is only knowable after the under-lock re-check, so it is set
-        # on the way out rather than at span open.
+        # The under-lock re-check decides create vs update.
         store_span.set_attribute("op", "update" if existing is not None else "create")
         store_span.set_attribute("document_id", stored_doc.id)
 
@@ -244,12 +243,16 @@ async def _update_document_with_chunks(
     document: Document,
     chunks: list[Chunk],
     docling_document: "DoclingDocument | None" = None,
+    observed_uri: str | None = None,
 ) -> Document:
     """Update a document and replace its chunks, embedding any that lack embeddings.
 
     Handles versioning/rollback on failure. When `docling_document` is None,
-    existing items are preserved.
+    existing items are preserved. ``observed_uri`` is the URI the other phase
+    spans report; it differs from ``document.uri``, which is the URI the
+    document is stored under.
     """
+    span_uri = observed_uri if observed_uri is not None else document.uri
     assert document.id is not None, "Document ID is required for update"
 
     # Snapshot existing picture bytes before deleting items so the post-delete
@@ -268,18 +271,16 @@ async def _update_document_with_chunks(
     items: list[DocumentItem] | None = None
     if docling_document is not None:
         items = await _extract_items_observed(
-            document.uri, document.id, docling_document, existing_picture_data
+            span_uri, document.id, docling_document, existing_picture_data
         )
 
     with logfire.span(
         "document.store",
-        uri=document.uri,
+        uri=span_uri,
         op="update",
         document_id=document.id,
         chunks=len(chunks),
     ) as store_span:
-        # Absent rather than zero when no docling document came in: the
-        # existing items are preserved, not replaced with none.
         if items is not None:
             store_span.set_attribute("items", len(items))
         async with session.store.write_transaction():
@@ -604,7 +605,7 @@ async def _ingest_fetch_result(
             existing_doc.title = title
         await _prepare_and_title(session, existing_doc, docling_document)
         updated = await _update_document_with_chunks(
-            session, existing_doc, chunks, docling_document
+            session, existing_doc, chunks, docling_document, observed_uri=result.uri
         )
         await _reconcile_pdf_attachments(session, updated, result.body, depth=depth)
         return updated
@@ -617,7 +618,7 @@ async def _ingest_fetch_result(
     )
     await _prepare_and_title(session, document, docling_document)
     created = await _store_document_with_chunks(
-        session, document, chunks, docling_document
+        session, document, chunks, docling_document, observed_uri=result.uri
     )
     await _reconcile_pdf_attachments(session, created, result.body, depth=depth)
     return created
