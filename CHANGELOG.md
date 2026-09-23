@@ -15,6 +15,8 @@
   finishes. `--name` must be a file name. Live conversation runs write none.
 - `evaluations run --no-telemetry`. Without it a run refuses to start when
   Logfire finds no token.
+- `evaluations pair TREATED BASELINE`: the paired table for two result files,
+  with exact McNemar on verdicts and the sign test on `cited_map`.
 - `DatasetSpec.pair_key`: the case-metadata key two runs of a dataset pair on,
   recorded as `pair_key` in experiment metadata.
 

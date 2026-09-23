@@ -10,9 +10,10 @@ from evaluations.artifacts import download_dataset_db, upload_dataset_db
 from evaluations.config import DatasetSpec
 from evaluations.datasets import DATASETS
 from evaluations.experiment import code_revision, config_hash
+from evaluations.pairing import pair_outcomes, render
 from evaluations.population import populate_db
 from evaluations.qa import run_live_qa_benchmark, run_qa_benchmark
-from evaluations.results import check_run_name, default_results_path
+from evaluations.results import check_run_name, default_results_path, read_results
 from evaluations.retrieval import run_retrieval_benchmark
 from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
 from haiku.rag.config.models import ModelConfig
@@ -291,6 +292,27 @@ def run(
             results_dir=results or default_results_path(),
         )
     )
+
+
+@app.command()
+def pair(
+    treated: Path = typer.Argument(..., help="Result file of the arm under test."),
+    baseline: Path = typer.Argument(..., help="Result file it is compared against."),
+) -> None:
+    """The paired table for two result files: McNemar on verdicts, sign test on
+    cited_map, joined on each case's pairing key."""
+    names = (treated.name.removesuffix(".jsonl"), baseline.name.removesuffix(".jsonl"))
+    try:
+        result = pair_outcomes(
+            names[0], read_results(treated), names[1], read_results(baseline)
+        )
+    except ValueError as error:
+        console.print(str(error), style="red", markup=False)
+        raise typer.Exit(code=1) from None
+    if result.paired == 0:
+        console.print(f"{names[0]} and {names[1]} have no case in common", style="red")
+        raise typer.Exit(code=1)
+    console.print(render(result), soft_wrap=True, highlight=False, markup=False)
 
 
 @app.command()

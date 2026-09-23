@@ -66,6 +66,18 @@ overwritten. Live
 conversation runs write no file. `--name` must be a file name: letters, digits,
 dot, dash and underscore.
 
+Two result files over the same cases pair with
+
+```bash
+evaluations pair <treated>.jsonl <baseline>.jsonl
+```
+
+which joins them on each case's pairing key (`DatasetSpec.pair_key`) and prints
+accuracy, floor, cite rate, mean `cited_map`, aborts and unjudged for each arm,
+the discordant counts with the exact McNemar p-value, the `cited_map` sign test,
+and the smallest discordance split the exact test would reject. It refuses a
+file with a missing or duplicate key, and two files with no case in common.
+
 A run refuses to start when Logfire finds no token, whether from
 `LOGFIRE_TOKEN` or a credentials file. `--no-telemetry` runs without Logfire,
 leaving the result file as the only record.
