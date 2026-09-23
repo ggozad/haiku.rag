@@ -66,7 +66,8 @@ async def test_populate_batched_limits_corpus_and_vacuums(tmp_path: Path) -> Non
         config = AppConfig()
         await populate_db(spec, config, db_path=tmp_path / "db", vacuum_interval=4)
 
-    assert config.storage.auto_vacuum is False
+    assert config.storage.auto_vacuum is True
+    assert haiku.call_args.kwargs["config"].storage.auto_vacuum is False
     await_call = ingest.await_args
     assert await_call is not None
     assert len(await_call.args[2]) == 2

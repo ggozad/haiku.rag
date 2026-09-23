@@ -8,6 +8,7 @@ from rich.console import Console
 from evaluations.artifacts import download_dataset_db, upload_dataset_db
 from evaluations.config import DatasetSpec
 from evaluations.datasets import DATASETS
+from evaluations.experiment import code_revision, config_hash
 from evaluations.population import populate_db
 from evaluations.qa import run_live_qa_benchmark, run_qa_benchmark
 from evaluations.retrieval import run_retrieval_benchmark
@@ -112,6 +113,17 @@ def _load_config(config_path: Path | None) -> AppConfig:
     return AppConfig()
 
 
+def _print_run_identity(config: AppConfig) -> None:
+    revision = code_revision()
+    sha = revision["git_sha"] or "unknown"
+    dirty = " (uncommitted changes)" if revision["git_dirty"] else ""
+    console.print(
+        f"Code: {sha}{dirty} | config hash: {config_hash(config)}",
+        style="dim",
+        soft_wrap=True,
+    )
+
+
 def _load_case_ids(path: Path | None) -> set[str] | None:
     """Read a newline-delimited case-id file into a set (None when no path)."""
     if path is None:
@@ -200,6 +212,7 @@ def run(
 ) -> None:
     spec = _resolve_dataset(dataset)
     app_config = _load_config(config)
+    _print_run_identity(app_config)
     judge_model_config = app_config.evaluations.judge
 
     asyncio.run(

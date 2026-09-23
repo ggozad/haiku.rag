@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- `evaluations run` records `git_sha`, `git_dirty`, `config_hash`, `db_path`,
+  `db_documents`, `db_chunks`, `db_embedder_provider`, `db_embedder_model`,
+  `db_embedder_dim`, `db_version` and `db_written_at` in experiment metadata,
+  and prints the code revision and config hash at start.
+- `TableInfo.latest_version_at`: the newest table version time.
+
 ### Changed
 
 - Tests use pytest-asyncio auto mode and separate fast, slow end-to-end, live

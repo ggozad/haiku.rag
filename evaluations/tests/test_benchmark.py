@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import typer
+from typer.testing import CliRunner
 
 from evaluations.benchmark import (
     _load_config,
@@ -767,7 +768,7 @@ class TestExperimentMetadataCapability:
 
 
 class TestCapabilityModel:
-    def test_the_capability_runs_on_qa_model(self, tmp_path: Path) -> None:
+    async def test_the_capability_runs_on_qa_model(self, tmp_path: Path) -> None:
         from evaluations.qa import _prepare_qa_run
 
         spec = DatasetSpec(
@@ -783,11 +784,12 @@ class TestCapabilityModel:
             provider="openai", name="served", base_url="http://gpu:8000/v1"
         )
         with patch("evaluations.qa.get_model") as mock_get_model:
-            run = _prepare_qa_run(
+            run = await _prepare_qa_run(
                 spec, config, None, None, tmp_path / "test.lancedb", None, None, None
             )
         mock_get_model.assert_called_once_with(config.qa.model, config)
         assert run.experiment_metadata["capability_model"] == "served"
+        assert run.experiment_metadata["db_path"] == str(tmp_path / "test.lancedb")
 
 
 class TestRunQaBenchmarkCapability:
@@ -1096,6 +1098,33 @@ class TestRetrievalTarget:
         assert result["map"] == 1.0
         assert searches[0]["include_images"] is False
 
+    async def test_records_the_corpus_fingerprint(self, tmp_path: Path) -> None:
+        from pydantic_evals import Dataset as EvalDataset
+
+        from evaluations.benchmark import run_retrieval_benchmark
+
+        class FakeRag:
+            async def search(self, **kwargs) -> list:
+                return []
+
+        recorded: dict = {}
+        evaluate = EvalDataset.evaluate
+
+        async def capture(self, *args, **kwargs):
+            recorded.update(kwargs["metadata"])
+            return await evaluate(self, *args, **kwargs)
+
+        db = tmp_path / "test.lancedb"
+        with (
+            patch("evaluations.retrieval.HaikuRAG") as mock_haiku,
+            patch.object(EvalDataset, "evaluate", capture),
+        ):
+            mock_haiku.return_value.__aenter__.return_value = FakeRag()
+            await run_retrieval_benchmark(self._spec(), AppConfig(), db_path=db)
+
+        assert recorded["db_path"] == str(db)
+        assert "db_documents" in recorded
+
     async def test_ranks_each_document_once(self, tmp_path: Path) -> None:
         from evaluations.benchmark import run_retrieval_benchmark
         from haiku.rag.store.models.chunk import SearchResult
@@ -1305,3 +1334,22 @@ async def test_population_refuses_a_configured_set():
             name=None,
             db_path=None,
         )
+
+
+class TestRunPrintsItsIdentity:
+    def test_prints_the_revision_and_config_hash(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import evaluations.benchmark as benchmark
+        from evaluations.experiment import code_revision, config_hash
+
+        async def nothing(**kwargs) -> None:
+            return None
+
+        monkeypatch.setattr(benchmark, "evaluate_dataset", nothing)
+        with patch("evaluations.benchmark.find_config_file", return_value=None):
+            result = CliRunner().invoke(benchmark.app, ["run", "frames", "--skip-db"])
+
+        assert result.exit_code == 0, result.output
+        assert code_revision()["git_sha"] in result.output
+        assert f"config hash: {config_hash(AppConfig())}" in result.output

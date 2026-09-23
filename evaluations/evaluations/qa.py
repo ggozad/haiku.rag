@@ -25,7 +25,11 @@ from evaluations.evaluators import (
     RefusalJudge,
     TranscriptLLMJudge,
 )
-from evaluations.experiment import DEFAULT_JUDGE_MODEL, build_experiment_metadata
+from evaluations.experiment import (
+    DEFAULT_JUDGE_MODEL,
+    build_experiment_metadata,
+    corpus_fingerprint,
+)
 from haiku.rag.capabilities.rag import create_capability
 from haiku.rag.config import AppConfig
 from haiku.rag.config.models import ModelConfig
@@ -188,7 +192,7 @@ class _QARun(NamedTuple):
     capability_model: Any
 
 
-def _prepare_qa_run(
+async def _prepare_qa_run(
     spec: DatasetSpec,
     config: AppConfig,
     limit: int | None,
@@ -222,12 +226,16 @@ def _prepare_qa_run(
         document_filter=document_filter,
     )
     experiment_metadata.update(spec.experiment_metadata or {})
+    db = (
+        None
+        if spec.uses_configured_databases(config, db_path)
+        else spec.db_path(db_path)
+    )
+    experiment_metadata.update(await corpus_fingerprint(db, config))
 
     return _QARun(
         cases=cases,
-        db=None
-        if spec.uses_configured_databases(config, db_path)
-        else spec.db_path(db_path),
+        db=db,
         judge_config=judge_config,
         eval_name=eval_name,
         experiment_metadata=experiment_metadata,
@@ -265,7 +273,7 @@ async def run_qa_benchmark(
     case_ids: set[str] | None = None,
     document_filter: str | None = None,
 ) -> ReportCaseFailure[str, str, dict[str, str]] | None:
-    run = _prepare_qa_run(
+    run = await _prepare_qa_run(
         spec,
         config,
         limit,
@@ -434,7 +442,7 @@ async def run_live_qa_benchmark(
     One case per conversation; ``limit`` counts conversations. Answers carry
     forward as real message history, so prior-turn compaction is exercised.
     """
-    run = _prepare_qa_run(
+    run = await _prepare_qa_run(
         spec,
         config,
         limit,

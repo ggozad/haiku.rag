@@ -80,7 +80,9 @@ async def populate_db(
     if spec.document_limit is not None:
         corpus = corpus.select(range(min(spec.document_limit, len(corpus))))
 
-    # Disable auto_vacuum - we'll vacuum periodically instead to prevent disk exhaustion
+    # Vacuum periodically instead, to prevent disk exhaustion. The caller's
+    # config is the one the run hashes, so change a copy.
+    config = config.model_copy(deep=True)
     config.storage.auto_vacuum = False
 
     with Progress() as progress:
