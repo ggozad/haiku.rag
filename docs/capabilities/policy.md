@@ -13,24 +13,22 @@ policy capability. Pydantic AI rejects a second.
 
 A model that finds nothing relevant calls the cite tool with an empty list. That records
 the answer as *ungrounded*, which is distinct from an answer that declared nothing at
-all (*missing*). The distinction is what makes a declaration requirable without forcing
-the model to invent grounding.
+all (*missing*). A model can always satisfy the policy without inventing grounding.
 
 ## What happens when a question ends undeclared
 
 The model is asked once to record what grounded the answer it already gave. It is not
 asked to change the answer. If the cite tool is no longer available by then, or the
 question finishes undeclared anyway, the question is recorded in
-`CitationPolicyState.violations` under the `"citation_policy"` state key. Pointing a
-model at a tool that is gone costs it retries, so the capability records the failure
-instead.
+`CitationPolicyState.violations` under the `"citation_policy"` state key, and the model
+is not asked again.
 
 ## Which answers are enforced
 
 Every answer in a conversation that has something to declare: either this question
 retrieved evidence, or the conversation has already cited something, which stays
 available to later answers. A follow-up about evidence cited earlier is enforced even
-though it searched nothing, which is the case the capability exists for.
+though it searched nothing.
 
 Once anything has been cited, later turns are enforced too, a greeting included. The
 model satisfies the policy by citing an empty list, at the cost of one extra request. A

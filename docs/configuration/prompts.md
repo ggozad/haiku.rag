@@ -26,7 +26,7 @@ The `domain_preamble` field provides **domain context** prepended to the RAG cap
 - Clarify domain-specific terminology
 - Provide context that helps the model interpret ambiguous queries
 
-**Important:** `domain_preamble` is for domain context, not behavioral instructions. Descriptions of subject matter, terminology, and content scope belong here. Applications can add behavioral guidance through normal Pydantic AI agent instructions.
+`domain_preamble` is for domain context, not behavioral instructions. Descriptions of subject matter, terminology, and content scope belong here. Applications can add behavioral guidance through normal Pydantic AI agent instructions.
 
 **Example:**
 

@@ -26,11 +26,6 @@
 
 ### Changed
 
-- Tests use pytest-asyncio auto mode and separate fast, slow end-to-end, live
-  integration and evaluations lanes, with request delays removed from
-  docling-serve cassette playback, core tests grouped by source subsystem, and
-  redundant smoke coverage removed. The evaluations lane now enforces an 85%
-  coverage floor.
 - Chat "Clear chat" keeps the selected document filter.
 - Docker images: the default `mcp` command binds `0.0.0.0`. The unused
   `DEFAULT_DATA_DIR` variable is removed; set `storage.data_dir: /data` in the

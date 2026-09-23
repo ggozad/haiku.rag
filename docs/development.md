@@ -116,7 +116,7 @@ async def test_pdf_visualization(temp_db_path):
 ```
 
 Integration tests are skipped in CI. Start the required services and they run as
-part of the core suite; they skip when a service is unreachable.
+part of the core suite, and skip when a service is unreachable.
 
 ## Linting and formatting
 

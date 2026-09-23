@@ -22,8 +22,8 @@ haiku-rag mcp --stdio
 ```
 
 `--host` defaults to `127.0.0.1` (loopback only). Bind to `0.0.0.0` only
-when you want the MCP server reachable from outside the local machine —
-e.g. inside a Docker container with port mapping, or on a trusted LAN.
+when the MCP server must be reachable from outside the machine, such as
+inside a Docker container with port mapping, or on a trusted LAN.
 
 The server opens the database read-only. Ingestion goes through the CLI
 (`haiku-rag add`, `add-src`, `delete`) or [`haiku-ingester`](ingester.md).
@@ -148,7 +148,7 @@ embeds the query image and searches by vector similarity alone.
 
 `get_document` returns a document whole, in reading order. For a long one,
 `get_document_outline` returns the heading tree with page numbers and
-`get_document_section` the text of one section, subsections included; a
+`get_document_section` the text of one section, subsections included. A
 node's `id` in the outline is the `section_id`. A document without headings
 has an empty outline. `list_documents` returns titles, URIs and metadata,
 which is how a client learns what a filter can match.

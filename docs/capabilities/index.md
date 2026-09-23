@@ -114,7 +114,7 @@ capabilities:
 
 The block is read like a `haiku.rag.yaml` file: keys it omits take `AppConfig` defaults
 rather than values from the configuration file on disk. The embedding model must match the
-database; a mismatch may prevent opening it or produce invalid retrieval. Write the block in
+database. A mismatch may prevent opening it or produce invalid retrieval. Write the block in
 full or omit it and let the [configuration file](../configuration/index.md) apply.
 
 ## State

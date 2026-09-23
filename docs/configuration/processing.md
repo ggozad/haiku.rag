@@ -91,9 +91,9 @@ processing:
     pdf_backend: docling_parse   # docling_parse, threaded_docling_parse, pypdfium2
 ```
 
-- **pdf_backend**: The parser docling uses to read a PDF. The parsers segment a document differently, so both converters are given this same value: change it and expect different items, chunk boundaries and chunk ids on the next ingest.
+- **pdf_backend**: The parser docling uses to read a PDF. Both converters receive it. The parsers segment a document differently, so a change brings different items, chunk boundaries and chunk ids on the next ingest.
   - `docling_parse` (default): serialized page parsing
-  - `threaded_docling_parse`: concurrent page parsing, and docling's own default. On some documents its page producer never delivers and the conversion never returns, so it is not ours. Measured over ten arXiv papers against `docling_parse`: one table undetected, 7% fewer table cells, 9% faster.
+  - `threaded_docling_parse`: concurrent page parsing, and docling's own default. On some documents the conversion never returns. Over ten arXiv papers against `docling_parse`: one table undetected, 7% fewer table cells, 9% faster.
   - `pypdfium2`: faster and simpler, less layout detail. Over the same ten papers: 7% fewer words and 28% fewer table cells.
 
 #### OCR settings
@@ -107,8 +107,8 @@ processing:
     ocr_lang: []          # List of OCR languages, e.g., ["en", "fr", "de"]
 ```
 
-- **do_ocr**: When `true`, applies OCR to images and scanned pages. Disable for faster processing if documents contain only native text.
-- **force_ocr**: When `true`, replaces existing text layers with OCR output. Useful for documents with poor text extraction.
+- **do_ocr**: When `true`, applies OCR to images and scanned pages. Disable it for documents with only embedded text, which converts faster.
+- **force_ocr**: When `true`, replaces existing text layers with OCR output, for documents whose embedded text is poor.
 - **ocr_engine**: Select the OCR engine to use. Options:
   - `auto` (default): Automatically select the best available engine
   - `easyocr`: EasyOCR - supports many languages, good accuracy
@@ -128,7 +128,7 @@ processing:
     table_cell_matching: true   # Match cells back to PDF
 ```
 
-- **do_table_structure**: When `true`, extracts table structure. Disable for faster processing if tables aren't important.
+- **do_table_structure**: When `true`, extracts table structure. Disabling it converts faster, without table structure.
 - **table_mode**:
   - `accurate`: Better table structure recognition (slower)
   - `fast`: Faster processing with simpler table detection
@@ -147,7 +147,7 @@ processing:
 
 - **images_scale**: Scale factor for extracted images. Higher values = better quality but larger size. Typical range: 1.0-3.0.
 - **generate_page_images**: When `true` (default), rendered images of each PDF page are included in the document. Required for `visualize_chunk()` to show visual grounding. When `false`, page images are excluded to reduce document size.
-- **fetch_remote_images**: When `true` (default), HTML and Markdown inputs have their external `<img src="https://...">` URLs fetched and stored as picture bytes. Set `false` for air-gapped ingest. Applies only to `docling-local`. **docling-serve doesn't fetch external `<img>` URLs** (the `ConvertDocumentsOptions` API exposes no equivalent flag, and HTML falls through to docling's `fetch_images=False` default); HTML ingested via docling-serve produces picture items with `picture_data=NULL`. Use `converter: docling-local` if you need image bytes from HTML/Markdown.
+- **fetch_remote_images**: When `true` (default), HTML and Markdown inputs have their external `<img src="https://...">` URLs fetched and stored as picture bytes. Set `false` for air-gapped ingest. Applies only to `docling-local`. docling-serve has no such option and does not fetch external images, so HTML it converts has picture items without bytes (`picture_data=NULL`).
 - **fetch_headers**: HTTP headers sent with those image fetches. Default: a `User-Agent` naming haiku.rag. `docling-local` only.
 - **infer_furniture**: When `false` (default), everything in an HTML page is document content. When `true`, docling files whatever precedes the first heading as page furniture and leaves it out of the document, which removes site banners and navigation on web pages but also removes an article's lead paragraph and infobox. Applies only to `docling-local`; docling-serve keeps docling's rule, so HTML converted there loses the content before its first heading.
 
@@ -171,7 +171,7 @@ Per-image failures (404, timeout, oversized, unreadable) leave that picture as a
 | `.pdf` | ✅ | ✅ | ✅ | n/a | n/a |
 | `.png` / `.jpg` / `.jpeg` / `.bmp` / `.tiff` / `.webp` | ✅ | ✅ | ✅ | n/a | n/a |
 | `.html` / `.xhtml` | n/a (markup-based) | n/a | ✅ on embedded pictures | ✅ | ✅ |
-| `.md` / `.qmd` / `.rmd` | n/a | n/a | ✅ on embedded pictures | ✅ (only `<img>` HTML blocks; native `![alt](url)` syntax is not fetched by docling) | n/a |
+| `.md` / `.qmd` / `.rmd` | n/a | n/a | ✅ on embedded pictures | ✅ (`<img>` HTML blocks only, not `![alt](url)`) | n/a |
 | `.docx` / `.pptx` | n/a | n/a | ✅ on embedded pictures | n/a | n/a |
 | Other (`.csv`, `.xlsx`, `.adoc`, `.tex`, `.xml`, `.eml`, `.msg`) | n/a | n/a | n/a | n/a | n/a |
 
@@ -204,9 +204,6 @@ processing:
 
 The model is called at `/v1/chat/completions` under its `base_url`, which may be written with or without `/v1`. Without a `base_url`, only `ollama` and `openai` are accepted. Writing a `model` block replaces the default `thinking: false`, so set it explicitly on a model that thinks by default. `timeout` and `max_tokens` bound each call during conversion. `rebuild --descriptions` runs the same model through Pydantic AI and does not apply them.
 
-!!! warning "Breaking change"
-    `processing.conversion_options.picture_description.enabled` is replaced by `processing.pictures`. Map `enabled: true` → `pictures: description`, `enabled: false` → `pictures: image`. The pre-April-30 `generate_picture_images` flag also no longer exists. Use `pictures: none` for the old opt-out.
-
 **Switching modes on an existing database** doesn't require reingesting when the bytes are already stored:
 
 - `image` → `description`: `haiku-rag rebuild --descriptions` runs the VLM over stored bytes and re-chunks. Skips the docling parse entirely.
@@ -225,7 +222,7 @@ Three independent settings drive ingest, retrieval, and QA:
 | `embeddings.model.multimodal` | Can the embedder index image content? | `false` (default, text-only) / `true` (supported on `vllm`, `openrouter`, `voyageai`, `cohere`) |
 | `qa.model.vision` | Can the QA model interpret images? | `false` / `true` (default) |
 
-The Embedder column below is driven by `embeddings.model.multimodal`, not the provider name — a vision-capable model under a text-only configuration still indexes no images, and an image-only document then produces zero chunks. See [Multimodal embedders](providers.md#multimodal-embedders).
+The Embedder column below is driven by `embeddings.model.multimodal`, not the provider name. A vision-capable model under a text-only configuration still indexes no images, and an image-only document then produces zero chunks. See [Multimodal embedders](providers.md#multimodal-embedders).
 
 **What gets stored** by `pictures` × embedder:
 
@@ -239,8 +236,8 @@ The Embedder column below is driven by `embeddings.model.multimodal`, not the pr
 
 **What QA receives** at search time:
 
-- `qa.model.vision: false` — text chunks only (descriptions, when present, answer figure questions in prose).
-- `qa.model.vision: true` — text chunks + raw picture bytes via `BinaryContent`. The model reads figures directly. Requires `pictures != none` so the bytes exist.
+- `qa.model.vision: false`: text chunks only (descriptions, when present, answer figure questions in prose).
+- `qa.model.vision: true`: text chunks and raw picture bytes via `BinaryContent`. The model reads figures directly. Requires `pictures != none` so the bytes exist.
 
 `qa.model.vision` is independent of ingestion. Flipping it never requires reingesting. It declares what the model can read: the default `qwen3.8` is vision-capable, so the default is `true`. Set it `false` when pointing `qa.model` at a text-only model, where `true` causes silent acceptance and confabulation on Ollama and a 400 on OpenAI.
 
@@ -262,36 +259,27 @@ processing:
   conversion_timeout: 600   # seconds
 ```
 
-Only `docling-local` reads this; a docling-serve conversion is bounded by
+Only `docling-local` reads this. A docling-serve conversion is bounded by
 `providers.docling_serve.timeout` per HTTP call instead.
 
 - **conversion_timeout**: How long one document may spend in conversion before
-  it is abandoned and `ConversionTimeoutError` is raised. It bounds the
-  caller's wait only. Each conversion runs on its own daemon thread, which is
-  never cancelled, so an abandoned one runs to whatever end it reaches without
-  holding up process exit.
+  it is abandoned with `ConversionTimeoutError`. It bounds the wait, not the
+  work: the abandoned conversion keeps running in the background, holding a
+  thread and its memory, and does not block process exit.
 
-  PDFs and office formats share one docling converter, and an abandoned
-  conversion keeps it, so subsequent conversions raise `ConverterWedgedError`
-  naming the restart. A service that must keep ingesting after a stalled PDF
-  has to replace the process, not retry in it.
-
-  HTML and Markdown build a converter per call, so abandoning one leaves later
-  conversions able to run. It is not free either: the thread is never
-  cancelled, so each stall keeps one OS thread and its memory for the life of
-  the process.
+  PDFs and office formats share one docling converter, which an abandoned
+  conversion keeps, so later conversions in that process raise
+  `ConverterWedgedError`. Recovering needs a new process. The
+  [ingester](../ingester.md#run-it-under-a-supervisor) exits for that reason,
+  to be restarted. HTML and Markdown get a converter per call, so later
+  conversions still run.
 
 ### Chunking strategies
 
-**Hybrid chunking** (default):
-- Structure-aware chunking
-- Respects document boundaries
-- Best for most use cases
+`chunker_type` picks the docling chunker:
 
-**Hierarchical chunking**:
-- Creates hierarchical chunk structure
-- Preserves document hierarchy
-- Useful for complex documents
+- `hybrid` (default): docling's `HybridChunker`. Starts from the document's structure, splits items longer than `chunk_size` tokens of `chunking_tokenizer`, and with `chunking_merge_peers` merges undersized neighbours under the same headings.
+- `hierarchical`: docling's `HierarchicalChunker`. One chunk per document item (paragraph, list, table), with no token limit, so `chunk_size` does not apply.
 
 ### Chunk size
 
@@ -300,7 +288,7 @@ processing:
   chunk_size: 256  # Maximum tokens per chunk
 ```
 
-Context expansion settings (for enriching search results with surrounding content) are configured in the `search` section. See [Search Settings](qa.md#search-settings).
+`chunk_size` applies to the `hybrid` chunker. How much surrounding content a search result carries is set in `search`, see [Search settings](qa.md#search-settings).
 
 ### Table serialization
 

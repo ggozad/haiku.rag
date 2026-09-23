@@ -24,10 +24,10 @@ async with HaikuRAG("path/to/database.lancedb", read_only=True) as client:
     # await client.create_document(...)  # Would raise ReadOnlyError
 ```
 
-`async with` is the lifecycle. A caller that owns the client some other way releases it with `await client.aclose()`, which does the same work for every client shape. `client.close()` closes the connection to one database and nothing else, since draining the background vacuum and releasing the embedder and reranker are awaitable; it refuses a client covering several.
+`async with` is the lifecycle. A caller that owns the client some other way releases it with `await client.aclose()`, which does the same work for every client shape. `client.close()` closes the connection to one database and nothing else: it does not drain the background vacuum or release the embedder and reranker, which are awaitable. It refuses a client covering several.
 
 !!! note
-    Databases must be explicitly created with `create=True` or via `haiku-rag init` before use. Opening a nonexistent local database given as a path raises `FileNotFoundError`, naming the path; a configured or default database raises `SourceUnavailableError`, which names the database rather than its location. A path beside a configured `lancedb.databases` raises `AmbiguousDatabaseError`.
+    Databases must be explicitly created with `create=True` or via `haiku-rag init` before use. Opening a nonexistent local database given as a path raises `FileNotFoundError`, naming the path. A configured or default database raises `SourceUnavailableError`, which names the database rather than its location. A path beside a configured `lancedb.databases` raises `AmbiguousDatabaseError`.
 
 !!! note
     Read-only mode blocks every write, and downgrades an embedding provider or name mismatch to a warning (see [Operational constraints](configuration/storage.md#operational-constraints)).
@@ -188,8 +188,6 @@ custom_chunks = [
 await client.update_document(document_id=doc.id, chunks=custom_chunks)
 ```
 
-**Notes:**
-
 - Updates to only `metadata` or `title` skip re-chunking
 - Updates to `content` trigger re-chunking and re-embedding
 - Custom `chunks` with embeddings are stored as-is. Missing embeddings are generated automatically
@@ -296,7 +294,7 @@ results = await client.search(
 )
 ```
 
-**Note:** Filters apply to document properties only. Available columns for filtering:
+Filters apply to document columns only:
 - `id` - Document ID
 - `uri` - Document URI/URL
 - `title` - Document title (if set)

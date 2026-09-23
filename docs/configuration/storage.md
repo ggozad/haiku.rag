@@ -41,40 +41,30 @@ storage:
 ```
 
 - **data_dir**: Directory for local database storage. When empty, uses platform-specific default locations
-- **auto_vacuum**: When enabled (default), automatically runs vacuum after document create/update/delete operations and database rebuilds. Background vacuums are throttled to at most one every 5 minutes, so sustained ingestion does not trigger continuous compaction, and a final vacuum runs when the client closes. Set to `false` to disable automatic vacuuming and rely on manual `haiku-rag vacuum` commands only. Disabling can help avoid potential crashes in high-concurrency scenarios
+- **auto_vacuum**: When enabled (default), automatically runs vacuum after document create/update/delete operations and database rebuilds. Background vacuums are throttled to at most one every 5 minutes, so sustained ingestion does not trigger continuous compaction, and a final vacuum runs when the client closes. Set to `false` to vacuum only with `haiku-rag vacuum`
 - **vacuum_retention_seconds**: When vacuum runs, old table versions older than this threshold are removed. Default: 86400 seconds (1 day). Set to 0 for aggressive cleanup (removes all old versions immediately)
-- **compaction_target_bytes**: Target size for the fragments compaction writes on the tables that store docling blobs. Default: 2 GiB. Advisory rather than a cap, see [Vacuum Memory](#vacuum-memory) below
+- **compaction_target_bytes**: Target size for the fragments compaction writes on the tables that store docling blobs. Default: 2 GiB. Advisory rather than a cap, see [Vacuum memory](#vacuum-memory) below
 
-!!! warning "Vacuum Retention Threshold"
-    The `vacuum_retention_seconds` value should be larger than the typical time it takes to process and write a document. If a concurrent operation is in progress while vacuum runs, setting this value too low can cause race conditions where vacuum removes table versions that an in-flight operation still needs. The default of 86400 seconds (1 day) is conservative and safe for most use cases.
+!!! warning "Vacuum retention"
+    Keep `vacuum_retention_seconds` above the time a document takes to process and write. A lower value lets vacuum remove table versions an in-flight operation still needs.
 
 ### Vacuum memory
 
-Vacuum compacts small data files into larger ones. LanceDB targets roughly one million rows per fragment, which a `documents` table holding multi-megabyte docling blobs never reaches, so an unsized pass re-merges the whole existing fragment rather than only the new rows, and peak memory scales with the table rather than with what was added.
-
-The `documents` and `document_items` tables are therefore compacted with an explicit fragment target derived from `compaction_target_bytes`. The target is sized from the widest fragment's bytes per row, taken from table metadata without reading any payload, so a handful of very large documents shrinks it for the whole table. The remaining tables use LanceDB's own optimize, which is already bounded for them because their rows are small.
+Vacuum compacts small data files into larger ones. The `documents` and `document_items` tables, which hold the docling blobs, are compacted to fragments of about `compaction_target_bytes`, sized from the widest fragment's bytes per row. The other tables use LanceDB's own optimize.
 
 !!! warning "The target is not a memory cap"
-    `compaction_target_bytes` sizes the fragments compaction **writes**. It cannot shrink a fragment that is already larger, and LanceDB rewrites such a fragment in one piece, costing roughly its own size no matter how low the target is set.
+    `compaction_target_bytes` sizes the fragments compaction **writes**. It cannot shrink a fragment that is already larger: LanceDB rewrites such a fragment in one piece, at roughly its own size, the first time deletions within it pass 10%, and splits it to the target. A single large ingest batch writes one large fragment.
 
-    Oversized fragments come from two places: a single large ingest batch, since each write becomes one fragment, and any database vacuumed before this release. In both cases the cost is paid once per fragment, the first time deletions within it pass LanceDB's 10% threshold, after which it is split to the target and stays there.
+    So peak memory is the larger of `compaction_target_bytes` and the biggest existing fragment. Lower the first by reducing it, and the second by ingesting in smaller batches.
 
-    So the practical peak is the larger of `compaction_target_bytes` and your biggest existing fragment. To lower the first, reduce it; to lower the second, ingest in smaller batches.
+A row larger than the target costs roughly its own size. A 300-page PDF at `images_scale: 2.0` makes a row of about 445 MB. To make rows smaller:
 
-A row larger than the target cannot be sized at all: the target floors at one row and the pass costs roughly that row's size. A 300-page PDF at `images_scale: 2.0` produces a row of around 445 MB. To reduce row size rather than raise the target:
-
-- Reduce `images_scale` (see [Image Settings](processing.md#image-settings)). Rendered page rasters dominate the size of `documents`, and their byte cost falls with the square of the scale factor.
-- Set `generate_page_images: false` if visual grounding through `visualize_chunk()` is not needed. This removes page rasters entirely.
+- Reduce `images_scale` (see [Image settings](processing.md#image-settings)). Page images dominate `documents`, and their size falls with the square of the scale.
+- Set `generate_page_images: false` when visual grounding is not needed. This removes page images entirely.
 
 Vacuum also adds new rows to the full-text index. Search stays correct without it but scans the uncovered rows on every query. `haiku-rag doctor` reports the coverage.
 
-If fragment sizes are missing from the table metadata, which can happen for databases written by much older versions, compaction is skipped for that table and a warning is logged. Old versions are still pruned.
-
-#### The first vacuum after upgrading
-
-A database written before this release may contain one large fragment built by unsized compaction. It is left alone until deletions within it pass the 10% threshold, so early vacuums are cheap but its superseded payload is not yet reclaimed and disk usage can sit above the live data size. The pass that crosses the threshold rewrites it once, splitting it to the target, after which the table stays at the target and disk returns to normal.
-
-Compaction options are not exposed by LanceDB's async API ([lancedb/lancedb#2325](https://github.com/lancedb/lancedb/issues/2325)), so these tables are compacted through `lance` directly.
+When a table's metadata lacks fragment sizes, as in databases written by old versions, compaction skips that table with a warning. Old versions are still pruned.
 
 ### Placing the database
 
@@ -175,14 +165,12 @@ lancedb:
     papers: hdfs://namenode:port/path/to/table
 ```
 
-- **LanceDB Cloud** (`db://`): Requires `api_key` and `region`. Table optimization and indexing are managed server-side.
+- **LanceDB Cloud** (`db://`): Requires `api_key` and `region`. LanceDB Cloud optimizes and indexes tables itself, so haiku.rag does not.
 - **Object storage** (`s3://`, `gs://`, `az://`, `hdfs://`): Uses `storage_options` for credentials and endpoint configuration. Authentication can also be provided via environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, etc.) or cloud provider SDK defaults (AWS CLI, Azure CLI, gcloud).
 - **S3-compatible stores** (MinIO, Tigris, etc.): Set `endpoint` in `storage_options`. When using `http://` endpoints, also set `allow_http: "true"`.
 - **Local path** (no scheme): a location without a scheme is a local path. See [Placing the Database](#placing-the-database).
 
 The `storage_options` keys are case-insensitive and passed directly to the underlying object store library. Available keys depend on the backend. See the [LanceDB storage docs](https://lancedb.com/docs/storage/) for details.
-
-**Note:** Table optimization is automatically handled by LanceDB Cloud (`db://` URIs) and is disabled for better performance. For object storage backends (S3, Azure, GCS), optimization and vector indexing are still performed normally.
 
 ### Caching and read consistency
 
@@ -203,8 +191,8 @@ writing process per database URI, any number of read-only consumers.
 
 The recommended layout for production is "different buckets, same account, separate IAM roles per process":
 
-- **Ingestion process** — IAM role with `s3:Get/List` on the documents bucket and `s3:Get/Put/Delete` on the LanceDB bucket. Runs `haiku-ingester serve` (with `ingester.sources[type=s3]` pointing at the documents bucket). Exactly one such process per LanceDB URI.
-- **Consumer processes** (1..N) — IAM role with `s3:Get/List` on the LanceDB bucket only. Run `haiku-rag mcp`, the chat TUI, etc. They never see the documents bucket.
+- **Ingestion process**: IAM role with `s3:Get/List` on the documents bucket and `s3:Get/Put/Delete` on the LanceDB bucket. Runs `haiku-ingester serve` (with `ingester.sources[type=s3]` pointing at the documents bucket). Exactly one such process per LanceDB URI.
+- **Consumer processes** (1..N): IAM role with `s3:Get/List` on the LanceDB bucket only. Run `haiku-rag mcp`, the chat TUI, etc. They never see the documents bucket.
 
 Each process picks up its own credentials from the AWS default chain (env vars, IAM instance role, AWS profile), so no credentials are hard-coded in the configuration files.
 
@@ -231,12 +219,12 @@ For search behavior settings (`limit`, `max_context_chars`), see [Search and Que
   - `cosine`: Cosine similarity (default, best for most embeddings)
   - `l2`: Euclidean distance
 - **vector_refine_factor**: Improves accuracy when using a vector index by retrieving `refine_factor * limit` candidates (using approximate search) and re-ranking them with exact distances. Higher values increase accuracy but slow down queries. Default: 30
-  - **Only applies with a vector index** - has no effect on brute-force search, which already returns exact results
+  - Only applies with a vector index. Brute-force search already returns exact results
 - **vector_nprobes**: How many IVF partitions each query searches. Higher values increase recall and latency. A larger corpus holds more partitions, so the same value covers a smaller fraction of it. Default: 20
-  - **Only applies with a vector index** - ignored by brute-force search
+  - Only applies with a vector index
 
 !!! note
-    Vector indexes are only necessary for large datasets with over 100,000 chunks. For smaller datasets, LanceDB's brute-force kNN search provides exact results with good performance. Only create an index if you notice search performance degradation on large datasets.
+    Below about 100,000 chunks, brute-force kNN search is exact and fast enough. Create an index when search slows on a larger corpus.
 
 Retrieval MAP with and without an index, measured on copies of the benchmark databases with no reranker:
 
@@ -246,29 +234,16 @@ Retrieval MAP with and without an index, measured on copies of the benchmark dat
 | `orb_multimodal_nemotron` | 121,168 | 2048 | 0.9799 | 0.9800 | +0.0001 | 25.8 s | 3.38 GB |
 | `frames` | 425,940 | 2560 | 0.5431 | 0.5387 | -0.0044 | 34.1 s | 4.02 GB |
 
-An index costs no accuracy at 70k and 121k chunks and 0.0044 MAP at 426k. A larger corpus holds more IVF partitions, so the default number of probes covers a smaller fraction of the space, and `vector_refine_factor` can only re-score what those probes returned. Raise `vector_nprobes` to trade latency for recall on a large corpus. Build cost is near-flat in row count because training samples the data rather than scanning it, and vector dimension drives it more than corpus size.
+An index costs no accuracy at 70k and 121k chunks and 0.0044 MAP at 426k. A larger corpus holds more IVF partitions, so the default probes cover less of it, and `vector_refine_factor` only re-scores what the probes returned. Raise `vector_nprobes` to trade latency for recall on a large corpus. Build time depends more on vector dimension than on row count, since training samples the data.
 
-**Index creation:**
-
-Vector indexes are **not created automatically** during document ingestion to avoid slowing down the process. After you've added documents (at least 256 chunks required), create the index manually:
+Ingestion never creates a vector index. Once the database holds at least 256 chunks, build one:
 
 ```bash
 haiku-rag create-index
 ```
 
-This command:
-- Checks if you have enough data (minimum 256 chunks)
-- Creates an IVF_PQ index for fast approximate nearest neighbor (ANN) search
-- Uses LanceDB's automatic parameter calculation based on your dataset size and vector dimensions
-
-**Re-indexing:**
+It builds an IVF_PQ index, with LanceDB choosing the parameters from the row count and vector dimension.
 
 New chunks reach the index without a rebuild. `optimize()`, which runs after writes while `auto_vacuum` is on, adds them as a delta part. Between a write and the next optimize, LanceDB serves ANN over the indexed rows and a brute-force scan over the remainder, then combines the results.
 
-A rebuild retrains the centroids, which are fitted once at build time and never recomputed. As a corpus grows past the distribution it was trained on the partitioning fits it less well, and delta parts accumulate. Rebuild after substantial growth:
-
-```bash
-haiku-rag create-index
-```
-
-For datasets with fewer than 256 chunks, searches use brute-force kNN scans (exact nearest neighbors, 100% recall) which work well for small datasets but don't scale beyond a few hundred thousand vectors.
+The centroids are fitted when the index is built and never recomputed, so as a corpus grows past what they were trained on the partitioning fits it less well and delta parts accumulate. Run `haiku-rag create-index` again after substantial growth to retrain them.
