@@ -209,10 +209,10 @@ evaluations download hotpotqa --force   # overwrite
 | `t2_finqa`: T²-RAGBench FinQA, `qwen3-embedding:4b` | ~2.0 GB |
 | `t2_tatdqa`: T²-RAGBench TAT-DQA, `qwen3-embedding:4b` | ~1.8 GB |
 | `hotpotqa`: HotpotQA, `qwen3-embedding:4b` | ~1.2 GB |
-| `frames`: FRAMES, `qwen3-embedding:4b` | ~5.4 GB |
+| `frames`: FRAMES, `nvidia/llama-nemotron-embed-vl-1b-v2` | ~7.2 GB |
 | `mtrag_clapnq`: MTRAG ClapNQ, `qwen3-embedding:4b`, shared by the `_rewrite`, `_live` and `_live_uncompacted` keys | ~2.7 GB |
 
-The hosted databases were built before the current ORB and FRAMES rows, so downloading them does not reproduce those numbers. The hosted `frames` corpus predates a conversion fix, lacking the articles' lead sections and infoboxes, and uses `qwen3-embedding:4b` rather than the nemotron embedder of the current rows.
+The hosted `frames` database is the corpus behind the current FRAMES rows. The hosted `orb_multimodal_nemotron` database was built before the current ORB rows, so downloading it does not reproduce those numbers.
 
 After downloading, run with `--skip-db` and the database's reference config from `evaluations/configs/`, since a database opens only against the embedder it was built with:
 
@@ -221,7 +221,6 @@ evaluations run orb_multimodal_nemotron --skip-db --config configs/orb_multimoda
 ```
 
 `t2_tatdqa` has no reference config of its own. `configs/t2_finqa.yaml` uses the same embedder and opens it.
-`configs/frames.yaml` names the stack of the current FRAMES rows, `nvidia/llama-nemotron-embed-vl-1b-v2`, so it does not open the hosted `frames` database, which uses `qwen3-embedding:4b`.
 
 The configs use vLLM endpoints. Point their `base_url` at your own OpenAI-compatible servers to run them.
 
