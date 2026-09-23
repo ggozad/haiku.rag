@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Literal, NamedTuple, cast
+from typing import Any, NamedTuple, cast
 
 from pydantic_evals import Case, set_eval_attribute
 from pydantic_evals import Dataset as EvalDataset
@@ -25,7 +25,12 @@ from evaluations.evaluators import (
     RefusalJudge,
     TranscriptLLMJudge,
 )
-from evaluations.experiment import DEFAULT_JUDGE_MODEL, build_experiment_metadata
+from evaluations.experiment import (
+    DEFAULT_JUDGE_MODEL,
+    build_experiment_metadata,
+    corpus_fingerprint,
+)
+from evaluations.results import case_writer, new_run_id, write_results
 from haiku.rag.capabilities.rag import create_capability
 from haiku.rag.config import AppConfig
 from haiku.rag.config.models import ModelConfig
@@ -66,18 +71,6 @@ def _attach_relevant_uris(
         metadata = case.metadata if case.metadata is not None else {}
         metadata["relevant_uris"] = list(uris)
         case.metadata = metadata
-
-
-CapabilityModelSource = Literal["--capability-model", "qa.model"]
-
-
-def _resolve_capability_config(
-    config: AppConfig, capability_model: ModelConfig | None
-) -> tuple[ModelConfig, CapabilityModelSource]:
-    """The model the capability runs on, and which setting supplied it."""
-    if capability_model is not None:
-        return capability_model, "--capability-model"
-    return config.qa.model, "qa.model"
 
 
 def _live_summary(report_cases, report_failures) -> dict[str, float | int] | None:
@@ -200,14 +193,13 @@ class _QARun(NamedTuple):
     capability_model: Any
 
 
-def _prepare_qa_run(
+async def _prepare_qa_run(
     spec: DatasetSpec,
     config: AppConfig,
     limit: int | None,
     name: str | None,
     db_path: Path | None,
     judge_model: ModelConfig | None,
-    capability_model: ModelConfig | None,
     case_ids: set[str] | None,
     document_filter: str | None,
 ) -> _QARun:
@@ -223,9 +215,7 @@ def _prepare_qa_run(
     ]
 
     judge_config = judge_model or DEFAULT_JUDGE_MODEL
-    capability_config, capability_model_source = _resolve_capability_config(
-        config, capability_model
-    )
+    capability_config = config.qa.model
 
     eval_name = name if name is not None else f"{spec.key}_qa_evaluation"
     experiment_metadata = build_experiment_metadata(
@@ -234,16 +224,20 @@ def _prepare_qa_run(
         config=config,
         judge_config=judge_config,
         capability_config=capability_config,
-        capability_model_source=capability_model_source,
         document_filter=document_filter,
+        pair_key=spec.pair_key,
     )
     experiment_metadata.update(spec.experiment_metadata or {})
+    db = (
+        None
+        if spec.uses_configured_databases(config, db_path)
+        else spec.db_path(db_path)
+    )
+    experiment_metadata.update(await corpus_fingerprint(db, config))
 
     return _QARun(
         cases=cases,
-        db=None
-        if spec.uses_configured_databases(config, db_path)
-        else spec.db_path(db_path),
+        db=db,
         judge_config=judge_config,
         eval_name=eval_name,
         experiment_metadata=experiment_metadata,
@@ -278,18 +272,17 @@ async def run_qa_benchmark(
     name: str | None = None,
     db_path: Path | None = None,
     judge_model: ModelConfig | None = None,
-    capability_model: ModelConfig | None = None,
     case_ids: set[str] | None = None,
     document_filter: str | None = None,
+    results_dir: Path | None = None,
 ) -> ReportCaseFailure[str, str, dict[str, str]] | None:
-    run = _prepare_qa_run(
+    run = await _prepare_qa_run(
         spec,
         config,
         limit,
         name,
         db_path,
         judge_model,
-        capability_model,
         case_ids,
         document_filter,
     )
@@ -361,13 +354,28 @@ async def run_qa_benchmark(
         set_eval_attribute("citation_status", result.citation_status)
         return result.answer
 
+    run_id = new_run_id()
     report = await evaluation_dataset.evaluate(
         answer_question,
         name=run.eval_name,
         max_concurrency=1,
         progress=True,
         metadata=run.experiment_metadata,
+        lifecycle=None
+        if results_dir is None
+        else case_writer(
+            results_dir, name=run.eval_name, pair_key=spec.pair_key, run_id=run_id
+        ),
     )
+    if results_dir is not None:
+        results_path = write_results(
+            report,
+            name=run.eval_name,
+            pair_key=spec.pair_key,
+            directory=results_dir,
+            run_id=run_id,
+        )
+        console.print(f"Per-case results: {results_path}", style="dim", soft_wrap=True)
 
     total_processed = len(report.cases)
     failures = report.failures
@@ -444,7 +452,6 @@ async def run_live_qa_benchmark(
     name: str | None = None,
     db_path: Path | None = None,
     judge_model: ModelConfig | None = None,
-    capability_model: ModelConfig | None = None,
     case_ids: set[str] | None = None,
     document_filter: str | None = None,
 ) -> None:
@@ -453,14 +460,13 @@ async def run_live_qa_benchmark(
     One case per conversation; ``limit`` counts conversations. Answers carry
     forward as real message history, so prior-turn compaction is exercised.
     """
-    run = _prepare_qa_run(
+    run = await _prepare_qa_run(
         spec,
         config,
         limit,
         name,
         db_path,
         judge_model,
-        capability_model,
         case_ids,
         document_filter,
     )

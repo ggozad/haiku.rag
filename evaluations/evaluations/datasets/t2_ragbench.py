@@ -139,6 +139,7 @@ def build_t2_case(index: int, doc: Mapping[str, Any]) -> Case[str, str, dict[str
 def _t2_spec(subset: str, key: str, db_filename: str) -> DatasetSpec:
     return DatasetSpec(
         key=key,
+        pair_key="id",
         db_filename=db_filename,
         document_loader=partial(load_t2_corpus, subset),
         document_mapper=map_t2_document,

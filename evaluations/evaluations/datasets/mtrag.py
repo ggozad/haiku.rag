@@ -258,6 +258,7 @@ def build_mtrag_live_case(
 def _mtrag_spec(key: str, variant: str) -> DatasetSpec:
     return DatasetSpec(
         key=key,
+        pair_key="task_id",
         db_filename="mtrag_clapnq.lancedb",
         document_loader=load_clapnq_corpus,
         document_mapper=map_mtrag_document,
@@ -286,6 +287,7 @@ MTRAG_CLAPNQ_REWRITE_SPEC = _mtrag_spec("mtrag_clapnq_rewrite", "rewrite")
 def _mtrag_live_spec(key: str, compaction: bool) -> DatasetSpec:
     return DatasetSpec(
         key=key,
+        pair_key="conversation_id",
         db_filename="mtrag_clapnq.lancedb",
         document_loader=load_clapnq_corpus,
         document_mapper=map_mtrag_document,

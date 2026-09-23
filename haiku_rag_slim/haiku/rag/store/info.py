@@ -35,11 +35,14 @@ async def get_database_stats(db: lancedb.AsyncConnection) -> dict:
         tables[name] = tbl
         # lancedb's .stats() stub claims TableStatistics but returns a plain dict at runtime.
         tbl_stats: dict = await tbl.stats()  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+        versions = await tbl.list_versions()
+        latest = versions[-1]["timestamp"] if versions else None
         stats[name] = {
             "exists": True,
             "num_rows": tbl_stats.get("num_rows", 0),
             "total_bytes": tbl_stats.get("total_bytes", 0),
-            "num_versions": len(await tbl.list_versions()),
+            "num_versions": len(versions),
+            "latest_version_at": None if latest is None else latest.isoformat(),
         }
 
     if stats["chunks"]["exists"]:
@@ -68,6 +71,7 @@ class TableInfo(BaseModel):
     num_rows: int = 0
     total_bytes: int = 0
     num_versions: int = 0
+    latest_version_at: str | None = None
 
 
 class VectorIndexInfo(BaseModel):
@@ -135,6 +139,7 @@ async def gather_database_info(location: Path | str, config: AppConfig) -> Datab
             num_rows=stats[name].get("num_rows", 0),
             total_bytes=stats[name].get("total_bytes", 0),
             num_versions=stats[name].get("num_versions", 0),
+            latest_version_at=stats[name].get("latest_version_at"),
         )
         for name in ("documents", "document_meta", "chunks", "document_items")
     ]

@@ -9,6 +9,21 @@ Eval runs (`evaluations/`) ship spans to Logfire under `service_name = 'evals'`.
 This skill finds a run, surfaces its metrics and failures, and drills into a
 single case. Read-only.
 
+## Read the result file first
+
+A single-question QA run also writes one JSON line per case to
+`<data dir>/evaluations/results/<name>.<trace id>.jsonl`, and prints the
+path when it ends. While it runs, rows are appended to `<name>.<run id>.partial.jsonl`
+as each case finishes. Each row carries the verdict, `cited_map`, abort flag,
+answer, judge reason and per-case attributes, so counting, filtering and
+pairing need no Logfire query, no row cap and no lookback window:
+
+- progress of a live run: `wc -l <name>.*.partial.jsonl`
+- two runs over the same cases: `evaluations pair <treated>.jsonl <baseline>.jsonl`
+
+Use Logfire for what the file does not hold: the agent's tool calls and model
+requests inside a case, and live conversation runs, which write no file.
+
 ## How to query
 
 1. Confirm the current schema with `mcp__logfire__query_schema_reference` (spans
@@ -221,8 +236,9 @@ ORDER BY 1,2;
 
 ## Monitoring a run that is still in flight
 
-An eval prints nothing until it finishes, so a live run's only progress signal is its
-case spans. Everything below works mid-run.
+A single-question QA run's partial result file grows by one line per finished case,
+which is the cheapest progress signal. Live conversation runs write none, and for
+them the case spans below are the only one. Everything below works mid-run.
 
 Progress and ETA:
 

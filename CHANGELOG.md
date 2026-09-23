@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Added
+
+- `evaluations run` records `git_sha`, `git_dirty`, `config_hash`, `db_path`,
+  `db_documents`, `db_chunks`, `db_embedder_provider`, `db_embedder_model`,
+  `db_embedder_dim`, `db_version` and `db_written_at` in experiment metadata,
+  and prints the code revision and config hash at start.
+- `TableInfo.latest_version_at`: the newest table version time.
+- `evaluations run` writes per-case results to
+  `<data dir>/evaluations/results/<name>.<trace id>.jsonl` (`--results DIR`), one
+  JSON line per case, appended to `<name>.<run id>.partial.jsonl` as each case
+  finishes. `--name` must be a file name. Live conversation runs write none.
+- `evaluations run --no-telemetry`. Without it a run refuses to start when
+  Logfire finds no token.
+- `evaluations pair TREATED BASELINE`: the paired table for two result files,
+  with exact McNemar on verdicts and the sign test on `cited_map`.
+- Database population prints cumulative throughput every 50 ingested
+  documents and at the end: documents seen and ingested, elapsed time,
+  documents per minute over the whole run, ETA. Documents skipped on resume
+  count as seen, not ingested.
+- `DatasetSpec.pair_key`: the case-metadata key two runs of a dataset pair on,
+  recorded as `pair_key` in experiment metadata.
+
 ### Changed
 
 - Tests use pytest-asyncio auto mode and separate fast, slow end-to-end, live
@@ -9,6 +31,11 @@
   docling-serve cassette playback, core tests grouped by source subsystem, and
   redundant smoke coverage removed. The evaluations lane now enforces an 85%
   coverage floor.
+
+### Removed
+
+- `evaluations run --capability-model` and the `capability_model_source`
+  experiment metadata key. Set the capability model in `qa.model`.
 
 ## [0.88.0] - 2026-09-21
 

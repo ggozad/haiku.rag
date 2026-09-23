@@ -1,4 +1,5 @@
 import asyncio
+import os
 from pathlib import Path
 
 import typer
@@ -8,20 +9,19 @@ from rich.console import Console
 from evaluations.artifacts import download_dataset_db, upload_dataset_db
 from evaluations.config import DatasetSpec
 from evaluations.datasets import DATASETS
+from evaluations.experiment import code_revision, config_hash
+from evaluations.pairing import pair_outcomes, render
 from evaluations.population import populate_db
 from evaluations.qa import run_live_qa_benchmark, run_qa_benchmark
+from evaluations.results import check_run_name, default_results_path, read_results
 from evaluations.retrieval import run_retrieval_benchmark
 from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.logging import configure_cli_logging
 from haiku.rag.telemetry import configure as configure_telemetry
-from haiku.rag.utils import parse_model_option
 
 load_dotenv(find_dotenv(usecwd=True))
 
-# Scrubbing off: eval outputs are financial answers with words like "authorized"
-# that trip Logfire's secret scrubber and redact the model's answer text.
-configure_telemetry(service_name="evals", scrubbing=False)
 configure_cli_logging()
 console = Console()
 
@@ -38,9 +38,9 @@ async def evaluate_dataset(
     vacuum_interval: int = 100,
     multimodal_only: bool = False,
     judge_model: ModelConfig | None = None,
-    capability_model: ModelConfig | None = None,
     case_ids: set[str] | None = None,
     document_filter: str | None = None,
+    results_dir: Path | None = None,
 ) -> None:
     if document_filter is not None:
         console.print(f"Document filter: {document_filter}", style="dim")
@@ -79,18 +79,29 @@ async def evaluate_dataset(
 
     if not skip_qa:
         console.print("\nRunning QA benchmarks...", style="bold yellow")
-        qa_benchmark = run_live_qa_benchmark if spec.live else run_qa_benchmark
-        await qa_benchmark(
-            spec,
-            config,
-            limit=limit,
-            name=name,
-            db_path=db_path,
-            judge_model=judge_model,
-            capability_model=capability_model,
-            case_ids=case_ids,
-            document_filter=document_filter,
-        )
+        if spec.live:
+            await run_live_qa_benchmark(
+                spec,
+                config,
+                limit=limit,
+                name=name,
+                db_path=db_path,
+                judge_model=judge_model,
+                case_ids=case_ids,
+                document_filter=document_filter,
+            )
+        else:
+            await run_qa_benchmark(
+                spec,
+                config,
+                limit=limit,
+                name=name,
+                db_path=db_path,
+                judge_model=judge_model,
+                case_ids=case_ids,
+                document_filter=document_filter,
+                results_dir=results_dir,
+            )
 
 
 app = typer.Typer(help="Run retrieval and QA benchmarks for configured datasets.")
@@ -113,6 +124,33 @@ def _load_config(config_path: Path | None) -> AppConfig:
 
     console.print("No config file found, using defaults", style="dim")
     return AppConfig()
+
+
+def require_telemetry() -> None:
+    """Exit 1 when the configured Logfire resolved no token, from the
+    environment or a credentials file alike."""
+    import logfire
+
+    if logfire.DEFAULT_LOGFIRE_INSTANCE.config.token:
+        return
+    console.print(
+        "Logfire found no token: this run would send no traces. Set "
+        "LOGFIRE_TOKEN or authenticate Logfire, or pass --no-telemetry to run "
+        "with the result file only.",
+        style="red",
+    )
+    raise typer.Exit(code=1)
+
+
+def _print_run_identity(config: AppConfig) -> None:
+    revision = code_revision()
+    sha = revision["git_sha"] or "unknown"
+    dirty = " (uncommitted changes)" if revision["git_dirty"] else ""
+    console.print(
+        f"Code: {sha}{dirty} | config hash: {config_hash(config)}",
+        style="dim",
+        soft_wrap=True,
+    )
 
 
 def _load_case_ids(path: Path | None) -> set[str] | None:
@@ -181,11 +219,6 @@ def run(
         "--multimodal-only",
         help="Only evaluate queries requiring image understanding.",
     ),
-    capability_model: str | None = typer.Option(
-        None,
-        "--capability-model",
-        help="Capability model as 'provider:name'. Defaults to qa.model from the config.",
-    ),
     document_filter: str | None = typer.Option(
         None,
         "--filter",
@@ -205,13 +238,41 @@ def run(
             "(failure-subset rerun). Filters QA only; retrieval is unaffected."
         ),
     ),
+    no_telemetry: bool = typer.Option(
+        False,
+        "--no-telemetry",
+        help=(
+            "Run without Logfire telemetry. Without this flag a run refuses to "
+            "start when Logfire finds no token."
+        ),
+    ),
+    results: Path | None = typer.Option(
+        None,
+        "--results",
+        help=(
+            "Directory for the per-case result file. Defaults to "
+            "evaluations/results/ in the haiku.rag data directory."
+        ),
+    ),
 ) -> None:
+    if name is not None:
+        try:
+            check_run_name(name)
+        except ValueError as error:
+            console.print(str(error), style="red")
+            raise typer.Exit(code=1) from None
+    if no_telemetry:
+        # Unconfigured, logfire creates no span and warns once per process.
+        os.environ["LOGFIRE_IGNORE_NO_CONFIG"] = "1"
+    else:
+        # Scrubbing off: eval outputs are financial answers with words like
+        # "authorized" that trip Logfire's scrubber and redact the answer text.
+        configure_telemetry(service_name="evals", scrubbing=False)
+        require_telemetry()
     spec = _resolve_dataset(dataset)
     app_config = _load_config(config)
+    _print_run_identity(app_config)
     judge_model_config = app_config.evaluations.judge
-    capability_model_config = (
-        parse_model_option(capability_model) if capability_model else None
-    )
 
     asyncio.run(
         evaluate_dataset(
@@ -226,11 +287,32 @@ def run(
             vacuum_interval=vacuum_interval,
             multimodal_only=multimodal_only,
             judge_model=judge_model_config,
-            capability_model=capability_model_config,
             case_ids=_load_case_ids(filter_ids),
             document_filter=document_filter,
+            results_dir=results or default_results_path(),
         )
     )
+
+
+@app.command()
+def pair(
+    treated: Path = typer.Argument(..., help="Result file of the arm under test."),
+    baseline: Path = typer.Argument(..., help="Result file it is compared against."),
+) -> None:
+    """The paired table for two result files: McNemar on verdicts, sign test on
+    cited_map, joined on each case's pairing key."""
+    names = (treated.name.removesuffix(".jsonl"), baseline.name.removesuffix(".jsonl"))
+    try:
+        result = pair_outcomes(
+            names[0], read_results(treated), names[1], read_results(baseline)
+        )
+    except ValueError as error:
+        console.print(str(error), style="red", markup=False)
+        raise typer.Exit(code=1) from None
+    if result.paired == 0:
+        console.print(f"{names[0]} and {names[1]} have no case in common", style="red")
+        raise typer.Exit(code=1)
+    console.print(render(result), soft_wrap=True, highlight=False, markup=False)
 
 
 @app.command()
