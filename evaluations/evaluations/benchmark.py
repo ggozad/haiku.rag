@@ -1,4 +1,5 @@
 import asyncio
+import os
 from pathlib import Path
 
 import typer
@@ -11,6 +12,7 @@ from evaluations.datasets import DATASETS
 from evaluations.experiment import code_revision, config_hash
 from evaluations.population import populate_db
 from evaluations.qa import run_live_qa_benchmark, run_qa_benchmark
+from evaluations.results import check_run_name, default_results_path
 from evaluations.retrieval import run_retrieval_benchmark
 from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
 from haiku.rag.config.models import ModelConfig
@@ -19,9 +21,6 @@ from haiku.rag.telemetry import configure as configure_telemetry
 
 load_dotenv(find_dotenv(usecwd=True))
 
-# Scrubbing off: eval outputs are financial answers with words like "authorized"
-# that trip Logfire's secret scrubber and redact the model's answer text.
-configure_telemetry(service_name="evals", scrubbing=False)
 configure_cli_logging()
 console = Console()
 
@@ -40,6 +39,7 @@ async def evaluate_dataset(
     judge_model: ModelConfig | None = None,
     case_ids: set[str] | None = None,
     document_filter: str | None = None,
+    results_dir: Path | None = None,
 ) -> None:
     if document_filter is not None:
         console.print(f"Document filter: {document_filter}", style="dim")
@@ -78,17 +78,29 @@ async def evaluate_dataset(
 
     if not skip_qa:
         console.print("\nRunning QA benchmarks...", style="bold yellow")
-        qa_benchmark = run_live_qa_benchmark if spec.live else run_qa_benchmark
-        await qa_benchmark(
-            spec,
-            config,
-            limit=limit,
-            name=name,
-            db_path=db_path,
-            judge_model=judge_model,
-            case_ids=case_ids,
-            document_filter=document_filter,
-        )
+        if spec.live:
+            await run_live_qa_benchmark(
+                spec,
+                config,
+                limit=limit,
+                name=name,
+                db_path=db_path,
+                judge_model=judge_model,
+                case_ids=case_ids,
+                document_filter=document_filter,
+            )
+        else:
+            await run_qa_benchmark(
+                spec,
+                config,
+                limit=limit,
+                name=name,
+                db_path=db_path,
+                judge_model=judge_model,
+                case_ids=case_ids,
+                document_filter=document_filter,
+                results_dir=results_dir,
+            )
 
 
 app = typer.Typer(help="Run retrieval and QA benchmarks for configured datasets.")
@@ -111,6 +123,22 @@ def _load_config(config_path: Path | None) -> AppConfig:
 
     console.print("No config file found, using defaults", style="dim")
     return AppConfig()
+
+
+def require_telemetry() -> None:
+    """Exit 1 when the configured Logfire resolved no token, from the
+    environment or a credentials file alike."""
+    import logfire
+
+    if logfire.DEFAULT_LOGFIRE_INSTANCE.config.token:
+        return
+    console.print(
+        "Logfire found no token: this run would send no traces. Set "
+        "LOGFIRE_TOKEN or authenticate Logfire, or pass --no-telemetry to run "
+        "with the result file only.",
+        style="red",
+    )
+    raise typer.Exit(code=1)
 
 
 def _print_run_identity(config: AppConfig) -> None:
@@ -209,7 +237,37 @@ def run(
             "(failure-subset rerun). Filters QA only; retrieval is unaffected."
         ),
     ),
+    no_telemetry: bool = typer.Option(
+        False,
+        "--no-telemetry",
+        help=(
+            "Run without Logfire telemetry. Without this flag a run refuses to "
+            "start when Logfire finds no token."
+        ),
+    ),
+    results: Path | None = typer.Option(
+        None,
+        "--results",
+        help=(
+            "Directory for the per-case result file. Defaults to "
+            "evaluations/results/ in the haiku.rag data directory."
+        ),
+    ),
 ) -> None:
+    if name is not None:
+        try:
+            check_run_name(name)
+        except ValueError as error:
+            console.print(str(error), style="red")
+            raise typer.Exit(code=1) from None
+    if no_telemetry:
+        # Unconfigured, logfire creates no span and warns once per process.
+        os.environ["LOGFIRE_IGNORE_NO_CONFIG"] = "1"
+    else:
+        # Scrubbing off: eval outputs are financial answers with words like
+        # "authorized" that trip Logfire's scrubber and redact the answer text.
+        configure_telemetry(service_name="evals", scrubbing=False)
+        require_telemetry()
     spec = _resolve_dataset(dataset)
     app_config = _load_config(config)
     _print_run_identity(app_config)
@@ -230,6 +288,7 @@ def run(
             judge_model=judge_model_config,
             case_ids=_load_case_ids(filter_ids),
             document_filter=document_filter,
+            results_dir=results or default_results_path(),
         )
     )
 

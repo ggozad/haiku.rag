@@ -53,6 +53,23 @@ The capability runs on `qa.model` and the judge on `evaluations.judge`, both
 from the config. A citation retrieval metric (`cited_map`) is computed
 alongside QA accuracy from the URIs the capability registered via the `cite` tool.
 
+### Per-case results
+
+A QA run writes one JSON line per case to
+`<data dir>/evaluations/results/<name>.<trace id>.jsonl` (`--results DIR`
+to place it elsewhere): case name, pairing key, verdict, citation flag,
+`cited_map`, abort flag, trace id, answer, judge reason, the per-case attributes
+and task duration. Rows are appended to `<name>.<run id>.partial.jsonl` as
+each case finishes, so a run that is killed keeps the cases it completed. The
+run id keeps concurrent runs of one name apart, and a result file is never
+overwritten. Live
+conversation runs write no file. `--name` must be a file name: letters, digits,
+dot, dash and underscore.
+
+A run refuses to start when Logfire finds no token, whether from
+`LOGFIRE_TOKEN` or a credentials file. `--no-telemetry` runs without Logfire,
+leaving the result file as the only record.
+
 ### Debugging runs in Logfire
 
 With `LOGFIRE_TOKEN` set, runs ship spans under `service_name = 'evals'`. The

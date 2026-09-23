@@ -101,6 +101,15 @@ class TestCorpusFingerprint:
         assert fingerprint["db_embedder_model"] is None
         assert not path.exists()
 
+    async def test_a_directory_without_tables_reports_only_its_path(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "empty.lancedb"
+        path.mkdir()
+        fingerprint = await corpus_fingerprint(path, AppConfig())
+        assert fingerprint["db_path"] == str(path)
+        assert fingerprint["db_documents"] is None
+
     async def test_reads_counts_and_the_stored_embedder(self, tmp_path: Path) -> None:
         config = AppConfig()
         dim = config.embeddings.model.vector_dim

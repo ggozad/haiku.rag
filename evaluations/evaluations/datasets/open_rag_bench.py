@@ -219,6 +219,7 @@ def is_multimodal_query(source: str) -> bool:
 def _orb_spec(key: str, db_filename: str) -> DatasetSpec:
     return DatasetSpec(
         key=key,
+        pair_key="query_id",
         db_filename=db_filename,
         document_loader=load_orb_corpus,
         document_mapper=map_orb_document,

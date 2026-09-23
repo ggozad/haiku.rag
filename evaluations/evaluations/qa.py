@@ -30,6 +30,7 @@ from evaluations.experiment import (
     build_experiment_metadata,
     corpus_fingerprint,
 )
+from evaluations.results import case_writer, new_run_id, write_results
 from haiku.rag.capabilities.rag import create_capability
 from haiku.rag.config import AppConfig
 from haiku.rag.config.models import ModelConfig
@@ -224,6 +225,7 @@ async def _prepare_qa_run(
         judge_config=judge_config,
         capability_config=capability_config,
         document_filter=document_filter,
+        pair_key=spec.pair_key,
     )
     experiment_metadata.update(spec.experiment_metadata or {})
     db = (
@@ -272,6 +274,7 @@ async def run_qa_benchmark(
     judge_model: ModelConfig | None = None,
     case_ids: set[str] | None = None,
     document_filter: str | None = None,
+    results_dir: Path | None = None,
 ) -> ReportCaseFailure[str, str, dict[str, str]] | None:
     run = await _prepare_qa_run(
         spec,
@@ -351,13 +354,28 @@ async def run_qa_benchmark(
         set_eval_attribute("citation_status", result.citation_status)
         return result.answer
 
+    run_id = new_run_id()
     report = await evaluation_dataset.evaluate(
         answer_question,
         name=run.eval_name,
         max_concurrency=1,
         progress=True,
         metadata=run.experiment_metadata,
+        lifecycle=None
+        if results_dir is None
+        else case_writer(
+            results_dir, name=run.eval_name, pair_key=spec.pair_key, run_id=run_id
+        ),
     )
+    if results_dir is not None:
+        results_path = write_results(
+            report,
+            name=run.eval_name,
+            pair_key=spec.pair_key,
+            directory=results_dir,
+            run_id=run_id,
+        )
+        console.print(f"Per-case results: {results_path}", style="dim", soft_wrap=True)
 
     total_processed = len(report.cases)
     failures = report.failures

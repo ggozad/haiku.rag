@@ -1,3 +1,5 @@
+import json
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -9,6 +11,7 @@ from evaluations.benchmark import (
     _load_config,
     _resolve_dataset,
     evaluate_dataset,
+    require_telemetry,
 )
 from evaluations.config import DatasetSpec, DocumentPayload
 from evaluations.experiment import build_experiment_metadata
@@ -1348,8 +1351,151 @@ class TestRunPrintsItsIdentity:
 
         monkeypatch.setattr(benchmark, "evaluate_dataset", nothing)
         with patch("evaluations.benchmark.find_config_file", return_value=None):
-            result = CliRunner().invoke(benchmark.app, ["run", "frames", "--skip-db"])
+            result = CliRunner().invoke(
+                benchmark.app, ["run", "frames", "--skip-db", "--no-telemetry"]
+            )
 
         assert result.exit_code == 0, result.output
         assert code_revision()["git_sha"] in result.output
         assert f"config hash: {config_hash(AppConfig())}" in result.output
+
+
+def _resolved_token(monkeypatch: pytest.MonkeyPatch, token: str | None) -> None:
+    """Stand in for what `logfire.configure` resolved from its sources."""
+    import logfire
+
+    monkeypatch.setattr(logfire.DEFAULT_LOGFIRE_INSTANCE.config, "token", token)
+
+
+class TestRequireTelemetry:
+    def test_refuses_when_logfire_resolved_no_token(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _resolved_token(monkeypatch, None)
+        with pytest.raises(typer.Exit):
+            require_telemetry()
+
+    def test_passes_when_logfire_resolved_a_token(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _resolved_token(monkeypatch, "pylf_v1_eu_test")
+        require_telemetry()
+
+    @pytest.mark.parametrize("credentials", [True, False])
+    def test_a_credentials_file_counts_as_a_token(
+        self, tmp_path: Path, credentials: bool
+    ) -> None:
+        """Logfire reads the token from `LOGFIRE_CREDENTIALS_DIR` as well as the
+        environment. Run in a child process: configuring Logfire is global."""
+        import subprocess
+        import sys
+
+        if credentials:
+            (tmp_path / "logfire_credentials.json").write_text(
+                json.dumps(
+                    {
+                        "token": "pylf_v1_eu_test",
+                        "project_name": "p",
+                        "project_url": "https://logfire-eu.pydantic.dev/o/p",
+                        "logfire_api_url": "https://logfire-eu.pydantic.dev",
+                    }
+                )
+            )
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if not key.startswith(("LOGFIRE_", "OTEL_"))
+        }
+        env["LOGFIRE_CREDENTIALS_DIR"] = str(tmp_path)
+        program = (
+            "from evaluations.benchmark import configure_telemetry, require_telemetry\n"
+            "configure_telemetry(service_name='evals', scrubbing=False)\n"
+            "require_telemetry()\n"
+        )
+        done = subprocess.run(
+            [sys.executable, "-c", program],
+            env=env,
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert done.returncode == (0 if credentials else 1), done.stderr
+        assert ("found no token" in done.stdout) is not credentials
+
+
+class TestRunTelemetry:
+    def _stub(self, monkeypatch: pytest.MonkeyPatch, token: str | None) -> list[dict]:
+        import evaluations.benchmark as benchmark
+
+        configured: list[dict] = []
+
+        def configure(**kwargs) -> None:
+            configured.append(kwargs)
+            _resolved_token(monkeypatch, token)
+
+        monkeypatch.setattr(benchmark, "configure_telemetry", configure)
+
+        async def nothing(**kwargs) -> None:
+            return None
+
+        monkeypatch.setattr(benchmark, "evaluate_dataset", nothing)
+        return configured
+
+    def test_an_opt_out_sends_nothing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import evaluations.benchmark as benchmark
+
+        monkeypatch.setenv("LOGFIRE_IGNORE_NO_CONFIG", "0")
+        configured = self._stub(monkeypatch, "pylf_v1_eu_test")
+
+        result = CliRunner().invoke(
+            benchmark.app, ["run", "frames", "--no-telemetry", "--skip-db"]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert configured == []
+        assert os.environ["LOGFIRE_IGNORE_NO_CONFIG"] == "1"
+
+    def test_a_run_that_keeps_telemetry_configures_it(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import evaluations.benchmark as benchmark
+
+        configured = self._stub(monkeypatch, "pylf_v1_eu_test")
+
+        result = CliRunner().invoke(benchmark.app, ["run", "frames", "--skip-db"])
+
+        assert result.exit_code == 0, result.output
+        assert configured == [{"service_name": "evals", "scrubbing": False}]
+
+    def test_a_run_without_a_resolved_token_stops(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import evaluations.benchmark as benchmark
+
+        self._stub(monkeypatch, None)
+
+        result = CliRunner().invoke(benchmark.app, ["run", "frames", "--skip-db"])
+
+        assert result.exit_code == 1
+        assert "--no-telemetry" in result.output
+
+
+class TestRunRefusesAnUnusableName:
+    def test_a_name_that_is_not_a_file_name_stops_the_run(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import evaluations.benchmark as benchmark
+
+        monkeypatch.setenv("LOGFIRE_TOKEN", "pylf_v1_eu_test")
+
+        def never(**kwargs):
+            raise AssertionError("must not start an evaluation")
+
+        monkeypatch.setattr(benchmark, "evaluate_dataset", never)
+        result = CliRunner().invoke(
+            benchmark.app, ["run", "frames", "--name", "../escape"]
+        )
+
+        assert result.exit_code == 1
+        assert "run name" in result.output

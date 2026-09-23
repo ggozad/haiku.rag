@@ -9,6 +9,14 @@
   `db_embedder_dim`, `db_version` and `db_written_at` in experiment metadata,
   and prints the code revision and config hash at start.
 - `TableInfo.latest_version_at`: the newest table version time.
+- `evaluations run` writes per-case results to
+  `<data dir>/evaluations/results/<name>.<trace id>.jsonl` (`--results DIR`), one
+  JSON line per case, appended to `<name>.<run id>.partial.jsonl` as each case
+  finishes. `--name` must be a file name. Live conversation runs write none.
+- `evaluations run --no-telemetry`. Without it a run refuses to start when
+  Logfire finds no token.
+- `DatasetSpec.pair_key`: the case-metadata key two runs of a dataset pair on,
+  recorded as `pair_key` in experiment metadata.
 
 ### Changed
 
