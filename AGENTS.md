@@ -667,8 +667,6 @@ Separate workspace package (`evaluations/`) for benchmarking.
 cd evaluations
 uv sync
 evaluations run <dataset>
-evaluations run <dataset> --capability-model ollama:qwen3.8
-evaluations run <dataset> --judge-model ollama:gemma4  # independent judge
 evaluations download <dataset|all>           # Pre-built eval DBs from HuggingFace
 evaluations upload <dataset|all>             # Upload eval DBs
 ```
@@ -677,7 +675,7 @@ Datasets: `hotpotqa`, `orb_text`, `orb_multimodal`, `orb_multimodal_nemotron`, `
 
 **Multi-turn (MTRAG)**: `mtrag_clapnq` runs gold-prefix QA (`ConversationInput` cases replay the reference prefix as message history) plus lastturn retrieval; `_rewrite` retrieves with the human rewrites; `_live` and `_live_uncompacted` set `spec.live` (one case per conversation, `--limit` counts conversations) and differ only in `spec.compaction`, which registers `EvidenceCompactionCapability` in the runner — the only eval coverage compaction has, since every other dataset is single-turn where it is inert. Live runs carry `all_messages()` and ONE capability-state dict across turns (0.74.0 compaction raises on history with a fresh state dict) and record question-length per-turn arrays (`turn_cited_uris`, `turn_n_search_calls`, `turn_n_sandbox_search_calls`, `turn_n_rejected_searches`, `turn_n_failed_tools`, `turn_n_executions`, `turn_n_requests`, `turn_citation_status`), counted per turn from `new_messages()` so compaction rewriting earlier history cannot skew them. Gold-prefix and live pass rates answer different judge questions and are NOT comparable; the supported comparison is compacted vs uncompacted, paired by turn. `_live_summary`'s macro rate excludes conversations with zero judged turns — a judge outage is an operational exclusion, not a failed conversation.
 
-**Capability runs** go end-to-end through a native Pydantic AI agent (see `evaluations/capability_runner.py`). `--capability-model` defaults to `config.qa.model`. Benchmark rows measured before the analysis capability merged into the RAG capability carry a `Target` column naming which one ran.
+**Capability runs** go end-to-end through a native Pydantic AI agent (see `evaluations/capability_runner.py`). The capability model is `config.qa.model` and the judge is `config.evaluations.judge`, with no command-line override for either. Benchmark rows measured before the analysis capability merged into the RAG capability carry a `Target` column naming which one ran.
 
 **Citation retrieval metric**: `CitationMAPEvaluator` scores the URIs the capability registers via its citation tool against gold `expected_uris`, alongside the LLMJudge. Score key: `cited_map`.
 
@@ -695,7 +693,7 @@ Datasets: `hotpotqa`, `orb_text`, `orb_multimodal`, `orb_multimodal_nemotron`, `
 
 **Eval prompts**: datasets do not carry custom system prompts. Capability targets use packaged instructions plus `config.prompts.domain_preamble`. `DatasetSpec` has no `system_prompt` field.
 
-**Eval-side rules**: don't assert specific phrases in packaged instructions; test behavior instead. `build_experiment_metadata` is additive, with one exception made alongside the `thinking` rename: the `qa_*` model mirrors (`qa_provider`, `qa_model`, `qa_temperature`, `qa_max_tokens`, `qa_enable_thinking`, `qa_extra_body`) were removed because `capability_*` records the model that ran and `qa_*` could record one that did not. `qa_max_searches`, `qa_max_executions`, `sandbox_code_timeout` and `sandbox_max_output_chars` stay: they bound the capability and have no `capability_` twin. `capability_model_source` names which of `--capability-model` / `qa.model` produced `capability_*`; `capability_*` is always present on a QA run and absent on a retrieval run. Run targeted tests in `evaluations/` with `uv run pytest`.
+**Eval-side rules**: don't assert specific phrases in packaged instructions; test behavior instead. `build_experiment_metadata` is additive, with one exception made alongside the `thinking` rename: the `qa_*` model mirrors (`qa_provider`, `qa_model`, `qa_temperature`, `qa_max_tokens`, `qa_enable_thinking`, `qa_extra_body`) were removed because `capability_*` records the model that ran and `qa_*` could record one that did not. `qa_max_searches`, `qa_max_executions`, `sandbox_code_timeout` and `sandbox_max_output_chars` stay: they bound the capability and have no `capability_` twin. `capability_*` is always present on a QA run and absent on a retrieval run. Run targeted tests in `evaluations/` with `uv run pytest`.
 
 **Reasoning knobs on vLLM**: a vLLM server started with `--reasoning-parser` consumes `chat_template_kwargs.enable_thinking` itself — it never reaches the chat template. Muse-Glimmer QA blocks must set `chat_template_kwargs.reasoning_strength: high` instead (the mtrag reference config does); a template defaulting it to low silently cuts search calls ~37% with no error anywhere. Verify a kwarg by RENDERING (`/tokenize` with `return_token_strs`) or by measured behavior, never by HTTP acceptance.
 

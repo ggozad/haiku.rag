@@ -10,6 +10,11 @@
   redundant smoke coverage removed. The evaluations lane now enforces an 85%
   coverage floor.
 
+### Removed
+
+- `evaluations run --capability-model` and the `capability_model_source`
+  experiment metadata key. Set the capability model in `qa.model`.
+
 ## [0.88.0] - 2026-09-21
 
 ### Added

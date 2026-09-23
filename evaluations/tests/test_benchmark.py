@@ -758,41 +758,19 @@ class TestExperimentMetadataCapability:
             test_cases=1,
             config=AppConfig(),
             capability_config=capability,
-            capability_model_source="qa.model",
         )
         assert result["capability_provider"] == "ollama"
         assert result["capability_model"] == "gpt-oss-large"
         assert result["capability_temperature"] == 0.2
         assert result["capability_thinking"] == "low"
-        assert result["capability_model_source"] == "qa.model"
         assert "capability_enable_thinking" not in result
 
 
-class TestResolveCapabilityConfig:
-    """The capability model and the record of where it came from."""
+class TestCapabilityModel:
+    def test_the_capability_runs_on_qa_model(self, tmp_path: Path) -> None:
+        from evaluations.qa import _prepare_qa_run
 
-    def test_falls_back_to_qa_model(self) -> None:
-        from evaluations.qa import _resolve_capability_config
-
-        config = AppConfig()
-        assert _resolve_capability_config(config, None) == (
-            config.qa.model,
-            "qa.model",
-        )
-
-    def test_override_wins(self) -> None:
-        from evaluations.qa import _resolve_capability_config
-
-        override = ModelConfig(provider="openai", name="gpt-5")
-        assert _resolve_capability_config(AppConfig(), override) == (
-            override,
-            "--capability-model",
-        )
-
-
-class TestEvaluateDatasetTarget:
-    def _spec(self) -> DatasetSpec:
-        return DatasetSpec(
+        spec = DatasetSpec(
             key="test",
             db_filename="test.lancedb",
             document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
@@ -800,42 +778,16 @@ class TestEvaluateDatasetTarget:
             qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
             qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         )
-
-    async def test_threads_the_capability_model(self) -> None:
-        capability = ModelConfig(provider="ollama", name="gpt-oss")
-        with patch(
-            "evaluations.benchmark.run_qa_benchmark", new_callable=AsyncMock
-        ) as mock_qa:
-            await evaluate_dataset(
-                spec=self._spec(),
-                config=AppConfig(),
-                skip_db=True,
-                skip_retrieval=True,
-                skip_qa=False,
-                limit=None,
-                name=None,
-                db_path=None,
-                capability_model=capability,
+        config = AppConfig()
+        config.qa.model = ModelConfig(
+            provider="openai", name="served", base_url="http://gpu:8000/v1"
+        )
+        with patch("evaluations.qa.get_model") as mock_get_model:
+            run = _prepare_qa_run(
+                spec, config, None, None, tmp_path / "test.lancedb", None, None, None
             )
-
-        mock_qa.assert_called_once()
-        assert mock_qa.call_args[1]["capability_model"] is capability
-
-    async def test_the_capability_model_defaults_to_none(self) -> None:
-        with patch(
-            "evaluations.benchmark.run_qa_benchmark", new_callable=AsyncMock
-        ) as mock_qa:
-            await evaluate_dataset(
-                spec=self._spec(),
-                config=AppConfig(),
-                skip_db=True,
-                skip_retrieval=True,
-                skip_qa=False,
-                limit=None,
-                name=None,
-                db_path=None,
-            )
-        assert mock_qa.call_args[1]["capability_model"] is None
+        mock_get_model.assert_called_once_with(config.qa.model, config)
+        assert run.experiment_metadata["capability_model"] == "served"
 
 
 class TestRunQaBenchmarkCapability:

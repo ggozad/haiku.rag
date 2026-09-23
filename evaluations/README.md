@@ -47,11 +47,10 @@ evaluations run hotpotqa --limit 100
 
 ```bash
 evaluations run hotpotqa
-evaluations run hotpotqa --capability-model ollama:qwen3.8
 ```
 
-`--capability-model "provider:name"` overrides the capability model independently from
-the judge (defaults to `qa.model`). A citation retrieval metric (`cited_map`) is computed
+The capability runs on `qa.model` and the judge on `evaluations.judge`, both
+from the config. A citation retrieval metric (`cited_map`) is computed
 alongside QA accuracy from the URIs the capability registered via the `cite` tool.
 
 ### Debugging runs in Logfire
