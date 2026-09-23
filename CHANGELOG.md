@@ -17,6 +17,10 @@
   Logfire finds no token.
 - `evaluations pair TREATED BASELINE`: the paired table for two result files,
   with exact McNemar on verdicts and the sign test on `cited_map`.
+- Database population prints cumulative throughput every 50 ingested
+  documents and at the end: documents seen and ingested, elapsed time,
+  documents per minute over the whole run, ETA. Documents skipped on resume
+  count as seen, not ingested.
 - `DatasetSpec.pair_key`: the case-metadata key two runs of a dataset pair on,
   recorded as `pair_key` in experiment metadata.
 
