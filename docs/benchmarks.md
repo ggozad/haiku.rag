@@ -205,14 +205,14 @@ evaluations download hotpotqa --force   # overwrite
 |---------|------|
 | `orb_text`: OpenRAG Bench, `qwen3-embedding:4b` with VLM picture descriptions in the chunk text | ~15.8 GB |
 | `orb_multimodal`: OpenRAG Bench, multimodal `qwen3-vl-embedding-8b` | ~16.7 GB |
-| `orb_multimodal_nemotron`: OpenRAG Bench, multimodal `nvidia/llama-nemotron-embed-vl-1b-v2` | ~15.7 GB |
+| `orb_multimodal_nemotron`: OpenRAG Bench, multimodal `nvidia/llama-nemotron-embed-vl-1b-v2` | ~15.2 GB |
 | `t2_finqa`: T²-RAGBench FinQA, `qwen3-embedding:4b` | ~2.0 GB |
 | `t2_tatdqa`: T²-RAGBench TAT-DQA, `qwen3-embedding:4b` | ~1.8 GB |
 | `hotpotqa`: HotpotQA, `qwen3-embedding:4b` | ~1.2 GB |
 | `frames`: FRAMES, `nvidia/llama-nemotron-embed-vl-1b-v2` | ~7.2 GB |
 | `mtrag_clapnq`: MTRAG ClapNQ, `qwen3-embedding:4b`, shared by the `_rewrite`, `_live` and `_live_uncompacted` keys | ~2.7 GB |
 
-The hosted `frames` database is the corpus behind the current FRAMES rows. The hosted `orb_multimodal_nemotron` database was built before the current ORB rows, so downloading it does not reproduce those numbers.
+The hosted `frames` and `orb_multimodal_nemotron` databases are the corpora behind the current FRAMES and ORB rows.
 
 After downloading, run with `--skip-db` and the database's reference config from `evaluations/configs/`, since a database opens only against the embedder it was built with:
 
