@@ -2,9 +2,9 @@
 
 Opinionated agentic RAG powered by LanceDB, Pydantic AI, and Docling - Core package with minimal dependencies.
 
-`haiku.rag-slim` is the core package for users who want to install only the dependencies they need. Document processing (docling), and reranker support are all optional extras.
+`haiku.rag-slim` is the core package for users who want to install only the dependencies they need. Document processing (Docling) and the in-process rerankers are optional extras.
 
-**For most users, we recommend installing [`haiku.rag`](https://pypi.org/project/haiku.rag/) instead**, which includes all features out of the box.
+**For most users, we recommend installing [`haiku.rag`](https://pypi.org/project/haiku.rag/) instead**, which bundles Docling, the VoyageAI and Cohere embedders, every reranker and the terminal UI.
 
 ## Installation
 
@@ -24,7 +24,7 @@ Core functionality with OpenAI/Ollama support, MCP server, and Logfire observabi
 uv pip install haiku.rag-slim[docling]
 ```
 
-Adds support for 40+ file formats including PDF, DOCX, HTML, and more.
+Adds PDF, DOCX, PPTX, XLSX, HTML, LaTeX, email and image conversion.
 
 ### Available Extras
 
@@ -54,7 +54,7 @@ See the main [`haiku.rag`](https://github.com/ggozad/haiku.rag) repository for:
 
 Full documentation: https://ggozad.github.io/haiku.rag/
 
-- [Installation](https://ggozad.github.io/haiku.rag/installation/) - Provider setup
+- [Installation](https://ggozad.github.io/haiku.rag/installation/) - Packages and extras
 - [Configuration](https://ggozad.github.io/haiku.rag/configuration/) - YAML configuration
 - [CLI](https://ggozad.github.io/haiku.rag/cli/) - Command reference
 - [Python API](https://ggozad.github.io/haiku.rag/python/) - Complete API docs

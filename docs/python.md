@@ -106,6 +106,16 @@ docling = await client.document_repository.get_docling_data(doc.id)
 pages = await client.document_repository.get_pages_data(doc.id)
 ```
 
+By ID, title or URI, tried in that order:
+```python
+doc = await client.resolve_document("Q3 Financial Report")
+```
+
+A picture's bytes, by document and the picture's `self_ref`:
+```python
+png = await client.get_picture_bytes(doc.id, "#/pictures/0")
+```
+
 List all documents:
 ```python
 docs = await client.list_documents(limit=10, offset=0)
@@ -119,6 +129,9 @@ Filter documents by properties:
 ```python
 # Filter by URI pattern
 docs = await client.list_documents(filter="uri LIKE '%arxiv%'")
+
+# Over several databases, list a subset
+docs = await client.list_documents(sources=["papers"])
 
 # Filter by exact title
 docs = await client.list_documents(filter="title = 'My Document'")
@@ -166,9 +179,11 @@ await client.update_document(
 )
 
 # Use custom chunks (embeddings optional - will be generated if missing)
+from haiku.rag.store.models.chunk import Chunk
+
 custom_chunks = [
     Chunk(content="Custom chunk 1"),
-    Chunk(content="Custom chunk 2", embedding=[...]),  # Pre-computed embedding
+    Chunk(content="Custom chunk 2", embedding=precomputed_vector),  # list[float] of vector_dim
 ]
 await client.update_document(document_id=doc.id, chunks=custom_chunks)
 ```
@@ -200,7 +215,7 @@ for result in results:
     print(f"Document ID: {result.document_id}")
 ```
 
-Each result carries the parent document's metadata in `result.document_meta` and the relevant chunk's verbatim metadata in `result.chunk_meta`. Neither is shown to the model during QA.
+Each result carries the parent document's metadata in `result.document_meta` and the relevant chunk's verbatim metadata in `result.chunk_meta`. Neither is shown to the model during QA. Pictures matched by a result are attached in `result.image_data`. Pass `include_images=False` to skip loading them.
 
 Search with different search types:
 ```python
@@ -258,7 +273,7 @@ A scoped question can cite only the selected databases, and code run by the capa
 
 `sources=None` covers every database the client covers. `sources=[]` covers none: `search` returns no results, and `ask` runs with no evidence from any database.
 
-A name no client covers raises `UnknownDatabaseError`, a `KeyError`, wherever it is given: at construction, per query, and when placing a citation.
+A name no client covers raises `UnknownDatabaseError`, a `KeyError`, wherever it is given: when the client opens, per query, and when placing a citation.
 
 On the constructor `sources=[]` means something else. Passing `sources` alongside a database path raises `AmbiguousDatabaseError` immediately, since both say which database to open. Passing `sources=[]` alone raises `ValueError` on entering the client: a selection of nothing to search is a legitimate question, a client over no database is not.
 
@@ -269,11 +284,14 @@ client.covers_multiple      # whether the client covers more than one database
 client.source_names         # database names, in order; known before the client opens
 client.source               # the one database's name, or None for a set
 
+client.is_read_only         # the mode every covered database is opened with
+
 owner = await client.reader_for("papers")      # the client reading that database
 papers, wiki = await client.clients_for(["papers", "wiki"])
+covering = await client.clients_covering(["papers"])  # [] for [], every client for None
 ```
 
-`reader_for` and `clients_for` open databases lazily and return borrowed clients. They remain valid while the covering client is open and inherit its read-only mode. The covering client owns and closes their database sessions.
+`reader_for`, `clients_for` and `clients_covering` open databases lazily and return borrowed clients. They remain valid while the covering client is open and inherit its read-only mode. The covering client owns and closes their database sessions.
 
 To learn what a configuration covers without opening anything, resolve it:
 
@@ -332,7 +350,7 @@ A filter restricts what a search retrieves. `ask` applies it to every search of 
 
 ### Image queries
 
-`client.search()` accepts an image instead of a text query when the configured embedder is multimodal (`embeddings.model.multimodal: true` on a vLLM, VoyageAI, or Cohere model). The image is embedded once and the chunks table is searched vector-only. Full-text search and reranking don't apply without a text query.
+`client.search()` accepts an image instead of a text query when the configured embedder is multimodal (`embeddings.model.multimodal: true` on a vLLM, OpenRouter, VoyageAI, or Cohere model). The image is embedded once and the chunks table is searched vector-only. Full-text search and reranking don't apply without a text query.
 
 ```python
 from PIL import Image
@@ -367,13 +385,26 @@ for result in expanded_results:
     print(f"Expanded content: {result.content}")
 ```
 
-Context expansion is automatic and section-aware. For structured documents (with section headers), expansion includes the entire section containing the match. For sections that exceed the budget or are too small (e.g., a title+authors area), expansion grows outward item-by-item from the match center, skipping noise labels (page headers, page footers, table of contents). This crosses into adjacent sections until the budget is filled. Picture and table matches are exempt: they return their enclosing section as-is and never cross section boundaries. For unstructured documents, expansion grows outward item-by-item. Results without `doc_item_refs` (e.g., custom chunks passed to `import_document`) pass through unexpanded.
+Context expansion is automatic and section-aware. For structured documents (with section headers), expansion includes the entire section containing the match when it fits the budget. A section larger than the budget grows outward item-by-item from the match, staying inside the section. A section under 20% of the budget (e.g., a title+authors area) grows across section boundaries until the budget is filled, except when the match is a picture or table, which returns its section as-is. Noise labels (page headers, page footers, table of contents) are skipped. For unstructured documents, expansion grows outward item-by-item. Results without `doc_item_refs` (e.g., custom chunks passed to `import_document`) pass through unexpanded.
 
 Configuration:
 
 - **search.max_context_chars**: Maximum characters in expanded context. Default: 5000.
 
 **Merging**: When expanded results overlap within the same document, they are automatically merged into a single result with continuous content and the highest relevance score.
+
+### Visual Grounding
+
+`visualize_chunk` returns one PIL image per page, with the chunk's bounding boxes drawn on it. It needs the document's page images (`generate_page_images`, on by default for PDFs):
+
+```python
+chunk = await client.get_chunk_by_id(result.chunk_id, result.source)
+images = await client.visualize_chunk(chunk, source=result.source)
+for page_number, image in enumerate(images, start=1):
+    image.save(f"page-{page_number}.png")
+```
+
+`source` is required when the client covers several databases. `expand=False` draws only the chunk, without its expanded context.
 
 ## Question Answering
 
@@ -440,10 +471,12 @@ For the low-level toolset factories under `haiku.rag.tools`, see [Toolsets](tool
 If you process documents externally or need custom processing, use `import_document()`:
 
 ```python
+from pathlib import Path
+
 from haiku.rag.store.models.chunk import Chunk
 
-# Convert your source to a DoclingDocument
-docling_doc = await client.convert("path/to/document.pdf")
+# Convert your source to a DoclingDocument (a str that is not a URL is converted as text)
+docling_doc = await client.convert(Path("path/to/document.pdf"))
 
 # Create chunks (embeddings optional - will be generated if missing)
 chunks = [
@@ -566,6 +599,7 @@ async for doc_id in client.rebuild_database(mode=RebuildMode.DESCRIPTIONS):
 - `RebuildMode.RECHUNK` - Re-chunk from the stored docling document, re-embed
 - `RebuildMode.EMBED_ONLY` - Keep existing chunks, only regenerate embeddings
 - `RebuildMode.TITLE_ONLY` - Generate titles for untitled documents (no re-chunking or re-embedding)
+- `RebuildMode.SET_EMBEDDER` - Adopt the configured embedder's provider and name without re-embedding, when the vector dimension is unchanged
 - `RebuildMode.DESCRIPTIONS` - Run the VLM over picture bytes already stored on `document_items.picture_data`, patch descriptions into the docling blob, re-chunk + re-embed. Skips the docling parse entirely. Idempotent: pictures already carrying `meta.description.text` are not re-described, so the operation is safe to re-run.
 
 ### Generating Titles

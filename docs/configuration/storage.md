@@ -98,7 +98,7 @@ Databases must be explicitly created before use:
 
 **CLI:**
 ```bash
-# Create in default location (see Configuration File Locations below)
+# Create in the default location
 haiku-rag init
 
 # Create at custom path

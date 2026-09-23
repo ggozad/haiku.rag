@@ -122,7 +122,7 @@ into docling-serve's internal queue beyond what its workers can process.
 The ingester logs the worker / source / docling-serve counts on startup so
 you can check the ratio.
 
-Conversion options work identically for both local and remote processing.
+Conversion options apply to both converters, except `fetch_remote_images`, `fetch_headers` and `infer_furniture`, which only `docling-local` reads.
 
 ### Large PDFs and docling memory
 
@@ -183,13 +183,14 @@ continuously:
 
 ### Conversion Options
 
-The `conversion_options` section allows fine-grained control over document conversion. These options work with both `docling-local` and `docling-serve` converters.
+The `conversion_options` section allows fine-grained control over document conversion. Both converters read these options, except `fetch_remote_images`, `fetch_headers` and `infer_furniture`, which apply to `docling-local` only.
 
 #### PDF Parsing
 
 ```yaml
-conversion_options:
-  pdf_backend: docling_parse   # docling_parse, threaded_docling_parse, pypdfium2
+processing:
+  conversion_options:
+    pdf_backend: docling_parse   # docling_parse, threaded_docling_parse, pypdfium2
 ```
 
 - **pdf_backend**: The parser docling uses to read a PDF. The parsers segment a document differently, so both converters are given this same value: change it and expect different items, chunk boundaries and chunk ids on the next ingest.
@@ -200,11 +201,12 @@ conversion_options:
 #### OCR Settings
 
 ```yaml
-conversion_options:
-  do_ocr: true          # Enable OCR for bitmap/scanned content
-  force_ocr: false      # Replace all text with OCR output
-  ocr_engine: auto      # OCR engine selection
-  ocr_lang: []          # List of OCR languages, e.g., ["en", "fr", "de"]
+processing:
+  conversion_options:
+    do_ocr: true          # Enable OCR for bitmap/scanned content
+    force_ocr: false      # Replace all text with OCR output
+    ocr_engine: auto      # OCR engine selection
+    ocr_lang: []          # List of OCR languages, e.g., ["en", "fr", "de"]
 ```
 
 - **do_ocr**: When `true`, applies OCR to images and scanned pages. Disable for faster processing if documents contain only native text.
@@ -213,18 +215,19 @@ conversion_options:
   - `auto` (default): Automatically select the best available engine
   - `easyocr`: EasyOCR - supports many languages, good accuracy
   - `rapidocr`: RapidOCR - fast processing
-  - `tesseract`: Tesseract OCR
-  - `tesserocr`: Tesseract via tesserocr Python binding
+  - `tesseract`: the Tesseract command-line binary
+  - `tesserocr`: Tesseract through the tesserocr Python binding
   - `ocrmac`: macOS native OCR (macOS only)
 - **ocr_lang**: List of language codes for OCR. Empty list uses default language detection. Examples: `["en"]`, `["en", "fr", "de"]`.
 
 #### Table Extraction
 
 ```yaml
-conversion_options:
-  do_table_structure: true    # Extract structured table data
-  table_mode: accurate        # fast or accurate
-  table_cell_matching: true   # Match cells back to PDF
+processing:
+  conversion_options:
+    do_table_structure: true    # Extract structured table data
+    table_mode: accurate        # fast or accurate
+    table_cell_matching: true   # Match cells back to PDF
 ```
 
 - **do_table_structure**: When `true`, extracts table structure. Disable for faster processing if tables aren't important.
@@ -236,16 +239,18 @@ conversion_options:
 #### Image Settings
 
 ```yaml
-conversion_options:
-  images_scale: 2.0               # Image resolution scale factor
-  generate_page_images: true      # Include rendered page images
-  fetch_remote_images: true       # Fetch external <img src> URLs in HTML/MD
-  infer_furniture: false          # Keep HTML content before the first heading
+processing:
+  conversion_options:
+    images_scale: 2.0               # Image resolution scale factor
+    generate_page_images: true      # Include rendered page images
+    fetch_remote_images: true       # Fetch external <img src> URLs in HTML/MD
+    infer_furniture: false          # Keep HTML content before the first heading
 ```
 
 - **images_scale**: Scale factor for extracted images. Higher values = better quality but larger size. Typical range: 1.0-3.0.
 - **generate_page_images**: When `true` (default), rendered images of each PDF page are included in the document. Required for `visualize_chunk()` to show visual grounding. When `false`, page images are excluded to reduce document size.
 - **fetch_remote_images**: When `true` (default), HTML and Markdown inputs have their external `<img src="https://...">` URLs fetched and stored as picture bytes. Set `false` for air-gapped ingest. Applies only to `docling-local`. **docling-serve doesn't fetch external `<img>` URLs** (the `ConvertDocumentsOptions` API exposes no equivalent flag, and HTML falls through to docling's `fetch_images=False` default); HTML ingested via docling-serve produces picture items with `picture_data=NULL`. Use `converter: docling-local` if you need image bytes from HTML/Markdown.
+- **fetch_headers**: HTTP headers sent with those image fetches. Default: a `User-Agent` naming haiku.rag. `docling-local` only.
 - **infer_furniture**: When `false` (default), everything in an HTML page is document content. When `true`, docling files whatever precedes the first heading as page furniture and leaves it out of the document, which removes site banners and navigation on web pages but also removes an article's lead paragraph and infobox. Applies only to `docling-local`; docling-serve keeps docling's rule, so HTML converted there loses the content before its first heading.
 
 #### External image fetching
@@ -292,11 +297,14 @@ processing:
   conversion_options:
     picture_description:          # only consulted when pictures == "description"
       model:
-        provider: ollama          # any OpenAI-compatible /v1/chat/completions provider
+        provider: ollama
         name: qwen3.8
+        thinking: false
       timeout: 90
       max_tokens: 200
 ```
+
+The model is called at `/v1/chat/completions` under its `base_url`, which may be written with or without `/v1`. Without a `base_url`, only `ollama` and `openai` are accepted. Writing a `model` block replaces the default `thinking: false`, so set it explicitly on a model that thinks by default. `timeout` and `max_tokens` bound each call during conversion. `rebuild --descriptions` runs the same model through Pydantic AI and does not apply them.
 
 !!! warning "Breaking change"
     `processing.conversion_options.picture_description.enabled` is replaced by `processing.pictures`. Map `enabled: true` → `pictures: description`, `enabled: false` → `pictures: image`. The pre-April-30 `generate_picture_images` flag also no longer exists. Use `pictures: none` for the old opt-out.

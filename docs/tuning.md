@@ -22,7 +22,7 @@ Larger embedding models produce better representations at the cost of slower ind
 
 ### Reranking
 
-When configured, a cross-encoder reranker re-scores 10x the requested candidates and returns the top results. This adds latency but improves precision. See [Search Settings](configuration/qa.md#search-settings) for how reranking integrates with search.
+When configured, a reranker re-scores 10x the requested candidates of a text query and returns the top results. This adds latency but improves precision. See [Search Settings](configuration/qa.md#search-settings) for how reranking integrates with search.
 
 ### Search Settings
 
@@ -38,11 +38,14 @@ Model and temperature selection affect answer quality directly. See [Providers](
 
 ## What Requires a Rebuild
 
-| Change | Rebuild required? |
-|--------|:-:|
-| `chunk_size`, `chunker_type`, `chunking_merge_peers` | Yes (run `haiku-rag rebuild`) |
-| Embedding model | Yes (run `haiku-rag rebuild`) |
-| Search settings, reranking, prompts | No |
+| Change | What to run |
+|--------|-------------|
+| `chunk_size`, `chunker_type`, `chunking_tokenizer`, `chunking_merge_peers`, `chunking_use_markdown_tables` | `haiku-rag rebuild --rechunk` |
+| Converter, `conversion_options` | `haiku-rag rebuild` |
+| `processing.pictures` | See [switching modes](configuration/processing.md#picture-handling) |
+| Embedding model or `vector_dim` | `haiku-rag rebuild --embed-only` |
+| `search.vector_index_metric` | `haiku-rag create-index`, when an index exists |
+| Other search settings, reranking, prompts | Nothing |
 
 ## Inspector
 
@@ -73,6 +76,7 @@ Three panels:
 | `Tab` | Cycle panels |
 | `↑` / `↓` | Navigate lists |
 | `/` | Search modal |
+| `i` | Database info modal |
 | `c` | Context expansion modal (the chunk plus what the agent would see around it) |
 | `v` | Visual grounding modal (chunk highlighted on the page) |
 | `q` | Quit |
@@ -108,7 +112,7 @@ You can also visualize a chunk from the CLI without launching the TUI: `haiku-ra
 
 ## Measuring Changes
 
-For systematic measurement, use the `evaluations/` workspace which provides retrieval metrics (MRR, MAP) and LLM-judged QA accuracy via `pydantic-evals`:
+For systematic measurement, use the `evaluations/` workspace which provides retrieval metrics (MAP, Recall, nDCG) and LLM-judged QA accuracy via `pydantic-evals`:
 
 ```bash
 # Run retrieval + QA benchmarks

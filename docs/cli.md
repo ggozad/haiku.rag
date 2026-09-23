@@ -6,7 +6,7 @@ The `haiku-rag` CLI provides complete document management functionality.
     Global options (must be specified before the command):
 
     - `--config` - Specify custom configuration file
-    - `--read-only` - Open database in read-only mode (blocks writes, skips upgrades)
+    - `--read-only` - Open the database read-only, blocking writes. `search`, `ask`, `list`, `get`, `visualize`, `chat` and `inspect` always open read-only
     - `--db-name` - Name of a database from `lancedb.databases` to work on
     - `--version` / `-v` - Show version and exit
 
@@ -71,7 +71,7 @@ AWS_ACCESS_KEY_ID=key AWS_SECRET_ACCESS_KEY=secret AWS_REGION=us-east-1 \
 ```
 
 !!! note
-    When adding a directory, the converter's supported extensions filter applies. For pattern-based ignore/include filtering (e.g. `**/.git/**`), use the [ingester](ingester.md) with a filesystem source.
+    When adding a directory, files are filtered by the extensions docling-local and the text handler support, and `--title` is ignored. For pattern-based ignore/include filtering (e.g. `**/.git/**`), use the [ingester](ingester.md) with a filesystem source.
 
 !!! note
     As you add documents to `haiku.rag` the database keeps growing. By default, LanceDB supports versioning
@@ -170,7 +170,7 @@ Attach images to the question, for example to check an image against indexed doc
 haiku-rag ask "Does this photo satisfy the spec in the design document?" --image photo.jpg
 ```
 
-`ask` runs the [RAG capability](capabilities/rag.md) and always renders citations under the answer. When available, citations use the document title, otherwise they fall back to the URI.
+`ask` runs the [RAG capability](capabilities/rag.md) and always renders citations under the answer. Citations are labelled `title (uri)`, or whichever of the two the document has.
 
 Citation text is truncated to a 300-character preview. To read the whole passage the model saw:
 ```bash
@@ -221,7 +221,7 @@ The inspector provides:
 - Browse all documents in the database
 - View document metadata and content
 - Explore individual chunks
-- Search and filter results
+- Search chunks and preview their expanded context
 
 See [Tuning: Inspector](tuning.md#inspector) for the full keybindings and modal flows.
 
@@ -250,7 +250,7 @@ Create a new database:
 haiku-rag init [--db /path/to/your.lancedb]
 ```
 
-This creates the database with the configured settings. **All other commands require an existing database** - they will fail with an informative error if the database doesn't exist.
+This creates the database with the configured settings. Commands that read or write documents fail with an error when the database does not exist. `info` and `history` report the missing path and exit 0.
 
 ### Info
 
@@ -268,10 +268,7 @@ Shows:
 - vector index status (exists/not created, indexed/unindexed chunks)
 - table versions per table (documents, document_meta, chunks)
 
-At the end, a separate "Versions" section lists runtime package versions:
-- haiku.rag
-- lancedb
-- docling
+It also lists pending migrations, or reports the database up to date. A final "Versions" section lists haiku.rag, lancedb, docling, pydantic-ai and the DoclingDocument schema version.
 
 ### Doctor
 
@@ -325,16 +322,16 @@ haiku-rag migrate [--db /path/to/your.lancedb]
 When you upgrade haiku.rag to a new version that includes schema changes, the database requires migration. Opening a database with pending migrations will display an error:
 
 ```
-Error: Database requires migration from 0.19.0 to 0.26.5. 3 migration(s) pending. Run 'haiku-rag migrate' to upgrade.
+Error: Database requires migration from 0.19.0 to 0.38.0. 4 migration(s) pending. Run 'haiku-rag migrate' to upgrade.
 ```
 
 Run `haiku-rag migrate` to apply the pending migrations. The command shows which migrations were applied:
 
 ```
 Applied 4 migration(s):
-  - 0.20.0: Add 'docling_document_json' and 'docling_version' columns
+  - 0.20.0: Add 'docling_document_json' and 'docling_version' columns to documents table
   - 0.23.1: Add content_fts column for contextualized FTS search
-  - 0.25.0: Compress docling_document with gzip
+  - 0.25.0: Compress docling_document and use large_binary type
   - 0.38.0: Split docling_document pages into separate column and re-compress with zstd
 Migration completed successfully.
 ```
@@ -353,8 +350,9 @@ haiku-rag download-models
 This command downloads:
 
 - Docling OCR/conversion models
-- HuggingFace tokenizer (for chunking)
-- Ollama models referenced in your configuration (embeddings, QA, rerank)
+- The HuggingFace tokenizer for chunking
+- A sentence-transformers embedder, and a cross-encoder or local Jina reranker, when configured
+- Ollama models referenced in your configuration (embeddings, QA, reranking, title generation, picture description)
 
 Progress is displayed in real-time with download status and progress bars for Ollama model pulls.
 

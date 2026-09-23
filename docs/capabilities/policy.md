@@ -17,9 +17,8 @@ agent = Agent(
 )
 ```
 
-It exposes no tools and takes no configuration. Exactly one policy capability makes
-the decision, however many evidence capabilities are registered, so two of them
-cannot each demand a citation for one answer.
+It exposes no tools and takes no configuration. An agent takes at most one policy
+capability. Pydantic AI rejects a second.
 
 The host must carry the capability state between runs, alongside the message
 history. Enforcement reads what the conversation has already cited, so without it

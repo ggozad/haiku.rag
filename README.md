@@ -14,22 +14,22 @@ Built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.pydantic.dev/
 ## Features
 
 - **Hybrid search** — Vector + full-text with Reciprocal Rank Fusion
-- **Multimodal & cross-modal search** — Multimodal embedders (vLLM, VoyageAI, Cohere) put picture vectors in the same space as text; supports text-as-query → figure hits and image-as-query
+- **Multimodal & cross-modal search** — Multimodal embedders (vLLM, OpenRouter, VoyageAI, Cohere) put picture vectors in the same space as text; supports text-as-query → figure hits and image-as-query
 - **Question answering** — RAG capability with citations (page numbers, section headings)
 - **Vision QA** — Vision-capable models receive figure bytes alongside chunk text; attach your own images to questions in `ask` and the chat TUI
-- **Reranking** — local cross-encoders, Cohere, Zero Entropy, or vLLM
+- **Reranking** — local cross-encoders, Jina, Cohere, Zero Entropy, vLLM, or OpenRouter
 - **Code execution** — The RAG capability runs sandboxed Python over the documents for aggregation, computation and multi-document analysis
 - **Evidence compaction** — Optional capability that replaces earlier questions' search results on the request with the evidence they cited, so long conversations stop resending everything they retrieved
 - **Citation policy** — Optional capability that requires every answer to declare what grounds it, including declaring that nothing does
 - **Conversational RAG** — Chat TUI and web application for multi-turn conversations with session memory
 - **Document structure** — Stores full [DoclingDocument](https://docling-project.github.io/docling/concepts/docling_document/), enabling structure-aware context expansion
-- **Multiple providers** — Embeddings: Ollama, OpenAI, VoyageAI, Cohere, LM Studio, vLLM (multimodal via `multimodal: true` on vLLM/VoyageAI/Cohere). QA: any model supported by Pydantic AI
+- **Multiple providers** — Embeddings: Ollama, OpenAI and OpenAI-compatible servers, vLLM, OpenRouter, VoyageAI, Cohere, sentence-transformers (multimodal via `multimodal: true` on vLLM/OpenRouter/VoyageAI/Cohere). QA: any model supported by Pydantic AI
 - **Multi-database search** — Search, ask, or chat across named databases with source attribution on results and citations
 - **Local-first** — Embedded LanceDB, no servers required. Also supports S3, GCS, Azure, and LanceDB Cloud
 - **CLI & Python API** — Full functionality from command line or code
 - **MCP server** — Expose as tools for AI assistants (Claude Desktop, etc.)
 - **Visual grounding** — View chunks highlighted on original page images
-- **Production ingester** — Long-lived `haiku-ingester` service with persistent SQLite queue, async worker pool with retries and a dead-letter queue, FS / HTTP / S3 / WebDAV source adapters, FastAPI control plane, and a browser dashboard for operators. See [docs/ingester.md](docs/ingester.md).
+- **Production ingester** — Long-lived `haiku-ingester` service with a persistent SQLite or Postgres queue, async worker pool with retries and a dead-letter queue, FS / HTTP / S3 / WebDAV source adapters, FastAPI control plane, and a browser dashboard for operators. See [Ingester](https://ggozad.github.io/haiku.rag/ingester/).
 - **Tags** — Name database states with `haiku-rag tag` and roll back to them
 - **Inspector** — TUI for browsing documents, chunks, and search results
 
@@ -43,7 +43,7 @@ Built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.pydantic.dev/
 pip install haiku.rag
 ```
 
-Includes all features: document processing, all embedding providers, and rerankers.
+Includes document processing (Docling), the VoyageAI and Cohere embedders, every reranker, and the terminal UI. The ingester, S3 access and model providers other than Ollama and OpenAI-compatible endpoints are extras, listed under [Installation](https://ggozad.github.io/haiku.rag/installation/).
 
 Using [uv](https://docs.astral.sh/uv/)? `uv pip install haiku.rag`
 
@@ -60,6 +60,9 @@ Install only the extras you need. See the [Installation](https://ggozad.github.i
 > **Note**: Requires an embedding provider (Ollama, OpenAI, etc.). See the [Tutorial](https://ggozad.github.io/haiku.rag/tutorial/) for setup instructions.
 
 ```bash
+# Create the database
+haiku-rag init
+
 # Index a PDF
 haiku-rag add-src paper.pdf
 
@@ -78,7 +81,8 @@ haiku-rag ask "How many documents mention transformers?"
 # Interactive chat — multi-turn conversations with memory
 haiku-rag chat
 
-# Continuously ingest from configured sources (FS, HTTP, S3, WebDAV)
+# Continuously ingest from configured sources (FS, HTTP, S3, WebDAV).
+# Needs the ingester extra: pip install 'haiku.rag[ingester]'
 haiku-ingester serve
 ```
 
@@ -147,10 +151,10 @@ Provides search, document reading, and analysis tools directly in your AI assist
 
 ## Examples
 
-See the [examples directory](examples/) for working examples:
+See the [examples directory](https://github.com/ggozad/haiku.rag/tree/main/examples) for working examples:
 
-- **[Docker Setup](examples/docker/)** - Complete Docker deployment with continuous ingestion (`haiku-ingester`) and MCP server
-- **[Web Application](app/)** - Full-stack conversational RAG with CopilotKit frontend
+- **[Docker Setup](https://github.com/ggozad/haiku.rag/tree/main/examples/docker)** - Complete Docker deployment with continuous ingestion (`haiku-ingester`) and MCP server
+- **[Web Application](https://github.com/ggozad/haiku.rag/tree/main/app)** - Full-stack conversational RAG with CopilotKit frontend
 
 ## Documentation
 
@@ -166,13 +170,13 @@ Full documentation at: https://ggozad.github.io/haiku.rag/
 - [Ingester](https://ggozad.github.io/haiku.rag/ingester/) - Production ingester for continuous indexing from FS, HTTP, S3, and WebDAV
 - [MCP](https://ggozad.github.io/haiku.rag/mcp/) - Model Context Protocol integration
 - [Remote processing](https://ggozad.github.io/haiku.rag/remote-processing/) - Offload conversion to docling-serve
-- [Applications](https://ggozad.github.io/haiku.rag/apps/) - Chat TUI, web app, and inspector
-- [Benchmarks](https://ggozad.github.io/haiku.rag/benchmarks/) - Performance benchmarks
+- [Web application](https://ggozad.github.io/haiku.rag/apps/) - Browser chat app built on AG-UI
+- [Benchmarks](https://ggozad.github.io/haiku.rag/benchmarks/) - Retrieval and QA benchmarks
 - [Changelog](https://ggozad.github.io/haiku.rag/changelog/) - Version history
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the [MIT License](https://github.com/ggozad/haiku.rag/blob/main/LICENSE).
 
 <!-- mcp-name is used by the MCP registry to identify this server -->
 mcp-name: io.github.ggozad/haiku-rag

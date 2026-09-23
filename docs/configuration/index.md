@@ -21,7 +21,7 @@ This creates a `haiku.rag.yaml` file in your current directory with all availabl
 
 `haiku.rag` searches for configuration files in this order:
 
-1. Path specified via `--config` flag: `haiku-rag --config /path/to/config.yaml <command>`
+1. Path specified via `--config` flag: `haiku-rag --config /path/to/config.yaml <command>`, or the `HAIKU_RAG_CONFIG_PATH` environment variable, which library use reads too. A path that does not exist is an error.
 2. `./haiku.rag.yaml` (current directory)
 3. Platform-specific user directory:
     - **Linux**: `~/.local/share/haiku.rag/haiku.rag.yaml`
@@ -38,15 +38,18 @@ ingester:
     dburi: postgresql+asyncpg://haiku:${POSTGRES_PASSWORD}@db:5432/haiku_rag
 ```
 
-- `${VAR}` is replaced with the value of `VAR`. If `VAR` is unset, loading fails with an error naming the variable.
+- `${VAR}` is replaced with the value of `VAR`. If `VAR` is unset or empty, loading fails with an error naming the variable.
 - `${VAR:-default}` uses `default` when `VAR` is unset or empty.
 - `$$` produces a literal `$`.
 
 Substitution happens after the YAML is parsed, so a value containing `:`, `@`, or `#` fills the string verbatim and never changes the document structure.
 
+`environment` defaults to `production`. In the CLI, any value other than `development` silences Python warnings and Logfire console output.
+
 ## Minimal Configuration
 
-A minimal configuration file with defaults:
+A minimal configuration file with defaults. These `qa.model` values are the defaults only when the `qa` section is omitted. Once you write a `qa.model` block, each field you leave out takes the `ModelConfig` default: `vision: false`, and no `thinking`, `temperature` or `max_tokens`. The same holds for `processing.title_model` and `processing.conversion_options.picture_description.model`.
+
 
 ```yaml
 # haiku.rag.yaml
@@ -65,7 +68,9 @@ qa:
     thinking: true
 ```
 
-## Complete Configuration Example
+## Configuration Example
+
+A selection of settings. `haiku-rag init-config` writes every setting with its default.
 
 ```yaml
 # haiku.rag.yaml
@@ -98,9 +103,9 @@ embeddings:
 reranking:
   # Omit this section, or set `model: null`, to disable reranking.
   model:
-    provider: cross-encoder  # cross-encoder, cohere, zeroentropy, vllm, jina, jina-local
+    provider: cross-encoder  # cross-encoder, cohere, zeroentropy, vllm, openrouter, jina, jina-local
     name: cross-encoder/ms-marco-MiniLM-L-6-v2
-  multimodal: false  # vllm only: send picture chunks to the reranker as images
+  multimodal: false  # vllm and openrouter: send picture chunks to the reranker as images
 
 qa:
   model:

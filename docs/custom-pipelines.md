@@ -20,12 +20,12 @@ For standard use cases, prefer the convenience methods:
 
 ## Processing Primitives
 
-The client exposes four primitives that can be composed into custom workflows:
+The client exposes `convert()` and `chunk()`. `haiku.rag.embeddings` provides `embed_chunks()` and `contextualize()`. Together they compose into custom workflows:
 
 | Primitive | Input | Output | Purpose |
 |-----------|-------|--------|---------|
-| `convert()` | file, URL, or text | `DoclingDocument` | Convert source to structured document |
-| `chunk()` | `DoclingDocument` | `list[Chunk]` | Split document into chunks |
+| `convert()` | `Path`, URL, `file://` URI, or text | `DoclingDocument` | Convert source to structured document |
+| `chunk()` | `DoclingDocument` | `list[Chunk]` | Split document into chunks (plus picture chunks under a multimodal embedder) |
 | `embed_chunks()` | `list[Chunk]`, embedder | `list[Chunk]` | Generate embeddings for chunks (includes contextualization) |
 | `contextualize()` | `list[Chunk]` | `list[str]` | Get embedding-ready text (for custom embedders only) |
 
@@ -34,12 +34,14 @@ The client exposes four primitives that can be composed into custom workflows:
 The standard pipeline mirrors what `create_document()` does internally:
 
 ```python
+from pathlib import Path
+
 from haiku.rag.client import HaikuRAG
 from haiku.rag.embeddings import embed_chunks
 
 async with HaikuRAG("database.lancedb", create=True) as client:
     # 1. Convert source to DoclingDocument
-    docling_doc = await client.convert("path/to/document.pdf")
+    docling_doc = await client.convert(Path("path/to/document.pdf"))
 
     # 2. Chunk the document
     chunks = await client.chunk(docling_doc)
@@ -58,11 +60,11 @@ async with HaikuRAG("database.lancedb", create=True) as client:
 
 ## Convert
 
-`convert()` accepts files, URLs, or plain text and returns a `DoclingDocument`:
+`convert()` accepts a `Path`, an http(s) URL, a `file://` URI, or text, and returns a `DoclingDocument`. A string that is not a URL is converted as text, so pass local files as `Path`:
 
 ```python
 # From local file
-docling_doc = await client.convert("report.pdf")
+docling_doc = await client.convert(Path("report.pdf"))
 docling_doc = await client.convert(Path("/absolute/path/to/file.docx"))
 
 # From URL (downloads and converts)
@@ -83,6 +85,7 @@ The `format` parameter controls how text content is parsed:
 
 - `"md"` (default) - Parse as Markdown
 - `"html"` - Parse as HTML, preserving semantic structure (headings, lists, tables)
+- `"plain"` - Plain text, no parsing
 
 !!! note
     The `format` parameter only applies to text content. Files and URLs determine their format from the file extension or content-type header.
@@ -108,6 +111,8 @@ for chunk in chunks:
     # Access raw metadata (including headings, page_numbers and labels)
     print(f"Raw metadata: {chunk.metadata}")
 ```
+
+With a multimodal embedder, `chunk()` also returns one picture chunk per distinct picture, merged into document order.
 
 Chunks are returned with:
 
@@ -159,16 +164,22 @@ See the [Custom Embeddings](#custom-embeddings) example below for when to use `c
 Transform content before chunking:
 
 ```python
+import re
+from pathlib import Path
+
+from haiku.rag.client import HaikuRAG
+from haiku.rag.embeddings import embed_chunks
+
+
 def clean_markdown(text: str) -> str:
     """Remove HTML comments and normalize whitespace."""
-    import re
     text = re.sub(r'<!--.*?-->', '', text, flags=re.DOTALL)
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
 
 async with HaikuRAG("database.lancedb", create=True) as client:
     # Convert to get raw content
-    docling_doc = await client.convert("document.md")
+    docling_doc = await client.convert(Path("document.md"))
 
     # Extract and preprocess markdown
     markdown = docling_doc.export_to_markdown()
@@ -182,8 +193,9 @@ async with HaikuRAG("database.lancedb", create=True) as client:
     embedded_chunks = await embed_chunks(chunks, client.embedder)
 
     await client.import_document(
+        docling_document=processed_doc,
         chunks=embedded_chunks,
-        content=cleaned,
+        uri="file:///path/to/document.md",
     )
 ```
 
@@ -192,8 +204,13 @@ async with HaikuRAG("database.lancedb", create=True) as client:
 Remove unwanted chunks before embedding:
 
 ```python
+from pathlib import Path
+
+from haiku.rag.client import HaikuRAG
+from haiku.rag.embeddings import embed_chunks
+
 async with HaikuRAG("database.lancedb", create=True) as client:
-    docling_doc = await client.convert("document.pdf")
+    docling_doc = await client.convert(Path("document.pdf"))
     chunks = await client.chunk(docling_doc)
 
     # Filter out short chunks or boilerplate
@@ -220,13 +237,20 @@ async with HaikuRAG("database.lancedb", create=True) as client:
 Use your own embedding service:
 
 ```python
+from pathlib import Path
+
+from haiku.rag.client import HaikuRAG
+from haiku.rag.embeddings import contextualize
+from haiku.rag.store.models.chunk import Chunk
+
+
 async def my_embedder(texts: list[str]) -> list[list[float]]:
     """Your custom embedding function."""
     # Call your embedding API here
     ...
 
 async with HaikuRAG("database.lancedb", create=True) as client:
-    docling_doc = await client.convert("document.pdf")
+    docling_doc = await client.convert(Path("document.pdf"))
     chunks = await client.chunk(docling_doc)
 
     # Use contextualize for consistent embedding input
@@ -236,8 +260,6 @@ async with HaikuRAG("database.lancedb", create=True) as client:
     embeddings = await my_embedder(texts)
 
     # Create chunks with embeddings
-    from haiku.rag.store.models.chunk import Chunk
-
     embedded_chunks = [
         Chunk(
             content=chunk.content,

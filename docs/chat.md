@@ -27,7 +27,7 @@ Each answer cites the chunks the agent used, with source document, page numbers,
 
 ![Expanded citation with an inline figure](img/chat-citation-figure.png)
 
-For visual grounding of a text chunk (the chunk highlighted on its source page image), open the command palette and pick "Show visual grounding". This requires:
+For visual grounding of a text chunk (the chunk highlighted on its source page image), select a citation, then open the command palette and pick "Show visual grounding". This requires:
 
 - Documents processed via Docling with page images (default for PDFs).
 - A terminal that supports inline images (iTerm2, WezTerm, Kitty).
@@ -44,6 +44,16 @@ haiku-rag visualize <chunk_id>
 Press `Ctrl+I` to open the image picker: a directory tree filtered to image files with a live preview. Selecting an image inserts an `[Image #N]` token at the cursor and attaches the image to your next message. Tokens delete as a unit with backspace or delete, and you can place them anywhere in the text to control where each image appears relative to your words.
 
 Retrieval stays text-based; the images are sent to the model alongside your message, so the driving model needs `vision: true` in its configuration.
+
+## Keys
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Send the message |
+| `Shift+Enter` | New line |
+| `Esc` | Focus the input, or cancel a running response |
+| `Ctrl+I` | Attach an image |
+| `Ctrl+P` | Command palette |
 
 ## Command palette
 
@@ -65,10 +75,10 @@ The capability mounts every document as a virtual filesystem at `/documents/{id}
 - "Compare the experimental sections across these three reports."
 - "Which section discusses the proof of Theorem 4.10?"
 
-The program behind an answer is shown under it. See [RAG capability](capabilities/rag.md).
+The last successful program behind an answer is shown under it. See [RAG capability](capabilities/rag.md).
 
 ## Document filter
 
-Run "Filter documents" from the command palette to restrict searches to a subset. The filter applies to every search the agent runs for the rest of the session.
+Run "Filter documents" from the command palette to restrict searches to a subset. The filter applies to every search the agent runs, and stays in force after "Clear chat".
 
-Chat also honors the global `--read-only` flag. See the [CLI reference](cli.md) for details.
+Chat always opens the database read-only.

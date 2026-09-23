@@ -35,6 +35,7 @@
 - Docker images: the default `mcp` command binds `0.0.0.0`. The unused
   `DEFAULT_DATA_DIR` variable is removed; set `storage.data_dir: /data` in the
   mounted config.
+- `app/` compose files bind the frontend to `127.0.0.1`.
 
 ### Fixed
 

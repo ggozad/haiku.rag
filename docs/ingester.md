@@ -228,8 +228,8 @@ example-provider = "example_pkg:Provider"
 ```
 
 The provider is built once at startup, so it can hold a client or cache
-across calls. When a document's source revision is unchanged, the
-ingester keeps the existing cheap HEAD short-circuit and preserves the
+across calls. When the revision discovery observed matches the stored one,
+the ingester skips the document without fetching it and preserves the
 stored provider metadata; the provider runs again when the document is
 fetched for a new or changed revision. The source-derived keys (`md5`,
 `source_revision`, `content_type`, `source_id`) are stripped from
@@ -380,11 +380,12 @@ lease lapse and is reclaimed by the reaper after `lease_ttl_s`.
   so it can be short; keep it well above `heartbeat_interval_s`.
 - `heartbeat_interval_s` must be at most `lease_ttl_s / 3` so scheduler
   jitter or a slow DB round-trip can't let a live job's lease lapse.
-- `worker_count` should match downstream capacity. docling-serve
-  processes one task per instance, so `worker_count` above the number
-  of `providers.docling_serve.base_url` entries over-subscribes the
-  fleet — extra submissions queue inside docling-serve. They are not
-  reaped while queued because the worker keeps renewing the lease.
+- `worker_count` should match downstream capacity. A default docling-serve
+  instance processes one task at a time, so start at 1–2× the number of
+  `providers.docling_serve.base_url` entries: enough to overlap one job's
+  fetch, embed and store with another's conversion. Submissions beyond that
+  queue inside docling-serve, and are not reaped while queued because the
+  worker keeps renewing the lease.
 - `poll_idle_interval_s`: lower = faster pickup, more SQLite churn.
 - `reaper_interval_s`: worst-case post-crash reclaim is
   `lease_ttl_s + reaper_interval_s`.
@@ -418,6 +419,11 @@ ingester:
         failure_threshold: 5
         cooldown_s: 600
 ```
+
+Workers keep a second breaker per source over job failures. After 5
+consecutive transient job failures they stop claiming that source's jobs for
+60 seconds. Both values are fixed. `/health` reports the breaker, and opening
+it emits an `ingester.worker breaker opened` event.
 
 ## Run it
 
@@ -483,7 +489,8 @@ queue, not the LanceDB.
 
 By default the ingester exposes a FastAPI control plane on
 `127.0.0.1:8765`. Set `ingester.api.auth_token` to require a Bearer
-token; without one the API stays open and the service logs a warning.
+token on every route except `/` and `/health`. Without one the API stays
+open and the service logs a warning.
 
 !!! warning "Non-loopback binds need a token"
     Loopback (`127.0.0.1`) is local-only and safe to leave open. If
@@ -495,18 +502,19 @@ token; without one the API stays open and the service logs a warning.
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/` | browser dashboard (HTML; unauthenticated, the JS attaches the bearer on its own JSON fetches) |
-| `GET` | `/health` | liveness + queue counts + live worker/poller counts; `status` is `"ok"` or `"degraded"` |
+| `GET` | `/health` | liveness + queue counts + live worker/poller counts + worker breaker state; `status` is `"degraded"` when a worker or poller is down or the worker breaker is open. Unauthenticated |
 | `GET` | `/sources` | configured pollers + last-poll time + breaker state + last skip reason |
-| `POST` | `/sources/{id}/refresh` | force an out-of-band sweep |
+| `POST` | `/sources/{id}/refresh` | run a sweep now; skipped (`refreshed: false`) while the source has queued or claimed jobs or its breaker is open |
 | `GET` | `/jobs` | filtered list (`status`, `source_id`, `uri`, `limit`, `offset`) |
 | `GET` | `/jobs/{id}` | one job |
-| `POST` | `/jobs/{id}/retry` | reset attempts to 0, status to queued |
+| `POST` | `/jobs/{id}/retry` | reset a dead or queued job: attempts to 0, status to queued. Returns the live job instead when one exists for the same URI |
 | `DELETE` | `/jobs/{id}` | cancel a queued/claimed job |
 | `GET` | `/dlq` | dead jobs |
 | `POST` | `/dlq/{id}/retry` | re-queue a dead job |
 | `GET` | `/stats` | rolling throughput (5m / 30m / 1h succeeded), worker occupancy, oldest queued age, per-source DLQ + backlog |
 | `GET` | `/database` | LanceDB snapshot — stored version, embeddings, per-table row counts/sizes, vector index status, pending migrations, package versions (same data as `haiku-rag info`) |
-| `GET` | `/config` | full effective configuration (defaults filled in) as YAML, with secrets redacted |
+| `GET` | `/config` | full effective configuration (defaults filled in), as YAML text in a JSON `yaml` field, with secrets redacted |
+| `GET` | `/providers` | reachability of each `providers.docling_serve.base_url` entry (`/health`, 2 s timeout) |
 
 OpenAPI docs at `http://localhost:8765/docs`. The dashboard at `/` polls
 the JSON endpoints above every few seconds and surfaces the same data
@@ -617,7 +625,8 @@ leaves it in place, so re-adding an ingested document by hand cannot
 detach it from its source.
 
 A source id is an identity. An `fs` source without an `id` derives one
-from its root (`fs:{resolved_root}`), so moving a watched directory, or
+from its root (`fs:{resolved_root}`), and an `s3` source from its bucket and
+prefix (`s3:{bucket}/{prefix}`), so moving a watched directory or prefix, or
 renaming a source that sets `id`, detaches every document already
 ingested under the old id. Set `id` explicitly on a source whose
 location may move:
@@ -765,6 +774,7 @@ For ops setup you can pre-create it:
 ```bash
 haiku-ingester queue init             # create the DB and schema
 haiku-ingester queue migrate          # apply pending schema changes
+haiku-ingester queue init -q /var/lib/haiku-rag/ingester.db   # at another path
 ```
 
 Terminal job rows (`succeeded` and `dead`) are kept for history and pruned by
@@ -847,9 +857,6 @@ exact instance that served it. A worker circuit breaker opening emits an
 `ingester.worker breaker opened` event with `source_id`, `threshold`, and
 `cooldown_s`.
 
-The `debug-ingestion` skill in `.claude/skills/` turns these spans into
-ready-made Logfire queries (failed jobs, docling-serve failover, per-source
-sweeps, breaker trips) for use from Claude Code.
 
 ### Operating against the API
 

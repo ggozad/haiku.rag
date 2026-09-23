@@ -252,6 +252,9 @@ evaluations run hotpotqa --config /path/to/haiku.rag.yaml --db /path/to/custom.l
 - `--filter CLAUSE` / `-f CLAUSE` - Restrict every benchmark search to a subset of the database (see [Restricting the corpus](#restricting-the-corpus)).
 - `--results DIR` - Directory for the per-case result file (default: `evaluations/results/` in the haiku.rag data directory).
 - `--no-telemetry` - Run without Logfire. Without it, a run refuses to start when Logfire finds no token (`LOGFIRE_TOKEN` or a credentials file).
+- `--filter-ids PATH` - Run only the QA cases whose ids the file lists, one per line. Retrieval is unaffected
+- `--multimodal-only` - Only evaluate queries that need image understanding
+- `--vacuum-interval N` - Vacuum every N documents while populating (default 100)
 
 If no config file is specified, the script searches standard locations: `./haiku.rag.yaml`, user config directory, then falls back to defaults.
 

@@ -3,11 +3,11 @@
 haiku.rag supports multiple AI providers for embeddings, question answering, and reranking. This guide covers provider-specific configuration and setup.
 
 !!! note
-    You can use a `.env` file in your project directory to set environment variables like `OLLAMA_BASE_URL` and API keys (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`). These will be automatically loaded when running `haiku-rag` commands.
+    You can use a `.env` file in your project directory to set environment variables like `OLLAMA_BASE_URL` and API keys (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`). `haiku-rag` and `haiku-ingester` load it on start. Library use does not read `.env`.
 
 ## Model Settings
 
-Configure model behavior for the `qa` model. These settings apply to any provider that supports them.
+Configure model behavior for the `qa` model. The settings apply on the providers haiku.rag builds directly: `ollama`, `vllm`, `openai`, `openrouter`, `anthropic`, `google`, `groq`, `bedrock` and `mistral`. Any other provider is passed to Pydantic AI by name, which applies none of them, and haiku.rag logs a warning when they are set.
 
 ### Basic Settings
 
@@ -22,7 +22,7 @@ qa:
 
 **Available options:**
 
-- **temperature**: Sampling temperature (0.0-1.0+). Defaults vary by task: 0.3 for QA and title generation, 0.0 for picture description.
+- **temperature**: Sampling temperature (0.0-1.0+). Unset by default. The built-in QA and title models set 0.3 when their section is omitted.
   - Lower (0.0-0.3): Deterministic, focused responses
   - Medium (0.4-0.7): Balanced
   - Higher (0.8-1.0+): Creative, varied responses
@@ -31,6 +31,7 @@ qa:
 - **base_url**: Custom endpoint for OpenAI-compatible servers (vLLM, LM Studio, etc.)
 - **api_key**: Key for this endpoint, overriding the provider's environment variable (see [Per-endpoint API keys](#per-endpoint-api-keys))
 - **extra_body**: Raw dict forwarded to the model SDK (see [Raw Provider Pass-through](#raw-provider-pass-through))
+- **vision**: Whether the model reads images. Default `false`, and `true` for the built-in QA model when `qa` is omitted
 
 ### Per-endpoint API keys
 
@@ -75,7 +76,7 @@ qa:
 
 **How the value travels:**
 
-- **Vendor APIs** (`openai` without a `base_url`, `anthropic`, `google`, `groq`, `bedrock`, and any provider reached by name): the value is passed as Pydantic AI's unified `thinking` setting, and Pydantic AI maps it per provider, clamped to what each model offers: `reasoning_effort` on OpenAI reasoning models, adaptive thinking or a token budget on Anthropic, `thinking_level` on Gemini 3. `false` is dropped on always-on models. See the [Pydantic AI thinking documentation](https://ai.pydantic.dev/thinking/) for the per-provider tables. Bedrock Converse does not serve the proprietary OpenAI models, so configuring one raises an error. Reach those through `provider: bedrock-mantle`.
+- **Vendor APIs** (`openai` without a `base_url`, `anthropic`, `google`, `groq`, `bedrock`, `mistral`): the value is passed as Pydantic AI's unified `thinking` setting, and Pydantic AI maps it per provider, clamped to what each model offers: `reasoning_effort` on OpenAI reasoning models, adaptive thinking or a token budget on Anthropic, `thinking_level` on Gemini 3. `false` is dropped on always-on models. See the [Pydantic AI thinking documentation](https://ai.pydantic.dev/thinking/) for the per-provider tables. Bedrock Converse does not serve the proprietary OpenAI models, so configuring one raises an error. `provider: bedrock-mantle` reaches them, passed to Pydantic AI by name, so `thinking` and the other settings are not applied.
 - **Self-hosted OpenAI-compatible endpoints** (`ollama`, `vllm`, `openai` with a `base_url`, and the picture-description VLM): the value is sent as the request's `reasoning_effort` field under any model name: `false` sends `none`, `true` sends `medium`, a level is sent as written. The server decides what it means, so the accepted levels are the model's own.
 - **Ollama** maps `reasoning_effort` onto its `think` option and never rejects a value: `minimal` becomes `low`, `xhigh` becomes `max`. Gemma 4, Qwen3.8 and Muse Glimmer think by default there. `gpt-oss` cannot be switched off and takes `low`, `medium`, `high`.
 - **vLLM** hands `reasoning_effort` to the chat template, which may reject a value it does not know: `Inferact/Qwen3.8-27B-NVFP4` takes `low`, `medium` and `xhigh` and returns 400 for `minimal` and `high`. The Gemma 4 family reads only on and off, so every level thinks the same. A template with a switch of its own, Muse Glimmer's `reasoning_strength`, ignores the field, see [vLLM](#vllm).
@@ -110,7 +111,7 @@ These keys are sent as top-level request fields. Of the three, ollama honors onl
 
 `extra_body.reasoning_effort` reaches the request the same way and overrides the value `thinking` sends. A template carrying a switch of its own takes `chat_template_kwargs`, see [vLLM](#vllm).
 
-**Provider support:** honored by openai, ollama, openrouter, anthropic, groq and vllm via pydantic-ai's `ModelSettings.extra_body`. Silently ignored by google and bedrock.
+**Provider support:** honored by openai, ollama, openrouter, anthropic, groq and vllm via pydantic-ai's `ModelSettings.extra_body`. Silently ignored by google, bedrock and mistral.
 
 ## Embedding Providers
 
@@ -188,7 +189,7 @@ export OPENAI_API_KEY=your-api-key
 
 ### Cohere
 
-Cohere embeddings are available via pydantic-ai:
+Cohere embeddings need the `cohere` extra, which the full `haiku.rag` package includes:
 
 ```yaml
 embeddings:
@@ -206,7 +207,7 @@ export CO_API_KEY=your-api-key
 
 ### SentenceTransformers
 
-For local embeddings using HuggingFace models:
+For local embeddings using HuggingFace models. Needs `sentence-transformers`, which the `cross-encoder` extra installs and the full `haiku.rag` package includes:
 
 ```yaml
 embeddings:
@@ -338,7 +339,7 @@ OpenAI QA is included in the default installation:
 qa:
   model:
     provider: openai
-    name: gpt-4o-mini  # or gpt-4, gpt-3.5-turbo, etc.
+    name: gpt-4o-mini
 ```
 
 Set your API key via environment variable:
@@ -349,13 +350,13 @@ export OPENAI_API_KEY=your-api-key
 
 ### Anthropic
 
-Anthropic QA is included in the default installation:
+Anthropic needs the `anthropic` extra, which neither package includes: `uv pip install 'haiku.rag-slim[anthropic]'`.
 
 ```yaml
 qa:
   model:
     provider: anthropic
-    name: claude-3-5-haiku-20241022  # or claude-3-5-sonnet-20241022, etc.
+    name: claude-haiku-4-5
 ```
 
 Set your API key via environment variable:
@@ -450,14 +451,14 @@ qa:
 
 ### Other Providers
 
-Any provider supported by Pydantic AI can be used. Examples:
+Any provider supported by Pydantic AI can be used. Google, Groq and Mistral need the `google`, `groq` and `mistral` extras on `haiku.rag-slim`. Examples:
 
 ```yaml
 # Google Gemini
 qa:
   model:
     provider: google
-    name: gemini-1.5-flash
+    name: gemini-2.5-flash
 
 # Groq
 qa:

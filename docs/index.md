@@ -17,7 +17,7 @@ haiku-rag ask "what does it conclude?"
 
 ## Why haiku.rag
 
-**Answers you can check.** Every answer carries citations with page numbers and section headings. Visual grounding shows the cited chunk highlighted on the original page image. Optional capabilities require an answer to declare what grounds it, including declaring that nothing does.
+**Answers you can check.** Every answer carries citations with page numbers and section headings. Visual grounding shows the cited chunk highlighted on the original page image. An optional capability requires every answer to declare what grounds it, including declaring that nothing does.
 
 **Local-first, no server.** Embedded [LanceDB](https://lancedb.com/) and open models through [Ollama](https://ollama.com/) by default. No database to run and no API keys required. The same code runs against S3, GCS, Azure, LanceDB Cloud, or any provider Pydantic AI supports.
 

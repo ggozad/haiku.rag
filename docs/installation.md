@@ -29,11 +29,13 @@ uv pip install 'haiku.rag-slim[docling,voyageai,cross-encoder]'
 ### Extras
 
 Every extra `haiku.rag-slim` defines. The right-hand column marks the ones the
-full `haiku.rag` package already includes.
+full `haiku.rag` package already includes. `haiku.rag` itself defines only the
+`tui`, `s3`, `cross-encoder` and `ingester` extras, so the model-provider extras
+are installed from `haiku.rag-slim`, alongside the full package if you use it.
 
 | Extra | Provides | In `haiku.rag` |
 |---|---|---|
-| `docling` | PDF, DOCX, PPTX, images and 40+ formats, converted locally | yes |
+| `docling` | PDF, DOCX, PPTX, XLSX, HTML, LaTeX, email and images, converted locally | yes |
 | `tui` | Terminal UI for `chat` and `inspect` | yes |
 | `voyageai` | VoyageAI embeddings | yes |
 | `cohere` | Cohere embeddings and reranking | yes |
@@ -55,6 +57,7 @@ Ollama and any OpenAI-compatible endpoint work with no extra at all.
 - **Ollama** (default embedding provider)
 - **OpenAI** (GPT models for QA and embeddings)
 - **vLLM** and other OpenAI-compatible endpoints (embeddings, QA, reranking)
+- **OpenRouter** (QA, embeddings including multimodal, reranking)
 - **Jina** reranking via `provider: jina`, which calls the Jina HTTP API
 
 Other providers come from the extras above, which pull the matching Pydantic AI extra. For Claude models, `uv pip install 'haiku.rag-slim[anthropic]'`.
@@ -76,8 +79,9 @@ haiku-rag download-models
 
 This will download:
 - Docling models for document processing
-- HuggingFace tokenizer models for chunking
-- Any Ollama models referenced by your current configuration
+- The HuggingFace tokenizer for chunking
+- A sentence-transformers embedder, and a cross-encoder or local Jina reranker, when configured
+- Every Ollama model the configuration references: embeddings, QA, reranking, title generation and picture description
 
 ## Remote Processing (Optional)
 
@@ -114,5 +118,7 @@ docker run -p 8001:8001 \
   -v /path/to/data:/data \
   haiku-rag
 ```
+
+The mounted `haiku.rag.yaml` must set `storage.data_dir: /data`, or the database is written inside the container rather than to the volume.
 
 See `docker/README.md` for complete build and configuration instructions, including how to run the [ingester](ingester.md) service for continuous document ingestion.

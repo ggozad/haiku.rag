@@ -2,7 +2,7 @@
 
 A conversational RAG interface built with [CopilotKit](https://copilotkit.ai/) and [pydantic-ai](https://github.com/pydantic/pydantic-ai)'s AG-UI protocol.
 
-> **Note:** An illustrative example meant as a starting point, with no authentication. The compose files bind the backend to `127.0.0.1`; don't expose it to an untrusted network.
+> **Note:** An illustrative example meant as a starting point, with no authentication. The compose files bind the frontend and backend to `127.0.0.1`. The frontend proxies every backend route, so don't expose either to an untrusted network.
 
 ## Prerequisites
 
@@ -42,9 +42,9 @@ A conversational RAG interface built with [CopilotKit](https://copilotkit.ai/) a
 |----------|-------------|----------|
 | `DB_VOLUME` | Host path of the LanceDB database the compose files mount at `/data`, where `haiku.rag.yaml` places it (default `./data/haiku.rag.lancedb`) | No |
 | `HAIKU_RAG_CONFIG_PATH` | The configuration file; the compose files set it to the mounted `/app/haiku.rag.yaml` | No |
-| `ANTHROPIC_API_KEY` | Anthropic API key | One LLM key required |
-| `OPENAI_API_KEY` | OpenAI API key | One LLM key required |
-| `OLLAMA_BASE_URL` | Ollama server URL (default: `http://host.docker.internal:11434`) | For local models |
+| `ANTHROPIC_API_KEY` | Anthropic API key | When `haiku.rag.yaml` uses Anthropic |
+| `OPENAI_API_KEY` | OpenAI API key | When `haiku.rag.yaml` uses OpenAI |
+| `OLLAMA_BASE_URL` | Ollama server URL (default: `http://host.docker.internal:11434`). Ignored when `haiku.rag.yaml` sets `providers.ollama.base_url`, as the example does | No |
 | `LOGFIRE_TOKEN` | Pydantic Logfire token for debugging | No |
 
 ### haiku.rag.yaml
@@ -52,18 +52,23 @@ A conversational RAG interface built with [CopilotKit](https://copilotkit.ai/) a
 Configure the LLM, embeddings, and search settings:
 
 ```yaml
+lancedb:
+  databases:
+    haiku.rag: /data   # where the compose files mount DB_VOLUME
+
 qa:
   model:
-    provider: anthropic  # or openai, ollama
-    name: claude-sonnet-4-20250514
+    provider: ollama   # or anthropic, openai
+    name: gpt-oss
 
 embeddings:
   model:
     provider: ollama
-    name: nomic-embed-text
+    name: qwen3-embedding:4b
+    vector_dim: 2560   # must match the database
 
 search:
-  limit: 10
+  limit: 5
 ```
 
 See `haiku.rag.yaml.example` for all options.
@@ -106,5 +111,5 @@ The chat can:
 
 - **Search** your documents with hybrid vector + full-text search
 - **Answer questions** with citations from your knowledge base
-- **Filter by document** when you ask about specific files
+- **Filter by document** through the document filter in the UI
 - **Show visual grounding** for PDF/image sources

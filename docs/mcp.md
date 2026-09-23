@@ -31,10 +31,12 @@ The server opens the database read-only. Ingestion goes through the CLI
 ## Collections
 
 With several databases in `lancedb.databases`, the server covers all of
-them, as `haiku-rag search` does. Results and documents name theirs in
-`source`. `sources` on `search_documents`, `search_documents_by_image`
-and `execute_code` restricts a call to a subset; `source` on `get_document` names the database holding the
-document. A name the server does not cover is an error.
+them, as `haiku-rag search` does. Search results name theirs on a
+`Collection:` line, and documents in their `source` field. `sources` on
+`search_documents`, `search_documents_by_image`, `list_documents` and
+`execute_code` restricts a call to a subset. `source` on `get_document`,
+`get_document_outline` and `get_document_section` names the database holding
+the document. A name the server does not cover is an error.
 `haiku-rag --db-name NAME mcp` serves one. See
 [Multiple Databases](configuration/storage.md#multiple-databases).
 
@@ -192,10 +194,10 @@ title = 'Q3 report'
 
 `filter` and `sources` are chosen by the client model on each call. What a
 client can reach is bounded by the databases the server was started against,
-not by either parameter: `filter` restricts what `search_documents` and
-`list_documents` return and what `execute_code` mounts, `get_document` and
-`get_document_section` take none, and a document id resolves through them
-whatever filter another call used. Content that must stay out of a client's
+not by either parameter: `filter` restricts what the two search tools and
+`list_documents` return and what `execute_code` mounts, the three document
+read tools take none, and a document id resolves through them whatever
+filter another call used. Content that must stay out of a client's
 reach belongs in a database the server does not cover.
 
 ### Errors

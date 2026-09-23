@@ -41,13 +41,13 @@ The slim Docker image with docker-compose is the recommended setup. See `example
 See the [official docling-serve repository](https://github.com/docling-project/docling-serve) for installation options. The quickest way is using Docker:
 
 ```bash
-docker run -p 5001:5001 quay.io/docling-project/docling-serve
+docker run -p 5001:5001 quay.io/docling-project/docling-serve:v1.32.0
 ```
 
 To enable the web UI for debugging:
 
 ```bash
-docker run -p 5001:5001 -e DOCLING_SERVE_ENABLE_UI=true quay.io/docling-project/docling-serve
+docker run -p 5001:5001 -e DOCLING_SERVE_ENABLE_UI=true quay.io/docling-project/docling-serve:v1.32.0
 ```
 
 ### Configuration
@@ -69,10 +69,10 @@ providers:
 
 For converter / chunker config options (chunking strategy, tokenizer,
 OCR, table handling, picture description), see
-[Document Processing](configuration/processing.md). The configuration is
-identical between `docling-local` and `docling-serve` modes — this page
-covers only what's specific to running docling-serve as a separate
-service.
+[Document Processing](configuration/processing.md). Both converters read the
+same configuration, except `fetch_remote_images`, `fetch_headers` and
+`infer_furniture`, which docling-serve ignores. This page covers only what is
+specific to running docling-serve as a separate service.
 
 ## VLM picture description with docling-serve
 
@@ -88,7 +88,7 @@ docling-serve blocks outbound calls by default. Enable them by setting
 ```bash
 docker run -p 5001:5001 \
   -e DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true \
-  quay.io/docling-project/docling-serve
+  quay.io/docling-project/docling-serve:v1.32.0
 ```
 
 ### Reach host services from inside the container

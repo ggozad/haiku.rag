@@ -10,30 +10,26 @@
 | `execute_code(code)` | Run Python against the virtual document filesystem. |
 | `cite(chunk_ids)` | Register retrieved or filesystem-derived chunk IDs as answer citations. |
 
-The sandbox exposes documents under `/documents/{document_id}/` with `metadata.json`, `content.txt`, `items.jsonl`, `chunks.jsonl` (chunk ids with their metadata) and `toc.json`. In code, `await search()` results carry `chunk_meta` and `await list_documents()` rows carry `metadata`. The interpreter's limits and the per-call budgets are listed under [MCP, Code](../mcp.md#code). The sandbox opens only when the model first executes code, so a question answered from search alone never pays for it.
+The sandbox exposes documents under `/documents/{document_id}/` with `metadata.json`, `content.txt`, `items.jsonl`, `chunks.jsonl` (chunk ids with their metadata) and `toc.json`. In code, `await search()` results carry `chunk_meta` and `await list_documents()` rows carry `metadata`. One sandbox serves every `execute_code` call of a run, so variables persist between calls. Its per-call limits are under [Sandbox configuration](../configuration/qa.md#sandbox-configuration) and the interpreter's Python subset under [MCP, Code](../mcp.md#code). The sandbox opens only when the model first executes code, so a question answered from search alone never pays for it.
 
 ## Create and compose
 
 ```python
 from pydantic_ai import Agent
-from haiku.rag.capabilities.compaction import create_capability as compaction
-from haiku.rag.capabilities.policy import create_capability as citation_policy
 from haiku.rag.capabilities.rag import create_capability as rag
 
 agent = Agent(
     "openai:gpt-5",
-    capabilities=[
-        rag(db_path="my.lancedb"),
-        compaction(),
-        citation_policy(),
-    ],
+    capabilities=[rag(db_path="my.lancedb")],
 )
 
 result = await agent.run("What safety equipment does the manual require?")
 print(result.output)
 ```
 
-`create_capability` accepts `db_path`, `config`, `defer_loading`, `request_limit`, `sources`, and `vision`. `sources` names the configured databases the capability covers, the sandbox filesystem included, all of them when omitted (see [Database selection](index.md#database-selection)). Set `defer_loading=True` when the agent routes among several capabilities and should load this one on demand. The default request limit is 30 model requests per question; set `request_limit=None` to disable it. `vision` controls whether picture results are attached to search returns as images and should reflect the model the hosting agent runs; it defaults to the configured QA model's `vision` flag.
+To add evidence compaction and the citation policy, see [Compose an agent](index.md#compose-an-agent).
+
+`create_capability` accepts `db_path`, `config`, `defer_loading`, `rag`, `request_limit`, `sources`, and `vision`. `rag` lends the capability an open `HaikuRAG` client, which it uses and never closes. `sources` names the configured databases the capability covers, the sandbox filesystem included, all of them when omitted (see [Database selection](index.md#database-selection)). Set `defer_loading=True` when the agent routes among several capabilities and should load this one on demand. The default request limit is 30 model requests per agent run; set `request_limit=None` to disable it. `vision` controls whether picture results are attached to search returns as images and should reflect the model the hosting agent runs; it defaults to the configured QA model's `vision` flag.
 
 When the limit is reached, `search` and `execute_code` are removed while `cite` remains for two further requests that call one of the capability's tools, so the model can register citations before answering from evidence already gathered. Requests spent on other tools do not count against that window. Unrelated agent and capability tools remain available. A new agent run starts a fresh limit, so multi-turn chat does not consume one shared budget.
 
@@ -66,7 +62,7 @@ class RAGState(BaseModel):
 
 `document_filter`, `sources`, `citation_index` and `evidence` persist across runs. Citations, searches and executions are cleared when a new question starts; a run that resumes a question keeps the evidence it is still answering from.
 
-`evidence` records which chunks this capability retrieved and cited, and in which question. `haiku.rag.capabilities.ledger.citation_status(records, question=...)` derives `missing`, `grounded` or `ungrounded` from it.
+`evidence` records which chunks this capability cited, in which question, and whether the citing question also retrieved them. `haiku.rag.capabilities.ledger.citation_status(records, question=...)` derives `missing`, `grounded` or `ungrounded` from it.
 
 State is ordinary application state; the capability does not depend on AG-UI. An AG-UI application can expose it using Pydantic AI's standard adapter.
 

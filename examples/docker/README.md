@@ -4,9 +4,9 @@ Run haiku.rag with docling-serve for remote document processing, continuous inge
 
 ## Architecture
 
-LanceDB allows exactly one writer + N readers per database URI, so the
-example runs the ingester and the MCP server as **two separate containers**
-sharing the same data volume:
+haiku.rag allows one writing process per database, with any number of
+readers, so the example runs the ingester and the MCP server as **two
+separate containers** sharing the same data volume:
 
 - **docling-serve-1** / **docling-serve-2** - Two replicas of the
   document conversion + chunking service. The ingester round-robins
@@ -104,9 +104,10 @@ docker compose exec haiku-rag haiku-rag ask "What is haiku.rag?"
 Check ingester progress via its control plane:
 
 ```bash
+source .env   # INGESTER_TOKEN
 curl http://localhost:8765/health
-curl http://localhost:8765/jobs?status=queued
-curl http://localhost:8765/dlq
+curl -H "Authorization: Bearer $INGESTER_TOKEN" 'http://localhost:8765/jobs?status=queued'
+curl -H "Authorization: Bearer $INGESTER_TOKEN" http://localhost:8765/dlq
 ```
 
 ## Ports
@@ -127,7 +128,9 @@ processing:
 
 providers:
   docling_serve:
-    base_url: http://docling-serve:5001
+    base_url:
+      - http://docling-serve-1:5001
+      - http://docling-serve-2:5001
 ```
 
 Edit `haiku.rag.yaml` to configure providers, embeddings, and other settings. See the [Configuration documentation](https://ggozad.github.io/haiku.rag/configuration/) for all options.
@@ -142,8 +145,9 @@ docker compose up -d
 
 The ingester container binds the control plane to `0.0.0.0` so the host
 port-mapping works. The example config requires a bearer token via
-`INGESTER_TOKEN`; set it in `.env` (gitignored) alongside the API keys
-before bringing the stack up:
+`INGESTER_TOKEN`. Both haiku containers load that config and fail to start
+without it, so set it in `.env` (gitignored) alongside the API keys before
+bringing the stack up:
 
 ```bash
 echo "INGESTER_TOKEN=$(openssl rand -hex 32)" >> .env
@@ -187,10 +191,10 @@ services:
         condition: service_healthy
 ```
 
-Workers claim jobs with `FOR UPDATE SKIP LOCKED`, so the ingester can run as
-several replicas against one Postgres queue to scale ingestion out. The
-LanceDB single-writer rule still holds, so multiple writers need LanceDB Cloud
-or another shared store rather than the local file volume.
+Workers claim jobs with `FOR UPDATE SKIP LOCKED`, so several ingesters can
+share one Postgres queue. Each still needs a database of its own: the
+one-writer rule is haiku.rag's and holds on every store, LanceDB Cloud
+included.
 
 ## Documentation
 

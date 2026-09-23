@@ -84,6 +84,7 @@ from haiku.rag.capabilities.compaction import EvidenceCompactionCapability
 from haiku.rag.capabilities.policy import CitationPolicyCapability
 from haiku.rag.capabilities.rag import RAGCapability
 
+# Deps is the dataclass from the example above.
 agent = Agent.from_file(
     "agent.yaml",
     deps_type=Deps,
@@ -111,7 +112,7 @@ capabilities:
       db_path: /data/kb.lancedb
       config:
         embeddings:
-          model: {provider: ollama, name: embeddinggemma, vector_dim: 2048}
+          model: {provider: ollama, name: embeddinggemma, vector_dim: 768}
 ```
 
 The block is read like a `haiku.rag.yaml` file: keys it omits take `AppConfig` defaults

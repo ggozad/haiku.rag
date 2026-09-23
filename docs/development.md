@@ -38,7 +38,7 @@ uv run pytest --cov
 
 Tests use pytest markers to categorize them:
 
-- `@pytest.mark.integration` - Tests requiring local services (Docling models, etc.) that aren't available in CI
+- `@pytest.mark.integration` - Tests against external services (Postgres, docling-serve, SeaweedFS from `tests/docker/`), not run in CI
 - `@pytest.mark.slow` - Deterministic end-to-end tests run in a separate CI job
 - `@pytest.mark.vcr()` - Tests with HTTP call recording
 
@@ -70,7 +70,7 @@ When adding a new test that makes HTTP calls:
 
 ### Re-recording Cassettes
 
-To update an existing cassette, delete it and re-run the test, or use `--record-mode=rewrite`.
+To update an existing cassette, re-run the test with `--record-mode=rewrite`. Deleting it alone is not enough: without `--record-mode`, playback runs in `none` mode and an unrecorded call fails.
 
 ### Running Without Cassettes (Live Mode)
 
