@@ -4,8 +4,6 @@ import asyncio
 import inspect
 from unittest.mock import AsyncMock
 
-import pytest
-
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import FSSourceConfig, HTTPSourceConfig
 from haiku.rag.ingester.pollers.manager import PollerManager
@@ -49,7 +47,6 @@ def _mock_client(docs_root) -> AsyncMock:
     return client
 
 
-@pytest.mark.asyncio
 async def test_e2e_initial_sweep_lands_succeeded_jobs(tmp_path, jobs, sync):
     """PollerManager + WorkerPool together: a file on disk at startup becomes
     a succeeded queue row and a sync_state entry."""
@@ -111,7 +108,6 @@ async def test_e2e_initial_sweep_lands_succeeded_jobs(tmp_path, jobs, sync):
     assert row_b is not None and row_b.content_hash and row_b.last_ingested_at
 
 
-@pytest.mark.asyncio
 async def test_e2e_handles_url_encoded_special_chars_in_path(tmp_path, jobs, sync):
     """File names containing characters that path.as_uri() URL-encodes (e.g.
     Next.js dynamic-route brackets like `[chunk_id]`) must survive the
@@ -166,7 +162,6 @@ async def test_e2e_handles_url_encoded_special_chars_in_path(tmp_path, jobs, syn
     assert "%5Bchunk_id%5D" in call.args[0]
 
 
-@pytest.mark.asyncio
 async def test_e2e_watchfiles_push_event_lands_as_job(tmp_path, jobs, sync):
     """FSPoller's watchfiles loop: a file *added* after startup should land
     as a queued job without waiting for the periodic sweep. No worker pool
@@ -214,7 +209,6 @@ async def test_e2e_watchfiles_push_event_lands_as_job(tmp_path, jobs, sync):
     assert queued[0].uri == (tmp_path / "new.md").as_uri()
 
 
-@pytest.mark.asyncio
 async def test_pre_existing_job_resolves_through_configured_source(
     tmp_path, jobs, sync
 ):

@@ -89,7 +89,6 @@ def _periodic(source, config, jobs, sync, **kwargs):
 # --- _stagger_start ---
 
 
-@pytest.mark.asyncio
 async def test_stagger_start_sleeps_fraction_of_interval(
     jobs, sync, fs_config, monkeypatch
 ):
@@ -103,7 +102,6 @@ async def test_stagger_start_sleeps_fraction_of_interval(
     assert stopped is False
 
 
-@pytest.mark.asyncio
 async def test_stagger_start_returns_true_when_stopped(
     jobs, sync, fs_config, monkeypatch
 ):
@@ -119,7 +117,6 @@ async def test_stagger_start_returns_true_when_stopped(
 # --- _sweep_once / event handling on the base class via PeriodicPoller ---
 
 
-@pytest.mark.asyncio
 async def test_upsert_event_enqueues_job_and_touches_sync_state(fs_config, jobs, sync):
     source = _StubSource("src", [[_event("file:///a.md", revision="r1")]])
     poller = _periodic(source, fs_config, jobs, sync)
@@ -139,7 +136,6 @@ async def test_upsert_event_enqueues_job_and_touches_sync_state(fs_config, jobs,
     assert await sync.list_known_uris("src") == {"file:///a.md"}
 
 
-@pytest.mark.asyncio
 async def test_unchanged_event_touches_sync_state_no_job(fs_config, jobs, sync):
     source = _StubSource(
         "src", [[_event("file:///a.md", kind=SourceEventKind.UNCHANGED, revision="r1")]]
@@ -151,7 +147,6 @@ async def test_unchanged_event_touches_sync_state_no_job(fs_config, jobs, sync):
     assert await sync.get_revision_snapshot("src") == {"file:///a.md": "r1"}
 
 
-@pytest.mark.asyncio
 async def test_delete_event_enqueues_delete_job(fs_config, jobs, sync):
     source = _StubSource(
         "src", [[_event("file:///gone.md", kind=SourceEventKind.DELETE)]]
@@ -164,7 +159,6 @@ async def test_delete_event_enqueues_delete_job(fs_config, jobs, sync):
     assert queued[0].op is JobOp.DELETE
 
 
-@pytest.mark.asyncio
 async def test_delete_event_skipped_when_delete_orphans_false(fs_config, jobs, sync):
     fs_config = fs_config.model_copy(update={"delete_orphans": False})
     source = _StubSource(
@@ -175,7 +169,6 @@ async def test_delete_event_skipped_when_delete_orphans_false(fs_config, jobs, s
     assert await jobs.list_jobs(source_id="src") == []
 
 
-@pytest.mark.asyncio
 async def test_repeated_sweep_skipped_when_queue_has_pending(fs_config, jobs, sync):
     """Backpressure: once a job is queued/claimed, the next sweep skips
     discover() entirely instead of churning the listing operation."""
@@ -189,7 +182,6 @@ async def test_repeated_sweep_skipped_when_queue_has_pending(fs_config, jobs, sy
     assert source.discover_calls == 1
 
 
-@pytest.mark.asyncio
 async def test_skipped_sweep_records_pending_work_reason(fs_config, jobs, sync):
     """last_skip_reason surfaces 'pending_work' while the queue is saturated
     and clears once the next sweep actually polls."""
@@ -211,7 +203,6 @@ async def test_skipped_sweep_records_pending_work_reason(fs_config, jobs, sync):
     assert poller.last_skip_reason is None
 
 
-@pytest.mark.asyncio
 async def test_dead_job_does_not_clear_sync_state_revision(fs_config, jobs, sync):
     """When a job dies, the URI's previously-ingested revision must remain
     in sync_state so subsequent sweeps still see the URI as known."""
@@ -238,7 +229,6 @@ async def test_dead_job_does_not_clear_sync_state_revision(fs_config, jobs, sync
     assert await sync.get_revision_snapshot("src") == {"file:///a.md": "r1"}
 
 
-@pytest.mark.asyncio
 async def test_sweep_resumes_after_queue_drains(fs_config, jobs, sync):
     """Once the queue clears (success, dead, or cancel), sweeps resume."""
     event = _event("file:///a.md", revision="r1")
@@ -254,7 +244,6 @@ async def test_sweep_resumes_after_queue_drains(fs_config, jobs, sync):
     assert source.discover_calls == 2
 
 
-@pytest.mark.asyncio
 async def test_circuit_breaker_pauses_sweeps_after_failures(fs_config, jobs, sync):
     class _Clock:
         now = 0.0
@@ -282,7 +271,6 @@ async def test_circuit_breaker_pauses_sweeps_after_failures(fs_config, jobs, syn
     assert source.discover_calls == before
 
 
-@pytest.mark.asyncio
 async def test_sweep_records_last_polled_at_on_success(fs_config, jobs, sync):
     source = _StubSource("src", [[]])
     poller = _periodic(source, fs_config, jobs, sync)
@@ -292,7 +280,6 @@ async def test_sweep_records_last_polled_at_on_success(fs_config, jobs, sync):
     assert poller.last_polled_at.tzinfo is not None
 
 
-@pytest.mark.asyncio
 async def test_per_source_retry_policy_overrides_default(jobs, sync, tmp_path):
     from haiku.rag.config import RetryPolicyConfig
 
@@ -312,7 +299,6 @@ async def test_per_source_retry_policy_overrides_default(jobs, sync, tmp_path):
 # --- dry-run collection ---
 
 
-@pytest.mark.asyncio
 async def test_dry_run_reports_changes_without_mutating_queue_or_sync(
     fs_config, jobs, sync
 ):
@@ -347,7 +333,6 @@ async def test_dry_run_reports_changes_without_mutating_queue_or_sync(
     assert await sync.list_known_uris("src") == set()
 
 
-@pytest.mark.asyncio
 async def test_dry_run_counts_ignored_deletes_when_orphan_delete_disabled(
     fs_config, jobs, sync
 ):
@@ -366,7 +351,6 @@ async def test_dry_run_counts_ignored_deletes_when_orphan_delete_disabled(
     assert await jobs.list_jobs(source_id="src") == []
 
 
-@pytest.mark.asyncio
 async def test_dry_run_skips_when_queue_has_pending_work(fs_config, jobs, sync):
     await jobs.enqueue("src", "file:///already.md", op=JobOp.UPSERT)
     source = _StubSource("src", [[_event("file:///a.md")]])
@@ -384,7 +368,6 @@ async def test_dry_run_skips_when_queue_has_pending_work(fs_config, jobs, sync):
 # --- PollerManager lifecycle ---
 
 
-@pytest.mark.asyncio
 async def test_manager_builds_pollers_per_source(tmp_path, jobs, sync):
     """When SourceConfig.id is set, the poller's source uses it verbatim;
     when omitted, the adapter auto-derives one from its target."""
@@ -411,7 +394,6 @@ async def test_manager_builds_pollers_per_source(tmp_path, jobs, sync):
     }
 
 
-@pytest.mark.asyncio
 async def test_manager_sources_available_at_construction(tmp_path, jobs, sync):
     """PollerManager builds Sources eagerly so callers (WorkerPool) can
     receive them by plain construction order."""
@@ -436,7 +418,6 @@ async def test_manager_sources_available_at_construction(tmp_path, jobs, sync):
     assert http.headers == {"Authorization": "Bearer abc"}
 
 
-@pytest.mark.asyncio
 async def test_manager_double_start_raises(tmp_path, jobs, sync):
     cfg = FSSourceConfig(
         type="fs",
@@ -453,7 +434,6 @@ async def test_manager_double_start_raises(tmp_path, jobs, sync):
         await manager.stop()
 
 
-@pytest.mark.asyncio
 async def test_manager_restart_resumes_polling(tmp_path, jobs, sync):
     """stop() then start() produces a working poller that stays alive after
     its initial sweep — the second cycle's stop event is fresh, not the
@@ -509,7 +489,6 @@ def _fs_poller(tmp_path, jobs, sync):
     )
 
 
-@pytest.mark.asyncio
 async def test_watch_deleted_enqueues_when_file_truly_gone(tmp_path, jobs, sync):
     from watchfiles import Change
 
@@ -523,7 +502,6 @@ async def test_watch_deleted_enqueues_when_file_truly_gone(tmp_path, jobs, sync)
     assert queued[0].op is JobOp.DELETE
 
 
-@pytest.mark.asyncio
 async def test_watch_deleted_skipped_when_file_already_back(tmp_path, jobs, sync):
     """`git checkout` and atomic-rename saves fire (deleted, added) in quick
     succession; by the time the deleted event reaches us the file is back.
@@ -540,7 +518,6 @@ async def test_watch_deleted_skipped_when_file_already_back(tmp_path, jobs, sync
     assert await jobs.list_jobs(source_id="local") == []
 
 
-@pytest.mark.asyncio
 async def test_watch_deleted_then_added_enqueues_upsert(tmp_path, jobs, sync):
     """End-to-end of the git-checkout scenario: (deleted, added) for an
     existing file leaves a single UPSERT job, not a DELETE."""
@@ -558,7 +535,6 @@ async def test_watch_deleted_then_added_enqueues_upsert(tmp_path, jobs, sync):
     assert queued[0].op is JobOp.UPSERT
 
 
-@pytest.mark.asyncio
 async def test_watch_added_file_deleted_before_stat_does_not_crash(
     tmp_path, jobs, sync
 ):
@@ -579,7 +555,6 @@ async def test_watch_added_file_deleted_before_stat_does_not_crash(
 # --- FSPoller end-to-end smoke ---
 
 
-@pytest.mark.asyncio
 async def test_fs_poller_enqueues_initial_files(tmp_path, jobs, sync):
     (tmp_path / "a.md").write_text("hello")
     (tmp_path / "b.md").write_text("world")
@@ -607,7 +582,6 @@ async def test_fs_poller_enqueues_initial_files(tmp_path, jobs, sync):
 # --- _dry_run_once ---
 
 
-@pytest.mark.asyncio
 async def test_dry_run_collects_changes_without_writing(fs_config, jobs, sync):
     source = _StubSource(
         "src",
@@ -632,7 +606,6 @@ async def test_dry_run_collects_changes_without_writing(fs_config, jobs, sync):
     assert await jobs.list_jobs(source_id="src") == []
 
 
-@pytest.mark.asyncio
 async def test_dry_run_ignores_deletes_when_delete_orphans_false(
     fs_config, jobs, sync, tmp_path
 ):
@@ -654,7 +627,6 @@ async def test_dry_run_ignores_deletes_when_delete_orphans_false(
     assert changes == []
 
 
-@pytest.mark.asyncio
 async def test_dry_run_skipped_when_circuit_open(fs_config, jobs, sync):
     class _Clock:
         now = 0.0
@@ -682,7 +654,6 @@ async def test_dry_run_skipped_when_circuit_open(fs_config, jobs, sync):
     assert poller.last_skip_reason == "circuit_open"
 
 
-@pytest.mark.asyncio
 async def test_dry_run_records_failure_when_discover_raises(fs_config, jobs, sync):
     source = _StubSource("src", [])
     source.fail_with = RuntimeError("upstream down")
@@ -695,7 +666,6 @@ async def test_dry_run_records_failure_when_discover_raises(fs_config, jobs, syn
     assert poller._breaker.consecutive_failures == 1
 
 
-@pytest.mark.asyncio
 async def test_dry_run_skipped_when_queue_has_pending_work(fs_config, jobs, sync):
     source = _StubSource("src", [[_event("file:///a.md")]])
     poller = _periodic(source, fs_config, jobs, sync)
@@ -708,7 +678,6 @@ async def test_dry_run_skipped_when_queue_has_pending_work(fs_config, jobs, sync
     assert poller.last_skip_reason == "pending_work"
 
 
-@pytest.mark.asyncio
 async def test_watch_deleted_skipped_when_delete_orphans_false(tmp_path, jobs, sync):
     from watchfiles import Change
 
@@ -734,7 +703,6 @@ async def test_watch_deleted_skipped_when_delete_orphans_false(tmp_path, jobs, s
     assert await jobs.list_jobs(source_id="local") == []
 
 
-@pytest.mark.asyncio
 async def test_dry_run_manifest_reports_failed_sources(tmp_path, jobs, sync):
     """A source whose discover() raises is named in the failed list while the
     manifest still carries the sources that succeeded."""

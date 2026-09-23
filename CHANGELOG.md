@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Tests use pytest-asyncio auto mode and separate fast, slow end-to-end, live
+  integration and evaluations lanes, with request delays removed from
+  docling-serve cassette playback, core tests grouped by source subsystem, and
+  redundant smoke coverage removed. The evaluations lane now enforces an 85%
+  coverage floor.
+
 ## [0.88.0] - 2026-09-21
 
 ### Added

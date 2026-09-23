@@ -1,0 +1,1947 @@
+import asyncio
+import json
+import tempfile
+import threading
+from pathlib import Path
+from unittest.mock import AsyncMock, patch
+
+import httpx
+import pytest
+from docling_core.types.doc.document import DoclingDocument
+from docling_core.types.doc.labels import DocItemLabel
+from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolReturnPart
+from pydantic_ai.models.function import FunctionModel
+
+from haiku.rag.client import HaikuRAG
+from haiku.rag.client.documents import (
+    DocumentImport,
+    _prepare_document_from_docling,
+    check_source_accessible,
+)
+from haiku.rag.client.processing import _write_fetch_body
+from haiku.rag.config import get_config
+from haiku.rag.embeddings import EmbedderWrapper
+from haiku.rag.sources.base import FetchResult
+from haiku.rag.store.compression import decompress_json
+from haiku.rag.store.models.chunk import Chunk
+from haiku.rag.store.models.document import Document
+from tests.locks import ObservedLock, assert_waiting_for_lock
+
+
+async def test_a_string_db_path_is_accepted(temp_db_path):
+    """The documented `HaikuRAG("knowledge.lancedb")` form: Store calls
+    `exists()` and `absolute()` on db_path, which a str lacks."""
+    async with HaikuRAG(str(temp_db_path), create=True) as client:
+        assert client.store.db_path == temp_db_path
+        assert isinstance(client.store.db_path, Path)
+
+
+async def test_prepare_document_from_docling_runs_off_event_loop_thread(monkeypatch):
+    import haiku.rag.client.documents as documents
+
+    event_loop_thread = threading.current_thread()
+    called_from: list[threading.Thread] = []
+
+    docling_doc = DoclingDocument(name="thread-check")
+    docling_doc.add_text(label=DocItemLabel.TEXT, text="Threaded content")
+    document = Document(content="")
+    original = documents._prepare_document_from_docling_sync
+
+    def spy(doc, docling):
+        called_from.append(threading.current_thread())
+        return original(doc, docling)
+
+    monkeypatch.setattr(documents, "_prepare_document_from_docling_sync", spy)
+
+    content = await _prepare_document_from_docling(document, docling_doc)
+
+    assert content == "Threaded content"
+    assert document.content == "Threaded content"
+    assert document.docling_document is not None
+    assert called_from, "Document.set_docling was never called"
+    assert called_from[0] is not event_loop_thread, (
+        "Document.set_docling ran on the event-loop thread; document prep must "
+        "be dispatched via asyncio.to_thread"
+    )
+
+
+async def test_write_fetch_body_runs_off_event_loop_thread(monkeypatch):
+    import haiku.rag.client.processing as processing
+
+    event_loop_thread = threading.current_thread()
+    called_from: list[threading.Thread] = []
+    original = processing._write_fetch_body_sync
+
+    def spy(body, suffix):
+        called_from.append(threading.current_thread())
+        return original(body, suffix)
+
+    monkeypatch.setattr(processing, "_write_fetch_body_sync", spy)
+
+    path = await _write_fetch_body(b"payload", ".bin")
+    try:
+        assert path.read_bytes() == b"payload"
+    finally:
+        path.unlink(missing_ok=True)
+
+    assert called_from, "_write_fetch_body_sync was never called"
+    assert called_from[0] is not event_loop_thread, (
+        "_write_fetch_body_sync ran on the event-loop thread; fetched body "
+        "writes must be dispatched via asyncio.to_thread"
+    )
+
+
+@pytest.mark.vcr()
+async def test_client_document_crud(qa_corpus: list[dict[str, str]], temp_db_path):
+    """Test HaikuRAG CRUD operations for documents."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Get test data
+        first_doc = qa_corpus[0]
+        document_text = first_doc["document_extracted"]
+        test_uri = "file:///path/to/test.txt"
+        test_metadata = {"source": "test", "topic": "testing"}
+
+        # Test create_document
+        created_doc = await client.create_document(
+            content=document_text, uri=test_uri, metadata=test_metadata
+        )
+
+        assert created_doc.id is not None
+        # Content is stored as markdown export, check key text is preserved
+        assert "Jakarta" in created_doc.content
+        assert created_doc.uri == test_uri
+        assert created_doc.metadata == test_metadata
+
+        # Test get_document_by_id
+        retrieved_doc = await client.get_document_by_id(created_doc.id)
+        assert retrieved_doc is not None
+        assert retrieved_doc.id == created_doc.id
+        assert "Jakarta" in retrieved_doc.content
+        assert retrieved_doc.uri == test_uri
+
+        # Test get_document_by_uri
+        retrieved_by_uri = await client.get_document_by_uri(test_uri)
+        assert retrieved_by_uri is not None
+        assert retrieved_by_uri.id == created_doc.id
+        assert "Jakarta" in retrieved_by_uri.content
+
+        # Test get_document_by_uri with non-existent URI
+        non_existent = await client.get_document_by_uri("file:///non/existent.txt")
+        assert non_existent is None
+
+        # Test update_document
+        updated_doc = await client.update_document(
+            document_id=retrieved_doc.id,
+            content="Updated content",
+        )
+        assert updated_doc.content == "Updated content"
+
+        # Test list_documents
+        all_docs = await client.list_documents()
+        assert len(all_docs) == 1
+        assert all_docs[0].id == created_doc.id
+
+        # Test list_documents with pagination
+        limited_docs = await client.list_documents(limit=10, offset=0)
+        assert len(limited_docs) == 1
+
+        # Test delete_document
+        deleted = await client.delete_document(created_doc.id)
+        assert deleted is True
+
+        # Verify document is gone
+        retrieved_doc = await client.get_document_by_id(created_doc.id)
+        assert retrieved_doc is None
+
+        # Test delete non-existent document
+        deleted_again = await client.delete_document(created_doc.id)
+        assert deleted_again is False
+
+
+async def test_client_resolve_document(temp_db_path):
+    """Test resolve_document finds documents by ID, title, or URI."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Insert document directly via repository (no embeddings needed)
+        doc = Document(
+            content="Test content",
+            uri="test://resolve-test",
+            title="Resolve Test Doc",
+        )
+        doc = await client.document_repository.create(doc)
+
+        # Resolve by ID
+        by_id = await client.resolve_document(doc.id)
+        assert by_id is not None
+        assert by_id.id == doc.id
+
+        # Resolve by title
+        by_title = await client.resolve_document("Resolve Test Doc")
+        assert by_title is not None
+        assert by_title.id == doc.id
+
+        # Resolve by URI
+        by_uri = await client.resolve_document("test://resolve-test")
+        assert by_uri is not None
+        assert by_uri.id == doc.id
+
+        # Not found returns None
+        not_found = await client.resolve_document("nonexistent")
+        assert not_found is None
+
+        # SQL injection is escaped
+        injection = "x' OR title LIKE '%"
+        injected = await client.resolve_document(injection)
+        assert injected is None
+
+
+@pytest.mark.vcr()
+async def test_client_update_document(qa_corpus: list[dict[str, str]], temp_db_path):
+    """Test updating document with individual parameters."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Get test data
+        first_doc = qa_corpus[0]
+        document_text = first_doc["document_extracted"]
+        test_uri = "file:///path/to/test.txt"
+        test_metadata = {"source": "test", "topic": "testing"}
+
+        # Create a document
+        created_doc = await client.create_document(
+            content=document_text,
+            uri=test_uri,
+            title="Original Title",
+            metadata=test_metadata,
+        )
+        assert created_doc.id is not None
+        original_id = created_doc.id
+
+        # Test updating only content
+        updated_doc = await client.update_document(
+            document_id=original_id, content="Updated content only"
+        )
+        assert updated_doc.id == original_id
+        assert updated_doc.content == "Updated content only"
+        assert updated_doc.title == "Original Title"
+        assert updated_doc.uri == test_uri
+
+        # Test updating only metadata
+        new_metadata = {"source": "updated", "version": "2.0"}
+        updated_doc = await client.update_document(
+            document_id=original_id, metadata=new_metadata
+        )
+        assert updated_doc.metadata == new_metadata
+        assert (
+            updated_doc.content == "Updated content only"
+        )  # Should keep previous update
+
+        # Test updating only title
+        updated_doc = await client.update_document(
+            document_id=original_id, title="New Title"
+        )
+        assert updated_doc.title == "New Title"
+        assert updated_doc.content == "Updated content only"
+        assert updated_doc.metadata == new_metadata
+
+        # Test updating multiple fields at once
+        custom_chunks = [
+            Chunk(content="Custom chunk 1", order=0),
+            Chunk(content="Custom chunk 2", order=1),
+        ]
+        updated_doc = await client.update_document(
+            document_id=original_id,
+            content="Content with custom chunks",
+            title="Final Title",
+            metadata={"final": "true"},
+            chunks=custom_chunks,
+        )
+        assert updated_doc.id == original_id
+        assert updated_doc.content == "Content with custom chunks"
+        assert updated_doc.title == "Final Title"
+        assert updated_doc.metadata == {"final": "true"}
+
+        # Verify the custom chunks were created
+        doc_chunks = await client.chunk_repository.get_by_document_id(original_id)
+        assert len(doc_chunks) == 2
+        assert doc_chunks[0].content == "Custom chunk 1"
+        assert doc_chunks[1].content == "Custom chunk 2"
+
+        # Test updating only the uri
+        new_uri = "file:///path/to/new.txt"
+        updated_doc = await client.update_document(document_id=original_id, uri=new_uri)
+        assert updated_doc.uri == new_uri
+        refetched = await client.get_document_by_id(original_id)
+        assert refetched is not None
+        assert refetched.uri == new_uri
+        assert (await client.get_document_by_uri(new_uri)) is not None
+        assert (await client.get_document_by_uri(test_uri)) is None
+
+
+@pytest.mark.vcr()
+async def test_client_create_document_from_source(temp_db_path):
+    """Test creating a document from a file source."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_content = "This is test content from a file."
+            temp_path = Path(temp_dir) / "test.txt"
+            temp_path.write_text(test_content)
+
+            # Test create_document_from_source with Path
+            doc = await client.create_document_from_source(source=temp_path)
+            assert isinstance(doc, Document)
+
+            assert doc.id is not None
+            assert doc.content == test_content
+            assert doc.uri == temp_path.as_uri()
+            assert "content_type" in doc.metadata
+            assert "md5" in doc.metadata
+            assert doc.metadata["content_type"] == "text/plain"
+
+            # Test create_document_from_source with string path
+            doc2 = await client.create_document_from_source(source=str(temp_path))
+            assert isinstance(doc2, Document)
+
+            assert doc2.id is not None
+            assert doc2.content == test_content
+            assert doc2.uri == temp_path.as_uri()
+            assert "content_type" in doc2.metadata
+            assert "md5" in doc2.metadata
+
+
+@pytest.mark.vcr()
+async def test_client_update_title_noop_behavior(temp_db_path):
+    """When content is unchanged, updating title should update document without re-chunking."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / "test_update_title.txt"
+            temp_path.write_text("Original content")
+
+            doc1 = await client.create_document_from_source(temp_path, title="Title A")
+            assert isinstance(doc1, Document)
+            assert doc1.id is not None
+            assert doc1.title == "Title A"
+
+            # Re-add with same content but new title
+            doc2 = await client.create_document_from_source(temp_path, title="Title B")
+            assert isinstance(doc2, Document)
+            assert doc2.id == doc1.id
+            # Fetch and verify title updated
+            got = await client.get_document_by_id(doc1.id)
+            assert got is not None
+            assert got.title == "Title B"
+
+
+@pytest.mark.vcr()
+async def test_client_create_document_from_source_with_uri_override(temp_db_path):
+    """A `uri` override is honored as the canonical document identifier."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / "2412.06611v2.pdf-ish.txt"
+            temp_path.write_text("Synthetic content for URI-override test.")
+
+            doc = await client.create_document_from_source(
+                source=temp_path, uri="2412.06611v2"
+            )
+            assert isinstance(doc, Document)
+            assert doc.uri == "2412.06611v2"
+            assert doc.uri != temp_path.as_uri()
+
+            # The override URI is the lookup key for subsequent reads.
+            looked_up = await client.get_document_by_uri("2412.06611v2")
+            assert looked_up is not None
+            assert looked_up.id == doc.id
+
+            # The original file URI is NOT a key.
+            assert await client.get_document_by_uri(temp_path.as_uri()) is None
+
+
+@pytest.mark.vcr()
+async def test_client_create_document_from_source_uri_override_dedupes(temp_db_path):
+    """Re-creating from the same source with the same override is a no-op."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / "doc.txt"
+            temp_path.write_text("Stable content for dedup test.")
+
+            doc1 = await client.create_document_from_source(
+                source=temp_path, uri="paper-id-1"
+            )
+            doc2 = await client.create_document_from_source(
+                source=temp_path, uri="paper-id-1"
+            )
+            assert isinstance(doc1, Document) and isinstance(doc2, Document)
+            assert doc1.id == doc2.id
+
+
+@pytest.mark.vcr()
+async def test_client_create_document_from_source_uri_override_rejected_for_dir(
+    temp_db_path,
+):
+    """Directory sources reject the `uri` override (would collide on multiple files)."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            (Path(temp_dir) / "a.txt").write_text("a")
+            (Path(temp_dir) / "b.txt").write_text("b")
+
+            with pytest.raises(ValueError, match="directory sources"):
+                await client.create_document_from_source(
+                    source=Path(temp_dir), uri="some-uri"
+                )
+
+
+@pytest.mark.vcr()
+async def test_client_create_document_from_source_unsupported(temp_db_path):
+    """Test creating a document from an unsupported file type."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Create a temporary file with unsupported extension
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".unsupported", delete=False
+        ) as f:
+            f.write("content")
+            temp_path = Path(f.name)
+
+            # Should raise ValueError for unsupported extension
+            with pytest.raises(ValueError, match="Unsupported file extension"):
+                await client.create_document_from_source(temp_path)
+
+
+@pytest.mark.vcr()
+async def test_client_create_document_from_source_nonexistent(temp_db_path):
+    """Test creating a document from a non-existent file."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        non_existent_path = Path("/non/existent/file.txt")
+
+        # Should raise ValueError when file doesn't exist
+        with pytest.raises(ValueError, match="File does not exist"):
+            await client.create_document_from_source(non_existent_path)
+
+
+@pytest.mark.vcr()
+async def test_client_create_document_from_directory(temp_db_path):
+    """Test creating documents from a directory recursively."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_dir = Path(temp_dir) / "test_docs"
+            test_dir.mkdir()
+
+            (test_dir / "doc1.txt").write_text("Content of doc1")
+            (test_dir / "doc2.md").write_text("# Content of doc2")
+
+            subdir = test_dir / "subdir"
+            subdir.mkdir()
+            (subdir / "doc3.py").write_text("print('hello')")
+
+            (test_dir / "unsupported.xyz").write_text("unsupported file")
+
+            result = await client.create_document_from_source(test_dir)
+
+            assert isinstance(result, list)
+            assert len(result) == 3
+
+            for doc in result:
+                assert doc.id is not None
+                assert doc.uri is not None
+                assert "md5" in doc.metadata
+                assert "content_type" in doc.metadata
+
+            uris = [doc.uri for doc in result if doc.uri]
+            assert any("doc1.txt" in uri for uri in uris)
+            assert any("doc2.md" in uri for uri in uris)
+            assert any("doc3.py" in uri for uri in uris)
+            assert not any("unsupported.xyz" in uri for uri in uris)
+
+
+@pytest.mark.vcr()
+async def test_directory_ingest_skips_symlinks_escaping_the_tree(temp_db_path):
+    """A symlinked file resolving outside the named directory is not ingested;
+    one resolving inside it is. Matches FSSource.discover."""
+    import os
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "tree"
+            outside = Path(temp_dir) / "outside"
+            root.mkdir()
+            outside.mkdir()
+
+            (root / "real.txt").write_text("Inside the tree.")
+            (outside / "secret.txt").write_text("Outside the tree.")
+            os.symlink(outside / "secret.txt", root / "escape.txt")
+            os.symlink(root / "real.txt", root / "inside_link.txt")
+
+            result = await client.create_document_from_source(root)
+
+            assert isinstance(result, list)
+            uris = sorted(uri for doc in result if (uri := doc.uri))
+            assert not any("secret" in uri or "escape" in uri for uri in uris)
+            assert any("real.txt" in uri for uri in uris)
+
+
+@pytest.mark.vcr()
+async def test_client_create_document_from_url(temp_db_path):
+    """Test creating a document from a URL."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Mock the HTTP response
+        mock_response = AsyncMock()
+        mock_response.content = b"<html><body><h1>Test Page</h1><p>This is test content from a webpage.</p></body></html>"
+        mock_response.headers = {"content-type": "text/html"}
+        mock_response.raise_for_status = AsyncMock()
+
+        with patch("httpx.AsyncClient.get", return_value=mock_response):
+            doc = await client.create_document_from_source(
+                source="https://example.com/test.html", metadata={"source_type": "web"}
+            )
+            assert isinstance(doc, Document)
+
+            assert doc.id is not None
+            assert "Test Page" in doc.content
+            assert "test content" in doc.content
+            assert doc.uri == "https://example.com/test.html"
+            assert doc.metadata["source_type"] == "web"
+            assert "content_type" in doc.metadata
+            assert "md5" in doc.metadata
+            assert doc.metadata["content_type"] == "text/html"
+
+
+@pytest.mark.vcr()
+async def test_client_create_document_from_url_with_different_content_types(
+    temp_db_path,
+):
+    """Test creating documents from URLs with different content types."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Test JSON content
+        mock_json_response = AsyncMock()
+        mock_json_response.content = (
+            b'{"title": "Test JSON", "content": "This is JSON content"}'
+        )
+        mock_json_response.headers = {"content-type": "application/json"}
+        mock_json_response.raise_for_status = AsyncMock()
+
+        with patch("httpx.AsyncClient.get", return_value=mock_json_response):
+            doc = await client.create_document_from_source(
+                "https://api.example.com/data.json"
+            )
+            assert isinstance(doc, Document)
+
+            assert doc.id is not None
+            assert "Test JSON" in doc.content
+            assert doc.uri == "https://api.example.com/data.json"
+            assert "content_type" in doc.metadata
+            assert "md5" in doc.metadata
+            assert doc.metadata["content_type"] == "application/json"
+
+        # Test plain text content
+        mock_text_response = AsyncMock()
+        mock_text_response.content = b"This is plain text content from a URL."
+        mock_text_response.headers = {"content-type": "text/plain"}
+        mock_text_response.raise_for_status = AsyncMock()
+
+        with patch("httpx.AsyncClient.get", return_value=mock_text_response):
+            doc = await client.create_document_from_source(
+                "https://example.com/readme.txt"
+            )
+            assert isinstance(doc, Document)
+
+            assert doc.id is not None
+            assert doc.content == "This is plain text content from a URL."
+            assert doc.uri == "https://example.com/readme.txt"
+            assert "content_type" in doc.metadata
+            assert "md5" in doc.metadata
+            assert doc.metadata["content_type"] == "text/plain"
+
+
+@pytest.mark.vcr()
+async def test_client_create_document_from_url_unsupported_content(temp_db_path):
+    """Test creating a document from URL with unsupported content type."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Mock response with unsupported content type
+        mock_response = AsyncMock()
+        mock_response.content = b"binary content"
+        mock_response.headers = {"content-type": "application/octet-stream"}
+        mock_response.raise_for_status = AsyncMock()
+
+        with patch("httpx.AsyncClient.get", return_value=mock_response):
+            with pytest.raises(ValueError, match="Unsupported content type"):
+                await client.create_document_from_source(
+                    "https://example.com/binary.bin"
+                )
+
+
+@pytest.mark.vcr()
+async def test_client_create_document_from_url_http_error(temp_db_path):
+    """Test handling HTTP errors when creating document from URL."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with patch("httpx.AsyncClient.get") as mock_get:
+            mock_get.side_effect = httpx.HTTPStatusError(
+                "404 Not Found",
+                request=httpx.Request("GET", "https://example.com/notfound.html"),
+                response=httpx.Response(404),
+            )
+
+            with pytest.raises(httpx.HTTPStatusError):
+                await client.create_document_from_source(
+                    "https://example.com/notfound.html"
+                )
+
+
+def test_get_extension_from_content_type_or_url():
+    """Test the helper function for determining file extensions."""
+    from haiku.rag.client.processing import get_extension_from_content_type_or_url
+
+    # Content type mappings
+    assert get_extension_from_content_type_or_url("", "text/html") == ".html"
+    assert get_extension_from_content_type_or_url("", "application/pdf") == ".pdf"
+    assert get_extension_from_content_type_or_url("", "text/plain") == ".txt"
+
+    # URL extension detection
+    assert (
+        get_extension_from_content_type_or_url("https://example.com/doc.pdf", "")
+        == ".pdf"
+    )
+    assert (
+        get_extension_from_content_type_or_url("https://example.com/data.json", "")
+        == ".json"
+    )
+
+    # Default fallback
+    assert get_extension_from_content_type_or_url("https://example.com/", "") == ".html"
+
+    # Content type priority over URL extension
+    assert (
+        get_extension_from_content_type_or_url(
+            "https://example.com/file.txt", "application/pdf"
+        )
+        == ".pdf"
+    )
+
+
+@pytest.mark.vcr()
+async def test_client_metadata_content_type_and_md5(temp_db_path):
+    """Test that content_type and md5 metadata are correctly set."""
+    import hashlib
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Create a temporary file with known content
+        test_content = "Test content for MD5 calculation."
+        expected_md5 = hashlib.md5(test_content.encode()).hexdigest()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / "test.txt"
+            temp_path.write_text(test_content)
+
+            doc = await client.create_document_from_source(temp_path)
+            assert isinstance(doc, Document)
+
+            assert doc.metadata["content_type"] == "text/plain"
+            assert doc.metadata["md5"] == expected_md5
+
+            mock_response = AsyncMock()
+            mock_response.content = test_content.encode()
+            mock_response.headers = {"content-type": "text/plain"}
+            mock_response.raise_for_status = AsyncMock()
+
+            with patch("httpx.AsyncClient.get", return_value=mock_response):
+                url_doc = await client.create_document_from_source(
+                    "https://example.com/test.txt"
+                )
+                assert isinstance(url_doc, Document)
+
+                assert url_doc.metadata["content_type"] == "text/plain"
+                assert url_doc.metadata["md5"] == expected_md5
+
+
+@pytest.mark.vcr()
+async def test_client_create_update_no_op_behavior(temp_db_path):
+    """Test create/update/no-op behavior based on MD5 changes."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Create a temporary file
+        test_content = "Original content for testing."
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / "test.txt"
+            temp_path.write_text(test_content)
+
+            # First call - should create new document
+            doc1 = await client.create_document_from_source(temp_path)
+            assert isinstance(doc1, Document)
+            assert doc1.id is not None
+            assert doc1.content == test_content
+            original_id = doc1.id
+            original_updated_at = doc1.updated_at
+
+            # Second call with same content - should return existing document (no-op)
+            doc2 = await client.create_document_from_source(temp_path)
+            assert isinstance(doc2, Document)
+            assert doc2.id == original_id  # Same document
+            assert doc2.content == test_content
+            assert doc2.updated_at == original_updated_at  # No-op leaves it untouched
+
+            # Modify file content
+            updated_content = "Updated content for testing."
+            temp_path.write_text(updated_content)
+
+            # Third call with changed content - should update existing document
+            doc3 = await client.create_document_from_source(temp_path)
+            assert isinstance(doc3, Document)
+            assert doc3.id == original_id  # Same document ID
+            assert doc3.content == updated_content  # Updated content
+
+            # Verify the document was actually updated in database
+            retrieved_doc = await client.get_document_by_id(original_id)
+            assert retrieved_doc is not None
+            assert retrieved_doc.content == updated_content
+
+
+@pytest.mark.vcr()
+async def test_client_url_create_update_no_op_behavior(temp_db_path):
+    """Test create/update/no-op behavior for URLs based on MD5 changes."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        url = "https://example.com/test.txt"
+        original_content = b"Original URL content"
+        updated_content = b"Updated URL content"
+
+        # Mock first response
+        mock_response1 = AsyncMock()
+        mock_response1.content = original_content
+        mock_response1.headers = {"content-type": "text/plain"}
+        mock_response1.raise_for_status = AsyncMock()
+
+        with patch("httpx.AsyncClient.get", return_value=mock_response1):
+            # First call - should create new document
+            doc1 = await client.create_document_from_source(url)
+            assert isinstance(doc1, Document)
+            assert doc1.id is not None
+            original_id = doc1.id
+
+            # Second call with same content - should return existing document (no-op)
+            doc2 = await client.create_document_from_source(url)
+            assert isinstance(doc2, Document)
+            assert doc2.id == original_id  # Same document
+
+        mock_response2 = AsyncMock()
+        mock_response2.content = updated_content
+        mock_response2.headers = {"content-type": "text/plain"}
+        mock_response2.raise_for_status = AsyncMock()
+
+        with patch("httpx.AsyncClient.get", return_value=mock_response2):
+            # Third call with changed content - should update existing document
+            doc3 = await client.create_document_from_source(url)
+            assert isinstance(doc3, Document)
+            assert doc3.id == original_id  # Same document ID
+            assert doc3.content == updated_content.decode()  # Updated content
+
+
+@pytest.mark.vcr()
+async def test_client_search(temp_db_path):
+    """Test HaikuRAG search functionality."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Add multiple documents to search from
+        doc1_text = "Python is a high-level programming language known for its simplicity and readability."
+        doc2_text = "Machine learning algorithms help computers learn patterns from data without explicit programming."
+        doc3_text = "Data science combines statistics, programming, and domain expertise to extract insights."
+
+        # Create documents
+        doc1 = await client.create_document(
+            content=doc1_text, uri="doc1.txt", metadata={"topic": "python"}
+        )
+        doc2 = await client.create_document(
+            content=doc2_text, uri="doc2.txt", metadata={"topic": "ml"}
+        )
+        await client.create_document(
+            content=doc3_text, uri="doc3.txt", metadata={"topic": "data_science"}
+        )
+
+        # Test search with keyword that should match doc1
+        results = await client.search("Python programming", limit=3)
+
+        assert len(results) > 0
+        # Verify results are SearchResult objects with expected fields
+        first_result = results[0]
+        assert first_result.content
+        assert first_result.score >= 0
+        assert first_result.document_id == doc1.id
+
+        # Test search with different query
+        ml_results = await client.search("machine learning algorithms", limit=2)
+        assert len(ml_results) > 0
+
+        # Verify first result is from the machine learning document (doc2)
+        first_ml_result = ml_results[0]
+        assert first_ml_result.document_id == doc2.id
+
+        # Test search with limit parameter
+        limited_results = await client.search("programming", limit=1)
+        assert len(limited_results) <= 1
+
+
+@pytest.mark.vcr()
+async def test_client_import_document_with_custom_chunks(temp_db_path):
+    """Test importing a document with pre-created chunks."""
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Create a DoclingDocument
+        docling_doc = DoclingDocument(name="test")
+        docling_doc.add_text(label=DocItemLabel.TEXT, text="Full document content")
+
+        # Create some custom chunks with and without embeddings
+        chunks = [
+            Chunk(
+                content="This is the first chunk",
+                metadata={"custom": "metadata1"},
+                order=0,
+            ),
+            Chunk(
+                content="This is the second chunk",
+                metadata={"custom": "metadata2"},
+                embedding=[0.1] * get_config().embeddings.model.vector_dim,
+                order=1,
+            ),  # With embedding
+            Chunk(
+                content="This is the third chunk",
+                metadata={"custom": "metadata3"},
+                order=2,
+            ),
+        ]
+
+        # Import document with custom chunks
+        document = await client.import_document(
+            docling_document=docling_doc, chunks=chunks
+        )
+
+        assert document.id is not None
+        assert "Full document content" in document.content
+
+        # Verify the chunks were created correctly
+        doc_chunks = await client.chunk_repository.get_by_document_id(document.id)
+        assert len(doc_chunks) == 3
+
+        # Check chunks have correct content, document_id, and order from list position
+        for i, chunk in enumerate(doc_chunks):
+            assert chunk.document_id == document.id
+            assert chunk.content == chunks[i].content
+            assert chunk.order == i  # Order should be set from list position
+            assert (
+                chunk.metadata["custom"] == f"metadata{i + 1}"
+            )  # Original metadata preserved
+
+
+def _docling_doc(name: str, text: str):
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
+    doc = DoclingDocument(name=name)
+    doc.add_text(label=DocItemLabel.TEXT, text=text)
+    return doc
+
+
+def _import(name: str, text: str, **overrides) -> "DocumentImport":
+    """Build a DocumentImport with one pre-embedded chunk (no embedder call)."""
+    dim = get_config().embeddings.model.vector_dim
+    chunk = Chunk(content=text, embedding=[0.1] * dim, order=0)
+    return DocumentImport(
+        docling_document=_docling_doc(name, text),
+        chunks=[chunk],
+        **overrides,
+    )
+
+
+async def test_client_import_documents_single_version_per_table(temp_db_path):
+    """import_documents writes documents/chunks/document_items once for the
+    whole batch (issue #287)."""
+    config = get_config().model_copy(deep=True)
+    config.storage.auto_vacuum = False
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        imports = [
+            _import("a", "Alpha document body", uri="mem://a", title="Alpha"),
+            _import("b", "Beta document body", uri="mem://b", title="Beta"),
+            _import("c", "Gamma document body", uri="mem://c", title="Gamma"),
+        ]
+
+        before = await client.store.current_table_versions()
+        docs = await client.import_documents(imports)
+        after = await client.store.current_table_versions()
+
+        assert [d.title for d in docs] == ["Alpha", "Beta", "Gamma"]
+        assert all(d.id is not None for d in docs)
+        assert len({d.id for d in docs}) == 3
+
+        assert after["documents"] - before["documents"] == 1
+        assert after["document_items"] - before["document_items"] == 1
+        # Two on chunks: the batch, plus building the FTS index over the first
+        # rows the table has ever held.
+        assert after["chunks"] - before["chunks"] == 2
+
+        # With the index in place, a further batch is one version per table.
+        again = await client.import_documents(
+            [_import("d", "Delta document body", uri="mem://d", title="Delta")]
+        )
+        assert [d.title for d in again] == ["Delta"]
+        latest = await client.store.current_table_versions()
+        for table in ("documents", "chunks", "document_items"):
+            assert latest[table] - after[table] == 1, table
+
+        for doc, expected in zip(docs, ("Alpha", "Beta", "Gamma")):
+            assert doc.id is not None
+            stored = await client.get_document_by_id(doc.id)
+            assert stored is not None and stored.title == expected
+            chunks = await client.chunk_repository.get_by_document_id(doc.id)
+            assert len(chunks) == 1 and chunks[0].document_id == doc.id
+            items = await client.document_item_repository.get_all_items(doc.id)
+            assert len(items) >= 1
+            assert all(i.document_id == doc.id for i in items)
+
+
+async def test_client_import_documents_rolls_back_on_failure(temp_db_path):
+    """A failure mid-batch restores all tables: nothing is persisted."""
+    dim = get_config().embeddings.model.vector_dim
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        good = _import("good", "Good document body", uri="mem://good")
+        bad = DocumentImport(
+            docling_document=_docling_doc("bad", "Bad document body"),
+            chunks=[Chunk(content="bad", embedding=[0.1] * (dim + 1), order=0)],
+            uri="mem://bad",
+        )
+
+        with pytest.raises(Exception):
+            await client.import_documents([good, bad])
+
+        assert await client.count_documents() == 0
+
+
+async def test_client_import_documents_empty(temp_db_path):
+    """import_documents([]) returns [] and bumps no versions."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        before = await client.store.current_table_versions()
+        result = await client.import_documents([])
+        after = await client.store.current_table_versions()
+
+        assert result == []
+        assert after == before
+
+
+class _CountingEmbedder(EmbedderWrapper):
+    def __init__(self, vector_dim: int):
+        super().__init__(None, vector_dim)
+        self.batches: list[int] = []
+
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        self.batches.append(len(texts))
+        return [[0.1] * self.vector_dim for _ in texts]
+
+
+async def test_client_import_documents_batches_embeddings(temp_db_path):
+    """Chunks missing embeddings are embedded in one pass across the whole
+    batch, not one embedder call per document. Duplicate chunk texts across
+    documents keep their per-document embeddings."""
+    dim = get_config().embeddings.model.vector_dim
+    embedder = _CountingEmbedder(dim)
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client.store.embedder = embedder
+        imports = [
+            DocumentImport(
+                docling_document=_docling_doc(name, text),
+                chunks=[Chunk(content=text, order=0)],
+                uri=f"mem://{name}",
+                title=name,
+            )
+            for name, text in (
+                ("a", "Alpha document body"),
+                ("b", "Beta document body"),
+                ("c", "Alpha document body"),
+            )
+        ]
+
+        docs = await client.import_documents(imports)
+
+        assert embedder.batches == [3]
+        rows = await (
+            client.store.chunks_table.query()
+            .select(["document_id", "vector"])
+            .to_list()
+        )
+        assert {row["document_id"] for row in rows} == {doc.id for doc in docs}
+        assert all(len(row["vector"]) == dim for row in rows)
+
+
+async def test_single_and_batch_import_store_the_same_document(temp_db_path):
+    """import_document and import_documents share preparation and persistence, so
+    the same input has to land as the same stored document."""
+    dim = get_config().embeddings.model.vector_dim
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client.store.embedder = _CountingEmbedder(dim)
+
+        single = await client.import_document(
+            _docling_doc("a", "Alpha document body"),
+            [Chunk(content="Alpha document body", order=0)],
+            uri="mem://single",
+        )
+        [batched] = await client.import_documents(
+            [
+                DocumentImport(
+                    docling_document=_docling_doc("a", "Alpha document body"),
+                    chunks=[Chunk(content="Alpha document body", order=0)],
+                    uri="mem://batch",
+                )
+            ]
+        )
+
+        assert single.title == batched.title
+        assert single.content == batched.content
+
+        for doc in (single, batched):
+            chunks = await client.chunk_repository.get_by_document_id(doc.id)
+            assert [c.content for c in chunks] == ["Alpha document body"]
+
+        # get_by_document_id does not project the vector, so read it directly.
+        rows = await (
+            client.store.chunks_table.query()
+            .select(["document_id", "vector"])
+            .to_list()
+        )
+        vectors = {row["document_id"]: row["vector"] for row in rows}
+        assert set(vectors) == {single.id, batched.id}
+        assert all(len(vector) == dim for vector in vectors.values())
+
+        single_items = await client.document_item_repository.get_item_count(single.id)
+        batched_items = await client.document_item_repository.get_item_count(batched.id)
+        assert single_items == batched_items > 0
+
+
+async def test_create_document_embeds_in_one_pass(temp_db_path):
+    """Embedding is owned by the persistence funnel, so an operation makes one
+    embedder pass — no eager embed followed by a check that could embed again."""
+    dim = get_config().embeddings.model.vector_dim
+    embedder = _CountingEmbedder(dim)
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client.store.embedder = embedder
+        await client.create_document("Alpha document body")
+
+    assert len(embedder.batches) == 1
+
+
+async def test_client_import_documents_mixed_embeddings(temp_db_path):
+    """Pre-embedded chunks keep their vectors; only the unembedded ones go
+    through the embedder, in one batch."""
+    dim = get_config().embeddings.model.vector_dim
+    embedder = _CountingEmbedder(dim)
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client.store.embedder = embedder
+        pre_embedded = DocumentImport(
+            docling_document=_docling_doc("b", "Beta document body"),
+            chunks=[
+                Chunk(content="Beta document body", embedding=[0.5] * dim, order=0)
+            ],
+            uri="mem://b",
+            title="b",
+        )
+        unembedded = [
+            DocumentImport(
+                docling_document=_docling_doc(name, text),
+                chunks=[Chunk(content=text, order=0)],
+                uri=f"mem://{name}",
+                title=name,
+            )
+            for name, text in (("a", "Alpha document body"), ("c", "Gamma body"))
+        ]
+
+        docs = await client.import_documents(
+            [unembedded[0], pre_embedded, unembedded[1]]
+        )
+
+        assert embedder.batches == [2]
+        by_uri = {doc.uri: doc.id for doc in docs}
+        rows = await (
+            client.store.chunks_table.query()
+            .select(["document_id", "vector"])
+            .to_list()
+        )
+        vectors = {row["document_id"]: list(row["vector"]) for row in rows}
+        assert vectors[by_uri["mem://b"]] == pytest.approx([0.5] * dim)
+        assert vectors[by_uri["mem://a"]] == pytest.approx([0.1] * dim)
+        assert vectors[by_uri["mem://c"]] == pytest.approx([0.1] * dim)
+
+
+async def test_client_update_document_replaces_rows_with_bounded_versions(
+    temp_db_path,
+):
+    """Updating one document should replace stale rows with bounded versions.
+
+    auto_vacuum is off: its writes would land inside the measured window.
+    """
+    dim = get_config().embeddings.model.vector_dim
+    config = get_config().model_copy(deep=True)
+    config.storage.auto_vacuum = False
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        created = await client.import_document(
+            _docling_doc("original", "Original body"),
+            [Chunk(content="Original body", embedding=[0.1] * dim, order=0)],
+            uri="mem://replace",
+            title="Replace",
+        )
+        assert created.id is not None
+
+        updated_docling = _docling_doc("updated", "Updated body")
+        updated_chunks = [
+            Chunk(content="Updated body A", embedding=[0.2] * dim, order=0),
+            Chunk(content="Updated body B", embedding=[0.3] * dim, order=1),
+        ]
+
+        before = await client.store.current_table_versions()
+        updated = await client.update_document(
+            created.id,
+            docling_document=updated_docling,
+            chunks=updated_chunks,
+        )
+        after = await client.store.current_table_versions()
+
+        assert updated.id == created.id
+        assert after["documents"] - before["documents"] == 1
+        # Indexed LanceDB tables record one additional physical version for
+        # merge replacement in 0.30.x.
+        assert after["chunks"] - before["chunks"] <= 2
+        assert after["document_items"] - before["document_items"] <= 2
+
+        stored_chunks = await client.chunk_repository.get_by_document_id(created.id)
+        assert [chunk.content for chunk in stored_chunks] == [
+            "Updated body A",
+            "Updated body B",
+        ]
+        stored_items = await client.document_item_repository.get_all_items(created.id)
+        assert len(stored_items) == 1
+        assert stored_items[0].text == "Updated body"
+
+
+async def test_metadata_only_update_does_not_advance_documents_table(temp_db_path):
+    """Metadata/title-only updates must not rewrite the heavy documents row.
+
+    This is the blob-bloat fix: source_revision rolling on every ingester sweep
+    used to rewrite the multi-MB docling row each time. Mutable attributes now
+    live in document_meta, so the documents table version must stay frozen while
+    only metadata/title change — and reads must still hydrate the full Document.
+    """
+    dim = get_config().embeddings.model.vector_dim
+    config = get_config().model_copy(deep=True)
+    config.storage.auto_vacuum = False
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        created = await client.import_document(
+            _docling_doc("doc", "Body text"),
+            [Chunk(content="Body text", embedding=[0.1] * dim, order=0)],
+            uri="mem://meta-bloat",
+            title="Original",
+            metadata={"source_revision": "rev-0"},
+        )
+        assert created.id is not None
+
+        docs_v0 = await client.store.documents_table.version()
+        meta_v0 = await client.store.document_meta_table.version()
+
+        for i in range(1, 6):
+            await client.update_document(
+                created.id,
+                metadata={"source_revision": f"rev-{i}"},
+                title=f"Title {i}",
+            )
+
+        # The heavy documents table must not advance on metadata-only updates.
+        assert await client.store.documents_table.version() == docs_v0
+        # The light document_meta table absorbs the updates.
+        assert await client.store.document_meta_table.version() > meta_v0
+
+        # Reads still hydrate content and the mutable attributes together.
+        fetched = await client.get_document_by_id(created.id)
+        assert fetched is not None
+        assert fetched.metadata["source_revision"] == "rev-5"
+        assert fetched.title == "Title 5"
+        assert fetched.content == "Body text"
+
+        # And the untouched docling blob is still there.
+        docling = await client.document_repository.get_docling_data(created.id)
+        assert docling is not None
+        assert docling.get_docling_document() is not None
+
+
+async def test_close_releases_the_connection(temp_db_path):
+    """A caller managing the client itself closes it directly; leaving the
+    context goes through the session instead."""
+    client = HaikuRAG(temp_db_path, create=True)
+    await client.__aenter__()
+    store = client.store
+    assert store.db.is_open()
+
+    client.close()
+
+    assert not store.db.is_open()
+
+
+async def test_delete_marks_vacuum_dirty(temp_db_path):
+    """A delete adds tombstone/table versions, so it must enter the auto-vacuum
+    lifecycle — otherwise a delete-only run closes without a final vacuum."""
+    dim = get_config().embeddings.model.vector_dim
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(
+            _docling_doc("d", "body"),
+            [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+            uri="mem://del",
+        )
+        assert doc.id is not None
+        client._session._vacuum_dirty = False  # isolate the delete
+
+        assert await client.delete_document(doc.id) is True
+        assert client._session._vacuum_dirty is True
+
+
+async def test_delete_rolls_back_on_partial_failure(temp_db_path, monkeypatch):
+    """A multi-table delete is atomic: if a later table delete fails, the write
+    lock + version restore bring every table back, leaving no orphaned rows."""
+    dim = get_config().embeddings.model.vector_dim
+    config = get_config().model_copy(deep=True)
+    config.storage.auto_vacuum = False
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        doc = await client.import_document(
+            _docling_doc("d", "body"),
+            [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+            uri="mem://del",
+            title="T",
+            metadata={"k": "v"},
+        )
+        assert doc.id is not None
+
+        async def boom(*_a, **_k):
+            raise RuntimeError("meta delete failed")
+
+        # Fail the final step (document_meta) after chunks/items/documents deleted.
+        monkeypatch.setattr(client.store.document_meta_table, "delete", boom)
+        with pytest.raises(RuntimeError, match="meta delete failed"):
+            await client.delete_document(doc.id)
+        monkeypatch.undo()
+
+        # Rollback restored every table — the document is fully intact.
+        restored = await client.get_document_by_id(doc.id)
+        assert restored is not None
+        assert restored.title == "T"
+        assert restored.metadata["k"] == "v"
+        assert restored.content == "body"
+        chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        assert len(chunks) == 1
+
+
+async def test_cascade_delete_is_atomic(temp_db_path, monkeypatch):
+    """Deleting a parent cascades to children under one lock + snapshot. If any
+    delete in the subtree fails, the whole subtree is restored — a child isn't
+    left deleted while its parent survives."""
+    dim = get_config().embeddings.model.vector_dim
+    config = get_config().model_copy(deep=True)
+    config.storage.auto_vacuum = False
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        parent = await client.import_document(
+            _docling_doc("p", "parent"),
+            [Chunk(content="parent", embedding=[0.1] * dim, order=0)],
+            uri="mem://parent",
+        )
+        child = await client.import_document(
+            _docling_doc("c", "child"),
+            [Chunk(content="child", embedding=[0.2] * dim, order=0)],
+            uri="mem://child",
+            metadata={"parent_uri": "mem://parent"},
+        )
+        assert parent.id is not None and child.id is not None
+
+        orig_delete = client.document_repository.delete
+
+        async def delete_failing_on_child(doc_id):
+            if doc_id == child.id:
+                raise RuntimeError("child delete failed")
+            return await orig_delete(doc_id)
+
+        monkeypatch.setattr(
+            client.document_repository, "delete", delete_failing_on_child
+        )
+        with pytest.raises(RuntimeError, match="child delete failed"):
+            await client.delete_document(parent.id)
+        monkeypatch.undo()
+
+        # Atomic: the parent delete was rolled back too — both survive.
+        assert await client.get_document_by_id(parent.id) is not None
+        assert await client.get_document_by_id(child.id) is not None
+        assert await client.count_documents() == 2
+
+
+async def test_delete_missing_id_returns_false_without_vacuum(temp_db_path):
+    """Deleting an id that doesn't exist returns False and owes no vacuum (the
+    existence check is inside the lock, so a no-op delete stays a no-op)."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._session._vacuum_dirty = False
+        assert await client.delete_document("does-not-exist") is False
+        assert client._session._vacuum_dirty is False
+
+
+@pytest.mark.vcr()
+async def test_client_ask(allow_model_requests, temp_db_path):
+    """Test asking questions through the native RAG capability."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Create a test document for the agent to search
+        await client.create_document(
+            content="Python is a high-level programming language.", uri="test.txt"
+        )
+
+        answer, _ = await client.ask("What is Python?")
+
+        # A recorded cite names the recording run's chunk id, which a fresh
+        # database never holds, so only the answer replays faithfully.
+        assert "programming language" in answer.lower()
+
+
+async def test_ask_returns_the_cited_chunk_with_its_provenance(
+    temp_db_path, monkeypatch
+):
+    """`ask` resolves what the model cites into citations naming the chunk and
+    its document."""
+    from haiku.rag import utils as rag_utils
+
+    text = "Lucy Lawless was born on 29 March 1968."
+
+    def model_function(messages, info):
+        cited = any(
+            isinstance(part, ToolReturnPart) and part.tool_name == "cite"
+            for message in messages
+            for part in message.parts
+        )
+        if not cited:
+            return ModelResponse(
+                parts=[ToolCallPart("cite", {"chunk_ids": [chunk.id]})]
+            )
+        return ModelResponse(parts=[TextPart("She was born in 1968.")])
+
+    monkeypatch.setattr(
+        rag_utils, "get_model", lambda *args, **kwargs: FunctionModel(model_function)
+    )
+    dim = get_config().embeddings.model.vector_dim
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = DoclingDocument(name="Lucy Lawless")
+        doc.add_text(label=DocItemLabel.TEXT, text=text)
+        document = await client.import_document(
+            doc,
+            [Chunk(content=text, embedding=[0.1] * dim, order=0)],
+            uri="test://lawless",
+            title="Lucy Lawless",
+        )
+        (chunk,) = await client.chunk_repository.get_by_document_id(document.id)
+
+        answer, citations = await client.ask("When was Lucy Lawless born?")
+
+    assert answer == "She was born in 1968."
+    (citation,) = citations
+    assert citation.chunk_id == chunk.id
+    assert citation.document_id == document.id
+    assert citation.document_uri == "test://lawless"
+    assert citation.document_title == "Lucy Lawless"
+    assert citation.content == text
+
+
+@pytest.mark.vcr()
+async def test_client_ask_runs_code(allow_model_requests, temp_db_path):
+    """A corpus-level question is answered through the capability's sandbox."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.create_document("First document about cats.", title="Doc 1")
+        await client.create_document("Second document about dogs.", title="Doc 2")
+        await client.create_document("Third document about birds.", title="Doc 3")
+
+        answer, _ = await client.ask("How many documents are in the database?")
+
+        assert "3" in answer
+
+
+@pytest.mark.vcr()
+async def test_client_create_document_stores_docling_json(temp_db_path):
+    """Test that create_document stores DoclingDocument JSON."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document(
+            content="Test content for docling storage",
+            uri="test://docling",
+            metadata={"test": "docling_storage"},
+        )
+
+        assert doc.id is not None
+        assert doc.docling_document is not None
+        assert doc.docling_version is not None
+
+        # Verify JSON is valid and can be parsed
+        import json
+
+        from haiku.rag.store.compression import decompress_json
+
+        parsed = json.loads(decompress_json(doc.docling_document))
+        assert "version" in parsed
+        assert parsed["version"] == doc.docling_version
+
+
+@pytest.mark.vcr()
+async def test_client_import_document_stores_docling_data(temp_db_path):
+    """Test that import_document stores DoclingDocument data correctly."""
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Create a docling document with some content
+        docling_doc = DoclingDocument(name="test")
+        docling_doc.add_text(
+            label=DocItemLabel.TEXT, text="Content from docling document"
+        )
+
+        custom_chunks = [Chunk(content="Chunk content", order=0)]
+
+        # Import with DoclingDocument
+        doc = await client.import_document(
+            docling_document=docling_doc,
+            chunks=custom_chunks,
+        )
+
+        assert doc.id is not None
+        assert "Content from docling document" in doc.content
+        assert doc.docling_document is not None
+        assert doc.docling_version == docling_doc.version
+        # Structure is stored without pages
+        structure = json.loads(decompress_json(doc.docling_document))
+        assert "pages" not in structure
+        assert structure["name"] == "test"
+
+
+@pytest.mark.vcr()
+async def test_client_create_document_from_file_stores_docling_json(temp_db_path):
+    """Test that create_document_from_source stores DoclingDocument JSON for files."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / "test.txt"
+            temp_path.write_text("Test file content")
+
+            doc = await client.create_document_from_source(temp_path)
+            assert isinstance(doc, Document)
+
+            assert doc.id is not None
+            assert doc.docling_document is not None
+            assert doc.docling_version is not None
+
+            # Verify the stored document also has the JSON
+            retrieved = await client.document_repository.get_by_id(
+                doc.id, include_blobs=True
+            )
+            assert retrieved is not None
+            assert retrieved.docling_document == doc.docling_document
+            assert retrieved.docling_version == doc.docling_version
+
+
+@pytest.mark.vcr()
+async def test_client_update_document_stores_docling_json(temp_db_path):
+    """Test that update_document stores DoclingDocument JSON when content changes."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Create initial document
+        doc = await client.create_document(content="Initial content")
+        assert doc.id is not None
+        original_json = doc.docling_document
+
+        # Update content via update_document
+        updated_doc = await client.update_document(
+            document_id=doc.id, content="New content via fields update"
+        )
+
+        assert updated_doc.docling_document is not None
+        assert updated_doc.docling_version is not None
+        # JSON should be different because content changed
+        assert updated_doc.docling_document != original_json
+
+
+@pytest.mark.vcr()
+async def test_client_update_document_with_custom_chunks_no_docling_json(
+    temp_db_path,
+):
+    """Test that update_document with custom chunks does not update docling JSON."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Create initial document
+        doc = await client.create_document(content="Initial content")
+        assert doc.id is not None
+        original_json = doc.docling_document
+
+        # Update with custom chunks
+        custom_chunks = [Chunk(content="Custom chunk", order=0)]
+        updated_doc = await client.update_document(
+            document_id=doc.id, content="New content", chunks=custom_chunks
+        )
+
+        # Docling JSON should remain unchanged (no conversion when custom chunks provided)
+        assert updated_doc.docling_document == original_json
+
+
+@pytest.mark.vcr()
+async def test_client_update_document_content_docling_mutually_exclusive(
+    temp_db_path,
+):
+    """Test that content and docling_document cannot both be provided."""
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document(content="Initial content")
+        assert doc.id is not None
+
+        # Create a docling document
+        docling_doc = DoclingDocument(name="test")
+        docling_doc.add_text(label=DocItemLabel.TEXT, text="Some text")
+
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            await client.update_document(
+                document_id=doc.id,
+                content="New content",
+                docling_document=docling_doc,
+            )
+
+
+@pytest.mark.vcr()
+async def test_client_update_document_with_docling_rechunks(temp_db_path):
+    """Test that providing docling_document without chunks triggers rechunk."""
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Create initial document
+        doc = await client.create_document(content="Initial content")
+        assert doc.id is not None
+        original_chunks = await client.chunk_repository.get_by_document_id(doc.id)
+
+        # Create a new docling document with different content
+        docling_doc = DoclingDocument(name="updated")
+        docling_doc.add_text(
+            label=DocItemLabel.TEXT,
+            text="Completely different text from docling document",
+        )
+
+        # Update with docling document only - should rechunk from it
+        updated_doc = await client.update_document(
+            document_id=doc.id,
+            docling_document=docling_doc,
+        )
+
+        # Content should be extracted from docling document
+        assert "Completely different text" in updated_doc.content
+        assert updated_doc.docling_document is not None
+        assert updated_doc.docling_version == docling_doc.version
+        # Structure is stored without pages
+        structure = json.loads(decompress_json(updated_doc.docling_document))
+        assert "pages" not in structure
+        assert structure["name"] == "updated"
+
+        # Chunks should be regenerated
+        new_chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        assert len(new_chunks) > 0
+        # Content should differ from original
+        assert new_chunks[0].content != original_chunks[0].content
+
+
+@pytest.mark.vcr()
+async def test_client_update_document_docling_with_chunks(temp_db_path):
+    """Test that providing both docling_document and chunks stores both."""
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Create initial document
+        doc = await client.create_document(content="Initial content")
+        assert doc.id is not None
+
+        # Create a docling document
+        docling_doc = DoclingDocument(name="custom")
+        docling_doc.add_text(label=DocItemLabel.TEXT, text="Text from docling")
+
+        # Provide both docling and custom chunks
+        custom_chunks = [
+            Chunk(content="Custom chunk 1", order=0),
+            Chunk(content="Custom chunk 2", order=1),
+        ]
+
+        updated_doc = await client.update_document(
+            document_id=doc.id,
+            chunks=custom_chunks,
+            docling_document=docling_doc,
+        )
+
+        # Content should be extracted from docling (since content wasn't provided)
+        assert "Text from docling" in updated_doc.content
+        assert updated_doc.docling_document is not None
+        structure = json.loads(decompress_json(updated_doc.docling_document))
+        assert "pages" not in structure
+
+        # Custom chunks should be used (not rechunked from docling)
+        chunks = await client.chunk_repository.get_by_document_id(doc.id)
+        assert len(chunks) == 2
+        assert chunks[0].content == "Custom chunk 1"
+        assert chunks[1].content == "Custom chunk 2"
+
+
+@pytest.mark.vcr()
+async def test_client_file_update_stores_docling_json(temp_db_path):
+    """Test that updating a file re-stores DoclingDocument JSON."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / "test.txt"
+            temp_path.write_text("Original content")
+
+            # Create initial document
+            doc1 = await client.create_document_from_source(temp_path)
+            assert isinstance(doc1, Document)
+            original_json = doc1.docling_document
+            original_version = doc1.docling_version
+
+            # Modify file
+            temp_path.write_text("Modified content")
+
+            # Update document from source
+            doc2 = await client.create_document_from_source(temp_path)
+            assert isinstance(doc2, Document)
+            assert doc2.id == doc1.id  # Same document
+
+            # Docling JSON should be updated
+            assert doc2.docling_document is not None
+            assert doc2.docling_document != original_json
+            assert doc2.docling_version == original_version  # Version stays same
+
+
+@pytest.mark.vcr()
+async def test_sql_injection_is_blocked_with_escaping(temp_db_path):
+    """SQL injection is blocked when using escape_sql_string.
+
+    This test verifies that escape_sql_string properly prevents SQL injection
+    by escaping single quotes in user input.
+    """
+    from haiku.rag.utils import escape_sql_string
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        # Create documents
+        await client.create_document(
+            content="Secret classified data XYZ",
+            uri="secret://doc",
+            title="Secret",
+        )
+        await client.create_document(
+            content="Public report about weather",
+            uri="public://report",
+            title="Weather Report",
+        )
+
+        # Without escaping, this injection would match all documents
+        # by breaking out of the string literal: title = 'x' OR title LIKE '%'
+        injection_payload = "x' OR title LIKE '%"
+
+        # With proper escaping, single quotes become double quotes
+        # so the filter becomes: title = 'x'' OR title LIKE ''%'
+        # which searches for a literal title containing the injection string
+        safe_payload = escape_sql_string(injection_payload)
+        docs = await client.list_documents(filter=f"title = '{safe_payload}'")
+
+        # Should find 0 documents (injection is escaped, searching for literal string)
+        assert len(docs) == 0
+
+        # Verify the escaping works correctly
+        assert safe_payload == "x'' OR title LIKE ''%"
+
+        # Verify unescaped injection would have matched documents (for test validity)
+        # This demonstrates that the injection works without escaping
+        docs_unescaped = await client.list_documents(
+            filter=f"title = '{injection_payload}'"
+        )
+        assert len(docs_unescaped) == 2  # SQL injection succeeds without escaping
+
+
+# =============================================================================
+# URL-prefixed content regression tests
+# =============================================================================
+
+
+def _patch_embed_chunks(monkeypatch):
+    async def fake_embed_chunks(chunks, embedder, config):
+        for chunk in chunks:
+            chunk.embedding = [0.0] * 2560
+        return chunks
+
+    monkeypatch.setattr("haiku.rag.embeddings.embed_chunks", fake_embed_chunks)
+
+
+async def test_create_document_with_url_prefixed_content(temp_db_path, monkeypatch):
+    """Text whose first line is a URL must be stored as text, not fetched."""
+    _patch_embed_chunks(monkeypatch)
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        content = "https://example.com/foo\n\n# Heading\n\nBody text here."
+        doc = await client.create_document(content=content, uri="test://url-prefixed")
+
+        assert doc.id is not None
+        assert "example.com" in doc.content
+        assert "Heading" in doc.content
+
+
+async def test_update_document_with_url_prefixed_content(temp_db_path, monkeypatch):
+    """update_document(content=...) with URL-prefixed text must not fetch it."""
+    _patch_embed_chunks(monkeypatch)
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document(
+            content="initial body", uri="test://update-url"
+        )
+        assert doc.id is not None
+
+        url_prefixed = "https://example.com/bar\n\n# New heading\n\nReplacement body."
+        updated = await client.update_document(doc.id, content=url_prefixed)
+
+        assert "example.com" in updated.content
+        assert "New heading" in updated.content
+
+
+async def test_update_document_with_chunks_keeps_page_images(temp_db_path, monkeypatch):
+    """Replacing content and chunks without a docling document writes the stored
+    record back as-is, so its page rasters must survive the round trip."""
+    _patch_embed_chunks(monkeypatch)
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document(content="initial body", uri="test://pages")
+        assert doc.id is not None
+
+        sentinel_pages = b"\x80SENTINEL_PAGE_BYTES"
+        await client.store.documents_table.update(
+            {"docling_pages": sentinel_pages}, where=f"id = '{doc.id}'"
+        )
+
+        await client.update_document(
+            doc.id,
+            content="replacement body",
+            chunks=[Chunk(content="replacement body")],
+        )
+
+        stored = await client.document_repository.get_by_id(doc.id, include_blobs=True)
+        assert stored is not None
+        assert stored.content == "replacement body"
+        assert stored.docling_pages == sentinel_pages
+
+
+async def test_rebuild_rechunk_with_url_prefixed_stored_content(
+    temp_db_path, monkeypatch
+):
+    """RECHUNK rebuild must handle stored markdown whose first line is a URL."""
+    from haiku.rag.client import RebuildMode
+
+    _patch_embed_chunks(monkeypatch)
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document(
+            content="plain seed content", uri="file:///nonexistent/path.txt"
+        )
+        assert doc.id is not None
+
+        # Overwrite stored content to simulate markdown that starts with a URL,
+        # bypassing the (also-affected) create_document path so this test
+        # specifically exercises the rebuild path.
+        doc.content = "https://example.com/baz\n\n# Stored\n\nStored body text."
+        await client.document_repository.update(doc)
+
+        processed_ids = [
+            doc_id async for doc_id in client.rebuild_database(mode=RebuildMode.RECHUNK)
+        ]
+        assert doc.id in processed_ids
+
+        doc_after = await client.document_repository.get_by_id(doc.id)
+        assert doc_after is not None
+        assert "example.com" in doc_after.content
+        assert "Stored" in doc_after.content
+
+
+async def test_metadata_only_update_waits_for_write_lock(temp_db_path, monkeypatch):
+    """The metadata-only update path serializes with other writers so it
+    cannot land inside another writer's critical section (e.g. between
+    create_tag's version snapshot and its per-table tag creation)."""
+    import asyncio
+
+    dim = get_config().embeddings.model.vector_dim
+    docling_doc = DoclingDocument(name="d")
+    docling_doc.add_text(label=DocItemLabel.TEXT, text="body")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(
+            docling_doc,
+            [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+            uri="mem://meta",
+        )
+
+        lock = ObservedLock()
+        monkeypatch.setattr(client.store, "_write_lock", lock)
+        async with lock:
+            task = asyncio.create_task(
+                client.update_document(document_id=doc.id, metadata={"k": "v"})
+            )
+            await assert_waiting_for_lock(task, lock)
+        updated = await task
+        assert updated.metadata == {"k": "v"}
+
+
+@pytest.mark.parametrize(
+    "uri,expected",
+    [
+        ("https://example.com/doc.pdf", True),
+        ("s3://bucket/key", True),
+        ("mem://not-a-source", False),
+        # urlparse rejects a malformed IPv6 host; a stored URI that no longer
+        # parses must not abort the caller's rebuild sweep.
+        ("http://[::1", False),
+    ],
+    ids=["https", "s3", "unknown_scheme", "unparseable"],
+)
+def test_check_source_accessible(uri, expected):
+    assert check_source_accessible(uri) is expected
+
+
+def test_check_source_accessible_file_uri(tmp_path):
+    existing = tmp_path / "there.txt"
+    existing.write_text("x")
+
+    assert check_source_accessible(existing.as_uri()) is True
+    assert check_source_accessible((tmp_path / "gone.txt").as_uri()) is False
+
+
+def test_check_source_accessible_percent_encoded_file_uri(tmp_path):
+    existing = tmp_path / "a[b] c.txt"
+    existing.write_text("x")
+
+    assert check_source_accessible(existing.as_uri()) is True
+
+
+class _CountingSource:
+    """A real Source over one in-memory document that counts its closes."""
+
+    def __init__(self, uri: str, body: bytes) -> None:
+        self.source_id = "counting"
+        self.supported_extensions = None
+        self.max_file_size = None
+        self._uri = uri
+        self._body = body
+        self.closes = 0
+
+    def supports(self, uri: str) -> bool:
+        return uri == self._uri
+
+    async def head(self, uri: str) -> str | None:
+        return "v1"
+
+    async def aclose(self) -> None:
+        self.closes += 1
+
+    async def fetch(self, uri: str) -> "FetchResult":
+        import hashlib
+
+        return FetchResult(
+            uri=uri,
+            body=self._body,
+            content_type="text/markdown",
+            content_hash=hashlib.md5(self._body).hexdigest(),
+            revision="v1",
+        )
+
+    def discover(self, since=None, *, known_uris=None):
+        raise NotImplementedError
+
+
+@pytest.mark.vcr()
+async def test_adhoc_source_is_closed_after_ingest(temp_db_path, monkeypatch):
+    """An ad-hoc fetcher is built for this one call, so this call has to close
+    it — HTTP and WebDAV adapters hold an httpx connection pool."""
+    from haiku.rag import sources as sources_module
+
+    uri = "https://example.com/counting.md"
+    fetcher = _CountingSource(uri, b"# Counting\n\nAd-hoc fetched body.")
+    monkeypatch.setattr(
+        sources_module, "resolve_adhoc_fetcher", lambda *a, **kw: fetcher
+    )
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document_from_source(uri)
+        assert not isinstance(doc, list)
+
+    assert fetcher.closes == 1
+
+
+@pytest.mark.vcr()
+async def test_configured_source_is_not_closed_after_ingest(temp_db_path):
+    """A source handed in by the caller (the ingester's long-lived pool) is not
+    ours to close: closing it would tear down the pool mid-run."""
+    uri = "https://example.com/configured.md"
+    fetcher = _CountingSource(uri, b"# Configured\n\nCaller-owned body.")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document_from_source(uri, sources=[fetcher])
+        assert not isinstance(doc, list)
+
+    assert fetcher.closes == 0
+
+
+@pytest.mark.vcr()
+@pytest.mark.parametrize("auto_vacuum", [True, False])
+async def test_import_documents_schedules_vacuum_per_config(temp_db_path, auto_vacuum):
+    """A batch import runs a background vacuum only when auto_vacuum is on."""
+    from haiku.rag.config import AppConfig
+
+    config = AppConfig()
+    config.storage.auto_vacuum = auto_vacuum
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        docling_doc = await client.convert("Batch imported body.")
+        chunks = await client.chunk(docling_doc)
+
+        # Spy rather than inspecting _vacuum_tasks: the scheduling code
+        # discards each task on completion, so the set races to empty. The
+        # spy's count does not race, and draining the scheduled task keeps
+        # the assertion deterministic without pulling in the close-time pass.
+        with patch.object(client.store, "vacuum", new=AsyncMock()) as vacuum:
+            await client.import_documents(
+                [
+                    DocumentImport(
+                        docling_document=docling_doc,
+                        chunks=chunks,
+                        uri="test://batch-vacuum",
+                    )
+                ]
+            )
+            await asyncio.gather(*client._session._vacuum_tasks)
+
+            assert vacuum.await_count == (1 if auto_vacuum else 0)
+
+
+@pytest.mark.vcr()
+async def test_reingesting_a_source_applies_an_explicit_title(temp_db_path):
+    """Re-adding a changed source with a title updates both, in place."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "retitled.txt"
+            source.write_text("stable content")
+
+            first = await client.create_document_from_source(source)
+            assert not isinstance(first, list)
+            source.write_text("changed content")
+
+            second = await client.create_document_from_source(
+                source, title="Explicit Title"
+            )
+
+        assert not isinstance(second, list)
+        assert second.id == first.id
+        assert second.title == "Explicit Title"
+        assert second.content == "changed content"
+
+
+async def test_update_document_rejects_unknown_id(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with pytest.raises(ValueError, match="not found"):
+            await client.update_document("no-such-document", content="x")

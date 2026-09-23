@@ -84,7 +84,6 @@ def _flatten(tree: list[dict]) -> list[dict]:
     return out
 
 
-@pytest.mark.asyncio
 class TestMetadataJson:
     """metadata.json is served by a reader callback, like the other VFS files."""
 
@@ -101,7 +100,6 @@ class TestMetadataJson:
         assert meta["uri"] == "test://meta"
 
 
-@pytest.mark.asyncio
 class TestTocShape:
     """toc.json builds a section tree from heading_level + position."""
 
@@ -235,7 +233,6 @@ class TestTocShape:
         assert node["chunk_ids"] == []
 
 
-@pytest.mark.asyncio
 class TestTocChunkIdsAggregation:
     """toc.json nodes carry the union of chunk_ids covered by their item_range."""
 
@@ -299,7 +296,6 @@ class TestTocChunkIdsAggregation:
         assert methods["chunk_ids"] == ["cD"]
 
 
-@pytest.mark.asyncio
 class TestTocCaching:
     """items + toc reads for a doc share one items fetch and one chunk-index fetch."""
 
@@ -347,7 +343,6 @@ class TestTocCaching:
         assert chunk_calls["n"] == 1
 
 
-@pytest.mark.asyncio
 class TestItemsJsonlSurfacesNewFields:
     """items.jsonl row shape: heading_level is always present (0 on non-headers);
     chunk_ids surfaces each item's containing chunks; position and tree_depth
@@ -384,7 +379,6 @@ class TestItemsJsonlSurfacesNewFields:
             assert "tree_depth" not in r
 
 
-@pytest.mark.asyncio
 class TestVfsReadPaths:
     """The synchronous VFS readers bridge back to the event loop; drive them
     through a worker thread the way execute() does."""

@@ -20,7 +20,6 @@ class TestListingAcrossDatabases:
     """The chat TUI's document filter lists documents through the client, and a
     client covering a set has no repositories of its own."""
 
-    @pytest.mark.asyncio
     async def test_listing_covers_every_database(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha one", "alpha two"])
@@ -35,7 +34,6 @@ class TestListingAcrossDatabases:
             "test://beta/beta one",
         }
 
-    @pytest.mark.asyncio
     async def test_counting_covers_every_database(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha one", "alpha two"])
@@ -44,7 +42,6 @@ class TestListingAcrossDatabases:
         async with HaikuRAG(config=config) as rag:
             assert await rag.count_documents() == 3
 
-    @pytest.mark.asyncio
     async def test_a_limit_bounds_the_merged_listing(self, tmp_path):
         """A limit is that many documents in total, not that many per database."""
         config = _config(tmp_path, ["alpha", "beta"])
@@ -56,7 +53,6 @@ class TestListingAcrossDatabases:
             assert len(await rag.list_documents(limit=2, offset=2)) == 2
             assert len(await rag.list_documents(offset=3)) == 1
 
-    @pytest.mark.asyncio
     async def test_a_page_shows_every_database(self, tmp_path):
         """A window is taken across the databases, not filled from the first one:
         concatenating hides every database after whichever was listed first."""
@@ -70,7 +66,6 @@ class TestListingAcrossDatabases:
         assert len(page) == 3
         assert {(d.uri or "").split("/")[2] for d in page} == {"alpha", "beta"}
 
-    @pytest.mark.asyncio
     async def test_a_filter_reaches_every_database(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha one"])
@@ -86,7 +81,6 @@ class TestSourcesRestrictListing:
     """`sources` narrows `list_documents` the same way it narrows `search`, on
     a client covering a set and on one covering a single database alike."""
 
-    @pytest.mark.asyncio
     async def test_sources_restricts_the_multi_database_listing(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha one"])
@@ -97,7 +91,6 @@ class TestSourcesRestrictListing:
 
         assert {d.uri for d in docs} == {"test://alpha/alpha one"}
 
-    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "names", [["alpha", "beta"], ["alpha"]], ids=["multi", "single"]
     )
@@ -108,7 +101,6 @@ class TestSourcesRestrictListing:
         async with HaikuRAG(config=config) as rag:
             assert await rag.list_documents(sources=[]) == []
 
-    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "names", [["alpha", "beta"], ["alpha"]], ids=["multi", "single"]
     )
@@ -125,7 +117,6 @@ class TestLookupByIdentifier:
     """An id or a URI says nothing about which database holds it, and a client
     covering a set has no repositories of its own."""
 
-    @pytest.mark.asyncio
     async def test_a_document_is_found_in_whichever_database_holds_it(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha one"])
@@ -144,7 +135,6 @@ class TestLookupByIdentifier:
         assert by_uri is not None and by_uri.uri == "test://alpha/alpha one"
         assert resolved is not None and resolved.uri == "test://beta/beta one"
 
-    @pytest.mark.asyncio
     async def test_a_chunk_is_found_in_whichever_database_holds_it(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha one"])
@@ -159,7 +149,6 @@ class TestLookupByIdentifier:
 
         assert found is not None and found.content == "beta one"
 
-    @pytest.mark.asyncio
     async def test_a_chunk_is_read_from_the_database_its_source_names(self, tmp_path):
         """One chunk id in two databases, holding different content. A result
         carries the database it came from, so a caller holding one must be able
@@ -189,7 +178,6 @@ class TestLookupByIdentifier:
         # Configured order, as an unqualified lookup has always answered.
         assert unqualified is not None and unqualified.content == "shared body"
 
-    @pytest.mark.asyncio
     async def test_a_document_held_by_two_databases_answers_from_the_first(
         self, tmp_path
     ):
@@ -227,7 +215,6 @@ class TestLookupByIdentifier:
             await beta.document_repository.update_meta(target)
         return config
 
-    @pytest.mark.asyncio
     async def test_a_title_match_is_read_from_the_database_that_matched(self, tmp_path):
         config = await self._collided(tmp_path)
 
@@ -240,7 +227,6 @@ class TestLookupByIdentifier:
         assert by_uri is not None
         assert (by_uri.source, by_uri.uri) == ("beta", "test://beta/only")
 
-    @pytest.mark.asyncio
     async def test_a_partial_match_is_read_from_the_database_that_matched(
         self, tmp_path
     ):
@@ -255,7 +241,6 @@ class TestLookupByIdentifier:
         assert by_uri is not None and by_uri.source == "beta"
         assert by_title is not None and by_title.source == "beta"
 
-    @pytest.mark.asyncio
     async def test_a_source_is_checked_against_what_the_client_covers(self, tmp_path):
         """A lookup naming a database the client does not cover is wrong rather
         than answerable from the one it does cover."""
@@ -297,7 +282,6 @@ class TestLookupByIdentifier:
         assert picture == b"alpha-picture"
         assert chunk is not None and chunk.content == "alpha one"
 
-    @pytest.mark.asyncio
     async def test_a_database_at_a_path_answers_to_its_stem_alone(self, temp_db_path):
         stem = temp_db_path.stem
         async with HaikuRAG(temp_db_path, create=True) as rag:
@@ -325,7 +309,6 @@ class TestLookupByIdentifier:
             with pytest.raises(UnknownDatabaseError):
                 await rag.get_chunk_by_id(held.id, "alpha")
 
-    @pytest.mark.asyncio
     async def test_an_unknown_identifier_is_absent_rather_than_an_error(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha one"])
@@ -356,7 +339,6 @@ class TestWritesNameTheirDatabase:
         doc.add_text(label=DocItemLabel.TEXT, text=text)
         return doc
 
-    @pytest.mark.asyncio
     async def test_import_names_the_database(self, tmp_path):
         config = _config(tmp_path, ["alpha"])
         dim = get_config().embeddings.model.vector_dim
@@ -373,7 +355,6 @@ class TestWritesNameTheirDatabase:
         assert written.source == "alpha"
         assert read is not None and read.source == written.source
 
-    @pytest.mark.asyncio
     async def test_a_batch_import_names_every_document(self, tmp_path):
         from haiku.rag.client.documents import DocumentImport
 
@@ -394,7 +375,6 @@ class TestWritesNameTheirDatabase:
 
         assert [d.source for d in written] == ["alpha", "alpha"]
 
-    @pytest.mark.asyncio
     async def test_a_metadata_only_update_names_the_database(self, tmp_path):
         """Changing only metadata rewrites the row without re-chunking, so it
         never reaches the paths that name a document on the way through."""
@@ -417,7 +397,6 @@ class TestWritesNameTheirDatabase:
         assert updated.title == "Cats"
         assert updated.source == "alpha"
 
-    @pytest.mark.asyncio
     async def test_the_revision_short_circuit_names_the_database(self, tmp_path):
         """`create_document_from_source` refreshes metadata in place when the
         revision is unchanged, returning the document it rewrote."""
@@ -448,7 +427,6 @@ class TestDocumentsNameTheirDatabase:
     """A listing that spans databases is unreadable when the documents do not
     say which one they came from, the same reason a search result carries one."""
 
-    @pytest.mark.asyncio
     async def test_a_listing_names_each_document_s_database(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha one", "alpha two"])
@@ -463,7 +441,6 @@ class TestDocumentsNameTheirDatabase:
             "test://beta/beta one": "beta",
         }
 
-    @pytest.mark.asyncio
     async def test_a_looked_up_document_names_its_database(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha one"])
@@ -482,7 +459,6 @@ class TestDocumentsNameTheirDatabase:
         assert by_uri is not None and by_uri.source == "alpha"
         assert resolved is not None and resolved.source == "beta"
 
-    @pytest.mark.asyncio
     async def test_one_named_database_still_names_itself(self, tmp_path):
         """`haiku-rag --db-name alpha list` opens one database, and its name is
         the whole reason the option exists."""
@@ -500,7 +476,6 @@ class TestDocumentsNameTheirDatabase:
         assert by_id is not None and by_id.source == "alpha"
         assert by_uri is not None and by_uri.source == "alpha"
 
-    @pytest.mark.asyncio
     async def test_one_database_at_a_path_is_named_by_its_stem(
         self, tmp_path, temp_db_path
     ):

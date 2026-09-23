@@ -139,7 +139,6 @@ def test_budget_must_be_positive():
         StorageConfig(compaction_target_bytes=0)
 
 
-@pytest.mark.asyncio
 async def test_vacuum_leaves_the_handle_usable(temp_db_path):
     """Reads and writes must work through the same handle after a vacuum.
 
@@ -162,7 +161,6 @@ async def test_vacuum_leaves_the_handle_usable(temp_db_path):
         assert await store.documents_table.count_rows() == 2
 
 
-@pytest.mark.asyncio
 async def test_handle_is_refreshed_when_a_later_step_fails(temp_db_path, monkeypatch):
     """A committed compaction followed by a failure must not strand the handle."""
     config = AppConfig()
@@ -201,7 +199,6 @@ async def test_handle_is_refreshed_when_a_later_step_fails(temp_db_path, monkeyp
 
 # 1 compact, 2 optimize_indices, 3 prune -- all three on the first payload table
 @pytest.mark.parametrize("cancel_at", [1, 2, 3])
-@pytest.mark.asyncio
 async def test_cancelling_vacuum_waits_for_the_running_step(
     temp_db_path, cancel_at, monkeypatch
 ):
@@ -253,7 +250,6 @@ async def test_cancelling_vacuum_waits_for_the_running_step(
         assert await store.documents_table.count_rows() == 1
 
 
-@pytest.mark.asyncio
 async def test_thin_tables_keep_using_optimize(temp_db_path, monkeypatch):
     """Only payload-bearing tables take the sized path."""
     config = AppConfig()
@@ -279,7 +275,6 @@ async def test_thin_tables_keep_using_optimize(temp_db_path, monkeypatch):
     assert sorted(optimized) == ["chunks", "document_meta", "settings"]
 
 
-@pytest.mark.asyncio
 async def test_unmeasurable_table_still_prunes(temp_db_path, monkeypatch, caplog):
     config = AppConfig()
     config.storage.auto_vacuum = False

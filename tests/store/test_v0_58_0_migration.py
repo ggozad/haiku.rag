@@ -1,7 +1,5 @@
 import json
 
-import pytest
-
 from haiku.rag.store.engine import Store
 from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.upgrades.v0_58_0 import _apply_split_document_meta
@@ -13,7 +11,6 @@ from tests.store.legacy_documents import (
 _LEGACY_COLUMNS = {"uri", "title", "metadata", "created_at", "updated_at"}
 
 
-@pytest.mark.asyncio
 class TestV0_58_0Migration:
     """v0.58.0 moves mutable attributes out of the documents row into
     document_meta so metadata/title updates stop rewriting the docling blob."""
@@ -98,7 +95,6 @@ class TestV0_58_0Migration:
             assert meta_rows[0]["id"] == "doc-1"
 
 
-@pytest.mark.asyncio
 class TestV0_58_0MigrationEdgeCases:
     async def test_resume_skips_already_migrated_rows(self, temp_db_path):
         """A half-finished prior run leaves some document_meta rows; re-running
@@ -213,7 +209,6 @@ class TestV0_58_0MigrationEdgeCases:
         assert vacuum_calls == []  # reclaim vacuum was skipped
 
 
-@pytest.mark.asyncio
 async def test_delete_all_clears_document_meta(temp_db_path):
     """delete_all drops and recreates both documents and document_meta."""
     from haiku.rag.store.models.document import Document

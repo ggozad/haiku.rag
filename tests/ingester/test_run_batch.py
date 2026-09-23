@@ -134,7 +134,6 @@ def use_client(monkeypatch):
     return _install
 
 
-@pytest.mark.asyncio
 async def test_run_batch_drains_upserts(tmp_path, use_client):
     (tmp_path / "a.md").write_text("hello")
     (tmp_path / "b.md").write_text("world")
@@ -156,7 +155,6 @@ async def test_run_batch_drains_upserts(tmp_path, use_client):
     }
 
 
-@pytest.mark.asyncio
 async def test_run_batch_reports_progress(tmp_path, use_client):
     (tmp_path / "a.md").write_text("hello")
     (tmp_path / "b.md").write_text("world")
@@ -180,7 +178,6 @@ async def test_run_batch_reports_progress(tmp_path, use_client):
     assert progress[-1].claimed == 0
 
 
-@pytest.mark.asyncio
 async def test_run_batch_prunes_orphans(tmp_path, use_client):
     (tmp_path / "a.md").write_text("hello")
     (tmp_path / "b.md").write_text("world")
@@ -213,7 +210,6 @@ async def test_run_batch_prunes_orphans(tmp_path, use_client):
     assert second.dead == 0
 
 
-@pytest.mark.asyncio
 async def test_run_batch_reports_dead_on_permanent_failure(tmp_path, use_client):
     (tmp_path / "a.md").write_text("hello")
 
@@ -229,7 +225,6 @@ async def test_run_batch_reports_dead_on_permanent_failure(tmp_path, use_client)
     assert report.dead == 1
 
 
-@pytest.mark.asyncio
 async def test_run_batch_recovered_doc_is_not_counted_as_dead(tmp_path, use_client):
     """A doc that dead-lettered in an earlier run and succeeds in this one
     prunes its dead row. The report counts only this run's terminal jobs, so
@@ -259,7 +254,6 @@ async def test_run_batch_recovered_doc_is_not_counted_as_dead(tmp_path, use_clie
     assert second.succeeded == 1
 
 
-@pytest.mark.asyncio
 async def test_run_batch_reports_failed_sweep(
     tmp_path, use_client, monkeypatch, caplog
 ):
@@ -285,7 +279,6 @@ async def test_run_batch_reports_failed_sweep(
     assert "discover() failed" in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_run_batch_empty_source_returns_immediately(tmp_path, use_client):
     client = _mock_client()
     use_client(client)
@@ -302,7 +295,6 @@ async def test_run_batch_empty_source_returns_immediately(tmp_path, use_client):
     client._ingest_observed.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_run_batch_dry_run_reports_manifest_without_mutating_queue(tmp_path):
     (tmp_path / "a.md").write_text("hello")
     config = _config(tmp_path)
@@ -340,7 +332,6 @@ async def test_run_batch_dry_run_reports_manifest_without_mutating_queue(tmp_pat
         await engine.dispose()
 
 
-@pytest.mark.asyncio
 async def test_run_batch_from_manifest_drains_changes_without_sweeping(
     tmp_path, use_client, monkeypatch
 ):
@@ -371,7 +362,6 @@ async def test_run_batch_from_manifest_drains_changes_without_sweeping(
     sweep_all.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_run_batch_from_manifest_rejects_stale_upsert_revision(
     tmp_path, use_client
 ):
@@ -398,7 +388,6 @@ async def test_run_batch_from_manifest_rejects_stale_upsert_revision(
     client._ingest_observed.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_run_batch_from_manifest_delete_uses_manifest_even_if_file_reappears(
     tmp_path, use_client
 ):
@@ -425,7 +414,6 @@ async def test_run_batch_from_manifest_delete_uses_manifest_even_if_file_reappea
     client.delete_document.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_run_batch_from_manifest_resumes_same_manifest_work(tmp_path, use_client):
     (tmp_path / "a.md").write_text("hello")
     revision = str((tmp_path / "a.md").stat().st_mtime_ns)
@@ -469,7 +457,6 @@ async def test_run_batch_from_manifest_resumes_same_manifest_work(tmp_path, use_
     client._ingest_observed.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_run_batch_from_manifest_rejects_non_manifest_pending_work(
     tmp_path, use_client
 ):
@@ -499,7 +486,6 @@ async def test_run_batch_from_manifest_rejects_non_manifest_pending_work(
         )
 
 
-@pytest.mark.asyncio
 async def test_run_batch_from_manifest_rejects_different_manifest_pending_work(
     tmp_path, use_client
 ):
@@ -539,7 +525,6 @@ async def test_run_batch_from_manifest_rejects_different_manifest_pending_work(
         ).run_batch_from_manifest(manifest)
 
 
-@pytest.mark.asyncio
 async def test_run_batch_from_manifest_rejects_unrelated_pending_work(
     tmp_path, use_client
 ):
@@ -569,7 +554,6 @@ async def test_run_batch_from_manifest_rejects_unrelated_pending_work(
         )
 
 
-@pytest.mark.asyncio
 async def test_run_batch_from_manifest_rejects_duplicate_changes(tmp_path, use_client):
     path = tmp_path / "a.md"
     path.write_text("hello")
@@ -588,7 +572,6 @@ async def test_run_batch_from_manifest_rejects_duplicate_changes(tmp_path, use_c
         ).run_batch_from_manifest(_manifest(change, change))
 
 
-@pytest.mark.asyncio
 async def test_run_batch_aborts_when_all_workers_die(
     tmp_path, use_client, monkeypatch, caplog
 ):
@@ -631,7 +614,6 @@ async def _wait_until(predicate, *, timeout: float = 5.0):
         await asyncio.sleep(0.02)
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("api", [True, False])
 async def test_serve_starts_workers_pollers_and_shuts_down(tmp_path, use_client, api):
     """serve brings up pollers, workers and (when enabled) the HTTP API, then
@@ -680,7 +662,6 @@ class _SlowPool(WorkerPool):
         return 2
 
 
-@pytest.mark.asyncio
 async def test_stop_pool_warns_when_shutdown_grace_elapses(tmp_path, caplog):
     """When a worker doesn't stop within the shutdown grace, _stop_pool logs a
     warning and still drains any pending cancel-cleanup releases."""
@@ -720,7 +701,6 @@ def _record_close_order(monkeypatch) -> list[str]:
     return order
 
 
-@pytest.mark.asyncio
 async def test_run_batch_closes_sources_after_pool_stops(
     tmp_path, use_client, monkeypatch
 ):
@@ -736,7 +716,6 @@ async def test_run_batch_closes_sources_after_pool_stops(
     assert order == ["stop_pool", "close_sources"]
 
 
-@pytest.mark.asyncio
 async def test_serve_closes_sources_after_pool_stops(tmp_path, use_client, monkeypatch):
     use_client(_mock_client())
     config = _config(tmp_path)

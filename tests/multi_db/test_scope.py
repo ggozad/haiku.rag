@@ -46,7 +46,6 @@ class TestNamingIsRequired:
 
 
 class TestNamingADatabaseDirectly:
-    @pytest.mark.asyncio
     async def test_a_db_path_beside_the_configured_set_is_refused(
         self, tmp_path, temp_db_path
     ):
@@ -60,7 +59,6 @@ class TestNamingADatabaseDirectly:
         assert str(temp_db_path) in str(raised.value)
         assert not temp_db_path.exists()
 
-    @pytest.mark.asyncio
     async def test_one_configured_database_is_opened_by_name(self, tmp_path):
         """A set of one is not federated, and the client resolves it."""
         config = _config(tmp_path, ["alpha"])
@@ -81,7 +79,6 @@ class TestOneConfiguredLocation:
     def _config(self, location) -> AppConfig:
         return AppConfig(lancedb=LanceDBConfig(databases={"notes": str(location)}))
 
-    @pytest.mark.asyncio
     async def test_a_local_location_opens_the_configured_database(self, tmp_path):
         located = tmp_path / "notes.lancedb"
         config = self._config(located)
@@ -91,7 +88,6 @@ class TestOneConfiguredLocation:
             assert rag.source == "notes"
         assert located.exists()
 
-    @pytest.mark.asyncio
     async def test_a_path_beside_the_configured_database_is_refused(self, tmp_path):
         config = self._config(tmp_path / "configured.lancedb")
         chosen = tmp_path / "chosen.lancedb"
@@ -102,7 +98,6 @@ class TestOneConfiguredLocation:
         assert not chosen.exists()
         assert not (tmp_path / "configured.lancedb").exists()
 
-    @pytest.mark.asyncio
     async def test_a_local_location_that_does_not_exist_is_refused(self, tmp_path):
         """A schemeless location is a local path and must exist. The error names
         the configured database, never its location."""
@@ -131,7 +126,6 @@ class TestSessionsOwnTheRef:
     """A session is built from the resolved reference and hands storage only
     its location; the configuration it keeps is the one the caller named."""
 
-    @pytest.mark.asyncio
     async def test_a_session_opens_the_location_with_the_undivided_config(
         self, tmp_path
     ):
@@ -151,7 +145,6 @@ class TestSessionsOwnTheRef:
         finally:
             await session.aclose()
 
-    @pytest.mark.asyncio
     async def test_a_client_keeps_the_configuration_it_was_given(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -173,7 +166,6 @@ class TestLocate:
 
 
 class TestSelection:
-    @pytest.mark.asyncio
     async def test_unknown_source_at_construction_is_rejected(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
 
@@ -181,7 +173,6 @@ class TestSelection:
             async with HaikuRAG(config=config, sources=["nope"]):
                 pass
 
-    @pytest.mark.asyncio
     async def test_unknown_source_across_several_databases_is_rejected(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -191,7 +182,6 @@ class TestSelection:
             with pytest.raises(UnknownDatabaseError, match="nope"):
                 await rag.search("cats", search_type="fts", sources=["nope"])
 
-    @pytest.mark.asyncio
     async def test_no_matches_anywhere_returns_nothing(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -205,7 +195,6 @@ class TestPlacingADatabase:
     """What a client says about the databases it covers, so nothing outside has
     to read its private state to find out."""
 
-    @pytest.mark.asyncio
     async def test_a_set_names_every_database_it_covers(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha one"])
@@ -216,7 +205,6 @@ class TestPlacingADatabase:
             assert rag.source_names == ("alpha", "beta")
             assert rag.source is None
 
-    @pytest.mark.asyncio
     async def test_one_named_database_names_itself(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha one"])
@@ -226,7 +214,6 @@ class TestPlacingADatabase:
             assert rag.source_names == ("alpha",)
             assert rag.source == "alpha"
 
-    @pytest.mark.asyncio
     async def test_a_named_database_keeps_its_name_on_re_entry(self, tmp_path):
         """Entering derives a single-database configuration from what was
         configured. Deriving it from the last derivation loses the name."""
@@ -243,13 +230,11 @@ class TestPlacingADatabase:
 
         assert {r.source for r in results} == {"alpha"}
 
-    @pytest.mark.asyncio
     async def test_a_database_at_a_path_is_named_by_its_stem(self, temp_db_path):
         async with HaikuRAG(temp_db_path, create=True) as rag:
             assert rag.source_names == (temp_db_path.stem,)
             assert rag.source == temp_db_path.stem
 
-    @pytest.mark.asyncio
     async def test_the_default_database_is_selectable_by_name(self, tmp_path):
         """Nothing configured is the one entry `haiku.rag`, an ordinary
         configured database that `sources` can name."""
@@ -278,7 +263,6 @@ class TestPlacingADatabase:
         assert at_path.source_names == ("other",)
         assert not at_path.covers_multiple
 
-    @pytest.mark.asyncio
     async def test_the_reader_for_a_database_is_the_client_holding_it(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha one"])
@@ -292,7 +276,6 @@ class TestPlacingADatabase:
             # Asked twice, the same wrapper comes back.
             assert await rag.reader_for("beta") is reader
 
-    @pytest.mark.asyncio
     async def test_a_client_reading_one_database_is_its_own_reader(self, temp_db_path):
         async with HaikuRAG(temp_db_path, create=True) as rag:
             assert await rag.reader_for(None) is rag
@@ -323,7 +306,6 @@ class TestPlacingADatabase:
             with pytest.raises(AmbiguousDatabaseError, match="pass one of them"):
                 HaikuRAG(tmp_path / "alpha.lancedb", config=config, sources=sources)
 
-    @pytest.mark.asyncio
     async def test_one_database_refuses_a_name_it_does_not_cover(self, tmp_path):
         """A citation naming another database must not get this database's
         reader."""
@@ -336,14 +318,12 @@ class TestPlacingADatabase:
             with pytest.raises(UnknownDatabaseError, match="beta"):
                 await alpha.reader_for("beta")
 
-    @pytest.mark.asyncio
     async def test_a_database_at_a_path_answers_to_its_stem_alone(self, temp_db_path):
         async with HaikuRAG(temp_db_path, create=True) as rag:
             assert await rag.reader_for(temp_db_path.stem) is rag
             with pytest.raises(UnknownDatabaseError, match=temp_db_path.stem):
                 await rag.reader_for("anything")
 
-    @pytest.mark.asyncio
     async def test_a_set_cannot_place_evidence_that_names_no_database(self, tmp_path):
         """A sourceless citation names no database a set could place."""
         config = _config(tmp_path, ["alpha", "beta"])
@@ -358,7 +338,6 @@ class TestNamingOneOfTheSetOnTheCommandLine:
     client it opens has to honour it — one that ignores it covers the set and
     quietly answers from the wrong database."""
 
-    @pytest.mark.asyncio
     async def test_a_named_database_is_the_one_read(self, tmp_path, capsys):
         from haiku.rag.app import HaikuRAGApp
 
@@ -375,7 +354,6 @@ class TestNamingOneOfTheSetOnTheCommandLine:
         assert "test://beta/" in printed
         assert "test://alpha/" not in printed
 
-    @pytest.mark.asyncio
     async def test_naming_none_of_them_covers_the_set(self, tmp_path, capsys):
         from haiku.rag.app import HaikuRAGApp
 

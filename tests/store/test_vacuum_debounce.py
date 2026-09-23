@@ -1,0 +1,121 @@
+import asyncio
+
+import haiku.rag.client.session as session_mod
+from haiku.rag.client import HaikuRAG
+from haiku.rag.client.documents import _refresh_doc_metadata
+from haiku.rag.config import get_config
+from haiku.rag.store.models.chunk import Chunk
+from tests.conftest import writing
+from tests.locks import ObservedLock, assert_waiting_for_lock
+
+
+def _docling_doc(name: str, text: str):
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
+    doc = DoclingDocument(name=name)
+    doc.add_text(label=DocItemLabel.TEXT, text=text)
+    return doc
+
+
+async def test_schedule_vacuum_is_debounced(temp_db_path, monkeypatch):
+    """Rapid writes within the throttle window schedule only one background
+    vacuum; once the interval elapses, a new one is scheduled."""
+    t = {"now": 1000.0}
+    monkeypatch.setattr(session_mod, "monotonic", lambda: t["now"])
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        calls: list[int] = []
+
+        async def fake_vacuum(*_a, **_k):
+            calls.append(1)
+
+        monkeypatch.setattr(client.store, "vacuum", fake_vacuum)
+
+        for _ in range(3):
+            client._session.schedule_vacuum()
+        await asyncio.gather(*client._session._vacuum_tasks)
+        assert len(calls) == 1  # debounced within the interval
+
+        t["now"] += session_mod._VACUUM_MIN_INTERVAL_S + 1
+        client._session.schedule_vacuum()
+        await asyncio.gather(*client._session._vacuum_tasks)
+        assert len(calls) == 2  # interval elapsed -> a new vacuum scheduled
+
+
+async def test_debounced_writes_still_collapse_on_close(temp_db_path, monkeypatch):
+    """Even when scheduled vacuums after the first are debounced, the writes are
+    marked dirty so the close-time drain runs a final collapse."""
+    t = {"now": 1000.0}
+    monkeypatch.setattr(session_mod, "monotonic", lambda: t["now"])
+    calls: list[int] = []
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+
+        async def fake_vacuum(*_a, **_k):
+            calls.append(1)
+
+        monkeypatch.setattr(client.store, "vacuum", fake_vacuum)
+
+        client._session.schedule_vacuum()  # schedules the first background pass
+        client._session.schedule_vacuum()  # debounced (no task)
+
+        await client._session.drain_vacuum()
+        # one scheduled background pass + one final collapse on drain
+        assert len(calls) == 2
+        assert client._session._vacuum_dirty is False
+
+
+async def test_metadata_refresh_sweep_schedules_vacuum(temp_db_path):
+    """A source re-sweep that only rolls source_revision (MD5/revision
+    short-circuit) writes document_meta and must still schedule the (debounced)
+    vacuum, so that tiny churn gets reclaimed instead of accumulating."""
+    dim = get_config().embeddings.model.vector_dim
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(
+            _docling_doc("d", "body"),
+            [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+            uri="mem://sweep",
+            metadata={"source_revision": "r1"},
+        )
+        # Isolate the refresh: the import already scheduled a vacuum.
+        client._session._vacuum_dirty = False
+
+        await _refresh_doc_metadata(
+            writing(client),
+            doc,
+            title=None,
+            user_metadata={},
+            source_metadata={"source_revision": "r2", "md5": "same"},
+        )
+        assert client._session._vacuum_dirty is True
+
+
+async def test_metadata_refresh_waits_for_write_lock(temp_db_path, monkeypatch):
+    """The revision/MD5 short-circuit write serializes with other writers so
+    it cannot land inside another writer's critical section (e.g. between
+    create_tag's version snapshot and its per-table tag creation)."""
+    dim = get_config().embeddings.model.vector_dim
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(
+            _docling_doc("d", "body"),
+            [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+            uri="mem://sweep",
+            metadata={"source_revision": "r1"},
+        )
+
+        lock = ObservedLock()
+        monkeypatch.setattr(client.store, "_write_lock", lock)
+        async with lock:
+            task = asyncio.create_task(
+                _refresh_doc_metadata(
+                    writing(client),
+                    doc,
+                    title=None,
+                    user_metadata={},
+                    source_metadata={"source_revision": "r2", "md5": "same"},
+                )
+            )
+            await assert_waiting_for_lock(task, lock)
+        refreshed = await task
+        assert refreshed.metadata["source_revision"] == "r2"

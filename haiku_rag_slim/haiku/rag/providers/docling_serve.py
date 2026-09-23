@@ -1,9 +1,9 @@
 """Shared client for docling-serve async API."""
 
-import asyncio
 import itertools
 import logging
 import time
+from asyncio import sleep
 from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
 
@@ -183,7 +183,7 @@ class DoclingServeClient:
                     self._max_attempts,
                     exc,
                 )
-                await asyncio.sleep(self._retry_delay(attempt_no))
+                await sleep(self._retry_delay(attempt_no))
             else:
                 breaker.record_success()
                 return result
@@ -239,7 +239,7 @@ class DoclingServeClient:
             elif status in ("failure", "error"):
                 raise ValueError(f"docling-serve task failed for {name}: {poll_result}")
 
-            await asyncio.sleep(1)
+            await sleep(1)
 
     async def submit_and_poll(
         self,

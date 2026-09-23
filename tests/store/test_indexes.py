@@ -1,5 +1,4 @@
 import pyarrow as pa
-import pytest
 from lancedb.index import FTS, BTree
 
 from haiku.rag.store.engine import Store
@@ -60,7 +59,6 @@ async def _covering(table, column: str) -> list[tuple[str, str]]:
     ]
 
 
-@pytest.mark.asyncio
 async def test_fresh_database_indexes_every_hot_lookup_key(temp_db_path):
     """A new database carries the full index set."""
     async with Store(temp_db_path, create=True) as store:
@@ -69,7 +67,6 @@ async def test_fresh_database_indexes_every_hot_lookup_key(temp_db_path):
             assert await _indexed_columns(table) == expected, name
 
 
-@pytest.mark.asyncio
 async def test_ensure_indexes_skips_existing_instead_of_rebuilding(temp_db_path):
     """A second pass must not rebuild: replace=True writes a new version."""
     async with Store(temp_db_path, create=True) as store:
@@ -82,7 +79,6 @@ async def test_ensure_indexes_skips_existing_instead_of_rebuilding(temp_db_path)
         assert await _indexed_columns(table) == EXPECTED_INDEXED_COLUMNS["chunks"]
 
 
-@pytest.mark.asyncio
 async def test_ensure_indexes_corrects_an_index_of_the_wrong_type(temp_db_path):
     """A wrong-typed index does not satisfy the declared one."""
     async with Store(temp_db_path, create=True) as store:
@@ -100,7 +96,6 @@ async def test_ensure_indexes_corrects_an_index_of_the_wrong_type(temp_db_path):
         )
 
 
-@pytest.mark.asyncio
 async def test_ensure_indexes_adds_the_declared_type_beside_a_custom_index(
     temp_db_path,
 ):
@@ -117,7 +112,6 @@ async def test_ensure_indexes_adds_the_declared_type_beside_a_custom_index(
         assert "Bitmap" in covering.values()
 
 
-@pytest.mark.asyncio
 async def test_ensure_indexes_keeps_an_operator_index_on_a_declared_column(
     temp_db_path,
 ):
@@ -132,7 +126,6 @@ async def test_ensure_indexes_keeps_an_operator_index_on_a_declared_column(
         assert covering == {"label_idx": "Bitmap", "operator_label": "BTree"}
 
 
-@pytest.mark.asyncio
 async def test_delete_all_restores_the_full_index_set(temp_db_path):
     """Recreated tables come back with the full index set."""
     async with Store(temp_db_path, create=True) as store:
@@ -146,7 +139,6 @@ async def test_delete_all_restores_the_full_index_set(temp_db_path):
             assert await _indexed_columns(table) == expected, name
 
 
-@pytest.mark.asyncio
 async def test_delete_all_keeps_picture_data_as_large_binary(temp_db_path):
     """picture_data must survive delete_all as large_binary, not binary."""
     async with Store(temp_db_path, create=True) as store:
@@ -159,7 +151,6 @@ async def test_delete_all_keeps_picture_data_as_large_binary(temp_db_path):
         assert schema.field("picture_data").type == pa.large_binary()
 
 
-@pytest.mark.asyncio
 async def test_empty_chunks_table_carries_no_fts_index(temp_db_path):
     """An FTS index over no rows indexes nothing and lance never catches it up,
     so it waits for rows rather than being built with the table."""
@@ -167,7 +158,6 @@ async def test_empty_chunks_table_carries_no_fts_index(temp_db_path):
         assert await _fts_indexed_rows(store.chunks_table) is None
 
 
-@pytest.mark.asyncio
 async def test_ensure_indexes_skips_fts_while_the_table_is_empty(temp_db_path):
     async with Store(temp_db_path, create=True) as store:
         await ensure_indexes(store.chunks_table, "chunks")
@@ -179,7 +169,6 @@ async def test_ensure_indexes_skips_fts_while_the_table_is_empty(temp_db_path):
         )
 
 
-@pytest.mark.asyncio
 async def test_ensure_indexes_builds_fts_over_existing_rows(temp_db_path):
     async with Store(temp_db_path, create=True) as store:
         await store.chunks_table.add(
@@ -203,7 +192,6 @@ async def test_ensure_indexes_builds_fts_over_existing_rows(temp_db_path):
         )
 
 
-@pytest.mark.asyncio
 async def test_creating_chunks_builds_a_covering_fts_index(temp_db_path):
     async with Store(temp_db_path, create=True) as store:
         await _add_chunk(store)
@@ -211,7 +199,6 @@ async def test_creating_chunks_builds_a_covering_fts_index(temp_db_path):
         assert await _fts_indexed_rows(store.chunks_table) == 1
 
 
-@pytest.mark.asyncio
 async def test_replacing_chunks_builds_a_covering_fts_index(temp_db_path):
     """replace_for_document inserts where nothing matches, so it can be the
     first write into a fresh table."""
@@ -231,7 +218,6 @@ async def test_replacing_chunks_builds_a_covering_fts_index(temp_db_path):
         assert await _fts_indexed_rows(store.chunks_table) == 1
 
 
-@pytest.mark.asyncio
 async def test_a_second_write_leaves_the_covering_index_in_place(temp_db_path):
     """One indexed row is enough: later rows merge as a scanned tail, so the
     index is not rebuilt per write."""
@@ -245,7 +231,6 @@ async def test_a_second_write_leaves_the_covering_index_in_place(temp_db_path):
         assert await store.chunks_table.version() == version_after_first + 1
 
 
-@pytest.mark.asyncio
 async def test_delete_all_then_write_rebuilds_a_covering_fts_index(temp_db_path):
     """delete_all recreates the table empty, so the next write owns the index."""
     async with Store(temp_db_path, create=True) as store:
@@ -258,7 +243,6 @@ async def test_delete_all_then_write_rebuilds_a_covering_fts_index(temp_db_path)
         assert await _fts_indexed_rows(store.chunks_table) == 1
 
 
-@pytest.mark.asyncio
 async def test_deleting_the_indexed_rows_rebuilds_the_fts_index(temp_db_path):
     """Deleting every row the index covers, while unindexed rows remain,
     reaches the zero-coverage scan path; the delete repairs it."""
@@ -273,7 +257,6 @@ async def test_deleting_the_indexed_rows_rebuilds_the_fts_index(temp_db_path):
         assert await _fts_indexed_rows(store.chunks_table) == 1
 
 
-@pytest.mark.asyncio
 async def test_replacing_the_indexed_rows_rebuilds_the_fts_index(temp_db_path):
     """Replacement rewrites rows, and rewritten rows are unindexed."""
     async with Store(temp_db_path, create=True) as store:
@@ -295,7 +278,6 @@ async def test_replacing_the_indexed_rows_rebuilds_the_fts_index(temp_db_path):
         assert await _fts_indexed_rows(store.chunks_table) == 2
 
 
-@pytest.mark.asyncio
 async def test_a_write_repairs_a_legacy_index_that_covers_no_rows(temp_db_path):
     """A database whose FTS index predates its rows is repaired by the first
     write that runs index maintenance."""
@@ -322,7 +304,6 @@ async def test_a_write_repairs_a_legacy_index_that_covers_no_rows(temp_db_path):
         assert await _fts_indexed_rows(store.chunks_table) == 2
 
 
-@pytest.mark.asyncio
 async def test_unavailable_index_stats_repair_matches_doctor(temp_db_path, monkeypatch):
     """index_stats may return None; doctor treats that as uncovered, so the
     write-path repair does too."""

@@ -65,7 +65,6 @@ async def run_with_policy(temp_db_path, responses, *, policy=True, config=None):
     return result, deps, sent
 
 
-@pytest.mark.asyncio
 async def test_an_answer_without_a_citation_is_sent_back_once(temp_db_path):
     """The last response of a question is the last moment to notice."""
     result, deps, sent = await run_with_policy(
@@ -84,7 +83,6 @@ async def test_an_answer_without_a_citation_is_sent_back_once(temp_db_path):
     assert result.output == "an answer with no citation"
 
 
-@pytest.mark.asyncio
 async def test_a_grounded_answer_is_left_alone(temp_db_path):
     _, _, sent = await run_with_policy(
         temp_db_path,
@@ -98,7 +96,6 @@ async def test_a_grounded_answer_is_left_alone(temp_db_path):
     assert not [p for p in prompts_of(sent[-1]) if REDIRECT_HINT in p]
 
 
-@pytest.mark.asyncio
 async def test_an_explicitly_ungrounded_answer_is_left_alone(temp_db_path):
     """Citing nothing is a declaration, not an omission."""
     _, deps, sent = await run_with_policy(
@@ -114,7 +111,6 @@ async def test_an_explicitly_ungrounded_answer_is_left_alone(temp_db_path):
     assert deps.state["citation_policy"]["violations"] == []
 
 
-@pytest.mark.asyncio
 async def test_a_question_that_gathered_no_evidence_is_left_alone(temp_db_path):
     """Nothing was retrieved, so there is no grounding to declare."""
     _, _, sent = await run_with_policy(temp_db_path, [[TextPart("hello back")]])
@@ -122,7 +118,6 @@ async def test_a_question_that_gathered_no_evidence_is_left_alone(temp_db_path):
     assert not [p for p in prompts_of(sent[-1]) if REDIRECT_HINT in p]
 
 
-@pytest.mark.asyncio
 async def test_a_violation_is_recorded_when_the_cite_tool_is_gone(temp_db_path):
     """Asking for a withdrawn tool costs the agent's unknown-tool retries."""
     with patch(
@@ -141,7 +136,6 @@ async def test_a_violation_is_recorded_when_the_cite_tool_is_gone(temp_db_path):
     assert deps.state["citation_policy"]["violations"] == [0]
 
 
-@pytest.mark.asyncio
 async def test_without_the_policy_capability_nothing_is_enforced(temp_db_path):
     """Omission is the switch, so there is no flag to test."""
     _, deps, sent = await run_with_policy(
@@ -179,7 +173,6 @@ def test_the_policy_state_round_trips():
     assert restored.violations == [4, 12]
 
 
-@pytest.mark.asyncio
 async def test_a_second_question_can_be_redirected_again(temp_db_path):
     """The redirect fires once per question, not once per conversation."""
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
@@ -217,7 +210,6 @@ class StatelessDeps:
     """A host that keeps no capability state, which is allowed."""
 
 
-@pytest.mark.asyncio
 async def test_a_violation_with_nowhere_to_record_it_does_not_fail_the_run(
     temp_db_path,
 ):
@@ -250,7 +242,6 @@ async def test_a_violation_with_nowhere_to_record_it_does_not_fail_the_run(
     assert result.output == "an answer with no citation"
 
 
-@pytest.mark.asyncio
 async def test_a_follow_up_answered_from_retained_evidence_is_enforced(temp_db_path):
     """The multi-turn case is the one enforcement exists for.
 
@@ -290,7 +281,6 @@ async def test_a_follow_up_answered_from_retained_evidence_is_enforced(temp_db_p
     assert [p for p in prompts_of(sent[-1]) if REDIRECT_HINT in p]
 
 
-@pytest.mark.asyncio
 async def test_a_conversation_that_never_cited_anything_is_still_left_alone(
     temp_db_path,
 ):
@@ -300,7 +290,6 @@ async def test_a_conversation_that_never_cited_anything_is_still_left_alone(
     assert not [p for p in prompts_of(sent[-1]) if REDIRECT_HINT in p]
 
 
-@pytest.mark.asyncio
 async def test_a_resumed_question_is_not_redirected_twice(temp_db_path):
     """Once per question has to mean once, across every run of that question.
 
@@ -349,7 +338,6 @@ async def test_a_resumed_question_is_not_redirected_twice(temp_db_path):
     assert len(redirects) == 1
 
 
-@pytest.mark.asyncio
 async def test_a_user_quoting_the_redirect_does_not_suppress_enforcement(temp_db_path):
     """Prose is not proof that we asked: a user can write any phrase.
 
@@ -389,7 +377,6 @@ class Answer(BaseModel):
     text: str
 
 
-@pytest.mark.asyncio
 async def test_a_structured_output_answer_does_not_escape_enforcement(temp_db_path):
     """An output tool call is a `ToolCallPart` too, and it ends the run.
 
@@ -434,7 +421,6 @@ async def test_a_structured_output_answer_does_not_escape_enforcement(temp_db_pa
     assert [p for p in prompts_of(sent[-1]) if CITATION_REDIRECT_TAG in p]
 
 
-@pytest.mark.asyncio
 async def test_a_question_asked_once_and_still_undeclared_is_recorded(temp_db_path):
     """Being asked is not an outcome; the question still ended undeclared.
 

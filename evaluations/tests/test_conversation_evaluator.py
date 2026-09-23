@@ -31,7 +31,6 @@ def _grading(pass_: bool) -> MagicMock:
 
 
 class TestConversationEvaluator:
-    @pytest.mark.asyncio
     async def test_per_turn_scores_and_aggregates(self) -> None:
         evaluator = ConversationEvaluator(rubric="equivalence rubric", model="test")
         ctx = _ctx(
@@ -90,7 +89,6 @@ class TestConversationEvaluator:
         assert judge_refusal.await_count == 2
         assert judge_answer.await_count == 3
 
-    @pytest.mark.asyncio
     async def test_judge_sees_live_transcript(self) -> None:
         """Turn 2 is judged against the conversation so far with OUR answer to
         turn 1, not the reference."""
@@ -124,7 +122,6 @@ class TestConversationEvaluator:
         assert answer == "my a2"
         assert reference == "r2"
 
-    @pytest.mark.asyncio
     async def test_no_citation_scores_without_eligible_turns(self) -> None:
         evaluator = ConversationEvaluator(rubric="rubric", model="test")
         ctx = _ctx(
@@ -160,7 +157,6 @@ class TestConversationEvaluator:
             "turn_1_refused": True,
         }
 
-    @pytest.mark.asyncio
     async def test_mismatched_arrays_raise(self) -> None:
         evaluator = ConversationEvaluator(rubric="rubric", model="test")
         ctx = _ctx(
@@ -172,7 +168,6 @@ class TestConversationEvaluator:
         with pytest.raises(ValueError, match="conversation arrays disagree"):
             await evaluator.evaluate(ctx)
 
-    @pytest.mark.asyncio
     async def test_judge_error_voids_one_turn_not_the_conversation(self) -> None:
         evaluator = ConversationEvaluator(rubric="rubric", model="test")
         ctx = _ctx(
@@ -220,7 +215,6 @@ class TestConversationEvaluator:
             "turn_3_refused": False,
         }
 
-    @pytest.mark.asyncio
     async def test_refusal_judge_error_skips_refusal_verdict_only(self) -> None:
         evaluator = ConversationEvaluator(rubric="rubric", model="test")
         ctx = _ctx(

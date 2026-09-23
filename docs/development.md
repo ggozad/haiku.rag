@@ -19,15 +19,33 @@ uv run pre-commit install
 uv run pytest
 ```
 
+This runs the complete core suite, including deterministic end-to-end tests and
+tests marked `integration`. Integration tests skip when their services are not
+available. Start them before running the suite:
+
+```bash
+docker compose -f tests/docker/docker-compose.yml up -d
+```
+
+The evaluations suite is separate and enforces its own 85% coverage floor:
+
+```bash
+cd evaluations
+uv run pytest --cov
+```
+
 ### Test Markers
 
 Tests use pytest markers to categorize them:
 
 - `@pytest.mark.integration` - Tests requiring local services (Docling models, etc.) that aren't available in CI
-- `@pytest.mark.asyncio` - Async tests (applied automatically via pytest-asyncio)
+- `@pytest.mark.slow` - Deterministic end-to-end tests run in a separate CI job
 - `@pytest.mark.vcr()` - Tests with HTTP call recording
 
-CI runs `pytest -m "not integration"` to skip integration tests.
+Async tests are detected automatically through pytest-asyncio's auto mode.
+
+CI runs the fast, slow and evaluations suites as separate jobs. Live integration
+tests are exercised locally against the services in `tests/docker/`.
 
 ## HTTP Recording with VCR
 
@@ -39,13 +57,16 @@ Tests use [pytest-recording](https://github.com/kiwicom/pytest-recording) (VCR.p
 2. On subsequent runs, HTTP calls are replayed from cassettes instead of hitting real services
 3. Cassettes are committed to the repository so CI can run tests without external dependencies
 
+Docling-serve polling and retry delays are skipped during cassette playback.
+Recording and `--disable-recording` runs retain the real delays.
+
 ### Recording New Cassettes
 
 When adding a new test that makes HTTP calls:
 
 1. Add the `@pytest.mark.vcr()` decorator to your test
-2. Run the test with the required services available (e.g., Ollama running)
-3. The cassette is automatically created on first run
+2. Run the test with the required services available and `--record-mode=once`
+3. Commit the generated cassette
 
 ### Re-recording Cassettes
 
@@ -76,7 +97,6 @@ import pytest
 from haiku.rag.client import HaikuRAG
 
 
-@pytest.mark.asyncio
 @pytest.mark.vcr()
 async def test_my_feature(temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -90,13 +110,13 @@ For tests requiring local services that can't be mocked via VCR:
 
 ```python
 @pytest.mark.integration
-@pytest.mark.asyncio
 async def test_pdf_visualization(temp_db_path):
     # Test code that needs local PDF processing
     pass
 ```
 
-Integration tests are skipped in CI but run locally when you have the required services.
+Integration tests are skipped in CI. Start the required services and they run as
+part of the core suite; they skip when a service is unreachable.
 
 ## Linting and Formatting
 
@@ -117,8 +137,8 @@ including ones whose service you do not have running.
 
 ```bash
 # Ollama-backed cassettes need no key, only a running Ollama
-uv run pytest tests/test_embedder.py::test_ollama_embedder -n0 --record-mode=rewrite
+uv run pytest tests/embeddings/test_embedder.py::test_ollama_embedder -n0 --record-mode=rewrite
 
 # A keyed provider reads its own variable. Cohere's SDK reads CO_API_KEY
-CO_API_KEY=... uv run pytest tests/test_reranker.py::test_cohere_reranker -n0 --record-mode=rewrite
+CO_API_KEY=... uv run pytest tests/reranking/test_reranker.py::test_cohere_reranker -n0 --record-mode=rewrite
 ```

@@ -10,7 +10,6 @@ import base64
 import json
 
 import pyarrow as pa
-import pytest
 
 from haiku.rag.store.compression import compress_json, decompress_json
 from haiku.rag.store.engine import Store
@@ -47,7 +46,6 @@ def _docling_blob_with_picture(self_ref: str = "#/pictures/0") -> bytes:
     return compress_json(json.dumps(doc))
 
 
-@pytest.mark.asyncio
 async def test_migration_backfills_picture_bytes_and_strips_blob(temp_db_path):
     """Happy path: doc has a picture with bytes inline in the blob plus a
     matching items row (with picture_data NULL). The migration writes the
@@ -102,7 +100,6 @@ async def test_migration_backfills_picture_bytes_and_strips_blob(temp_db_path):
         assert blob["pictures"][0]["image"] is None
 
 
-@pytest.mark.asyncio
 async def test_migration_runs_against_pre_v0_48_0_schema(temp_db_path):
     """Regression: v0.45.0 must not depend on columns introduced later.
 
@@ -180,7 +177,6 @@ async def test_migration_runs_against_pre_v0_48_0_schema(temp_db_path):
         assert blob["pictures"][0]["image"] is None
 
 
-@pytest.mark.asyncio
 async def test_migration_is_idempotent(temp_db_path):
     """Running the migration twice on the same DB is a no-op the second
     time — the blob is already stripped."""

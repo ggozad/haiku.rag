@@ -1,7 +1,5 @@
 import json
 
-import pytest
-
 from haiku.rag.store.engine import Store
 from haiku.rag.store.upgrades.v0_50_0 import _apply_canonical_metadata_keys
 from tests.store.legacy_documents import (
@@ -10,7 +8,6 @@ from tests.store.legacy_documents import (
 )
 
 
-@pytest.mark.asyncio
 class TestV0_50_0Migration:
     """v0.50.0 normalises document.metadata to source-agnostic keys.
 

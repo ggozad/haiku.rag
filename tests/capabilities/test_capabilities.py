@@ -118,7 +118,6 @@ class TestACapabilityFollowsTheConfiguredLocation:
         [ref] = create_rag(config=remote).scope.databases
         assert ref == DatabaseRef("notes", "s3://bucket/one.lancedb")
 
-    @pytest.mark.asyncio
     async def test_it_opens_the_database_the_configuration_places(self, tmp_path):
         from haiku.rag.client import HaikuRAG
 
@@ -144,7 +143,6 @@ class TestACapabilityFollowsTheConfiguredLocation:
             create_rag(db_path=chosen, config=config)
 
 
-@pytest.mark.asyncio
 async def test_a_string_db_path_opens_a_store(temp_db_path):
     """Store calls `absolute()` and `exists()` on db_path, which a str lacks."""
     from haiku.rag.client import HaikuRAG
@@ -186,7 +184,6 @@ def _single_database_client() -> AsyncMock:
     return client
 
 
-@pytest.mark.asyncio
 async def test_capability_instructions_are_injected_once(temp_db_path):
     domain = "The corpus contains solar manuals."
     seen_instructions = []
@@ -213,7 +210,6 @@ async def test_capability_instructions_are_injected_once(temp_db_path):
     assert seen_instructions[0].count("# RAG") == 1
 
 
-@pytest.mark.asyncio
 async def test_request_limit_removes_the_capability_tools_but_not_the_hosts(
     temp_db_path,
 ):
@@ -261,7 +257,6 @@ async def test_request_limit_removes_the_capability_tools_but_not_the_hosts(
         )
 
 
-@pytest.mark.asyncio
 async def test_deferred_request_limit_starts_after_capability_load(temp_db_path):
     seen_tools = []
     seen_instructions = []
@@ -310,7 +305,6 @@ async def test_deferred_request_limit_starts_after_capability_load(temp_db_path)
     assert "rag capability has reached its request limit" in seen_instructions[2]
 
 
-@pytest.mark.asyncio
 async def test_capability_isolated_per_run_and_round_trips_state(temp_db_path):
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
     deps = Deps(
@@ -333,7 +327,6 @@ async def test_capability_isolated_per_run_and_round_trips_state(temp_db_path):
     assert deps.state["rag"]["document_filter"] == "uri = 'manual.pdf'"
 
 
-@pytest.mark.asyncio
 async def test_run_error_closes_resources_and_propagates(temp_db_path):
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
     client = _single_database_client()
@@ -347,7 +340,6 @@ async def test_run_error_closes_resources_and_propagates(temp_db_path):
     assert capability.rag is None
 
 
-@pytest.mark.asyncio
 async def test_a_spent_search_budget_fails_the_tool(temp_db_path):
     config = AppConfig()
     config.qa.max_searches = 0
@@ -402,7 +394,6 @@ async def _labels_of_search(temp_db_path, *sources: str) -> list[str]:
     return [item for item in returned.content if isinstance(item, str)]
 
 
-@pytest.mark.asyncio
 async def test_a_search_spanning_collections_names_them_on_its_images(temp_db_path):
     """Images travel beside the results and are labelled the same way."""
     labels = await _labels_of_search(temp_db_path, "alpha", "beta")
@@ -410,7 +401,6 @@ async def test_a_search_spanning_collections_names_them_on_its_images(temp_db_pa
     assert "Collection: alpha." in labels[0]
 
 
-@pytest.mark.asyncio
 async def test_a_search_over_one_collection_does_not_name_it_on_its_images(
     temp_db_path,
 ):
@@ -419,7 +409,6 @@ async def test_a_search_over_one_collection_does_not_name_it_on_its_images(
     assert not [label for label in labels if "Collection" in label]
 
 
-@pytest.mark.asyncio
 async def test_a_fruitless_search_says_so(temp_db_path):
     """A blank tool return reads as a broken tool, not as an empty corpus."""
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
@@ -431,7 +420,6 @@ async def test_a_fruitless_search_says_so(temp_db_path):
     )
 
 
-@pytest.mark.asyncio
 async def test_a_narrower_repeat_keeps_what_the_wider_search_returned(temp_db_path):
     """One query, two limits: the model can still cite the results it was shown."""
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
@@ -456,7 +444,6 @@ async def test_a_narrower_repeat_keeps_what_the_wider_search_returned(temp_db_pa
     ]
 
 
-@pytest.mark.asyncio
 async def test_two_databases_holding_one_chunk_id_both_survive(temp_db_path):
     """A database copied from another holds the same chunk ids, so what tells
     two results apart is the database and the id together."""
@@ -480,7 +467,6 @@ async def test_two_databases_holding_one_chunk_id_both_survive(temp_db_path):
     ]
 
 
-@pytest.mark.asyncio
 async def test_cite_resolves_direct_chunk_ids_and_reuses_document_lookup(temp_db_path):
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
     capability.state = RAGState(evidence=CapabilityEvidenceRecord(question=0))
@@ -506,7 +492,6 @@ async def test_cite_resolves_direct_chunk_ids_and_reuses_document_lookup(temp_db
     client.get_document_by_id.assert_awaited_once_with("doc-1")
 
 
-@pytest.mark.asyncio
 async def test_cite_reports_unresolved_ids_on_partial_success(temp_db_path):
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
     capability.state = RAGState(evidence=CapabilityEvidenceRecord(question=0))
@@ -534,7 +519,6 @@ async def test_cite_reports_unresolved_ids_on_partial_success(temp_db_path):
     assert capability.state.citations == ["chunk-1"]
 
 
-@pytest.mark.asyncio
 async def test_cite_repairs_chunk_ids_damaged_in_transcription(temp_db_path):
     """Models mistype opaque UUIDs; near misses resolve to the retrieved id."""
     true_id = "b8e25ea1-0bb3-48b1-8fea-2ac1f148bf7c"
@@ -573,7 +557,6 @@ async def test_cite_repairs_chunk_ids_damaged_in_transcription(temp_db_path):
     client.get_chunk_by_id.assert_awaited_once_with(unrelated)
 
 
-@pytest.mark.asyncio
 async def test_records_new_sandbox_search_results(temp_db_path):
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
     existing = SearchResult(content="existing", score=1, chunk_id="chunk-1")
@@ -593,7 +576,6 @@ async def test_records_new_sandbox_search_results(temp_db_path):
     ]
 
 
-@pytest.mark.asyncio
 async def test_an_execution_records_how_many_times_it_searched(temp_db_path):
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
     capability.state = RAGState()
@@ -610,7 +592,6 @@ async def test_an_execution_records_how_many_times_it_searched(temp_db_path):
 
 
 class TestInCodeSearchAccounting:
-    @pytest.mark.asyncio
     async def test_an_execution_reports_its_in_code_search_calls(self, sandbox_factory):
         sandbox = sandbox_factory()
         try:
@@ -625,7 +606,6 @@ class TestInCodeSearchAccounting:
         assert counted.search_calls == 2
         assert quiet.search_calls == 0
 
-    @pytest.mark.asyncio
     async def test_each_in_code_search_opens_a_span(self, sandbox_factory, monkeypatch):
         from contextlib import nullcontext
 
@@ -647,7 +627,6 @@ class TestInCodeSearchAccounting:
         assert result.success, result.stderr
         assert spans == [{"span_name": "sandbox.search", "query": "cats", "limit": 3}]
 
-    @pytest.mark.asyncio
     async def test_a_search_past_the_deadline_is_still_counted_and_traced(
         self, sandbox_factory, monkeypatch
     ):
@@ -678,7 +657,6 @@ class TestInCodeSearchAccounting:
         assert spans == ["sandbox.search"]
 
 
-@pytest.mark.asyncio
 async def test_failed_tool_reaches_the_model_and_the_run_continues(temp_db_path):
     """A `ToolFailed` tool leaves a failed result in history and answers anyway."""
     config = AppConfig()
@@ -711,7 +689,6 @@ async def test_failed_tool_reaches_the_model_and_the_run_continues(temp_db_path)
     assert "Search limit reached" in str(failed[0].content)
 
 
-@pytest.mark.asyncio
 async def test_execute_code_tool_runs_the_program_and_records_it(rag_db):
     calls = 0
 
@@ -746,7 +723,6 @@ async def test_execute_code_tool_runs_the_program_and_records_it(rag_db):
     assert execution["success"] is True
 
 
-@pytest.mark.asyncio
 async def test_execution_limit_fails_the_tool(temp_db_path):
     config = AppConfig()
     config.qa.max_executions = 0
@@ -757,7 +733,6 @@ async def test_execution_limit_fails_the_tool(temp_db_path):
         await capability._execute_code("print('done')")
 
 
-@pytest.mark.asyncio
 async def test_a_spent_execution_budget_is_not_evidence(temp_db_path):
     """Nothing was produced to ground an answer on, so nothing is recorded."""
     config = AppConfig()
@@ -781,7 +756,6 @@ async def test_a_spent_execution_budget_is_not_evidence(temp_db_path):
         pytest.param(False, "", 0, id="failed without printing"),
     ],
 )
-@pytest.mark.asyncio
 async def test_only_a_code_execution_the_model_can_read_is_evidence(
     temp_db_path, success, stdout, expected_epoch
 ):
@@ -809,7 +783,6 @@ async def test_only_a_code_execution_the_model_can_read_is_evidence(
     assert capability.state.evidence.latest_evidence_epoch == expected_epoch
 
 
-@pytest.mark.asyncio
 async def test_spent_search_budget_is_announced_but_keeps_the_tool(rag_db):
     """A spent budget is announced; the tool stays declared to avoid a dead run.
 
@@ -880,7 +853,6 @@ def test_grace_window_ignores_other_tools_turns():
     )
 
 
-@pytest.mark.asyncio
 async def test_spent_search_notice_points_at_code_while_it_has_budget(temp_db_path):
     """The model must be sent to the sandbox, not told to answer, while it can.
 
@@ -906,7 +878,6 @@ async def test_spent_search_notice_points_at_code_while_it_has_budget(temp_db_pa
     assert capability.evidence_tool_names() <= capability._spent_tool_names()
 
 
-@pytest.mark.asyncio
 async def test_spent_execution_budget_joins_the_notice(temp_db_path):
     config = AppConfig()
     config.qa.max_executions = 3
@@ -922,7 +893,6 @@ async def test_spent_execution_budget_joins_the_notice(temp_db_path):
     assert "execute_code" in notice
 
 
-@pytest.mark.asyncio
 async def test_exhausted_run_can_still_register_citations(rag_db):
     """The cite tool outlives the request limit so evidence is not lost.
 
@@ -977,7 +947,6 @@ async def test_exhausted_run_can_still_register_citations(rag_db):
     assert deps.state["rag"]["citations"] == [chunk_id]
 
 
-@pytest.mark.asyncio
 async def test_cite_tool_is_withdrawn_after_the_grace_window(temp_db_path):
     capability = create_rag(
         db_path=temp_db_path,
@@ -1008,7 +977,6 @@ async def test_cite_tool_is_withdrawn_after_the_grace_window(temp_db_path):
     assert "no longer available" in notice
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("stderr", "expect_hint"),
     [
@@ -1037,7 +1005,6 @@ async def test_sandbox_iteration_failure_carries_the_workaround(
     assert (".readlines()" in str(failure.value)) is expect_hint
 
 
-@pytest.mark.asyncio
 async def test_sandbox_failure_records_execution_and_fails_the_tool(
     temp_db_path,
 ):
@@ -1060,7 +1027,6 @@ async def test_sandbox_failure_records_execution_and_fails_the_tool(
     assert capability.outer_state["rag"]["executions"][-1]["code"] == "boom"
 
 
-@pytest.mark.asyncio
 async def test_native_agent_composition_initializes_host_state(temp_db_path):
     capability = create_rag(
         db_path=temp_db_path,
@@ -1081,7 +1047,6 @@ async def test_native_agent_composition_initializes_host_state(temp_db_path):
     ).model_dump(mode="json")
 
 
-@pytest.mark.asyncio
 async def test_deferred_capability_loads_native_tools(temp_db_path):
     seen_instructions = []
     loaded_payloads = []
@@ -1161,7 +1126,6 @@ async def _stub_search(self, query: str, _limit: int | None, _run_step: int) -> 
     return "EVIDENCE"
 
 
-@pytest.mark.asyncio
 async def test_a_question_takes_its_own_identity(temp_db_path):
     """Identity is derived from the conversation, so no counter is shared."""
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
@@ -1181,7 +1145,6 @@ async def test_a_question_takes_its_own_identity(temp_db_path):
     assert second_identity is not None and second_identity > 0
 
 
-@pytest.mark.asyncio
 async def test_a_resumption_keeps_the_identity_of_the_question_in_progress(
     temp_db_path,
 ):
@@ -1213,7 +1176,6 @@ async def test_a_resumption_keeps_the_identity_of_the_question_in_progress(
     assert _record(deps, "rag").question == 7
 
 
-@pytest.mark.asyncio
 async def test_resuming_without_a_stored_identity_fails_instead_of_guessing(
     temp_db_path,
 ):
@@ -1244,7 +1206,6 @@ async def test_resuming_without_a_stored_identity_fails_instead_of_guessing(
         )
 
 
-@pytest.mark.asyncio
 async def test_citing_after_searching_grounds_the_question(temp_db_path):
     """The whole rule, end to end, with no compactor and no policy capability."""
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
@@ -1274,7 +1235,6 @@ async def test_citing_after_searching_grounds_the_question(temp_db_path):
     assert citation_status([record], question=question) == "grounded"
 
 
-@pytest.mark.asyncio
 async def test_searching_after_citing_leaves_the_question_uncited(temp_db_path):
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
     calls = iter(
@@ -1302,7 +1262,6 @@ async def test_searching_after_citing_leaves_the_question_uncited(temp_db_path):
     assert citation_status([record], question=question) == "missing"
 
 
-@pytest.mark.asyncio
 async def test_a_citation_in_the_same_request_as_its_search_is_not_current(
     temp_db_path,
 ):
@@ -1335,7 +1294,6 @@ async def test_a_citation_in_the_same_request_as_its_search_is_not_current(
     assert citation_status([record], question=question) == "missing"
 
 
-@pytest.mark.asyncio
 async def test_evidence_cited_in_two_questions_keeps_both_in_the_record(temp_db_path):
     """Occurrences outlive the question that wrote them, through the state dict."""
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
@@ -1371,7 +1329,6 @@ async def test_evidence_cited_in_two_questions_keeps_both_in_the_record(temp_db_
     assert record.question != first_question
 
 
-@pytest.mark.asyncio
 async def test_a_run_with_no_prompt_and_no_history_starts_a_question(temp_db_path):
     """An instructions-only run is a first question, not a resumption.
 
@@ -1391,7 +1348,6 @@ async def test_a_run_with_no_prompt_and_no_history_starts_a_question(temp_db_pat
     assert _record(deps, "rag").question == 0
 
 
-@pytest.mark.asyncio
 async def test_citing_without_searching_grounds_the_question(temp_db_path):
     """A direct chunk-id citation stands on its own, with no evidence outcome.
 
@@ -1430,7 +1386,6 @@ async def test_citing_without_searching_grounds_the_question(temp_db_path):
     assert citation_status([record], question=question) == "grounded"
 
 
-@pytest.mark.asyncio
 async def test_a_host_seeded_record_does_not_pass_for_a_resumption(temp_db_path):
     """A seeded record says nothing about a question, so the history has to.
 
@@ -1457,7 +1412,6 @@ async def test_a_host_seeded_record_does_not_pass_for_a_resumption(temp_db_path)
         )
 
 
-@pytest.mark.asyncio
 async def test_a_resumption_keeps_the_evidence_the_question_already_gathered(
     temp_db_path,
 ):
@@ -1506,7 +1460,6 @@ async def test_a_resumption_keeps_the_evidence_the_question_already_gathered(
     assert citation_status([record], question=identity) == "grounded"
 
 
-@pytest.mark.asyncio
 async def test_a_capability_fetches_its_own_evidences_pictures(temp_db_path):
     """Compaction rehydrates through the owner, which already holds the connection."""
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
@@ -1520,7 +1473,6 @@ async def test_a_capability_fetches_its_own_evidences_pictures(temp_db_path):
     client.get_picture_bytes.assert_awaited_once_with("doc-1", "#/pictures/0", "beta")
 
 
-@pytest.mark.asyncio
 async def test_citing_nothing_is_a_valid_declaration(temp_db_path):
     """A model with nothing to cite must be able to say so.
 
@@ -1541,7 +1493,6 @@ async def test_citing_nothing_is_a_valid_declaration(temp_db_path):
     assert capability.state.citations == []
 
 
-@pytest.mark.asyncio
 async def test_citing_nothing_after_citing_something_keeps_it_grounded(temp_db_path):
     """Declaring again cannot narrow what a question already declared."""
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
@@ -1561,7 +1512,6 @@ async def test_citing_nothing_after_citing_something_keeps_it_grounded(temp_db_p
     assert citation_status([record], question=0) == "grounded"
 
 
-@pytest.mark.asyncio
 async def test_a_promptless_run_on_a_settled_history_is_a_new_question(temp_db_path):
     """AG-UI hosts never pass a prompt: the client's message is the history.
 
@@ -1586,7 +1536,6 @@ async def test_a_promptless_run_on_a_settled_history_is_a_new_question(temp_db_p
     assert _record(deps, "rag").question == len(history)
 
 
-@pytest.mark.asyncio
 async def test_a_promptless_run_on_an_unfinished_tail_is_still_a_continuation(
     temp_db_path,
 ):
@@ -1610,7 +1559,6 @@ async def test_a_promptless_run_on_an_unfinished_tail_is_still_a_continuation(
     assert _record(deps, "rag").question == 3
 
 
-@pytest.mark.asyncio
 async def test_a_structured_answer_does_not_leave_the_question_in_progress(
     temp_db_path,
 ):
@@ -1654,7 +1602,6 @@ async def test_a_structured_answer_does_not_leave_the_question_in_progress(
     assert second_identity is not None and second_identity > 0
 
 
-@pytest.mark.asyncio
 async def test_a_run_pausing_for_deferred_work_leaves_the_question_in_progress(
     temp_db_path,
 ):
@@ -1692,7 +1639,6 @@ async def test_a_run_pausing_for_deferred_work_leaves_the_question_in_progress(
     assert _record(deps, "rag").in_progress is True
 
 
-@pytest.mark.asyncio
 async def test_an_answered_question_is_no_longer_in_progress(temp_db_path):
     """The flag is what tells the next run it is asking something new."""
     rag = create_rag(db_path=temp_db_path, config=AppConfig())

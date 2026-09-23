@@ -1,0 +1,567 @@
+import os
+import time
+from datetime import UTC, datetime
+
+import pytest
+
+from haiku.rag.store.engine import Store
+from haiku.rag.store.models.document import Document
+from haiku.rag.store.models.document_item import DocumentItem
+from haiku.rag.store.repositories import document as document_repository
+from haiku.rag.store.repositories.document import DocumentRepository
+from haiku.rag.store.repositories.document_item import DocumentItemRepository
+
+
+@pytest.mark.parametrize("include_content", [False, True])
+async def test_document_list_all(
+    qa_corpus: list[dict[str, str]], temp_db_path, include_content
+):
+    """list_all excludes content and docling_document unless include_content=True."""
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+
+        content = qa_corpus[0]["document_extracted"]
+        doc = Document(
+            content=content,
+            uri="https://example.com/doc.txt",
+            title="Test Document",
+            metadata={"key": "value"},
+        )
+        created = await doc_repo.create(doc)
+
+        docs = await doc_repo.list_all(include_content=include_content)
+        assert len(docs) == 1
+        assert docs[0].id == created.id
+        assert docs[0].title == "Test Document"
+        assert docs[0].uri == "https://example.com/doc.txt"
+        assert docs[0].metadata == {"key": "value"}
+        assert docs[0].content == (content if include_content else "")
+        assert docs[0].docling_document is None
+
+
+async def test_document_list_all_content_skips_docling_blobs(temp_db_path):
+    """include_content loads content only; the docling blobs (page rasters run
+    to hundreds of MB per document) are never materialized."""
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+
+        for content in ("first", "second"):
+            await doc_repo.create(
+                Document(
+                    content=content,
+                    docling_document=b"structure-blob",
+                    docling_pages=b"page-raster-blob",
+                )
+            )
+
+        docs = await doc_repo.list_all(include_content=True)
+
+        assert {d.content for d in docs} == {"first", "second"}
+        assert all(d.docling_document is None for d in docs)
+        assert all(d.docling_pages is None for d in docs)
+
+
+async def test_document_list_all_content_spans_batches(temp_db_path, monkeypatch):
+    """Every document gets its content when the lookup spans several batches."""
+    monkeypatch.setattr(document_repository, "_CONTENT_BATCH", 2)
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+        contents = {f"document {i}" for i in range(5)}
+        for content in contents:
+            await doc_repo.create(Document(content=content))
+
+        docs = await doc_repo.list_all(include_content=True)
+
+        assert {d.content for d in docs} == contents
+
+
+async def test_document_list_with_filter(qa_corpus: list[dict[str, str]], temp_db_path):
+    """Test listing documents with filter clause."""
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+
+        first_doc = qa_corpus[0]
+        document_text = first_doc["document_extracted"]
+
+        doc1 = Document(
+            content=document_text,
+            uri="https://example.com/doc1.txt",
+            metadata={"source": "test", "category": "A"},
+        )
+        doc2 = Document(
+            content=document_text,
+            uri="https://arxiv.org/paper.pdf",
+            metadata={"source": "test", "category": "B"},
+        )
+        doc3 = Document(
+            content=document_text,
+            uri="https://example.com/doc3.txt",
+            metadata={"source": "test", "category": "A"},
+        )
+
+        created_doc1 = await doc_repo.create(doc1)
+        created_doc2 = await doc_repo.create(doc2)
+        created_doc3 = await doc_repo.create(doc3)
+
+        all_documents = await doc_repo.list_all()
+        assert len(all_documents) == 3
+
+        arxiv_documents = await doc_repo.list_all(filter="uri LIKE '%arxiv%'")
+        assert len(arxiv_documents) == 1
+        assert arxiv_documents[0].id == created_doc2.id
+
+        example_documents = await doc_repo.list_all(filter="uri LIKE '%example.com%'")
+        assert len(example_documents) == 2
+        assert {doc.id for doc in example_documents} == {
+            created_doc1.id,
+            created_doc3.id,
+        }
+
+
+async def test_document_create_batch(qa_corpus: list[dict[str, str]], temp_db_path):
+    """create accepts a list of documents and writes them in a single version."""
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+
+        content = qa_corpus[0]["document_extracted"]
+        doc_a = Document(content=content, uri="https://example.com/a.txt", title="A")
+        doc_b = Document(content=content, uri="https://example.com/b.txt", title="B")
+
+        before = await store.documents_table.version()
+        created = await doc_repo.create([doc_a, doc_b])
+        after = await store.documents_table.version()
+
+        assert isinstance(created, list)
+        assert len(created) == 2
+        assert created[0].id is not None
+        assert created[1].id is not None
+        assert created[0].id != created[1].id
+        assert after - before == 1
+
+        round_a = await doc_repo.get_by_id(created[0].id)
+        round_b = await doc_repo.get_by_id(created[1].id)
+        assert round_a is not None and round_a.title == "A"
+        assert round_b is not None and round_b.title == "B"
+
+
+async def test_document_create_empty_batch(temp_db_path):
+    """create([]) is a no-op returning an empty list with no version bump."""
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+
+        before = await store.documents_table.version()
+        created = await doc_repo.create([])
+        after = await store.documents_table.version()
+
+        assert created == []
+        assert after == before
+
+
+async def test_document_item_create_all(temp_db_path):
+    """create_all writes items spanning multiple documents in a single version."""
+    async with Store(temp_db_path, create=True) as store:
+        item_repo = DocumentItemRepository(store)
+
+        items = [
+            DocumentItem(
+                document_id="doc-1", position=0, self_ref="#/texts/0", text="a"
+            ),
+            DocumentItem(
+                document_id="doc-1", position=1, self_ref="#/texts/1", text="b"
+            ),
+            DocumentItem(
+                document_id="doc-2", position=0, self_ref="#/texts/0", text="c"
+            ),
+        ]
+
+        before = await store.document_items_table.version()
+        await item_repo.create_all(items)
+        after = await store.document_items_table.version()
+
+        assert after - before == 1
+
+        doc1_items = await item_repo.get_all_items("doc-1")
+        doc2_items = await item_repo.get_all_items("doc-2")
+        assert [i.text for i in doc1_items] == ["a", "b"]
+        assert [i.text for i in doc2_items] == ["c"]
+
+
+async def test_document_item_create_all_empty(temp_db_path):
+    """create_all([]) is a no-op with no version bump."""
+    async with Store(temp_db_path, create=True) as store:
+        item_repo = DocumentItemRepository(store)
+
+        before = await store.document_items_table.version()
+        await item_repo.create_all([])
+        after = await store.document_items_table.version()
+
+        assert after == before
+
+
+def test_document_get_docling_document():
+    """Test parsing stored DoclingDocument JSON."""
+    doc_json = {
+        "name": "test_doc",
+        "texts": [
+            {
+                "self_ref": "#/texts/0",
+                "text": "Test text",
+                "orig": "Test text",
+                "label": "paragraph",
+            },
+        ],
+        "tables": [],
+        "pictures": [],
+        "groups": [],
+        "body": {"self_ref": "#/body", "children": []},
+        "furniture": {"self_ref": "#/furniture", "children": []},
+    }
+
+    import json
+
+    from haiku.rag.store.compression import compress_json
+
+    document = Document(
+        content="Test content",
+        docling_document=compress_json(json.dumps(doc_json)),
+        docling_version="1.3.0",
+    )
+
+    docling_doc = document.get_docling_document()
+
+    assert docling_doc is not None
+    assert docling_doc.name == "test_doc"
+    assert len(docling_doc.texts) == 1
+    assert docling_doc.texts[0].text == "Test text"
+
+
+def test_document_get_docling_document_none():
+    """Test get_docling_document returns None when not stored."""
+    document = Document(content="Test content")
+
+    assert document.docling_document is None
+    assert document.get_docling_document() is None
+
+
+def test_set_docling_splits_structure_and_pages():
+    """set_docling stores structure and pages separately."""
+    import json
+
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
+    from haiku.rag.store.compression import decompress_json
+
+    docling_doc = DoclingDocument(name="split_test")
+    docling_doc.add_text(label=DocItemLabel.PARAGRAPH, text="Hello world")
+
+    document = Document(content="test")
+    document.set_docling(docling_doc)
+
+    assert document.docling_document is not None
+    assert document.docling_version == docling_doc.version
+
+    # Structure should not contain pages
+    structure = json.loads(decompress_json(document.docling_document))
+    assert "pages" not in structure
+    assert structure["name"] == "split_test"
+
+    # get_docling_document should work from the split structure
+    parsed = document.get_docling_document()
+    assert parsed is not None
+    assert parsed.name == "split_test"
+    assert len(list(parsed.iterate_items())) > 0
+
+
+def test_set_docling_with_page_images():
+    """set_docling stores page images in docling_pages."""
+    import json
+
+    from docling_core.types.doc.base import Size
+    from docling_core.types.doc.document import DoclingDocument, PageItem
+    from docling_core.types.doc.labels import DocItemLabel
+
+    from haiku.rag.store.compression import decompress_json
+
+    docling_doc = DoclingDocument(name="pages_test")
+    docling_doc.add_text(label=DocItemLabel.PARAGRAPH, text="Content")
+    docling_doc.pages[1] = PageItem(
+        size=Size(width=612, height=792),
+        page_no=1,
+    )
+
+    document = Document(content="test")
+    document.set_docling(docling_doc)
+
+    assert document.docling_pages is not None
+
+    # Pages blob should contain page data
+    pages = json.loads(decompress_json(document.docling_pages))
+    assert "1" in pages
+
+
+def test_compress_docling_split_dict_sources_match():
+    """Both ways of building the compression input dict must yield identical
+    stored bytes: ``model_dump(mode="json")`` (used at ingest) and
+    ``json.loads(model_dump_json())`` (used when migrating a stored string).
+    In particular int-keyed ``pages`` must serialize to string keys either way.
+    """
+    import json
+
+    from docling_core.types.doc.base import Size
+    from docling_core.types.doc.document import DoclingDocument, PageItem
+    from docling_core.types.doc.labels import DocItemLabel
+
+    from haiku.rag.store.compression import compress_docling_split
+
+    docling_doc = DoclingDocument(name="equivalence_test")
+    docling_doc.add_text(label=DocItemLabel.PARAGRAPH, text="Hello world")
+    docling_doc.pages[1] = PageItem(size=Size(width=612, height=792), page_no=1)
+
+    struct_dump, pages_dump = compress_docling_split(
+        docling_doc.model_dump(mode="json")
+    )
+    struct_str, pages_str = compress_docling_split(
+        json.loads(docling_doc.model_dump_json())
+    )
+
+    assert struct_dump == struct_str
+    assert pages_dump is not None and pages_str is not None
+    assert pages_dump == pages_str
+
+
+def test_get_page_images():
+    """get_page_images returns requested pages from docling_pages blob."""
+    import json
+
+    from haiku.rag.store.compression import compress_json
+
+    pages_data = {
+        "1": {"size": {"width": 612, "height": 792}, "page_no": 1},
+        "2": {"size": {"width": 612, "height": 792}, "page_no": 2},
+        "3": {"size": {"width": 612, "height": 792}, "page_no": 3},
+    }
+    document = Document(
+        content="test",
+        docling_pages=compress_json(json.dumps(pages_data)),
+    )
+
+    result = document.get_page_images([1, 3])
+    assert len(result) == 2
+    assert 1 in result
+    assert 3 in result
+    assert 2 not in result
+
+    # Missing pages are skipped
+    result = document.get_page_images([99])
+    assert len(result) == 0
+
+    # None docling_pages returns empty
+    doc_no_pages = Document(content="test")
+    assert doc_no_pages.get_page_images([1]) == {}
+
+
+async def test_get_docling_data_loads_only_docling_columns(
+    qa_corpus: list[dict[str, str]], temp_db_path
+):
+    """get_docling_data returns docling blob without loading content."""
+    import json
+
+    from haiku.rag.store.compression import compress_json
+
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+
+        doc_json = {
+            "name": "test_doc",
+            "texts": [],
+            "tables": [],
+            "pictures": [],
+            "groups": [],
+            "body": {"self_ref": "#/body", "children": []},
+            "furniture": {"self_ref": "#/furniture", "children": []},
+        }
+        compressed = compress_json(json.dumps(doc_json))
+
+        doc = Document(
+            content=qa_corpus[0]["document_extracted"],
+            uri="https://example.com/doc.txt",
+            docling_document=compressed,
+            docling_version="2.1.0",
+        )
+        created = await doc_repo.create(doc)
+        assert created.id is not None
+
+        result = await doc_repo.get_docling_data(created.id)
+        assert result is not None
+        assert result.id == created.id
+        assert result.content == ""
+        assert result.docling_document == compressed
+        assert result.docling_version == "2.1.0"
+
+        # Verify docling document can be parsed
+        docling_doc = result.get_docling_document()
+        assert docling_doc is not None
+        assert docling_doc.name == "test_doc"
+
+        # Non-existent ID returns None
+        assert await doc_repo.get_docling_data("nonexistent-id") is None
+
+
+@pytest.mark.parametrize(
+    "with_pages",
+    # Markdown documents have no page images, so their pages blob stays None.
+    [True, False],
+    ids=["with_pages", "markdown"],
+)
+async def test_get_pages_data_loads_only_pages_column(
+    qa_corpus: list[dict[str, str]], temp_db_path, with_pages
+):
+    """get_pages_data returns only page image data for a document."""
+    import json
+
+    from haiku.rag.store.compression import compress_json
+
+    pages_blob = (
+        compress_json(
+            json.dumps({"1": {"size": {"width": 612, "height": 792}, "page_no": 1}})
+        )
+        if with_pages
+        else None
+    )
+
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+
+        doc = Document(
+            content=qa_corpus[0]["document_extracted"],
+            uri="https://example.com/doc.txt",
+            docling_pages=pages_blob,
+        )
+        created = await doc_repo.create(doc)
+        assert created.id is not None
+
+        result = await doc_repo.get_pages_data(created.id)
+        assert result is not None
+        assert result.id == created.id
+        assert result.content == ""
+        assert result.docling_pages == pages_blob
+
+        # Non-existent ID returns None
+        assert await doc_repo.get_pages_data("nonexistent-id") is None
+
+
+@pytest.mark.parametrize("include_blobs", [False, True])
+async def test_document_get_by_id_docling_blobs(temp_db_path, include_blobs):
+    """get_by_id leaves the docling blobs out unless asked for them: a single
+    document's page rasters run to hundreds of MB."""
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+
+        created = await doc_repo.create(
+            Document(
+                content="the text",
+                uri="https://example.com/doc.pdf",
+                title="Test Document",
+                metadata={"key": "value"},
+                docling_document=b"structure-blob",
+                docling_pages=b"page-raster-blob",
+                docling_version="2.1.0",
+            )
+        )
+        assert created.id is not None
+
+        doc = await doc_repo.get_by_id(created.id, include_blobs=include_blobs)
+
+        assert doc is not None
+        assert doc.id == created.id
+        assert doc.content == "the text"
+        assert doc.uri == "https://example.com/doc.pdf"
+        assert doc.title == "Test Document"
+        assert doc.metadata == {"key": "value"}
+        if include_blobs:
+            assert doc.docling_document == b"structure-blob"
+            assert doc.docling_pages == b"page-raster-blob"
+            assert doc.docling_version == "2.1.0"
+        else:
+            assert doc.docling_document is None
+            assert doc.docling_pages is None
+
+
+@pytest.mark.parametrize("include_blobs", [False, True])
+async def test_document_get_by_uri_docling_blobs(temp_db_path, include_blobs):
+    """get_by_uri has the same projection as get_by_id."""
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+
+        created = await doc_repo.create(
+            Document(
+                content="the text",
+                uri="https://example.com/doc.pdf",
+                docling_document=b"structure-blob",
+                docling_pages=b"page-raster-blob",
+            )
+        )
+
+        doc = await doc_repo.get_by_uri(
+            "https://example.com/doc.pdf", include_blobs=include_blobs
+        )
+
+        assert doc is not None
+        assert doc.id == created.id
+        assert doc.content == "the text"
+        if include_blobs:
+            assert doc.docling_document == b"structure-blob"
+            assert doc.docling_pages == b"page-raster-blob"
+        else:
+            assert doc.docling_document is None
+            assert doc.docling_pages is None
+
+
+async def test_document_get_by_uri_with_special_characters(
+    qa_corpus: list[dict[str, str]], temp_db_path
+):
+    """Test get_by_uri handles URIs with special characters like single quotes."""
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+
+        first_doc = qa_corpus[0]
+        document_text = first_doc["document_extracted"]
+
+        doc_with_quote = Document(
+            content=document_text,
+            uri="Hamish and Andy's Gap Year",
+            metadata={"source": "test"},
+        )
+
+        created_doc = await doc_repo.create(doc_with_quote)
+
+        retrieved = await doc_repo.get_by_uri("Hamish and Andy's Gap Year")
+        assert retrieved is not None
+        assert retrieved.id == created_doc.id
+        assert retrieved.uri == "Hamish and Andy's Gap Year"
+
+
+@pytest.mark.skipif(not hasattr(time, "tzset"), reason="time.tzset is POSIX-only")
+def test_naive_timestamp_is_converted_from_local_time():
+    original_tz = os.environ.get("TZ")
+    os.environ["TZ"] = "Europe/Athens"
+    time.tzset()
+    try:
+        created = datetime(2026, 1, 1, 14, 0, 0)  # January is EET, UTC+2
+        updated = datetime(2026, 1, 1, 14, 30, 0)
+        doc = Document(content="x", created_at=created, updated_at=updated)
+        assert doc.created_at == datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
+        assert doc.updated_at == datetime(2026, 1, 1, 12, 30, 0, tzinfo=UTC)
+    finally:
+        if original_tz is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = original_tz
+        time.tzset()
+
+
+def test_created_at_serializes_with_timezone_offset():
+    doc = Document(content="x")
+    value = doc.model_dump(mode="json")["created_at"]
+    assert datetime.fromisoformat(value).utcoffset() is not None

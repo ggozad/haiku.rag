@@ -33,7 +33,6 @@ def counts(monkeypatch):
     return tally
 
 
-@pytest.mark.asyncio
 async def test_reopening_reads_the_table_list_and_settings_once(temp_db_path, counts):
     async with Store(temp_db_path, create=True):
         pass
@@ -48,7 +47,6 @@ async def test_reopening_reads_the_table_list_and_settings_once(temp_db_path, co
     assert counts["settings_query"] == 1
 
 
-@pytest.mark.asyncio
 async def test_storage_failures_propagate(temp_db_path):
     """A read failure must not read as empty settings: the migration check would
     then see version 0.0.0 and declare every migration pending."""
@@ -63,7 +61,6 @@ async def test_storage_failures_propagate(temp_db_path):
             await store._read_stored_settings()
 
 
-@pytest.mark.asyncio
 async def test_non_dict_settings_read_as_empty(temp_db_path):
     async with Store(temp_db_path, create=True) as store:
         await store.settings_table.update({"settings": "[]"}, where="id = 'settings'")

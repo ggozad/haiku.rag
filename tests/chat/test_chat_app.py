@@ -166,7 +166,6 @@ def _make_app_with_state(db_path: Path, mock_client: AsyncMock | None = None):
     ), mock_client
 
 
-@pytest.mark.asyncio
 async def test_chat_app_has_required_widgets(temp_db_path: Path):
     """Test that ChatApp has the required widgets: ChatHistory, FlexibleInput."""
     from haiku.rag.chat.widgets.chat_history import ChatHistory
@@ -187,7 +186,6 @@ async def test_chat_app_has_required_widgets(temp_db_path: Path):
             assert chat_input is not None
 
 
-@pytest.mark.asyncio
 async def test_chat_app_quit_binding(temp_db_path: Path):
     """Test that pressing ctrl+q quits the app."""
     app, mock_client = _make_app(temp_db_path)
@@ -202,7 +200,6 @@ async def test_chat_app_quit_binding(temp_db_path: Path):
             assert not app.is_running
 
 
-@pytest.mark.asyncio
 async def test_chat_history_can_add_message(temp_db_path: Path):
     """Test that ChatHistory can display messages."""
     from haiku.rag.chat.widgets.chat_history import ChatHistory
@@ -224,7 +221,6 @@ async def test_chat_history_can_add_message(temp_db_path: Path):
             assert len(chat_history.messages) == 2
 
 
-@pytest.mark.asyncio
 async def test_chat_history_can_add_tool_calls(temp_db_path: Path):
     """Test that ChatHistory can display inline tool calls."""
     from haiku.rag.chat.widgets.chat_history import ChatHistory, ToolCallWidget
@@ -248,7 +244,6 @@ async def test_chat_history_can_add_tool_calls(temp_db_path: Path):
             assert tool_widget._completed is True
 
 
-@pytest.mark.asyncio
 async def test_chat_history_can_add_citations(temp_db_path: Path):
     """Test that ChatHistory can display inline citations."""
     from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
@@ -292,7 +287,6 @@ async def test_chat_history_can_add_citations(temp_db_path: Path):
             assert len(list(citation_widgets)) == 2
 
 
-@pytest.mark.asyncio
 async def test_chat_history_thinking_indicator(temp_db_path: Path):
     """Test that ChatHistory can show and hide thinking indicator."""
     from haiku.rag.chat.widgets.chat_history import ChatHistory, ThinkingWidget
@@ -316,7 +310,6 @@ async def test_chat_history_thinking_indicator(temp_db_path: Path):
             assert len(list(thinking)) == 0
 
 
-@pytest.mark.asyncio
 async def test_clear_chat_resets_state(temp_db_path: Path):
     """Test that clearing chat resets state, messages, and conversation id."""
     from haiku.rag.chat.widgets.chat_history import ChatHistory
@@ -342,7 +335,6 @@ async def test_clear_chat_resets_state(temp_db_path: Path):
             assert app._conversation_id != previous_conversation_id
 
 
-@pytest.mark.asyncio
 async def test_citation_expand_collapse_with_enter(temp_db_path: Path):
     """Test that pressing Enter on a focused citation toggles expand/collapse."""
     from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget
@@ -383,7 +375,6 @@ async def test_citation_expand_collapse_with_enter(temp_db_path: Path):
             assert citation_widget.collapsed is True
 
 
-@pytest.mark.asyncio
 async def test_show_citations_renders_from_flat_state(temp_db_path: Path):
     """Citations in state (flat list[str]) render into the chat history."""
     from haiku.rag.capabilities.rag import STATE_NAMESPACE
@@ -421,7 +412,6 @@ async def test_show_citations_renders_from_flat_state(temp_db_path: Path):
             assert widgets[0].citation.chunk_id == "chunk1"
 
 
-@pytest.mark.asyncio
 async def test_document_filter_updates_rag_state(temp_db_path: Path):
     """Test that selecting document filters updates RAGState.document_filter."""
     from haiku.rag.capabilities.rag import STATE_NAMESPACE
@@ -459,7 +449,6 @@ async def test_document_filter_updates_rag_state(temp_db_path: Path):
             assert app._state["rag"]["document_filter"] == expected_filter
 
 
-@pytest.mark.asyncio
 async def test_document_filter_narrows_sources_to_the_selection(temp_db_path: Path):
     """Over a set, the filter carries ids and `sources` restricts the question
     to the databases the selection names."""
@@ -500,7 +489,6 @@ async def test_document_filter_narrows_sources_to_the_selection(temp_db_path: Pa
             assert rag_state.document_filter is None
 
 
-@pytest.mark.asyncio
 async def test_document_filter_cleared_when_empty(temp_db_path: Path):
     """Test that clearing all document filters sets document_filter to None."""
     from haiku.rag.capabilities.rag import STATE_NAMESPACE
@@ -529,7 +517,6 @@ async def test_document_filter_cleared_when_empty(temp_db_path: Path):
             assert app._state["rag"]["document_filter"] is None
 
 
-@pytest.mark.asyncio
 async def test_chat_app_open_failure_surfaces_real_error(tmp_path: Path):
     """A failed database open must surface its own error, not an
     AttributeError from tearing down a client that never opened."""
@@ -544,7 +531,6 @@ async def test_chat_app_open_failure_surfaces_real_error(tmp_path: Path):
             pass
 
 
-@pytest.mark.asyncio
 async def test_a_cancelled_run_does_not_advance_persisted_state(temp_db_path: Path):
     """State and message history have to move together, or the thread bricks.
 
@@ -648,7 +634,6 @@ async def test_visual_grounding_uses_the_database_holding_the_citation(tmp_path)
 
 
 class TestLendingTheClient:
-    @pytest.mark.asyncio
     async def test_mounting_lends_its_client_to_the_capability(self, temp_db_path):
         """The capability is built before the client exists, and reads through
         the one the app opened."""
@@ -664,7 +649,6 @@ class TestLendingTheClient:
 
         assert borrowed is client
 
-    @pytest.mark.asyncio
     async def test_mounting_gives_the_capability_the_apps_scope(self, tmp_path):
         """A capability built over the configured set covers what the chat
         selected once mounted: the sandbox is built over that scope."""
@@ -700,7 +684,6 @@ class TestDocumentSelectionIdentity:
     """Two documents can share a title, within a corpus and across databases, so
     the selection is by id and the label says which database."""
 
-    @pytest.mark.asyncio
     async def test_a_repeated_title_selects_one_document(self, temp_db_path: Path):
         from haiku.rag.chat.widgets.document_filter_modal import (
             DocumentCheckbox,
@@ -738,7 +721,6 @@ class TestDocumentSelectionIdentity:
                 await pilot.pause()
                 assert modal._selected == {("arxiv", "id-one")}
 
-    @pytest.mark.asyncio
     async def test_a_shared_id_selects_only_the_named_database_copy(
         self, temp_db_path: Path
     ):
@@ -839,7 +821,6 @@ def test_a_citation_title_that_looks_like_markup_is_text():
 
 
 class TestRenderingUnattributedPictures:
-    @pytest.mark.asyncio
     async def test_a_sourceless_picture_citation_does_not_fail_the_answer(
         self, temp_db_path: Path
     ):
@@ -882,7 +863,6 @@ class TestRenderingUnattributedPictures:
         covering.reader_for.assert_awaited_once_with(None)
         covering.get_picture_bytes.assert_not_awaited()
 
-    @pytest.mark.asyncio
     async def test_citations_from_two_collections_keep_their_own_pictures(
         self, temp_db_path: Path, monkeypatch
     ):
@@ -988,7 +968,6 @@ class TestNamingACitationsCollection:
                 await pilot.pause()
                 return [str(w.title) for w in app.query(CitationWidget)]
 
-    @pytest.mark.asyncio
     async def test_one_title_in_two_collections_reads_as_two_citations(
         self, temp_db_path: Path
     ):
@@ -1002,7 +981,6 @@ class TestNamingACitationsCollection:
         assert "alpha" in titles[0]
         assert "beta" in titles[1]
 
-    @pytest.mark.asyncio
     async def test_one_named_database_is_not_named_on_its_citations(
         self, temp_db_path: Path
     ):
@@ -1019,7 +997,6 @@ class TestKeepingSelectionsReachable:
     """A selection applies whether or not the page shows it, and a checkbox is
     the only way to remove one."""
 
-    @pytest.mark.asyncio
     async def test_every_selection_is_reachable_and_the_page_stays_bounded(
         self, temp_db_path: Path
     ):
@@ -1093,7 +1070,6 @@ class TestKeepingSelectionsReachable:
         assert len(second) == 20
         assert set(first) | set(second) == {d.id for d in picked}
 
-    @pytest.mark.asyncio
     async def test_deselecting_updates_the_selected_listing(self, temp_db_path: Path):
         """The listing is the selection, so removing one changes what it holds
         and how far it runs. Its last page can stop existing."""
@@ -1168,7 +1144,6 @@ class TestKeepingSelectionsReachable:
         assert "page" not in footer
         assert f"[bold]{DOCUMENT_PAGE}[/bold] document(s) selected" in footer
 
-    @pytest.mark.asyncio
     async def test_the_results_listing_pages_too(self, temp_db_path: Path):
         """More documents match than one page holds; the rest are a page
         away."""
@@ -1206,7 +1181,6 @@ class TestKeepingSelectionsReachable:
 
         assert client.list_documents.await_args.kwargs["offset"] == DOCUMENT_PAGE
 
-    @pytest.mark.asyncio
     async def test_a_search_matching_nothing_says_so(self, temp_db_path: Path):
         """An empty list is indistinguishable from one still loading."""
         from textual.widgets import Static
@@ -1232,7 +1206,6 @@ class TestKeepingSelectionsReachable:
                 empty = modal.query_one("#filter-empty", Static)
                 assert "No documents match" in str(empty.content)
 
-    @pytest.mark.asyncio
     async def test_typing_without_submitting_leaves_the_listing_alone(
         self, temp_db_path: Path
     ):
@@ -1343,7 +1316,6 @@ class TestDocumentSearchFilter:
         assert built is not None
         assert "o''brien" in built
 
-    @pytest.mark.asyncio
     async def test_submitting_a_search_reloads_the_page(self, temp_db_path: Path):
         """The typed term reaches the database and replaces what is shown."""
         from textual.widgets import Input

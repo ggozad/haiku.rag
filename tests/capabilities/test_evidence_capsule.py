@@ -414,7 +414,6 @@ async def _answer(_messages, _info):
     return ModelResponse(parts=[TextPart("answer")])
 
 
-@pytest.mark.asyncio
 async def test_the_compactor_discovers_the_evidence_capability(temp_db_path):
     """Discovery runs one way through the registry, so nothing needs wiring."""
     compactor = create_compaction()
@@ -434,7 +433,6 @@ async def test_the_compactor_discovers_the_evidence_capability(temp_db_path):
     }
 
 
-@pytest.mark.asyncio
 async def test_discovery_sees_the_run_instances_not_the_registered_ones(temp_db_path):
     """A registered capability holds no state; only its per-run copy does."""
     compactor = create_compaction()
@@ -467,7 +465,6 @@ def test_two_compactors_fail_fast(temp_db_path):
         )
 
 
-@pytest.mark.asyncio
 async def test_a_compactor_alone_discovers_nothing_and_still_runs():
     found: list[list[DiscoveredEvidence]] = []
 
@@ -481,7 +478,6 @@ async def test_a_compactor_alone_discovers_nothing_and_still_runs():
     assert result.output == "answer"
 
 
-@pytest.mark.asyncio
 async def test_a_deferred_capability_the_model_never_loaded_has_an_empty_record(
     temp_db_path,
 ):

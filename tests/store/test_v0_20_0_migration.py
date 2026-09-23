@@ -5,7 +5,6 @@ The migration rebuilds `documents` with `docling_document_json` and
 """
 
 import pyarrow as pa
-import pytest
 
 from haiku.rag.store.engine import Store
 from haiku.rag.store.upgrades.v0_20_0 import _apply_add_docling_document_columns
@@ -20,7 +19,6 @@ async def _seed_v2(store: Store, records: list[DocumentRecordV2]) -> None:
     await seed_documents(store, documents_schema(DocumentRecordV2), records)
 
 
-@pytest.mark.asyncio
 async def test_existing_rows_survive_with_empty_docling_columns(temp_db_path):
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
         await _seed_v2(
@@ -57,7 +55,6 @@ async def test_existing_rows_survive_with_empty_docling_columns(temp_db_path):
         assert row["docling_version"] is None
 
 
-@pytest.mark.asyncio
 async def test_null_metadata_becomes_an_empty_json_object(temp_db_path):
     """`metadata` is non-nullable from 0.20.0 on, so a NULL must be coerced."""
     nullable_metadata = pa.schema(
@@ -89,7 +86,6 @@ async def test_null_metadata_becomes_an_empty_json_object(temp_db_path):
     assert rows[0]["metadata"] == "{}"
 
 
-@pytest.mark.asyncio
 async def test_empty_database_is_rebuilt_on_the_new_schema(temp_db_path):
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
         await _seed_v2(store, [])
@@ -103,7 +99,6 @@ async def test_empty_database_is_rebuilt_on_the_new_schema(temp_db_path):
     assert rows == []
 
 
-@pytest.mark.asyncio
 async def test_missing_documents_table_is_created(temp_db_path):
     """Reruns after an interrupted migration find no documents table at all."""
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:

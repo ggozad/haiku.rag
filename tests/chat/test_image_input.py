@@ -1,7 +1,6 @@
 from io import BytesIO
 from pathlib import Path
 
-import pytest
 from PIL import Image as PILImage
 from pydantic_ai.messages import BinaryContent
 from textual.app import App
@@ -91,7 +90,6 @@ class PromptApp(App):
 
 
 class TestFlexibleInput:
-    @pytest.mark.asyncio
     async def test_enter_submits_text(self):
         app = PromptApp()
         async with app.run_test() as pilot:
@@ -101,7 +99,6 @@ class TestFlexibleInput:
             await pilot.press("enter")
         assert app.submitted == ["hello"]
 
-    @pytest.mark.asyncio
     async def test_backspace_deletes_whole_image_token(self):
         app = PromptApp()
         async with app.run_test() as pilot:
@@ -112,7 +109,6 @@ class TestFlexibleInput:
             await pilot.press("backspace")
             assert area.text == "look at  now"
 
-    @pytest.mark.asyncio
     async def test_ctrl_i_opens_image_select(self):
         app = PromptApp()
         async with app.run_test() as pilot:
@@ -123,7 +119,6 @@ class TestFlexibleInput:
 
 
 class TestChatAppImageAttach:
-    @pytest.mark.asyncio
     async def test_image_added_inserts_token_and_stores_bytes(self, temp_db_path):
         from haiku.rag.capabilities.rag import create_capability
         from haiku.rag.chat.app import ChatApp
@@ -146,7 +141,6 @@ class TestChatAppImageAttach:
 
 
 class TestChatAppLayout:
-    @pytest.mark.asyncio
     async def test_prompt_stays_compact_and_history_visible(self, temp_db_path):
         from haiku.rag.capabilities.rag import create_capability
         from haiku.rag.chat.app import ChatApp

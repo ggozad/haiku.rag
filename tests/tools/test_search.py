@@ -62,7 +62,6 @@ class TestNamingTheCollection:
             expand_context=AsyncMock(return_value=results),
         )
 
-    @pytest.mark.asyncio
     async def test_a_client_covering_a_set_names_each_result(self, search_config):
         toolset = create_search_toolset(search_config)
         client = self._client(covers_multiple=True, source="alpha")
@@ -71,7 +70,6 @@ class TestNamingTheCollection:
 
         assert "Collection: alpha" in text
 
-    @pytest.mark.asyncio
     async def test_one_named_collection_is_not_named(self, search_config):
         toolset = create_search_toolset(search_config)
         client = self._client(covers_multiple=False, source="alpha")
@@ -86,7 +84,6 @@ class TestNamingTheCollection:
         config.qa.model.vision = True
         return config
 
-    @pytest.mark.asyncio
     async def test_a_client_covering_a_set_names_each_image(self, search_config):
         """Images travel beside the results and are labelled the same way."""
         from pydantic_ai.messages import ToolReturn
@@ -100,7 +97,6 @@ class TestNamingTheCollection:
         labels = [item for item in returned.content if isinstance(item, str)]
         assert "Collection: alpha." in labels[0]
 
-    @pytest.mark.asyncio
     async def test_one_named_collection_is_not_named_on_an_image(self, search_config):
         from pydantic_ai.messages import ToolReturn
 
@@ -121,7 +117,6 @@ class TestNamingTheCollection:
 class TestSearchToolExecution:
     """Tests for search tool execution."""
 
-    @pytest.mark.asyncio
     async def test_search_returns_formatted_results(self, search_client, search_config):
         """Search tool returns formatted results."""
         toolset = create_search_toolset(search_config)
@@ -133,7 +128,6 @@ class TestSearchToolExecution:
         assert "Python" in result or "programming" in result
         assert "No results found" not in result
 
-    @pytest.mark.asyncio
     async def test_search_with_no_results(self, temp_db_path, search_config):
         """Search tool returns appropriate message when no results."""
         from haiku.rag.client import HaikuRAG
@@ -148,7 +142,6 @@ class TestSearchToolExecution:
 
             assert result == "No results found."
 
-    @pytest.mark.asyncio
     async def test_search_with_base_filter(self, search_client, search_config):
         """Search toolset respects base_filter parameter."""
         accumulated: list[SearchResult] = []
@@ -166,7 +159,6 @@ class TestSearchToolExecution:
         for r in accumulated:
             assert "JavaScript" not in (r.document_title or "")
 
-    @pytest.mark.asyncio
     async def test_search_on_results_callback(self, search_client, search_config):
         """on_results callback receives search results."""
         accumulated: list[SearchResult] = []
@@ -179,7 +171,6 @@ class TestSearchToolExecution:
         assert len(accumulated) > 0
         assert any("Python" in r.content for r in accumulated)
 
-    @pytest.mark.asyncio
     async def test_search_on_results_accumulates_across_calls(
         self, search_client, search_config
     ):
@@ -195,7 +186,6 @@ class TestSearchToolExecution:
         await search_tool.function(ctx, "JavaScript")
         assert len(accumulated) > first_count
 
-    @pytest.mark.asyncio
     async def test_search_without_on_results(self, search_client, search_config):
         """Search works without on_results callback."""
         toolset = create_search_toolset(search_config)
@@ -211,7 +201,6 @@ class TestSearchToolExecution:
 class TestSearchMaxSearches:
     """Tests for max_searches cap on search toolset."""
 
-    @pytest.mark.asyncio
     async def test_searches_within_limit_return_results(
         self, search_client, search_config
     ):
@@ -223,7 +212,6 @@ class TestSearchMaxSearches:
         assert await search_tool.function(ctx, "Python")
         assert await search_tool.function(ctx, "JavaScript")
 
-    @pytest.mark.asyncio
     async def test_searches_beyond_limit_fail_the_tool(
         self, search_client, search_config
     ):
@@ -237,7 +225,6 @@ class TestSearchMaxSearches:
         with pytest.raises(ToolFailed, match="Search limit reached"):
             await search_tool.function(ctx, "JavaScript")
 
-    @pytest.mark.asyncio
     async def test_counter_resets_across_runs(self, search_client, search_config):
         """Search counter resets when run_id changes (new agent run)."""
         toolset = create_search_toolset(search_config, max_searches=1)
@@ -252,7 +239,6 @@ class TestSearchMaxSearches:
         ctx_run2 = make_ctx(search_client, run_id="run-2")
         assert await search_tool.function(ctx_run2, "Python")
 
-    @pytest.mark.asyncio
     async def test_no_limit_by_default(self, search_client, search_config):
         """Without max_searches, searches are unlimited."""
         toolset = create_search_toolset(search_config)

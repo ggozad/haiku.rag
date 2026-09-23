@@ -11,7 +11,6 @@ from tests.store.legacy_documents import (
 )
 
 
-@pytest.mark.asyncio
 async def test_create_rolls_back_meta_when_documents_write_fails(temp_db_path):
     """A failed documents write must not leave an orphan document_meta row that
     list_all/count would surface (they read document_meta). The rollback must be
@@ -42,7 +41,6 @@ async def test_create_rolls_back_meta_when_documents_write_fails(temp_db_path):
         assert fetched is not None and fetched.uri == "mem://keep"
 
 
-@pytest.mark.asyncio
 async def test_update_missing_id_does_not_create_ghost(temp_db_path):
     """update()/update_meta() for an id with no documents row must not insert a
     document_meta row — otherwise it would show up in list_all/count while
@@ -59,7 +57,6 @@ async def test_update_missing_id_does_not_create_ghost(temp_db_path):
         assert await repo.get_by_id("missing") is None
 
 
-@pytest.mark.asyncio
 async def test_opening_legacy_db_raises_migration_without_mutating(temp_db_path):
     """Opening a pre-0.58 DB (no document_meta) must raise MigrationRequiredError
     up front — in both writable and read-only mode — and must not mutate the DB
@@ -88,7 +85,6 @@ async def test_opening_legacy_db_raises_migration_without_mutating(temp_db_path)
     assert "document_meta" not in (await raw.list_tables()).tables
 
 
-@pytest.mark.asyncio
 async def test_migrate_creates_and_populates_document_meta(temp_db_path):
     """The migrate path (skip_migration_check) still creates and fills
     document_meta for a legacy DB."""
@@ -108,7 +104,6 @@ async def test_migrate_creates_and_populates_document_meta(temp_db_path):
         assert doc is not None and doc.uri == "u"
 
 
-@pytest.mark.asyncio
 async def test_repository_empty_and_missing_id_paths(temp_db_path):
     """Cover the repository's early-return branches for empty input and
     missing ids, plus get_content."""
@@ -126,7 +121,6 @@ async def test_repository_empty_and_missing_id_paths(temp_db_path):
         assert await repo.get_content(doc.id) == "hello body"
 
 
-@pytest.mark.asyncio
 async def test_batch_create_rolls_back_meta_on_failure(temp_db_path, monkeypatch):
     """The list create path also rolls back its document_meta rows if the
     documents write fails."""
@@ -147,7 +141,6 @@ async def test_batch_create_rolls_back_meta_on_failure(temp_db_path, monkeypatch
         assert await store.document_meta_table.count_rows() == 0
 
 
-@pytest.mark.asyncio
 async def test_get_by_uri_with_orphan_meta_returns_none(temp_db_path):
     """Defensive: a document_meta row whose documents row is missing (an
     invariant violation) resolves to None, not a half-hydrated document."""
@@ -161,7 +154,6 @@ async def test_get_by_uri_with_orphan_meta_returns_none(temp_db_path):
         assert await repo.get_by_uri("u-ghost") is None
 
 
-@pytest.mark.asyncio
 async def test_update_meta_all_writes_one_version(temp_db_path):
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
         repo = DocumentRepository(store)
@@ -179,7 +171,6 @@ async def test_update_meta_all_writes_one_version(temp_db_path):
         assert all(d.metadata == {"tag": "batch"} for d in await repo.list_all())
 
 
-@pytest.mark.asyncio
 async def test_update_meta_all_writes_nothing_for_no_documents(temp_db_path):
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
         repo = DocumentRepository(store)

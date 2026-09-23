@@ -44,6 +44,19 @@ if TYPE_CHECKING:
 setattr(pydantic_ai.models, "ALLOW_MODEL_REQUESTS", False)
 logging.getLogger("vcr.cassette").setLevel(logging.WARNING)
 
+_CENTRAL_CASSETTE_SUITES = frozenset(
+    {
+        "client",
+        "chunkers",
+        "converters",
+        "embeddings",
+        "interfaces",
+        "providers",
+        "reranking",
+        "store",
+    }
+)
+
 
 @contextmanager
 def capture_logs(
@@ -144,6 +157,27 @@ def allow_expected_model_requests(request):
 
 
 @pytest.fixture(autouse=True)
+def skip_docling_serve_delays_during_replay(
+    request, record_mode, disable_recording, monkeypatch
+):
+    """Skip docling-serve polling delays during cassette playback."""
+    if (
+        request.node.get_closest_marker("vcr") is None
+        or request.node.get_closest_marker("integration") is not None
+        or record_mode != "none"
+        or disable_recording
+    ):
+        yield
+        return
+
+    async def no_delay(_seconds: float) -> None:
+        pass
+
+    monkeypatch.setattr("haiku.rag.providers.docling_serve.sleep", no_delay)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def set_mock_api_keys(monkeypatch):
     """Set mock API keys for providers that require them during initialization."""
     if not os.getenv("OPENAI_API_KEY"):
@@ -170,6 +204,15 @@ def pytest_recording_configure(config: Any, vcr: "VCR"):
     from . import json_body_serializer
 
     vcr.register_serializer("yaml", json_body_serializer)
+
+
+@pytest.fixture(scope="module")
+def vcr_cassette_dir(request: pytest.FixtureRequest) -> str:
+    module_path = Path(str(request.node.path))
+    cassette_root = module_path.parent / "cassettes"
+    if module_path.parent.name in _CENTRAL_CASSETTE_SUITES:
+        cassette_root = Path(__file__).parent / "cassettes"
+    return str(cassette_root / module_path.stem)
 
 
 @pytest.fixture(scope="module")
@@ -207,6 +250,30 @@ def doclaynet_first_page_pdf(tmp_path_factory) -> Path:
     finally:
         src.close()
     return out_path
+
+
+@pytest.fixture(scope="session")
+async def docling_local_models(
+    tmp_path_factory: pytest.TempPathFactory,
+    doclaynet_first_page_pdf: Path,
+    worker_id: str,
+) -> None:
+    """Initialize docling-local model files once across xdist workers."""
+    from filelock import FileLock
+
+    from haiku.rag.config import get_config
+    from haiku.rag.converters.docling_local import DoclingLocalConverter
+
+    base_temp = tmp_path_factory.getbasetemp()
+    shared_temp = base_temp if worker_id == "master" else base_temp.parent
+    lock_path = shared_temp / "docling-local-models.lock"
+    ready_path = shared_temp / "docling-local-models.ready"
+    with FileLock(lock_path, timeout=300):
+        if ready_path.exists():
+            return
+        config = get_config().model_copy(deep=True)
+        await DoclingLocalConverter(config).convert_file(doclaynet_first_page_pdf)
+        ready_path.touch()
 
 
 # --- external services for integration tests ---

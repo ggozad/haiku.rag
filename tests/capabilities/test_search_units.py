@@ -76,7 +76,6 @@ def outcomes(result: AgentRunResult[Any]) -> list[str]:
     ]
 
 
-@pytest.mark.asyncio
 async def test_a_burst_in_one_response_consumes_one_unit(rag_db):
     """Three searches emitted together cost one unit and run in emission order."""
     agent = burst_agent([["ai", "machine learning", "deep learning"]], rag_db, 1)
@@ -95,7 +94,6 @@ async def test_a_burst_in_one_response_consumes_one_unit(rag_db):
     ]
 
 
-@pytest.mark.asyncio
 async def test_sequential_searches_pay_one_unit_each(rag_db):
     agent = burst_agent([["ai"], ["machine learning"]], rag_db, 1)
 
@@ -105,7 +103,6 @@ async def test_sequential_searches_pay_one_unit_each(rag_db):
     assert "Search limit reached" in str(search_returns(result)[1].content)
 
 
-@pytest.mark.asyncio
 async def test_max_searches_zero_fails_every_sibling(rag_db):
     agent = burst_agent([["ai", "machine learning", "deep learning"]], rag_db, 0)
 
@@ -114,7 +111,6 @@ async def test_max_searches_zero_fails_every_sibling(rag_db):
     assert outcomes(result) == ["failed", "failed", "failed"]
 
 
-@pytest.mark.asyncio
 async def test_a_rejected_round_fails_all_its_siblings(rag_db):
     agent = burst_agent([["ai"], ["ml", "deep learning", "supervised"]], rag_db, 1)
 
@@ -123,7 +119,6 @@ async def test_a_rejected_round_fails_all_its_siblings(rag_db):
     assert outcomes(result) == ["ok", "failed", "failed", "failed"]
 
 
-@pytest.mark.asyncio
 async def test_a_sibling_past_the_allowance_pays_its_own_unit(rag_db):
     burst = [["ai", "machine learning", "deep learning", "supervised learning"]]
 
@@ -134,7 +129,6 @@ async def test_a_sibling_past_the_allowance_pays_its_own_unit(rag_db):
     assert outcomes(over) == ["ok", "ok", "ok", "failed"]
 
 
-@pytest.mark.asyncio
 async def test_unit_tracking_resets_between_runs(rag_db):
     """A second run's opening burst prices like a first run's."""
 
@@ -210,7 +204,6 @@ def text_of(returned: Any) -> str:
     return returned if isinstance(returned, str) else returned.return_value
 
 
-@pytest.mark.asyncio
 async def test_a_duplicate_sibling_is_elided_and_stays_citable(temp_db_path):
     duplicate, novel = make_result(), make_result(chunk_id="c2", content="novel")
     client = stub_client([make_result()], [duplicate, novel])
@@ -232,7 +225,6 @@ async def test_a_duplicate_sibling_is_elided_and_stays_citable(temp_db_path):
     assert await capability._cite(["c1"]) == "Registered 1 citation(s)."
 
 
-@pytest.mark.asyncio
 async def test_a_new_run_step_formats_shown_results_in_full(temp_db_path):
     client = stub_client([make_result()], [make_result()])
     capability = dedup_capability(client, temp_db_path)
@@ -244,7 +236,6 @@ async def test_a_new_run_step_formats_shown_results_in_full(temp_db_path):
     assert len(images_of(second)) == 1
 
 
-@pytest.mark.asyncio
 async def test_same_chunk_id_from_another_collection_is_not_elided(temp_db_path):
     client = stub_client(
         [make_result(source="alpha")],
@@ -259,7 +250,6 @@ async def test_same_chunk_id_from_another_collection_is_not_elided(temp_db_path)
     assert "body" in text_of(second)
 
 
-@pytest.mark.asyncio
 async def test_same_anchor_with_new_evidence_formats_in_full(temp_db_path):
     shared, extra = _png(), _png()
     client = stub_client(
@@ -294,7 +284,6 @@ async def test_same_anchor_with_new_evidence_formats_in_full(temp_db_path):
         ({"image_data": {"#/pictures/9": _png()}}, False),
     ],
 )
-@pytest.mark.asyncio
 async def test_equivalence_follows_the_rendered_evidence(
     temp_db_path, overrides: dict[str, Any], elided: bool
 ):
@@ -308,7 +297,6 @@ async def test_equivalence_follows_the_rendered_evidence(
     assert ("Also matched, shown above" in text_of(second)) is elided
 
 
-@pytest.mark.asyncio
 async def test_a_failed_sibling_commits_nothing(temp_db_path):
     client = stub_client(
         [make_result(image_data={"#/pictures/0": "AAA"})],

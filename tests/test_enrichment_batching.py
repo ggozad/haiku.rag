@@ -65,7 +65,6 @@ def item_queries(monkeypatch):
     return tally
 
 
-@pytest.mark.asyncio
 async def test_enrichment_query_count_does_not_grow_with_documents(
     temp_db_path, item_queries
 ):
@@ -87,7 +86,6 @@ async def test_enrichment_query_count_does_not_grow_with_documents(
     )
 
 
-@pytest.mark.asyncio
 async def test_each_document_gets_its_own_pictures(temp_db_path):
     """self_refs collide across documents, so a batched fetch keyed on self_ref
     alone would hand one document another's picture."""
@@ -108,7 +106,6 @@ async def test_each_document_gets_its_own_pictures(temp_db_path):
         assert blob == f"bytes-{document_id}".encode()
 
 
-@pytest.mark.asyncio
 async def test_caption_ranked_results_take_at_most_four_queries(
     temp_db_path, item_queries
 ):
@@ -192,7 +189,6 @@ def _text_result(document_id: str) -> SearchResult:
     )
 
 
-@pytest.mark.asyncio
 async def test_expansion_query_count_is_flat_in_document_count(
     temp_db_path, item_queries
 ):
@@ -210,7 +206,6 @@ async def test_expansion_query_count_is_flat_in_document_count(
     assert counts == [2, 2], counts
 
 
-@pytest.mark.asyncio
 async def test_expansion_widens_each_document_with_its_own_items(temp_db_path):
     """Positions repeat across documents, so a batched window fetch keyed on
     position alone would splice one document's text into another's context."""
@@ -237,7 +232,6 @@ def _picture_chunk(document_id: str) -> Chunk:
     )
 
 
-@pytest.mark.asyncio
 async def test_reranker_blob_fetch_is_one_query_for_any_document_count(
     temp_db_path, item_queries, item_projections
 ):
@@ -261,7 +255,6 @@ async def test_reranker_blob_fetch_is_one_query_for_any_document_count(
     assert all("text" not in p for p in picture_projections), picture_projections
 
 
-@pytest.mark.asyncio
 async def test_reranker_gives_each_chunk_its_own_document_picture(temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as rag:
         await _seed(rag, ["doc-a", "doc-b"])
@@ -273,7 +266,6 @@ async def test_reranker_gives_each_chunk_its_own_document_picture(temp_db_path):
     assert chunks[1]._picture_data == b"bytes-doc-b"
 
 
-@pytest.mark.asyncio
 async def test_expansion_keeps_document_order_for_tied_scores(temp_db_path):
     """The score sort is stable, so equal-scored results must come back in the
     order they arrived, whether or not their document expands."""

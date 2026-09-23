@@ -72,7 +72,6 @@ class TestDocumentToolset:
 class TestDocumentToolExecution:
     """Tests for document tool execution."""
 
-    @pytest.mark.asyncio
     async def test_list_documents_returns_paginated_results(
         self, doc_client, doc_config
     ):
@@ -88,7 +87,6 @@ class TestDocumentToolExecution:
         assert len(result.documents) == 2
         assert result.page == 1
 
-    @pytest.mark.asyncio
     async def test_list_documents_pagination(self, doc_client, doc_config):
         """list_documents supports pagination."""
         toolset = create_document_toolset(doc_config)
@@ -101,7 +99,6 @@ class TestDocumentToolExecution:
         assert result.page == 2
         assert len(result.documents) == 0
 
-    @pytest.mark.asyncio
     async def test_get_document_by_title(self, doc_client, doc_config):
         """get_document finds document by title."""
         toolset = create_document_toolset(doc_config)
@@ -113,7 +110,6 @@ class TestDocumentToolExecution:
         assert "Python Guide" in result
         assert "Python is a programming language" in result
 
-    @pytest.mark.asyncio
     async def test_get_document_by_uri(self, doc_client, doc_config):
         """get_document finds document by URI."""
         toolset = create_document_toolset(doc_config)
@@ -124,7 +120,6 @@ class TestDocumentToolExecution:
 
         assert "Python Guide" in result
 
-    @pytest.mark.asyncio
     async def test_get_document_not_found(self, doc_client, doc_config):
         """get_document returns appropriate message when not found."""
         toolset = create_document_toolset(doc_config)
@@ -135,7 +130,6 @@ class TestDocumentToolExecution:
         with pytest.raises(ToolFailed, match="Document not found: nonexistent"):
             await get_tool.function(ctx, "nonexistent")
 
-    @pytest.mark.asyncio
     async def test_list_documents_with_base_filter(self, doc_client, doc_config):
         """list_documents respects base_filter."""
         toolset = create_document_toolset(
@@ -154,7 +148,6 @@ class TestDocumentToolExecution:
 class TestFindDocument:
     """Tests for find_document helper function."""
 
-    @pytest.mark.asyncio
     async def test_find_document_partial_uri(self, doc_client):
         """find_document resolves partial URI match."""
         from haiku.rag.tools.document import find_document
@@ -163,7 +156,6 @@ class TestFindDocument:
         assert doc is not None
         assert doc.uri == "test://python"
 
-    @pytest.mark.asyncio
     async def test_find_document_partial_title(self, doc_client):
         """find_document resolves partial title match."""
         from haiku.rag.tools.document import find_document
@@ -177,7 +169,6 @@ class TestFindDocument:
 class TestSummarizeDocumentTool:
     """Tests for summarize_document tool."""
 
-    @pytest.mark.asyncio
     async def test_summarize_document_not_found(self, doc_client, doc_config):
         """summarize_document returns not-found message for nonexistent document."""
         toolset = create_document_toolset(doc_config)
@@ -189,7 +180,6 @@ class TestSummarizeDocumentTool:
             await summarize_tool.function(ctx, "nonexistent document")
 
     @pytest.mark.vcr()
-    @pytest.mark.asyncio
     async def test_summarize_document_returns_model_summary(
         self, doc_client, doc_config, monkeypatch
     ):

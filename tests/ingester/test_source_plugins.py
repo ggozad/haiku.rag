@@ -160,7 +160,6 @@ def test_build_source_does_not_load_unreferenced_plugins(monkeypatch):
     assert unused.loaded is False
 
 
-@pytest.mark.asyncio
 async def test_plugin_source_drives_poller_and_fetch(monkeypatch, jobs, sync):
     _register(monkeypatch, _FakeEntryPoint("memory", _MemorySource))
     cfg = _config()

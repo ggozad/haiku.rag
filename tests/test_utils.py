@@ -18,7 +18,6 @@ HAS_GROQ = importlib.util.find_spec("groq") is not None
 HAS_BEDROCK = importlib.util.find_spec("botocore") is not None
 
 
-@pytest.mark.asyncio
 async def test_text_to_docling_document():
     """Test text to DoclingDocument conversion."""
     # Test basic text conversion
@@ -36,7 +35,6 @@ async def test_text_to_docling_document():
     assert "This is a simple text document." in markdown
 
 
-@pytest.mark.asyncio
 async def test_text_to_docling_document_with_custom_name():
     """Test text to DoclingDocument conversion with custom name parameter."""
     code_text = """# Python Code
@@ -61,7 +59,6 @@ def hello():
     assert "Hello, World!" in markdown
 
 
-@pytest.mark.asyncio
 async def test_text_to_docling_document_markdown_content():
     """Test text to DoclingDocument conversion with markdown content."""
     markdown_text = """# Test Document
@@ -95,7 +92,6 @@ def test():
     assert "def test():" in result_markdown
 
 
-@pytest.mark.asyncio
 async def test_text_to_docling_document_empty_content():
     """Test text to DoclingDocument conversion with empty content."""
     converter = get_converter(get_config())
@@ -111,7 +107,6 @@ async def test_text_to_docling_document_empty_content():
     assert isinstance(markdown, str)
 
 
-@pytest.mark.asyncio
 async def test_text_to_docling_document_unicode_content():
     """Test text to DoclingDocument conversion with unicode content."""
     unicode_text = """# 测试文档
@@ -306,7 +301,6 @@ def test_get_model_openai_extra_body_forwarded():
     assert result._settings.get("extra_body") == extra
 
 
-@pytest.mark.asyncio
 async def test_get_model_merges_system_messages_for_openai_compatible():
     """Instruction parts from multiple sources (agent preamble, capability
     instructions, dynamic notices) each map to their own system message.
@@ -999,7 +993,6 @@ def test_cosine_similarity_zero_norm():
     assert cosine_similarity([0, 0], [0, 0]) == 0.0
 
 
-@pytest.mark.asyncio
 async def test_is_up_to_date(monkeypatch):
     from unittest.mock import AsyncMock, MagicMock
 
@@ -1174,7 +1167,6 @@ class TestGatherAll:
     """A fan-out leaves nothing running: a caller unwinding from a failure closes
     the sessions its siblings are still reading through."""
 
-    @pytest.mark.asyncio
     async def test_results_arrive_in_the_order_asked_for(self):
         async def slow(value):
             await asyncio.sleep(0.01)
@@ -1185,7 +1177,6 @@ class TestGatherAll:
 
         assert await gather_all(slow("a"), fast("b"), slow("c")) == ["a", "b", "c"]
 
-    @pytest.mark.asyncio
     async def test_a_failure_leaves_no_sibling_running(self):
         started = asyncio.Event()
         unwound = asyncio.Event()
@@ -1208,7 +1199,6 @@ class TestGatherAll:
         assert unwound.is_set()
         assert asyncio.all_tasks() - before == set()
 
-    @pytest.mark.asyncio
     async def test_the_failure_arrives_as_itself(self):
         """A `TaskGroup` drains the siblings too, but raises an `ExceptionGroup`."""
 

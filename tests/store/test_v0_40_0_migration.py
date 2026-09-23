@@ -6,8 +6,6 @@ introduced by later migrations (``picture_data`` in v0.45.0,
 ``heading_level`` / ``tree_depth`` in v0.48.0).
 """
 
-import pytest
-
 from haiku.rag.store.compression import compress_docling_split
 from haiku.rag.store.engine import Store
 from haiku.rag.store.schema import DocumentRecord
@@ -24,7 +22,6 @@ def _simple_docling_doc():
     return doc
 
 
-@pytest.mark.asyncio
 async def test_populate_handles_extra_columns_on_items_table(temp_db_path):
     """Regression: v0.40.0 must not fail when the live ``document_items``
     table carries columns added by later migrations.

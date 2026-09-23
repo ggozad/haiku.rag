@@ -19,7 +19,6 @@ from tests.multi_db.helpers import (
 
 
 class TestAskAcrossDatabases:
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_the_capability_searches_the_selected_databases(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
@@ -36,7 +35,6 @@ class TestAskAcrossDatabases:
         assert "alpha" in formatted
         assert "beta document" not in formatted
 
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_searching_all_databases_reaches_both(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
@@ -59,7 +57,6 @@ class TestStandaloneCapabilities:
     configured set, or a host that only registers capabilities gets one
     database while the configuration names several."""
 
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_a_rag_capability_opens_the_configured_set(self, tmp_path):
         from tests.capabilities.test_capabilities import Deps, make_context
@@ -80,7 +77,6 @@ class TestStandaloneCapabilities:
         assert "alpha document" in formatted
         assert "beta document" in formatted
 
-    @pytest.mark.asyncio
     async def test_the_capability_mounts_the_configured_set(self, tmp_path):
         from tests.capabilities.test_capabilities import Deps, make_context
 
@@ -99,7 +95,6 @@ class TestStandaloneCapabilities:
         assert len(docs) == 2
         assert {owner.source for owner in owners.values()} == {"alpha", "beta"}
 
-    @pytest.mark.asyncio
     async def test_a_single_configured_database_is_still_opened(self, tmp_path):
         """One named database is a set of one, not a path to guess."""
         config = _config(tmp_path, ["alpha"])
@@ -114,7 +109,6 @@ class TestStandaloneCapabilities:
 
 
 class TestTheSandboxAcrossDatabases:
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_the_sandbox_is_scoped_by_the_search_selection(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
@@ -138,7 +132,6 @@ class TestTheSandboxAcrossDatabases:
 class TestScopingACapabilityToASubset:
     """`sources` at construction narrows what the capability can reach."""
 
-    @pytest.mark.asyncio
     async def test_a_scoped_capability_never_reaches_the_other_database(
         self, tmp_path, query_embedding
     ):
@@ -160,7 +153,6 @@ class TestScopingACapabilityToASubset:
         assert "alpha document" in formatted
         assert "beta document" not in formatted
 
-    @pytest.mark.asyncio
     async def test_a_scoped_capability_mounts_only_its_databases(self, tmp_path):
         from tests.capabilities.test_capabilities import Deps, make_context
 
@@ -179,7 +171,6 @@ class TestScopingACapabilityToASubset:
 
         assert [doc.uri for doc in docs] == ["test://alpha/alpha document about cats"]
 
-    @pytest.mark.asyncio
     async def test_a_question_naming_a_database_outside_the_scope_fails(
         self, tmp_path, query_embedding
     ):
@@ -212,7 +203,6 @@ class TestScopingACapabilityToASubset:
         with pytest.raises(ValueError, match="pass None for all of them"):
             create_capability(config=_config(tmp_path, ["alpha", "beta"]), sources=[])
 
-    @pytest.mark.asyncio
     async def test_sources_beside_a_lent_client_is_refused(self, tmp_path):
         """A lent client's coverage is what the capability reads."""
         config = _config(tmp_path, ["alpha", "beta"])
@@ -247,7 +237,6 @@ class TestCollectionIdentityForTheModel:
 
         assert "Collection" not in result.format_for_agent(include_collection=True)
 
-    @pytest.mark.asyncio
     @pytest.mark.vcr()
     async def test_in_code_search_names_the_collection(self, tmp_path):
         """The dictionaries code reads carry `source` whatever the formatted
@@ -283,7 +272,6 @@ class TestNamingDatabasesBeforeTheModelRuns:
     """A name is checked at the boundary. Discovering it from a failed search
     spends model requests, and a run can answer without reaching one."""
 
-    @pytest.mark.asyncio
     async def test_ask_refuses_an_unknown_source_before_the_model(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -293,7 +281,6 @@ class TestNamingDatabasesBeforeTheModelRuns:
             with pytest.raises(UnknownDatabaseError, match="typo"):
                 await rag.ask("what about cats?", sources=["typo"])
 
-    @pytest.mark.asyncio
     async def test_checking_a_name_opens_nothing(self, tmp_path):
         """Validating a name reads the configured set; no database opens for
         it."""
@@ -314,7 +301,6 @@ class TestNamingDatabasesBeforeTheModelRuns:
 
 
 class TestLendingANamedClient:
-    @pytest.mark.asyncio
     async def test_a_lent_named_client_names_the_citation(self, tmp_path):
         """What a citation records is the lent client's database, not the scope
         the capability was constructed with. That chat lends its client is
@@ -354,7 +340,6 @@ class TestWhenTheModelIsToldTheCollection:
     """The line is decided by what the search spans, not by whether a name
     exists: one collection has nothing to distinguish."""
 
-    @pytest.mark.asyncio
     async def test_a_search_spanning_a_set_names_every_result(
         self, tmp_path, monkeypatch
     ):
@@ -383,7 +368,6 @@ class TestWhenTheModelIsToldTheCollection:
 
 
 class TestActionableFailures:
-    @pytest.mark.asyncio
     async def test_a_migration_error_survives_being_named(self, tmp_path, temp_db_path):
         """The remedy is the whole value of the message, and it names no location,
         so it is not replaced by the database's name."""

@@ -1,4 +1,3 @@
-import pytest
 from lancedb.pydantic import LanceModel
 
 from haiku.rag.store.engine import Store
@@ -26,7 +25,6 @@ async def _seed_legacy_meta(store: Store, doc_id: str) -> None:
     )
 
 
-@pytest.mark.asyncio
 async def test_renames_document_id_to_id_and_keeps_rows(temp_db_path):
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
         await _seed_legacy_meta(store, "doc-1")
@@ -39,7 +37,6 @@ async def test_renames_document_id_to_id_and_keeps_rows(temp_db_path):
         assert [r["id"] for r in rows] == ["doc-1"]
 
 
-@pytest.mark.asyncio
 async def test_idempotent_when_already_renamed(temp_db_path):
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
         await _seed_legacy_meta(store, "doc-1")

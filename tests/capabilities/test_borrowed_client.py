@@ -4,7 +4,6 @@ from haiku.rag.capabilities.rag import create_capability
 from haiku.rag.client import HaikuRAG
 
 
-@pytest.mark.asyncio
 async def test_a_borrowed_client_is_reused_not_reopened(temp_db_path, monkeypatch):
     """A capability handed a client must not open a second connection to the
     same database."""
@@ -29,7 +28,6 @@ async def test_a_borrowed_client_is_reused_not_reopened(temp_db_path, monkeypatc
         assert opens == 0
 
 
-@pytest.mark.asyncio
 async def test_closing_never_closes_a_borrowed_client(temp_db_path):
     """`_close` owns only what it opened. Closing the caller's client would be a
     use-after-close for the caller."""
@@ -45,7 +43,6 @@ async def test_closing_never_closes_a_borrowed_client(temp_db_path):
         assert await client.list_documents() == []
 
 
-@pytest.mark.asyncio
 async def test_a_borrowed_client_survives_for_run(temp_db_path):
     """for_run clears the owned connection per run; a borrowed one is the
     caller's and carries into the run copy."""
@@ -64,7 +61,6 @@ async def test_a_borrowed_client_survives_for_run(temp_db_path):
         assert await run_capability._ensure_rag() is client
 
 
-@pytest.mark.asyncio
 async def test_ask_hands_its_client_to_the_capability(temp_db_path, monkeypatch):
     """`ask` built the capability from a db_path alone, so the capability opened
     its own connection to a database the client already had open."""

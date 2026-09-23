@@ -35,7 +35,6 @@ def _pool(client, jobs, sync, **kwargs) -> WorkerPool:
 # --- worker identity ---
 
 
-@pytest.mark.asyncio
 async def test_worker_ids_are_unique_across_pools(client, jobs, sync):
     """Two pools built with default construction must not share worker ids;
     otherwise a stale worker from one pool can satisfy the claimed_by guard of
@@ -65,7 +64,6 @@ async def test_worker_ids_are_unique_across_pools(client, jobs, sync):
 # --- event-driven wakeup ---
 
 
-@pytest.mark.asyncio
 async def test_idle_worker_picks_up_job_quickly(client, jobs, sync):
     """An idle worker should wake up well under poll_idle_s when a job is
     enqueued, thanks to the job_available condition notification."""
@@ -86,7 +84,6 @@ async def test_idle_worker_picks_up_job_quickly(client, jobs, sync):
         await pool.stop()
 
 
-@pytest.mark.asyncio
 async def test_stop_completes_with_idle_workers(client, jobs, sync):
     """stop() must notify workers parked on job_available.wait() so they
     exit promptly. Without the notify, workers sleep for the full
@@ -104,7 +101,6 @@ async def test_stop_completes_with_idle_workers(client, jobs, sync):
 # --- drain_once: covers _process logic deterministically ---
 
 
-@pytest.mark.asyncio
 async def test_drain_marks_job_succeeded_and_writes_sync_state(client, jobs, sync):
     client._ingest_observed.return_value = Document(
         id="doc-1",
@@ -127,7 +123,6 @@ async def test_drain_marks_job_succeeded_and_writes_sync_state(client, jobs, syn
     assert snapshot == {"s3://b/k.md": "e1"}
 
 
-@pytest.mark.asyncio
 async def test_drain_delete_op_removes_sync_state(client, jobs, sync):
     await sync.upsert("src", "s3://b/k.md", revision="e1", content_hash="m1")
     client.get_document_by_uri.return_value = Document(
@@ -148,7 +143,6 @@ async def test_drain_delete_op_removes_sync_state(client, jobs, sync):
     assert snapshot == {}
 
 
-@pytest.mark.asyncio
 async def test_successful_delete_prunes_dead_jobs_for_same_uri(client, jobs, sync):
     """Once a DELETE resolves a URI, any earlier UPSERT failure for the same
     (source_id, uri) is stale — auto-prune keeps the DLQ free of resolved
@@ -176,7 +170,6 @@ async def test_successful_delete_prunes_dead_jobs_for_same_uri(client, jobs, syn
     assert await jobs.get_job(upsert.id) is None
 
 
-@pytest.mark.asyncio
 async def test_permanent_error_without_revision_writes_no_marker(client, jobs, sync):
     """A permanent failure on a revision-less job (e.g. HTTP without ETag) writes
     no suppression marker — get_revision_snapshot omits revision-less rows, so it
@@ -195,7 +188,6 @@ async def test_permanent_error_without_revision_writes_no_marker(client, jobs, s
     assert await sync.get_revision_snapshot("src") == {}
 
 
-@pytest.mark.asyncio
 async def test_permanent_error_with_revision_records_marker(client, jobs, sync):
     """A permanent failure on a revisioned job records the failed revision in
     sync_state (ingested=False) so discovery sees it as UNCHANGED and stops
@@ -220,7 +212,6 @@ async def test_permanent_error_with_revision_records_marker(client, jobs, sync):
     assert row.last_ingested_at is None
 
 
-@pytest.mark.asyncio
 async def test_transient_exhausted_writes_no_marker(client, jobs, sync):
     """A transient failure that exhausts max_attempts goes dead but records no
     suppression marker, so it stays re-attemptable on the next sweep (transient =
@@ -241,7 +232,6 @@ async def test_transient_exhausted_writes_no_marker(client, jobs, sync):
     assert await sync.get_revision_snapshot("src") == {}
 
 
-@pytest.mark.asyncio
 async def test_transient_error_reschedules_below_max_attempts(client, jobs, sync):
     client._ingest_observed.side_effect = TransientError("blip")
     job = await jobs.enqueue("src", "u", JobOp.UPSERT, max_attempts=3)
@@ -263,7 +253,6 @@ async def test_transient_error_reschedules_below_max_attempts(client, jobs, sync
     assert refreshed.scheduled_at > job.scheduled_at
 
 
-@pytest.mark.asyncio
 async def test_transient_error_at_max_attempts_marks_dead(client, jobs, sync, conn):
     client._ingest_observed.side_effect = TransientError("blip")
     job = await jobs.enqueue("src", "u", JobOp.UPSERT, max_attempts=1)
@@ -281,7 +270,6 @@ async def test_transient_error_at_max_attempts_marks_dead(client, jobs, sync, co
     assert refreshed.attempts == 1
 
 
-@pytest.mark.asyncio
 async def test_unknown_exception_caught_and_marked_dead(client, jobs, sync):
     """The classifier's fallback wraps any unrecognised Exception into
     TransientError, so an unknown error still flows through reschedule/DLQ
@@ -303,7 +291,6 @@ async def test_unknown_exception_caught_and_marked_dead(client, jobs, sync):
     assert refreshed.status is JobStatus.DEAD
 
 
-@pytest.mark.asyncio
 async def test_keyboard_interrupt_propagates_not_classified(client, jobs, sync):
     """KeyboardInterrupt / SystemExit / CancelledError signal runtime shutdown.
     The pipeline must not wrap them — the job stays 'claimed' for the reaper."""
@@ -320,7 +307,6 @@ async def test_keyboard_interrupt_propagates_not_classified(client, jobs, sync):
     assert refreshed.status is JobStatus.CLAIMED
 
 
-@pytest.mark.asyncio
 async def test_drain_passes_configured_sources_to_client(client, jobs, sync):
     """The pool's `sources` list flows through run_job to
     client._ingest_observed so resolve_fetcher can pick the
@@ -343,7 +329,6 @@ async def test_drain_passes_configured_sources_to_client(client, jobs, sync):
 # --- start / stop lifecycle ---
 
 
-@pytest.mark.asyncio
 async def test_workers_drain_queue_after_start(client, jobs, sync):
     client._ingest_observed.return_value = Document(
         id="doc", content="x", uri="u", metadata={"md5": "m", "source_revision": "e"}
@@ -367,7 +352,6 @@ async def test_workers_drain_queue_after_start(client, jobs, sync):
     assert counts.get("succeeded", 0) == 5
 
 
-@pytest.mark.asyncio
 async def test_shutdown_grace_lets_inflight_job_complete(client, jobs, sync):
     """A short-running job in flight when stop() is called must finish before
     the pool returns. Cancellation is the timeout path, not the default."""
@@ -397,7 +381,6 @@ async def test_shutdown_grace_lets_inflight_job_complete(client, jobs, sync):
     assert counts.get("succeeded", 0) == 1
 
 
-@pytest.mark.asyncio
 async def test_shutdown_grace_timeout_releases_claim(client, jobs, sync):
     """When grace elapses and the worker is cancelled mid-job, the claim is
     released back to 'queued' so the next process can pick it up immediately
@@ -436,7 +419,6 @@ async def test_shutdown_grace_timeout_releases_claim(client, jobs, sync):
 # --- heartbeat / lease renewal ---
 
 
-@pytest.mark.asyncio
 async def test_heartbeat_keeps_long_job_from_being_reaped(client, jobs, sync):
     """A job that takes longer than lease_ttl_s is kept alive by the heartbeat,
     so the reaper never resets it and it completes exactly once. Without
@@ -481,7 +463,6 @@ async def test_heartbeat_keeps_long_job_from_being_reaped(client, jobs, sync):
     assert calls == 1
 
 
-@pytest.mark.asyncio
 async def test_heartbeat_continues_during_graceful_stop(client, jobs, sync):
     """While stop() waits for an in-flight job to drain, the heartbeat keeps
     renewing its lease so a peer process doesn't reap it mid-drain."""
@@ -537,7 +518,6 @@ async def test_heartbeat_continues_during_graceful_stop(client, jobs, sync):
     assert final is not None and final.status is JobStatus.SUCCEEDED
 
 
-@pytest.mark.asyncio
 async def test_stale_worker_exit_keeps_a_siblings_renewal_entry(client, jobs, sync):
     """Same-pool reaper race: worker A is processing J, the reaper resets it,
     sibling worker B re-claims J. A's eventual exit must not evict B's renewal
@@ -559,7 +539,6 @@ async def test_stale_worker_exit_keeps_a_siblings_renewal_entry(client, jobs, sy
     assert "J" not in pool._inflight
 
 
-@pytest.mark.asyncio
 async def test_forced_shutdown_cancels_heartbeat(client, jobs, sync):
     """When the shutdown grace elapses and stop() is cancelled, the heartbeat
     task is cancelled along with the workers — they are no longer draining."""
@@ -584,7 +563,6 @@ async def test_forced_shutdown_cancels_heartbeat(client, jobs, sync):
     assert not pool.heartbeat_alive
 
 
-@pytest.mark.asyncio
 async def test_heartbeat_survives_a_renewal_failure(
     client, jobs, sync, monkeypatch, caplog
 ):
@@ -637,7 +615,6 @@ async def test_heartbeat_survives_a_renewal_failure(
         await pool.stop()
 
 
-@pytest.mark.asyncio
 async def test_heartbeat_done_callback_logs_unexpected_outcomes(
     client, jobs, sync, caplog
 ):
@@ -666,7 +643,6 @@ async def test_heartbeat_done_callback_logs_unexpected_outcomes(
     assert "exited while the pool was still running" in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_reaper_logs_when_it_resets_a_stale_claim(
     client, jobs, sync, conn, caplog
 ):
@@ -702,7 +678,6 @@ async def test_reaper_logs_when_it_resets_a_stale_claim(
         await pool.stop()
 
 
-@pytest.mark.asyncio
 async def test_worker_loses_claim_to_reaper_does_not_write_sync_state(
     client, jobs, sync
 ):
@@ -734,7 +709,6 @@ async def test_worker_loses_claim_to_reaper_does_not_write_sync_state(
     assert await sync.get_revision_snapshot("src") == {}
 
 
-@pytest.mark.asyncio
 async def test_permanent_error_loses_claim_to_reaper_writes_no_marker(
     client, jobs, sync
 ):
@@ -764,7 +738,6 @@ async def test_permanent_error_loses_claim_to_reaper_writes_no_marker(
     assert await sync.get_revision_snapshot("src") == {}
 
 
-@pytest.mark.asyncio
 async def test_cancel_cleanup_survives_second_cancel(client, jobs, sync, monkeypatch):
     """A second cancel arriving while the cancel-handler is awaiting
     release_if_claimed must not strand the claim. The shielded await may
@@ -816,7 +789,6 @@ async def test_cancel_cleanup_survives_second_cancel(client, jobs, sync, monkeyp
     assert refreshed.claimed_by is None
 
 
-@pytest.mark.asyncio
 async def test_drain_pending_releases_waits_for_orphan_releases(
     client, jobs, sync, monkeypatch
 ):
@@ -867,7 +839,6 @@ async def test_drain_pending_releases_waits_for_orphan_releases(
     assert refreshed.status is JobStatus.QUEUED
 
 
-@pytest.mark.asyncio
 async def test_drain_pending_releases_with_no_orphans_is_noop(client, jobs, sync):
     """Common case: nothing to drain — drain returns 0 immediately, no
     asyncio.wait against an empty set."""
@@ -875,7 +846,6 @@ async def test_drain_pending_releases_with_no_orphans_is_noop(client, jobs, sync
     assert await pool.drain_pending_releases() == 0
 
 
-@pytest.mark.asyncio
 async def test_live_workers_drops_when_a_worker_finishes(client, jobs, sync):
     """live_workers powers /health's degraded signal. When a worker task
     has completed (crashed or exited), it must no longer count."""
@@ -891,7 +861,6 @@ async def test_live_workers_drops_when_a_worker_finishes(client, jobs, sync):
         await pool.stop()
 
 
-@pytest.mark.asyncio
 async def test_double_start_raises(client, jobs, sync):
     pool = _pool(client, jobs, sync, worker_count=1)
     await pool.start()
@@ -905,7 +874,6 @@ async def test_double_start_raises(client, jobs, sync):
 # --- per-source circuit breaker ---
 
 
-@pytest.mark.asyncio
 async def test_breaker_opens_after_n_consecutive_transient_failures(client, jobs, sync):
     """N back-to-back TransientErrors from one source flips that source's
     breaker open. While open, _worker_loop excludes the source from
@@ -934,7 +902,6 @@ async def test_breaker_opens_after_n_consecutive_transient_failures(client, jobs
     assert remaining_before >= 1
 
 
-@pytest.mark.asyncio
 async def test_breaker_open_emits_logfire_event(client, jobs, sync, monkeypatch):
     """The worker breaker opening emits exactly one structured Logfire event
     (on the closed->open transition, not on every failure), tagged with the
@@ -965,7 +932,6 @@ async def test_breaker_open_emits_logfire_event(client, jobs, sync, monkeypatch)
     assert events[0]["source_id"] == "src"
 
 
-@pytest.mark.asyncio
 async def test_breaker_pauses_worker_loop_claims(client, jobs, sync):
     """Worker loop honours the breaker: an open source is excluded from
     claim_next, so its queued jobs stay queued until the breaker closes."""
@@ -987,7 +953,6 @@ async def test_breaker_pauses_worker_loop_claims(client, jobs, sync):
         await pool.stop()
 
 
-@pytest.mark.asyncio
 async def test_breaker_closes_on_successful_probe(client, jobs, sync):
     """After cooldown, the next probe is allowed through; if it succeeds,
     record_success clears the breaker so workers fully resume."""
@@ -1011,7 +976,6 @@ async def test_breaker_closes_on_successful_probe(client, jobs, sync):
     assert pool.breaker_consecutive_failures == 0
 
 
-@pytest.mark.asyncio
 async def test_breaker_closes_when_success_lands_while_open(client, jobs, sync, caplog):
     """A job that succeeds while the source's breaker is still open (drained
     directly, bypassing the paused-source skip) closes it and logs recovery."""
@@ -1031,7 +995,6 @@ async def test_breaker_closes_when_success_lands_while_open(client, jobs, sync, 
     assert "Worker breaker closed" in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_breaker_isolates_sources(client, jobs, sync):
     """An open breaker pauses only the failing source. Workers keep draining
     a healthy source's jobs while the failing source's jobs stay queued."""
@@ -1080,7 +1043,6 @@ async def test_breaker_isolates_sources(client, jobs, sync):
     assert [j.attempts for j in queued] == [0, 0, 0]
 
 
-@pytest.mark.asyncio
 async def test_breaker_ignores_permanent_errors(client, jobs, sync):
     """Permanent errors are about the document, not downstream — they
     shouldn't poison the breaker against unrelated jobs."""
@@ -1099,7 +1061,6 @@ async def test_breaker_ignores_permanent_errors(client, jobs, sync):
 # --- sync_state write resilience ---
 
 
-@pytest.mark.asyncio
 async def test_sync_state_write_failure_does_not_crash_worker(
     client, jobs, sync, monkeypatch
 ):
@@ -1132,7 +1093,6 @@ async def test_sync_state_write_failure_does_not_crash_worker(
     assert len(listed) == 1
 
 
-@pytest.mark.asyncio
 async def test_permanent_failure_marker_write_failure_does_not_crash_worker(
     client, jobs, sync, monkeypatch
 ):
@@ -1160,7 +1120,6 @@ async def test_permanent_failure_marker_write_failure_does_not_crash_worker(
 # --- reaper ---
 
 
-@pytest.mark.asyncio
 async def test_boot_reap_resets_stale_pre_existing_claims(client, jobs, sync, conn):
     """A SIGKILL'd previous process leaves a stale claim (its lease stopped
     being renewed). WorkerPool.start() sweeps it so fresh workers can take it
@@ -1194,7 +1153,6 @@ async def test_boot_reap_resets_stale_pre_existing_claims(client, jobs, sync, co
         await pool.stop()
 
 
-@pytest.mark.asyncio
 async def test_boot_reap_leaves_a_peer_process_fresh_claim_alone(client, jobs, sync):
     """A peer process sharing the queue holds a freshly-claimed job. Our
     startup boot-reap must not wipe its live claim."""
@@ -1213,7 +1171,6 @@ async def test_boot_reap_leaves_a_peer_process_fresh_claim_alone(client, jobs, s
         await pool.stop()
 
 
-@pytest.mark.asyncio
 async def test_reaper_resets_stale_claims(client, jobs, sync, conn):
     from datetime import UTC, datetime, timedelta
 
@@ -1252,7 +1209,6 @@ async def test_reaper_resets_stale_claims(client, jobs, sync, conn):
     assert refreshed.status is JobStatus.QUEUED
 
 
-@pytest.mark.asyncio
 async def test_reaper_prunes_old_terminal_jobs(client, jobs, sync, conn):
     from datetime import UTC, datetime, timedelta
 
@@ -1287,7 +1243,6 @@ async def test_reaper_prunes_old_terminal_jobs(client, jobs, sync, conn):
     assert await jobs.get_job(job.id) is None
 
 
-@pytest.mark.asyncio
 async def test_reaper_skips_prune_when_retention_none(client, jobs, sync, conn):
     from datetime import UTC, datetime, timedelta
 
@@ -1320,7 +1275,6 @@ async def test_reaper_skips_prune_when_retention_none(client, jobs, sync, conn):
     assert refreshed.status is JobStatus.SUCCEEDED
 
 
-@pytest.mark.asyncio
 async def test_fatal_permanent_error_terminates_after_the_job_is_dead(
     client, jobs, sync, monkeypatch
 ):
@@ -1361,7 +1315,6 @@ async def test_fatal_permanent_error_terminates_after_the_job_is_dead(
     assert refreshed is not None and refreshed.status is JobStatus.DEAD
 
 
-@pytest.mark.asyncio
 async def test_ordinary_permanent_error_does_not_terminate(
     client, jobs, sync, monkeypatch
 ):
@@ -1386,7 +1339,6 @@ async def test_ordinary_permanent_error_does_not_terminate(
     assert terminated is False
 
 
-@pytest.mark.asyncio
 async def test_fatal_error_terminates_when_mark_dead_loses_the_claim(
     client, jobs, sync, monkeypatch
 ):
@@ -1418,7 +1370,6 @@ async def test_fatal_error_terminates_when_mark_dead_loses_the_claim(
     assert terminated is True
 
 
-@pytest.mark.asyncio
 async def test_fatal_error_terminates_when_mark_dead_raises(
     client, jobs, sync, monkeypatch
 ):

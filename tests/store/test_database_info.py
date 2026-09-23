@@ -1,6 +1,5 @@
 import json
 
-import pytest
 from lancedb.pydantic import LanceModel, Vector
 from pydantic import Field
 
@@ -65,7 +64,6 @@ async def _seed(temp_db_path, *, version: str, with_items: bool = True):
     )
 
 
-@pytest.mark.asyncio
 async def test_gather_database_info_reports_tables_and_settings(temp_db_path):
     await _seed(temp_db_path, version="1.2.3")
 
@@ -92,7 +90,6 @@ async def test_gather_database_info_reports_tables_and_settings(temp_db_path):
     assert "lancedb" in info.packages
 
 
-@pytest.mark.asyncio
 async def test_gather_database_info_flags_missing_table_and_pending_migrations(
     temp_db_path,
 ):
@@ -106,7 +103,6 @@ async def test_gather_database_info_flags_missing_table_and_pending_migrations(
     assert all(m.version and m.description is not None for m in info.pending_migrations)
 
 
-@pytest.mark.asyncio
 async def test_gather_database_info_empty_database(temp_db_path):
     import lancedb
 
@@ -118,7 +114,6 @@ async def test_gather_database_info_empty_database(temp_db_path):
     assert info.path == str(temp_db_path)
 
 
-@pytest.mark.asyncio
 async def test_gather_database_info_connects_to_the_location_it_is_given():
     """A remote location is passed to the connection as is and reported back
     as the path; the configuration's own `uri` plays no part."""

@@ -2,15 +2,12 @@
 and the set of external functions exposed to the interpreter.
 """
 
-import pytest
-
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.sandbox import AnalysisContext, Sandbox
 from haiku.rag.store.models.chunk import SearchResult
 
 
-@pytest.mark.asyncio
 class TestSearchPictureRefs:
     """search() result dicts carry a `picture_refs` list (subset of
     doc_item_refs labeled 'picture'). No `image_data` base64 in the dict."""
@@ -70,7 +67,6 @@ class TestSearchPictureRefs:
         assert "image_data" not in results[0]
 
 
-@pytest.mark.asyncio
 class TestExternalFunctionsShape:
     """Sandbox externals expose exactly ``search`` and ``list_documents``.
 
