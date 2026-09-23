@@ -1,50 +1,24 @@
 # Ingester
 
-The ingester is a long-running service that watches sources for
-changes and feeds documents into haiku.rag's LanceDB. It runs as a
-separate process (`haiku-ingester serve`), owns its own job queue
-(SQLite by default, or a database server), and exposes a small HTTP
-control plane for operations.
+`haiku-ingester` is a long-running service that watches sources for changes and keeps a haiku.rag database in step with them. It runs as its own process, keeps a job queue (SQLite by default, or Postgres) with retries and a dead-letter queue, and serves an HTTP control plane with a dashboard.
 
-Use the ingester when:
+For one-off ingestion, `haiku-rag add-src` is enough, see [CLI](cli.md#add).
 
-- you have a corpus you want to keep in sync continuously
-- documents arrive over time from filesystem, S3, or HTTP sources
-- you want retry + dead-letter behavior, not "fire and forget"
-
-For one-off ingestion, the `haiku-rag add-src` CLI is enough — see
-[CLI → Add Documents](cli.md).
-
-**On this page:**
-
-- [Install](#install)
-- [Configure sources](#configure-sources) (FS, S3, HTTP, WebDAV)
-- [Workers and retry](#workers-and-retry)
-- [Circuit breaker](#circuit-breaker)
-- [Run it](#run-it)
-- [HTTP control plane](#http-control-plane)
-- [Operating](#operating) (smoke test, queue inspection, logs, API)
-
-Single-writer constraint: only one ingester per LanceDB. See
-[Storage → Deployment Pattern](configuration/storage.md#deployment-pattern-one-writer-many-readers).
+Run one ingester per database: haiku.rag allows one writing process per database (see [Operational constraints](configuration/storage.md#operational-constraints)). MCP servers and other read-only consumers can run beside it.
 
 ## Install
 
-The ingester ships behind an optional extra:
-
 ```bash
 pip install 'haiku.rag-slim[ingester]'
-# or, for the full package:
+# or, with the full package:
 pip install 'haiku.rag[ingester]'
 ```
 
-That pulls `fastapi`, `uvicorn`, `sqlalchemy`, `aiosqlite`, `asyncpg`, and
-the `[s3]` extra. The production binary is `haiku-ingester`.
+The extra pulls `fastapi`, `uvicorn`, `sqlalchemy`, `aiosqlite`, `asyncpg` and the `s3` extra.
 
 ## Configure sources
 
-Add an `ingester:` block to your `haiku.rag.yaml`. The minimum is a
-single source:
+Sources are listed under `ingester.sources` in `haiku.rag.yaml`. The minimum is one:
 
 ```yaml
 ingester:
@@ -55,25 +29,25 @@ ingester:
       delete_orphans: true
 ```
 
+Every source takes `id`, `poll_interval_s`, `delete_orphans`, `max_file_size`, `retry`, `circuit_breaker` and `metadata_provider`. With `delete_orphans`, a document whose file disappears from the source is deleted. Without it, the document stays. `ignore_patterns` and `include_patterns` follow [gitignore syntax](https://git-scm.com/docs/gitignore#_pattern_format).
+
 ### Filesystem
 
 ```yaml
 ingester:
   sources:
     - type: fs
-      id: local-docs                          # optional; auto-derives from root
+      id: local-docs                          # optional, derived from root
       root: /Users/you/docs
       poll_interval_s: 300
       delete_orphans: true
       ignore_patterns: ["**/.git/**", "**/node_modules/**"]
-      include_patterns: ["*.md", "*.pdf"]    # optional whitelist
+      include_patterns: ["*.md", "*.pdf"]    # optional allow-list
 ```
 
-Uses `watchfiles` for push events plus a periodic sweep that catches
-anything the OS dropped between starts. Patterns follow
-[gitignore syntax](https://git-scm.com/docs/gitignore#_pattern_format).
+`watchfiles` delivers changes as they happen, and a periodic sweep catches anything missed while the service was down.
 
-### S3 / object storage
+### S3 and object storage
 
 ```yaml
 ingester:
@@ -86,23 +60,16 @@ ingester:
       ignore_patterns: ["draft*"]
       include_patterns: ["*.pdf", "*.md"]
       storage_options:
-        endpoint: http://seaweed:8333         # omit for AWS default chain
+        endpoint: http://seaweed:8333         # omit for the AWS default chain
         aws_access_key_id: ${AWS_KEY}
         aws_secret_access_key: ${AWS_SECRET}
         region: us-east-1
         allow_http: "true"
 ```
 
-ETags decide what a sweep re-fetches. Each sweep lists the prefix, compares
-the listed ETag against the document's stored `metadata["source_revision"]`,
-and only fetches keys whose ETag has changed. If the bytes turn out to
-match the stored MD5 (a multipart re-upload gives the same content a new
-ETag), only the revision is refreshed — no re-chunk.
+Each sweep lists the prefix and fetches only keys whose ETag differs from the document's stored `metadata["source_revision"]`. When the fetched bytes match the stored MD5, as after a multipart re-upload, only the revision is updated and nothing is re-chunked.
 
-`storage_options` follows the same convention as `lancedb.storage_options` —
-the dict is passed straight to obstore (the Rust `object_store` library
-LanceDB uses internally), so credentials configured for the LanceDB
-backend can be copy-pasted here.
+`storage_options` takes the same keys as `lancedb.storage_options`, so credentials written for the database work here too.
 
 ### HTTP
 
@@ -118,10 +85,7 @@ ingester:
       poll_interval_s: 86400
 ```
 
-HTTP is pull-based with HEAD-driven change detection. A `410 Gone`
-response from a configured URL triggers a delete event; other failure
-statuses fall through to UPSERT-with-no-revision so the worker can
-GET and decide.
+Change detection uses `HEAD`. A URL removed from `urls`, or answering `410 Gone`, counts as gone. Other failures leave the decision to the fetch. A URL whose server sends neither `ETag` nor `Last-Modified` is not fetched again once ingested.
 
 ### WebDAV
 
@@ -137,25 +101,11 @@ ingester:
       poll_interval_s: 600
 ```
 
-Each sweep issues one `PROPFIND` with `Depth: infinity` against
-`base_url` and parses the multistatus response. Files (non-collection
-resources) are emitted as UPSERT / UNCHANGED based on the `getetag`
-property (falling back to `getlastmodified` if the server omits it);
-URIs that were in the previous snapshot but no longer appear under the
-collection are emitted as DELETE.
+Each sweep issues one `PROPFIND` with `Depth: infinity` against `base_url`. A file's `getetag`, or `getlastmodified` when the server sends no ETag, decides whether it changed. A file missing from the listing counts as gone. Fetches are plain `GET`s.
 
-Fetches are plain HTTP GETs — any WebDAV server already supports them.
+Redirects are followed for both `PROPFIND` and `GET`, so servers that redirect for a trailing slash or `http` to `https` work unchanged. A redirect that moves the collection to another path or host fails discovery, so the source can be pointed at the new location. Credentials are never sent to a different host.
 
-Redirects are followed for both `PROPFIND` and `GET`, so front-ended
-servers that 30x on trailing-slash normalisation or scheme upgrades (e.g.
-Plone) work without extra configuration. Discovered URIs stay anchored to
-`base_url` (the `GET` fetch follows redirects to the bytes). A same-host
-scheme upgrade (`http`→`https`) is transparent; a redirect that moves the
-collection to a different path or host makes discovery raise so you can
-point `base_url` at the new location rather than silently dropping every
-file. Credentials are never replayed to a different host on a redirect.
-
-Bearer-token auth can replace HTTP Basic via the standard `headers` map:
+`headers` can replace HTTP Basic with a bearer token:
 
 ```yaml
     - type: webdav
@@ -167,9 +117,7 @@ Bearer-token auth can replace HTTP Basic via the standard `headers` map:
 
 ### File size limits
 
-Any source can set `max_file_size` (bytes) to reject oversized files
-before they are read into memory. Files exceeding the limit go
-straight to the DLQ without retrying.
+`max_file_size` (bytes) rejects oversized files before they are read into memory. They go straight to the dead-letter queue.
 
 ```yaml
     - type: fs
@@ -177,20 +125,11 @@ straight to the DLQ without retrying.
       max_file_size: 104857600        # 100 MB
 ```
 
-FS and S3 sources know the size before downloading (`stat`, object
-metadata), so the limit is always enforced. For HTTP and WebDAV the check
-relies on a `Content-Length` response header; a server that omits it (for
-example a chunked response) is fetched in full and the limit does not
-apply.
+FS and S3 sources know the size before downloading, so the limit always applies. HTTP and WebDAV rely on the `Content-Length` header, and a response without one, such as a chunked response, is fetched in full.
 
 ### Metadata providers
 
-A source can attach custom metadata to every document it ingests by
-naming a `metadata_provider`. The provider is a callable that an external
-package registers under the `haiku.rag.metadata_providers` entry-point
-group; when the document is fetched for ingestion, the ingester calls it
-with `(source_id, uri, result)`, where `result` is the source's
-`FetchResult`, and merges the returned dict into the document's metadata.
+A source can attach custom metadata to every document it ingests through a `metadata_provider`, a callable an external package registers under the `haiku.rag.metadata_providers` entry-point group:
 
 ```yaml
     - type: webdav
@@ -199,8 +138,7 @@ with `(source_id, uri, result)`, where `result` is the source's
       metadata_provider: example-provider
 ```
 
-The provider is a zero-argument callable returning the provider instance,
-so a class is its own factory:
+The entry point is a zero-argument callable returning the provider, so a class is its own factory. The ingester calls the provider with `(source_id, uri, result)`, where `result` is the source's `FetchResult`, and merges the returned dict into the document's metadata:
 
 ```python
 # example_pkg/__init__.py
@@ -227,25 +165,11 @@ class Provider:
 example-provider = "example_pkg:Provider"
 ```
 
-The provider is built once at startup, so it can hold a client or cache
-across calls. When a document's source revision is unchanged, the
-ingester keeps the existing cheap HEAD short-circuit and preserves the
-stored provider metadata; the provider runs again when the document is
-fetched for a new or changed revision. The source-derived keys (`md5`,
-`source_revision`, `content_type`, `source_id`) are stripped from
-provider output, so a provider cannot override them. A
-`metadata_provider` name with no
-installed entry point fails at startup. A provider exception is
-classified like any other ingestion error (network and timeout errors
-retry; others go to the DLQ).
+The provider is built once at startup, so it can hold a client or a cache. It runs when a document is fetched for a new or changed revision. An unchanged document is skipped without a fetch and keeps its stored provider metadata. The keys `md5`, `source_revision`, `content_type` and `source_id` are removed from provider output. A `metadata_provider` with no installed entry point fails startup. A provider exception is handled like any ingestion error: network and timeout errors retry, others go to the dead-letter queue.
 
 ### Custom sources
 
-The four built-in source types (`fs`, `http`, `s3`, `webdav`) cover the
-common cases. To ingest from something else (a git host, a ticketing
-system, a bespoke API), an external package registers a source factory
-under the `haiku.rag.sources` entry-point group and a config references it
-with `type: plugin`.
+To ingest from something the four built-in types (`fs`, `http`, `s3`, `webdav`) do not cover, such as a git host or a ticketing system, a package registers a source factory under the `haiku.rag.sources` entry-point group and the configuration names it with `type: plugin`:
 
 ```yaml
     - type: plugin
@@ -258,15 +182,9 @@ with `type: plugin`.
         token: ${SCM_TOKEN}
 ```
 
-`plugin` is the entry-point name. `options` is an opaque mapping passed
-straight to the factory, which validates it however it likes (for example
-with its own Pydantic model). The base fields on every source
-(`id`, `poll_interval_s`, `delete_orphans`, `max_file_size`, `retry`,
-`circuit_breaker`, `metadata_provider`) are handled by the ingester and
-are not part of `options`.
+`plugin` is the entry-point name. `options` is passed to the factory as given, and the factory validates it. The base source fields are handled by the ingester and are not part of `options`.
 
-The factory is called with the source id, the validated `options`, and the
-ambient extension and size limits, and returns a `Source`:
+The factory takes the source id, the options, and the extension and size limits, and returns a `Source`:
 
 ```python
 def __call__(
@@ -279,16 +197,13 @@ def __call__(
 ) -> Source: ...
 ```
 
-A `Source` implements this protocol:
-
 ```python
 class Source(Protocol):
     source_id: str
 
     def supports(self, uri: str) -> bool: ...
 
-    # Current revision for `uri`, cheaply, or None if there is no cheap
-    # lookup. Lets the pipeline skip re-ingest when the revision is unchanged.
+    # Current revision for `uri`, or None when there is no cheap lookup.
     async def head(self, uri: str) -> str | None: ...
 
     # Release resources (connection pools, etc.). Called once at shutdown.
@@ -297,7 +212,7 @@ class Source(Protocol):
     async def fetch(self, uri: str) -> FetchResult: ...
 
     # Yield UPSERT / UNCHANGED / DELETE events. `since` is the uri -> revision
-    # snapshot from the previous sweep so the source can emit only deltas.
+    # snapshot from the previous sweep, so the source can emit only changes.
     def discover(
         self,
         since: RevisionSnapshot | None = None,
@@ -306,8 +221,7 @@ class Source(Protocol):
     ) -> AsyncIterator[SourceEvent]: ...
 ```
 
-`FetchResult`, `SourceEvent`, `SourceEventKind`, and `RevisionSnapshot`
-live in `haiku.rag.sources`.
+`FetchResult`, `SourceEvent`, `SourceEventKind` and `RevisionSnapshot` are in `haiku.rag.sources`.
 
 ```toml
 # in the source package's pyproject.toml
@@ -315,19 +229,9 @@ live in `haiku.rag.sources`.
 git = "example_pkg:build_git_source"
 ```
 
-Only the plugin a source references is imported, so an unused plugin with a
-missing optional dependency does not break startup. A `plugin` name with no
-installed entry point fails at startup, as does a factory that returns
-something that is not a `Source`.
+Only plugins a source references are imported. A `plugin` name with no installed entry point fails startup, as does a factory that returns something other than a `Source`.
 
-Two limits to know:
-
-- Custom sources are reached through configured discovery and the job
-  queue, not through one-shot `haiku-rag add-src <uri>`, which only knows
-  the built-in URI schemes.
-- Change detection is per `(source, uri)`. A source that needs a single
-  per-source cursor (for example a git last-commit SHA) tracks it itself,
-  by encoding it in each URI's revision or stashing it under a sentinel URI.
+Custom sources are reached through the ingester only, not through `haiku-rag add-src`. Change detection is per source and URI, so a source that needs one cursor for the whole source (a git commit SHA, say) keeps it in each URI's revision or under a sentinel URI.
 
 ## Workers and retry
 
@@ -339,7 +243,7 @@ ingester:
     lease_ttl_s: 120
     heartbeat_interval_s: 30
     reaper_interval_s: 60
-    shutdown_grace_s: 60            # SIGTERM drains in-flight up to this long
+    shutdown_grace_s: 60            # SIGTERM drains in-flight jobs up to this long
     retry:
       max_attempts: 5
       base_delay_s: 2.0
@@ -347,50 +251,21 @@ ingester:
       jitter: 0.25                  # ±25%
 ```
 
-The worker pool runs `worker_count` async workers, each processing one
-job at a time. `worker_count` is therefore also the maximum number of
-concurrent in-flight jobs. Jobs that hit a `TransientError` are
-rescheduled with exponential backoff plus jitter, up to `max_attempts`,
-then move to the dead-letter queue. `PermanentError` (unsupported
-extension, 4xx HTTP except 408/429, object-store credential and
-configuration errors, etc.) skips retry entirely.
+`worker_count` workers each process one job at a time, so it is also the most jobs in flight. A job failing with a transient error is retried with exponential backoff and jitter up to `max_attempts`, then moves to the dead-letter queue. A permanent error skips retries: an unsupported extension, an HTTP 4xx other than 408 and 429, an object-store credential or configuration error.
 
-While a worker processes a job it renews the job's lease every
-`heartbeat_interval_s`. A reaper task resets any claim whose lease has not
-been renewed within `lease_ttl_s` so a crashed worker doesn't strand its
-job. Because a live worker keeps renewing, `lease_ttl_s` need not exceed
-job duration — a slow job is not reaped while it is still running.
+A worker renews its job's lease every `heartbeat_interval_s`. The reaper returns a job to the queue when its lease has not been renewed for `lease_ttl_s`, so a crashed worker's job is picked up again. A slow job keeps renewing and is never reaped while it runs.
 
-**Backpressure.** Each poller skips its periodic sweep when its source
-already has queued or claimed jobs in the queue. The unique-index dedup
-would coalesce a re-sweep anyway; the skip saves the listing round-trip
-(`PROPFIND` / `S3 LIST` / FS walk). FS push events from `watchfiles`
-still flow during a skipped sweep, so new files aren't lost.
+- `lease_ttl_s` bounds how long a crashed worker's job waits before another worker takes it. It need not exceed job duration.
+- `heartbeat_interval_s` must be at most `lease_ttl_s / 3`.
+- `worker_count` should match downstream capacity. With docling-serve, start at 1–2× the number of `providers.docling_serve.base_url` entries, see [Remote processing](remote-processing.md#several-instances).
+- `poll_idle_interval_s`: lower picks up work faster and queries the queue more often.
+- `reaper_interval_s`: a crashed worker's job is reclaimed within `lease_ttl_s + reaper_interval_s`.
 
-**Graceful shutdown.** On `SIGINT` / `SIGTERM`, pollers stop immediately
-and workers are given `shutdown_grace_s` to finish in-flight jobs. Jobs
-still running after the grace window are cancelled and released back to
-`queued` for immediate re-claim; any release that fails has its
-lease lapse and is reclaimed by the reaper after `lease_ttl_s`.
+A poller skips its periodic sweep while its source has queued or claimed jobs. Filesystem change events still flow during a skipped sweep.
 
-**Tuning.**
+On `SIGINT` or `SIGTERM`, pollers stop and workers get `shutdown_grace_s` to finish. Jobs still running after that are cancelled and returned to the queue. A job that cannot be returned is reclaimed by the reaper once its lease expires.
 
-- `lease_ttl_s` bounds how long a crashed worker's job stays stuck before
-  another worker takes it over. It no longer needs to exceed job duration,
-  so it can be short; keep it well above `heartbeat_interval_s`.
-- `heartbeat_interval_s` must be at most `lease_ttl_s / 3` so scheduler
-  jitter or a slow DB round-trip can't let a live job's lease lapse.
-- `worker_count` should match downstream capacity. docling-serve
-  processes one task per instance, so `worker_count` above the number
-  of `providers.docling_serve.base_url` entries over-subscribes the
-  fleet — extra submissions queue inside docling-serve. They are not
-  reaped while queued because the worker keeps renewing the lease.
-- `poll_idle_interval_s`: lower = faster pickup, more SQLite churn.
-- `reaper_interval_s`: worst-case post-crash reclaim is
-  `lease_ttl_s + reaper_interval_s`.
-
-**Per-source override.** A source can opt out of the global retry
-policy:
+A source can override the retry policy:
 
 ```yaml
 ingester:
@@ -405,8 +280,7 @@ ingester:
 
 ## Circuit breaker
 
-After N consecutive `discover()` failures, a source's circuit breaker
-opens and polling pauses for a cooldown. Other sources keep running.
+After `failure_threshold` consecutive discovery failures, a source's circuit breaker opens and its polling pauses for `cooldown_s`. Other sources keep running.
 
 ```yaml
 ingester:
@@ -419,103 +293,61 @@ ingester:
         cooldown_s: 600
 ```
 
+Workers keep a second breaker per source over job failures. After 5 consecutive transient job failures they stop claiming that source's jobs for 60 seconds. Both values are fixed. `/health` reports the breaker, and opening it emits an `ingester.worker breaker opened` event.
+
 ## Run it
 
 ```bash
-haiku-ingester serve                          # workers + pollers + API
-haiku-ingester serve --no-api                 # workers + pollers only
-haiku-ingester serve --db /path.lancedb       # explicit DB
-haiku-ingester serve --host 0.0.0.0           # bind API on all interfaces
-haiku-ingester serve --port 9000              # override API port
+haiku-ingester serve                          # workers, pollers and API
+haiku-ingester serve --no-api                 # workers and pollers only
+haiku-ingester serve --db /path.lancedb       # explicit database
+haiku-ingester serve --host 0.0.0.0           # bind the API on all interfaces
+haiku-ingester serve --port 9000              # API port
 ```
 
-`--host` and `--port` are CLI overrides for `ingester.api.host` and
-`ingester.api.port` in `haiku.rag.yaml`. Both default to the YAML value
-(which itself defaults to `127.0.0.1:8765` — loopback only).
+`--host` and `--port` override `ingester.api.host` and `ingester.api.port`, which default to `127.0.0.1:8765`. `--config`/`-c` names the configuration file.
 
-The service blocks until SIGINT or SIGTERM. Shutdown drains the API
-server, then pollers, then in-flight workers.
+The service runs until `SIGINT` or `SIGTERM`, then stops the API server, the pollers and the workers, in that order.
 
 ### Run it under a supervisor
 
-A document can stall docling indefinitely. `processing.conversion_timeout`
-abandons it, but the conversion thread is never cancelled and it keeps the
-shared docling converter, so the process cannot convert again. The worker
-records that document dead and then exits non-zero, leaving the process to be
-replaced.
+A document can stall docling indefinitely. `processing.conversion_timeout` abandons it, but a stalled PDF or office conversion holds docling's shared converter, so the process cannot convert again. The worker records the document dead and exits non-zero, for the process to be replaced.
 
-**So the service needs something to restart it.** The example
-`docker-compose.yml` sets `restart: unless-stopped`; a systemd unit needs
-`Restart=always`, and any other supervisor needs its equivalent. Without one,
-the ingester stops for good the first time a document stalls.
+So the service needs something to restart it: `restart: unless-stopped` in Compose (the example sets it), `Restart=always` in a systemd unit. Without one, the ingester stops the first time a document stalls. A restart mid-job is safe: the reaper returns the jobs of a vanished process to the queue once their leases expire, without counting the attempt.
 
-Restarting mid-job is a supported path independently of this: jobs whose owner
-disappears are reset to `queued` by the reaper once their lease expires, and
-their attempt is refunded rather than consumed.
+The stalled document is not retried by itself. Its dead job keeps discovery from queueing the same revision again, and retention never removes it. It is cleared by:
 
-The document that stalled is not tried again on its own. It is recorded dead
-with `conversion_stalled`, and `uq_jobs_blocking_op` keeps that row in the slot
-for its (source, URI, op, revision), so discovery cannot re-enqueue the same
-bytes. Retention never removes it. These do:
+- a new revision of the file at the source
+- `POST /dlq/{job_id}/retry`, once the document is fixed. Retrying a different dead job for the same document and revision answers 409 and names the job in the way
+- deleting the document
 
-- The source publishing a new revision of the file, which takes a different
-  slot.
-- `POST /dlq/{job_id}/retry`, once the document is fixed. Retrying a different
-  dead row for the same slot answers 409 and names the row in the way.
-- Deleting the document. A DELETE holds its own slot, and a successful one
-  prunes the dead rows for the URI.
-
-A stall that did not strand the shared converter — HTML and Markdown build
-their own — is tombstoned the same way but does not end the process.
-
-### Single-writer constraint
-
-haiku.rag serializes multi-table writes with a process-local lock and rolls
-them back by restoring table versions, so a second writing process can
-commit inside another's transaction and be reverted by its rollback. Run
-exactly one `haiku-ingester serve` against a given LanceDB. Multiple
-MCP servers or read-only consumers against the same DB are fine. Sharing
-the Postgres queue across processes is safe (the claim/lease lifecycle is
-cross-process-correct) but does not relax this constraint — it governs the
-queue, not the LanceDB.
+An HTML or Markdown stall is recorded the same way but does not end the process, since those formats do not share a converter.
 
 ## HTTP control plane
 
-By default the ingester exposes a FastAPI control plane on
-`127.0.0.1:8765`. Set `ingester.api.auth_token` to require a Bearer
-token; without one the API stays open and the service logs a warning.
+The ingester serves a FastAPI control plane on `127.0.0.1:8765`. `ingester.api.auth_token` requires a bearer token on every route except `/` and `/health`. Without a token the API is open and the service logs a warning.
 
 !!! warning "Non-loopback binds need a token"
-    Loopback (`127.0.0.1`) is local-only and safe to leave open. If
-    you bind to any other interface (`0.0.0.0`, a LAN IP, behind a
-    reverse proxy) **set `auth_token`** — the control plane can
-    cancel jobs, retry from the DLQ, and trigger source refreshes.
-    The startup warning is your only signal that you forgot.
+    Loopback is local-only. On any other interface (`0.0.0.0`, a LAN address, behind a reverse proxy) set `auth_token`: the control plane can cancel jobs, retry dead ones and trigger sweeps. The startup warning is the only sign that it is missing.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/` | browser dashboard (HTML; unauthenticated, the JS attaches the bearer on its own JSON fetches) |
-| `GET` | `/health` | liveness + queue counts + live worker/poller counts; `status` is `"ok"` or `"degraded"` |
-| `GET` | `/sources` | configured pollers + last-poll time + breaker state + last skip reason |
-| `POST` | `/sources/{id}/refresh` | force an out-of-band sweep |
-| `GET` | `/jobs` | filtered list (`status`, `source_id`, `uri`, `limit`, `offset`) |
-| `GET` | `/jobs/{id}` | one job |
-| `POST` | `/jobs/{id}/retry` | reset attempts to 0, status to queued |
-| `DELETE` | `/jobs/{id}` | cancel a queued/claimed job |
-| `GET` | `/dlq` | dead jobs |
-| `POST` | `/dlq/{id}/retry` | re-queue a dead job |
-| `GET` | `/stats` | rolling throughput (5m / 30m / 1h succeeded), worker occupancy, oldest queued age, per-source DLQ + backlog |
-| `GET` | `/database` | LanceDB snapshot — stored version, embeddings, per-table row counts/sizes, vector index status, pending migrations, package versions (same data as `haiku-rag info`) |
-| `GET` | `/config` | full effective configuration (defaults filled in) as YAML, with secrets redacted |
+| `GET` | `/` | Browser dashboard. Unauthenticated. Its script sends the token on its own requests |
+| `GET` | `/health` | Queue counts, live workers and pollers, worker breaker state. `status` is `degraded` when a worker or poller is down or the worker breaker is open. Unauthenticated |
+| `GET` | `/sources` | Configured sources, last poll time, breaker state, last skip reason |
+| `POST` | `/sources/{id}/refresh` | Run a sweep now. Skipped (`refreshed: false`) while the source has queued or claimed jobs or its breaker is open |
+| `GET` | `/jobs` | Jobs filtered by `status`, `source_id`, `uri`, `limit`, `offset` |
+| `GET` | `/jobs/{id}` | One job |
+| `POST` | `/jobs/{id}/retry` | Reset a dead or queued job to queued with zero attempts. Returns the live job instead when one exists for the same URI |
+| `DELETE` | `/jobs/{id}` | Cancel a queued or claimed job |
+| `GET` | `/dlq` | Dead jobs, filtered by `source_id`, `limit` (default 50, at most 500), `offset` |
+| `POST` | `/dlq/{id}/retry` | Re-queue a dead job |
+| `GET` | `/stats` | Throughput over 5 minutes, 30 minutes and 1 hour, worker occupancy, oldest queued age, per-source dead and backlog counts |
+| `GET` | `/database` | The database report `haiku-rag info` prints |
+| `GET` | `/config` | The effective configuration, defaults filled in and secrets redacted, as YAML text in a JSON `yaml` field |
+| `GET` | `/providers` | Reachability of each `providers.docling_serve.base_url` entry (`/health`, 2 s timeout) |
 
-OpenAPI docs at `http://localhost:8765/docs`. The dashboard at `/` polls
-the JSON endpoints above every few seconds and surfaces the same data
-visually — queue depth chips, per-source health with a `queue busy` badge
-when sweeps are skipped, throughput counters, active jobs with a Cancel
-button, recent failures with a Retry button, and the last-completed
-feed. The Database and Configuration panels are collapsed and load on
-demand (the Database panel has a Refresh button) rather than on the poll
-loop.
+OpenAPI docs are at `/docs`. The dashboard at `/` shows the same data and refreshes every few seconds.
 
 ![Ingester dashboard mid-ingest: queue depth, per-source health, active and recent jobs](img/ingester-dashboard.png)
 
@@ -525,25 +357,17 @@ ingester:
     enabled: true
     host: 127.0.0.1
     port: 8765
-    auth_token: secret                        # null → unauthenticated
+    auth_token: ${INGESTER_TOKEN}             # unset: unauthenticated
     root_path: ""                             # e.g. /ingester behind a proxy
 ```
 
 ### Behind a reverse proxy
 
-To serve the control plane under a sub-path (so a reverse proxy can front
-it alongside other services on one origin, e.g. `https://host/ingester/`),
-set `ingester.api.root_path` (or `serve --root-path /ingester`). It is
-forwarded to FastAPI/uvicorn as `root_path` — OpenAPI/`/docs` links become
-prefix-aware — and the dashboard is served with a matching `<base href>` so
-its JSON fetches resolve under the prefix. The value is normalized to a
-single leading slash with no trailing slash (`ingester`, `/ingester/` and
-`/` become `/ingester`, `/ingester` and `""`). Strip the prefix at the proxy
-before forwarding; for example, with nginx:
+`ingester.api.root_path` (or `serve --root-path /ingester`) serves the control plane under a sub-path, such as `https://host/ingester/`. The OpenAPI docs and the dashboard's requests follow the prefix. The value is normalized to one leading slash and no trailing slash. Strip the prefix at the proxy, for example with nginx:
 
 ```nginx
-# Redirect the bare prefix to the trailing-slash form so the dashboard's
-# <base href> resolves correctly.
+# Redirect the bare prefix to the trailing-slash form, where the dashboard's
+# <base href> resolves.
 location = /ingester {
     return 308 /ingester/;
 }
@@ -558,69 +382,37 @@ location /ingester/ {
 
 ### One-shot batch build
 
-`run-batch` runs a single discover sweep across every configured source,
-drains the queue, then exits. New and changed resources are ingested,
-resources that vanished from a source are deleted. The periodic poller
-loops never start, so the run is deterministic and finishes as soon as the
-queue is empty. This is the mode for building a database in CI or on a
-schedule rather than running the service continuously.
+`run-batch` runs one discovery sweep over every source, drains the queue and exits. New and changed files are ingested, and, with `delete_orphans`, documents whose files are gone are deleted. It is the mode for building a database in CI or on a schedule.
 
 ```bash
 haiku-ingester run-batch
 haiku-ingester run-batch --db rag.lancedb
 ```
 
-To review a batch before it mutates the document store, use `--dry-run`.
-Dry-run performs the same discovery checks but writes no queue jobs and does
-not update `sync_state`. It writes a YAML manifest named
-`manifest-<datestamp>.yaml` by default:
+It exits non-zero when a job dead-letters or a source's sweep does not complete. Deletion compares each source against the queue's record of what it ingested, so keep `ingester.db` between runs.
+
+`--dry-run` makes the same discovery without queueing anything, and writes the changes it found to a YAML manifest, `manifest-<datestamp>.yaml` unless `--output`/`-o` names one:
 
 ```bash
 haiku-ingester run-batch --dry-run
 haiku-ingester run-batch --dry-run --output manifest-20260622.yaml
 ```
 
-The manifest records the `upsert` and `delete` changes discovered for each
-source. Replay it later to ingest exactly that changeset, without another
-discovery sweep:
+`--manifest` replays exactly that changeset, without another sweep:
 
 ```bash
 haiku-ingester run-batch --manifest manifest-20260622.yaml
 ```
 
-Manifest replay rejects sources with queued or claimed work, preserving the
-one-active-changeset-per-source pattern. Revisioned upserts are checked
-against the current upstream revision before fetch; if the resource changed
-after dry-run, that job dead-letters and the newer version waits for the next
-dry-run. Sources that provide no revision can freeze URI discovery but cannot
-prove byte identity at replay time.
-
-Orphan deletion compares each source against `sync_state` in the queue DB,
-so persist `ingester.db` between runs for deletions to be detected. It exits
-non-zero if any job dead-letters or a source's discovery sweep does not
-complete.
+Replay refuses a source with queued or claimed jobs. An upsert with a revision is checked against the source before fetching, and one that changed since the dry run dead-letters, leaving the newer version to the next dry run. A source that reports no revisions cannot prove at replay that the bytes are the ones the dry run saw.
 
 ### Which source a document came from
 
-Every document the ingester fetches carries `metadata["source_id"]`, the
-id of the source that ingested it. Documents added by hand with
-`haiku-rag add-src` carry no such key, and neither do documents derived
-from a fetched one rather than fetched themselves — PDF attachments are
-attributed through the parent they hang off, which deleting the parent
-removes with it.
+A document the ingester fetches carries `metadata["source_id"]`, the id of the source that ingested it. Documents added with `haiku-rag add-src` have none. Neither do PDF attachments, which belong to their parent document and are deleted with it.
 
-`source_id` is set by ingestion, and otherwise only by the named
-operation `HaikuRAG.set_document_source`, which startup reconciliation
-uses to attribute a document the queue already records. Passing one as
-document metadata does nothing, and updating a document's metadata
-leaves it in place, so re-adding an ingested document by hand cannot
-detach it from its source.
+Only ingestion sets `source_id`, and `HaikuRAG.set_document_source`, which startup reconciliation uses. Passing it as metadata does nothing, and re-adding an ingested document by hand keeps it.
 
-A source id is an identity. An `fs` source without an `id` derives one
-from its root (`fs:{resolved_root}`), so moving a watched directory, or
-renaming a source that sets `id`, detaches every document already
-ingested under the old id. Set `id` explicitly on a source whose
-location may move:
+A source id is an identity. An `fs` source without an `id` derives it from its root (`fs:{resolved_root}`), and an `s3` source from its bucket and prefix (`s3:{bucket}/{prefix}`). Moving the directory or prefix, or renaming an `id`, detaches every document ingested under the old one. Set `id` on a source whose location may move:
 
 ```yaml
 ingester:
@@ -630,81 +422,34 @@ ingester:
       root: /srv/handbook
 ```
 
-Where two sources cover the same URI (nested `fs` roots, nested S3
-prefixes, one URL in two `http` source lists), the most recent ingestion
-takes ownership and the change is logged at WARNING. Overlapping sources
-are a configuration error; the warning names both ids.
+When two sources cover the same URI (nested roots or prefixes, one URL in two `http` sources), the latest ingestion takes ownership and a warning names both ids. Overlapping sources are a configuration error.
 
 ### Reconciliation at startup
 
-Ingester state lives in two databases: the documents in LanceDB and the
-queue's `sync_state`, which records what each source has ingested and is
-what delete detection diffs the source against. Either can be restored,
-rebuilt or lost without the other — a queue file on container-local
-storage, a restore of one backup, a rebuilt index — and the two then
-disagree.
+The ingester's state is in two places: the documents in the database, and the queue's record of what each source ingested, which deletion is computed from. Either can be restored or lost without the other, for example a queue file on container-local storage or a database restored from backup.
 
-Every `serve` and `run-batch` reconciles them before the first sweep. Per
-source:
+Every `serve` and `run-batch` reconciles them before its first sweep. For each source:
 
-- A document the source owns with no `sync_state` row gets one back, so
-  the next sweep decides whether it is still at the source. Without this,
-  a document whose file is gone stays in the index forever.
-- A stored revision for a URI the index no longer holds is cleared, so
-  the next sweep re-ingests instead of reporting the file unchanged.
-- A document with no `source_id` that this source successfully ingested
-  is attributed. This is how a database written before attribution
-  existed acquires it, without a fetch or a re-conversion.
+- A document the source owns with no queue record gets one back, so the next sweep can delete it if its file is gone.
+- A recorded revision for a URI the database no longer holds is cleared, so the next sweep re-ingests it.
+- A document without `source_id` that the source's queue records as ingested is attributed to the source, without a fetch.
 
-The last two act only on a URI the source has actually ingested. A
-permanently failed job also stores a revision, to stop discovery
-re-enqueuing an unchanged file forever, and reconciliation leaves that
-marker alone: clearing it would retry the poison document on every
-restart, and the document sitting at that URI came from somewhere else.
+A permanently failed job also records a revision, which keeps an unchanged failing file from being queued forever. Reconciliation leaves those alone.
 
-A document that two sources both ingested is left unattributed, with a
-warning naming them. Their order in the configuration is not evidence of
-ownership; separate the sources instead.
+A document two sources both ingested stays unattributed, with a warning naming them. Documents of a `source_id` no longer configured are counted in a warning and left alone. Reconciliation reads the document metadata table once and no content.
 
-Drift is logged per source. Documents belonging to a `source_id` that is
-no longer configured are counted in a warning and otherwise left alone:
-no configured source sweeps them, so nothing can say whether they are
-still current.
-
-Reconciliation lists `document_meta` once per process start and writes
-each repair in one transaction: one for the rows it restores, one for
-the revisions it clears, and one `document_meta` version for the
-documents it attributes. It reads no content and no docling blobs, but
-on a large index the listing is not free.
-
-One gap: `run-batch --dry-run` opens no document store, so a manifest
-generated while the two databases disagreed omits the orphan deletes, and
-`run-batch --manifest` replays the frozen changeset without sweeping.
-Replay reconciles `sync_state`, so an ordinary sweep afterwards emits
-what the manifest missed, but a workflow built only on dry-run and replay
-never runs one.
+`run-batch --dry-run` opens no database, so a manifest written while the two disagreed misses the deletions reconciliation would find, and `--manifest` replay does not sweep. A normal sweep afterwards catches up.
 
 ### Documents with no source attribution
 
-Reconciliation warns at startup when the index holds documents that
-remain without source attribution:
+At startup, reconciliation reports documents that remain unattributed:
 
 ```
 14 document(s) remain without source attribution. Review whether they are
 intentionally unmanaged or have ambiguous or lost ownership.
 ```
 
-Commonly they are one of two kinds. One was added by hand with
-`haiku-rag add-src`, which is fine and permanent. The other was ingested
-before `source_id` existed, by a source whose queue rows were lost before
-the upgrade, so neither database records that the source wrote it. While
-its file is still at the source the next sweep picks it up and attributes
-it. Once the file is gone, nothing can identify it and it stays in the
-index.
-
-A third kind is deliberate: a URI that two sources both ingested is left
-unattributed, and named in its own warning. Separate the sources rather
-than deleting the document.
+Such a document was added by hand, was ingested by a version that did not record `source_id` and whose queue record is gone, or is claimed by two sources and named in its own warning. The last kind needs the sources separated, not the document deleted. While a lost document's file is still at its source, the next sweep attributes it. Once the file is gone, nothing identifies it.
 
 To clear them:
 
@@ -715,14 +460,7 @@ haiku-ingester --config /etc/haiku/haiku.rag.yaml run-batch
 echo $?    # must be 0
 ```
 
-This attributes what the ingester can still account for: reconciliation
-writes attribution directly wherever the queue records an ingestion, and
-the sweep attributes the rest as it picks them up. An unchanged document
-costs no body fetch, conversion, chunking or embedding; one whose bytes
-have changed is re-ingested normally. A non-zero exit means a source
-failed to sweep or a job died, so some live documents were not
-attributed; fix that and re-run before going on, or step 2 will offer
-them for deletion.
+Reconciliation attributes what the queue records, and the sweep attributes what it finds. An unchanged document costs no fetch, conversion or embedding. A non-zero exit means a source failed to sweep or a job died, so some live documents may still be unattributed. Fix that and run again before step 2.
 
 **2. List what is left.**
 
@@ -737,11 +475,7 @@ Narrow it on a database that also holds hand-added documents:
   -f "metadata NOT LIKE '%\"source_id\"%' AND uri LIKE 'file:///srv/handbook/%'"
 ```
 
-This is a practical filter, not an exact one. `metadata` is stored as
-JSON and matched as text, so a document whose own metadata contains the
-string `source_id` drops out of the list. The error runs toward omission:
-an orphan goes unlisted rather than a live document being offered for
-deletion.
+`metadata` is matched as JSON text, so a document whose own metadata contains the string `source_id` is left out. The filter can miss an orphan, never offer a live document.
 
 **3. Delete what you confirm.**
 
@@ -749,77 +483,44 @@ deletion.
 haiku-rag --config /etc/haiku/haiku.rag.yaml delete <id>
 ```
 
-Read the URIs before deleting. Step 2 lists candidates, not a verdict:
-a document you added by hand whose file has since moved looks exactly
-like one the ingester lost track of.
+Read the URIs first. A hand-added document whose file has since moved looks the same as one the ingester lost track of.
 
 ### The queue
 
-The ingester's SQLite queue lives at
-`~/Library/Application Support/haiku.rag/ingester.db` on macOS
-(platform user data dir; configurable via `ingester.queue.path`). It's
-created automatically by `serve`.
-
-For ops setup you can pre-create it:
+The SQLite queue is `ingester.db` in the platform data directory (`~/Library/Application Support/haiku.rag/` on macOS), or `ingester.queue.path`. `serve` creates it. To create or migrate it ahead of time:
 
 ```bash
-haiku-ingester queue init             # create the DB and schema
+haiku-ingester queue init             # create the database and schema
 haiku-ingester queue migrate          # apply pending schema changes
+haiku-ingester queue init -q /var/lib/haiku-rag/ingester.db   # at another path
 ```
 
-Terminal job rows (`succeeded` and `dead`) are kept for history and pruned by
-the reaper once they age past `retention_days`:
+Succeeded and dead jobs are kept for history. The reaper deletes those completed more than `retention_days` ago:
 
 ```yaml
 ingester:
   queue:
     path: /var/lib/haiku-rag/ingester.db
-    retention_days: 30                # null disables pruning
+    retention_days: 30                # null keeps them all
 ```
 
-The reaper deletes terminal rows whose `completed_at` is older than the window
-on its `reaper_interval_s` cadence. Set `retention_days: null` to keep all
-terminal rows.
+#### Postgres
 
-#### Using a database server
-
-If you already run a database server, point the queue at it with
-`ingester.queue.dburi`, a SQLAlchemy async URL. SQLite is used when `dburi` is
-unset.
+`ingester.queue.dburi` points the queue at Postgres, with a SQLAlchemy async URL:
 
 ```yaml
 ingester:
   queue:
-    dburi: postgresql+asyncpg://haiku:secret@db:5432/haiku_rag
+    dburi: postgresql+asyncpg://haiku:${POSTGRES_PASSWORD}@db:5432/haiku_rag
 ```
 
-Postgres (`postgresql+asyncpg://`) is supported alongside the default SQLite.
-The `asyncpg` driver ships with the `[ingester]` extra. `dburi` overrides
-`path`, and the `--queue` CLI flag is ignored while it is set. Create the schema
-the same way as for SQLite:
+The `asyncpg` driver comes with the `ingester` extra. `dburi` overrides `path` and the `--queue` flag. `haiku-ingester queue init` creates the schema, as for SQLite.
 
-```bash
-haiku-ingester queue init
-```
+Several `haiku-ingester serve` processes can share one Postgres queue: workers claim jobs with `FOR UPDATE SKIP LOCKED`, and leases are renewed and reaped correctly across processes. Each still needs a database of its own. Idle workers wake at once for work queued in their own process, and on their next `poll_idle_interval_s` tick for work queued by another.
 
-Workers claim jobs with `FOR UPDATE SKIP LOCKED`, and the claim/lease lifecycle
-is cross-process-safe — claims are renewed and reaped correctly no matter which
-process owns them — so several `haiku-ingester serve` processes can share one
-Postgres queue without double-claiming or reaping each other's live jobs.
+### Logs and tracing
 
-This does not lift the LanceDB
-[single-writer constraint](#single-writer-constraint): each `serve` still owns
-its own LanceDB. A shared queue therefore spans processes writing distinct
-LanceDB URIs; it does not let several processes write one database.
-
-One caveat: idle workers wake on new work instantly only within their own
-process. Workers in other processes pick up enqueued jobs on their next
-`poll_idle_interval_s` tick rather than immediately.
-
-### Logs
-
-The service logs via Python `logging` to stderr through a Rich handler.
-A typical run looks like:
+The service logs to stderr:
 
 ```
 INFO     Ingester running: 4 worker(s), 1 source(s)
@@ -829,38 +530,24 @@ INFO     Processing upsert file:///.../a.md (job 5d9a...)
 INFO     Job 5d9a... succeeded in 0.34s: file:///.../a.md
 ```
 
-When `LOGFIRE_TOKEN` is set, spans are also shipped to Logfire. Spans carry
-`service.name` (`haiku-ingester`) and `service.version`. To tell concurrent
-ingestions apart in Logfire, give each process a distinct name via the standard
-`OTEL_SERVICE_NAME` (or `LOGFIRE_SERVICE_NAME`) environment variable, which
-overrides the default:
+With `LOGFIRE_TOKEN` set, spans are sent to Logfire with `service.name` `haiku-ingester` and `service.version`. `OTEL_SERVICE_NAME` (or `LOGFIRE_SERVICE_NAME`) names a process differently, to tell concurrent ingesters apart:
 
 ```bash
 OTEL_SERVICE_NAME=ingester-tenant-a haiku-ingester serve
 ```
 
-The span tree is `ingester.poller.sweep` -> `ingester.job` (tagged with
-`source_id` and `uri`) -> `document.convert` / `document.chunk`. When a source
-uses docling-serve, each request emits a `docling_serve.request` span carrying
-the instance `url` and `attempt`, so a failed conversion can be traced to the
-exact instance that served it. A worker circuit breaker opening emits an
-`ingester.worker breaker opened` event with `source_id`, `threshold`, and
-`cooldown_s`.
-
-The `debug-ingestion` skill in `.claude/skills/` turns these spans into
-ready-made Logfire queries (failed jobs, docling-serve failover, per-source
-sweeps, breaker trips) for use from Claude Code.
+The span tree is `ingester.poller.sweep` → `ingester.job` (with `source_id` and `uri`) → `document.convert` / `document.chunk`. Each docling-serve request adds a `docling_serve.request` span with the instance `url` and `attempt`. A worker breaker opening emits an `ingester.worker breaker opened` event with `source_id`, `threshold` and `cooldown_s`.
 
 ### Operating against the API
 
 ```bash
-TOKEN=$INGESTER_TOKEN   # omit -H entirely if no token configured
+TOKEN=$INGESTER_TOKEN   # omit -H when no token is configured
 
 curl http://localhost:8765/health
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8765/sources
 curl -H "Authorization: Bearer $TOKEN" 'http://localhost:8765/jobs?status=dead'
 
-# Force a poll now
+# Sweep a source now
 curl -H "Authorization: Bearer $TOKEN" -X POST \
     http://localhost:8765/sources/local-docs/refresh
 

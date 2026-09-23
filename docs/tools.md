@@ -1,22 +1,25 @@
 # Toolsets
 
-For agent integrations, use the native Pydantic AI [capabilities](capabilities/index.md). `haiku.rag.tools` provides the lower-level `FunctionToolset` factories used across haiku.rag, which can be reused to build custom agents.
+For agent integrations, use the native Pydantic AI [capabilities](capabilities/index.md). `haiku.rag.tools` provides lower-level `FunctionToolset` factories for building custom agents.
 
-## Low-Level Toolsets
+## Low-level toolsets
 
-### RAGDeps Protocol
+### RAGDeps protocol
 
-All toolsets use the `RAGDeps` protocol for dependency injection:
+All toolsets read their client from the agent dependencies through the `RAGDeps` protocol, which requires a `client: HaikuRAG` attribute:
 
 ```python
-from haiku.rag.tools import RAGDeps
+from dataclasses import dataclass
 
+from haiku.rag.client import HaikuRAG
+
+
+@dataclass
 class MyDeps:
-    def __init__(self, client: HaikuRAG):
-        self.client = client
+    client: HaikuRAG
 ```
 
-### Search Toolset
+### Search toolset
 
 `create_search_toolset()` provides hybrid search with context expansion.
 
@@ -33,8 +36,11 @@ search = create_search_toolset(config)
 | `base_filter` | `None` | SQL WHERE clause applied to all searches |
 | `tool_name` | `"search"` | Name of the tool exposed to the agent |
 | `on_results` | `None` | Callback `(list[SearchResult]) -> None` invoked with results |
+| `max_searches` | `None` | Searches allowed per run. Past it the tool fails and tells the agent to answer |
 
-### Document Toolset
+Picture results are attached as images when `config.qa.model.vision` is set.
+
+### Document toolset
 
 `create_document_toolset()` provides document browsing and retrieval.
 
@@ -51,12 +57,13 @@ docs = create_document_toolset(config)
 
 **Tools:**
 
-- `list_documents(page?)` — Paginated document listing (50 per page).
-- `get_document(query)` — Retrieve a document by title or URI.
-- `summarize_document(query)` — Generate an LLM summary of a document's content.
+- `list_documents(page?)`: paginated document listing (50 per page).
+- `get_document(query)`: retrieve a document by title or URI.
+- `summarize_document(query)`: generate an LLM summary of a document's content.
 
-## Filter Helpers
+## Filter helpers
 
 `haiku.rag.tools.filters` provides utilities for building SQL filters:
 
-- **`build_multi_document_filter(document_names)`** — Combines multiple document name filters with OR logic. Matches against both `uri` and `title`, case-insensitive.
+- **`build_multi_document_filter(document_names)`**: combines multiple document name filters with OR logic. Matches against both `uri` and `title`, case-insensitive, with and without spaces. Returns `None` for an empty list.
+- **`build_document_id_filter(document_ids)`**: matches exactly the given document ids. Returns `None` for an empty list.

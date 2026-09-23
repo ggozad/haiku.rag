@@ -1,12 +1,12 @@
-# Document Processing
+# Document processing
 
 This guide covers how haiku.rag converts and chunks documents. Continuous
 ingestion (watching directories, polling HTTP / S3 / WebDAV sources) lives
 in the [ingester](../ingester.md) service.
 
-## Document Processing
+## Settings
 
-Configure how documents are converted and chunked:
+The processing settings, with their defaults:
 
 ```yaml
 processing:
@@ -58,194 +58,97 @@ processing:
   pictures: image                            # none | description | image
 ```
 
-### Local vs Remote Processing
+### Local and remote conversion
 
-**Local processing** (default):
-
-- Uses `docling` library locally
-- No external dependencies
-- Good for development and small workloads
-
-**Remote processing** (docling-serve):
-
-- Offloads processing to docling-serve API
-- Better for heavy workloads and production
-- Requires docling-serve instance (see [Remote processing setup](../remote-processing.md))
-
-To use remote processing:
-
-```yaml
-processing:
-  converter: docling-serve
-  chunker: docling-serve
-
-providers:
-  docling_serve:
-    base_url: http://localhost:5001
-    api_key: "your-api-key"  # Optional
-```
-
-`base_url` also accepts a list — jobs round-robin across the entries, with
-each job's submit / poll / result pinned to one instance (task IDs are
-instance-local):
-
-```yaml
-providers:
-  docling_serve:
-    base_url:
-      - http://gpu-1:5001
-      - http://cpu-1:5001
-      - http://cpu-2:5001
-    max_attempts: 3
-    circuit_breaker:
-      failure_threshold: 3
-      cooldown_s: 30.0
-```
-
-The round-robin counter is per-process — multiple concurrent ingester or
-client processes pick independently, so the distribution evens out over many
-jobs without coordination. When a listed instance crashes or returns 5xx, the
-client fails the request over to another instance (up to `max_attempts`) and
-opens that instance's circuit breaker so subsequent jobs skip it until its
-`cooldown_s` elapses. An external load balancer can only front docling-serve in
-RQ mode (shared Redis task state); with the default standalone instances the
-submit / poll / result trio is instance-pinned, so the failover and health
-checks live in the client.
-
-**Tuning `ingester.workers.worker_count` for docling-serve users**: convert
-is usually the throughput ceiling — a default docling-serve instance
-processes one task at a time (configurable via `DOCLING_SERVE_ENG_LOC_NUM_WORKERS`
-if you've set it). A reasonable starting point for `worker_count` is **1–2 ×
-the number of `docling_serve.base_url` entries**: enough to overlap fetch /
-embed / store of one job with the convert of another, without piling jobs
-into docling-serve's internal queue beyond what its workers can process.
-The ingester logs the worker / source / docling-serve counts on startup so
-you can check the ratio.
-
-Conversion options work identically for both local and remote processing.
+`docling-local` runs docling in-process and needs the `docling` extra. `docling-serve` sends documents to a [docling-serve](../remote-processing.md) service, including a round-robin list of instances with failover. Conversion options apply to both converters, except `fetch_remote_images`, `fetch_headers` and `infer_furniture`, which only `docling-local` reads.
 
 ### Large PDFs and docling memory
 
-Docling's parser is memory-hungry and has confirmed leaks in current versions
-([docling #2209](https://github.com/docling-project/docling/issues/2209),
-[#1343](https://github.com/docling-project/docling/issues/1343),
-[#2954](https://github.com/docling-project/docling/issues/2954);
-[docling-serve #366](https://github.com/docling-project/docling-serve/issues/366),
-[#474](https://github.com/docling-project/docling-serve/issues/474)).
-Single-pass conversion of 400-page PDFs can OOM a workstation in local mode,
-and long-running docling-serve containers see RSS grow monotonically.
-
-Mitigation in haiku.rag — set `processing.split_pages`:
+Docling's parser is memory-hungry and leaks over a long-running process ([docling #2209](https://github.com/docling-project/docling/issues/2209), [#1343](https://github.com/docling-project/docling/issues/1343), [#2954](https://github.com/docling-project/docling/issues/2954)). Single-pass conversion of a 400-page PDF can exhaust a workstation's memory in local mode. `processing.split_pages` bounds it:
 
 ```yaml
 processing:
   split_pages: 10                  # 0 disables (default)
 ```
 
-When `split_pages > 0`, PDFs are split at the byte level into N-page slices
-(using pypdfium2, already bundled), each slice converted independently, then
-merged back via `DoclingDocument.concatenate` — preserving page numbers and
-re-indexing `self_ref` values across slices. Peak memory per conversion is
-bounded by one slice's working set rather than the whole document; in
-docling-serve mode each slice is also an independent task that lets the
-server release task-local state between requests.
+With `split_pages > 0`, PDFs are split into N-page slices, each converted on its own, then merged with `DoclingDocument.concatenate`, which keeps page numbers and re-indexes `self_ref` values. Peak memory is one slice's working set. Under docling-serve each slice is a separate task.
 
-A slice sees only its own pages, so the result is not identical to a
-single-pass conversion. docling orders and joins text within the slice it is
-given: a paragraph spanning a boundary stays two items instead of one, and a
-caption near a boundary can order differently against body text. On a 9-page
-document that costs about one text item and one chunk per boundary; no text is
-lost or duplicated. Single-pass is therefore the better output, and
-`split_pages` trades some of that for a bounded memory ceiling. Changing the
-setting re-chunks those boundary regions on the next ingest.
+A slice sees only its own pages, so the result differs from single-pass conversion near each boundary: a paragraph spanning one stays two items, and a caption near one can order differently. On a 9-page document that is about one text item and one chunk per boundary. No text is lost or duplicated. Cross-page references (named destinations, multi-page link annotations) are dropped at the split. Changing the setting re-chunks the boundary regions on the next ingest.
 
-Recommendation: `10` is a sensible starting point for any consistently-large
-PDF workload. Smaller slices reduce peak memory but multiply task overhead
-(per-slice docling startup + HTTP round-trips for docling-serve). Cross-page
-references (named destinations, multi-page link annotations) are dropped at
-the split — accepted loss; haiku.rag doesn't surface them downstream.
+`10` is a starting point for a consistently large PDF workload. Smaller slices lower peak memory and add per-slice overhead.
 
-**Operational note for long-running ingest**: even with `split_pages`,
-docling's per-process leak rate is non-zero. For deployments running
-continuously:
+The leak is not bounded by slicing. Under `docling-local` it grows inside the `haiku-ingester` process, so give its container a memory limit and a restart policy: in-flight jobs are reclaimed by the queue's reaper after a restart. For docling-serve, see [Remote processing](../remote-processing.md#operations).
 
-- *docling-serve mode*: set `mem_limit` on the container in Compose
-  (or `resources.limits.memory` in Kubernetes) plus `restart: unless-stopped`
-  so the kernel OOM-kills and the runtime restarts. Run multiple
-  docling-serve replicas behind the round-robin `base_url` list above so a
-  restart of one doesn't stop ingest.
-- *docling-local mode*: the leak is inside the `haiku-ingester` process
-  itself. Apply the same `mem_limit` + restart policy to the ingester
-  container. Restarts are graceful — in-flight jobs are reclaimed by the
-  queue's reaper and resume on next start.
+### Conversion options
 
-**Note:** When using `chunker: docling-serve`, OCR options (`do_ocr`, `force_ocr`, `ocr_engine`, `ocr_lang`) from `conversion_options` are passed to the chunking API. This is useful when running docling-serve in a read-only container where OCR model downloads fail. Set `do_ocr: false` to disable OCR entirely.
+The `conversion_options` section allows fine-grained control over document conversion. Both converters read these options, except `fetch_remote_images`, `fetch_headers` and `infer_furniture`, which apply to `docling-local` only.
 
-### Conversion Options
-
-The `conversion_options` section allows fine-grained control over document conversion. These options work with both `docling-local` and `docling-serve` converters.
-
-#### PDF Parsing
+#### PDF parsing
 
 ```yaml
-conversion_options:
-  pdf_backend: docling_parse   # docling_parse, threaded_docling_parse, pypdfium2
+processing:
+  conversion_options:
+    pdf_backend: docling_parse   # docling_parse, threaded_docling_parse, pypdfium2
 ```
 
-- **pdf_backend**: The parser docling uses to read a PDF. The parsers segment a document differently, so both converters are given this same value: change it and expect different items, chunk boundaries and chunk ids on the next ingest.
+- **pdf_backend**: The parser docling uses to read a PDF. Both converters receive it. The parsers segment a document differently, so a change brings different items, chunk boundaries and chunk ids on the next ingest.
   - `docling_parse` (default): serialized page parsing
-  - `threaded_docling_parse`: concurrent page parsing, and docling's own default. On some documents its page producer never delivers and the conversion never returns, so it is not ours. Measured over ten arXiv papers against `docling_parse`: one table undetected, 7% fewer table cells, 9% faster.
+  - `threaded_docling_parse`: concurrent page parsing, and docling's own default. On some documents the conversion never returns. Over ten arXiv papers against `docling_parse`: one table undetected, 7% fewer table cells, 9% faster.
   - `pypdfium2`: faster and simpler, less layout detail. Over the same ten papers: 7% fewer words and 28% fewer table cells.
 
-#### OCR Settings
+#### OCR settings
 
 ```yaml
-conversion_options:
-  do_ocr: true          # Enable OCR for bitmap/scanned content
-  force_ocr: false      # Replace all text with OCR output
-  ocr_engine: auto      # OCR engine selection
-  ocr_lang: []          # List of OCR languages, e.g., ["en", "fr", "de"]
+processing:
+  conversion_options:
+    do_ocr: true          # Enable OCR for bitmap/scanned content
+    force_ocr: false      # Replace all text with OCR output
+    ocr_engine: auto      # OCR engine selection
+    ocr_lang: []          # List of OCR languages, e.g., ["en", "fr", "de"]
 ```
 
-- **do_ocr**: When `true`, applies OCR to images and scanned pages. Disable for faster processing if documents contain only native text.
-- **force_ocr**: When `true`, replaces existing text layers with OCR output. Useful for documents with poor text extraction.
+- **do_ocr**: When `true`, applies OCR to images and scanned pages. Disable it for documents with only embedded text, which converts faster.
+- **force_ocr**: When `true`, replaces existing text layers with OCR output, for documents whose embedded text is poor.
 - **ocr_engine**: Select the OCR engine to use. Options:
   - `auto` (default): Automatically select the best available engine
   - `easyocr`: EasyOCR - supports many languages, good accuracy
   - `rapidocr`: RapidOCR - fast processing
-  - `tesseract`: Tesseract OCR
-  - `tesserocr`: Tesseract via tesserocr Python binding
+  - `tesseract`: the Tesseract command-line binary
+  - `tesserocr`: Tesseract through the tesserocr Python binding
   - `ocrmac`: macOS native OCR (macOS only)
 - **ocr_lang**: List of language codes for OCR. Empty list uses default language detection. Examples: `["en"]`, `["en", "fr", "de"]`.
 
-#### Table Extraction
+#### Table extraction
 
 ```yaml
-conversion_options:
-  do_table_structure: true    # Extract structured table data
-  table_mode: accurate        # fast or accurate
-  table_cell_matching: true   # Match cells back to PDF
+processing:
+  conversion_options:
+    do_table_structure: true    # Extract structured table data
+    table_mode: accurate        # fast or accurate
+    table_cell_matching: true   # Match cells back to PDF
 ```
 
-- **do_table_structure**: When `true`, extracts table structure. Disable for faster processing if tables aren't important.
+- **do_table_structure**: When `true`, extracts table structure. Disabling it converts faster, without table structure.
 - **table_mode**:
   - `accurate`: Better table structure recognition (slower)
   - `fast`: Faster processing with simpler table detection
 - **table_cell_matching**: When `true`, matches detected table cells back to PDF cells. Disable if tables have merged cells across columns.
 
-#### Image Settings
+#### Image settings
 
 ```yaml
-conversion_options:
-  images_scale: 2.0               # Image resolution scale factor
-  generate_page_images: true      # Include rendered page images
-  fetch_remote_images: true       # Fetch external <img src> URLs in HTML/MD
-  infer_furniture: false          # Keep HTML content before the first heading
+processing:
+  conversion_options:
+    images_scale: 2.0               # Image resolution scale factor
+    generate_page_images: true      # Include rendered page images
+    fetch_remote_images: true       # Fetch external <img src> URLs in HTML/MD
+    infer_furniture: false          # Keep HTML content before the first heading
 ```
 
 - **images_scale**: Scale factor for extracted images. Higher values = better quality but larger size. Typical range: 1.0-3.0.
 - **generate_page_images**: When `true` (default), rendered images of each PDF page are included in the document. Required for `visualize_chunk()` to show visual grounding. When `false`, page images are excluded to reduce document size.
-- **fetch_remote_images**: When `true` (default), HTML and Markdown inputs have their external `<img src="https://...">` URLs fetched and stored as picture bytes. Set `false` for air-gapped ingest. Applies only to `docling-local`. **docling-serve doesn't fetch external `<img>` URLs** (the `ConvertDocumentsOptions` API exposes no equivalent flag, and HTML falls through to docling's `fetch_images=False` default); HTML ingested via docling-serve produces picture items with `picture_data=NULL`. Use `converter: docling-local` if you need image bytes from HTML/Markdown.
+- **fetch_remote_images**: When `true` (default), HTML and Markdown inputs have their external `<img src="https://...">` URLs fetched and stored as picture bytes. Set `false` for air-gapped ingest. Applies only to `docling-local`. docling-serve has no such option and does not fetch external images, so HTML it converts has picture items without bytes (`picture_data=NULL`).
+- **fetch_headers**: HTTP headers sent with those image fetches. Default: a `User-Agent` naming haiku.rag. `docling-local` only.
 - **infer_furniture**: When `false` (default), everything in an HTML page is document content. When `true`, docling files whatever precedes the first heading as page furniture and leaves it out of the document, which removes site banners and navigation on web pages but also removes an article's lead paragraph and infobox. Applies only to `docling-local`; docling-serve keeps docling's rule, so HTML converted there loses the content before its first heading.
 
 #### External image fetching
@@ -268,11 +171,11 @@ Per-image failures (404, timeout, oversized, unreadable) leave that picture as a
 | `.pdf` | ✅ | ✅ | ✅ | n/a | n/a |
 | `.png` / `.jpg` / `.jpeg` / `.bmp` / `.tiff` / `.webp` | ✅ | ✅ | ✅ | n/a | n/a |
 | `.html` / `.xhtml` | n/a (markup-based) | n/a | ✅ on embedded pictures | ✅ | ✅ |
-| `.md` / `.qmd` / `.rmd` | n/a | n/a | ✅ on embedded pictures | ✅ (only `<img>` HTML blocks; native `![alt](url)` syntax is not fetched by docling) | n/a |
+| `.md` / `.qmd` / `.rmd` | n/a | n/a | ✅ on embedded pictures | ✅ (`<img>` HTML blocks only, not `![alt](url)`) | n/a |
 | `.docx` / `.pptx` | n/a | n/a | ✅ on embedded pictures | n/a | n/a |
 | Other (`.csv`, `.xlsx`, `.adoc`, `.tex`, `.xml`, `.eml`, `.msg`) | n/a | n/a | n/a | n/a | n/a |
 
-#### Picture Handling
+#### Picture handling
 
 `processing.pictures` picks one of three modes:
 
@@ -292,14 +195,14 @@ processing:
   conversion_options:
     picture_description:          # only consulted when pictures == "description"
       model:
-        provider: ollama          # any OpenAI-compatible /v1/chat/completions provider
+        provider: ollama
         name: qwen3.8
+        thinking: false
       timeout: 90
       max_tokens: 200
 ```
 
-!!! warning "Breaking change"
-    `processing.conversion_options.picture_description.enabled` is replaced by `processing.pictures`. Map `enabled: true` → `pictures: description`, `enabled: false` → `pictures: image`. The pre-April-30 `generate_picture_images` flag also no longer exists. Use `pictures: none` for the old opt-out.
+The model is called at `/v1/chat/completions` under its `base_url`, which may be written with or without `/v1`. Without a `base_url`, only `ollama` and `openai` are accepted. Writing a `model` block replaces the default `thinking: false`, so set it explicitly on a model that thinks by default. `timeout` and `max_tokens` bound each call during conversion. `rebuild --descriptions` runs the same model through Pydantic AI and does not apply them.
 
 **Switching modes on an existing database** doesn't require reingesting when the bytes are already stored:
 
@@ -307,7 +210,7 @@ processing:
 - `description` → `image`: `haiku-rag rebuild --rechunk` recomposes chunk text from the stripped docling blob without descriptions.
 - Switching to/from `none`: a full reingest is needed since the bytes either weren't stored or need to be discarded.
 
-When using `converter: docling-serve`, the VLM is invoked from docling-serve rather than haiku.rag. See [Remote processing](../remote-processing.md#vlm-picture-description-with-docling-serve).
+When using `converter: docling-serve`, the VLM is invoked from docling-serve rather than haiku.rag. See [Remote processing](../remote-processing.md#picture-descriptions).
 
 #### Pictures × embedder × QA model: how the pieces compose
 
@@ -319,7 +222,7 @@ Three independent settings drive ingest, retrieval, and QA:
 | `embeddings.model.multimodal` | Can the embedder index image content? | `false` (default, text-only) / `true` (supported on `vllm`, `openrouter`, `voyageai`, `cohere`) |
 | `qa.model.vision` | Can the QA model interpret images? | `false` / `true` (default) |
 
-The Embedder column below is driven by `embeddings.model.multimodal`, not the provider name — a vision-capable model under a text-only configuration still indexes no images, and an image-only document then produces zero chunks. See [Multimodal embedders](providers.md#multimodal-embedders).
+The Embedder column below is driven by `embeddings.model.multimodal`, not the provider name. A vision-capable model under a text-only configuration still indexes no images, and an image-only document then produces zero chunks. See [Multimodal embedders](providers.md#multimodal-embedders).
 
 **What gets stored** by `pictures` × embedder:
 
@@ -333,8 +236,8 @@ The Embedder column below is driven by `embeddings.model.multimodal`, not the pr
 
 **What QA receives** at search time:
 
-- `qa.model.vision: false` — text chunks only (descriptions, when present, answer figure questions in prose).
-- `qa.model.vision: true` — text chunks + raw picture bytes via `BinaryContent`. The model reads figures directly. Requires `pictures != none` so the bytes exist.
+- `qa.model.vision: false`: text chunks only (descriptions, when present, answer figure questions in prose).
+- `qa.model.vision: true`: text chunks and raw picture bytes via `BinaryContent`. The model reads figures directly. Requires `pictures != none` so the bytes exist.
 
 `qa.model.vision` is independent of ingestion. Flipping it never requires reingesting. It declares what the model can read: the default `qwen3.8` is vision-capable, so the default is `true`. Set it `false` when pointing `qa.model` at a text-only model, where `true` causes silent acceptance and confabulation on Ollama and a 400 on OpenAI.
 
@@ -349,54 +252,45 @@ The Embedder column below is driven by `embeddings.model.multimodal`, not the pr
 | Cross-modal search + vision QA | `image` or `description` | multimodal | `true` |
 | Cross-modal search, text QA only | `description` | multimodal | `false` |
 
-### Conversion Timeout
+### Conversion timeout
 
 ```yaml
 processing:
   conversion_timeout: 600   # seconds
 ```
 
-Only `docling-local` reads this; a docling-serve conversion is bounded by
+Only `docling-local` reads this. A docling-serve conversion is bounded by
 `providers.docling_serve.timeout` per HTTP call instead.
 
 - **conversion_timeout**: How long one document may spend in conversion before
-  it is abandoned and `ConversionTimeoutError` is raised. It bounds the
-  caller's wait only. Each conversion runs on its own daemon thread, which is
-  never cancelled, so an abandoned one runs to whatever end it reaches without
-  holding up process exit.
+  it is abandoned with `ConversionTimeoutError`. It bounds the wait, not the
+  work: the abandoned conversion keeps running in the background, holding a
+  thread and its memory, and does not block process exit.
 
-  PDFs and office formats share one docling converter, and an abandoned
-  conversion keeps it, so subsequent conversions raise `ConverterWedgedError`
-  naming the restart. A service that must keep ingesting after a stalled PDF
-  has to replace the process, not retry in it.
+  PDFs and office formats share one docling converter, which an abandoned
+  conversion keeps, so later conversions in that process raise
+  `ConverterWedgedError`. Recovering needs a new process. The
+  [ingester](../ingester.md#run-it-under-a-supervisor) exits for that reason,
+  to be restarted. HTML and Markdown get a converter per call, so later
+  conversions still run.
 
-  HTML and Markdown build a converter per call, so abandoning one leaves later
-  conversions able to run. It is not free either: the thread is never
-  cancelled, so each stall keeps one OS thread and its memory for the life of
-  the process.
+### Chunking strategies
 
-### Chunking Strategies
+`chunker_type` picks the docling chunker:
 
-**Hybrid chunking** (default):
-- Structure-aware chunking
-- Respects document boundaries
-- Best for most use cases
+- `hybrid` (default): docling's `HybridChunker`. Starts from the document's structure, splits items longer than `chunk_size` tokens of `chunking_tokenizer`, and with `chunking_merge_peers` merges undersized neighbours under the same headings.
+- `hierarchical`: docling's `HierarchicalChunker`. One chunk per document item (paragraph, list, table), with no token limit, so `chunk_size` does not apply.
 
-**Hierarchical chunking**:
-- Creates hierarchical chunk structure
-- Preserves document hierarchy
-- Useful for complex documents
-
-### Chunk Size
+### Chunk size
 
 ```yaml
 processing:
   chunk_size: 256  # Maximum tokens per chunk
 ```
 
-Context expansion settings (for enriching search results with surrounding content) are configured in the `search` section. See [Search Settings](qa.md#search-settings).
+`chunk_size` applies to the `hybrid` chunker. How much surrounding content a search result carries is set in `search`, see [Search settings](qa.md#search-settings).
 
-### Table Serialization
+### Table serialization
 
 Control how tables are represented in chunks:
 
@@ -408,7 +302,7 @@ processing:
 - `false`: Tables as narrative text ("Value A, Column 2 = Value B")
 - `true`: Tables as markdown (preserves table structure)
 
-### Automatic Title Generation
+### Automatic title generation
 
 Enable automatic title generation during document ingestion:
 
@@ -430,9 +324,9 @@ Priority order: HTML `<title>` (furniture layer) → h1/PDF title (body layer) �
 
 Explicit titles passed via `title=` parameter always take precedence and are never overridden. When updating documents, existing titles are preserved. Auto-generation only applies to untitled documents.
 
-To generate titles for existing untitled documents, use [`rebuild --title-only`](../cli.md#rebuild-database).
+To generate titles for existing untitled documents, use [`rebuild --title-only`](../cli.md#rebuild).
 
-### PDF Embedded Attachments
+### PDF embedded attachments
 
 A PDF can carry other files inside it via the `/EmbeddedFiles` table (signed memos, appendices, supporting documents). With `extract_pdf_attachments: true` (the default), each embedded file is ingested as a separate Document linked to the wrapper through `metadata.parent_uri`:
 

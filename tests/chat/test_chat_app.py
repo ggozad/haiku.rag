@@ -335,6 +335,32 @@ async def test_clear_chat_resets_state(temp_db_path: Path):
             assert app._conversation_id != previous_conversation_id
 
 
+async def test_clear_chat_keeps_the_document_filter(temp_db_path: Path):
+    """Clearing the chat keeps the selected document filter in force."""
+    from haiku.rag.capabilities.rag import STATE_NAMESPACE
+    from haiku.rag.chat.widgets.document_filter_modal import DocumentFilterModal
+    from haiku.rag.tools.filters import build_document_id_filter
+
+    app, mock_client = _make_app_with_state(temp_db_path)
+
+    with (
+        patch("haiku.rag.chat.app.HaikuRAG") as _stub_rag,
+        _covering_returns(_stub_rag, mock_client),
+    ):
+        async with app.run_test() as pilot:
+            doc_id = "6f1c2d4e-0000-4000-8000-000000000001"
+            app.on_document_filter_modal_filter_changed(
+                DocumentFilterModal.FilterChanged([("test", doc_id)])
+            )
+
+            await app.action_clear_chat()
+            await pilot.pause()
+
+            rag_state = RAGState.model_validate(app._state[STATE_NAMESPACE])
+            assert rag_state.document_filter == build_document_id_filter([doc_id])
+            assert app._document_filter == [("test", doc_id)]
+
+
 async def test_citation_expand_collapse_with_enter(temp_db_path: Path):
     """Test that pressing Enter on a focused citation toggles expand/collapse."""
     from haiku.rag.chat.widgets.chat_history import ChatHistory, CitationWidget

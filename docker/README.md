@@ -1,6 +1,6 @@
 # haiku.rag Docker Image
 
-The full haiku.rag Docker image includes all features and extras (docling, voyageai, cross-encoder). You can build it locally using the provided Dockerfile.
+The full haiku.rag Docker image contains the `haiku.rag` package (Docling, VoyageAI and Cohere embedders, every reranker, the terminal UI) and the `ingester` extra. It is not published. Build it locally with the provided Dockerfile.
 
 ## Building the Image
 
@@ -10,11 +10,7 @@ Build the full image with all features:
 docker build -f docker/Dockerfile -t haiku-rag .
 ```
 
-This creates an image with:
-- All document processing capabilities (Docling)
-- VoyageAI embeddings
-- MixedBread AI reranking
-- Full feature set
+Its default command runs the read-only MCP server on port 8001, bound to `0.0.0.0`.
 
 ## Configuration
 
@@ -22,18 +18,23 @@ Create a configuration file `haiku.rag.yaml`:
 
 ```yaml
 # haiku.rag.yaml
-environment: production
+storage:
+  data_dir: /data   # the mounted volume; without it the database stays inside the container
 
 embeddings:
   model:
     provider: ollama
-    name: nomic-embed-text
-    vector_dim: 768
+    name: qwen3-embedding:4b
+    vector_dim: 2560
 
 qa:
   model:
     provider: ollama
-    name: qwen3
+    name: qwen3.8
+
+providers:
+  ollama:
+    base_url: http://host.docker.internal:11434
 ```
 
 See [Configuration docs](https://ggozad.github.io/haiku.rag/configuration/) for all available options.
@@ -66,6 +67,9 @@ path**:
 
 ```yaml
 ingester:
+  api:
+    host: 0.0.0.0             # reachable through the -p 8765:8765 mapping
+    auth_token: ${INGESTER_TOKEN}
   queue:
     path: /data/ingester.db   # persist queue in the data volume
   sources:
@@ -75,9 +79,10 @@ ingester:
       delete_orphans: true
 ```
 
-The MCP server running in the first container must be started with
-`--read-only` when an ingester is writing to the same database — LanceDB
-allows one writer and N readers per URI. See
+The MCP server always opens the database read-only, so it can run beside
+the ingester, which is the database's one writer. haiku.rag allows one
+writing process per database. Pass `-e INGESTER_TOKEN=...` to both
+containers, since both load the same configuration. See
 `examples/docker/docker-compose.yml` for a working two-service setup.
 
 For API keys (OpenAI, Anthropic, etc.), pass them as environment variables:

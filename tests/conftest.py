@@ -194,6 +194,8 @@ def set_mock_api_keys(monkeypatch):
         monkeypatch.setenv("VOYAGE_API_KEY", "mock-voyage-key-for-vcr-playback")
     if not os.getenv("GROQ_API_KEY"):
         monkeypatch.setenv("GROQ_API_KEY", "mock-groq-key-for-vcr-playback")
+    if not os.getenv("MISTRAL_API_KEY"):
+        monkeypatch.setenv("MISTRAL_API_KEY", "mock-mistral-key-for-vcr-playback")
     if not os.getenv("GOOGLE_API_KEY"):
         monkeypatch.setenv("GOOGLE_API_KEY", "mock-google-key-for-vcr-playback")
     if not os.getenv("AWS_DEFAULT_REGION"):

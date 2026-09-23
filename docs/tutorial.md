@@ -39,7 +39,7 @@ ollama pull qwen3.8
 haiku-rag init
 ```
 
-This creates a LanceDB database in your platform's user directory. Pass `--db` to any subcommand to use a different path:
+This creates a LanceDB database in your platform's user directory. Pass `--db` to a command that opens a database to use a different path:
 
 ```bash
 haiku-rag init --db /tmp/test.lancedb

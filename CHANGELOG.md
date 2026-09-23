@@ -26,11 +26,23 @@
 
 ### Changed
 
-- Tests use pytest-asyncio auto mode and separate fast, slow end-to-end, live
-  integration and evaluations lanes, with request delays removed from
-  docling-serve cassette playback, core tests grouped by source subsystem, and
-  redundant smoke coverage removed. The evaluations lane now enforces an 85%
-  coverage floor.
+- Chat "Clear chat" keeps the selected document filter.
+- Docker images: the default `mcp` command binds `0.0.0.0`. The unused
+  `DEFAULT_DATA_DIR` variable is removed; set `storage.data_dir: /data` in the
+  mounted config.
+- `app/` compose files bind the frontend to `127.0.0.1`.
+
+### Fixed
+
+- `processing.conversion_options.ocr_engine`: `tesseract` and `tesserocr` selected
+  each other's engine on `docling-local`.
+- Picture-description `base_url` is accepted with or without `/v1` during conversion.
+- `provider: mistral` applies `temperature`, `max_tokens` and `thinking`. Other
+  providers passed to Pydantic AI by name log a warning when those settings are
+  set.
+- A missing `--db` path prints an error and exits 1 instead of a traceback.
+- `examples/docker`: the MCP service receives `INGESTER_TOKEN`, which the shared
+  config requires.
 
 ### Removed
 

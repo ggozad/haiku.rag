@@ -1,44 +1,41 @@
 # Installation
 
-## Choose Your Package
+haiku.rag needs Python 3.12 or newer. The default configuration runs its embedding and answering models through [Ollama](https://ollama.com/).
 
-**haiku.rag** is available in two packages:
+## Packages
 
-### Full Package (Recommended)
+haiku.rag ships as two packages:
 
 ```bash
-uv pip install haiku.rag
+uv pip install haiku.rag        # full
+uv pip install haiku.rag-slim   # core, extras chosen by you
 ```
 
-The full package pulls the `docling`, `voyageai`, `cohere`, `zeroentropy`,
-`cross-encoder`, `jina` and `tui` extras. It does not include `s3` or `ingester`:
+`haiku.rag` is `haiku.rag-slim` with the `docling`, `voyageai`, `cohere`, `zeroentropy`, `cross-encoder`, `jina` and `tui` extras. It defines four extras of its own, `tui`, `s3`, `cross-encoder` and `ingester`:
 
 ```bash
 uv pip install 'haiku.rag[ingester]'   # the haiku-ingester service
 uv pip install 'haiku.rag[s3]'         # S3 and object storage
 ```
 
-### Slim Package (Minimal Dependencies)
+The model-provider extras exist only on `haiku.rag-slim`. With the full package, install them beside it:
 
 ```bash
-uv pip install haiku.rag-slim
-uv pip install 'haiku.rag-slim[docling]'
-uv pip install 'haiku.rag-slim[docling,voyageai,cross-encoder]'
+uv pip install haiku.rag 'haiku.rag-slim[anthropic]'
 ```
 
-### Extras
+## Extras
 
-Every extra `haiku.rag-slim` defines. The right-hand column marks the ones the
-full `haiku.rag` package already includes.
+Every extra `haiku.rag-slim` defines:
 
 | Extra | Provides | In `haiku.rag` |
 |---|---|---|
-| `docling` | PDF, DOCX, PPTX, images and 40+ formats, converted locally | yes |
+| `docling` | PDF, DOCX, PPTX, XLSX, HTML, LaTeX, email and images, converted locally | yes |
 | `tui` | Terminal UI for `chat` and `inspect` | yes |
 | `voyageai` | VoyageAI embeddings | yes |
 | `cohere` | Cohere embeddings and reranking | yes |
 | `zeroentropy` | Zero Entropy reranking | yes |
-| `cross-encoder` | Local reranking via sentence-transformers | yes |
+| `cross-encoder` | Local reranking and embeddings via sentence-transformers | yes |
 | `jina` | Local Jina reranking (`provider: jina-local`) | yes |
 | `s3` | S3 and object-storage access | no |
 | `ingester` | The `haiku-ingester` service (also pulls `s3`) | no |
@@ -49,63 +46,34 @@ full `haiku.rag` package already includes.
 | `bedrock` | AWS Bedrock models | no |
 | `vertexai` | Google Vertex AI models | no |
 
-Ollama and any OpenAI-compatible endpoint work with no extra at all.
+These providers need no extra: Ollama, OpenAI and any OpenAI-compatible server (vLLM, LM Studio, sglang), OpenRouter, and Jina reranking through its HTTP API (`provider: jina`). [Providers](configuration/providers.md) covers configuring each.
 
-**Built-in providers** (no extras needed):
-- **Ollama** (default embedding provider)
-- **OpenAI** (GPT models for QA and embeddings)
-- **vLLM** and other OpenAI-compatible endpoints (embeddings, QA, reranking)
-- **Jina** reranking via `provider: jina`, which calls the Jina HTTP API
+Without the `docling` extra, `haiku.rag-slim` can convert through [docling-serve](remote-processing.md) instead.
 
-Other providers come from the extras above, which pull the matching Pydantic AI extra. For Claude models, `uv pip install 'haiku.rag-slim[anthropic]'`.
-
-See [Configuration](configuration/index.md) for configuring providers including advanced options like vLLM.
-
-## Requirements
-
-- Python 3.12+
-- Ollama (for default embeddings and QA)
-
-## Pre-download Models (Optional)
-
-You can prefetch all required runtime models before first use:
+## Pre-download models
 
 ```bash
 haiku-rag download-models
 ```
 
-This will download:
+fetches, ahead of first use:
+
 - Docling models for document processing
-- HuggingFace tokenizer models for chunking
-- Any Ollama models referenced by your current configuration
-
-## Remote Processing (Optional)
-
-When using `haiku.rag-slim`, you can skip installing the `docling` extra and instead use [docling-serve](https://github.com/docling-project/docling-serve) for remote document processing. This is useful for:
-
-- Keeping dependencies minimal
-- Offloading heavy document processing to a dedicated service
-- Production deployments with separate processing infrastructure
-
-See [Remote processing](remote-processing.md) for setup instructions and [Document Processing](configuration/processing.md) for configuration options.
+- The HuggingFace tokenizer for chunking
+- A sentence-transformers embedder, and a cross-encoder or local Jina reranker, when configured
+- Every Ollama model the configuration references: embeddings, QA, reranking, title generation and picture description
 
 ## Docker
 
-Only the slim image is published. Build the full image yourself:
-
-### Slim Image (Minimal)
-
-Pre-built slim image with minimal dependencies - use with external docling-serve for document processing:
+The slim image is published, with the `ingester` extra and without `docling`, for use with docling-serve:
 
 ```bash
 docker pull ghcr.io/ggozad/haiku.rag-slim:latest
 ```
 
-See `examples/docker/docker-compose.yml` for a complete setup with docling-serve.
+`examples/docker/docker-compose.yml` runs it with docling-serve, the ingester and the MCP server.
 
-### Full Image (Self-contained)
-
-Build locally to include all features and document processing without docling-serve:
+The full image, which converts in-process, is built locally:
 
 ```bash
 docker build -f docker/Dockerfile -t haiku-rag .
@@ -115,4 +83,4 @@ docker run -p 8001:8001 \
   haiku-rag
 ```
 
-See `docker/README.md` for complete build and configuration instructions, including how to run the [ingester](ingester.md) service for continuous document ingestion.
+Both images run the read-only MCP server on port 8001 by default. The mounted `haiku.rag.yaml` must set `storage.data_dir: /data`, or the database is written inside the container rather than to the volume. `docker/README.md` covers running the [ingester](ingester.md) from the same image.

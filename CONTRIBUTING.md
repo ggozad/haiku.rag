@@ -22,8 +22,8 @@ uv run pre-commit install
 ## Making changes
 
 1. Create a branch from `main`.
-2. Make your change, with tests. Core coverage is enforced at 100%; the
-   evaluations workspace enforces 85%.
+2. Make your change, with tests. Core coverage is enforced at 100%, and the
+   evaluations workspace at 85%.
 3. Run the checks:
 
    ```bash
@@ -37,12 +37,9 @@ uv run pre-commit install
 5. Update `docs/` and `README.md` if you changed user-facing behaviour.
 6. Open a pull request against `main`. Describe what changed and why.
 
-The core suite includes deterministic end-to-end tests and attempts tests marked
-`integration`; integration tests skip when their external services are unavailable.
-Start the services with `docker compose -f tests/docker/docker-compose.yml up -d`
-before running the suite. CI splits the core suite into fast and slow jobs and does
-not run live integration tests. The [Development guide](https://ggozad.github.io/haiku.rag/development/)
-covers fixtures, test markers and recording HTTP cassettes.
+The [Development guide](https://ggozad.github.io/haiku.rag/development/) covers the
+test suites, the services integration tests need, fixtures, markers and recording
+HTTP cassettes.
 
 ## AI-assisted contributions
 

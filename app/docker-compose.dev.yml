@@ -31,8 +31,9 @@ services:
       target: base
     command: sh -c "pnpm install && pnpm dev"
     working_dir: /app
+    # No authentication; it proxies every backend route, so it stays on loopback too.
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       - BACKEND_URL=http://backend:8000
       - HOSTNAME=0.0.0.0

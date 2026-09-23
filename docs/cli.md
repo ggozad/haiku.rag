@@ -1,550 +1,274 @@
-# Command Line Interface
+# Command line interface
 
-The `haiku-rag` CLI provides complete document management functionality.
+`haiku-rag` manages documents, searches and answers from the command line, and runs the MCP server. `haiku-rag COMMAND -h` shows a command's options.
 
-!!! note
-    Global options (must be specified before the command):
+## Global options
 
-    - `--config` - Specify custom configuration file
-    - `--read-only` - Open database in read-only mode (blocks writes, skips upgrades)
-    - `--db-name` - Name of a database from `lancedb.databases` to work on
-    - `--version` / `-v` - Show version and exit
+Global options precede the command:
 
-    Per-command options:
+| Option | Meaning |
+|---|---|
+| `--config PATH` | Configuration file. `HAIKU_RAG_CONFIG_PATH` does the same |
+| `--db-name NAME` | Work on one database from `lancedb.databases` |
+| `--read-only` | Open the database read-only. `search`, `ask`, `list`, `get`, `visualize`, `chat` and `inspect` always do |
+| `--version`, `-v` | Show the version and exit |
 
-    - `--db` - Open the database at this path, named by its stem, whatever the configuration places
-    - `-h` - Show help for specific command
+`--db PATH` follows the command and opens the database at that path, named by its stem, whatever the configuration places. `settings`, `init-config` and `download-models` take no `--db`.
 
-    Example:
-    ```bash
-    haiku-rag --config /path/to/config.yaml list
-    haiku-rag --config /path/to/config.yaml list --db /path/to/custom.db
-    haiku-rag --read-only search "query"
-    haiku-rag --db-name papers list
-    haiku-rag add -h
-    ```
+```bash
+haiku-rag --config /path/to/config.yaml list --db /path/to/custom.lancedb
+haiku-rag --db-name papers list
+```
 
-    With `lancedb.databases` configured, `search`, `ask`, `chat`, and `mcp` use the full set by default. Select one database for other commands with `--db-name` or `--db`. `settings`, `init-config`, and `download-models` do not open a database. See [Multiple Databases](configuration/storage.md#multiple-databases).
+With several databases configured, `search`, `ask`, `chat` and `mcp` cover them all, and every other command needs `--db-name` or `--db`. See [Multiple databases](configuration/multiple-databases.md#cli).
 
-## Document Management
+## Documents
 
-### Add Documents
+### Add
 
 From text:
+
 ```bash
-haiku-rag add "Your document content here"
-
-# Set a title
-haiku-rag add "Your document content here" --title "My Document"
-
-# Attach metadata (repeat --meta for multiple entries)
-haiku-rag add "Your document content here" --meta author=alice --meta topic=notes
+haiku-rag add "Your document content here" --title "My Document" --meta author=alice --meta topic=notes
 ```
 
-From file or URL:
+From a file, URL, directory or S3 object:
+
 ```bash
-haiku-rag add-src /path/to/document.pdf
+haiku-rag add-src /path/to/document.pdf --title "Q3 Financial Report"
 haiku-rag add-src https://example.com/article.html
-
-# Optionally set a human‑readable title stored in the DB schema
-haiku-rag add-src /mnt/data/doc1.pdf --title "Q3 Financial Report"
-
-# Optionally attach metadata (repeat --meta). Values use JSON parsing if possible:
-# numbers, booleans, null, arrays/objects; otherwise kept as strings.
-haiku-rag add-src /mnt/data/doc1.pdf --meta source=manual --meta page_count=12 --meta published=true
-```
-
-From directory (recursively adds all supported files):
-```bash
-haiku-rag add-src /path/to/documents/
-```
-
-From an S3 bucket (requires the `[s3]` extra, see the [ingester docs](ingester.md) for continuous S3 polling):
-```bash
-# AWS S3 with credentials in the default chain (env vars, IAM role, AWS profile)
+haiku-rag add-src /path/to/documents/            # recursive
 haiku-rag add-src s3://my-bucket/path/to/document.pdf
+```
 
-# S3-compatible endpoint (SeaweedFS, MinIO, Cloudflare R2, etc.)
+`--meta KEY=VALUE` is repeatable. Values are parsed as JSON where possible (numbers, booleans, null, arrays, objects) and kept as strings otherwise.
+
+A directory is walked recursively. Files are kept when docling-local or the text handler supports their extension, and `--title` is ignored. For include and ignore patterns, use the [ingester](ingester.md) with a filesystem source.
+
+`s3://` needs the `s3` extra. Credentials come from the default AWS chain. For an S3-compatible store, set `AWS_ENDPOINT_URL`:
+
+```bash
 AWS_ACCESS_KEY_ID=key AWS_SECRET_ACCESS_KEY=secret AWS_REGION=us-east-1 \
   AWS_ENDPOINT_URL=http://localhost:8333 \
   haiku-rag add-src s3://my-bucket/path/to/document.pdf
 ```
 
-!!! note
-    When adding a directory, the converter's supported extensions filter applies. For pattern-based ignore/include filtering (e.g. `**/.git/**`), use the [ingester](ingester.md) with a filesystem source.
+A failed add or update rolls the database back to its state before the operation.
 
-!!! note
-    As you add documents to `haiku.rag` the database keeps growing. By default, LanceDB supports versioning
-    of your data. Create and update operations are not atomic, but they roll back: if anything fails during
-    chunking or embedding, the database returns to the pre‑operation snapshot using LanceDB table versioning.
-    You can optimize and compact the database by running the [vacuum](#vacuum-optimize-and-cleanup) command.
-
-### List Documents
+### List, get, delete
 
 ```bash
 haiku-rag list
+haiku-rag list -f "uri LIKE '%arxiv%'"
+haiku-rag list -f "uri LIKE '%.pdf' AND title LIKE '%paper%'"
+
+haiku-rag get 3f4a...      # document ID
+haiku-rag delete 3f4a...   # or: haiku-rag rm 3f4a...
 ```
 
-Filter documents by properties:
-```bash
-# Filter by URI pattern (--filter or -f)
-haiku-rag list --filter "uri LIKE '%arxiv%'"
+`--filter`/`-f` takes a SQL WHERE clause over the document columns, see [Filtering search results](python.md#filtering-search-results).
 
-# Filter by exact title
-haiku-rag list --filter "title = 'My Document'"
+## Search and ask
 
-# Combine multiple conditions
-haiku-rag list --filter "uri LIKE '%.pdf' AND title LIKE '%paper%'"
-```
-
-### Get Document
-
-```bash
-haiku-rag get 3f4a...   # document ID
-```
-
-### Delete Document
-
-```bash
-haiku-rag delete 3f4a...   # document ID
-haiku-rag rm 3f4a...       # alias
-```
-
-## Search
-
-Basic search:
 ```bash
 haiku-rag search "machine learning"
+haiku-rag search "python programming" -l 10 -s fts -f "uri LIKE '%arxiv%'"
+haiku-rag search --image path/to/figure.png
 ```
 
-With options:
+| Option | Meaning |
+|---|---|
+| `--limit`, `-l` | Results to return. Default `search.limit` |
+| `--search-type`, `-s` | `hybrid` (default), `vector` or `fts` |
+| `--filter`, `-f` | SQL WHERE clause over document columns |
+| `--image PATH` | Search by image, in place of the text query. Needs a multimodal embedder, and takes no `--search-type` |
+
+`search` prints the matched chunks without context expansion.
+
 ```bash
-haiku-rag search "python programming" --limit 10  # or -l 10
-```
-
-With search type:
-```bash
-# Hybrid search (the default)
-haiku-rag search "python programming" --search-type hybrid  # or -s hybrid
-
-# Full-text search only
-haiku-rag search "python programming" --search-type fts  # or -s fts
-
-# Vector search only
-haiku-rag search "python programming" --search-type vector  # or -s vector
-```
-
-With filters (filter by document properties, use `--filter` or `-f`):
-```bash
-# Filter by URI pattern
-haiku-rag search "neural networks" --filter "uri LIKE '%arxiv%'"
-
-# Filter by exact title
-haiku-rag search "transformers" --filter "title = 'Deep Learning Guide'"
-
-# Combine multiple conditions
-haiku-rag search "AI" --filter "uri LIKE '%.pdf' AND title LIKE '%paper%'"
-```
-
-Image-as-query (requires a multimodal embedder):
-```bash
-haiku-rag search --image path/to/figure.png --limit 5
-```
-
-When `--image` is used, the positional query is omitted. Pass one or the other, not both.
-
-## Question Answering
-
-Ask questions about your documents:
-```bash
-haiku-rag ask "Who is the author of haiku.rag?"
-```
-
-Filter to specific documents:
-```bash
-haiku-rag ask "What are the main findings?" --filter "uri LIKE '%paper%'"
-```
-
-Attach images to the question, for example to check an image against indexed documents:
-```bash
+haiku-rag ask "What are the main findings?" -f "uri LIKE '%paper%'"
 haiku-rag ask "Does this photo satisfy the spec in the design document?" --image photo.jpg
-```
-
-`ask` runs the [RAG capability](capabilities/rag.md) and always renders citations under the answer. When available, citations use the document title, otherwise they fall back to the URI.
-
-Citation text is truncated to a 300-character preview. To read the whole passage the model saw:
-```bash
 haiku-rag ask "What are the main findings?" --full-citations
 ```
 
-Flags:
+`ask` runs the [RAG capability](capabilities/rag.md) and prints citations under the answer, labelled `title (uri)` or whichever of the two the document has. Citation text is cut to a 300-character preview unless `--full-citations` is set. `--image` is repeatable. Retrieval stays text-based, and the QA model needs `vision: true`.
 
-- `--filter` / `-f`: Restrict searches to documents matching the filter (see [Filtering Search Results](python.md#filtering-search-results))
-- `--image`: Path to an image attached to the question (repeatable). Retrieval stays text-based; the model must have `vision: true` configured.
-- `--full-citations`: Show the full text of each citation instead of a truncated preview
+## Terminal apps
 
-## Chat
+| Command | What it does |
+|---|---|
+| `haiku-rag chat [--model PROVIDER:NAME]` | Conversational RAG in the terminal. See [Chat](chat.md) |
+| `haiku-rag inspect` | Browse documents and chunks, search, preview expanded context. See [Inspector](chat.md#inspector) |
+| `haiku-rag visualize CHUNK_ID [--no-expand]` | Draw a chunk on its page images, its expanded context fainter. `--no-expand` draws the chunk alone |
 
-Launch an interactive chat session for multi-turn conversations:
-
-```bash
-haiku-rag chat
-haiku-rag chat --db /path/to/database.lancedb
-```
-
-!!! note
-    Requires the `tui` extra: `pip install haiku.rag-slim[tui]` (included in full `haiku.rag` package)
-
-The chat interface provides:
-
-- Streaming responses with real-time tool execution
-- Expandable citations with source metadata
-- Session memory for context-aware follow-up questions
-- Visual grounding to inspect chunk source locations
-
-See [Chat](chat.md) for keyboard shortcuts and features.
-
-## Inspect
-
-Launch the interactive inspector TUI for browsing documents and chunks:
-
-```bash
-haiku-rag inspect
-haiku-rag inspect --db /path/to/database.lancedb
-```
-
-!!! note
-    Requires the `tui` extra: `pip install haiku.rag-slim[tui]` (included in full `haiku.rag` package)
-
-The inspector provides:
-
-- Browse all documents in the database
-- View document metadata and content
-- Explore individual chunks
-- Search and filter results
-
-See [Tuning: Inspector](tuning.md#inspector) for the full keybindings and modal flows.
-
-## Visualize Chunk
-
-Display visual grounding for a chunk - shows page images with highlighted bounding boxes:
-
-```bash
-haiku-rag visualize <chunk_id>
-```
-
-This renders the source document pages with the chunk's location highlighted. The chunk itself draws in a strong highlight, while the surrounding context added by expansion draws fainter. Useful for verifying chunk boundaries and understanding document structure.
-
-Pass `--no-expand` to highlight only the chunk itself, without its expanded context.
-
-!!! note
-    Requires a terminal with image support (iTerm2, Kitty, WezTerm, etc.) and documents processed with docling that have page images stored.
+`chat` and `inspect` need the `tui` extra, which the full package includes. `visualize` needs a terminal with inline images (iTerm2, Kitty, WezTerm) and documents converted with page images.
 
 ## Database lifecycle
 
-### Initialize Database
-
-Create a new database:
+### init
 
 ```bash
 haiku-rag init [--db /path/to/your.lancedb]
 ```
 
-This creates the database with the configured settings. **All other commands require an existing database** - they will fail with an informative error if the database doesn't exist.
+Creates the database with the configured settings. On an existing database it warns and exits 0. Commands that read or write documents fail when the database does not exist. `info` and `history` report the missing path and exit 0.
 
-### Info
-
-Display database metadata:
+### info
 
 ```bash
 haiku-rag info [--db /path/to/your.lancedb]
 ```
 
-Shows:
-- path to the database
-- stored haiku.rag version (from settings)
-- embeddings provider/model and vector dimension
-- per-table row counts and storage sizes (documents, document_meta, chunks, document_items)
-- vector index status (exists/not created, indexed/unindexed chunks)
-- table versions per table (documents, document_meta, chunks)
+Shows the database path, the stored haiku.rag version, the embedding provider, model and dimension, per-table row counts and sizes, vector index status, table versions, and pending migrations. A final section lists the haiku.rag, lancedb, docling, pydantic-ai and DoclingDocument schema versions.
 
-At the end, a separate "Versions" section lists runtime package versions:
-- haiku.rag
-- lancedb
-- docling
-
-### Doctor
-
-Check the database for consistency problems and print a pass/warn/fail report:
+### doctor
 
 ```bash
 haiku-rag doctor [--db /path/to/your.lancedb] [--duplicates-out groups.yaml]
 ```
 
-While it runs, doctor shows a spinner naming the check currently in progress.
+Checks the database and prints a pass, warn or fail report. It makes no changes, prints the command that fixes each failure (`rebuild`, `create-index`, `vacuum`, `migrate`, `rebuild --set-embedder`), and exits 1 when any check fails or the database is missing. The checks:
 
-`--duplicates-out PATH` additionally writes the near-duplicate document groups to a YAML file (one block per group with `keep` and a list of `documents`, each carrying `document_id`, `document`, `chunks`, `similarity`, and `keep_suggested`) for offline review.
-
-Checks include:
-
-- required tables are present
-- `documents` and `document_meta` are in 1:1 correspondence
+- required tables are present, and `documents` and `document_meta` correspond one to one
 - chunks and document items reference documents that exist
-- documents with text content produced chunks (empty and heading/furniture-only documents are not flagged; image-only documents are flagged according to whether the embedder can index images)
-- chunked documents have document items (empty documents are not flagged)
-- chunk `doc_item_refs` resolve to existing document items
-- chunk vector size matches the stored embedding dimension
-- chunks are embedded (no all-zero vectors)
-- pictures in image/PDF documents carry their image data (external image references in text documents are not flagged)
-- exactly one settings row is present
-- the configured embedding identity matches the stored settings
-- no database migrations are pending
-- the vector index covers all chunks
-- the full-text index covers the chunks it searches
-- near-identical documents (by embedding-centroid similarity) are grouped and reported, with the largest member flagged as the likely one to keep (advisory only, never deleted, tuned via `doctor.duplicates` in config)
-- API keys are set for configured providers
+- documents with text produced chunks. Empty and heading- or furniture-only documents are not flagged, and image-only documents are flagged according to whether the embedder indexes images
+- chunked documents have document items, and chunk `doc_item_refs` resolve to them
+- chunk vectors have the stored dimension and are not all zero
+- pictures in image and PDF documents carry their image data
+- exactly one settings row exists, and the configured embedder matches it
+- no migrations are pending
+- the vector index covers all chunks, and the full-text index covers the chunks it searches
+- near-identical documents, by embedding-centroid similarity. Advisory only, tuned by `doctor.duplicates`. The largest member of each group is suggested to keep
+- API keys are set for the configured providers
 
-It also probes the external endpoints the config uses and reports them under a Providers section:
+It also probes the endpoints the configuration uses: Ollama and its models (`{base_url}/api/tags`), docling-serve when configured (`{base_url}/health`), and custom OpenAI-compatible and vLLM endpoints (`{base_url}/models`). Hosted providers get only the API-key check. In-process models have no endpoint and are reported as such.
 
-- Ollama is reachable and the configured models are installed (`{base_url}/api/tags`)
-- docling-serve is reachable when used as the converter or chunker (`{base_url}/health`)
-- custom OpenAI-compatible and vLLM endpoints respond (`{base_url}/models`)
+`--duplicates-out PATH` writes the near-duplicate groups to YAML: per group, `keep` and a list of `documents`, each with `document_id`, `document`, `chunks`, `similarity` and `keep_suggested`.
 
-SaaS providers (OpenAI, OpenRouter, Anthropic, Cohere, Jina, ZeroEntropy, Voyage) are covered by the API-key check rather than a network probe. In-process local models (sentence-transformers, cross-encoder, jina-local) have no endpoint and are reported as such.
-
-Each failure prints the command that fixes it (`rebuild`, `create-index`, `vacuum`, `migrate`, `rebuild --set-embedder`). `doctor` makes no changes. It exits with status 1 when any check fails, so it can gate CI or monitoring.
-
-### Migrate Database
-
-Apply pending database migrations:
+### migrate
 
 ```bash
 haiku-rag migrate [--db /path/to/your.lancedb]
 ```
 
-When you upgrade haiku.rag to a new version that includes schema changes, the database requires migration. Opening a database with pending migrations will display an error:
+A database written by an older haiku.rag may need a schema migration. Opening it then fails:
 
 ```
-Error: Database requires migration from 0.19.0 to 0.26.5. 3 migration(s) pending. Run 'haiku-rag migrate' to upgrade.
+Error: Database requires migration from 0.19.0 to 0.38.0. 4 migration(s) pending. Run 'haiku-rag migrate' to upgrade.
 ```
 
-Run `haiku-rag migrate` to apply the pending migrations. The command shows which migrations were applied:
+`migrate` applies the pending migrations and lists them:
 
 ```
 Applied 4 migration(s):
-  - 0.20.0: Add 'docling_document_json' and 'docling_version' columns
+  - 0.20.0: Add 'docling_document_json' and 'docling_version' columns to documents table
   - 0.23.1: Add content_fts column for contextualized FTS search
-  - 0.25.0: Compress docling_document with gzip
+  - 0.25.0: Compress docling_document and use large_binary type
   - 0.38.0: Split docling_document pages into separate column and re-compress with zstd
 Migration completed successfully.
 ```
 
-!!! tip
-    Back up your database before running migrations. They are designed to be safe, but a backup is what lets you recover if one fails.
+Back up the database first. `migrate` exits 1 on failure.
 
-### Download Models
-
-Download required runtime models:
+### download-models
 
 ```bash
 haiku-rag download-models
 ```
 
-This command downloads:
-
-- Docling OCR/conversion models
-- HuggingFace tokenizer (for chunking)
-- Ollama models referenced in your configuration (embeddings, QA, rerank)
-
-Progress is displayed in real-time with download status and progress bars for Ollama model pulls.
+Fetches the models the configuration needs, see [Installation](installation.md#pre-download-models). Exits 1 on error.
 
 ## Maintenance
 
-### Create Vector Index
-
-Create a vector index on the chunks table for fast approximate nearest neighbor search:
+### rebuild
 
 ```bash
-haiku-rag create-index [--db /path/to/your.lancedb]
+haiku-rag rebuild [--rechunk | --embed-only | --title-only | --descriptions | --set-embedder]
 ```
 
-**Requirements:**
-- Minimum 256 chunks required for index creation (LanceDB training data requirement)
-- Creates an IVF_PQ index using the configured `search.vector_index_metric` (cosine/l2)
-
-**When to use:**
-- On a collection over 100,000 chunks (below that, brute-force kNN is exact and fast enough)
-- After substantial corpus growth, to retrain the centroids
-- Use `haiku-rag info` to check index status and see how many chunks are indexed/unindexed, or `haiku-rag doctor` for the same as a health check
-
-See [Vector Indexing](configuration/storage.md#vector-indexing) for the measured accuracy and build cost.
-
-**Search behavior:**
-- Without index: Brute-force kNN search (exact nearest neighbors, slower for large datasets)
-- With index: ANN (approximate nearest neighbors) using IVF_PQ, tuned by `search.vector_nprobes`
-- Between a write and the next `optimize()`: LanceDB combines ANN over indexed rows with brute-force kNN over the remainder
-
-### Rebuild Database
-
-Rebuild the database by re-indexing documents. Useful when switching embeddings provider/model or changing chunking settings:
-
-```bash
-# Full rebuild (default) - re-converts from source files, re-chunks, re-embeds
-haiku-rag rebuild
-
-# Re-chunk from stored content (no source file access)
-haiku-rag rebuild --rechunk
-
-# Only regenerate embeddings (fastest, keeps existing chunks)
-haiku-rag rebuild --embed-only
-
-# Only generate titles for untitled documents
-haiku-rag rebuild --title-only
-
-# Run the VLM over already-stored picture bytes and patch descriptions
-# into the docling blob. Skips the docling parse entirely.
-haiku-rag rebuild --descriptions
-
-# Adopt the current embedder identity without re-embedding (same vector dimension)
-haiku-rag rebuild --set-embedder
-```
-
-**Rebuild modes:**
-
-| Mode | Flag | Use case |
+| Mode | Flag | Use it when |
 |------|------|----------|
-| Full | (default) | Changed converter, source files updated; re-converts documents stored by a version before inline groups were flattened |
-| Rechunk | `--rechunk` | Changed chunking strategy or chunk size |
-| Embed only | `--embed-only` | Changed embedding model or vector dimensions |
-| Title only | `--title-only` | Generate titles for documents without one |
-| Descriptions | `--descriptions` | Add VLM picture descriptions to an existing database |
-| Set embedder | `--set-embedder` | Same model, different serving stack (e.g. Ollama to vLLM); vector dimension unchanged |
+| Full | (default) | The converter or conversion options changed, or source files were updated. Re-converts from source, re-chunks, re-embeds |
+| Rechunk | `--rechunk` | Chunking settings changed. Re-chunks stored content, re-embeds |
+| Embed only | `--embed-only` | The embedding model or `vector_dim` changed. Keeps chunks |
+| Title only | `--title-only` | Documents lack titles |
+| Descriptions | `--descriptions` | Adding VLM picture descriptions to an existing database |
+| Set embedder | `--set-embedder` | The same model is now served by another stack (e.g. Ollama to vLLM) |
 
-**`--set-embedder` mode** updates the stored embedding provider/name to match the current config without re-embedding, valid only when the vector dimension is unchanged. Use it when the same model is served by a different stack so the recorded identity stops drifting from the config. A changed vector dimension is rejected; regenerate embeddings with `--embed-only` or a full rebuild instead.
+`--set-embedder` records the configured embedding provider and name without re-embedding, and is rejected when the vector dimension changed.
 
-**`--descriptions` mode** runs the configured VLM (`processing.conversion_options.picture_description.model`) over the picture bytes already stored in `document_items.picture_data`, patches each description into the stored docling blob's `pictures[i].meta.description.text`, and re-chunks + re-embeds so chunk text reflects the new descriptions. Requires `processing.pictures: description` in the config. Idempotent: pictures that already carry a description are skipped, so the operation is safe to re-run after a partial failure. The docling parse is skipped entirely. Only the VLM time is paid.
+`--descriptions` runs `processing.conversion_options.picture_description.model` over the picture bytes already stored, writes each description into the stored docling document, then re-chunks and re-embeds. It needs `processing.pictures: description`, skips docling conversion, and skips pictures that already have a description, so it is safe to re-run.
 
-### Vacuum (Optimize and Cleanup)
-
-Reduce disk usage by optimizing and pruning old table versions across all tables:
+### vacuum
 
 ```bash
 haiku-rag vacuum
 ```
 
-**Automatic Cleanup:** Vacuum runs automatically in the background after document operations, throttled to at most once every 5 minutes so sustained ingestion does not trigger continuous compaction (a final vacuum runs when the client closes). By default, it removes versions older than 1 day (configurable via `storage.vacuum_retention_seconds`), preserving recent versions for concurrent connections. Manual vacuum can be useful for cleanup after bulk operations or to free disk space immediately.
+Compacts the tables and removes old versions. With `storage.auto_vacuum` it also runs in the background, see [Storage](configuration/storage.md#local-storage).
 
-## MCP Server
+### create-index
 
 ```bash
-# HTTP transport on port 8001
-haiku-rag mcp
-
-# stdio transport (for Claude Desktop)
-haiku-rag mcp --stdio
-
-# Custom port
-haiku-rag mcp --port 9000
-
-# Bind to all interfaces (containers, trusted LAN)
-haiku-rag mcp --host 0.0.0.0
+haiku-rag create-index [--db /path/to/your.lancedb]
 ```
 
-See [MCP](mcp.md) for details. For continuous document ingestion
-(filesystem watch, S3 polling, HTTP / WebDAV sources), use the
-[ingester](ingester.md).
+Builds an IVF_PQ vector index over the chunks, using `search.vector_index_metric`. It needs at least 256 chunks. Without an index, search is exact brute-force kNN, which is fast enough below about 100,000 chunks. Re-run it after substantial growth to retrain the centroids. See [Vector indexing](configuration/storage.md#vector-indexing).
 
-## Settings
+## Tags and history
 
-View current configuration settings:
-```bash
-haiku-rag settings
-```
-
-### Generate Configuration File
-
-Generate a YAML configuration file with defaults:
-```bash
-haiku-rag init-config [output_path]
-```
-
-If no path is specified, creates `haiku.rag.yaml` in the current directory.
-
-## Tags
-
-A tag names the current database state. It is a logical snapshot composed of one LanceDB tag on each of the five tables, created from a single version snapshot.
+A tag names the current database state: one LanceDB tag on each of the five tables, taken from a single version snapshot.
 
 ```bash
-# Tag the current state, e.g. at deploy time or after an ingestion run
-haiku-rag tag create release-1
-
-# List tags with the versions they point to
-haiku-rag tag list
-
-# Delete a tag, releasing its versions for cleanup
-haiku-rag tag delete release-1
-```
-
-A tag present on every table is complete. A tag missing from some tables (created outside haiku.rag, or left behind by a failure) is partial. `tag list` marks partial tags. Partial tags can be listed and deleted but never restored.
-
-Create tags with other writers stopped. Tag creation coordinates writers within one process only; a writer in another process can commit between the per-table snapshot reads, and the tag then captures a mixed state.
-
-Tagged versions survive `vacuum`. Vacuum retains the oldest tagged version and every newer version; versions older than the oldest tag remain eligible for cleanup. Delete tags you no longer need so cleanup can advance.
-
-### Restore
-
-`tag restore` brings the database back to a tagged state:
-
-```bash
+haiku-rag tag create release-1   # e.g. at deploy time
+haiku-rag tag list               # tags and the versions they point to
+haiku-rag tag delete release-1   # release its versions for cleanup
 haiku-rag tag restore release-1
 ```
 
-Restore changes the live state. It is not a read-only view: each table gets a new latest version equal to the tagged one, and reads and writes continue from there. Versions written after the tag remain in history until vacuum removes them.
+A tag missing from some tables, created outside haiku.rag or left by a failure, is partial. `tag list` marks it, and it can be deleted but never restored.
 
-Before changing anything, restore creates a complete safety tag (`before-restore-<timestamp>`) for the current state and reports it, so the pre-restore state can always be restored by name:
+Create and restore tags with every other writer stopped. The snapshot is coordinated within one process, so a writer in another process can commit between the per-table reads.
+
+Vacuum keeps the oldest tagged version and everything newer. Delete tags you no longer need so cleanup can advance.
+
+`tag restore` changes the live state: each table gets a new latest version equal to the tagged one. Before changing anything it creates a safety tag, `before-restore-<timestamp>`, and reports it:
 
 ```bash
-haiku-rag tag create release-1 --db /path/to/db.lancedb
-# Stop all writers before either restore.
 haiku-rag tag restore release-1 --db /path/to/db.lancedb --yes
-haiku-rag tag list --db /path/to/db.lancedb
 haiku-rag tag restore before-restore-YYYYMMDDTHHMMSSZ --db /path/to/db.lancedb --yes
 ```
 
-Restore is a maintenance operation:
-
-- Stop all ingestion and other writers before restoring and keep them stopped until it finishes.
-- The operation is coordinated but not transactionally atomic across tables. On failure it attempts to roll back to the pre-restore state and reports whether the rollback succeeded.
-- `--yes` only skips the confirmation prompt. It provides no locking and no concurrent-writer protection.
-- Restore never migrates. Restoring a tag from an older haiku.rag version completes normally, and the next open reports the required migration. Run `haiku-rag migrate` explicitly.
-
-### Version History
-
-View version history for database tables:
+Restore is coordinated but not atomic across tables. On failure it attempts to roll back to the pre-restore state and reports whether that succeeded. `--yes` only skips the confirmation prompt. Restore never migrates: restoring a tag from an older version succeeds, and the next open reports the migration to run. Tag commands exit 1 on failure.
 
 ```bash
-# Show history for all tables
-haiku-rag history
-
-# Show history for a specific table
-haiku-rag history --table documents
-
-# Limit number of versions shown
-haiku-rag history --limit 10
+haiku-rag history                       # every table
+haiku-rag history -t documents -l 10    # one table, 10 versions
 ```
 
-Output shows version numbers and timestamps, sorted newest first, with tags marked:
+`history` lists table versions newest first, with tags marked. `--table` takes `documents`, `document_meta`, `chunks`, `document_items` or `settings`:
 
 ```
-Version History
-
 documents
   v5: 2025-01-15 14:30:00  <- release-1
   v4: 2025-01-14 10:00:00
-  v3: 2025-01-13 09:15:00
-
-chunks
-  v8: 2025-01-15 14:30:00  <- release-1
-  v7: 2025-01-14 10:00:00
-  ...
 ```
+
+## Servers
+
+```bash
+haiku-rag mcp                  # streamable HTTP on 127.0.0.1:8001
+haiku-rag mcp --stdio          # stdio, for Claude Desktop
+haiku-rag mcp --host 0.0.0.0 --port 9000
+```
+
+See [MCP](mcp.md). Continuous ingestion runs in the separate [`haiku-ingester`](ingester.md) service.
+
+## Settings
+
+```bash
+haiku-rag settings               # the effective configuration
+haiku-rag init-config [PATH]     # write every setting with its default, ./haiku.rag.yaml by default
+```
+
+`init-config` refuses to overwrite an existing file and exits 1.

@@ -1,8 +1,8 @@
-# Model Context Protocol (MCP)
+# Model context protocol (MCP)
 
 The MCP server exposes `haiku.rag` as MCP tools for compatible MCP clients like Claude Desktop.
 
-## Starting MCP Server
+## Starting MCP server
 
 The MCP server supports Streamable HTTP and stdio transports:
 
@@ -22,8 +22,8 @@ haiku-rag mcp --stdio
 ```
 
 `--host` defaults to `127.0.0.1` (loopback only). Bind to `0.0.0.0` only
-when you want the MCP server reachable from outside the local machine —
-e.g. inside a Docker container with port mapping, or on a trusted LAN.
+when the MCP server must be reachable from outside the machine, such as
+inside a Docker container with port mapping, or on a trusted LAN.
 
 The server opens the database read-only. Ingestion goes through the CLI
 (`haiku-rag add`, `add-src`, `delete`) or [`haiku-ingester`](ingester.md).
@@ -31,12 +31,14 @@ The server opens the database read-only. Ingestion goes through the CLI
 ## Collections
 
 With several databases in `lancedb.databases`, the server covers all of
-them, as `haiku-rag search` does. Results and documents name theirs in
-`source`. `sources` on `search_documents`, `search_documents_by_image`
-and `execute_code` restricts a call to a subset; `source` on `get_document` names the database holding the
-document. A name the server does not cover is an error.
+them, as `haiku-rag search` does. Search results name theirs on a
+`Collection:` line, and documents in their `source` field. `sources` on
+`search_documents`, `search_documents_by_image`, `list_documents` and
+`execute_code` restricts a call to a subset. `source` on `get_document`,
+`get_document_outline` and `get_document_section` names the database holding
+the document. A name the server does not cover is an error.
 `haiku-rag --db-name NAME mcp` serves one. See
-[Multiple Databases](configuration/storage.md#multiple-databases).
+[Multiple databases](configuration/multiple-databases.md).
 
 ## Claude Code
 
@@ -85,7 +87,7 @@ The `allowed-tools` field supplies Claude Code's tool pre-approval and may be
 ignored by other Agent Skills clients. Codex configures MCP tool approvals
 separately in `config.toml`.
 
-## Claude Desktop Integration
+## Claude Desktop integration
 
 Add to your Claude Desktop configuration (`claude_desktop_config.json`):
 
@@ -146,37 +148,16 @@ embeds the query image and searches by vector similarity alone.
 
 `get_document` returns a document whole, in reading order. For a long one,
 `get_document_outline` returns the heading tree with page numbers and
-`get_document_section` the text of one section, subsections included; a
+`get_document_section` the text of one section, subsections included. A
 node's `id` in the outline is the `section_id`. A document without headings
 has an empty outline. `list_documents` returns titles, URIs and metadata,
 which is how a client learns what a filter can match.
 
 ### Code
 
-`execute_code` runs a Python program in the sandbox of the
-[RAG capability](capabilities/rag.md), over the documents `filter`
-and `sources` select, and returns what it printed. The program reads
-`/documents/{document_id}/` (`metadata.json`, `content.txt`, `items.jsonl`,
-`chunks.jsonl`, `toc.json`) and can `await search()` and
-`await list_documents()`; the tool description spells out the fields and the
-patterns that matter. Every document `filter` and `sources` admit is mounted
-with its full text, whether or not a search returned it. Each call is one
-program: nothing carries over between calls, and the sandbox is created and
-closed per call. A failing program is a
-tool error carrying the interpreter's message and any output printed before
-it. No model runs on the server. Claude Code moves a call still running after
-about two minutes to a background task.
+`execute_code` runs a Python program in the [RAG capability's sandbox](capabilities/rag.md#sandbox), over the documents `filter` and `sources` select, and returns what it printed. Every document they admit is mounted with its full text, whether or not a search returned it. The tool description spells out the files, fields and patterns that matter.
 
-The interpreter is [Monty](https://github.com/pydantic/monty), a Python subset.
-Useful modules include `json`, `re`, `math`, `pathlib`, `datetime`,
-`collections`, `itertools`, `functools` and `dataclasses`. Absent, and often
-reached for: `decimal` and `statistics`. No generator functions, class
-inheritance or `match` statements, and a file object cannot be iterated. Files are read-only, and
-there is no network and no filesystem
-beyond `/documents`. `sandbox.code_timeout` is the call's budget: compute is
-stopped at it, and past it no further host call starts, a file read or an
-in-code search alike, though one already running finishes.
-`sandbox.max_output_chars` bounds the output.
+Each call is one program: nothing carries over between calls, and the sandbox is created and closed per call. A failing program is a tool error carrying the interpreter's message and any output printed before it. No model runs on the server. Claude Code moves a call still running after about two minutes to a background task.
 
 ### Filters
 
@@ -192,10 +173,10 @@ title = 'Q3 report'
 
 `filter` and `sources` are chosen by the client model on each call. What a
 client can reach is bounded by the databases the server was started against,
-not by either parameter: `filter` restricts what `search_documents` and
-`list_documents` return and what `execute_code` mounts, `get_document` and
-`get_document_section` take none, and a document id resolves through them
-whatever filter another call used. Content that must stay out of a client's
+not by either parameter: `filter` restricts what the two search tools and
+`list_documents` return and what `execute_code` mounts, the three document
+read tools take none, and a document id resolves through them whatever
+filter another call used. Content that must stay out of a client's
 reach belongs in a database the server does not cover.
 
 ### Errors
@@ -212,9 +193,3 @@ The server publishes `instructions` describing the knowledge base: what it
 holds, when to reach for it, the collection names when it covers several, and
 `prompts.domain_preamble` when set. Claude Code and Codex show them to the
 model. Claude Desktop does not, so every tool description stands on its own.
-
-## Continuous ingestion
-
-For continuous document ingestion (filesystem watch, S3 polling, HTTP
-sources, a job queue with retries), run [`haiku-ingester`](ingester.md)
-as a separate process against the same LanceDB.

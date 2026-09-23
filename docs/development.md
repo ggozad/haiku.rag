@@ -13,7 +13,7 @@ uv sync
 uv run pre-commit install
 ```
 
-## Running Tests
+## Running tests
 
 ```bash
 uv run pytest
@@ -34,11 +34,11 @@ cd evaluations
 uv run pytest --cov
 ```
 
-### Test Markers
+### Test markers
 
 Tests use pytest markers to categorize them:
 
-- `@pytest.mark.integration` - Tests requiring local services (Docling models, etc.) that aren't available in CI
+- `@pytest.mark.integration` - Tests against external services (Postgres, docling-serve, SeaweedFS from `tests/docker/`), not run in CI
 - `@pytest.mark.slow` - Deterministic end-to-end tests run in a separate CI job
 - `@pytest.mark.vcr()` - Tests with HTTP call recording
 
@@ -47,11 +47,11 @@ Async tests are detected automatically through pytest-asyncio's auto mode.
 CI runs the fast, slow and evaluations suites as separate jobs. Live integration
 tests are exercised locally against the services in `tests/docker/`.
 
-## HTTP Recording with VCR
+## HTTP recording with VCR
 
 Tests use [pytest-recording](https://github.com/kiwicom/pytest-recording) (VCR.py) to record and replay HTTP calls. This allows tests to run without external services like Ollama or API providers.
 
-### How It Works
+### How it works
 
 1. Tests marked with `@pytest.mark.vcr()` record HTTP interactions to YAML cassettes
 2. On subsequent runs, HTTP calls are replayed from cassettes instead of hitting real services
@@ -60,7 +60,7 @@ Tests use [pytest-recording](https://github.com/kiwicom/pytest-recording) (VCR.p
 Docling-serve polling and retry delays are skipped during cassette playback.
 Recording and `--disable-recording` runs retain the real delays.
 
-### Recording New Cassettes
+### Recording new cassettes
 
 When adding a new test that makes HTTP calls:
 
@@ -68,11 +68,11 @@ When adding a new test that makes HTTP calls:
 2. Run the test with the required services available and `--record-mode=once`
 3. Commit the generated cassette
 
-### Re-recording Cassettes
+### Re-recording cassettes
 
-To update an existing cassette, delete it and re-run the test, or use `--record-mode=rewrite`.
+To update an existing cassette, re-run the test with `--record-mode=rewrite`. Deleting it alone is not enough: without `--record-mode`, playback runs in `none` mode and an unrecorded call fails.
 
-### Running Without Cassettes (Live Mode)
+### Running without cassettes (live mode)
 
 To run tests against real services instead of recorded cassettes:
 
@@ -80,9 +80,9 @@ To run tests against real services instead of recorded cassettes:
 uv run pytest --disable-recording
 ```
 
-## Writing Tests
+## Writing tests
 
-### Common Fixtures
+### Common fixtures
 
 Available fixtures from `tests/conftest.py`:
 
@@ -90,7 +90,7 @@ Available fixtures from `tests/conftest.py`:
 - `temp_yaml_config` - Temporary config file
 - `allow_model_requests` - Enables pydantic-ai model calls
 
-### Example: Adding a New Test with VCR
+### Example: adding a new test with VCR
 
 ```python
 import pytest
@@ -104,7 +104,7 @@ async def test_my_feature(temp_db_path):
         assert doc.id is not None
 ```
 
-### Integration Tests
+### Integration tests
 
 For tests requiring local services that can't be mocked via VCR:
 
@@ -116,9 +116,9 @@ async def test_pdf_visualization(temp_db_path):
 ```
 
 Integration tests are skipped in CI. Start the required services and they run as
-part of the core suite; they skip when a service is unreachable.
+part of the core suite, and skip when a service is unreachable.
 
-## Linting and Formatting
+## Linting and formatting
 
 ```bash
 uv run ruff check
@@ -126,7 +126,7 @@ uv run ruff format
 uv run ty check
 ```
 
-## Mock API Keys
+## Mock API keys
 
 Tests automatically set mock API keys for providers that require them during client initialization. When running with VCR playback, these mock keys are sufficient since no real API calls are made.
 

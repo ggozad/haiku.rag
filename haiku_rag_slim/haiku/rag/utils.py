@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import logging
 import math
 import sys
 from collections.abc import Awaitable
@@ -8,6 +9,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, NoReturn
 
 from packaging.version import Version, parse
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from pydantic_ai.messages import BinaryContent
@@ -411,8 +414,27 @@ def get_model(
             ),
         )
 
+    elif provider == "mistral":
+        from pydantic_ai.models.mistral import MistralModel
+
+        return MistralModel(
+            model_name=model,
+            settings=apply_common_settings(None, model_config),
+        )
+
     else:
-        # For any other provider, use string format and let Pydantic AI handle it
+        # Pydantic AI builds the model from the string, which carries no settings.
+        dropped = [
+            name
+            for name in ("temperature", "max_tokens", "thinking", "extra_body")
+            if getattr(model_config, name) is not None
+        ]
+        if dropped:
+            logger.warning(
+                "Provider %r is passed to Pydantic AI by name, so %s is not applied.",
+                provider,
+                ", ".join(dropped),
+            )
         return f"{provider}:{model}"
 
 

@@ -2,66 +2,58 @@
 
 A browser-based reference implementation of conversational RAG, built on a Starlette backend with pydantic-ai's `AGUIAdapter` and a Next.js / CopilotKit frontend. It lives in the `app/` directory of the haiku.rag repository.
 
-This is a starting point for your own deployments, not the canonical haiku.rag UX. For the day-to-day terminal experience see [Chat](chat.md).
+It is a starting point for your own deployment. The terminal equivalent is [Chat](chat.md).
 
 !!! warning "No authentication"
-    An illustrative example meant as a starting point, with no authentication. The compose files bind the backend to `127.0.0.1`; don't expose it to an untrusted network.
+    An illustrative example meant as a starting point, with no authentication. The compose files bind the frontend and backend to `127.0.0.1`. The frontend proxies every backend route, so don't expose either to an untrusted network.
 
-## Features
-
-- Streaming chat with real-time tool execution visibility.
-- Expandable citations with source documents, pages, and headings.
-- Visual grounding to view chunk source locations in documents.
-- Document filter to restrict searches to selected documents.
-- Session state view for inspecting citations and search results.
+It streams answers and tool calls, shows expandable citations with visual grounding, restricts searches through a document filter, and keeps sessions in the browser with markdown export.
 
 ## Quick start
 
 ```bash
 cd app
-docker compose -f docker-compose.dev.yml up -d --build
+cp .env.example .env
+cp haiku.rag.yaml.example haiku.rag.yaml
+docker compose up -d --build
+# with hot reload instead: docker compose -f docker-compose.dev.yml up -d --build
 ```
 
-- Frontend: `http://localhost:3000`
-- Backend: `http://localhost:8001`
-
-## Architecture
-
-- **Backend**: Starlette server with pydantic-ai `AGUIAdapter`.
-- **Frontend**: Next.js with CopilotKit.
-- **Protocol**: AG-UI for streaming chat.
+The frontend is at `http://localhost:3000` and the backend at `http://localhost:8001`. The app needs an existing database, created with the `haiku-rag` CLI.
 
 ## Configuration
 
-Create a `.env` file in the `app/` directory:
+`.env` in the `app/` directory holds the secrets and the database path:
 
 ```bash
-# API Keys (at least one required)
+# API keys for the providers haiku.rag.yaml uses (none for Ollama)
 ANTHROPIC_API_KEY=your-anthropic-key
 OPENAI_API_KEY=your-openai-key
 
 # Host path of the LanceDB database, mounted at /data
 DB_VOLUME=/path/to/your/haiku.rag.lancedb
 
-# Optional: Ollama base URL (if using local models)
-OLLAMA_BASE_URL=http://localhost:11434
-
 # Optional: Logfire for observability
 LOGFIRE_TOKEN=your-logfire-token
 ```
 
-The mounted `haiku.rag.yaml` places the database at `/data` and configures the models; the compose files point `HAIKU_RAG_CONFIG_PATH` at it:
+`haiku.rag.yaml`, copied from `haiku.rag.yaml.example`, places the database at `/data` and configures the models. The compose files point `HAIKU_RAG_CONFIG_PATH` at it. The example uses Ollama on the host through `providers.ollama.base_url: http://host.docker.internal:11434`, which takes precedence over `OLLAMA_BASE_URL`:
 
 ```yaml
-# app/haiku.rag.yaml
 lancedb:
   databases:
     haiku.rag: /data
 
 qa:
   model:
-    provider: anthropic
-    name: claude-sonnet-4-20250514
+    provider: ollama
+    name: gpt-oss
+
+embeddings:
+  model:
+    provider: ollama
+    name: qwen3-embedding:4b
+    vector_dim: 2560
 ```
 
 Outside compose, the backend loads its configuration like the CLI: `HAIKU_RAG_CONFIG_PATH`, then `./haiku.rag.yaml`, then the platform directory.

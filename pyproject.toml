@@ -91,6 +91,7 @@ dev = [
     "pydantic-ai-slim[bedrock]",
     "pydantic-ai-slim[google]",
     "pydantic-ai-slim[groq]",
+    "pydantic-ai-slim[mistral]",
     "ty>=0.0.78",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.4.0",

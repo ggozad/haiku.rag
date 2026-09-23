@@ -27,9 +27,8 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app /app
 
-# Set default data directory
+# Data volume mount point, used when haiku.rag.yaml sets storage.data_dir: /data
 RUN mkdir -p /data
-ENV DEFAULT_DATA_DIR=/data
 
 ENV PATH="/app/.venv/bin:$PATH"
 
@@ -40,4 +39,4 @@ EXPOSE 8001 8765
 
 # Default command: read-only MCP server. The companion ingester service is
 # launched via docker-compose against the same image.
-CMD ["haiku-rag", "--config", "/app/haiku.rag.yaml", "mcp", "--port", "8001"]
+CMD ["haiku-rag", "--config", "/app/haiku.rag.yaml", "mcp", "--host", "0.0.0.0", "--port", "8001"]

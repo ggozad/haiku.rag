@@ -5,27 +5,9 @@ search result it ever produced. Every question adds its evidence to the history,
 requests grow turn after turn, which degrades answers and can exceed a provider's
 limits.
 
-Register it alongside an evidence capability:
-
-```python
-from pydantic_ai import Agent
-from haiku.rag.capabilities.compaction import create_capability as compaction
-from haiku.rag.capabilities.rag import create_capability as rag
-
-agent = Agent(
-    "openai:gpt-5",
-    capabilities=[rag(db_path="my.lancedb"), compaction()],
-)
-```
-
-It exposes no tools and takes no configuration. Registering it is the only switch:
-leave it out and the transcript reaches the model untouched.
-
-The host must carry the capability state between runs, alongside the message
-history: the capsule is built from what earlier questions recorded there. Given
-only a message history, every run starts from an empty record, and compaction
-refuses rather than replacing evidence it cannot retain. See
-[Compose an agent](index.md#compose-an-agent) for the shape.
+Register it alongside the RAG capability, with the host carrying capability state
+between runs, as in [Compose an agent](index.md#compose-an-agent). Registering it is
+the only switch: leave it out and the transcript reaches the model untouched.
 
 ## What it does
 

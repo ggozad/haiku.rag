@@ -53,22 +53,23 @@ query -> vector + full-text search -> fusion -> rerank -> context expansion
 
 Search runs a vector query and a full-text query and fuses the rankings. With a
 reranker configured, it retrieves ten times the requested limit and reranks down
-to it, so quality improves without changing the caller's limit.
+to it.
 
 Results then expand: a chunk is returned with the section it belongs to, bounded
 by `search.max_context_chars`. Sections that fit come back whole, larger ones
-grow outward from the match, and small ones grow across boundaries. Every result
-carries its page numbers and headings, which is what makes a citation checkable.
+grow outward from the match within the section, and small ones grow across
+boundaries. See [Search settings](configuration/qa.md#search-settings). Every
+result carries its page numbers and headings, so a citation can be checked
+against its source.
 
 ## Answering
 
-Two [capabilities](capabilities/index.md) sit on top, both native Pydantic AI
-capabilities you can attach to your own agent:
-
-- The **RAG capability** searches, cites, and runs a sandboxed Python interpreter
-  with the documents mounted as a filesystem, for questions that need computation
-  across documents rather than retrieval. Its citations carry page numbers and
-  headings, and `haiku-rag visualize` draws the cited chunk on the page image.
+The **RAG capability** sits on top, a native Pydantic AI
+[capability](capabilities/index.md) you can attach to your own agent. It
+searches, cites, and runs a sandboxed Python interpreter with the documents
+mounted as a filesystem, for questions that need computation across documents
+rather than retrieval. Its citations carry page numbers and headings, and
+`haiku-rag visualize` draws the cited chunk on the page image.
 
 Two optional capabilities compose with it: evidence compaction replaces older
 turns' evidence with what was actually cited, and citation policy requires every

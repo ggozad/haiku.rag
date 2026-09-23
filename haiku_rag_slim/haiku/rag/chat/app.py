@@ -315,6 +315,7 @@ class ChatApp(App):
         await chat_history.clear_messages()
         self._messages.clear()
         self._state = {STATE_NAMESPACE: RAGState().model_dump(mode="json")}
+        self._apply_document_filter(self._document_filter)
         # Cleared chat starts a fresh Logfire conversation.
         self._conversation_id = str(uuid.uuid4())
 
@@ -403,18 +404,21 @@ class ChatApp(App):
         )
 
     def on_document_filter_modal_filter_changed(self, event: Any) -> None:
+        self._apply_document_filter(event.selected)
+
+    def _apply_document_filter(self, selected: list[tuple[str | None, str]]) -> None:
         """Scope the conversation to the selection: the filter carries the ids,
         and over a set `sources` restricts the search to the databases the
         selection names. One database needs no narrowing by source.
         """
         from haiku.rag.tools.filters import build_document_id_filter
 
-        self._document_filter = event.selected
+        self._document_filter = selected
 
         doc_filter = build_document_id_filter(
-            sorted({doc_id for _, doc_id in event.selected})
+            sorted({doc_id for _, doc_id in selected})
         )
-        selected_sources = sorted({source for source, _ in event.selected if source})
+        selected_sources = sorted({source for source, _ in selected if source})
         covers_multiple = self.client is not None and self.client.covers_multiple
         sources = selected_sources if covers_multiple and selected_sources else None
         state = RAGState.model_validate(self._state.get(STATE_NAMESPACE) or {})

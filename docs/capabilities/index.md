@@ -84,6 +84,7 @@ from haiku.rag.capabilities.compaction import EvidenceCompactionCapability
 from haiku.rag.capabilities.policy import CitationPolicyCapability
 from haiku.rag.capabilities.rag import RAGCapability
 
+# Deps is the dataclass from the example above.
 agent = Agent.from_file(
     "agent.yaml",
     deps_type=Deps,
@@ -99,9 +100,6 @@ agent = Agent.from_file(
 through `deps.state` (see [State](#state)). `Agent.from_file` reads YAML, which needs
 `pydantic-ai-slim[spec]`; `Agent.from_spec` takes a dict and needs no YAML parser.
 
-The tools are visible immediately. Set `defer_loading: true` when the model should
-choose among several capabilities and load this one on demand.
-
 A `config:` block accepts a whole `AppConfig`, for agents in one process that need
 different databases or embedding models:
 
@@ -111,35 +109,21 @@ capabilities:
       db_path: /data/kb.lancedb
       config:
         embeddings:
-          model: {provider: ollama, name: embeddinggemma, vector_dim: 2048}
+          model: {provider: ollama, name: embeddinggemma, vector_dim: 768}
 ```
 
 The block is read like a `haiku.rag.yaml` file: keys it omits take `AppConfig` defaults
 rather than values from the configuration file on disk. The embedding model must match the
-database; a mismatch may prevent opening it or produce invalid retrieval. Write the block in
+database. A mismatch may prevent opening it or produce invalid retrieval. Write the block in
 full or omit it and let the [configuration file](../configuration/index.md) apply.
 
 ## State
 
-Capabilities use a plain `state: dict[str, Any]` attribute on agent dependencies when one is available. RAG state lives under `"rag"`. This keeps state independent of any transport or UI protocol.
+Capabilities use a plain `state: dict[str, Any]` attribute on agent dependencies when one is available. RAG state lives under `"rag"`, see [RAG capability state](rag.md#state). The state is independent of any transport. Applications serving AG-UI adapt the agent with Pydantic AI's `AGUIAdapter`, with no haiku.rag-specific bridge.
 
-Applications serving AG-UI should adapt the agent with Pydantic AI's `AGUIAdapter`. Native model and tool events require no haiku.rag-specific bridge.
+## Database selection
 
-## Database Selection
-
-The RAG capability covers the databases the configuration places: [`lancedb.databases`](../configuration/storage.md#multiple-databases), or with nothing configured the default database `haiku.rag` under `storage.data_dir`. The `db_path` argument places one database where the configuration places none; beside `lancedb.databases` it raises `AmbiguousDatabaseError`.
-
-`sources` narrows that coverage to the databases it names, in a spec as in the factory:
-
-```yaml
-capabilities:
-  - RAGCapability:
-      sources: [manuals, specs]
-```
-
-An unknown name raises `UnknownDatabaseError`, an empty list `ValueError`. `sources` is refused beside `db_path` and beside `rag=` with `AmbiguousDatabaseError`, since each of those already says which databases the capability covers.
-
-The `sources` field of the capability [state](#state) selects among the databases the capability covers, for one question. A question naming a database outside that coverage fails when it searches.
+The RAG capability covers the databases the configuration places: `lancedb.databases`, or with nothing configured the default database `haiku.rag` under `storage.data_dir`. The `db_path` argument places one database where the configuration places none, and beside `lancedb.databases` it raises `AmbiguousDatabaseError`. `sources` narrows the coverage to named databases, and the `sources` field of the capability [state](#state) selects among them for one question. See [Multiple databases](../configuration/multiple-databases.md#capability).
 
 `document_filter` in the same state is a SQL WHERE clause over the document columns (see [Filtering Search Results](../python.md#filtering-search-results)). The host sets it, and it persists until the host changes it. It restricts what the capability's searches retrieve and which documents the sandbox mounts, not what a citation can resolve, so evidence from an earlier question stays citable after the filter narrows.
 

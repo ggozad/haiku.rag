@@ -1,14 +1,12 @@
 # haiku.rag Examples
 
-This directory contains example scripts demonstrating various features of haiku.rag.
+Runnable examples.
 
 ## Docker Example
 
 **Directory:** `docker/`
 
-Complete Docker setup for running haiku.rag with all services:
-- Continuous ingestion from a watched directory via `haiku-ingester`
-- MCP server for AI assistant integration
+Docker Compose setup with docling-serve, continuous ingestion of a watched directory through `haiku-ingester`, and a read-only MCP server.
 
 See `docker/README.md` for setup instructions.
 
@@ -16,7 +14,7 @@ See `docker/README.md` for setup instructions.
 
 **Script:** `custom_agent.py`
 
-Uses the eagerly loaded RAG capability to build a conversational agent.
+A conversational agent built on the RAG capability.
 
 ```bash
 uv run python examples/custom_agent.py /path/to/db.lancedb

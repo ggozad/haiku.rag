@@ -119,6 +119,8 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - VOYAGE_API_KEY=${VOYAGE_API_KEY}
       - CO_API_KEY=${CO_API_KEY}
+      # haiku.rag.yaml reads it, so config loading fails without it.
+      - INGESTER_TOKEN=${INGESTER_TOKEN:-}
     depends_on:
       haiku-ingester:
         condition: service_healthy
