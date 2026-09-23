@@ -161,7 +161,7 @@ The two live arms replay the same 29 conversations (224 turns) and differ only i
 
 ## Methodology
 
-### Retrieval Metrics
+### Retrieval metrics
 
 **Mean Average Precision (MAP)** scores ranked retrieval results against the gold `expected_uris`.
 
@@ -171,7 +171,7 @@ The two live arms replay the same 29 conversations (224 turns) and differ only i
 - Range: 0 to 1. Rewards ranking relevant documents higher
 - For single-doc queries this collapses to `1/rank` (i.e. reciprocal rank)
 
-### QA Accuracy
+### QA accuracy
 
 `pydantic-evals` coordinates an LLM judge to determine whether the capability's answer is correct. The default judge is `ollama:qwen3.8`, pinned so changes to the capability model don't change the judge underneath. Set `evaluations.judge` in `haiku.rag.yaml` to override (including a custom `base_url` for any OpenAI-compatible endpoint). Accuracy is the fraction of correctly answered questions.
 
@@ -181,13 +181,13 @@ A dataset that brings its own deterministic evaluator is scored by that evaluato
 
 Before that, we picked `qwen3.6` over the previously-pinned `gpt-oss` after a 4-cell calibration (gpt-oss / qwen3.6 as both answerer and judge, with Claude Opus 4.7 as a reference). `qwen3.6` had κ ≥ 0.66 vs the reference on both same-family and cross-family answerers (vs ~0.39–0.55 for `gpt-oss`) and showed no measurable self-preference bias, while `gpt-oss` was ~10 pp more lenient on its own outputs.
 
-### Citation Retrieval
+### Citation retrieval
 
 Alongside QA accuracy, a second metric scores the URIs the capability registered via the `cite` tool against each dataset's gold `expected_uris`, using the same MAP math as raw retrieval. The score key is `cited_map`. Console output also includes the cite rate (% of cases with at least one citation) and the mean number of citations per case.
 
 This is computed alongside QA accuracy from the same capability run, no extra invocations. The signal complements raw retrieval: where raw retrieval measures whether the retriever returned the gold document at any rank, citation retrieval measures whether the capability grounded its answer on it.
 
-## Running Evaluations
+## Running evaluations
 
 You can run evaluations with the `evaluations` CLI:
 
@@ -198,7 +198,7 @@ evaluations run orb_text
 
 The evaluation flow is orchestrated with [`pydantic-evals`](https://github.com/pydantic/pydantic-ai/tree/main/libs/pydantic-evals), which we use for dataset management, scoring, and report generation.
 
-### Pre-built Databases
+### Pre-built databases
 
 Building evaluation databases from scratch can take a long time, especially for large datasets like OpenRAG Bench. Pre-built databases are available on HuggingFace:
 

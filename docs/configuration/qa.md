@@ -1,6 +1,6 @@
-# Search and Question Answering
+# Search and question answering
 
-## Search Settings
+## Search settings
 
 Configure search behavior and context expansion:
 
@@ -13,12 +13,12 @@ search:
 - **limit**: Default number of search results to return when no limit is specified. Used by CLI, MCP server, and QA. Default: 5
 - **max_context_chars**: Hard limit on total characters in expanded content. Default: 5000.
 
-Context expansion is automatic and section-aware. For structured documents (with section headers), expansion includes the entire section containing the match when it fits the budget. A section larger than the budget grows outward item-by-item from the match, staying inside the section. A section under 20% of the budget (e.g., a title+authors area) grows across section boundaries until the budget is filled, except when the match is a picture or table, which returns its section as-is. Noise labels (page headers, page footers, table of contents) are skipped. For unstructured documents, expansion grows outward item-by-item. Results without `doc_item_refs` (e.g., custom chunks passed to `import_document`) pass through unexpanded.
+Context expansion is section-aware. The capability's search tool, the MCP search tools and in-code `search()` expand every result. `HaikuRAG.search` returns chunks as matched, and `HaikuRAG.expand_context` expands them. For structured documents (with section headers), expansion includes the entire section containing the match when it fits the budget. A section larger than the budget grows outward item-by-item from the match, staying inside the section. A section under 20% of the budget (e.g., a title+authors area) grows across section boundaries until the budget is filled, except when the match is a picture or table, which returns its section as-is. Noise labels (page headers, page footers, table of contents) are skipped. For unstructured documents, expansion grows outward item-by-item. Results without `doc_item_refs` (e.g., custom chunks passed to `import_document`) pass through unexpanded. Results whose expanded ranges overlap within a document are merged into one.
 
 !!! note "Reranking behavior"
-    When a reranker is configured, search automatically retrieves 10x the requested limit, then reranks to return the final count. This improves result quality without requiring you to adjust `limit`.
+    With a reranker configured, a text search retrieves 10x the requested limit and reranks down to it. Image queries skip the reranker.
 
-## Question Answering Configuration
+## Question answering configuration
 
 Configure the RAG capability (used by `client.ask` and `haiku-rag ask`):
 
@@ -40,9 +40,9 @@ qa:
 - **max_executions**: Maximum `execute_code` calls per question before the capability is told to answer from what it has (default: 15)
 
 !!! note "Thinking on self-hosted models"
-    `thinking` is sent as `reasoning_effort` to every self-hosted endpoint, and the accepted levels are the model's own, see [Thinking Control](providers.md#thinking-control). A template with a switch of its own, Muse Glimmer's `reasoning_strength`, takes [`extra_body`](providers.md#raw-provider-pass-through).
+    `thinking` is sent as `reasoning_effort` to every self-hosted endpoint, and the accepted levels are the model's own. A chat template with a switch of its own takes it through `extra_body`. See [Thinking](providers.md#thinking).
 
-## Sandbox Configuration
+## Sandbox configuration
 
 Limits of one `execute_code` call, in the RAG capability and in the MCP `execute_code` tool:
 

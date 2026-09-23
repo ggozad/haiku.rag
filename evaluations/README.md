@@ -132,7 +132,7 @@ You can override this with the `--db` option.
 
 ### Evaluating over Multiple Databases
 
-With [`lancedb.databases`](https://ggozad.github.io/haiku.rag/configuration/storage/#multiple-databases) configured, `evaluations run <dataset> --skip-db` benchmarks the full set. Retrieval, QA, and live conversations preserve the database name on results and citations. A configured set of one follows the same path and retains its name.
+With [`lancedb.databases`](https://ggozad.github.io/haiku.rag/configuration/multiple-databases/) configured, `evaluations run <dataset> --skip-db` benchmarks the full set. Retrieval, QA, and live conversations preserve the database name on results and citations. A configured set of one follows the same path and retains its name.
 
 Population writes one database, so it runs only without `lancedb.databases`. `--db` beside a configured set is an error:
 

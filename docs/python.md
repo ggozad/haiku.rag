@@ -2,7 +2,7 @@
 
 Use `haiku.rag` directly in your Python applications.
 
-## Basic Usage
+## Basic usage
 
 ```python
 from pathlib import Path
@@ -30,14 +30,14 @@ async with HaikuRAG("path/to/database.lancedb", read_only=True) as client:
     Databases must be explicitly created with `create=True` or via `haiku-rag init` before use. Opening a nonexistent local database given as a path raises `FileNotFoundError`, naming the path; a configured or default database raises `SourceUnavailableError`, which names the database rather than its location. A path beside a configured `lancedb.databases` raises `AmbiguousDatabaseError`.
 
 !!! note
-    Read-only mode is useful for safely accessing databases without risk of modification. It blocks all write operations and downgrades an embedding provider/name mismatch to a warning instead of raising `ConfigMismatchError`.
+    Read-only mode blocks every write, and downgrades an embedding provider or name mismatch to a warning (see [Operational constraints](configuration/storage.md#operational-constraints)).
 
 !!! warning "Database Migrations"
-    When upgrading haiku.rag to a version with schema changes, opening an existing database will raise `MigrationRequiredError`. Run `haiku-rag migrate` to apply pending migrations before using the database. See [CLI Database Management](cli.md#migrate-database) for details.
+    When upgrading haiku.rag to a version with schema changes, opening an existing database will raise `MigrationRequiredError`. Run `haiku-rag migrate` to apply pending migrations before using the database. See [migrate](cli.md#migrate) for details.
 
-## Document Management
+## Document management
 
-### Creating Documents
+### Creating documents
 
 From text:
 ```python
@@ -84,7 +84,7 @@ doc = await client.create_document_from_source(
 
 PDFs that carry attachments via the `/EmbeddedFiles` table are split into one Document per attachment, linked to the wrapper through `metadata.parent_uri`. See [PDF Embedded Attachments](configuration/processing.md#pdf-embedded-attachments).
 
-### Retrieving Documents
+### Retrieving documents
 
 By ID:
 ```python
@@ -152,7 +152,7 @@ total = await client.count_documents()
 pdf_count = await client.count_documents(filter="uri LIKE '%.pdf'")
 ```
 
-### Updating Documents
+### Updating documents
 
 ```python
 # Update content (triggers re-chunking)
@@ -194,7 +194,7 @@ await client.update_document(document_id=doc.id, chunks=custom_chunks)
 - Updates to `content` trigger re-chunking and re-embedding
 - Custom `chunks` with embeddings are stored as-is. Missing embeddings are generated automatically
 
-### Deleting Documents
+### Deleting documents
 
 ```python
 await client.delete_document(doc.id)
@@ -202,7 +202,7 @@ await client.delete_document(doc.id)
 
 Deleting a document also removes any child Documents linked to it via `metadata.parent_uri` (PDF attachment children, primarily). The cascade is transitive.
 
-## Searching Documents
+## Searching documents
 
 The search method performs native hybrid search (vector + full-text) using LanceDB with optional reranking for improved relevance:
 
@@ -249,62 +249,19 @@ for result in results:
     print(f"Document Title: {result.document_title}")  # when available
 ```
 
-### Searching Multiple Databases
+### Searching multiple databases
 
-With [`lancedb.databases`](configuration/storage.md#multiple-databases) configured, a client covers the full set. Use `sources` to select a subset. Each result includes its database name:
+With several databases in `lancedb.databases`, a client covers them all, and `search`, `ask` and `list_documents` take `sources` to select a subset. Each result and citation names its database in `source`:
 
 ```python
-results = await client.search("machine learning")                    # all of them
-results = await client.search("machine learning", sources=["papers"])  # one of them
-
+results = await client.search("machine learning", sources=["papers"])
 for result in results:
     print(f"{result.source}: {result.content}")
 ```
 
-`ask` also accepts `sources`. Citations include the database name:
+`client.is_read_only` reports the mode every covered database is opened with. Selection rules, the client's coverage properties and ranking across databases are under [Multiple databases](configuration/multiple-databases.md#python).
 
-```python
-answer, citations = await client.ask("What changed?", sources=["papers", "wiki"])
-for cite in citations:
-    print(f"[{cite.source}] {cite.document_title or cite.document_uri}")
-```
-
-A scoped question can cite only the selected databases, and code run by the capability mounts only their documents.
-
-`sources=None` covers every database the client covers. `sources=[]` covers none: `search` returns no results, and `ask` runs with no evidence from any database.
-
-A name no client covers raises `UnknownDatabaseError`, a `KeyError`, wherever it is given: when the client opens, per query, and when placing a citation.
-
-On the constructor `sources=[]` means something else. Passing `sources` alongside a database path raises `AmbiguousDatabaseError` immediately, since both say which database to open. Passing `sources=[]` alone raises `ValueError` on entering the client: a selection of nothing to search is a legitimate question, a client over no database is not.
-
-#### Inspecting the client scope
-
-```python
-client.covers_multiple      # whether the client covers more than one database
-client.source_names         # database names, in order; known before the client opens
-client.source               # the one database's name, or None for a set
-
-client.is_read_only         # the mode every covered database is opened with
-
-owner = await client.reader_for("papers")      # the client reading that database
-papers, wiki = await client.clients_for(["papers", "wiki"])
-covering = await client.clients_covering(["papers"])  # [] for [], every client for None
-```
-
-`reader_for`, `clients_for` and `clients_covering` open databases lazily and return borrowed clients. They remain valid while the covering client is open and inherit its read-only mode. The covering client owns and closes their database sessions.
-
-To learn what a configuration covers without opening anything, resolve it:
-
-```python
-from haiku.rag.client import DatabaseScope
-
-for ref in DatabaseScope.resolve(config).databases:
-    print(ref.name, ref.location)   # "haiku.rag", Path(".../haiku.rag.lancedb") when nothing is configured
-```
-
-`DatabaseScope.resolve` is pure: it reads the configuration and classifies each location as a local path or a URI.
-
-### Filtering Search Results
+### Filtering search results
 
 Filter search results to only include chunks from documents matching specific criteria:
 
@@ -370,7 +327,7 @@ results = await client.search(
 
 Image queries return picture chunks (synthetic per-figure chunks emitted at ingest under a multimodal embedder) and any text chunks whose vectors are near the image vector in the shared embedding space. Calling `client.search(bytes)` against a text-only embedder raises a `ValueError`.
 
-### Expanding Search Context
+### Expanding search context
 
 Expand search results with surrounding content from the document:
 
@@ -385,15 +342,9 @@ for result in expanded_results:
     print(f"Expanded content: {result.content}")
 ```
 
-Context expansion is automatic and section-aware. For structured documents (with section headers), expansion includes the entire section containing the match when it fits the budget. A section larger than the budget grows outward item-by-item from the match, staying inside the section. A section under 20% of the budget (e.g., a title+authors area) grows across section boundaries until the budget is filled, except when the match is a picture or table, which returns its section as-is. Noise labels (page headers, page footers, table of contents) are skipped. For unstructured documents, expansion grows outward item-by-item. Results without `doc_item_refs` (e.g., custom chunks passed to `import_document`) pass through unexpanded.
+Expansion is section-aware and capped by `search.max_context_chars`, see [Search settings](configuration/qa.md#search-settings). Results whose expanded ranges overlap within a document are merged into one result with the highest score.
 
-Configuration:
-
-- **search.max_context_chars**: Maximum characters in expanded context. Default: 5000.
-
-**Merging**: When expanded results overlap within the same document, they are automatically merged into a single result with continuous content and the highest relevance score.
-
-### Visual Grounding
+### Visual grounding
 
 `visualize_chunk` returns one PIL image per page, with the chunk's bounding boxes drawn on it. It needs the document's page images (`generate_page_images`, on by default for PDFs):
 
@@ -406,7 +357,7 @@ for page_number, image in enumerate(images, start=1):
 
 `source` is required when the client covers several databases. `expand=False` draws only the chunk, without its expanded context.
 
-## Question Answering
+## Question answering
 
 Ask questions about your documents:
 
@@ -437,36 +388,11 @@ answer, citations = await client.ask(
 
 Images are passed to the model alongside the question. Retrieval stays text-based. The QA model must have `vision: true` in its configuration.
 
-`client.ask` runs the [RAG capability](capabilities/rag.md) and returns `(answer_text, list[Citation])`. Citations include page numbers, section headings, document references, the document's metadata (`document_meta`), and the cited chunk's raw, unparsed metadata (`chunk_meta`), so UIs can render metadata keys such as a public source URL alongside the citation.
+`client.ask` runs the [RAG capability](capabilities/rag.md) and returns `(answer_text, list[Citation])`. The capability searches, and writes and runs Python over the documents when a question needs counting or aggregation. Citations carry page numbers, section headings, document references, the document's metadata (`document_meta`) and the cited chunk's stored metadata (`chunk_meta`), so a UI can render keys such as a public source URL beside the citation. The QA model is configured in `haiku.rag.yaml` or passed in the client's `config`.
 
-The QA provider and model are configured in `haiku.rag.yaml` or can be passed directly to the client (see [Configuration](configuration/index.md)).
+To build your own Pydantic AI agent, attach the RAG capability directly, see [Capabilities](capabilities/index.md). The lower-level toolset factories are under [Toolsets](tools.md).
 
-See also: [Capabilities](capabilities/index.md) for direct agent composition.
-
-## Code execution
-
-`ask` runs the [RAG capability](capabilities/rag.md), which can also write and execute Python in a sandbox over the documents, for aggregation, computation and multi-document questions:
-
-```python
-# Aggregation across documents
-answer, citations = await client.ask("Which quarter had the highest revenue?")
-
-# Computation within a document set
-answer, citations = await client.ask(
-    "What is the average deal size mentioned in these contracts?",
-    filter="uri LIKE '%contracts%'",
-)
-```
-
-The model decides when to reach for code; a question one search away from its answer never opens the sandbox.
-
-## Building custom agents
-
-`client.ask` is a convenience wrapper. To build your own Pydantic AI agent, attach the native RAG capability directly. See [Capabilities](capabilities/index.md).
-
-For the low-level toolset factories under `haiku.rag.tools`, see [Toolsets](tools.md).
-
-## Importing Pre-Processed Documents
+## Importing pre-processed documents
 
 If you process documents externally or need custom processing, use `import_document()`:
 
@@ -505,7 +431,7 @@ doc = await client.import_document(
 
 The `docling_document` provides metadata for visual grounding, page numbers, and section headings. Content is automatically extracted from the DoclingDocument.
 
-### Batch Import
+### Batch import
 
 Each `create_document*` / `import_document` call writes new versions of the `documents`, `document_meta`, `chunks`, and `document_items` tables. Ingesting many documents in a loop therefore creates a table version per document. Use `import_documents()` to write the whole batch in a single version per table:
 
@@ -568,7 +494,7 @@ Delete tags you no longer need. Vacuum retains the oldest tagged version and eve
 await client.store.delete_tag("release-1")
 ```
 
-### Rebuilding the Database
+### Rebuilding the database
 
 ```python
 from haiku.rag.client import RebuildMode
@@ -602,7 +528,7 @@ async for doc_id in client.rebuild_database(mode=RebuildMode.DESCRIPTIONS):
 - `RebuildMode.SET_EMBEDDER` - Adopt the configured embedder's provider and name without re-embedding, when the vector dimension is unchanged
 - `RebuildMode.DESCRIPTIONS` - Run the VLM over picture bytes already stored on `document_items.picture_data`, patch descriptions into the docling blob, re-chunk + re-embed. Skips the docling parse entirely. Idempotent: pictures already carrying `meta.description.text` are not re-described, so the operation is safe to re-run.
 
-### Generating Titles
+### Generating titles
 
 Generate a title for an existing document on demand:
 
@@ -623,7 +549,7 @@ async for doc_id in client.rebuild_database(mode=RebuildMode.TITLE_ONLY):
 
 See [Automatic Title Generation](configuration/processing.md#automatic-title-generation) for configuration details.
 
-### Atomic Writes and Rollback
+### Atomic writes and rollback
 
 Document create, update, and delete operations take a snapshot of table versions before any write and automatically roll back to that snapshot if something fails (for example, during chunking or embedding). This restores the `documents`, `document_meta`, `chunks`, and `document_items` tables to their pre‑operation state using LanceDB’s table versioning. These writes are serialized under a single lock, so the rollback is safe under concurrent ingester workers.
 

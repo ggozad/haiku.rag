@@ -4,26 +4,10 @@
 capability's instructions ask the model to cite and record what it cites, but nothing
 enforces the declaration without this capability.
 
-Register it alongside an evidence capability:
-
-```python
-from pydantic_ai import Agent
-from haiku.rag.capabilities.policy import create_capability as citation_policy
-from haiku.rag.capabilities.rag import create_capability as rag
-
-agent = Agent(
-    "openai:gpt-5",
-    capabilities=[rag(db_path="my.lancedb"), citation_policy()],
-)
-```
-
-It exposes no tools and takes no configuration. An agent takes at most one policy
-capability. Pydantic AI rejects a second.
-
-The host must carry the capability state between runs, alongside the message
-history. Enforcement reads what the conversation has already cited, so without it
-a follow-up about evidence cited earlier goes unenforced. See
-[Compose an agent](index.md#compose-an-agent) for the shape.
+Register it alongside the RAG capability, with the host carrying capability state
+between runs, as in [Compose an agent](index.md#compose-an-agent). Without that state
+a follow-up about evidence cited earlier goes unenforced. An agent takes at most one
+policy capability. Pydantic AI rejects a second.
 
 ## Declaring nothing is a valid answer
 

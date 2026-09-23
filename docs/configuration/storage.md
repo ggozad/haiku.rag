@@ -1,4 +1,4 @@
-# Database and Storage
+# Database and storage
 
 ## Operational constraints
 
@@ -28,7 +28,7 @@ warns on a read-only open and raises on a writable one. `haiku-rag rebuild
 --set-embedder` adopts the new identity without re-embedding, and `haiku-rag
 rebuild --embed-only` re-embeds against the new model.
 
-## Local Storage
+## Local storage
 
 By default, `haiku.rag` uses a local LanceDB database:
 
@@ -48,7 +48,7 @@ storage:
 !!! warning "Vacuum Retention Threshold"
     The `vacuum_retention_seconds` value should be larger than the typical time it takes to process and write a document. If a concurrent operation is in progress while vacuum runs, setting this value too low can cause race conditions where vacuum removes table versions that an in-flight operation still needs. The default of 86400 seconds (1 day) is conservative and safe for most use cases.
 
-### Vacuum Memory
+### Vacuum memory
 
 Vacuum compacts small data files into larger ones. LanceDB targets roughly one million rows per fragment, which a `documents` table holding multi-megabyte docling blobs never reaches, so an unsized pass re-merges the whole existing fragment rather than only the new rows, and peak memory scales with the table rather than with what was added.
 
@@ -76,7 +76,7 @@ A database written before this release may contain one large fragment built by u
 
 Compaction options are not exposed by LanceDB's async API ([lancedb/lancedb#2325](https://github.com/lancedb/lancedb/issues/2325)), so these tables are compacted through `lance` directly.
 
-### Placing the Database
+### Placing the database
 
 `lancedb.databases` maps a name to a location, a local path or a URI, and is the one way to place databases. With nothing configured, the database is the entry `haiku.rag` at `<storage.data_dir>/haiku.rag.lancedb`. To put one database somewhere else, name it:
 
@@ -92,7 +92,7 @@ An explicit `--db PATH` on the command line opens that database instead, named b
 
 A value with no scheme is a local path wherever it is configured, so `haiku-rag init` creates it and every command that opens an existing database requires it to exist. A mistyped path fails rather than becoming a new empty database.
 
-## Database Creation
+## Database creation
 
 Databases must be explicitly created before use:
 
@@ -120,7 +120,7 @@ The [default location](index.md#configuration-file-locations) is platform-specif
 
 Opening a nonexistent local database given as a path raises `FileNotFoundError`, naming the path. This prevents accidental database creation from typos or misconfigured paths. A configured or default database raises `SourceUnavailableError` instead, naming the database and not its location.
 
-## Remote Storage
+## Remote storage
 
 For remote storage, give the database a URI as its location. Credentials and storage options are connection settings, shared by every database in the configuration:
 
@@ -184,7 +184,7 @@ The `storage_options` keys are case-insensitive and passed directly to the under
 
 **Note:** Table optimization is automatically handled by LanceDB Cloud (`db://` URIs) and is disabled for better performance. For object storage backends (S3, Azure, GCS), optimization and vector indexing are still performed normally.
 
-### Caching and Read Consistency
+### Caching and read consistency
 
 ```yaml
 lancedb:
@@ -196,7 +196,7 @@ lancedb:
 - **read_consistency_interval_seconds**: how often a connection checks for writes from another process. `null` never checks, so a long-lived reader never sees the ingester's writes. `0` checks on every read.
 - **index_cache_size_bytes** / **metadata_cache_size_bytes**: sizes for the caches held by the LanceDB session, which is shared across every connection in the process. The first vector query loads the index into it, so on object storage the cache is what stops the next connection refetching it. Size it for the total set of indexes a process keeps warm, against the memory available to it.
 
-### Deployment Pattern: One Writer, Many Readers
+### Deployment pattern: one writer, many readers
 
 The [one-writer constraint](#operational-constraints) shapes the deployment: one
 writing process per database URI, any number of read-only consumers.
@@ -208,107 +208,13 @@ The recommended layout for production is "different buckets, same account, separ
 
 Each process picks up its own credentials from the AWS default chain (env vars, IAM instance role, AWS profile), so no credentials are hard-coded in the configuration files.
 
-`haiku-ingester` writes the database the configuration places, so a one-entry `lancedb.databases` needs no further option. `--db PATH` overrides it. When `lancedb.databases` contains more than one database the ingester has no way to name which it writes, and refuses to start with `AmbiguousDatabaseError`: give each database its own ingester process, each with a configuration naming a single database, or select one with `--db PATH`.
+`haiku-ingester` writes the database the configuration places, or the one `--db PATH` names. With several configured it refuses to start, see [Multiple databases](multiple-databases.md#ingester).
 
-## Multiple Databases
+## Multiple databases
 
-Use `lancedb.databases` to name local or remote databases that should be searched together:
+Several databases can be configured and searched together. See [Multiple databases](multiple-databases.md).
 
-```yaml
-lancedb:
-  databases:
-    papers: s3://my-bucket/papers.lancedb
-    wiki: s3://my-bucket/wiki.lancedb
-    notes: /data/notes.lancedb
-```
-
-A location can be a URI or local path.
-
-Results, documents, and citations use the configured name as `source`. An unavailable configured database raises `SourceUnavailableError`, which names the database and not its location, so a location never travels in an error a consumer might render or log. A migration, configuration or read-only failure keeps its own type, with the database named in the message. Commands that report on a database, such as `info`, still show where it is.
-
-Searches spanning multiple databases identify each result with a model-facing `Collection:` line. Searches over one database omit it. Structured `source` fields on results, documents, citations, and in-code search dictionaries are unchanged.
-
-Embedding compatibility is checked against two different things.
-
-On open, each database is compared with the current configuration. A dimension mismatch raises `ConfigMismatchError`. A provider or model-name mismatch at the same dimension warns in read-only mode and raises in writable mode.
-
-Across a selection, the databases are compared with each other. Vector and hybrid search embed the query once, so every database answering it must record the same provider, model, and dimension. A disagreement raises `ConfigMismatchError` in read-only mode as well. Only the databases searched together have to agree, and full-text search embeds nothing, so it is unaffected.
-
-### Search and Provenance
-
-`search`, `ask`, and `list_documents` use the full set by default. Pass `sources` to select a subset:
-
-```python
-results = await client.search("query")                     # every database
-results = await client.search("query", sources=["papers"])   # one of them
-```
-
-Candidates are combined into one ranked list with the configured reranker, or by cosine similarity to the query when reranking is disabled, with within-database rank breaking ties (full-text-only searches order by retrieval score). `SearchResult.source`, `Citation.source`, and `Document.source` carry the database name, for a set and for one database alike.
-
-The CLI labels results and citations only when the operation spans multiple databases. A command already narrowed with `--db-name` does not repeat the name on every result.
-
-#### Duplicate IDs
-
-IDs are unique within a database, not across databases. Copies of a database therefore retain the same IDs.
-
-Citation ambiguity is evaluated against evidence available to the run. A cited chunk ID is rejected with `AmbiguousCitationError` if search returned it from multiple databases, or it was previously cited from another database. If only one retrieved result has the ID, that result is cited. For an ID absent from search results, the fallback checks every selected database and rejects multiple holders. A shared ID that nothing cites is ignored.
-
-`get_document_by_id`, `get_chunk_by_id`, `get_picture_bytes` and `visualize_chunk` take an optional `source`, and ask that database alone. A name the client does not cover raises `UnknownDatabaseError`. Without one, the document and chunk lookups ask every covered database and answer from the first that holds the ID; `get_picture_bytes` and `visualize_chunk` require one whenever the client covers a set, since a chunk carries no database identity where `SearchResult.source` and `Citation.source` do.
-
-The sandbox rejects shared document IDs because its mount path is `/documents/{id}/`.
-
-The chat document filter selects by document and database: the search is narrowed to the databases the selection names, and the ID filter applies within them. An ID that copies share still matches in every selected database that holds it.
-
-#### Ranking
-
-Without a reranker, the fused list is ordered by cosine similarity between the query vector and each candidate. The databases in a selection share an embedder, so similarity in that one space is comparable across databases, where retrieval scores are not. Ties resolve by the candidate's rank within its own database, and configured order decides only when both tie. Similarities rarely tie exactly, so declaration order decides almost nothing: on MTRAG retrieval benchmarks, reversing it left recall unchanged in every cell. Full-text-only searches have no query vector and order by retrieval score instead.
-
-Results are not guaranteed to spread across databases: a database with nothing relevant to a query contributes nothing, and a strong database can fill every slot. On MTRAG retrieval benchmarks over two to eight collections, cosine fusion holds recall roughly flat as collections are added, where position-based fusion lost up to half its recall at eight.
-
-A configured reranker scores the combined candidate set directly, ignoring which database each candidate came from, and remains the strongest option: roughly 6 to 8 recall points above cosine fusion on the same benchmarks. Its cost grows with the number of databases because each contributes candidates.
-
-Image queries are vector-only and skip the reranker: the reranker interface takes a text query, and multimodal reranking applies to pictures on the candidate side, not to image queries. Their fused list is ordered by cosine similarity like any other vector search.
-
-If a selected database is unavailable, the operation fails with `SourceUnavailableError`, which names that database.
-
-### Python Operations
-
-Creating, writing, rebuilding, and vacuuming require one database. Calling these operations on a client that covers multiple raises `AmbiguousDatabaseError`. Select one at creation time or obtain a single-database client:
-
-```python
-async with HaikuRAG(config=config, create=True, sources=["papers"]) as papers:
-    ...
-
-async with HaikuRAG(config=config) as client:
-    papers = (await client.clients_for(["papers"]))[0]
-```
-
-Conversion, chunking, and title generation do not access a database and remain available on a multi-database client.
-
-### CLI Commands
-
-Commands use database sets as follows:
-
-- **Set-capable**: `search`, `ask`, `chat`, and `mcp` use the full configured set, or the single database selected by `--db-name`.
-- **Config-only**: `settings`, `init-config`, and `download-models` do not open a database.
-- **Single-database**: everything else — document writes, `rebuild`, `vacuum`, `migrate`, `init`, `info`, `history`, `tag`, `doctor`, `list`, `inspect`, and `visualize` — works on one database, selected with the global `--db-name` option.
-
-```bash
-haiku-rag search "query"         # every configured database
-haiku-rag --db-name papers list  # one of them
-haiku-rag --db-name papers migrate
-```
-
-`--db-name` selects an entry from `lancedb.databases`, including remote entries, and `haiku.rag` when nothing is configured. `--db` opens a local path, named by its stem, whatever is configured. A single-database command requires one of these options when multiple databases are configured. A configured set of one is selected automatically.
-
-Each database is created, migrated and vacuumed on its own:
-
-```bash
-haiku-rag --db-name papers init
-haiku-rag --db-name wiki init
-```
-
-## Vector Indexing
+## Vector indexing
 
 Configure vector search settings:
 

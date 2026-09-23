@@ -1,115 +1,13 @@
 # haiku.rag Chat App
 
-A conversational RAG interface built with [CopilotKit](https://copilotkit.ai/) and [pydantic-ai](https://github.com/pydantic/pydantic-ai)'s AG-UI protocol.
+A browser chat over a haiku.rag database: a Starlette backend adapting the RAG capability with Pydantic AI's `AGUIAdapter`, and a Next.js / CopilotKit frontend.
 
 > **Note:** An illustrative example meant as a starting point, with no authentication. The compose files bind the frontend and backend to `127.0.0.1`. The frontend proxies every backend route, so don't expose either to an untrusted network.
 
-## Prerequisites
-
-- Docker and Docker Compose
-- A haiku.rag database (created via the `haiku-rag` CLI)
-- An LLM API key (Anthropic, OpenAI, or local Ollama)
-
-## Quick Start
-
-1. **Set up environment variables:**
-
-   ```bash
-   cp .env.example .env
-   # Edit .env with your API keys and database path
-   ```
-
-2. **Configure the LLM and embedding models:**
-
-   ```bash
-   cp haiku.rag.yaml.example haiku.rag.yaml
-   # Edit haiku.rag.yaml to configure your models
-   ```
-
-3. **Start the app:**
-
-   ```bash
-   docker compose up -d
-   ```
-
-4. **Open the chat interface:** http://localhost:3000
-
-## Configuration
-
-### Environment Variables
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `DB_VOLUME` | Host path of the LanceDB database the compose files mount at `/data`, where `haiku.rag.yaml` places it (default `./data/haiku.rag.lancedb`) | No |
-| `HAIKU_RAG_CONFIG_PATH` | The configuration file; the compose files set it to the mounted `/app/haiku.rag.yaml` | No |
-| `ANTHROPIC_API_KEY` | Anthropic API key | When `haiku.rag.yaml` uses Anthropic |
-| `OPENAI_API_KEY` | OpenAI API key | When `haiku.rag.yaml` uses OpenAI |
-| `OLLAMA_BASE_URL` | Ollama server URL (default: `http://host.docker.internal:11434`). Ignored when `haiku.rag.yaml` sets `providers.ollama.base_url`, as the example does | No |
-| `LOGFIRE_TOKEN` | Pydantic Logfire token for debugging | No |
-
-### haiku.rag.yaml
-
-Configure the LLM, embeddings, and search settings:
-
-```yaml
-lancedb:
-  databases:
-    haiku.rag: /data   # where the compose files mount DB_VOLUME
-
-qa:
-  model:
-    provider: ollama   # or anthropic, openai
-    name: gpt-oss
-
-embeddings:
-  model:
-    provider: ollama
-    name: qwen3-embedding:4b
-    vector_dim: 2560   # must match the database
-
-search:
-  limit: 5
-```
-
-See `haiku.rag.yaml.example` for all options.
-
-## Development
-
-For local development with hot reloading:
-
 ```bash
-docker compose -f docker-compose.dev.yml up -d --build
+cp .env.example .env                      # API keys and the database path
+cp haiku.rag.yaml.example haiku.rag.yaml  # models; the database is at /data
+docker compose up -d --build              # or docker-compose.dev.yml for hot reload
 ```
 
-- Backend code changes reload automatically
-- Frontend available at http://localhost:3000
-- Backend API at http://localhost:8001
-
-## Architecture
-
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│    Frontend     │────▶│     Backend     │────▶│   haiku.rag     │
-│  (CopilotKit)   │     │  (pydantic-ai)  │     │   (LanceDB)     │
-│  localhost:3000 │     │  localhost:8001 │     │                 │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-```
-
-### Backend Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/v1/chat/stream` | POST | AG-UI chat streaming |
-| `/api/documents` | GET | List documents in database |
-| `/api/info` | GET | Database statistics |
-| `/api/visualize/{chunk_id}` | GET | Visual grounding for chunks |
-| `/health` | GET | Health check |
-
-## Chat Capabilities
-
-The chat can:
-
-- **Search** your documents with hybrid vector + full-text search
-- **Answer questions** with citations from your knowledge base
-- **Filter by document** through the document filter in the UI
-- **Show visual grounding** for PDF/image sources
+Open http://localhost:3000. Configuration, endpoints and development are covered in the [web application docs](https://ggozad.github.io/haiku.rag/apps/).

@@ -1,130 +1,67 @@
-# Remote Processing
+# Remote processing
 
-`haiku.rag` can use [docling-serve](https://github.com/docling-project/docling-serve) for remote document processing and chunking, offloading resource-intensive operations to a dedicated service.
+haiku.rag can send conversion and chunking to [docling-serve](https://github.com/docling-project/docling-serve), a REST service running docling, instead of running docling in-process. It moves docling's memory and CPU out of the haiku.rag process, and lets `haiku.rag-slim` run without the `docling` extra. haiku.rag is tested against docling-serve 1.32.0.
 
-## Overview
+## Running docling-serve
 
-docling-serve is a REST API service that provides:
-
-- Document conversion (PDF, DOCX, PPTX, images, etc.)
-- Chunking with structure preservation
-- OCR capabilities for scanned documents
-- Table and figure extraction
-
-## When to Use docling-serve
-
-**Use local processing (default) when:**
-
-- Working with small to medium document volumes
-- Running on development machines
-- Want zero external dependencies
-- Processing simple document formats
-
-**Use docling-serve when:**
-
-- Processing large volumes of documents
-- Working with complex PDFs requiring OCR
-- Running in production environments
-- Separating compute-intensive tasks
-- Scaling document processing independently
-
-## Setup
-
-haiku.rag is tested against docling-serve 1.32.0.
-
-### Docker Compose (Recommended)
-
-The slim Docker image with docker-compose is the recommended setup. See `examples/docker/docker-compose.yml` for a complete configuration that includes both services.
-
-### Running docling-serve Manually
-
-See the [official docling-serve repository](https://github.com/docling-project/docling-serve) for installation options. The quickest way is using Docker:
+`examples/docker/docker-compose.yml` runs two docling-serve replicas beside the ingester and the MCP server. To run one by hand:
 
 ```bash
 docker run -p 5001:5001 quay.io/docling-project/docling-serve:v1.32.0
 ```
 
-To enable the web UI for debugging:
+`-e DOCLING_SERVE_ENABLE_UI=true` adds its web UI, for debugging.
 
-```bash
-docker run -p 5001:5001 -e DOCLING_SERVE_ENABLE_UI=true quay.io/docling-project/docling-serve:v1.32.0
-```
-
-### Configuration
-
-Configure haiku.rag to use docling-serve. See the [Document Processing](configuration/processing.md) guide for all available options.
+## Configuration
 
 ```yaml
-# haiku.rag.yaml
 processing:
-  converter: docling-serve  # Use remote conversion
-  chunker: docling-serve    # Use remote chunking
+  converter: docling-serve
+  chunker: docling-serve
 
 providers:
   docling_serve:
     base_url: http://localhost:5001
-    api_key: ""  # Optional API key for authentication
-    timeout: 300  # Per-request timeout in seconds
+    api_key: ""   # sent when docling-serve requires one
+    timeout: 300  # seconds per HTTP call: submit, poll, result
 ```
 
-For converter / chunker config options (chunking strategy, tokenizer,
-OCR, table handling, picture description), see
-[Document Processing](configuration/processing.md). Both converters read the
-same configuration, except `fetch_remote_images`, `fetch_headers` and
-`infer_furniture`, which docling-serve ignores. This page covers only what is
-specific to running docling-serve as a separate service.
+`timeout` bounds each HTTP call, not the whole conversion. The [processing options](configuration/processing.md) apply as they do locally, except `fetch_remote_images`, `fetch_headers` and `infer_furniture`, which docling-serve ignores. With `chunker: docling-serve`, the OCR options (`do_ocr`, `force_ocr`, `ocr_engine`, `ocr_lang`) are sent to the chunking API too. `do_ocr: false` there avoids OCR model downloads in a read-only container.
 
-## VLM picture description with docling-serve
+## Several instances
 
-When `processing.pictures = "description"` and `converter: docling-serve`,
-the VLM API calls are made by the docling-serve container, not by
-haiku.rag. Two deployment caveats:
+`base_url` also takes a list. Jobs round-robin across the entries, and each job's submit, poll and result stay on one instance, since task ids are local to it:
 
-### Enable remote services
-
-docling-serve blocks outbound calls by default. Enable them by setting
-`DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true` on the container:
-
-```bash
-docker run -p 5001:5001 \
-  -e DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true \
-  quay.io/docling-project/docling-serve:v1.32.0
+```yaml
+providers:
+  docling_serve:
+    base_url:
+      - http://gpu-1:5001
+      - http://cpu-1:5001
+      - http://cpu-2:5001
+    max_attempts: 3
+    circuit_breaker:
+      failure_threshold: 3
+      cooldown_s: 30.0
 ```
 
-### Reach host services from inside the container
+The round-robin counter is per process, so separate ingester or client processes pick independently. When an instance fails or returns 5xx, the request moves to another, up to `max_attempts`, and that instance's circuit breaker opens so later jobs skip it until `cooldown_s` elapses. An external load balancer can front docling-serve only in its RQ mode, where task state is shared in Redis.
 
-If your VLM (e.g. Ollama) runs on the host while docling-serve runs in
-Docker, set the VLM's `base_url` in
-`processing.conversion_options.picture_description.model` to
-`http://host.docker.internal:11434` rather than `localhost`. See
-[Document Processing → Picture Handling](configuration/processing.md#picture-handling)
-for the full config snippet.
+A default docling-serve instance processes one task at a time (`DOCLING_SERVE_ENG_LOC_NUM_WORKERS` raises it). Start `ingester.workers.worker_count` at 1–2× the number of `base_url` entries, which overlaps one job's fetch, embed and store with another's conversion.
 
-## Operational notes
+## Picture descriptions
 
-Long-running docling-serve containers see CPU memory grow monotonically
-([docling-serve #366](https://github.com/docling-project/docling-serve/issues/366),
-[#474](https://github.com/docling-project/docling-serve/issues/474)). The
-underlying parser leaks are in core docling
-([#2209](https://github.com/docling-project/docling/issues/2209),
-[#1343](https://github.com/docling-project/docling/issues/1343)) and affect
-docling-local too.
+With `processing.pictures: description`, docling-serve calls the vision model itself, so:
 
-Recommended deployment shape:
+- it must run with `DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true`, since it blocks outbound calls by default
+- the model's `base_url` in `processing.conversion_options.picture_description.model` must be reachable from the container: `http://host.docker.internal:11434` for Ollama on the host, not `localhost`
 
-- Set `mem_limit` on the docling-serve container (or `resources.limits.memory`
-  in Kubernetes) at a value comfortably above your largest expected job.
-- Combine with `restart: unless-stopped` so the runtime restarts when the
-  kernel OOM-kills.
-- Run multiple docling-serve replicas behind haiku.rag's round-robin
-  `providers.docling_serve.base_url` list (see
-  [Document Processing](configuration/processing.md)). A restart of one
-  replica doesn't stop ingest.
-- In haiku.rag, set `processing.split_pages` for large-PDF workloads so each
-  slice is an independent docling-serve task and the per-task working set
-  stays bounded.
+See [Picture handling](configuration/processing.md#picture-handling).
 
-## Resources
+## Operations
 
-- [docling-serve GitHub](https://github.com/docling-project/docling-serve)
-- [docling-serve Documentation](https://github.com/docling-project/docling-serve#readme)
+Long-running docling-serve containers grow in memory ([docling-serve #366](https://github.com/docling-project/docling-serve/issues/366), [#474](https://github.com/docling-project/docling-serve/issues/474)), from leaks in docling itself. To keep ingesting through it:
+
+- set a memory limit on each container (`mem_limit` in Compose, `resources.limits.memory` in Kubernetes) above your largest expected job, with `restart: unless-stopped`
+- run several replicas in the `base_url` list, so one restarting does not stop ingest
+- set `processing.split_pages` for large PDFs, so each slice is its own task, see [Large PDFs](configuration/processing.md#large-pdfs-and-docling-memory)

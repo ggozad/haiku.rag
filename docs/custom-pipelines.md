@@ -1,8 +1,8 @@
-# Custom Processing Pipelines
+# Custom processing pipelines
 
 haiku.rag provides processing primitives that let you build custom document pipelines. Use these when you need control over conversion, chunking, or embedding (for example, to preprocess content, use external services, or implement custom chunking logic).
 
-## When to Use Custom Pipelines
+## When to use custom pipelines
 
 Use the primitives when you need to:
 
@@ -18,7 +18,7 @@ For standard use cases, prefer the convenience methods:
 - `create_document_from_source()` - Create from file or URL
 - `import_document()` - Store pre-processed documents with custom chunks
 
-## Processing Primitives
+## Processing primitives
 
 The client exposes `convert()` and `chunk()`. `haiku.rag.embeddings` provides `embed_chunks()` and `contextualize()`. Together they compose into custom workflows:
 
@@ -29,7 +29,7 @@ The client exposes `convert()` and `chunk()`. `haiku.rag.embeddings` provides `e
 | `embed_chunks()` | `list[Chunk]`, embedder | `list[Chunk]` | Generate embeddings for chunks (includes contextualization) |
 | `contextualize()` | `list[Chunk]` | `list[str]` | Get embedding-ready text (for custom embedders only) |
 
-## Basic Pipeline
+## Basic pipeline
 
 The standard pipeline mirrors what `create_document()` does internally:
 
@@ -157,9 +157,9 @@ texts = contextualize(chunks)
 
 See the [Custom Embeddings](#custom-embeddings) example below for when to use `contextualize()`.
 
-## Custom Processing Examples
+## Custom processing examples
 
-### Preprocessing Content
+### Preprocessing content
 
 Transform content before chunking:
 
@@ -199,7 +199,7 @@ async with HaikuRAG("database.lancedb", create=True) as client:
     )
 ```
 
-### Filtering Chunks
+### Filtering chunks
 
 Remove unwanted chunks before embedding:
 
@@ -232,7 +232,7 @@ async with HaikuRAG("database.lancedb", create=True) as client:
     )
 ```
 
-### Custom Embeddings
+### Custom embeddings
 
 Use your own embedding service:
 

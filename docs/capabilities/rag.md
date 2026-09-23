@@ -1,18 +1,6 @@
-# RAG Capability
+# RAG capability
 
-`RAGCapability` adds grounded document search, sandboxed Python over the documents, and citations to a Pydantic AI agent. It loads eagerly by default. Set `defer_loading=True` to keep its instructions and tools out of the model context until the model loads it.
-
-## Tools
-
-| Tool | Purpose |
-|---|---|
-| `search(query, limit?)` | Hybrid vector and full-text search with context expansion. |
-| `execute_code(code)` | Run Python against the virtual document filesystem. |
-| `cite(chunk_ids)` | Register retrieved or filesystem-derived chunk IDs as answer citations. |
-
-The sandbox exposes documents under `/documents/{document_id}/` with `metadata.json`, `content.txt`, `items.jsonl`, `chunks.jsonl` (chunk ids with their metadata) and `toc.json`. In code, `await search()` results carry `chunk_meta` and `await list_documents()` rows carry `metadata`. One sandbox serves every `execute_code` call of a run, so variables persist between calls. Its per-call limits are under [Sandbox configuration](../configuration/qa.md#sandbox-configuration) and the interpreter's Python subset under [MCP, Code](../mcp.md#code). The sandbox opens only when the model first executes code, so a question answered from search alone never pays for it.
-
-## Create and compose
+`RAGCapability` adds grounded document search, sandboxed Python over the documents, and citations to a Pydantic AI agent.
 
 ```python
 from pydantic_ai import Agent
@@ -27,27 +15,57 @@ result = await agent.run("What safety equipment does the manual require?")
 print(result.output)
 ```
 
-To add evidence compaction and the citation policy, see [Compose an agent](index.md#compose-an-agent).
+`HaikuRAG.ask` runs the same capability behind a single call. To add evidence compaction and the citation policy, see [Compose an agent](index.md#compose-an-agent).
 
-`create_capability` accepts `db_path`, `config`, `defer_loading`, `rag`, `request_limit`, `sources`, and `vision`. `rag` lends the capability an open `HaikuRAG` client, which it uses and never closes. `sources` names the configured databases the capability covers, the sandbox filesystem included, all of them when omitted (see [Database selection](index.md#database-selection)). Set `defer_loading=True` when the agent routes among several capabilities and should load this one on demand. The default request limit is 30 model requests per agent run; set `request_limit=None` to disable it. `vision` controls whether picture results are attached to search returns as images and should reflect the model the hosting agent runs; it defaults to the configured QA model's `vision` flag.
+## Tools
 
-When the limit is reached, `search` and `execute_code` are removed while `cite` remains for two further requests that call one of the capability's tools, so the model can register citations before answering from evidence already gathered. Requests spent on other tools do not count against that window. Unrelated agent and capability tools remain available. A new agent run starts a fresh limit, so multi-turn chat does not consume one shared budget.
+| Tool | Purpose |
+|---|---|
+| `search(query, limit?)` | Hybrid vector and full-text search with context expansion. |
+| `execute_code(code)` | Run Python against the virtual document filesystem. |
+| `cite(chunk_ids)` | Register retrieved or filesystem-derived chunk IDs as answer citations. |
 
-When `qa.max_searches` or `qa.max_executions` runs out, the exhausted tool keeps failing rather than disappearing, and the instructions name it on every following request. Searching from inside `execute_code` does not count against `qa.max_searches`.
+## Parameters
 
-For the high-level convenience API:
+`create_capability` takes:
 
-```python
-from haiku.rag.client import HaikuRAG
+| Parameter | Default | Meaning |
+|---|---|---|
+| `db_path` | `None` | A database path, where the configuration places none. See [Database selection](index.md#database-selection) |
+| `config` | the loaded configuration | An `AppConfig` |
+| `defer_loading` | `False` | Keep the instructions and tools out of the model context until the model loads the capability |
+| `rag` | `None` | An open `HaikuRAG` client to use. The capability never closes it |
+| `request_limit` | `30` | Model requests per agent run. `None` disables it |
+| `sources` | all configured | The databases the capability covers, the sandbox filesystem included |
+| `vision` | `qa.model.vision` | Whether picture results are attached to search returns as images. Set it for the model the agent runs |
 
-async with HaikuRAG("my.lancedb") as client:
-    answer, citations = await client.ask("Which quarter had the highest revenue?")
-    print(answer)
-```
+## Budgets
+
+When the request limit is reached, `search` and `execute_code` are removed and `cite` remains for two further requests that call one of the capability's tools, so the model can register citations before answering. Requests spent on other tools do not count against that window, and other tools stay available. Each agent run starts a fresh limit.
+
+When `qa.max_searches` or `qa.max_executions` runs out, the exhausted tool keeps failing rather than disappearing, and the instructions name it on every following request. Searching from inside `execute_code` does not count against `qa.max_searches`. The budgets are described under [Search and question answering](../configuration/qa.md#question-answering-configuration).
+
+## Sandbox
+
+`execute_code` runs Python in a [Monty](https://github.com/pydantic/monty) interpreter over a virtual filesystem. Each document the question covers is mounted at `/documents/{document_id}/`:
+
+| File | Contents |
+|---|---|
+| `metadata.json` | Document id, title, URI, creation time and metadata |
+| `content.txt` | The full text |
+| `items.jsonl` | Document items in reading order |
+| `chunks.jsonl` | Chunk ids with their metadata |
+| `toc.json` | The section tree |
+
+Code can also `await search(query)`, whose rows carry `chunk_meta` and `picture_refs`, and `await list_documents()`, whose rows carry `metadata`.
+
+Monty is a Python subset. Useful modules include `json`, `re`, `math`, `pathlib`, `datetime`, `collections`, `itertools`, `functools` and `dataclasses`. `decimal` and `statistics` are absent. Class inheritance, generators, `match` statements and iterating a file object are not supported. Files are read-only, and there is no network and no filesystem beyond `/documents`.
+
+One sandbox serves every `execute_code` call of a run, so variables persist between calls. It opens when the model first executes code. `sandbox.code_timeout` and `sandbox.max_output_chars` bound each call, see [Sandbox configuration](../configuration/qa.md#sandbox-configuration). The MCP server's `execute_code` tool runs the same sandbox, one program per call.
 
 ## State
 
-When agent dependencies expose a `state` dictionary, the capability maintains a `RAGState` under `"rag"`:
+When agent dependencies expose a `state` dictionary, the capability keeps a `RAGState` under `"rag"`:
 
 ```python
 class RAGState(BaseModel):
@@ -60,18 +78,12 @@ class RAGState(BaseModel):
     executions: list[CodeExecutionEntry]
 ```
 
-`document_filter`, `sources`, `citation_index` and `evidence` persist across runs. Citations, searches and executions are cleared when a new question starts; a run that resumes a question keeps the evidence it is still answering from.
+`document_filter`, `sources`, `citation_index` and `evidence` persist across runs. Citations, searches and executions are cleared when a new question starts. A run that resumes a question keeps the evidence it is still answering from.
 
 `evidence` records which chunks this capability cited, in which question, and whether the citing question also retrieved them. `haiku.rag.capabilities.ledger.citation_status(records, question=...)` derives `missing`, `grounded` or `ungrounded` from it.
 
-State is ordinary application state; the capability does not depend on AG-UI. An AG-UI application can expose it using Pydantic AI's standard adapter.
-
-## Context management
-
-This capability does not alter the message history. To stop long conversations resending old retrieved content, register the [compaction capability](compaction.md) alongside it.
+The capability does not alter the message history. To stop long conversations resending old retrieved content, register the [compaction capability](compaction.md).
 
 ## Domain context and vision
 
-`prompts.domain_preamble` is prepended to the packaged capability instructions. When the capability's `vision` gate is on (by default, when the configured QA model has `vision: true`), picture results are attached to search returns as `BinaryContent`.
-
-See [Search and question answering](../configuration/qa.md) and [picture processing](../configuration/processing.md#picture-handling).
+`prompts.domain_preamble` is prepended to the packaged capability instructions, see [Prompts](../configuration/prompts.md). With `vision` on, picture results are attached to search returns as `BinaryContent`. See [picture handling](../configuration/processing.md#picture-handling).

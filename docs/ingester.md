@@ -15,18 +15,9 @@ Use the ingester when:
 For one-off ingestion, the `haiku-rag add-src` CLI is enough — see
 [CLI → Add Documents](cli.md).
 
-**On this page:**
-
-- [Install](#install)
-- [Configure sources](#configure-sources) (FS, S3, HTTP, WebDAV)
-- [Workers and retry](#workers-and-retry)
-- [Circuit breaker](#circuit-breaker)
-- [Run it](#run-it)
-- [HTTP control plane](#http-control-plane)
-- [Operating](#operating) (smoke test, queue inspection, logs, API)
-
-Single-writer constraint: only one ingester per LanceDB. See
-[Storage → Deployment Pattern](configuration/storage.md#deployment-pattern-one-writer-many-readers).
+Run one ingester per database: haiku.rag allows one writing process per
+database (see [Operational constraints](configuration/storage.md#operational-constraints)).
+MCP servers and other read-only consumers can run beside it.
 
 ## Install
 
@@ -474,17 +465,6 @@ bytes. Retention never removes it. These do:
 A stall that did not strand the shared converter — HTML and Markdown build
 their own — is tombstoned the same way but does not end the process.
 
-### Single-writer constraint
-
-haiku.rag serializes multi-table writes with a process-local lock and rolls
-them back by restoring table versions, so a second writing process can
-commit inside another's transaction and be reverted by its rollback. Run
-exactly one `haiku-ingester serve` against a given LanceDB. Multiple
-MCP servers or read-only consumers against the same DB are fine. Sharing
-the Postgres queue across processes is safe (the claim/lease lifecycle is
-cross-process-correct) but does not relax this constraint — it governs the
-queue, not the LanceDB.
-
 ## HTTP control plane
 
 By default the ingester exposes a FastAPI control plane on
@@ -817,10 +797,8 @@ is cross-process-safe — claims are renewed and reaped correctly no matter whic
 process owns them — so several `haiku-ingester serve` processes can share one
 Postgres queue without double-claiming or reaping each other's live jobs.
 
-This does not lift the LanceDB
-[single-writer constraint](#single-writer-constraint): each `serve` still owns
-its own LanceDB. A shared queue therefore spans processes writing distinct
-LanceDB URIs; it does not let several processes write one database.
+Each `serve` still needs a database of its own. A shared queue spans
+processes writing distinct databases, never several processes writing one.
 
 One caveat: idle workers wake on new work instantly only within their own
 process. Workers in other processes pick up enqueued jobs on their next

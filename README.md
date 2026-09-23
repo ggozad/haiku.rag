@@ -37,7 +37,7 @@ Built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.pydantic.dev/
 
 **Python 3.12 or newer required**
 
-### Full Package (Recommended)
+### Full package (recommended)
 
 ```bash
 pip install haiku.rag
@@ -47,7 +47,7 @@ Includes document processing (Docling), the VoyageAI and Cohere embedders, every
 
 Using [uv](https://docs.astral.sh/uv/)? `uv pip install haiku.rag`
 
-### Slim Package (Minimal Dependencies)
+### Slim package (minimal dependencies)
 
 ```bash
 pip install haiku.rag-slim
@@ -55,7 +55,7 @@ pip install haiku.rag-slim
 
 Install only the extras you need. See the [Installation](https://ggozad.github.io/haiku.rag/installation/) documentation for available options.
 
-## Quick Start
+## Quick start
 
 > **Note**: Requires an embedding provider (Ollama, OpenAI, etc.). See the [Tutorial](https://ggozad.github.io/haiku.rag/tutorial/) for setup instructions.
 
@@ -112,7 +112,7 @@ async with HaikuRAG("knowledge.lancedb", create=True) as rag:
 
 For direct agent composition, see the [capabilities documentation](https://ggozad.github.io/haiku.rag/capabilities/).
 
-## MCP Server
+## MCP server
 
 Use with AI assistants like Claude Code, Codex, and Claude Desktop:
 

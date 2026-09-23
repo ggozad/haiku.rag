@@ -2,9 +2,9 @@
 
 For agent integrations, use the native Pydantic AI [capabilities](capabilities/index.md). `haiku.rag.tools` provides lower-level `FunctionToolset` factories for building custom agents.
 
-## Low-Level Toolsets
+## Low-level toolsets
 
-### RAGDeps Protocol
+### RAGDeps protocol
 
 All toolsets read their client from the agent dependencies through the `RAGDeps` protocol, which requires a `client: HaikuRAG` attribute:
 
@@ -19,7 +19,7 @@ class MyDeps:
     client: HaikuRAG
 ```
 
-### Search Toolset
+### Search toolset
 
 `create_search_toolset()` provides hybrid search with context expansion.
 
@@ -40,7 +40,7 @@ search = create_search_toolset(config)
 
 Picture results are attached as images when `config.qa.model.vision` is set.
 
-### Document Toolset
+### Document toolset
 
 `create_document_toolset()` provides document browsing and retrieval.
 
@@ -61,7 +61,7 @@ docs = create_document_toolset(config)
 - `get_document(query)` — Retrieve a document by title or URI.
 - `summarize_document(query)` — Generate an LLM summary of a document's content.
 
-## Filter Helpers
+## Filter helpers
 
 `haiku.rag.tools.filters` provides utilities for building SQL filters:
 

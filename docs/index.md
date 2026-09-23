@@ -25,6 +25,14 @@ haiku-rag ask "what does it conclude?"
 
 **Benchmarked.** Retrieval and answer quality are tracked against public benchmarks with runnable configs. See [Benchmarks](benchmarks.md).
 
+## What it does
+
+- **Ingest.** PDFs, office documents, HTML, Markdown and images, converted by [Docling](configuration/processing.md) in-process or on [docling-serve](remote-processing.md). One-shot from the CLI, or continuously from filesystem, S3, HTTP and WebDAV sources with the [ingester](ingester.md).
+- **Search.** Hybrid vector and full-text search, optional [reranking](configuration/providers.md#reranking-providers), section-aware context expansion, and image search with a multimodal embedder. Across [several databases](configuration/multiple-databases.md) at once.
+- **Answer.** The [RAG capability](capabilities/rag.md) searches, runs sandboxed Python over the documents, and cites what it used. [Evidence compaction](capabilities/compaction.md) and a [citation policy](capabilities/policy.md) are optional.
+- **Integrate.** A [Python API](python.md), Pydantic AI [capabilities](capabilities/index.md) for your own agents, an [MCP server](mcp.md), and a [web app](apps.md) to start from.
+- **Operate.** [Storage](configuration/storage.md) on local disk, S3, GCS, Azure or LanceDB Cloud, tags and rollback, vacuum, `haiku-rag doctor` health checks, and an ingester with a job queue, retries and a dashboard.
+
 ## Start here
 
 - [Quickstart](tutorial.md): install, index, chat.

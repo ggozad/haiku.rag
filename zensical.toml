@@ -17,7 +17,7 @@ nav = [
     ] },
     { "Use it" = [
         { CLI = "cli.md" },
-        { Chat = "chat.md" },
+        { "Chat and inspector" = "chat.md" },
     ] },
     { Capabilities = [
         "capabilities/index.md",
@@ -31,6 +31,7 @@ nav = [
         { "Search and question answering" = "configuration/qa.md" },
         { "Document processing" = "configuration/processing.md" },
         { Storage = "configuration/storage.md" },
+        { "Multiple databases" = "configuration/multiple-databases.md" },
         { Prompts = "configuration/prompts.md" },
         { Tuning = "tuning.md" },
     ] },

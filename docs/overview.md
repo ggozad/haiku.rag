@@ -53,12 +53,14 @@ query -> vector + full-text search -> fusion -> rerank -> context expansion
 
 Search runs a vector query and a full-text query and fuses the rankings. With a
 reranker configured, it retrieves ten times the requested limit and reranks down
-to it, so quality improves without changing the caller's limit.
+to it.
 
 Results then expand: a chunk is returned with the section it belongs to, bounded
 by `search.max_context_chars`. Sections that fit come back whole, larger ones
-grow outward from the match, and small ones grow across boundaries. Every result
-carries its page numbers and headings, which is what makes a citation checkable.
+grow outward from the match within the section, and small ones grow across
+boundaries. See [Search settings](configuration/qa.md#search-settings). Every
+result carries its page numbers and headings, which is what makes a citation
+checkable.
 
 ## Answering
 

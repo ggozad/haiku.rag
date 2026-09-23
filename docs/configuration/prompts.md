@@ -1,4 +1,4 @@
-# Prompt Customization
+# Prompt customization
 
 Customize the prompts used by haiku.rag's capabilities to match your domain.
 
@@ -18,7 +18,7 @@ prompts:
     Describe this figure in two sentences, naming any axis labels and units.
 ```
 
-## Domain Preamble
+## Domain preamble
 
 The `domain_preamble` field provides **domain context** prepended to the RAG capability instructions and appended to the MCP server's instructions. Use this to:
 
@@ -38,7 +38,7 @@ prompts:
     "Deployment" refers to Acme's managed deployment service, not general CI/CD.
 ```
 
-## Picture Description Prompt
+## Picture description prompt
 
 Customize the prompt used when generating VLM descriptions for embedded images during document conversion. This prompt is sent to the configured Vision Language Model for each image.
 
@@ -61,7 +61,7 @@ prompts:
 
 The prompt is used when `processing.pictures` is `"description"`. See [Picture Handling](processing.md#picture-handling) for full configuration.
 
-## Programmatic Configuration
+## Programmatic configuration
 
 ```python
 from haiku.rag.config import AppConfig

@@ -2,18 +2,12 @@
 
 A browser-based reference implementation of conversational RAG, built on a Starlette backend with pydantic-ai's `AGUIAdapter` and a Next.js / CopilotKit frontend. It lives in the `app/` directory of the haiku.rag repository.
 
-This is a starting point for your own deployments, not the canonical haiku.rag UX. For the day-to-day terminal experience see [Chat](chat.md).
+It is a starting point for your own deployment. The terminal equivalent is [Chat](chat.md).
 
 !!! warning "No authentication"
     An illustrative example meant as a starting point, with no authentication. The compose files bind the frontend and backend to `127.0.0.1`. The frontend proxies every backend route, so don't expose either to an untrusted network.
 
-## Features
-
-- Streaming chat with real-time tool execution visibility.
-- Expandable citations with source documents, pages, and headings.
-- Visual grounding to view chunk source locations in documents.
-- Document filter to restrict searches to selected documents.
-- Browser-stored sessions, with markdown export.
+It streams answers and tool calls, shows expandable citations with visual grounding, restricts searches through a document filter, and keeps sessions in the browser with markdown export.
 
 ## Quick start
 
@@ -21,17 +15,11 @@ This is a starting point for your own deployments, not the canonical haiku.rag U
 cd app
 cp .env.example .env
 cp haiku.rag.yaml.example haiku.rag.yaml
-docker compose -f docker-compose.dev.yml up -d --build
+docker compose up -d --build
+# with hot reload instead: docker compose -f docker-compose.dev.yml up -d --build
 ```
 
-- Frontend: `http://localhost:3000`
-- Backend: `http://localhost:8001`
-
-## Architecture
-
-- **Backend**: Starlette server with pydantic-ai `AGUIAdapter`.
-- **Frontend**: Next.js with CopilotKit.
-- **Protocol**: AG-UI for streaming chat.
+The frontend is at `http://localhost:3000` and the backend at `http://localhost:8001`. The app needs an existing database, created with the `haiku-rag` CLI.
 
 ## Configuration
 
