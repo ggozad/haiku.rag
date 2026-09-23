@@ -44,7 +44,7 @@ class ModelConfig(ConfigModel):
             keys haiku.rag doesn't model explicitly (e.g. vLLM's
             `chat_template_kwargs.enable_thinking: false` for Qwen3).
             Honored by openai/ollama/openrouter/anthropic/groq and vllm; ignored by
-            google/bedrock.
+            google/bedrock/mistral.
     """
 
     provider: str = "ollama"
@@ -182,7 +182,8 @@ class RerankingConfig(ConfigModel):
     Attributes:
         model: Reranker model, or None to disable reranking.
         multimodal: Whether the reranker scores picture chunks by their image
-            bytes in addition to text. Supported on the vllm provider only.
+            bytes in addition to text. Supported on the vllm and openrouter
+            providers.
     """
 
     model: ModelConfig | None = None

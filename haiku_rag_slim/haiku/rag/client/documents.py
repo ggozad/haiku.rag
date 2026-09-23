@@ -748,8 +748,8 @@ async def create_document_from_source(
             from haiku.rag.sources.filter import FileFilter
             from haiku.rag.sources.fs import walk_files
 
-            # One-shot CLI directory ingest uses the converter's supported
-            # extensions but no include/ignore patterns. For pattern-based
+            # One-shot CLI directory ingest filters by the docling-local and text
+            # extensions, with no include/ignore patterns. For pattern-based
             # filtering use `haiku-ingester serve` with an FS source.
             documents: list[Document] = []
             filter = FileFilter()

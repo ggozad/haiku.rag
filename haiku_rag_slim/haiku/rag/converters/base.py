@@ -13,12 +13,14 @@ if TYPE_CHECKING:
 
 
 def vlm_api_url(config: "AppConfig", model: "ModelConfig") -> str:
-    """Construct the VLM chat-completions URL for a picture-description model."""
+    """VLM chat-completions URL for a picture-description model; ``base_url`` may include ``/v1``."""
+    from haiku.rag.utils import vllm_base_url
+
     if model.base_url:
-        return f"{model.base_url.rstrip('/')}/v1/chat/completions"
+        return f"{vllm_base_url(model.base_url).rstrip('/')}/chat/completions"
 
     if model.provider == "ollama":
-        return f"{config.providers.ollama.base_url.rstrip('/')}/v1/chat/completions"
+        return f"{vllm_base_url(config.providers.ollama.base_url).rstrip('/')}/chat/completions"
 
     if model.provider == "openai":
         return "https://api.openai.com/v1/chat/completions"

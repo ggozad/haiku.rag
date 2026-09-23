@@ -1,5 +1,6 @@
 import asyncio
 import importlib.util
+import logging
 from unittest.mock import AsyncMock
 
 import pytest
@@ -10,12 +11,15 @@ from haiku.rag.config.models import ModelConfig
 from haiku.rag.converters import get_converter
 from haiku.rag.store.exceptions import ReadOnlyError
 from haiku.rag.utils import gather_all, get_model
+from tests.conftest import capture_logs
 
 # Check for optional dependencies
 HAS_ANTHROPIC = importlib.util.find_spec("anthropic") is not None
 HAS_GOOGLE = importlib.util.find_spec("google.genai") is not None
 HAS_GROQ = importlib.util.find_spec("groq") is not None
 HAS_BEDROCK = importlib.util.find_spec("botocore") is not None
+HAS_MISTRAL = importlib.util.find_spec("mistralai") is not None
+UTILS_LOGGER = logging.getLogger("haiku.rag.utils")
 
 
 async def test_text_to_docling_document():
@@ -463,6 +467,44 @@ def test_get_model_groq_with_thinking(thinking):
     assert result.settings.get("thinking") == thinking
 
 
+@pytest.mark.skipif(not HAS_MISTRAL, reason="Mistral not installed")
+def test_get_model_mistral_applies_settings():
+    from pydantic_ai.models.mistral import MistralModel
+
+    model_config = ModelConfig(
+        provider="mistral",
+        name="mistral-small-latest",
+        temperature=0.2,
+        max_tokens=300,
+    )
+    result = get_model(model_config)
+
+    assert isinstance(result, MistralModel)
+    assert result.settings is not None
+    assert result.settings.get("temperature") == 0.2
+    assert result.settings.get("max_tokens") == 300
+
+
+def test_get_model_other_provider_warns_that_settings_are_dropped():
+    model_config = ModelConfig(provider="cerebras", name="llama3.1-8b", temperature=0.2)
+
+    with capture_logs(UTILS_LOGGER, logging.WARNING) as records:
+        result = get_model(model_config)
+
+    assert result == "cerebras:llama3.1-8b"
+    [message] = [r.getMessage() for r in records]
+    assert "cerebras" in message
+    assert "temperature" in message
+
+
+def test_get_model_other_provider_without_settings_does_not_warn():
+    with capture_logs(UTILS_LOGGER, logging.WARNING) as records:
+        result = get_model(ModelConfig(provider="cerebras", name="llama3.1-8b"))
+
+    assert result == "cerebras:llama3.1-8b"
+    assert records == []
+
+
 @pytest.mark.skipif(not HAS_BEDROCK, reason="Bedrock not installed")
 def test_get_model_bedrock():
     """Test get_model returns BedrockConverseModel for Bedrock."""
@@ -557,10 +599,10 @@ def test_get_model_bedrock_rejects_mantle_only_model():
 def test_get_model_passthrough_for_unbranched_provider():
     """A provider pydantic-ai knows but we do not branch on passes through as a
     string, so a new pydantic-ai provider needs no haiku.rag release."""
-    model_config = ModelConfig(provider="mistral", name="mistral-large-latest")
+    model_config = ModelConfig(provider="cerebras", name="llama3.1-8b")
     result = get_model(model_config)
     assert isinstance(result, str)
-    assert result == "mistral:mistral-large-latest"
+    assert result == "cerebras:llama3.1-8b"
 
 
 def test_get_model_accepts_provider_whose_sdk_is_missing(monkeypatch):

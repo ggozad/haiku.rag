@@ -50,6 +50,7 @@ def cli():
     except (
         AmbiguousDatabaseError,
         ConfigMismatchError,
+        FileNotFoundError,
         MigrationRequiredError,
         ReadOnlyError,
         UnknownDatabaseError,
@@ -339,7 +340,7 @@ def search(
         None,
         "--limit",
         "-l",
-        help="Maximum number of results to return (default: config search.default_limit)",
+        help="Maximum number of results to return (default: config search.limit)",
     ),
     filter: str | None = typer.Option(
         None,

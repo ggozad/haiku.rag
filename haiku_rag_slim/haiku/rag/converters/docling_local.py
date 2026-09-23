@@ -145,9 +145,9 @@ class DoclingLocalConverter(DocumentConverter):
             case "rapidocr":
                 return RapidOcrOptions(force_full_page_ocr=force_ocr, lang=lang)
             case "tesseract":
-                return TesseractOcrOptions(force_full_page_ocr=force_ocr, lang=lang)
-            case "tesserocr":
                 return TesseractCliOcrOptions(force_full_page_ocr=force_ocr, lang=lang)
+            case "tesserocr":
+                return TesseractOcrOptions(force_full_page_ocr=force_ocr, lang=lang)
             case "ocrmac":
                 return OcrMacOptions(force_full_page_ocr=force_ocr, lang=lang)
             case _:  # "auto" or any other value

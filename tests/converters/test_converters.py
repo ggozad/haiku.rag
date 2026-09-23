@@ -65,6 +65,17 @@ class TestVlmApiUrl:
         )
         assert url == "http://my-vllm:8000/v1/chat/completions"
 
+    def test_custom_base_url_may_include_v1(self):
+        url = vlm_api_url(
+            AppConfig(),
+            ModelConfig(
+                provider="openai",
+                name="gpt-4-vision",
+                base_url="http://my-vllm:8000/v1/",
+            ),
+        )
+        assert url == "http://my-vllm:8000/v1/chat/completions"
+
     def test_openai_uses_public_endpoint(self):
         url = vlm_api_url(
             AppConfig(), ModelConfig(provider="openai", name="gpt-4-vision")
@@ -1126,23 +1137,13 @@ class TestDoclingLocalConverter:
         opts = converter._get_ocr_options(config.processing.conversion_options)
         assert isinstance(opts, EasyOcrOptions)
 
-    def test_get_ocr_options_tesseract(self, config):
-        """Test that _get_ocr_options returns TesseractOcrOptions for 'tesseract'."""
-        from docling.datamodel.pipeline_options import TesseractOcrOptions
-
-        config.processing.conversion_options.ocr_engine = "tesseract"
+    @pytest.mark.parametrize("engine", ["tesseract", "tesserocr"])
+    def test_get_ocr_options_tesseract_engines(self, config, engine):
+        """The OCR options' docling kind is the configured engine name, as docling-serve reads it."""
+        config.processing.conversion_options.ocr_engine = engine
         converter = DoclingLocalConverter(config)
         opts = converter._get_ocr_options(config.processing.conversion_options)
-        assert isinstance(opts, TesseractOcrOptions)
-
-    def test_get_ocr_options_tesserocr(self, config):
-        """Test that _get_ocr_options returns TesseractCliOcrOptions for 'tesserocr'."""
-        from docling.datamodel.pipeline_options import TesseractCliOcrOptions
-
-        config.processing.conversion_options.ocr_engine = "tesserocr"
-        converter = DoclingLocalConverter(config)
-        opts = converter._get_ocr_options(config.processing.conversion_options)
-        assert isinstance(opts, TesseractCliOcrOptions)
+        assert opts.kind == engine
 
     def test_get_ocr_options_ocrmac(self, config):
         """Test that _get_ocr_options returns OcrMacOptions for 'ocrmac'."""

@@ -490,6 +490,22 @@ class TestCliConfigMismatchError:
             assert exc_info.value.code == 1
 
 
+class TestCliMissingDatabase:
+    def test_missing_database_path_is_an_error_not_a_traceback(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        missing = tmp_path / "missing.lancedb"
+        monkeypatch.setattr(sys, "argv", ["haiku-rag", "list", "--db", str(missing)])
+
+        with pytest.raises(SystemExit) as exc_info:
+            cli_wrapper()
+
+        assert exc_info.value.code == 1
+        err = capsys.readouterr().err
+        assert err.startswith("Error: Database does not exist")
+        assert str(missing) in err
+
+
 class TestCliMigrationError:
     def test_catches_migration_required_error(self):
         with patch("haiku.rag.cli._cli") as mock_cli:
