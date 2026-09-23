@@ -406,9 +406,9 @@ Agent Skills client ignores it.
 - `@pytest.mark.slow` - Deterministic end-to-end tests. CI runs them separately with `pytest -m "slow and not integration"`.
 - `@pytest.mark.vcr()` - HTTP call recording/replay
 
-`pytest` runs the complete core suite, including slow and integration tests. `pytest evaluations/tests -n0` runs the evaluations suite. Tests run under xdist (`-n auto` in addopts); pass `-n0` to disable when debugging races or container lifecycle. Async tests are detected automatically through pytest-asyncio's auto mode, and asyncio fixtures default to **session** loop scope (`asyncio_default_fixture_loop_scope = "session"`).
+`pytest` runs the complete core suite, including slow and integration tests. Run `cd evaluations && uv run pytest --cov` for the evaluations suite and its coverage gate. Tests run under xdist (`-n auto` in addopts); pass `-n0` to disable when debugging races or container lifecycle. Async tests are detected automatically through pytest-asyncio's auto mode, and asyncio fixtures default to **session** loop scope (`asyncio_default_fixture_loop_scope = "session"`).
 
-**Coverage is enforced at 100%** (`fail_under = 100` in `[tool.coverage.report]`). New code needs a test or a `# pragma: no cover - <short reason>` on one line (never a wrapped multi-line comment). CI prints term-missing, so a gate failure names the line.
+**Core coverage is enforced at 100%** (`fail_under = 100` in `[tool.coverage.report]`); the evaluations workspace enforces 85%. New code needs a test or a `# pragma: no cover - <short reason>` on one line (never a wrapped multi-line comment). CI prints term-missing, so a gate failure names the line.
 
 **VCR Recording:**
 Tests use pytest-recording (VCR.py) to record and replay HTTP calls. Cassettes are stored in `tests/cassettes/` and committed to the repo, allowing CI to run without external services.

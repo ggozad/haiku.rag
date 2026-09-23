@@ -31,6 +31,13 @@ packages = ["evaluations"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 
+[tool.coverage.run]
+source = ["evaluations"]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+
 [tool.ruff]
 extend = "../pyproject.toml"
 

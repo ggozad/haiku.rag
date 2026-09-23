@@ -27,7 +27,12 @@ available. Start them before running the suite:
 docker compose -f tests/docker/docker-compose.yml up -d
 ```
 
-The evaluations suite is separate: `uv run pytest evaluations/tests -n0`.
+The evaluations suite is separate and enforces its own 85% coverage floor:
+
+```bash
+cd evaluations
+uv run pytest --cov
+```
 
 ### Test Markers
 

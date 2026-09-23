@@ -22,12 +22,13 @@ uv run pre-commit install
 ## Making changes
 
 1. Create a branch from `main`.
-2. Make your change, with tests. Coverage is enforced at 100%.
+2. Make your change, with tests. Core coverage is enforced at 100%; the
+   evaluations workspace enforces 85%.
 3. Run the checks:
 
    ```bash
    uv run pytest
-   uv run pytest evaluations/tests -n0
+   (cd evaluations && uv run pytest --cov)
    uv run ruff check && uv run ruff format
    uv run ty check
    ```
