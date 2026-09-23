@@ -529,6 +529,7 @@ async def test_expand_context_no_base64_images(temp_db_path):
 
 
 @pytest.mark.slow
+@pytest.mark.usefixtures("docling_local_models")
 @pytest.mark.vcr()
 async def test_expand_context_no_base64_images_docling_local(
     temp_db_path, doclaynet_first_page_pdf

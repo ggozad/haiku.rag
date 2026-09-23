@@ -970,6 +970,7 @@ class TestDoclingLocalConverter:
         )
 
     @pytest.mark.slow
+    @pytest.mark.usefixtures("docling_local_models")
     async def test_convert_pdf_with_picture_images(
         self, config, doclaynet_first_page_pdf
     ):
@@ -988,6 +989,7 @@ class TestDoclingLocalConverter:
             )
 
     @pytest.mark.slow
+    @pytest.mark.usefixtures("docling_local_models")
     async def test_split_and_merge_matches_single_pass(self, config):
         """Real-PDF test for split_pages, in two parts.
 
@@ -1056,6 +1058,7 @@ class TestDoclingLocalConverter:
         )
 
     @pytest.mark.slow
+    @pytest.mark.usefixtures("docling_local_models")
     async def test_convert_pdf_without_page_images(
         self, config, doclaynet_first_page_pdf
     ):
@@ -1074,6 +1077,7 @@ class TestDoclingLocalConverter:
             )
 
     @pytest.mark.slow
+    @pytest.mark.usefixtures("docling_local_models")
     async def test_convert_pdf_with_page_images(self, config, doclaynet_first_page_pdf):
         """Test PDF conversion includes page images when enabled."""
         pdf_path = doclaynet_first_page_pdf
@@ -1196,6 +1200,7 @@ class TestDoclingLocalConverter:
         }
 
     @pytest.mark.slow
+    @pytest.mark.usefixtures("docling_local_models")
     @pytest.mark.vcr()
     async def test_picture_description_end_to_end(
         self, config, doclaynet_first_page_pdf

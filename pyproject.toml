@@ -97,6 +97,7 @@ dev = [
     "pytest-cov>=7.1.0",
     "pytest-recording>=0.13.4",
     "pytest-xdist>=3.8.0",
+    "filelock>=3.25.2",
     "ruff>=0.16.6",
 ]
 

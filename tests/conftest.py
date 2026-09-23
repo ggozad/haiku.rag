@@ -252,6 +252,30 @@ def doclaynet_first_page_pdf(tmp_path_factory) -> Path:
     return out_path
 
 
+@pytest.fixture(scope="session")
+async def docling_local_models(
+    tmp_path_factory: pytest.TempPathFactory,
+    doclaynet_first_page_pdf: Path,
+    worker_id: str,
+) -> None:
+    """Initialize docling-local model files once across xdist workers."""
+    from filelock import FileLock
+
+    from haiku.rag.config import get_config
+    from haiku.rag.converters.docling_local import DoclingLocalConverter
+
+    base_temp = tmp_path_factory.getbasetemp()
+    shared_temp = base_temp if worker_id == "master" else base_temp.parent
+    lock_path = shared_temp / "docling-local-models.lock"
+    ready_path = shared_temp / "docling-local-models.ready"
+    with FileLock(lock_path, timeout=300):
+        if ready_path.exists():
+            return
+        config = get_config().model_copy(deep=True)
+        await DoclingLocalConverter(config).convert_file(doclaynet_first_page_pdf)
+        ready_path.touch()
+
+
 # --- external services for integration tests ---
 #
 # Integration tests (marked `integration`, excluded in CI via `-m "not

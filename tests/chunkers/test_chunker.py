@@ -685,6 +685,7 @@ This is content.
 
 
 @pytest.mark.slow
+@pytest.mark.usefixtures("docling_local_models")
 @pytest.mark.vcr()
 async def test_local_and_serve_chunkers_produce_same_output(doclaynet_first_page_pdf):
     """Pin converter and chunker parity across local and serve backends.
