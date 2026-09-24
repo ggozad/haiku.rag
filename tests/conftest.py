@@ -86,7 +86,7 @@ def capture_logs(
 @pytest.fixture(scope="session")
 def qa_corpus() -> list[dict[str, str]]:
     corpus_path = Path(__file__).parent / "data" / "qa_corpus.json"
-    with open(corpus_path) as f:
+    with open(corpus_path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -124,7 +124,7 @@ def temp_yaml_config(tmp_path, monkeypatch):
         "qa": {"model": {"provider": "ollama", "name": "qwen3.8"}},
     }
 
-    with open(config_file, "w") as f:
+    with open(config_file, "w", encoding="utf-8") as f:
         yaml.dump(config_data, f)
 
     # Set env var so config loader will find it

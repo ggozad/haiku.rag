@@ -18,6 +18,8 @@
 ### Fixed
 
 - `document.embed` carries `scope.name = haiku.rag`.
+- `haiku.rag.yaml`, `init-config` output and the packaged capability
+  instructions are read and written as UTF-8.
 
 ## [0.88.1] - 2026-09-23
 

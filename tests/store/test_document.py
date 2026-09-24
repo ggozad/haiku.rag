@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 from datetime import UTC, datetime
 
@@ -542,8 +543,9 @@ async def test_document_get_by_uri_with_special_characters(
         assert retrieved.uri == "Hamish and Andy's Gap Year"
 
 
-@pytest.mark.skipif(not hasattr(time, "tzset"), reason="time.tzset is POSIX-only")
 def test_naive_timestamp_is_converted_from_local_time():
+    if sys.platform == "win32":
+        pytest.skip("time.tzset is POSIX-only")
     original_tz = os.environ.get("TZ")
     os.environ["TZ"] = "Europe/Athens"
     time.tzset()

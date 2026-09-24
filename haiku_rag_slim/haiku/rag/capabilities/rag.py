@@ -106,13 +106,13 @@ class RAGState(BaseModel):
 
 @cache
 def instructions() -> str:
-    return _instructions_path.read_text().strip()
+    return _instructions_path.read_text(encoding="utf-8").strip()
 
 
 @cache
 def multiple_collections_instructions() -> str:
     """Appended for a run that spans more than one collection."""
-    return _multiple_collections_path.read_text().rstrip()
+    return _multiple_collections_path.read_text(encoding="utf-8").rstrip()
 
 
 def _ambiguous_retry(error: AmbiguousCitationError) -> ModelRetry:

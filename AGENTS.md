@@ -600,6 +600,7 @@ Each entry is the trap and what to do. The evidence behind them is in the commit
 
 ### Testing and tooling
 
+- **Windows.** Text mode follows the host locale (cp1252), so read and write repo files with `encoding="utf-8"`. Build an expected rendered path with `pathlib`, not a literal `/`. Write a file under test through `tmp_path`: Windows refuses to reopen an open `NamedTemporaryFile`. Creating a symlink needs Administrator or Developer Mode; without it the `requires_symlinks` tests (`tests/platform.py`) skip and the symlink branch of `sources/fs.py` goes uncovered. Guard a POSIX-only call with `sys.platform`, which ty narrows on, not `hasattr` or `getattr`.
 - **`haiku.rag`'s logger does not propagate**, so `caplog` misses its records once any test in the worker has called `get_logger()`. Use `capture_logs(logger, level)` from `tests/conftest.py`.
 - **HF Hub outages** stall unmarked-network tests at setup. `HF_HUB_OFFLINE=1 pytest ...` runs from the disk cache.
 - **`uv run ty check <files>`** checks only those files. The pre-commit ty hook is broader: run `uv run pre-commit run --files <paths>`.

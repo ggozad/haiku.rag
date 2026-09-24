@@ -6,6 +6,7 @@ import pytest
 from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.sources.base import FileTooLargeError, SourceEventKind
 from haiku.rag.sources.fs import FSSource
+from tests.platform import requires_symlinks
 
 
 @pytest.fixture
@@ -196,6 +197,7 @@ async def test_fs_source_fetch_rejects_paths_outside_root(
         await src.fetch(outside.as_uri())
 
 
+@requires_symlinks
 async def test_fs_source_fetch_rejects_symlink_to_outside_file(
     fs_root: Path, tmp_path: Path
 ):
@@ -210,6 +212,7 @@ async def test_fs_source_fetch_rejects_symlink_to_outside_file(
         await src.fetch(link.as_uri())
 
 
+@requires_symlinks
 async def test_fs_source_discover_skips_symlinks_pointing_outside_root(
     fs_root: Path, tmp_path: Path
 ):
@@ -229,6 +232,7 @@ async def test_fs_source_discover_skips_symlinks_pointing_outside_root(
     assert (fs_root / "a.md").as_uri() in uris
 
 
+@requires_symlinks
 async def test_fs_source_discover_follows_within_root_symlinks(fs_root: Path):
     """A symlink whose target lives inside root is legitimate — supports/
     head/fetch all accept it (resolve-then-check), so discover() must too,
@@ -247,6 +251,7 @@ async def test_fs_source_discover_follows_within_root_symlinks(fs_root: Path):
     assert (fs_root / "alias.md").as_uri() not in uris
 
 
+@requires_symlinks
 async def test_fs_source_discover_skips_symlinked_directories(
     fs_root: Path, tmp_path: Path
 ):
@@ -339,6 +344,7 @@ async def test_fetch_falls_back_to_octet_stream_for_unknown_extension(tmp_path):
     assert result.body == b"payload"
 
 
+@requires_symlinks
 async def test_discover_skips_symlink_to_missing_in_root_target(tmp_path):
     """A broken symlink inside the root resolves to a path that is not a file."""
     (tmp_path / "real.md").write_text("real")
@@ -350,6 +356,7 @@ async def test_discover_skips_symlink_to_missing_in_root_target(tmp_path):
     assert {e.uri for e in events} == {(tmp_path / "real.md").as_uri()}
 
 
+@requires_symlinks
 def test_walk_files_drops_links_escaping_the_root(tmp_path):
     import os
 

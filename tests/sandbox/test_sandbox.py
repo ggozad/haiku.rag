@@ -1165,6 +1165,7 @@ class TestSandboxWorkerCrash:
         """The crash fails one call. The next call gets a fresh session."""
         import os
         import signal
+        import sys
 
         config = AppConfig()
         async with HaikuRAG(temp_db_path, create=True):
@@ -1178,7 +1179,8 @@ class TestSandboxWorkerCrash:
             pid = sb._session.worker_pid
             assert pid is not None
 
-            os.kill(pid, signal.SIGKILL)
+            # On Windows os.kill terminates the process for any signal.
+            os.kill(pid, signal.SIGTERM if sys.platform == "win32" else signal.SIGKILL)
 
             crashed = await sb.execute("print(2)")
             assert crashed.success is False

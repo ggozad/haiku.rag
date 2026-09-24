@@ -603,19 +603,18 @@ class TestDoclingLocalConverter:
         assert isinstance(doc, DoclingDocument)
         assert "just some prose" in doc.export_to_markdown()
 
-    async def test_convert_code_file(self, converter):
+    async def test_convert_code_file(self, converter, tmp_path):
         """Test that code files are wrapped in code blocks."""
         python_code = "def hello():\n    print('Hello')"
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".py") as f:
-            f.write(python_code)
-            f.flush()
-            temp_path = Path(f.name)
-            doc = await converter.convert_file(temp_path)
-            result = doc.export_to_markdown()
+        temp_path = tmp_path / "snippet.py"
+        temp_path.write_text(python_code, encoding="utf-8")
 
-            assert "```" in result
-            assert "def hello():" in result
+        doc = await converter.convert_file(temp_path)
+        result = doc.export_to_markdown()
+
+        assert "```" in result
+        assert "def hello():" in result
 
     def test_conversion_options_applied_to_local_converter(self, config):
         """Test that conversion options are applied to local docling converter."""
@@ -1942,7 +1941,7 @@ class TestDoclingServeConverter:
 
         doc = converter._parse_zip_to_docling(buf.getvalue(), "test")
         assert doc.pictures[0].image is not None
-        assert str(doc.pictures[0].image.uri) == "artifacts/missing.png"
+        assert str(doc.pictures[0].image.uri) == str(Path("artifacts/missing.png"))
 
     async def test_convert_text_connection_error(self, converter):
         """Test handling of connection errors."""
@@ -1994,7 +1993,7 @@ class TestDoclingServeConverter:
                 await converter.convert_text("# Test")
             assert exc_info.value.response.status_code == 401
 
-    async def test_convert_file_pdf(self, converter):
+    async def test_convert_file_pdf(self, converter, tmp_path):
         """Test converting PDF file via docling-serve async workflow."""
         doc_json = create_mock_docling_document("test")
         submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
@@ -2007,16 +2006,14 @@ class TestDoclingServeConverter:
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
 
-            with tempfile.NamedTemporaryFile(suffix=".pdf") as f:
-                f.write(b"fake pdf content")
-                f.flush()
-                temp_path = Path(f.name)
-                doc = await converter.convert_file(temp_path)
+            temp_path = tmp_path / "sample.pdf"
+            temp_path.write_bytes(b"fake pdf content")
+            doc = await converter.convert_file(temp_path)
 
             assert isinstance(doc, DoclingDocument)
             mock_client.post.assert_called_once()
 
-    async def test_convert_file_text(self, converter):
+    async def test_convert_file_text(self, converter, tmp_path):
         """Test converting text file (reads locally, sends to docling-serve)."""
         doc_json = create_mock_docling_document("test")
         submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
@@ -2029,11 +2026,9 @@ class TestDoclingServeConverter:
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
 
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".py") as f:
-                f.write("def hello():\n    pass")
-                f.flush()
-                temp_path = Path(f.name)
-                doc = await converter.convert_file(temp_path)
+            temp_path = tmp_path / "sample.py"
+            temp_path.write_text("def hello():\n    pass", encoding="utf-8")
+            doc = await converter.convert_file(temp_path)
 
             assert isinstance(doc, DoclingDocument)
             mock_client.post.assert_called_once()

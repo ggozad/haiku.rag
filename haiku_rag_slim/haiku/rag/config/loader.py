@@ -82,7 +82,7 @@ def find_config_file(cli_path: Path | None = None) -> Path | None:
 
 def load_yaml_config(path: Path) -> dict:
     """Load and parse a YAML config file, expanding ${VAR} references."""
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f)
     return expand_env_vars(data or {})
 

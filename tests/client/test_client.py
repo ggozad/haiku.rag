@@ -26,6 +26,7 @@ from haiku.rag.store.compression import decompress_json
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from tests.locks import ObservedLock, assert_waiting_for_lock
+from tests.platform import requires_symlinks
 
 
 async def test_a_string_db_path_is_accepted(temp_db_path):
@@ -449,6 +450,7 @@ async def test_client_create_document_from_directory(temp_db_path):
             assert not any("unsupported.xyz" in uri for uri in uris)
 
 
+@requires_symlinks
 @pytest.mark.vcr()
 async def test_directory_ingest_skips_symlinks_escaping_the_tree(temp_db_path):
     """A symlinked file resolving outside the named directory is not ingested;
