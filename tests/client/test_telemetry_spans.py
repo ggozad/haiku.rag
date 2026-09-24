@@ -284,8 +284,8 @@ async def test_spans_carry_the_haiku_rag_scope(temp_db_path, exporter):
 
 
 async def test_ingest_phases_report_the_fetched_uri(temp_db_path, tmp_path, exporter):
-    """Every phase span of one ingest reports the fetched uri, not the uri the
-    document is stored under."""
+    """Every phase span of an ingest, on the create and the update path, reports
+    the fetched uri, not the uri the document is stored under."""
     dim = get_config().embeddings.model.vector_dim
     source = tmp_path / "alpha.md"
     source.write_text("# Alpha\n\nAlpha document body.\n", encoding="utf-8")
@@ -294,10 +294,23 @@ async def test_ingest_phases_report_the_fetched_uri(temp_db_path, tmp_path, expo
         client.store.embedder = _StubEmbedder(dim)
         doc = await client.create_document_from_source(source, uri="mem://override")
 
+        tree = Tree(exporter)
+        convert_uri = tree.attrs("document.convert")["uri"]
+        assert doc.uri == "mem://override"
+        assert convert_uri != doc.uri
+        assert tree.attrs("document.store")["op"] == "create"
+        assert tree.attrs("document.store")["uri"] == convert_uri
+        assert tree.attrs("document.items")["uri"] == convert_uri
+
+        source.write_text(
+            "# Alpha\n\nAlpha document body, revised.\n", encoding="utf-8"
+        )
+        exporter.clear()
+        updated = await client.create_document_from_source(source, uri="mem://override")
+
     tree = Tree(exporter)
-    convert_uri = tree.attrs("document.convert")["uri"]
-    assert doc.uri == "mem://override"
-    assert convert_uri != doc.uri
+    assert updated.id == doc.id
+    assert tree.attrs("document.store")["op"] == "update"
     assert tree.attrs("document.store")["uri"] == convert_uri
     assert tree.attrs("document.items")["uri"] == convert_uri
 

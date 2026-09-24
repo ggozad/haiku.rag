@@ -165,8 +165,8 @@ async def _store_document_with_chunks(
     """Store a document with chunks, embedding any that lack embeddings.
 
     Handles versioning/rollback on failure. ``observed_uri`` is the URI the
-    other phase spans report; it differs from ``document.uri``, which is the
-    URI the document is stored under.
+    other phase spans report, which can differ from ``document.uri``, the URI
+    the document is stored under.
     """
     span_uri = observed_uri if observed_uri is not None else document.uri
     chunks = await ensure_chunks_embedded(
@@ -249,7 +249,7 @@ async def _update_document_with_chunks(
 
     Handles versioning/rollback on failure. When `docling_document` is None,
     existing items are preserved. ``observed_uri`` is the URI the other phase
-    spans report; it differs from ``document.uri``, which is the URI the
+    spans report, which can differ from ``document.uri``, the URI the
     document is stored under.
     """
     span_uri = observed_uri if observed_uri is not None else document.uri
