@@ -15,8 +15,9 @@ class RerankerBase:
     def _scoreable(self, chunk: Chunk) -> bool:
         """Whether this reranker has anything to send for `chunk`.
 
-        A picture chunk has no text, and its bytes are attached only under
-        reranking.multimodal, so it can arrive with nothing to score.
+        A picture chunk's text is its caption, which can be empty, and its
+        bytes are attached only under reranking.multimodal, so it can arrive
+        with nothing to score.
         """
         return bool(chunk.content)
 
