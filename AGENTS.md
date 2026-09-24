@@ -433,8 +433,6 @@ is Claude Code's pre-approval and other Agent Skills clients ignore it.
 
 **Core coverage is enforced at 100%** (`fail_under = 100`, `source = ["haiku_rag_slim"]`); the evaluations workspace enforces 85%. New code needs a test or a `# pragma: no cover - <short reason>` on one line. CI prints term-missing, so a gate failure names the line. Run coverage with `--cov` and scope the report by grepping it: a deep-dotted `--cov=haiku.rag.<module>` crashes beartype, and a file-path `--cov=<path>.py` collects nothing.
 
-**On Windows**, creating a symlink needs Administrator or Developer Mode. Without the privilege the `requires_symlinks` tests (`tests/platform.py`) skip, and the symlink branch of `sources/fs.py` goes uncovered, so the 100% gate lands at 99.95%. Turning Developer Mode on runs them and restores it. Read and write repo files with an explicit `encoding="utf-8"`: text mode otherwise follows the host locale, which is cp1252 there. Build an assertion on a rendered path with `pathlib` rather than a hard-coded `/`, and write a file under test through `tmp_path` rather than an open `NamedTemporaryFile`, which Windows forbids reopening.
-
 **VCR Recording:**
 Tests use pytest-recording (VCR.py). Cassettes are committed: the suites in `_CENTRAL_CASSETTE_SUITES` (client, chunkers, converters, embeddings, interfaces, providers, reranking, store) record under `tests/cassettes/<module>/`, every other suite under `<suite>/cassettes/<module>/`.
 
@@ -602,6 +600,7 @@ Each entry is the trap and what to do. The evidence behind them is in the commit
 
 ### Testing and tooling
 
+- **Windows.** Text mode follows the host locale (cp1252), so read and write repo files with `encoding="utf-8"`. Build an expected rendered path with `pathlib`, not a literal `/`. Write a file under test through `tmp_path`: Windows refuses to reopen an open `NamedTemporaryFile`. Creating a symlink needs Administrator or Developer Mode; without it the `requires_symlinks` tests (`tests/platform.py`) skip and the symlink branch of `sources/fs.py` goes uncovered. Guard a POSIX-only call with `sys.platform`, which ty narrows on, not `hasattr` or `getattr`.
 - **`haiku.rag`'s logger does not propagate**, so `caplog` misses its records once any test in the worker has called `get_logger()`. Use `capture_logs(logger, level)` from `tests/conftest.py`.
 - **HF Hub outages** stall unmarked-network tests at setup. `HF_HUB_OFFLINE=1 pytest ...` runs from the disk cache.
 - **`uv run ty check <files>`** checks only those files. The pre-commit ty hook is broader: run `uv run pre-commit run --files <paths>`.

@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 from datetime import UTC, datetime
 
@@ -542,14 +543,12 @@ async def test_document_get_by_uri_with_special_characters(
         assert retrieved.uri == "Hamish and Andy's Gap Year"
 
 
-@pytest.mark.skipif(not hasattr(time, "tzset"), reason="time.tzset is POSIX-only")
 def test_naive_timestamp_is_converted_from_local_time():
-    # `time.tzset` is POSIX-only, and ty resolves it per platform: reached
-    # through getattr, the call type-checks on Windows too. The skipif guards it.
-    tzset = getattr(time, "tzset")
+    if sys.platform == "win32":
+        pytest.skip("time.tzset is POSIX-only")
     original_tz = os.environ.get("TZ")
     os.environ["TZ"] = "Europe/Athens"
-    tzset()
+    time.tzset()
     try:
         created = datetime(2026, 1, 1, 14, 0, 0)  # January is EET, UTC+2
         updated = datetime(2026, 1, 1, 14, 30, 0)
@@ -561,7 +560,7 @@ def test_naive_timestamp_is_converted_from_local_time():
             os.environ.pop("TZ", None)
         else:
             os.environ["TZ"] = original_tz
-        tzset()
+        time.tzset()
 
 
 def test_created_at_serializes_with_timezone_offset():

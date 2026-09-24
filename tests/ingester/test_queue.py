@@ -1,5 +1,5 @@
 import asyncio
-import os
+import sys
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -170,12 +170,21 @@ def test_insert_uses_dialect_specific_construct():
     assert isinstance(_insert(jobs_table, "sqlite"), SqliteInsert)
 
 
-async def test_open_queue_handles_path_with_url_chars(tmp_path):
-    """A `#` (and `?`, where the filesystem allows it) has URL meaning. The
-    queue must open the literal file, not a truncated one. Windows forbids `?`
-    in a filename, so the character under test is chosen per platform."""
-    name = "queue#weird.db" if os.name == "nt" else "queue?weird.db"
-    path = tmp_path / name
+@pytest.mark.parametrize(
+    "char",
+    [
+        "#",
+        pytest.param(
+            "?",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32", reason="Windows forbids ? in a filename"
+            ),
+        ),
+    ],
+)
+async def test_open_queue_handles_path_with_url_chars(tmp_path, char):
+    """The queue opens a file whose name carries a URL-significant character."""
+    path = tmp_path / f"queue{char}weird.db"
     eng = await open_queue(QueueConfig(path=path))
     try:
         assert path.exists()
