@@ -6,6 +6,10 @@
 
 - `evaluations.system_one` (`SystemOneConfig`: `base_url`, `model`), a
   `/v1/systemone` endpoint for the evaluations answer-equivalence judge.
+- `evaluations.evaluators.SystemOneJudge`: a pydantic-evals evaluator asking a
+  `/v1/systemone` endpoint one yes/no question, deciding alone at
+  p >= `pass_at` (0.8) or p < `fail_below` (0.2) and deferring the rest, and
+  endpoint errors, to a `fallback` evaluator.
 
 ### Fixed
 

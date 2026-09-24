@@ -13,6 +13,7 @@ from evaluations.evaluators.refusal import (
     RefusalJudge,
 )
 from evaluations.evaluators.retrieval import NDCGEvaluator, RecallEvaluator
+from evaluations.evaluators.system_one import SystemOneJudge
 from evaluations.evaluators.transcript import TranscriptLLMJudge
 
 __all__ = [
@@ -28,5 +29,6 @@ __all__ = [
     "NumberMatchEvaluator",
     "RecallEvaluator",
     "RefusalJudge",
+    "SystemOneJudge",
     "TranscriptLLMJudge",
 ]
