@@ -41,7 +41,7 @@ class Endpoint:
         return httpx2.Response(
             200,
             json={
-                "model": body.get("model") or "server-default",
+                "model": body["model"],
                 "usage": {"input_tokens": 10, "output_tokens": 0},
                 "answers": answers,
             },
@@ -89,6 +89,7 @@ class TestSystemOneJudgeBands:
         assert _verdict(result).value is True
         assert result["verdict_probability"] == p
         assert result["verdict_decided_by"] == "system_one"
+        assert result["verdict_model"] == "jev-latest"
         assert fallback.calls == 0
 
     @pytest.mark.parametrize("p", [0.0, 0.1999])
@@ -110,6 +111,7 @@ class TestSystemOneJudgeBands:
         )
         assert result["verdict_probability"] == p
         assert result["verdict_decided_by"] == "fallback"
+        assert result["verdict_model"] == "jev-latest"
         assert fallback.calls == 1
 
     async def test_bands_are_configurable(self) -> None:
@@ -143,6 +145,7 @@ class TestSystemOneJudgeErrors:
         assert _verdict(result).value is True
         assert result["verdict_decided_by"] == "fallback_on_error"
         assert "verdict_probability" not in result
+        assert "verdict_model" not in result
         assert fallback.calls == 1
 
     async def test_endpoint_error_without_fallback_raises(self) -> None:

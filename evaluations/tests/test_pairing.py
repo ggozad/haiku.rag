@@ -220,6 +220,55 @@ class TestPairOutcomes:
         assert "1 case only in main" in text
         assert "no split reaches p < 0.05" in text
 
+    def test_render_warns_when_only_one_arm_was_gated(self) -> None:
+        treated, baseline = self._arms()
+        treated[0] = CaseOutcome(
+            case_name="n_1",
+            key="1",
+            passed=True,
+            cited=True,
+            cited_map=0.9,
+            aborted=False,
+            judge_decided_by="system_one",
+        )
+        result = pair_outcomes("branch", treated, "main", baseline)
+
+        assert result.treated.gated and not result.baseline.gated
+        assert (
+            "warning: branch was judged through system_one and main was not; "
+            "verdict differences include judge differences" in render(result)
+        )
+
+    def test_render_warns_when_the_arms_were_gated_by_different_models(
+        self,
+    ) -> None:
+        def gated(key: str, model: str) -> CaseOutcome:
+            return CaseOutcome(
+                case_name=f"n_{key}",
+                key=key,
+                passed=True,
+                cited=True,
+                cited_map=0.5,
+                aborted=False,
+                judge_decided_by="system_one",
+                system_one_model=model,
+            )
+
+        result = pair_outcomes(
+            "branch", [gated("1", "jev-1.13.0")], "main", [gated("1", "decider-4b-v1")]
+        )
+
+        assert (
+            "warning: branch was judged through system_one model jev-1.13.0 and "
+            "main through decider-4b-v1" in render(result)
+        )
+
+    def test_render_does_not_warn_when_both_arms_share_a_judge(self) -> None:
+        treated, baseline = self._arms()
+        assert "warning" not in render(
+            pair_outcomes("branch", treated, "main", baseline)
+        )
+
     def test_render_states_the_resolution_and_one_sided_cases(self) -> None:
         treated = [_o(str(i), passed=True) for i in range(8)] + [_o("x")]
         baseline = [_o(str(i), passed=False) for i in range(8)]
@@ -246,6 +295,33 @@ def _write(path: Path, passed: list[bool]) -> Path:
         )
     )
     return path
+
+
+class TestReadResults:
+    def test_a_file_from_before_the_gated_judge_reads_as_ungated(
+        self, tmp_path: Path
+    ) -> None:
+        from evaluations.results import read_results
+
+        (outcome,) = read_results(_write(tmp_path / "old.jsonl", [True]))
+        assert outcome.judge_decided_by is None
+
+    def test_the_decider_is_read_back(self, tmp_path: Path) -> None:
+        from evaluations.results import read_results
+
+        path = tmp_path / "gated.jsonl"
+        row = {
+            "case_name": "0_q0",
+            "key": "q0",
+            "passed": True,
+            "cited": True,
+            "cited_map": 0.5,
+            "aborted": False,
+            "judge_decided_by": "fallback",
+        }
+        path.write_text(json.dumps(row) + "\n")
+        (outcome,) = read_results(path)
+        assert outcome.judge_decided_by == "fallback"
 
 
 class TestPairCommand:

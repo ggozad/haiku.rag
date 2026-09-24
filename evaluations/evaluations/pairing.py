@@ -43,6 +43,8 @@ class ArmSummary:
     cited_map: float | None
     aborts: int
     unjudged: int
+    gated: bool
+    system_one_models: frozenset[str]
 
 
 def summarize(name: str, outcomes: list[CaseOutcome]) -> ArmSummary:
@@ -65,6 +67,12 @@ def summarize(name: str, outcomes: list[CaseOutcome]) -> ArmSummary:
         cited_map=sum(maps) / len(maps) if maps else None,
         aborts=sum(1 for outcome in outcomes if outcome.aborted),
         unjudged=cases - len(judged),
+        gated=any(outcome.judge_decided_by is not None for outcome in outcomes),
+        system_one_models=frozenset(
+            outcome.system_one_model
+            for outcome in outcomes
+            if outcome.system_one_model is not None
+        ),
     )
 
 
@@ -153,6 +161,10 @@ def _only(count: int, name: str) -> str:
     return f", {count} case{'s' if count != 1 else ''} only in {name}"
 
 
+def _models(arm: ArmSummary) -> str:
+    return ", ".join(sorted(arm.system_one_models)) or "none"
+
+
 def render(result: PairResult) -> str:
     """The standard paired table."""
     head = f"{result.paired} cases on both sides"
@@ -161,10 +173,26 @@ def render(result: PairResult) -> str:
     if result.only_baseline:
         head += _only(result.only_baseline, result.baseline.name)
     width = max(len(result.treated.name), len(result.baseline.name), 3)
-    lines = [
-        head,
-        f"{'arm':<{width}}  cases  accuracy    floor  cite rate  cited_map  aborts  unjudged",
-    ]
+    lines = [head]
+    if result.treated.gated != result.baseline.gated:
+        gated, ungated = (
+            (result.treated, result.baseline)
+            if result.treated.gated
+            else (result.baseline, result.treated)
+        )
+        lines.append(
+            f"warning: {gated.name} was judged through system_one and {ungated.name} "
+            "was not; verdict differences include judge differences"
+        )
+    elif result.treated.system_one_models != result.baseline.system_one_models:
+        lines.append(
+            f"warning: {result.treated.name} was judged through system_one model "
+            f"{_models(result.treated)} and {result.baseline.name} through "
+            f"{_models(result.baseline)}"
+        )
+    lines.append(
+        f"{'arm':<{width}}  cases  accuracy    floor  cite rate  cited_map  aborts  unjudged"
+    )
     for arm in (result.treated, result.baseline):
         lines.append(
             f"{arm.name:<{width}}  {arm.cases:>5}  {_rate(arm.accuracy):>8}  "

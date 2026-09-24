@@ -82,4 +82,5 @@ class SystemOneJudge(Evaluator[object, object, object]):
             name: verdict,
             f"{name}_probability": p,
             f"{name}_decided_by": decided_by,
+            f"{name}_model": response.model,
         }
