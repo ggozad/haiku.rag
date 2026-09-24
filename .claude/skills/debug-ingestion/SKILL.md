@@ -45,9 +45,28 @@ shares its `trace_id`:
 - Job: `ingester.job` — `attributes->>'source_id'`, `->>'uri'`, `->>'op'`
   (`UPSERT`/`DELETE`), `(->>'attempt')::int`. `is_exception=true` marks a job
   that raised.
-- Document pipeline: `document.fetch` (`bytes`, `content_hash`),
-  `document.convert`, `document.chunk` (`chunks_created`), `document.embed`,
-  `document.store` (`op` `create`/`update`, `document_id`).
+- Document pipeline, six sibling phases under `ingester.job`:
+  `document.fetch` (`bytes`, `content_hash`), `document.convert`,
+  `document.chunk` (`chunks_created`), `document.embed`, `document.items`,
+  `document.store`. Each measures one phase only, and none contains another.
+  They do not sum to the job: `_prepare_and_title` (create) and
+  `get_all_picture_data` (update) run outside any phase span.
+  - `document.embed` — `(->>'chunks')::int` (total on the document),
+    `chunks_embedded` (how many lacked a vector; `0` means the phase was
+    free, and the span is still emitted), `images`, `batch_size`. Provider
+    round trips are `ceil((chunks_embedded - images) / batch_size) + images`:
+    text goes out in `batch_size` groups, images one at a time.
+  - `document.items` — `extract_items` on a worker thread. `pictures`,
+    `items`, `uri`. Absent on an update that carries no docling document
+    (existing items are preserved).
+  - `document.store` — the LanceDB write. `op` (`create` / `update` /
+    `create_batch`), `document_id`, `uri`, `chunks`, `items`, `documents` on
+    a batch, and `(->>'lock_wait_ms')::float`, the time spent waiting on the
+    write lock. `op` is set after the write on the create path, because a
+    concurrent ingest of the same URI is only resolved under the lock.
+    `lock_wait_ms` also lands on `ingester.job` for a DELETE, which writes
+    without a `document.store` span. The lock is in-process, so contention
+    between two ingester processes on one database is not measured.
 - docling-serve: `docling_serve.request` — `attributes->>'name'` (operation),
   `->>'url'` (instance), `(->>'attempt')::int`. A retry emits a new span with a
   different `url`, so failover shows as sibling spans.
@@ -150,7 +169,56 @@ SELECT span_name,
        duration, trace_id
 FROM records
 WHERE service_name='haiku-ingester'
-  AND span_name IN ('document.convert','docling_serve.request','document.embed','document.chunk')
+  AND span_name IN ('document.convert','docling_serve.request','document.embed',
+                    'document.chunk','document.items','document.store')
+ORDER BY duration DESC
+LIMIT 20;
+```
+
+Where a job's time goes. The phase names are listed explicitly: `LIKE
+'document.%'` would also match `document.convert_slice`, which nests inside
+`document.convert` when `processing.split_pages` is on, counting conversion
+twice.
+
+```sql
+SELECT span_name, count(*) AS n,
+       avg(duration) AS avg_s,
+       sum(duration) AS total_s
+FROM records
+WHERE service_name='haiku-ingester'
+  AND span_name IN ('document.fetch','document.convert','document.chunk',
+                    'document.embed','document.items','document.store')
+GROUP BY 1
+ORDER BY total_s DESC;
+```
+
+Is storing slow, or just queued behind another writer?
+
+```sql
+SELECT attributes->>'uri' AS uri,
+       attributes->>'op' AS op,
+       (attributes->>'lock_wait_ms')::float AS lock_wait_ms,
+       duration AS store_s,
+       trace_id
+FROM records
+WHERE service_name='haiku-ingester' AND span_name='document.store'
+ORDER BY lock_wait_ms DESC
+LIMIT 20;
+```
+
+Embedding: provider latency or batch count?
+
+```sql
+SELECT ceil(((attributes->>'chunks_embedded')::int
+             - (attributes->>'images')::int)::float
+            / (attributes->>'batch_size')::int)
+       + (attributes->>'images')::int AS batches,
+       (attributes->>'chunks_embedded')::int AS chunks,
+       duration,
+       attributes->>'uri' AS uri
+FROM records
+WHERE service_name='haiku-ingester' AND span_name='document.embed'
+  AND (attributes->>'chunks_embedded')::int > 0
 ORDER BY duration DESC
 LIMIT 20;
 ```

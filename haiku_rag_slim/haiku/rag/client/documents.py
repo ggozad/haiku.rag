@@ -138,59 +138,96 @@ def parent_uri_filter(parent_uri: str) -> str:
     return f'metadata LIKE \'%"parent_uri": "{json_fragment}"%\''
 
 
+async def _extract_items_observed(
+    uri: str | None,
+    document_id: str,
+    docling_document: "DoclingDocument",
+    existing_picture_data: dict[str, bytes] | None = None,
+) -> list[DocumentItem]:
+    """`extract_items` on a worker thread, under a `document.items` span."""
+    with logfire.span(
+        "document.items", uri=uri, pictures=len(docling_document.pictures)
+    ) as span:
+        items = await asyncio.to_thread(
+            extract_items, document_id, docling_document, existing_picture_data
+        )
+        span.set_attribute("items", len(items))
+        return items
+
+
 async def _store_document_with_chunks(
     session: SingleDatabaseSession,
     document: Document,
     chunks: list[Chunk],
     docling_document: "DoclingDocument",
+    observed_uri: str | None = None,
 ) -> Document:
     """Store a document with chunks, embedding any that lack embeddings.
 
-    Handles versioning/rollback on failure.
+    Handles versioning/rollback on failure. ``observed_uri`` is the URI the
+    other phase spans report, which can differ from ``document.uri``, the URI
+    the document is stored under.
     """
+    span_uri = observed_uri if observed_uri is not None else document.uri
     chunks = await ensure_chunks_embedded(
         session.config, chunks, session.store.embedder
     )
-    items = await asyncio.to_thread(extract_items, "", docling_document)
+    items = await _extract_items_observed(span_uri, "", docling_document)
     # A racing writer's document is only visible under the lock, so a transfer
     # to this one is resolved here and reported once the write commits.
     replaced_owner: str | None = None
 
-    async with session.store.write_transaction():
-        # A concurrent ingestion of the same URI may have created the document
-        # while this one was converting/embedding outside the lock. LanceDB has
-        # no unique constraint on `uri`, so re-check under the lock and update in
-        # place rather than inserting a duplicate.
-        existing = (
-            await session.get_document_by_uri(document.uri)
-            if document.uri is not None
-            else None
-        )
-
-        if existing is not None:
-            document.id = existing.id
-            document.created_at = existing.created_at
-            replaced_owner = (existing.metadata or {}).get("source_id")
-            document.metadata = _keep_source_id(document.metadata, existing.metadata)
-            stored_doc = await session.document_repository.update(document)
-        else:
-            stored_doc = await session.document_repository.create(document)
-
-        assert stored_doc.id is not None, "Document ID should not be None after storing"
-        for order, chunk in enumerate(chunks):
-            chunk.document_id = stored_doc.id
-            chunk.order = order
-        for item in items:
-            item.document_id = stored_doc.id
-
-        if existing is not None:
-            await session.chunk_repository.replace_for_document(stored_doc.id, chunks)
-            await session.document_item_repository.replace_for_document(
-                stored_doc.id, items
+    with logfire.span(
+        "document.store", uri=span_uri, chunks=len(chunks), items=len(items)
+    ) as store_span:
+        async with session.store.write_transaction():
+            # A concurrent ingestion of the same URI may have created the
+            # document while this one was converting/embedding outside the
+            # lock. LanceDB has no unique constraint on `uri`, so re-check
+            # under the lock and update in place rather than inserting a
+            # duplicate.
+            existing = (
+                await session.get_document_by_uri(document.uri)
+                if document.uri is not None
+                else None
             )
-        else:
-            await session.chunk_repository.create(chunks)
-            await session.document_item_repository.create_items(stored_doc.id, items)
+
+            if existing is not None:
+                document.id = existing.id
+                document.created_at = existing.created_at
+                replaced_owner = (existing.metadata or {}).get("source_id")
+                document.metadata = _keep_source_id(
+                    document.metadata, existing.metadata
+                )
+                stored_doc = await session.document_repository.update(document)
+            else:
+                stored_doc = await session.document_repository.create(document)
+
+            assert stored_doc.id is not None, (
+                "Document ID should not be None after storing"
+            )
+            for order, chunk in enumerate(chunks):
+                chunk.document_id = stored_doc.id
+                chunk.order = order
+            for item in items:
+                item.document_id = stored_doc.id
+
+            if existing is not None:
+                await session.chunk_repository.replace_for_document(
+                    stored_doc.id, chunks
+                )
+                await session.document_item_repository.replace_for_document(
+                    stored_doc.id, items
+                )
+            else:
+                await session.chunk_repository.create(chunks)
+                await session.document_item_repository.create_items(
+                    stored_doc.id, items
+                )
+
+        # The under-lock re-check decides create vs update.
+        store_span.set_attribute("op", "update" if existing is not None else "create")
+        store_span.set_attribute("document_id", stored_doc.id)
 
     _note_source_change(stored_doc, replaced_owner)
 
@@ -206,12 +243,16 @@ async def _update_document_with_chunks(
     document: Document,
     chunks: list[Chunk],
     docling_document: "DoclingDocument | None" = None,
+    observed_uri: str | None = None,
 ) -> Document:
     """Update a document and replace its chunks, embedding any that lack embeddings.
 
     Handles versioning/rollback on failure. When `docling_document` is None,
-    existing items are preserved.
+    existing items are preserved. ``observed_uri`` is the URI the other phase
+    spans report, which can differ from ``document.uri``, the URI the
+    document is stored under.
     """
+    span_uri = observed_uri if observed_uri is not None else document.uri
     assert document.id is not None, "Document ID is required for update"
 
     # Snapshot existing picture bytes before deleting items so the post-delete
@@ -229,24 +270,33 @@ async def _update_document_with_chunks(
 
     items: list[DocumentItem] | None = None
     if docling_document is not None:
-        items = await asyncio.to_thread(
-            extract_items, document.id, docling_document, existing_picture_data
+        items = await _extract_items_observed(
+            span_uri, document.id, docling_document, existing_picture_data
         )
 
-    async with session.store.write_transaction():
-        updated_doc = await session.document_repository.update(document)
-
-        assert updated_doc.id is not None
-        for order, chunk in enumerate(chunks):
-            chunk.document_id = updated_doc.id
-            chunk.order = order
-
-        await session.chunk_repository.replace_for_document(updated_doc.id, chunks)
-
+    with logfire.span(
+        "document.store",
+        uri=span_uri,
+        op="update",
+        document_id=document.id,
+        chunks=len(chunks),
+    ) as store_span:
         if items is not None:
-            await session.document_item_repository.replace_for_document(
-                updated_doc.id, items
-            )
+            store_span.set_attribute("items", len(items))
+        async with session.store.write_transaction():
+            updated_doc = await session.document_repository.update(document)
+
+            assert updated_doc.id is not None
+            for order, chunk in enumerate(chunks):
+                chunk.document_id = updated_doc.id
+                chunk.order = order
+
+            await session.chunk_repository.replace_for_document(updated_doc.id, chunks)
+
+            if items is not None:
+                await session.document_item_repository.replace_for_document(
+                    updated_doc.id, items
+                )
 
     if session.config.storage.auto_vacuum:
         session.schedule_vacuum()
@@ -337,27 +387,39 @@ async def _store_documents_with_chunks(
     def _extract_all_items():
         return [extract_items("", d) for _, _, d in prepared]
 
-    all_item_lists = await asyncio.to_thread(_extract_all_items)
+    with logfire.span(
+        "document.items",
+        documents=len(prepared),
+        pictures=sum(len(d.pictures) for _, _, d in prepared),
+    ) as items_span:
+        all_item_lists = await asyncio.to_thread(_extract_all_items)
+        items_span.set_attribute("items", sum(len(i) for i in all_item_lists))
 
-    async with session.store.write_transaction():
-        created = await session.document_repository.create(
-            [doc for doc, _, _ in prepared]
-        )
+    with logfire.span(
+        "document.store",
+        op="create_batch",
+        documents=len(prepared),
+        chunks=len(flat),
+    ):
+        async with session.store.write_transaction():
+            created = await session.document_repository.create(
+                [doc for doc, _, _ in prepared]
+            )
 
-        all_chunks: list[Chunk] = []
-        all_items = []
-        for doc, doc_chunks, item_list in zip(created, embedded, all_item_lists):
-            assert doc.id is not None
-            for order, chunk in enumerate(doc_chunks):
-                chunk.document_id = doc.id
-                chunk.order = order
-            all_chunks.extend(doc_chunks)
-            for item in item_list:
-                item.document_id = doc.id
-            all_items.extend(item_list)
+            all_chunks: list[Chunk] = []
+            all_items = []
+            for doc, doc_chunks, item_list in zip(created, embedded, all_item_lists):
+                assert doc.id is not None
+                for order, chunk in enumerate(doc_chunks):
+                    chunk.document_id = doc.id
+                    chunk.order = order
+                all_chunks.extend(doc_chunks)
+                for item in item_list:
+                    item.document_id = doc.id
+                all_items.extend(item_list)
 
-        await session.chunk_repository.create(all_chunks)
-        await session.document_item_repository.create_all(all_items)
+            await session.chunk_repository.create(all_chunks)
+            await session.document_item_repository.create_all(all_items)
 
     if session.config.storage.auto_vacuum:
         session.schedule_vacuum()
@@ -542,11 +604,9 @@ async def _ingest_fetch_result(
         if title is not None:
             existing_doc.title = title
         await _prepare_and_title(session, existing_doc, docling_document)
-        with logfire.span("document.store", uri=result.uri, op="update") as store_span:
-            updated = await _update_document_with_chunks(
-                session, existing_doc, chunks, docling_document
-            )
-            store_span.set_attribute("document_id", updated.id)
+        updated = await _update_document_with_chunks(
+            session, existing_doc, chunks, docling_document, observed_uri=result.uri
+        )
         await _reconcile_pdf_attachments(session, updated, result.body, depth=depth)
         return updated
 
@@ -557,11 +617,9 @@ async def _ingest_fetch_result(
         metadata=final_metadata,
     )
     await _prepare_and_title(session, document, docling_document)
-    with logfire.span("document.store", uri=result.uri, op="create") as store_span:
-        created = await _store_document_with_chunks(
-            session, document, chunks, docling_document
-        )
-        store_span.set_attribute("document_id", created.id)
+    created = await _store_document_with_chunks(
+        session, document, chunks, docling_document, observed_uri=result.uri
+    )
     await _reconcile_pdf_attachments(session, created, result.body, depth=depth)
     return created
 

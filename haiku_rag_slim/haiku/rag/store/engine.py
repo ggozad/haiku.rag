@@ -14,6 +14,7 @@ from typing import Any, cast
 import lance
 import lancedb
 from lancedb.index import IvfPq
+from opentelemetry import trace
 from packaging.version import parse
 
 from haiku.rag.config import AppConfig, get_config
@@ -790,11 +791,17 @@ class Store:
         In-process coordination only: a writer in another process can commit
         between the version snapshot and the mutation.
 
+        Sets `lock_wait_ms` on the recording span, if any.
+
         Raises:
             ReadOnlyError: If the store is in read-only mode.
         """
         self._assert_writable()
+        waiting_since = monotonic()
         async with self._write_lock:
+            trace.get_current_span().set_attribute(
+                "lock_wait_ms", (monotonic() - waiting_since) * 1000
+            )
             versions = await self.current_table_versions()
             try:
                 yield

@@ -6,13 +6,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-import logfire
-
 from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.config import AppConfig
 from haiku.rag.converters import get_converter
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document_item import _picture_description_text
+from haiku.rag.telemetry import logfire
 from haiku.rag.uri import is_local_uri, uri_to_path
 
 if TYPE_CHECKING:
@@ -356,10 +355,16 @@ async def ensure_chunks_embedded(
 
     chunks_to_embed = [c for c in chunks if c.embedding is None]
 
-    if not chunks_to_embed:
-        return chunks
+    with logfire.span(
+        "document.embed",
+        chunks=len(chunks),
+        chunks_embedded=len(chunks_to_embed),
+        images=sum(1 for c in chunks_to_embed if c._picture_data is not None),
+        batch_size=config.embeddings.batch_size,
+    ):
+        if not chunks_to_embed:
+            return chunks
 
-    with logfire.span("document.embed", chunks=len(chunks_to_embed)):
         embedded = await embed_chunks(chunks_to_embed, embedder, config)
 
     # embed_chunks preserves input order; fill positionally, since duplicate
