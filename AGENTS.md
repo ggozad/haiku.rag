@@ -429,7 +429,7 @@ is Claude Code's pre-approval and other Agent Skills clients ignore it.
 - `@pytest.mark.slow` - Deterministic end-to-end tests. CI runs them separately with `pytest -m "slow and not integration"`.
 - `@pytest.mark.vcr()` - HTTP call recording/replay
 
-`pytest` runs the whole core suite, slow and integration included. CI's fast lane is `pytest -m "not slow and not integration" --cov`. `cd evaluations && uv run pytest --cov` runs the evaluations suite and its coverage gate. Tests run under xdist (`-n auto` in addopts); pass `-n0` when debugging races or container lifecycle. Async tests are detected through pytest-asyncio's auto mode, and asyncio fixtures default to **session** loop scope.
+`pytest` runs the whole core suite, slow and integration included. CI's fast lane is `pytest -m "not slow and not integration" --cov`. `test-windows` runs it on Windows without `--cov`, as a check that is not required. `cd evaluations && uv run pytest --cov` runs the evaluations suite and its coverage gate. Tests run under xdist (`-n auto` in addopts); pass `-n0` when debugging races or container lifecycle. Async tests are detected through pytest-asyncio's auto mode, and asyncio fixtures default to **session** loop scope.
 
 **Core coverage is enforced at 100%** (`fail_under = 100`, `source = ["haiku_rag_slim"]`); the evaluations workspace enforces 85%. New code needs a test or a `# pragma: no cover - <short reason>` on one line. CI prints term-missing, so a gate failure names the line. Run coverage with `--cov` and scope the report by grepping it: a deep-dotted `--cov=haiku.rag.<module>` crashes beartype, and a file-path `--cov=<path>.py` collects nothing.
 
