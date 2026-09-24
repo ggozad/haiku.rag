@@ -46,6 +46,11 @@ def _key(metadata: Any, pair_key: str) -> str | None:
     return None if value is None else str(value)
 
 
+def _trace(trace_id: str | None) -> str | None:
+    """None for a missing trace and for the all-zero id a run without telemetry gets."""
+    return None if trace_id is None or not trace_id.strip("0") else trace_id
+
+
 def _passed(case: ReportCase) -> bool | None:
     verdict = case.assertions.get("answer_equivalent")
     if verdict is not None:
@@ -66,7 +71,7 @@ def _case_row(case: ReportCase, pair_key: str, trace_id: str | None) -> dict[str
         "cited": bool(case.attributes.get("cited_uris")),
         "cited_map": None if cited_map is None else float(cited_map.value),
         "aborted": False,
-        "trace_id": case.trace_id or trace_id,
+        "trace_id": _trace(case.trace_id) or _trace(trace_id),
         "answer": None if case.output is None else str(case.output),
         "reason": None if verdict is None else verdict.reason,
         "attributes": dict(case.attributes),
@@ -84,7 +89,7 @@ def _failure_row(
         "cited": False,
         "cited_map": None,
         "aborted": True,
-        "trace_id": failure.trace_id or trace_id,
+        "trace_id": _trace(failure.trace_id) or _trace(trace_id),
         "answer": None,
         "reason": failure.error_message,
         "attributes": {},
@@ -137,7 +142,7 @@ def write_results(
         _failure_row(failure, pair_key, report.trace_id) for failure in report.failures
     ]
     rows.sort(key=lambda row: row["case_name"])
-    tag = report.trace_id or f"notrace-{run_id}"
+    tag = _trace(report.trace_id) or f"notrace-{run_id}"
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{name}.{tag}.jsonl"
     with path.open("x") as out:

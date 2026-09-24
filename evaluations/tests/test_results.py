@@ -78,6 +78,16 @@ async def _report(evaluator: Evaluator = Judge()):
     )
 
 
+TRACE = "01a0cd944d57" + "a" * 20
+
+
+def _traced(report, trace_id: str):
+    report.trace_id = trace_id
+    for result in [*report.cases, *report.failures]:
+        result.trace_id = trace_id
+    return report
+
+
 def _rows(path: Path) -> dict[str, dict]:
     rows = [json.loads(line) for line in path.read_text().splitlines()]
     return {row["case_name"]: row for row in rows}
@@ -85,7 +95,7 @@ def _rows(path: Path) -> dict[str, dict]:
 
 class TestWriteResults:
     async def test_writes_one_row_per_case_and_failure(self, tmp_path: Path) -> None:
-        report = await _report()
+        report = _traced(await _report(), TRACE)
 
         path = write_results(
             report, name="run-x", pair_key="query_id", directory=tmp_path, run_id="r1"
@@ -109,7 +119,7 @@ class TestWriteResults:
             "cited_map": 0.5,
             "aborted": False,
         }
-        assert first["trace_id"] == report.trace_id
+        assert first["trace_id"] == TRACE
         assert first["answer"] == "answer"
         assert first["reason"] is None
         assert first["attributes"] == {"cited_uris": ["u1"]}
@@ -139,18 +149,22 @@ class TestWriteResults:
         assert rows["1_a"]["passed"] is True
         assert rows["2_b"]["passed"] is False
 
-    async def test_the_file_name_carries_the_trace_or_says_it_has_none(
-        self, tmp_path: Path
-    ) -> None:
-        report = await _report()
+    async def test_the_file_name_carries_the_trace(self, tmp_path: Path) -> None:
+        report = _traced(await _report(), TRACE)
         path = write_results(
             report, name="run-x", pair_key="query_id", directory=tmp_path, run_id="r1"
         )
-        tag = path.name[len("run-x.") : -len(".jsonl")]
-        if report.trace_id is None:
-            assert tag == "notrace-r1"
-        else:
-            assert tag == report.trace_id
+        assert path.name == f"run-x.{TRACE}.jsonl"
+
+    async def test_the_all_zero_trace_of_a_run_without_telemetry_is_no_trace(
+        self, tmp_path: Path
+    ) -> None:
+        report = _traced(await _report(), "0" * 32)
+        path = write_results(
+            report, name="run-x", pair_key="query_id", directory=tmp_path, run_id="r1"
+        )
+        assert path.name == "run-x.notrace-r1.jsonl"
+        assert {row["trace_id"] for row in _rows(path).values()} == {None}
 
     async def test_runs_started_in_one_millisecond_keep_separate_files(
         self, tmp_path: Path
