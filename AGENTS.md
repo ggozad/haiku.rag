@@ -294,7 +294,7 @@ leaves the configuration: it travels in `SearchResult.source`, `Citation.source`
 - `ProvidersConfig` - ollama, docling_serve (OllamaConfig, DoclingServeConfig)
 - `PromptsConfig` - domain_preamble, picture_description
 - `IngesterConfig` - sources, queue (QueueConfig), workers (WorkerConfig), api (APIConfig)
-- `EvaluationsConfig` - judge (ModelConfig | None)
+- `EvaluationsConfig` - judge (ModelConfig | None), system_one (SystemOneConfig | None: base_url, model; key from `TYPESAFE_API_KEY`)
 - `LanceDBConfig` - databases (name → local path or URI), api_key, region, storage_options, read_consistency_interval_seconds, index_cache_size_bytes, metadata_cache_size_bytes
 
 Every model inherits `ConfigModel` (`extra="forbid"`), so an unknown or misspelled key raises at load. converter, chunker and chunker_type are `Literal`s and numeric fields carry bounds. Provider fields stay unrestricted `str`: `get_model` passes an unknown provider to pydantic-ai by name, logging a warning when model settings are set, since none apply. Read config through `get_config()`: there is no module-level `Config` singleton, and capturing the config in a default argument freezes it before `set_config()` runs.

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- `evaluations.system_one` (`SystemOneConfig`: `base_url`, `model`), a
+  `/v1/systemone` endpoint for the evaluations answer-equivalence judge.
+
 ### Fixed
 
 - `evaluations run --no-telemetry` names the result file `<name>.notrace-<run id>.jsonl` and records no trace id, instead of the all-zero trace id.
