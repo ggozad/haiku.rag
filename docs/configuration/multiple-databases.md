@@ -14,7 +14,7 @@ Placing a single database works the same way. See [Placing the database](storage
 
 ## Names and provenance
 
-The configured name is the only identity that leaves the configuration. `SearchResult.source`, `Citation.source` and `Document.source` carry it, for a set and for one database alike. The model sees it as a `Collection:` line on each search result, only when the search spans more than one database.
+The configured name is the only identity that leaves the configuration. `SearchResult.source`, `Citation.source` and `Document.source` carry it, for a set and for one database alike. The model sees it as a `Collection:` line on each search result and image label whenever the run spans more than one database, including a search narrowed to one.
 
 An unavailable database raises `SourceUnavailableError`, which names the database and not its location. A migration, configuration or read-only failure keeps its own type, with the database named in the message. Commands that report on a database, such as `info`, still show where it is.
 
@@ -107,6 +107,8 @@ capabilities:
 ```
 
 An unknown name raises `UnknownDatabaseError`, an empty list `ValueError`. `sources` beside `db_path` or `rag=` raises `AmbiguousDatabaseError`, since each of those already says which databases the capability covers. The `sources` field of the capability state then selects among the covered databases for one question. See [Capabilities](../capabilities/index.md#database-selection).
+
+Within a question, the model narrows one search with the `sources` argument of the `search` tool: omitted, the search covers the question's selection; a list covers those databases; an empty list covers none. A name outside the question's selection fails that call and lists the collections the run covers, so a lent client covering more than the question selects lends nothing beyond it. Over a single database the tool has no `sources` argument.
 
 ## MCP server
 

@@ -315,3 +315,34 @@ async def test_a_failed_sibling_commits_nothing(temp_db_path):
 
     assert "body" in text_of(second)
     assert len(images_of(second)) == 1
+
+
+async def test_the_same_chunk_from_differently_narrowed_siblings_is_elided(
+    temp_db_path,
+):
+    """The collection label follows the run, so a broad sibling recognises what
+    a narrowed one showed."""
+    client = stub_client(
+        [make_result(source="alpha")],
+        [make_result(source="alpha")],
+        sources=["alpha", "beta"],
+    )
+    capability = dedup_capability(client, temp_db_path)
+
+    first = await capability._search("q", None, 1, sources=["alpha"])
+    second = await capability._search("q rephrased", None, 1)
+
+    assert "Collection: alpha" in text_of(first)
+    assert "Also matched, shown above: [c1] [rank 1 of 1]" in text_of(second)
+
+
+async def test_a_narrowed_search_labels_its_pictures_with_the_collection(
+    temp_db_path,
+):
+    client = stub_client([make_result(source="alpha")], sources=["alpha", "beta"])
+    capability = dedup_capability(client, temp_db_path)
+
+    first = await capability._search("q", None, 1, sources=["alpha"])
+
+    labels = [item for item in first.content if isinstance(item, str)]
+    assert any("Collection: alpha" in label for label in labels)

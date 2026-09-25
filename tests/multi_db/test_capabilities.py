@@ -1,8 +1,12 @@
 """Asking across the databases a question covers."""
 
+from dataclasses import replace
 from unittest.mock import AsyncMock
 
 import pytest
+from pydantic_ai import Agent, ToolFailed
+from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from haiku.rag.capabilities._tools import search_corpus
 from haiku.rag.capabilities.rag import RAGState, create_capability
@@ -337,14 +341,10 @@ class TestLendingANamedClient:
 
 
 class TestWhenTheModelIsToldTheCollection:
-    """The line is decided by what the search spans, not by whether a name
-    exists: one collection has nothing to distinguish."""
+    """The line follows the run, which the caller states: a result cannot tell
+    from its own fields what else the run could reach."""
 
-    async def test_a_search_spanning_a_set_names_every_result(
-        self, tmp_path, monkeypatch
-    ):
-        """Named from the selection, so a result is named even when every hit
-        came back from one collection: the search could have drawn on both."""
+    async def test_the_label_is_the_callers_decision(self, tmp_path, monkeypatch):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
         await _seed(config, "beta", ["beta document about cats"])
@@ -356,15 +356,246 @@ class TestWhenTheModelIsToldTheCollection:
         async with HaikuRAG(config=config) as rag:
             monkeypatch.setattr(rag, "search", AsyncMock(return_value=only_alpha))
 
-            spanning, _, _, spans = await search_corpus(rag, "cats")
-            narrowed, _, _, narrows = await search_corpus(
-                rag, "cats", sources=["alpha"]
+            labelled, _, _ = await search_corpus(
+                rag, "cats", sources=["alpha"], include_collection=True
+            )
+            plain, _, _ = await search_corpus(rag, "cats", include_collection=False)
+
+        assert "Collection: alpha" in labelled
+        assert "Collection" not in plain
+
+
+class TestNarrowingASearch:
+    """`sources` on one search selects within the run, and the run's own
+    selection is the ceiling: a lent client may cover more."""
+
+    async def test_sources_narrows_one_search(self, tmp_path, query_embedding):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        async with HaikuRAG(config=config) as rag:
+            capability = create_capability(config=config, rag=rag)
+            capability.state = RAGState()
+
+            narrowed = await capability._search("cats", 10, 1, sources=["beta"])
+            broad = await capability._search("cats", 10, 2)
+
+        assert isinstance(narrowed, str) and isinstance(broad, str)
+        assert "beta document" in narrowed
+        assert "alpha document" not in narrowed
+        assert "alpha document" in broad and "beta document" in broad
+
+    async def test_an_empty_selection_searches_nothing(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        async with HaikuRAG(config=config) as rag:
+            capability = create_capability(config=config, rag=rag)
+            capability.state = RAGState()
+
+            assert await capability._search("cats", 10, 1, sources=[]) == (
+                "No results found."
             )
 
-        assert "Collection: alpha" in spanning
-        assert "Collection" not in narrowed
-        # Images travel beside the results and are labelled the same way.
-        assert (spans, narrows) == (True, False)
+    async def test_a_name_outside_the_run_fails_naming_the_run(self, tmp_path):
+        """Checked before anything opens: a wrong name costs no database."""
+        from tests.capabilities.test_capabilities import Deps, make_context
+
+        capability = create_capability(config=_config(tmp_path, ["alpha", "beta"]))
+        run = await capability.for_run(make_context(Deps()))
+
+        with pytest.raises(ToolFailed) as raised:
+            await run._search("cats", 10, 1, sources=["alpha", "typo"])
+
+        assert raised.value.message == (
+            "Unknown collection(s): typo. This run covers: alpha, beta."
+        )
+        assert run.rag is None
+
+    async def test_the_run_selection_is_the_ceiling_not_the_client(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        async with HaikuRAG(config=config) as rag:
+            capability = create_capability(config=config, rag=rag)
+            capability.state = RAGState(sources=["alpha"])
+
+            with pytest.raises(ToolFailed) as raised:
+                await capability._search("cats", 10, 1, sources=["beta"])
+
+        assert raised.value.message == (
+            "Unknown collection(s): beta. This run covers: alpha."
+        )
+
+    async def test_a_narrowed_search_in_a_spanning_run_names_the_collection(
+        self, tmp_path, query_embedding
+    ):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        async with HaikuRAG(config=config) as rag:
+            capability = create_capability(config=config, rag=rag)
+            capability.state = RAGState()
+
+            narrowed = await capability._search("cats", 10, 1, sources=["alpha"])
+
+        assert isinstance(narrowed, str)
+        assert "Collection: alpha" in narrowed
+
+    async def test_a_run_of_one_collection_names_nothing(
+        self, tmp_path, query_embedding
+    ):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+
+        async with HaikuRAG(config=config) as rag:
+            capability = create_capability(config=config, rag=rag)
+            capability.state = RAGState(sources=["alpha"])
+
+            formatted = await capability._search("cats", 10, 1, sources=["alpha"])
+
+        assert isinstance(formatted, str)
+        assert "alpha document" in formatted
+        assert "Collection" not in formatted
+
+
+class TestTheRunsCollections:
+    """What the model may select among: the question's `sources`, else the
+    lent client's coverage, else the scope."""
+
+    def test_state_sources_are_the_run(self, tmp_path):
+        capability = create_capability(config=_config(tmp_path, ["alpha", "beta"]))
+        capability.state = RAGState(sources=["beta", "beta"])
+
+        assert capability.collections == ("beta",)
+        assert not capability.spans_collections
+
+    def test_a_lent_client_is_the_run(self, tmp_path):
+        config = _config(tmp_path, ["alpha", "beta"])
+        capability = create_capability(config=config)
+        capability.borrowed_rag = HaikuRAG(config=config, sources=["alpha"])
+        capability.state = RAGState()
+
+        assert capability.collections == ("alpha",)
+        assert not capability.spans_collections
+
+    def test_the_scope_is_the_run_by_default(self, tmp_path):
+        capability = create_capability(config=_config(tmp_path, ["alpha", "beta"]))
+
+        assert capability.collections == ("alpha", "beta")
+        assert capability.spans_collections
+
+
+class TestTheSearchToolSchema:
+    """`sources` is offered only where there is something to select among, so
+    a run over one collection keeps the `(query, limit)` contract."""
+
+    async def _search_tool(self, capability, deps):
+        from tests.capabilities.test_capabilities import make_context
+
+        ctx = make_context(deps)
+        run = await capability.for_run(ctx)
+        try:
+            tools = await run.get_toolset().get_tools(ctx)
+            # The agent stamps the capability on its tools before `prepare_tools`.
+            defs = [replace(t.tool_def, capability_id=run.id) for t in tools.values()]
+            prepared = await run.prepare_tools(ctx, defs)
+        finally:
+            await run._close()
+        return next(tool for tool in prepared if tool.name == "search")
+
+    async def test_a_spanning_run_offers_sources(self, tmp_path):
+        from tests.capabilities.test_capabilities import Deps
+
+        capability = create_capability(config=_config(tmp_path, ["alpha", "beta"]))
+        tool = await self._search_tool(capability, Deps())
+
+        properties = tool.parameters_json_schema["properties"]
+        assert set(properties) == {"query", "limit", "sources"}
+        assert "collection" in properties["sources"]["description"].lower()
+        assert "sources" not in tool.parameters_json_schema.get("required", [])
+
+    async def test_a_run_over_one_collection_keeps_two_parameters(self, tmp_path):
+        from tests.capabilities.test_capabilities import Deps
+
+        capability = create_capability(config=_config(tmp_path, ["alpha"]))
+        tool = await self._search_tool(capability, Deps())
+
+        assert set(tool.parameters_json_schema["properties"]) == {"query", "limit"}
+
+    async def test_a_question_narrowed_to_one_collection_hides_sources(self, tmp_path):
+        from tests.capabilities.test_capabilities import Deps
+
+        capability = create_capability(config=_config(tmp_path, ["alpha", "beta"]))
+        deps = Deps(state={"rag": RAGState(sources=["alpha"]).model_dump(mode="json")})
+        tool = await self._search_tool(capability, deps)
+
+        assert "sources" not in tool.parameters_json_schema["properties"]
+
+
+class TestTheModelNarrowingASearch:
+    """Through the agent: what the model is offered, and what it gets back."""
+
+    async def test_the_model_narrows_a_search_and_reads_the_collection(
+        self, tmp_path, query_embedding
+    ):
+        from tests.capabilities.test_capabilities import Deps
+
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
+        seen: dict = {}
+
+        def model(messages, info: AgentInfo) -> ModelResponse:
+            search = next(t for t in info.function_tools if t.name == "search")
+            seen["properties"] = set(search.parameters_json_schema["properties"])
+            if len(messages) == 1:
+                return ModelResponse(
+                    parts=[
+                        ToolCallPart("search", {"query": "cats", "sources": ["beta"]})
+                    ]
+                )
+            seen["returned"] = messages[-1].parts[0].content
+            return ModelResponse(parts=[TextPart("done")])
+
+        agent = Agent(
+            FunctionModel(model),
+            deps_type=Deps,
+            capabilities=[create_capability(config=config)],
+        )
+        result = await agent.run("cats", deps=Deps())
+
+        assert result.output == "done"
+        assert seen["properties"] == {"query", "limit", "sources"}
+        assert "beta document" in seen["returned"]
+        assert "alpha document" not in seen["returned"]
+        assert "Collection: beta" in seen["returned"]
+
+    async def test_over_one_collection_the_model_is_offered_no_sources(self, tmp_path):
+        from tests.capabilities.test_capabilities import Deps
+
+        config = _config(tmp_path, ["alpha"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+        seen: dict = {}
+
+        def model(messages, info: AgentInfo) -> ModelResponse:
+            search = next(t for t in info.function_tools if t.name == "search")
+            seen["properties"] = set(search.parameters_json_schema["properties"])
+            return ModelResponse(parts=[TextPart("done")])
+
+        agent = Agent(
+            FunctionModel(model),
+            deps_type=Deps,
+            capabilities=[create_capability(config=config)],
+        )
+        await agent.run("cats", deps=Deps())
+
+        assert seen["properties"] == {"query", "limit"}
 
 
 class TestActionableFailures:

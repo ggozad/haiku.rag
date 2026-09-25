@@ -16,9 +16,16 @@
 - Per-case result rows carry `scores` and `metadata`; `evaluations pair` reports every
   score both arms carry.
 - `DatasetSpec.configure` and `DatasetSpec.case_evaluators`.
+- `sources` on the RAG capability's `search` tool: a list narrows one search to those
+  collections, an empty list searches none, and a name outside the run's collections
+  fails the call and lists them. Offered only when the run spans more than one
+  collection.
+- `RAGCapability.collections`: the collections a run may search.
 
 ### Changed
 
+- `Collection:` lines on search results and image labels follow the run, not the
+  search: a search narrowed to one collection inside a run spanning several keeps them.
 - `pydantic-monty` 1.0.
 - `sandbox.code_timeout` bounds each `execute_code` call. A call stopped by it resets the sandbox session.
 - The sandbox's working directory is `/documents`. `time.sleep()` and `asyncio.sleep()` return immediately.

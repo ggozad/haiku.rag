@@ -33,7 +33,9 @@ from haiku.rag.capabilities._tools import (
     CodeExecutionEntry,
     EvidenceKey,
     merge_results,
+    require_collections,
     search_corpus,
+    without_sources,
 )
 from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord, EvidenceRef
 from haiku.rag.client import HaikuRAG, all_found
@@ -315,6 +317,16 @@ class RAGCapability(AbstractCapability[Any]):
         return run_capability
 
     @property
+    def collections(self) -> tuple[str, ...]:
+        """The collections this run may search: the question's `sources`, else
+        a lent client's coverage, else the scope. A search selects within them."""
+        if self.state is not None and self.state.sources is not None:
+            return tuple(dict.fromkeys(self.state.sources))
+        if self.borrowed_rag is not None:
+            return tuple(self.borrowed_rag.source_names)
+        return self.scope.names
+
+    @property
     def spans_collections(self) -> bool:
         """Whether this run reads more than one collection.
 
@@ -322,11 +334,7 @@ class RAGCapability(AbstractCapability[Any]):
         built over a set can still run against one collection, and telling it
         how to attribute across collections it cannot reach is noise.
         """
-        if self.state is not None and self.state.sources is not None:
-            return len(set(self.state.sources)) > 1
-        if self.borrowed_rag is not None:
-            return self.borrowed_rag.covers_multiple
-        return self.scope.covers_multiple
+        return len(self.collections) > 1
 
     def get_instructions(self) -> str:
         parts = [instructions()]
@@ -410,7 +418,17 @@ class RAGCapability(AbstractCapability[Any]):
         makes a model that calls it anyway hit ``Unknown tool name``, charged
         against the agent's unknown-tool retry budget, which kills the run after
         two attempts. A spent tool that keeps failing only wastes requests.
+
+        Over one collection the search tool has no ``sources`` parameter: there
+        is nothing to select among.
         """
+        if not self.spans_collections:
+            tool_defs = [
+                without_sources(tool)
+                if tool.capability_id == self.id and tool.name == SEARCH_TOOL
+                else tool
+                for tool in tool_defs
+            ]
         if self._citation_grace_expired:
             return [tool for tool in tool_defs if tool.capability_id != self.id]
         if not self._request_limit_reached:
@@ -595,9 +613,15 @@ class RAGCapability(AbstractCapability[Any]):
         )
 
     async def _search(
-        self, query: str, limit: int | None, run_step: int
+        self,
+        query: str,
+        limit: int | None,
+        run_step: int,
+        sources: list[str] | None = None,
     ) -> str | ToolReturn:
         assert self.state is not None
+        if sources is not None:
+            require_collections(sources, self.collections)
         if run_step != self.search_step:
             self.search_step = run_step
             self.step_searches = 0
@@ -614,20 +638,21 @@ class RAGCapability(AbstractCapability[Any]):
                 "the results you already have."
             )
         async with self.rag_lock:
-            formatted, results, rendered, include_collection = await search_corpus(
+            formatted, results, rendered = await search_corpus(
                 await self._ensure_rag(),
                 query,
                 limit=limit,
                 document_filter=self.state.document_filter,
-                sources=self.state.sources,
+                sources=self.state.sources if sources is None else sources,
                 shown=self.step_shown,
+                include_collection=self.spans_collections,
             )
         parts: list[str | BinaryContent] = []
         emitted: set[PictureKey] = set()
         if self.vision:
             parts, emitted = build_image_content_from_results(
                 results,
-                include_collection=include_collection,
+                include_collection=self.spans_collections,
                 exclude=self.step_pictures,
             )
         # Everything the search produced commits together, after formatting and
@@ -792,10 +817,20 @@ class RAGCapability(AbstractCapability[Any]):
 
     def get_toolset(self) -> FunctionToolset[Any]:
         async def search(
-            ctx: RunContext[Any], query: str, limit: int | None = None
+            ctx: RunContext[Any],
+            query: str,
+            limit: int | None = None,
+            sources: list[str] | None = None,
         ) -> str | ToolReturn:
-            """Search the knowledge base for evidence to analyze."""
-            return await self._with_state(self._search(query, limit, ctx.run_step))
+            """Search the knowledge base for evidence to analyze.
+
+            Args:
+                sources: Collections to search, by name. Omit to search every
+                    collection this run covers; an empty list searches none.
+            """
+            return await self._with_state(
+                self._search(query, limit, ctx.run_step, sources)
+            )
 
         async def execute_code(ctx: RunContext[Any], code: str) -> str:
             """Execute Python against the sandboxed document filesystem."""

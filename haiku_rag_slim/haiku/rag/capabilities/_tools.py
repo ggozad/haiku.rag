@@ -1,7 +1,10 @@
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from collections.abc import Set as AbstractSet
+from dataclasses import replace
 
 from pydantic import BaseModel
+from pydantic_ai import ToolFailed
+from pydantic_ai.tools import ToolDefinition
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.store.models.chunk import SearchResult, qualified_id
@@ -24,23 +27,42 @@ identical renderings of the same chunk id held by two databases.
 """
 
 
-def evidence_signature(result: SearchResult, include_collection: bool) -> tuple:
+def evidence_signature(result: SearchResult) -> tuple:
     """The rendered evidence a result shows the model, as an equivalence key.
 
-    Rank and total are held at neutral values: they vary with a result's
-    position, and position (like score) must not tell two renderings apart.
+    Rank and total are held at neutral values, and the collection label is
+    left out: position, score and presentation must not tell two renderings
+    of one chunk apart. The qualified id keeps copies from different
+    collections distinct.
     """
-    return (
-        result.format_for_agent(rank=0, total=0, include_collection=include_collection),
-        picture_keys(result),
-    )
+    return (result.format_for_agent(rank=0, total=0), picture_keys(result))
 
 
-def evidence_key(result: SearchResult, include_collection: bool) -> EvidenceKey:
-    return (
-        qualified_id(result.source, result.chunk_id),
-        evidence_signature(result, include_collection),
-    )
+def evidence_key(result: SearchResult) -> EvidenceKey:
+    return (qualified_id(result.source, result.chunk_id), evidence_signature(result))
+
+
+def require_collections(requested: Sequence[str], available: Sequence[str]) -> None:
+    """Fail the call on a name outside the collections this run covers."""
+    unknown = sorted(set(requested) - set(available))
+    if unknown:
+        raise ToolFailed(
+            f"Unknown collection(s): {', '.join(unknown)}. "
+            f"This run covers: {', '.join(available)}."
+        )
+
+
+def without_sources(tool_def: ToolDefinition) -> ToolDefinition:
+    """The tool's definition without its `sources` parameter."""
+    schema = dict(tool_def.parameters_json_schema)
+    schema["properties"] = {
+        name: spec
+        for name, spec in schema.get("properties", {}).items()
+        if name != "sources"
+    }
+    if "required" in schema:
+        schema["required"] = [name for name in schema["required"] if name != "sources"]
+    return replace(tool_def, parameters_json_schema=schema)
 
 
 async def search_corpus(
@@ -50,27 +72,26 @@ async def search_corpus(
     document_filter: str | None = None,
     sources: list[str] | None = None,
     shown: AbstractSet[EvidenceKey] = frozenset(),
-) -> tuple[str, list[SearchResult], set[EvidenceKey], bool]:
+    *,
+    include_collection: bool,
+) -> tuple[str, list[SearchResult], set[EvidenceKey]]:
     """Search and context-expand results, eliding evidence already shown.
 
-    Returns the formatted results, the full result list, the evidence keys the
-    formatting rendered in full, and whether results name their collection. A
-    result whose key is in ``shown`` keeps its slot but collapses to one line;
-    the result list is never filtered.
+    Returns the formatted results, the full result list and the evidence keys
+    the formatting rendered in full. ``include_collection`` names each result's
+    collection, a decision about the run that the caller makes. A result whose
+    key is in ``shown`` keeps its slot but collapses to one line; the result
+    list is never filtered.
     """
     results = await rag.search(
         query, limit=limit, filter=document_filter, sources=sources
     )
     results = await rag.expand_context(results)
-    # Named from the selection, not the hits: a search that could have drawn on
-    # two collections names them even when everything came back from one.
-    selected = rag.source_names if sources is None else sources
-    include_collection = len(set(selected)) > 1
     rendered: set[EvidenceKey] = set()
     parts: list[str] = []
     total = len(results)
     for index, result in enumerate(results):
-        key = evidence_key(result, include_collection)
+        key = evidence_key(result)
         if key in shown or key in rendered:
             parts.append(
                 f"Also matched, shown above: [{result.chunk_id}] "
@@ -84,7 +105,7 @@ async def search_corpus(
             )
             rendered.add(key)
     formatted = "\n\n---\n\n".join(parts)
-    return formatted or "No results found.", list(results), rendered, include_collection
+    return formatted or "No results found.", list(results), rendered
 
 
 def merge_results(
@@ -109,5 +130,7 @@ __all__ = [
     "evidence_key",
     "evidence_signature",
     "merge_results",
+    "require_collections",
     "search_corpus",
+    "without_sources",
 ]
