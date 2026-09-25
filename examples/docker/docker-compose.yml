@@ -8,7 +8,7 @@ services:
     image: quay.io/docling-project/docling-serve:v1.32.0
     container_name: docling-serve-1
     ports:
-      - "5001:5001"  # exposed on the host for ad-hoc debugging (5001)
+      - "127.0.0.1:5001:5001"  # exposed on the host for ad-hoc debugging (5001)
     environment:
       - DOCLING_SERVE_ENABLE_UI=1
       # Allow remote VLM calls (picture descriptions via an external model API).
@@ -26,7 +26,7 @@ services:
     image: quay.io/docling-project/docling-serve:v1.32.0
     container_name: docling-serve-2
     ports:
-      - "5002:5001"  # host 5002 → container 5001 (debug only)
+      - "127.0.0.1:5002:5001"  # host 5002 → container 5001 (debug only)
     environment:
       - DOCLING_SERVE_ENABLE_UI=1
       # Allow remote VLM calls (picture descriptions via an external model API).
@@ -110,7 +110,7 @@ services:
         "8001",
       ]
     ports:
-      - "8001:8001"  # MCP server (read-only against the same LanceDB)
+      - "127.0.0.1:8001:8001"  # MCP server (read-only, no authentication)
     volumes:
       - ./data:/data  # Shared with the ingester (read-only at this process)
       - ./haiku.rag.yaml:/app/haiku.rag.yaml:ro

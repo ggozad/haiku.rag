@@ -106,6 +106,8 @@ curl -H "Authorization: Bearer $INGESTER_TOKEN" http://localhost:8765/dlq
 - `8001` - MCP server (read-only)
 - `8765` - ingester control plane (`/health`, `/jobs`, `/sources`, `/dlq`)
 
+docling-serve and the MCP server are published on `127.0.0.1` only. The MCP server has no authentication: anyone who can reach port 8001 can search and read every document and run `execute_code`. Put an authenticating proxy in front of it before publishing it beyond the host.
+
 ## Configuration
 
 The setup uses `haiku.rag-slim` image configured to use docling-serve for document processing:
