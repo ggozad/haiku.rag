@@ -15,6 +15,7 @@ from evaluations.population import populate_db
 from evaluations.qa import run_live_qa_benchmark, run_qa_benchmark
 from evaluations.results import check_run_name, default_results_path, read_results
 from evaluations.retrieval import run_retrieval_benchmark
+from evaluations.split import split_database
 from haiku.rag.config import AppConfig, find_config_file, load_yaml_config
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.logging import configure_cli_logging
@@ -44,6 +45,9 @@ async def evaluate_dataset(
 ) -> None:
     if document_filter is not None:
         console.print(f"Document filter: {document_filter}", style="dim")
+
+    if spec.configure is not None:
+        spec = spec.configure(spec, config)
 
     if db_path is not None and config.lancedb.databases:
         raise ValueError(
@@ -313,6 +317,23 @@ def pair(
         console.print(f"{names[0]} and {names[1]} have no case in common", style="red")
         raise typer.Exit(code=1)
     console.print(render(result), soft_wrap=True, highlight=False, markup=False)
+
+
+@app.command()
+def split(
+    source: Path = typer.Argument(..., help="Database to split."),
+    destinations: list[Path] = typer.Argument(
+        ..., help="Databases to create, one per shard."
+    ),
+    config: Path | None = typer.Option(
+        None, "--config", help="Config naming the embedder SOURCE was built with."
+    ),
+) -> None:
+    """Copy each document of SOURCE into the destination its uri hashes to,
+    chunks and embeddings included."""
+    counts = asyncio.run(split_database(source, destinations, _load_config(config)))
+    for destination, count in zip(destinations, counts, strict=True):
+        console.print(f"{destination.name}: {count}")
 
 
 @app.command()

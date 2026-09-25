@@ -77,6 +77,17 @@ def summarize(name: str, outcomes: list[CaseOutcome]) -> ArmSummary:
 
 
 @dataclass
+class ScorePair:
+    name: str
+    treated_mean: float | None
+    baseline_mean: float | None
+    up: int
+    down: int
+    ties: int
+    p: float
+
+
+@dataclass
 class PairResult:
     treated: ArmSummary
     baseline: ArmSummary
@@ -91,6 +102,53 @@ class PairResult:
     down: int
     ties: int
     sign_p: float
+    scores: list[ScorePair]
+
+
+def _mean(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def pair_scores(
+    ours: dict[str, CaseOutcome], theirs: dict[str, CaseOutcome], shared: list[str]
+) -> list[ScorePair]:
+    """Every score both arms carry, cited_map aside: per-arm means over the
+    cases carrying it, and a sign test over the pairs carrying it on both
+    sides."""
+    names = (
+        {name for outcome in ours.values() for name in outcome.scores}
+        & {name for outcome in theirs.values() for name in outcome.scores}
+    ) - {"cited_map"}
+    pairs: list[ScorePair] = []
+    for name in sorted(names):
+        up = down = ties = 0
+        for case_key in shared:
+            x = ours[case_key].scores.get(name)
+            y = theirs[case_key].scores.get(name)
+            if x is None or y is None:
+                continue
+            if x > y:
+                up += 1
+            elif x < y:
+                down += 1
+            else:
+                ties += 1
+        pairs.append(
+            ScorePair(
+                name=name,
+                treated_mean=_mean(
+                    [o.scores[name] for o in ours.values() if name in o.scores]
+                ),
+                baseline_mean=_mean(
+                    [o.scores[name] for o in theirs.values() if name in o.scores]
+                ),
+                up=up,
+                down=down,
+                ties=ties,
+                p=sign_test(up, down),
+            )
+        )
+    return pairs
 
 
 def _by_key(name: str, outcomes: list[CaseOutcome]) -> dict[str, CaseOutcome]:
@@ -150,6 +208,7 @@ def pair_outcomes(
         down=down,
         ties=ties,
         sign_p=sign_test(up, down),
+        scores=pair_scores(ours, theirs, shared),
     )
 
 
@@ -163,6 +222,23 @@ def _only(count: int, name: str) -> str:
 
 def _models(arm: ArmSummary) -> str:
     return ", ".join(sorted(arm.system_one_models)) or "none"
+
+
+def _score_table(result: PairResult) -> list[str]:
+    width = max(len("score"), *(len(score.name) for score in result.scores))
+    treated, baseline = result.treated.name, result.baseline.name
+    arm_width = max(len(treated), len(baseline), 8)
+    lines = [
+        f"{'score':<{width}}  {treated:>{arm_width}}  {baseline:>{arm_width}}  "
+        f"{'up':>4}  {'down':>4}  {'ties':>4}  {'p':>6}"
+    ]
+    for score in result.scores:
+        lines.append(
+            f"{score.name:<{width}}  {_rate(score.treated_mean):>{arm_width}}  "
+            f"{_rate(score.baseline_mean):>{arm_width}}  {score.up:>4}  "
+            f"{score.down:>4}  {score.ties:>4}  {score.p:>6.4f}"
+        )
+    return lines
 
 
 def render(result: PairResult) -> str:
@@ -209,6 +285,8 @@ def render(result: PairResult) -> str:
         f"cited_map sign test: {result.up} up, {result.down} down, {result.ties} ties; "
         f"p = {result.sign_p:.4f}"
     )
+    if result.scores:
+        lines.extend(_score_table(result))
     discordant = result.b + result.c
     delta = resolution(discordant)
     if delta is None:

@@ -169,7 +169,7 @@ class TestCitationStatusDerivation:
         from haiku.rag.capabilities.rag import RAGState
 
         state = RAGState(evidence=record)
-        return _result_from_run("answer", state, ToolTraffic(0, 0, 0, 1))
+        return _result_from_run("answer", state, ToolTraffic(0, 0, 0, 1, []))
 
     def test_grounded(self) -> None:
         from haiku.rag.capabilities.ledger import (
@@ -469,7 +469,7 @@ def test_records_the_database_each_citation_came_from():
         evidence=CapabilityEvidenceRecord(question=1),
     )
 
-    result = _result_from_run("answer", state, ToolTraffic(0, 0, 0, 0))
+    result = _result_from_run("answer", state, ToolTraffic(0, 0, 0, 0, []))
 
     assert result.cited_sources == ["alpha", "beta", "alpha"]
 
@@ -494,7 +494,7 @@ def test_a_hand_built_citation_without_a_source_records_an_empty_string():
         evidence=CapabilityEvidenceRecord(question=1),
     )
 
-    result = _result_from_run("answer", state, ToolTraffic(0, 0, 0, 0))
+    result = _result_from_run("answer", state, ToolTraffic(0, 0, 0, 0, []))
 
     assert result.cited_sources == [""]
 
@@ -513,7 +513,34 @@ def test_in_code_search_calls_are_summed_across_executions():
         evidence=CapabilityEvidenceRecord(question=1),
     )
 
-    result = _result_from_run("answer", state, ToolTraffic(0, 0, 0, 0))
+    result = _result_from_run("answer", state, ToolTraffic(0, 0, 0, 0, []))
 
     assert result.n_executions == 3
     assert result.n_sandbox_search_calls == 3
+
+
+def test_count_tool_traffic_records_the_collections_each_search_named():
+    """`sources` is read from the call arguments, in call order: None where the
+    call omitted it, and whatever was sent otherwise, a non-list included."""
+    messages = [
+        ModelRequest(parts=[UserPromptPart(content="q")]),
+        ModelResponse(
+            parts=[
+                ToolCallPart("search", {"query": "a", "sources": ["alpha"]}),
+                ToolCallPart("search", {"query": "b"}),
+                ToolCallPart("search", '{"query": "c", "sources": []}'),
+                ToolCallPart("search", {"query": "d", "sources": "alpha"}),
+                ToolCallPart("execute_code", {"code": "print(1)"}),
+            ]
+        ),
+        ModelResponse(parts=[TextPart("done")]),
+    ]
+
+    traffic = _count_tool_traffic(messages, TOOL_NAMES)
+
+    assert traffic.search_sources == [["alpha"], None, [], "alpha"]
+    assert traffic.n_search_calls == 4
+
+
+def test_a_run_result_carries_the_search_sources():
+    assert CapabilityRunResult(answer="a").search_sources == []

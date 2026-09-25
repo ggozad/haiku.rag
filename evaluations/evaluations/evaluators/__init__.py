@@ -13,6 +13,7 @@ from evaluations.evaluators.refusal import (
     RefusalJudge,
 )
 from evaluations.evaluators.retrieval import NDCGEvaluator, RecallEvaluator
+from evaluations.evaluators.routing import CollectionRoutingEvaluator
 from evaluations.evaluators.system_one import SystemOneJudge
 from evaluations.evaluators.transcript import TranscriptLLMJudge
 
@@ -21,6 +22,7 @@ __all__ = [
     "REFUSAL_ELIGIBLE_LABELS",
     "REFUSAL_RUBRIC",
     "CitationMAPEvaluator",
+    "CollectionRoutingEvaluator",
     "ConversationEvaluator",
     "LLMJudge",
     "LLMJudgeResponseSchema",

@@ -54,6 +54,9 @@ class CapabilityRunResult:
     n_failed_tools: int = 0
     n_requests: int = 0
     citation_status: str | None = None
+    # The `sources` argument of each search call, in call order, as sent;
+    # None where the call omitted it.
+    search_sources: list[Any] = field(default_factory=list)
 
 
 class ToolTraffic(NamedTuple):
@@ -61,6 +64,7 @@ class ToolTraffic(NamedTuple):
     n_rejected_searches: int
     n_failed_tools: int
     n_requests: int
+    search_sources: list[Any]
 
 
 def _count_tool_traffic(
@@ -88,14 +92,14 @@ def _count_tool_traffic(
     rejected_searches = 0
     failed_tools = 0
     requests = 0
+    search_sources: list[Any] = []
     for message in messages:
         if isinstance(message, ModelResponse):
             requests += 1
-            search_calls += sum(
-                1
-                for part in message.parts
-                if isinstance(part, ToolCallPart) and part.tool_name == search_tool
-            )
+            for part in message.parts:
+                if isinstance(part, ToolCallPart) and part.tool_name == search_tool:
+                    search_calls += 1
+                    search_sources.append(part.args_as_dict().get("sources"))
             continue
         for part in message.parts:
             if not isinstance(part, RetryPromptPart | ToolReturnPart):
@@ -113,6 +117,7 @@ def _count_tool_traffic(
         n_rejected_searches=rejected_searches,
         n_failed_tools=failed_tools,
         n_requests=requests,
+        search_sources=search_sources,
     )
 
 
@@ -280,4 +285,5 @@ def _result_from_run(
         n_failed_tools=traffic.n_failed_tools,
         n_requests=traffic.n_requests,
         citation_status=status,
+        search_sources=traffic.search_sources,
     )

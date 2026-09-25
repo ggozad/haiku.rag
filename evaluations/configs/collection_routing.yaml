@@ -1,0 +1,67 @@
+# Reference config for the `collection_routing` evaluation: FRAMES split in
+# two collections plus OpenRAG Bench, all three built with the
+# nvidia/llama-nemotron-embed-vl-1b-v2 multimodal embedder.
+# Build the FRAMES shards from the downloaded `frames` database:
+#   evaluations split <dbs>/frames.lancedb <dbs>/frames_a.lancedb <dbs>/frames_b.lancedb --config configs/frames.yaml
+# Run: evaluations run collection_routing --skip-db --config configs/collection_routing.yaml
+# base_url uses the `vllm` host serving each model over an OpenAI-compatible API.
+
+environment: development
+
+lancedb:
+  databases:
+    wikipedia-a: /root/.local/share/haiku.rag/evaluations/dbs/frames_a.lancedb
+    wikipedia-b: /root/.local/share/haiku.rag/evaluations/dbs/frames_b.lancedb
+    papers: /root/.local/share/haiku.rag/evaluations/dbs/open_rag_bench_multimodal_nemotron.lancedb
+
+
+storage:
+  auto_vacuum: false
+
+embeddings:
+  model:
+    provider: vllm
+    name: nvidia/llama-nemotron-embed-vl-1b-v2
+    vector_dim: 2048
+    multimodal: true
+    base_url: http://vllm:11438/v1
+
+reranking:
+  multimodal: true
+  model:
+    provider: vllm
+    name: nvidia/llama-nemotron-rerank-vl-1b-v2
+    base_url: http://vllm:11434
+
+sandbox:
+  # Bounds per-execution sandbox output so accumulated code returns cannot
+  # outgrow the model's input budget.
+  max_output_chars: 20000
+
+qa:
+  model:
+    provider: openai
+    name: Inferact/Qwen3.8-27B-NVFP4
+    base_url: http://vllm:11439/v1
+    vision: true
+    max_tokens: 16384
+    temperature: 0.6
+    extra_body:
+      chat_template_kwargs:
+        # qwen3.8 defaults to xhigh, which spends the output budget
+        # deliberating and truncates the answer. low | medium | xhigh.
+        reasoning_effort: low
+
+evaluations:
+  judge:
+    provider: openai
+    name: Inferact/Qwen3.8-27B-NVFP4
+    base_url: http://vllm:11439/v1
+    temperature: 0.6
+    max_tokens: 16384
+    extra_body:
+      top_p: 0.95
+      top_k: 20
+      min_p: 0
+      chat_template_kwargs:
+        reasoning_effort: low

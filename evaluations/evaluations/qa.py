@@ -349,6 +349,7 @@ async def run_qa_benchmark(
         evaluators = [answer_judge]
     if citation_evaluator is not None:
         evaluators.append(citation_evaluator)
+    evaluators.extend(spec.case_evaluators)
     # RefusalJudge scores only cases whose metadata carries an answerability
     # label; on unlabeled datasets it returns no score without a judge call.
     evaluators.append(
@@ -383,6 +384,7 @@ async def run_qa_benchmark(
         set_eval_attribute("cited_chunk_ids", result.cited_chunk_ids)
         set_eval_attribute("cited_sources", result.cited_sources)
         set_eval_attribute("searched_uris", result.searched_uris)
+        set_eval_attribute("search_sources", result.search_sources)
         set_eval_attribute("n_searches", result.n_searches)
         set_eval_attribute("n_search_calls", result.n_search_calls)
         set_eval_attribute("n_rejected_searches", result.n_rejected_searches)

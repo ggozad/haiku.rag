@@ -57,6 +57,15 @@ _MTRAG_CONVERSATION = {
         }
     ],
 }
+_ROUTING_ROW = {
+    "member": "frames",
+    "question_id": "frames:7",
+    "question": "Q?",
+    "answer": "A",
+    "relevant_uris": ["https://en.wikipedia.org/wiki/X"],
+    "expected_roles": ["frames_a"],
+    "cue": "named",
+}
 _ROWS = {
     "frames": {
         "id": "7",
@@ -80,6 +89,8 @@ _ROWS = {
     "mtrag_clapnq_rewrite": _MTRAG_TASK,
     "mtrag_clapnq_live": _MTRAG_CONVERSATION,
     "mtrag_clapnq_live_uncompacted": _MTRAG_CONVERSATION,
+    "collection_routing": _ROUTING_ROW,
+    "collection_routing_opaque": _ROUTING_ROW,
 }
 
 
@@ -118,6 +129,7 @@ def _o(
     cited: bool = True,
     cited_map: float | None = 0.5,
     aborted: bool = False,
+    scores: dict[str, float] | None = None,
 ) -> CaseOutcome:
     return CaseOutcome(
         case_name=f"n_{key}",
@@ -126,6 +138,7 @@ def _o(
         cited=cited,
         cited_map=cited_map,
         aborted=aborted,
+        scores={} if scores is None else scores,
     )
 
 
@@ -268,6 +281,54 @@ class TestPairOutcomes:
         assert "warning" not in render(
             pair_outcomes("branch", treated, "main", baseline)
         )
+
+    def _scored_arms(self) -> tuple[list[CaseOutcome], list[CaseOutcome]]:
+        treated = [
+            _o("1", scores={"cited_map": 0.5, "hops": 2.0, "exact": 1.0}),
+            _o("2", scores={"cited_map": 0.5, "hops": 3.0, "exact": 0.0}),
+            _o("3", scores={"cited_map": 0.5, "hops": 1.0, "exact": 1.0}),
+            _o("4", scores={"cited_map": 0.5, "only_treated": 1.0}),
+        ]
+        baseline = [
+            _o("1", scores={"cited_map": 0.5, "hops": 3.0, "exact": 1.0}),
+            _o("2", scores={"cited_map": 0.5, "hops": 3.0, "exact": 0.0}),
+            _o("3", scores={"cited_map": 0.5, "hops": 2.0}),
+            _o("4", scores={"cited_map": 0.5, "exact": 0.0}),
+        ]
+        return treated, baseline
+
+    def test_every_score_on_both_sides_is_paired(self) -> None:
+        """Means run over the cases of each arm carrying the score; the sign
+        test over the pairs carrying it on both sides. cited_map keeps its own
+        line and `only_treated` is on one side only."""
+        treated, baseline = self._scored_arms()
+        result = pair_outcomes("branch", treated, "main", baseline)
+
+        by_name = {score.name: score for score in result.scores}
+        assert list(by_name) == ["exact", "hops"]
+        hops, exact = by_name["hops"], by_name["exact"]
+        assert hops.treated_mean == pytest.approx(2.0)
+        assert hops.baseline_mean == pytest.approx(8 / 3)
+        assert (hops.up, hops.down, hops.ties) == (0, 2, 1)
+        assert hops.p == pytest.approx(sign_test(0, 2))
+        assert exact.treated_mean == pytest.approx(2 / 3)
+        assert exact.baseline_mean == pytest.approx(1 / 3)
+        assert (exact.up, exact.down, exact.ties) == (0, 0, 2)
+
+    def test_arms_without_scores_pair_nothing(self) -> None:
+        treated, baseline = self._arms()
+        assert pair_outcomes("branch", treated, "main", baseline).scores == []
+
+    def test_render_lists_the_paired_scores(self) -> None:
+        treated, baseline = self._scored_arms()
+        text = render(pair_outcomes("branch", treated, "main", baseline))
+        lines = text.splitlines()
+        header = next(line for line in lines if line.startswith("score"))
+        for column in ("branch", "main", "up", "down", "ties", "p"):
+            assert column in header
+        hops = next(line for line in lines if line.startswith("hops"))
+        assert "2.0000" in hops and "2.6667" in hops
+        assert "only_treated" not in text
 
     def test_render_states_the_resolution_and_one_sided_cases(self) -> None:
         treated = [_o(str(i), passed=True) for i in range(8)] + [_o("x")]

@@ -94,6 +94,20 @@ def _rows(path: Path) -> dict[str, dict]:
 
 
 class TestWriteResults:
+    async def test_rows_carry_every_score_and_the_case_metadata(
+        self, tmp_path: Path
+    ) -> None:
+        report = await _report()
+        path = write_results(
+            report, name="run-x", pair_key="query_id", directory=tmp_path, run_id="r1"
+        )
+        rows = _rows(path)
+        assert rows["1_a"]["scores"] == {"cited_map": 0.5}
+        assert rows["1_a"]["metadata"] == {"query_id": "a"}
+        assert rows["3_c"]["scores"] == {}
+        assert rows["3_c"]["metadata"] == {"query_id": "c"}
+        assert rows["4_d"]["metadata"] == {}
+
     async def test_writes_one_row_per_case_and_failure(self, tmp_path: Path) -> None:
         report = _traced(await _report(), TRACE)
 
@@ -120,6 +134,7 @@ class TestWriteResults:
             "aborted": False,
             "judge_decided_by": None,
             "system_one_model": None,
+            "scores": {"cited_map": 0.5},
         }
         assert first["trace_id"] == TRACE
         assert first["answer"] == "answer"
@@ -359,9 +374,24 @@ class TestReadResults:
             cited=True,
             cited_map=0.5,
             aborted=False,
+            scores={"cited_map": 0.5},
         )
         assert outcomes[2].aborted is True
+        assert outcomes[2].scores == {}
         assert outcomes[3].key is None
+
+    async def test_a_row_without_scores_reads_as_none(self, tmp_path: Path) -> None:
+        path = tmp_path / "run-x.jsonl"
+        row = {
+            "case_name": "1_a",
+            "key": "a",
+            "passed": True,
+            "cited": False,
+            "cited_map": None,
+            "aborted": False,
+        }
+        path.write_text(json.dumps(row) + "\n")
+        assert read_results(path)[0].scores == {}
 
     def test_skips_blank_lines(self, tmp_path: Path) -> None:
         path = tmp_path / "run-x.jsonl"
