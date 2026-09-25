@@ -40,7 +40,7 @@ from evaluations.results import case_writer, new_run_id, write_results
 from haiku.rag.capabilities.rag import create_capability
 from haiku.rag.config import AppConfig
 from haiku.rag.config.models import ModelConfig
-from haiku.rag.utils import get_model
+from haiku.rag.utils.models import get_model
 
 console = Console()
 

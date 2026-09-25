@@ -54,7 +54,7 @@ def test_find_config_file_user_config(tmp_path, monkeypatch):
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     monkeypatch.chdir(cwd)
-    monkeypatch.setattr("haiku.rag.utils.get_default_data_dir", lambda: data_dir)
+    monkeypatch.setattr("haiku.rag.utils.paths.get_default_data_dir", lambda: data_dir)
 
     config_file = data_dir / "haiku.rag.yaml"
     config_file.write_text("environment: production")
@@ -108,7 +108,7 @@ def test_find_config_file_not_found(tmp_path, monkeypatch):
         return tmp_path
 
     monkeypatch.setattr(
-        "haiku.rag.utils.get_default_data_dir", mock_get_default_data_dir
+        "haiku.rag.utils.paths.get_default_data_dir", mock_get_default_data_dir
     )
 
     found = find_config_file()
@@ -140,7 +140,7 @@ def test_config_precedence_cwd_over_user(tmp_path, monkeypatch):
         return user_dir
 
     monkeypatch.setattr(
-        "haiku.rag.utils.get_default_data_dir", mock_get_default_data_dir
+        "haiku.rag.utils.paths.get_default_data_dir", mock_get_default_data_dir
     )
 
     # Create both configs
@@ -565,7 +565,9 @@ def test_find_config_file_returns_none_when_nothing_exists(tmp_path, monkeypatch
 
     empty_data_dir = tmp_path / "data"
     empty_data_dir.mkdir()
-    monkeypatch.setattr("haiku.rag.utils.get_default_data_dir", lambda: empty_data_dir)
+    monkeypatch.setattr(
+        "haiku.rag.utils.paths.get_default_data_dir", lambda: empty_data_dir
+    )
 
     assert find_config_file() is None
 
@@ -790,7 +792,7 @@ def test_empty_data_dir_means_the_platform_default(value):
     """Both doc pages promise this, and soliplex's example config relies on it.
     Without it the value coerces to Path("") and the database lands in whatever
     directory the process started from."""
-    from haiku.rag.utils import get_default_data_dir
+    from haiku.rag.utils.paths import get_default_data_dir
 
     config = AppConfig.model_validate({"storage": {"data_dir": value}})
 

@@ -70,7 +70,7 @@ def find_config_file(cli_path: Path | None = None) -> Path | None:
         return cwd_config
 
     # Use same directory as data storage for config
-    from haiku.rag.utils import get_default_data_dir
+    from haiku.rag.utils.paths import get_default_data_dir
 
     data_dir = get_default_data_dir()
     user_config = data_dir / "haiku.rag.yaml"

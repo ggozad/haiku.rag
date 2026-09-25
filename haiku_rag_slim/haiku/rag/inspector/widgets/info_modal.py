@@ -8,7 +8,8 @@ from textual.containers import Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
-from haiku.rag.utils import format_bytes, get_package_versions
+from haiku.rag.utils.formatting import format_bytes
+from haiku.rag.utils.packages import get_package_versions
 
 if TYPE_CHECKING:
     from haiku.rag.client import HaikuRAG

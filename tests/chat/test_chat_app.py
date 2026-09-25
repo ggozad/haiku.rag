@@ -113,7 +113,7 @@ def test_run_chat_gates_capability_vision_on_qa_model(temp_db_path: Path, vision
     with (
         patch("haiku.rag.chat.app.ChatApp") as mock_app,
         patch("haiku.rag.config.get_config", return_value=config),
-        patch("haiku.rag.utils.get_model", side_effect=fake_get_model),
+        patch("haiku.rag.utils.models.get_model", side_effect=fake_get_model),
     ):
         from haiku.rag.chat import run_chat
 
@@ -339,7 +339,7 @@ async def test_clear_chat_keeps_the_document_filter(temp_db_path: Path):
     """Clearing the chat keeps the selected document filter in force."""
     from haiku.rag.capabilities.rag import STATE_NAMESPACE
     from haiku.rag.chat.widgets.document_filter_modal import DocumentFilterModal
-    from haiku.rag.tools.filters import build_document_id_filter
+    from haiku.rag.utils.sql import build_document_id_filter
 
     app, mock_client = _make_app_with_state(temp_db_path)
 
@@ -442,7 +442,7 @@ async def test_document_filter_updates_rag_state(temp_db_path: Path):
     """Test that selecting document filters updates RAGState.document_filter."""
     from haiku.rag.capabilities.rag import STATE_NAMESPACE
     from haiku.rag.chat.widgets.document_filter_modal import DocumentFilterModal
-    from haiku.rag.tools.filters import build_document_id_filter
+    from haiku.rag.utils.sql import build_document_id_filter
 
     app, mock_client = _make_app_with_state(temp_db_path)
 

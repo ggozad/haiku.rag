@@ -1,7 +1,7 @@
 import asyncio
 import math
 
-from haiku.rag.utils import raise_missing_extra
+from haiku.rag.utils.dependencies import raise_missing_extra
 
 try:
     import torch

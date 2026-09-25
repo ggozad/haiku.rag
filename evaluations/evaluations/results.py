@@ -9,7 +9,7 @@ from uuid import uuid4
 from pydantic_evals.lifecycle import CaseLifecycle
 from pydantic_evals.reporting import EvaluationReport, ReportCase, ReportCaseFailure
 
-from haiku.rag.utils import get_default_data_dir
+from haiku.rag.utils.paths import get_default_data_dir
 
 RUN_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 

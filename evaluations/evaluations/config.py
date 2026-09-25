@@ -110,7 +110,7 @@ class DatasetSpec:
         if override_path is not None:
             return override_path
 
-        from haiku.rag.utils import get_default_data_dir
+        from haiku.rag.utils.paths import get_default_data_dir
 
         data_dir = get_default_data_dir()
         return data_dir / "evaluations" / "dbs" / self.db_filename

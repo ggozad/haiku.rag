@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 def vlm_api_url(config: "AppConfig", model: "ModelConfig") -> str:
     """VLM chat-completions URL for a picture-description model; ``base_url`` may include ``/v1``."""
-    from haiku.rag.utils import vllm_base_url
+    from haiku.rag.utils.models import vllm_base_url
 
     if model.base_url:
         return f"{vllm_base_url(model.base_url).rstrip('/')}/chat/completions"
@@ -46,7 +46,7 @@ def vlm_api_headers(model: "ModelConfig") -> dict[str, str]:
 
 def vlm_api_params(model: "ModelConfig", max_tokens: int) -> dict[str, object]:
     """Request body fields docling posts alongside the picture."""
-    from haiku.rag.utils import reasoning_effort
+    from haiku.rag.utils.models import reasoning_effort
 
     params: dict[str, object] = {
         "model": model.name,

@@ -8,7 +8,7 @@ from pydantic_ai.messages import BinaryContent
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig
-from haiku.rag.utils import image_binary_content
+from haiku.rag.utils.images import image_binary_content
 
 
 def make_image_bytes(fmt: str) -> bytes:

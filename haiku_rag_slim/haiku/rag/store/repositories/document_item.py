@@ -4,7 +4,7 @@ from collections.abc import Mapping, Sequence
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.document_item import DocumentItem
 from haiku.rag.store.schema import DocumentItemRecord
-from haiku.rag.utils import escape_sql_string
+from haiku.rag.utils.sql import escape_sql_string
 
 # Per-item metadata columns. The payload column ``picture_data`` is fetched
 # explicitly via ``get_picture_bytes`` / ``get_pictures_for_chunk`` /

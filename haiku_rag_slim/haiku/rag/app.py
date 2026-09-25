@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from haiku.rag.store.engine import Store
     from haiku.rag.store.models import SearchResult
 from haiku.rag.config import redact_secrets
-from haiku.rag.utils import format_bytes, format_citations_rich
+from haiku.rag.utils.formatting import format_bytes, format_citations_rich
 
 logger = logging.getLogger(__name__)
 

@@ -13,7 +13,7 @@ from haiku.rag.store.schema import (
     get_documents_arrow_schema,
     query_to_pydantic,
 )
-from haiku.rag.utils import escape_sql_string
+from haiku.rag.utils.sql import escape_sql_string
 
 # Ids per `id IN (...)` content lookup. Keeps the filter string bounded on an
 # unpaginated listing of a large database.

@@ -16,7 +16,7 @@ from textual.widget import Widget
 from textual.widgets import Static, TextArea
 
 from haiku.rag.chat.widgets.image_select import ImageAdded, ImageSelect
-from haiku.rag.utils import image_binary_content
+from haiku.rag.utils.images import image_binary_content
 
 MAX_PROMPT_LINES = 10
 

@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.store.models.chunk import SearchResult, qualified_id
-from haiku.rag.tools.search import picture_keys
+from haiku.rag.utils.images import picture_keys
 
 
 class CodeExecutionEntry(BaseModel):

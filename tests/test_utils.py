@@ -10,7 +10,8 @@ from haiku.rag.config import get_config
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.converters import get_converter
 from haiku.rag.store.exceptions import ReadOnlyError
-from haiku.rag.utils import gather_all, get_model
+from haiku.rag.utils.concurrency import gather_all
+from haiku.rag.utils.models import get_model
 from tests.conftest import capture_logs
 
 # Check for optional dependencies
@@ -19,7 +20,7 @@ HAS_GOOGLE = importlib.util.find_spec("google.genai") is not None
 HAS_GROQ = importlib.util.find_spec("groq") is not None
 HAS_BEDROCK = importlib.util.find_spec("botocore") is not None
 HAS_MISTRAL = importlib.util.find_spec("mistralai") is not None
-UTILS_LOGGER = logging.getLogger("haiku.rag.utils")
+UTILS_LOGGER = logging.getLogger("haiku.rag.utils.models")
 
 
 async def test_text_to_docling_document():
@@ -723,7 +724,7 @@ def test_get_model_rejects_unknown_provider(provider):
 
 def test_get_package_versions():
     """Test get_package_versions returns expected keys."""
-    from haiku.rag.utils import get_package_versions
+    from haiku.rag.utils.packages import get_package_versions
 
     versions = get_package_versions()
 
@@ -744,7 +745,7 @@ def test_get_package_versions():
 
 def test_apply_common_settings_no_settings():
     from haiku.rag.config.models import ModelConfig
-    from haiku.rag.utils import apply_common_settings
+    from haiku.rag.utils.models import apply_common_settings
 
     mc = ModelConfig(provider="openai", name="gpt-4o")
     result = apply_common_settings(None, mc)
@@ -753,7 +754,7 @@ def test_apply_common_settings_no_settings():
 
 def test_apply_common_settings_temperature():
     from haiku.rag.config.models import ModelConfig
-    from haiku.rag.utils import apply_common_settings
+    from haiku.rag.utils.models import apply_common_settings
 
     mc = ModelConfig(provider="openai", name="gpt-4o", temperature=0.7)
     result = apply_common_settings(None, mc)
@@ -763,7 +764,7 @@ def test_apply_common_settings_temperature():
 
 def test_apply_common_settings_max_tokens():
     from haiku.rag.config.models import ModelConfig
-    from haiku.rag.utils import apply_common_settings
+    from haiku.rag.utils.models import apply_common_settings
 
     mc = ModelConfig(provider="openai", name="gpt-4o", max_tokens=500)
     result = apply_common_settings(None, mc)
@@ -773,7 +774,7 @@ def test_apply_common_settings_max_tokens():
 
 def test_apply_common_settings_existing():
     from haiku.rag.config.models import ModelConfig
-    from haiku.rag.utils import apply_common_settings
+    from haiku.rag.utils.models import apply_common_settings
 
     mc = ModelConfig(provider="openai", name="gpt-4o", temperature=0.5)
     existing = {"some_key": "value"}
@@ -787,7 +788,7 @@ def test_apply_common_settings_existing():
 
 
 def test_format_bytes():
-    from haiku.rag.utils import format_bytes
+    from haiku.rag.utils.formatting import format_bytes
 
     assert format_bytes(0) == "0.0 B"
     assert format_bytes(512) == "512.0 B"
@@ -811,14 +812,14 @@ def _render_rich(renderables: list) -> str:
 
 
 async def test_format_citations_rich_empty():
-    from haiku.rag.utils import format_citations_rich
+    from haiku.rag.utils.formatting import format_citations_rich
 
     assert await format_citations_rich([]) == []
 
 
 async def test_format_citations_rich_header_and_footer():
     from haiku.rag.store.models.citation import Citation
-    from haiku.rag.utils import format_citations_rich
+    from haiku.rag.utils.formatting import format_citations_rich
 
     citation = Citation(
         document_id="doc-uuid-1",
@@ -840,7 +841,7 @@ async def test_format_citations_rich_header_and_footer():
 
 async def test_format_citations_rich_names_a_single_page():
     from haiku.rag.store.models.citation import Citation
-    from haiku.rag.utils import format_citations_rich
+    from haiku.rag.utils.formatting import format_citations_rich
 
     citation = Citation(
         document_id="doc1",
@@ -859,7 +860,7 @@ async def test_format_citations_rich_names_the_database_when_federating():
     from unittest.mock import AsyncMock
 
     from haiku.rag.store.models.citation import Citation
-    from haiku.rag.utils import format_citations_rich
+    from haiku.rag.utils.formatting import format_citations_rich
 
     citation = Citation(
         document_id="doc-uuid-1",
@@ -884,7 +885,7 @@ async def test_an_unattributable_picture_renders_its_marker(tmp_path):
     from rich.console import Console
 
     from haiku.rag.store.models.citation import Citation
-    from haiku.rag.utils import format_citations_rich
+    from haiku.rag.utils.formatting import format_citations_rich
 
     covering = AsyncMock()
     covering.covers_multiple = True
@@ -908,7 +909,7 @@ async def test_an_unattributable_picture_renders_its_marker(tmp_path):
 def test_truncated_marks_what_it_dropped():
     """An unmarked cut reads as the value: a sentence ending "in 1991" becomes
     one ending "in 1"."""
-    from haiku.rag.utils import truncated
+    from haiku.rag.utils.formatting import truncated
 
     sentence = "Station Kestrel sits at 980 metres and was commissioned in 1991."
 
@@ -924,7 +925,7 @@ async def test_format_citations_rich_omits_the_database_for_one_database():
     from unittest.mock import AsyncMock
 
     from haiku.rag.store.models.citation import Citation
-    from haiku.rag.utils import format_citations_rich
+    from haiku.rag.utils.formatting import format_citations_rich
 
     citation = Citation(
         document_id="doc-uuid-1",
@@ -945,7 +946,7 @@ async def test_format_citations_rich_omits_the_database_for_one_database():
 
 async def test_format_citations_rich_truncates_long_content():
     from haiku.rag.store.models.citation import Citation
-    from haiku.rag.utils import CITATION_PREVIEW_CHARS, format_citations_rich
+    from haiku.rag.utils.formatting import CITATION_PREVIEW_CHARS, format_citations_rich
 
     citation = Citation(
         document_id="doc1",
@@ -960,7 +961,7 @@ async def test_format_citations_rich_truncates_long_content():
 
 async def test_format_citations_rich_full_keeps_the_whole_content():
     from haiku.rag.store.models.citation import Citation
-    from haiku.rag.utils import CITATION_PREVIEW_CHARS, format_citations_rich
+    from haiku.rag.utils.formatting import CITATION_PREVIEW_CHARS, format_citations_rich
 
     content = "A" * (CITATION_PREVIEW_CHARS + 200)
     citation = Citation(
@@ -977,7 +978,7 @@ async def test_format_citations_rich_full_keeps_the_whole_content():
 
 async def test_format_citations_rich_picture_marker_without_client():
     from haiku.rag.store.models.citation import Citation
-    from haiku.rag.utils import format_citations_rich
+    from haiku.rag.utils.formatting import format_citations_rich
 
     citation = Citation(
         document_id="doc1",
@@ -996,43 +997,14 @@ async def test_format_citations_rich_picture_marker_without_client():
 def test_get_default_data_dir():
     from pathlib import Path
 
-    from haiku.rag.utils import get_default_data_dir
+    from haiku.rag.utils.paths import get_default_data_dir
 
     result = get_default_data_dir()
     assert isinstance(result, Path)
     assert "haiku.rag" in str(result)
 
 
-# --- build_prompt tests ---
-
-
-def test_build_prompt_without_preamble():
-    from haiku.rag.config.models import AppConfig
-    from haiku.rag.utils import build_prompt
-
-    config = AppConfig()
-    result = build_prompt("Base prompt", config)
-    assert result == "Base prompt"
-
-
-def test_build_prompt_with_preamble():
-    from haiku.rag.config.models import AppConfig, PromptsConfig
-    from haiku.rag.utils import build_prompt
-
-    config = AppConfig(prompts=PromptsConfig(domain_preamble="You are a legal expert."))
-    result = build_prompt("Base prompt", config)
-    assert result == "You are a legal expert.\n\nBase prompt"
-
-
 # --- is_up_to_date tests ---
-
-
-def test_cosine_similarity_zero_norm():
-    from haiku.rag.utils import cosine_similarity
-
-    assert cosine_similarity([0, 0, 0], [1, 2, 3]) == 0.0
-    assert cosine_similarity([1, 2, 3], [0, 0, 0]) == 0.0
-    assert cosine_similarity([0, 0], [0, 0]) == 0.0
 
 
 async def test_is_up_to_date(monkeypatch):
@@ -1040,7 +1012,7 @@ async def test_is_up_to_date(monkeypatch):
 
     import httpx
 
-    from haiku.rag.utils import is_up_to_date
+    from haiku.rag.utils.packages import is_up_to_date
 
     mock_response = MagicMock()
     mock_response.json.return_value = {"info": {"version": "0.0.1"}}
@@ -1061,7 +1033,7 @@ async def test_is_up_to_date(monkeypatch):
 
 
 def test_parse_model_option():
-    from haiku.rag.utils import parse_model_option
+    from haiku.rag.utils.models import parse_model_option
 
     result = parse_model_option("anthropic:claude-sonnet-4-20250514")
     assert result.provider == "anthropic"
@@ -1075,16 +1047,9 @@ def test_parse_model_option():
             parse_model_option(bad)
 
 
-def test_cosine_similarity_identical_vectors():
-    from haiku.rag.utils import cosine_similarity
-
-    assert cosine_similarity([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
-    assert cosine_similarity([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
-
-
 async def test_format_citations_rich_separates_multiple_citations():
     from haiku.rag.store.models.citation import Citation
-    from haiku.rag.utils import format_citations_rich
+    from haiku.rag.utils.formatting import format_citations_rich
 
     citations = [
         Citation(
@@ -1115,7 +1080,7 @@ async def test_format_citations_rich_separates_multiple_citations():
 async def test_render_picture_handles_stored_bytes(stored, renders):
     from unittest.mock import AsyncMock
 
-    from haiku.rag.utils import _render_picture
+    from haiku.rag.utils.formatting import _render_picture
 
     if stored == "png":
         from io import BytesIO
@@ -1141,7 +1106,7 @@ async def test_render_picture_handles_stored_bytes(stored, renders):
 
 
 async def test_render_picture_without_client_returns_none():
-    from haiku.rag.utils import _render_picture
+    from haiku.rag.utils.formatting import _render_picture
 
     assert await _render_picture(None, "doc1", "#/pictures/0") is None
 
@@ -1149,7 +1114,7 @@ async def test_render_picture_without_client_returns_none():
 def test_get_package_versions_reports_missing_docling(monkeypatch):
     from importlib import metadata as importlib_metadata
 
-    from haiku.rag.utils import get_package_versions
+    from haiku.rag.utils.packages import get_package_versions
 
     real_version = importlib_metadata.version
 

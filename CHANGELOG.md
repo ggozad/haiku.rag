@@ -20,6 +20,16 @@
   `system_one` and the other was not, or when they were judged through
   different `system_one` models.
 
+### Changed
+
+- `haiku.rag.utils` is a package with no re-exports; import each helper from its module: `haiku.rag.utils.models` (`get_model`, `parse_model_option`, `check_api_key_supported`), `haiku.rag.utils.sql` (`escape_sql_string`, `build_document_id_filter`), `haiku.rag.utils.formatting` (`format_citations_rich`, `format_bytes`, `truncated`), `haiku.rag.utils.images` (`image_media_type`, `image_data_uri`, `image_binary_content`), `haiku.rag.utils.concurrency` (`gather_all`), `haiku.rag.utils.paths` (`get_default_data_dir`, `locate_database`), `haiku.rag.utils.packages` (`get_package_versions`, `is_up_to_date`), `haiku.rag.utils.dependencies` (`raise_missing_extra`).
+- `DocumentInfo`, `OutlineNode` and `DocumentSection` moved from `haiku.rag.tools.document` to `haiku.rag.mcp`.
+
+### Removed
+
+- `haiku.rag.tools`, including `create_search_toolset`, `create_document_toolset`, `RAGDeps` and `build_multi_document_filter`; use `RAGCapability` (`haiku.rag.capabilities.rag.create_capability`).
+- `haiku.rag.utils.cosine_similarity` and `build_prompt`.
+
 ### Fixed
 
 - `evaluations run --no-telemetry` names the result file `<name>.notrace-<run id>.jsonl` and records no trace id, instead of the all-zero trace id.

@@ -5,11 +5,10 @@ import pytest
 from fastmcp.exceptions import ToolError
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.mcp import DocumentInfo, create_mcp_server
 from haiku.rag.mcp import _covering as _mcp_covering
-from haiku.rag.mcp import create_mcp_server
 from haiku.rag.store.exceptions import UnknownDatabaseError
 from haiku.rag.store.models import Chunk, Document, SearchResult
-from haiku.rag.tools.document import DocumentInfo
 from tests.multi_db.helpers import _config, _seed, _seed_expandable
 
 

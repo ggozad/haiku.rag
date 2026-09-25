@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from pydantic_ai import Agent
 
 from haiku.rag.config.models import AppConfig, ModelConfig
-from haiku.rag.utils import get_model
+from haiku.rag.utils.models import get_model
 
 ANSWER_EQUIVALENCE_RUBRIC = """You are evaluating whether a generated answer is equivalent to an expected answer for a given question.
 

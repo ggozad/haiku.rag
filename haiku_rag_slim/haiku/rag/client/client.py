@@ -27,7 +27,8 @@ from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.repositories.document_item import DocumentItemRepository
-from haiku.rag.utils import escape_sql_string, gather_all
+from haiku.rag.utils.concurrency import gather_all
+from haiku.rag.utils.sql import escape_sql_string
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument

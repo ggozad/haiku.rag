@@ -22,7 +22,7 @@ from haiku.rag.sandbox.dependencies import AnalysisContext
 from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX, DocumentItem
 from haiku.rag.telemetry import logfire
-from haiku.rag.utils import gather_all
+from haiku.rag.utils.concurrency import gather_all
 
 if TYPE_CHECKING:
     from pathlib import Path, PurePosixPath

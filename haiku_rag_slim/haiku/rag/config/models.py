@@ -4,7 +4,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from haiku.rag.utils import get_default_data_dir
+from haiku.rag.utils.paths import get_default_data_dir
 
 # pydantic-ai's `ThinkingEffort`; importing it loads the whole package at config import.
 ThinkingEffort = Literal["minimal", "low", "medium", "high", "xhigh"]

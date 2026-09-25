@@ -47,7 +47,7 @@ from haiku.rag.store.models.citation import (
     ambiguous_citation,
     resolve_citations,
 )
-from haiku.rag.tools.search import PictureKey, build_image_content_from_results
+from haiku.rag.utils.images import PictureKey, build_image_content_from_results
 
 STATE_NAMESPACE = "rag"
 CAPABILITY_ID = "haiku-rag"

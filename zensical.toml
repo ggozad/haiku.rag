@@ -43,7 +43,6 @@ nav = [
     { Develop = [
         { Python = "python.md" },
         { "Custom pipelines" = "custom-pipelines.md" },
-        { Toolsets = "tools.md" },
         { "Web app" = "apps.md" },
     ] },
     { Benchmarks = "benchmarks.md" },

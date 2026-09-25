@@ -2,7 +2,7 @@ import os
 
 from haiku.rag.reranking.vllm import VLLMReranker
 from haiku.rag.store.models.chunk import Chunk
-from haiku.rag.utils import image_data_uri
+from haiku.rag.utils.images import image_data_uri
 
 BASE_URL = "https://openrouter.ai/api/v1"
 API_KEY_ENV = "OPENROUTER_API_KEY"

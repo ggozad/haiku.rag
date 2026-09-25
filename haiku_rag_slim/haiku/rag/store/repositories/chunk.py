@@ -11,7 +11,7 @@ from lancedb.rerankers import RRFReranker
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.chunk import Chunk, SearchType
 from haiku.rag.store.schema import ensure_indexes, query_to_pydantic
-from haiku.rag.utils import escape_sql_string
+from haiku.rag.utils.sql import escape_sql_string
 
 logger = logging.getLogger(__name__)
 
@@ -373,7 +373,7 @@ class ChunkRepository:
         rows expose which chunks contain them, so callers can bridge from an
         item to a `cite`-acceptable chunk_id without a separate search.
         """
-        from haiku.rag.utils import escape_sql_string
+        from haiku.rag.utils.sql import escape_sql_string
 
         if not document_ids:
             return {}

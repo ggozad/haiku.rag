@@ -9,7 +9,7 @@ from haiku.rag.store.models.chunk import (
     qualified_id,
 )
 from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX
-from haiku.rag.utils import gather_all
+from haiku.rag.utils.concurrency import gather_all
 
 if TYPE_CHECKING:
     from PIL import Image as PILImage

@@ -411,7 +411,7 @@ class ChatApp(App):
         and over a set `sources` restricts the search to the databases the
         selection names. One database needs no narrowing by source.
         """
-        from haiku.rag.tools.filters import build_document_id_filter
+        from haiku.rag.utils.sql import build_document_id_filter
 
         self._document_filter = selected
 

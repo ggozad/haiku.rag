@@ -1,6 +1,6 @@
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.reranking.base import RerankerBase
-from haiku.rag.utils import check_api_key_supported
+from haiku.rag.utils.models import check_api_key_supported
 
 
 def get_reranker(config: AppConfig | None = None) -> RerankerBase | None:

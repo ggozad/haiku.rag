@@ -6,7 +6,7 @@ from haiku.rag.config.models import AppConfig, ModelConfig, RerankingConfig
 from haiku.rag.reranking import get_reranker
 from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk
-from haiku.rag.utils import raise_missing_extra
+from haiku.rag.utils.dependencies import raise_missing_extra
 
 # Providers whose constructor loads a model in-process. Factory-routing tests
 # patch the loader so they assert dispatch without paying the model load.

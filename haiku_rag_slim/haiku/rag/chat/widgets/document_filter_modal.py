@@ -7,8 +7,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, Input, Static
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.tools.filters import build_document_id_filter
-from haiku.rag.utils import escape_sql_string
+from haiku.rag.utils.sql import build_document_id_filter, escape_sql_string
 
 # Documents listed at once. Mounting a checkbox per document wedges the modal on
 # a large corpus, so the rest is reached through the search box.

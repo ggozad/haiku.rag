@@ -227,20 +227,6 @@ class TestLookupByIdentifier:
         assert by_uri is not None
         assert (by_uri.source, by_uri.uri) == ("beta", "test://beta/only")
 
-    async def test_a_partial_match_is_read_from_the_database_that_matched(
-        self, tmp_path
-    ):
-        from haiku.rag.tools.document import find_document
-
-        config = await self._collided(tmp_path)
-
-        async with HaikuRAG(config=config) as rag:
-            by_uri = await find_document(rag, "beta/onl")
-            by_title = await find_document(rag, "only in bet")
-
-        assert by_uri is not None and by_uri.source == "beta"
-        assert by_title is not None and by_title.source == "beta"
-
     async def test_a_source_is_checked_against_what_the_client_covers(self, tmp_path):
         """A lookup naming a database the client does not cover is wrong rather
         than answerable from the one it does cover."""
