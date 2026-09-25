@@ -38,6 +38,7 @@
 
 ### Security
 
+- `ChunkRepository` escapes ids in `search`, `get_by_id`, `get_by_document_id`, `count_by_document_id` and `delete_by_document_id`. A chunk id passed to `cite` or to the app's `/api/visualize` route no longer selects other chunks.
 - `haiku-rag settings` and the ingester's `GET /config` mask the `ingester.queue.dburi` password, every value under `headers` and `fetch_headers`, and credentials embedded in any URL. `max_tokens` and `chunking_tokenizer` are no longer masked.
 - The `settings` table stores only the version and `embeddings.model` `provider`, `name` and `vector_dim`. Earlier releases stored the whole configuration, credentials and resolved `${VAR}` values included. Existing databases need `haiku-rag migrate`. To purge older table versions, stop every process using the database, delete tags taken before the migration, and run `haiku-rag vacuum --retention-seconds 0`. Rotate the credentials of any database that was shared or kept on object storage.
 

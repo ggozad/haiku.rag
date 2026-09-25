@@ -934,3 +934,77 @@ async def test_search_applies_configured_nprobes(
         )
 
     assert probed == [7]
+
+
+async def test_chunk_lookups_read_an_id_as_a_literal(temp_db_path):
+    """A quote in an id is part of the id, never SQL."""
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
+    from haiku.rag.store.models.chunk import Chunk
+
+    docling = DoclingDocument(name="doc")
+    docling.add_text(label=DocItemLabel.TEXT, text="stored")
+    dim = get_config().embeddings.model.vector_dim
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.import_document(
+            docling, [Chunk(content="stored", embedding=[0.1] * dim, order=0)]
+        )
+        repo = client.chunk_repository
+        injected = "x' OR id != 'x"
+        injected_document = "x' OR document_id != 'x"
+
+        assert await repo.get_by_id(injected) is None
+        assert await repo.get_by_document_id(injected_document) == []
+        assert await repo.count_by_document_id(injected_document) == 0
+        assert await repo.delete_by_document_id(injected_document) is False
+        assert len(await repo.list_all()) == 1
+
+
+async def test_deleting_chunks_by_a_document_id_holding_a_quote(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        store = client.store
+        await store.chunks_table.add(
+            [
+                store.ChunkRecord(
+                    document_id="it's",
+                    content="stored",
+                    content_fts="stored",
+                    metadata="{}",
+                    order=0,
+                    vector=[0.1] * store.embedder.vector_dim,
+                )
+            ]
+        )
+
+        assert await client.chunk_repository.delete_by_document_id("it's") is True
+        assert await client.chunk_repository.list_all() == []
+
+
+async def test_searching_a_document_whose_id_holds_a_quote(temp_db_path):
+    from haiku.rag.store.schema import DocumentMetaRecord, ensure_indexes
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        store = client.store
+        await store.document_meta_table.add(
+            [DocumentMetaRecord(id="it's", uri="mem://quoted")]
+        )
+        await store.chunks_table.add(
+            [
+                store.ChunkRecord(
+                    document_id="it's",
+                    content="stored words",
+                    content_fts="stored words",
+                    metadata="{}",
+                    order=0,
+                    vector=[0.1] * store.embedder.vector_dim,
+                )
+            ]
+        )
+        await ensure_indexes(store.chunks_table, "chunks")
+
+        results = await client.chunk_repository.search(
+            "stored", search_type="fts", filter="uri = 'mem://quoted'"
+        )
+
+        assert [chunk.document_uri for chunk, _ in results] == ["mem://quoted"]
