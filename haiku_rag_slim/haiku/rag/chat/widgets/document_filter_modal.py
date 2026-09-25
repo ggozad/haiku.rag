@@ -7,7 +7,11 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, Input, Static
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.utils.sql import build_document_id_filter, escape_sql_string
+from haiku.rag.utils.sql import (
+    build_document_id_filter,
+    escape_like_pattern,
+    escape_sql_string,
+)
 
 # Documents listed at once. Mounting a checkbox per document wedges the modal on
 # a large corpus, so the rest is reached through the search box.
@@ -55,10 +59,7 @@ def search_filter(term: str) -> str | None:
     term = term.strip()
     if not term:
         return None
-    literal = term.lower()
-    for wildcard in ("\\", "%", "_"):
-        literal = literal.replace(wildcard, f"\\{wildcard}")
-    escaped = escape_sql_string(f"%{literal}%")
+    escaped = escape_sql_string(f"%{escape_like_pattern(term.lower())}%")
     return (
         f"LOWER(title) LIKE '{escaped}' ESCAPE '\\' "
         f"OR LOWER(uri) LIKE '{escaped}' ESCAPE '\\'"

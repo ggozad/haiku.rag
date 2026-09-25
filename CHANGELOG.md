@@ -32,6 +32,7 @@
 
 ### Fixed
 
+- Deleting or re-ingesting a document whose URI contains `_` or `%` no longer deletes the PDF attachments of another document.
 - `evaluations run --no-telemetry` names the result file `<name>.notrace-<run id>.jsonl` and records no trace id, instead of the all-zero trace id.
 
 ## [0.88.2] - 2026-09-24

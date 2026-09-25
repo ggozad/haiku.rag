@@ -15,3 +15,9 @@ def test_build_document_id_filter_matches_exactly():
 
 def test_build_document_id_filter_escapes_quotes():
     assert build_document_id_filter(["O'Reilly"]) == "id IN ('O''Reilly')"
+
+
+def test_escape_like_pattern_makes_wildcards_literal():
+    from haiku.rag.utils.sql import escape_like_pattern
+
+    assert escape_like_pattern("a_b%c\\d") == "a\\_b\\%c\\\\d"

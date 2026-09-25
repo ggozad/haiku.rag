@@ -552,3 +552,83 @@ async def test_extract_pdf_attachments_called_off_event_loop_thread(
         "_extract_pdf_attachments ran on the event-loop thread; "
         "it must be dispatched via asyncio.to_thread to avoid blocking the loop"
     )
+
+
+async def _two_lookalike_parents(client: HaikuRAG, underscored_uri: str):
+    """Parents at `underscored_uri` and its `_`-to-`-` lookalike, one attachment each."""
+    pdf_bytes = build_pdf([("a.txt", b"A")])
+    underscored = await _make_parent(client, underscored_uri, pdf_bytes)
+    await _reconcile_pdf_attachments(writing(client), underscored, pdf_bytes, depth=0)
+    hyphenated_uri = underscored_uri.replace("_", "-")
+    hyphenated = await _make_parent(client, hyphenated_uri, pdf_bytes)
+    await _reconcile_pdf_attachments(writing(client), hyphenated, pdf_bytes, depth=0)
+    return underscored, f"{hyphenated_uri}#attachment=a.txt"
+
+
+async def test_reingest_leaves_a_lookalike_parents_attachments(
+    temp_db_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent, lookalike_child = await _two_lookalike_parents(
+            client, "file:///fixtures/report_1.pdf"
+        )
+
+        second = build_pdf([("b.txt", b"B")])
+        await _reconcile_pdf_attachments(writing(client), parent, second, depth=0)
+
+        assert (
+            await client.get_document_by_uri(f"{parent.uri}#attachment=a.txt") is None
+        )
+        assert await client.get_document_by_uri(lookalike_child) is not None
+
+
+async def test_cascade_delete_leaves_a_lookalike_parents_attachments(
+    temp_db_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent, lookalike_child = await _two_lookalike_parents(
+            client, "file:///fixtures/report_1.pdf"
+        )
+
+        await client.delete_document(parent.id)
+
+        assert (
+            await client.get_document_by_uri(f"{parent.uri}#attachment=a.txt") is None
+        )
+        assert await client.get_document_by_uri(lookalike_child) is not None
+
+
+async def test_cascade_delete_of_a_percent_uri_leaves_other_parents_attachments(
+    temp_db_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        pdf_bytes = build_pdf([("a.txt", b"A")])
+        other = await _make_parent(client, "file:///fixtures/other.pdf", pdf_bytes)
+        await _reconcile_pdf_attachments(writing(client), other, pdf_bytes, depth=0)
+        percent = await _make_parent(client, "file:///fixtures/%.pdf", pdf_bytes)
+        await _reconcile_pdf_attachments(writing(client), percent, pdf_bytes, depth=0)
+
+        await client.delete_document(percent.id)
+
+        assert (
+            await client.get_document_by_uri("file:///fixtures/%.pdf#attachment=a.txt")
+            is None
+        )
+        assert (
+            await client.get_document_by_uri(
+                "file:///fixtures/other.pdf#attachment=a.txt"
+            )
+            is not None
+        )

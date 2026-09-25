@@ -24,6 +24,7 @@ from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import DocumentItem, extract_items
 from haiku.rag.telemetry import logfire
 from haiku.rag.uri import is_local_uri, uri_to_path
+from haiku.rag.utils.sql import escape_like_pattern, escape_sql_string
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
@@ -133,9 +134,10 @@ def parent_uri_filter(parent_uri: str) -> str:
     equals ``parent_uri``. ``metadata`` is stored as a JSON string produced by
     the standard library's ``json.dumps`` (which inserts ``": "`` between key
     and value), so the match is a substring search over that serialized form —
-    escape JSON-meaningful chars in the URI, then SQL-escape single quotes."""
-    json_fragment = json.dumps(parent_uri)[1:-1].replace("'", "''")
-    return f'metadata LIKE \'%"parent_uri": "{json_fragment}"%\''
+    escape JSON-meaningful chars in the URI, then `LIKE` wildcards, then single
+    quotes."""
+    json_fragment = escape_sql_string(escape_like_pattern(json.dumps(parent_uri)[1:-1]))
+    return f"metadata LIKE '%\"parent_uri\": \"{json_fragment}\"%' ESCAPE '\\'"
 
 
 async def _extract_items_observed(

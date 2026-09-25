@@ -8,7 +8,9 @@ from tests.conftest import for_path
 
 def test_parent_uri_filter_simple():
     f = parent_uri_filter("file:///path/to/parent.pdf")
-    assert f == 'metadata LIKE \'%"parent_uri": "file:///path/to/parent.pdf"%\''
+    assert f == (
+        "metadata LIKE '%\"parent_uri\": \"file:///path/to/parent.pdf\"%' ESCAPE '\\'"
+    )
 
 
 def test_parent_uri_filter_escapes_single_quote():
