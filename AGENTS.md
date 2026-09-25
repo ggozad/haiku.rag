@@ -47,11 +47,10 @@ haiku_rag_slim/haiku/rag/   # Source code
 │   ├── policy.py           # CitationPolicyCapability, CitationPolicyState
 │   ├── rag.py              # RAGCapability, RAGState, create_capability
 │   └── instructions/       # Model instructions (rag.md, rag_multiple_collections.md)
-├── tools/                  # Reusable pydantic-ai FunctionToolsets
-│   ├── context.py          # RAGDeps protocol
-│   ├── filters.py          # SQL filter builders
-│   ├── search.py           # create_search_toolset()
-│   └── document.py         # create_document_toolset()
+├── tools/                  # Shared search and document helpers
+│   ├── filters.py          # Document ID filters
+│   ├── search.py           # Picture collection and image content
+│   └── document.py         # Document response models
 ├── chunkers/               # docling-local, docling-serve
 ├── converters/             # docling-local, docling-serve, pdf_split.py, text_utils.py, exceptions.py
 ├── config/                 # models.py (all config classes), loader.py
@@ -158,8 +157,6 @@ app/                        # Conversational RAG application (see below)
   - `from_spec` delegates here so agent specs can declare the capability. `db_path` accepts a `str`.
 - `create_capability()` → `EvidenceCompactionCapability` (capabilities/compaction.py). Optional, registering it is the only switch. Replaces earlier questions' evidence on the *request* with a capsule of what was cited (pictures included, fetched through the owning capability). Other earlier evidence returns as a receipt. No config, no budget: it reduces a request without bounding it.
 - `create_capability()` → `CitationPolicyCapability` (capabilities/policy.py). Optional. Requires every answer to declare its grounding, asks once per question, records failures in `CitationPolicyState.violations`, never asks the model to change its answer. Enforced when the question retrieved evidence or the conversation already cited something.
-- `create_search_toolset(config, ...)` → `FunctionToolset[RAGDeps]` (tools/search.py)
-- `create_document_toolset(config, ...)` → `FunctionToolset[RAGDeps]` (tools/document.py)
 
 **Base Classes:**
 - `EmbedderWrapper` (embeddings/__init__.py) — wraps pydantic-ai `Embedder`

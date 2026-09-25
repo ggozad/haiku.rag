@@ -1,24 +1,19 @@
 """Picture-bearing search results: image_data attachment, expansion, multimodal ToolReturn."""
 
 import base64
-from dataclasses import dataclass
 from io import BytesIO
 from unittest.mock import AsyncMock
 
 import pytest
 from PIL import Image as PILImageModule
-from pydantic_ai import RunContext
 from pydantic_ai.messages import BinaryContent, ToolReturn
-from pydantic_ai.models.test import TestModel
-from pydantic_ai.usage import RunUsage
 
 from haiku.rag.capabilities.rag import RAGState, create_capability
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.search import _populate_image_data
-from haiku.rag.config import AppConfig, get_config
+from haiku.rag.config import AppConfig
 from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document_item import DocumentItem
-from haiku.rag.tools.search import create_search_toolset
 from tests.conftest import writing
 from tests.test_context import _fetch_and_expand
 
@@ -368,111 +363,6 @@ async def test_expand_context_does_not_attach_expansion_added_pictures(temp_db_p
         assert out.image_data is None
 
 
-@dataclass
-class _Deps:
-    client: object
-
-
-async def test_search_tool_returns_multimodal_when_picture_present():
-    """The agent-facing search tool must wrap text + BinaryContent in ToolReturn
-    whenever a result carries picture image_data AND the QA model is vision-capable."""
-
-    picture_result = SearchResult(
-        content="A diagram of the layout",
-        score=1.0,
-        chunk_id="chunk-1",
-        document_id="doc-1",
-        doc_item_refs=["#/pictures/0"],
-        labels=["picture"],
-        image_data={"#/pictures/0": PICTURE_B64},
-    )
-
-    fake_client = AsyncMock()
-    fake_client.search = AsyncMock(return_value=[picture_result])
-    fake_client.expand_context = AsyncMock(return_value=[picture_result])
-
-    config = AppConfig()
-    config.qa.model.vision = True
-    toolset = create_search_toolset(config, expand_context=False)
-    func = toolset.tools["search"].function
-
-    ctx = RunContext(
-        deps=_Deps(client=fake_client),  # type: ignore[arg-type]
-        model=TestModel(),
-        usage=RunUsage(),
-        run_id="run-1",
-    )
-    result = await func(ctx, "anything")
-
-    assert isinstance(result, ToolReturn)
-    assert isinstance(result.return_value, str)
-    assert "Type: picture" in result.return_value or "rank 1" in result.return_value
-    assert result.content is not None
-    images = [c for c in result.content if isinstance(c, BinaryContent)]
-    assert len(images) == 1
-    part = images[0]
-    assert isinstance(part, BinaryContent)
-    assert part.media_type == "image/png"
-    assert part.identifier == "#/pictures/0"
-    assert part.data == PICTURE_BYTES
-
-
-async def test_search_tool_attaches_same_self_ref_from_different_documents():
-    """Two different documents both have ``#/pictures/0`` — the dedup must
-    key on ``(document_id, self_ref)`` so each document's figure reaches
-    the model. Keying on ``self_ref`` alone silently drops the second
-    document's bytes, leaving the model with text only for that result."""
-    other_bytes = _make_png("blue")
-    other_b64 = base64.b64encode(other_bytes).decode("ascii")
-
-    doc_a = SearchResult(
-        content="Figure from doc A",
-        score=1.0,
-        chunk_id="chunk-a",
-        document_id="doc-A",
-        doc_item_refs=["#/pictures/0"],
-        labels=["picture"],
-        image_data={"#/pictures/0": PICTURE_B64},
-    )
-    doc_b = SearchResult(
-        content="Figure from doc B (same self_ref, different bytes)",
-        score=0.9,
-        chunk_id="chunk-b",
-        document_id="doc-B",
-        doc_item_refs=["#/pictures/0"],
-        labels=["picture"],
-        image_data={"#/pictures/0": other_b64},
-    )
-
-    fake_client = AsyncMock()
-    fake_client.search = AsyncMock(return_value=[doc_a, doc_b])
-    fake_client.expand_context = AsyncMock(return_value=[doc_a, doc_b])
-
-    config = AppConfig()
-    config.qa.model.vision = True
-    toolset = create_search_toolset(config, expand_context=False)
-    func = toolset.tools["search"].function
-
-    ctx = RunContext(
-        deps=_Deps(client=fake_client),  # type: ignore[arg-type]
-        model=TestModel(),
-        usage=RunUsage(),
-        run_id="run-1",
-    )
-    result = await func(ctx, "anything")
-
-    assert isinstance(result, ToolReturn)
-    assert result.content is not None
-    images = [c for c in result.content if isinstance(c, BinaryContent)]
-    assert len(images) == 2, (
-        "Both documents' figures must reach the model — dedup keyed on "
-        "self_ref alone would drop doc-B's bytes."
-    )
-    payloads = {part.data for part in images}
-    assert PICTURE_BYTES in payloads
-    assert other_bytes in payloads
-
-
 # Synthetic picture chunks at ingest
 
 
@@ -818,165 +708,6 @@ async def test_ingest_emits_picture_chunks_with_multimodal_embedder(
         assert any(
             "#/pictures/0" in (c.get("metadata") or "") for c in picture_db_chunks
         )
-
-
-async def test_search_tool_skips_binary_content_when_qa_model_is_text_only():
-    """The agent search tool must NOT attach picture bytes when the QA model
-    is text-only (``qa.model.vision = False``). Sending image
-    parts to a text-only model would cause it to hallucinate confidently —
-    Ollama silently accepts the bytes and the model guesses."""
-
-    picture_result = SearchResult(
-        content="A diagram of the layout",
-        score=1.0,
-        chunk_id="chunk-1",
-        document_id="doc-1",
-        doc_item_refs=["#/pictures/0"],
-        labels=["picture"],
-        image_data={"#/pictures/0": PICTURE_B64},
-    )
-
-    fake_client = AsyncMock()
-    fake_client.search = AsyncMock(return_value=[picture_result])
-    fake_client.expand_context = AsyncMock(return_value=[picture_result])
-
-    config = AppConfig()
-    config.qa.model.vision = False
-    toolset = create_search_toolset(config, expand_context=False)
-    func = toolset.tools["search"].function
-
-    ctx = RunContext(
-        deps=_Deps(client=fake_client),  # type: ignore[arg-type]
-        model=TestModel(),
-        usage=RunUsage(),
-        run_id="run-1",
-    )
-    result = await func(ctx, "anything")
-
-    assert isinstance(result, str)
-
-
-async def test_search_tool_drops_invalid_image_bytes():
-    """A picture whose bytes cannot be decoded by PIL must not produce a
-    BinaryContent part. Otherwise the model adapter emits a vision
-    placeholder for an image the server can't decode, leaving Qwen3-VL's
-    processor with an off-by-one count and a 400 from
-    ``Qwen3VLProcessor``."""
-    from io import BytesIO
-
-    from PIL import Image as PILImageModule
-
-    buf = BytesIO()
-    PILImageModule.new("RGB", (4, 4), "red").save(buf, "PNG")
-    valid_png = buf.getvalue()
-    valid_b64 = base64.b64encode(valid_png).decode("ascii")
-
-    # Truthy bytes (passes ``if blob`` guards) but not a decodable PNG.
-    invalid_bytes = b"\x89PNG\r\n\x1a\ngarbage"
-    invalid_b64 = base64.b64encode(invalid_bytes).decode("ascii")
-
-    picture_result = SearchResult(
-        content="Two figures",
-        score=1.0,
-        chunk_id="chunk-1",
-        document_id="doc-1",
-        doc_item_refs=["#/pictures/0", "#/pictures/1"],
-        labels=["picture"],
-        image_data={"#/pictures/0": valid_b64, "#/pictures/1": invalid_b64},
-    )
-
-    fake_client = AsyncMock()
-    fake_client.search = AsyncMock(return_value=[picture_result])
-    fake_client.expand_context = AsyncMock(return_value=[picture_result])
-
-    config = AppConfig()
-    config.qa.model.vision = True
-    toolset = create_search_toolset(config, expand_context=False)
-    func = toolset.tools["search"].function
-
-    ctx = RunContext(
-        deps=_Deps(client=fake_client),  # type: ignore[arg-type]
-        model=TestModel(),
-        usage=RunUsage(),
-        run_id="run-1",
-    )
-    result = await func(ctx, "anything")
-
-    assert isinstance(result, ToolReturn)
-    assert result.content is not None
-    identifiers = {p.identifier for p in result.content if isinstance(p, BinaryContent)}
-    assert identifiers == {"#/pictures/0"}, (
-        "Only the decodable PNG should reach the model — the corrupt "
-        "ref must be dropped so we don't emit a placeholder for an "
-        "image the server can't decode."
-    )
-
-
-async def test_search_tool_drops_all_invalid_returns_plain_text():
-    """If every picture in the result set fails decode, fall back to a
-    plain string return — there's nothing to attach, so wrapping in
-    ``ToolReturn`` with an empty ``content`` list would surface an empty
-    user message downstream."""
-    bad_b64 = base64.b64encode(b"\x89PNGnope").decode("ascii")
-    picture_result = SearchResult(
-        content="One broken figure",
-        score=1.0,
-        chunk_id="chunk-1",
-        document_id="doc-1",
-        doc_item_refs=["#/pictures/0"],
-        labels=["picture"],
-        image_data={"#/pictures/0": bad_b64},
-    )
-
-    fake_client = AsyncMock()
-    fake_client.search = AsyncMock(return_value=[picture_result])
-    fake_client.expand_context = AsyncMock(return_value=[picture_result])
-
-    config = AppConfig()
-    config.qa.model.vision = True
-    toolset = create_search_toolset(config, expand_context=False)
-    func = toolset.tools["search"].function
-
-    ctx = RunContext(
-        deps=_Deps(client=fake_client),  # type: ignore[arg-type]
-        model=TestModel(),
-        usage=RunUsage(),
-        run_id="run-1",
-    )
-    result = await func(ctx, "anything")
-
-    assert isinstance(result, str)
-
-
-async def test_search_tool_returns_plain_string_when_no_pictures():
-    """When no result carries image_data the tool returns a plain str (no
-    ToolReturn wrapper) so non-vision flows are unaffected."""
-    text_result = SearchResult(
-        content="Some text",
-        score=1.0,
-        chunk_id="chunk-1",
-        document_id="doc-1",
-        doc_item_refs=["#/texts/0"],
-        labels=["paragraph"],
-    )
-
-    fake_client = AsyncMock()
-    fake_client.search = AsyncMock(return_value=[text_result])
-    fake_client.expand_context = AsyncMock(return_value=[text_result])
-
-    toolset = create_search_toolset(get_config(), expand_context=False)
-    func = toolset.tools["search"].function
-
-    ctx = RunContext(
-        deps=_Deps(client=fake_client),  # type: ignore[arg-type]
-        model=TestModel(),
-        usage=RunUsage(),
-        run_id="run-1",
-    )
-    result = await func(ctx, "anything")
-
-    assert isinstance(result, str)
-    assert "rank 1" in result
 
 
 async def test_rag_capability_attaches_images_for_vision_model(temp_db_path):

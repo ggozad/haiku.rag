@@ -20,6 +20,10 @@
   `system_one` and the other was not, or when they were judged through
   different `system_one` models.
 
+### Removed
+
+- `haiku.rag.tools.create_search_toolset`, `create_document_toolset`, `RAGDeps` and `build_multi_document_filter`; use `RAGCapability` (`haiku.rag.capabilities.rag.create_capability`).
+
 ### Fixed
 
 - `evaluations run --no-telemetry` names the result file `<name>.notrace-<run id>.jsonl` and records no trace id, instead of the all-zero trace id.

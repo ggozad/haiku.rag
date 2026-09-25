@@ -388,7 +388,7 @@ Images are passed to the model alongside the question. Retrieval stays text-base
 
 `client.ask` runs the [RAG capability](capabilities/rag.md) and returns `(answer_text, list[Citation])`. The capability searches, and writes and runs Python over the documents when a question needs counting or aggregation. Citations carry page numbers, section headings, document references, the document's metadata (`document_meta`) and the cited chunk's stored metadata (`chunk_meta`), so a UI can render keys such as a public source URL beside the citation. The QA model is configured in `haiku.rag.yaml` or passed in the client's `config`.
 
-To build your own Pydantic AI agent, attach the RAG capability directly, see [Capabilities](capabilities/index.md). The lower-level toolset factories are under [Toolsets](tools.md).
+To build your own Pydantic AI agent, attach the RAG capability directly, see [Capabilities](capabilities/index.md).
 
 ## Importing pre-processed documents
 
