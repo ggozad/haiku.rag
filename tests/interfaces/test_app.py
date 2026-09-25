@@ -395,9 +395,9 @@ async def test_rebuild_names_the_mode_and_completes(app, client, mode, descripti
 
 
 async def test_vacuum_confirms(app, client):
-    await app.vacuum()
+    await app.vacuum(retention_seconds=0)
 
-    client.vacuum.assert_awaited_once()
+    client.vacuum.assert_awaited_once_with(retention_seconds=0)
     assert "Vacuum completed successfully" in out(app)
 
 

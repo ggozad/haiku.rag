@@ -4,6 +4,7 @@
 
 ### Added
 
+- `haiku-rag vacuum --retention-seconds N` overrides `storage.vacuum_retention_seconds` for one run; `HaikuRAG.vacuum(retention_seconds=)` likewise.
 - `evaluations.system_one` (`SystemOneConfig`: `base_url`, `model`), a
   `/v1/systemone` endpoint for the evaluations answer-equivalence judge.
 - `evaluations.evaluators.SystemOneJudge`: a pydantic-evals evaluator asking a
@@ -34,6 +35,10 @@
 
 - Deleting or re-ingesting a document whose URI contains `_` or `%` no longer deletes the PDF attachments of another document.
 - `evaluations run --no-telemetry` names the result file `<name>.notrace-<run id>.jsonl` and records no trace id, instead of the all-zero trace id.
+
+### Security
+
+- The `settings` table stores only the version and `embeddings.model` `provider`, `name` and `vector_dim`. Earlier releases stored the whole configuration, credentials and resolved `${VAR}` values included. Existing databases need `haiku-rag migrate`. To purge older table versions, stop every process using the database, delete tags taken before the migration, and run `haiku-rag vacuum --retention-seconds 0`. Rotate the credentials of any database that was shared or kept on object storage.
 
 ## [0.88.2] - 2026-09-24
 

@@ -690,12 +690,12 @@ class HaikuRAGApp:
                 "[bold green]Database rebuild completed successfully.[/bold green]"
             )
 
-    async def vacuum(self):
+    async def vacuum(self, retention_seconds: int | None = None):
         """Run database maintenance: optimize and cleanup table history."""
         async with HaikuRAG._covering(
             self.scope, self.config, skip_validation=True, read_only=self.read_only
         ) as client:
-            await client.vacuum()
+            await client.vacuum(retention_seconds=retention_seconds)
         self.console.print("[bold green]Vacuum completed successfully.[/bold green]")
 
     async def migrate(self) -> list[str]:

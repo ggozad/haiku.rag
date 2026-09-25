@@ -202,10 +202,10 @@ haiku-rag rebuild [--rechunk | --embed-only | --title-only | --descriptions | --
 ### vacuum
 
 ```bash
-haiku-rag vacuum
+haiku-rag vacuum [--retention-seconds N]
 ```
 
-Compacts the tables and removes old versions. With `storage.auto_vacuum` it also runs in the background, see [Storage](configuration/storage.md#local-storage).
+Compacts the tables and removes old versions older than `storage.vacuum_retention_seconds` (default a day). `--retention-seconds` overrides it for one run. `--retention-seconds 0` removes every version except the current one and those kept by a tag, so stop every other process using the database first. With `storage.auto_vacuum` vacuum also runs in the background, see [Storage](configuration/storage.md#local-storage).
 
 ### create-index
 
