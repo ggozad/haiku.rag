@@ -148,7 +148,7 @@ processing:
 - **images_scale**: Scale factor for extracted images. Higher values = better quality but larger size. Typical range: 1.0-3.0.
 - **generate_page_images**: When `true` (default), rendered images of each PDF page are included in the document. Required for `visualize_chunk()` to show visual grounding. When `false`, page images are excluded to reduce document size.
 - **fetch_remote_images**: When `true` (default), HTML and Markdown inputs have their external `<img src="https://...">` URLs fetched and stored as picture bytes. Set `false` for air-gapped ingest. Applies only to `docling-local`. docling-serve has no such option and does not fetch external images, so HTML it converts has picture items without bytes (`picture_data=NULL`).
-- **fetch_headers**: HTTP headers sent with those image fetches. Default: a `User-Agent` naming haiku.rag. `docling-local` only.
+- **fetch_headers**: HTTP headers sent with those image fetches. Default: a `User-Agent` naming haiku.rag. `docling-local` only. They go to every host an ingested document names, so they must not carry a credential.
 - **infer_furniture**: When `false` (default), everything in an HTML page is document content. When `true`, docling files whatever precedes the first heading as page furniture and leaves it out of the document, which removes site banners and navigation on web pages but also removes an article's lead paragraph and infobox. Applies only to `docling-local`; docling-serve keeps docling's rule, so HTML converted there loses the content before its first heading.
 
 #### External image fetching
