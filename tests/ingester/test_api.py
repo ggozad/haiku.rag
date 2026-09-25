@@ -705,6 +705,19 @@ async def test_config_returns_full_yaml_with_redacted_secrets(jobs, sync):
     assert "auth_token: '***'" in text
 
 
+async def test_config_masks_credentials_in_urls_and_headers(jobs, sync):
+    from tests.interfaces.test_app import DOCUMENTED_SECRETS, documented_secret_shapes
+
+    state = APIState(config=documented_secret_shapes(), job_repo=jobs, sync_repo=sync)
+    async with _client(state) as client:
+        resp = await client.get("/config")
+
+    text = resp.json()["yaml"]
+    assert "db/queue" in text
+    for secret in DOCUMENTED_SECRETS:
+        assert secret not in text
+
+
 async def test_config_requires_auth(state):
     async with _client(state, auth_token="secret") as client:
         resp = await client.get("/config")

@@ -442,6 +442,51 @@ def test_show_settings_hides_secrets(tmp_path):
     assert "secret-value" not in printed
 
 
+DOCUMENTED_SECRETS = ("PGSECRET", "HDRSECRET", "DAVSECRET", "FETCHSECRET")
+
+
+def documented_secret_shapes() -> AppConfig:
+    """Credentials where the docs tell operators to put them."""
+    return AppConfig.model_validate(
+        {
+            "processing": {
+                "conversion_options": {
+                    "fetch_headers": {"Authorization": "Bearer FETCHSECRET"}
+                }
+            },
+            "ingester": {
+                "queue": {"dburi": "postgresql+asyncpg://ingest:PGSECRET@db/queue"},
+                "sources": [
+                    {
+                        "type": "http",
+                        "id": "reports",
+                        "urls": ["https://reports.example/a.pdf"],
+                        "headers": {"Authorization": "Bearer HDRSECRET"},
+                    },
+                    {
+                        "type": "webdav",
+                        "id": "dav",
+                        "base_url": "https://alice:DAVSECRET@dav.example/remote/",
+                    },
+                ],
+            },
+        }
+    )
+
+
+def test_show_settings_hides_credentials_in_urls_and_headers():
+    config = documented_secret_shapes()
+    app = HaikuRAGApp(scope=DatabaseScope.resolve(config), config=config)
+    app.console = Console(record=True, width=200)
+
+    app.show_settings()
+
+    printed = app.console.export_text()
+    assert "dav.example/remote/" in printed
+    for secret in DOCUMENTED_SECRETS:
+        assert secret not in printed
+
+
 def test_show_settings_renders_the_shape_a_config_file_has(tmp_path):
     """Nesting is indented and a path is its string: what is read here is what
     `haiku.rag.yaml` holds."""

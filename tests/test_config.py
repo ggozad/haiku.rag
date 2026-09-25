@@ -414,6 +414,74 @@ def test_redact_secrets_masks_nested_secret_keys():
     assert redacted["storage_options"]["aws_secret_access_key"] == "***"
 
 
+def test_redact_secrets_masks_credentials_embedded_in_urls():
+    from haiku.rag.config.loader import redact_secrets
+
+    data = {
+        "dburi": "postgresql+asyncpg://ingest:PGSECRET@db.internal:5432/queue",
+        "urls": [
+            "https://alice:DAVPASS@cloud.example/a.pdf",
+            "https://TOKEN@host.example/b",
+            "https://plain.example/c",
+            "https://u:PW@[unparseable/d",
+        ],
+        "databases": {"remote": "s3://bucket/path"},
+    }
+
+    assert redact_secrets(data) == {
+        "dburi": "postgresql+asyncpg://***@db.internal:5432/queue",
+        "urls": [
+            "https://***@cloud.example/a.pdf",
+            "https://***@host.example/b",
+            "https://plain.example/c",
+            "***",
+        ],
+        "databases": {"remote": "s3://bucket/path"},
+    }
+
+
+def test_redact_secrets_masks_every_header_value():
+    from haiku.rag.config.loader import redact_secrets
+
+    data = {
+        "headers": {"Authorization": "Bearer HDR", "X-Api": "X"},
+        "fetch_headers": {"User-Agent": "ua"},
+    }
+
+    assert redact_secrets(data) == {
+        "headers": {"Authorization": "***", "X-Api": "***"},
+        "fetch_headers": {"User-Agent": "***"},
+    }
+
+
+def test_redact_secrets_masks_camel_case_and_concatenated_secret_keys():
+    from haiku.rag.config.loader import redact_secrets
+
+    data = {
+        "clientSecret": "a",
+        "accessToken": "b",
+        "apiKey": "c",
+        "dbPassword": "d",
+        "awsCredentials": "e",
+        "mysecretvalue": "f",
+    }
+
+    assert redact_secrets(data) == dict.fromkeys(data, "***")
+
+
+def test_redact_secrets_leaves_token_counts_and_tokenizers():
+    from haiku.rag.config.loader import redact_secrets
+
+    data = {
+        "max_tokens": 512,
+        "maxTokens": 512,
+        "chunking_tokenizer": "Qwen/Qwen3-Embedding-0.6B",
+        "keywords": "a, b",
+    }
+
+    assert redact_secrets(data) == data
+
+
 def test_expand_env_var_set(tmp_path, monkeypatch):
     """A ${VAR} referencing a set variable is substituted."""
     monkeypatch.setenv("HAIKU_TEST_MODEL", "my-model")

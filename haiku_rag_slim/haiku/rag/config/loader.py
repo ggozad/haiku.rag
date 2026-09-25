@@ -3,6 +3,7 @@ import os
 import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import yaml
 
@@ -95,30 +96,62 @@ def generate_default_config() -> dict:
     return default_config.model_dump(mode="json", exclude_none=False)
 
 
-_SECRET_KEY_HINTS = ("key", "password", "token", "secret")
+# Never part of an innocent key name, so matched anywhere in it.
+_SECRET_KEY_FRAGMENTS = ("password", "passwd", "secret", "credential")
+# Found inside innocent names (max_tokens, keywords), so matched as whole words.
+_SECRET_KEY_WORDS = frozenset({"key", "apikey", "token"})
+_HEADER_KEYS = frozenset({"headers", "fetch_headers"})
 
 
 def _is_secret_key(key: str) -> bool:
     lowered = key.lower()
-    return any(hint in lowered for hint in _SECRET_KEY_HINTS)
+    if any(fragment in lowered for fragment in _SECRET_KEY_FRAGMENTS):
+        return True
+    words = re.split(r"[^a-z0-9]+", re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", key).lower())
+    return not _SECRET_KEY_WORDS.isdisjoint(words)
+
+
+def _mask(value: Any) -> str | None:
+    return "***" if value else None
+
+
+def _mask_userinfo(value: str) -> str:
+    """`value` with any URL userinfo replaced by `***`."""
+    if "://" not in value:
+        return value
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        return "***"
+    if "@" not in parts.netloc:
+        return value
+    host = parts.netloc.rsplit("@", 1)[1]
+    return urlunsplit(parts._replace(netloc=f"***@{host}"))
 
 
 def redact_secrets(data: Any) -> Any:
-    """Recursively mask secret-bearing values in a config dump. Any scalar
-    whose key contains key/password/token/secret becomes "***" when set or
-    None when unset; everything else is preserved."""
+    """Recursively mask secret-bearing values in a config dump.
+
+    Masks scalars under a key naming a key, password, token, secret or
+    credential, every value under `headers` or `fetch_headers`, and the
+    userinfo of any URL. Set values become "***", unset ones None.
+    """
     if isinstance(data, dict):
         result = {}
         for key, value in data.items():
-            if (
+            if key in _HEADER_KEYS and isinstance(value, dict):
+                result[key] = {name: _mask(item) for name, item in value.items()}
+            elif (
                 isinstance(key, str)
                 and _is_secret_key(key)
                 and not isinstance(value, (dict, list))
             ):
-                result[key] = "***" if value else None
+                result[key] = _mask(value)
             else:
                 result[key] = redact_secrets(value)
         return result
     if isinstance(data, list):
         return [redact_secrets(item) for item in data]
+    if isinstance(data, str):
+        return _mask_userinfo(data)
     return data
