@@ -344,6 +344,38 @@ sandbox:
     assert cfg.sandbox.max_output_chars == 50_000
 
 
+def test_system_one_judge_is_off_by_default():
+    assert AppConfig().evaluations.system_one is None
+
+
+def test_system_one_judge_yaml_block(tmp_path):
+    cfg = AppConfig.model_validate(
+        load_yaml_config(
+            _write(
+                tmp_path,
+                """
+evaluations:
+  system_one:
+    base_url: http://127.0.0.1:8010
+    model: decider-4b-v1
+""",
+            )
+        )
+    )
+    system_one = cfg.evaluations.system_one
+    assert system_one is not None
+    assert system_one.base_url == "http://127.0.0.1:8010"
+    assert system_one.model == "decider-4b-v1"
+
+
+def test_system_one_judge_endpoint_and_model_default_to_the_server():
+    cfg = AppConfig.model_validate({"evaluations": {"system_one": {}}})
+    system_one = cfg.evaluations.system_one
+    assert system_one is not None
+    assert system_one.base_url is None
+    assert system_one.model is None
+
+
 def test_analysis_block_is_rejected(tmp_path):
     data = load_yaml_config(
         _write(
@@ -642,6 +674,10 @@ def test_set_config_reaches_the_factories(monkeypatch, tmp_path):
             "providers.docling_serve.bogus",
         ),
         ({"qa": {"model": {"bogus": 1}}}, "qa.model.bogus"),
+        (
+            {"evaluations": {"system_one": {"api_key": "x"}}},
+            "evaluations.system_one.api_key",
+        ),
         ({"ingester": {"queue": {"bogus": 1}}}, "ingester.queue.bogus"),
         (
             {"ingester": {"sources": [{"type": "fs", "root": "/tmp", "bogus": 1}]}},

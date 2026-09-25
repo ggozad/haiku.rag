@@ -1,5 +1,6 @@
 """QA benchmarks: single-question runs and live multi-turn conversations."""
 
+from collections import Counter
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, NamedTuple, cast
@@ -24,6 +25,11 @@ from evaluations.evaluators import (
     ConversationEvaluator,
     RefusalJudge,
     TranscriptLLMJudge,
+)
+from evaluations.evaluators.answer_equivalence import (
+    AnswerEquivalenceJudge,
+    check_system_one,
+    system_one_client,
 )
 from evaluations.experiment import (
     DEFAULT_JUDGE_MODEL,
@@ -253,6 +259,16 @@ def _print_mean_task_time(report_cases, unit: str = "case") -> None:
     console.print(f"Avg task time per {unit}: {mean:.2f}s")
 
 
+def _print_decided_by(report_cases) -> None:
+    counts = Counter(
+        str(case.labels["answer_equivalent_decided_by"].value)
+        for case in report_cases
+        if "answer_equivalent_decided_by" in case.labels
+    )
+    summary = ", ".join(f"{who} {n}" for who, n in counts.most_common())
+    console.print(f"Judge decided by: {summary}")
+
+
 def _print_failures(failures, show_question: bool = False) -> None:
     if not failures:
         return
@@ -292,22 +308,45 @@ async def run_qa_benchmark(
     citation_evaluator = spec.citation_evaluator
 
     qa_evaluator = spec.qa_evaluator
+    system_one = config.evaluations.system_one
+    system_one_session = None
     evaluators: list[Evaluator]
     if qa_evaluator is not None:
         evaluators = [qa_evaluator]
     else:
-        evaluators = [
-            TranscriptLLMJudge(
-                rubric=ANSWER_EQUIVALENCE_RUBRIC,
-                include_input=True,
-                include_expected_output=True,
-                model=get_model(judge_config, config),
-                assertion={
-                    "evaluation_name": "answer_equivalent",
-                    "include_reason": True,
-                },
-            ),
-        ]
+        answer_judge: Evaluator = TranscriptLLMJudge(
+            rubric=ANSWER_EQUIVALENCE_RUBRIC,
+            include_input=True,
+            include_expected_output=True,
+            model=get_model(judge_config, config),
+            assertion={
+                "evaluation_name": "answer_equivalent",
+                "include_reason": True,
+            },
+        )
+        if system_one is not None:
+            system_one_session = system_one_client(system_one)
+            try:
+                served_model = await check_system_one(system_one_session, system_one)
+            except BaseException:
+                await system_one_session.aclose()
+                raise
+            gated = AnswerEquivalenceJudge(
+                client=system_one_session,
+                model=system_one.model,
+                fallback=answer_judge,
+            )
+            run.experiment_metadata.update(
+                {
+                    "system_one_base_url": system_one.base_url,
+                    "system_one_model": system_one.model,
+                    "system_one_served_model": served_model,
+                    "system_one_pass_at": gated.pass_at,
+                    "system_one_fail_below": gated.fail_below,
+                }
+            )
+            answer_judge = gated
+        evaluators = [answer_judge]
     if citation_evaluator is not None:
         evaluators.append(citation_evaluator)
     # RefusalJudge scores only cases whose metadata carries an answerability
@@ -355,18 +394,22 @@ async def run_qa_benchmark(
         return result.answer
 
     run_id = new_run_id()
-    report = await evaluation_dataset.evaluate(
-        answer_question,
-        name=run.eval_name,
-        max_concurrency=1,
-        progress=True,
-        metadata=run.experiment_metadata,
-        lifecycle=None
-        if results_dir is None
-        else case_writer(
-            results_dir, name=run.eval_name, pair_key=spec.pair_key, run_id=run_id
-        ),
-    )
+    try:
+        report = await evaluation_dataset.evaluate(
+            answer_question,
+            name=run.eval_name,
+            max_concurrency=1,
+            progress=True,
+            metadata=run.experiment_metadata,
+            lifecycle=None
+            if results_dir is None
+            else case_writer(
+                results_dir, name=run.eval_name, pair_key=spec.pair_key, run_id=run_id
+            ),
+        )
+    finally:
+        if system_one_session is not None:
+            await system_one_session.aclose()
     if results_dir is not None:
         results_path = write_results(
             report,
@@ -403,6 +446,8 @@ async def run_qa_benchmark(
     console.print(f"Correct answers: {passing_cases}")
     console.print(f"QA Accuracy: {accuracy:.4f} ({accuracy * 100:.2f}%)")
     _print_mean_task_time(report.cases)
+    if system_one_session is not None:
+        _print_decided_by(report.cases)
 
     if citation_evaluator is not None:
         score_key = citation_evaluator.get_default_evaluation_name()
@@ -460,6 +505,8 @@ async def run_live_qa_benchmark(
     One case per conversation; ``limit`` counts conversations. Answers carry
     forward as real message history, so prior-turn compaction is exercised.
     """
+    if config.evaluations.system_one is not None:
+        console.print("evaluations.system_one is not used by live runs", style="yellow")
     run = await _prepare_qa_run(
         spec,
         config,

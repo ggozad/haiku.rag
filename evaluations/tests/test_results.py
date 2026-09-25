@@ -118,6 +118,8 @@ class TestWriteResults:
             "cited": True,
             "cited_map": 0.5,
             "aborted": False,
+            "judge_decided_by": None,
+            "system_one_model": None,
         }
         assert first["trace_id"] == TRACE
         assert first["answer"] == "answer"
@@ -279,6 +281,47 @@ class TestPartialResults:
             )
         )
         assert rows["1_a"]["passed"] is None
+
+    async def test_rows_record_who_decided_the_verdict(self, tmp_path: Path) -> None:
+        @dataclass
+        class Gated(Evaluator):
+            def evaluate(self, ctx: EvaluatorContext) -> dict[str, bool | float | str]:
+                return {
+                    "answer_equivalent": True,
+                    "answer_equivalent_probability": 0.91,
+                    "answer_equivalent_decided_by": "system_one",
+                    "answer_equivalent_model": "jev-1.13.0",
+                }
+
+        rows = _rows(
+            write_results(
+                await _report(Gated()),
+                name="run-x",
+                pair_key="query_id",
+                directory=tmp_path,
+                run_id="r1",
+            )
+        )
+        assert rows["1_a"]["judge_decided_by"] == "system_one"
+        assert rows["1_a"]["judge_probability"] == 0.91
+        assert rows["1_a"]["system_one_model"] == "jev-1.13.0"
+
+    async def test_rows_of_an_ungated_judge_record_no_decider(
+        self, tmp_path: Path
+    ) -> None:
+        rows = _rows(
+            write_results(
+                await _report(),
+                name="run-x",
+                pair_key="query_id",
+                directory=tmp_path,
+                run_id="r1",
+            )
+        )
+        assert rows["1_a"]["judge_decided_by"] is None
+        assert rows["1_a"]["judge_probability"] is None
+        assert rows["1_a"]["system_one_model"] is None
+        assert rows["3_c"]["judge_decided_by"] is None
 
     async def test_a_result_file_is_never_overwritten(self, tmp_path: Path) -> None:
         report = await _report()

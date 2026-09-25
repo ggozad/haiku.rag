@@ -265,6 +265,51 @@ evaluations:
         reasoning_effort: low   # qwen3.8: low | medium | xhigh (default)
 ```
 
+### Faster judging with a System One model
+
+`evaluations.system_one` puts a [System One](https://typesafe.ai/blog/introducing-system-one-models-and-jev) model in front of the judge. It is optional and off by default, and the benchmarks on this page are judged by Qwen3.8 alone. A System One model returns a probability instead of generated text.
+
+Each answer goes to the `/v1/systemone` endpoint first, as a JSON state holding the question, the expected answer and the generated answer, with the rubric as the question's instructions and criteria. At a probability of 0.8 or more the answer passes, and below 0.2 it fails, with no call to the judge. The judge in `evaluations.judge` decides everything in between, every case the endpoint fails on, and gold-prefix conversation cases. Live conversation runs do not use the endpoint, and say so when the block is set. The run checks the endpoint before the first case and stops if it does not answer.
+
+TypeSafe's hosted Jev reads the key from `TYPESAFE_API_KEY`:
+
+```yaml
+evaluations:
+  system_one:
+    model: jev-1.13.0
+```
+
+[Decider](https://github.com/Mapika/decider) is an open reproduction served on the same API from your own GPU or a Mac. Its README covers installation. The measurements below used revision `c23ab4d` of the `Mapika/decider-4b` weights, pinned by downloading them first:
+
+```bash
+python -c "from huggingface_hub import snapshot_download; snapshot_download('Mapika/decider-4b', revision='c23ab4d2483e7c6a93484463e9afe1688b29bedd', local_dir='decider-4b')"
+DECIDER_MODEL=decider-4b uvicorn decider.serve:app --port 8010
+```
+
+On a GPU shared with other servers, `DECIDER_WARMUP=0` skips the CUDA-graph capture at start, which peaked at 28.4 GB in our setup.
+
+```yaml
+evaluations:
+  system_one:
+    base_url: http://127.0.0.1:8010
+    model: decider-4b-v1
+```
+
+A local server needs no key. Set `model` explicitly: when it is unset, the TypeSafe SDK sends `jev-latest`, to a local server as well.
+
+Measured on 2026-09-24 against Qwen3.8 alone, on fresh `orb_multimodal_nemotron` and `frames` runs of the current capability. Every case where the verdicts differed was adjudicated by three independent labellers (one reviewer and two fresh-context LLM labellers), blind to which judge produced which verdict. Decider's ORB run served on Apple silicon (MPS, fp16) and its FRAMES run on a CUDA GPU (bf16). The two agreed to within 0.026 in probability on 390 labelled cases.
+
+| Endpoint | Dataset | Cases | Decided alone | Pass rate (Qwen3.8 → gated) | Changed verdicts | Qwen3.8 right / gated right |
+|---|---|---|---|---|---|---|
+| Jev 1.13.0 | ORB | 3,043 | 90.0% | 96.39% → 96.09% | 9 | 6 / 3 |
+| Jev 1.13.0 | FRAMES | 797 | 94.9% | 90.97% → 90.97% | 2 | 0 / 2 |
+| Decider-4B | ORB | 3,043 | 86.6% | 96.39% → 96.12% | 14 | 8 / 6 |
+| Decider-4B | FRAMES | 797 | 88.6% | 90.97% → 90.46% | 4 | 3 / 1 (majority, one labeller 2 / 2) |
+
+Most changed verdicts (25 of 29) are fails below 0.2 on answers Qwen3.8 passed, so a gated run reads lower than Qwen3.8 alone. On ORB all 9 of Jev's changes go that way (McNemar exact p = 0.004). The per-dataset splits of who was right rest on 2 to 14 cases and are too small to rank the endpoints. Jev is not deterministic between runs. Three replays of 390 labelled cases each moved 8 to 11 of them across a band edge against an earlier run, so a gated run does not reproduce verdict for verdict.
+
+Result rows record `judge_decided_by` (`system_one`, `fallback`, `fallback_on_error` or `fallback_conversation`), `judge_probability` and `system_one_model`, and the run prints the count of each. A gated run and an ungated run of the same system differ by the judge as well, so they do not form a null pair, and `evaluations pair` warns when only one of its two files was gated or when they were gated by different models.
+
 ### Restricting the corpus
 
 When a database holds several corpora and a dataset's questions come from one, `--filter` restricts every benchmark search to it. It takes the SQL `WHERE` clause `haiku-rag search --filter` takes, over the document columns (`id`, `uri`, `title`, `created_at`, `updated_at`, `metadata`). Each dataset writes its own URIs: `orb_text` uses arXiv ids such as `2407.01528v3`, `hotpotqa` page titles.

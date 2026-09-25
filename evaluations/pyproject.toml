@@ -15,6 +15,7 @@ dependencies = [
     "huggingface_hub>=0.20.0",
     "typer>=0.21.0,<0.22.0",
     "python-dotenv>=1.2.2",
+    "typesafe-sdk>=0.7.0",
 ]
 
 [project.scripts]

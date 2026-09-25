@@ -22,6 +22,8 @@ class CaseOutcome:
     cited: bool
     cited_map: float | None
     aborted: bool
+    judge_decided_by: str | None = None
+    system_one_model: str | None = None
 
 
 def check_run_name(name: str) -> str:
@@ -64,6 +66,9 @@ def _passed(case: ReportCase) -> bool | None:
 def _case_row(case: ReportCase, pair_key: str, trace_id: str | None) -> dict[str, Any]:
     cited_map = case.scores.get("cited_map")
     verdict = case.assertions.get("answer_equivalent")
+    decided_by = case.labels.get("answer_equivalent_decided_by")
+    probability = case.scores.get("answer_equivalent_probability")
+    served_model = case.labels.get("answer_equivalent_model")
     return {
         "case_name": case.name,
         "key": _key(case.metadata, pair_key),
@@ -74,6 +79,9 @@ def _case_row(case: ReportCase, pair_key: str, trace_id: str | None) -> dict[str
         "trace_id": _trace(case.trace_id) or _trace(trace_id),
         "answer": None if case.output is None else str(case.output),
         "reason": None if verdict is None else verdict.reason,
+        "judge_decided_by": None if decided_by is None else decided_by.value,
+        "judge_probability": None if probability is None else float(probability.value),
+        "system_one_model": None if served_model is None else served_model.value,
         "attributes": dict(case.attributes),
         "task_duration": case.task_duration,
     }
@@ -92,6 +100,9 @@ def _failure_row(
         "trace_id": _trace(failure.trace_id) or _trace(trace_id),
         "answer": None,
         "reason": failure.error_message,
+        "judge_decided_by": None,
+        "judge_probability": None,
+        "system_one_model": None,
         "attributes": {},
         "task_duration": None,
     }
@@ -160,6 +171,8 @@ def read_results(path: Path) -> list[CaseOutcome]:
             cited=bool(row["cited"]),
             cited_map=row["cited_map"],
             aborted=bool(row["aborted"]),
+            judge_decided_by=row.get("judge_decided_by"),
+            system_one_model=row.get("system_one_model"),
         )
         for row in (
             json.loads(line) for line in path.read_text().splitlines() if line.strip()

@@ -453,6 +453,22 @@ class PromptsConfig(ConfigModel):
     )
 
 
+class SystemOneConfig(ConfigModel):
+    """A `/v1/systemone` endpoint: TypeSafe's Jev or a compatible server.
+
+    The API key is read from `TYPESAFE_API_KEY`, never from the config.
+    """
+
+    base_url: str | None = Field(
+        default=None,
+        description="Endpoint URL. None means TypeSafe's hosted API.",
+    )
+    model: str | None = Field(
+        default=None,
+        description="Model the endpoint serves. None means the server's default.",
+    )
+
+
 class EvaluationsConfig(ConfigModel):
     """Settings consumed only by the `evaluations` package."""
 
@@ -462,6 +478,13 @@ class EvaluationsConfig(ConfigModel):
             "Judge model for `evaluations run`'s LLM-as-judge step. "
             "ModelConfig's base_url lets the judge point at any "
             "OpenAI-compatible endpoint."
+        ),
+    )
+    system_one: SystemOneConfig | None = Field(
+        default=None,
+        description=(
+            "Decision endpoint that judges answer equivalence when confident, "
+            "leaving the rest to `judge`. Off when unset."
         ),
     )
 

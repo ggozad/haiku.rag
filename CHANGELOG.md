@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Added
+
+- `evaluations.system_one` (`SystemOneConfig`: `base_url`, `model`), a
+  `/v1/systemone` endpoint for the evaluations answer-equivalence judge.
+- `evaluations.evaluators.SystemOneJudge`: a pydantic-evals evaluator asking a
+  `/v1/systemone` endpoint one yes/no question, deciding alone at
+  p >= `pass_at` (0.8) or p < `fail_below` (0.2) and deferring the rest, and
+  endpoint errors, to a `fallback` evaluator.
+- With `evaluations.system_one` set, `evaluations run` judges answer equivalence
+  with `AnswerEquivalenceJudge`, falling back to the LLM judge, and fails at
+  start when the endpoint does not answer. Result rows gain `judge_decided_by`,
+  `judge_probability` and `system_one_model`; experiment metadata gains
+  `system_one_base_url`, `system_one_model`, `system_one_served_model`,
+  `system_one_pass_at` and `system_one_fail_below`.
+- `evaluations pair` warns when one result file was judged through
+  `system_one` and the other was not, or when they were judged through
+  different `system_one` models.
+
 ### Fixed
 
 - `evaluations run --no-telemetry` names the result file `<name>.notrace-<run id>.jsonl` and records no trace id, instead of the all-zero trace id.
