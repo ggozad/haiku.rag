@@ -276,8 +276,9 @@ leaves the configuration: it travels in `SearchResult.source`, `Citation.source`
 - **`UnknownDatabaseError` subclasses `KeyError`** and overrides `__str__`. `pytest.raises(KeyError)` cannot tell the contract from a bare one, so assert the specific type.
 - **Model context** names the database as a `Collection:` line whenever the run
   spans more than one (`RAGCapability.collections`: the question's `sources`, else
-  the lent client's coverage, else the scope), a search narrowed to one included.
-  Storage vocabulary stays "database", the model boundary says "collection".
+  the lent client's coverage, else the scope), including a search narrowed to one,
+  and the instructions of such a run list its collections by name. Storage
+  vocabulary stays "database", the model boundary says "collection".
 
 ## Configuration
 

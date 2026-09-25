@@ -342,6 +342,7 @@ class RAGCapability(AbstractCapability[Any]):
             parts.insert(0, self.config.prompts.domain_preamble)
         if self.spans_collections:
             parts.append(multiple_collections_instructions())
+            parts.append(f"Collections in this run: {', '.join(self.collections)}.")
         return "\n\n".join(parts)
 
     async def before_model_request(

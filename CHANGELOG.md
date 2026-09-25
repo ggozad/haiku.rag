@@ -30,6 +30,9 @@
 - `sandbox.code_timeout` bounds each `execute_code` call. A call stopped by it resets the sandbox session.
 - The sandbox's working directory is `/documents`. `time.sleep()` and `asyncio.sleep()` return immediately.
 - `Sandbox(executions=)` removed.
+- The multi-collection instructions name the collections the run covers and say when
+  to narrow a search with `sources`, when to search every collection, and to search
+  again without `sources` after a narrowed search finds nothing useful.
 
 ## [0.89.0] - 2026-09-25
 

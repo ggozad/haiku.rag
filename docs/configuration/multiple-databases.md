@@ -108,7 +108,7 @@ capabilities:
 
 An unknown name raises `UnknownDatabaseError`, an empty list `ValueError`. `sources` beside `db_path` or `rag=` raises `AmbiguousDatabaseError`, since each of those already says which databases the capability covers. The `sources` field of the capability state then selects among the covered databases for one question. See [Capabilities](../capabilities/index.md#database-selection).
 
-Within a question, the model narrows one search with the `sources` argument of the `search` tool: omitted, the search covers the question's selection; a list covers those databases; an empty list covers none. A name outside the question's selection fails that call and lists the collections the run covers, so a lent client covering more than the question selects lends nothing beyond it. Over a single database the tool has no `sources` argument.
+Within a question, the model narrows one search with the `sources` argument of the `search` tool. Omitted, the search covers the question's selection. A list covers those databases, and an empty list covers none. A name outside the question's selection fails that call and lists the databases the run covers, so a search cannot reach a database the question does not select, whatever a lent client covers. Over a single database the tool has no `sources` argument. The instructions of a run spanning several databases name them and say when to narrow a search and when to search them all.
 
 ## MCP server
 

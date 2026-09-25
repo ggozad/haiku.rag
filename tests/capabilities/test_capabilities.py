@@ -1798,3 +1798,24 @@ class TestMultipleCollectionsInstructions:
         capability.state = RAGState(sources=["alpha", "beta"])
 
         assert "Collection:" in capability.get_instructions()
+
+    def test_a_spanning_run_names_its_collections(self):
+        """The names the model may pass to `sources`, in the run's order."""
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb", gamma="/c.lancedb")
+
+        whole = create_rag(config=config)
+        assert (
+            "Collections in this run: alpha, beta, gamma." in whole.get_instructions()
+        )
+
+        narrowed = create_rag(config=config)
+        narrowed.state = RAGState(sources=["gamma", "alpha"])
+        assert "Collections in this run: gamma, alpha." in narrowed.get_instructions()
+
+    def test_a_lent_client_names_what_it_covers(self):
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
+        covering = self._client({"beta": "/b.lancedb", "alpha": "/a.lancedb"})
+
+        capability = create_rag(config=config, rag=covering)
+
+        assert "Collections in this run: beta, alpha." in capability.get_instructions()
