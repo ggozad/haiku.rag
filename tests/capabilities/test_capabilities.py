@@ -409,6 +409,70 @@ async def test_a_search_over_one_collection_does_not_name_it_on_its_images(
     assert not [label for label in labels if "Collection" in label]
 
 
+@pytest.mark.parametrize("sources", [("alpha",), ("alpha", "beta")])
+async def test_search_results_name_the_collection_only_when_spanning_several(
+    temp_db_path: Path, sources: tuple[str, ...]
+):
+    result = _picture_result("alpha")
+    client = _stub_client([result])
+    client.source_names = sources
+    capability = create_rag(db_path=temp_db_path, config=AppConfig(), vision=False)
+    capability.state = RAGState()
+    capability.borrowed_rag = client
+
+    returned = await capability._search("cats", None, 1)
+
+    assert isinstance(returned, str)
+    assert result.content in returned
+    if len(sources) > 1:
+        assert "Collection: alpha" in returned
+    else:
+        assert "Collection" not in returned
+
+
+@pytest.mark.parametrize(
+    ("vision", "pictures"),
+    [(True, "valid"), (False, "valid"), (True, "invalid"), (True, "absent")],
+)
+async def test_search_attaches_only_decodable_pictures_for_a_vision_model(
+    temp_db_path: Path, vision: bool, pictures: str
+):
+    import base64
+
+    from pydantic_ai.messages import BinaryContent, ToolReturn
+
+    result = _picture_result("alpha")
+    assert result.image_data is not None
+    picture_bytes = base64.b64decode(result.image_data["#/pictures/0"])
+    if pictures == "invalid":
+        result.image_data = {"#/pictures/0": base64.b64encode(b"\x89PNGnope").decode()}
+    elif pictures == "absent":
+        result.image_data = None
+    client = _stub_client([result])
+    client.source_names = ("alpha",)
+    config = AppConfig()
+    config.qa.model.vision = vision
+    capability = create_rag(db_path=temp_db_path, config=config)
+    capability.state = RAGState()
+    capability.borrowed_rag = client
+
+    returned = await capability._search("cats", None, 1)
+
+    if vision and pictures == "valid":
+        assert isinstance(returned, ToolReturn)
+        assert returned.content is not None
+        [image] = [part for part in returned.content if isinstance(part, BinaryContent)]
+        assert image.media_type == "image/png"
+        assert image.identifier == "#/pictures/0"
+        assert image.data == picture_bytes
+        text = returned.return_value
+    else:
+        text = returned
+    assert isinstance(text, str)
+    assert "[rank 1 of 1]" in text
+    assert result.content in text
+
+
 async def test_a_fruitless_search_says_so(temp_db_path):
     """A blank tool return reads as a broken tool, not as an empty corpus."""
     capability = create_rag(db_path=temp_db_path, config=AppConfig())

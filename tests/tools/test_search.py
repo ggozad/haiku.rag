@@ -276,14 +276,14 @@ def search_config():
     return get_config()
 
 
-def _png_b64():
+def _png_b64(color: str = "red") -> str:
     import base64
     from io import BytesIO
 
     from PIL import Image as PILImage
 
     buf = BytesIO()
-    PILImage.new("RGB", (4, 4), "red").save(buf, format="PNG")
+    PILImage.new("RGB", (4, 4), color).save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode()
 
 
@@ -326,6 +326,75 @@ class TestBuildImageContentFromResults:
 
         images = [item for item in content if isinstance(item, BinaryContent)]
         assert len(images) == 1
+
+    def test_the_same_ref_in_different_documents_attaches_each_picture(self):
+        import base64
+
+        from pydantic_ai.messages import BinaryContent
+
+        from haiku.rag.tools.search import build_image_content_from_results
+
+        pictures = [_png_b64("red"), _png_b64("blue")]
+        results = [
+            SearchResult(
+                content=f"Figure from document {index}",
+                score=1.0,
+                chunk_id=f"chunk-{index}",
+                document_id=f"doc-{index}",
+                image_data={"#/pictures/0": picture},
+            )
+            for index, picture in enumerate(pictures)
+        ]
+
+        content, emitted = build_image_content_from_results(results)
+
+        images = [item for item in content if isinstance(item, BinaryContent)]
+        assert [image.data for image in images] == [
+            base64.b64decode(picture) for picture in pictures
+        ]
+        assert emitted == {
+            (None, "doc-0", "#/pictures/0"),
+            (None, "doc-1", "#/pictures/0"),
+        }
+
+    @pytest.mark.parametrize("include_valid", [True, False])
+    def test_undecodable_pictures_emit_neither_images_nor_labels(
+        self, include_valid: bool
+    ):
+        import base64
+
+        from pydantic_ai.messages import BinaryContent
+
+        from haiku.rag.tools.search import build_image_content_from_results
+
+        valid = _png_b64()
+        pictures = {"#/pictures/0": valid} if include_valid else {}
+        pictures["#/pictures/1"] = base64.b64encode(
+            b"\x89PNG\r\n\x1a\ngarbage"
+        ).decode()
+        result = SearchResult(
+            content="Figures",
+            score=1.0,
+            chunk_id="c1",
+            document_id="doc-1",
+            image_data=pictures,
+        )
+
+        content, emitted = build_image_content_from_results([result])
+
+        if include_valid:
+            label, image = content
+            assert isinstance(label, str)
+            assert "#/pictures/0" in label
+            assert "#/pictures/1" not in label
+            assert "1 of 1" in label
+            assert isinstance(image, BinaryContent)
+            assert image.data == base64.b64decode(valid)
+            assert image.identifier == "#/pictures/0"
+            assert emitted == {(None, "doc-1", "#/pictures/0")}
+        else:
+            assert content == []
+            assert emitted == set()
 
     @staticmethod
     def _one_picture_in_two_collections():
