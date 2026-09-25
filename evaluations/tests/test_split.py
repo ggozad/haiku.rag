@@ -2,12 +2,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from docling_core.types.doc.document import DoclingDocument
+from docling_core.types.doc.base import BoundingBox, Size
+from docling_core.types.doc.document import DoclingDocument, ImageRef, ProvenanceItem
 from docling_core.types.doc.labels import DocItemLabel
+from PIL import Image as PILImage
 from typer.testing import CliRunner
 
 from evaluations.datasets.collection_routing import shard_of
-from evaluations.split import split_database
+from evaluations.split import DOCUMENT_COLUMN, split_database
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models import Chunk
@@ -29,49 +31,65 @@ def _uris_per_shard(shards: int, each: int) -> list[list[str]]:
     return picked
 
 
-async def _seed(
-    path: Path, config: AppConfig, uris: list[str]
-) -> dict[str, list[float]]:
+def _document(uri: str, color: str) -> DoclingDocument:
+    """A page with an image and a picture with bytes, so both blobs exist."""
+    doc = DoclingDocument(name=uri)
+    image = ImageRef.from_pil(PILImage.new("RGB", (8, 8), color), dpi=72)
+    doc.add_page(page_no=1, size=Size(width=100, height=100), image=image)
+    doc.add_text(
+        label=DocItemLabel.TEXT,
+        text=f"text of {uri}",
+        prov=ProvenanceItem(
+            page_no=1, bbox=BoundingBox(l=0, t=0, r=50, b=10), charspan=(0, 0)
+        ),
+    )
+    doc.add_picture(
+        image=image,
+        prov=ProvenanceItem(
+            page_no=1, bbox=BoundingBox(l=0, t=20, r=50, b=60), charspan=(0, 0)
+        ),
+    )
+    return doc
+
+
+async def _seed(path: Path, config: AppConfig, uris: list[str]) -> None:
     dim = config.embeddings.model.vector_dim
-    vectors: dict[str, list[float]] = {}
     async with HaikuRAG(path, config=config, create=True) as rag:
         for n, uri in enumerate(uris):
-            doc = DoclingDocument(name=uri)
-            doc.add_text(label=DocItemLabel.TEXT, text=f"text of {uri}")
-            vectors[uri] = [0.1 * (n + 1)] * dim
             await rag.import_document(
-                doc,
-                [Chunk(content=f"text of {uri}", embedding=vectors[uri], order=0)],
+                _document(uri, ["red", "green", "blue", "white"][n % 4]),
+                [Chunk(content=f"text of {uri}", embedding=[0.1 * (n + 1)] * dim)],
                 uri=uri,
                 title=f"title {n}",
                 metadata={"n": n},
             )
-    return vectors
 
 
-async def _read(
-    path: Path, config: AppConfig
-) -> tuple[dict[str, dict], dict[str, list[float]]]:
-    async with HaikuRAG(path, config=config, read_only=True) as rag:
-        documents = {d.uri: d for d in await rag.list_documents()}
-        rows = await rag.store.chunks_table.query().to_list()
-        by_doc = {row["document_id"]: list(row["vector"]) for row in rows}
-        return (
-            {
-                uri: {"title": d.title, "metadata": d.metadata}
-                for uri, d in documents.items()
-            },
-            {uri: by_doc[d.id] for uri, d in documents.items()},
-        )
+async def _rows(rag: HaikuRAG, table: str, ids: list[str]) -> list[dict]:
+    column = DOCUMENT_COLUMN[table]
+    listed = ", ".join(f"'{i}'" for i in ids)
+    arrow = await (
+        getattr(rag.store, f"{table}_table")
+        .query()
+        .where(f"{column} IN ({listed})")
+        .to_arrow()
+    )
+    rows = arrow.to_pylist()
+    return sorted(
+        rows,
+        key=lambda row: tuple(
+            str(row.get(key, "")) for key in ("document_id", "id", "self_ref", "order")
+        ),
+    )
 
 
-async def test_every_document_lands_in_the_shard_its_uri_hashes_to(
+async def test_every_row_of_a_document_lands_verbatim_in_its_shard(
     tmp_path: Path,
 ) -> None:
     config = AppConfig()
     per_shard = _uris_per_shard(2, 2)
     source = tmp_path / "src.lancedb"
-    vectors = await _seed(source, config, per_shard[0] + per_shard[1])
+    await _seed(source, config, per_shard[0] + per_shard[1])
     destinations = [tmp_path / "a.lancedb", tmp_path / "b.lancedb"]
 
     with patch(
@@ -80,13 +98,24 @@ async def test_every_document_lands_in_the_shard_its_uri_hashes_to(
         counts = await split_database(source, destinations, config)
 
     assert counts == [2, 2]
-    for shard, destination in enumerate(destinations):
-        documents, embeddings = await _read(destination, config)
-        assert sorted(documents) == sorted(per_shard[shard])
-        for uri in per_shard[shard]:
-            assert embeddings[uri] == pytest.approx(vectors[uri])
-        assert all(d["title"].startswith("title ") for d in documents.values())
-        assert all("n" in d["metadata"] for d in documents.values())
+    async with HaikuRAG(source, config=config, read_only=True) as src:
+        ids_by_uri = {d.uri: d.id for d in await src.list_documents()}
+        for shard, destination in enumerate(destinations):
+            ids = [ids_by_uri[uri] for uri in per_shard[shard]]
+            async with HaikuRAG(destination, config=config, read_only=True) as dst:
+                assert sorted(d.uri for d in await dst.list_documents()) == sorted(
+                    per_shard[shard]
+                )
+                for table in DOCUMENT_COLUMN:
+                    expected = await _rows(src, table, ids)
+                    assert expected, table
+                    assert await _rows(dst, table, ids) == expected, table
+                documents = await _rows(dst, "documents", ids)
+                assert all(row["docling_pages"] for row in documents)
+                items = await _rows(dst, "document_items", ids)
+                assert any(row["picture_data"] for row in items)
+                stats = await dst.store.chunks_table.index_stats("content_fts_idx")
+                assert stats is not None and stats.num_indexed_rows == 2
 
 
 async def test_a_document_without_a_uri_refuses(tmp_path: Path) -> None:
