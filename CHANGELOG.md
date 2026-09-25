@@ -33,6 +33,7 @@
 
 ### Fixed
 
+- `haiku-rag doctor` prints a document title or URI containing Rich markup, such as `[/dim]`, as text instead of failing with `MarkupError`.
 - Deleting or re-ingesting a document whose URI contains `_` or `%` no longer deletes the PDF attachments of another document.
 - `evaluations run --no-telemetry` names the result file `<name>.notrace-<run id>.jsonl` and records no trace id, instead of the all-zero trace id.
 

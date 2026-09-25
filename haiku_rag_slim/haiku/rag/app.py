@@ -283,7 +283,7 @@ class HaikuRAGApp:
         def render(result):
             self.console.print(f"{glyphs[result.severity]} {result.message}")
             for detail in result.details:
-                self.console.print(f"    [dim]{detail}[/dim]")
+                self.console.print(f"    [dim]{escape(str(detail))}[/dim]")
             if result.remediation:
                 self.console.print(f"    [dim]→ {result.remediation}[/dim]")
 

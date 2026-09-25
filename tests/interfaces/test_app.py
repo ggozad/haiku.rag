@@ -789,6 +789,37 @@ async def test_doctor_renders_the_report(app, monkeypatch):
     assert "1 ok" in printed and "1 warning(s)" in printed and "1 failure(s)" in printed
 
 
+async def test_doctor_prints_details_holding_markup_as_text(app, monkeypatch):
+    from haiku.rag.doctor import CheckResult, Severity
+
+    class Report:
+        results = [
+            CheckResult(
+                name="duplicate_documents",
+                severity=Severity.WARN,
+                message="1 near-duplicate group",
+                details=["Report [/dim] draft", "[bold]notes[/bold].pdf"],
+            ),
+            CheckResult(name="tables", severity=Severity.OK, message="tables present"),
+        ]
+        failed = False
+
+        def count(self, severity):
+            return sum(1 for r in self.results if r.severity is severity)
+
+    async def report(*args, **kwargs):
+        return Report()
+
+    monkeypatch.setattr("haiku.rag.doctor.run_doctor", report)
+
+    await app.doctor()
+
+    printed = out(app)
+    assert "Report [/dim] draft" in printed
+    assert "[bold]notes[/bold].pdf" in printed
+    assert "tables present" in printed
+
+
 async def test_doctor_reports_the_duplicates_export(app, monkeypatch, tmp_path):
     class Report:
         results = []
