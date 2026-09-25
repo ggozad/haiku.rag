@@ -30,7 +30,7 @@ from haiku.rag.store.exceptions import (  # noqa: E402
     UnknownDatabaseError,
 )
 from haiku.rag.store.models.chunk import SearchType  # noqa: E402
-from haiku.rag.utils import is_up_to_date  # noqa: E402
+from haiku.rag.utils.packages import is_up_to_date  # noqa: E402
 
 if TYPE_CHECKING:
     from haiku.rag.app import HaikuRAGApp

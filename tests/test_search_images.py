@@ -18,7 +18,7 @@ class TestBuildImageContentFromResults:
     """Picture bytes are attached once per (document, self_ref) pair, and labelled."""
 
     def test_results_without_image_data_contribute_nothing(self):
-        from haiku.rag.tools.search import build_image_content_from_results
+        from haiku.rag.utils.images import build_image_content_from_results
 
         results = [
             SearchResult(content="text only", score=0.5, chunk_id="c1", image_data=None)
@@ -29,7 +29,7 @@ class TestBuildImageContentFromResults:
     def test_duplicate_document_and_ref_is_attached_once(self):
         from pydantic_ai.messages import BinaryContent
 
-        from haiku.rag.tools.search import build_image_content_from_results
+        from haiku.rag.utils.images import build_image_content_from_results
 
         shared = {"#/pictures/0": _png_b64()}
         results = [
@@ -59,7 +59,7 @@ class TestBuildImageContentFromResults:
 
         from pydantic_ai.messages import BinaryContent
 
-        from haiku.rag.tools.search import build_image_content_from_results
+        from haiku.rag.utils.images import build_image_content_from_results
 
         pictures = [_png_b64("red"), _png_b64("blue")]
         results = [
@@ -92,7 +92,7 @@ class TestBuildImageContentFromResults:
 
         from pydantic_ai.messages import BinaryContent
 
-        from haiku.rag.tools.search import build_image_content_from_results
+        from haiku.rag.utils.images import build_image_content_from_results
 
         valid = _png_b64()
         pictures = {"#/pictures/0": valid} if include_valid else {}
@@ -149,7 +149,7 @@ class TestBuildImageContentFromResults:
     def test_the_same_picture_in_two_collections_is_attached_from_each(self):
         from pydantic_ai.messages import BinaryContent
 
-        from haiku.rag.tools.search import build_image_content_from_results
+        from haiku.rag.utils.images import build_image_content_from_results
 
         content, _ = build_image_content_from_results(
             self._one_picture_in_two_collections()
@@ -161,7 +161,7 @@ class TestBuildImageContentFromResults:
     def test_each_image_is_labelled_with_the_collection_it_came_from(self):
         """Nothing else tells the two apart: same chunk id, same document, same
         reference."""
-        from haiku.rag.tools.search import build_image_content_from_results
+        from haiku.rag.utils.images import build_image_content_from_results
 
         content, _ = build_image_content_from_results(
             self._one_picture_in_two_collections(), include_collection=True
@@ -172,7 +172,7 @@ class TestBuildImageContentFromResults:
         assert "Collection: wiki." in labels[1]
 
     def test_an_unasked_for_collection_is_not_named_on_an_image(self):
-        from haiku.rag.tools.search import build_image_content_from_results
+        from haiku.rag.utils.images import build_image_content_from_results
 
         content, _ = build_image_content_from_results(
             self._one_picture_in_two_collections()
@@ -194,7 +194,7 @@ class TestBuildImageContentFromResults:
         """
         from pydantic_ai.messages import BinaryContent
 
-        from haiku.rag.tools.search import build_image_content_from_results
+        from haiku.rag.utils.images import build_image_content_from_results
 
         results = [
             SearchResult(

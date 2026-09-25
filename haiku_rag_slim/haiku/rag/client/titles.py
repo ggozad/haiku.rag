@@ -43,7 +43,7 @@ async def generate_title_with_llm(config: AppConfig, content: str) -> str | None
     """Generate a title using LLM from document content."""
     from pydantic_ai import Agent
 
-    from haiku.rag.utils import get_model
+    from haiku.rag.utils.models import get_model
 
     truncated = content[:2000]
 

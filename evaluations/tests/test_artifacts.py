@@ -32,7 +32,7 @@ class TestDownloadDatasetDb:
         db.mkdir(parents=True)
 
         with (
-            patch("haiku.rag.utils.get_default_data_dir", return_value=tmp_path),
+            patch("haiku.rag.utils.paths.get_default_data_dir", return_value=tmp_path),
             patch("evaluations.artifacts.snapshot_download") as download,
             patch("evaluations.artifacts.console"),
         ):
@@ -50,7 +50,7 @@ class TestDownloadDatasetDb:
         (source / "data").write_text("new")
 
         with (
-            patch("haiku.rag.utils.get_default_data_dir", return_value=tmp_path),
+            patch("haiku.rag.utils.paths.get_default_data_dir", return_value=tmp_path),
             patch(
                 "evaluations.artifacts.snapshot_download", return_value=str(snapshot)
             ) as download,
@@ -68,7 +68,7 @@ class TestDownloadDatasetDb:
 
     def test_download_failure_leaves_no_database(self, tmp_path: Path) -> None:
         with (
-            patch("haiku.rag.utils.get_default_data_dir", return_value=tmp_path),
+            patch("haiku.rag.utils.paths.get_default_data_dir", return_value=tmp_path),
             patch(
                 "evaluations.artifacts.snapshot_download",
                 side_effect=RuntimeError("offline"),
@@ -85,7 +85,7 @@ class TestDownloadDatasetDb:
         snapshot.mkdir()
 
         with (
-            patch("haiku.rag.utils.get_default_data_dir", return_value=tmp_path),
+            patch("haiku.rag.utils.paths.get_default_data_dir", return_value=tmp_path),
             patch(
                 "evaluations.artifacts.snapshot_download", return_value=str(snapshot)
             ),
@@ -101,7 +101,7 @@ class TestDownloadDatasetDb:
 class TestUploadDatasetDb:
     def test_missing_database_is_not_uploaded(self, tmp_path: Path) -> None:
         with (
-            patch("haiku.rag.utils.get_default_data_dir", return_value=tmp_path),
+            patch("haiku.rag.utils.paths.get_default_data_dir", return_value=tmp_path),
             patch("evaluations.artifacts.HfApi") as api,
             patch("evaluations.artifacts.console"),
         ):
@@ -124,7 +124,7 @@ class TestUploadDatasetDb:
         api = create_autospec(HfApi, instance=True)
         api.upload_large_folder.side_effect = capture_upload
         with (
-            patch("haiku.rag.utils.get_default_data_dir", return_value=tmp_path),
+            patch("haiku.rag.utils.paths.get_default_data_dir", return_value=tmp_path),
             patch("evaluations.artifacts.HfApi", return_value=api),
             patch("evaluations.artifacts.console"),
         ):
@@ -147,7 +147,7 @@ class TestUploadDatasetDb:
         api.delete_folder.side_effect = RuntimeError("not found")
 
         with (
-            patch("haiku.rag.utils.get_default_data_dir", return_value=tmp_path),
+            patch("haiku.rag.utils.paths.get_default_data_dir", return_value=tmp_path),
             patch("evaluations.artifacts.HfApi", return_value=api),
             patch("evaluations.artifacts.console"),
         ):

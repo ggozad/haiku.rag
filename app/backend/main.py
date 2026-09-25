@@ -27,7 +27,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.config import get_config
 from haiku.rag.telemetry import configure as configure_telemetry
-from haiku.rag.utils import get_model
+from haiku.rag.utils.models import get_model
 
 load_dotenv(find_dotenv(usecwd=True))
 

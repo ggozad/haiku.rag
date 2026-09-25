@@ -21,7 +21,7 @@ from haiku.rag.capabilities.evidence import (
 )
 from haiku.rag.capabilities.rag import RAGCapability
 from haiku.rag.store.models.citation import Citation
-from haiku.rag.tools.search import RETRIEVED_IMAGE_TAG, decode_picture
+from haiku.rag.utils.images import RETRIEVED_IMAGE_TAG, decode_picture
 
 CAPABILITY_ID = "haiku-rag-evidence-compaction"
 

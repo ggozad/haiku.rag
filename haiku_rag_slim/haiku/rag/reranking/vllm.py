@@ -2,7 +2,8 @@ import httpx
 
 from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk
-from haiku.rag.utils import image_data_uri, vllm_base_url
+from haiku.rag.utils.images import image_data_uri
+from haiku.rag.utils.models import vllm_base_url
 
 
 class VLLMReranker(RerankerBase):

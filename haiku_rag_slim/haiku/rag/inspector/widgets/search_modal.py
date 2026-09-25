@@ -9,7 +9,7 @@ from textual.widgets import Input, ListItem, ListView, Static
 from haiku.rag.client import HaikuRAG
 from haiku.rag.inspector.widgets.detail_view import DetailView
 from haiku.rag.store.models import Chunk, SearchResult
-from haiku.rag.utils import truncated
+from haiku.rag.utils.formatting import truncated
 
 
 class SearchModal(Screen):

@@ -7,7 +7,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
 from haiku.rag.config.models import AppConfig, LanceDBConfig
 from haiku.rag.store.models import Chunk
-from haiku.rag.utils import locate_database
+from haiku.rag.utils.paths import locate_database
 
 
 def _config(tmp_path, names) -> AppConfig:

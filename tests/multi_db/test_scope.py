@@ -11,7 +11,7 @@ from haiku.rag.store.exceptions import (
     SourceUnavailableError,
     UnknownDatabaseError,
 )
-from haiku.rag.utils import locate_database
+from haiku.rag.utils.paths import locate_database
 from tests.multi_db.helpers import (
     _config,
     _seed,

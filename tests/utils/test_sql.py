@@ -1,4 +1,4 @@
-from haiku.rag.tools.filters import build_document_id_filter
+from haiku.rag.utils.sql import build_document_id_filter
 
 
 def test_build_document_id_filter_empty():

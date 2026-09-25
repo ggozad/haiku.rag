@@ -47,10 +47,15 @@ haiku_rag_slim/haiku/rag/   # Source code
 │   ├── policy.py           # CitationPolicyCapability, CitationPolicyState
 │   ├── rag.py              # RAGCapability, RAGState, create_capability
 │   └── instructions/       # Model instructions (rag.md, rag_multiple_collections.md)
-├── tools/                  # Shared search and document helpers
-│   ├── filters.py          # Document ID filters
-│   ├── search.py           # Picture collection and image content
-│   └── document.py         # Document response models
+├── utils/                  # Shared helpers organized by purpose
+│   ├── models.py           # Model construction and provider settings
+│   ├── images.py           # Image and retrieved-picture helpers
+│   ├── sql.py              # SQL escaping and document ID filters
+│   ├── formatting.py       # Citation and byte formatting
+│   ├── concurrency.py      # Concurrent awaitable handling
+│   ├── paths.py            # Database and data directory paths
+│   ├── packages.py         # Package versions and update checks
+│   └── dependencies.py     # Optional dependency errors
 ├── chunkers/               # docling-local, docling-serve
 ├── converters/             # docling-local, docling-serve, pdf_split.py, text_utils.py, exceptions.py
 ├── config/                 # models.py (all config classes), loader.py
@@ -92,15 +97,14 @@ haiku_rag_slim/haiku/rag/   # Source code
 ├── s3.py                   # Object-store helpers
 ├── telemetry.py            # Logfire configuration
 ├── logging.py              # Logging configuration
-├── uri.py                  # is_local_uri, uri_to_path
-└── utils.py                # get_model, format_citations_rich, raise_missing_extra, and more
+└── uri.py                  # is_local_uri, uri_to_path
 tests/                      # Mirrors source structure
 ├── conftest.py             # Fixtures (see Testing), capture_logs, for_path, writing
 ├── cassettes/              # VCR cassettes for the central suites (see Testing)
 ├── json_body_serializer.py # Custom VCR serializer for JSON bodies
 ├── docker/                 # docker-compose.yml for integration services
 ├── client/ chunkers/ converters/ embeddings/ interfaces/ providers/ reranking/ store/
-├── capabilities/ chat/ ingester/ multi_db/ sandbox/ sources/ tools/
+├── capabilities/ chat/ ingester/ multi_db/ sandbox/ sources/ utils/
 └── data/                   # Test data files
 evaluations/                # Benchmarking workspace
 ├── configs/                # Reference configs per dataset
@@ -386,8 +390,8 @@ returns what it printed. One sandbox per call: a session outliving the call
 would hit Monty's cumulative duration budget and never see documents ingested
 after its first mount. The server's value to a client that is already a model is
 the sandbox, so there is no `ask_question` or `analyze` tool and
-`haiku.rag.utils` has no `format_citations` (`format_citations_rich` and the
-`_citation_*` helpers stay, for the CLI).
+`haiku.rag.utils.formatting` has no `format_citations` (`format_citations_rich`
+and the `_citation_*` helpers stay, for the CLI).
 
 **One error contract.** `mask_error_details=False`, passed explicitly since the
 setting is also read from the environment: every failure reaches the client as

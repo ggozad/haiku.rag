@@ -104,7 +104,7 @@ async def gather_database_info(location: Path | str, config: AppConfig) -> Datab
     """Collect read-only database state without going through Store, so a
     database missing tables (e.g. pre-migration) still reports what it can."""
     from haiku.rag.store.upgrades import get_pending_upgrades
-    from haiku.rag.utils import get_package_versions
+    from haiku.rag.utils.packages import get_package_versions
 
     display_path = str(location)
 

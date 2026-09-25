@@ -13,7 +13,7 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import BinaryContent
 
 from haiku.rag.config import AppConfig
-from haiku.rag.utils import get_model
+from haiku.rag.utils.models import get_model
 
 logger = logging.getLogger(__name__)
 

@@ -4,7 +4,7 @@ from datetime import timedelta
 
 from haiku.rag.store.engine import Store
 from haiku.rag.store.upgrades import Upgrade
-from haiku.rag.utils import escape_sql_string
+from haiku.rag.utils.sql import escape_sql_string
 
 logger = logging.getLogger(__name__)
 

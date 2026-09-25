@@ -970,7 +970,7 @@ async def set_document_source(
     strips it, so reconciliation uses this to carry attribution the queue
     already records onto the documents themselves.
     """
-    from haiku.rag.tools.filters import build_document_id_filter
+    from haiku.rag.utils.sql import build_document_id_filter
 
     docs = []
     previous_owners = []

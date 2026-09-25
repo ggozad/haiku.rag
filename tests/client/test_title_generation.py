@@ -373,7 +373,7 @@ async def test_generate_title_with_llm_returns_model_output(monkeypatch):
         return ModelResponse(parts=[TextPart("  A Generated Title  ")])
 
     monkeypatch.setattr(
-        "haiku.rag.utils.get_model", lambda *a, **kw: FunctionModel(respond)
+        "haiku.rag.utils.models.get_model", lambda *a, **kw: FunctionModel(respond)
     )
 
     assert await generate_title_with_llm(AppConfig(), "body") == "A Generated Title"
@@ -390,7 +390,7 @@ async def test_generate_title_with_llm_returns_none_for_blank_output(monkeypatch
         return ModelResponse(parts=[TextPart("   ")])
 
     monkeypatch.setattr(
-        "haiku.rag.utils.get_model", lambda *a, **kw: FunctionModel(respond)
+        "haiku.rag.utils.models.get_model", lambda *a, **kw: FunctionModel(respond)
     )
 
     assert await generate_title_with_llm(AppConfig(), "body") is None

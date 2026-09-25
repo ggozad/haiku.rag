@@ -35,7 +35,7 @@ class TestDatasetSpecDbPath:
     def test_default_uses_data_dir(self) -> None:
         spec = _make_spec(db_filename="mydb.lancedb")
         with patch(
-            "haiku.rag.utils.get_default_data_dir",
+            "haiku.rag.utils.paths.get_default_data_dir",
             return_value=Path("/home/user/.local/share/haiku.rag"),
         ):
             result = spec.db_path()
@@ -46,7 +46,7 @@ class TestDatasetSpecDbPath:
     def test_none_override_uses_default(self) -> None:
         spec = _make_spec(db_filename="other.lancedb")
         with patch(
-            "haiku.rag.utils.get_default_data_dir",
+            "haiku.rag.utils.paths.get_default_data_dir",
             return_value=Path("/data"),
         ):
             result = spec.db_path(None)

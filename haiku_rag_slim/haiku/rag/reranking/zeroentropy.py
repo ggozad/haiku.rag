@@ -1,4 +1,4 @@
-from haiku.rag.utils import raise_missing_extra
+from haiku.rag.utils.dependencies import raise_missing_extra
 
 try:
     from zeroentropy import AsyncZeroEntropy

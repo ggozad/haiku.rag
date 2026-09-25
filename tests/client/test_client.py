@@ -1307,7 +1307,7 @@ async def test_ask_returns_the_cited_chunk_with_its_provenance(
 ):
     """`ask` resolves what the model cites into citations naming the chunk and
     its document."""
-    from haiku.rag import utils as rag_utils
+    from haiku.rag.utils import models as rag_models
 
     text = "Lucy Lawless was born on 29 March 1968."
 
@@ -1324,7 +1324,7 @@ async def test_ask_returns_the_cited_chunk_with_its_provenance(
         return ModelResponse(parts=[TextPart("She was born in 1968.")])
 
     monkeypatch.setattr(
-        rag_utils, "get_model", lambda *args, **kwargs: FunctionModel(model_function)
+        rag_models, "get_model", lambda *args, **kwargs: FunctionModel(model_function)
     )
     dim = get_config().embeddings.model.vector_dim
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -1622,7 +1622,7 @@ async def test_sql_injection_is_blocked_with_escaping(temp_db_path):
     This test verifies that escape_sql_string properly prevents SQL injection
     by escaping single quotes in user input.
     """
-    from haiku.rag.utils import escape_sql_string
+    from haiku.rag.utils.sql import escape_sql_string
 
     async with HaikuRAG(temp_db_path, create=True) as client:
         # Create documents

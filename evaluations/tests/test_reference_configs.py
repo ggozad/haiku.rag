@@ -68,7 +68,7 @@ def test_reference_configs_send_no_thinking_settings(path: Path) -> None:
     Reasoning knobs in these configs travel through `extra_body`. A config that
     opts in to `thinking` changes what the model receives and is a new arm.
     """
-    from haiku.rag.utils import get_model
+    from haiku.rag.utils.models import get_model
 
     config = _load(path)
     models = [config.qa.model, config.evaluations.judge]

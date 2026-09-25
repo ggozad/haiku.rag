@@ -8,7 +8,8 @@ from pydantic_ai.providers.ollama import OllamaProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from haiku.rag.config import AppConfig, get_config
-from haiku.rag.utils import check_api_key_supported, image_data_uri, vllm_base_url
+from haiku.rag.utils.images import image_data_uri
+from haiku.rag.utils.models import check_api_key_supported, vllm_base_url
 
 if TYPE_CHECKING:
     from PIL import Image as PILImage

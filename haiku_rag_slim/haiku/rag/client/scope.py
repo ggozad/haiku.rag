@@ -7,7 +7,7 @@ from haiku.rag.store.exceptions import (
     AmbiguousDatabaseError,
     UnknownDatabaseError,
 )
-from haiku.rag.utils import locate_database
+from haiku.rag.utils.paths import locate_database
 
 DEFAULT_DATABASE_FILENAME = "haiku.rag.lancedb"
 

@@ -28,7 +28,7 @@ def run_chat(
 
     from haiku.rag.capabilities.rag import create_capability
     from haiku.rag.config import get_config
-    from haiku.rag.utils import get_model, parse_model_option
+    from haiku.rag.utils.models import get_model, parse_model_option
 
     config = get_config()
     if scope is None:

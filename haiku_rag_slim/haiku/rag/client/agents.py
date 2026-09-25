@@ -29,7 +29,7 @@ def _build_user_prompt(
             f"Model {model_config.provider}:{model_config.name} is not configured "
             "for vision (set `vision: true` on the model config to pass images)."
         )
-    from haiku.rag.utils import image_binary_content
+    from haiku.rag.utils.images import image_binary_content
 
     return [question, *(image_binary_content(data) for data in images)]
 
@@ -56,7 +56,7 @@ async def ask(
         Tuple of (answer text, list of resolved citations).
     """
     from haiku.rag.capabilities.rag import RAGState, create_capability
-    from haiku.rag.utils import get_model
+    from haiku.rag.utils.models import get_model
 
     # Validate names without opening lazily covered databases.
     client._require_known_sources(sources)

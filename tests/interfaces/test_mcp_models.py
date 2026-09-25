@@ -1,4 +1,4 @@
-from haiku.rag.tools.document import DocumentInfo
+from haiku.rag.mcp import DocumentInfo
 
 
 class TestDocumentModels:
