@@ -555,9 +555,16 @@ def vacuum(
         "--db",
         help="Path to the LanceDB database file",
     ),
+    retention_seconds: int | None = typer.Option(
+        None,
+        "--retention-seconds",
+        min=0,
+        help="Keep table versions newer than this; overrides "
+        "storage.vacuum_retention_seconds",
+    ),
 ):
     app = create_app(db)
-    asyncio.run(app.vacuum())
+    asyncio.run(app.vacuum(retention_seconds=retention_seconds))
 
 
 @_cli.command("migrate", help="Run pending database migrations")

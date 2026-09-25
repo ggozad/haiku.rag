@@ -28,10 +28,14 @@ jobs:
       - name: Install MCP Publisher
         env:
           GH_TOKEN: ${{ github.token }}
+          MCP_PUBLISHER_VERSION: "1.8.1"
         run: |
-          gh release download --repo modelcontextprotocol/registry \
-            --pattern 'mcp-publisher_linux_amd64.tar.gz' -O mcp-publisher.tar.gz
-          tar -xzf mcp-publisher.tar.gz
+          gh release download "v$MCP_PUBLISHER_VERSION" --repo modelcontextprotocol/registry \
+            --pattern 'mcp-publisher_linux_amd64.tar.gz' \
+            --pattern "registry_${MCP_PUBLISHER_VERSION}_checksums.txt"
+          grep ' mcp-publisher_linux_amd64.tar.gz$' "registry_${MCP_PUBLISHER_VERSION}_checksums.txt" \
+            | sha256sum -c -
+          tar -xzf mcp-publisher_linux_amd64.tar.gz
           chmod +x mcp-publisher
           sudo mv mcp-publisher /usr/local/bin/
       - name: Login to MCP Registry

@@ -1,7 +1,7 @@
 import json
 import logging
 
-from haiku.rag.store.engine import Store
+from haiku.rag.store.engine import Store, recorded_settings
 from haiku.rag.store.exceptions import ConfigMismatchError
 from haiku.rag.store.schema import SettingsRecord, query_to_pydantic
 
@@ -27,9 +27,9 @@ class SettingsRepository:
         return json.loads(results[0].settings) if results[0].settings else {}
 
     async def save_current_settings(self) -> None:
-        """Save the current configuration to the database."""
+        """Record the current embedder in the database."""
         self.store._assert_writable()
-        current_config = self.store._config.model_dump(mode="json")
+        recorded = recorded_settings(self.store._config.model_dump(mode="json"))
 
         existing = await query_to_pydantic(
             self.store.settings_table.query().where("id = 'settings'").limit(1),
@@ -40,16 +40,16 @@ class SettingsRepository:
             # Preserve existing version if present to avoid interfering with upgrade flow
             existing_settings = json.loads(existing[0].settings)
             if "version" in existing_settings:
-                current_config["version"] = existing_settings["version"]
+                recorded["version"] = existing_settings["version"]
 
-            if existing_settings != current_config:
+            if existing_settings != recorded:
                 await self.store.settings_table.update(
-                    {"settings": json.dumps(current_config)},
+                    {"settings": json.dumps(recorded)},
                     where="id = 'settings'",
                 )
         else:
             settings_record = SettingsRecord(
-                id="settings", settings=json.dumps(current_config)
+                id="settings", settings=json.dumps(recorded)
             )
             await self.store.settings_table.add([settings_record])
 

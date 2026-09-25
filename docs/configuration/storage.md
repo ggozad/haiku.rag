@@ -2,7 +2,7 @@
 
 ## Operational constraints
 
-Four things to know before deploying.
+Five things to know before deploying.
 
 **Run one writer per database.** This is a haiku.rag constraint, not a LanceDB
 one. A write that spans several tables is serialized by an in-process lock and
@@ -27,6 +27,18 @@ against new ones. Changing the provider or model name while keeping the dimensio
 warns on a read-only open and raises on a writable one. `haiku-rag rebuild
 --set-embedder` adopts the new identity without re-embedding, and `haiku-rag
 rebuild --embed-only` re-embeds against the new model.
+
+**The database records only its version and embedder.** The `settings` table
+holds the haiku.rag version that last wrote or migrated the database, and the
+embedder's `provider`, `name` and `vector_dim`, which every open checks against
+the configuration. Nothing else from the configuration is stored, so a database
+can be copied or shared without the credentials of the process that wrote it.
+Databases written before 0.89.0 stored the whole configuration. `haiku-rag
+migrate` reduces it, and the older table versions still hold it. To remove them,
+stop every process using the database, run `haiku-rag migrate`, delete the tags
+taken before it, and run `haiku-rag vacuum --retention-seconds 0`.
+The default retention keeps them for a day, and a tag keeps its version and
+everything after it.
 
 ## Local storage
 

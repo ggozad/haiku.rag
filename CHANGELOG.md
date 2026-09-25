@@ -4,6 +4,7 @@
 
 ### Added
 
+- `haiku-rag vacuum --retention-seconds N` overrides `storage.vacuum_retention_seconds` for one run; `HaikuRAG.vacuum(retention_seconds=)` likewise.
 - `evaluations.system_one` (`SystemOneConfig`: `base_url`, `model`), a
   `/v1/systemone` endpoint for the evaluations answer-equivalence judge.
 - `evaluations.evaluators.SystemOneJudge`: a pydantic-evals evaluator asking a
@@ -22,6 +23,7 @@
 
 ### Changed
 
+- `examples/docker/docker-compose.yml` publishes the MCP server and docling-serve on `127.0.0.1` only.
 - `haiku.rag.utils` is a package with no re-exports; import each helper from its module: `haiku.rag.utils.models` (`get_model`, `parse_model_option`, `check_api_key_supported`), `haiku.rag.utils.sql` (`escape_sql_string`, `build_document_id_filter`), `haiku.rag.utils.formatting` (`format_citations_rich`, `format_bytes`, `truncated`), `haiku.rag.utils.images` (`image_media_type`, `image_data_uri`, `image_binary_content`), `haiku.rag.utils.concurrency` (`gather_all`), `haiku.rag.utils.paths` (`get_default_data_dir`, `locate_database`), `haiku.rag.utils.packages` (`get_package_versions`, `is_up_to_date`), `haiku.rag.utils.dependencies` (`raise_missing_extra`).
 - `DocumentInfo`, `OutlineNode` and `DocumentSection` moved from `haiku.rag.tools.document` to `haiku.rag.mcp`.
 
@@ -32,7 +34,15 @@
 
 ### Fixed
 
+- `haiku-rag doctor` prints a document title or URI containing Rich markup, such as `[/dim]`, as text instead of failing with `MarkupError`.
+- Deleting or re-ingesting a document whose URI contains `_` or `%` no longer deletes the PDF attachments of another document.
 - `evaluations run --no-telemetry` names the result file `<name>.notrace-<run id>.jsonl` and records no trace id, instead of the all-zero trace id.
+
+### Security
+
+- `ChunkRepository` escapes ids in `search`, `get_by_id`, `get_by_document_id`, `count_by_document_id` and `delete_by_document_id`. A chunk id passed to `cite` or to the app's `/api/visualize` route no longer selects other chunks.
+- `haiku-rag settings` and the ingester's `GET /config` mask the `ingester.queue.dburi` password, every value under `headers` and `fetch_headers`, and credentials embedded in any URL. `max_tokens` and `chunking_tokenizer` are no longer masked.
+- The `settings` table stores only the version and `embeddings.model` `provider`, `name` and `vector_dim`. Earlier releases stored the whole configuration, credentials and resolved `${VAR}` values included. Existing databases need `haiku-rag migrate`. To purge older table versions, stop every process using the database, delete tags taken before the migration, and run `haiku-rag vacuum --retention-seconds 0`. Rotate the credentials of any database that was shared or kept on object storage.
 
 ## [0.88.2] - 2026-09-24
 

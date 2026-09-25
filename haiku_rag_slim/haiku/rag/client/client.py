@@ -1006,9 +1006,12 @@ class HaikuRAG:
         async for doc_id in rebuild_database(session, mode):
             yield doc_id
 
-    async def vacuum(self) -> None:
-        """Optimize and clean up old versions across all tables."""
-        await self._single_session("vacuum").store.vacuum()
+    async def vacuum(self, retention_seconds: int | None = None) -> None:
+        """Optimize and clean up old versions across all tables.
+
+        `retention_seconds` defaults to `storage.vacuum_retention_seconds`.
+        """
+        await self._single_session("vacuum").store.vacuum(retention_seconds)
 
     async def aclose(self) -> None:
         """Release everything this client opened, whatever it covers.

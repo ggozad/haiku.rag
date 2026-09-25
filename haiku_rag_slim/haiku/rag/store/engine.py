@@ -118,6 +118,24 @@ def _stored_embedding(
     return model.get("provider"), model.get("name"), model.get("vector_dim")
 
 
+_RECORDED_EMBEDDING_KEYS = ("provider", "name", "vector_dim")
+
+
+def recorded_settings(settings: dict) -> dict:
+    """What a database records of `settings`: its version and embedder identity."""
+    recorded: dict = {}
+    if "version" in settings:
+        recorded["version"] = settings["version"]
+    model = settings.get("embeddings", {}).get("model", {})
+    if model:
+        recorded["embeddings"] = {
+            "model": {
+                key: model[key] for key in _RECORDED_EMBEDDING_KEYS if key in model
+            }
+        }
+    return recorded
+
+
 # Keeps the vacuum cleanup cutoff safely older than the oldest tagged
 # version; guards against timestamp precision at the boundary.
 TAG_RETENTION_MARGIN = timedelta(seconds=1)
@@ -641,7 +659,7 @@ class Store:
             self.settings_table = await self.db.create_table(
                 "settings", schema=SettingsRecord
             )
-            settings_data = self._config.model_dump(mode="json")
+            settings_data = recorded_settings(self._config.model_dump(mode="json"))
             await self.settings_table.add(
                 [SettingsRecord(id="settings", settings=json.dumps(settings_data))]
             )
@@ -726,14 +744,14 @@ class Store:
                 if settings_records[0].settings
                 else {}
             )
-            if current.get("version") != version:
-                current["version"] = version
+            updated = recorded_settings({**current, "version": version})
+            if updated != current:
                 await self.settings_table.update(
-                    {"settings": json.dumps(current)},
+                    {"settings": json.dumps(updated)},
                     where="id = 'settings'",
                 )
         else:
-            settings_data = self._config.model_dump(mode="json")
+            settings_data = recorded_settings(self._config.model_dump(mode="json"))
             settings_data["version"] = version
             await self.settings_table.add(
                 [SettingsRecord(id="settings", settings=json.dumps(settings_data))]

@@ -395,9 +395,9 @@ async def test_rebuild_names_the_mode_and_completes(app, client, mode, descripti
 
 
 async def test_vacuum_confirms(app, client):
-    await app.vacuum()
+    await app.vacuum(retention_seconds=0)
 
-    client.vacuum.assert_awaited_once()
+    client.vacuum.assert_awaited_once_with(retention_seconds=0)
     assert "Vacuum completed successfully" in out(app)
 
 
@@ -440,6 +440,51 @@ def test_show_settings_hides_secrets(tmp_path):
     printed = app.console.export_text()
     assert "haiku.rag configuration" in printed
     assert "secret-value" not in printed
+
+
+DOCUMENTED_SECRETS = ("PGSECRET", "HDRSECRET", "DAVSECRET", "FETCHSECRET")
+
+
+def documented_secret_shapes() -> AppConfig:
+    """Credentials where the docs tell operators to put them."""
+    return AppConfig.model_validate(
+        {
+            "processing": {
+                "conversion_options": {
+                    "fetch_headers": {"Authorization": "Bearer FETCHSECRET"}
+                }
+            },
+            "ingester": {
+                "queue": {"dburi": "postgresql+asyncpg://ingest:PGSECRET@db/queue"},
+                "sources": [
+                    {
+                        "type": "http",
+                        "id": "reports",
+                        "urls": ["https://reports.example/a.pdf"],
+                        "headers": {"Authorization": "Bearer HDRSECRET"},
+                    },
+                    {
+                        "type": "webdav",
+                        "id": "dav",
+                        "base_url": "https://alice:DAVSECRET@dav.example/remote/",
+                    },
+                ],
+            },
+        }
+    )
+
+
+def test_show_settings_hides_credentials_in_urls_and_headers():
+    config = documented_secret_shapes()
+    app = HaikuRAGApp(scope=DatabaseScope.resolve(config), config=config)
+    app.console = Console(record=True, width=200)
+
+    app.show_settings()
+
+    printed = app.console.export_text()
+    assert "dav.example/remote/" in printed
+    for secret in DOCUMENTED_SECRETS:
+        assert secret not in printed
 
 
 def test_show_settings_renders_the_shape_a_config_file_has(tmp_path):
@@ -742,6 +787,37 @@ async def test_doctor_renders_the_report(app, monkeypatch):
     # providers are reported under their own rule
     assert "ollama unreachable" in printed
     assert "1 ok" in printed and "1 warning(s)" in printed and "1 failure(s)" in printed
+
+
+async def test_doctor_prints_details_holding_markup_as_text(app, monkeypatch):
+    from haiku.rag.doctor import CheckResult, Severity
+
+    class Report:
+        results = [
+            CheckResult(
+                name="duplicate_documents",
+                severity=Severity.WARN,
+                message="1 near-duplicate group",
+                details=["Report [/dim] draft", "[bold]notes[/bold].pdf"],
+            ),
+            CheckResult(name="tables", severity=Severity.OK, message="tables present"),
+        ]
+        failed = False
+
+        def count(self, severity):
+            return sum(1 for r in self.results if r.severity is severity)
+
+    async def report(*args, **kwargs):
+        return Report()
+
+    monkeypatch.setattr("haiku.rag.doctor.run_doctor", report)
+
+    await app.doctor()
+
+    printed = out(app)
+    assert "Report [/dim] draft" in printed
+    assert "[bold]notes[/bold].pdf" in printed
+    assert "tables present" in printed
 
 
 async def test_doctor_reports_the_duplicates_export(app, monkeypatch, tmp_path):

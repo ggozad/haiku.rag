@@ -47,6 +47,8 @@ ingester:
 
 `watchfiles` delivers changes as they happen, and a periodic sweep catches anything missed while the service was down.
 
+With `converter: docling-local`, a LaTeX document is converted where it sits, and `\input`, `\include` and `\includegraphics` read the files they name from its directory and below, whatever their extension and whatever `ignore_patterns` says. The files they pull in become searchable text. Do not watch a directory where untrusted users can write `.tex` files next to files that must stay private.
+
 ### S3 and object storage
 
 ```yaml

@@ -30,7 +30,7 @@ haiku_rag_slim/haiku/rag/   # Source code
 │   ├── info.py             # gather_database_info, get_database_stats, DatabaseInfo
 │   ├── models/             # Domain models: chunk (Chunk, SearchResult), document, document_item, citation
 │   ├── repositories/       # CRUD: DocumentRepository, ChunkRepository, DocumentItemRepository, SettingsRepository
-│   ├── upgrades/           # Version migrations (v0_20_0 … v0_75_0)
+│   ├── upgrades/           # Version migrations (v0_20_0 … v0_89_0)
 │   └── exceptions.py       # ReadOnlyError, MigrationRequiredError, AmbiguousDatabaseError, UnknownDatabaseError,
 │                           # AmbiguousCitationError, SourceUnavailableError, ConfigMismatchError
 ├── embeddings/             # VoyageAI, Cohere, vLLM, OpenRouter (ollama/openai via pydantic-ai)
@@ -146,7 +146,7 @@ app/                        # Conversational RAG application (see below)
 | `DocumentRepository` | store/repositories/document.py | Document CRUD |
 | `ChunkRepository` | store/repositories/chunk.py | Chunk CRUD + search |
 | `DocumentItemRepository` | store/repositories/document_item.py | Document items, pictures |
-| `SettingsRepository` | store/repositories/settings.py | Config persistence |
+| `SettingsRepository` | store/repositories/settings.py | The version and embedder a database records (`recorded_settings`) |
 
 **Factory Functions:**
 - `get_embedder(config)` → `EmbedderWrapper` (embeddings/__init__.py)

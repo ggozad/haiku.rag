@@ -167,7 +167,9 @@ class ChunkRepository:
     async def get_by_id(self, entity_id: str) -> Chunk | None:
         """Get a chunk by its ID."""
         results = await query_to_pydantic(
-            self.store.chunks_table.query().where(f"id = '{entity_id}'").limit(1),
+            self.store.chunks_table.query()
+            .where(f"id = '{escape_sql_string(entity_id)}'")
+            .limit(1),
             self.store.ChunkRecord,
         )
 
@@ -229,7 +231,9 @@ class ChunkRepository:
         if not chunks:
             return False
 
-        await self.store.chunks_table.delete(f"document_id = '{document_id}'")
+        await self.store.chunks_table.delete(
+            f"document_id = '{escape_sql_string(document_id)}'"
+        )
         await ensure_indexes(self.store.chunks_table, "chunks")
         return True
 
@@ -273,7 +277,7 @@ class ChunkRepository:
             )
             if docs_df.empty:
                 return []
-            id_list = ", ".join(f"'{d}'" for d in docs_df["id"])
+            id_list = ", ".join(f"'{escape_sql_string(d)}'" for d in docs_df["id"])
             chunk_filter = f"document_id IN ({id_list})"
 
         if search_type != "vector" and query.strip():
@@ -324,7 +328,9 @@ class ChunkRepository:
         Returns:
             List of chunks ordered by their order field.
         """
-        query = self.store.chunks_table.query().where(f"document_id = '{document_id}'")
+        query = self.store.chunks_table.query().where(
+            f"document_id = '{escape_sql_string(document_id)}'"
+        )
 
         if offset is not None:
             query = query.offset(offset)
@@ -336,7 +342,7 @@ class ChunkRepository:
         doc_rows = await (
             self.store.document_meta_table.query()
             .select(["id", "uri", "title", "metadata"])
-            .where(f"id = '{document_id}'")
+            .where(f"id = '{escape_sql_string(document_id)}'")
             .limit(1)
             .to_list()
         )
@@ -401,7 +407,7 @@ class ChunkRepository:
         df = await (
             self.store.chunks_table.query()
             .select(["id"])
-            .where(f"document_id = '{document_id}'")
+            .where(f"document_id = '{escape_sql_string(document_id)}'")
             .to_pandas()
         )
         return len(df)
@@ -448,8 +454,8 @@ class ChunkRepository:
         # Batch fetch document metadata (skip content/docling blobs)
         documents_map: dict[str, dict] = {}
         if document_ids:
-            id_list = "', '".join(document_ids)
-            where_clause = f"id IN ('{id_list}')"
+            id_list = ", ".join(f"'{escape_sql_string(d)}'" for d in document_ids)
+            where_clause = f"id IN ({id_list})"
             doc_rows = await (
                 self.store.document_meta_table.query()
                 .select(["id", "uri", "title", "metadata"])

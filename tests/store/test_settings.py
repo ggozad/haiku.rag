@@ -1,3 +1,4 @@
+import json
 import logging
 
 import pytest
@@ -5,51 +6,81 @@ import pytest
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.store.exceptions import ConfigMismatchError
 
+SECRETS = {
+    "lancedb": {
+        "api_key": "LANCE-KEY",
+        "storage_options": {"aws_secret_access_key": "S3-KEY"},
+    },
+    "providers": {"docling_serve": {"api_key": "DOCLING-KEY"}},
+    "embeddings": {
+        "model": {"api_key": "EMBED-KEY", "base_url": "https://u:PW@embed.example/v1"}
+    },
+}
 
-async def test_settings_table_populated_on_store_init(temp_db_path):
-    """Test that settings table is populated with current config when store is initialized."""
+
+def _config_with_secrets() -> AppConfig:
+    """The global config's embedder, with a secret in every field that can hold one."""
+    base = get_config().model_dump(mode="json")
+    base["lancedb"].update(SECRETS["lancedb"])
+    base["providers"]["docling_serve"].update(SECRETS["providers"]["docling_serve"])
+    base["embeddings"]["model"].update(SECRETS["embeddings"]["model"])
+    return AppConfig.model_validate(base)
+
+
+def _recorded(model) -> dict:
+    return {
+        "provider": model.provider,
+        "name": model.name,
+        "vector_dim": model.vector_dim,
+    }
+
+
+async def test_a_new_database_records_its_version_and_embedder_only(temp_db_path):
     from haiku.rag.store.engine import Store
     from haiku.rag.store.repositories.settings import SettingsRepository
 
-    async with Store(temp_db_path, create=True) as store:
-        settings_repo = SettingsRepository(store)
+    config = _config_with_secrets()
+    async with Store(temp_db_path, config=config, create=True) as store:
+        stored = await SettingsRepository(store).get_current_settings()
 
-        db_settings = await settings_repo.get_current_settings()
-        config_dict = get_config().model_dump(mode="json")
-
-        # Remove version from db_settings since it's added automatically
-        db_settings_without_version = {
-            k: v for k, v in db_settings.items() if k != "version"
-        }
-        assert db_settings_without_version == config_dict
+    assert set(stored) == {"version", "embeddings"}
+    assert stored["embeddings"] == {"model": _recorded(config.embeddings.model)}
+    for secret in ("LANCE-KEY", "S3-KEY", "DOCLING-KEY", "EMBED-KEY", "PW"):
+        assert secret not in json.dumps(stored)
 
 
-async def test_settings_save_and_retrieve(temp_db_path):
-    """Test saving and retrieving settings after config change."""
+async def test_saving_settings_records_the_embedder_only(temp_db_path):
     from haiku.rag.store.engine import Store
     from haiku.rag.store.repositories.settings import SettingsRepository
 
-    async with Store(temp_db_path, create=True) as store:
+    config = _config_with_secrets()
+    async with Store(temp_db_path, config=config, create=True) as store:
         settings_repo = SettingsRepository(store)
-
-        original_chunk_size = get_config().processing.chunk_size
-        get_config().processing.chunk_size = 2 * original_chunk_size
+        await store.settings_table.update(
+            {
+                "settings": json.dumps(
+                    {**config.model_dump(mode="json"), "version": "1.0.0"}
+                )
+            },
+            where="id = 'settings'",
+        )
 
         await settings_repo.save_current_settings()
-        retrieved_settings = await settings_repo.get_current_settings()
-        assert retrieved_settings["processing"]["chunk_size"] == 2 * original_chunk_size
 
-        get_config().processing.chunk_size = original_chunk_size
+        assert await settings_repo.get_current_settings() == {
+            "version": "1.0.0",
+            "embeddings": {"model": _recorded(config.embeddings.model)},
+        }
 
 
 async def test_set_haiku_version_recreates_row_from_store_config(temp_db_path):
-    """Recreating a missing settings row stamps the store's own config, not the
-    process-global one."""
+    """Recreating a missing settings row records the store's own embedder, not the
+    process-global one's."""
     from haiku.rag.store.engine import Store
     from haiku.rag.store.repositories.settings import SettingsRepository
 
-    config = AppConfig()
-    config.processing.chunk_size = get_config().processing.chunk_size + 512
+    config = _config_with_secrets()
+    config.embeddings.model.name = "store-own-embedder"
 
     async with Store(temp_db_path, config=config, create=True) as store:
         settings_repo = SettingsRepository(store)
@@ -60,10 +91,35 @@ async def test_set_haiku_version_recreates_row_from_store_config(temp_db_path):
 
         await store.set_haiku_version("1.2.3")
 
-        recreated = await settings_repo.get_current_settings()
-        assert recreated["version"] == "1.2.3"
-        assert recreated["processing"]["chunk_size"] == config.processing.chunk_size
-        assert await store.get_haiku_version() == "1.2.3"
+        assert await settings_repo.get_current_settings() == {
+            "version": "1.2.3",
+            "embeddings": {"model": _recorded(config.embeddings.model)},
+        }
+
+
+async def test_set_haiku_version_drops_everything_but_version_and_embedder(
+    temp_db_path,
+):
+    from haiku.rag.store.engine import Store
+    from haiku.rag.store.repositories.settings import SettingsRepository
+
+    config = _config_with_secrets()
+    async with Store(temp_db_path, config=config, create=True) as store:
+        await store.settings_table.update(
+            {
+                "settings": json.dumps(
+                    {**config.model_dump(mode="json"), "version": "1.0.0"}
+                )
+            },
+            where="id = 'settings'",
+        )
+
+        await store.set_haiku_version("1.2.3")
+
+        assert await SettingsRepository(store).get_current_settings() == {
+            "version": "1.2.3",
+            "embeddings": {"model": _recorded(config.embeddings.model)},
+        }
 
 
 class TestValidateConfigCompatibility:
@@ -268,7 +324,6 @@ async def test_save_current_settings_recreates_a_deleted_row(temp_db_path):
         await settings_repo.save_current_settings()
 
         recreated = await settings_repo.get_current_settings()
-        assert (
-            recreated["embeddings"]
-            == store._config.model_dump(mode="json")["embeddings"]
-        )
+        assert recreated["embeddings"] == {
+            "model": _recorded(store._config.embeddings.model)
+        }
