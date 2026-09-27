@@ -19,8 +19,11 @@ the collections this run covers stay the same.
   collection holds the answer, pass those names.
 - When you do not know which collection holds the answer, omit `sources` and
   search them all.
-- When a narrowed search finds nothing useful, search again without `sources`
-  before concluding that the knowledge base lacks the information.
+- A collection the user names can be the wrong one. If a narrowed search does
+  not answer the question, your next search omits `sources`. Do not retry other
+  wordings in the same collections first.
+- Never report that the knowledge base lacks the information until a search
+  without `sources` has failed to find it.
 - A name outside this run's collections fails the call and lists the names
   available. Use the names exactly as listed.
 
