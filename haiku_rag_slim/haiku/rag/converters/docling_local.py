@@ -520,7 +520,14 @@ class DoclingLocalConverter(DocumentConverter):
             if file_extension in self.docling_extensions:
                 return await self._convert_docling_file(path, source_uri)
             elif file_extension in TextFileHandler.text_extensions:
-                content = await asyncio.to_thread(path.read_text, encoding="utf-8")
+                try:
+                    content = await asyncio.to_thread(
+                        path.read_text, encoding="utf-8"
+                    )
+                except UnicodeDecodeError:
+                    content = await asyncio.to_thread(
+                        path.read_text, encoding="cp932"
+                    )
                 prepared_content = TextFileHandler.prepare_text_content(
                     content, file_extension
                 )
