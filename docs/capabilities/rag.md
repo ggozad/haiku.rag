@@ -59,9 +59,9 @@ When `qa.max_searches` or `qa.max_executions` runs out, the exhausted tool keeps
 
 Code can also `await search(query)`, whose rows carry `chunk_meta` and `picture_refs`, and `await list_documents()`, whose rows carry `metadata`.
 
-Monty is a Python subset. Useful modules include `json`, `re`, `math`, `pathlib`, `datetime`, `collections`, `itertools`, `functools` and `dataclasses`. `decimal` and `statistics` are absent. Class inheritance, generators, `match` statements and iterating a file object are not supported. Files are read-only, and there is no network and no filesystem beyond `/documents`.
+Monty is a Python subset. Useful modules include `json`, `re`, `math`, `pathlib`, `datetime`, `collections`, `itertools`, `functools` and `dataclasses`. `decimal` and `statistics` are absent. Class inheritance, generators, `match` statements and iterating a file object are not supported. Files are read-only, and there is no network and no filesystem beyond `/documents`, which is the working directory. `time.sleep()` returns immediately.
 
-One sandbox serves every `execute_code` call of a run, so variables persist between calls. It opens when the model first executes code. `sandbox.code_timeout` and `sandbox.max_output_chars` bound each call, see [Sandbox configuration](../configuration/qa.md#sandbox-configuration). The MCP server's `execute_code` tool runs the same sandbox, one program per call.
+One sandbox serves every `execute_code` call of a run, so variables persist between calls, except across a call stopped by `sandbox.code_timeout`. It opens when the model first executes code. `sandbox.code_timeout` and `sandbox.max_output_chars` bound each call, see [Sandbox configuration](../configuration/qa.md#sandbox-configuration). The MCP server's `execute_code` tool runs the same sandbox, one program per call.
 
 ## State
 

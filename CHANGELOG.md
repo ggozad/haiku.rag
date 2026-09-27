@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `pydantic-monty` 1.0.
+- `sandbox.code_timeout` bounds each `execute_code` call. A call stopped by it resets the sandbox session.
+- The sandbox's working directory is `/documents`. `time.sleep()` and `asyncio.sleep()` return immediately.
+- `Sandbox(executions=)` removed.
+
 ## [0.89.0] - 2026-09-25
 
 ### Added

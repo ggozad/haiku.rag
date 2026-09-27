@@ -207,9 +207,6 @@ class TestTheSandboxCoversWhatTheCapabilityCovers:
         try:
             assert sandbox._scope is capability.scope
             assert capability.scope.names == ("alpha",)
-            # The capability's session serves up to `qa.max_executions` calls.
-            budget = sandbox._session_limits()["max_duration_secs"]
-            assert budget == config.sandbox.code_timeout * config.qa.max_executions
         finally:
             await capability._close()
 

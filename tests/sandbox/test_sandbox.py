@@ -3,6 +3,8 @@ import threading
 from pathlib import Path
 
 import pytest
+from docling_core.types.doc.document import DoclingDocument
+from docling_core.types.doc.labels import DocItemLabel
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
@@ -29,6 +31,16 @@ class TestSandboxBasics:
         )
         assert result.success, result.stderr
         assert "[('a', 2)] [0, 1]" in result.stdout
+
+    async def test_sleep_returns_at_once(self, sandbox):
+        """A program's `time.sleep` does not hold the worker."""
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        result = await sandbox.execute("import time\ntime.sleep(5)\nprint('woke')")
+        await sandbox.close()
+
+        assert result.success, result.stderr
+        assert loop.time() - started < 3
 
     async def test_execute_simple_code(self, sandbox):
         """Test executing simple code in the sandbox."""
@@ -590,6 +602,37 @@ class TestSandboxVFS:
             assert result.success
             assert "True" in result.stdout
 
+    async def test_relative_paths_resolve_under_documents(self, temp_db_path):
+        """The working directory is `/documents`."""
+        config = AppConfig()
+        docling = DoclingDocument(name="d")
+        docling.add_text(label=DocItemLabel.TEXT, text="Foxes and dogs.")
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.import_document(
+                docling,
+                [
+                    Chunk(
+                        content="Foxes and dogs.",
+                        embedding=[0.1] * config.embeddings.model.vector_dim,
+                        order=0,
+                    )
+                ],
+                uri="test://relative",
+            )
+
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            result = await sb.execute(
+                "from pathlib import Path\n"
+                "print([p.name for p in Path('.').iterdir()])\n"
+                f"print(open('{doc.id}/content.txt').read())"
+            )
+        finally:
+            await sb.close()
+
+        assert result.success, result.stderr
+        assert result.stdout.splitlines() == [f"['{doc.id}']", "Foxes and dogs."]
+
     @pytest.mark.vcr()
     async def test_open_readlines(self, temp_db_path):
         """readlines() splits a newline-delimited VFS file into lines."""
@@ -964,16 +1007,16 @@ class TestSandboxHeldConnection:
 
 
 class TestSandboxReadDeadline:
-    """The VFS bridge suspends the worker for the length of a read, so Monty
-    cannot check its duration budget while one is in flight. The sandbox
-    enforces the budget itself, before each read."""
+    """The VFS bridge suspends the worker for the length of a read, and Monty's
+    feed limit does not count a read in flight. The sandbox enforces the
+    deadline itself, before each read."""
 
     async def test_the_deadline_covers_reads_from_memory_and_in_code_calls(
         self, temp_db_path, monkeypatch
     ):
         """Once a call's time is up, a file served from memory and an in-code
         listing are refused like a database read. A slow first read spends the
-        budget; the watchdog does not count time spent waiting on the host."""
+        budget; the feed limit does not count time spent waiting on the host."""
         from docling_core.types.doc.document import DoclingDocument
         from docling_core.types.doc.labels import DocItemLabel
 
@@ -1040,23 +1083,25 @@ class TestSandboxReadDeadline:
         coro.close()
         assert scheduled is False
 
-    def test_session_budget_covers_every_permitted_execution(self, temp_db_path):
-        """Monty spends its duration budget across the session's whole life, so a
-        per-call value would let the first call starve the rest."""
+    async def test_each_call_gets_the_whole_time_limit(self, temp_db_path):
+        """A call that spends most of `code_timeout` leaves the next call its own."""
         config = AppConfig()
-        config.sandbox.code_timeout = 5.0
+        config.sandbox.code_timeout = 1.0
+        async with HaikuRAG(temp_db_path, create=True):
+            pass
+        burn = "import time\nt0 = time.monotonic()\nwhile time.monotonic() - t0 < 0.7:\n    pass\nprint('done')"
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            results = [await sb.execute(burn) for _ in range(3)]
+        finally:
+            await sb.close()
 
-        sb = Sandbox(
-            db_path=temp_db_path,
-            config=config,
-            context=AnalysisContext(),
-            executions=3,
-        )
+        assert all(r.success for r in results), [r.stderr for r in results]
 
-        limits = sb._session_limits()
-
-        assert limits["max_duration_secs"] == 15.0
-        cap = limits["max_suspensions"]
+    def test_host_calls_are_not_capped(self, temp_db_path):
+        cap = Sandbox(
+            db_path=temp_db_path, config=AppConfig(), context=AnalysisContext()
+        )._session_limits()["max_suspensions"]
         assert cap is not None
         assert cap >= 1_000_000
 
@@ -1198,27 +1243,22 @@ class TestSandboxWorkerCrash:
             await sb.close()
 
 
-class TestSandboxRequestTimeout:
-    """The pool watchdog bounds a call that never reads."""
+class TestSandboxTimeLimit:
+    """Monty's feed limit bounds a call that never reads."""
 
-    async def test_runaway_compute_is_killed_and_the_next_call_recovers(
+    async def test_runaway_compute_is_stopped_and_the_next_call_recovers(
         self, temp_db_path
     ):
-        """Code that never reads escapes the read deadline. The watchdog kills it."""
+        """Code that never reads escapes the read deadline. The feed limit stops it,
+        and the session it leaves behind is replaced."""
         config = AppConfig()
         config.sandbox.code_timeout = 1.0
         async with HaikuRAG(temp_db_path, create=True):
             pass
 
-        # A session serving several calls: the killed call must leave budget
-        # for the next one.
-        sb = Sandbox(
-            db_path=temp_db_path,
-            config=config,
-            context=AnalysisContext(),
-            executions=3,
-        )
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
         try:
+            await sb.execute("x = 1")
             runaway = await sb.execute(
                 "x = 0\nfor i in range(500000000):\n    x += i\nprint(x)"
             )
@@ -1228,6 +1268,49 @@ class TestSandboxRequestTimeout:
             recovered = await sb.execute("print('alive')")
             assert recovered.success, recovered.stderr
             assert "alive" in recovered.stdout
+
+            lost = await sb.execute("print(x)")
+            assert lost.success is False
+            assert "NameError" in lost.stderr
+        finally:
+            await sb.close()
+
+    async def test_a_refused_read_keeps_the_session(self, temp_db_path, monkeypatch):
+        """The read deadline's TimeoutError is answered by the host, so the
+        session's variables survive it."""
+
+        def _past_deadline(self, coro):
+            coro.close()
+            raise self._time_limit()
+
+        monkeypatch.setattr(Sandbox, "_run_on_loop", _past_deadline)
+        config = AppConfig()
+        docling = DoclingDocument(name="d")
+        docling.add_text(label=DocItemLabel.TEXT, text="Foxes and dogs.")
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await client.import_document(
+                docling,
+                [
+                    Chunk(
+                        content="Foxes and dogs.",
+                        embedding=[0.1] * config.embeddings.model.vector_dim,
+                        order=0,
+                    )
+                ],
+                uri="test://refused-keeps-session",
+            )
+
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            await sb.execute("x = 1")
+            refused = await sb.execute(
+                f"open('/documents/{doc.id}/content.txt').read()"
+            )
+            assert refused.success is False
+            assert "restarted" not in refused.stderr
+
+            kept = await sb.execute("print(x)")
+            assert kept.success, kept.stderr
         finally:
             await sb.close()
 
