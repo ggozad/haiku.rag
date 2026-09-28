@@ -187,6 +187,8 @@ Per-image failures (404, timeout, oversized, unreadable) leave that picture as a
 
 Not every picture becomes a picture chunk. Identical picture bytes within a document produce a single chunk, so a watermark or logo repeated on every page embeds once. Pictures smaller than `processing.min_picture_size` pixels on their smaller side (default 64, `0` disables) are skipped entirely. Filtered pictures keep their bytes in `document_items`, so context expansion and vision QA still see them.
 
+A picture's text is its description or caption, followed by any text docling found inside it, such as a screenshot's words, a chart's labels or the picture's footnotes. Full-text search finds that text only through a picture chunk, so only under a multimodal embedder and only for pictures that get one. Every picture's `document_items` row carries it, so context expansion shows it around a retrieved passage, but a search cannot retrieve a filtered picture by its words. Existing databases pick the text up with `haiku-rag rebuild --rechunk`.
+
 Use `none` when you don't need picture content (e.g. very large reference manuals where RAM is tight). Use `description` to include VLM-generated text in chunk content and keep bytes for later. Use `image` (default) to keep bytes without paying the VLM cost. The prompt is configurable under `prompts.picture_description`. See [Prompts](prompts.md).
 
 ```yaml
