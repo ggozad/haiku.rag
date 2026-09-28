@@ -1,4 +1,3 @@
-import warnings
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -57,24 +56,6 @@ class ModelConfig(ConfigModel):
     max_tokens: int | None = Field(default=None, gt=0)
     vision: bool = False
     extra_body: dict | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def _enable_thinking_is_deprecated(cls, data: Any) -> Any:
-        if isinstance(data, dict) and "enable_thinking" in data:
-            if "thinking" in data:
-                raise ValueError("set one of thinking and enable_thinking, not both")
-            warnings.warn(
-                "enable_thinking is deprecated and will be removed in 0.90.0; "
-                "set thinking instead. true now selects the model's default "
-                "level (medium on OpenAI-compatible endpoints); write "
-                "thinking: high to keep the previous level",
-                FutureWarning,
-                stacklevel=2,
-            )
-            data = {**data, "thinking": data["enable_thinking"]}
-            del data["enable_thinking"]
-        return data
 
 
 class EmbeddingModelConfig(ConfigModel):

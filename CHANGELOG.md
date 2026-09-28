@@ -10,6 +10,10 @@
   collection.
 - `RAGCapability.collections`: the collections a run may search.
 
+### Removed
+
+- `enable_thinking` model setting. Use `thinking`.
+
 ### Changed
 
 - `Collection:` lines on search results and image labels follow the run, not the

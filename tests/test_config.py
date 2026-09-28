@@ -966,20 +966,11 @@ def test_thinking_rejects_values_outside_the_vocabulary(value):
         ModelConfig(thinking=value)
 
 
-@pytest.mark.parametrize("value", [True, False])
-def test_enable_thinking_loads_as_thinking_with_a_warning(value):
-    """The old key still loads, warns once, and takes the `thinking` semantics."""
-    with pytest.warns(FutureWarning, match=r"enable_thinking.*0\.90\.0.*thinking"):
-        config = AppConfig.model_validate({"qa": {"model": {"enable_thinking": value}}})
-
-    assert config.qa.model.thinking is value
-
-
-def test_enable_thinking_beside_thinking_is_rejected():
+def test_enable_thinking_is_rejected():
     from haiku.rag.config.models import ModelConfig
 
-    with pytest.raises(ValidationError, match="one of"):
-        ModelConfig.model_validate({"thinking": True, "enable_thinking": True})
+    with pytest.raises(ValidationError, match="enable_thinking"):
+        ModelConfig.model_validate({"enable_thinking": True})
 
 
 def test_generated_config_carries_thinking_not_the_old_key():
