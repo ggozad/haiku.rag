@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 
 
 _MAX_HOST_CALLS = 10_000_000
+_READ_DEADLINE = "time limit exceeded: no further document reads or calls after "
 
 
 @dataclass
@@ -118,7 +119,6 @@ class Sandbox:
     _lock: "asyncio.Lock | None"
     _search_results: "list[SearchResult]"
     _search_calls: int
-    _executions: int
     _doc_items: dict[str, list["DocumentItem"]]
     _doc_chunk_index: dict[str, dict[str, list[str]]]
     _items_jsonl_cache: dict[str, str]
@@ -138,7 +138,6 @@ class Sandbox:
         context: AnalysisContext,
         rag: "HaikuRAG | None" = None,
         lock: "asyncio.Lock | None" = None,
-        executions: int = 1,
     ):
         from haiku.rag.client.scope import DatabaseScope
 
@@ -148,7 +147,6 @@ class Sandbox:
             context,
             rag,
             lock,
-            executions,
         )
 
     @classmethod
@@ -159,7 +157,6 @@ class Sandbox:
         context: AnalysisContext,
         rag: "HaikuRAG | None" = None,
         lock: "asyncio.Lock | None" = None,
-        executions: int = 1,
     ) -> "Sandbox":
         """A sandbox over databases someone already resolved.
 
@@ -169,7 +166,7 @@ class Sandbox:
         handed is the only one resolved.
         """
         sandbox = cls.__new__(cls)
-        sandbox._configure(scope, config, context, rag, lock, executions)
+        sandbox._configure(scope, config, context, rag, lock)
         return sandbox
 
     def _configure(
@@ -179,17 +176,11 @@ class Sandbox:
         context: AnalysisContext,
         rag: "HaikuRAG | None",
         lock: "asyncio.Lock | None",
-        executions: int,
     ) -> None:
-        """The state every sandbox starts with, however its scope was reached.
-
-        ``executions`` is how many ``execute()`` calls the session will serve;
-        the session's duration budget is that many ``code_timeout``s.
-        """
+        """The state every sandbox starts with, however its scope was reached."""
         self._scope = scope
         self._config = config
         self._context = context
-        self._executions = executions
         self._rag = rag
         self._opened = None
         self._owners = {}
@@ -301,10 +292,10 @@ class Sandbox:
         Called off the loop while ``feed_run`` is awaited, so scheduling onto it
         and blocking for the result is safe.
 
-        Blocking here suspends the worker, and Monty checks its duration budget
-        between interpreter steps, so it cannot check while a read is in flight.
-        Enforce the budget before starting another read, or code that reads in a
-        loop overruns it by however long the outstanding reads take. Raising from
+        Blocking here suspends the worker, and Monty's feed limit counts only
+        time the worker spends computing, so it never counts a read in flight.
+        Enforce the deadline before starting another read, or code that reads in
+        a loop overruns it by however long the outstanding reads take. Raising from
         inside the callback answers the worker's suspension, which keeps the
         session usable — cancelling ``feed_run`` from outside does not, and wedges
         the protocol.
@@ -325,15 +316,24 @@ class Sandbox:
         )
 
     def _time_limit(self) -> TimeoutError:
-        return TimeoutError(
-            "time limit exceeded: no further document reads or calls after "
-            f"{self._config.sandbox.code_timeout}s"
+        return TimeoutError(_READ_DEADLINE + f"{self._config.sandbox.code_timeout}s")
+
+    @staticmethod
+    def _hit_time_limit(error: pydantic_monty.MontyError) -> bool:
+        """Whether Monty stopped the program on its feed limit.
+
+        Both that limit and the read deadline surface as ``TimeoutError``; only
+        the message tells them apart.
+        """
+        inner = error.exception()
+        return isinstance(inner, TimeoutError) and not str(inner).startswith(
+            _READ_DEADLINE
         )
 
     def _check_deadline(self) -> None:
         """Refuse a host call once the call's time is up.
 
-        Monty's watchdog counts only time the worker spends computing, so every
+        Monty's feed limit counts only time the worker spends computing, so every
         host call, a file served from memory and an in-code search included,
         checks the deadline before it runs.
         """
@@ -654,20 +654,15 @@ class Sandbox:
     def _session_limits(self) -> ResourceLimits:
         """Resource limits for the worker session.
 
-        Monty spends ``max_duration_secs`` across the session's whole life, and
-        the session is reused so variables persist between calls: the budget
-        covers every execution the session serves. ``code_timeout`` is enforced per
-        call elsewhere: past
-        its deadline no further host call starts (``_check_deadline``), and the
-        pool's ``request_timeout`` bounds compute.
+        ``max_feed_duration_secs`` bounds the compute of one ``execute()`` call;
+        its reads are bounded by ``_check_deadline``.
 
         ``max_suspensions`` counts host callbacks per session, document reads
-        included, defaults to 1000 and cannot be disabled. The time budgets are
+        included, defaults to 1000 and cannot be disabled. The time limits are
         the governors here, so it is set where no program reaches it.
         """
-        config = self._config
         return {
-            "max_duration_secs": config.sandbox.code_timeout * self._executions,
+            "max_feed_duration_secs": self._config.sandbox.code_timeout,
             "max_suspensions": _MAX_HOST_CALLS,
         }
 
@@ -676,15 +671,13 @@ class Sandbox:
         if self._vfs is None:
             self._vfs = await self._build_vfs()
         if self._pool is None:
-            # The watchdog counts only time the worker spends running code, so a
-            # read that blocks the worker never trips it. That leaves the two
-            # limits disjoint: this one bounds a call that computes, and the read
-            # deadline bounds a call that reads.
-            pool = AsyncMonty(request_timeout=self._config.sandbox.code_timeout)
+            pool = AsyncMonty()
             await pool.__aenter__()
             self._pool = pool
         if self._session is None:
-            session = self._pool.checkout(limits=self._session_limits())
+            session = self._pool.checkout(
+                limits=self._session_limits(), os_policy={"sleep": "zero"}
+            )
             await session.__aenter__()
             self._session = session
         assert self._session is not None and self._vfs is not None
@@ -714,13 +707,17 @@ class Sandbox:
                 code,
                 external_lookup=external_fns,
                 print_callback=out.write,
+                cwd="/documents",
                 os=vfs,
             )
         except (pydantic_monty.MontyError, RuntimeError) as e:
             stderr = str(e)
-            # A crash kills the worker, and a protocol error leaves it out of
-            # step. Both poison the session. Bad user code does not.
-            if isinstance(e, pydantic_monty.MontyCrashedError | RuntimeError):
+            # A crash kills the worker, a protocol error leaves it out of step,
+            # and Monty's time limit leaves its heap undefined. All three poison
+            # the session. Bad user code does not.
+            if isinstance(
+                e, pydantic_monty.MontyCrashedError | RuntimeError
+            ) or self._hit_time_limit(e):
                 await self._discard_session()
                 stderr = (
                     f"{stderr}\n\nThe interpreter restarted. Variables from "

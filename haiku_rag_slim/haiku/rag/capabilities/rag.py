@@ -514,7 +514,6 @@ class RAGCapability(AbstractCapability[Any]):
                 ),
                 rag=rag,
                 lock=self.rag_lock,
-                executions=self.config.qa.max_executions,
             )
         return self.sandbox
 

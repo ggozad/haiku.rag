@@ -387,8 +387,7 @@ pydantic model, whose JSON is the payload.
 **`execute_code`** runs one program per call in the same Monty sandbox the
 RAG capability uses, over the documents `filter` and `sources` select, and
 returns what it printed. One sandbox per call: a session outliving the call
-would hit Monty's cumulative duration budget and never see documents ingested
-after its first mount. The server's value to a client that is already a model is
+would never see documents ingested after its first mount. The server's value to a client that is already a model is
 the sandbox, so there is no `ask_question` or `analyze` tool and
 `haiku.rag.utils.formatting` has no `format_citations` (`format_citations_rich`
 and the `_citation_*` helpers stay, for the CLI).
@@ -576,7 +575,8 @@ Each entry is the trap and what to do. The evidence behind them is in the commit
 - **User-attached images** need the instructions' "Questions with attached images" section, or vision models refuse without searching.
 - **`SearchResult.document_meta` / `Citation.document_meta`** carry the document's metadata for UIs, excluded from `format_for_agent`. `chunk_meta` is the verbatim `Chunk.metadata`, typed keys included: on an expanded result it is the anchor chunk's, and `format_for_agent` shows it only with `include_chunk_meta` (the MCP search tools set it).
 - **Sandbox** (`sandbox/sandbox.py`): pydantic-monty in a subprocess worker from an `AsyncMonty` pool, with read-only `CallbackFile`s under `/documents/{id}/`. `metadata.json` is prebuilt, `content.txt` lazy per document, `items.jsonl`/`chunks.jsonl`/`toc.json` a lazy bulk cache. One session serves every `execute()` call of a capability run. `_run_on_loop` bridges sync reads to async queries. A host error keeps its message for every caller.
-- **`sandbox.code_timeout` is a deadline**: `_check_deadline` runs before every host call (`_timed` wraps the five readers, in-code `search()` and `list_documents()` call it first, `_run_on_loop` keeps its own), because cached reads never touch the bridge. Monty's watchdog stops compute.
+- **`sandbox.code_timeout` is a deadline**: `_check_deadline` runs before every host call (`_timed` wraps the five readers, in-code `search()` and `list_documents()` call it first, `_run_on_loop` keeps its own), because cached reads never touch the bridge. Monty's feed limit (`max_feed_duration_secs = code_timeout`, reset per `feed_run`) stops compute and never counts time suspended on the host. It raises the same `TimeoutError` type as the read deadline and leaves the heap undefined, so `_hit_time_limit` tells them apart by the read deadline's message and discards the session on the feed limit only. The pool's grace backstop kills a worker that overruns the feed limit, so no `request_timeout` is set.
+- **Sandbox OS policy**: `time.sleep`/`asyncio.sleep` default to real waits of up to 10s that no duration limit counts, so the checkout sets `os_policy={"sleep": "zero"}`. `feed_run(cwd="/documents")` makes relative paths resolve under the mount.
 - **Monty caps host callbacks** per checkout (`max_suspensions`, 1000 by default), with no way to disable it. `_session_limits` sets `_MAX_HOST_CALLS = 10_000_000`, so the time budgets govern.
 - **Monty runs VFS callbacks on a thread coverage does not trace**: a reader's lines need a direct-read test (`tests/sandbox/test_sandbox_toc.py`).
 - **Compaction and policy hooks.** `EvidenceCompactionCapability` discovers the evidence capability through `RunContext.capabilities` and rewrites `request_context.messages` in `wrap_model_request`, never the stored history, which keeps question identities and epochs (message counts) meaningful. `CitationPolicyCapability` reads the same records in `after_model_request` / `after_run`. `cite([])` records a declaration with no refs (`ungrounded`), distinct from declaring nothing (`missing`).
