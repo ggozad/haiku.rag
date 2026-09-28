@@ -561,7 +561,7 @@ async def test_rebuild_rechunk(qa_corpus: list[dict[str, str]], temp_db_path):
 
         assert doc.id in processed_ids
 
-        # Document content should be unchanged, but docling JSON should be updated
+        # Document content and docling JSON are unchanged
         doc_after = await client.document_repository.get_by_id(
             doc.id, include_blobs=True
         )
@@ -1192,9 +1192,9 @@ def _count_flushes(monkeypatch, rebuild_module) -> list[int]:
     real = rebuild_module._flush_rebuild_batch
     sizes: list[int] = []
 
-    async def spy(client, documents, chunks):
+    async def spy(client, documents, chunks, **kwargs):
         sizes.append(len(documents))
-        return await real(client, documents, chunks)
+        return await real(client, documents, chunks, **kwargs)
 
     monkeypatch.setattr(rebuild_module, "_flush_rebuild_batch", spy)
     return sizes
@@ -1213,7 +1213,9 @@ async def test_flush_rebuild_batch_is_a_noop_without_documents(temp_db_path):
         before = await client.store.documents_table.count_rows()
         assert before == 1
 
-        await _flush_rebuild_batch(client, [], [])
+        await _flush_rebuild_batch(
+            client, [], [], document_columns=("docling_document",)
+        )
 
         assert await client.store.documents_table.count_rows() == before
         after = await client.get_document_by_id(existing.id)
@@ -1427,6 +1429,78 @@ async def test_rechunk_raises_when_docling_blob_is_missing(temp_db_path):
         with pytest.raises(ValueError, match="has no stored docling document"):
             async for _ in client.rebuild_database(mode=RebuildMode.RECHUNK):
                 pass
+
+
+@pytest.mark.vcr()
+async def test_rebuild_rechunk_writes_no_documents_version(temp_db_path):
+    from haiku.rag.config import AppConfig
+
+    config = AppConfig()
+    config.storage.auto_vacuum = False
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        await client.create_document(content="rechunk leaves documents alone")
+        before = await client.store.documents_table.version()
+
+        async for _ in client.rebuild_database(mode=RebuildMode.RECHUNK):
+            pass
+
+        assert await client.store.documents_table.version() == before
+
+
+@pytest.mark.vcr()
+@pytest.mark.parametrize(
+    "mode", [RebuildMode.RECHUNK, RebuildMode.DESCRIPTIONS], ids=lambda m: m.name
+)
+async def test_rebuild_holds_no_page_images(temp_db_path, monkeypatch, mode):
+    """Batched documents carry no page images, and the stored ones survive."""
+    from haiku.rag.client import rebuild as rebuild_module
+    from haiku.rag.client.documents import _store_document_with_chunks
+    from haiku.rag.config import AppConfig
+    from haiku.rag.store.models.document import Document
+    from tests.store.test_document_items import _docling_doc_with_picture
+
+    config = AppConfig()
+    config.processing.pictures = "description"
+
+    async def fake_describe(image_bytes_by_ref, *, config):
+        return {ref: "A red square (mocked)." for ref in image_bytes_by_ref}
+
+    monkeypatch.setattr(
+        "haiku.rag.providers.picture_description.describe_pictures", fake_describe
+    )
+
+    flushed: list[Document] = []
+    real = rebuild_module._flush_rebuild_batch
+
+    async def spy(client, documents, chunks, **kwargs):
+        flushed.extend(documents)
+        return await real(client, documents, chunks, **kwargs)
+
+    monkeypatch.setattr(rebuild_module, "_flush_rebuild_batch", spy)
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
+        docling_doc = _docling_doc_with_picture()
+        document = Document(content="picture doc", uri="test://doc")
+        document.set_docling(docling_doc)
+        created = await _store_document_with_chunks(
+            writing(rag), document, [], docling_doc
+        )
+        assert created.id is not None
+        pages = b"\x80SENTINEL_PAGE_BYTES"
+        await rag.store.documents_table.update(
+            {"docling_pages": pages}, where=f"id = '{created.id}'"
+        )
+
+        async for _ in rag.rebuild_database(mode=mode):
+            pass
+
+        assert [d.id for d in flushed] == [created.id]
+        assert flushed[0].docling_pages is None
+        after = await rag.document_repository.get_by_id(created.id, include_blobs=True)
+        assert after is not None
+        assert after.content == "picture doc"
+        assert after.docling_pages == pages
 
 
 @pytest.mark.vcr()

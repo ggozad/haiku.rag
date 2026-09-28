@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `rebuild --rechunk` failing with lance "Resources exhausted" on databases with page
+  images (#666). `--rechunk` writes no `documents` version. `--rechunk` and
+  `--descriptions` no longer load or rewrite `docling_pages`. The stored-content
+  fallback of a full rebuild no longer loads the stored `docling_pages`, and writes
+  their replacement from the markdown conversion.
+
 ## [0.90.0] - 2026-09-28
 
 ### Added
