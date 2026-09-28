@@ -1,6 +1,6 @@
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -24,7 +24,6 @@ class CaseOutcome:
     aborted: bool
     judge_decided_by: str | None = None
     system_one_model: str | None = None
-    scores: dict[str, float] = field(default_factory=dict)
 
 
 def check_run_name(name: str) -> str:
@@ -84,8 +83,6 @@ def _case_row(case: ReportCase, pair_key: str, trace_id: str | None) -> dict[str
         "judge_probability": None if probability is None else float(probability.value),
         "system_one_model": None if served_model is None else served_model.value,
         "attributes": dict(case.attributes),
-        "scores": {name: float(score.value) for name, score in case.scores.items()},
-        "metadata": dict(case.metadata or {}),
         "task_duration": case.task_duration,
     }
 
@@ -107,8 +104,6 @@ def _failure_row(
         "judge_probability": None,
         "system_one_model": None,
         "attributes": {},
-        "scores": {},
-        "metadata": dict(failure.metadata or {}),
         "task_duration": None,
     }
 
@@ -178,7 +173,6 @@ def read_results(path: Path) -> list[CaseOutcome]:
             aborted=bool(row["aborted"]),
             judge_decided_by=row.get("judge_decided_by"),
             system_one_model=row.get("system_one_model"),
-            scores=dict(row.get("scores") or {}),
         )
         for row in (
             json.loads(line) for line in path.read_text().splitlines() if line.strip()

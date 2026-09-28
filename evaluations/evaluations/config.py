@@ -1,5 +1,5 @@
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -86,11 +86,6 @@ class DatasetSpec:
     experiment_metadata: dict[str, Any] | None = None
     # The case-metadata key two runs of this dataset pair on.
     pair_key: str = "question_id"
-    # Binds the spec to the run's configuration before anything runs, for a
-    # dataset whose cases depend on it. Returns the spec to run.
-    configure: Callable[["DatasetSpec", AppConfig], "DatasetSpec"] | None = None
-    # Scored on every QA case, beside the judge and the citation evaluator.
-    case_evaluators: list[Evaluator] = field(default_factory=list)
 
     def uses_configured_databases(
         self, config: AppConfig, override_path: Path | None = None

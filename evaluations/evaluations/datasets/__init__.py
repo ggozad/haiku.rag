@@ -1,9 +1,5 @@
 from evaluations.config import DatasetSpec
 
-from .collection_routing import (
-    COLLECTION_ROUTING_OPAQUE_SPEC,
-    COLLECTION_ROUTING_SPEC,
-)
 from .frames import FRAMES_SPEC
 from .hotpotqa import HOTPOTQA_SPEC
 from .mtrag import (
@@ -33,8 +29,6 @@ DATASETS: dict[str, DatasetSpec] = {
         ORB_MULTIMODAL_NEMOTRON_SPEC,
         T2_FINQA_SPEC,
         T2_TATDQA_SPEC,
-        COLLECTION_ROUTING_SPEC,
-        COLLECTION_ROUTING_OPAQUE_SPEC,
     )
 }
 

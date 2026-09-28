@@ -14,7 +14,6 @@ Benchmarking for haiku.rag: retrieval, QA accuracy and citation retrieval, score
   - `mtrag_clapnq_live` replays whole conversations through one capability session, carrying the model's own answers and tool history, and reports per-turn outcomes with micro (per-turn) and macro (per-conversation) aggregates. `--limit` counts conversations.
   - `mtrag_clapnq_live_uncompacted` is the same replay without evidence compaction.
   - Retrieval reports Recall@5/@10, nDCG@5/@10 and MAP, comparable with IBM's published setup. Generation scores use our judge and rubric and are not comparable with IBM's.
-- `collection_routing`, `collection_routing_opaque`: FRAMES and OpenRAG Bench over three collections placed by `lancedb.databases`: the FRAMES articles split by uri hash into two databases, and the `orb_multimodal_nemotron` database as the third. The 822 FRAMES questions and the first 822 ORB questions are interleaved, so `--limit` keeps both members even, and every fifth question, by position, is prefixed with a cue: `named` names the collections holding its gold documents, `misnamed` a covered collection that does not, `outside` a collection the run lacks. Each case records `expected_sources` and `collections`, the run records each search's `sources` argument as `search_sources`, and the routing scores are `first_search_covers`, `first_search_exact`, `sources_recall`, `effective_collections`, `n_broad_searches`, `n_invalid_selections`, `n_broadenings`, `recovered_after_miss` (on the cases whose first search missed) and `searched_recall`, with the run counts `n_search_calls`, `n_sandbox_search_calls`, `n_executions` and `n_requests` scored too so `evaluations pair` reports them. A `sources` value that is not a list of names is an invalid selection that read nothing. The `_opaque` key runs the same corpus with the collections named `alpha`, `beta` and `gamma`.
 
 ## Usage
 
@@ -139,11 +138,4 @@ Population writes one database, so it runs only without `lancedb.databases`. `--
 ```bash
 evaluations run hotpotqa --db /path/to/one.lancedb   # no lancedb.databases: populate, then benchmark
 evaluations run hotpotqa --skip-db                   # lancedb.databases: benchmark the configured set
-```
-
-`evaluations split` copies a database's documents into shards by uri hash, chunks and embeddings included, so no embedder runs. The `collection_routing` datasets read the two FRAMES shards it builds plus the ORB database:
-
-```bash
-evaluations split dbs/frames.lancedb dbs/frames_a.lancedb dbs/frames_b.lancedb --config configs/frames.yaml
-evaluations run collection_routing --skip-db --config configs/collection_routing.yaml
 ```

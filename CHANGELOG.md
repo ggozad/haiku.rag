@@ -4,18 +4,6 @@
 
 ### Added
 
-- `collection_routing` and `collection_routing_opaque` evaluation datasets: FRAMES split
-  into two collections plus OpenRAG Bench, with collection cues on the questions and the
-  routing scores `first_search_covers`, `first_search_exact`, `sources_recall`,
-  `effective_collections`, `n_broad_searches`, `n_invalid_selections`, `n_broadenings`,
-  `recovered_after_miss` and `searched_recall`, and the run counts
-  `n_search_calls`, `n_sandbox_search_calls`, `n_executions` and `n_requests` as scores.
-- `evaluations split SOURCE DESTINATION...`: copies a database's documents into shards by
-  uri hash, chunks and embeddings included.
-- `evaluations run` records `search_sources`, the `sources` argument of each search call.
-- Per-case result rows carry `scores` and `metadata`; `evaluations pair` reports every
-  score both arms carry.
-- `DatasetSpec.configure` and `DatasetSpec.case_evaluators`.
 - `sources` on the RAG capability's `search` tool: a list narrows one search to those
   collections, an empty list searches none, and a name outside the run's collections
   fails the call and lists them. Offered only when the run spans more than one
