@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.90.0] - 2026-09-28
+
 ### Added
 
 - `sources` on the RAG capability's `search` tool: a list narrows one search to those
@@ -2785,7 +2787,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.89.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.90.0...HEAD
+[0.90.0]: https://github.com/ggozad/haiku.rag/compare/0.89.0...0.90.0
 [0.89.0]: https://github.com/ggozad/haiku.rag/compare/0.88.2...0.89.0
 [0.88.2]: https://github.com/ggozad/haiku.rag/compare/0.88.1...0.88.2
 [0.88.1]: https://github.com/ggozad/haiku.rag/compare/0.88.0...0.88.1
