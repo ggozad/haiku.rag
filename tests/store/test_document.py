@@ -199,6 +199,39 @@ async def test_document_item_create_all_empty(temp_db_path):
         assert after == before
 
 
+async def test_document_item_create_items_empty(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        item_repo = DocumentItemRepository(store)
+
+        before = await store.document_items_table.version()
+        await item_repo.create_items("doc-1", [])
+
+        assert await store.document_items_table.version() == before
+
+
+async def test_document_item_delete_by_document_ids(temp_db_path):
+    """Deletes the listed documents' items in one version; [] writes nothing."""
+    async with Store(temp_db_path, create=True) as store:
+        item_repo = DocumentItemRepository(store)
+        await item_repo.create_all(
+            [
+                DocumentItem(document_id=doc_id, position=0, self_ref="#/texts/0")
+                for doc_id in ("doc-1", "doc-2", "doc-3")
+            ]
+        )
+
+        before = await store.document_items_table.version()
+        await item_repo.delete_by_document_ids([])
+        assert await store.document_items_table.version() == before
+
+        await item_repo.delete_by_document_ids(["doc-1", "doc-3"])
+
+        assert await store.document_items_table.version() == before + 1
+        assert await item_repo.get_all_items("doc-1") == []
+        assert await item_repo.get_all_items("doc-3") == []
+        assert len(await item_repo.get_all_items("doc-2")) == 1
+
+
 def test_document_get_docling_document():
     """Test parsing stored DoclingDocument JSON."""
     doc_json = {

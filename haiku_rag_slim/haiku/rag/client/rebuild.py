@@ -206,6 +206,7 @@ async def _rebuild_title_only(
     """Generate titles for documents that don't have one."""
     repo = session.document_repository
     untitled = [d for d in documents if d.title is None]
+    pending: list[Document] = []
     async for doc in _hydrate(session, untitled):
         assert doc.id is not None
         try:
@@ -217,8 +218,15 @@ async def _rebuild_title_only(
             continue
         if title is not None:
             doc.title = title
-            await repo.update_meta(doc)
-            yield doc.id
+            pending.append(doc)
+            if len(pending) >= _REBUILD_BATCH_SIZE:
+                for saved in await repo.update_meta_all(pending):
+                    assert saved.id is not None
+                    yield saved.id
+                pending = []
+    for saved in await repo.update_meta_all(pending):
+        assert saved.id is not None
+        yield saved.id
 
 
 async def _resolve_rebuild_recovery(
@@ -565,20 +573,24 @@ async def _flush_rebuild_batch(
     # blob has had its picture URIs stripped (compress_docling_split), so
     # re-extracting from it would lose picture_data — snapshot the existing
     # bytes per document and merge them back.
-    for doc in documents:
+    # One add per document bounds lance's writer memory to one document's pictures.
+    items_repo = session.document_item_repository
+    replaced = [doc for doc in documents if doc.docling_document is not None]
+    existing_picture_data: dict[str, dict[str, bytes]] = {}
+    for doc in replaced:
+        assert doc.id is not None
+        existing_picture_data[doc.id] = await items_repo.get_all_picture_data(doc.id)
+    await items_repo.delete_by_document_ids(list(existing_picture_data))
+    for doc in replaced:
         assert doc.id is not None
         docling_doc = doc.get_docling_document()
-        if docling_doc is not None:
-            existing_picture_data = (
-                await session.document_item_repository.get_all_picture_data(doc.id)
-            )
-            await session.document_item_repository.delete_by_document_id(doc.id)
-            items = extract_items(
-                doc.id,
-                docling_doc,
-                existing_picture_data=existing_picture_data,
-            )
-            await session.document_item_repository.create_items(doc.id, items)
+        assert docling_doc is not None
+        items = extract_items(
+            doc.id,
+            docling_doc,
+            existing_picture_data=existing_picture_data.pop(doc.id),
+        )
+        await items_repo.create_items(doc.id, items)
 
 
 async def _rebuild_rechunk(

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `rebuild --rechunk`, `--descriptions` and `rebuild` delete `document_items` once per
+  batch of 50 documents instead of per document, and `--title-only` writes
+  `document_meta` once per batch.
+
 ### Fixed
 
 - `rebuild --rechunk` failing with lance "Resources exhausted" on databases with page
