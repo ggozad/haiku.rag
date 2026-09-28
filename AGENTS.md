@@ -153,7 +153,7 @@ app/                        # Conversational RAG application (see below)
 - `get_reranker(config)` → `RerankerBase | None` (reranking/__init__.py)
 - `get_converter(config)` → `DocumentConverter` (converters/__init__.py)
 - `get_chunker(config)` → `DocumentChunker` (chunkers/__init__.py)
-- `create_capability(db_path?, config?, *, defer_loading=False, rag=None, request_limit=30, sources=None, vision=None)` → `RAGCapability` (capabilities/rag.py). Tools `search`, `execute_code`, `cite`, state under `rag`.
+- `create_capability(db_path?, config?, *, defer_loading=False, rag=None, request_limit=30, sources=None, vision=None)` → `RAGCapability` (capabilities/rag.py). Tools `search(query, limit?, sources?)`, `execute_code`, `cite`, state under `rag`.
   - `request_limit` counts model requests per agent run. At the limit the capability's tools are removed except `cite`, which survives `CITATION_GRACE_REQUESTS` (2) further requests that call one of the capability's tools. Requests spent on other tools do not count.
   - A spent search or code budget does not withdraw the tool: it keeps failing. Withdrawing a tool the model still calls costs the agent's unknown-tool retries and aborts the run.
   - `vision` gates image attachment on search results and must reflect the model the hosting agent runs. Default `qa.model.vision`.
@@ -274,9 +274,11 @@ leaves the configuration: it travels in `SearchResult.source`, `Citation.source`
   returned grounded nothing, so one retrieved result resolves normally.
 - **`clients_covering(sources)` opens the databases; `_require_known_sources` only checks names.** Validating at an operation boundary must use the latter, or an unscoped question opens every configured database before the model runs.
 - **`UnknownDatabaseError` subclasses `KeyError`** and overrides `__str__`. `pytest.raises(KeyError)` cannot tell the contract from a bare one, so assert the specific type.
-- **Model context** names the database as a `Collection:` line, only when the
-  search spans more than one. Storage vocabulary stays "database", the model
-  boundary says "collection".
+- **Model context** names the database as a `Collection:` line whenever the run
+  spans more than one (`RAGCapability.collections`: the question's `sources`, else
+  the lent client's coverage, else the scope), including a search narrowed to one,
+  and the instructions of such a run list its collections by name. Storage
+  vocabulary stays "database", the model boundary says "collection".
 
 ## Configuration
 
@@ -570,6 +572,14 @@ Each entry is the trap and what to do. The evidence behind them is in the commit
 - **Agent specs construct capabilities through `from_spec`**, never `cls()`: `id` comes from `create_capability()`, `rag.py` filters tools by `tool.capability_id != self.id`, and pydantic-ai's duplicate-id rejection enforces one compaction and one policy capability per run. pydantic-ai passes raw parsed YAML (`db_path` a `str`, `config` a `dict`). Third-party capabilities are never auto-discovered: the caller passes `custom_capability_types=[...]`. A spec needs a model, in the spec or as a kwarg. A zero-argument `from_spec` override keeps per-run caches out of the schema.
 - **`_cite` repairs a near-miss chunk id** to the nearest id the run retrieved, above `CHUNK_ID_MATCH_CUTOFF` (0.75), before the database fallback, and before `resolve_citations`, so `cited_map` order holds.
 - **Repeated cite reminders in `capabilities/instructions/*.md` are load-bearing.** Treat any prompt-length reduction there as a behaviour change needing its own eval.
+- **Per-search `sources`** on the capability's `search` tool selects within
+  `RAGCapability.collections`, never the client: a search cannot reach a database
+  outside `state.sources`, whatever a lent client covers. `[]` searches nothing. A name outside the
+  run is a `ToolFailed` naming the run's collections, raised before anything opens.
+  `prepare_tools` strips the parameter from the schema on a one-collection run, so
+  single-database runs keep the `(query, limit)` contract. `evidence_signature`
+  renders without the collection label, so evidence dedups across differently
+  narrowed siblings. The qualified id keeps copies apart.
 - **Repeated search queries accumulate**: `state.searches[query]` merges through `merge_results` keyed on `chunk_id`. Hand-built `SearchResult`s without a `chunk_id` collapse to the first. `search_corpus` returns `"No results found."`, never an empty string.
 - **Sibling dedup.** Searches in one model response collapse evidence a sibling already showed to `Also matched, shown above: [id]`, and attach each picture once per response on `(source, document_id, self_ref)`. Equivalence is `evidence_signature` (`_tools.py`). `state.searches` keeps results whole. Search state commits only after formatting and image construction succeed. Dedup never crosses run_steps. In-code `search()` bypasses pricing, dedup and spans.
 - **User-attached images** need the instructions' "Questions with attached images" section, or vision models refuse without searching.

@@ -21,7 +21,7 @@ print(result.output)
 
 | Tool | Purpose |
 |---|---|
-| `search(query, limit?)` | Hybrid vector and full-text search with context expansion. |
+| `search(query, limit?, sources?)` | Hybrid vector and full-text search with context expansion. `sources` narrows one search to named collections within the run. It is offered only when the run spans more than one. |
 | `execute_code(code)` | Run Python against the virtual document filesystem. |
 | `cite(chunk_ids)` | Register retrieved or filesystem-derived chunk IDs as answer citations. |
 

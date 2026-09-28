@@ -25,6 +25,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.usage import RunUsage
 
 from haiku.rag.capabilities.ledger import (
@@ -385,9 +386,9 @@ async def _labels_of_search(temp_db_path, *sources: str) -> list[str]:
     capability.state = RAGState()
     client = _stub_client([_picture_result(sources[0])])
     client.source_names = sources
+    capability.borrowed_rag = client
 
-    with patch.object(RAGCapability, "_ensure_rag", AsyncMock(return_value=client)):
-        returned = await capability._search("cats", None, 1)
+    returned = await capability._search("cats", None, 1)
 
     assert isinstance(returned, ToolReturn)
     assert returned.content is not None
@@ -1018,19 +1019,19 @@ async def test_cite_tool_is_withdrawn_after_the_grace_window(temp_db_path):
         request_limit=2,
     )
     tool_defs = [
-        SimpleNamespace(name=name, capability_id=capability.id)
+        ToolDefinition(name=name, capability_id=capability.id)
         for name in ("search", "cite")
     ]
     ctx = make_context(Deps())
 
     capability.request_count = 2
-    kept = await capability.prepare_tools(ctx, cast(Any, tool_defs))
+    kept = await capability.prepare_tools(ctx, tool_defs)
     assert {tool.name for tool in kept} == {"cite"}
     notice = capability._budget_notice()
     assert notice is not None and "cite" in notice
 
     capability.grace_requests_used = CITATION_GRACE_REQUESTS
-    kept = await capability.prepare_tools(ctx, cast(Any, tool_defs))
+    kept = await capability.prepare_tools(ctx, tool_defs)
     assert kept == []
     # The notice must never point at a tool prepare_tools has withdrawn:
     # calling a missing tool burns the agent's unknown-tool retries and can
@@ -1181,7 +1182,9 @@ def _record(deps: Deps, namespace: str) -> CapabilityEvidenceRecord:
     return CapabilityEvidenceRecord.model_validate(deps.state[namespace]["evidence"])
 
 
-async def _stub_search(self, query: str, _limit: int | None, _run_step: int) -> str:
+async def _stub_search(
+    self, query: str, _limit: int | None, _run_step: int, _sources=None
+) -> str:
     """Record a result the way the real search does, so citing resolves."""
     cast(Any, self.state).searches[query] = [
         SearchResult(content="evidence", score=1.0, chunk_id="chunk-1")
@@ -1795,3 +1798,24 @@ class TestMultipleCollectionsInstructions:
         capability.state = RAGState(sources=["alpha", "beta"])
 
         assert "Collection:" in capability.get_instructions()
+
+    def test_a_spanning_run_names_its_collections(self):
+        """The names the model may pass to `sources`, in the run's order."""
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb", gamma="/c.lancedb")
+
+        whole = create_rag(config=config)
+        assert (
+            "Collections in this run: alpha, beta, gamma." in whole.get_instructions()
+        )
+
+        narrowed = create_rag(config=config)
+        narrowed.state = RAGState(sources=["gamma", "alpha"])
+        assert "Collections in this run: gamma, alpha." in narrowed.get_instructions()
+
+    def test_a_lent_client_names_what_it_covers(self):
+        config = self._config(alpha="/a.lancedb", beta="/b.lancedb")
+        covering = self._client({"beta": "/b.lancedb", "alpha": "/a.lancedb"})
+
+        capability = create_rag(config=config, rag=covering)
+
+        assert "Collections in this run: beta, alpha." in capability.get_instructions()
