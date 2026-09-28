@@ -83,7 +83,7 @@ embeddings:
 
 ### Thinking
 
-`thinking` takes `false`, `true`, or an effort level: `minimal`, `low`, `medium`, `high`, `xhigh`. Unset leaves the model's default. `enable_thinking` is its former name, still read with a `FutureWarning` until 0.90.0.
+`thinking` takes `false`, `true`, or an effort level: `minimal`, `low`, `medium`, `high`, `xhigh`. Unset leaves the model's default.
 
 How the value reaches the model depends on the provider:
 
