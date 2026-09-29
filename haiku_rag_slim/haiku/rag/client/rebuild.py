@@ -5,6 +5,7 @@ from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import pyarrow as pa
 from docling_core.types.doc.document import DescriptionMetaField, PictureMeta
 from lancedb.pydantic import LanceModel
 
@@ -34,6 +35,8 @@ _REBUILD_BATCH_SIZE = 50
 _STAGING_TABLE_NAME = "chunks_rebuild_staging"
 _STAGING_MARKER_TABLE_NAME = "chunks_rebuild_marker"
 _STAGING_COPY_BATCH_SIZE = 1000
+_DESCRIPTION_COLUMNS = ("docling_document", "docling_version")
+_FULL_FALLBACK_COLUMNS = ("docling_document", "docling_pages", "docling_version")
 
 
 class _StagingChunkRecord(LanceModel):
@@ -118,9 +121,7 @@ async def _rebuild_locked(
     await settings_repo.save_current_settings()
 
     # Light listing — id/uri/title/metadata only. Each rebuild function
-    # fetches full content (including the multi-MB docling_pages blob) one
-    # document at a time so a 1000-doc database doesn't pull ~15 GB of
-    # blobs into memory before the loop starts.
+    # fetches content and blobs one document at a time.
     documents = await session.list_documents(include_content=False)
 
     if mode == RebuildMode.TITLE_ONLY:
@@ -181,43 +182,33 @@ async def _set_embedder(session: SingleDatabaseSession) -> None:
 
 
 async def _hydrate(
-    session: SingleDatabaseSession,
-    light_docs: list[Document],
-    include_blobs: bool = True,
+    session: SingleDatabaseSession, light_docs: list[Document]
 ) -> AsyncGenerator[Document, None]:
-    """Yield fully-loaded documents one at a time from a light listing.
+    """Yield documents with content and docling structure, never page images.
 
-    The light listing in ``rebuild_database`` skips the multi-MB
-    ``docling_document``/``docling_pages`` blobs; this helper fetches each
-    full record on demand so peak memory stays at ~one document. Documents
-    that disappeared between listing and processing are silently skipped.
+    Documents that disappeared between listing and processing are skipped.
     """
+    repo = session.document_repository
     for light_doc in light_docs:
         assert light_doc.id is not None
-        doc = await session.document_repository.get_by_id(
-            light_doc.id, include_blobs=include_blobs
-        )
-        if doc is None:
+        doc = await repo.get_by_id(light_doc.id)
+        structure = await repo.get_docling_data(light_doc.id)
+        if doc is None or structure is None:
             continue
-        assert doc.id is not None
+        doc.docling_document = structure.docling_document
+        doc.docling_version = structure.docling_version
         yield doc
 
 
 async def _rebuild_title_only(
     session: SingleDatabaseSession, documents: list[Document]
 ) -> AsyncGenerator[str, None]:
-    """Generate titles for documents that don't have one.
-
-    A title comes from the content or the docling structure, never the page
-    rasters, so those are left out of the per-document load.
-    """
+    """Generate titles for documents that don't have one."""
     repo = session.document_repository
     untitled = [d for d in documents if d.title is None]
-    async for doc in _hydrate(session, untitled, include_blobs=False):
+    pending: list[Document] = []
+    async for doc in _hydrate(session, untitled):
         assert doc.id is not None
-        structure = await repo.get_docling_data(doc.id)
-        if structure is not None:
-            doc.docling_document = structure.docling_document
         try:
             title = await generate_title(session.config, doc)
         except Exception:
@@ -227,8 +218,15 @@ async def _rebuild_title_only(
             continue
         if title is not None:
             doc.title = title
-            await repo.update_meta(doc)
-            yield doc.id
+            pending.append(doc)
+            if len(pending) >= _REBUILD_BATCH_SIZE:
+                for saved in await repo.update_meta_all(pending):
+                    assert saved.id is not None
+                    yield saved.id
+                pending = []
+    for saved in await repo.update_meta_all(pending):
+        assert saved.id is not None
+        yield saved.id
 
 
 async def _resolve_rebuild_recovery(
@@ -517,38 +515,38 @@ async def _rebuild_embed_only(
 
 
 async def _flush_rebuild_batch(
-    session: SingleDatabaseSession, documents: list[Document], chunks: list[Chunk]
+    session: SingleDatabaseSession,
+    documents: list[Document],
+    chunks: list[Chunk],
+    *,
+    document_columns: tuple[str, ...],
 ) -> None:
     """Batch write documents and chunks during rebuild.
 
-    Performs two writes: one for all document updates (via merge_insert), one
-    for all chunks. Also repopulates document items from the stored docling
-    document. Used by RECHUNK and FULL modes after the chunks table has been
-    cleared.
+    Writes only ``document_columns`` of each ``documents`` row, none when
+    empty. Also repopulates document items from the stored docling document.
     """
-    from haiku.rag.store.schema import DocumentMetaRecord, DocumentRecord
+    from haiku.rag.store.schema import DocumentMetaRecord
 
     if not documents:
         return
 
     now = datetime.now(UTC).isoformat()
 
-    # Batch update documents and document_meta using merge_insert (one LanceDB
-    # version per table). Content+blobs go to documents; mutable attributes go
-    # to document_meta.
-    doc_records = []
+    if document_columns:
+        table = session.store.documents_table
+        schema = await table.schema()
+        columns = ("id", *document_columns)
+        rows = [{c: getattr(doc, c) for c in columns} for doc in documents]
+        source = pa.Table.from_pylist(
+            rows, schema=pa.schema([schema.field(c) for c in columns])
+        )
+        # Update-only: a partial source with an insert branch is rejected.
+        await table.merge_insert("id").when_matched_update_all().execute(source)
+
     meta_records = []
     for doc in documents:
         assert doc.id is not None
-        doc_records.append(
-            DocumentRecord(
-                id=doc.id,
-                content=doc.content,
-                docling_document=doc.docling_document,
-                docling_pages=doc.docling_pages,
-                docling_version=doc.docling_version,
-            )
-        )
         meta_records.append(
             DocumentMetaRecord(
                 id=doc.id,
@@ -560,11 +558,6 @@ async def _flush_rebuild_batch(
             )
         )
 
-    await (
-        session.store.documents_table.merge_insert("id")
-        .when_matched_update_all()
-        .execute(doc_records)
-    )
     await (
         session.store.document_meta_table.merge_insert("id")
         .when_matched_update_all()
@@ -580,20 +573,24 @@ async def _flush_rebuild_batch(
     # blob has had its picture URIs stripped (compress_docling_split), so
     # re-extracting from it would lose picture_data — snapshot the existing
     # bytes per document and merge them back.
-    for doc in documents:
+    # One add per document bounds lance's writer memory to one document's pictures.
+    items_repo = session.document_item_repository
+    replaced = [doc for doc in documents if doc.docling_document is not None]
+    existing_picture_data: dict[str, dict[str, bytes]] = {}
+    for doc in replaced:
+        assert doc.id is not None
+        existing_picture_data[doc.id] = await items_repo.get_all_picture_data(doc.id)
+    await items_repo.delete_by_document_ids(list(existing_picture_data))
+    for doc in replaced:
         assert doc.id is not None
         docling_doc = doc.get_docling_document()
-        if docling_doc is not None:
-            existing_picture_data = (
-                await session.document_item_repository.get_all_picture_data(doc.id)
-            )
-            await session.document_item_repository.delete_by_document_id(doc.id)
-            items = extract_items(
-                doc.id,
-                docling_doc,
-                existing_picture_data=existing_picture_data,
-            )
-            await session.document_item_repository.create_items(doc.id, items)
+        assert docling_doc is not None
+        items = extract_items(
+            doc.id,
+            docling_doc,
+            existing_picture_data=existing_picture_data.pop(doc.id),
+        )
+        await items_repo.create_items(doc.id, items)
 
 
 async def _rebuild_rechunk(
@@ -644,12 +641,16 @@ async def _rebuild_rechunk(
         yield doc.id
 
         if len(pending_docs) >= _REBUILD_BATCH_SIZE:
-            await _flush_rebuild_batch(session, pending_docs, pending_chunks)
+            await _flush_rebuild_batch(
+                session, pending_docs, pending_chunks, document_columns=()
+            )
             pending_chunks = []
             pending_docs = []
 
     if pending_docs:
-        await _flush_rebuild_batch(session, pending_docs, pending_chunks)
+        await _flush_rebuild_batch(
+            session, pending_docs, pending_chunks, document_columns=()
+        )
 
 
 def _apply_descriptions_sync(
@@ -787,12 +788,19 @@ async def _rebuild_descriptions(
         yield doc.id
 
         if len(pending_docs) >= _REBUILD_BATCH_SIZE:
-            await _flush_rebuild_batch(session, pending_docs, pending_chunks)
+            await _flush_rebuild_batch(
+                session,
+                pending_docs,
+                pending_chunks,
+                document_columns=_DESCRIPTION_COLUMNS,
+            )
             pending_chunks = []
             pending_docs = []
 
     if pending_docs:
-        await _flush_rebuild_batch(session, pending_docs, pending_chunks)
+        await _flush_rebuild_batch(
+            session, pending_docs, pending_chunks, document_columns=_DESCRIPTION_COLUMNS
+        )
 
     logger.info(
         "rebuild --descriptions: %d new picture descriptions added across %d documents",
@@ -821,7 +829,12 @@ async def _rebuild_full(
             # The refresh writes through the database, not the batch buffer, so
             # anything pending has to land first.
             if pending_docs:
-                await _flush_rebuild_batch(session, pending_docs, pending_chunks)
+                await _flush_rebuild_batch(
+                    session,
+                    pending_docs,
+                    pending_chunks,
+                    document_columns=_FULL_FALLBACK_COLUMNS,
+                )
                 pending_chunks = []
                 pending_docs = []
 
@@ -851,11 +864,8 @@ async def _rebuild_full(
                 "Source missing for %s, re-embedding from content", light_doc.uri
             )
 
-        # Fallback: rebuild from stored content. Now we need the full
-        # record (content + docling_pages for the round-trip write).
-        doc = await session.document_repository.get_by_id(
-            light_doc.id, include_blobs=True
-        )
+        # Fallback: rebuild from stored content; set_docling replaces both blobs.
+        doc = await session.document_repository.get_by_id(light_doc.id)
         if doc is None:
             continue
         assert doc.id is not None
@@ -875,9 +885,19 @@ async def _rebuild_full(
         yield doc.id
 
         if len(pending_docs) >= _REBUILD_BATCH_SIZE:
-            await _flush_rebuild_batch(session, pending_docs, pending_chunks)
+            await _flush_rebuild_batch(
+                session,
+                pending_docs,
+                pending_chunks,
+                document_columns=_FULL_FALLBACK_COLUMNS,
+            )
             pending_chunks = []
             pending_docs = []
 
     if pending_docs:
-        await _flush_rebuild_batch(session, pending_docs, pending_chunks)
+        await _flush_rebuild_batch(
+            session,
+            pending_docs,
+            pending_chunks,
+            document_columns=_FULL_FALLBACK_COLUMNS,
+        )

@@ -174,6 +174,14 @@ class DocumentItemRepository:
         safe_id = escape_sql_string(document_id)
         await self.store.document_items_table.delete(f"document_id = '{safe_id}'")
 
+    async def delete_by_document_ids(self, document_ids: Sequence[str]) -> None:
+        """Delete all items for these documents in one table version."""
+        if not document_ids:
+            return
+        self.store._assert_writable()
+        ids = ", ".join(f"'{escape_sql_string(i)}'" for i in document_ids)
+        await self.store.document_items_table.delete(f"document_id IN ({ids})")
+
     async def get_picture_bytes(self, document_id: str, self_ref: str) -> bytes | None:
         """Fetch raw picture bytes for a single picture item by self_ref."""
         safe_id = escape_sql_string(document_id)

@@ -189,7 +189,7 @@ haiku-rag rebuild [--rechunk | --embed-only | --title-only | --descriptions | --
 | Mode | Flag | Use it when |
 |------|------|----------|
 | Full | (default) | The converter or conversion options changed, or source files were updated. Re-converts from source, re-chunks, re-embeds |
-| Rechunk | `--rechunk` | Chunking settings changed. Re-chunks stored content, re-embeds |
+| Rechunk | `--rechunk` | Chunking settings changed, or an upgrade changed how chunks or document items are extracted. Re-chunks stored content, re-embeds, recreates document items |
 | Embed only | `--embed-only` | The embedding model or `vector_dim` changed. Keeps chunks |
 | Title only | `--title-only` | Documents lack titles |
 | Descriptions | `--descriptions` | Adding VLM picture descriptions to an existing database |

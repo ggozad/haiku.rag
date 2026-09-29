@@ -561,7 +561,7 @@ async def test_rebuild_rechunk(qa_corpus: list[dict[str, str]], temp_db_path):
 
         assert doc.id in processed_ids
 
-        # Document content should be unchanged, but docling JSON should be updated
+        # Document content and docling JSON are unchanged
         doc_after = await client.document_repository.get_by_id(
             doc.id, include_blobs=True
         )
@@ -642,6 +642,68 @@ async def test_rebuild_title_only_reads_structural_title(temp_db_path):
         refreshed = await client.get_document_by_id(created.id)
         assert refreshed is not None
         assert refreshed.title == "The Stored Title"
+
+
+async def test_rebuild_title_only_writes_one_meta_version_per_batch(
+    temp_db_path, monkeypatch
+):
+    from haiku.rag.client import rebuild as rebuild_module
+    from haiku.rag.config import AppConfig
+    from haiku.rag.store.models.document import Document
+
+    monkeypatch.setattr(rebuild_module, "_REBUILD_BATCH_SIZE", 2)
+
+    async def fake_generate_title(config, doc):
+        return f"Title {doc.content}"
+
+    monkeypatch.setattr("haiku.rag.client.rebuild.generate_title", fake_generate_title)
+
+    config = AppConfig()
+    config.storage.auto_vacuum = False
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        docs = [
+            await client.document_repository.create(Document(content=f"doc {i}"))
+            for i in range(3)
+        ]
+        before = await client.store.document_meta_table.version()
+
+        processed = [
+            doc_id
+            async for doc_id in client.rebuild_database(mode=RebuildMode.TITLE_ONLY)
+        ]
+
+        assert sorted(processed) == sorted(d.id for d in docs)
+        assert await client.store.document_meta_table.version() == before + 2
+        for doc in docs:
+            assert doc.id is not None
+            refreshed = await client.get_document_by_id(doc.id)
+            assert refreshed is not None
+            assert refreshed.title == f"Title {doc.content}"
+
+
+async def test_rebuild_title_only_yields_only_saved_titles(temp_db_path, monkeypatch):
+    from haiku.rag.client import rebuild as rebuild_module
+    from haiku.rag.store.models.document import Document
+
+    monkeypatch.setattr(rebuild_module, "_REBUILD_BATCH_SIZE", 2)
+
+    async def fake_generate_title(config, doc):
+        return "Saved"
+
+    monkeypatch.setattr("haiku.rag.client.rebuild.generate_title", fake_generate_title)
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        for i in range(3):
+            await client.document_repository.create(Document(content=f"doc {i}"))
+
+        rebuild = client.rebuild_database(mode=RebuildMode.TITLE_ONLY)
+        first = await anext(rebuild)
+        await rebuild.aclose()
+
+        saved = await client.get_document_by_id(first)
+        assert saved is not None
+        assert saved.title == "Saved"
 
 
 async def test_rebuild_title_only_handles_llm_failure(temp_db_path, monkeypatch):
@@ -1192,9 +1254,9 @@ def _count_flushes(monkeypatch, rebuild_module) -> list[int]:
     real = rebuild_module._flush_rebuild_batch
     sizes: list[int] = []
 
-    async def spy(client, documents, chunks):
+    async def spy(client, documents, chunks, **kwargs):
         sizes.append(len(documents))
-        return await real(client, documents, chunks)
+        return await real(client, documents, chunks, **kwargs)
 
     monkeypatch.setattr(rebuild_module, "_flush_rebuild_batch", spy)
     return sizes
@@ -1213,12 +1275,62 @@ async def test_flush_rebuild_batch_is_a_noop_without_documents(temp_db_path):
         before = await client.store.documents_table.count_rows()
         assert before == 1
 
-        await _flush_rebuild_batch(client, [], [])
+        await _flush_rebuild_batch(
+            client, [], [], document_columns=("docling_document",)
+        )
 
         assert await client.store.documents_table.count_rows() == before
         after = await client.get_document_by_id(existing.id)
         assert after is not None
         assert after.updated_at == existing.updated_at
+
+
+async def test_flush_rebuild_batch_deletes_items_in_one_version(temp_db_path):
+    """One delete for the batch, one add per document, picture bytes kept."""
+    from haiku.rag.client.documents import _store_document_with_chunks
+    from haiku.rag.client.rebuild import _flush_rebuild_batch, _hydrate
+    from haiku.rag.config import AppConfig
+    from haiku.rag.store.models.document import Document
+    from tests.store.test_document_items import _docling_doc_with_picture
+
+    config = AppConfig()
+    config.storage.auto_vacuum = False
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
+        created = []
+        for i in range(3):
+            docling_doc = _docling_doc_with_picture()
+            document = Document(content=f"doc {i}", uri=f"test://doc-{i}")
+            document.set_docling(docling_doc)
+            created.append(
+                await _store_document_with_chunks(
+                    writing(rag), document, [], docling_doc
+                )
+            )
+        items_repo = rag.document_item_repository
+        before = {
+            d.id: (
+                await items_repo.get_item_count(d.id),
+                await items_repo.get_all_picture_data(d.id),
+            )
+            for d in created
+            if d.id is not None
+        }
+        assert all(pictures for _, pictures in before.values())
+        version = await rag.store.document_items_table.version()
+
+        docs = [doc async for doc in _hydrate(writing(rag), created)]
+        await _flush_rebuild_batch(writing(rag), docs, [], document_columns=())
+
+        assert await rag.store.document_items_table.version() == version + 1 + 3
+        after = {
+            doc_id: (
+                await items_repo.get_item_count(doc_id),
+                await items_repo.get_all_picture_data(doc_id),
+            )
+            for doc_id in before
+        }
+        assert after == before
 
 
 async def test_mark_phase1_complete_is_idempotent(temp_db_path):
@@ -1427,6 +1539,78 @@ async def test_rechunk_raises_when_docling_blob_is_missing(temp_db_path):
         with pytest.raises(ValueError, match="has no stored docling document"):
             async for _ in client.rebuild_database(mode=RebuildMode.RECHUNK):
                 pass
+
+
+@pytest.mark.vcr()
+async def test_rebuild_rechunk_writes_no_documents_version(temp_db_path):
+    from haiku.rag.config import AppConfig
+
+    config = AppConfig()
+    config.storage.auto_vacuum = False
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        await client.create_document(content="rechunk leaves documents alone")
+        before = await client.store.documents_table.version()
+
+        async for _ in client.rebuild_database(mode=RebuildMode.RECHUNK):
+            pass
+
+        assert await client.store.documents_table.version() == before
+
+
+@pytest.mark.vcr()
+@pytest.mark.parametrize(
+    "mode", [RebuildMode.RECHUNK, RebuildMode.DESCRIPTIONS], ids=lambda m: m.name
+)
+async def test_rebuild_holds_no_page_images(temp_db_path, monkeypatch, mode):
+    """Batched documents carry no page images, and the stored ones survive."""
+    from haiku.rag.client import rebuild as rebuild_module
+    from haiku.rag.client.documents import _store_document_with_chunks
+    from haiku.rag.config import AppConfig
+    from haiku.rag.store.models.document import Document
+    from tests.store.test_document_items import _docling_doc_with_picture
+
+    config = AppConfig()
+    config.processing.pictures = "description"
+
+    async def fake_describe(image_bytes_by_ref, *, config):
+        return {ref: "A red square (mocked)." for ref in image_bytes_by_ref}
+
+    monkeypatch.setattr(
+        "haiku.rag.providers.picture_description.describe_pictures", fake_describe
+    )
+
+    flushed: list[Document] = []
+    real = rebuild_module._flush_rebuild_batch
+
+    async def spy(client, documents, chunks, **kwargs):
+        flushed.extend(documents)
+        return await real(client, documents, chunks, **kwargs)
+
+    monkeypatch.setattr(rebuild_module, "_flush_rebuild_batch", spy)
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
+        docling_doc = _docling_doc_with_picture()
+        document = Document(content="picture doc", uri="test://doc")
+        document.set_docling(docling_doc)
+        created = await _store_document_with_chunks(
+            writing(rag), document, [], docling_doc
+        )
+        assert created.id is not None
+        pages = b"\x80SENTINEL_PAGE_BYTES"
+        await rag.store.documents_table.update(
+            {"docling_pages": pages}, where=f"id = '{created.id}'"
+        )
+
+        async for _ in rag.rebuild_database(mode=mode):
+            pass
+
+        assert [d.id for d in flushed] == [created.id]
+        assert flushed[0].docling_pages is None
+        after = await rag.document_repository.get_by_id(created.id, include_blobs=True)
+        assert after is not None
+        assert after.content == "picture doc"
+        assert after.docling_pages == pages
 
 
 @pytest.mark.vcr()
