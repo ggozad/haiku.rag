@@ -65,6 +65,22 @@ def _picture_caption_text(item: "PictureItem", docling_doc: "DoclingDocument") -
     )
 
 
+def _picture_child_text(item: "PictureItem", docling_doc: "DoclingDocument") -> str:
+    """Join the text docling found inside a picture, captions excluded."""
+    from docling_core.types.doc.document import TextItem
+
+    captions = {ref.cref for ref in item.captions}
+    return " ".join(
+        text
+        for child, _level in docling_doc.iterate_items(
+            root=item, traverse_pictures=True
+        )
+        if isinstance(child, TextItem)
+        and child.self_ref not in captions
+        and (text := child.text.strip())
+    )
+
+
 def extract_item_text(
     item: "NodeItem",
     docling_doc: "DoclingDocument",
@@ -81,7 +97,8 @@ def extract_item_text(
     - PictureItem: Prefer the VLM description (when picture_description is on)
       so pictures carry meaningful prose into chunk text and survive
       ``expand_with_items``' ``if item.text:`` filter; otherwise fall back to
-      the picture's caption text.
+      the picture's caption text. Text docling found inside the picture
+      follows on its own line.
     - Items whose own text is empty because docling pushed mixed inline
       content (e.g. a paragraph or list item containing a code span or link)
       into a child InlineGroup instead: serialize that group, the same way
@@ -114,9 +131,12 @@ def extract_item_text(
             return None
 
     if isinstance(item, PictureItem):
-        if description := _picture_description_text(item):
-            return description
-        return _picture_caption_text(item, docling_doc)
+        label = _picture_description_text(item) or _picture_caption_text(
+            item, docling_doc
+        )
+        return "\n".join(
+            part for part in (label, _picture_child_text(item, docling_doc)) if part
+        )
 
     if isinstance(item, TableItem):
         return _serialize(item)

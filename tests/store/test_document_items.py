@@ -154,6 +154,14 @@ def _doc_with_captioned_picture(*captions: str):
     return doc, pic
 
 
+def _add_picture_text(doc, parent, *texts: str) -> None:
+    """Add text items under ``parent``, as docling does for text it OCRs inside a picture."""
+    from docling_core.types.doc.labels import DocItemLabel
+
+    for text in texts:
+        doc.add_text(label=DocItemLabel.TEXT, text=text, parent=parent)
+
+
 def _doc_with_tables(n: int):
     from docling_core.types.doc.document import DoclingDocument, TableCell, TableData
 
@@ -189,6 +197,57 @@ class TestExtractItemTextPictures:
         doc, pic = _doc_with_captioned_picture("A caption")
         pic.meta = PictureMeta(description=DescriptionMetaField(text="A red square."))
         assert extract_item_text(pic, doc) == "A red square."
+
+    def test_child_text_is_extracted(self):
+        doc, pic = _doc_with_captioned_picture()
+        _add_picture_text(doc, pic, "Skip paywalls", "Save on subscription costs.")
+        assert (
+            extract_item_text(pic, doc) == "Skip paywalls Save on subscription costs."
+        )
+
+    def test_child_text_follows_caption(self):
+        doc, pic = _doc_with_captioned_picture("Figure 1")
+        _add_picture_text(doc, pic, "Bypass Paywall")
+        assert extract_item_text(pic, doc) == "Figure 1\nBypass Paywall"
+
+    def test_child_text_follows_description(self):
+        from docling_core.types.doc.document import DescriptionMetaField, PictureMeta
+
+        doc, pic = _doc_with_captioned_picture("A caption")
+        pic.meta = PictureMeta(description=DescriptionMetaField(text="A screenshot."))
+        _add_picture_text(doc, pic, "Bypass Paywall")
+        assert extract_item_text(pic, doc) == "A screenshot.\nBypass Paywall"
+
+    def test_caption_child_not_repeated(self):
+        from docling_core.types.doc.labels import DocItemLabel
+
+        doc, pic = _doc_with_captioned_picture()
+        cap = doc.add_text(label=DocItemLabel.CAPTION, text="Figure 2", parent=pic)
+        pic.captions.append(cap.get_ref())
+        _add_picture_text(doc, pic, "axis label")
+        assert extract_item_text(pic, doc) == "Figure 2\naxis label"
+
+    def test_footnote_child_is_extracted(self):
+        from docling_core.types.doc.labels import DocItemLabel
+
+        doc, pic = _doc_with_captioned_picture("Figure 3")
+        note = doc.add_text(
+            label=DocItemLabel.FOOTNOTE, text="Source: survey", parent=pic
+        )
+        pic.footnotes.append(note.get_ref())
+        assert extract_item_text(pic, doc) == "Figure 3\nSource: survey"
+
+    def test_text_nested_in_group_is_extracted(self):
+        doc, pic = _doc_with_captioned_picture()
+        group = doc.add_group(parent=pic)
+        _add_picture_text(doc, group, "grouped words")
+        assert extract_item_text(pic, doc) == "grouped words"
+
+    def test_extract_items_row_carries_child_text(self):
+        doc, pic = _doc_with_captioned_picture("Figure 1")
+        _add_picture_text(doc, pic, "Bypass Paywall")
+        rows = {row.self_ref: row for row in extract_items("doc-1", doc)}
+        assert rows[pic.self_ref].text == "Figure 1\nBypass Paywall"
 
     def test_picture_path_does_not_export_markdown(self, monkeypatch):
         from docling_core.types.doc.document import PictureItem

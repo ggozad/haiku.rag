@@ -443,6 +443,39 @@ def test_build_picture_chunks_dedupes_identical_bytes():
     assert refs == ["#/pictures/0", "#/pictures/2"]
 
 
+def test_build_picture_chunks_content_carries_picture_text():
+    from PIL import Image as PILImageModule
+
+    from haiku.rag.client.processing import build_picture_chunks
+    from tests.store.test_document_items import _add_picture_text
+
+    doc = _doc_with_picture_images(PILImageModule.new("RGB", (100, 100), "red"))
+    _add_picture_text(doc, doc.pictures[0], "Skip paywalls")
+
+    chunks = build_picture_chunks(doc, document_id="doc-1")
+
+    assert [c.content for c in chunks] == ["Skip paywalls"]
+
+
+def test_skipped_picture_text_reaches_its_row_but_no_chunk():
+    """A picture too small to chunk keeps its text on its document_items row only."""
+    from PIL import Image as PILImageModule
+
+    from haiku.rag.client.processing import build_picture_chunks
+    from haiku.rag.store.models.document_item import extract_items
+    from tests.store.test_document_items import _add_picture_text
+
+    doc = _doc_with_picture_images(PILImageModule.new("RGB", (16, 16), "red"))
+    icon = doc.pictures[0]
+    _add_picture_text(doc, icon, "Skip paywalls")
+
+    chunks = build_picture_chunks(doc, document_id="doc-1", min_picture_size=64)
+    rows = {row.self_ref: row for row in extract_items("doc-1", doc)}
+
+    assert chunks == []
+    assert rows[icon.self_ref].text == "Skip paywalls"
+
+
 def test_build_picture_chunks_skips_small_pictures():
     """Pictures whose smaller side is under min_picture_size are not chunked."""
     from PIL import Image as PILImageModule

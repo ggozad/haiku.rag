@@ -7,6 +7,7 @@
 - `rebuild --rechunk`, `--descriptions` and `rebuild` delete `document_items` once per
   batch of 50 documents instead of per document, and `--title-only` writes
   `document_meta` once per batch.
+- A picture's text in picture chunks and `document_items` includes the text docling found inside it, captions excluded. Existing databases need `haiku-rag rebuild --rechunk`.
 
 ### Fixed
 
