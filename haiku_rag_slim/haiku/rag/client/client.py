@@ -8,11 +8,7 @@ from typing import TYPE_CHECKING, Any, overload
 
 from haiku.rag.client.documents import DocumentImport
 from haiku.rag.client.scope import DatabaseScope
-from haiku.rag.client.session import (
-    FederatedSession,
-    SingleDatabaseSession,
-    aclose_quietly,
-)
+from haiku.rag.client.session import FederatedSession, SingleDatabaseSession
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.embeddings import get_embedder
 from haiku.rag.reranking import get_reranker
@@ -27,7 +23,7 @@ from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.repositories.document_item import DocumentItemRepository
-from haiku.rag.utils.concurrency import gather_all
+from haiku.rag.utils.concurrency import aclose_quietly, gather_all
 from haiku.rag.utils.sql import escape_sql_string
 
 if TYPE_CHECKING:

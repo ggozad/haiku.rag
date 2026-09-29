@@ -17,7 +17,6 @@ from rich.progress import (
     TimeElapsedColumn,
     TimeRemainingColumn,
 )
-from sqlalchemy import make_url
 
 load_dotenv(find_dotenv(usecwd=True))
 
@@ -32,6 +31,7 @@ from haiku.rag.config import (  # noqa: E402
 from haiku.rag.ingester.batch import BatchManifest  # noqa: E402
 from haiku.rag.ingester.queue.migrations import open_queue  # noqa: E402
 from haiku.rag.logging import configure_cli_logging  # noqa: E402
+from haiku.rag.sqlstore import display_target  # noqa: E402
 from haiku.rag.store.exceptions import (  # noqa: E402
     AmbiguousDatabaseError,
     ConfigMismatchError,
@@ -121,9 +121,7 @@ def _resolve_queue_config(config: AppConfig, override: Path | None) -> QueueConf
 def _queue_target(queue: QueueConfig) -> str:
     """A display string for the queue location, with any dburi password
     masked so it isn't echoed to the terminal or logs."""
-    if queue.dburi:
-        return make_url(queue.dburi).render_as_string(hide_password=True)
-    return str(queue.path)
+    return display_target(queue.path, queue.dburi)
 
 
 async def _ensure_schema(queue: QueueConfig) -> None:

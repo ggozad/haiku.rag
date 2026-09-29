@@ -1,6 +1,7 @@
 import pytest
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.config.models import AppConfig, EmbeddingModelConfig, EmbeddingsConfig
 from haiku.rag.store import ReadOnlyError
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models import Chunk, Document
@@ -384,3 +385,20 @@ class TestAppReadVerbsDoNotWrite:
             )["embeddings"]["model"]["name"]
 
         assert stored_name_after == stored_name_before
+
+
+async def test_read_only_open_constructs_no_embedder(temp_db_path):
+    async with Store(temp_db_path, create=True):
+        pass
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(provider="not-installed", name="x")
+        )
+    )
+    async with Store(
+        temp_db_path, config=config, read_only=True, skip_validation=True
+    ) as store:
+        assert store.stored_embedding is not None
+        assert await store.chunks_table.count_rows() == 0
+        with pytest.raises(ValueError, match="Unsupported embedding provider"):
+            store.embedder

@@ -706,6 +706,39 @@ class IngesterConfig(ConfigModel):
     api: APIConfig = Field(default_factory=APIConfig)
 
 
+class CurateStoreConfig(ConfigModel):
+    """Curate's own history store. Defaults to a SQLite file; set `dburi` for a database server."""
+
+    path: Path = Field(
+        default_factory=lambda: get_default_data_dir() / "curate.db",
+        description="SQLite store file. Used when dburi is unset.",
+    )
+    dburi: str | None = Field(
+        default=None,
+        description="SQLAlchemy async URL for the store, e.g. "
+        "postgresql+asyncpg://user:pw@host/db. Overrides path when set.",
+    )
+
+
+class CurateThresholdsConfig(ConfigModel):
+    short_chunk_chars: int = Field(
+        default=50,
+        gt=0,
+        description="A chunk shorter than this many characters counts as short.",
+    )
+
+
+class CurateConfig(ConfigModel):
+    """Settings for haiku-curate."""
+
+    store: CurateStoreConfig = Field(default_factory=CurateStoreConfig)
+    databases: list[str] | None = Field(
+        default=None,
+        description="Names from lancedb.databases to sweep. None sweeps all of them.",
+    )
+    thresholds: CurateThresholdsConfig = Field(default_factory=CurateThresholdsConfig)
+
+
 class AppConfig(ConfigModel):
     environment: str = "production"
     storage: StorageConfig = Field(default_factory=StorageConfig)
@@ -720,6 +753,7 @@ class AppConfig(ConfigModel):
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     prompts: PromptsConfig = Field(default_factory=PromptsConfig)
     ingester: IngesterConfig = Field(default_factory=IngesterConfig)
+    curate: CurateConfig = Field(default_factory=CurateConfig)
     evaluations: "EvaluationsConfig" = Field(
         default_factory=lambda: EvaluationsConfig()
     )

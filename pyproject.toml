@@ -55,6 +55,7 @@ tui = ["textual>=8.2.4"]
 s3 = ["haiku.rag-slim[s3]==0.91.0"]
 cross-encoder = ["haiku.rag-slim[cross-encoder]==0.91.0"]
 ingester = ["haiku.rag-slim[ingester]==0.91.0"]
+curate = ["haiku.rag-slim[curate]==0.91.0"]
 
 [build-system]
 requires = ["hatchling"]
@@ -85,6 +86,7 @@ members = ["haiku_rag_slim", "evaluations"]
 dev = [
     "haiku.rag-evals",
     "haiku.rag-slim[ingester]",
+    "haiku.rag-slim[curate]",
     "zensical",
     "pre-commit>=4.5.1",
     "pydantic-ai-slim[anthropic]",

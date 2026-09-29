@@ -94,6 +94,12 @@ ingester = [
     "asyncpg>=0.29",
     "haiku.rag-slim[s3]",
 ]
+# Corpus curation service (history store, sweeps)
+curate = [
+    "sqlalchemy[asyncio]>=2.0",
+    "aiosqlite>=0.20",
+    "asyncpg>=0.29",
+]
 # TUI (chat and inspect commands)
 tui = [
     "textual>=8.2.4",
@@ -111,6 +117,7 @@ vertexai = ["pydantic-ai-slim[google]"]
 [project.scripts]
 haiku-rag = "haiku.rag.cli:cli"
 haiku-ingester = "haiku.rag.ingester.cli:cli"
+haiku-curate = "haiku.rag.curate.cli:cli"
 
 [build-system]
 requires = ["hatchling"]

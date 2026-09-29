@@ -18,7 +18,7 @@ from opentelemetry import trace
 from packaging.version import parse
 
 from haiku.rag.config import AppConfig, get_config
-from haiku.rag.embeddings import get_embedder
+from haiku.rag.embeddings import EmbedderWrapper, get_embedder
 from haiku.rag.store.exceptions import MigrationRequiredError, ReadOnlyError
 from haiku.rag.store.schema import (
     REQUIRED_TABLES,
@@ -33,6 +33,7 @@ from haiku.rag.store.schema import (
     query_to_pydantic,
     rebuild_indexes,
 )
+from haiku.rag.utils.concurrency import aclose_quietly
 
 logger = logging.getLogger(__name__)
 
@@ -278,13 +279,28 @@ class Store:
                 if not self.db_path.parent.exists():
                     Path.mkdir(self.db_path.parent, parents=True)
 
-        # Create embedder (sync — no LanceDB needed)
-        self.embedder = get_embedder(config=self._config)
+        self._embedder: EmbedderWrapper | None = None
         # The settings blob as of open, and the embedder it records, so
         # reporting on a database and comparing it against another cost no
         # second read. Neither follows a later write.
         self.stored_settings: dict = {}
         self.stored_embedding: tuple[str | None, str | None, int | None] | None = None
+
+    @property
+    def embedder(self) -> EmbedderWrapper:
+        """The configured embedder, constructed on first access."""
+        if self._embedder is None:
+            self._embedder = get_embedder(config=self._config)
+        return self._embedder
+
+    @embedder.setter
+    def embedder(self, embedder: EmbedderWrapper) -> None:
+        self._embedder = embedder
+
+    async def release_embedder(self) -> None:
+        """Close the embedder if one was constructed."""
+        if self._embedder is not None:
+            await aclose_quietly(self._embedder, "embedder")
 
     def _remember_settings(self, settings: dict) -> None:
         """Hold the settings blob and the embedder it records.
@@ -313,7 +329,7 @@ class Store:
         # An existing database's chunks can only be read with the dimension they
         # were written at.
         stored_vector_dim = _stored_vector_dim(self.stored_settings)
-        chunk_vector_dim = stored_vector_dim or self.embedder._vector_dim
+        chunk_vector_dim = stored_vector_dim or self._config.embeddings.model.vector_dim
         self.ChunkRecord: type[ChunkRecordBase] = create_chunk_model(chunk_vector_dim)
 
         # Initialize tables (creates them if they don't exist). For an existing

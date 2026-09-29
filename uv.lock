@@ -1606,6 +1606,9 @@ dependencies = [
 cross-encoder = [
     { name = "haiku-rag-slim", extra = ["cross-encoder"] },
 ]
+curate = [
+    { name = "haiku-rag-slim", extra = ["curate"] },
+]
 ingester = [
     { name = "haiku-rag-slim", extra = ["ingester"] },
 ]
@@ -1620,7 +1623,7 @@ tui = [
 dev = [
     { name = "filelock" },
     { name = "haiku-rag-evals" },
-    { name = "haiku-rag-slim", extra = ["ingester"] },
+    { name = "haiku-rag-slim", extra = ["curate", "ingester"] },
     { name = "pre-commit" },
     { name = "pydantic-ai-slim", extra = ["anthropic", "bedrock", "google", "groq", "mistral"] },
     { name = "pytest" },
@@ -1636,17 +1639,19 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "haiku-rag-slim", extras = ["cross-encoder"], marker = "extra == 'cross-encoder'", editable = "haiku_rag_slim" },
+    { name = "haiku-rag-slim", extras = ["curate"], marker = "extra == 'curate'", editable = "haiku_rag_slim" },
     { name = "haiku-rag-slim", extras = ["docling", "voyageai", "cohere", "zeroentropy", "tui", "cross-encoder", "jina"], editable = "haiku_rag_slim" },
     { name = "haiku-rag-slim", extras = ["ingester"], marker = "extra == 'ingester'", editable = "haiku_rag_slim" },
     { name = "haiku-rag-slim", extras = ["s3"], marker = "extra == 's3'", editable = "haiku_rag_slim" },
     { name = "textual", marker = "extra == 'tui'", specifier = ">=8.2.4" },
 ]
-provides-extras = ["tui", "s3", "cross-encoder", "ingester"]
+provides-extras = ["tui", "s3", "cross-encoder", "ingester", "curate"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "filelock", specifier = ">=3.25.2" },
     { name = "haiku-rag-evals", editable = "evaluations" },
+    { name = "haiku-rag-slim", extras = ["curate"], editable = "haiku_rag_slim" },
     { name = "haiku-rag-slim", extras = ["ingester"], editable = "haiku_rag_slim" },
     { name = "pre-commit", specifier = ">=4.5.1" },
     { name = "pydantic-ai-slim", extras = ["anthropic"] },
@@ -1730,6 +1735,11 @@ cohere = [
 cross-encoder = [
     { name = "sentence-transformers" },
 ]
+curate = [
+    { name = "aiosqlite" },
+    { name = "asyncpg" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+]
 docling = [
     { name = "docling" },
     { name = "docling-ibm-models" },
@@ -1778,7 +1788,9 @@ zeroentropy = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiosqlite", marker = "extra == 'curate'", specifier = ">=0.20" },
     { name = "aiosqlite", marker = "extra == 'ingester'", specifier = ">=0.20" },
+    { name = "asyncpg", marker = "extra == 'curate'", specifier = ">=0.29" },
     { name = "asyncpg", marker = "extra == 'ingester'", specifier = ">=0.29" },
     { name = "cohere", marker = "extra == 'cohere'", specifier = ">=5.21.1" },
     { name = "docling", marker = "extra == 'docling'", specifier = "==2.124.0" },
@@ -1811,6 +1823,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "rich", specifier = ">=14.3.3" },
     { name = "sentence-transformers", marker = "extra == 'cross-encoder'", specifier = ">=3.0.0,<6.0.0" },
+    { name = "sqlalchemy", extras = ["asyncio"], marker = "extra == 'curate'", specifier = ">=2.0" },
     { name = "sqlalchemy", extras = ["asyncio"], marker = "extra == 'ingester'", specifier = ">=2.0" },
     { name = "textual", marker = "extra == 'tui'", specifier = ">=8.2.4" },
     { name = "textual-image", specifier = ">=0.8.5" },
@@ -1824,7 +1837,7 @@ requires-dist = [
     { name = "zeroentropy", marker = "extra == 'zeroentropy'", specifier = ">=0.1.0a11" },
     { name = "zstandard", marker = "python_full_version < '3.14'", specifier = ">=0.23.0" },
 ]
-provides-extras = ["docling", "s3", "voyageai", "cohere", "zeroentropy", "jina", "cross-encoder", "ingester", "tui", "anthropic", "groq", "google", "mistral", "bedrock", "vertexai"]
+provides-extras = ["docling", "s3", "voyageai", "cohere", "zeroentropy", "jina", "cross-encoder", "ingester", "curate", "tui", "anthropic", "groq", "google", "mistral", "bedrock", "vertexai"]
 
 [[package]]
 name = "hf-xet"

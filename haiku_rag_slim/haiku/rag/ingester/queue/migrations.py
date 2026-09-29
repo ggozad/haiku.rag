@@ -1,12 +1,11 @@
 import sqlalchemy as sa
-from sqlalchemy.engine import URL, make_url
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.schema import CreateIndex
 
+from haiku.rag import sqlstore
 from haiku.rag.config.models import QueueConfig
 from haiku.rag.ingester.queue.db import (
     SCHEMA_VERSION,
-    install_sqlite_pragmas,
     jobs,
     metadata,
     schema_version,
@@ -16,28 +15,8 @@ __all__ = ["SCHEMA_VERSION", "apply_migrations", "make_engine", "open_queue"]
 
 
 def make_engine(config: QueueConfig) -> AsyncEngine:
-    """Build the queue's AsyncEngine from config. Uses `dburi` when set,
-    otherwise a `sqlite+aiosqlite` URL pointing at the resolved `path`
-    (creating the parent directory). SQLite runs in WAL mode with a small pool
-    so reads (API stats/jobs) proceed concurrently with worker writes; the
-    claim stays atomic via its single UPDATE statement, not the pool size.
-    Postgres uses pool_pre_ping so a long-running ingester survives a DB
-    restart or idle connection drop."""
-    if config.dburi:
-        url = make_url(config.dburi)
-    else:
-        path = config.path.expanduser().resolve()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        # URL.create keeps the path literal — building a string and reparsing
-        # would treat `?`/`#` in the filename as query/fragment.
-        url = URL.create("sqlite+aiosqlite", database=str(path))
-
-    if url.get_backend_name() == "sqlite":
-        engine = create_async_engine(url, pool_size=5, max_overflow=5)
-    else:
-        engine = create_async_engine(url, pool_pre_ping=True)
-    install_sqlite_pragmas(engine)
-    return engine
+    """Build the queue's AsyncEngine from config."""
+    return sqlstore.make_engine(config.path, config.dburi)
 
 
 async def apply_migrations(engine: AsyncEngine) -> int:

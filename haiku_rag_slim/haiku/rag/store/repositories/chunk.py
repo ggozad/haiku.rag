@@ -8,6 +8,7 @@ if TYPE_CHECKING:
 
 from lancedb.rerankers import RRFReranker
 
+from haiku.rag.embeddings import EmbedderWrapper
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.chunk import Chunk, SearchType
 from haiku.rag.store.schema import ensure_indexes, query_to_pydantic
@@ -21,8 +22,11 @@ class ChunkRepository:
 
     def __init__(self, store: Store) -> None:
         self.store = store
-        self.embedder = store.embedder
         self._fts_coverage_checked = False
+
+    @property
+    def embedder(self) -> EmbedderWrapper:
+        return self.store.embedder
 
     async def _warn_if_fts_uncovered(self) -> None:
         """An FTS index covering no rows makes lance serve a broken scan path:

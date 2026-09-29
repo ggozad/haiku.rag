@@ -6,6 +6,22 @@
 
 - Bumped dependencies to patched versions for known advisories: `pyjwt` 2.15.1 in `uv.lock`, `ip-address` 10.7.2 and `fast-uri` 3.1.8 in `app/frontend/pnpm-lock.yaml`.
 
+### Added
+
+- `haiku-curate` entry point and `[curate]` extra. `haiku-curate sweep` reads every
+  database in `lancedb.databases` (or `curate.databases`) read-only and records, per
+  document revision, a fingerprint: centroid, chunk stats, U+FFFD count and chunk
+  text hashes. Deletions and embedder changes are recorded; a database written
+  to during its sweep is skipped. Exits 1 when a database cannot be swept.
+  `haiku-curate store init|migrate` manage the store (`curate.store.path` or
+  `curate.store.dburi`).
+- `curate` config block: `store`, `databases`, `thresholds.short_chunk_chars`.
+
+### Changed
+
+- `Store` constructs its embedder on first use. Opening a database no longer builds
+  the configured embedder.
+
 ## [0.91.0] - 2026-09-30
 
 ### Added

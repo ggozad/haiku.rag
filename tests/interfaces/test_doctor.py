@@ -31,7 +31,6 @@ from haiku.rag.doctor import (
     _check_duplicate_documents,
     _check_embedding_drift,
     _check_vector_index,
-    _duplicate_families,
     _model_present,
     _probe_endpoint,
     _provider_targets,
@@ -40,6 +39,7 @@ from haiku.rag.doctor import (
     run_doctor,
     run_provider_checks,
 )
+from haiku.rag.similarity import duplicate_families
 from haiku.rag.store.schema import (
     DocumentItemRecord,
     DocumentMetaRecord,
@@ -1041,7 +1041,7 @@ def _centroids(
     spec: dict[str, list[int]], dim: int = 8
 ) -> tuple[list[str], np.ndarray, np.ndarray]:
     """Summed one-hot centroids + chunk counts per document, as
-    ``_duplicate_families`` consumes them.
+    ``duplicate_families`` consumes them.
 
     Orthogonal one-hot chunks make the centroid cosine of two documents equal to
     ``shared / sqrt(len(a) * len(b))``: identical documents score 1.0, fully
@@ -1056,8 +1056,8 @@ def _centroids(
     return doc_ids, centroids, counts
 
 
-def test_duplicate_families_identical_docs_flagged():
-    families = _duplicate_families(
+def testduplicate_families_identical_docs_flagged():
+    families = duplicate_families(
         *_centroids({"a": [0, 1, 2, 3], "b": [0, 1, 2, 3]}), DuplicateDetectionConfig()
     )
     assert len(families) == 1
@@ -1065,25 +1065,25 @@ def test_duplicate_families_identical_docs_flagged():
     assert families[0].similarity == {"a": pytest.approx(1.0), "b": pytest.approx(1.0)}
 
 
-def test_duplicate_families_append_only_not_flagged():
+def testduplicate_families_append_only_not_flagged():
     # A is fully contained in the larger B, but their centroids diverge
     # (cosine sqrt(3/6) ~= 0.71), so it stays below the similarity cutoff.
-    families = _duplicate_families(
+    families = duplicate_families(
         *_centroids({"a": [0, 1, 2], "b": [0, 1, 2, 3, 4, 5]}),
         DuplicateDetectionConfig(),
     )
     assert families == []
 
 
-def test_duplicate_families_distinct_docs_none():
-    families = _duplicate_families(
+def testduplicate_families_distinct_docs_none():
+    families = duplicate_families(
         *_centroids({"a": [0, 1, 2], "b": [3, 4, 5]}), DuplicateDetectionConfig()
     )
     assert families == []
 
 
-def test_duplicate_families_three_way_one_family():
-    families = _duplicate_families(
+def testduplicate_families_three_way_one_family():
+    families = duplicate_families(
         *_centroids({"a": [0, 1, 2, 3], "b": [0, 1, 2, 3], "c": [0, 1, 2, 3]}),
         DuplicateDetectionConfig(),
     )
@@ -1093,29 +1093,29 @@ def test_duplicate_families_three_way_one_family():
     assert families[0].keep == "a"
 
 
-def test_duplicate_families_clique_single_family():
+def testduplicate_families_clique_single_family():
     # A self-similar corpus (all identical) is one clique. Union-find collapses
     # it to a single family without materializing every pair.
     spec = {chr(ord("a") + k): [0, 1, 2, 3] for k in range(8)}
-    families = _duplicate_families(*_centroids(spec), DuplicateDetectionConfig())
+    families = duplicate_families(*_centroids(spec), DuplicateDetectionConfig())
     assert len(families) == 1
     assert set(families[0].members) == set(spec)
     assert all(s == pytest.approx(1.0) for s in families[0].similarity.values())
 
 
-def test_duplicate_families_tiny_docs_ignored():
+def testduplicate_families_tiny_docs_ignored():
     # min_chunks = 3 excludes the one-chunk documents.
-    families = _duplicate_families(
+    families = duplicate_families(
         *_centroids({"a": [0], "b": [0]}), DuplicateDetectionConfig()
     )
     assert families == []
 
 
-def test_duplicate_families_threshold_is_configurable():
+def testduplicate_families_threshold_is_configurable():
     # Share 3 of 4 chunks each -> centroid cosine 0.75.
     spec = {"a": [0, 1, 2, 3], "b": [0, 1, 2, 4]}
-    assert _duplicate_families(*_centroids(spec), DuplicateDetectionConfig()) == []
-    flagged = _duplicate_families(
+    assert duplicate_families(*_centroids(spec), DuplicateDetectionConfig()) == []
+    flagged = duplicate_families(
         *_centroids(spec), DuplicateDetectionConfig(similarity_threshold=0.7)
     )
     assert len(flagged) == 1

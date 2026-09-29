@@ -2,7 +2,7 @@ import asyncio
 import logging
 from pathlib import Path
 from time import monotonic
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from haiku.rag.client.scope import DatabaseRef, DatabaseScope
 from haiku.rag.config import AppConfig
@@ -17,6 +17,7 @@ from haiku.rag.store.exceptions import (
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.repositories.document_item import DocumentItemRepository
+from haiku.rag.utils.concurrency import aclose_quietly
 
 if TYPE_CHECKING:
     from haiku.rag.store.models.document import Document
@@ -33,14 +34,6 @@ _VACUUM_MIN_INTERVAL_S = 300.0
 # Failures whose message names the remedy and never the location. `open()`
 # prefixes the failing database's name.
 _NAMEABLE_FAILURES = (MigrationRequiredError, ConfigMismatchError, ReadOnlyError)
-
-
-async def aclose_quietly(closeable: Any, what: str) -> None:
-    """Close; a failure is logged, never raised."""
-    try:
-        await closeable.aclose()
-    except Exception:
-        logger.debug("Closing the %s failed on teardown", what, exc_info=True)
 
 
 class SingleDatabaseSession:
@@ -243,7 +236,7 @@ class SingleDatabaseSession:
         The store owns the embedder, so this is where it is released.
         """
         await self.drain_vacuum()
-        await aclose_quietly(self.store.embedder, "embedder")
+        await self.store.release_embedder()
         self.close()
 
     def close(self) -> None:

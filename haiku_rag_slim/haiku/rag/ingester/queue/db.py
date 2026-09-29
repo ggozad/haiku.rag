@@ -1,6 +1,4 @@
 import sqlalchemy as sa
-from sqlalchemy import event
-from sqlalchemy.ext.asyncio import AsyncEngine
 
 SCHEMA_VERSION = 3
 
@@ -105,22 +103,3 @@ schema_version = sa.Table(
     metadata,
     sa.Column("version", sa.Integer, primary_key=True),
 )
-
-
-def install_sqlite_pragmas(engine: AsyncEngine) -> None:
-    """Register a connect listener that sets the per-connection pragmas the
-    queue relies on. SQLite-only — Postgres has no equivalent and asyncpg
-    rejects PRAGMA, so the listener is never attached for it."""
-    if engine.dialect.name != "sqlite":
-        return
-
-    @event.listens_for(engine.sync_engine, "connect")
-    def _set_pragmas(dbapi_conn, _record):
-        cursor = dbapi_conn.cursor()
-        try:
-            cursor.execute("PRAGMA journal_mode=WAL")
-            cursor.execute("PRAGMA synchronous=NORMAL")
-            cursor.execute("PRAGMA foreign_keys=ON")
-            cursor.execute("PRAGMA busy_timeout=30000")
-        finally:
-            cursor.close()
