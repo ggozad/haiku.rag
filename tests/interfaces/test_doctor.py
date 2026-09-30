@@ -215,7 +215,7 @@ async def test_missing_fts_index_fails(temp_db_path):
     assert result.severity is Severity.FAIL
     assert "chunks.content_fts" in result.details[0]
     assert "no index over 1 rows" in result.details[0]
-    assert "rebuild" in (result.remediation or "")
+    assert "rebuild --reindex" in (result.remediation or "")
     assert "vacuum" not in (result.remediation or "")
     assert report.failed
 
@@ -228,6 +228,29 @@ async def test_fts_index_covering_no_rows_fails(temp_db_path):
     assert result.severity is Severity.FAIL
     assert "0 of 1 rows indexed" in result.details[0]
     assert "vacuum" in (result.remediation or "")
+
+
+async def test_fts_index_missing_rows_warns(temp_db_path):
+    """Rows written after the index was built stay outside it until vacuum."""
+    db = await _build_db(temp_db_path)
+    chunks_tbl = await db.open_table("chunks")
+    await chunks_tbl.add(
+        [
+            ChunkRecord(
+                id="c2",
+                document_id="d1",
+                content="hello again",
+                metadata=json.dumps({"doc_item_refs": ["#/texts/0"]}),
+                vector=[0.1] * VECTOR_DIM,
+            )
+        ]
+    )
+    report = await run_doctor(_config(), temp_db_path, {})
+    result = _result(report, "fts_index_coverage")
+    assert result.severity is Severity.WARN
+    assert result.details == ["chunks.content_fts: 1 of 2 rows indexed"]
+    assert "rebuild --reindex" in (result.remediation or "")
+    assert not report.failed
 
 
 async def test_fts_coverage_passes_an_empty_table(temp_db_path):

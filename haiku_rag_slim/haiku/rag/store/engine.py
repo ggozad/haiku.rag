@@ -31,6 +31,7 @@ from haiku.rag.store.schema import (
     get_documents_arrow_schema,
     has_payload_columns,
     query_to_pydantic,
+    rebuild_indexes,
 )
 
 logger = logging.getLogger(__name__)
@@ -383,6 +384,15 @@ class Store:
             raise ValueError(
                 "Rebuild in progress; tag operations are unavailable until it completes"
             )
+
+    async def rebuild_indexes(self) -> dict[str, list[str]]:
+        """Rebuild every declared index of every table. Returns the columns per table."""
+        self._assert_writable()
+        async with self._write_lock:
+            return {
+                name: await rebuild_indexes(table, name)
+                for name, table in self._tables().items()
+            }
 
     async def vacuum(self, retention_seconds: int | None = None) -> None:
         """Optimize and clean up old versions across all tables to reduce disk usage.

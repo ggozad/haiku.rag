@@ -230,11 +230,13 @@ async def _check_fts_coverage(store: Store) -> CheckResult:
     """An FTS index that covers no rows, and a populated table with no FTS
     index at all, both make lance serve results unsorted by score with
     matching rows dropped. optimize indexes the rows of an index that
-    exists; it never creates one that is absent."""
+    exists; it never creates one that is absent. An index that misses some
+    rows can change FTS and hybrid scores and ranking, which warns."""
     from lancedb.index import FTS
 
     uncovered: list[str] = []
     missing: list[str] = []
+    partial: list[str] = []
     for table_name, table in store._tables().items():
         declared = [c for c, cfg in index_specs(table_name) if isinstance(cfg, FTS)]
         if not declared:
@@ -254,6 +256,11 @@ async def _check_fts_coverage(store: Store) -> CheckResult:
             stats = await table.index_stats(index.name)
             if stats is None or stats.num_indexed_rows == 0:
                 uncovered.append(f"{table_name}.{column}: 0 of {rows} rows indexed")
+            elif stats.num_unindexed_rows:
+                partial.append(
+                    f"{table_name}.{column}: {stats.num_indexed_rows} of {rows} "
+                    "rows indexed"
+                )
     if missing or uncovered:
         return CheckResult(
             name="fts_index_coverage",
@@ -263,11 +270,22 @@ async def _check_fts_coverage(store: Store) -> CheckResult:
                 "hybrid results are unsorted and incomplete."
             ),
             remediation=(
-                "Run 'haiku-rag rebuild --embed-only' to build the index."
+                "Run 'haiku-rag rebuild --reindex' to build the index."
                 if missing
                 else "Run 'haiku-rag vacuum' to index the rows."
             ),
             details=missing + uncovered,
+        )
+    if partial:
+        return CheckResult(
+            name="fts_index_coverage",
+            severity=Severity.WARN,
+            message=(
+                "Full-text search index does not cover every row, which can "
+                "affect FTS and hybrid scores and ranking."
+            ),
+            remediation="Run 'haiku-rag rebuild --reindex' to index them.",
+            details=partial,
         )
     return CheckResult(
         name="fts_index_coverage",

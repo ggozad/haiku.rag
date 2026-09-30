@@ -127,7 +127,7 @@ Shows the database path, the stored haiku.rag version, the embedding provider, m
 haiku-rag doctor [--db /path/to/your.lancedb] [--duplicates-out groups.yaml]
 ```
 
-Checks the database and prints a pass, warn or fail report. It makes no changes, prints the command that fixes each failure (`rebuild`, `create-index`, `vacuum`, `migrate`, `rebuild --set-embedder`), and exits 1 when any check fails or the database is missing. The checks:
+Checks the database and prints a pass, warn or fail report. It makes no changes, prints the command that fixes each failure (`rebuild`, `create-index`, `vacuum`, `migrate`, `rebuild --set-embedder`, `rebuild --reindex`), and exits 1 when any check fails or the database is missing. The checks:
 
 - required tables are present, and `documents` and `document_meta` correspond one to one
 - chunks and document items reference documents that exist
@@ -137,7 +137,7 @@ Checks the database and prints a pass, warn or fail report. It makes no changes,
 - pictures in image and PDF documents carry their image data
 - exactly one settings row exists, and the configured embedder matches it
 - no migrations are pending
-- the vector index covers all chunks, and the full-text index covers the chunks it searches
+- the vector index covers all chunks, and the full-text index exists and covers rows. Rows written since it was last built are a warning
 - near-identical documents, by embedding-centroid similarity. Advisory only, tuned by `doctor.duplicates`. The largest member of each group is suggested to keep
 - API keys are set for the configured providers
 
@@ -183,7 +183,7 @@ Fetches the models the configuration needs, see [Installation](installation.md#p
 ### rebuild
 
 ```bash
-haiku-rag rebuild [--rechunk | --embed-only | --title-only | --descriptions | --set-embedder]
+haiku-rag rebuild [--rechunk | --embed-only | --title-only | --descriptions | --set-embedder | --reindex]
 ```
 
 | Mode | Flag | Use it when |
@@ -194,6 +194,9 @@ haiku-rag rebuild [--rechunk | --embed-only | --title-only | --descriptions | --
 | Title only | `--title-only` | Documents lack titles |
 | Descriptions | `--descriptions` | Adding VLM picture descriptions to an existing database |
 | Set embedder | `--set-embedder` | The same model is now served by another stack (e.g. Ollama to vLLM) |
+| Reindex | `--reindex` | `doctor` reports rows outside the full-text index, or an index is missing |
+
+Every mode except `--title-only` and `--set-embedder` ends by rebuilding the full-text and scalar indexes, whatever `storage.auto_vacuum` says. A full rebuild, `--rechunk`, `--embed-only` and `--descriptions` also retrain the vector index if the database had one. `--reindex` rebuilds the full-text and scalar indexes from scratch and nothing else: it rewrites no rows and leaves the vector index alone.
 
 `--set-embedder` records the configured embedding provider and name without re-embedding, and is rejected when the vector dimension changed.
 
@@ -213,7 +216,7 @@ Compacts the tables and removes old versions older than `storage.vacuum_retentio
 haiku-rag create-index [--db /path/to/your.lancedb]
 ```
 
-Builds an IVF_PQ vector index over the chunks, using `search.vector_index_metric`. It needs at least 256 chunks. Without an index, search is exact brute-force kNN, which is fast enough below about 100,000 chunks. Re-run it after substantial growth to retrain the centroids. See [Vector indexing](configuration/storage.md#vector-indexing).
+Builds an IVF_PQ vector index over the chunks, using `search.vector_index_metric`. It needs at least 256 chunks. Without an index, search is exact brute-force kNN, which is fast enough below about 100,000 chunks. Re-run it after substantial growth to retrain the centroids. A `rebuild` that rewrites chunks retrains an existing index and never creates one. See [Vector indexing](configuration/storage.md#vector-indexing).
 
 ## Tags and history
 

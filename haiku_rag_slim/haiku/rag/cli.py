@@ -520,14 +520,24 @@ def rebuild(
             "for the same model (e.g. Ollama to vLLM)."
         ),
     ),
+    reindex: bool = typer.Option(
+        False,
+        "--reindex",
+        help=(
+            "Rebuild the full-text and scalar indexes from scratch, without "
+            "rewriting any rows"
+        ),
+    ),
 ):
     from haiku.rag.client import RebuildMode
 
-    exclusive = sum([embed_only, rechunk, title_only, descriptions, set_embedder])
+    exclusive = sum(
+        [embed_only, rechunk, title_only, descriptions, set_embedder, reindex]
+    )
     if exclusive > 1:
         typer.echo(
-            "Error: --embed-only, --rechunk, --title-only, --descriptions, and "
-            "--set-embedder are mutually exclusive"
+            "Error: --embed-only, --rechunk, --title-only, --descriptions, "
+            "--set-embedder and --reindex are mutually exclusive"
         )
         raise typer.Exit(1)
 
@@ -541,6 +551,8 @@ def rebuild(
         mode = RebuildMode.DESCRIPTIONS
     elif set_embedder:
         mode = RebuildMode.SET_EMBEDDER
+    elif reindex:
+        mode = RebuildMode.REINDEX
     else:
         mode = RebuildMode.FULL
 

@@ -1541,8 +1541,16 @@ async def test_rechunk_raises_when_docling_blob_is_missing(temp_db_path):
                 pass
 
 
+async def _data_files(table) -> list[tuple[int, list[str]]]:
+    dataset = await table.to_lance()
+    return [
+        (fragment.fragment_id, [f.path for f in fragment.data_files()])
+        for fragment in dataset.get_fragments()
+    ]
+
+
 @pytest.mark.vcr()
-async def test_rebuild_rechunk_writes_no_documents_version(temp_db_path):
+async def test_rebuild_rechunk_rewrites_no_document_rows(temp_db_path):
     from haiku.rag.config import AppConfig
 
     config = AppConfig()
@@ -1550,12 +1558,12 @@ async def test_rebuild_rechunk_writes_no_documents_version(temp_db_path):
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         await client.create_document(content="rechunk leaves documents alone")
-        before = await client.store.documents_table.version()
+        before = await _data_files(client.store.documents_table)
 
         async for _ in client.rebuild_database(mode=RebuildMode.RECHUNK):
             pass
 
-        assert await client.store.documents_table.version() == before
+        assert await _data_files(client.store.documents_table) == before
 
 
 @pytest.mark.vcr()
@@ -1825,3 +1833,189 @@ async def test_rebuild_embed_only_recovers_picture_bytes(
             # The stored PNG was re-attached and routed through embed_image.
             assert len(embedded_images) == 1
             assert embedded_images[0].startswith(b"\x89PNG")
+
+
+async def _import_documents(client: HaikuRAG, names: tuple[str, ...]) -> None:
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
+    from haiku.rag.store.models.chunk import Chunk
+
+    dim = client.store.embedder.vector_dim
+    for name in names:
+        doc = DoclingDocument(name=name)
+        doc.add_text(label=DocItemLabel.TEXT, text=f"document {name}")
+        await client.import_document(
+            doc,
+            [Chunk(content=f"document {name}", embedding=[0.1] * dim, order=0)],
+            uri=f"test://{name}",
+        )
+
+
+async def _unindexed_rows(table) -> dict[str, int]:
+    return {i.name: i.num_unindexed_rows for i in await table.list_indices()}
+
+
+@pytest.mark.parametrize("mode", [RebuildMode.EMBED_ONLY, RebuildMode.RECHUNK])
+async def test_chunk_writing_rebuild_ends_with_every_row_indexed(
+    temp_db_path, monkeypatch, mode
+):
+    """Coverage does not wait for a vacuum."""
+    from haiku.rag import embeddings as embeddings_module
+    from haiku.rag.client import rebuild as rebuild_module
+    from haiku.rag.config import AppConfig
+
+    monkeypatch.setattr(rebuild_module, "_REBUILD_BATCH_SIZE", 1)
+
+    async def keep_embeddings(chunks, embedder, config=None):
+        for chunk in chunks:
+            if chunk.embedding is None:
+                chunk.embedding = [0.1] * embedder.vector_dim
+        return chunks
+
+    monkeypatch.setattr(embeddings_module, "embed_chunks", keep_embeddings)
+
+    config = AppConfig()
+    config.storage.auto_vacuum = False
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        await _import_documents(client, ("one", "two", "three"))
+
+        async for _ in client.rebuild_database(mode=mode):
+            pass
+
+        for name, table in client.store._tables().items():
+            unindexed = await _unindexed_rows(table)
+            assert set(unindexed.values()) <= {0}, (name, unindexed)
+
+
+async def test_rebuild_title_only_leaves_the_chunk_indexes_alone(
+    temp_db_path, monkeypatch
+):
+    from haiku.rag.config import AppConfig
+
+    async def fake_generate_title(config, doc):
+        return "A title"
+
+    monkeypatch.setattr("haiku.rag.client.rebuild.generate_title", fake_generate_title)
+
+    config = AppConfig()
+    config.storage.auto_vacuum = False
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        await _import_documents(client, ("one",))
+        before = await client.store.chunks_table.version()
+
+        async for _ in client.rebuild_database(mode=RebuildMode.TITLE_ONLY):
+            pass
+
+        assert await client.store.chunks_table.version() == before
+
+
+async def test_rebuild_reindex_covers_rows_and_writes_nothing_else(temp_db_path):
+    from haiku.rag.config import AppConfig
+
+    config = AppConfig()
+    config.storage.auto_vacuum = False
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        await _import_documents(client, ("one", "two"))
+        assert (await _unindexed_rows(client.store.chunks_table))[
+            "content_fts_idx"
+        ] == 1
+        settings_version = await client.store.settings_table.version()
+        rows_before = (
+            await client.store.chunks_table.query().select(["id", "content"]).to_arrow()
+        ).sort_by("id")
+
+        yielded = [
+            doc_id async for doc_id in client.rebuild_database(mode=RebuildMode.REINDEX)
+        ]
+
+        assert yielded == []
+        assert set((await _unindexed_rows(client.store.chunks_table)).values()) == {0}
+        assert await client.store.settings_table.version() == settings_version
+        rows_after = (
+            await client.store.chunks_table.query().select(["id", "content"]).to_arrow()
+        ).sort_by("id")
+        assert rows_after == rows_before
+
+
+async def test_rebuild_reindex_works_on_empty_database(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        async for _ in client.rebuild_database(mode=RebuildMode.REINDEX):
+            pass
+
+        assert {i.name for i in await client.store.chunks_table.list_indices()} == {
+            "id_idx",
+            "document_id_idx",
+        }
+
+
+async def _vector_indexes(client: HaikuRAG) -> list[str]:
+    return [
+        i.name
+        for i in await client.store.chunks_table.list_indices()
+        if "vector" in i.columns
+    ]
+
+
+async def _import_indexed_document(
+    client: HaikuRAG, monkeypatch, *, chunks: int, vector_index: bool
+) -> None:
+    """One document of `chunks` random-vector chunks, re-embedded randomly."""
+    import random
+
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
+    from haiku.rag import embeddings as embeddings_module
+    from haiku.rag.store.models.chunk import Chunk
+
+    rng = random.Random(0)
+
+    async def random_embeddings(chunks, embedder, config=None):
+        for chunk in chunks:
+            chunk.embedding = [rng.random() for _ in range(embedder.vector_dim)]
+        return chunks
+
+    monkeypatch.setattr(embeddings_module, "embed_chunks", random_embeddings)
+
+    dim = client.store.embedder.vector_dim
+    doc = DoclingDocument(name="many")
+    doc.add_text(label=DocItemLabel.TEXT, text="many chunks")
+    await client.import_document(
+        doc,
+        [
+            Chunk(
+                content=f"chunk {i}",
+                embedding=[rng.random() for _ in range(dim)],
+                order=i,
+            )
+            for i in range(chunks)
+        ],
+        uri="test://many",
+    )
+    if vector_index:
+        await client.store._ensure_vector_index()
+        assert await _vector_indexes(client) == ["vector_idx"]
+
+
+@pytest.mark.parametrize("had_vector_index", [True, False])
+async def test_rebuild_keeps_vector_index_opt_in(
+    temp_db_path, monkeypatch, had_vector_index
+):
+    """A vector index survives the table a rebuild recreates, and a rebuild
+    never creates one where there was none."""
+    from haiku.rag.config import AppConfig
+
+    config = AppConfig()
+    config.storage.auto_vacuum = False
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        await _import_indexed_document(
+            client, monkeypatch, chunks=300, vector_index=had_vector_index
+        )
+
+        async for _ in client.rebuild_database(mode=RebuildMode.EMBED_ONLY):
+            pass
+
+        assert await _vector_indexes(client) == (
+            ["vector_idx"] if had_vector_index else []
+        )

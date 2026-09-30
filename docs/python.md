@@ -515,6 +515,10 @@ async for doc_id in client.rebuild_database(mode=RebuildMode.EMBED_ONLY):
 # processing.pictures='description' in the config.
 async for doc_id in client.rebuild_database(mode=RebuildMode.DESCRIPTIONS):
     print(f"Described pictures in {doc_id}")
+
+# Rebuild the full-text and scalar indexes, rewriting no rows. Yields no document ids.
+async for _ in client.rebuild_database(mode=RebuildMode.REINDEX):
+    pass
 ```
 
 **Rebuild modes:**
@@ -524,7 +528,10 @@ async for doc_id in client.rebuild_database(mode=RebuildMode.DESCRIPTIONS):
 - `RebuildMode.EMBED_ONLY` - Keep existing chunks, only regenerate embeddings
 - `RebuildMode.TITLE_ONLY` - Generate titles for untitled documents (no re-chunking or re-embedding)
 - `RebuildMode.SET_EMBEDDER` - Adopt the configured embedder's provider and name without re-embedding, when the vector dimension is unchanged
+- `RebuildMode.REINDEX` - Rebuild the full-text and scalar indexes from scratch, rewriting no rows. Leaves the vector index alone
 - `RebuildMode.DESCRIPTIONS` - Run the VLM over picture bytes already stored on `document_items.picture_data`, patch descriptions into the docling blob, re-chunk + re-embed. Skips the docling parse entirely. Idempotent: pictures already carrying `meta.description.text` are not re-described, so the operation is safe to re-run.
+
+Every mode except `TITLE_ONLY` and `SET_EMBEDDER` ends by rebuilding the full-text and scalar indexes, whatever `storage.auto_vacuum` says. `FULL`, `RECHUNK`, `EMBED_ONLY` and `DESCRIPTIONS` also retrain the vector index if the database had one.
 
 ### Generating titles
 
