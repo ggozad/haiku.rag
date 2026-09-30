@@ -96,6 +96,7 @@ class RebuildMode(Enum):
     # bytes, patch descriptions into the docling blob, then re-chunk + re-embed.
     SET_EMBEDDER = "set_embedder"  # Adopt the current embedder identity without
     # re-embedding, when the vector dimension is unchanged.
+    REINDEX = "reindex"  # Rebuild every declared index, rewriting no rows.
 
 
 class HaikuRAG:

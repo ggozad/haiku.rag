@@ -101,6 +101,13 @@ class TestRebuildValidation:
         assert result.exit_code == 1
         assert "mutually exclusive" in result.output
 
+    def test_reindex_and_rechunk_mutually_exclusive(self):
+        result = runner.invoke(
+            cli, ["rebuild", "--reindex", "--rechunk", "--db", "/tmp/fake.lancedb"]
+        )
+        assert result.exit_code == 1
+        assert "mutually exclusive" in result.output
+
 
 class TestOneDatabaseCommands:
     """`lancedb.databases` names a set; most commands work on one database."""
@@ -1003,6 +1010,7 @@ def test_analyze_is_not_a_command(app_stub):
         ("--title-only", "TITLE_ONLY"),
         ("--descriptions", "DESCRIPTIONS"),
         ("--set-embedder", "SET_EMBEDDER"),
+        ("--reindex", "REINDEX"),
     ],
 )
 def test_rebuild_flag_selects_the_mode(app_stub, flag, mode_name):

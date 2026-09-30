@@ -361,6 +361,23 @@ async def test_rebuild_set_embedder_reports_settings_updated(app, client):
     assert "Stored embedder settings updated" in out(app)
 
 
+async def test_rebuild_reindex_runs_on_an_empty_database(app, client):
+    client.list_documents.return_value = []
+    modes = []
+
+    async def no_documents(mode):
+        modes.append(mode)
+        return
+        yield
+
+    client.rebuild_database = no_documents
+
+    await app.rebuild(mode=RebuildMode.REINDEX)
+
+    assert modes == [RebuildMode.REINDEX]
+    assert "Indexes rebuilt" in out(app)
+
+
 async def test_rebuild_reports_an_empty_database(app, client):
     client.list_documents.return_value = []
 

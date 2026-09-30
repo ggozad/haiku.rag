@@ -655,12 +655,14 @@ class HaikuRAGApp:
         async with HaikuRAG._covering(
             self.scope, self.config, skip_validation=True, read_only=self.read_only
         ) as client:
-            if mode == RebuildMode.SET_EMBEDDER:
+            done = {
+                RebuildMode.SET_EMBEDDER: "Stored embedder settings updated.",
+                RebuildMode.REINDEX: "Indexes rebuilt.",
+            }
+            if mode in done:
                 async for _ in client.rebuild_database(mode=mode):
                     pass
-                self.console.print(
-                    "[bold green]Stored embedder settings updated.[/bold green]"
-                )
+                self.console.print(f"[bold green]{done[mode]}[/bold green]")
                 return
 
             documents = await client.list_documents()

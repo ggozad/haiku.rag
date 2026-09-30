@@ -215,6 +215,29 @@ async def ensure_indexes(table: lancedb.AsyncTable, table_name: str) -> list[str
     return applied
 
 
+async def rebuild_indexes(table: lancedb.AsyncTable, table_name: str) -> list[str]:
+    """Rebuild every declared index from scratch. Returns the columns indexed.
+
+    The rebuilt index covers every row in the current on-disk format, in one
+    segment, under the name of the declared index it replaces. FTS is skipped
+    while the table is empty.
+    """
+    names: dict[tuple[str, str], str] = {}
+    for index in await table.list_indices():
+        for column in index.columns:
+            names.setdefault((column, index.index_type), index.name)
+
+    populated = await table.count_rows() > 0
+    applied: list[str] = []
+    for column, config in index_specs(table_name):
+        if isinstance(config, FTS) and not populated:
+            continue
+        name = names.get((column, type(config).__name__), f"{column}_idx")
+        await table.create_index(column, config=config, replace=True, name=name)
+        applied.append(column)
+    return applied
+
+
 class SettingsRecord(LanceModel):
     id: str = Field(default="settings")
     settings: str = Field(default="{}")

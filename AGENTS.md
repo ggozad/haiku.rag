@@ -206,7 +206,7 @@ async with HaikuRAG(db_path, config, create=True) as rag:
     png = await rag.get_picture_bytes(document_id, self_ref)
 
     # Maintenance
-    async for doc_id in rag.rebuild_database(mode=RebuildMode.FULL): ...  # also RECHUNK, EMBED_ONLY, TITLE_ONLY, DESCRIPTIONS, SET_EMBEDDER
+    async for doc_id in rag.rebuild_database(mode=RebuildMode.FULL): ...  # also RECHUNK, EMBED_ONLY, TITLE_ONLY, DESCRIPTIONS, SET_EMBEDDER, REINDEX
     await rag.vacuum()
 
     # Tags (Store-level; TagInfo has tables/missing_tables/complete)
@@ -330,7 +330,7 @@ ask           QA via the RAG capability (always shows citations; --image PATH re
 
 # Maintenance
 init          Initialize new database
-rebuild       Re-convert, re-chunk, re-embed (--rechunk, --embed-only, --title-only, --descriptions, --set-embedder)
+rebuild       Re-convert, re-chunk, re-embed (--rechunk, --embed-only, --title-only, --descriptions, --set-embedder, --reindex)
 vacuum        Optimize and clean up tables
 migrate       Database migration
 create-index  Create vector index for similarity search
@@ -505,7 +505,7 @@ Each entry is the trap and what to do. The evidence behind them is in the commit
 - **Opening a Store never writes to it.** Stored embedding settings change only via `init`/`rebuild`, and the version is a forward-only marker written by `init` and `migrate`. `Store.stored_settings` and `Store.stored_embedding` are read at open and never follow a later write. Refresh them together through `_remember_settings`.
 - **Embedding drift on open.** A `vector_dim` mismatch always raises `ConfigMismatchError`. Provider/name drift at the same dimension warns read-only and raises writable. Reconcile with `haiku-rag rebuild --set-embedder`. Maintenance commands, `list`, `get`, `visualize` and CLI deletion pass `skip_validation=True`. The MCP server does not: it opens one validating read-only client in its lifespan, so a `vector_dim` mismatch fails startup.
 - **lance 8 `merge_insert`** rejects partial-schema sources upfront when an insert branch needs non-nullable columns the source lacks. Declare update-only merges (drop `when_not_matched_insert_all`) when matches are guaranteed.
-- **Index sets** live in `index_specs()` / `ensure_indexes()` (schema.py), and every table-creating path routes through them. `ensure_indexes` matches on (column, index type) and never drops an index it did not declare. It skips FTS on an empty table (an index born over zero rows never catches up on `add`) and rebuilds an FTS index covering zero rows. The chunk write paths call it after writing. So a test needing the zero-coverage state writes via `chunks_table.add` directly, and the first chunk write into a fresh table writes one extra version.
+- **Index sets** live in `index_specs()` / `ensure_indexes()` (schema.py), and every table-creating path routes through them. `ensure_indexes` matches on (column, index type) and never drops an index it did not declare. It skips FTS on an empty table (an index born over zero rows never catches up on `add`) and rebuilds an FTS index covering zero rows. The chunk write paths call it after writing. So a test needing the zero-coverage state writes via `chunks_table.add` directly, and the first chunk write into a fresh table writes one extra version. Rows written past an index stay outside it until vacuum. `rebuild_indexes()` rebuilds every declared index from scratch under its existing name, and every rebuild mode but TITLE_ONLY and SET_EMBEDDER ends with it (`Store.rebuild_indexes`), so a rebuild writes an index-only version of every table. The vector index is opt-in (`create-index`) and not in `index_specs`: FULL, RECHUNK, EMBED_ONLY and DESCRIPTIONS recreate the chunks table, so `_rebuild_locked` notes whether one existed and retrains it with `_ensure_vector_index` afterwards. REINDEX leaves it alone. An interrupted rebuild still loses it.
 - **A zero-coverage or missing FTS index** returns every match unsorted, in insertion order, so `limit` slices arbitrarily and hybrid fuses that order as a ranking. `ensure_indexes`' rebuild is load-bearing. Single-term probes on small tables look healthy.
 - **`create_index(replace=True)` rebuilds an identical index** (new uuid, new version, old files kept until vacuum), and matches by index *name* (`{column}_idx` by default), so a custom-named index on the same column gets a sibling. On lancedb 0.38+ an unnamed replace builds a suffixed sibling beside a different-typed index. Check `list_indices()` first and pass `name=`.
 - **`optimize()` on an indexed table writes a version**, so an `auto_vacuum` pass touches `documents`. A test measuring version deltas sets `storage.auto_vacuum = False`.

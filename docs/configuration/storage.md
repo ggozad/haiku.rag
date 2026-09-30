@@ -53,7 +53,7 @@ storage:
 ```
 
 - **data_dir**: Directory for local database storage. When empty, uses platform-specific default locations
-- **auto_vacuum**: When enabled (default), automatically runs vacuum after document create/update/delete operations and database rebuilds. Background vacuums are throttled to at most one every 5 minutes, so sustained ingestion does not trigger continuous compaction, and a final vacuum runs when the client closes. Set to `false` to vacuum only with `haiku-rag vacuum`
+- **auto_vacuum**: When enabled (default), automatically runs vacuum after document create/update/delete operations and database rebuilds. Background vacuums are throttled to at most one every 5 minutes, so sustained ingestion does not trigger continuous compaction, and a final vacuum runs when the client closes. Set to `false` to vacuum only with `haiku-rag vacuum`. Vacuum is also what adds newly written rows to the indexes, so with `false` they stay outside them until `haiku-rag vacuum`, or `haiku-rag rebuild --reindex` for the full-text and scalar indexes
 - **vacuum_retention_seconds**: When vacuum runs, old table versions older than this threshold are removed. Default: 86400 seconds (1 day). Set to 0 for aggressive cleanup (removes all old versions immediately)
 - **compaction_target_bytes**: Target size for the fragments compaction writes on the tables that store docling blobs. Default: 2 GiB. Advisory rather than a cap, see [Vacuum memory](#vacuum-memory) below
 
@@ -258,4 +258,4 @@ It builds an IVF_PQ index, with LanceDB choosing the parameters from the row cou
 
 New chunks reach the index without a rebuild. `optimize()`, which runs after writes while `auto_vacuum` is on, adds them as a delta part. Between a write and the next optimize, LanceDB serves ANN over the indexed rows and a brute-force scan over the remainder, then combines the results.
 
-The centroids are fitted when the index is built and never recomputed, so as a corpus grows past what they were trained on the partitioning fits it less well and delta parts accumulate. Run `haiku-rag create-index` again after substantial growth to retrain them.
+The centroids are fitted when the index is built and never recomputed, so as a corpus grows past what they were trained on the partitioning fits it less well and delta parts accumulate. Run `haiku-rag create-index` again after substantial growth to retrain them. A full `rebuild`, `--rechunk`, `--embed-only` and `--descriptions` retrain an existing index, and no `rebuild` creates one.

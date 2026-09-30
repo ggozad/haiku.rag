@@ -183,7 +183,7 @@ Fetches the models the configuration needs, see [Installation](installation.md#p
 ### rebuild
 
 ```bash
-haiku-rag rebuild [--rechunk | --embed-only | --title-only | --descriptions | --set-embedder]
+haiku-rag rebuild [--rechunk | --embed-only | --title-only | --descriptions | --set-embedder | --reindex]
 ```
 
 | Mode | Flag | Use it when |
@@ -194,6 +194,9 @@ haiku-rag rebuild [--rechunk | --embed-only | --title-only | --descriptions | --
 | Title only | `--title-only` | Documents lack titles |
 | Descriptions | `--descriptions` | Adding VLM picture descriptions to an existing database |
 | Set embedder | `--set-embedder` | The same model is now served by another stack (e.g. Ollama to vLLM) |
+| Reindex | `--reindex` | `doctor` reports rows outside the full-text index, or an index is missing |
+
+Every mode except `--title-only` and `--set-embedder` ends by rebuilding the full-text and scalar indexes, whatever `storage.auto_vacuum` says. A full rebuild, `--rechunk`, `--embed-only` and `--descriptions` also retrain the vector index if the database had one. `--reindex` rebuilds the full-text and scalar indexes from scratch and nothing else: it rewrites no rows and leaves the vector index alone.
 
 `--set-embedder` records the configured embedding provider and name without re-embedding, and is rejected when the vector dimension changed.
 
@@ -213,7 +216,7 @@ Compacts the tables and removes old versions older than `storage.vacuum_retentio
 haiku-rag create-index [--db /path/to/your.lancedb]
 ```
 
-Builds an IVF_PQ vector index over the chunks, using `search.vector_index_metric`. It needs at least 256 chunks. Without an index, search is exact brute-force kNN, which is fast enough below about 100,000 chunks. Re-run it after substantial growth to retrain the centroids. See [Vector indexing](configuration/storage.md#vector-indexing).
+Builds an IVF_PQ vector index over the chunks, using `search.vector_index_metric`. It needs at least 256 chunks. Without an index, search is exact brute-force kNN, which is fast enough below about 100,000 chunks. Re-run it after substantial growth to retrain the centroids. A `rebuild` that rewrites chunks retrains an existing index and never creates one. See [Vector indexing](configuration/storage.md#vector-indexing).
 
 ## Tags and history
 

@@ -92,6 +92,9 @@ async def rebuild_database(
         if mode == RebuildMode.SET_EMBEDDER:
             await _set_embedder(session)
             return
+        if mode == RebuildMode.REINDEX:
+            await session.store.rebuild_indexes()
+            return
 
         async for doc_id in _rebuild_locked(session, mode):
             yield doc_id
@@ -116,6 +119,9 @@ async def _rebuild_locked(
     # which may schedule *new* background vacuums — those run after the
     # destructive phase and are fine.
     await session.drain_vacuum()
+
+    # Every mode but TITLE_ONLY recreates the chunks table, dropping its vector index.
+    had_vector_index = await _has_vector_index(session)
 
     settings_repo = SettingsRepository(session.store)
     await settings_repo.save_current_settings()
@@ -147,6 +153,11 @@ async def _rebuild_locked(
         await session.store.recreate_embeddings_table()
         async for doc_id in _rebuild_full(session, documents):
             yield doc_id
+
+    if mode != RebuildMode.TITLE_ONLY:
+        await session.store.rebuild_indexes()
+        if had_vector_index:
+            await session.store._ensure_vector_index()
 
     # Final maintenance if auto_vacuum enabled. Swallowing only so that a
     # failed post-rebuild optimize doesn't mask a successful rebuild — but
@@ -227,6 +238,16 @@ async def _rebuild_title_only(
     for saved in await repo.update_meta_all(pending):
         assert saved.id is not None
         yield saved.id
+
+
+async def _has_vector_index(session: SingleDatabaseSession) -> bool:
+    """Whether the chunks table exists and carries a vector index."""
+    if "chunks" not in (await session.store.db.list_tables()).tables:
+        return False
+    return any(
+        "vector" in index.columns
+        for index in await session.store.chunks_table.list_indices()
+    )
 
 
 async def _resolve_rebuild_recovery(

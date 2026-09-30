@@ -1,11 +1,12 @@
 import pyarrow as pa
+import pytest
 from lancedb.index import FTS, BTree
 
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models import Chunk, Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
-from haiku.rag.store.schema import ensure_indexes
+from haiku.rag.store.schema import ensure_indexes, rebuild_indexes
 
 EXPECTED_INDEXED_COLUMNS = {
     "documents": {"id"},
@@ -323,3 +324,125 @@ async def test_unavailable_index_stats_repair_matches_doctor(temp_db_path, monke
         applied = await ensure_indexes(store.chunks_table, "chunks")
 
         assert applied == ["content_fts"]
+
+
+async def _fts_index(table):
+    [index] = [i for i in await table.list_indices() if i.index_type == "FTS"]
+    return index
+
+
+async def test_rebuild_indexes_covers_rows_written_past_the_index(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        await _add_chunk(store, "first", document_id="doc-a")
+        await _add_chunk(store, "second", document_id="doc-b")
+        assert (await _fts_index(store.chunks_table)).num_unindexed_rows == 1
+
+        applied = await rebuild_indexes(store.chunks_table, "chunks")
+
+        assert sorted(applied) == sorted(EXPECTED_POPULATED_CHUNK_COLUMNS)
+        for index in await store.chunks_table.list_indices():
+            assert index.num_unindexed_rows == 0, index.name
+        assert await _covering(store.chunks_table, "content_fts") == [
+            ("content_fts_idx", "FTS")
+        ]
+
+
+async def test_rebuild_indexes_writes_the_current_fts_format(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        await _add_chunk(store)
+        dataset = await store.chunks_table.to_lance()
+        dataset.create_scalar_index(
+            "content_fts",
+            index_type="INVERTED",
+            name="content_fts_idx",
+            replace=True,
+            with_position=True,
+            remove_stop_words=False,
+            format_version=1,
+        )
+        await store.chunks_table.checkout_latest()
+        assert (await _fts_index(store.chunks_table)).index_version == 1
+
+        await rebuild_indexes(store.chunks_table, "chunks")
+
+        index = await _fts_index(store.chunks_table)
+        assert (index.name, index.index_version) == ("content_fts_idx", 2)
+
+
+async def test_rebuild_indexes_folds_delta_segments(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        await _add_chunk(store, "first", document_id="doc-a")
+        await _add_chunk(store, "second", document_id="doc-b")
+        dataset = await store.chunks_table.to_lance()
+        dataset.optimize.optimize_indices(num_indices_to_merge=0)
+        await store.chunks_table.checkout_latest()
+        assert (await _fts_index(store.chunks_table)).num_segments == 2
+
+        await rebuild_indexes(store.chunks_table, "chunks")
+
+        assert (await _fts_index(store.chunks_table)).num_segments == 1
+
+
+async def test_rebuild_indexes_skips_fts_while_the_table_is_empty(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        applied = await rebuild_indexes(store.chunks_table, "chunks")
+
+        assert sorted(applied) == ["document_id", "id"]
+        assert await _fts_indexed_rows(store.chunks_table) is None
+
+
+async def test_rebuild_indexes_keeps_a_custom_named_index(temp_db_path):
+    """A declared index under another name is rebuilt under that name."""
+    async with Store(temp_db_path, create=True) as store:
+        await _add_chunk(store)
+        await store.chunks_table.drop_index("content_fts_idx")
+        await store.chunks_table.create_index(
+            "content_fts",
+            config=FTS(with_position=True, remove_stop_words=False),
+            name="operator_fts",
+        )
+
+        await rebuild_indexes(store.chunks_table, "chunks")
+
+        assert await _covering(store.chunks_table, "content_fts") == [
+            ("operator_fts", "FTS")
+        ]
+
+
+async def test_rebuild_indexes_leaves_undeclared_indexes_alone(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        table = store.document_items_table
+        await table.create_index("label", config=BTree(), name="operator_label")
+
+        await rebuild_indexes(table, "document_items")
+
+        covering = dict(await _covering(table, "label"))
+        assert covering == {"label_idx": "Bitmap", "operator_label": "BTree"}
+
+
+async def test_store_rebuild_indexes_covers_every_table(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        await _add_chunk(store)
+        repo = DocumentRepository(store)
+        await repo.create(Document(content="A document"))
+
+        rebuilt = await store.rebuild_indexes()
+
+        assert rebuilt == {
+            "documents": ["id"],
+            "document_meta": ["id", "uri"],
+            "chunks": ["content_fts", "id", "document_id"],
+            "document_items": ["document_id", "position", "self_ref", "label"],
+            "settings": [],
+        }
+
+
+async def test_store_rebuild_indexes_refuses_read_only(temp_db_path):
+    from haiku.rag.store.exceptions import ReadOnlyError
+
+    async with Store(temp_db_path, create=True):
+        pass
+
+    async with Store(temp_db_path, read_only=True) as store:
+        with pytest.raises(ReadOnlyError):
+            await store.rebuild_indexes()

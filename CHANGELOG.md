@@ -2,16 +2,25 @@
 
 ## [Unreleased]
 
+### Added
+
+- `haiku-rag rebuild --reindex` (`RebuildMode.REINDEX`): rebuilds the full-text and
+  scalar indexes from scratch without rewriting rows.
+
 ### Changed
 
+- Every `rebuild` mode except `--title-only` and `--set-embedder` ends by rebuilding
+  the full-text and scalar indexes, regardless of `storage.auto_vacuum`.
 - `rebuild --rechunk`, `--descriptions` and `rebuild` delete `document_items` once per
   batch of 50 documents instead of per document, and `--title-only` writes
   `document_meta` once per batch.
 
 ### Fixed
 
+- `rebuild` modes that rewrite chunks dropping the vector index built by
+  `haiku-rag create-index`. They retrain it.
 - `rebuild --rechunk` failing with lance "Resources exhausted" on databases with page
-  images (#666). `--rechunk` writes no `documents` version. `--rechunk` and
+  images (#666). `--rechunk` rewrites no `documents` rows. `--rechunk` and
   `--descriptions` no longer load or rewrite `docling_pages`. The stored-content
   fallback of a full rebuild no longer loads the stored `docling_pages`, and writes
   their replacement from the markdown conversion.
