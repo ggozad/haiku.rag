@@ -119,7 +119,7 @@ def test_describe_each_status():
     ok = _result(SweepStatus.OK, documents=3, rebaseline=True)
     assert describe(ok) == "wiki: ok, 3 documents, 0 new, 0 deleted, embedder changed"
     assert describe(_result(SweepStatus.ERROR, error="boom")) == "wiki: error: boom"
-    assert describe(_result(SweepStatus.MOVED)) == "wiki: moved"
+    assert describe(_result(SweepStatus.UNCHANGED)) == "wiki: unchanged"
 
 
 async def test_the_api_answers_while_a_sweep_runs(curate, monkeypatch):  # noqa: F811

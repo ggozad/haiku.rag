@@ -14,6 +14,7 @@ from haiku.rag.curate.store.models import (
     Flag,
     FlagKind,
     FlagStatus,
+    Health,
     Watch,
 )
 from haiku.rag.curate.sweep import find_chunk_text
@@ -85,6 +86,20 @@ async def health(state: APIState = Depends(get_state)) -> HealthResponse:
     return HealthResponse(
         status="ok", databases=await state.repository.databases(state.scope.names)
     )
+
+
+@router.get("/health/{database}", response_model=Health)
+async def database_health(
+    database: str, state: APIState = Depends(get_state)
+) -> Health:
+    """Doctor's checks of a database, from the last sweep that ran them."""
+    _known(state, database)
+    health = await state.repository.health(database)
+    if health is None:
+        raise HTTPException(
+            status_code=404, detail=f"database {database!r} has not been checked yet"
+        )
+    return health
 
 
 @router.get("/databases", response_model=list[DatabaseSummary])

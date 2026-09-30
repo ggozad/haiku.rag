@@ -102,6 +102,15 @@ watched = sa.Table(
     sa.Column("added_at", sa.Text, nullable=False),
 )
 
+health = sa.Table(
+    "health",
+    metadata,
+    sa.Column("database", sa.Text, primary_key=True),
+    sa.Column("sweep_id", sa.Integer, sa.ForeignKey("sweeps.id"), nullable=False),
+    sa.Column("checked_at", sa.Text, nullable=False),
+    sa.Column("results", sa.Text, nullable=False),
+)
+
 layout = sa.Table(
     "layout",
     metadata,

@@ -334,3 +334,22 @@ async def test_database_filters_include_cross_database_groups(curate):  # noqa: 
     assert [f["database"] for f in wiki] == [None]
     assert [f["id"] for f in papers] == [f["id"] for f in wiki]
     assert [s["open_flags"] for s in summaries] == [1, 1]
+
+
+async def test_database_health(populated, tmp_path):
+    config, repository, _, _ = populated
+    config.lancedb.databases["gone"] = str(tmp_path / "gone.lancedb")
+    await sweep(config, repository)
+    async with _client(config, repository, auth_token="secret") as client:
+        headers = {"Authorization": "Bearer secret"}
+        wiki = await client.get("/health/wiki", headers=headers)
+        unswept = await client.get("/health/gone", headers=headers)
+        unknown = await client.get("/health/nope", headers=headers)
+        unauthorised = await client.get("/health/wiki")
+    body = wiki.json()
+    assert body["database"] == "wiki" and body["checked_at"]
+    assert {check["name"] for check in body["results"]} >= {"settings_row"}
+    assert unswept.status_code == 404
+    assert unswept.json()["detail"] == "database 'gone' has not been checked yet"
+    assert unknown.status_code == 404
+    assert unauthorised.status_code == 401

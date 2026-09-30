@@ -11,6 +11,7 @@ from haiku.rag.curate.store.db import (
     chunk_texts,
     fingerprints,
     flags,
+    health,
     layout,
     sweeps,
     watched,
@@ -28,6 +29,7 @@ from haiku.rag.curate.store.models import (
     Flag,
     FlagKind,
     FlagStatus,
+    Health,
     LastSweep,
     RepeatedText,
     Revision,
@@ -181,6 +183,12 @@ class CurateRepository:
                         )
                     )
                 ).scalar_one()
+                checks = (
+                    await conn.execute(
+                        sa.select(health.c.results).where(health.c.database == name)
+                    )
+                ).scalar_one_or_none()
+                severities = [c["severity"] for c in json.loads(checks or "[]")]
                 open_flags = (
                     await conn.execute(
                         sa.select(sa.func.count()).where(
@@ -199,6 +207,8 @@ class CurateRepository:
                         last_sweep_at=last.finished_at if last else None,
                         last_error=last.error if last else None,
                         embedder=last.embedder if last else None,
+                        failed_checks=severities.count("fail"),
+                        warned_checks=severities.count("warn"),
                     )
                 )
         return summaries
@@ -334,6 +344,22 @@ class CurateRepository:
             for r in rows
         ]
 
+    async def health(self, database: str) -> Health | None:
+        async with self._engine.connect() as conn:
+            row = (
+                await conn.execute(
+                    sa.select(health).where(health.c.database == database)
+                )
+            ).first()
+        if row is None:
+            return None
+        return Health(
+            database=row.database,
+            sweep_id=row.sweep_id,
+            checked_at=row.checked_at,
+            results=json.loads(row.results),
+        )
+
     async def isolation(self, database: str) -> dict[str, float | None]:
         stmt = sa.select(layout.c.document_id, layout.c.isolation).where(
             layout.c.database == database
@@ -412,7 +438,22 @@ class StoreWriter:
             await self._end(sweep.deleted, sweep_id, deleted=True)
             await self._insert_fingerprints(sweep, sweep_id)
             await self._refresh(sweep)
+        if sweep.health is not None:
+            await self._write_health(sweep, sweep_id)
         return sweep_id
+
+    async def _write_health(self, sweep: DatabaseSweep, sweep_id: int) -> None:
+        await self._conn.execute(
+            sa.delete(health).where(health.c.database == sweep.database)
+        )
+        await self._conn.execute(
+            sa.insert(health).values(
+                database=sweep.database,
+                sweep_id=sweep_id,
+                checked_at=sweep.finished_at,
+                results=json.dumps(sweep.health),
+            )
+        )
 
     async def view(
         self, database: str, repeated_chunks: RepeatedChunksConfig

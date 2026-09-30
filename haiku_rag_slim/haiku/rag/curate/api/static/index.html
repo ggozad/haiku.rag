@@ -52,7 +52,7 @@
 
       .cards {
         display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-        gap: 12px; margin-bottom: 16px;
+        gap: 12px; margin-bottom: 16px; align-items: start;
       }
       .card {
         display: block; width: 100%; text-align: left; color: var(--text);
@@ -69,6 +69,8 @@
       .card .figure.flags .value { color: var(--warn); }
       .card .sweep { margin-top: 6px; font-size: 12px; color: var(--muted); }
       .card .sweep.error { color: var(--bad); }
+      .card .checks { display: block; margin-top: 4px; font-size: 12px; color: var(--warn); }
+      .card .checks.failed { color: var(--bad); }
 
       .tabs { display: flex; gap: 4px; margin-bottom: 0; }
       .tab {
@@ -143,6 +145,7 @@
         <button type="button" class="tab" data-tab="documents">Documents</button>
         <button type="button" class="tab" data-tab="duplicates">Duplicates</button>
         <button type="button" class="tab" data-tab="watched">Watched</button>
+        <button type="button" class="tab" data-tab="health">Health</button>
       </div>
       <div class="panel" id="panel"></div>
     </div>
@@ -853,6 +856,18 @@
               d.last_status ? `${d.last_status} · ${relTime(d.last_sweep_at)}` : "never swept",
               failed && d.last_error ? el("span", { class: "name" }, d.last_error) : null,
             ),
+            d.failed_checks || d.warned_checks
+              ? el(
+                  "span",
+                  { class: `checks ${d.failed_checks ? "failed" : ""}` },
+                  [
+                    d.failed_checks ? `${d.failed_checks} failed check(s)` : null,
+                    d.warned_checks ? `${d.warned_checks} warning(s)` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(", "),
+                )
+              : null,
           );
         });
         $("cards").replaceChildren(...cards);
@@ -872,12 +887,62 @@
         }
       }
 
+      async function renderHealth(target) {
+        const databases = state.database
+          ? state.databases.filter((d) => d.database === state.database)
+          : state.databases;
+        const tone = { fail: "bad", warn: "warn", ok: "ok" };
+        const sections = [];
+        for (const { database } of databases) {
+          let health = null;
+          try {
+            health = await getJson(`health/${encodeURIComponent(database)}`);
+          } catch (error) {
+            sections.push(el("h3", {}, database), el("div", { class: "empty" }, error.message));
+            continue;
+          }
+          const problems = health.results.filter((check) => check.severity !== "ok");
+          const passed = health.results.length - problems.length;
+          sections.push(el("h3", {}, `${database} · checked ${relTime(health.checked_at)}`));
+          if (problems.length) {
+            sections.push(
+              el(
+                "table",
+                {},
+                problems.map((check) =>
+                    el(
+                      "tr",
+                      {},
+                      el("td", {}, el("span", { class: `badge ${tone[check.severity]}` }, check.severity)),
+                      el(
+                        "td",
+                        {},
+                        check.message,
+                        check.remediation ? el("div", { class: "muted mono" }, `→ ${check.remediation}`) : null,
+                        check.details.length
+                          ? el("div", { class: "muted mono" }, check.details.join(", "))
+                          : null,
+                      ),
+                      el("td", { class: "muted mono" }, check.name),
+                    ),
+                  ),
+              ),
+            );
+          }
+          sections.push(el("div", { class: "muted" }, `${passed} check(s) passed`));
+        }
+        target.replaceChildren(
+          ...(sections.length ? sections : [el("div", { class: "empty" }, "No databases.")]),
+        );
+      }
+
       const RENDERERS = {
         flags: renderFlags,
         changes: renderChanges,
         documents: renderDocuments,
         duplicates: renderDuplicates,
         watched: renderWatched,
+        health: renderHealth,
       };
 
       let renderSeq = 0;

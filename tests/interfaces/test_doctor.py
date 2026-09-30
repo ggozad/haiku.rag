@@ -36,10 +36,13 @@ from haiku.rag.doctor import (
     _provider_targets,
     _resolve_endpoint,
     _sample,
+    run_db_checks,
     run_doctor,
     run_provider_checks,
 )
 from haiku.rag.similarity import duplicate_families
+from haiku.rag.store.engine import Store
+from haiku.rag.store.info import get_database_stats
 from haiku.rag.store.schema import (
     DocumentItemRecord,
     DocumentMetaRecord,
@@ -359,6 +362,44 @@ async def test_heading_only_document_no_chunks_is_ok(temp_db_path):
     report = await run_doctor(_config(), temp_db_path, {})
     assert _result(report, "documents_without_chunks").severity is Severity.OK
     assert all(r.name != "documents_text_no_chunks" for r in report.results)
+
+
+async def test_db_checks_skip_named_checks_and_accept_unknown_image_support(
+    temp_db_path,
+):
+    db = await _build_db(temp_db_path)
+    await _add_doc(
+        db,
+        "d2",
+        items=[
+            DocumentItemRecord(
+                document_id="d2", position=0, self_ref="#/pictures/0", label="picture"
+            )
+        ],
+    )
+    unbuildable = _config(provider="not-installed")
+    async with Store(
+        temp_db_path,
+        config=unbuildable,
+        read_only=True,
+        skip_validation=True,
+        skip_migration_check=True,
+    ) as store:
+        results = await run_db_checks(
+            store,
+            unbuildable,
+            await get_database_stats(store.db),
+            supports_images=None,
+            skip={"duplicate_documents", "embedding_drift"},
+        )
+
+    names = {result.name for result in results}
+    assert not names & {"duplicate_documents", "embedding_drift"}
+    [pictures] = [r for r in results if r.name == "documents_pictures_no_chunks"]
+    assert pictures.severity is Severity.WARN
+    assert pictures.message == "1 picture-only document(s) have no chunks."
+    assert pictures.remediation is None
+    assert pictures.details == ["d2"]
 
 
 async def test_image_only_document_text_embedder_warns(temp_db_path):

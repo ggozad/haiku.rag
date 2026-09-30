@@ -20,15 +20,21 @@ from haiku.rag.curate.store.models import (
     SweepStatus,
 )
 from haiku.rag.curate.store.repository import CurateRepository
+from haiku.rag.doctor import run_db_checks
 from haiku.rag.similarity import document_centroids
 from haiku.rag.store.engine import Store
 from haiku.rag.store.exceptions import MigrationRequiredError, SourceUnavailableError
+from haiku.rag.store.info import get_database_stats
 from haiku.rag.utils.sql import escape_sql_string
 
 logger = logging.getLogger(__name__)
 
 # Documents per chunk read.
 READ_BATCH = 100
+
+# Curate covers duplicates itself, and its config is not any database's
+# ingestion config.
+SKIPPED_CHECKS = frozenset({"duplicate_documents", "embedding_drift"})
 
 
 @dataclass(frozen=True)
@@ -118,17 +124,8 @@ async def sweep_database(
 
 
 async def open_database(ref: DatabaseRef, config: AppConfig) -> SingleDatabaseSession:
-    """Open a database the way curate reads it: read-only, unvalidated, never stale."""
-    # Every read sees the latest commit, so the version guard sees a write that
-    # lands during the sweep.
-    strong = config.model_copy(
-        update={
-            "lancedb": config.lancedb.model_copy(
-                update={"read_consistency_interval_seconds": 0}
-            )
-        }
-    )
-    session = SingleDatabaseSession(ref, strong, read_only=True, skip_validation=True)
+    """Open a database the way curate reads it: read-only and unvalidated."""
+    session = SingleDatabaseSession(ref, config, read_only=True, skip_validation=True)
     return await session.open()
 
 
@@ -174,6 +171,7 @@ async def _sweep_store(
     embedder = _embedder_label(store.stored_embedding)
     last = await repository.last_ok_sweep(name)
     if last is not None and last.table_versions == versions:
+        unchecked = await repository.health(name) is None
         return DatabaseSweep(
             database=name,
             started_at=started_at,
@@ -181,6 +179,7 @@ async def _sweep_store(
             status=SweepStatus.UNCHANGED,
             table_versions=versions,
             embedder=embedder,
+            health=await _health_checks(store, config) if unchecked else None,
         )
 
     rebaseline = last is not None and last.embedder != embedder
@@ -194,16 +193,7 @@ async def _sweep_store(
         or current[document.id].change_key != document.change_key
     ]
     new = await _read_changed(store, changed, embedder, config)
-
-    if await store.current_table_versions() != versions:
-        return DatabaseSweep(
-            database=name,
-            started_at=started_at,
-            finished_at=_now(),
-            status=SweepStatus.MOVED,
-            table_versions=versions,
-            embedder=embedder,
-        )
+    checks = await _health_checks(store, config)
 
     present = {document.id for document in documents}
     changed_ids = {document.id for document in changed}
@@ -220,7 +210,19 @@ async def _sweep_store(
         replaced=[current[d].id for d in changed_ids if d in current],
         deleted=[fp.id for doc_id, fp in current.items() if doc_id not in present],
         refreshed=_refreshes(documents, current, changed_ids),
+        health=checks,
     )
+
+
+async def _health_checks(store: Store, config: AppConfig) -> list[dict]:
+    checks = await run_db_checks(
+        store,
+        config,
+        await get_database_stats(store.db),
+        supports_images=None,
+        skip=SKIPPED_CHECKS,
+    )
+    return [check.model_dump(mode="json") for check in checks]
 
 
 def _refreshes(

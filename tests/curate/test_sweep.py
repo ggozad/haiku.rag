@@ -252,28 +252,6 @@ async def test_embedder_change_rebaselines_every_document(curate):
     )
 
 
-async def test_write_during_a_sweep_discards_the_database(curate, monkeypatch):
-    paths, config, repository = curate
-    async with HaikuRAG(paths["wiki"], _writer_config()) as rag:
-        doc_id = await _import(rag, "file:///wiki/a.pdf", ["Alpha."], [0])
-    read = sweep_module._read_changed
-
-    async def read_then_write(store, *args, **kwargs):
-        result = await read(store, *args, **kwargs)
-        if store.db_path == paths["wiki"]:
-            async with HaikuRAG(paths["wiki"], _writer_config()) as rag:
-                await _rewrite(rag, doc_id, ["Beta."], [1])
-        return result
-
-    monkeypatch.setattr(sweep_module, "_read_changed", read_then_write)
-
-    results = _by_database(await sweep(config, repository))
-
-    assert results["wiki"].status is SweepStatus.MOVED
-    assert await repository.history("wiki", doc_id) == []
-    assert await repository.last_ok_sweep("wiki") is None
-
-
 async def test_unavailable_database_is_an_error_and_others_proceed(curate, tmp_path):
     paths, config, repository = curate
     config.lancedb.databases["gone"] = str(tmp_path / "gone.lancedb")

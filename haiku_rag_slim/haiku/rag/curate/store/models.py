@@ -7,7 +7,6 @@ from enum import StrEnum
 class SweepStatus(StrEnum):
     OK = "ok"
     UNCHANGED = "unchanged"
-    MOVED = "moved"
     ERROR = "error"
 
 
@@ -172,6 +171,7 @@ class DatabaseSweep:
     replaced: list[int] = field(default_factory=list)
     deleted: list[int] = field(default_factory=list)
     refreshed: list[Refresh] = field(default_factory=list)
+    health: list[dict] | None = None
 
 
 @dataclass(frozen=True)
@@ -208,6 +208,8 @@ class DatabaseSummary:
     last_sweep_at: str | None
     last_error: str | None
     embedder: str | None
+    failed_checks: int
+    warned_checks: int
 
 
 class ChangeKind(StrEnum):
@@ -240,6 +242,16 @@ class CurrentDocument:
     chunk_stats: dict
     isolation: float | None
     open_flags: list[FlagKind]
+
+
+@dataclass(frozen=True)
+class Health:
+    """Doctor's checks of a database, from the last sweep that ran them."""
+
+    database: str
+    sweep_id: int
+    checked_at: str
+    results: list[dict]
 
 
 @dataclass(frozen=True)

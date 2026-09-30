@@ -11,14 +11,15 @@
 - `haiku-curate` entry point and `[curate]` extra. `haiku-curate sweep` reads every
   database in `lancedb.databases` (or `curate.databases`) read-only and records, per
   document revision, a fingerprint: centroid, chunk stats, U+FFFD count and chunk
-  text hashes. Deletions and embedder changes are recorded; a database written
-  to during its sweep is skipped. Each sweep raises flags (`bad_update`,
+  text hashes. Deletions and embedder changes are recorded. Each sweep raises
+  flags (`bad_update`,
   `bad_document`, `watched_change`, `watched_deletion`, `duplicate_group` within a
   database and across databases by md5, `repeated_chunk`, `missing_metadata`), each
-  `open`, `acknowledged`, `superseded` or `resolved`, and records a per-document
-  isolation score. Exits 1 when a database cannot be swept. `haiku-curate serve
+  `open`, `acknowledged`, `superseded` or `resolved`, records a per-document
+  isolation score, and records doctor's structural checks of each changed
+  database. Exits 1 when a database cannot be swept. `haiku-curate serve
   [--no-sweep]` sweeps every `curate.sweep_interval_s` and serves an HTTP API:
-  `/health`, `/databases`, `/flags` (with acknowledgment and the text of a
+  `/health`, `/health/{database}`, `/databases`, `/flags` (with acknowledgment and the text of a
   repeated chunk), `/changes`, `/documents` and a document's history, and the
   watch list, plus a dashboard at `/`. `haiku-curate store init|migrate` manage the store
   (`curate.store.path` or `curate.store.dburi`).

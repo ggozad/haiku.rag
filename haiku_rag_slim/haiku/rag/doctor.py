@@ -1,6 +1,6 @@
 import asyncio
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from enum import StrEnum
 from pathlib import Path
 
@@ -164,7 +164,7 @@ def _check_tables_present(stats: dict) -> CheckResult:
 def _classify_unchunked(
     no_chunk_ids: set[str],
     labels_by_doc: dict[str, set[str]],
-    supports_images: bool,
+    supports_images: bool | None,
 ) -> list[CheckResult]:
     """Classify chunk-less documents by what they hold.
 
@@ -194,7 +194,16 @@ def _classify_unchunked(
                 details=_sample(sorted(text_docs)),
             )
         )
-    if picture_docs and supports_images:
+    if picture_docs and supports_images is None:
+        results.append(
+            CheckResult(
+                name="documents_pictures_no_chunks",
+                severity=Severity.WARN,
+                message=f"{len(picture_docs)} picture-only document(s) have no chunks.",
+                details=_sample(sorted(picture_docs)),
+            )
+        )
+    elif picture_docs and supports_images:
         results.append(
             CheckResult(
                 name="documents_pictures_no_chunks",
@@ -615,12 +624,17 @@ async def run_db_checks(
     store: Store,
     config: AppConfig,
     stats: dict,
+    *,
+    supports_images: bool | None,
+    skip: Collection[str] = (),
     duplicates_out: Path | None = None,
     on_progress: Callable[[str], None] | None = None,
 ) -> list[CheckResult]:
     """Referential and content-integrity checks against an open read-only Store.
 
     Assumes all required tables exist (the caller short-circuits otherwise).
+    `supports_images` is whether the database's embedder embeds pictures, None
+    when unknown; `skip` names checks not to run.
     """
     notify = on_progress or (lambda _label: None)
     results: list[CheckResult] = []
@@ -671,7 +685,7 @@ async def run_db_checks(
 
     notify("Checking document chunking")
     results += _classify_unchunked(
-        doc_ids - chunk_doc_ids, labels_by_doc, store.embedder.supports_images
+        doc_ids - chunk_doc_ids, labels_by_doc, supports_images
     )
     results.append(_check_documents_without_items(doc_ids, chunk_doc_ids, item_doc_ids))
 
@@ -701,23 +715,24 @@ async def run_db_checks(
 
     results.append(_check_unembedded_chunks(arrow.column("id"), embedded))
 
-    notify("Detecting near-duplicate documents")
-    centroid_doc_ids, centroids, counts = document_centroids(
-        arrow.column("document_id"), vectors, embedded, actual_dim
-    )
-    # The matrix is the largest object here; drop it before clustering.
-    del vectors
-    results.append(
-        _check_duplicate_documents(
-            centroid_doc_ids,
-            centroids,
-            counts,
-            uri_by_doc,
-            title_by_doc,
-            config.doctor.duplicates,
-            yaml_path=duplicates_out,
+    if "duplicate_documents" not in skip:
+        notify("Detecting near-duplicate documents")
+        centroid_doc_ids, centroids, counts = document_centroids(
+            arrow.column("document_id"), vectors, embedded, actual_dim
         )
-    )
+        # The matrix is the largest object here; drop it before clustering.
+        del vectors
+        results.append(
+            _check_duplicate_documents(
+                centroid_doc_ids,
+                centroids,
+                counts,
+                uri_by_doc,
+                title_by_doc,
+                config.doctor.duplicates,
+                yaml_path=duplicates_out,
+            )
+        )
 
     notify("Checking picture data")
     missing_picture_docs = [
@@ -735,7 +750,8 @@ async def run_db_checks(
         await store.settings_table.query().where("id = 'settings'").to_list()
     )
     results.append(_check_settings_row(total_settings, canonical))
-    results.append(_check_embedding_drift(stored, config))
+    if "embedding_drift" not in skip:
+        results.append(_check_embedding_drift(stored, config))
     results.append(_check_pending_migrations(str(stored.get("version", "unknown"))))
 
     results.append(_check_vector_index(stats))
@@ -1029,6 +1045,7 @@ async def run_doctor(
                     store,
                     config,
                     stats,
+                    supports_images=store.embedder.supports_images,
                     duplicates_out=duplicates_out,
                     on_progress=on_progress,
                 )
