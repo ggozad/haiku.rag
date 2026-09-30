@@ -269,9 +269,9 @@ evaluations:
 
 `evaluations.system_one` puts a [System One](https://typesafe.ai/blog/introducing-system-one-models-and-jev) model in front of the judge. It is optional and off by default, and the benchmarks on this page are judged by Qwen3.8 alone. A System One model returns a probability instead of generated text.
 
-Each answer goes to the `/v1/systemone` endpoint first, as a JSON state holding the question, the expected answer and the generated answer, with the rubric as the question's instructions and criteria. At a probability of 0.8 or more the answer passes, and below 0.2 it fails, with no call to the judge. The judge in `evaluations.judge` decides everything in between, every case the endpoint fails on, and gold-prefix conversation cases. Live conversation runs do not use the endpoint, and say so when the block is set. The run checks the endpoint before the first case and stops if it does not answer.
+Each answer goes to the decision model first, with the question, the expected answer and the generated answer as its state and the rubric as its question. At a probability of 0.8 or more the answer passes, and below 0.2 it fails, with no call to the judge. The judge in `evaluations.judge` decides everything in between, every case the endpoint fails on, and gold-prefix conversation cases. Live conversation runs do not use the model, and say so when the block is set. The run asks the model the judge's question before the first case and stops if it does not answer.
 
-TypeSafe's hosted Jev reads the key from `TYPESAFE_API_KEY`:
+TypeSafe's hosted Jev is reached on its `/v1/systemone` API and reads the key from `TYPESAFE_API_KEY`:
 
 ```yaml
 evaluations:
@@ -279,34 +279,57 @@ evaluations:
     model: jev-1.13.0
 ```
 
-[Decider](https://github.com/Mapika/decider) is an open reproduction served on the same API from your own GPU or a Mac. Its README covers installation. The measurements below used revision `c23ab4d` of the `Mapika/decider-4b` weights, pinned by downloading them first:
+Set `model` explicitly: when it is unset, the TypeSafe SDK sends `jev-latest`.
+
+[Tev1 4B](https://huggingface.co/togethercomputer/Tev1-4B-experimental) is an open decision model from Together AI that runs on Ollama or vLLM. With `provider` set, the judge asks it on the OpenAI-compatible chat API in Tev1's own format, reads the probability from the answer letter's logprobs, and averages the two orders of the yes and no options. Two requests per answer, no key.
+
+On Ollama 0.35 or later, the measurements used digest `cef45ef93cf6`:
 
 ```bash
-python -c "from huggingface_hub import snapshot_download; snapshot_download('Mapika/decider-4b', revision='c23ab4d2483e7c6a93484463e9afe1688b29bedd', local_dir='decider-4b')"
-DECIDER_MODEL=decider-4b uvicorn decider.serve:app --port 8010
+ollama pull tev1:4b
 ```
-
-On a GPU shared with other servers, `DECIDER_WARMUP=0` skips the CUDA-graph capture at start, which peaked at 28.4 GB in our setup.
 
 ```yaml
 evaluations:
   system_one:
-    base_url: http://127.0.0.1:8010
-    model: decider-4b-v1
+    provider: ollama
+    model: tev1:4b
 ```
 
-A local server needs no key. Set `model` explicitly: when it is unset, the TypeSafe SDK sends `jev-latest`, to a local server as well.
+On vLLM, the measurements used revision `0b7becf` with vLLM 0.29:
 
-Measured on 2026-09-24 against Qwen3.8 alone, on fresh `orb_multimodal_nemotron` and `frames` runs of the current capability. Every case where the verdicts differed was adjudicated by three independent labellers (one reviewer and two fresh-context LLM labellers), blind to which judge produced which verdict. Decider's ORB run served on Apple silicon (MPS, fp16) and its FRAMES run on a CUDA GPU (bf16). The two agreed to within 0.026 in probability on 390 labelled cases.
+```bash
+vllm serve togethercomputer/Tev1-4B-experimental \
+  --revision 0b7becf017daa0e5eb222f8ce7483c8c8259c52f \
+  --served-model-name tev1-4b --max-num-seqs 256
+```
+
+vLLM refuses to start when `--max-num-seqs` exceeds the cache blocks it can give the model's linear-attention layers. 256 fit at `--gpu-memory-utilization 0.22` on a 96 GB GPU, and the default of 1024 did not.
+
+```yaml
+evaluations:
+  system_one:
+    provider: vllm
+    base_url: http://localhost:8000
+    model: tev1-4b
+```
+
+Tev1 was trained on prompts of up to 2,048 tokens. Its Ollama model sets a context of 2,050 and rejects longer prompts, which the judge then decides: 8 of 3,043 ORB answers and 8 of 797 FRAMES answers. On vLLM the prompt limit is `--max-model-len`.
+
+Ollama's own `/v1/systemone` API also serves `tev1:4b`, but renders its own prompt and rejects the judge's list criteria, so use `provider: ollama` instead.
+
+Measured against Qwen3.8 alone, on fresh `orb_multimodal_nemotron` and `frames` runs of the current capability: Jev on 2026-09-24, Tev1 4B on 2026-09-30. Every case where the verdicts differed was adjudicated by three independent labellers (one reviewer and two fresh-context LLM labellers), blind to which judge produced which verdict. Tev1 on vLLM served bf16 weights on a CUDA GPU, and on Ollama its Q8_0 build on Apple silicon. The two gave the same verdict on 3,033 of 3,035 ORB answers and 788 of 789 FRAMES answers.
 
 | Endpoint | Dataset | Cases | Decided alone | Pass rate (Qwen3.8 → gated) | Changed verdicts | Qwen3.8 right / gated right |
 |---|---|---|---|---|---|---|
 | Jev 1.13.0 | ORB | 3,043 | 90.0% | 96.39% → 96.09% | 9 | 6 / 3 |
 | Jev 1.13.0 | FRAMES | 797 | 94.9% | 90.97% → 90.97% | 2 | 0 / 2 |
-| Decider-4B | ORB | 3,043 | 86.6% | 96.39% → 96.12% | 14 | 8 / 6 |
-| Decider-4B | FRAMES | 797 | 88.6% | 90.97% → 90.46% | 4 | 3 / 1 (majority, one labeller 2 / 2) |
+| Tev1 4B, vLLM | ORB | 3,043 | 92.7% | 96.39% → 96.39% | 6 | 2 / 4 |
+| Tev1 4B, vLLM | FRAMES | 797 | 96.7% | 90.97% → 90.59% | 5 | 2 / 3 |
+| Tev1 4B, Ollama | ORB | 3,043 | 92.9% | 96.39% → 96.39% | 8 | 3 / 4 (one not adjudicated) |
+| Tev1 4B, Ollama | FRAMES | 797 | 96.6% | 90.97% → 90.72% | 6 | 2 / 4 |
 
-Most changed verdicts (25 of 29) are fails below 0.2 on answers Qwen3.8 passed, so a gated run reads lower than Qwen3.8 alone. On ORB all 9 of Jev's changes go that way (McNemar exact p = 0.004). The per-dataset splits of who was right rest on 2 to 14 cases and are too small to rank the endpoints. Jev is not deterministic between runs. Three replays of 390 labelled cases each moved 8 to 11 of them across a band edge against an earlier run, so a gated run does not reproduce verdict for verdict.
+All 9 of Jev's ORB changes are fails below 0.2 on answers Qwen3.8 passed (McNemar exact p = 0.004), so a Jev-gated ORB run reads lower than Qwen3.8 alone. Tev1's changes go both ways. The splits of who was right rest on 2 to 9 cases per row and are too small to rank the endpoints. Neither model is deterministic between runs: replaying 390 labelled cases moved up to 11 across a band edge for Jev, and vLLM's batching moves Tev1's probabilities by up to 0.03, so a gated run does not reproduce verdict for verdict.
 
 Result rows record `judge_decided_by` (`system_one`, `fallback`, `fallback_on_error` or `fallback_conversation`), `judge_probability` and `system_one_model`, and the run prints the count of each. A gated run and an ungated run of the same system differ by the judge as well, so they do not form a null pair, and `evaluations pair` warns when only one of its two files was gated or when they were gated by different models.
 
