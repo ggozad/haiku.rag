@@ -605,3 +605,29 @@ class TestPlacingTheIngesterDatabase:
             ingester_cli()
 
         assert exit_info.value.code == 1
+
+
+@pytest.mark.parametrize(
+    "args, inherits",
+    [
+        (["run-batch"], True),
+        (["queue", "init"], True),
+        (["queue", "migrate"], True),
+        (["serve"], False),
+    ],
+)
+def test_only_one_shot_commands_inherit_trace_context(monkeypatch, args, inherits):
+    """run-batch joins the parent trace passed in TRACEPARENT; the
+    long-running serve never does."""
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        "haiku.rag.telemetry.configure", lambda **kwargs: calls.append(kwargs)
+    )
+    monkeypatch.setattr("haiku.rag.ingester.cli.configure_cli_logging", lambda: None)
+
+    # `--help` on the subcommand runs the group callback, then exits before
+    # the command body.
+    result = runner.invoke(cli, [*args, "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert [c["inherit_trace_context"] for c in calls] == [inherits]

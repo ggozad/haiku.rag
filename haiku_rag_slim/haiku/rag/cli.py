@@ -134,8 +134,15 @@ def version_callback(value: bool):
         raise typer.Exit()
 
 
+# Commands that run until stopped. They never join a parent trace passed in
+# TRACEPARENT: every span of their lifetime would land in one trace that
+# never ends.
+_LONG_RUNNING = frozenset({"mcp", "chat", "inspect"})
+
+
 @_cli.callback()
 def main(
+    ctx: typer.Context,
     _version: bool = typer.Option(
         False,
         "-v",
@@ -177,7 +184,9 @@ def main(
 
     is_production = get_config().environment != "development"
     configure_telemetry(
-        service_name="haiku-rag", console=False if is_production else None
+        service_name="haiku-rag",
+        console=False if is_production else None,
+        inherit_trace_context=ctx.invoked_subcommand not in _LONG_RUNNING,
     )
 
     if get_config().environment != "development":

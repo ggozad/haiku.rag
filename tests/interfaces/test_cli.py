@@ -1210,3 +1210,36 @@ def test_inspect_reports_a_missing_tui_extra(monkeypatch):
     assert result.exit_code == 1
     assert "textual is not installed" in result.output
     assert "haiku.rag-slim[tui]" in result.output
+
+
+@pytest.mark.parametrize(
+    "command, inherits",
+    [
+        ("migrate", True),
+        ("vacuum", True),
+        ("rebuild", True),
+        ("add-src", True),
+        ("mcp", False),
+        ("chat", False),
+        ("inspect", False),
+    ],
+)
+def test_only_one_shot_commands_inherit_trace_context(monkeypatch, command, inherits):
+    """A parent trace in TRACEPARENT is joined by commands that run once and
+    exit; a long-running one would put its whole lifetime into one trace."""
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        "haiku.rag.telemetry.configure", lambda **kwargs: calls.append(kwargs)
+    )
+
+    async def _no_version_check():
+        return None
+
+    monkeypatch.setattr("haiku.rag.cli.check_version", _no_version_check)
+
+    # `--help` on the subcommand runs the group callback, then exits before
+    # the command body.
+    result = runner.invoke(cli, [command, "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert [c["inherit_trace_context"] for c in calls] == [inherits]

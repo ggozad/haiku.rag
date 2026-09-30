@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `haiku-ingester` and `haiku-rag` one-shot commands join a parent trace passed in `TRACEPARENT` / `TRACESTATE`; `serve`, `mcp`, `chat` and `inspect` don't.
+
 ### Changed
 
 - A full `rebuild`, `--rechunk` and `--descriptions` report a document after its batch of 50 is written.

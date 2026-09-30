@@ -55,6 +55,7 @@ _cli = typer.Typer(
 
 @_cli.callback()
 def main(
+    ctx: typer.Context,
     config: Path | None = typer.Option(
         None,
         "--config",
@@ -68,7 +69,12 @@ def main(
 
     _load_config_with_override(config)
     configure_cli_logging()
-    configure_telemetry(service_name="haiku-ingester")
+    # One-shot commands (run-batch and the queue group) join a
+    # parent trace passed in TRACEPARENT; the long-running `serve` never does.
+    configure_telemetry(
+        service_name="haiku-ingester",
+        inherit_trace_context=ctx.invoked_subcommand != "serve",
+    )
 
 
 def cli() -> None:
