@@ -11,9 +11,11 @@ from evaluations.capability_runner import CapabilityRunResult
 from evaluations.config import ConversationInput, DatasetSpec, Turn
 from evaluations.evaluators.answer_equivalence import (
     AnswerEquivalenceJudge,
+    answer_equivalence_judge,
     check_system_one,
-    system_one_client,
+    system_one_endpoint,
 )
+from evaluations.evaluators.system_one import SystemOneEndpoint
 from evaluations.qa import run_qa_benchmark
 from haiku.rag.config.models import AppConfig, SystemOneConfig
 from tests.test_system_one import Endpoint, FixedJudge, _ctx
@@ -22,7 +24,9 @@ from tests.test_system_one import Endpoint, FixedJudge, _ctx
 class TestAnswerEquivalenceJudge:
     async def test_request_carries_question_gold_and_answer_as_state(self) -> None:
         endpoint = Endpoint(p=0.9)
-        judge = AnswerEquivalenceJudge(client=endpoint.client(), fallback=FixedJudge())
+        judge = AnswerEquivalenceJudge(
+            endpoint=SystemOneEndpoint(endpoint.client()), fallback=FixedJudge()
+        )
         result = await judge.evaluate(_ctx())
 
         request = endpoint.requests[0]
@@ -40,7 +44,9 @@ class TestAnswerEquivalenceJudge:
     async def test_conversation_inputs_go_to_the_fallback(self) -> None:
         endpoint = Endpoint(p=0.9)
         fallback = FixedJudge(verdict=False)
-        judge = AnswerEquivalenceJudge(client=endpoint.client(), fallback=fallback)
+        judge = AnswerEquivalenceJudge(
+            endpoint=SystemOneEndpoint(endpoint.client()), fallback=fallback
+        )
         conversation = ConversationInput(turns=[Turn(speaker="user", text="q")])
         result = await judge.evaluate(_ctx(inputs=conversation))
 
@@ -51,30 +57,41 @@ class TestAnswerEquivalenceJudge:
         assert endpoint.requests == []
 
 
-class TestSystemOneClient:
+class TestSystemOneEndpoint:
     def test_hosted_api_needs_a_key(self, monkeypatch) -> None:
         monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
         with pytest.raises(TypeSafeError, match="API key"):
-            system_one_client(SystemOneConfig())
+            system_one_endpoint(SystemOneConfig(), AppConfig())
 
     def test_a_local_server_needs_no_key(self, monkeypatch) -> None:
         monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
-        client = system_one_client(SystemOneConfig(base_url="http://127.0.0.1:8010"))
-        assert client is not None
+        endpoint = system_one_endpoint(
+            SystemOneConfig(base_url="http://127.0.0.1:8010"), AppConfig()
+        )
+        assert isinstance(endpoint, SystemOneEndpoint)
 
     async def test_an_unreachable_endpoint_fails_the_check(self) -> None:
-        with pytest.raises(RuntimeError, match="did not answer"):
-            await check_system_one(
-                Endpoint(status=503).client(),
-                SystemOneConfig(base_url="http://decider.test"),
-            )
-
-    async def test_the_check_returns_the_model_that_served(self) -> None:
-        endpoint = Endpoint(p=0.9)
-        served = await check_system_one(
-            endpoint.client(), SystemOneConfig(model="decider-4b-v1")
+        config = SystemOneConfig(base_url="http://decider.test")
+        judge = answer_equivalence_judge(
+            config, SystemOneEndpoint(Endpoint(status=503).client()), FixedJudge()
         )
-        assert endpoint.requests[0]["model"] == "decider-4b-v1"
+        with pytest.raises(RuntimeError, match="http://decider.test did not answer"):
+            await check_system_one(judge, config)
+
+    async def test_the_check_asks_the_judges_question_and_returns_the_model(
+        self,
+    ) -> None:
+        endpoint = Endpoint(p=0.9)
+        config = SystemOneConfig(model="decider-4b-v1")
+        judge = answer_equivalence_judge(
+            config,
+            SystemOneEndpoint(endpoint.client(), model="decider-4b-v1"),
+            FixedJudge(),
+        )
+        served = await check_system_one(judge, config)
+        request = endpoint.requests[0]
+        assert request["model"] == "decider-4b-v1"
+        assert len(request["questions"]["answer_equivalent"]["criteria"]["true"]) == 4
         assert served == "decider-4b-v1"
 
 
@@ -104,7 +121,10 @@ class TestRunWithSystemOne:
     ) -> None:
         endpoint = Endpoint(p=0.95)
         with (
-            patch("evaluations.qa.system_one_client", return_value=endpoint.client()),
+            patch(
+                "evaluations.qa.system_one_endpoint",
+                return_value=SystemOneEndpoint(endpoint.client()),
+            ),
             patch("evaluations.qa.get_model", return_value="fake-model"),
             patch(
                 "evaluations.qa.run_capability_question",
@@ -133,8 +153,8 @@ class TestRunWithSystemOne:
     ) -> None:
         with (
             patch(
-                "evaluations.qa.system_one_client",
-                return_value=Endpoint(status=503).client(),
+                "evaluations.qa.system_one_endpoint",
+                return_value=SystemOneEndpoint(Endpoint(status=503).client()),
             ),
             patch("evaluations.qa.get_model", return_value="fake-model"),
             patch(
@@ -153,7 +173,10 @@ class TestRunWithSystemOne:
     ) -> None:
         client = Endpoint(status=503).client()
         with (
-            patch("evaluations.qa.system_one_client", return_value=client),
+            patch(
+                "evaluations.qa.system_one_endpoint",
+                return_value=SystemOneEndpoint(client),
+            ),
             patch.object(client, "aclose", wraps=client.aclose) as aclose,
             patch("evaluations.qa.get_model", return_value="fake-model"),
             pytest.raises(RuntimeError, match="did not answer"),
@@ -175,8 +198,8 @@ class TestRunWithSystemOne:
         with (
             patch("evaluations.qa.console", console),
             patch(
-                "evaluations.qa.system_one_client",
-                return_value=Endpoint(p=0.95).client(),
+                "evaluations.qa.system_one_endpoint",
+                return_value=SystemOneEndpoint(Endpoint(p=0.95).client()),
             ),
             patch("evaluations.qa.get_model", return_value="fake-model"),
             patch(
@@ -199,8 +222,8 @@ class TestRunWithSystemOne:
         evaluate = AsyncMock(side_effect=RuntimeError("stop after metadata"))
         with (
             patch(
-                "evaluations.qa.system_one_client",
-                return_value=Endpoint(p=0.9).client(),
+                "evaluations.qa.system_one_endpoint",
+                return_value=SystemOneEndpoint(Endpoint(p=0.9).client()),
             ),
             patch("evaluations.qa.get_model", return_value="fake-model"),
             patch.object(EvalDataset, "evaluate", evaluate),
@@ -212,6 +235,7 @@ class TestRunWithSystemOne:
 
         assert evaluate.await_args is not None
         metadata = evaluate.await_args.kwargs["metadata"]
+        assert metadata["system_one_provider"] is None
         assert metadata["system_one_base_url"] == "http://decider.test"
         assert metadata["system_one_model"] is None
         assert metadata["system_one_served_model"] == "jev-latest"

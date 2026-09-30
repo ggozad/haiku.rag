@@ -27,9 +27,9 @@ from evaluations.evaluators import (
     TranscriptLLMJudge,
 )
 from evaluations.evaluators.answer_equivalence import (
-    AnswerEquivalenceJudge,
+    answer_equivalence_judge,
     check_system_one,
-    system_one_client,
+    system_one_endpoint,
 )
 from evaluations.experiment import (
     DEFAULT_JUDGE_MODEL,
@@ -325,19 +325,18 @@ async def run_qa_benchmark(
             },
         )
         if system_one is not None:
-            system_one_session = system_one_client(system_one)
+            system_one_session = system_one_endpoint(system_one, config)
+            gated = answer_equivalence_judge(
+                system_one, system_one_session, fallback=answer_judge
+            )
             try:
-                served_model = await check_system_one(system_one_session, system_one)
+                served_model = await check_system_one(gated, system_one)
             except BaseException:
                 await system_one_session.aclose()
                 raise
-            gated = AnswerEquivalenceJudge(
-                client=system_one_session,
-                model=system_one.model,
-                fallback=answer_judge,
-            )
             run.experiment_metadata.update(
                 {
+                    "system_one_provider": system_one.provider,
                     "system_one_base_url": system_one.base_url,
                     "system_one_model": system_one.model,
                     "system_one_served_model": served_model,
