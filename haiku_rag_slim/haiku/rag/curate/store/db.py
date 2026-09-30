@@ -118,6 +118,4 @@ layout = sa.Table(
     sa.Column("document_id", sa.Text, primary_key=True),
     sa.Column("sweep_id", sa.Integer, sa.ForeignKey("sweeps.id"), nullable=False),
     sa.Column("isolation", sa.Float),
-    sa.Column("x", sa.Float),
-    sa.Column("y", sa.Float),
 )

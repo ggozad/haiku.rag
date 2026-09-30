@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import signal
+from typing import TYPE_CHECKING
 
 from haiku.rag.config import AppConfig
 from haiku.rag.config.models import CurateStoreConfig
@@ -8,6 +9,9 @@ from haiku.rag.curate.store.migrations import open_store
 from haiku.rag.curate.store.models import DatabaseSweep, SweepStatus
 from haiku.rag.curate.store.repository import CurateRepository
 from haiku.rag.curate.sweep import sweep
+
+if TYPE_CHECKING:
+    from haiku.rag.curate.api.server import APIState
 
 logger = logging.getLogger(__name__)
 
@@ -56,17 +60,24 @@ async def serve(
         except NotImplementedError:  # pragma: no cover - Windows only
             pass
 
+    from haiku.rag.curate.api.server import APIState
+
     engine = await open_store(config.curate.store)
-    repository = CurateRepository(engine)
+    state = APIState(config, CurateRepository(engine))
     stopped = asyncio.create_task(stop.wait())
     server = task = None
     try:
         if config.curate.api.enabled:
-            server = _api_server(config, repository)
+            server = _api_server(config, state)
             task = asyncio.create_task(server.serve())
         while not stop.is_set():
             if sweeping:
-                for result in await asyncio.to_thread(_sweep_on_own_loop, config):
+                state.sweeping = True
+                try:
+                    results = await asyncio.to_thread(_sweep_on_own_loop, config)
+                finally:
+                    state.sweeping = False
+                for result in results:
                     level = (
                         logging.WARNING
                         if result.status is SweepStatus.ERROR
@@ -95,16 +106,16 @@ def _sweep_on_own_loop(config: AppConfig) -> list[DatabaseSweep]:
     return asyncio.run(run_sweep(config))
 
 
-def _api_server(config: AppConfig, repository: CurateRepository):
+def _api_server(config: AppConfig, state: "APIState"):
     import uvicorn
 
-    from haiku.rag.curate.api.server import APIState, build_app
+    from haiku.rag.curate.api.server import build_app
 
     api = config.curate.api
     if api.auth_token is None:
         logger.warning("curate.api.auth_token is unset: the API is unauthenticated")
     app = build_app(
-        APIState(config, repository),
+        state,
         auth_token=api.auth_token,
         root_path=api.root_path,
     )

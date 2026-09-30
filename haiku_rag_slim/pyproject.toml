@@ -101,6 +101,7 @@ curate = [
     "sqlalchemy[asyncio]>=2.0",
     "aiosqlite>=0.20",
     "asyncpg>=0.29",
+    "scikit-learn>=1.3",
 ]
 # TUI (chat and inspect commands)
 tui = [

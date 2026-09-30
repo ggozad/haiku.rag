@@ -5,8 +5,10 @@ import httpx
 import pytest
 from httpx import ASGITransport
 
+import haiku.rag.curate.api.server as server
 from haiku.rag.client import HaikuRAG
 from haiku.rag.curate.api.server import APIState, build_app
+from haiku.rag.curate.projection import project
 from haiku.rag.curate.sweep import sweep
 from tests.curate.test_flags import CLEAN, GARBLED
 from tests.curate.test_sweep import (
@@ -41,12 +43,49 @@ async def populated(curate):  # noqa: F811
     return config, repository, doc_id, footer
 
 
+async def test_map_places_each_embedded_document(populated):
+    config, repository, doc_id, _ = populated
+    async with _client(config, repository) as client:
+        wiki = (await client.get("/map/wiki")).json()
+        papers = (await client.get("/map/papers")).json()
+        unknown = await client.get("/map/nope")
+    assert len(wiki) == 6 and doc_id in {p["document_id"] for p in wiki}
+    assert all(isinstance(p["x"], float) and isinstance(p["y"], float) for p in wiki)
+    assert papers == []
+    assert unknown.status_code == 404
+
+
+async def test_map_is_computed_once_per_changed_sweep(populated, monkeypatch):
+    config, repository, doc_id, _ = populated
+    calls = []
+
+    def counted(centroids):
+        calls.append(len(centroids))
+        return project(centroids)
+
+    monkeypatch.setattr(server, "project", counted)
+    async with _client(config, repository) as client:
+        first = (await client.get("/map/wiki")).json()
+        assert (await client.get("/map/wiki")).json() == first
+        await sweep(config, repository)
+        await client.get("/map/wiki")
+        assert calls == [6]
+
+        async with HaikuRAG(config.lancedb.databases["wiki"], _writer_config()) as rag:
+            await rag.delete_document(doc_id)
+        await sweep(config, repository)
+        second = (await client.get("/map/wiki")).json()
+    assert calls == [6, 5]
+    assert doc_id not in {p["document_id"] for p in second}
+
+
 async def test_health_is_open_without_a_token(populated):
     config, repository, _, _ = populated
     async with _client(config, repository, auth_token="secret") as client:
         health = await client.get("/health")
         databases = await client.get("/databases")
     assert health.status_code == 200
+    assert health.json()["sweeping"] is False
     assert {d["database"] for d in health.json()["databases"]} == {"wiki", "papers"}
     assert databases.status_code == 401
 

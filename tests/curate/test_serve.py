@@ -122,7 +122,7 @@ def test_describe_each_status():
     assert describe(_result(SweepStatus.UNCHANGED)) == "wiki: unchanged"
 
 
-async def test_the_api_answers_while_a_sweep_runs(curate, monkeypatch):  # noqa: F811
+async def test_the_api_answers_and_reports_a_running_sweep(curate, monkeypatch):  # noqa: F811
     _, config, _ = curate
     port = _free_port()
     config.curate.api = APIConfig(port=port, auth_token="secret")
@@ -142,16 +142,24 @@ async def test_the_api_answers_while_a_sweep_runs(curate, monkeypatch):  # noqa:
             base_url=f"http://127.0.0.1:{port}", timeout=5
         ) as client:
 
-            async def healthy_mid_sweep() -> bool:
+            async def sweeping() -> bool | None:
+                try:
+                    return (await client.get("/health")).json()["sweeping"]
+                except httpx.TransportError:
+                    return None
+
+            async def reported_mid_sweep() -> bool:
                 if not started.is_set():
                     return False
-                try:
-                    answered = (await client.get("/health")).status_code == 200
-                except httpx.TransportError:
-                    return False
-                return answered and not finished.is_set()
+                return await sweeping() is True and not finished.is_set()
 
-            await _until(healthy_mid_sweep, timeout=10)
+            await _until(reported_mid_sweep, timeout=10)
+            release.set()
+
+            async def reported_done() -> bool:
+                return finished.is_set() and await sweeping() is False
+
+            await _until(reported_done, timeout=10)
     finally:
         release.set()
         stop.set()

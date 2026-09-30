@@ -19,9 +19,10 @@
   isolation score, and records doctor's structural checks of each changed
   database. Exits 1 when a database cannot be swept. `haiku-curate serve
   [--no-sweep]` sweeps every `curate.sweep_interval_s` and serves an HTTP API:
-  `/health`, `/health/{database}`, `/databases`, `/flags` (with acknowledgment and the text of a
-  repeated chunk), `/changes`, `/documents` and a document's history, and the
-  watch list, plus a dashboard at `/`. `haiku-curate store init|migrate` manage the store
+  `/health` (with whether a sweep is running), `/health/{database}`, `/databases`, `/flags` (with acknowledgment and the text of a
+  repeated chunk), `/changes`, `/documents` and a document's history, `/map/{database}`
+  (t-SNE positions, cached per changed sweep), and the watch list, plus a dashboard at
+  `/` with a map of each database. `haiku-curate store init|migrate` manage the store
   (`curate.store.path` or `curate.store.dburi`).
 - `curate` config block: `store`, `databases`, `thresholds`, `duplicates`,
   `repeated_chunks`, `required_metadata`, `sweep_interval_s`, `api`.

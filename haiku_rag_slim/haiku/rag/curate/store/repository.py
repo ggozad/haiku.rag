@@ -360,6 +360,21 @@ class CurateRepository:
             results=json.loads(row.results),
         )
 
+    async def current_centroids(self, database: str) -> dict[str, bytes]:
+        """Centroids of `database`'s current documents that have one, by document id."""
+        stmt = (
+            sa.select(fingerprints.c.document_id, fingerprints.c.centroid)
+            .where(
+                fingerprints.c.database == database,
+                fingerprints.c.ended_sweep.is_(None),
+                fingerprints.c.centroid.is_not(None),
+            )
+            .order_by(fingerprints.c.id)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return {row.document_id: row.centroid for row in rows}
+
     async def isolation(self, database: str) -> dict[str, float | None]:
         stmt = sa.select(layout.c.document_id, layout.c.isolation).where(
             layout.c.database == database

@@ -18,6 +18,13 @@ from tests.curate.test_sweep import _import, _writer_config
 runner = CliRunner()
 
 
+@pytest.fixture(autouse=True)
+def _restore_global_config(monkeypatch):
+    import haiku.rag.config as config_module
+
+    monkeypatch.setattr(config_module, "_config", config_module._config)
+
+
 def _write_config(tmp_path, databases: dict) -> str:
     path = tmp_path / "curate.yaml"
     path.write_text(

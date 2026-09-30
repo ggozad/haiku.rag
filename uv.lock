@@ -1739,6 +1739,7 @@ curate = [
     { name = "aiosqlite" },
     { name = "asyncpg" },
     { name = "fastapi" },
+    { name = "scikit-learn" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -1825,6 +1826,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "rich", specifier = ">=14.3.3" },
+    { name = "scikit-learn", marker = "extra == 'curate'", specifier = ">=1.3" },
     { name = "sentence-transformers", marker = "extra == 'cross-encoder'", specifier = ">=3.0.0,<6.0.0" },
     { name = "sqlalchemy", extras = ["asyncio"], marker = "extra == 'curate'", specifier = ">=2.0" },
     { name = "sqlalchemy", extras = ["asyncio"], marker = "extra == 'ingester'", specifier = ">=2.0" },

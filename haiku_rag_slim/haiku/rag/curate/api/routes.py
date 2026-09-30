@@ -30,6 +30,7 @@ _DASHBOARD = (Path(__file__).resolve().parent / "static" / "index.html").read_te
 
 class HealthResponse(BaseModel):
     status: str
+    sweeping: bool
     databases: list[DatabaseSummary]
 
 
@@ -84,7 +85,9 @@ async def dashboard(request: Request) -> HTMLResponse:
 async def health(state: APIState = Depends(get_state)) -> HealthResponse:
     """Liveness and the last sweep of each database; needs no token."""
     return HealthResponse(
-        status="ok", databases=await state.repository.databases(state.scope.names)
+        status="ok",
+        sweeping=state.sweeping,
+        databases=await state.repository.databases(state.scope.names),
     )
 
 
@@ -182,6 +185,24 @@ async def documents(
 ) -> list[CurrentDocument]:
     _known(state, database)
     return await state.repository.documents(database)
+
+
+class MapPoint(BaseModel):
+    document_id: str
+    x: float
+    y: float
+
+
+@router.get("/map/{database}", response_model=list[MapPoint])
+async def map_points(
+    database: str, state: APIState = Depends(get_state)
+) -> list[MapPoint]:
+    """t-SNE positions of the embedded documents; none below three."""
+    _known(state, database)
+    return [
+        MapPoint(document_id=doc_id, x=x, y=y)
+        for doc_id, (x, y) in (await state.map(database)).items()
+    ]
 
 
 @router.get("/documents/{database}/{document_id}/history")
