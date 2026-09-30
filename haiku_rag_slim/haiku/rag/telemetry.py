@@ -1,11 +1,13 @@
 import logging
 import os
+from contextvars import Token
 from importlib import metadata
 from typing import Literal
 
 from logfire import Logfire, attach_context, get_context
 from opentelemetry import context as otel_context
 from opentelemetry import trace
+from opentelemetry.context import Context
 from opentelemetry.trace.propagation.tracecontext import (
     TraceContextTextMapPropagator,
 )
@@ -27,7 +29,7 @@ logfire = Logfire(otel_scope="haiku.rag")
 # Token for the context attach_env_context() attached. Held for the life of
 # the process and never detached: the parent trace is meant to cover every
 # span this process creates.
-_env_context_token: object | None = None
+_env_context_token: Token[Context] | None = None
 
 
 def attach_env_context() -> bool:
