@@ -10,7 +10,8 @@ import numpy as np
 from haiku.rag.client.scope import DatabaseRef, DatabaseScope
 from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.config import AppConfig
-from haiku.rag.curate.chunks import chunk_stats, chunk_text_hash
+from haiku.rag.curate.chunks import chunk_stats, chunk_text_hash, normalized_text
+from haiku.rag.curate.detectors import detect_across, detect_database, isolation_scores
 from haiku.rag.curate.store.models import (
     CurrentFingerprint,
     DatabaseSweep,
@@ -59,15 +60,34 @@ def _change_key(md5: str | None, chunk_ids: list[str]) -> str:
 
 
 async def sweep(config: AppConfig, repository: CurateRepository) -> list[DatabaseSweep]:
-    """Sweep every configured database once, recording each as it finishes."""
+    """Sweep every configured database once, recording each as it finishes.
+
+    A database's record, flags and scores commit together. Flags are
+    reconciled on every sweep, unchanged databases included.
+    """
+    curate = config.curate
     scope = DatabaseScope.resolve(config)
-    if config.curate.databases is not None:
-        scope = scope.select(config.curate.databases)
+    if curate.databases is not None:
+        scope = scope.select(curate.databases)
     results = []
     for ref in scope.databases:
         result = await sweep_database(ref, config, repository)
-        await repository.record(result)
+        async with repository.transaction() as store:
+            sweep_id = await store.record(result)
+            view = await store.view(ref.name, curate.repeated_chunks)
+            await store.reconcile(detect_database(view, curate), ref.name, view.current)
+            if result.status is SweepStatus.OK:
+                await store.write_layout(
+                    ref.name,
+                    sweep_id,
+                    isolation_scores(
+                        view.current, curate.thresholds.isolation_neighbours
+                    ),
+                )
         results.append(result)
+    async with repository.transaction() as store:
+        current = await store.current_revisions(scope.names)
+        await store.reconcile(detect_across(current), None, [])
     return results
 
 
@@ -285,7 +305,10 @@ async def _read_changed(
                     ),
                     created_at=document.created_at,
                     updated_at=document.updated_at,
-                    chunk_texts=[(chunk_text_hash(t), len(t)) for t in chunk_texts],
+                    chunk_texts=[
+                        (chunk_text_hash(t), len(normalized_text(t)))
+                        for t in chunk_texts
+                    ],
                 )
             )
     return fingerprints

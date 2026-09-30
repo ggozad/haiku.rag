@@ -73,3 +73,42 @@ chunk_texts = sa.Table(
     sa.Index("ix_chunk_texts_hash", "database", "text_hash"),
     sa.Index("ix_chunk_texts_fingerprint", "fingerprint_id"),
 )
+
+flags = sa.Table(
+    "flags",
+    metadata,
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+    sa.Column("identity", sa.Text, nullable=False, unique=True),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("database", sa.Text),
+    sa.Column("subject", sa.Text),
+    sa.Column("fingerprint_id", sa.Integer, sa.ForeignKey("fingerprints.id")),
+    sa.Column("previous_fingerprint_id", sa.Integer, sa.ForeignKey("fingerprints.id")),
+    sa.Column("members", sa.Text),
+    sa.Column("reasons", sa.Text, nullable=False),
+    sa.Column("status", sa.Text, nullable=False),
+    sa.Column("raised_at", sa.Text, nullable=False),
+    sa.Column("status_changed_at", sa.Text, nullable=False),
+    sa.Column("note", sa.Text),
+    sa.Index("ix_flags_database", "database", "status"),
+)
+
+watched = sa.Table(
+    "watched",
+    metadata,
+    sa.Column("database", sa.Text, primary_key=True),
+    sa.Column("uri", sa.Text, primary_key=True),
+    sa.Column("note", sa.Text),
+    sa.Column("added_at", sa.Text, nullable=False),
+)
+
+layout = sa.Table(
+    "layout",
+    metadata,
+    sa.Column("database", sa.Text, primary_key=True),
+    sa.Column("document_id", sa.Text, primary_key=True),
+    sa.Column("sweep_id", sa.Integer, sa.ForeignKey("sweeps.id"), nullable=False),
+    sa.Column("isolation", sa.Float),
+    sa.Column("x", sa.Float),
+    sa.Column("y", sa.Float),
+)

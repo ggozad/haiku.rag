@@ -20,6 +20,11 @@ def chunk_stats(
     }
 
 
+def normalized_text(text: str) -> str:
+    """A chunk's text with whitespace collapsed and case folded."""
+    return " ".join(text.split()).casefold()
+
+
 def chunk_text_hash(text: str) -> str:
-    """Hash of a chunk's text with whitespace collapsed and case folded."""
-    return hashlib.sha256(" ".join(text.split()).casefold().encode()).hexdigest()
+    """Hash of a chunk's normalized text."""
+    return hashlib.sha256(normalized_text(text).encode()).hexdigest()

@@ -1,3 +1,5 @@
+import hashlib
+import json
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -7,6 +9,103 @@ class SweepStatus(StrEnum):
     UNCHANGED = "unchanged"
     MOVED = "moved"
     ERROR = "error"
+
+
+class FlagKind(StrEnum):
+    BAD_UPDATE = "bad_update"
+    BAD_DOCUMENT = "bad_document"
+    WATCHED_CHANGE = "watched_change"
+    WATCHED_DELETION = "watched_deletion"
+    DUPLICATE_GROUP = "duplicate_group"
+    REPEATED_CHUNK = "repeated_chunk"
+    MISSING_METADATA = "missing_metadata"
+
+
+class FlagStatus(StrEnum):
+    OPEN = "open"
+    ACKNOWLEDGED = "acknowledged"
+    SUPERSEDED = "superseded"
+    RESOLVED = "resolved"
+
+
+@dataclass(frozen=True)
+class Detection:
+    """A condition a detector found; its identity decides which flag it is."""
+
+    kind: FlagKind
+    database: str | None
+    subject: str | None = None
+    fingerprint_id: int | None = None
+    previous_fingerprint_id: int | None = None
+    members: list[dict] | None = None
+    reasons: list[dict] = field(default_factory=list)
+
+    @property
+    def identity(self) -> str:
+        signature = (
+            sorted((m["database"], m["document_id"]) for m in self.members)
+            if self.kind is FlagKind.DUPLICATE_GROUP and self.members
+            else None
+        )
+        key = [self.kind, self.database, self.subject, self.fingerprint_id, signature]
+        return hashlib.sha256(json.dumps(key).encode()).hexdigest()
+
+
+@dataclass(frozen=True)
+class Flag:
+    id: int
+    identity: str
+    kind: FlagKind
+    database: str | None
+    subject: str | None
+    fingerprint_id: int | None
+    previous_fingerprint_id: int | None
+    members: list[dict] | None
+    reasons: list[dict]
+    status: FlagStatus
+    raised_at: str
+    status_changed_at: str
+    note: str | None
+
+
+@dataclass(frozen=True)
+class Revision:
+    """A fingerprint as the detectors read it."""
+
+    id: int
+    database: str
+    document_id: str
+    subject: str
+    md5: str | None
+    embedder: str | None
+    centroid: bytes | None
+    chars: int
+    chunks: int
+    embedded_chunks: int
+    replacement_chars: int
+    metadata_keys: list[str]
+    became_current_at: str
+    ended_at: str | None
+    deleted: bool
+
+
+@dataclass(frozen=True)
+class RepeatedText:
+    text_hash: str
+    chars: int
+    document_ids: list[str]
+
+
+@dataclass
+class DatabaseView:
+    """The store's state of one database, as the detectors need it."""
+
+    database: str
+    current: list[Revision]
+    previous: dict[int, Revision]
+    deletions: list[Revision]
+    watched: dict[str, str]
+    repeated: list[RepeatedText]
 
 
 @dataclass(frozen=True)

@@ -1,6 +1,6 @@
 import pytest
 
-from haiku.rag.curate.chunks import chunk_stats, chunk_text_hash
+from haiku.rag.curate.chunks import chunk_stats, chunk_text_hash, normalized_text
 
 
 def test_chunk_stats_percentiles_and_short_share():
@@ -23,3 +23,7 @@ def test_chunk_stats_without_chunks():
 def test_chunk_text_hash_ignores_whitespace_and_case():
     assert chunk_text_hash("Page  1 of\n10") == chunk_text_hash("page 1 of 10")
     assert chunk_text_hash("page 1 of 10") != chunk_text_hash("page 2 of 10")
+
+
+def test_normalized_text_collapses_whitespace_and_folds_case():
+    assert normalized_text("  Page  1 of\n10 ") == "page 1 of 10"

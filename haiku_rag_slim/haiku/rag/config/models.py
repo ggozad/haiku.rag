@@ -193,7 +193,7 @@ class SandboxConfig(ConfigModel):
 
 
 class DuplicateDetectionConfig(ConfigModel):
-    """Thresholds for doctor's near-duplicate document detection.
+    """Thresholds for near-duplicate document detection, in doctor and curate.
 
     Detection clusters whole documents whose embedding centroids are nearly
     identical — the same document ingested twice, or a light revision.
@@ -726,6 +726,43 @@ class CurateThresholdsConfig(ConfigModel):
         gt=0,
         description="A chunk shorter than this many characters counts as short.",
     )
+    update_cosine: float = Field(
+        default=0.85,
+        ge=0.0,
+        le=1.0,
+        description="An update whose centroid cosine to the previous revision is "
+        "below this is flagged.",
+    )
+    size_factor: float = Field(
+        default=3.0,
+        gt=1.0,
+        description="An update whose characters or chunks change by more than this "
+        "factor is flagged.",
+    )
+    replacement_chars_per_1k: float = Field(
+        default=200.0,
+        ge=0.0,
+        description="A document with more U+FFFD per 1000 characters than this is "
+        "flagged.",
+    )
+    isolation_neighbours: int = Field(
+        default=5,
+        gt=0,
+        description="Nearest neighbours the isolation score averages over.",
+    )
+
+
+class RepeatedChunksConfig(ConfigModel):
+    min_documents: int = Field(
+        default=5,
+        ge=2,
+        description="A chunk text shared by at least this many documents is flagged.",
+    )
+    min_chars: int = Field(
+        default=20,
+        ge=0,
+        description="Chunk texts shorter than this are not compared.",
+    )
 
 
 class CurateConfig(ConfigModel):
@@ -737,6 +774,14 @@ class CurateConfig(ConfigModel):
         description="Names from lancedb.databases to sweep. None sweeps all of them.",
     )
     thresholds: CurateThresholdsConfig = Field(default_factory=CurateThresholdsConfig)
+    duplicates: DuplicateDetectionConfig = Field(
+        default_factory=DuplicateDetectionConfig
+    )
+    repeated_chunks: RepeatedChunksConfig = Field(default_factory=RepeatedChunksConfig)
+    required_metadata: list[str] = Field(
+        default_factory=list,
+        description="Metadata keys every document must carry.",
+    )
 
 
 class AppConfig(ConfigModel):
