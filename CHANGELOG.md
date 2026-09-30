@@ -20,7 +20,7 @@
   [--no-sweep]` sweeps every `curate.sweep_interval_s` and serves an HTTP API:
   `/health`, `/databases`, `/flags` (with acknowledgment and the text of a
   repeated chunk), `/changes`, `/documents` and a document's history, and the
-  watch list. `haiku-curate store init|migrate` manage the store
+  watch list, plus a dashboard at `/`. `haiku-curate store init|migrate` manage the store
   (`curate.store.path` or `curate.store.dburi`).
 - `curate` config block: `store`, `databases`, `thresholds`, `duplicates`,
   `repeated_chunks`, `required_metadata`, `sweep_interval_s`, `api`.

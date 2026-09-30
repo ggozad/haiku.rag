@@ -1,7 +1,9 @@
 import dataclasses
 from datetime import UTC, datetime
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from haiku.rag.curate.api.server import APIState, get_state
@@ -19,6 +21,10 @@ from haiku.rag.store.exceptions import MigrationRequiredError, SourceUnavailable
 
 public = APIRouter()
 router = APIRouter()
+
+_DASHBOARD = (Path(__file__).resolve().parent / "static" / "index.html").read_text(
+    encoding="utf-8"
+)
 
 
 class HealthResponse(BaseModel):
@@ -61,6 +67,16 @@ async def _scoped_flag(state: APIState, flag_id: int) -> Flag:
     if flag is None or not _in_scope(state, flag):
         raise HTTPException(status_code=404, detail=f"no flag {flag_id}")
     return flag
+
+
+@public.get("/", include_in_schema=False)
+async def dashboard(request: Request) -> HTMLResponse:
+    """The dashboard; its script sends the token on its own requests."""
+    root_path = request.scope.get("root_path", "")
+    base_href = f"{root_path}/" if root_path else "/"
+    return HTMLResponse(
+        _DASHBOARD.replace("<head>", f'<head>\n    <base href="{base_href}" />', 1)
+    )
 
 
 @public.get("/health", response_model=HealthResponse)

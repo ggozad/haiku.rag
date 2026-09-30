@@ -1,5 +1,5 @@
 import json
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncIterator, Iterable, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
@@ -88,8 +88,19 @@ class CurateRepository:
 
     async def history(self, database: str, document_id: str) -> list[Fingerprint]:
         """Every fingerprint of a document, oldest first."""
+        began = sweeps.alias("began")
+        ended = sweeps.alias("ended")
         stmt = (
-            sa.select(fingerprints)
+            sa.select(
+                fingerprints,
+                began.c.started_at.label("became_current_at"),
+                ended.c.started_at.label("ended_at"),
+            )
+            .select_from(
+                fingerprints.join(
+                    began, began.c.id == fingerprints.c.became_current_sweep
+                ).outerjoin(ended, ended.c.id == fingerprints.c.ended_sweep)
+            )
             .where(
                 fingerprints.c.database == database,
                 fingerprints.c.document_id == document_id,
@@ -118,7 +129,7 @@ class CurateRepository:
 
         `database` includes cross-database flags with a member in it.
         """
-        stmt = sa.select(flags).order_by(flags.c.id)
+        stmt = _flag_select().order_by(flags.c.id)
         if database is not None:
             stmt = stmt.where(
                 sa.or_(flags.c.database == database, flags.c.database.is_(None))
@@ -129,7 +140,8 @@ class CurateRepository:
             stmt = stmt.where(flags.c.status == status)
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        found = [_flag(row) for row in rows]
+            described = await _member_documents(conn, rows)
+        found = [_flag(row, described) for row in rows]
         if database is None:
             return found
         return [
@@ -141,9 +153,10 @@ class CurateRepository:
     async def flag(self, flag_id: int) -> Flag | None:
         async with self._engine.connect() as conn:
             row = (
-                await conn.execute(sa.select(flags).where(flags.c.id == flag_id))
+                await conn.execute(_flag_select().where(flags.c.id == flag_id))
             ).first()
-        return _flag(row) if row is not None else None
+            described = await _member_documents(conn, [row] if row else [])
+        return _flag(row, described) if row is not None else None
 
     async def databases(self, names: Iterable[str]) -> list[DatabaseSummary]:
         """One summary per database name, in the order given."""
@@ -352,14 +365,22 @@ class CurateRepository:
         return result.rowcount > 0
 
     async def watch(self, database: str, uri: str, note: str | None = None) -> None:
-        """Watch `uri`; watching it again updates the note and keeps `added_at`."""
+        """Watch `uri`; watching it again keeps `added_at`, and the note unless one is given."""
         async with self._engine.begin() as conn:
-            updated = await conn.execute(
-                sa.update(watched)
-                .where(watched.c.database == database, watched.c.uri == uri)
-                .values(note=note)
-            )
-            if updated.rowcount == 0:
+            existing = (
+                await conn.execute(
+                    sa.select(watched.c.uri).where(
+                        watched.c.database == database, watched.c.uri == uri
+                    )
+                )
+            ).first()
+            if existing is not None and note is not None:
+                await conn.execute(
+                    sa.update(watched)
+                    .where(watched.c.database == database, watched.c.uri == uri)
+                    .values(note=note)
+                )
+            elif existing is None:
                 await conn.execute(
                     sa.insert(watched).values(
                         database=database, uri=uri, note=note, added_at=_now()
@@ -807,21 +828,69 @@ def _fingerprint(row: sa.Row) -> Fingerprint:
         replacement_chars=row.replacement_chars,
         chunk_stats=json.loads(row.chunk_stats),
         became_current_sweep=row.became_current_sweep,
+        became_current_at=row.became_current_at,
         ended_sweep=row.ended_sweep,
+        ended_at=row.ended_at,
         deleted=row.deleted,
     )
 
 
-def _flag(row: sa.Row) -> Flag:
+def _flag_select() -> sa.Select:
+    """Flags with the document id of their fingerprint, null for group flags."""
+    return sa.select(flags, fingerprints.c.document_id).select_from(
+        flags.outerjoin(fingerprints, fingerprints.c.id == flags.c.fingerprint_id)
+    )
+
+
+async def _member_documents(
+    conn: AsyncConnection, rows: Sequence[sa.Row]
+) -> dict[tuple[str, str], tuple[str | None, str | None]]:
+    """The latest URI and title of every member of `rows`' group flags."""
+    wanted = {
+        (member["database"], member["document_id"])
+        for row in rows
+        if row.members
+        for member in json.loads(row.members)
+    }
+    described: dict[tuple[str, str], tuple[str | None, str | None]] = {}
+    ids = sorted({document_id for _, document_id in wanted})
+    for start in range(0, len(ids), 500):
+        result = await conn.execute(
+            sa.select(
+                fingerprints.c.database,
+                fingerprints.c.document_id,
+                fingerprints.c.uri,
+                fingerprints.c.title,
+            )
+            .where(fingerprints.c.document_id.in_(ids[start : start + 500]))
+            .order_by(fingerprints.c.id)
+        )
+        for found in result:
+            key = (found.database, found.document_id)
+            if key in wanted:
+                described[key] = (found.uri, found.title)
+    return described
+
+
+def _flag(
+    row: sa.Row, described: dict[tuple[str, str], tuple[str | None, str | None]]
+) -> Flag:
+    members = json.loads(row.members) if row.members is not None else None
+    for member in members or []:
+        uri, title = described.get(
+            (member["database"], member["document_id"]), (None, None)
+        )
+        member["uri"], member["title"] = uri, title
     return Flag(
         id=row.id,
         identity=row.identity,
         kind=FlagKind(row.kind),
         database=row.database,
         subject=row.subject,
+        document_id=row.document_id,
         fingerprint_id=row.fingerprint_id,
         previous_fingerprint_id=row.previous_fingerprint_id,
-        members=json.loads(row.members) if row.members is not None else None,
+        members=members,
         reasons=json.loads(row.reasons),
         status=FlagStatus(row.status),
         raised_at=row.raised_at,

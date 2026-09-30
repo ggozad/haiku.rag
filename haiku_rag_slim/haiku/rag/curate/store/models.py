@@ -58,6 +58,7 @@ class Flag:
     kind: FlagKind
     database: str | None
     subject: str | None
+    document_id: str | None
     fingerprint_id: int | None
     previous_fingerprint_id: int | None
     members: list[dict] | None
@@ -192,7 +193,9 @@ class Fingerprint:
     replacement_chars: int
     chunk_stats: dict
     became_current_sweep: int
+    became_current_at: str
     ended_sweep: int | None
+    ended_at: str | None
     deleted: bool
 
 

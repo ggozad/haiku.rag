@@ -1,0 +1,926 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>haiku-curate</title>
+    <link rel="icon" href="data:," />
+    <style>
+      :root {
+        --bg: #0f1419;
+        --panel: #1a2027;
+        --border: #2a323d;
+        --text: #d9e1ea;
+        --muted: #7e8a99;
+        --accent: #6db4ff;
+        --ok: #4caf7c;
+        --warn: #d4a247;
+        --bad: #cc5454;
+        --info: #4f86c6;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+          Roboto, Helvetica, Arial, sans-serif;
+        font-size: 14px;
+        line-height: 1.45;
+      }
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      button, select, input {
+        background: var(--bg); color: var(--text); border: 1px solid var(--border);
+        padding: 5px 10px; border-radius: 4px; font: inherit;
+      }
+      button { cursor: pointer; }
+      button:hover { background: var(--border); }
+      button.small { padding: 2px 8px; font-size: 12px; }
+      .container { max-width: 1400px; margin: 0 auto; padding: 16px; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+      .muted { color: var(--muted); }
+
+      .topbar {
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+        padding: 12px 16px; background: var(--panel);
+        border: 1px solid var(--border); border-radius: 8px; margin-bottom: 16px;
+      }
+      .topbar h1 { margin: 0; font-size: 16px; font-weight: 600; }
+      .topbar .spacer { flex: 1; }
+      .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+      .dot.ok { background: var(--ok); }
+      .dot.bad { background: var(--bad); }
+
+      .cards {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 12px; margin-bottom: 16px;
+      }
+      .card {
+        display: block; width: 100%; text-align: left; color: var(--text);
+        background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+        padding: 12px 14px; cursor: pointer;
+      }
+      .card:hover { background: var(--panel); border-color: var(--muted); }
+      .card .name, .card .sweep, .card .value, .card .label { display: block; }
+      .card.selected { border-color: var(--accent); }
+      .card .name { font-weight: 600; }
+      .card .figures { display: flex; gap: 16px; margin-top: 6px; }
+      .card .figure .value { font-size: 20px; font-weight: 600; }
+      .card .figure .label { font-size: 11px; color: var(--muted); text-transform: uppercase; }
+      .card .figure.flags .value { color: var(--warn); }
+      .card .sweep { margin-top: 6px; font-size: 12px; color: var(--muted); }
+      .card .sweep.error { color: var(--bad); }
+
+      .tabs { display: flex; gap: 4px; margin-bottom: 0; }
+      .tab {
+        padding: 8px 14px; border: 1px solid var(--border); border-bottom: none;
+        border-radius: 6px 6px 0 0; background: var(--bg); cursor: pointer; color: var(--muted);
+      }
+      .tab.active { background: var(--panel); color: var(--text); }
+      .tab:focus-visible, .card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+      .panel {
+        background: var(--panel); border: 1px solid var(--border);
+        border-radius: 0 8px 8px 8px; padding: 16px;
+      }
+      .filters { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+      .empty { color: var(--muted); font-style: italic; padding: 12px 4px; }
+      .error-line { color: var(--bad); padding: 8px 4px; }
+
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+      th { font-weight: 600; color: var(--muted); font-size: 11px; text-transform: uppercase; }
+      th.sortable { cursor: pointer; user-select: none; }
+      th.sorted { color: var(--text); }
+      td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+      td.wrap { word-break: break-all; }
+      td.actions { white-space: nowrap; width: 1%; }
+
+      .badge {
+        display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px;
+        font-weight: 500; margin: 0 4px 2px 0; white-space: nowrap;
+      }
+      .badge.bad { background: rgba(204, 84, 84, 0.15); color: var(--bad); }
+      .badge.warn { background: rgba(212, 162, 71, 0.15); color: var(--warn); }
+      .badge.info { background: rgba(79, 134, 198, 0.15); color: var(--info); }
+      .badge.ok { background: rgba(76, 175, 124, 0.15); color: var(--ok); }
+      .badge.muted { background: rgba(126, 138, 153, 0.15); color: var(--muted); }
+      ul.reasons { margin: 0; padding-left: 16px; }
+      pre.text {
+        margin: 6px 0 0; padding: 8px; background: var(--bg); border: 1px solid var(--border);
+        border-radius: 4px; white-space: pre-wrap; font-size: 12px;
+      }
+
+      #history {
+        position: fixed; top: 0; right: 0; bottom: 0; width: min(760px, 100%);
+        background: var(--panel); border-left: 1px solid var(--border);
+        padding: 16px; overflow: auto; box-shadow: -8px 0 24px rgba(0, 0, 0, 0.4);
+        display: none;
+      }
+      #history.open { display: block; }
+      #history h2 { margin: 0 0 4px; font-size: 15px; word-break: break-all; }
+      #history .head { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 12px; }
+      #history .head .title { flex: 1; }
+      #history h3 { font-size: 12px; text-transform: uppercase; color: var(--muted); margin: 16px 0 6px; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="topbar">
+        <span class="dot" id="health-dot"></span>
+        <h1>haiku-curate</h1>
+        <span class="muted" id="health-detail"></span>
+        <span class="spacer"></span>
+        <label class="muted" for="token">Token</label>
+        <input id="token" type="password" placeholder="bearer token" autocomplete="off" />
+        <button type="button" id="refresh">Refresh</button>
+        <span class="muted" id="last-refresh">never</span>
+      </div>
+
+      <div class="cards" id="cards"></div>
+
+      <div class="tabs" id="tabs">
+        <button type="button" class="tab active" data-tab="flags">Flags</button>
+        <button type="button" class="tab" data-tab="changes">Changes</button>
+        <button type="button" class="tab" data-tab="documents">Documents</button>
+        <button type="button" class="tab" data-tab="duplicates">Duplicates</button>
+        <button type="button" class="tab" data-tab="watched">Watched</button>
+      </div>
+      <div class="panel" id="panel"></div>
+    </div>
+
+    <aside id="history"></aside>
+
+    <script>
+      "use strict";
+      const TOKEN_KEY = "haiku-curate-token";
+      const KIND_LABELS = {
+        bad_update: ["bad update", "bad"],
+        bad_document: ["bad document", "bad"],
+        watched_change: ["watched change", "warn"],
+        watched_deletion: ["watched deletion", "warn"],
+        duplicate_group: ["duplicates", "info"],
+        repeated_chunk: ["repeated text", "info"],
+        missing_metadata: ["missing metadata", "warn"],
+      };
+      const DOCUMENT_KINDS = [
+        "bad_update",
+        "bad_document",
+        "watched_change",
+        "watched_deletion",
+        "missing_metadata",
+      ];
+      const GROUP_KINDS = ["duplicate_group", "repeated_chunk"];
+
+      const state = {
+        tab: "flags",
+        database: null,
+        databases: [],
+        flagStatus: "open",
+        flagKind: "",
+        since: "7",
+        sort: { key: "isolation", descending: true },
+      };
+
+      const $ = (id) => document.getElementById(id);
+
+      function token() {
+        try {
+          return localStorage.getItem(TOKEN_KEY) || "";
+        } catch {
+          return "";
+        }
+      }
+
+      function saveToken(value) {
+        try {
+          localStorage.setItem(TOKEN_KEY, value);
+        } catch {
+          // Storage can be unavailable; the token then lasts for this page only.
+        }
+        tokenInMemory = value;
+      }
+
+      let tokenInMemory = token();
+
+      async function request(method, path, body) {
+        const headers = tokenInMemory
+          ? { Authorization: `Bearer ${tokenInMemory}` }
+          : {};
+        if (body !== undefined) headers["Content-Type"] = "application/json";
+        const response = await fetch(path, {
+          method,
+          headers,
+          body: body === undefined ? undefined : JSON.stringify(body),
+        });
+        if (response.status === 401) throw new Error("unauthorized: set the token");
+        if (!response.ok) {
+          let detail = `${response.status}`;
+          try {
+            detail = (await response.json()).detail || detail;
+          } catch {
+            // Not JSON; keep the status code.
+          }
+          throw new Error(`${path}: ${detail}`);
+        }
+        return response.status === 204 || response.status === 201
+          ? null
+          : response.json();
+      }
+
+      const getJson = (path) => request("GET", path);
+
+      function query(path, params) {
+        const search = new URLSearchParams();
+        for (const [key, value] of Object.entries(params)) {
+          if (value !== null && value !== undefined && value !== "") {
+            search.set(key, value);
+          }
+        }
+        const text = search.toString();
+        return text ? `${path}?${text}` : path;
+      }
+
+      function el(tag, attrs, ...children) {
+        const node = document.createElement(tag);
+        for (const [key, value] of Object.entries(attrs || {})) {
+          if (key === "class") node.className = value;
+          else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+          else node.setAttribute(key, value);
+        }
+        for (const child of children.flat()) {
+          if (child === null || child === undefined || child === false) continue;
+          node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+        }
+        return node;
+      }
+
+      function relTime(iso) {
+        if (!iso) return "—";
+        const seconds = (Date.now() - Date.parse(iso)) / 1000;
+        if (seconds < 60) return "just now";
+        if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
+        if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`;
+        return `${Math.round(seconds / 86400)}d ago`;
+      }
+
+      function number(value, digits) {
+        if (value === null || value === undefined) return "—";
+        return digits === undefined
+          ? Number(value).toLocaleString()
+          : Number(value).toFixed(digits);
+      }
+
+      function kindBadge(kind) {
+        const [label, tone] = KIND_LABELS[kind] || [kind, "muted"];
+        return el("span", { class: `badge ${tone}` }, label);
+      }
+
+      function statusBadge(status) {
+        const tone = { open: "warn", acknowledged: "ok", superseded: "muted", resolved: "muted" };
+        return el("span", { class: `badge ${tone[status] || "muted"}` }, status);
+      }
+
+      function describeReason(reason) {
+        const value = reason.value;
+        switch (reason.metric) {
+          case "centroid_cosine":
+            return `content moved away from the previous revision: cosine ${number(value, 2)} (below ${reason.threshold})`;
+          case "chars_ratio":
+            return value === null
+              ? `text went from ${number(reason.previous)} characters to none, or from none`
+              : `text size changed ${number(value, 1)}× (over ${reason.threshold}×; was ${number(reason.previous)} characters)`;
+          case "chunks_ratio":
+            return value === null
+              ? `chunks went from ${number(reason.previous)} to none, or from none`
+              : `chunk count changed ${number(value, 1)}× (over ${reason.threshold}×; was ${number(reason.previous)})`;
+          case "replacement_chars_per_1k":
+            return `${number(value, 0)} unreadable characters (U+FFFD) per 1000 (over ${reason.threshold})`;
+          case "embedded_chunks":
+            return "no embedded chunks";
+          case "missing_key":
+            return `missing metadata key "${value}"`;
+          case "documents":
+            return `shared by ${value} documents`;
+          case "chars":
+            return `${value} characters long`;
+          case "similarity":
+            return `${reason.document_id}: similarity ${number(value, 3)}`;
+          case "md5":
+            return `the same file (md5 ${value})`;
+          default:
+            return `${reason.metric}: ${JSON.stringify(value)}`;
+        }
+      }
+
+      function reasonsList(flag) {
+        if (flag.kind === "watched_change") return "the document changed while watched";
+        if (flag.kind === "watched_deletion") return "the document was deleted while watched";
+        if (!flag.reasons.length) return "—";
+        return el("ul", { class: "reasons" }, flag.reasons.map((r) => el("li", {}, describeReason(r))));
+      }
+
+      function openHistoryLink(database, documentId, label) {
+        return el(
+          "a",
+          {
+            href: "#",
+            onclick: (event) => {
+              event.preventDefault();
+              showHistory(database, documentId);
+            },
+          },
+          label || documentId,
+        );
+      }
+
+      function membersList(flag) {
+        return el(
+          "ul",
+          { class: "reasons" },
+          (flag.members || []).map((member) =>
+            el(
+              "li",
+              {},
+              el("span", { class: "muted" }, `${member.database} · `),
+              openHistoryLink(
+                member.database,
+                member.document_id,
+                member.title || member.uri || member.document_id,
+              ),
+              member.title && member.uri ? el("div", { class: "muted mono" }, member.uri) : null,
+            ),
+          ),
+        );
+      }
+
+      function showError(target, error) {
+        target.replaceChildren(el("div", { class: "error-line" }, error.message || String(error)));
+      }
+
+      function flagAction(flag, action, label, body, reload) {
+        return el(
+          "button",
+          {
+            class: "small",
+            onclick: async () => {
+              try {
+                await request("POST", `flags/${flag.id}/${action}`, body());
+                await reload();
+                await loadHealth();
+              } catch (error) {
+                alertLine(error);
+              }
+            },
+          },
+          label,
+        );
+      }
+
+      function acknowledgeCell(flag, reload) {
+        const note = flag.note ? el("span", { class: "muted" }, flag.note, " ") : null;
+        if (flag.status === "acknowledged") {
+          return el("span", {}, note, flagAction(flag, "reopen", "Reopen", () => undefined, reload));
+        }
+        if (flag.status !== "open") return note || "";
+        const input = el("input", { placeholder: "note", size: "14" });
+        return el(
+          "span",
+          {},
+          input,
+          " ",
+          flagAction(flag, "acknowledge", "Acknowledge", () => ({ note: input.value || null }), reload),
+        );
+      }
+
+      function alertLine(error) {
+        $("health-detail").textContent = error.message || String(error);
+      }
+
+      function textButton(flag) {
+        const holder = el("div", {});
+        const button = el(
+          "button",
+          {
+            class: "small",
+            onclick: async () => {
+              button.disabled = true;
+              try {
+                const { text } = await getJson(`flags/${flag.id}/text`);
+                holder.replaceChildren(el("pre", { class: "text" }, text));
+              } catch (error) {
+                holder.replaceChildren(el("div", { class: "error-line" }, error.message));
+              }
+            },
+          },
+          "Show text",
+        );
+        holder.append(button);
+        return holder;
+      }
+
+      function flagFilters(kinds, reload) {
+        const status = el(
+          "select",
+          {
+            onchange: () => {
+              state.flagStatus = status.value;
+              reload();
+            },
+          },
+          ["open", "acknowledged", "superseded", "resolved", ""].map((value) =>
+            el("option", value === state.flagStatus ? { value, selected: "" } : { value }, value || "any status"),
+          ),
+        );
+        const kind = el(
+          "select",
+          {
+            onchange: () => {
+              state.flagKind = kind.value;
+              reload();
+            },
+          },
+          ["", ...kinds].map((value) =>
+            el(
+              "option",
+              value === state.flagKind ? { value, selected: "" } : { value },
+              value ? KIND_LABELS[value][0] : "any kind",
+            ),
+          ),
+        );
+        return el("div", { class: "filters" }, status, kinds.length > 1 ? kind : null);
+      }
+
+      async function fetchFlags(kinds) {
+        const kind = kinds.includes(state.flagKind) ? state.flagKind : "";
+        const flags = await getJson(
+          query("flags", { database: state.database, status: state.flagStatus, kind }),
+        );
+        return flags.filter((flag) => kinds.includes(flag.kind)).reverse();
+      }
+
+      async function renderFlags(target) {
+        const reload = renderTab;
+        const flags = await fetchFlags(DOCUMENT_KINDS);
+        const rows = flags.map((flag) =>
+          el(
+            "tr",
+            {},
+            el("td", {}, kindBadge(flag.kind), statusBadge(flag.status)),
+            el("td", {}, flag.database || "—"),
+            el(
+              "td",
+              { class: "wrap mono" },
+              openHistoryLink(flag.database, flag.document_id, flag.subject),
+            ),
+            el("td", {}, reasonsList(flag)),
+            el("td", { class: "muted" }, relTime(flag.raised_at)),
+            el("td", { class: "actions" }, acknowledgeCell(flag, reload)),
+          ),
+        );
+        target.replaceChildren(
+          flagFilters(DOCUMENT_KINDS, reload),
+          rows.length
+            ? el(
+                "table",
+                {},
+                el("tr", {}, ["Kind", "Database", "Document", "Why", "Raised", ""].map((h) => el("th", {}, h))),
+                rows,
+              )
+            : el("div", { class: "empty" }, "No flags."),
+        );
+      }
+
+      async function renderDuplicates(target) {
+        const reload = renderTab;
+        const flags = await fetchFlags(GROUP_KINDS);
+        const rows = flags.map((flag) =>
+          el(
+            "tr",
+            {},
+            el("td", {}, kindBadge(flag.kind), statusBadge(flag.status)),
+            el("td", {}, flag.database || "across databases"),
+            el("td", {}, reasonsList(flag), flag.kind === "repeated_chunk" ? textButton(flag) : null),
+            el("td", { class: "wrap" }, membersList(flag)),
+            el("td", { class: "actions" }, acknowledgeCell(flag, reload)),
+          ),
+        );
+        target.replaceChildren(
+          flagFilters(GROUP_KINDS, reload),
+          rows.length
+            ? el(
+                "table",
+                {},
+                el("tr", {}, ["Kind", "Database", "Why", "Documents", ""].map((h) => el("th", {}, h))),
+                rows,
+              )
+            : el("div", { class: "empty" }, "No duplicates or repeated text."),
+        );
+      }
+
+      async function renderChanges(target) {
+        const days = state.since;
+        const since = days ? new Date(Date.now() - Number(days) * 86400000).toISOString() : null;
+        const changes = (await getJson(query("changes", { since, database: state.database }))).reverse();
+        const picker = el(
+          "select",
+          {
+            onchange: () => {
+              state.since = picker.value;
+              renderTab();
+            },
+          },
+          [
+            ["1", "last 24 hours"],
+            ["7", "last 7 days"],
+            ["30", "last 30 days"],
+            ["", "everything"],
+          ].map(([value, label]) =>
+            el("option", value === state.since ? { value, selected: "" } : { value }, label),
+          ),
+        );
+        const tone = { added: "ok", updated: "info", deleted: "bad" };
+        const rows = changes.map((change) =>
+          el(
+            "tr",
+            {},
+            el("td", {}, el("span", { class: `badge ${tone[change.kind]}` }, change.kind)),
+            el("td", {}, change.database),
+            el(
+              "td",
+              { class: "wrap" },
+              openHistoryLink(change.database, change.document_id, change.title || change.uri || change.document_id),
+              change.title && change.uri ? el("div", { class: "muted mono" }, change.uri) : null,
+            ),
+            el("td", { class: "muted" }, relTime(change.at)),
+          ),
+        );
+        target.replaceChildren(
+          el("div", { class: "filters" }, picker, el("span", { class: "muted" }, `${changes.length} changes`)),
+          rows.length
+            ? el(
+                "table",
+                {},
+                el("tr", {}, ["Change", "Database", "Document", "When"].map((h) => el("th", {}, h))),
+                rows,
+              )
+            : el("div", { class: "empty" }, "No changes in this period."),
+        );
+      }
+
+      const DOCUMENT_COLUMNS = [
+        ["title", "Document", (d) => (d.title || d.uri || d.document_id).toLowerCase()],
+        ["chunks", "Chunks", (d) => d.chunks],
+        ["chars", "Characters", (d) => d.chars],
+        ["p50", "Median chunk", (d) => d.chunk_stats.p50],
+        ["short", "Short chunks", (d) => d.chunk_stats.short_share],
+        ["isolation", "Isolation", (d) => d.isolation],
+        ["fffd", "U+FFFD / 1k", (d) => (d.chars ? (d.replacement_chars / d.chars) * 1000 : 0)],
+        ["flags", "Open flags", (d) => d.open_flags.length],
+      ];
+
+      async function renderDocuments(target) {
+        if (!state.database) {
+          target.replaceChildren(el("div", { class: "empty" }, "Pick a database above to list its documents."));
+          return;
+        }
+        const documents = await getJson(query("documents", { database: state.database }));
+        const [, , key] = DOCUMENT_COLUMNS.find(([name]) => name === state.sort.key);
+        const direction = state.sort.descending ? -1 : 1;
+        documents.sort((a, b) => {
+          const left = key(a);
+          const right = key(b);
+          if (left === right) return 0;
+          if (left === null || left === undefined) return 1;
+          if (right === null || right === undefined) return -1;
+          return left < right ? -direction : direction;
+        });
+        const header = el(
+          "tr",
+          {},
+          DOCUMENT_COLUMNS.map(([name, label]) =>
+            el(
+              "th",
+              {
+                class: `sortable ${["title", "flags"].includes(name) ? "" : "num"} ${name === state.sort.key ? "sorted" : ""}`,
+                onclick: () => {
+                  state.sort =
+                    state.sort.key === name
+                      ? { key: name, descending: !state.sort.descending }
+                      : { key: name, descending: name !== "title" };
+                  renderTab();
+                },
+              },
+              label,
+              name === state.sort.key ? (state.sort.descending ? " ▾" : " ▴") : "",
+            ),
+          ),
+        );
+        const rows = documents.map((d) =>
+          el(
+            "tr",
+            {},
+            el(
+              "td",
+              { class: "wrap" },
+              openHistoryLink(d.database, d.document_id, d.title || d.uri || d.document_id),
+              d.title && d.uri ? el("div", { class: "muted mono" }, d.uri) : null,
+            ),
+            el("td", { class: "num" }, number(d.chunks)),
+            el("td", { class: "num" }, number(d.chars)),
+            el("td", { class: "num" }, number(d.chunk_stats.p50, 0)),
+            el("td", { class: "num" }, d.chunk_stats.short_share === null ? "—" : `${number(d.chunk_stats.short_share * 100, 0)}%`),
+            el("td", { class: "num" }, number(d.isolation, 3)),
+            el("td", { class: "num" }, d.chars ? number((d.replacement_chars / d.chars) * 1000, 1) : "—"),
+            el("td", {}, d.open_flags.map(kindBadge)),
+          ),
+        );
+        target.replaceChildren(
+          el("div", { class: "filters muted" }, `${documents.length} documents · click a column to sort, a document for its history`),
+          el("table", {}, header, rows),
+        );
+      }
+
+      async function renderWatched(target) {
+        const watches = await getJson("watched");
+        const shown = state.database ? watches.filter((w) => w.database === state.database) : watches;
+        const database = el(
+          "select",
+          {},
+          state.databases.map((d) =>
+            el("option", d.database === state.database ? { value: d.database, selected: "" } : { value: d.database }, d.database),
+          ),
+        );
+        const uri = el("input", { placeholder: "document URI", size: "48" });
+        const note = el("input", { placeholder: "note", size: "24" });
+        const add = el(
+          "button",
+          {
+            onclick: async () => {
+              if (!uri.value.trim()) return;
+              try {
+                await request("POST", "watched", {
+                  database: database.value,
+                  uri: uri.value.trim(),
+                  note: note.value || null,
+                });
+                await renderTab();
+              } catch (error) {
+                alertLine(error);
+              }
+            },
+          },
+          "Watch",
+        );
+        const rows = shown.map((w) =>
+          el(
+            "tr",
+            {},
+            el("td", {}, w.database),
+            el("td", { class: "wrap mono" }, w.uri),
+            el("td", {}, w.note || ""),
+            el("td", { class: "muted" }, relTime(w.added_at)),
+            el(
+              "td",
+              { class: "actions" },
+              el(
+                "button",
+                {
+                  class: "small",
+                  onclick: async () => {
+                    try {
+                      await request("DELETE", query("watched", { database: w.database, uri: w.uri }));
+                      await renderTab();
+                    } catch (error) {
+                      alertLine(error);
+                    }
+                  },
+                },
+                "Unwatch",
+              ),
+            ),
+          ),
+        );
+        target.replaceChildren(
+          el("div", { class: "filters" }, database, uri, note, add),
+          rows.length
+            ? el(
+                "table",
+                {},
+                el("tr", {}, ["Database", "URI", "Note", "Since", ""].map((h) => el("th", {}, h))),
+                rows,
+              )
+            : el("div", { class: "empty" }, "Nothing watched. Watch a document to be told about every change to it."),
+        );
+      }
+
+      let historySeq = 0;
+
+      async function showHistory(database, documentId) {
+        const seq = ++historySeq;
+        const panel = $("history");
+        panel.classList.add("open");
+        panel.replaceChildren(el("div", { class: "empty" }, "loading…"));
+        try {
+          const history = await getJson(
+            `documents/${encodeURIComponent(database)}/${encodeURIComponent(documentId)}/history`,
+          );
+          const latest = history[history.length - 1];
+          const flags = (await getJson(query("flags", { database, status: "" }))).filter((flag) =>
+            history.some((f) => f.id === flag.fingerprint_id) ||
+            (flag.members || []).some((m) => m.database === database && m.document_id === documentId),
+          );
+          const watching = (await getJson("watched")).find(
+            (w) => w.database === database && w.uri === latest.uri,
+          );
+          if (seq !== historySeq) return;
+          const watch = !latest.uri
+            ? null
+            : watching
+              ? el(
+                  "button",
+                  { disabled: "", title: watching.note || "" },
+                  watching.note ? `Watching: ${watching.note}` : "Watching",
+                )
+              : el(
+                  "button",
+                  {
+                    onclick: async () => {
+                      try {
+                        await request("POST", "watched", { database, uri: latest.uri });
+                        watch.textContent = "Watching";
+                        watch.disabled = true;
+                      } catch (error) {
+                        alertLine(error);
+                      }
+                    },
+                  },
+                  "Watch",
+                );
+          panel.replaceChildren(
+            el(
+              "div",
+              { class: "head" },
+              el(
+                "div",
+                { class: "title" },
+                el("h2", {}, latest.title || latest.uri || documentId),
+                el("div", { class: "muted mono" }, `${database} · ${latest.uri || documentId}`),
+              ),
+              watch,
+              el("button", { onclick: () => panel.classList.remove("open") }, "Close"),
+            ),
+            el("h3", {}, "Revisions, newest first"),
+            el(
+              "table",
+              {},
+              el(
+                "tr",
+                {},
+                ["Since", "State", "Chunks", "Characters", "U+FFFD", "Embedder", "Metadata keys"].map((h) =>
+                  el("th", { class: ["Chunks", "Characters", "U+FFFD"].includes(h) ? "num" : "" }, h),
+                ),
+              ),
+              [...history].reverse().map((f) =>
+                el(
+                  "tr",
+                  {},
+                  el("td", { title: f.became_current_at }, relTime(f.became_current_at)),
+                  el(
+                    "td",
+                    { title: f.ended_at || "" },
+                    f.deleted
+                      ? el("span", { class: "badge bad" }, `deleted ${relTime(f.ended_at)}`)
+                      : f.ended_sweep
+                        ? el("span", { class: "badge muted" }, `replaced ${relTime(f.ended_at)}`)
+                        : el("span", { class: "badge ok" }, "current"),
+                  ),
+                  el("td", { class: "num" }, number(f.chunks)),
+                  el("td", { class: "num" }, number(f.chars)),
+                  el("td", { class: "num" }, number(f.replacement_chars)),
+                  el("td", { class: "mono" }, f.embedder || "—"),
+                  el("td", { class: "mono" }, f.metadata_keys.join(", ") || "—"),
+                ),
+              ),
+            ),
+            el("h3", {}, "Flags"),
+            flags.length
+              ? el(
+                  "table",
+                  {},
+                  flags.reverse().map((flag) =>
+                    el(
+                      "tr",
+                      {},
+                      el("td", {}, kindBadge(flag.kind), statusBadge(flag.status)),
+                      el("td", {}, reasonsList(flag)),
+                      el("td", { class: "muted" }, relTime(flag.raised_at)),
+                    ),
+                  ),
+                )
+              : el("div", { class: "empty" }, "No flags."),
+          );
+        } catch (error) {
+          if (seq !== historySeq) return;
+          showError(panel, error);
+          panel.prepend(el("button", { onclick: () => panel.classList.remove("open") }, "Close"));
+        }
+      }
+
+      function renderCards() {
+        const cards = state.databases.map((d) => {
+          const failed = d.last_status === "error";
+          return el(
+            "button",
+            {
+              type: "button",
+              "aria-pressed": d.database === state.database ? "true" : "false",
+              class: `card ${d.database === state.database ? "selected" : ""}`,
+              onclick: () => {
+                state.database = state.database === d.database ? null : d.database;
+                renderCards();
+                renderTab();
+              },
+            },
+            el("span", { class: "name" }, d.database),
+            el(
+              "span",
+              { class: "figures" },
+              el("span", { class: "figure" }, el("span", { class: "value" }, number(d.documents)), el("span", { class: "label" }, "documents")),
+              el("span", { class: "figure flags" }, el("span", { class: "value" }, number(d.open_flags)), el("span", { class: "label" }, "open flags")),
+            ),
+            el(
+              "span",
+              { class: `sweep ${failed ? "error" : ""}` },
+              d.last_status ? `${d.last_status} · ${relTime(d.last_sweep_at)}` : "never swept",
+              failed && d.last_error ? el("span", { class: "name" }, d.last_error) : null,
+            ),
+          );
+        });
+        $("cards").replaceChildren(...cards);
+      }
+
+      async function loadHealth() {
+        try {
+          const health = await getJson("health");
+          state.databases = health.databases;
+          $("health-dot").className = "dot ok";
+          const failing = health.databases.filter((d) => d.last_status === "error").length;
+          $("health-detail").textContent = failing ? `${failing} database(s) failed their last sweep` : "";
+          renderCards();
+        } catch (error) {
+          $("health-dot").className = "dot bad";
+          alertLine(error);
+        }
+      }
+
+      const RENDERERS = {
+        flags: renderFlags,
+        changes: renderChanges,
+        documents: renderDocuments,
+        duplicates: renderDuplicates,
+        watched: renderWatched,
+      };
+
+      let renderSeq = 0;
+
+      async function renderTab() {
+        // Built off-screen and shown only if no later render started meanwhile.
+        const seq = ++renderSeq;
+        for (const tab of document.querySelectorAll(".tab")) {
+          tab.classList.toggle("active", tab.dataset.tab === state.tab);
+        }
+        const staging = el("div", {});
+        try {
+          await RENDERERS[state.tab](staging);
+        } catch (error) {
+          showError(staging, error);
+        }
+        if (seq !== renderSeq) return;
+        $("panel").replaceChildren(...staging.childNodes);
+        $("last-refresh").textContent = `updated ${new Date().toLocaleTimeString()}`;
+      }
+
+      async function refresh() {
+        await loadHealth();
+        await renderTab();
+      }
+
+      $("token").value = tokenInMemory;
+      $("token").addEventListener("change", () => {
+        saveToken($("token").value.trim());
+        refresh();
+      });
+      $("refresh").addEventListener("click", refresh);
+      for (const tab of document.querySelectorAll(".tab")) {
+        tab.addEventListener("click", () => {
+          state.tab = tab.dataset.tab;
+          state.flagKind = "";
+          renderTab();
+        });
+      }
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") $("history").classList.remove("open");
+      });
+      refresh();
+    </script>
+  </body>
+</html>

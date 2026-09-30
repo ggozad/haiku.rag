@@ -229,9 +229,10 @@ async def test_exact_copies_across_databases_and_their_resolution(curate):  # no
 
     [flag] = await _flags(repository, FlagKind.DUPLICATE_GROUP)
     assert flag.database is None
-    assert flag.members == [
-        {"database": "papers", "document_id": ids["papers"]},
-        {"database": "wiki", "document_id": ids["wiki"]},
+    assert flag.members is not None
+    assert [(m["database"], m["document_id"]) for m in flag.members] == [
+        ("papers", ids["papers"]),
+        ("wiki", ids["wiki"]),
     ]
 
     async with HaikuRAG(paths["papers"], _writer_config()) as rag:

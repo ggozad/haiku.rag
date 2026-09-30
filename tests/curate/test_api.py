@@ -64,10 +64,19 @@ async def test_databases_summarise_each_database(populated):
 
 
 async def test_flags_filter_and_acknowledge(populated):
-    config, repository, _, _ = populated
+    config, repository, doc_id, _ = populated
     async with _client(config, repository) as client:
         [bad] = (await client.get("/flags", params={"kind": "bad_update"})).json()
         assert bad["subject"] == "file:///wiki/a.pdf"
+        assert bad["document_id"] == doc_id
+        [repeated] = (
+            await client.get("/flags", params={"kind": "repeated_chunk"})
+        ).json()
+        assert repeated["document_id"] is None
+        assert sorted(m["uri"] for m in repeated["members"]) == [
+            f"file:///wiki/{n}.pdf" for n in range(5)
+        ]
+        assert all("title" in m for m in repeated["members"])
         assert (await client.get("/flags", params={"database": "papers"})).json() == []
 
         acknowledged = await client.post(
@@ -151,6 +160,9 @@ async def test_documents_and_history(populated):
     first, second = history.json()
     assert "centroid" not in first
     assert first["ended_sweep"] == second["became_current_sweep"]
+    assert first["ended_at"] == second["became_current_at"]
+    assert first["became_current_at"] < first["ended_at"]
+    assert second["ended_at"] is None
     assert empty.status_code == 404
 
 
@@ -164,6 +176,9 @@ async def test_watch_list(populated):
             "/watched",
             json={"database": "wiki", "uri": "file:///wiki/a.pdf", "note": "golden"},
         )
+        rewatched = await client.post(
+            "/watched", json={"database": "wiki", "uri": "file:///wiki/a.pdf"}
+        )
         listed = (await client.get("/watched")).json()
         removed = await client.delete(
             "/watched", params={"database": "wiki", "uri": "file:///wiki/a.pdf"}
@@ -171,7 +186,7 @@ async def test_watch_list(populated):
         again = await client.delete(
             "/watched", params={"database": "wiki", "uri": "file:///wiki/a.pdf"}
         )
-    assert added.status_code == 201 and renoted.status_code == 201
+    assert added.status_code == renoted.status_code == rewatched.status_code == 201
     assert [(w["uri"], w["note"]) for w in listed] == [("file:///wiki/a.pdf", "golden")]
     assert removed.status_code == 204 and again.status_code == 404
 
