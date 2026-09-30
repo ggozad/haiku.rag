@@ -4,3 +4,5 @@ allowBuilds:
 overrides:
   sharp: '>=0.35.4'
   qs: '>=6.16.0'
+  ip-address: '^10.7.1'
+  fast-uri: '^3.1.8'

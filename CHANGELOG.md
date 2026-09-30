@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Security
+
+- Bumped dependencies to patched versions for known advisories: `pyjwt` 2.15.1 in `uv.lock`, `ip-address` 10.7.2 and `fast-uri` 3.1.8 in `app/frontend/pnpm-lock.yaml`.
+
 ## [0.91.0] - 2026-09-30
 
 ### Added
