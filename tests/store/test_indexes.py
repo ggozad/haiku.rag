@@ -446,3 +446,16 @@ async def test_store_rebuild_indexes_refuses_read_only(temp_db_path):
     async with Store(temp_db_path, read_only=True) as store:
         with pytest.raises(ReadOnlyError):
             await store.rebuild_indexes()
+
+
+async def test_rebuild_indexes_builds_a_missing_fts_index(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        await _add_chunk(store)
+        await store.chunks_table.drop_index("content_fts_idx")
+
+        await rebuild_indexes(store.chunks_table, "chunks")
+
+        assert await _covering(store.chunks_table, "content_fts") == [
+            ("content_fts_idx", "FTS")
+        ]
+        assert await _fts_indexed_rows(store.chunks_table) == 1

@@ -11,6 +11,9 @@
 
 - Every `rebuild` mode except `--title-only` and `--set-embedder` ends by rebuilding
   the full-text and scalar indexes, regardless of `storage.auto_vacuum`.
+- `doctor`'s `fts_index_coverage` warns when some rows are outside the full-text
+  index, and names `rebuild --reindex` for a missing index instead of
+  `rebuild --embed-only`.
 - `rebuild --rechunk`, `--descriptions` and `rebuild` delete `document_items` once per
   batch of 50 documents instead of per document, and `--title-only` writes
   `document_meta` once per batch.

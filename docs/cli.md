@@ -127,7 +127,7 @@ Shows the database path, the stored haiku.rag version, the embedding provider, m
 haiku-rag doctor [--db /path/to/your.lancedb] [--duplicates-out groups.yaml]
 ```
 
-Checks the database and prints a pass, warn or fail report. It makes no changes, prints the command that fixes each failure (`rebuild`, `create-index`, `vacuum`, `migrate`, `rebuild --set-embedder`), and exits 1 when any check fails or the database is missing. The checks:
+Checks the database and prints a pass, warn or fail report. It makes no changes, prints the command that fixes each failure (`rebuild`, `create-index`, `vacuum`, `migrate`, `rebuild --set-embedder`, `rebuild --reindex`), and exits 1 when any check fails or the database is missing. The checks:
 
 - required tables are present, and `documents` and `document_meta` correspond one to one
 - chunks and document items reference documents that exist
@@ -137,7 +137,7 @@ Checks the database and prints a pass, warn or fail report. It makes no changes,
 - pictures in image and PDF documents carry their image data
 - exactly one settings row exists, and the configured embedder matches it
 - no migrations are pending
-- the vector index covers all chunks, and the full-text index covers the chunks it searches
+- the vector index covers all chunks, and the full-text index exists and covers rows. Rows written since it was last built are a warning
 - near-identical documents, by embedding-centroid similarity. Advisory only, tuned by `doctor.duplicates`. The largest member of each group is suggested to keep
 - API keys are set for the configured providers
 
