@@ -110,3 +110,4 @@ Without `config`, the client uses the configuration loaded from the YAML file, o
 - [Multiple databases](multiple-databases.md): searching several databases together
 - [Prompts](prompts.md): domain context and the picture-description prompt
 - [Ingester](../ingester.md): continuous ingestion sources, workers and queue
+- [Curator](../curate.md): curation sweeps, flag thresholds and the curation store

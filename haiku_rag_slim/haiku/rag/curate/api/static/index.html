@@ -705,7 +705,7 @@
           { class: "muted" },
           `${placed.length} documents placed` +
             (unplaced ? ` · ${unplaced} without a position (no embedded chunks, or fewer than 3 in the database)` : "") +
-            " · similar documents sit together · hover for the title, click for the history",
+            " · similar documents are placed near each other · hover for the title, click for the history",
         );
         if (!placed.length) {
           target.replaceChildren(el("div", { class: "filters" }, summary), el("div", { class: "empty" }, "No map for this database yet."));

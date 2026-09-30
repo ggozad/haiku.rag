@@ -1,6 +1,6 @@
 # haiku.rag Docker Image
 
-The full haiku.rag Docker image contains the `haiku.rag` package (Docling, VoyageAI and Cohere embedders, every reranker, the terminal UI) and the `ingester` extra. It is not published. Build it locally with the provided Dockerfile.
+The full haiku.rag Docker image contains the `haiku.rag` package (Docling, VoyageAI and Cohere embedders, every reranker, the terminal UI) and the `ingester` and `curate` extras. It is not published. Build it locally with the provided Dockerfile.
 
 ## Building the Image
 
@@ -84,6 +84,32 @@ the ingester, which is the database's one writer. haiku.rag allows one
 writing process per database. Pass `-e INGESTER_TOKEN=...` to both
 containers, since both load the same configuration. See
 `examples/docker/docker-compose.yml` for a working two-service setup.
+
+To review the databases, run `haiku-curate` from the same image. It opens
+every database read-only, so it can run beside the ingester:
+
+```bash
+docker run \
+  -v /path/to/haiku.rag.yaml:/app/haiku.rag.yaml \
+  -v /path/to/data:/data \
+  -p 8766:8766 \
+  -e CURATE_TOKEN=... \
+  -e INGESTER_TOKEN=... \
+  haiku-rag haiku-curate --config /app/haiku.rag.yaml serve
+```
+
+```yaml
+curate:
+  store:
+    path: /data/curate.db     # persist the curation history in the data volume
+  api:
+    host: 0.0.0.0             # reachable through the -p 8766:8766 mapping
+    auth_token: ${CURATE_TOKEN}
+```
+
+Loading fails on any unset variable the configuration names, so every
+container that loads it needs both `CURATE_TOKEN` and `INGESTER_TOKEN`. The published slim image does not include
+`haiku-curate`.
 
 For API keys (OpenAI, Anthropic, etc.), pass them as environment variables:
 

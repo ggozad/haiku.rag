@@ -359,7 +359,7 @@ ingester:
     enabled: true
     host: 127.0.0.1
     port: 8765
-    auth_token: ${INGESTER_TOKEN}             # unset: unauthenticated
+    auth_token: ${INGESTER_TOKEN}             # loading fails if INGESTER_TOKEN is unset, omit the key for no token
     root_path: ""                             # e.g. /ingester behind a proxy
 ```
 

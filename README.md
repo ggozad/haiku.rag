@@ -18,7 +18,7 @@ Built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.pydantic.dev/
 - **Answer** with the RAG capability: it searches, runs sandboxed Python over the documents for counting and aggregation, and cites page numbers and headings. Vision models receive the figures. Optional capabilities compact earlier evidence in long conversations and require every answer to declare its grounding.
 - **Check** a citation by drawing its chunk on the page image, from the CLI, the chat TUI or Python.
 - **Integrate** through the Python API, native Pydantic AI capabilities, an MCP server for Claude Code, Codex and Claude Desktop, and a reference web app.
-- **Operate** with the `haiku-ingester` service (filesystem, HTTP, S3 and WebDAV sources, a SQLite or Postgres job queue with retries, a control plane and dashboard), tags and rollback, vacuum, and `haiku-rag doctor` health checks.
+- **Operate** with the `haiku-ingester` service (filesystem, HTTP, S3 and WebDAV sources, a SQLite or Postgres job queue with retries, a control plane and dashboard), the `haiku-curate` service (flags for garbled updates, duplicates and missing metadata, a revision history and a dashboard), tags and rollback, vacuum, and `haiku-rag doctor` health checks.
 
 ## Installation
 
@@ -100,7 +100,7 @@ Codex and Claude Desktop setup is in the [MCP docs](https://ggozad.github.io/hai
 - [CLI](https://ggozad.github.io/haiku.rag/cli/) and [Chat and inspector](https://ggozad.github.io/haiku.rag/chat/)
 - [Capabilities](https://ggozad.github.io/haiku.rag/capabilities/): native Pydantic AI capabilities
 - [Configuration](https://ggozad.github.io/haiku.rag/configuration/): every setting, and [tuning](https://ggozad.github.io/haiku.rag/tuning/)
-- [Ingester](https://ggozad.github.io/haiku.rag/ingester/), [MCP](https://ggozad.github.io/haiku.rag/mcp/) and [remote processing](https://ggozad.github.io/haiku.rag/remote-processing/)
+- [Ingester](https://ggozad.github.io/haiku.rag/ingester/), [Curator](https://ggozad.github.io/haiku.rag/curate/), [MCP](https://ggozad.github.io/haiku.rag/mcp/) and [remote processing](https://ggozad.github.io/haiku.rag/remote-processing/)
 - [Python API](https://ggozad.github.io/haiku.rag/python/) and [custom pipelines](https://ggozad.github.io/haiku.rag/custom-pipelines/)
 - [Benchmarks](https://ggozad.github.io/haiku.rag/benchmarks/) and the [changelog](https://ggozad.github.io/haiku.rag/changelog/)
 

@@ -13,13 +13,13 @@ ENV UV_COMPILE_BYTECODE=1 \
 COPY pyproject.toml uv.lock ./
 COPY haiku_rag_slim/pyproject.toml haiku_rag_slim/README.md haiku_rag_slim/LICENSE haiku_rag_slim/
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project --no-dev --extra ingester
+    uv sync --frozen --no-install-project --no-dev --extra ingester --extra curate
 
-# Install the project itself (with the ingester extra so haiku-ingester is on PATH)
+# Install the project itself (with the ingester and curate extras so haiku-ingester and haiku-curate are on PATH)
 COPY haiku_rag_slim haiku_rag_slim/
 COPY README.md LICENSE ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-editable --no-dev --extra ingester
+    uv sync --frozen --no-editable --no-dev --extra ingester --extra curate
 
 # Final layer
 FROM python:3.13-slim
@@ -32,10 +32,10 @@ RUN mkdir -p /data
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Expose MCP server (8001) and ingester control plane (8765) ports.
+# Expose MCP server (8001), ingester control plane (8765) and curate API (8766) ports.
 # docker-compose overrides this image's default command to run either the
 # MCP server (read-only) or the ingester service.
-EXPOSE 8001 8765
+EXPOSE 8001 8765 8766
 
 # Default command: read-only MCP server. The companion ingester service is
 # launched via docker-compose against the same image.

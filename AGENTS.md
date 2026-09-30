@@ -86,6 +86,16 @@ haiku_rag_slim/haiku/rag/   # Source code
 │   │   ├── routes/         # health, sources, jobs, dlq, stats, config, database, dashboard, providers
 │   │   └── static/index.html # Self-contained vanilla-JS dashboard served at /
 │   └── exceptions.py       # PermanentError, TransientError
+├── curate/                 # haiku-curate service (own CLI + [curate] extra), read-only on the corpora
+│   ├── cli.py, app.py      # haiku-curate entry point + application layer (serve, run_sweep)
+│   ├── sweep.py            # One sweep: fingerprints, detectors, isolation, doctor's checks per database
+│   ├── chunks.py           # Chunk stats, normalized chunk text hash
+│   ├── detectors.py        # Flags from the store's view, isolation scores
+│   ├── projection.py       # t-SNE map positions (scikit-learn)
+│   ├── store/              # db.py (tables, SCHEMA_VERSION), migrations.py, repository.py, models.py
+│   └── api/                # server.py (APIState, map cache), routes.py, static/index.html dashboard
+├── similarity.py           # document_centroids, duplicate_families (doctor and curate)
+├── sqlstore.py             # make_engine(path, dburi), SQLite pragmas (queue and curate store)
 ├── sources/                # base, fs, http, s3, webdav adapters + registry, plugins, filter, walk_files
 │                           # (used by the ingester AND one-shot client ingestion)
 ├── app.py                  # HaikuRAGApp CLI application layer
@@ -297,6 +307,7 @@ leaves the configuration: it travels in `SearchResult.source`, `Citation.source`
 - `ProvidersConfig` - ollama, docling_serve (OllamaConfig, DoclingServeConfig)
 - `PromptsConfig` - domain_preamble, picture_description
 - `IngesterConfig` - sources, queue (QueueConfig), workers (WorkerConfig), api (APIConfig)
+- `CurateConfig` - store (CurateStoreConfig: path, dburi), databases, thresholds (CurateThresholdsConfig), duplicates, repeated_chunks, required_metadata, sweep_interval_s, api (APIConfig, port 8766)
 - `EvaluationsConfig` - judge (ModelConfig | None), system_one (SystemOneConfig | None: base_url, model; key from `TYPESAFE_API_KEY`)
 - `LanceDBConfig` - databases (name → local path or URI), api_key, region, storage_options, read_consistency_interval_seconds, index_cache_size_bytes, metadata_cache_size_bytes
 
@@ -360,6 +371,13 @@ download-models  Download Docling, HuggingFace and Ollama models
 serve       Run pollers + workers, and the HTTP API unless --no-api; blocks until SIGINT/SIGTERM
 run-batch   One discover sweep over every source, drain the queue, exit; non-zero on dead-letter or incomplete sweep
 queue       init | migrate the queue DB
+```
+
+**haiku-curate** (separate entry point, `[curate]` extra, user docs `docs/curate.md`):
+```
+sweep       Sweep every curated database once; exit 1 when a database cannot be swept (flags never affect it)
+serve       Sweep every curate.sweep_interval_s and serve the API, or only serve with --no-sweep
+store       init | migrate the curate store
 ```
 
 **Tags:** `haiku-rag tag create/list/delete NAME` name database states across all five tables. `tag restore NAME` brings the live database back to a tagged state: it creates a `before-restore-*` safety tag first, requires stopped writers, and never migrates. Vacuum retains the oldest tagged version and everything newer.
@@ -563,8 +581,21 @@ Each entry is the trap and what to do. The evidence behind them is in the commit
 - **An exception out of an FS periodic sweep dies silently**: `_sweep_loop` is a task `run()` never awaits, `live_pollers` counts the outer task, and shutdown's `gather(..., return_exceptions=True)` swallows it. `/health` stays green.
 - **Poller discovery failures** are handled in three places with the same `record_failure` + `logger.exception` body: `pollers/base.py` `_sweep_once` and `_dry_run_once`, and `pollers/fs.py` `_watch_loop`. Change one, change all three.
 - **Plugins** use `importlib.metadata` entry points: `haiku.rag.metadata_providers` and `haiku.rag.sources`. Only referenced ones load.
-- **Docker images.** Both Dockerfiles install `--extra ingester`, which does not pull `[docling]`. The full image gets docling from the `haiku.rag` package itself. The published slim image cannot run `converter: docling-local`. `[ingester]` pulls `[s3]`.
+- **Docker images.** Both Dockerfiles install `--extra ingester`, which does not pull `[docling]`, and the full one also `--extra curate`. The slim image has no `haiku-curate`: `[curate]` would add scikit-learn and scipy. The full image gets docling from the `haiku.rag` package itself. The published slim image cannot run `converter: docling-local`. `[ingester]` pulls `[s3]`.
 - **Dashboard** (`ingester/api/static/index.html`) is outside the biome hook's scope. Run `biome lint <file>` by hand, and `node --check` on the extracted script.
+
+### Curate
+
+- **Curate never embeds.** It opens databases read-only with `skip_validation=True`, and `Store.embedder` is built on first access. Any curate path that touches `store.embedder` builds the configured embedder and fails without its keys or packages. `run_db_checks` takes `supports_images` for this reason: curate passes None.
+- **A fingerprint is content becoming current.** `change_key` hashes the md5 and the sorted chunk ids, not `source_revision`, so A → B → A is three rows. A metadata or title change refreshes the current fingerprint in place. An embedder change rebaselines the database, and no cosine is compared across it.
+- **`bad_update` compares against a baseline**, the latest earlier revision not under an open or superseded `bad_update` flag, so a fixed upload is not flagged against the garbled one. An acknowledged flag's revision becomes the baseline.
+- **Flag identity is explicit** (sha256 over kind, database and subject or members). A `repeated_chunk` flag's members update in place. A duplicate group whose membership changes is a new flag, and the old one resolves. A resolved flag whose condition returns reopens, and an acknowledged one stays acknowledged until `POST /flags/{id}/reopen`.
+- **A sweep overlapping an ingestion write** can record a document half-written and flag it. The next sweep supersedes it. There is no version guard: under continuous ingestion it would discard every sweep.
+- **`serve` sweeps on its own event loop in a worker thread** (`_sweep_on_own_loop`), with its own store engine. `APIState.sweeping` is set around that sweep only, so a cron `haiku-curate sweep` in another process is never reported.
+- **Map positions are not stored.** `APIState.map` computes them on request in a thread and caches them in memory, keyed by the database's last `ok` sweep id. t-SNE runs over distinct centroids, so exact copies share a point.
+- **Curate store migrations** follow the queue's rule: `create_all` never adds a column to an existing table, so a new column needs an `ALTER TABLE` under `current < N` and a `SCHEMA_VERSION` bump.
+- **`haiku-curate`'s `main` calls `set_config`.** Tests invoking the CLI restore `haiku.rag.config._config` (the autouse fixture in `tests/curate/test_cli.py`), or later tests on the worker read the curate test's databases.
+- **Dashboard** (`curate/api/static/index.html`) is checked as the ingester's is: `node --check` and `biome lint` on the extracted script. `routes.py` reads it once at import, so a running server needs a restart to serve an edit.
 
 ### Capabilities and sandbox
 

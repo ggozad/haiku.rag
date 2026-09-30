@@ -265,7 +265,7 @@ haiku-rag mcp --stdio          # stdio, for Claude Desktop
 haiku-rag mcp --host 0.0.0.0 --port 9000
 ```
 
-See [MCP](mcp.md). Continuous ingestion runs in the separate [`haiku-ingester`](ingester.md) service.
+See [MCP](mcp.md). Continuous ingestion runs in the separate [`haiku-ingester`](ingester.md) service, and curation in [`haiku-curate`](curate.md).
 
 ## Settings
 

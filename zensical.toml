@@ -37,6 +37,7 @@ nav = [
     ] },
     { Production = [
         { Ingester = "ingester.md" },
+        { Curator = "curate.md" },
         { MCP = "mcp.md" },
         { "Remote processing" = "remote-processing.md" },
     ] },

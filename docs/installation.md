@@ -11,10 +11,11 @@ uv pip install haiku.rag        # full
 uv pip install haiku.rag-slim   # core, extras chosen by you
 ```
 
-`haiku.rag` is `haiku.rag-slim` with the `docling`, `voyageai`, `cohere`, `zeroentropy`, `cross-encoder`, `jina` and `tui` extras. It defines four extras of its own, `tui`, `s3`, `cross-encoder` and `ingester`:
+`haiku.rag` is `haiku.rag-slim` with the `docling`, `voyageai`, `cohere`, `zeroentropy`, `cross-encoder`, `jina` and `tui` extras. It defines five extras of its own, `tui`, `s3`, `cross-encoder`, `ingester` and `curate`:
 
 ```bash
 uv pip install 'haiku.rag[ingester]'   # the haiku-ingester service
+uv pip install 'haiku.rag[curate]'     # the haiku-curate service
 uv pip install 'haiku.rag[s3]'         # S3 and object storage
 ```
 
@@ -39,6 +40,7 @@ Every extra `haiku.rag-slim` defines:
 | `jina` | Local Jina reranking (`provider: jina-local`) | yes |
 | `s3` | S3 and object-storage access | no |
 | `ingester` | The `haiku-ingester` service (also pulls `s3`) | no |
+| `curate` | The `haiku-curate` service | no |
 | `anthropic` | Anthropic Claude models | no |
 | `google` | Google Gemini models | no |
 | `groq` | Groq models | no |
@@ -83,4 +85,4 @@ docker run -p 8001:8001 \
   haiku-rag
 ```
 
-Both images run the read-only MCP server on port 8001 by default. The mounted `haiku.rag.yaml` must set `storage.data_dir: /data`, or the database is written inside the container rather than to the volume. `docker/README.md` covers running the [ingester](ingester.md) from the same image.
+Both images run the read-only MCP server on port 8001 by default. The mounted `haiku.rag.yaml` must set `storage.data_dir: /data`, or the database is written inside the container rather than to the volume. `docker/README.md` covers running the [ingester](ingester.md) from the same image, and the [curator](curate.md) from the full image. The slim image does not include the curator.
