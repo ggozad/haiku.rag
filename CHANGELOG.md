@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.91.0] - 2026-09-30
+
 ### Added
 
 - `haiku-rag rebuild --reindex` (`RebuildMode.REINDEX`): rebuilds the full-text and
@@ -2817,7 +2819,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.90.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.91.0...HEAD
+[0.91.0]: https://github.com/ggozad/haiku.rag/compare/0.90.0...0.91.0
 [0.90.0]: https://github.com/ggozad/haiku.rag/compare/0.89.0...0.90.0
 [0.89.0]: https://github.com/ggozad/haiku.rag/compare/0.88.2...0.89.0
 [0.88.2]: https://github.com/ggozad/haiku.rag/compare/0.88.1...0.88.2
