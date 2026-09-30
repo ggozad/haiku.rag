@@ -194,3 +194,54 @@ class Fingerprint:
     became_current_sweep: int
     ended_sweep: int | None
     deleted: bool
+
+
+@dataclass(frozen=True)
+class DatabaseSummary:
+    database: str
+    documents: int
+    open_flags: int
+    last_status: SweepStatus | None
+    last_sweep_at: str | None
+    last_error: str | None
+    embedder: str | None
+
+
+class ChangeKind(StrEnum):
+    ADDED = "added"
+    UPDATED = "updated"
+    DELETED = "deleted"
+
+
+@dataclass(frozen=True)
+class Change:
+    kind: ChangeKind
+    database: str
+    document_id: str
+    uri: str | None
+    title: str | None
+    fingerprint_id: int
+    at: str
+
+
+@dataclass(frozen=True)
+class CurrentDocument:
+    database: str
+    document_id: str
+    uri: str | None
+    title: str | None
+    fingerprint_id: int
+    chunks: int
+    chars: int
+    replacement_chars: int
+    chunk_stats: dict
+    isolation: float | None
+    open_flags: list[FlagKind]
+
+
+@dataclass(frozen=True)
+class Watch:
+    database: str
+    uri: str
+    note: str | None
+    added_at: str

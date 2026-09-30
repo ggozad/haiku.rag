@@ -1738,7 +1738,9 @@ cross-encoder = [
 curate = [
     { name = "aiosqlite" },
     { name = "asyncpg" },
+    { name = "fastapi" },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "uvicorn", extra = ["standard"] },
 ]
 docling = [
     { name = "docling" },
@@ -1797,6 +1799,7 @@ requires-dist = [
     { name = "docling-core", specifier = "==2.93.0" },
     { name = "docling-ibm-models", marker = "extra == 'docling'", specifier = "==4.0.1" },
     { name = "docling-parse", marker = "extra == 'docling'", specifier = "==7.16.0" },
+    { name = "fastapi", marker = "extra == 'curate'", specifier = ">=0.125" },
     { name = "fastapi", marker = "extra == 'ingester'", specifier = ">=0.125" },
     { name = "fastmcp", specifier = ">=4.0.2,<5.0.0" },
     { name = "haiku-rag-slim", extras = ["s3"], marker = "extra == 'ingester'", editable = "haiku_rag_slim" },
@@ -1832,6 +1835,7 @@ requires-dist = [
     { name = "tree-sitter", marker = "extra == 'tui'", specifier = ">=0.25.2" },
     { name = "tree-sitter-json", marker = "extra == 'tui'", specifier = ">=0.24.8" },
     { name = "typer", specifier = ">=0.21.0,<0.27.0" },
+    { name = "uvicorn", extras = ["standard"], marker = "extra == 'curate'", specifier = ">=0.32" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'ingester'", specifier = ">=0.32" },
     { name = "watchfiles", specifier = ">=1.1.1" },
     { name = "zeroentropy", marker = "extra == 'zeroentropy'", specifier = ">=0.1.0a11" },

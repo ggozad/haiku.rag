@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import CurateStoreConfig
+from haiku.rag.curate.app import APIServerStopped
 from haiku.rag.curate.cli import _cli as cli
 from haiku.rag.curate.cli import cli as curate_cli
 from haiku.rag.curate.store.db import SCHEMA_VERSION, schema_version
@@ -135,3 +136,35 @@ def test_store_from_newer_code_is_a_clean_error(tmp_path, monkeypatch, capsys):
 
     assert exit_info.value.code == 1
     assert "Error: store schema" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("args,sweeping", [([], True), (["--no-sweep"], False)])
+def test_serve_passes_the_sweep_choice(tmp_path, monkeypatch, args, sweeping):
+    config = _write_config(tmp_path, {})
+    calls = []
+
+    async def serve(app_config, *, sweeping):
+        calls.append((app_config.curate.store.path, sweeping))
+
+    monkeypatch.setattr("haiku.rag.curate.cli.serve", serve)
+
+    result = runner.invoke(cli, ["--config", config, "serve", *args])
+
+    assert result.exit_code == 0, result.output
+    assert calls == [(tmp_path / "curate.db", sweeping)]
+
+
+def test_a_stopped_api_server_is_a_clean_error(tmp_path, monkeypatch, capsys):
+    config = _write_config(tmp_path, {})
+
+    async def serve(app_config, *, sweeping):
+        raise APIServerStopped("the API server stopped")
+
+    monkeypatch.setattr("haiku.rag.curate.cli.serve", serve)
+    monkeypatch.setattr(sys, "argv", ["haiku-curate", "--config", config, "serve"])
+
+    with pytest.raises(SystemExit) as exit_info:
+        curate_cli()
+
+    assert exit_info.value.code == 1
+    assert "Error: the API server stopped" in capsys.readouterr().err

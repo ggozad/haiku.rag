@@ -102,6 +102,36 @@ async def test_acknowledged_flag_stays_acknowledged(curate):  # noqa: F811
     assert flag.note == "not needed here"
 
 
+async def test_a_reopened_flag_stays_open(curate):  # noqa: F811
+    paths, config, repository = curate
+    config.curate.required_metadata = ["department"]
+    async with HaikuRAG(paths["wiki"], _writer_config()) as rag:
+        await _import(rag, "file:///wiki/a.pdf", CLEAN, [0, 1])
+    await sweep(config, repository)
+    [flag] = await _flags(repository, FlagKind.MISSING_METADATA)
+    await repository.acknowledge(flag.id, "not needed here")
+
+    assert await repository.reopen(flag.id)
+    await sweep(config, repository)
+
+    [reopened] = await _flags(repository, FlagKind.MISSING_METADATA)
+    assert reopened.id == flag.id
+    assert reopened.status is FlagStatus.OPEN
+    assert reopened.note is None
+
+
+async def test_only_an_acknowledged_flag_reopens(curate):  # noqa: F811
+    paths, config, repository = curate
+    config.curate.required_metadata = ["department"]
+    async with HaikuRAG(paths["wiki"], _writer_config()) as rag:
+        await _import(rag, "file:///wiki/a.pdf", CLEAN, [0, 1])
+    await sweep(config, repository)
+    [flag] = await _flags(repository, FlagKind.MISSING_METADATA)
+
+    assert not await repository.reopen(flag.id)
+    assert not await repository.reopen(999)
+
+
 async def test_detectors_run_on_an_unchanged_database(curate):  # noqa: F811
     paths, config, repository = curate
     async with HaikuRAG(paths["wiki"], _writer_config()) as rag:

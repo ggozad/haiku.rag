@@ -16,7 +16,11 @@ from haiku.rag.curate.store.db import (
     watched,
 )
 from haiku.rag.curate.store.models import (
+    Change,
+    ChangeKind,
+    CurrentDocument,
     CurrentFingerprint,
+    DatabaseSummary,
     DatabaseSweep,
     DatabaseView,
     Detection,
@@ -28,6 +32,7 @@ from haiku.rag.curate.store.models import (
     RepeatedText,
     Revision,
     SweepStatus,
+    Watch,
 )
 
 
@@ -102,12 +107,219 @@ class CurateRepository:
         async with self._engine.connect() as conn:
             return list((await conn.execute(stmt)).scalars())
 
-    async def flags(self, kind: FlagKind) -> list[Flag]:
-        """Flags of one kind, oldest first."""
-        stmt = sa.select(flags).where(flags.c.kind == kind).order_by(flags.c.id)
+    async def flags(
+        self,
+        *,
+        database: str | None = None,
+        kind: FlagKind | None = None,
+        status: FlagStatus | None = None,
+    ) -> list[Flag]:
+        """Flags, oldest first, narrowed by any of the arguments given.
+
+        `database` includes cross-database flags with a member in it.
+        """
+        stmt = sa.select(flags).order_by(flags.c.id)
+        if database is not None:
+            stmt = stmt.where(
+                sa.or_(flags.c.database == database, flags.c.database.is_(None))
+            )
+        if kind is not None:
+            stmt = stmt.where(flags.c.kind == kind)
+        if status is not None:
+            stmt = stmt.where(flags.c.status == status)
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return [_flag(row) for row in rows]
+        found = [_flag(row) for row in rows]
+        if database is None:
+            return found
+        return [
+            flag
+            for flag in found
+            if flag.database is not None or _has_member(flag, database)
+        ]
+
+    async def flag(self, flag_id: int) -> Flag | None:
+        async with self._engine.connect() as conn:
+            row = (
+                await conn.execute(sa.select(flags).where(flags.c.id == flag_id))
+            ).first()
+        return _flag(row) if row is not None else None
+
+    async def databases(self, names: Iterable[str]) -> list[DatabaseSummary]:
+        """One summary per database name, in the order given."""
+        summaries = []
+        across = await self.flags(status=FlagStatus.OPEN)
+        across = [flag for flag in across if flag.database is None]
+        async with self._engine.connect() as conn:
+            for name in names:
+                last = (
+                    await conn.execute(
+                        sa.select(sweeps)
+                        .where(sweeps.c.database == name)
+                        .order_by(sweeps.c.id.desc())
+                        .limit(1)
+                    )
+                ).first()
+                documents = (
+                    await conn.execute(
+                        sa.select(sa.func.count()).where(
+                            fingerprints.c.database == name,
+                            fingerprints.c.ended_sweep.is_(None),
+                        )
+                    )
+                ).scalar_one()
+                open_flags = (
+                    await conn.execute(
+                        sa.select(sa.func.count()).where(
+                            flags.c.database == name,
+                            flags.c.status == FlagStatus.OPEN,
+                        )
+                    )
+                ).scalar_one()
+                summaries.append(
+                    DatabaseSummary(
+                        database=name,
+                        documents=documents,
+                        open_flags=open_flags
+                        + sum(_has_member(flag, name) for flag in across),
+                        last_status=SweepStatus(last.status) if last else None,
+                        last_sweep_at=last.finished_at if last else None,
+                        last_error=last.error if last else None,
+                        embedder=last.embedder if last else None,
+                    )
+                )
+        return summaries
+
+    async def changes(
+        self, since: datetime | None, databases: Iterable[str]
+    ) -> list[Change]:
+        """Documents added, updated or deleted at or after `since` (all when None), oldest first."""
+        names = list(databases)
+        async with self._engine.connect() as conn:
+            sweep_times = {
+                row.id: row.started_at
+                for row in await conn.execute(
+                    sa.select(sweeps.c.id, sweeps.c.started_at).where(
+                        sweeps.c.database.in_(names)
+                    )
+                )
+            }
+            rows = (
+                await conn.execute(
+                    sa.select(
+                        fingerprints.c.id,
+                        fingerprints.c.database,
+                        fingerprints.c.document_id,
+                        fingerprints.c.uri,
+                        fingerprints.c.title,
+                        fingerprints.c.became_current_sweep,
+                        fingerprints.c.ended_sweep,
+                        fingerprints.c.deleted,
+                    )
+                    .where(fingerprints.c.database.in_(names))
+                    .order_by(fingerprints.c.id)
+                )
+            ).all()
+
+        def included(at: str) -> bool:
+            return since is None or datetime.fromisoformat(at) >= since
+
+        seen: set[tuple[str, str]] = set()
+        changes = []
+        for row in rows:
+            subject = (row.database, row.uri or row.document_id)
+            became = sweep_times[row.became_current_sweep]
+            if included(became):
+                kind = ChangeKind.UPDATED if subject in seen else ChangeKind.ADDED
+                changes.append(_change(kind, row, became))
+            seen.add(subject)
+            if row.deleted:
+                ended = sweep_times[row.ended_sweep]
+                if included(ended):
+                    changes.append(_change(ChangeKind.DELETED, row, ended))
+        return sorted(changes, key=lambda change: (change.at, change.fingerprint_id))
+
+    async def documents(self, database: str) -> list[CurrentDocument]:
+        """Current documents of `database` with their scores and open flags."""
+        async with self._engine.connect() as conn:
+            rows = (
+                await conn.execute(
+                    sa.select(
+                        fingerprints.c.id,
+                        fingerprints.c.document_id,
+                        fingerprints.c.uri,
+                        fingerprints.c.title,
+                        fingerprints.c.chunks,
+                        fingerprints.c.chars,
+                        fingerprints.c.replacement_chars,
+                        fingerprints.c.chunk_stats,
+                        layout.c.isolation,
+                    )
+                    .select_from(
+                        fingerprints.outerjoin(
+                            layout,
+                            sa.and_(
+                                layout.c.database == fingerprints.c.database,
+                                layout.c.document_id == fingerprints.c.document_id,
+                            ),
+                        )
+                    )
+                    .where(
+                        fingerprints.c.database == database,
+                        fingerprints.c.ended_sweep.is_(None),
+                    )
+                    .order_by(fingerprints.c.id)
+                )
+            ).all()
+            open_rows = (
+                await conn.execute(
+                    sa.select(
+                        flags.c.kind, flags.c.fingerprint_id, flags.c.members
+                    ).where(
+                        flags.c.status == FlagStatus.OPEN,
+                        sa.or_(
+                            flags.c.database == database, flags.c.database.is_(None)
+                        ),
+                    )
+                )
+            ).all()
+        by_fingerprint: dict[int, set[FlagKind]] = {}
+        by_document: dict[str, set[FlagKind]] = {}
+        for row in open_rows:
+            kind = FlagKind(row.kind)
+            if row.fingerprint_id is not None:
+                by_fingerprint.setdefault(row.fingerprint_id, set()).add(kind)
+            for member in json.loads(row.members) if row.members else []:
+                if member["database"] == database:
+                    by_document.setdefault(member["document_id"], set()).add(kind)
+        return [
+            CurrentDocument(
+                database=database,
+                document_id=row.document_id,
+                uri=row.uri,
+                title=row.title,
+                fingerprint_id=row.id,
+                chunks=row.chunks,
+                chars=row.chars,
+                replacement_chars=row.replacement_chars,
+                chunk_stats=json.loads(row.chunk_stats),
+                isolation=row.isolation,
+                open_flags=sorted(
+                    by_fingerprint.get(row.id, set())
+                    | by_document.get(row.document_id, set())
+                ),
+            )
+            for row in rows
+        ]
+
+    async def watches(self) -> list[Watch]:
+        stmt = sa.select(watched).order_by(watched.c.database, watched.c.uri)
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [
+            Watch(database=r.database, uri=r.uri, note=r.note, added_at=r.added_at)
+            for r in rows
+        ]
 
     async def isolation(self, database: str) -> dict[str, float | None]:
         stmt = sa.select(layout.c.document_id, layout.c.isolation).where(
@@ -117,15 +329,27 @@ class CurateRepository:
             rows = (await conn.execute(stmt)).all()
         return {row.document_id: row.isolation for row in rows}
 
-    async def acknowledge(self, flag_id: int, note: str | None = None) -> None:
+    async def acknowledge(self, flag_id: int, note: str | None = None) -> bool:
+        """Acknowledge a flag; False when there is no such flag."""
         async with self._engine.begin() as conn:
-            await conn.execute(
+            result = await conn.execute(
                 sa.update(flags)
                 .where(flags.c.id == flag_id)
                 .values(
                     status=FlagStatus.ACKNOWLEDGED, status_changed_at=_now(), note=note
                 )
             )
+        return result.rowcount > 0
+
+    async def reopen(self, flag_id: int) -> bool:
+        """Set an acknowledged flag back to open, dropping its note; False otherwise."""
+        async with self._engine.begin() as conn:
+            result = await conn.execute(
+                sa.update(flags)
+                .where(flags.c.id == flag_id, flags.c.status == FlagStatus.ACKNOWLEDGED)
+                .values(status=FlagStatus.OPEN, status_changed_at=_now(), note=None)
+            )
+        return result.rowcount > 0
 
     async def watch(self, database: str, uri: str, note: str | None = None) -> None:
         """Watch `uri`; watching it again updates the note and keeps `added_at`."""
@@ -142,13 +366,15 @@ class CurateRepository:
                     )
                 )
 
-    async def unwatch(self, database: str, uri: str) -> None:
+    async def unwatch(self, database: str, uri: str) -> bool:
+        """Stop watching `uri`; False when it was not watched."""
         async with self._engine.begin() as conn:
-            await conn.execute(
+            result = await conn.execute(
                 sa.delete(watched).where(
                     watched.c.database == database, watched.c.uri == uri
                 )
             )
+        return result.rowcount > 0
 
 
 class StoreWriter:
@@ -543,6 +769,22 @@ def _revision(
         became_current_at=sweep_times.get(row.became_current_sweep, ""),
         ended_at=sweep_times.get(row.ended_sweep) if row.ended_sweep else None,
         deleted=row.deleted,
+    )
+
+
+def _has_member(flag: Flag, database: str) -> bool:
+    return any(member["database"] == database for member in flag.members or [])
+
+
+def _change(kind: ChangeKind, row: sa.Row, at: str) -> Change:
+    return Change(
+        kind=kind,
+        database=row.database,
+        document_id=row.document_id,
+        uri=row.uri,
+        title=row.title,
+        fingerprint_id=row.id,
+        at=at,
     )
 
 

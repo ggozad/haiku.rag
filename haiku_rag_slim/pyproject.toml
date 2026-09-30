@@ -94,8 +94,10 @@ ingester = [
     "asyncpg>=0.29",
     "haiku.rag-slim[s3]",
 ]
-# Corpus curation service (history store, sweeps)
+# Corpus curation service (history store, sweeps, API)
 curate = [
+    "fastapi>=0.125",
+    "uvicorn[standard]>=0.32",
     "sqlalchemy[asyncio]>=2.0",
     "aiosqlite>=0.20",
     "asyncpg>=0.29",

@@ -59,6 +59,14 @@ def _change_key(md5: str | None, chunk_ids: list[str]) -> str:
     return hashlib.sha256(json.dumps([md5, sorted(chunk_ids)]).encode()).hexdigest()
 
 
+def curated_scope(config: AppConfig) -> DatabaseScope:
+    """The databases haiku-curate covers: `curate.databases`, or every configured one."""
+    scope = DatabaseScope.resolve(config)
+    if config.curate.databases is not None:
+        scope = scope.select(config.curate.databases)
+    return scope
+
+
 async def sweep(config: AppConfig, repository: CurateRepository) -> list[DatabaseSweep]:
     """Sweep every configured database once, recording each as it finishes.
 
@@ -66,9 +74,7 @@ async def sweep(config: AppConfig, repository: CurateRepository) -> list[Databas
     reconciled on every sweep, unchanged databases included.
     """
     curate = config.curate
-    scope = DatabaseScope.resolve(config)
-    if curate.databases is not None:
-        scope = scope.select(curate.databases)
+    scope = curated_scope(config)
     results = []
     for ref in scope.databases:
         result = await sweep_database(ref, config, repository)
@@ -96,6 +102,23 @@ async def sweep_database(
 ) -> DatabaseSweep:
     """Read one database and compare it with its current fingerprints; writes nothing."""
     started_at = _now()
+    try:
+        session = await open_database(ref, config)
+    except (SourceUnavailableError, MigrationRequiredError) as error:
+        return _failed(ref.name, started_at, str(error))
+    try:
+        return await _sweep_store(
+            session.store, ref.name, config, repository, started_at
+        )
+    except Exception as error:
+        logger.exception("Sweeping database %r failed", ref.name)
+        return _failed(ref.name, started_at, f"sweep failed: {type(error).__name__}")
+    finally:
+        await session.aclose()
+
+
+async def open_database(ref: DatabaseRef, config: AppConfig) -> SingleDatabaseSession:
+    """Open a database the way curate reads it: read-only, unvalidated, never stale."""
     # Every read sees the latest commit, so the version guard sees a write that
     # lands during the sweep.
     strong = config.model_copy(
@@ -106,17 +129,26 @@ async def sweep_database(
         }
     )
     session = SingleDatabaseSession(ref, strong, read_only=True, skip_validation=True)
+    return await session.open()
+
+
+async def find_chunk_text(
+    ref: DatabaseRef, config: AppConfig, document_ids: list[str], text_hash: str
+) -> str | None:
+    """The text of a chunk in `document_ids` whose hash is `text_hash`."""
+    session = await open_database(ref, config)
     try:
-        await session.open()
-    except (SourceUnavailableError, MigrationRequiredError) as error:
-        return _failed(ref.name, started_at, str(error))
-    try:
-        return await _sweep_store(
-            session.store, ref.name, config, repository, started_at
-        )
-    except Exception as error:
-        logger.exception("Sweeping database %r failed", ref.name)
-        return _failed(ref.name, started_at, f"sweep failed: {type(error).__name__}")
+        for document_id in document_ids:
+            rows = (
+                await session.store.chunks_table.query()
+                .where(_id_filter("document_id", [document_id]))
+                .select(["content"])
+                .to_list()
+            )
+            for row in rows:
+                if chunk_text_hash(row["content"]) == text_hash:
+                    return row["content"]
+        return None
     finally:
         await session.aclose()
 

@@ -566,7 +566,7 @@ class WorkerConfig(ConfigModel):
 
 
 class APIConfig(ConfigModel):
-    """HTTP control plane settings for the ingester."""
+    """HTTP API settings, for haiku-ingester's control plane and haiku-curate."""
 
     # Validate on assignment so CLI overrides (e.g. --root-path) run the same
     # normalization as values parsed from the config file.
@@ -782,6 +782,12 @@ class CurateConfig(ConfigModel):
         default_factory=list,
         description="Metadata keys every document must carry.",
     )
+    sweep_interval_s: float = Field(
+        default=3600,
+        gt=0,
+        description="Seconds between sweeps under haiku-curate serve.",
+    )
+    api: APIConfig = Field(default_factory=lambda: APIConfig(port=8766))
 
 
 class AppConfig(ConfigModel):

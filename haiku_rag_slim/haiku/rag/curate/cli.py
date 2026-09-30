@@ -15,9 +15,15 @@ from haiku.rag.config import (  # noqa: E402
     set_config,
 )
 from haiku.rag.config.models import CurateStoreConfig  # noqa: E402
-from haiku.rag.curate.app import ensure_store, run_sweep  # noqa: E402
+from haiku.rag.curate.app import (  # noqa: E402
+    APIServerStopped,
+    describe,
+    ensure_store,
+    run_sweep,
+    serve,
+)
 from haiku.rag.curate.store.migrations import UnsupportedStoreError  # noqa: E402
-from haiku.rag.curate.store.models import DatabaseSweep, SweepStatus  # noqa: E402
+from haiku.rag.curate.store.models import SweepStatus  # noqa: E402
 from haiku.rag.logging import configure_cli_logging  # noqa: E402
 from haiku.rag.sqlstore import display_target  # noqa: E402
 from haiku.rag.store.exceptions import (  # noqa: E402
@@ -60,24 +66,17 @@ def main(
 
 
 def cli() -> None:
-    """Entry point that turns scope and store errors into a clean exit."""
+    """Entry point that turns scope, store and server errors into a clean exit."""
     try:
         _cli()
-    except (AmbiguousDatabaseError, UnknownDatabaseError, UnsupportedStoreError) as e:
+    except (
+        AmbiguousDatabaseError,
+        UnknownDatabaseError,
+        UnsupportedStoreError,
+        APIServerStopped,
+    ) as e:
         typer.echo(f"Error: {e}", err=True)
         sys.exit(1)
-
-
-def _describe(result: DatabaseSweep) -> str:
-    if result.status is SweepStatus.OK:
-        return (
-            f"{result.database}: ok, {result.documents} documents, "
-            f"{len(result.new)} new, {len(result.deleted)} deleted"
-            + (", embedder changed" if result.rebaseline else "")
-        )
-    if result.status is SweepStatus.ERROR:
-        return f"{result.database}: error: {result.error}"
-    return f"{result.database}: {result.status}"
 
 
 @_cli.command("sweep")
@@ -85,9 +84,21 @@ def sweep_command() -> None:
     """Sweep every configured database once; exits 1 when any database fails."""
     results = asyncio.run(run_sweep(get_config()))
     for result in results:
-        typer.echo(_describe(result))
+        typer.echo(describe(result))
     if any(result.status is SweepStatus.ERROR for result in results):
         raise typer.Exit(code=1)
+
+
+@_cli.command("serve")
+def serve_command(
+    no_sweep: bool = typer.Option(
+        False,
+        "--no-sweep",
+        help="Serve the API only; sweep elsewhere, e.g. `haiku-curate sweep` in cron.",
+    ),
+) -> None:
+    """Sweep every curate.sweep_interval_s and serve the API; stops on SIGINT/SIGTERM."""
+    asyncio.run(serve(get_config(), sweeping=not no_sweep))
 
 
 def _store_config(override: Path | None) -> CurateStoreConfig:
