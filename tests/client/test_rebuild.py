@@ -597,6 +597,8 @@ async def test_rebuild_full_with_accessible_source(temp_db_path):
             assert not isinstance(original, list)
             assert original.id is not None
             original_id = original.id
+            chunk_ids_before = await _chunk_ids(client, original_id)
+            assert chunk_ids_before
 
             processed_ids = [
                 doc_id
@@ -610,10 +612,13 @@ async def test_rebuild_full_with_accessible_source(temp_db_path):
             assert refreshed.uri == source_path.as_uri()
             assert "Fresh content" in refreshed.content
 
-            # The chunks table is recreated at the top of FULL, so the refresh
-            # must have written new chunks for the document to stay searchable.
-            chunks = await client.chunk_repository.get_by_document_id(original_id)
-            assert chunks
+            # The table keeps its rows through a same-dimension FULL, so the
+            # refresh has to replace the document's chunks, not add to them.
+            chunk_ids_after = await _chunk_ids(client, original_id)
+            assert chunk_ids_after
+            assert chunk_ids_after.isdisjoint(chunk_ids_before)
+            assert len(chunk_ids_after) == len(chunk_ids_before)
+            assert await client.store.chunks_table.count_rows() == len(chunk_ids_after)
 
 
 async def test_rebuild_title_only_reads_structural_title(temp_db_path):
@@ -2019,3 +2024,252 @@ async def test_rebuild_keeps_vector_index_opt_in(
         assert await _vector_indexes(client) == (
             ["vector_idx"] if had_vector_index else []
         )
+
+
+def _picture_document(name: str, sections: int = 0):
+    """A docling document with a picture, and `sections` headed paragraphs."""
+    from docling_core.types.doc.document import DoclingDocument, ImageRef
+    from docling_core.types.doc.labels import DocItemLabel
+    from PIL import Image as PilImageModule
+
+    doc = DoclingDocument(name=name)
+    doc.add_text(label=DocItemLabel.TEXT, text=f"document {name}")
+    for i in range(sections):
+        heading = doc.add_heading(text=f"{name} section {i}")
+        doc.add_text(label=DocItemLabel.TEXT, text=f"{name} body {i}", parent=heading)
+    doc.add_picture(
+        image=ImageRef.from_pil(PilImageModule.new("RGB", (8, 8), "red"), dpi=72)
+    )
+    return doc
+
+
+async def _import_picture_documents(
+    client: HaikuRAG, names: tuple[str, ...], *, sections: int = 0, chunks: int = 1
+) -> list[str]:
+    import random
+
+    from haiku.rag.store.models.chunk import Chunk
+
+    rng = random.Random(0)
+    dim = client.store.embedder.vector_dim
+    ids = []
+    for name in names:
+        document = await client.import_document(
+            _picture_document(name, sections),
+            [
+                Chunk(
+                    content=f"document {name} {i}",
+                    embedding=[rng.random() for _ in range(dim)],
+                    order=i,
+                )
+                for i in range(chunks)
+            ],
+            uri=f"test://{name}",
+        )
+        assert document.id is not None
+        ids.append(document.id)
+    return ids
+
+
+def _stub_embedder(monkeypatch, *, fail_on_call: int | None = None) -> None:
+    """Embed rebuilt chunks randomly; the `fail_on_call`th call raises."""
+    import random
+
+    from haiku.rag import embeddings as embeddings_module
+
+    rng = random.Random(1)
+    calls = 0
+
+    async def embed(chunks, embedder, config=None):
+        nonlocal calls
+        calls += 1
+        if calls == fail_on_call:
+            raise RuntimeError("embedder unavailable")
+        for chunk in chunks:
+            chunk.embedding = [rng.random() for _ in range(embedder.vector_dim)]
+        return chunks
+
+    monkeypatch.setattr(embeddings_module, "embed_chunks", embed)
+
+
+def _stub_picture_descriptions(monkeypatch) -> None:
+    async def fake_describe(image_bytes_by_ref, *, config):
+        return {ref: "A red square (mocked)." for ref in image_bytes_by_ref}
+
+    monkeypatch.setattr(
+        "haiku.rag.providers.picture_description.describe_pictures", fake_describe
+    )
+
+
+def _rebuild_config():
+    from haiku.rag.config import AppConfig
+
+    config = AppConfig()
+    config.storage.auto_vacuum = False
+    config.processing.pictures = "description"
+    return config
+
+
+async def _chunk_ids(client: HaikuRAG, document_id: str) -> set[str]:
+    chunks = await client.chunk_repository.get_by_document_id(document_id)
+    return {c.id for c in chunks if c.id is not None}
+
+
+async def _document_state(client: HaikuRAG, document_id: str):
+    """Everything a rebuild writes for a document, in comparable form."""
+    items = await client.document_item_repository.get_all_items(document_id)
+    structure = await client.document_repository.get_docling_data(document_id)
+    assert structure is not None
+    return (
+        await _chunk_ids(client, document_id),
+        [(i.position, i.self_ref, i.text) for i in items],
+        await client.document_item_repository.get_all_picture_data(document_id),
+        structure.docling_document,
+    )
+
+
+_CHUNK_REWRITING_MODES = [
+    RebuildMode.RECHUNK,
+    RebuildMode.DESCRIPTIONS,
+    RebuildMode.FULL,
+]
+
+
+@pytest.mark.parametrize("mode", _CHUNK_REWRITING_MODES, ids=lambda m: m.name)
+async def test_failed_rebuild_keeps_the_chunks_of_unprocessed_documents(
+    temp_db_path, monkeypatch, mode
+):
+    from haiku.rag.client import rebuild as rebuild_module
+
+    monkeypatch.setattr(rebuild_module, "_REBUILD_BATCH_SIZE", 1)
+    _stub_picture_descriptions(monkeypatch)
+    _stub_embedder(monkeypatch, fail_on_call=3)
+
+    async with HaikuRAG(temp_db_path, config=_rebuild_config(), create=True) as client:
+        ids = await _import_picture_documents(client, ("one", "two", "three"))
+        before = {i: await _chunk_ids(client, i) for i in ids}
+
+        with pytest.raises(RuntimeError, match="embedder unavailable"):
+            async for _ in client.rebuild_database(mode=mode):
+                pass
+
+        after = {i: await _chunk_ids(client, i) for i in ids}
+        assert all(after.values())
+        # Two documents were rewritten before the failure, one keeps what it had.
+        assert sorted(after[i] == before[i] for i in ids) == [False, False, True]
+        assert len(await client.search("document", search_type="fts")) == 3
+
+
+@pytest.mark.parametrize("mode", _CHUNK_REWRITING_MODES, ids=lambda m: m.name)
+async def test_rebuild_batch_that_fails_to_write_leaves_the_database_as_it_was(
+    temp_db_path, monkeypatch, mode
+):
+    from haiku.rag.store.repositories.document_item import DocumentItemRepository
+
+    _stub_picture_descriptions(monkeypatch)
+    _stub_embedder(monkeypatch)
+
+    async with HaikuRAG(temp_db_path, config=_rebuild_config(), create=True) as client:
+        ids = await _import_picture_documents(client, ("one", "two", "three"))
+        before = {i: await _document_state(client, i) for i in ids}
+
+        real = DocumentItemRepository.create_items
+        writes = 0
+
+        async def fail_on_second(self, document_id, items):
+            nonlocal writes
+            writes += 1
+            if writes == 2:
+                raise RuntimeError("disk full")
+            await real(self, document_id, items)
+
+        monkeypatch.setattr(DocumentItemRepository, "create_items", fail_on_second)
+
+        with pytest.raises(RuntimeError, match="disk full"):
+            async for _ in client.rebuild_database(mode=mode):
+                pass
+
+        assert writes == 2
+        assert {i: await _document_state(client, i) for i in ids} == before
+
+
+@pytest.mark.parametrize("mode", _CHUNK_REWRITING_MODES, ids=lambda m: m.name)
+async def test_closed_rebuild_has_written_the_documents_it_reported(
+    temp_db_path, monkeypatch, mode
+):
+    from haiku.rag.client import rebuild as rebuild_module
+
+    monkeypatch.setattr(rebuild_module, "_REBUILD_BATCH_SIZE", 1)
+    _stub_picture_descriptions(monkeypatch)
+    _stub_embedder(monkeypatch)
+
+    async with HaikuRAG(temp_db_path, config=_rebuild_config(), create=True) as client:
+        ids = await _import_picture_documents(client, ("one", "two", "three"))
+        before = {i: await _chunk_ids(client, i) for i in ids}
+
+        rebuild = client.rebuild_database(mode=mode)
+        reported = await anext(rebuild)
+        await rebuild.aclose()
+
+        for document_id in ids:
+            after = await _chunk_ids(client, document_id)
+            assert after
+            assert (after != before[document_id]) == (document_id == reported)
+
+
+@pytest.mark.parametrize("mode", _CHUNK_REWRITING_MODES, ids=lambda m: m.name)
+async def test_interrupted_rebuild_restores_the_vector_index_when_run_again(
+    temp_db_path, monkeypatch, mode
+):
+    """A rebuild that stops after its first batch keeps the vector index, and
+    the run that finishes it retrains it over every row."""
+    from haiku.rag.client import rebuild as rebuild_module
+
+    monkeypatch.setattr(rebuild_module, "_REBUILD_BATCH_SIZE", 1)
+    _stub_picture_descriptions(monkeypatch)
+    _stub_embedder(monkeypatch)
+
+    async with HaikuRAG(temp_db_path, config=_rebuild_config(), create=True) as client:
+        # Rechunking has to leave the 256 rows a vector index needs.
+        await _import_picture_documents(
+            client, ("one", "two"), sections=200, chunks=200
+        )
+        await client.store._ensure_vector_index()
+        assert await _vector_indexes(client) == ["vector_idx"]
+
+        rebuild = client.rebuild_database(mode=mode)
+        await anext(rebuild)
+        await rebuild.aclose()
+
+        assert await _vector_indexes(client) == ["vector_idx"]
+
+        async for _ in client.rebuild_database(mode=mode):
+            pass
+
+        assert await client.store.chunks_table.count_rows() >= 256
+        assert await _vector_indexes(client) == ["vector_idx"]
+        stats = await client.store.chunks_table.index_stats("vector_idx")
+        assert stats is not None
+        assert stats.num_unindexed_rows == 0
+
+
+@pytest.mark.parametrize("mode", _CHUNK_REWRITING_MODES, ids=lambda m: m.name)
+async def test_rebuild_to_another_vector_dimension_recreates_the_chunks(
+    temp_db_path, monkeypatch, mode
+):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await _import_documents(client, ("one", "two"))
+        assert client.store.embedder.vector_dim == 2560
+
+    config = _rebuild_config()
+    config.embeddings.model.vector_dim = 8
+    _stub_embedder(monkeypatch)
+    _stub_picture_descriptions(monkeypatch)
+
+    async with HaikuRAG(temp_db_path, config=config, skip_validation=True) as client:
+        rebuilt = [doc_id async for doc_id in client.rebuild_database(mode=mode)]
+
+        assert len(rebuilt) == 2
+        chunks = (await client.store.chunks_table.query().to_arrow()).to_pylist()
+        assert len(chunks) == 2
+        assert {len(chunk["vector"]) for chunk in chunks} == {8}

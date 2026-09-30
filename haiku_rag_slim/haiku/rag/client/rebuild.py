@@ -79,7 +79,13 @@ async def rebuild_database(
 ) -> AsyncGenerator[str, None]:
     """Rebuild the database with the specified mode.
 
-    Yields the ID of each document as it is processed.
+    Yields the ID of each document. FULL, RECHUNK and DESCRIPTIONS yield it
+    once its batch is written. When the vector dimension is unchanged they
+    replace the chunks of one batch at a time and leave the other documents'
+    as they were, so a run that fails or is cancelled rolls its batch back and
+    leaves every document with chunks. A process killed outright can leave the
+    batch it was writing without chunks until the rebuild is run again.
+    EMBED_ONLY still yields a document before writing it.
 
     Holds the store's rebuild lock for the whole run so tag operations fail
     fast instead of snapshotting a half-rebuilt database. The lock is held
@@ -111,17 +117,21 @@ async def _rebuild_locked(
     # phase 2 from the existing staging table instead of recopying.
     resume_from_staging = await _resolve_rebuild_recovery(session, mode)
 
-    # Wait for any already-scheduled background vacuum before the destructive
-    # table operations at the top of RECHUNK / FULL. Rebuild drops and
-    # recreates tables (and creates indices); a concurrent optimize on the
-    # same table fails with "CreateIndex transaction was preempted" from
-    # lance. Note: FULL calls create_document_from_source inside its loop,
-    # which may schedule *new* background vacuums — those run after the
-    # destructive phase and are fine.
+    # Wait for any already-scheduled background vacuum before the first table
+    # write. Rebuild rewrites rows, recreates tables and creates indices; a
+    # concurrent optimize on the same table fails with "CreateIndex
+    # transaction was preempted" from lance. Note: FULL calls
+    # create_document_from_source inside its loop, which may schedule *new*
+    # background vacuums — those run once the rebuild is under way and are fine.
     await session.drain_vacuum()
 
-    # Every mode but TITLE_ONLY recreates the chunks table, dropping its vector index.
+    # The chunks table is recreated only when the vector dimension changes, which
+    # drops its vector index. Otherwise it keeps its rows and index and the
+    # rebuild replaces them a batch at a time.
     had_vector_index = await _has_vector_index(session)
+    keeps_dimension = (
+        await _chunks_vector_dim(session) == session.store.embedder._vector_dim
+    )
 
     settings_repo = SettingsRepository(session.store)
     await settings_repo.save_current_settings()
@@ -139,18 +149,18 @@ async def _rebuild_locked(
         ):
             yield doc_id
     elif mode == RebuildMode.RECHUNK:
-        await session.chunk_repository.delete_all()
-        await session.store.recreate_embeddings_table()
+        if not keeps_dimension:
+            await session.store.recreate_embeddings_table()
         async for doc_id in _rebuild_rechunk(session, documents):
             yield doc_id
     elif mode == RebuildMode.DESCRIPTIONS:
-        await session.chunk_repository.delete_all()
-        await session.store.recreate_embeddings_table()
+        if not keeps_dimension:
+            await session.store.recreate_embeddings_table()
         async for doc_id in _rebuild_descriptions(session, documents):
             yield doc_id
     else:  # FULL
-        await session.chunk_repository.delete_all()
-        await session.store.recreate_embeddings_table()
+        if not keeps_dimension:
+            await session.store.recreate_embeddings_table()
         async for doc_id in _rebuild_full(session, documents):
             yield doc_id
 
@@ -248,6 +258,13 @@ async def _has_vector_index(session: SingleDatabaseSession) -> bool:
         "vector" in index.columns
         for index in await session.store.chunks_table.list_indices()
     )
+
+
+async def _chunks_vector_dim(session: SingleDatabaseSession) -> int:
+    """The width of the chunks table's vector column, which the settings can
+    disagree with after an interrupted rebuild."""
+    schema = await session.store.chunks_table.schema()
+    return schema.field("vector").type.list_size
 
 
 async def _resolve_rebuild_recovery(
@@ -512,8 +529,7 @@ async def _rebuild_embed_only(
         # Yield per-doc for progress reporting; the actual write batches up
         # to _REBUILD_BATCH_SIZE docs. If the process is interrupted between
         # yield and the next flush, the next rebuild resumes phase 2 from
-        # the staging table and redoes the batch (see _rebuild_rechunk for
-        # the original comment on the yield/flush gap).
+        # the staging table and redoes the batch.
         yield doc.id
 
         if len(yielded_docs) % _REBUILD_BATCH_SIZE == 0 and pending_records:
@@ -544,8 +560,14 @@ async def _flush_rebuild_batch(
 ) -> None:
     """Batch write documents and chunks during rebuild.
 
-    Writes only ``document_columns`` of each ``documents`` row, none when
-    empty. Also repopulates document items from the stored docling document.
+    Replaces the chunks of ``documents`` with ``chunks`` and writes only
+    ``document_columns`` of each ``documents`` row, none when empty. Also
+    repopulates document items from the stored docling document.
+
+    The batch is one write transaction: a failure restores every table to
+    what it held before, and the documents outside the batch are untouched.
+    Nothing in it may take the store's write lock again, so callers rebuild
+    indexes and yield only after it returns.
     """
     from haiku.rag.store.schema import DocumentMetaRecord
 
@@ -553,65 +575,72 @@ async def _flush_rebuild_batch(
         return
 
     now = datetime.now(UTC).isoformat()
+    document_ids = [doc.id for doc in documents if doc.id is not None]
 
-    if document_columns:
-        table = session.store.documents_table
-        schema = await table.schema()
-        columns = ("id", *document_columns)
-        rows = [{c: getattr(doc, c) for c in columns} for doc in documents]
-        source = pa.Table.from_pylist(
-            rows, schema=pa.schema([schema.field(c) for c in columns])
-        )
-        # Update-only: a partial source with an insert branch is rejected.
-        await table.merge_insert("id").when_matched_update_all().execute(source)
+    async with session.store.write_transaction():
+        await session.chunk_repository.delete_by_document_ids(document_ids)
 
-    meta_records = []
-    for doc in documents:
-        assert doc.id is not None
-        meta_records.append(
-            DocumentMetaRecord(
-                id=doc.id,
-                uri=doc.uri,
-                title=doc.title,
-                metadata=json.dumps(doc.metadata),
-                created_at=doc.created_at.isoformat() if doc.created_at else now,
-                updated_at=now,
+        if document_columns:
+            table = session.store.documents_table
+            schema = await table.schema()
+            columns = ("id", *document_columns)
+            rows = [{c: getattr(doc, c) for c in columns} for doc in documents]
+            source = pa.Table.from_pylist(
+                rows, schema=pa.schema([schema.field(c) for c in columns])
             )
+            # Update-only: a partial source with an insert branch is rejected.
+            await table.merge_insert("id").when_matched_update_all().execute(source)
+
+        meta_records = []
+        for doc in documents:
+            assert doc.id is not None
+            meta_records.append(
+                DocumentMetaRecord(
+                    id=doc.id,
+                    uri=doc.uri,
+                    title=doc.title,
+                    metadata=json.dumps(doc.metadata),
+                    created_at=doc.created_at.isoformat() if doc.created_at else now,
+                    updated_at=now,
+                )
+            )
+
+        await (
+            session.store.document_meta_table.merge_insert("id")
+            .when_matched_update_all()
+            .when_not_matched_insert_all()
+            .execute(meta_records)
         )
 
-    await (
-        session.store.document_meta_table.merge_insert("id")
-        .when_matched_update_all()
-        .when_not_matched_insert_all()
-        .execute(meta_records)
-    )
+        # Batch create all chunks (single LanceDB version)
+        if chunks:
+            await session.chunk_repository.create(chunks)
 
-    # Batch create all chunks (single LanceDB version)
-    if chunks:
-        await session.chunk_repository.create(chunks)
-
-    # Repopulate document items from stored docling data. The stored docling
-    # blob has had its picture URIs stripped (compress_docling_split), so
-    # re-extracting from it would lose picture_data — snapshot the existing
-    # bytes per document and merge them back.
-    # One add per document bounds lance's writer memory to one document's pictures.
-    items_repo = session.document_item_repository
-    replaced = [doc for doc in documents if doc.docling_document is not None]
-    existing_picture_data: dict[str, dict[str, bytes]] = {}
-    for doc in replaced:
-        assert doc.id is not None
-        existing_picture_data[doc.id] = await items_repo.get_all_picture_data(doc.id)
-    await items_repo.delete_by_document_ids(list(existing_picture_data))
-    for doc in replaced:
-        assert doc.id is not None
-        docling_doc = doc.get_docling_document()
-        assert docling_doc is not None
-        items = extract_items(
-            doc.id,
-            docling_doc,
-            existing_picture_data=existing_picture_data.pop(doc.id),
-        )
-        await items_repo.create_items(doc.id, items)
+        # Repopulate document items from stored docling data. The stored docling
+        # blob has had its picture URIs stripped (compress_docling_split), so
+        # re-extracting from it would lose picture_data — snapshot the existing
+        # bytes per document and merge them back.
+        # One add per document bounds lance's writer memory to one document's
+        # pictures.
+        items_repo = session.document_item_repository
+        replaced = [doc for doc in documents if doc.docling_document is not None]
+        existing_picture_data: dict[str, dict[str, bytes]] = {}
+        for doc in replaced:
+            assert doc.id is not None
+            existing_picture_data[doc.id] = await items_repo.get_all_picture_data(
+                doc.id
+            )
+        await items_repo.delete_by_document_ids(list(existing_picture_data))
+        for doc in replaced:
+            assert doc.id is not None
+            docling_doc = doc.get_docling_document()
+            assert docling_doc is not None
+            items = extract_items(
+                doc.id,
+                docling_doc,
+                existing_picture_data=existing_picture_data.pop(doc.id),
+            )
+            await items_repo.create_items(doc.id, items)
 
 
 async def _rebuild_rechunk(
@@ -654,17 +683,16 @@ async def _rebuild_rechunk(
 
         pending_chunks.extend(embedded_chunks)
         pending_docs.append(doc)
-        # Yield per-doc so progress reporting moves immediately. The actual
-        # write batches up to _REBUILD_BATCH_SIZE for throughput; if the
-        # process is interrupted between yield and flush, up to one
-        # batch's worth of trailing yields aren't persisted, which is
-        # consistent with the rebuild already being non-atomic.
-        yield doc.id
 
+        # Documents are reported once their batch is written, so an interrupted
+        # run has written every document it reported.
         if len(pending_docs) >= _REBUILD_BATCH_SIZE:
             await _flush_rebuild_batch(
                 session, pending_docs, pending_chunks, document_columns=()
             )
+            for written in pending_docs:
+                assert written.id is not None
+                yield written.id
             pending_chunks = []
             pending_docs = []
 
@@ -672,6 +700,9 @@ async def _rebuild_rechunk(
         await _flush_rebuild_batch(
             session, pending_docs, pending_chunks, document_columns=()
         )
+        for written in pending_docs:
+            assert written.id is not None
+            yield written.id
 
 
 def _apply_descriptions_sync(
@@ -806,7 +837,6 @@ async def _rebuild_descriptions(
 
         pending_chunks.extend(embedded_chunks)
         pending_docs.append(doc)
-        yield doc.id
 
         if len(pending_docs) >= _REBUILD_BATCH_SIZE:
             await _flush_rebuild_batch(
@@ -815,6 +845,9 @@ async def _rebuild_descriptions(
                 pending_chunks,
                 document_columns=_DESCRIPTION_COLUMNS,
             )
+            for written in pending_docs:
+                assert written.id is not None
+                yield written.id
             pending_chunks = []
             pending_docs = []
 
@@ -822,6 +855,9 @@ async def _rebuild_descriptions(
         await _flush_rebuild_batch(
             session, pending_docs, pending_chunks, document_columns=_DESCRIPTION_COLUMNS
         )
+        for written in pending_docs:
+            assert written.id is not None
+            yield written.id
 
     logger.info(
         "rebuild --descriptions: %d new picture descriptions added across %d documents",
@@ -848,7 +884,8 @@ async def _rebuild_full(
         # directly, no need to load the stored content/blobs first.
         if light_doc.uri and check_source_accessible(light_doc.uri):
             # The refresh writes through the database, not the batch buffer, so
-            # anything pending has to land first.
+            # anything pending has to land first. Its transaction is over by
+            # the time the refresh takes the same lock.
             if pending_docs:
                 await _flush_rebuild_batch(
                     session,
@@ -856,6 +893,9 @@ async def _rebuild_full(
                     pending_chunks,
                     document_columns=_FULL_FALLBACK_COLUMNS,
                 )
+                for written in pending_docs:
+                    assert written.id is not None
+                    yield written.id
                 pending_chunks = []
                 pending_docs = []
 
@@ -903,7 +943,6 @@ async def _rebuild_full(
 
         pending_chunks.extend(embedded_chunks)
         pending_docs.append(doc)
-        yield doc.id
 
         if len(pending_docs) >= _REBUILD_BATCH_SIZE:
             await _flush_rebuild_batch(
@@ -912,6 +951,9 @@ async def _rebuild_full(
                 pending_chunks,
                 document_columns=_FULL_FALLBACK_COLUMNS,
             )
+            for written in pending_docs:
+                assert written.id is not None
+                yield written.id
             pending_chunks = []
             pending_docs = []
 
@@ -922,3 +964,6 @@ async def _rebuild_full(
             pending_chunks,
             document_columns=_FULL_FALLBACK_COLUMNS,
         )
+        for written in pending_docs:
+            assert written.id is not None
+            yield written.id

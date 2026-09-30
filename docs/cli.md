@@ -198,6 +198,8 @@ haiku-rag rebuild [--rechunk | --embed-only | --title-only | --descriptions | --
 
 Every mode except `--title-only` and `--set-embedder` ends by rebuilding the full-text and scalar indexes, whatever `storage.auto_vacuum` says. A full rebuild, `--rechunk`, `--embed-only` and `--descriptions` also retrain the vector index if the database had one. `--reindex` rebuilds the full-text and scalar indexes from scratch and nothing else: it rewrites no rows and leaves the vector index alone.
 
+A full rebuild, `--rechunk` and `--descriptions` replace the chunks of 50 documents at a time, each batch in one transaction, and leave the other documents' chunks as they were. A run that fails or is cancelled rolls its batch back and keeps every document searchable and the vector index in place. Run it again to finish. A process killed outright, by SIGKILL or the out-of-memory killer, can leave the batch it was writing without chunks until you run the rebuild again. When the vector dimension changed, they drop the chunks table before processing any document, so an interrupted run leaves the documents it did not reach without chunks.
+
 `--set-embedder` records the configured embedding provider and name without re-embedding, and is rejected when the vector dimension changed.
 
 `--descriptions` runs `processing.conversion_options.picture_description.model` over the picture bytes already stored, writes each description into the stored docling document, then re-chunks and re-embeds. It needs `processing.pictures: description`, skips docling conversion, and skips pictures that already have a description, so it is safe to re-run.

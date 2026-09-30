@@ -1,5 +1,6 @@
 import json
 import logging
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -236,6 +237,14 @@ class ChunkRepository:
         )
         await ensure_indexes(self.store.chunks_table, "chunks")
         return True
+
+    async def delete_by_document_ids(self, document_ids: Sequence[str]) -> None:
+        """Delete all chunks of these documents in one table version."""
+        if not document_ids:
+            return
+        self.store._assert_writable()
+        ids = ", ".join(f"'{escape_sql_string(i)}'" for i in document_ids)
+        await self.store.chunks_table.delete(f"document_id IN ({ids})")
 
     async def search(
         self,

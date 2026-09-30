@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- A full `rebuild`, `--rechunk` and `--descriptions` report a document after its batch is written, so `rebuild` progress moves once per batch of 50 documents. `--embed-only` still reports each document before writing it. `ChunkRepository.delete_by_document_ids` deletes the chunks of several documents in one version.
+
+### Fixed
+
+- A failed or cancelled full `rebuild`, `--rechunk` or `--descriptions` left the documents it had not reached without chunks (#670). Unless the vector dimension changes they now keep their chunks: each batch of 50 documents is replaced in one transaction and a failed batch rolls back. The vector index survives an interrupted rebuild, and the run that finishes it retrains it. A process killed outright can still leave the batch it was writing without chunks until the rebuild is run again. A rebuild that changes `vector_dim` still drops the chunks table first.
+
 ### Security
 
 - Bumped dependencies to patched versions for known advisories: `pyjwt` 2.15.1 in `uv.lock`, `ip-address` 10.7.2 and `fast-uri` 3.1.8 in `app/frontend/pnpm-lock.yaml`.
