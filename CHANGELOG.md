@@ -14,6 +14,9 @@
 - `doctor`'s `fts_index_coverage` warns when some rows are outside the full-text
   index, and names `rebuild --reindex` for a missing index instead of
   `rebuild --embed-only`.
+- Existing databases need `haiku-rag migrate`. It rebuilds a full-text index in
+  lance's v1 format as v2 without rewriting rows, and on a database already on v2
+  writes only the stored version.
 - `rebuild --rechunk`, `--descriptions` and `rebuild` delete `document_items` once per
   batch of 50 documents instead of per document, and `--title-only` writes
   `document_meta` once per batch.

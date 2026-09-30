@@ -105,6 +105,9 @@ from haiku.rag.store.upgrades.v0_75_0 import (
 from haiku.rag.store.upgrades.v0_89_0 import (
     upgrade_record_embedder_only as upgrade_0_89_0_record_embedder_only,
 )
+from haiku.rag.store.upgrades.v0_91_0 import (
+    upgrade_fts_format_v2 as upgrade_0_91_0_fts_format_v2,
+)
 
 upgrades.append(upgrade_0_20_0_docling)
 upgrades.append(upgrade_0_23_1_contextualize)
@@ -118,3 +121,4 @@ upgrades.append(upgrade_0_58_0_split_document_meta)
 upgrades.append(upgrade_0_64_0_rename_document_meta_id)
 upgrades.append(upgrade_0_75_0_index_hot_lookup_keys)
 upgrades.append(upgrade_0_89_0_record_embedder_only)
+upgrades.append(upgrade_0_91_0_fts_format_v2)
