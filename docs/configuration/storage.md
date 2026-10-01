@@ -24,9 +24,13 @@ release that needs it says so in the [changelog](../changelog.md).
 dimension the database was created with. Changing `embeddings.model.vector_dim`
 raises `ConfigMismatchError` on open, because stored vectors cannot be compared
 against new ones. Changing the provider or model name while keeping the dimension
-warns on a read-only open and raises on a writable one. `haiku-rag rebuild
---set-embedder` adopts the new identity without re-embedding, and `haiku-rag
-rebuild --embed-only` re-embeds against the new model.
+warns on a read-only open and raises on a writable one, and so does a full
+rebuild, `--rechunk` or `--descriptions` to another embedder at the same
+dimension that was interrupted. `haiku-rag rebuild --embed-only` re-embeds with
+the configured model, and running an interrupted rebuild again finishes it.
+`haiku-rag rebuild --set-embedder` records the configured identity without
+re-embedding: use it only for an embedder that produces the same vectors as the
+recorded one, such as the same model served by another stack.
 
 **The database records only its version and embedder.** The `settings` table
 holds the haiku.rag version that last wrote or migrated the database, and the
