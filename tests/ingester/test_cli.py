@@ -607,27 +607,34 @@ class TestPlacingTheIngesterDatabase:
         assert exit_info.value.code == 1
 
 
-@pytest.mark.parametrize(
-    "args, inherits",
-    [
-        (["run-batch"], True),
-        (["queue", "init"], True),
-        (["queue", "migrate"], True),
-        (["serve"], False),
-    ],
-)
-def test_only_one_shot_commands_inherit_trace_context(monkeypatch, args, inherits):
-    """run-batch joins the parent trace passed in TRACEPARENT; the
-    long-running serve never does."""
-    calls: list[dict] = []
-    monkeypatch.setattr(
-        "haiku.rag.telemetry.configure", lambda **kwargs: calls.append(kwargs)
-    )
-    monkeypatch.setattr("haiku.rag.ingester.cli.configure_cli_logging", lambda: None)
+TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
 
-    # `--help` on the subcommand runs the group callback, then exits before
-    # the command body.
-    result = runner.invoke(cli, [*args, "--help"])
 
-    assert result.exit_code == 0, result.output
-    assert [c["inherit_trace_context"] for c in calls] == [inherits]
+def _current_trace() -> tuple[str, str]:
+    from opentelemetry import trace
+
+    span_context = trace.get_current_span().get_span_context()
+    return format(span_context.trace_id, "032x"), span_context.trace_state.to_header()
+
+
+@pytest.mark.parametrize("command, joins", [("run-batch", True), ("serve", False)])
+def test_one_shot_commands_join_the_traceparent_trace(monkeypatch, command, joins):
+    seen: list[tuple[str, str]] = []
+
+    async def record(*_, **__):
+        seen.append(_current_trace())
+        return BatchReport()
+
+    fake = MagicMock(run_batch=record, serve=record)
+    monkeypatch.setattr("haiku.rag.ingester.app.IngesterApp", lambda **_: fake)
+    monkeypatch.setenv("TRACEPARENT", TRACEPARENT)
+    monkeypatch.setenv("TRACESTATE", "vendor=value")
+    monkeypatch.setenv("LOGFIRE_DISTRIBUTED_TRACING", "false")
+
+    runner.invoke(cli, [command, "--db", "x.lancedb"])
+
+    if joins:
+        assert seen == [("4bf92f3577b34da6a3ce929d0e0e4736", "vendor=value")]
+    else:
+        assert seen == [("0" * 32, "")]
+    assert _current_trace() == ("0" * 32, "")

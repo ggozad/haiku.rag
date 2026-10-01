@@ -202,28 +202,6 @@ def set_mock_api_keys(monkeypatch):
         monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
 
 
-@pytest.fixture(autouse=True)
-def isolate_env_trace_context(monkeypatch):
-    """Keep a parent trace context from leaking between tests.
-
-    One-shot CLI commands attach the context in `TRACEPARENT` for the life of
-    the process, and Logfire's pytest plugin can write that variable. Clear
-    it, and afterwards detach whatever a test attached, so one test's context
-    never becomes the parent of every later span on the same worker.
-    """
-    from opentelemetry import context as otel_context
-
-    from haiku.rag import telemetry
-
-    monkeypatch.delenv("TRACEPARENT", raising=False)
-    monkeypatch.delenv("TRACESTATE", raising=False)
-    yield
-    token = telemetry._env_context_token
-    if token is not None:
-        telemetry._env_context_token = None
-        otel_context.detach(token)
-
-
 def pytest_recording_configure(config: Any, vcr: "VCR"):
     from . import json_body_serializer
 

@@ -134,9 +134,6 @@ def version_callback(value: bool):
         raise typer.Exit()
 
 
-# Commands that run until stopped. They never join a parent trace passed in
-# TRACEPARENT: every span of their lifetime would land in one trace that
-# never ends.
 _LONG_RUNNING = frozenset({"mcp", "chat", "inspect"})
 
 
@@ -180,14 +177,15 @@ def main(
 
     configure_cli_logging()
 
+    from haiku.rag.telemetry import attach_env_context
     from haiku.rag.telemetry import configure as configure_telemetry
 
     is_production = get_config().environment != "development"
     configure_telemetry(
-        service_name="haiku-rag",
-        console=False if is_production else None,
-        inherit_trace_context=ctx.invoked_subcommand not in _LONG_RUNNING,
+        service_name="haiku-rag", console=False if is_production else None
     )
+    if ctx.invoked_subcommand not in _LONG_RUNNING:
+        ctx.with_resource(attach_env_context())
 
     if get_config().environment != "development":
         # Suppress warnings in production

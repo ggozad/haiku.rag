@@ -1212,34 +1212,36 @@ def test_inspect_reports_a_missing_tui_extra(monkeypatch):
     assert "haiku.rag-slim[tui]" in result.output
 
 
-@pytest.mark.parametrize(
-    "command, inherits",
-    [
-        ("migrate", True),
-        ("vacuum", True),
-        ("rebuild", True),
-        ("add-src", True),
-        ("mcp", False),
-        ("chat", False),
-        ("inspect", False),
-    ],
-)
-def test_only_one_shot_commands_inherit_trace_context(monkeypatch, command, inherits):
-    """A parent trace in TRACEPARENT is joined by commands that run once and
-    exit; a long-running one would put its whole lifetime into one trace."""
-    calls: list[dict] = []
-    monkeypatch.setattr(
-        "haiku.rag.telemetry.configure", lambda **kwargs: calls.append(kwargs)
-    )
+TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
 
-    async def _no_version_check():
-        return None
 
-    monkeypatch.setattr("haiku.rag.cli.check_version", _no_version_check)
+def _current_trace() -> tuple[str, str]:
+    from opentelemetry import trace
 
-    # `--help` on the subcommand runs the group callback, then exits before
-    # the command body.
-    result = runner.invoke(cli, [command, "--help"])
+    span_context = trace.get_current_span().get_span_context()
+    return format(span_context.trace_id, "032x"), span_context.trace_state.to_header()
+
+
+@pytest.mark.parametrize("command, joins", [("vacuum", True), ("mcp", False)])
+def test_one_shot_commands_join_the_traceparent_trace(
+    app_stub, monkeypatch, command, joins
+):
+    seen: list[tuple[str, str]] = []
+
+    async def record(*_, **__):
+        seen.append(_current_trace())
+
+    app_stub.vacuum = record
+    app_stub.run_mcp = record
+    monkeypatch.setenv("TRACEPARENT", TRACEPARENT)
+    monkeypatch.setenv("TRACESTATE", "vendor=value")
+    monkeypatch.setenv("LOGFIRE_DISTRIBUTED_TRACING", "false")
+
+    result = runner.invoke(cli, [command] + DB_ARGS)
 
     assert result.exit_code == 0, result.output
-    assert [c["inherit_trace_context"] for c in calls] == [inherits]
+    if joins:
+        assert seen == [("4bf92f3577b34da6a3ce929d0e0e4736", "vendor=value")]
+    else:
+        assert seen == [("0" * 32, "")]
+    assert _current_trace() == ("0" * 32, "")
