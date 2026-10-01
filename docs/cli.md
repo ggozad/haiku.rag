@@ -127,7 +127,7 @@ Shows the database path, the stored haiku.rag version, the embedding provider, m
 haiku-rag doctor [--db /path/to/your.lancedb] [--duplicates-out groups.yaml]
 ```
 
-Checks the database and prints a pass, warn or fail report. It makes no changes, prints the command that fixes each failure (`rebuild`, `create-index`, `vacuum`, `migrate`, `rebuild --set-embedder`, `rebuild --reindex`), and exits 1 when any check fails or the database is missing. The checks:
+Checks the database and prints a pass, warn or fail report. It makes no changes, prints the command that fixes each failure (`rebuild`, `create-index`, `vacuum`, `migrate`, `rebuild --embed-only`, `rebuild --reindex`), and exits 1 when any check fails or the database is missing. The checks:
 
 - required tables are present, and `documents` and `document_meta` correspond one to one
 - chunks and document items reference documents that exist

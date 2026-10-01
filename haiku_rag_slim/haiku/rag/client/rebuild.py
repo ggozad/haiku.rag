@@ -90,8 +90,7 @@ async def rebuild_database(
     from haiku.rag.client import RebuildMode
 
     async with session.store._rebuild_lock:
-        # Every mode writes, and the embed-only staging copy is written before
-        # anything else would check.
+        # Every mode writes.
         session.store._assert_writable()
         if mode == RebuildMode.SET_EMBEDDER:
             await _set_embedder(session)
@@ -268,8 +267,7 @@ async def _recreate_chunks_table(session: SingleDatabaseSession) -> None:
     """Recreate the chunks table empty at the configured vector dimension.
 
     No vector of the old embedder is left, so the settings record the
-    configured one right away. Recording it only at the end would leave them
-    describing vectors the table no longer has.
+    configured one right away.
     """
     await session.store.recreate_embeddings_table()
     await SettingsRepository(session.store).save_current_settings()

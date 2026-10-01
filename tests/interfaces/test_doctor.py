@@ -1326,3 +1326,19 @@ def test_api_key_required_for_openrouter():
         _check_api_keys(config, {"OPENROUTER_API_KEY": "sk-or-x"}).severity
         is Severity.OK
     )
+
+
+async def test_embedding_drift_advises_re_embedding_not_adopting(temp_db_path):
+    """Drift can be an interrupted rebuild, whose table holds vectors of both
+    embedders, so adopting the configured one is advice only for an embedder
+    that produces the same vectors."""
+    await _build_db(temp_db_path, name="test")
+    report = await run_doctor(_config(name="different"), temp_db_path, {})
+    remediation = _result(report, "embedding_drift").remediation
+    assert remediation is not None
+    assert "'haiku-rag rebuild --embed-only'" in remediation
+    assert "interrupted rebuild again" in remediation
+    assert (
+        "'haiku-rag rebuild --set-embedder' only for an embedder that produces "
+        "the same vectors" in remediation
+    )
