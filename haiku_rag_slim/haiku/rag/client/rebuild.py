@@ -22,7 +22,7 @@ from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import extract_items
 from haiku.rag.store.repositories.settings import SettingsRepository
-from haiku.rag.store.schema import ChunkRecordBase, ensure_indexes
+from haiku.rag.store.schema import ChunkRecordBase, create_chunk_model, ensure_indexes
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
@@ -79,13 +79,8 @@ async def rebuild_database(
 ) -> AsyncGenerator[str, None]:
     """Rebuild the database with the specified mode.
 
-    Yields the ID of each document. FULL, RECHUNK and DESCRIPTIONS yield it
-    once its batch is written. When the vector dimension is unchanged they
-    replace the chunks of one batch at a time and leave the other documents'
-    as they were, so a run that fails or is cancelled rolls its batch back and
-    leaves every document with chunks. A process killed outright can leave the
-    batch it was writing without chunks until the rebuild is run again.
-    EMBED_ONLY still yields a document before writing it.
+    Yields the ID of each document: FULL, RECHUNK and DESCRIPTIONS once its
+    batch is written, EMBED_ONLY before writing it.
 
     Holds the store's rebuild lock for the whole run so tag operations fail
     fast instead of snapshotting a half-rebuilt database. The lock is held
@@ -95,6 +90,9 @@ async def rebuild_database(
     from haiku.rag.client import RebuildMode
 
     async with session.store._rebuild_lock:
+        # Every mode writes, and the embed-only staging copy is written before
+        # anything else would check.
+        session.store._assert_writable()
         if mode == RebuildMode.SET_EMBEDDER:
             await _set_embedder(session)
             return
@@ -129,12 +127,13 @@ async def _rebuild_locked(
     # drops its vector index. Otherwise it keeps its rows and index and the
     # rebuild replaces them a batch at a time.
     had_vector_index = await _has_vector_index(session)
-    keeps_dimension = (
-        await _chunks_vector_dim(session) == session.store.embedder._vector_dim
-    )
-
-    settings_repo = SettingsRepository(session.store)
-    await settings_repo.save_current_settings()
+    table_dim = await _chunks_vector_dim(session)
+    keeps_dimension = table_dim == session.store.embedder.vector_dim
+    if keeps_dimension:
+        # A run stopped between recreating the table at a new dimension and
+        # recording it leaves the old one recorded, and the chunk model it
+        # opens with is of that width.
+        session.store.ChunkRecord = create_chunk_model(table_dim)
 
     # Light listing — id/uri/title/metadata only. Each rebuild function
     # fetches content and blobs one document at a time.
@@ -150,21 +149,26 @@ async def _rebuild_locked(
             yield doc_id
     elif mode == RebuildMode.RECHUNK:
         if not keeps_dimension:
-            await session.store.recreate_embeddings_table()
+            await _recreate_chunks_table(session)
         async for doc_id in _rebuild_rechunk(session, documents):
             yield doc_id
     elif mode == RebuildMode.DESCRIPTIONS:
         if not keeps_dimension:
-            await session.store.recreate_embeddings_table()
+            await _recreate_chunks_table(session)
         async for doc_id in _rebuild_descriptions(session, documents):
             yield doc_id
     else:  # FULL
         if not keeps_dimension:
-            await session.store.recreate_embeddings_table()
+            await _recreate_chunks_table(session)
         async for doc_id in _rebuild_full(session, documents):
             yield doc_id
 
     if mode != RebuildMode.TITLE_ONLY:
+        # The settings record the embedder whose vectors the chunks table
+        # holds. A table the rebuild kept has the old embedder's vectors until
+        # the loop ends, so an interrupted run keeps it recorded and a writable
+        # open refuses the mix. TITLE_ONLY writes no vectors and records nothing.
+        await SettingsRepository(session.store).save_current_settings()
         await session.store.rebuild_indexes()
         if had_vector_index:
             await session.store._ensure_vector_index()
@@ -258,6 +262,17 @@ async def _has_vector_index(session: SingleDatabaseSession) -> bool:
         "vector" in index.columns
         for index in await session.store.chunks_table.list_indices()
     )
+
+
+async def _recreate_chunks_table(session: SingleDatabaseSession) -> None:
+    """Recreate the chunks table empty at the configured vector dimension.
+
+    No vector of the old embedder is left, so the settings record the
+    configured one right away. Recording it only at the end would leave them
+    describing vectors the table no longer has.
+    """
+    await session.store.recreate_embeddings_table()
+    await SettingsRepository(session.store).save_current_settings()
 
 
 async def _chunks_vector_dim(session: SingleDatabaseSession) -> int:
@@ -469,7 +484,7 @@ async def _rebuild_embed_only(
     # Recreate the chunks table fresh (idempotent; handles vector-dim
     # changes and discards any partial new chunks from a prior crashed
     # phase 2).
-    await session.store.recreate_embeddings_table()
+    await _recreate_chunks_table(session)
 
     staging_table = await db.open_table(_STAGING_TABLE_NAME)
 

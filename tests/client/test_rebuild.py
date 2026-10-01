@@ -2273,3 +2273,235 @@ async def test_rebuild_to_another_vector_dimension_recreates_the_chunks(
         chunks = (await client.store.chunks_table.query().to_arrow()).to_pylist()
         assert len(chunks) == 2
         assert {len(chunk["vector"]) for chunk in chunks} == {8}
+
+
+# --- the settings record the embedder once the chunks are its own (#673) ---
+
+_RECORDING_MODES = [*_CHUNK_REWRITING_MODES, RebuildMode.EMBED_ONLY]
+
+
+def _other_embedder_config(*, vector_dim: int | None = None):
+    config = _rebuild_config()
+    config.embeddings.model.name = "another-embedder"
+    if vector_dim is not None:
+        config.embeddings.model.vector_dim = vector_dim
+    return config
+
+
+async def _recorded_model(temp_db_path) -> dict:
+    from haiku.rag.store.repositories.settings import SettingsRepository
+
+    async with HaikuRAG(
+        temp_db_path, config=_rebuild_config(), skip_validation=True, read_only=True
+    ) as client:
+        settings = await SettingsRepository(client.store).get_current_settings()
+    return settings["embeddings"]["model"]
+
+
+async def _interrupt_after_first_document(temp_db_path, config, mode) -> None:
+    async with HaikuRAG(temp_db_path, config=config, skip_validation=True) as client:
+        rebuild = client.rebuild_database(mode=mode)
+        await anext(rebuild)
+        await rebuild.aclose()
+
+
+@pytest.mark.parametrize("mode", _CHUNK_REWRITING_MODES, ids=lambda m: m.name)
+async def test_interrupted_rebuild_to_another_embedder_keeps_the_old_one_recorded(
+    temp_db_path, monkeypatch, mode
+):
+    """The documents it did not reach keep the old embedder's vectors, so the
+    database still records it: a writable open refuses the new embedder, a
+    read-only open warns, and running the rebuild again finishes it."""
+    from haiku.rag.client import rebuild as rebuild_module
+    from haiku.rag.store.exceptions import ConfigMismatchError
+
+    monkeypatch.setattr(rebuild_module, "_REBUILD_BATCH_SIZE", 1)
+    _stub_embedder(monkeypatch)
+    _stub_picture_descriptions(monkeypatch)
+    async with HaikuRAG(temp_db_path, config=_rebuild_config(), create=True) as client:
+        ids = await _import_picture_documents(client, ("one", "two", "three"))
+        old_name = _rebuild_config().embeddings.model.name
+
+    config = _other_embedder_config()
+    await _interrupt_after_first_document(temp_db_path, config, mode)
+
+    assert (await _recorded_model(temp_db_path))["name"] == old_name
+    with pytest.raises(ConfigMismatchError):
+        async with HaikuRAG(temp_db_path, config=config):
+            pass
+    async with HaikuRAG(temp_db_path, config=config, read_only=True):
+        pass
+
+    async with HaikuRAG(temp_db_path, config=config, skip_validation=True) as client:
+        async for _ in client.rebuild_database(mode=mode):
+            pass
+
+    assert (await _recorded_model(temp_db_path))["name"] == "another-embedder"
+    async with HaikuRAG(temp_db_path, config=config) as client:
+        for document_id in ids:
+            assert await _chunk_ids(client, document_id)
+
+
+async def test_interrupted_embed_only_to_another_embedder_records_the_new_one(
+    temp_db_path, monkeypatch
+):
+    """Embed-only empties the table before writing, so no vector of the old
+    embedder is left for the settings to describe."""
+    from haiku.rag.client import rebuild as rebuild_module
+
+    monkeypatch.setattr(rebuild_module, "_REBUILD_BATCH_SIZE", 1)
+    _stub_embedder(monkeypatch)
+    async with HaikuRAG(temp_db_path, config=_rebuild_config(), create=True) as client:
+        ids = await _import_picture_documents(client, ("one", "two", "three"))
+
+    config = _other_embedder_config()
+    await _interrupt_after_first_document(temp_db_path, config, RebuildMode.EMBED_ONLY)
+
+    assert (await _recorded_model(temp_db_path))["name"] == "another-embedder"
+    async with HaikuRAG(temp_db_path, config=config) as client:
+        async for _ in client.rebuild_database(mode=RebuildMode.EMBED_ONLY):
+            pass
+        for document_id in ids:
+            assert await _chunk_ids(client, document_id)
+
+
+@pytest.mark.parametrize("mode", _RECORDING_MODES, ids=lambda m: m.name)
+async def test_interrupted_dimension_change_is_finished_by_running_it_again(
+    temp_db_path, monkeypatch, mode
+):
+    """The recreated table has the new dimension and so do the settings: the
+    old configuration is refused, writable or read-only, the new one opens,
+    and the rerun writes the documents the first run did not reach."""
+    from haiku.rag.client import rebuild as rebuild_module
+    from haiku.rag.store.exceptions import ConfigMismatchError
+
+    monkeypatch.setattr(rebuild_module, "_REBUILD_BATCH_SIZE", 1)
+    _stub_embedder(monkeypatch)
+    _stub_picture_descriptions(monkeypatch)
+    async with HaikuRAG(temp_db_path, config=_rebuild_config(), create=True) as client:
+        ids = await _import_picture_documents(client, ("one", "two", "three"))
+
+    config = _other_embedder_config(vector_dim=8)
+    await _interrupt_after_first_document(temp_db_path, config, mode)
+
+    assert (await _recorded_model(temp_db_path))["vector_dim"] == 8
+    for read_only in (False, True):
+        with pytest.raises(ConfigMismatchError):
+            async with HaikuRAG(
+                temp_db_path, config=_rebuild_config(), read_only=read_only
+            ):
+                pass
+    async with HaikuRAG(temp_db_path, config=config):
+        pass
+
+    async with HaikuRAG(temp_db_path, config=config, skip_validation=True) as client:
+        async for _ in client.rebuild_database(mode=mode):
+            pass
+
+    assert (await _recorded_model(temp_db_path))["vector_dim"] == 8
+    async with HaikuRAG(temp_db_path, config=config) as client:
+        for document_id in ids:
+            assert await _chunk_ids(client, document_id)
+        rows = (await client.store.chunks_table.query().to_arrow()).to_pylist()
+        assert {len(row["vector"]) for row in rows} == {8}
+
+
+@pytest.mark.parametrize("mode", _CHUNK_REWRITING_MODES, ids=lambda m: m.name)
+async def test_rebuild_stopped_before_recording_the_new_dimension_finishes(
+    temp_db_path, monkeypatch, mode
+):
+    """The table already has the new dimension and the settings still the old
+    one, so the rerun opens with a chunk model of the old width."""
+    from haiku.rag.client import rebuild as rebuild_module
+
+    _stub_embedder(monkeypatch)
+    _stub_picture_descriptions(monkeypatch)
+    async with HaikuRAG(temp_db_path, config=_rebuild_config(), create=True) as client:
+        ids = await _import_picture_documents(client, ("one", "two"))
+        old_dim = _rebuild_config().embeddings.model.vector_dim
+
+    async def stopped_before_recording(session):
+        await session.store.recreate_embeddings_table()
+        raise RuntimeError("stopped")
+
+    config = _other_embedder_config(vector_dim=8)
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            rebuild_module, "_recreate_chunks_table", stopped_before_recording
+        )
+        async with HaikuRAG(
+            temp_db_path, config=config, skip_validation=True
+        ) as client:
+            with pytest.raises(RuntimeError, match="stopped"):
+                async for _ in client.rebuild_database(mode=mode):
+                    pass
+    assert (await _recorded_model(temp_db_path))["vector_dim"] == old_dim
+
+    async with HaikuRAG(temp_db_path, config=config, skip_validation=True) as client:
+        async for _ in client.rebuild_database(mode=mode):
+            pass
+
+    assert (await _recorded_model(temp_db_path))["vector_dim"] == 8
+    async with HaikuRAG(temp_db_path, config=config) as client:
+        for document_id in ids:
+            assert await _chunk_ids(client, document_id)
+
+
+async def test_title_only_leaves_the_recorded_embedder_alone(temp_db_path, monkeypatch):
+    """It writes no vectors, so the ones in the table are still the old
+    embedder's."""
+
+    async def fake_generate_title(config, doc):
+        return "A title"
+
+    monkeypatch.setattr("haiku.rag.client.rebuild.generate_title", fake_generate_title)
+    async with HaikuRAG(temp_db_path, config=_rebuild_config(), create=True) as client:
+        await _import_documents(client, ("one",))
+        old_model = dict(await _recorded_model_of(client))
+
+    async with HaikuRAG(
+        temp_db_path, config=_other_embedder_config(), skip_validation=True
+    ) as client:
+        async for _ in client.rebuild_database(mode=RebuildMode.TITLE_ONLY):
+            pass
+
+    assert await _recorded_model(temp_db_path) == old_model
+
+
+async def _recorded_model_of(client: HaikuRAG) -> dict:
+    from haiku.rag.store.repositories.settings import SettingsRepository
+
+    settings = await SettingsRepository(client.store).get_current_settings()
+    return settings["embeddings"]["model"]
+
+
+@pytest.mark.parametrize(
+    "mode", [*_RECORDING_MODES, RebuildMode.TITLE_ONLY], ids=lambda m: m.name
+)
+async def test_read_only_rebuild_writes_nothing(temp_db_path, monkeypatch, mode):
+    from haiku.rag.store.exceptions import ReadOnlyError
+
+    _stub_embedder(monkeypatch)
+    _stub_picture_descriptions(monkeypatch)
+    async with HaikuRAG(temp_db_path, config=_rebuild_config(), create=True) as client:
+        await _import_picture_documents(client, ("one", "two"))
+
+    async def versions() -> dict[str, int]:
+        async with HaikuRAG(
+            temp_db_path, config=_rebuild_config(), read_only=True
+        ) as client:
+            tables = (await client.store.db.list_tables()).tables
+            return {
+                name: await (await client.store.db.open_table(name)).version()
+                for name in tables
+            }
+
+    before = await versions()
+    async with HaikuRAG(
+        temp_db_path, config=_rebuild_config(), read_only=True
+    ) as client:
+        with pytest.raises(ReadOnlyError):
+            async for _ in client.rebuild_database(mode=mode):
+                pass
+
+    assert await versions() == before

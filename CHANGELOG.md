@@ -4,11 +4,12 @@
 
 ### Changed
 
-- A full `rebuild`, `--rechunk` and `--descriptions` report a document after its batch is written, so `rebuild` progress moves once per batch of 50 documents. `--embed-only` still reports each document before writing it. `ChunkRepository.delete_by_document_ids` deletes the chunks of several documents in one version.
+- A full `rebuild`, `--rechunk` and `--descriptions` report a document after its batch of 50 is written.
+- A full `rebuild`, `--rechunk` and `--descriptions` at an unchanged vector dimension record the configured embedder once they have finished, and `--title-only` does not record it.
 
 ### Fixed
 
-- A failed or cancelled full `rebuild`, `--rechunk` or `--descriptions` left the documents it had not reached without chunks (#670). Unless the vector dimension changes they now keep their chunks: each batch of 50 documents is replaced in one transaction and a failed batch rolls back. The vector index survives an interrupted rebuild, and the run that finishes it retrains it. A process killed outright can still leave the batch it was writing without chunks until the rebuild is run again. A rebuild that changes `vector_dim` still drops the chunks table first.
+- A failed or cancelled full `rebuild`, `--rechunk` or `--descriptions` at an unchanged vector dimension no longer leaves the documents it had not reached without chunks, and keeps the vector index (#670).
 
 ### Security
 
