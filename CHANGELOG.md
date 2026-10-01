@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The vLLM and OpenRouter embedders no longer fail intermittently with
+  `httpx.RemoteProtocolError: Server disconnected without sending a response`.
+  Pooled connections now expire after 2s idle, before vLLM's 5s keep-alive
+  closes them, and a request whose connection drops under it is retried once.
+
 ### Security
 
 - Bumped dependencies to patched versions for known advisories: `pyjwt` 2.15.1 in `uv.lock`, `ip-address` 10.7.2 and `fast-uri` 3.1.8 in `app/frontend/pnpm-lock.yaml`.
