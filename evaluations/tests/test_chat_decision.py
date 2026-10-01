@@ -34,6 +34,7 @@ class DecisionModel:
     p_yes_second: float = 0.9
     letters: tuple[str, str] = ("A", "B")
     logprobs: bool = True
+    answer: str | None = None
     tasks: list[dict] = field(default_factory=list)
     system_prompts: list[str] = field(default_factory=list)
 
@@ -58,7 +59,8 @@ class DecisionModel:
             if self.logprobs
             else {}
         )
-        return ModelResponse(parts=[TextPart(yes_token)], provider_details=details)
+        text = self.answer if self.answer is not None else yes_token
+        return ModelResponse(parts=[TextPart(text)], provider_details=details)
 
     def endpoint(self) -> ChatDecisionEndpoint:
         return ChatDecisionEndpoint(model=FunctionModel(self, model_name="tev1-4b"))
@@ -107,7 +109,8 @@ class TestChatDecisionEndpoint:
     @pytest.mark.parametrize(
         "model, message",
         [
-            (DecisionModel(letters=("Yes", "No")), "neither option letter"),
+            (DecisionModel(letters=("Yes", "No"), answer="A"), "neither option letter"),
+            (DecisionModel(answer="C"), "answered 'C'"),
             (DecisionModel(logprobs=False), "no logprobs"),
         ],
     )

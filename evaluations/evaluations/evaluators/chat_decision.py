@@ -71,6 +71,9 @@ class ChatDecisionEndpoint:
             )
         except ModelAPIError as exc:
             raise DecisionError(str(exc)) from exc
+        answer = (response.text or "").strip()
+        if answer not in ("A", "B"):
+            raise DecisionError(f"the model answered {answer!r}, not an option letter")
         logprobs = (response.provider_details or {}).get("logprobs")
         if not logprobs:
             raise DecisionError("the endpoint returned no logprobs")
