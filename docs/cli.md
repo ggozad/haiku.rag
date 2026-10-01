@@ -127,7 +127,7 @@ Shows the database path, the stored haiku.rag version, the embedding provider, m
 haiku-rag doctor [--db /path/to/your.lancedb] [--duplicates-out groups.yaml]
 ```
 
-Checks the database and prints a pass, warn or fail report. It makes no changes, prints the command that fixes each failure (`rebuild`, `create-index`, `vacuum`, `migrate`, `rebuild --set-embedder`, `rebuild --reindex`), and exits 1 when any check fails or the database is missing. The checks:
+Checks the database and prints a pass, warn or fail report. It makes no changes, prints the command that fixes each failure (`rebuild`, `create-index`, `vacuum`, `migrate`, `rebuild --embed-only`, `rebuild --reindex`), and exits 1 when any check fails or the database is missing. The checks:
 
 - required tables are present, and `documents` and `document_meta` correspond one to one
 - chunks and document items reference documents that exist
@@ -197,6 +197,10 @@ haiku-rag rebuild [--rechunk | --embed-only | --title-only | --descriptions | --
 | Reindex | `--reindex` | `doctor` reports rows outside the full-text index, or an index is missing |
 
 Every mode except `--title-only` and `--set-embedder` ends by rebuilding the full-text and scalar indexes, whatever `storage.auto_vacuum` says. A full rebuild, `--rechunk`, `--embed-only` and `--descriptions` also retrain the vector index if the database had one. `--reindex` rebuilds the full-text and scalar indexes from scratch and nothing else: it rewrites no rows and leaves the vector index alone.
+
+A full rebuild, `--rechunk` and `--descriptions` replace the chunks of 50 documents at a time, each batch in one transaction, and leave the other documents' chunks as they were. A run that fails or is cancelled rolls its batch back and keeps every document searchable and the vector index in place. Run it again to finish. A process killed outright, by SIGKILL or the out-of-memory killer, can leave the batch it was writing without chunks until you run the rebuild again. When the vector dimension changed, they drop the chunks table before processing any document, so an interrupted run leaves the documents it did not reach without chunks.
+
+The database records the embedder whose vectors the chunks table holds. A rebuild that keeps the table records the configured embedder once it has finished. An interrupted one to another embedder at the same dimension keeps the old one recorded while some documents already have the new one's vectors, so opening the database fails when writable and warns when read-only, until you run the rebuild again. A rebuild that empties the table, `--embed-only` or a dimension change, records the configured embedder as soon as the table is recreated. `--title-only` embeds nothing and records nothing.
 
 `--set-embedder` records the configured embedding provider and name without re-embedding, and is rejected when the vector dimension changed.
 

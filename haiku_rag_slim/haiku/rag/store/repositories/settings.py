@@ -7,6 +7,16 @@ from haiku.rag.store.schema import SettingsRecord, query_to_pydantic
 
 logger = logging.getLogger(__name__)
 
+# What to do about provider or name drift at an unchanged vector_dim, which is
+# either a config naming another model or an interrupted rebuild whose table
+# holds vectors of both embedders.
+EMBEDDER_DRIFT_ADVICE = (
+    "Run 'haiku-rag rebuild --embed-only' to re-embed with the configured "
+    "embedder, or run an interrupted rebuild again to finish it. Run "
+    "'haiku-rag rebuild --set-embedder' only for an embedder that produces the "
+    "same vectors as the recorded one."
+)
+
 
 class SettingsRepository:
     """Repository for Settings operations."""
@@ -64,8 +74,7 @@ class SettingsRepository:
         legitimate when the same model is served by a different stack (Ollama vs
         vLLM-via-openai, etc.). Drift is surfaced via a warning; a writable open
         then raises so a write cannot mix embedding identities in the corpus,
-        while a read-only open continues. Stored settings are reconciled
-        explicitly via ``haiku-rag rebuild --set-embedder``, never on open.
+        while a read-only open continues.
         """
         if stored_settings is None:
             stored_settings = await self.get_current_settings()
@@ -111,15 +120,13 @@ class SettingsRepository:
 
         if soft_changes:
             logger.warning(
-                "Embedding identity changed (vector_dim matches): %s. If this is "
-                "intentional, run 'haiku-rag rebuild --set-embedder' to update the "
-                "stored settings; otherwise revert your config to match the database.",
+                "Embedding identity changed (vector_dim matches): %s. %s",
                 "; ".join(soft_changes),
+                EMBEDDER_DRIFT_ADVICE,
             )
             if not self.store.is_read_only:
                 raise ConfigMismatchError(
                     "Database embedding identity differs from current config "
                     f"(vector_dim matches): {'; '.join(soft_changes)}. "
-                    "Run 'haiku-rag rebuild --set-embedder' to adopt the current "
-                    "embedder, or revert your config to match the database."
+                    f"{EMBEDDER_DRIFT_ADVICE}"
                 )

@@ -327,3 +327,59 @@ async def test_save_current_settings_recreates_a_deleted_row(temp_db_path):
         assert recreated["embeddings"] == {
             "model": _recorded(store._config.embeddings.model)
         }
+
+
+def _assert_drift_advice(text: str) -> None:
+    """The advice fits an interrupted rebuild and a config naming another model."""
+    assert "'haiku-rag rebuild --embed-only'" in text
+    assert "interrupted rebuild again" in text
+    assert (
+        "'haiku-rag rebuild --set-embedder' only for an embedder that produces "
+        "the same vectors" in text
+    )
+    assert "'haiku-rag rebuild'" not in text
+
+
+async def test_drift_error_advises_re_embedding_not_adopting(temp_db_path):
+    from haiku.rag.store.engine import Store
+    from haiku.rag.store.repositories.settings import (
+        ConfigMismatchError,
+        SettingsRepository,
+    )
+
+    async with Store(temp_db_path, create=True):
+        pass
+
+    new_config = AppConfig()
+    new_config.embeddings.model.name = "different-model"
+    async with Store(temp_db_path, config=new_config, skip_validation=True) as store:
+        with pytest.raises(ConfigMismatchError) as raised:
+            await SettingsRepository(store).validate_config_compatibility()
+
+    _assert_drift_advice(str(raised.value))
+
+
+async def test_drift_warning_advises_re_embedding_not_adopting(
+    temp_db_path, caplog, monkeypatch
+):
+    from haiku.rag.store.engine import Store
+    from haiku.rag.store.repositories.settings import SettingsRepository
+
+    monkeypatch.setattr(logging.getLogger("haiku.rag"), "propagate", True)
+    async with Store(temp_db_path, create=True):
+        pass
+
+    new_config = AppConfig()
+    new_config.embeddings.model.name = "different-model"
+    async with Store(
+        temp_db_path, config=new_config, skip_validation=True, read_only=True
+    ) as store:
+        with caplog.at_level(logging.WARNING):
+            await SettingsRepository(store).validate_config_compatibility()
+
+    warnings = [
+        r.getMessage() for r in caplog.records if "different-model" in r.getMessage()
+    ]
+    assert warnings
+    for warning in warnings:
+        _assert_drift_advice(warning)

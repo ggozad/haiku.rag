@@ -1008,3 +1008,33 @@ async def test_searching_a_document_whose_id_holds_a_quote(temp_db_path):
         )
 
         assert [chunk.document_uri for chunk, _ in results] == ["mem://quoted"]
+
+
+async def test_chunk_delete_by_document_ids(temp_db_path):
+    """Deletes the listed documents' chunks in one version, reading each id as a
+    literal; [] writes nothing."""
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        store = client.store
+        repo = client.chunk_repository
+        await store.chunks_table.add(
+            [
+                store.ChunkRecord(
+                    document_id=document_id,
+                    content="stored",
+                    content_fts="stored",
+                    metadata="{}",
+                    order=0,
+                    vector=[0.1] * store.embedder.vector_dim,
+                )
+                for document_id in ("doc-1", "it's", "doc-3")
+            ]
+        )
+
+        before = await store.chunks_table.version()
+        await repo.delete_by_document_ids([])
+        assert await store.chunks_table.version() == before
+
+        await repo.delete_by_document_ids(["doc-1", "it's"])
+
+        assert await store.chunks_table.version() == before + 1
+        assert {c.document_id for c in await repo.list_all()} == {"doc-3"}

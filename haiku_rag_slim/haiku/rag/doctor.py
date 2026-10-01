@@ -17,6 +17,7 @@ from haiku.rag.config.models import (
 )
 from haiku.rag.store.engine import Store, connect_lancedb
 from haiku.rag.store.info import get_database_stats
+from haiku.rag.store.repositories.settings import EMBEDDER_DRIFT_ADVICE
 from haiku.rag.store.schema import REQUIRED_TABLES, index_specs
 from haiku.rag.store.upgrades import get_pending_upgrades
 
@@ -887,7 +888,7 @@ def _check_embedding_drift(stored: dict, config: AppConfig) -> CheckResult:
             name="embedding_drift",
             severity=Severity.WARN,
             message="Embedding identity differs from config (vector_dim matches).",
-            remediation="haiku-rag rebuild --set-embedder",
+            remediation=EMBEDDER_DRIFT_ADVICE,
             details=drift,
         )
     return CheckResult(

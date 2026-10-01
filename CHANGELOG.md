@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Changed
+
+- A full `rebuild`, `--rechunk` and `--descriptions` report a document after its batch of 50 is written.
+- A full `rebuild`, `--rechunk` and `--descriptions` at an unchanged vector dimension record the configured embedder once they have finished, and `--title-only` does not record it.
+- The error and warning for an embedder that differs from the recorded one at the same vector dimension, and `doctor`'s `embedding_drift`, advise `rebuild --embed-only` or running an interrupted rebuild again, and `rebuild --set-embedder` only for an embedder that produces the same vectors.
+
+### Fixed
+
+- A failed or cancelled full `rebuild`, `--rechunk` or `--descriptions` at an unchanged vector dimension no longer leaves the documents it had not reached without chunks, and keeps the vector index (#670).
+
 ### Security
 
 - Bumped dependencies to patched versions for known advisories: `pyjwt` 2.15.1 in `uv.lock`, `ip-address` 10.7.2 and `fast-uri` 3.1.8 in `app/frontend/pnpm-lock.yaml`.
