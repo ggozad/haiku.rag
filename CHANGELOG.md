@@ -8,6 +8,7 @@
 - `evaluations.system_one.provider` (`vllm`, `ollama` or `openai`): the answer-equivalence
   gate asks a decision model on a chat endpoint, reading p from the answer-letter
   logprobs in both option orders. Experiment metadata gains `system_one_provider`.
+- `haiku-rag doctor --skip-providers`: skips the API-key check and the provider endpoint probes.
 
 ### Changed
 

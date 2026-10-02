@@ -1104,6 +1104,7 @@ async def run_doctor(
     environ: dict[str, str],
     duplicates_out: Path | None = None,
     on_progress: Callable[[str], None] | None = None,
+    providers: bool = True,
 ) -> DoctorReport:
     """Open the database read-only and run every diagnostic check.
 
@@ -1144,7 +1145,8 @@ async def run_doctor(
                     on_progress=on_progress,
                 )
 
-    notify("Checking API keys")
-    results.append(_check_api_keys(config, environ))
-    results += await run_provider_checks(config, on_progress=on_progress)
+    if providers:
+        notify("Checking API keys")
+        results.append(_check_api_keys(config, environ))
+        results += await run_provider_checks(config, on_progress=on_progress)
     return DoctorReport(results=results)

@@ -659,9 +659,16 @@ def doctor(
         "--duplicates-out",
         help="Write near-duplicate document groups to this YAML file",
     ),
+    skip_providers: bool = typer.Option(
+        False,
+        "--skip-providers",
+        help="Check the database only: no API-key check or endpoint probes",
+    ),
 ):
     app = create_app(db)
-    if asyncio.run(app.doctor(duplicates_out=duplicates_out)):
+    if asyncio.run(
+        app.doctor(duplicates_out=duplicates_out, providers=not skip_providers)
+    ):
         raise typer.Exit(code=1)
 
 

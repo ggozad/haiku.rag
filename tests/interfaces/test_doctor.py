@@ -701,6 +701,42 @@ def test_cli_doctor_exits_1_on_failure(monkeypatch):
     assert result.exit_code == 1
 
 
+def test_cli_doctor_skip_providers(monkeypatch):
+    app = MagicMock()
+    app.doctor = AsyncMock(return_value=False)
+    monkeypatch.setattr("haiku.rag.cli.create_app", lambda *_a, **_k: app)
+    runner.invoke(cli, ["doctor", "--db", "/tmp/whatever.lancedb", "--skip-providers"])
+    app.doctor.assert_awaited_once_with(duplicates_out=None, providers=False)
+
+
+def test_cli_doctor_unreachable_endpoint_fails_unless_skipped(
+    temp_db_path, tmp_path, monkeypatch
+):
+    import asyncio
+
+    import haiku.rag.config as config_module
+
+    monkeypatch.setattr(config_module, "_config", None)
+    asyncio.run(_build_db(temp_db_path))
+    config_path = tmp_path / "haiku.rag.yaml"
+    config_path.write_text(
+        yaml.safe_dump(_config().model_dump(mode="json")), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        "haiku.rag.doctor._probe_endpoint",
+        _fake_probe((False, "Connection refused", None)),
+    )
+    args = ["--config", str(config_path), "doctor", "--db", str(temp_db_path)]
+
+    checked = runner.invoke(cli, args)
+    assert checked.exit_code == 1
+    assert "is unreachable" in checked.output
+
+    skipped = runner.invoke(cli, [*args, "--skip-providers"])
+    assert skipped.exit_code == 0
+    assert "is unreachable" not in skipped.output
+
+
 # --- Active models / API keys ---
 
 
@@ -970,6 +1006,22 @@ async def test_run_doctor_includes_provider_results(temp_db_path, monkeypatch):
     )
     report = await run_doctor(_config(), temp_db_path, {})
     assert any(r.name.startswith("provider:") for r in report.results)
+    assert not report.failed
+
+
+async def test_run_doctor_without_providers_skips_keys_and_probes(
+    temp_db_path, monkeypatch
+):
+    await _build_db(temp_db_path, provider="openai", name="text-embedding-3-small")
+    monkeypatch.setattr(
+        "haiku.rag.doctor._probe_endpoint",
+        _fake_probe((False, "Connection refused", None)),
+    )
+    config = _config(provider="openai", name="text-embedding-3-small")
+    report = await run_doctor(config, temp_db_path, environ={}, providers=False)
+    assert not any(
+        r.name == "api_keys" or r.name.startswith("provider:") for r in report.results
+    )
     assert not report.failed
 
 
