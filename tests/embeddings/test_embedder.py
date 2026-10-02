@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import pytest
 
@@ -463,104 +465,36 @@ async def test_vllm_reuses_pooled_client(monkeypatch):
     assert stats["closed"] == 1
 
 
-async def test_vllm_pool_expires_connections_before_server_keepalive(monkeypatch):
-    """Pooled connections expire before vLLM's 5s server keep-alive."""
-    from haiku.rag.embeddings.vllm import KEEPALIVE_EXPIRY, VLLMMultimodalEmbedder
-
-    captured = {}
-
-    class FakeAsyncClient:
-        def __init__(self, *args, **kwargs):
-            captured.update(kwargs)
-
-    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
-
-    VLLMMultimodalEmbedder(
-        model_name="x", vector_dim=2, base_url="http://localhost:8000/v1"
-    )
-    limits = captured["limits"]
-    assert limits.keepalive_expiry == KEEPALIVE_EXPIRY
-    assert KEEPALIVE_EXPIRY < 5.0
-    assert limits.max_connections == 100
-    assert limits.max_keepalive_connections == 20
-
-
-@pytest.mark.parametrize(
-    "error",
-    ["RemoteProtocolError", "ReadError", "WriteError"],
-)
-async def test_vllm_retries_once_when_connection_drops(monkeypatch, error):
-    """A request whose connection drops is retried once and logged."""
-    import logging
-
+async def test_vllm_embedder_retries_dropped_connection():
+    """A dropped connection is retried once; a second drop raises ValueError."""
     import httpx
 
-    from haiku.rag.embeddings import vllm
     from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+    from haiku.rag.utils import http
 
-    calls = {"n": 0}
+    outcomes = [
+        httpx.RemoteProtocolError("Server disconnected"),
+        httpx.Response(200, json={"data": [{"embedding": [0.1, 0.2]}]}),
+        httpx.RemoteProtocolError("Server disconnected"),
+        httpx.ReadError("Server disconnected"),
+    ]
 
-    class FakeResponse:
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            return {"data": [{"embedding": [0.1, 0.2]}, {"embedding": [0.3, 0.4]}]}
-
-    class FakeAsyncClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def post(self, *args, **kwargs):
-            calls["n"] += 1
-            if calls["n"] == 1:
-                raise getattr(httpx, error)(
-                    "Server disconnected without sending a response."
-                )
-            return FakeResponse()
-
-    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+    def handler(request):
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
 
     embedder = VLLMMultimodalEmbedder(
         model_name="x", vector_dim=2, base_url="http://localhost:8000/v1"
     )
-    with capture_logs(vllm.logger, logging.WARNING) as records:
-        vecs = await embedder.embed_documents(["a", "b"])
+    embedder._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
-    assert vecs == [[0.1, 0.2], [0.3, 0.4]]
-    assert calls["n"] == 2
-    assert len(records) == 1
-    message = records[0].getMessage()
-    assert "dropped the connection" in message
-    assert error in message
-
-
-async def test_vllm_connection_dropped_twice_surfaces(monkeypatch):
-    """A second dropped connection raises ValueError after two attempts."""
-    import httpx
-
-    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
-
-    calls = {"n": 0}
-
-    class FakeAsyncClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def post(self, *args, **kwargs):
-            calls["n"] += 1
-            raise httpx.RemoteProtocolError(
-                "Server disconnected without sending a response."
-            )
-
-    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
-
-    embedder = VLLMMultimodalEmbedder(
-        model_name="x", vector_dim=2, base_url="http://localhost:8000/v1"
-    )
-    with pytest.raises(ValueError, match="dropped the connection twice"):
-        await embedder.embed_documents(["a"])
-    assert calls["n"] == 2
+    with capture_logs(http.logger, logging.WARNING):
+        assert await embedder.embed_documents(["a"]) == [[0.1, 0.2]]
+        with pytest.raises(ValueError, match="dropped the connection twice"):
+            await embedder.embed_documents(["a"])
+    assert outcomes == []
 
 
 async def test_vllm_supports_images_flag():

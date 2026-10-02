@@ -11,28 +11,19 @@ Models like ``Qwen/Qwen3-VL-Embedding-8B`` and ``jinaai/jina-embeddings-v4``
 ship with chat templates that map both shapes into a shared vector space.
 """
 
-import logging
 from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from haiku.rag.embeddings import EmbedderWrapper, _to_data_uri
+from haiku.rag.utils.http import (
+    DROPPED_CONNECTION_ERRORS,
+    pooled_client,
+    post_retrying_dropped_connection,
+)
 
 if TYPE_CHECKING:
     from PIL import Image as PILImage
-
-logger = logging.getLogger(__name__)
-
-# Below vLLM's 5s server keep-alive (VLLM_HTTP_TIMEOUT_KEEP_ALIVE).
-KEEPALIVE_EXPIRY = 2.0
-
-# Raised when the connection dies under a sent request. Embedding is
-# idempotent, so these are retried once.
-_DROPPED_CONNECTION_ERRORS = (
-    httpx.RemoteProtocolError,
-    httpx.ReadError,
-    httpx.WriteError,
-)
 
 
 class VLLMMultimodalEmbedder(EmbedderWrapper):
@@ -59,14 +50,7 @@ class VLLMMultimodalEmbedder(EmbedderWrapper):
         # One client reused across every request so the connection (and its
         # name resolution) is established once and kept alive, rather than
         # rebuilt per call.
-        self._client = httpx.AsyncClient(
-            timeout=timeout,
-            limits=httpx.Limits(
-                max_connections=100,
-                max_keepalive_connections=20,
-                keepalive_expiry=KEEPALIVE_EXPIRY,
-            ),
-        )
+        self._client = pooled_client(timeout)
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -77,27 +61,17 @@ class VLLMMultimodalEmbedder(EmbedderWrapper):
     async def aclose(self) -> None:
         await self._client.aclose()
 
-    async def _send(self, body: dict[str, Any]) -> httpx.Response:
-        """POST ``body``, retrying once if the connection drops under it."""
-        url = f"{self._base_url}/embeddings"
-        try:
-            return await self._client.post(url, json=body, headers=self._headers())
-        except _DROPPED_CONNECTION_ERRORS as e:
-            logger.warning(
-                "%s at %s dropped the connection (%s: %s); retrying once",
-                self._service_name,
-                self._base_url,
-                type(e).__name__,
-                e,
-            )
-            return await self._client.post(url, json=body, headers=self._headers())
-
     async def _post(self, body: dict[str, Any]) -> list[list[float]]:
         try:
-            response = await self._send(body)
+            response = await post_retrying_dropped_connection(
+                self._client,
+                f"{self._base_url}/embeddings",
+                json=body,
+                headers=self._headers(),
+            )
             response.raise_for_status()
             payload = response.json()
-        except _DROPPED_CONNECTION_ERRORS as e:
+        except DROPPED_CONNECTION_ERRORS as e:
             raise ValueError(
                 f"{self._service_name} at {self._base_url} dropped the "
                 f"connection twice without a response. Error: {e}"

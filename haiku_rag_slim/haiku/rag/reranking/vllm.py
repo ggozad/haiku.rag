@@ -2,6 +2,7 @@ import httpx
 
 from haiku.rag.reranking.base import RerankerBase
 from haiku.rag.store.models.chunk import Chunk
+from haiku.rag.utils.http import pooled_client, post_retrying_dropped_connection
 from haiku.rag.utils.images import image_data_uri
 from haiku.rag.utils.models import vllm_base_url
 
@@ -19,7 +20,7 @@ class VLLMReranker(RerankerBase):
         # One client reused across rerank calls (connection kept alive).
         # Multimodal document batches can take far longer than httpx's 5s
         # default timeout to score.
-        self._client = httpx.AsyncClient(timeout=httpx.Timeout(120.0))
+        self._client = pooled_client(httpx.Timeout(120.0))
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -46,7 +47,8 @@ class VLLMReranker(RerankerBase):
     ) -> list[tuple[Chunk, float]]:
         documents = [self._document(chunk) for chunk in chunks]
 
-        response = await self._client.post(
+        response = await post_retrying_dropped_connection(
+            self._client,
             f"{self._base_url}/rerank",
             json={"model": self._model, "query": query, "documents": documents},
             headers=self._headers,

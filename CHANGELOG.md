@@ -11,7 +11,7 @@
 ### Fixed
 
 - A failed or cancelled full `rebuild`, `--rechunk` or `--descriptions` at an unchanged vector dimension no longer leaves the documents it had not reached without chunks, and keeps the vector index (#670).
-- The vLLM and OpenRouter embedders no longer fail intermittently with `httpx.RemoteProtocolError: Server disconnected without sending a response`. Pooled connections expire after 2s idle, before vLLM's 5s keep-alive closes them, and a request whose connection drops under it is retried once.
+- The vLLM and OpenRouter embedders and rerankers retry a request once when its connection drops, and expire idle pooled connections after 2s.
 
 ### Security
 

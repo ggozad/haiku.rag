@@ -53,6 +53,7 @@ haiku_rag_slim/haiku/rag/   # Source code
 │   ├── sql.py              # SQL escaping and document ID filters
 │   ├── formatting.py       # Citation and byte formatting
 │   ├── concurrency.py      # Concurrent awaitable handling
+│   ├── http.py             # Pooled httpx client, retry of a dropped connection
 │   ├── paths.py            # Database and data directory paths
 │   ├── packages.py         # Package versions and update checks
 │   └── dependencies.py     # Optional dependency errors
