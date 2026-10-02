@@ -8,9 +8,13 @@
 - `evaluations.system_one.provider` (`vllm`, `ollama` or `openai`): the answer-equivalence
   gate asks a decision model on a chat endpoint, reading p from the answer-letter
   logprobs in both option orders. Experiment metadata gains `system_one_provider`.
+- `haiku-rag doctor --skip-providers`: skips the API-key check and the provider endpoint probes.
+- `haiku-rag doctor --json`: prints the report as JSON on stdout.
 
 ### Changed
 
+- The outdated-version warning is printed on stderr.
+- **Breaking:** `doctor` reports `pending_migrations`, `documents_without_items`, `unembedded_chunks` and `documents_text_no_chunks` as failures and exits 1 on them.
 - A full `rebuild`, `--rechunk` and `--descriptions` report a document after its batch of 50 is written.
 - A full `rebuild`, `--rechunk` and `--descriptions` at an unchanged vector dimension record the configured embedder once they have finished, and `--title-only` does not record it.
 - The error and warning for an embedder that differs from the recorded one at the same vector dimension, and `doctor`'s `embedding_drift`, advise `rebuild --embed-only` or running an interrupted rebuild again, and `rebuild --set-embedder` only for an embedder that produces the same vectors.
