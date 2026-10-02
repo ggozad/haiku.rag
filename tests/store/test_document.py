@@ -11,6 +11,7 @@ from haiku.rag.store.models.document_item import DocumentItem
 from haiku.rag.store.repositories import document as document_repository
 from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.repositories.document_item import DocumentItemRepository
+from tests.conftest import run_with_lance_memory_pool
 
 
 @pytest.mark.parametrize("include_content", [False, True])
@@ -600,3 +601,52 @@ def test_created_at_serializes_with_timezone_offset():
     doc = Document(content="x")
     value = doc.model_dump(mode="json")["created_at"]
     assert datetime.fromisoformat(value).utcoffset() is not None
+
+
+_UPDATE_OVER_POOL = """
+import asyncio, os, sys
+from pathlib import Path
+
+from haiku.rag.config.models import AppConfig
+from haiku.rag.store.engine import Store
+from haiku.rag.store.models.document import Document
+from haiku.rag.store.repositories.document import DocumentRepository
+
+
+async def main():
+    config = AppConfig()
+    config.storage.auto_vacuum = False
+    async with Store(Path(sys.argv[1]), config=config, create=True) as store:
+        repo = DocumentRepository(store)
+        target = await repo.create(Document(content="target", uri="test://target"))
+        other = await repo.create(
+            Document(content="other", uri="test://other", docling_document=b"kept")
+        )
+        await store.rebuild_indexes()
+        stats = await store.documents_table.index_stats("id_idx")
+        assert stats is not None and stats.num_indexed_rows == 2
+        version = await store.documents_table.version()
+
+        blob = os.urandom(int(sys.argv[2]))
+        target.docling_document = blob
+        await repo.update(target)
+
+        assert await store.documents_table.version() == version + 1
+        stored = await repo.get_by_id(target.id, include_blobs=True)
+        assert stored is not None and stored.docling_document == blob
+        untouched = await repo.get_by_id(other.id, include_blobs=True)
+        assert untouched is not None
+        assert untouched.content == "other"
+        assert untouched.docling_document == b"kept"
+
+
+asyncio.run(main())
+"""
+
+
+def test_update_writes_a_row_larger_than_the_lance_memory_pool(tmp_path):
+    """Updating an indexed row with blobs larger than lance's query memory pool."""
+    result = run_with_lance_memory_pool(
+        _UPDATE_OVER_POOL, 1 << 20, str(tmp_path / "db.lancedb"), str(4 << 20)
+    )
+    assert result.returncode == 0, result.stderr

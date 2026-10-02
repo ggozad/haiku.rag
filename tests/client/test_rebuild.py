@@ -7,7 +7,12 @@ import pytest
 
 from haiku.rag.client import HaikuRAG, RebuildMode
 from haiku.rag.config import get_config
-from tests.conftest import capture_logs, for_path, writing
+from tests.conftest import (
+    capture_logs,
+    for_path,
+    run_with_lance_memory_pool,
+    writing,
+)
 
 
 class ChunkData(TypedDict):
@@ -2505,3 +2510,71 @@ async def test_read_only_rebuild_writes_nothing(temp_db_path, monkeypatch, mode)
                 pass
 
     assert await versions() == before
+
+
+_FLUSH_OVER_POOL = """
+import asyncio, os, sys
+from pathlib import Path
+
+from docling_core.types.doc.document import DoclingDocument
+from docling_core.types.doc.labels import DocItemLabel
+
+from haiku.rag.client import HaikuRAG
+from haiku.rag.client.rebuild import _DESCRIPTION_COLUMNS, _flush_rebuild_batch
+from haiku.rag.config.models import AppConfig
+from haiku.rag.store.models.document import Document
+from tests.conftest import writing
+
+
+async def main():
+    config = AppConfig()
+    config.storage.auto_vacuum = False
+    async with HaikuRAG(Path(sys.argv[1]), config=config, create=True) as rag:
+        repo = rag.document_repository
+        target = await repo.create(
+            Document(content="target", uri="test://target", docling_pages=b"pages")
+        )
+        other = await repo.create(
+            Document(content="other", uri="test://other", docling_document=b"kept")
+        )
+        await rag.store.rebuild_indexes()
+        stats = await rag.store.documents_table.index_stats("id_idx")
+        assert stats is not None and stats.num_indexed_rows == 2
+        version = await rag.store.documents_table.version()
+
+        # Hex text compresses to about half, so the blob outgrows the pool.
+        docling = DoclingDocument(name="large")
+        docling.add_text(label=DocItemLabel.PARAGRAPH, text=os.urandom(int(sys.argv[2])).hex())
+        target.set_docling(docling)
+        blob = target.docling_document
+        assert blob is not None and len(blob) > int(sys.argv[2]) // 2
+        target.docling_pages = b"not written"
+
+        await _flush_rebuild_batch(
+            writing(rag), [target], [], document_columns=_DESCRIPTION_COLUMNS
+        )
+
+        assert await rag.store.documents_table.version() == version + 1
+        stored = await repo.get_by_id(target.id, include_blobs=True)
+        assert stored is not None
+        assert stored.docling_document == blob
+        assert stored.content == "target"
+        assert stored.docling_pages == b"pages"
+        untouched = await repo.get_by_id(other.id, include_blobs=True)
+        assert untouched is not None
+        assert untouched.content == "other"
+        assert untouched.docling_document == b"kept"
+
+
+asyncio.run(main())
+"""
+
+
+def test_flush_rebuild_batch_writes_a_row_larger_than_the_lance_memory_pool(
+    tmp_path,
+):
+    """A rebuild batch rewriting an indexed row with blobs larger than lance's pool."""
+    result = run_with_lance_memory_pool(
+        _FLUSH_OVER_POOL, 1 << 20, str(tmp_path / "db.lancedb"), str(4 << 20)
+    )
+    assert result.returncode == 0, result.stderr
