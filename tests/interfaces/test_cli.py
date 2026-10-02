@@ -501,6 +501,10 @@ class TestCliMissingDatabase:
     def test_missing_database_path_is_an_error_not_a_traceback(
         self, tmp_path, monkeypatch, capsys
     ):
+        async def current():
+            return True, "9.9.9", "9.9.9"
+
+        monkeypatch.setattr("haiku.rag.cli.is_up_to_date", current)
         missing = tmp_path / "missing.lancedb"
         monkeypatch.setattr(sys, "argv", ["haiku-rag", "list", "--db", str(missing)])
 
