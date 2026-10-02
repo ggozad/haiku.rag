@@ -1089,7 +1089,7 @@ def test_version_flag_prints_the_version():
 
 
 def test_outdated_install_warns(app_stub, monkeypatch):
-    """The startup check warns but does not block the command."""
+    """The startup check warns on stderr and does not block the command."""
 
     async def outdated():
         return False, "0.1.0", "9.9.9"
@@ -1099,8 +1099,9 @@ def test_outdated_install_warns(app_stub, monkeypatch):
     result = runner.invoke(cli, ["list"] + DB_ARGS)
 
     assert result.exit_code == 0, result.output
-    assert "haiku.rag is outdated" in result.output
-    assert "Current: 0.1.0, Latest: 9.9.9" in result.output
+    assert "haiku.rag is outdated" in result.stderr
+    assert "Current: 0.1.0, Latest: 9.9.9" in result.stderr
+    assert "outdated" not in result.stdout
     app_stub.list_documents.assert_called_once()
 
 

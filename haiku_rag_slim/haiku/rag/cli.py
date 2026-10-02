@@ -123,8 +123,9 @@ async def check_version():
     if not up_to_date:
         typer.echo(
             f"Warning: haiku.rag is outdated. Current: {current_version}, Latest: {latest_version}",
+            err=True,
         )
-        typer.echo("Please update.")
+        typer.echo("Please update.", err=True)
 
 
 def version_callback(value: bool):
@@ -664,10 +665,19 @@ def doctor(
         "--skip-providers",
         help="Check the database only: no API-key check or endpoint probes",
     ),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Print the report as JSON on stdout",
+    ),
 ):
     app = create_app(db)
     if asyncio.run(
-        app.doctor(duplicates_out=duplicates_out, providers=not skip_providers)
+        app.doctor(
+            duplicates_out=duplicates_out,
+            providers=not skip_providers,
+            as_json=as_json,
+        )
     ):
         raise typer.Exit(code=1)
 

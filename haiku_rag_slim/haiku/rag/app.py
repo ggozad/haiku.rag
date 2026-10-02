@@ -241,13 +241,38 @@ class HaikuRAGApp:
         )
 
     async def doctor(
-        self, duplicates_out: Path | None = None, providers: bool = True
+        self,
+        duplicates_out: Path | None = None,
+        providers: bool = True,
+        as_json: bool = False,
     ) -> bool:
         """Run health checks and print a report. Returns True if any check failed."""
         import os
         from contextlib import nullcontext
 
-        from haiku.rag.doctor import Severity, run_doctor
+        from haiku.rag.doctor import CheckResult, DoctorReport, Severity, run_doctor
+
+        if as_json:
+            if self.database_missing:
+                report = DoctorReport(
+                    results=[
+                        CheckResult(
+                            name="database_missing",
+                            severity=Severity.FAIL,
+                            message="Database path does not exist.",
+                        )
+                    ]
+                )
+            else:
+                report = await run_doctor(
+                    self.config,
+                    self._location,
+                    dict(os.environ),
+                    duplicates_out=duplicates_out,
+                    providers=providers,
+                )
+            print(report.model_dump_json(indent=2))
+            return report.failed
 
         self.console.print("[bold]haiku.rag doctor[/bold]")
         self.console.print(

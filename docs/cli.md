@@ -126,7 +126,7 @@ Shows the database path, the stored haiku.rag version, the embedding provider, m
 ### doctor
 
 ```bash
-haiku-rag doctor [--db /path/to/your.lancedb] [--duplicates-out groups.yaml] [--skip-providers]
+haiku-rag doctor [--db /path/to/your.lancedb] [--duplicates-out groups.yaml] [--skip-providers] [--json]
 ```
 
 Checks the database and prints a pass, warn or fail report. It makes no changes, prints the command that fixes each failure (`rebuild`, `create-index`, `vacuum`, `migrate`, `rebuild --embed-only`, `rebuild --reindex`), and exits 1 when any check fails or the database is missing. The checks:
@@ -146,6 +146,8 @@ Checks the database and prints a pass, warn or fail report. It makes no changes,
 These are warnings and do not change the exit code: rows outside the full-text or vector index, no vector index on a large table, near-duplicate documents, picture-only documents without chunks, pictures without image data, an embedder that differs from the recorded one at the same vector dimension, and an Ollama endpoint missing a configured model. Every other problem fails.
 
 It also probes the endpoints the configuration uses: Ollama and its models (`{base_url}/api/tags`), docling-serve when configured (`{base_url}/health`), and custom OpenAI-compatible and vLLM endpoints (`{base_url}/models`). Hosted providers get only the API-key check. In-process models have no endpoint and are reported as such. `--skip-providers` skips the API-key check and the endpoint probes.
+
+`--json` prints the report as JSON on stdout and nothing else, with the same exit code: `{"results": [...]}`, each result carrying `name`, `severity` (`ok`, `warn` or `fail`), `message`, `remediation` and `details`. A missing database is one `database_missing` failure.
 
 `--duplicates-out PATH` writes the near-duplicate groups to YAML: per group, `keep` and a list of `documents`, each with `document_id`, `document`, `chunks`, `similarity` and `keep_suggested`.
 
