@@ -20,6 +20,8 @@ haiku-rag --config /path/to/config.yaml list --db /path/to/custom.lancedb
 haiku-rag --db-name papers list
 ```
 
+A command started with `TRACEPARENT` / `TRACESTATE` in its environment joins that trace. `mcp`, `chat` and `inspect` never join. The parent's sampling decision applies, so a `TRACEPARENT` with the sampled flag `00` suppresses the command's spans.
+
 With several databases configured, `search`, `ask`, `chat` and `mcp` cover them all, and every other command needs `--db-name` or `--db`. See [Multiple databases](configuration/multiple-databases.md#cli).
 
 ## Documents

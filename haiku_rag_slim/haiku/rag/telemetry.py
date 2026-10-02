@@ -1,4 +1,5 @@
 import os
+from contextlib import AbstractContextManager, nullcontext
 from importlib import metadata
 from typing import Literal
 
@@ -66,4 +67,20 @@ def configure(
         pass
 
 
-__all__ = ["attach_context", "configure", "get_context", "logfire"]
+def attach_env_context() -> AbstractContextManager[None]:
+    """Attach the trace context a parent process passed in `TRACEPARENT` / `TRACESTATE`."""
+    carrier: dict[str, str] = {
+        k.lower(): v for k in ("TRACEPARENT", "TRACESTATE") if (v := os.environ.get(k))
+    }
+    if "traceparent" not in carrier:
+        return nullcontext()
+    return attach_context(carrier)
+
+
+__all__ = [
+    "attach_context",
+    "attach_env_context",
+    "configure",
+    "get_context",
+    "logfire",
+]

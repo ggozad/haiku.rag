@@ -53,8 +53,12 @@ _cli = typer.Typer(
 )
 
 
+_LONG_RUNNING = frozenset({"serve"})
+
+
 @_cli.callback()
 def main(
+    ctx: typer.Context,
     config: Path | None = typer.Option(
         None,
         "--config",
@@ -64,11 +68,14 @@ def main(
 ) -> None:
     """Top-level callback so every subcommand inherits --config without
     each one redeclaring it. Mirrors haiku-rag's CLI shape."""
+    from haiku.rag.telemetry import attach_env_context
     from haiku.rag.telemetry import configure as configure_telemetry
 
     _load_config_with_override(config)
     configure_cli_logging()
     configure_telemetry(service_name="haiku-ingester")
+    if ctx.invoked_subcommand not in _LONG_RUNNING:
+        ctx.with_resource(attach_env_context())
 
 
 def cli() -> None:

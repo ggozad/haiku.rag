@@ -2,6 +2,7 @@ from importlib import metadata
 
 import logfire
 import pytest
+from opentelemetry import trace
 
 from haiku.rag import telemetry
 
@@ -68,3 +69,16 @@ def test_scrubbing_can_be_disabled(captured_configure):
     telemetry.configure(service_name="evals", scrubbing=False)
 
     assert captured_configure["scrubbing"] is False
+
+
+def test_attach_env_context_without_traceparent_keeps_the_active_trace(monkeypatch):
+    from opentelemetry.sdk.trace import TracerProvider
+
+    monkeypatch.delenv("TRACEPARENT", raising=False)
+    monkeypatch.setenv("TRACESTATE", "vendor=value")
+    tracer = TracerProvider().get_tracer("test")
+
+    with tracer.start_as_current_span("caller") as span:
+        with telemetry.attach_env_context():
+            current = trace.get_current_span().get_span_context()
+        assert current.trace_id == span.get_span_context().trace_id

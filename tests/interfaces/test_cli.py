@@ -17,7 +17,7 @@ from haiku.rag.store.exceptions import (
     MigrationRequiredError,
     UnknownDatabaseError,
 )
-from tests.conftest import for_path
+from tests.conftest import TRACEPARENT, current_trace, for_path
 
 runner = CliRunner()
 
@@ -1210,3 +1210,28 @@ def test_inspect_reports_a_missing_tui_extra(monkeypatch):
     assert result.exit_code == 1
     assert "textual is not installed" in result.output
     assert "haiku.rag-slim[tui]" in result.output
+
+
+@pytest.mark.parametrize("command, joins", [("vacuum", True), ("mcp", False)])
+def test_one_shot_commands_join_the_traceparent_trace(
+    app_stub, monkeypatch, command, joins
+):
+    seen: list[tuple[str, str]] = []
+
+    async def record(*_, **__):
+        seen.append(current_trace())
+
+    app_stub.vacuum = record
+    app_stub.run_mcp = record
+    monkeypatch.setenv("TRACEPARENT", TRACEPARENT)
+    monkeypatch.setenv("TRACESTATE", "vendor=value")
+    monkeypatch.setenv("LOGFIRE_DISTRIBUTED_TRACING", "false")
+
+    result = runner.invoke(cli, [command] + DB_ARGS)
+
+    assert result.exit_code == 0, result.output
+    if joins:
+        assert seen == [("4bf92f3577b34da6a3ce929d0e0e4736", "vendor=value")]
+    else:
+        assert seen == [("0" * 32, "")]
+    assert current_trace() == ("0" * 32, "")

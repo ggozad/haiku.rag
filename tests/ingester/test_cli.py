@@ -32,6 +32,7 @@ from haiku.rag.store.exceptions import (
     SourceUnavailableError,
     UnknownDatabaseError,
 )
+from tests.conftest import TRACEPARENT, current_trace
 
 runner = CliRunner()
 
@@ -605,3 +606,26 @@ class TestPlacingTheIngesterDatabase:
             ingester_cli()
 
         assert exit_info.value.code == 1
+
+
+@pytest.mark.parametrize("command, joins", [("run-batch", True), ("serve", False)])
+def test_one_shot_commands_join_the_traceparent_trace(monkeypatch, command, joins):
+    seen: list[tuple[str, str]] = []
+
+    async def record(*_, **__):
+        seen.append(current_trace())
+        return BatchReport()
+
+    fake = MagicMock(run_batch=record, serve=record)
+    monkeypatch.setattr("haiku.rag.ingester.app.IngesterApp", lambda **_: fake)
+    monkeypatch.setenv("TRACEPARENT", TRACEPARENT)
+    monkeypatch.setenv("TRACESTATE", "vendor=value")
+    monkeypatch.setenv("LOGFIRE_DISTRIBUTED_TRACING", "false")
+
+    runner.invoke(cli, [command, "--db", "x.lancedb"])
+
+    if joins:
+        assert seen == [("4bf92f3577b34da6a3ce929d0e0e4736", "vendor=value")]
+    else:
+        assert seen == [("0" * 32, "")]
+    assert current_trace() == ("0" * 32, "")
