@@ -143,6 +143,8 @@ Checks the database and prints a pass, warn or fail report. It makes no changes,
 - near-identical documents, by embedding-centroid similarity. Advisory only, tuned by `doctor.duplicates`. The largest member of each group is suggested to keep
 - API keys are set for the configured providers
 
+These are warnings and do not change the exit code: rows outside the full-text or vector index, no vector index on a large table, near-duplicate documents, picture-only documents without chunks, pictures without image data, an embedder that differs from the recorded one at the same vector dimension, and an Ollama endpoint missing a configured model. Every other problem fails.
+
 It also probes the endpoints the configuration uses: Ollama and its models (`{base_url}/api/tags`), docling-serve when configured (`{base_url}/health`), and custom OpenAI-compatible and vLLM endpoints (`{base_url}/models`). Hosted providers get only the API-key check. In-process models have no endpoint and are reported as such.
 
 `--duplicates-out PATH` writes the near-duplicate groups to YAML: per group, `keep` and a list of `documents`, each with `document_id`, `document`, `chunks`, `similarity` and `keep_suggested`.

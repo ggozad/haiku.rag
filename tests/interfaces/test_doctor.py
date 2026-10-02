@@ -312,7 +312,7 @@ async def _add_doc(db, doc_id, *, items, metadata=None, chunks=None):
         await chunks_tbl.add(chunks)
 
 
-async def test_document_with_text_but_no_chunks_warns(temp_db_path):
+async def test_document_with_text_but_no_chunks_fails(temp_db_path):
     db = await _build_db(temp_db_path)
     await _add_doc(
         db,
@@ -329,9 +329,9 @@ async def test_document_with_text_but_no_chunks_warns(temp_db_path):
     )
     report = await run_doctor(_config(), temp_db_path, {})
     result = _result(report, "documents_text_no_chunks")
-    assert result.severity is Severity.WARN
+    assert result.severity is Severity.FAIL
     assert "d2" in result.details
-    assert report.count(Severity.FAIL) == 0
+    assert report.failed
 
 
 async def test_empty_document_no_chunks_is_ok(temp_db_path):
@@ -427,7 +427,7 @@ async def test_dangling_doc_item_ref_fails(temp_db_path):
     assert "c2" in result.details
 
 
-async def test_unembedded_chunk_warns(temp_db_path):
+async def test_unembedded_chunk_fails(temp_db_path):
     db = await _build_db(temp_db_path)
     chunks_tbl = await db.open_table("chunks")
     await chunks_tbl.add(
@@ -443,12 +443,12 @@ async def test_unembedded_chunk_warns(temp_db_path):
     )
     report = await run_doctor(_config(), temp_db_path, {})
     result = _result(report, "unembedded_chunks")
-    assert result.severity is Severity.WARN
+    assert result.severity is Severity.FAIL
     assert "zero" in result.details
-    assert not report.failed
+    assert report.failed
 
 
-async def test_chunked_document_without_items_warns(temp_db_path):
+async def test_chunked_document_without_items_fails(temp_db_path):
     db = await _build_db(temp_db_path)
     await _add_doc(
         db,
@@ -462,8 +462,9 @@ async def test_chunked_document_without_items_warns(temp_db_path):
     )
     report = await run_doctor(_config(), temp_db_path, {})
     result = _result(report, "documents_without_items")
-    assert result.severity is Severity.WARN
+    assert result.severity is Severity.FAIL
     assert "d2" in result.details
+    assert report.failed
 
 
 async def test_empty_document_without_items_is_ok(temp_db_path):
@@ -585,11 +586,11 @@ async def test_vector_dimension_mismatch_fails(temp_db_path):
     assert report.failed
 
 
-async def test_pending_migration_warns(temp_db_path):
+async def test_pending_migration_fails(temp_db_path):
     await _build_db(temp_db_path, version="0.40.0")
     report = await run_doctor(_config(), temp_db_path, {})
-    assert _result(report, "pending_migrations").severity is Severity.WARN
-    assert not report.failed
+    assert _result(report, "pending_migrations").severity is Severity.FAIL
+    assert report.failed
 
 
 async def test_missing_api_key_fails(temp_db_path):
