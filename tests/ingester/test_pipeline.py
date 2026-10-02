@@ -645,3 +645,44 @@ async def test_manifest_replay_still_revalidates_before_ingesting():
     assert source.head_calls == 1
     kwargs = client._ingest_observed.await_args.kwargs
     assert kwargs["observed_revision"] == "etag-2"
+
+
+async def test_upsert_calls_the_provider_for_pdf_attachments(
+    tmp_path, temp_db_path, monkeypatch
+):
+    """End to end through a real client: the source's provider is called for
+    the fetched PDF and each attachment, with the job's source id, and only
+    the fetched document is attributed to the source."""
+    from haiku.rag.client.documents import parent_uri_filter
+    from haiku.rag.sources.fs import FSSource
+    from tests.converters.test_pdf_attachments import (
+        build_pdf,
+        fake_ingest_fetch_result,
+    )
+
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(build_pdf([("a.txt", b"A")]))
+    source = FSSource(root=tmp_path, source_id="src")
+    provider = _MetadataProvider({"team": "docs"})
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        result = await run_job(
+            client,
+            _job(uri=pdf_path.as_uri()),
+            sources=[source],
+            metadata_providers={"src": provider},
+        )
+        parent = await client.get_document_by_uri(pdf_path.as_uri())
+        (child,) = await client.list_documents(filter=parent_uri_filter(parent.uri))
+
+    assert result.document_id == parent.id
+    assert parent.metadata["team"] == "docs"
+    assert parent.metadata["source_id"] == "src"
+    assert child.uri == f"{parent.uri}#attachment=a.txt"
+    assert child.metadata["team"] == "docs"
+    assert child.metadata["source"] == "src"
+    assert "source_id" not in child.metadata

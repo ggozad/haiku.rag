@@ -396,3 +396,48 @@ async def test_queue_loss_does_not_strand_documents(tmp_path):
     assert (await run_batch()).dead == 0
 
     assert await stored_uris() == {first.as_uri()}
+
+
+async def test_attachments_ingested_under_a_provider_stay_unowned(
+    client, sync, tmp_path, monkeypatch
+):
+    """A provider runs for attachments on the parent source's behalf, but the
+    children must stay unowned: a sync_state row for an `#attachment=` URI
+    is one the next sweep never discovers, so `delete_orphans` would delete
+    the child and the next parent re-ingest recreate it, every round."""
+    from haiku.rag.client.documents import parent_uri_filter
+    from haiku.rag.sources.fs import FSSource
+    from tests.converters.test_pdf_attachments import (
+        build_pdf,
+        fake_ingest_fetch_result,
+    )
+
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+
+    async def provider(source_id, uri, result):
+        return {"provided_for": source_id}
+
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(build_pdf([("a.txt", b"A"), ("b.txt", b"B")]))
+    source = FSSource(root=tmp_path, source_id="fs:corpus")
+    parent = await client.create_document_from_source(
+        pdf_path,
+        sources=[source],
+        source_id=source.source_id,
+        metadata_provider=provider,
+    )
+    children = await client.list_documents(filter=parent_uri_filter(parent.uri))
+    assert {c.metadata["provided_for"] for c in children} == {"fs:corpus"}
+
+    reports = await reconcile(client, sync, ["fs:corpus"])
+
+    assert await sync.list_known_uris("fs:corpus") == {parent.uri}
+    assert reports[0].recovered == 1
+    assert reports[0].attributed == 0
+    assert all(
+        "source_id" not in doc.metadata
+        for doc in await client.list_documents(filter=parent_uri_filter(parent.uri))
+    )

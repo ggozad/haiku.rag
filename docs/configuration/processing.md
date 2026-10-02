@@ -349,13 +349,15 @@ children = await client.list_documents(
 
 Behavior:
 
-- Children inherit the standard ingest metadata (`content_type`, `md5`, `source_revision`) plus `parent_uri`.
+- Children carry the standard ingest metadata (`content_type`, `md5`) plus `parent_uri`, and no `source_id`. Under the [ingester](../ingester.md#metadata-providers), a source's metadata provider adds its keys to each child too.
 - Re-ingesting the wrapper reconciles its current attachment set against existing children: new files are added, changed bytes update in place, and dropped names are deleted.
 - `delete_document(parent_id)` cascades through `parent_uri` and removes all children.
 - Nested attachments (a PDF whose attachment is itself a PDF with attachments) recurse up to 3 levels. Deeper chains log a warning and skip.
 - Attachments whose extension or content type the converter does not support log a warning and are skipped without aborting the rest of the set.
 
 Set `extract_pdf_attachments: false` to ingest only the wrapper.
+
+To reproduce a child outside ingestion (a metadata back-fill, say), `haiku.rag.converters.pdf_attachments.extract_pdf_attachments(body, parent_uri)` returns the embedded files keyed by child URI, each with the name, bytes, content type and MD5 ingestion stores, and `attachment_uri(parent_uri, name)` builds one child URI. Neither applies the depth limit (`MAX_ATTACHMENT_DEPTH`).
 
 ## Continuous ingestion
 

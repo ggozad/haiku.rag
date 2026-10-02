@@ -38,6 +38,8 @@ async def fake_ingest_fetch_result(
     source_id=None,
     depth=0,
     filename=None,
+    metadata_provider=None,
+    provider_source_id=None,
 ):
     """A stand-in for ``_ingest_fetch_result`` that skips docling/embedder
     entirely: it writes the document with content_type/md5/parent_uri set
@@ -69,7 +71,14 @@ async def fake_ingest_fetch_result(
                 metadata=final_metadata,
             )
         )
-    await _reconcile_pdf_attachments(session, doc, result.body, depth=depth)
+    await _reconcile_pdf_attachments(
+        session,
+        doc,
+        result.body,
+        depth=depth,
+        metadata_provider=metadata_provider,
+        provider_source_id=provider_source_id,
+    )
     return doc
 
 
@@ -299,38 +308,45 @@ async def test_malformed_pdf_logs_warning_and_skips(temp_db_path, monkeypatch, c
 
 
 async def test_unsupported_attachment_continues_loop(temp_db_path, monkeypatch):
-    """One attachment whose ingest raises UnsupportedSourceError must not
-    prevent siblings from being ingested. The unsupported attachment is
-    skipped with a warning; the others land."""
+    """An attachment whose extension the converter does not support must not
+    prevent siblings from being ingested. It is skipped with a warning before
+    any ingest; the others land."""
+    ingested: list[str] = []
+
+    async def recording_fake(session, result, **kwargs):
+        ingested.append(result.uri)
+        return await fake_ingest_fetch_result(session, result, **kwargs)
+
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result", recording_fake
+    )
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent_uri = "file:///fixtures/parent.pdf"
+        pdf_bytes = build_pdf([("ok.txt", b"keep me"), ("unsupported.xyz", b"data")])
+        parent = await _make_parent(client, parent_uri, pdf_bytes)
+        await _reconcile_pdf_attachments(writing(client), parent, pdf_bytes, depth=0)
+        children = await client.list_documents(filter=parent_uri_filter(parent_uri))
+        assert {c.uri for c in children} == {f"{parent_uri}#attachment=ok.txt"}
+        assert ingested == [f"{parent_uri}#attachment=ok.txt"]
+
+
+async def test_attachment_rejected_during_ingest_continues_loop(
+    temp_db_path, monkeypatch
+):
+    """An attachment with a supported extension can still be rejected while it
+    is ingested (a .pdf pypdfium2 cannot open for slicing). Its siblings must
+    still be ingested."""
     from haiku.rag.client.exceptions import UnsupportedSourceError
 
-    async def picky_fake(
-        client,
-        result,
-        *,
-        title,
-        user_metadata,
-        stored_uri,
-        existing_doc,
-        depth=0,
-        filename=None,
-    ):
-        if stored_uri.endswith("unsupported.xyz"):
-            raise UnsupportedSourceError("nope")
-        return await fake_ingest_fetch_result(
-            client,
-            result,
-            title=title,
-            user_metadata=user_metadata,
-            stored_uri=stored_uri,
-            existing_doc=existing_doc,
-            depth=depth,
-        )
+    async def picky_fake(session, result, **kwargs):
+        if result.uri.endswith("broken.pdf"):
+            raise UnsupportedSourceError("pypdfium2 cannot open PDF")
+        return await fake_ingest_fetch_result(session, result, **kwargs)
 
     monkeypatch.setattr("haiku.rag.client.documents._ingest_fetch_result", picky_fake)
     async with HaikuRAG(temp_db_path, create=True) as client:
         parent_uri = "file:///fixtures/parent.pdf"
-        pdf_bytes = build_pdf([("ok.txt", b"keep me"), ("unsupported.xyz", b"data")])
+        pdf_bytes = build_pdf([("ok.txt", b"keep me"), ("broken.pdf", b"data")])
         parent = await _make_parent(client, parent_uri, pdf_bytes)
         await _reconcile_pdf_attachments(writing(client), parent, pdf_bytes, depth=0)
         children = await client.list_documents(filter=parent_uri_filter(parent_uri))
@@ -632,3 +648,338 @@ async def test_cascade_delete_of_a_percent_uri_leaves_other_parents_attachments(
             )
             is not None
         )
+
+
+# --- metadata providers -------------------------------------------------------
+
+
+class _RecordingProvider:
+    """Provider double: records each call, returns ``metadata`` plus the call's
+    URI, and raises for any URI ending in one of ``fail_for``."""
+
+    def __init__(self, metadata: dict | None = None, *, fail_for: tuple = ()):
+        self.metadata = metadata or {}
+        self.fail_for = fail_for
+        self.calls: list[tuple[str, str, FetchResult]] = []
+
+    async def __call__(self, source_id: str, uri: str, result: FetchResult) -> dict:
+        self.calls.append((source_id, uri, result))
+        if self.fail_for and uri.endswith(self.fail_for):
+            raise RuntimeError(f"provider failed for {uri}")
+        return {**self.metadata, "seen_uri": uri}
+
+    def attachment_calls(self) -> list[tuple[str, str, FetchResult]]:
+        return [c for c in self.calls if "parent_uri" in c[2].extra_metadata]
+
+
+async def _ingest_with_provider(
+    tmp_path, client, pdf_path, provider
+) -> tuple[Document, str]:
+    """Ingest ``pdf_path`` through an FS source under ``provider``; returns the
+    parent and its URI."""
+    from haiku.rag.sources.fs import FSSource
+
+    source = FSSource(root=tmp_path, source_id="fs:attachments")
+    parent = await client.create_document_from_source(
+        pdf_path,
+        sources=[source],
+        source_id=source.source_id,
+        metadata_provider=provider,
+    )
+    assert isinstance(parent, Document)
+    assert parent.uri is not None
+    return parent, parent.uri
+
+
+async def _reconcile_with_provider(
+    client: HaikuRAG, parent: Document, body: bytes, provider
+) -> None:
+    await _reconcile_pdf_attachments(
+        writing(client),
+        parent,
+        body,
+        depth=0,
+        metadata_provider=provider,
+        provider_source_id="src",
+    )
+
+
+async def test_provider_called_once_per_attachment_with_parent_source_id(
+    tmp_path, temp_db_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(build_pdf([("a.txt", b"A"), ("b.txt", b"B")]))
+    provider = _RecordingProvider({"tag": "x"})
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent, parent_uri = await _ingest_with_provider(
+            tmp_path, client, pdf_path, provider
+        )
+        children = {
+            c.uri: c
+            for c in await client.list_documents(filter=parent_uri_filter(parent_uri))
+        }
+
+    a_uri = f"{parent_uri}#attachment=a.txt"
+    b_uri = f"{parent_uri}#attachment=b.txt"
+    assert len(provider.calls) == 3
+    assert [(s, u, r.body) for s, u, r in provider.attachment_calls()] == [
+        ("fs:attachments", a_uri, b"A"),
+        ("fs:attachments", b_uri, b"B"),
+    ]
+    for _, uri, result in provider.attachment_calls():
+        assert result.uri == uri
+        assert result.content_type == "text/plain"
+        assert result.extra_metadata == {"parent_uri": parent_uri}
+        assert result.disk_path is None
+        assert result.revision is None
+    assert children[a_uri].metadata["tag"] == "x"
+    assert children[a_uri].metadata["seen_uri"] == a_uri
+    assert children[b_uri].metadata["seen_uri"] == b_uri
+    assert parent.metadata["seen_uri"] == str(pdf_path)
+
+
+async def test_attachment_children_carry_no_source_id_under_a_provider(
+    tmp_path, temp_db_path, monkeypatch
+):
+    """The provider runs on the parent's behalf; ownership is not passed down,
+    so orphan reconciliation never sees a child (see test_reconcile)."""
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(build_pdf([("notes.txt", b"plain text")]))
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent, parent_uri = await _ingest_with_provider(
+            tmp_path, client, pdf_path, _RecordingProvider()
+        )
+        (child,) = await client.list_documents(filter=parent_uri_filter(parent_uri))
+
+    assert parent.metadata["source_id"] == "fs:attachments"
+    assert "source_id" not in child.metadata
+    assert "seen_uri" in child.metadata
+
+
+async def test_provider_reserved_keys_do_not_reach_a_child(temp_db_path, monkeypatch):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    provider = _RecordingProvider(
+        {
+            "source_id": "forged",
+            "md5": "forged",
+            "content_type": "forged",
+            "source_revision": "forged",
+            "parent_uri": "file:///elsewhere.pdf",
+            "kept": "yes",
+        }
+    )
+    pdf_bytes = build_pdf([("a.txt", b"A")])
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent_uri = "file:///fixtures/parent.pdf"
+        parent = await _make_parent(client, parent_uri, pdf_bytes)
+        await _reconcile_with_provider(client, parent, pdf_bytes, provider)
+        (child,) = await client.list_documents(filter=parent_uri_filter(parent_uri))
+
+    assert child.metadata["kept"] == "yes"
+    assert child.metadata["parent_uri"] == parent_uri
+    assert child.metadata["content_type"] == "text/plain"
+    assert child.metadata["md5"] != "forged"
+    assert "source_id" not in child.metadata
+    assert "source_revision" not in child.metadata
+
+
+async def test_provider_called_for_nested_attachments_up_to_cap(
+    temp_db_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    l3 = build_pdf([("leaf.txt", b"deepest")])
+    l2 = build_pdf([("l3.pdf", l3)])
+    l1 = build_pdf([("l2.pdf", l2)])
+    root = build_pdf([("l1.pdf", l1)])
+    provider = _RecordingProvider()
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        root_uri = "file:///fixtures/root.pdf"
+        parent = await _make_parent(client, root_uri, root)
+        await _reconcile_with_provider(client, parent, root, provider)
+        l1_uri = f"{root_uri}#attachment=l1.pdf"
+        l2_uri = f"{l1_uri}#attachment=l2.pdf"
+        l2_doc = await client.get_document_by_uri(l2_uri)
+
+    assert [(s, u) for s, u, _ in provider.calls] == [("src", l1_uri), ("src", l2_uri)]
+    assert provider.calls[1][2].extra_metadata == {"parent_uri": l1_uri}
+    assert l2_doc is not None
+    assert l2_doc.metadata["seen_uri"] == l2_uri
+
+
+async def test_provider_skipped_for_unchanged_child_and_rerun_for_changed(
+    temp_db_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent_uri = "file:///fixtures/parent.pdf"
+        first = build_pdf([("stable.txt", b"same"), ("changed.txt", b"old")])
+        parent = await _make_parent(client, parent_uri, first)
+        await _reconcile_with_provider(
+            client, parent, first, _RecordingProvider({"run": "1", "only_first": "y"})
+        )
+
+        second_provider = _RecordingProvider({"run": "2"})
+        second = build_pdf([("stable.txt", b"same"), ("changed.txt", b"new")])
+        await _reconcile_with_provider(client, parent, second, second_provider)
+        stable = await client.get_document_by_uri(f"{parent_uri}#attachment=stable.txt")
+        changed = await client.get_document_by_uri(
+            f"{parent_uri}#attachment=changed.txt"
+        )
+
+    assert [u for _, u, _ in second_provider.calls] == [
+        f"{parent_uri}#attachment=changed.txt"
+    ]
+    assert stable is not None and changed is not None
+    assert stable.metadata["run"] == "1"
+    assert changed.metadata["run"] == "2"
+    assert "only_first" not in changed.metadata
+
+
+async def test_provider_failure_for_an_attachment_is_logged_not_raised(
+    tmp_path, temp_db_path, monkeypatch
+):
+    """The parent is stored before its children, so a provider raising for a
+    child must neither fail the parent nor cost the child or its siblings."""
+    import logging
+
+    from tests.conftest import capture_logs
+
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(build_pdf([("bad.txt", b"B"), ("good.txt", b"G")]))
+    provider = _RecordingProvider({"tag": "x"}, fail_for=("bad.txt",))
+
+    logger = logging.getLogger("haiku.rag.client.documents")
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with capture_logs(logger, logging.WARNING) as records:
+            parent, parent_uri = await _ingest_with_provider(
+                tmp_path, client, pdf_path, provider
+            )
+        bad = await client.get_document_by_uri(f"{parent_uri}#attachment=bad.txt")
+        good = await client.get_document_by_uri(f"{parent_uri}#attachment=good.txt")
+
+    assert parent.metadata["tag"] == "x"
+    assert bad is not None
+    assert "tag" not in bad.metadata
+    assert bad.metadata["parent_uri"] == parent_uri
+    assert good is not None
+    assert good.metadata["tag"] == "x"
+    (warning,) = records
+    assert warning.getMessage().startswith(
+        f"Metadata provider failed for attachment {parent_uri}#attachment=bad.txt "
+        f"of {parent_uri};"
+    )
+    assert warning.exc_info is not None
+
+
+async def test_provider_mutating_its_result_cannot_change_a_child(
+    temp_db_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+
+    async def mutating(source_id: str, uri: str, result: FetchResult) -> dict:
+        result.content_hash = "tampered"
+        result.extra_metadata["parent_uri"] = "file:///elsewhere.pdf"
+        return {}
+
+    pdf_bytes = build_pdf([("a.txt", b"A")])
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent_uri = "file:///fixtures/parent.pdf"
+        parent = await _make_parent(client, parent_uri, pdf_bytes)
+        await _reconcile_with_provider(client, parent, pdf_bytes, mutating)
+        (child,) = await client.list_documents(filter=parent_uri_filter(parent_uri))
+
+    assert child.metadata["parent_uri"] == parent_uri
+    assert child.metadata["md5"] != "tampered"
+
+
+async def test_provider_without_a_source_id_is_not_called(temp_db_path, monkeypatch):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    provider = _RecordingProvider()
+    pdf_bytes = build_pdf([("a.txt", b"A")])
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent_uri = "file:///fixtures/p.pdf"
+        parent = await _make_parent(client, parent_uri, pdf_bytes)
+        await _reconcile_pdf_attachments(
+            writing(client), parent, pdf_bytes, depth=0, metadata_provider=provider
+        )
+        (child,) = await client.list_documents(filter=parent_uri_filter(parent_uri))
+
+    assert provider.calls == []
+    assert "seen_uri" not in child.metadata
+
+
+async def test_provider_not_called_for_an_unsupported_attachment(
+    temp_db_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    provider = _RecordingProvider()
+    pdf_bytes = build_pdf([("Press Quality.joboptions", b"/Tags\n")])
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent_uri = "file:///fixtures/p.pdf"
+        parent = await _make_parent(client, parent_uri, pdf_bytes)
+        await _reconcile_with_provider(client, parent, pdf_bytes, provider)
+        assert await client.list_documents(filter=parent_uri_filter(parent_uri)) == []
+
+    assert provider.calls == []
+
+
+async def test_ingest_takes_the_extension_from_the_attachment_name(temp_db_path):
+    """The synthetic URI's fragment is dropped by the URL-suffix fallback, which
+    would inherit the parent's .pdf; `filename` makes the name authoritative,
+    so an unsupported name is rejected before any converter call."""
+    import pytest
+
+    from haiku.rag.client.documents import _ingest_fetch_result
+    from haiku.rag.client.exceptions import UnsupportedSourceError
+
+    child_uri = "file:///fixtures/brochure.pdf#attachment=Press%20Quality.joboptions"
+    result = FetchResult(
+        uri=child_uri,
+        body=b"/CompressObjects /Tags\n",
+        content_type="application/pdf",
+        content_hash="x",
+    )
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with pytest.raises(UnsupportedSourceError, match=".joboptions"):
+            await _ingest_fetch_result(
+                writing(client),
+                result,
+                title=None,
+                user_metadata={},
+                stored_uri=child_uri,
+                existing_doc=None,
+                filename="Press Quality.joboptions",
+            )

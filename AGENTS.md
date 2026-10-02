@@ -58,7 +58,7 @@ haiku_rag_slim/haiku/rag/   # Source code
 │   ├── packages.py         # Package versions and update checks
 │   └── dependencies.py     # Optional dependency errors
 ├── chunkers/               # docling-local, docling-serve
-├── converters/             # docling-local, docling-serve, pdf_split.py, text_utils.py, exceptions.py
+├── converters/             # docling-local, docling-serve, pdf_split.py, pdf_attachments.py, text_utils.py, exceptions.py
 ├── config/                 # models.py (all config classes), loader.py
 ├── chat/                   # Chat TUI (app.py, widgets/)
 ├── inspector/              # Inspector TUI (app.py, widgets/)

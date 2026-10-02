@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- `haiku.rag.converters.pdf_attachments`: `extract_pdf_attachments` and `attachment_uri` reproduce the attachment children ingestion stores for a PDF, for back-fills outside ingestion.
+
+### Changed
+
+- Ingester metadata providers are called for PDF attachments too, with the source id of the document they came from. Attachments still carry no `source_id`. Existing providers start seeing `#attachment=` URIs and attachment bodies; a provider exception for an attachment is logged rather than failing the job.
+- Metadata providers can no longer set `parent_uri`.
+
 ## [0.92.0] - 2026-10-02
 
 ### Added
