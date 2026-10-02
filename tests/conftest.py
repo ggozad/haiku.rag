@@ -344,6 +344,17 @@ def for_path(
     )
 
 
+TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+
+
+def current_trace() -> tuple[str, str]:
+    """The current span's trace id and trace state header."""
+    from opentelemetry import trace
+
+    span_context = trace.get_current_span().get_span_context()
+    return format(span_context.trace_id, "032x"), span_context.trace_state.to_header()
+
+
 @contextmanager
 def _covering_returns(stub, client):
     """Make a patched `HaikuRAG` hand back `client` however it is constructed.

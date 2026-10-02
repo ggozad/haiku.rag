@@ -4,7 +4,7 @@
 
 ### Added
 
-- `haiku-ingester` and `haiku-rag` one-shot commands join a parent trace passed in `TRACEPARENT` / `TRACESTATE`; `serve`, `mcp`, `chat` and `inspect` don't.
+- `haiku-ingester` and `haiku-rag` one-shot commands join a parent trace passed in `TRACEPARENT` / `TRACESTATE`. `serve`, `mcp`, `chat` and `inspect` don't.
 
 ### Changed
 

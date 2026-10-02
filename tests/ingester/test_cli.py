@@ -32,6 +32,7 @@ from haiku.rag.store.exceptions import (
     SourceUnavailableError,
     UnknownDatabaseError,
 )
+from tests.conftest import TRACEPARENT, current_trace
 
 runner = CliRunner()
 
@@ -607,22 +608,12 @@ class TestPlacingTheIngesterDatabase:
         assert exit_info.value.code == 1
 
 
-TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
-
-
-def _current_trace() -> tuple[str, str]:
-    from opentelemetry import trace
-
-    span_context = trace.get_current_span().get_span_context()
-    return format(span_context.trace_id, "032x"), span_context.trace_state.to_header()
-
-
 @pytest.mark.parametrize("command, joins", [("run-batch", True), ("serve", False)])
 def test_one_shot_commands_join_the_traceparent_trace(monkeypatch, command, joins):
     seen: list[tuple[str, str]] = []
 
     async def record(*_, **__):
-        seen.append(_current_trace())
+        seen.append(current_trace())
         return BatchReport()
 
     fake = MagicMock(run_batch=record, serve=record)
@@ -637,4 +628,4 @@ def test_one_shot_commands_join_the_traceparent_trace(monkeypatch, command, join
         assert seen == [("4bf92f3577b34da6a3ce929d0e0e4736", "vendor=value")]
     else:
         assert seen == [("0" * 32, "")]
-    assert _current_trace() == ("0" * 32, "")
+    assert current_trace() == ("0" * 32, "")

@@ -17,7 +17,7 @@ from haiku.rag.store.exceptions import (
     MigrationRequiredError,
     UnknownDatabaseError,
 )
-from tests.conftest import for_path
+from tests.conftest import TRACEPARENT, current_trace, for_path
 
 runner = CliRunner()
 
@@ -1212,16 +1212,6 @@ def test_inspect_reports_a_missing_tui_extra(monkeypatch):
     assert "haiku.rag-slim[tui]" in result.output
 
 
-TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
-
-
-def _current_trace() -> tuple[str, str]:
-    from opentelemetry import trace
-
-    span_context = trace.get_current_span().get_span_context()
-    return format(span_context.trace_id, "032x"), span_context.trace_state.to_header()
-
-
 @pytest.mark.parametrize("command, joins", [("vacuum", True), ("mcp", False)])
 def test_one_shot_commands_join_the_traceparent_trace(
     app_stub, monkeypatch, command, joins
@@ -1229,7 +1219,7 @@ def test_one_shot_commands_join_the_traceparent_trace(
     seen: list[tuple[str, str]] = []
 
     async def record(*_, **__):
-        seen.append(_current_trace())
+        seen.append(current_trace())
 
     app_stub.vacuum = record
     app_stub.run_mcp = record
@@ -1244,4 +1234,4 @@ def test_one_shot_commands_join_the_traceparent_trace(
         assert seen == [("4bf92f3577b34da6a3ce929d0e0e4736", "vendor=value")]
     else:
         assert seen == [("0" * 32, "")]
-    assert _current_trace() == ("0" * 32, "")
+    assert current_trace() == ("0" * 32, "")
