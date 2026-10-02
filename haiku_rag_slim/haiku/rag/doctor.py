@@ -184,7 +184,7 @@ def _classify_unchunked(
         results.append(
             CheckResult(
                 name="documents_text_no_chunks",
-                severity=Severity.WARN,
+                severity=Severity.FAIL,
                 message=f"{len(text_docs)} document(s) have text content but no chunks.",
                 remediation="haiku-rag rebuild",
                 details=_sample(sorted(text_docs)),
@@ -562,7 +562,7 @@ def _check_documents_without_items(
     missing = (doc_ids & chunk_doc_ids) - item_doc_ids
     return CheckResult(
         name="documents_without_items",
-        severity=Severity.WARN if missing else Severity.OK,
+        severity=Severity.FAIL if missing else Severity.OK,
         message=(
             f"{len(missing)} chunked document(s) have no document items."
             if missing
@@ -624,7 +624,7 @@ def _check_unembedded_chunks(id_column, embedded: "np.ndarray") -> CheckResult:
         sample.append(f"... (+{zero_count - _SAMPLE_LIMIT} more)")
     return CheckResult(
         name="unembedded_chunks",
-        severity=Severity.WARN if zero_count else Severity.OK,
+        severity=Severity.FAIL if zero_count else Severity.OK,
         message=(
             f"{zero_count} chunk(s) have an all-zero (unembedded) vector."
             if zero_count
@@ -711,7 +711,7 @@ def _check_pending_migrations(stored_version: str) -> CheckResult:
     )
     return CheckResult(
         name="pending_migrations",
-        severity=Severity.WARN if pending else Severity.OK,
+        severity=Severity.FAIL if pending else Severity.OK,
         message=(
             f"{len(pending)} migration(s) pending (db version {stored_version})."
             if pending
@@ -1104,6 +1104,7 @@ async def run_doctor(
     environ: dict[str, str],
     duplicates_out: Path | None = None,
     on_progress: Callable[[str], None] | None = None,
+    providers: bool = True,
 ) -> DoctorReport:
     """Open the database read-only and run every diagnostic check.
 
@@ -1144,7 +1145,8 @@ async def run_doctor(
                     on_progress=on_progress,
                 )
 
-    notify("Checking API keys")
-    results.append(_check_api_keys(config, environ))
-    results += await run_provider_checks(config, on_progress=on_progress)
+    if providers:
+        notify("Checking API keys")
+        results.append(_check_api_keys(config, environ))
+        results += await run_provider_checks(config, on_progress=on_progress)
     return DoctorReport(results=results)

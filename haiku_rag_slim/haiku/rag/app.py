@@ -240,12 +240,39 @@ class HaikuRAGApp:
             f"  [repr.attrib_name]docling-document schema[/repr.attrib_name]: {info.packages['docling_document_schema']}"
         )
 
-    async def doctor(self, duplicates_out: Path | None = None) -> bool:
+    async def doctor(
+        self,
+        duplicates_out: Path | None = None,
+        providers: bool = True,
+        as_json: bool = False,
+    ) -> bool:
         """Run health checks and print a report. Returns True if any check failed."""
         import os
         from contextlib import nullcontext
 
-        from haiku.rag.doctor import Severity, run_doctor
+        from haiku.rag.doctor import CheckResult, DoctorReport, Severity, run_doctor
+
+        if as_json:
+            if self.database_missing:
+                report = DoctorReport(
+                    results=[
+                        CheckResult(
+                            name="database_missing",
+                            severity=Severity.FAIL,
+                            message="Database path does not exist.",
+                        )
+                    ]
+                )
+            else:
+                report = await run_doctor(
+                    self.config,
+                    self._location,
+                    dict(os.environ),
+                    duplicates_out=duplicates_out,
+                    providers=providers,
+                )
+            print(report.model_dump_json(indent=2))
+            return report.failed
 
         self.console.print("[bold]haiku.rag doctor[/bold]")
         self.console.print(
@@ -272,6 +299,7 @@ class HaikuRAGApp:
                 dict(os.environ),
                 duplicates_out=duplicates_out,
                 on_progress=on_progress,
+                providers=providers,
             )
 
         glyphs = {
@@ -288,14 +316,14 @@ class HaikuRAGApp:
                 self.console.print(f"    [dim]→ {result.remediation}[/dim]")
 
         database = [r for r in report.results if not r.name.startswith("provider:")]
-        providers = [r for r in report.results if r.name.startswith("provider:")]
+        endpoints = [r for r in report.results if r.name.startswith("provider:")]
 
         self.console.rule("[bold]Database[/bold]")
         for result in database:
             render(result)
-        if providers:
+        if endpoints:
             self.console.rule("[bold]Providers[/bold]")
-            for result in providers:
+            for result in endpoints:
                 render(result)
 
         self.console.rule()

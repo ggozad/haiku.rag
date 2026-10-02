@@ -312,7 +312,7 @@ async def _add_doc(db, doc_id, *, items, metadata=None, chunks=None):
         await chunks_tbl.add(chunks)
 
 
-async def test_document_with_text_but_no_chunks_warns(temp_db_path):
+async def test_document_with_text_but_no_chunks_fails(temp_db_path):
     db = await _build_db(temp_db_path)
     await _add_doc(
         db,
@@ -329,9 +329,9 @@ async def test_document_with_text_but_no_chunks_warns(temp_db_path):
     )
     report = await run_doctor(_config(), temp_db_path, {})
     result = _result(report, "documents_text_no_chunks")
-    assert result.severity is Severity.WARN
+    assert result.severity is Severity.FAIL
     assert "d2" in result.details
-    assert report.count(Severity.FAIL) == 0
+    assert report.failed
 
 
 async def test_empty_document_no_chunks_is_ok(temp_db_path):
@@ -427,7 +427,7 @@ async def test_dangling_doc_item_ref_fails(temp_db_path):
     assert "c2" in result.details
 
 
-async def test_unembedded_chunk_warns(temp_db_path):
+async def test_unembedded_chunk_fails(temp_db_path):
     db = await _build_db(temp_db_path)
     chunks_tbl = await db.open_table("chunks")
     await chunks_tbl.add(
@@ -443,12 +443,12 @@ async def test_unembedded_chunk_warns(temp_db_path):
     )
     report = await run_doctor(_config(), temp_db_path, {})
     result = _result(report, "unembedded_chunks")
-    assert result.severity is Severity.WARN
+    assert result.severity is Severity.FAIL
     assert "zero" in result.details
-    assert not report.failed
+    assert report.failed
 
 
-async def test_chunked_document_without_items_warns(temp_db_path):
+async def test_chunked_document_without_items_fails(temp_db_path):
     db = await _build_db(temp_db_path)
     await _add_doc(
         db,
@@ -462,8 +462,9 @@ async def test_chunked_document_without_items_warns(temp_db_path):
     )
     report = await run_doctor(_config(), temp_db_path, {})
     result = _result(report, "documents_without_items")
-    assert result.severity is Severity.WARN
+    assert result.severity is Severity.FAIL
     assert "d2" in result.details
+    assert report.failed
 
 
 async def test_empty_document_without_items_is_ok(temp_db_path):
@@ -585,11 +586,11 @@ async def test_vector_dimension_mismatch_fails(temp_db_path):
     assert report.failed
 
 
-async def test_pending_migration_warns(temp_db_path):
+async def test_pending_migration_fails(temp_db_path):
     await _build_db(temp_db_path, version="0.40.0")
     report = await run_doctor(_config(), temp_db_path, {})
-    assert _result(report, "pending_migrations").severity is Severity.WARN
-    assert not report.failed
+    assert _result(report, "pending_migrations").severity is Severity.FAIL
+    assert report.failed
 
 
 async def test_missing_api_key_fails(temp_db_path):
@@ -698,6 +699,112 @@ def test_cli_doctor_exits_1_on_failure(monkeypatch):
     monkeypatch.setattr("haiku.rag.cli.create_app", lambda *_a, **_k: app)
     result = runner.invoke(cli, ["doctor", "--db", "/tmp/whatever.lancedb"])
     assert result.exit_code == 1
+
+
+def test_cli_doctor_skip_providers(monkeypatch):
+    app = MagicMock()
+    app.doctor = AsyncMock(return_value=False)
+    monkeypatch.setattr("haiku.rag.cli.create_app", lambda *_a, **_k: app)
+    runner.invoke(cli, ["doctor", "--db", "/tmp/whatever.lancedb", "--skip-providers"])
+    app.doctor.assert_awaited_once_with(
+        duplicates_out=None, providers=False, as_json=False
+    )
+
+
+def _doctor_cli_args(db_path, tmp_path, monkeypatch, **build) -> list[str]:
+    """`doctor` arguments over a database built by `_build_db`, its config, and an
+    unreachable endpoint."""
+    import asyncio
+
+    import haiku.rag.config as config_module
+
+    monkeypatch.setattr(config_module, "_config", None)
+    asyncio.run(_build_db(db_path, **build))
+    config_path = tmp_path / "haiku.rag.yaml"
+    config_path.write_text(
+        yaml.safe_dump(_config().model_dump(mode="json")), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        "haiku.rag.doctor._probe_endpoint",
+        _fake_probe((False, "Connection refused", None)),
+    )
+    return ["--config", str(config_path), "doctor", "--db", str(db_path)]
+
+
+def test_cli_doctor_unreachable_endpoint_fails_unless_skipped(
+    temp_db_path, tmp_path, monkeypatch
+):
+    args = _doctor_cli_args(temp_db_path, tmp_path, monkeypatch)
+
+    checked = runner.invoke(cli, args)
+    assert checked.exit_code == 1
+    assert "is unreachable" in checked.output
+
+    skipped = runner.invoke(cli, [*args, "--skip-providers"])
+    assert skipped.exit_code == 0
+    assert "is unreachable" not in skipped.output
+
+
+def test_cli_doctor_json_prints_only_the_report(temp_db_path, tmp_path, monkeypatch):
+    args = _doctor_cli_args(temp_db_path, tmp_path, monkeypatch)
+
+    result = runner.invoke(cli, [*args, "--json"])
+
+    assert result.exit_code == 1
+    report = DoctorReport.model_validate_json(result.stdout)
+    assert _result(report, "tables_present").severity is Severity.OK
+    assert any(
+        r.name.startswith("provider:") and r.severity is Severity.FAIL
+        for r in report.results
+    )
+
+
+def test_cli_doctor_json_exits_0_without_failures(temp_db_path, tmp_path, monkeypatch):
+    args = _doctor_cli_args(temp_db_path, tmp_path, monkeypatch)
+
+    result = runner.invoke(cli, [*args, "--json", "--skip-providers"])
+
+    assert result.exit_code == 0
+    assert not DoctorReport.model_validate_json(result.stdout).failed
+
+
+def test_cli_doctor_json_reports_a_pending_migration(
+    temp_db_path, tmp_path, monkeypatch
+):
+    args = _doctor_cli_args(temp_db_path, tmp_path, monkeypatch, version="0.40.0")
+
+    result = runner.invoke(cli, [*args, "--json", "--skip-providers"])
+
+    assert result.exit_code == 1
+    report = DoctorReport.model_validate_json(result.stdout)
+    assert _result(report, "pending_migrations").severity is Severity.FAIL
+
+
+def test_cli_doctor_json_still_writes_duplicates_out(
+    temp_db_path, tmp_path, monkeypatch
+):
+    args = _doctor_cli_args(temp_db_path, tmp_path, monkeypatch)
+    target = tmp_path / "dupes.yaml"
+
+    result = runner.invoke(
+        cli, [*args, "--json", "--skip-providers", "--duplicates-out", str(target)]
+    )
+
+    assert result.exit_code == 0
+    DoctorReport.model_validate_json(result.stdout)
+    assert target.exists()
+
+
+def test_cli_doctor_json_reports_a_missing_database(tmp_path):
+    result = runner.invoke(
+        cli, ["doctor", "--db", str(tmp_path / "nope.lancedb"), "--json"]
+    )
+
+    assert result.exit_code == 1
+    report = DoctorReport.model_validate_json(result.stdout)
+    assert [(r.name, r.severity) for r in report.results] == [
+        ("database_missing", Severity.FAIL)
+    ]
 
 
 # --- Active models / API keys ---
@@ -969,6 +1076,22 @@ async def test_run_doctor_includes_provider_results(temp_db_path, monkeypatch):
     )
     report = await run_doctor(_config(), temp_db_path, {})
     assert any(r.name.startswith("provider:") for r in report.results)
+    assert not report.failed
+
+
+async def test_run_doctor_without_providers_skips_keys_and_probes(
+    temp_db_path, monkeypatch
+):
+    await _build_db(temp_db_path, provider="openai", name="text-embedding-3-small")
+    monkeypatch.setattr(
+        "haiku.rag.doctor._probe_endpoint",
+        _fake_probe((False, "Connection refused", None)),
+    )
+    config = _config(provider="openai", name="text-embedding-3-small")
+    report = await run_doctor(config, temp_db_path, environ={}, providers=False)
+    assert not any(
+        r.name == "api_keys" or r.name.startswith("provider:") for r in report.results
+    )
     assert not report.failed
 
 

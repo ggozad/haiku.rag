@@ -855,6 +855,21 @@ async def test_doctor_reports_the_duplicates_export(app, monkeypatch, tmp_path):
     assert f"written to {target}" in out(app)
 
 
+async def test_doctor_passes_providers_to_run_doctor(app, monkeypatch):
+    from haiku.rag.doctor import DoctorReport
+
+    seen = {}
+
+    async def report(*args, **kwargs):
+        seen.update(kwargs)
+        return DoctorReport()
+
+    monkeypatch.setattr("haiku.rag.doctor.run_doctor", report)
+
+    await app.doctor(providers=False)
+    assert seen["providers"] is False
+
+
 async def test_doctor_reports_a_missing_database(tmp_path):
     application = HaikuRAGApp(scope=for_path(tmp_path / "gone"), config=AppConfig())
     application.console = Console(record=True, width=200)
