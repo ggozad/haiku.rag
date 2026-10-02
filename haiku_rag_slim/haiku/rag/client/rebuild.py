@@ -602,7 +602,13 @@ async def _flush_rebuild_batch(
                 rows, schema=pa.schema([schema.field(c) for c in columns])
             )
             # Update-only: a partial source with an insert branch is rejected.
-            await table.merge_insert("id").when_matched_update_all().execute(source)
+            # The indexed plan holds the blobs in lance's query memory pool, unspillable.
+            await (
+                table.merge_insert("id")
+                .when_matched_update_all()
+                .use_index(False)
+                .execute(source)
+            )
 
         meta_records = []
         for doc in documents:

@@ -23,6 +23,7 @@
 
 - A failed or cancelled full `rebuild`, `--rechunk` or `--descriptions` at an unchanged vector dimension no longer leaves the documents it had not reached without chunks, and keeps the vector index (#670).
 - The vLLM and OpenRouter embedders and rerankers retry a request once when its connection drops, and expire idle pooled connections after 2s.
+- Re-ingesting a document, and a full `rebuild` or `--descriptions` batch, no longer fail with `Resources exhausted … HashJoinInput` when a document's docling blobs exceed lance's 150 MB query memory pool (#681).
 
 ### Security
 

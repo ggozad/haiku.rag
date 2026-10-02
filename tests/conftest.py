@@ -1,6 +1,8 @@
 import json
 import logging
 import os
+import subprocess
+import sys
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -315,6 +317,20 @@ def docling_serve_url() -> str:
     if not reachable("localhost", 5001):
         pytest.skip(f"docling-serve not reachable on localhost:5001 — {_COMPOSE_HINT}")
     return "http://localhost:5001"
+
+
+def run_with_lance_memory_pool(
+    script: str, pool_bytes: int, *args: str
+) -> "subprocess.CompletedProcess[str]":
+    """Run `script` in a fresh interpreter whose lance query memory pool is `pool_bytes`.
+
+    lance reads `LANCE_MEM_POOL_SIZE` once per process, at its first query."""
+    return subprocess.run(
+        [sys.executable, "-c", script, *args],
+        env={**os.environ, "LANCE_MEM_POOL_SIZE": str(pool_bytes)},
+        capture_output=True,
+        text=True,
+    )
 
 
 def writing(client: "HaikuRAG") -> "SingleDatabaseSession":

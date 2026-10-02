@@ -319,9 +319,11 @@ class DocumentRepository:
         assert entity.id, "Document ID is required for update"
 
         doc_record = self._to_documents_record(entity, entity.id)
+        # The indexed plan holds the blobs in lance's query memory pool, unspillable.
         await (
             self.store.documents_table.merge_insert("id")
             .when_matched_update_all()
+            .use_index(False)
             .execute([doc_record])
         )
         await self.update_meta(entity)
