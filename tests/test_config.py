@@ -374,6 +374,41 @@ def test_system_one_judge_endpoint_and_model_default_to_the_server():
     assert system_one is not None
     assert system_one.base_url is None
     assert system_one.model is None
+    assert system_one.provider is None
+
+
+def test_system_one_judge_chat_provider(tmp_path):
+    cfg = AppConfig.model_validate(
+        load_yaml_config(
+            _write(
+                tmp_path,
+                """
+evaluations:
+  system_one:
+    provider: vllm
+    base_url: http://localhost:8000
+    model: tev1-4b
+""",
+            )
+        )
+    )
+    system_one = cfg.evaluations.system_one
+    assert system_one is not None
+    assert system_one.provider == "vllm"
+
+
+def test_system_one_judge_chat_provider_needs_a_model():
+    with pytest.raises(ValidationError, match="model"):
+        AppConfig.model_validate(
+            {"evaluations": {"system_one": {"provider": "ollama"}}}
+        )
+
+
+def test_system_one_judge_rejects_an_unknown_provider():
+    with pytest.raises(ValidationError, match="provider"):
+        AppConfig.model_validate(
+            {"evaluations": {"system_one": {"provider": "anthropic", "model": "x"}}}
+        )
 
 
 def test_analysis_block_is_rejected(tmp_path):

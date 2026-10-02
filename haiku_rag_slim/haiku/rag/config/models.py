@@ -435,19 +435,35 @@ class PromptsConfig(ConfigModel):
 
 
 class SystemOneConfig(ConfigModel):
-    """A `/v1/systemone` endpoint: TypeSafe's Jev or a compatible server.
+    """A decision model: `/v1/systemone` (TypeSafe's Jev or compatible), or a chat endpoint.
 
     The API key is read from `TYPESAFE_API_KEY`, never from the config.
     """
 
+    provider: Literal["vllm", "ollama", "openai"] | None = Field(
+        default=None,
+        description=(
+            "Chat endpoint serving the decision model, read through its logprobs. "
+            "None means a `/v1/systemone` endpoint."
+        ),
+    )
     base_url: str | None = Field(
         default=None,
-        description="Endpoint URL. None means TypeSafe's hosted API.",
+        description=(
+            "Endpoint URL. None means TypeSafe's hosted API, or the provider's "
+            "default server."
+        ),
     )
     model: str | None = Field(
         default=None,
         description="Model the endpoint serves. None means the server's default.",
     )
+
+    @model_validator(mode="after")
+    def _a_chat_provider_names_its_model(self) -> "SystemOneConfig":
+        if self.provider is not None and self.model is None:
+            raise ValueError("evaluations.system_one.provider needs a model")
+        return self
 
 
 class EvaluationsConfig(ConfigModel):

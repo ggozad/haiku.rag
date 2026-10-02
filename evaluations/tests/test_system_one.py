@@ -5,9 +5,10 @@ from unittest.mock import MagicMock
 import httpx2
 import pytest
 from pydantic_evals.evaluators import EvaluationReason, Evaluator, EvaluatorContext
-from typesafe_sdk import AsyncTypeSafeClient, RetryPolicy, TypeSafeError
+from typesafe_sdk import AsyncTypeSafeClient, RetryPolicy
 
 from evaluations.evaluators import SystemOneJudge
+from evaluations.evaluators.system_one import DecisionError, SystemOneEndpoint
 
 
 def _ctx(inputs="What is 2 + 2?", expected="4", output="four") -> EvaluatorContext:
@@ -74,9 +75,11 @@ def _verdict(result: dict) -> EvaluationReason:
     return verdict
 
 
-def _judge(endpoint: Endpoint, **kwargs) -> SystemOneJudge:
+def _judge(endpoint: Endpoint, model: str | None = None, **kwargs) -> SystemOneJudge:
     return SystemOneJudge(
-        client=endpoint.client(), instructions="Is the output correct?", **kwargs
+        endpoint=SystemOneEndpoint(endpoint.client(), model=model),
+        instructions="Is the output correct?",
+        **kwargs,
     )
 
 
@@ -149,7 +152,7 @@ class TestSystemOneJudgeErrors:
         assert fallback.calls == 1
 
     async def test_endpoint_error_without_fallback_raises(self) -> None:
-        with pytest.raises(TypeSafeError):
+        with pytest.raises(DecisionError):
             await _judge(Endpoint(status=500)).evaluate(_ctx())
 
     async def test_fallback_mapping_output_is_read_by_evaluation_name(self) -> None:
