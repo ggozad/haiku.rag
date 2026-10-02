@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import pytest
 
@@ -14,6 +16,7 @@ from haiku.rag.embeddings import (
     get_embedder,
 )
 from haiku.rag.store.models.chunk import Chunk
+from tests.conftest import capture_logs
 
 
 def similarities(embeddings, test_embedding):
@@ -460,6 +463,38 @@ async def test_vllm_reuses_pooled_client(monkeypatch):
     assert stats["constructed"] == 1
     await embedder.aclose()
     assert stats["closed"] == 1
+
+
+async def test_vllm_embedder_retries_dropped_connection():
+    """A dropped connection is retried once; a second drop raises ValueError."""
+    import httpx
+
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+    from haiku.rag.utils import http
+
+    outcomes = [
+        httpx.RemoteProtocolError("Server disconnected"),
+        httpx.Response(200, json={"data": [{"embedding": [0.1, 0.2]}]}),
+        httpx.RemoteProtocolError("Server disconnected"),
+        httpx.ReadError("Server disconnected"),
+    ]
+
+    def handler(request):
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    embedder = VLLMMultimodalEmbedder(
+        model_name="x", vector_dim=2, base_url="http://localhost:8000/v1"
+    )
+    embedder._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    with capture_logs(http.logger, logging.WARNING):
+        assert await embedder.embed_documents(["a"]) == [[0.1, 0.2]]
+        with pytest.raises(ValueError, match="dropped the connection twice"):
+            await embedder.embed_documents(["a"])
+    assert outcomes == []
 
 
 async def test_vllm_supports_images_flag():

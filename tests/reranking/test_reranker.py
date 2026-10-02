@@ -348,6 +348,34 @@ async def test_vllm_reranker_accepts_base_url_with_or_without_v1(monkeypatch, ba
     await reranker.aclose()
 
 
+async def test_vllm_reranker_retries_dropped_connection():
+    import logging
+
+    import httpx
+
+    from haiku.rag.reranking.vllm import VLLMReranker
+    from haiku.rag.utils import http
+    from tests.conftest import capture_logs
+
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        if len(calls) == 1:
+            raise httpx.RemoteProtocolError("Server disconnected")
+        return httpx.Response(
+            200, json={"results": [{"index": 0, "relevance_score": 0.9}]}
+        )
+
+    reranker = VLLMReranker(model="m", base_url="http://localhost:8000")
+    reranker._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    chunk = Chunk(content="a", order=0)
+
+    with capture_logs(http.logger, logging.WARNING):
+        assert await reranker.rerank("q", [chunk]) == [(chunk, 0.9)]
+    assert len(calls) == 2
+
+
 async def test_vllm_reranker_builds_multimodal_documents(monkeypatch):
     """Chunks carrying picture bytes are sent as content-parts documents
     (data-URI image plus text when the chunk has content); plain text chunks

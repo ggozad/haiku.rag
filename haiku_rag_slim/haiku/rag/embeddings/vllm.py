@@ -16,6 +16,11 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 from haiku.rag.embeddings import EmbedderWrapper, _to_data_uri
+from haiku.rag.utils.http import (
+    DROPPED_CONNECTION_ERRORS,
+    pooled_client,
+    post_retrying_dropped_connection,
+)
 
 if TYPE_CHECKING:
     from PIL import Image as PILImage
@@ -45,7 +50,7 @@ class VLLMMultimodalEmbedder(EmbedderWrapper):
         # One client reused across every request so the connection (and its
         # name resolution) is established once and kept alive, rather than
         # rebuilt per call.
-        self._client = httpx.AsyncClient(timeout=timeout)
+        self._client = pooled_client(timeout)
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -58,13 +63,19 @@ class VLLMMultimodalEmbedder(EmbedderWrapper):
 
     async def _post(self, body: dict[str, Any]) -> list[list[float]]:
         try:
-            response = await self._client.post(
+            response = await post_retrying_dropped_connection(
+                self._client,
                 f"{self._base_url}/embeddings",
                 json=body,
                 headers=self._headers(),
             )
             response.raise_for_status()
             payload = response.json()
+        except DROPPED_CONNECTION_ERRORS as e:
+            raise ValueError(
+                f"{self._service_name} at {self._base_url} dropped the "
+                f"connection twice without a response. Error: {e}"
+            ) from e
         except httpx.ConnectError as e:
             raise ValueError(
                 f"Could not connect to {self._service_name} at {self._base_url}. "
