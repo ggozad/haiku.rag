@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.92.0] - 2026-10-02
+
 ### Added
 
 - `haiku-ingester` and `haiku-rag` one-shot commands join a parent trace passed in `TRACEPARENT` / `TRACESTATE`. `serve`, `mcp`, `chat` and `inspect` don't.
@@ -2850,7 +2852,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.91.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.92.0...HEAD
+[0.92.0]: https://github.com/ggozad/haiku.rag/compare/0.91.0...0.92.0
 [0.91.0]: https://github.com/ggozad/haiku.rag/compare/0.90.0...0.91.0
 [0.90.0]: https://github.com/ggozad/haiku.rag/compare/0.89.0...0.90.0
 [0.89.0]: https://github.com/ggozad/haiku.rag/compare/0.88.2...0.89.0
