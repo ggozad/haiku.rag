@@ -96,9 +96,9 @@ def test_extract_holds_the_pdfium_lock_and_closes_the_document(monkeypatch):
             events.append(("count", PDFIUM_LOCK.locked()))
             return super().count_attachments()
 
-        def close(self):
+        def close(self, _by_parent=False):
             events.append(("close", PDFIUM_LOCK.locked()))
-            super().close()
+            super().close(_by_parent)
 
     monkeypatch.setattr(pdfium, "PdfDocument", Spy)
 

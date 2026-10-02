@@ -672,7 +672,11 @@ class _RecordingProvider:
         return [c for c in self.calls if "parent_uri" in c[2].extra_metadata]
 
 
-async def _ingest_with_provider(tmp_path, client, pdf_path, provider) -> Document:
+async def _ingest_with_provider(
+    tmp_path, client, pdf_path, provider
+) -> tuple[Document, str]:
+    """Ingest ``pdf_path`` through an FS source under ``provider``; returns the
+    parent and its URI."""
     from haiku.rag.sources.fs import FSSource
 
     source = FSSource(root=tmp_path, source_id="fs:attachments")
@@ -683,7 +687,8 @@ async def _ingest_with_provider(tmp_path, client, pdf_path, provider) -> Documen
         metadata_provider=provider,
     )
     assert isinstance(parent, Document)
-    return parent
+    assert parent.uri is not None
+    return parent, parent.uri
 
 
 async def _reconcile_with_provider(
@@ -711,14 +716,16 @@ async def test_provider_called_once_per_attachment_with_parent_source_id(
     provider = _RecordingProvider({"tag": "x"})
 
     async with HaikuRAG(temp_db_path, create=True) as client:
-        parent = await _ingest_with_provider(tmp_path, client, pdf_path, provider)
+        parent, parent_uri = await _ingest_with_provider(
+            tmp_path, client, pdf_path, provider
+        )
         children = {
             c.uri: c
-            for c in await client.list_documents(filter=parent_uri_filter(parent.uri))
+            for c in await client.list_documents(filter=parent_uri_filter(parent_uri))
         }
 
-    a_uri = f"{parent.uri}#attachment=a.txt"
-    b_uri = f"{parent.uri}#attachment=b.txt"
+    a_uri = f"{parent_uri}#attachment=a.txt"
+    b_uri = f"{parent_uri}#attachment=b.txt"
     assert len(provider.calls) == 3
     assert [(s, u, r.body) for s, u, r in provider.attachment_calls()] == [
         ("fs:attachments", a_uri, b"A"),
@@ -727,7 +734,7 @@ async def test_provider_called_once_per_attachment_with_parent_source_id(
     for _, uri, result in provider.attachment_calls():
         assert result.uri == uri
         assert result.content_type == "text/plain"
-        assert result.extra_metadata == {"parent_uri": parent.uri}
+        assert result.extra_metadata == {"parent_uri": parent_uri}
         assert result.disk_path is None
         assert result.revision is None
     assert children[a_uri].metadata["tag"] == "x"
@@ -749,10 +756,10 @@ async def test_attachment_children_carry_no_source_id_under_a_provider(
     pdf_path.write_bytes(build_pdf([("notes.txt", b"plain text")]))
 
     async with HaikuRAG(temp_db_path, create=True) as client:
-        parent = await _ingest_with_provider(
+        parent, parent_uri = await _ingest_with_provider(
             tmp_path, client, pdf_path, _RecordingProvider()
         )
-        (child,) = await client.list_documents(filter=parent_uri_filter(parent.uri))
+        (child,) = await client.list_documents(filter=parent_uri_filter(parent_uri))
 
     assert parent.metadata["source_id"] == "fs:attachments"
     assert "source_id" not in child.metadata
@@ -868,18 +875,23 @@ async def test_provider_failure_for_an_attachment_is_logged_not_raised(
     logger = logging.getLogger("haiku.rag.client.documents")
     async with HaikuRAG(temp_db_path, create=True) as client:
         with capture_logs(logger, logging.WARNING) as records:
-            parent = await _ingest_with_provider(tmp_path, client, pdf_path, provider)
-        bad = await client.get_document_by_uri(f"{parent.uri}#attachment=bad.txt")
-        good = await client.get_document_by_uri(f"{parent.uri}#attachment=good.txt")
+            parent, parent_uri = await _ingest_with_provider(
+                tmp_path, client, pdf_path, provider
+            )
+        bad = await client.get_document_by_uri(f"{parent_uri}#attachment=bad.txt")
+        good = await client.get_document_by_uri(f"{parent_uri}#attachment=good.txt")
 
     assert parent.metadata["tag"] == "x"
     assert bad is not None
     assert "tag" not in bad.metadata
-    assert bad.metadata["parent_uri"] == parent.uri
+    assert bad.metadata["parent_uri"] == parent_uri
     assert good is not None
     assert good.metadata["tag"] == "x"
     (warning,) = records
-    assert warning.args[:2] == (f"{parent.uri}#attachment=bad.txt", parent.uri)
+    assert warning.getMessage().startswith(
+        f"Metadata provider failed for attachment {parent_uri}#attachment=bad.txt "
+        f"of {parent_uri};"
+    )
     assert warning.exc_info is not None
 
 
@@ -915,11 +927,12 @@ async def test_provider_without_a_source_id_is_not_called(temp_db_path, monkeypa
     provider = _RecordingProvider()
     pdf_bytes = build_pdf([("a.txt", b"A")])
     async with HaikuRAG(temp_db_path, create=True) as client:
-        parent = await _make_parent(client, "file:///fixtures/p.pdf", pdf_bytes)
+        parent_uri = "file:///fixtures/p.pdf"
+        parent = await _make_parent(client, parent_uri, pdf_bytes)
         await _reconcile_pdf_attachments(
             writing(client), parent, pdf_bytes, depth=0, metadata_provider=provider
         )
-        (child,) = await client.list_documents(filter=parent_uri_filter(parent.uri))
+        (child,) = await client.list_documents(filter=parent_uri_filter(parent_uri))
 
     assert provider.calls == []
     assert "seen_uri" not in child.metadata
@@ -935,9 +948,10 @@ async def test_provider_not_called_for_an_unsupported_attachment(
     provider = _RecordingProvider()
     pdf_bytes = build_pdf([("Press Quality.joboptions", b"/Tags\n")])
     async with HaikuRAG(temp_db_path, create=True) as client:
-        parent = await _make_parent(client, "file:///fixtures/p.pdf", pdf_bytes)
+        parent_uri = "file:///fixtures/p.pdf"
+        parent = await _make_parent(client, parent_uri, pdf_bytes)
         await _reconcile_with_provider(client, parent, pdf_bytes, provider)
-        assert await client.list_documents(filter=parent_uri_filter(parent.uri)) == []
+        assert await client.list_documents(filter=parent_uri_filter(parent_uri)) == []
 
     assert provider.calls == []
 
