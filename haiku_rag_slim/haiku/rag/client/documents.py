@@ -1,12 +1,10 @@
 import asyncio
-import hashlib
 import json
 import logging
-import mimetypes
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import quote, urlparse
+from urllib.parse import urlparse
 
 from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.client.processing import (
@@ -19,6 +17,11 @@ from haiku.rag.client.processing import (
 from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.client.titles import resolve_title
 from haiku.rag.converters import get_converter
+from haiku.rag.converters.pdf_attachments import (
+    MAX_ATTACHMENT_DEPTH,
+    PdfAttachment,
+    extract_pdf_attachments,
+)
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import DocumentItem, extract_items
@@ -51,22 +54,18 @@ class DocumentImport:
     metadata: dict | None = field(default=None)
 
 
-# Maximum length of an attachment chain rooted at a top-level ingest. With
-# value 3, a PDF whose attachments contain PDFs which themselves contain
-# PDFs is fully ingested (3 levels); a fourth nested level logs a warning
-# and is skipped.
-MAX_ATTACHMENT_DEPTH = 3
-
 # Documents resolved per id-filter query, bounding the filter expression a
 # corpus-wide migration builds.
 ID_LOOKUP_BATCH = 500
 
 # Keys the source pipeline owns: content_type/md5/source_revision drive
 # sync_state, source_id records which configured source ingested the document
-# and drives orphan reconciliation. Stripped from provider output before it is
-# merged into the document, so only the pipeline sets them.
+# and drives orphan reconciliation, parent_uri links an attachment to the
+# document it was extracted from and drives cascade deletes. Stripped from
+# provider output before it is merged into the document, so only the pipeline
+# sets them.
 _RESERVED_METADATA_KEYS = frozenset(
-    {"content_type", "md5", "source_revision", "source_id"}
+    {"content_type", "md5", "source_revision", "source_id", "parent_uri"}
 )
 
 
@@ -537,6 +536,35 @@ async def _provider_metadata(
     }
 
 
+async def _attachment_provider_metadata(
+    provider: "MetadataProvider | None",
+    source_id: str | None,
+    uri: str,
+    result: "FetchResult",
+) -> dict:
+    """``_provider_metadata`` for an attachment, where a provider exception is
+    logged and yields no metadata instead of propagating.
+
+    The parent is already stored when its attachments are reconciled, so a
+    raise would fail the parent's job with the parent indexed, and its retry
+    would stop at the parent's MD5 short-circuit, which never reconciles
+    attachments: the children would stay missing until the parent's bytes
+    changed. A child stored without provider metadata can be back-filled."""
+    if provider is None or source_id is None:
+        return {}
+    try:
+        return await _provider_metadata(provider, source_id, uri, result)
+    except Exception:
+        logger.warning(
+            "Metadata provider failed for attachment %s of %s; storing it "
+            "without provider metadata",
+            uri,
+            result.extra_metadata.get("parent_uri"),
+            exc_info=True,
+        )
+        return {}
+
+
 async def _ingest_fetch_result(
     session: SingleDatabaseSession,
     result: "FetchResult",
@@ -548,6 +576,8 @@ async def _ingest_fetch_result(
     source_id: str | None = None,
     depth: int = 0,
     filename: str | None = None,
+    metadata_provider: "MetadataProvider | None" = None,
+    provider_source_id: str | None = None,
 ) -> Document:
     """Convert / chunk / embed / store a fetched document. Replaces an
     existing document if one is supplied. ``depth`` tracks position in an
@@ -556,7 +586,12 @@ async def _ingest_fetch_result(
     ``filename``, when given, makes its suffix authoritative for the file
     extension (and thus the docling format), overriding the URI/content-type
     fallback. Callers pass it when ``result.uri`` cannot yield the right
-    extension, e.g. embedded attachments whose name lives in a URI fragment."""
+    extension, e.g. embedded attachments whose name lives in a URI fragment.
+
+    ``metadata_provider`` is not called for ``result`` itself (the caller has
+    already merged its output into ``user_metadata``) but for each PDF
+    attachment, on behalf of ``provider_source_id``. ``source_id`` is the
+    document's owner, which attachments never inherit."""
 
     converter = get_converter(session.config)
     if filename is not None:
@@ -609,7 +644,14 @@ async def _ingest_fetch_result(
         updated = await _update_document_with_chunks(
             session, existing_doc, chunks, docling_document, observed_uri=result.uri
         )
-        await _reconcile_pdf_attachments(session, updated, result.body, depth=depth)
+        await _reconcile_pdf_attachments(
+            session,
+            updated,
+            result.body,
+            depth=depth,
+            metadata_provider=metadata_provider,
+            provider_source_id=provider_source_id,
+        )
         return updated
 
     document = Document(
@@ -622,67 +664,37 @@ async def _ingest_fetch_result(
     created = await _store_document_with_chunks(
         session, document, chunks, docling_document, observed_uri=result.uri
     )
-    await _reconcile_pdf_attachments(session, created, result.body, depth=depth)
+    await _reconcile_pdf_attachments(
+        session,
+        created,
+        result.body,
+        depth=depth,
+        metadata_provider=metadata_provider,
+        provider_source_id=provider_source_id,
+    )
     return created
 
 
 def _extract_pdf_attachments(
     parent_body: bytes, parent_uri: str, *, depth: int
-) -> dict[str, tuple[str, bytes, str, str]] | None:
-    """Open the parent PDF and return its embedded attachments keyed by child
-    URI. Returns ``None`` when the PDF can't be opened or the recursion depth
-    cap is reached — in both cases the caller skips reconciliation entirely.
-
-    Every pdfium call is held under ``PDFIUM_LOCK`` (shared with page slicing)
-    because libpdfium's global C state is not thread-safe; concurrent access
-    from another worker corrupts it and then fails valid PDFs with "Data format
-    error" until the process restarts.
-    """
-    import pypdfium2 as pdfium
-
-    from haiku.rag.converters.pdf_split import PDFIUM_LOCK
-
-    with PDFIUM_LOCK:
-        try:
-            pdf = pdfium.PdfDocument(parent_body)
-        except pdfium.PdfiumError as exc:
+) -> dict[str, PdfAttachment] | None:
+    """``extract_pdf_attachments`` bounded by the attachment chain's depth.
+    Returns ``None`` when the PDF can't be opened or the recursion depth cap is
+    reached — in both cases the caller skips reconciliation entirely."""
+    attachments = extract_pdf_attachments(parent_body, parent_uri)
+    if attachments is None:
+        return None
+    if depth + 1 >= MAX_ATTACHMENT_DEPTH:
+        if attachments:
             logger.warning(
-                "Cannot scan %s for embedded attachments: %s", parent_uri, exc
+                "Attachment depth cap (%d) reached at %s; skipping %d nested "
+                "attachment(s).",
+                MAX_ATTACHMENT_DEPTH,
+                parent_uri,
+                len(attachments),
             )
-            return None
-        try:
-            attachment_count = pdf.count_attachments()
-
-            if depth + 1 >= MAX_ATTACHMENT_DEPTH:
-                if attachment_count > 0:
-                    logger.warning(
-                        "Attachment depth cap (%d) reached at %s; skipping %d nested "
-                        "attachment(s).",
-                        MAX_ATTACHMENT_DEPTH,
-                        parent_uri,
-                        attachment_count,
-                    )
-                return None
-
-            new_attachments: dict[str, tuple[str, bytes, str, str]] = {}
-            for i in range(attachment_count):
-                att = pdf.get_attachment(i)
-                name = att.get_name()
-                # A malformed PDF can carry an attachment with an empty /F, so
-                # this is real validation on untrusted input — it just needs a
-                # hand-crafted file to reach, which no fixture here produces.
-                if not name:  # pragma: no cover - needs a malformed PDF
-                    continue
-                data = bytes(att.get_data())
-                child_uri = f"{parent_uri}#attachment={quote(name, safe='')}"
-                content_type = (
-                    mimetypes.guess_type(name)[0] or "application/octet-stream"
-                )
-                content_hash = hashlib.md5(data, usedforsecurity=False).hexdigest()
-                new_attachments[child_uri] = (name, data, content_type, content_hash)
-            return new_attachments
-        finally:
-            pdf.close()
+        return None
+    return attachments
 
 
 async def _reconcile_pdf_attachments(
@@ -691,6 +703,8 @@ async def _reconcile_pdf_attachments(
     parent_body: bytes,
     *,
     depth: int,
+    metadata_provider: "MetadataProvider | None" = None,
+    provider_source_id: str | None = None,
 ) -> None:
     """Diff the parent PDF's ``/EmbeddedFiles`` table against any children
     already linked via ``metadata.parent_uri`` and bring the child set in line:
@@ -699,6 +713,11 @@ async def _reconcile_pdf_attachments(
     Re-uses ``_ingest_fetch_result`` for each child so the standard conversion
     path runs uniformly — child PDFs recurse into this helper one level deeper,
     bounded by ``MAX_ATTACHMENT_DEPTH``.
+
+    ``metadata_provider`` is called for each child it ingests, on behalf of
+    ``provider_source_id`` (the source that fetched the root document). The
+    child is not attributed to that source: it carries no ``source_id``, so
+    orphan reconciliation never sees it and it is deleted with its parent.
     """
     if not session.config.processing.extract_pdf_attachments:
         return
@@ -715,43 +734,61 @@ async def _reconcile_pdf_attachments(
 
     existing = await session.list_documents(filter=parent_uri_filter(parent_doc.uri))
     existing_by_uri: dict[str, Document] = {d.uri: d for d in existing if d.uri}
+    supported_extensions = get_converter(session.config).supported_extensions
 
-    for child_uri, (name, data, content_type, content_hash) in new_attachments.items():
+    for child_uri, attachment in new_attachments.items():
         existing_child = existing_by_uri.get(child_uri)
         if (
             existing_child
-            and (existing_child.metadata or {}).get("md5") == content_hash
+            and (existing_child.metadata or {}).get("md5") == attachment.content_hash
         ):
+            continue
+
+        # Checked before the provider runs, so it is not called for a child
+        # that is never stored (a .joboptions in every Acrobat export, say).
+        extension = Path(attachment.name).suffix.lower()
+        if extension not in supported_extensions:
+            logger.warning(
+                "Skipping attachment %r in %s: unsupported extension %r "
+                "(content type %r)",
+                attachment.name,
+                parent_doc.uri,
+                extension,
+                attachment.content_type,
+            )
             continue
 
         from haiku.rag.sources.base import FetchResult
 
         child_fr = FetchResult(
             uri=child_uri,
-            body=data,
-            content_type=content_type,
-            content_hash=content_hash,
+            body=attachment.data,
+            content_type=attachment.content_type,
+            content_hash=attachment.content_hash,
             extra_metadata={"parent_uri": parent_doc.uri},
         )
+        user_metadata = await _attachment_provider_metadata(
+            metadata_provider, provider_source_id, child_uri, child_fr
+        )
         try:
+            # No source_id: the child stays unowned (see the docstring).
             await _ingest_fetch_result(
                 session,
                 child_fr,
                 title=None,
-                user_metadata={},
+                user_metadata=user_metadata,
                 stored_uri=child_uri,
                 existing_doc=existing_child,
                 depth=depth + 1,
-                filename=name,
+                filename=attachment.name,
+                metadata_provider=metadata_provider,
+                provider_source_id=provider_source_id,
             )
-        except UnsupportedSourceError:
+        except UnsupportedSourceError as exc:
+            # The converter can still reject a supported extension's bytes,
+            # e.g. a .pdf attachment pypdfium2 cannot open for slicing.
             logger.warning(
-                "Skipping attachment %r in %s: unsupported extension %r "
-                "(content type %r)",
-                name,
-                parent_doc.uri,
-                Path(name).suffix.lower(),
-                content_type,
+                "Skipping attachment %r in %s: %s", attachment.name, parent_doc.uri, exc
             )
 
     for child_uri, child in existing_by_uri.items():
@@ -914,8 +951,9 @@ async def create_document_from_source(
             fetch_span.set_attribute("bytes", len(result.body))
             fetch_span.set_attribute("content_hash", result.content_hash)
 
+        provider_source_id = source_id or fetcher.source_id
         provider_metadata = await _provider_metadata(
-            metadata_provider, source_id or fetcher.source_id, source_str, result
+            metadata_provider, provider_source_id, source_str, result
         )
         user_metadata = {**metadata, **provider_metadata}
 
@@ -955,6 +993,8 @@ async def create_document_from_source(
                 stored_uri=stored_uri,
                 existing_doc=existing_doc,
                 source_id=owner,
+                metadata_provider=metadata_provider,
+                provider_source_id=provider_source_id,
             ),
             previous_owner,
         )
