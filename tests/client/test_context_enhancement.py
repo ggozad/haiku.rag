@@ -320,7 +320,7 @@ async def test_expand_context_single_item_document(temp_db_path):
         document = Document(content="Simple test content")
         document.set_docling(docling_doc)
         doc = await _store_document_with_chunks(
-            writing(client), document, [], docling_doc
+            writing(client), None, document, [], docling_doc
         )
         assert doc.id is not None
 

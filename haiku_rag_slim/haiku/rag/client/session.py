@@ -196,9 +196,10 @@ class SingleDatabaseSession:
             )
         )
 
-    async def delete_document(self, document_id: str) -> bool:
+    async def delete_document(self, document_id: str) -> "list[Document]":
         """Delete a document, cascading to children linked via
-        ``metadata.parent_uri``.
+        ``metadata.parent_uri``. Returns the deleted documents in their
+        last-known state; empty when the id matched nothing.
 
         The whole subtree (root + transitive children) is deleted under a single
         write lock and a single version snapshot, so the cascade is atomic: any
@@ -213,7 +214,7 @@ class SingleDatabaseSession:
             # can't appear or move between collection and deletion. parent_uri
             # links a child to its parent's uri; walk transitively, guarding
             # against cycles.
-            ids_to_delete: list[str] = []
+            docs_to_delete: list[Document] = []
             seen: set[str] = set()
             queue = [await self.get_document_by_id(document_id)]
             while queue:
@@ -221,21 +222,22 @@ class SingleDatabaseSession:
                 if doc is None or doc.id is None or doc.id in seen:
                     continue
                 seen.add(doc.id)
-                ids_to_delete.append(doc.id)
+                docs_to_delete.append(doc)
                 if doc.uri:
                     queue.extend(
                         await self.list_documents(filter=parent_uri_filter(doc.uri))
                     )
 
-            if not ids_to_delete:
-                return False
+            if not docs_to_delete:
+                return []
 
-            for doc_id in ids_to_delete:
-                await self.document_repository.delete(doc_id)
+            for doc in docs_to_delete:
+                assert doc.id is not None
+                await self.document_repository.delete(doc.id)
 
         if self.config.storage.auto_vacuum:
             self.schedule_vacuum()
-        return True
+        return docs_to_delete
 
     async def aclose(self) -> None:
         """Drain, release the embedder, and close the connection.
