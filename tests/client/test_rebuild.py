@@ -2463,7 +2463,7 @@ async def test_rebuild_stopped_before_recording_the_new_dimension_finishes(
         ids = await _import_picture_documents(client, ("one", "two"))
         old_dim = _rebuild_config().embeddings.model.vector_dim
 
-    async def stopped_before_recording(session):
+    async def stopped_before_recording(session, incomplete):
         await session.store.recreate_embeddings_table()
         raise RuntimeError("stopped")
 
@@ -2548,6 +2548,302 @@ async def test_read_only_rebuild_writes_nothing(temp_db_path, monkeypatch, mode)
                 pass
 
     assert await versions() == before
+
+
+# --- a rebuild that recreated the chunks table and stopped is recorded (#670) ---
+
+_TABLE_RECREATING = [
+    pytest.param(RebuildMode.FULL, 32, id="FULL"),
+    pytest.param(RebuildMode.RECHUNK, 32, id="RECHUNK"),
+    pytest.param(RebuildMode.DESCRIPTIONS, 32, id="DESCRIPTIONS"),
+    pytest.param(RebuildMode.EMBED_ONLY, None, id="EMBED_ONLY"),
+    pytest.param(RebuildMode.EMBED_ONLY, 32, id="EMBED_ONLY-dimension"),
+]
+
+_COMMANDS = {
+    RebuildMode.FULL: "rebuild",
+    RebuildMode.RECHUNK: "rebuild --rechunk",
+    RebuildMode.DESCRIPTIONS: "rebuild --descriptions",
+    RebuildMode.EMBED_ONLY: "rebuild --embed-only",
+}
+
+
+def _target_config(vector_dim: int | None):
+    if vector_dim is None:
+        return _rebuild_config()
+    return _other_embedder_config(vector_dim=vector_dim)
+
+
+async def _indexed_corpus(
+    temp_db_path, monkeypatch, *, vector_index: bool = True
+) -> list[str]:
+    """Two documents with enough chunks for a vector index, rebuilt a document
+    per batch."""
+    from haiku.rag.client import rebuild as rebuild_module
+
+    monkeypatch.setattr(rebuild_module, "_REBUILD_BATCH_SIZE", 1)
+    _stub_embedder(monkeypatch)
+    _stub_picture_descriptions(monkeypatch)
+    async with HaikuRAG(temp_db_path, config=_rebuild_config(), create=True) as client:
+        ids = await _import_picture_documents(
+            client, ("one", "two"), sections=200, chunks=200
+        )
+        if vector_index:
+            await client.store._ensure_vector_index()
+            assert await _vector_indexes(client) == ["vector_idx"]
+    return ids
+
+
+async def _incomplete_rebuild(temp_db_path) -> list[dict]:
+    async with HaikuRAG(
+        temp_db_path, config=_rebuild_config(), skip_validation=True, read_only=True
+    ) as client:
+        db = client.store.db
+        if "chunks_rebuild_incomplete" not in (await db.list_tables()).tables:
+            return []
+        table = await db.open_table("chunks_rebuild_incomplete")
+        return (
+            await table.query().select(["mode", "vector_index"]).to_arrow()
+        ).to_pylist()
+
+
+async def _open_warnings(temp_db_path, config, *, read_only: bool) -> list[str]:
+    import logging
+
+    with capture_logs(
+        logging.getLogger("haiku.rag.store.engine"), logging.WARNING
+    ) as records:
+        async with HaikuRAG(temp_db_path, config=config, read_only=read_only):
+            pass
+    return [record.getMessage() for record in records]
+
+
+async def _finish(temp_db_path, config, mode) -> None:
+    async with HaikuRAG(temp_db_path, config=config, skip_validation=True) as client:
+        async for _ in client.rebuild_database(mode=mode):
+            pass
+
+
+async def _assert_complete(temp_db_path, config, ids, *, vector_index: bool) -> None:
+    assert await _incomplete_rebuild(temp_db_path) == []
+    async with HaikuRAG(temp_db_path, config=config, read_only=True) as client:
+        for document_id in ids:
+            assert await _chunk_ids(client, document_id)
+        assert await _vector_indexes(client) == (["vector_idx"] if vector_index else [])
+    for read_only in (True, False):
+        warnings = await _open_warnings(temp_db_path, config, read_only=read_only)
+        assert not [w for w in warnings if "incomplete" in w]
+
+
+@pytest.mark.parametrize(("mode", "vector_dim"), _TABLE_RECREATING)
+async def test_interrupted_rebuild_that_recreated_the_chunks_warns_until_finished(
+    temp_db_path, monkeypatch, mode, vector_dim
+):
+    ids = await _indexed_corpus(temp_db_path, monkeypatch)
+    config = _target_config(vector_dim)
+
+    await _interrupt_after_first_document(temp_db_path, config, mode)
+
+    assert await _incomplete_rebuild(temp_db_path) == [
+        {"mode": mode.value, "vector_index": True}
+    ]
+    for read_only in (True, False):
+        warnings = await _open_warnings(temp_db_path, config, read_only=read_only)
+        assert [
+            w
+            for w in warnings
+            if "incomplete" in w and f"'haiku-rag {_COMMANDS[mode]}'" in w
+        ]
+
+    await _finish(temp_db_path, config, mode)
+
+    await _assert_complete(temp_db_path, config, ids, vector_index=True)
+
+
+@pytest.mark.parametrize(("mode", "vector_dim"), _TABLE_RECREATING)
+async def test_rebuild_interrupted_twice_keeps_the_vector_index_recorded(
+    temp_db_path, monkeypatch, mode, vector_dim
+):
+    ids = await _indexed_corpus(temp_db_path, monkeypatch)
+    config = _target_config(vector_dim)
+
+    await _interrupt_after_first_document(temp_db_path, config, mode)
+    await _interrupt_after_first_document(temp_db_path, config, mode)
+
+    assert await _incomplete_rebuild(temp_db_path) == [
+        {"mode": mode.value, "vector_index": True}
+    ]
+    await _finish(temp_db_path, config, mode)
+    await _assert_complete(temp_db_path, config, ids, vector_index=True)
+
+
+@pytest.mark.parametrize(("mode", "vector_dim"), _TABLE_RECREATING)
+async def test_rebuild_stopped_before_dropping_the_chunks_is_recorded(
+    temp_db_path, monkeypatch, mode, vector_dim
+):
+    from haiku.rag.store.engine import Store
+
+    ids = await _indexed_corpus(temp_db_path, monkeypatch)
+    config = _target_config(vector_dim)
+
+    async def stopped(self):
+        raise RuntimeError("stopped")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Store, "recreate_embeddings_table", stopped)
+        with pytest.raises(RuntimeError, match="stopped"):
+            await _finish(temp_db_path, config, mode)
+
+    assert await _incomplete_rebuild(temp_db_path) == [
+        {"mode": mode.value, "vector_index": True}
+    ]
+    await _finish(temp_db_path, config, mode)
+    await _assert_complete(temp_db_path, config, ids, vector_index=True)
+
+
+@pytest.mark.parametrize(("mode", "vector_dim"), _TABLE_RECREATING)
+async def test_rebuild_stopped_while_rebuilding_indexes_stays_recorded(
+    temp_db_path, monkeypatch, mode, vector_dim
+):
+    from haiku.rag.store.engine import Store
+
+    ids = await _indexed_corpus(temp_db_path, monkeypatch)
+    config = _target_config(vector_dim)
+
+    async def stopped(self):
+        raise RuntimeError("stopped")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Store, "rebuild_indexes", stopped)
+        with pytest.raises(RuntimeError, match="stopped"):
+            await _finish(temp_db_path, config, mode)
+
+    assert await _incomplete_rebuild(temp_db_path) == [
+        {"mode": mode.value, "vector_index": True}
+    ]
+    await _finish(temp_db_path, config, mode)
+    await _assert_complete(temp_db_path, config, ids, vector_index=True)
+
+
+@pytest.mark.parametrize(("mode", "vector_dim"), _TABLE_RECREATING)
+async def test_resumed_rebuild_creates_no_vector_index_where_there_was_none(
+    temp_db_path, monkeypatch, mode, vector_dim
+):
+    ids = await _indexed_corpus(temp_db_path, monkeypatch, vector_index=False)
+    config = _target_config(vector_dim)
+
+    await _interrupt_after_first_document(temp_db_path, config, mode)
+
+    assert await _incomplete_rebuild(temp_db_path) == [
+        {"mode": mode.value, "vector_index": False}
+    ]
+    await _finish(temp_db_path, config, mode)
+    await _assert_complete(temp_db_path, config, ids, vector_index=False)
+
+
+@pytest.mark.parametrize("mode", _CHUNK_REWRITING_MODES, ids=lambda m: m.name)
+async def test_embed_only_refuses_a_rebuild_that_left_documents_without_chunks(
+    temp_db_path, monkeypatch, mode
+):
+    """Embed-only re-embeds the chunks that exist, which cannot finish a
+    rebuild that stopped before writing every document's."""
+    await _indexed_corpus(temp_db_path, monkeypatch)
+    config = _target_config(32)
+    await _interrupt_after_first_document(temp_db_path, config, mode)
+
+    with pytest.raises(ValueError, match=f"'haiku-rag {_COMMANDS[mode]}'"):
+        await _finish(temp_db_path, config, RebuildMode.EMBED_ONLY)
+
+    assert await _incomplete_rebuild(temp_db_path) == [
+        {"mode": mode.value, "vector_index": True}
+    ]
+
+
+@pytest.mark.parametrize(
+    "other",
+    [RebuildMode.TITLE_ONLY, RebuildMode.SET_EMBEDDER, RebuildMode.REINDEX],
+    ids=lambda m: m.name,
+)
+async def test_rebuild_writing_no_chunks_leaves_the_record(
+    temp_db_path, monkeypatch, other
+):
+    async def fake_generate_title(config, doc):
+        return "A title"
+
+    monkeypatch.setattr("haiku.rag.client.rebuild.generate_title", fake_generate_title)
+    await _indexed_corpus(temp_db_path, monkeypatch)
+    config = _target_config(32)
+    await _interrupt_after_first_document(temp_db_path, config, RebuildMode.RECHUNK)
+
+    await _finish(temp_db_path, config, other)
+
+    assert await _incomplete_rebuild(temp_db_path) == [
+        {"mode": "rechunk", "vector_index": True}
+    ]
+
+
+async def test_rebuild_taking_over_from_embed_only_records_its_own_mode(
+    temp_db_path, monkeypatch
+):
+    """Rechunk discards embed-only's staging copy, so embed-only can no longer
+    finish the job."""
+    await _indexed_corpus(temp_db_path, monkeypatch)
+    config = _rebuild_config()
+    await _interrupt_after_first_document(temp_db_path, config, RebuildMode.EMBED_ONLY)
+    await _interrupt_after_first_document(temp_db_path, config, RebuildMode.RECHUNK)
+
+    assert await _incomplete_rebuild(temp_db_path) == [
+        {"mode": "rechunk", "vector_index": True}
+    ]
+    with pytest.raises(ValueError, match="'haiku-rag rebuild --rechunk'"):
+        await _finish(temp_db_path, config, RebuildMode.EMBED_ONLY)
+
+
+async def test_rejected_descriptions_leaves_an_interrupted_embed_only_resumable(
+    temp_db_path, monkeypatch
+):
+    ids = await _indexed_corpus(temp_db_path, monkeypatch)
+    config = _rebuild_config()
+    await _interrupt_after_first_document(temp_db_path, config, RebuildMode.EMBED_ONLY)
+
+    without_descriptions = _rebuild_config()
+    without_descriptions.processing.pictures = "none"
+    with pytest.raises(ValueError, match="processing.pictures"):
+        await _finish(temp_db_path, without_descriptions, RebuildMode.DESCRIPTIONS)
+
+    assert await _incomplete_rebuild(temp_db_path) == [
+        {"mode": "embed_only", "vector_index": True}
+    ]
+    await _finish(temp_db_path, config, RebuildMode.EMBED_ONLY)
+    await _assert_complete(temp_db_path, config, ids, vector_index=True)
+
+
+async def test_title_only_keeps_what_an_interrupted_embed_only_resumes_from(
+    temp_db_path, monkeypatch
+):
+    async def fake_generate_title(config, doc):
+        return "A title"
+
+    monkeypatch.setattr("haiku.rag.client.rebuild.generate_title", fake_generate_title)
+    ids = await _indexed_corpus(temp_db_path, monkeypatch)
+    config = _rebuild_config()
+    await _interrupt_after_first_document(temp_db_path, config, RebuildMode.EMBED_ONLY)
+
+    await _finish(temp_db_path, config, RebuildMode.TITLE_ONLY)
+    await _finish(temp_db_path, config, RebuildMode.EMBED_ONLY)
+
+    await _assert_complete(temp_db_path, config, ids, vector_index=True)
+
+
+@pytest.mark.parametrize("mode", _CHUNK_REWRITING_MODES, ids=lambda m: m.name)
+async def test_interrupted_rebuild_keeping_the_chunks_table_is_not_recorded(
+    temp_db_path, monkeypatch, mode
+):
+    await _indexed_corpus(temp_db_path, monkeypatch)
+
+    await _interrupt_after_first_document(temp_db_path, _rebuild_config(), mode)
+
+    assert await _incomplete_rebuild(temp_db_path) == []
 
 
 _FLUSH_OVER_POOL = """

@@ -21,6 +21,7 @@ from haiku.rag.config import AppConfig, get_config
 from haiku.rag.embeddings import get_embedder
 from haiku.rag.store.exceptions import MigrationRequiredError, ReadOnlyError
 from haiku.rag.store.schema import (
+    INCOMPLETE_REBUILD_TABLE,
     REQUIRED_TABLES,
     ChunkRecordBase,
     DocumentMetaRecord,
@@ -35,6 +36,13 @@ from haiku.rag.store.schema import (
 )
 
 logger = logging.getLogger(__name__)
+
+REBUILD_COMMANDS = {
+    "full": "rebuild",
+    "rechunk": "rebuild --rechunk",
+    "descriptions": "rebuild --descriptions",
+    "embed_only": "rebuild --embed-only",
+}
 
 
 class ConnectionMode(Enum):
@@ -327,6 +335,9 @@ class Store:
         if not self._skip_validation:
             await self._validate_configuration(self.stored_settings)
 
+        if INCOMPLETE_REBUILD_TABLE in existing_tables:
+            await self._warn_incomplete_rebuild()
+
     async def __aenter__(self):
         # If _initialize connects to LanceDB but then fails (e.g. migration
         # check, config validation), close the connection so it doesn't
@@ -367,6 +378,15 @@ class Store:
         except (json.JSONDecodeError, TypeError):
             return {}
         return decoded if isinstance(decoded, dict) else {}
+
+    async def _warn_incomplete_rebuild(self) -> None:
+        table = await self.db.open_table(INCOMPLETE_REBUILD_TABLE)
+        rows = (await table.query().select(["mode"]).to_arrow()).to_pylist()
+        logger.warning(
+            "Database incomplete: an interrupted 'haiku-rag %s' left documents "
+            "without chunks. Run it again to finish.",
+            REBUILD_COMMANDS[rows[0]["mode"]],
+        )
 
     def _assert_writable(self) -> None:
         """Raise ReadOnlyError if the store is in read-only mode."""

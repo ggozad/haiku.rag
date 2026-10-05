@@ -18,11 +18,18 @@ from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.client.titles import generate_title
 from haiku.rag.converters import get_converter
 from haiku.rag.store.compression import compress_docling_split
+from haiku.rag.store.engine import REBUILD_COMMANDS
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import DocumentItem, extract_items
 from haiku.rag.store.repositories.settings import SettingsRepository
-from haiku.rag.store.schema import ChunkRecordBase, create_chunk_model, ensure_indexes
+from haiku.rag.store.schema import (
+    INCOMPLETE_REBUILD_TABLE,
+    ChunkRecordBase,
+    IncompleteRebuildRecord,
+    create_chunk_model,
+    ensure_indexes,
+)
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
@@ -109,11 +116,27 @@ async def _rebuild_locked(
 ) -> AsyncGenerator[str, None]:
     from haiku.rag.client import RebuildMode
 
-    # Resolve any leftover staging/marker tables from a previously
-    # interrupted rebuild. Returns True only when phase 1 was already
-    # complete and the current mode is EMBED_ONLY, in which case we resume
-    # phase 2 from the existing staging table instead of recopying.
-    resume_from_staging = await _resolve_rebuild_recovery(session, mode)
+    if (
+        mode == RebuildMode.DESCRIPTIONS
+        and session.config.processing.pictures != "description"
+    ):
+        raise ValueError(
+            "rebuild --descriptions requires processing.pictures = 'description' "
+            "in your config."
+        )
+
+    unfinished = await _incomplete_rebuild(session)
+    if (
+        mode == RebuildMode.EMBED_ONLY
+        and unfinished is not None
+        and unfinished.mode != mode.value
+    ):
+        command = REBUILD_COMMANDS[unfinished.mode]
+        raise ValueError(
+            f"An interrupted 'haiku-rag {command}' left documents without "
+            f"chunks, which --embed-only cannot write. Run 'haiku-rag {command}' "
+            "to finish it."
+        )
 
     # Wait for any already-scheduled background vacuum before the first table
     # write. Rebuild rewrites rows, recreates tables and creates indices; a
@@ -123,10 +146,29 @@ async def _rebuild_locked(
     # background vacuums — those run once the rebuild is under way and are fine.
     await session.drain_vacuum()
 
-    # The chunks table is recreated only when the vector dimension changes, which
-    # drops its vector index. Otherwise it keeps its rows and index and the
-    # rebuild replaces them a batch at a time.
-    had_vector_index = await _has_vector_index(session)
+    # The chunks table is recreated when the vector dimension changes and by
+    # EMBED_ONLY, which drops its vector index. Otherwise it keeps its rows and
+    # index and the rebuild replaces them a batch at a time.
+    incomplete = IncompleteRebuildRecord(
+        mode=mode.value,
+        vector_index=await _has_vector_index(session)
+        or (unfinished is not None and unfinished.vector_index),
+    )
+    if unfinished is not None and mode in (
+        RebuildMode.FULL,
+        RebuildMode.RECHUNK,
+        RebuildMode.DESCRIPTIONS,
+    ):
+        # The record names a mode that can finish the job. Once this one
+        # discards EMBED_ONLY's staging copy below, EMBED_ONLY cannot.
+        await _record_incomplete_rebuild(session, incomplete)
+
+    # Resolve any leftover staging/marker tables from a previously
+    # interrupted rebuild. Returns True only when phase 1 was already
+    # complete and the current mode is EMBED_ONLY, in which case we resume
+    # phase 2 from the existing staging table instead of recopying.
+    resume_from_staging = await _resolve_rebuild_recovery(session, mode)
+
     table_dim = await _chunks_vector_dim(session)
     keeps_dimension = table_dim == session.store.embedder.vector_dim
     if keeps_dimension:
@@ -144,22 +186,25 @@ async def _rebuild_locked(
             yield doc_id
     elif mode == RebuildMode.EMBED_ONLY:
         async for doc_id in _rebuild_embed_only(
-            session, documents, resume_from_staging=resume_from_staging
+            session,
+            documents,
+            incomplete,
+            resume_from_staging=resume_from_staging,
         ):
             yield doc_id
     elif mode == RebuildMode.RECHUNK:
         if not keeps_dimension:
-            await _recreate_chunks_table(session)
+            await _recreate_chunks_table(session, incomplete)
         async for doc_id in _rebuild_rechunk(session, documents):
             yield doc_id
     elif mode == RebuildMode.DESCRIPTIONS:
         if not keeps_dimension:
-            await _recreate_chunks_table(session)
+            await _recreate_chunks_table(session, incomplete)
         async for doc_id in _rebuild_descriptions(session, documents):
             yield doc_id
     else:  # FULL
         if not keeps_dimension:
-            await _recreate_chunks_table(session)
+            await _recreate_chunks_table(session, incomplete)
         async for doc_id in _rebuild_full(session, documents):
             yield doc_id
 
@@ -170,8 +215,9 @@ async def _rebuild_locked(
         # open refuses the mix. TITLE_ONLY writes no vectors and records nothing.
         await SettingsRepository(session.store).save_current_settings()
         await session.store.rebuild_indexes()
-        if had_vector_index:
+        if incomplete.vector_index:
             await session.store._ensure_vector_index()
+        await _clear_incomplete_rebuild(session)
 
     # Final maintenance if auto_vacuum enabled. Swallowing only so that a
     # failed post-rebuild optimize doesn't mask a successful rebuild — but
@@ -264,12 +310,48 @@ async def _has_vector_index(session: SingleDatabaseSession) -> bool:
     )
 
 
-async def _recreate_chunks_table(session: SingleDatabaseSession) -> None:
+async def _incomplete_rebuild(
+    session: SingleDatabaseSession,
+) -> IncompleteRebuildRecord | None:
+    db = session.store.db
+    if INCOMPLETE_REBUILD_TABLE not in (await db.list_tables()).tables:
+        return None
+    table = await db.open_table(INCOMPLETE_REBUILD_TABLE)
+    rows = (await table.query().select(["mode", "vector_index"]).to_arrow()).to_pylist()
+    return IncompleteRebuildRecord(**rows[0])
+
+
+async def _record_incomplete_rebuild(
+    session: SingleDatabaseSession, record: IncompleteRebuildRecord
+) -> None:
+    """Write the record, replacing any other, in one version of its table."""
+    existing = await _incomplete_rebuild(session)
+    if existing == record:
+        return
+    # lance warns when an overwrite creates the table.
+    await session.store.db.create_table(
+        INCOMPLETE_REBUILD_TABLE,
+        data=[record],
+        schema=IncompleteRebuildRecord,
+        mode="create" if existing is None else "overwrite",
+    )
+
+
+async def _clear_incomplete_rebuild(session: SingleDatabaseSession) -> None:
+    db = session.store.db
+    if INCOMPLETE_REBUILD_TABLE in (await db.list_tables()).tables:
+        await db.drop_table(INCOMPLETE_REBUILD_TABLE)
+
+
+async def _recreate_chunks_table(
+    session: SingleDatabaseSession, incomplete: IncompleteRebuildRecord
+) -> None:
     """Recreate the chunks table empty at the configured vector dimension.
 
-    No vector of the old embedder is left, so the settings record the
-    configured one right away.
+    The rebuild is recorded as incomplete first. No vector of the old embedder
+    is left, so the settings record the configured one right away.
     """
+    await _record_incomplete_rebuild(session, incomplete)
     await session.store.recreate_embeddings_table()
     await SettingsRepository(session.store).save_current_settings()
 
@@ -297,8 +379,13 @@ async def _resolve_rebuild_recovery(
     marker only              → drop marker (corrupted state)
     staging + marker, embed  → return True (resume phase 2 from staging)
     staging + marker, other  → drop both (staging is for embed-only; user picked a different mode)
+
+    TITLE_ONLY writes no chunks and leaves every state for a later rebuild.
     """
     from haiku.rag.client import RebuildMode
+
+    if mode == RebuildMode.TITLE_ONLY:
+        return False
 
     db = session.store.db
     tables = (await db.list_tables()).tables
@@ -443,6 +530,7 @@ async def _read_chunks_from_staging(staging_table, document_id: str) -> list[Chu
 async def _rebuild_embed_only(
     session: SingleDatabaseSession,
     documents: list[Document],
+    incomplete: IncompleteRebuildRecord,
     *,
     resume_from_staging: bool = False,
 ) -> AsyncGenerator[str, None]:
@@ -483,7 +571,7 @@ async def _rebuild_embed_only(
     # Recreate the chunks table fresh (idempotent; handles vector-dim
     # changes and discards any partial new chunks from a prior crashed
     # phase 2).
-    await _recreate_chunks_table(session)
+    await _recreate_chunks_table(session, incomplete)
 
     staging_table = await db.open_table(_STAGING_TABLE_NAME)
 
@@ -815,12 +903,6 @@ async def _rebuild_descriptions(
     already populated are not re-described.
     """
     from haiku.rag.embeddings import embed_chunks
-
-    if session.config.processing.pictures != "description":
-        raise ValueError(
-            "rebuild --descriptions requires processing.pictures = 'description' "
-            "in your config."
-        )
 
     pending_chunks: list[Chunk] = []
     pending_docs: list[Document] = []

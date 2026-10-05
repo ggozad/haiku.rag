@@ -10,6 +10,11 @@
 
 - `rebuild` (full, `--rechunk`, `--descriptions`) writes `document_items` once per 50-document batch, split whenever the documents gathered reach 16 MiB of pictures, instead of once per document.
 - `vacuum` removes untagged versions older than the retention that were written after a tag, and their files. A tag keeps only its own version (#684).
+- A `rebuild` interrupted after dropping the chunks table (`--embed-only`, or a vector dimension change) retrains the vector index when run again.
+- Opening a database whose chunks-dropping `rebuild` was interrupted warns that it is incomplete, naming the rebuild to run again.
+- `rebuild --embed-only` refuses to finish an interrupted full rebuild, `--rechunk` or `--descriptions`.
+- `rebuild --title-only` keeps the staging copy an interrupted `--embed-only` resumes from.
+- `rebuild` prints `Error: …` and exits 1 on a `ValueError`.
 
 ## [0.92.0] - 2026-10-02
 
