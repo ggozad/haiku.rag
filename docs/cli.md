@@ -243,7 +243,7 @@ A tag missing from some tables, created outside haiku.rag or left by a failure, 
 
 Create and restore tags with every other writer stopped. The snapshot is coordinated within one process, so a writer in another process can commit between the per-table reads.
 
-Vacuum keeps the oldest tagged version and everything newer. Delete tags you no longer need so cleanup can advance.
+Vacuum keeps every tagged version and the files it references, and removes the untagged versions older than the retention. Delete tags you no longer need so their files can be removed.
 
 `tag restore` changes the live state: each table gets a new latest version equal to the tagged one. Before changing anything it creates a safety tag, `before-restore-<timestamp>`, and reports it:
 

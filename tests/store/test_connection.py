@@ -1,6 +1,7 @@
 from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
+import pyarrow as pa
 import pytest
 from pydantic import ValidationError
 
@@ -181,10 +182,13 @@ class TestVacuumByConnectionMode:
                 "haiku.rag.store.engine.lancedb.connect_async", new_callable=AsyncMock
             ),
             patch.object(Store, "_init_tables", new_callable=AsyncMock),
+            patch.object(
+                Store, "_run_lance_maintenance", new_callable=AsyncMock
+            ) as maintenance,
         ):
             async with _remote_store_with_mock_tables("db://test-database") as store:
                 await store.vacuum()
-                store.chunks_table.optimize.assert_not_awaited()
+                maintenance.assert_not_awaited()
 
     async def test_object_storage_runs_vacuum(self):
         with (
@@ -192,22 +196,25 @@ class TestVacuumByConnectionMode:
                 "haiku.rag.store.engine.lancedb.connect_async", new_callable=AsyncMock
             ),
             patch.object(Store, "_init_tables", new_callable=AsyncMock),
+            patch.object(
+                Store, "_run_lance_maintenance", new_callable=AsyncMock
+            ) as maintenance,
         ):
             async with _remote_store_with_mock_tables("s3://bucket/path") as store:
-                store.chunks_table.tags.list = AsyncMock(return_value={})
+                store.chunks_table.schema = AsyncMock(return_value=pa.schema([]))
                 with patch.object(
                     store, "_tables", return_value={"chunks": store.chunks_table}
                 ):
                     await store.vacuum()
-                store.chunks_table.optimize.assert_awaited_once()
+                maintenance.assert_awaited()
 
     async def test_local_runs_vacuum(self, temp_db_path):
         async with Store(temp_db_path, create=True) as store:
             with patch.object(
-                store.chunks_table, "optimize", new_callable=AsyncMock
-            ) as mock_optimize:
+                Store, "_run_lance_maintenance", new_callable=AsyncMock
+            ) as maintenance:
                 await store.vacuum()
-                mock_optimize.assert_called()
+                maintenance.assert_awaited()
 
 
 class TestVectorIndexByConnectionMode:

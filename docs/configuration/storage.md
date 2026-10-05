@@ -41,8 +41,7 @@ Databases written before 0.89.0 stored the whole configuration. `haiku-rag
 migrate` reduces it, and the older table versions still hold it. To remove them,
 stop every process using the database, run `haiku-rag migrate`, delete the tags
 taken before it, and run `haiku-rag vacuum --retention-seconds 0`.
-The default retention keeps them for a day, and a tag keeps its version and
-everything after it.
+The default retention keeps them for a day, and a tag keeps its version.
 
 ## Local storage
 

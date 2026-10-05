@@ -6,6 +6,10 @@
 
 - lancedb 0.39.0, pylance 12.0.0. Tables created or recreated from now on are written in Lance file format 2.2. Existing tables keep their format.
 
+### Fixed
+
+- `vacuum` removes untagged versions older than the retention that were written after a tag, and their files. A tag keeps only its own version (#684).
+
 ## [0.92.0] - 2026-10-02
 
 ### Added
