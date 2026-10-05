@@ -28,11 +28,13 @@ class DatabaseRef:
     travels in results, citations and errors, where a location must not.
     ``location`` is a local path, or a URI. ``given`` marks a path the caller
     gave, whose errors may name it: the caller already knows where it is.
+    ``tag`` reads the database read-only at that tag.
     """
 
     name: str
     location: Path | str
     given: bool = False
+    tag: str | None = None
 
     def __post_init__(self) -> None:
         if not self.name.strip():

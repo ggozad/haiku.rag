@@ -5,6 +5,7 @@ from .exceptions import (
     MigrationRequiredError,
     ReadOnlyError,
     SourceUnavailableError,
+    TagError,
     UnknownDatabaseError,
 )
 from .models import Chunk, Document
@@ -18,5 +19,6 @@ __all__ = [
     "AmbiguousDatabaseError",
     "ConfigMismatchError",
     "SourceUnavailableError",
+    "TagError",
     "UnknownDatabaseError",
 ]
