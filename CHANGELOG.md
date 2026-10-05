@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- lancedb 0.39.0, pylance 12.0.0. Tables created or recreated from now on are written in Lance file format 2.2. Existing tables keep their format.
+
 ## [0.92.0] - 2026-10-02
 
 ### Added
