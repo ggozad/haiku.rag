@@ -137,11 +137,6 @@ def recorded_settings(settings: dict) -> dict:
     return recorded
 
 
-# Keeps the vacuum cleanup cutoff safely older than the oldest tagged
-# version; guards against timestamp precision at the boundary.
-TAG_RETENTION_MARGIN = timedelta(seconds=1)
-
-
 def compaction_target_rows(
     dataset: "lance.LanceDataset", target_bytes: int
 ) -> int | None:
@@ -407,7 +402,7 @@ class Store:
 
         Raises:
             ReadOnlyError: If the store is in read-only mode.
-            RuntimeError: On lance errors during optimize; only OSError
+            RuntimeError: On lance errors during maintenance; only OSError
                 (resource pressure) skips the pass.
         """
         self._assert_writable()
@@ -424,14 +419,25 @@ class Store:
                 # Evaluate config at runtime to allow dynamic changes
                 if retention_seconds is None:
                     retention_seconds = self._config.storage.vacuum_retention_seconds
-                # Perform maintenance per table using optimize() with configurable retention
                 retention = timedelta(seconds=retention_seconds)
                 for table in self._tables().values():
-                    cutoff = await self._tag_safe_retention(table, retention)
                     if has_payload_columns(await table.schema()):
-                        await self._compact_to_target(table, cutoff)
+                        await self._compact_to_target(table)
                     else:
-                        await table.optimize(cleanup_older_than=cutoff)
+                        await self._run_lance_maintenance(
+                            table, lambda ds: ds.optimize.compact_files()
+                        )
+                        await self._run_lance_maintenance(
+                            table, lambda ds: ds.optimize.optimize_indices()
+                        )
+                    # Tagged versions are kept and every other version older
+                    # than the retention is removed with its files.
+                    await self._run_lance_maintenance(
+                        table,
+                        lambda ds: ds.cleanup_old_versions(
+                            older_than=retention, error_if_tagged_old_versions=False
+                        ),
+                    )
             except OSError as e:
                 # Resource errors (e.g. disk pressure) skip the pass; lance
                 # errors surface as RuntimeError and must not be swallowed —
@@ -440,7 +446,7 @@ class Store:
 
     async def _run_lance_maintenance(
         self, table: lancedb.AsyncTable, step: "Callable[[lance.LanceDataset], Any]"
-    ) -> bool:
+    ) -> None:
         """Run one lance maintenance step against `table`, then refresh it.
 
         The step mutates the dataset behind the open handle, so the refresh has
@@ -454,8 +460,8 @@ class Store:
         follows it are shielded as one unit and awaited to completion rather
         than abandoned while they still hold `_write_lock`. Protecting only the
         thread would leave a cancellation arriving after the commit but before
-        the refresh with a stale handle. Returns whether a cancellation was
-        absorbed.
+        the refresh with a stale handle. An absorbed cancellation is raised once
+        the step has finished.
         """
 
         async def step_and_refresh() -> None:
@@ -466,11 +472,10 @@ class Store:
                 await table.checkout_latest()
 
         _, cancelled = await _wait_protected(step_and_refresh())
-        return cancelled
+        if cancelled:
+            raise asyncio.CancelledError
 
-    async def _compact_to_target(
-        self, table: lancedb.AsyncTable, cutoff: timedelta
-    ) -> None:
+    async def _compact_to_target(self, table: lancedb.AsyncTable) -> None:
         """Compact a table of inline payloads to an explicit fragment target.
 
         `AsyncTable.optimize` exposes no compaction options, and its default row
@@ -489,60 +494,24 @@ class Store:
                     "so compaction cannot be sized and is skipped; old versions "
                     "are still pruned"
                 )
-        else:
-            # A compaction cannot be cancelled once it reaches the worker
-            # thread, so a close waits it out. Say what is running, or an
-            # operator cannot tell a long pass from a wedge.
-            logger.info(
-                f"{table.name}: compacting to {target} rows per fragment "
-                f"({len(dataset.get_fragments())} fragments)"
-            )
-            started = monotonic()
-            if await self._run_lance_maintenance(
-                table,
-                lambda ds: ds.optimize.compact_files(target_rows_per_fragment=target),
-            ):
-                raise asyncio.CancelledError
-            logger.info(f"{table.name}: compacted in {monotonic() - started:.1f}s")
-            # compact_files leaves indices covering the pre-compaction
-            # fragments and never prunes; optimize() did both.
-            if await self._run_lance_maintenance(
-                table, lambda ds: ds.optimize.optimize_indices()
-            ):
-                raise asyncio.CancelledError
-        if await self._run_lance_maintenance(
-            table, lambda ds: ds.cleanup_old_versions(older_than=cutoff)
-        ):
-            raise asyncio.CancelledError
-
-    async def _tag_safe_retention(
-        self, table: lancedb.AsyncTable, retention: timedelta
-    ) -> timedelta:
-        """Grow the retention so the cleanup cutoff stays older than the
-        table's oldest tagged version.
-
-        Lance hard-errors when a tagged version falls inside the cleanup
-        window and the Python API exposes no way to skip tagged versions, so
-        the oldest tagged version and everything newer are retained; versions
-        older than the oldest tag remain eligible for cleanup.
-        """
-        tags = await table.tags.list()
-        if not tags:
-            return retention
-
-        timestamps = {v["version"]: v["timestamp"] for v in await table.list_versions()}
-        tagged = [
-            timestamps[tag["version"]]
-            for tag in tags.values()
-            if tag["version"] in timestamps
-        ]
-        if not tagged:  # pragma: no cover - vacuum never cleans a tagged version
-            return retention
-
-        # LanceDB version timestamps are naive datetimes in local time.
-        oldest = min(ts.replace(tzinfo=None) for ts in tagged)
-        needed = datetime.now() - oldest + TAG_RETENTION_MARGIN
-        return max(retention, needed)
+            return
+        # A compaction cannot be cancelled once it reaches the worker
+        # thread, so a close waits it out. Say what is running, or an
+        # operator cannot tell a long pass from a wedge.
+        logger.info(
+            f"{table.name}: compacting to {target} rows per fragment "
+            f"({len(dataset.get_fragments())} fragments)"
+        )
+        started = monotonic()
+        await self._run_lance_maintenance(
+            table,
+            lambda ds: ds.optimize.compact_files(target_rows_per_fragment=target),
+        )
+        logger.info(f"{table.name}: compacted in {monotonic() - started:.1f}s")
+        # compact_files leaves indices covering the pre-compaction fragments.
+        await self._run_lance_maintenance(
+            table, lambda ds: ds.optimize.optimize_indices()
+        )
 
     @property
     def location(self) -> Path | str:

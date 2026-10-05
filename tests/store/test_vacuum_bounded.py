@@ -250,8 +250,8 @@ async def test_cancelling_vacuum_waits_for_the_running_step(
         assert await store.documents_table.count_rows() == 1
 
 
-async def test_thin_tables_keep_using_optimize(temp_db_path, monkeypatch):
-    """Only payload-bearing tables take the sized path."""
+async def test_only_payload_tables_take_the_sized_path(temp_db_path, monkeypatch):
+    """Only payload-bearing tables take the sized path, and none uses optimize()."""
     config = AppConfig()
     config.storage.auto_vacuum = False
     optimized: list[str] = []
@@ -264,7 +264,7 @@ async def test_thin_tables_keep_using_optimize(temp_db_path, monkeypatch):
             optimized.append(self.name)
             return await real_optimize(self, **kwargs)
 
-        async def record_compact(self, table, cutoff):
+        async def record_compact(self, table):
             compacted.append(table.name)
 
         monkeypatch.setattr(type(store.chunks_table), "optimize", record_optimize)
@@ -272,13 +272,13 @@ async def test_thin_tables_keep_using_optimize(temp_db_path, monkeypatch):
         await store.vacuum(retention_seconds=0)
 
     assert sorted(compacted) == ["document_items", "documents"]
-    assert sorted(optimized) == ["chunks", "document_meta", "settings"]
+    assert optimized == []
 
 
 async def test_unmeasurable_table_still_prunes(temp_db_path, monkeypatch, caplog):
     config = AppConfig()
     config.storage.auto_vacuum = False
-    pruned: list[str] = []
+    steps: list[str] = []
 
     async with Store(temp_db_path, config=config, create=True) as store:
         await store.documents_table.add(
@@ -290,7 +290,7 @@ async def test_unmeasurable_table_still_prunes(temp_db_path, monkeypatch, caplog
         real = Store._run_lance_maintenance
 
         async def record(self, table, step):
-            pruned.append(getattr(step, "__qualname__", "?"))
+            steps.append(table.name)
             return await real(self, table, step)
 
         monkeypatch.setattr(Store, "_run_lance_maintenance", record)
@@ -298,7 +298,8 @@ async def test_unmeasurable_table_still_prunes(temp_db_path, monkeypatch, caplog
             await store.vacuum(retention_seconds=0)
 
     # compaction skipped, pruning still ran, and the skip is visible
-    assert len(pruned) == 2  # documents and document_items, prune only
+    assert steps.count("documents") == 1
+    assert steps.count("document_items") == 1
     assert "sizes are absent" in caplog.text
 
 

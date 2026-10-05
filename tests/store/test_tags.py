@@ -1,22 +1,22 @@
 import asyncio
-from datetime import timedelta
+import os
+from pathlib import Path
 
+import lance
 import pytest
+from docling_core.types.doc.document import DoclingDocument
+from docling_core.types.doc.labels import DocItemLabel
 from lancedb.table import AsyncTags
 
+from haiku.rag.client import HaikuRAG
+from haiku.rag.config import get_config
 from haiku.rag.store import ReadOnlyError
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models import Document
+from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.schema import REQUIRED_TABLES
 from tests.locks import ObservedLock, assert_waiting_for_lock
-
-
-@pytest.fixture
-def short_retention_margin(monkeypatch):
-    monkeypatch.setattr(
-        "haiku.rag.store.engine.TAG_RETENTION_MARGIN", timedelta(milliseconds=1)
-    )
 
 
 async def test_create_and_list_tags(temp_db_path):
@@ -239,33 +239,103 @@ async def test_vacuum_cleans_untagged_versions_and_keeps_tagged(temp_db_path):
         assert rows == 2
 
 
+def _unreferenced_files(table_path: Path) -> set[str]:
+    """Data and index files on disk that no remaining version references."""
+    data, indices = set(), set()
+    for version in lance.dataset(table_path).versions():
+        at = lance.dataset(table_path, version=version["version"])
+        for fragment in at.get_fragments():
+            data.update(f.path for f in fragment.metadata.files)
+        indices.update(index["uuid"] for index in at.list_indices())
+    on_disk = set(os.listdir(table_path / "data"))
+    index_dir = table_path / "_indices"
+    on_disk |= set(os.listdir(index_dir)) if index_dir.exists() else set()
+    return on_disk - data - indices
+
+
+async def _import(client: HaikuRAG, text: str) -> None:
+    docling = DoclingDocument(name=text[:8])
+    docling.add_text(label=DocItemLabel.TEXT, text=text)
+    dim = get_config().embeddings.model.vector_dim
+    chunk = Chunk(content=text, embedding=[0.1] * dim, order=0)
+    await client.import_document(docling_document=docling, chunks=[chunk])
+
+
+async def test_vacuum_reclaims_versions_written_after_a_tag(temp_db_path):
+    """Vacuum keeps a tagged version and the latest, and the tag reads in full."""
+    config = get_config().model_copy(deep=True)
+    config.storage.auto_vacuum = False
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        store = client.store
+        await _import(client, "tagged " + os.urandom(200_000).hex())
+        await store.create_tag("before")
+        tagged = (await store.list_tags())["before"].tables
+        at_tag = {
+            name: await table.query().to_arrow()
+            for name, table in store._tables().items()
+        }
+
+        for i in range(3):
+            await _import(client, f"later{i} " + os.urandom(200_000).hex())
+            await store.vacuum()
+        await store.vacuum(retention_seconds=0)
+
+        for name, table in store._tables().items():
+            versions = {v["version"] for v in await table.list_versions()}
+            assert versions == {tagged[name], await table.version()}, name
+            assert _unreferenced_files(temp_db_path / f"{name}.lance") == set(), name
+
+        for name, table in store._tables().items():
+            await table.checkout("before")
+            assert (await table.query().to_arrow()).equals(at_tag[name]), name
+
+        documents = DocumentRepository(store)
+        [document] = await documents.list_all()
+        assert document.id is not None
+        stored = await documents.get_by_id(document.id, include_blobs=True)
+        assert stored is not None
+        docling = stored.get_docling_document()
+        assert docling is not None
+        assert docling.texts[0].text.startswith("tagged ")
+
+        fts = await store.chunks_table.query().nearest_to_text("tagged").to_list()
+        assert [hit["content"][:7] for hit in fts] == ["tagged "]
+        hybrid = (
+            await store.chunks_table.query()
+            .nearest_to([0.1] * get_config().embeddings.model.vector_dim)
+            .nearest_to_text("tagged")
+            .to_list()
+        )
+        assert [hit["content"][:7] for hit in hybrid] == ["tagged "]
+
+        for table in store._tables().values():
+            await table.checkout_latest()
+
+
 async def test_vacuum_reraises_runtime_error(temp_db_path, monkeypatch):
     """Vacuum suppresses OSError only; lance errors (RuntimeError) surface
     instead of silently skipping cleanup."""
-    from lancedb.table import AsyncTable
-
     async with Store(temp_db_path, create=True) as store:
 
-        async def failing_optimize(self, **kwargs):
+        def failing_cleanup(self, **kwargs):
             raise RuntimeError("lance error: boom")
 
-        monkeypatch.setattr(AsyncTable, "optimize", failing_optimize)
+        monkeypatch.setattr(lance.LanceDataset, "cleanup_old_versions", failing_cleanup)
         with pytest.raises(RuntimeError, match="boom"):
             await store.vacuum(retention_seconds=0)
 
-        async def failing_optimize_os(self, **kwargs):
+        def failing_cleanup_os(self, **kwargs):
             raise OSError("disk full")
 
-        monkeypatch.setattr(AsyncTable, "optimize", failing_optimize_os)
+        monkeypatch.setattr(
+            lance.LanceDataset, "cleanup_old_versions", failing_cleanup_os
+        )
         await store.vacuum(retention_seconds=0)
 
 
-async def test_vacuum_multiple_tags_uses_oldest_cutoff(
-    temp_db_path, short_retention_margin
-):
-    """With several tags the retention clamp must key off the oldest one;
-    clamping to a newer tag would put the older tagged version inside the
-    cleanup window and lance would hard-error."""
+async def test_vacuum_keeps_every_tagged_version(temp_db_path):
+    """Every tagged version survives a zero-retention vacuum."""
     async with Store(temp_db_path, create=True) as store:
         repo = DocumentRepository(store)
         await repo.create(Document(content="First document"))
@@ -284,9 +354,7 @@ async def test_vacuum_multiple_tags_uses_oldest_cutoff(
         assert tags["new"].tables["documents"] in remaining
 
 
-async def test_vacuum_partial_tag_protects_its_tables(
-    temp_db_path, short_retention_margin
-):
+async def test_vacuum_partial_tag_protects_its_tables(temp_db_path):
     """A partial tag still protects the versions of the tables it exists on,
     while untagged tables clean up normally."""
     async with Store(temp_db_path, create=True) as store:
@@ -362,8 +430,7 @@ async def test_tag_operations_rejected_during_rebuild(temp_db_path):
 
 
 async def test_vacuum_waits_for_write_lock(temp_db_path, monkeypatch):
-    """Vacuum serializes with writers and tag operations so a tag cannot be
-    created between _tag_safe_retention's read and the optimize call."""
+    """Vacuum serializes with writers and tag operations."""
     async with Store(temp_db_path, create=True) as store:
         lock = ObservedLock()
         monkeypatch.setattr(store, "_write_lock", lock)

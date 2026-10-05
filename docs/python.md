@@ -486,7 +486,7 @@ safety_tag = await client.store.restore_tag("release-1")
 
 Restore is a maintenance operation: stop all other writers first. A tag present on only some tables is partial; `list_tags` reports it via `missing_tables`, and partial tags can be deleted but never restored.
 
-Delete tags you no longer need. Vacuum retains the oldest tagged version and everything newer:
+Delete tags you no longer need. Vacuum keeps every tagged version and the files it references:
 
 ```python
 await client.store.delete_tag("release-1")
