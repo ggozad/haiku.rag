@@ -4,6 +4,7 @@ import json
 import logging
 import mimetypes
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import quote, urlparse
@@ -29,7 +30,7 @@ from haiku.rag.utils.sql import escape_like_pattern, escape_sql_string
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
-    from haiku.rag.ingester.metadata import MetadataProvider
+    from haiku.rag.ingester.metadata import BoundMetadataProvider, MetadataProvider
     from haiku.rag.sources.base import FetchResult, Source
 
 logger = logging.getLogger(__name__)
@@ -63,11 +64,17 @@ ID_LOOKUP_BATCH = 500
 
 # Keys the source pipeline owns: content_type/md5/source_revision drive
 # sync_state, source_id records which configured source ingested the document
-# and drives orphan reconciliation. Stripped from provider output before it is
-# merged into the document, so only the pipeline sets them.
+# and drives orphan reconciliation, parent_uri links an attachment to the
+# document it was extracted from and drives cascade deletes. Stripped from
+# provider output before it is merged into the document, so only the pipeline
+# sets them.
 _RESERVED_METADATA_KEYS = frozenset(
-    {"content_type", "md5", "source_revision", "source_id"}
+    {"content_type", "md5", "source_revision", "source_id", "parent_uri"}
 )
+
+# Keys the revision and MD5 short-circuits trust. Written to a document that
+# can have attachments only once its attachments have reconciled.
+_FRESHNESS_KEYS = ("md5", "source_revision")
 
 
 def _prepare_document_from_docling_sync(
@@ -518,8 +525,7 @@ def _note_source_change(doc: Document, previous: str | None) -> Document:
 
 
 async def _provider_metadata(
-    provider: "MetadataProvider | None",
-    source_id: str,
+    provider: "BoundMetadataProvider | None",
     uri: str,
     result: "FetchResult",
 ) -> dict:
@@ -532,7 +538,7 @@ async def _provider_metadata(
     provider_result = result.model_copy(deep=True)
     return {
         k: v
-        for k, v in (await provider(source_id, uri, provider_result)).items()
+        for k, v in (await provider(uri, provider_result)).items()
         if k not in _RESERVED_METADATA_KEYS
     }
 
@@ -548,6 +554,7 @@ async def _ingest_fetch_result(
     source_id: str | None = None,
     depth: int = 0,
     filename: str | None = None,
+    metadata_provider: "BoundMetadataProvider | None" = None,
 ) -> Document:
     """Convert / chunk / embed / store a fetched document. Replaces an
     existing document if one is supplied. ``depth`` tracks position in an
@@ -556,7 +563,10 @@ async def _ingest_fetch_result(
     ``filename``, when given, makes its suffix authoritative for the file
     extension (and thus the docling format), overriding the URI/content-type
     fallback. Callers pass it when ``result.uri`` cannot yield the right
-    extension, e.g. embedded attachments whose name lives in a URI fragment."""
+    extension, e.g. embedded attachments whose name lives in a URI fragment.
+
+    ``metadata_provider`` runs for every attachment beneath this document, and
+    for the document itself when it is one (``depth > 0``)."""
 
     converter = get_converter(session.config)
     if filename is not None:
@@ -569,6 +579,12 @@ async def _ingest_fetch_result(
         raise UnsupportedSourceError(
             f"Unsupported content type/extension: {result.content_type}/{file_extension}"
         )
+
+    if depth > 0:
+        user_metadata = {
+            **user_metadata,
+            **await _provider_metadata(metadata_provider, result.uri, result),
+        }
 
     source_metadata: dict = {
         "content_type": result.content_type,
@@ -600,30 +616,48 @@ async def _ingest_fetch_result(
             cleanup_path.unlink(missing_ok=True)
 
     final_metadata = {**user_metadata, **source_metadata}
+    freshness = (
+        {k: final_metadata.pop(k) for k in _FRESHNESS_KEYS if k in final_metadata}
+        if _may_have_attachments(session, result.content_type)
+        else {}
+    )
 
     if existing_doc:
         existing_doc.metadata = final_metadata
         if title is not None:
             existing_doc.title = title
         await _prepare_and_title(session, existing_doc, docling_document)
-        updated = await _update_document_with_chunks(
+        stored = await _update_document_with_chunks(
             session, existing_doc, chunks, docling_document, observed_uri=result.uri
         )
-        await _reconcile_pdf_attachments(session, updated, result.body, depth=depth)
-        return updated
+    else:
+        document = Document(
+            content="",
+            uri=stored_uri,
+            title=title,
+            metadata=final_metadata,
+        )
+        await _prepare_and_title(session, document, docling_document)
+        stored = await _store_document_with_chunks(
+            session, document, chunks, docling_document, observed_uri=result.uri
+        )
 
-    document = Document(
-        content="",
-        uri=stored_uri,
-        title=title,
-        metadata=final_metadata,
+    await _reconcile_pdf_attachments(
+        session, stored, result.body, depth=depth, metadata_provider=metadata_provider
     )
-    await _prepare_and_title(session, document, docling_document)
-    created = await _store_document_with_chunks(
-        session, document, chunks, docling_document, observed_uri=result.uri
+    return await _refresh_doc_metadata(
+        session, stored, title=None, user_metadata={}, source_metadata=freshness
     )
-    await _reconcile_pdf_attachments(session, created, result.body, depth=depth)
-    return created
+
+
+def _may_have_attachments(
+    session: SingleDatabaseSession, content_type: str | None
+) -> bool:
+    """Whether a document of ``content_type`` gets its attachments reconciled."""
+    return (
+        session.config.processing.extract_pdf_attachments
+        and content_type == "application/pdf"
+    )
 
 
 def _extract_pdf_attachments(
@@ -691,6 +725,7 @@ async def _reconcile_pdf_attachments(
     parent_body: bytes,
     *,
     depth: int,
+    metadata_provider: "BoundMetadataProvider | None" = None,
 ) -> None:
     """Diff the parent PDF's ``/EmbeddedFiles`` table against any children
     already linked via ``metadata.parent_uri`` and bring the child set in line:
@@ -700,11 +735,11 @@ async def _reconcile_pdf_attachments(
     path runs uniformly — child PDFs recurse into this helper one level deeper,
     bounded by ``MAX_ATTACHMENT_DEPTH``.
     """
-    if not session.config.processing.extract_pdf_attachments:
+    if not _may_have_attachments(
+        session, (parent_doc.metadata or {}).get("content_type")
+    ):
         return
     if not parent_doc.uri:
-        return
-    if (parent_doc.metadata or {}).get("content_type") != "application/pdf":
         return
 
     new_attachments = await asyncio.to_thread(
@@ -743,6 +778,7 @@ async def _reconcile_pdf_attachments(
                 existing_doc=existing_child,
                 depth=depth + 1,
                 filename=name,
+                metadata_provider=metadata_provider,
             )
         except UnsupportedSourceError:
             logger.warning(
@@ -914,9 +950,12 @@ async def create_document_from_source(
             fetch_span.set_attribute("bytes", len(result.body))
             fetch_span.set_attribute("content_hash", result.content_hash)
 
-        provider_metadata = await _provider_metadata(
-            metadata_provider, source_id or fetcher.source_id, source_str, result
+        bound_provider = (
+            partial(metadata_provider, source_id or fetcher.source_id)
+            if metadata_provider is not None
+            else None
         )
+        provider_metadata = await _provider_metadata(bound_provider, source_str, result)
         user_metadata = {**metadata, **provider_metadata}
 
         # MD5 short-circuit: the bytes are unchanged even if the revision wasn't.
@@ -955,6 +994,7 @@ async def create_document_from_source(
                 stored_uri=stored_uri,
                 existing_doc=existing_doc,
                 source_id=owner,
+                metadata_provider=bound_provider,
             ),
             previous_owner,
         )

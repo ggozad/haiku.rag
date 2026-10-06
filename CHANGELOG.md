@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Ingester metadata providers are called for PDF attachments, with the source id of the document they came from.
+- Metadata providers can no longer set `parent_uri`.
+
+### Fixed
+
+- Retrying an ingest that failed on a PDF attachment ingests the attachment.
+
 ## [0.93.0] - 2026-10-06
 
 ### Added

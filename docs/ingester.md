@@ -167,7 +167,9 @@ class Provider:
 example-provider = "example_pkg:Provider"
 ```
 
-The provider is built once at startup, so it can hold a client or a cache. It runs when a document is fetched for a new or changed revision. An unchanged document is skipped without a fetch and keeps its stored provider metadata. The keys `md5`, `source_revision`, `content_type` and `source_id` are removed from provider output. A `metadata_provider` with no installed entry point fails startup. A provider exception is handled like any ingestion error: network and timeout errors retry, others go to the dead-letter queue.
+The provider is built once at startup, so it can hold a client or a cache. It runs when a document is fetched for a new or changed revision. An unchanged document is skipped without a fetch and keeps its stored provider metadata. The keys `md5`, `source_revision`, `content_type`, `source_id` and `parent_uri` are removed from provider output. A `metadata_provider` with no installed entry point fails startup. A provider exception is handled like any ingestion error: network and timeout errors retry, others go to the dead-letter queue.
+
+The provider is also called for each [PDF attachment](configuration/processing.md#pdf-embedded-attachments) the ingester stores, new or with changed bytes, at any nesting depth. It receives the source id of the document the attachment came from, the attachment's URI (`<parent uri>#attachment=<percent-encoded name>`; nested attachments chain fragments), and a `FetchResult` holding the attachment's bytes and guessed content type, with `result.extra_metadata["parent_uri"]` set and `disk_path` and `revision` unset. A provider that should treat attachments differently can test `"parent_uri" in result.extra_metadata`. It is not called for an attachment the converter does not support, or for one whose bytes are unchanged, which keeps its stored provider metadata. A provider exception for an attachment is handled like one for the document it came from. Attachments carry no `source_id` (see [Which source a document came from](#which-source-a-document-came-from)).
 
 ### Custom sources
 

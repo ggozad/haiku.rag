@@ -344,6 +344,72 @@ def writing(client: "HaikuRAG") -> "SingleDatabaseSession":
     return client._session
 
 
+def build_pdf(attachments: list[tuple[str, bytes]]) -> bytes:
+    """Build a minimal one-page PDF with the given (name, bytes) attachments."""
+    import io
+
+    import pypdfium2 as pdfium
+
+    pdf = pdfium.PdfDocument.new()
+    pdf.new_page(200, 200)
+    for name, data in attachments:
+        att = pdf.new_attachment(name)
+        att.set_data(data)
+    buf = io.BytesIO()
+    pdf.save(buf)
+    return buf.getvalue()
+
+
+async def fake_ingest_fetch_result(
+    session,
+    result,
+    *,
+    title,
+    user_metadata,
+    stored_uri,
+    existing_doc,
+    source_id=None,
+    depth=0,
+    filename=None,
+    metadata_provider=None,
+):
+    """A stand-in for ``_ingest_fetch_result`` that skips docling/embedder
+    entirely: it writes the document with content_type/md5/parent_uri set
+    correctly, then defers to the real ``_reconcile_pdf_attachments`` so
+    recursive logic stays under test. Metadata providers are not simulated."""
+    from haiku.rag.client.documents import _reconcile_pdf_attachments
+    from haiku.rag.store.models.document import Document
+
+    final_metadata = {
+        **(user_metadata or {}),
+        "content_type": result.content_type,
+        "md5": result.content_hash,
+        **result.extra_metadata,
+    }
+    if result.revision is not None:
+        final_metadata["source_revision"] = result.revision
+    if source_id is not None:
+        final_metadata["source_id"] = source_id
+
+    if existing_doc:
+        existing_doc.content = ""
+        existing_doc.metadata = final_metadata
+        if title is not None:
+            existing_doc.title = title
+        doc = await session.document_repository.update(existing_doc)
+    else:
+        doc = await session.document_repository.create(
+            Document(
+                content="",
+                uri=stored_uri,
+                title=title,
+                metadata=final_metadata,
+            )
+        )
+    await _reconcile_pdf_attachments(session, doc, result.body, depth=depth)
+    return doc
+
+
 def for_path(
     db_path: "Path | str | None" = None, config: "AppConfig | None" = None
 ) -> "DatabaseScope":

@@ -1,7 +1,7 @@
-import io
 import threading
+from functools import partial
 
-import pypdfium2 as pdfium
+import pytest
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.documents import (
@@ -12,65 +12,7 @@ from haiku.rag.client.documents import (
 )
 from haiku.rag.sources import FetchResult
 from haiku.rag.store.models.document import Document
-from tests.conftest import writing
-
-
-def build_pdf(attachments: list[tuple[str, bytes]]) -> bytes:
-    """Build a minimal one-page PDF with the given (name, bytes) attachments."""
-    pdf = pdfium.PdfDocument.new()
-    pdf.new_page(200, 200)
-    for name, data in attachments:
-        att = pdf.new_attachment(name)
-        att.set_data(data)
-    buf = io.BytesIO()
-    pdf.save(buf)
-    return buf.getvalue()
-
-
-async def fake_ingest_fetch_result(
-    session,
-    result: FetchResult,
-    *,
-    title,
-    user_metadata,
-    stored_uri,
-    existing_doc,
-    source_id=None,
-    depth=0,
-    filename=None,
-):
-    """A stand-in for ``_ingest_fetch_result`` that skips docling/embedder
-    entirely: it writes the document with content_type/md5/parent_uri set
-    correctly, then defers to the real ``_reconcile_pdf_attachments`` so
-    recursive logic stays under test."""
-    final_metadata = {
-        **(user_metadata or {}),
-        "content_type": result.content_type,
-        "md5": result.content_hash,
-        **result.extra_metadata,
-    }
-    if result.revision is not None:
-        final_metadata["source_revision"] = result.revision
-    if source_id is not None:
-        final_metadata["source_id"] = source_id
-
-    if existing_doc:
-        existing_doc.content = ""
-        existing_doc.metadata = final_metadata
-        if title is not None:
-            existing_doc.title = title
-        doc = await session.document_repository.update(existing_doc)
-    else:
-        doc = await session.document_repository.create(
-            Document(
-                content="",
-                uri=stored_uri,
-                title=title,
-                metadata=final_metadata,
-            )
-        )
-    await _reconcile_pdf_attachments(session, doc, result.body, depth=depth)
-    return doc
+from tests.conftest import build_pdf, fake_ingest_fetch_result, writing
 
 
 async def _make_parent(
@@ -314,6 +256,7 @@ async def test_unsupported_attachment_continues_loop(temp_db_path, monkeypatch):
         existing_doc,
         depth=0,
         filename=None,
+        metadata_provider=None,
     ):
         if stored_uri.endswith("unsupported.xyz"):
             raise UnsupportedSourceError("nope")
@@ -632,3 +575,255 @@ async def test_cascade_delete_of_a_percent_uri_leaves_other_parents_attachments(
             )
             is not None
         )
+
+
+# --- metadata providers -------------------------------------------------------
+
+
+class _RecordingProvider:
+    """Provider double: records each call and returns ``metadata`` plus the
+    call's URI. Raises the first time it sees a URI ending in ``fail_once``."""
+
+    def __init__(self, metadata: dict | None = None, *, fail_once: str | None = None):
+        self.metadata = metadata or {}
+        self.fail_once = fail_once
+        self.calls: list[tuple[str, str, FetchResult]] = []
+
+    async def __call__(self, source_id: str, uri: str, result: FetchResult) -> dict:
+        self.calls.append((source_id, uri, result))
+        if self.fail_once is not None and uri.endswith(self.fail_once):
+            self.fail_once = None
+            raise RuntimeError(f"provider failed for {uri}")
+        return {**self.metadata, "seen_uri": uri}
+
+    def attachment_uris(self) -> list[str]:
+        return [u for _, u, r in self.calls if "parent_uri" in r.extra_metadata]
+
+
+async def _ingest_with_provider(tmp_path, client, pdf_path, provider) -> Document:
+    """Ingest ``pdf_path`` through an FS source under ``provider``."""
+    from haiku.rag.sources.fs import FSSource
+
+    source = FSSource(root=tmp_path, source_id="fs:attachments")
+    parent = await client.create_document_from_source(
+        pdf_path,
+        sources=[source],
+        source_id=source.source_id,
+        metadata_provider=provider,
+    )
+    assert isinstance(parent, Document)
+    return parent
+
+
+async def _reconcile_with_provider(
+    client: HaikuRAG, parent: Document, body: bytes, provider
+) -> None:
+    await _reconcile_pdf_attachments(
+        writing(client),
+        parent,
+        body,
+        depth=0,
+        metadata_provider=partial(provider, "src"),
+    )
+
+
+def _md5(data: bytes) -> str:
+    import hashlib
+
+    return hashlib.md5(data, usedforsecurity=False).hexdigest()
+
+
+@pytest.mark.vcr()
+@pytest.mark.usefixtures("docling_local_models")
+async def test_provider_called_for_each_attachment_with_parent_source_id(
+    tmp_path, temp_db_path
+):
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(
+        build_pdf([("a.txt", b"alpha notes"), ("b.txt", b"beta notes")])
+    )
+    parent_uri = pdf_path.absolute().as_uri()
+    provider = _RecordingProvider({"tag": "x"})
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent = await _ingest_with_provider(tmp_path, client, pdf_path, provider)
+        children = {
+            c.uri: c
+            for c in await client.list_documents(filter=parent_uri_filter(parent_uri))
+        }
+
+    a_uri = f"{parent_uri}#attachment=a.txt"
+    b_uri = f"{parent_uri}#attachment=b.txt"
+    assert [(s, u, r.body) for s, u, r in provider.calls] == [
+        ("fs:attachments", str(pdf_path), pdf_path.read_bytes()),
+        ("fs:attachments", a_uri, b"alpha notes"),
+        ("fs:attachments", b_uri, b"beta notes"),
+    ]
+    for _, _, result in provider.calls[1:]:
+        assert result.content_type == "text/plain"
+        assert result.extra_metadata == {"parent_uri": parent_uri}
+        assert result.disk_path is None
+        assert result.revision is None
+    assert parent.metadata["source_id"] == "fs:attachments"
+    assert parent.metadata["md5"] == _md5(pdf_path.read_bytes())
+    assert "source_revision" in parent.metadata
+    for uri in (a_uri, b_uri):
+        assert children[uri].metadata["tag"] == "x"
+        assert children[uri].metadata["seen_uri"] == uri
+        assert "source_id" not in children[uri].metadata
+
+
+@pytest.mark.vcr()
+async def test_provider_reserved_keys_do_not_reach_a_child(temp_db_path):
+    provider = _RecordingProvider(
+        {
+            "source_id": "forged",
+            "md5": "forged",
+            "content_type": "forged",
+            "source_revision": "forged",
+            "parent_uri": "file:///elsewhere.pdf",
+            "kept": "yes",
+        }
+    )
+    pdf_bytes = build_pdf([("a.txt", b"alpha notes")])
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent_uri = "file:///fixtures/parent.pdf"
+        parent = await _make_parent(client, parent_uri, pdf_bytes)
+        await _reconcile_with_provider(client, parent, pdf_bytes, provider)
+        (child,) = await client.list_documents(filter=parent_uri_filter(parent_uri))
+
+    assert child.metadata["kept"] == "yes"
+    assert child.metadata["parent_uri"] == parent_uri
+    assert child.metadata["content_type"] == "text/plain"
+    assert child.metadata["md5"] == _md5(b"alpha notes")
+    assert "source_id" not in child.metadata
+    assert "source_revision" not in child.metadata
+
+
+@pytest.mark.usefixtures("docling_local_models")
+async def test_provider_called_for_nested_attachments_up_to_cap(temp_db_path):
+    l3 = build_pdf([("leaf.txt", b"deepest")])
+    l2 = build_pdf([("l3.pdf", l3)])
+    l1 = build_pdf([("l2.pdf", l2)])
+    root = build_pdf([("l1.pdf", l1)])
+    provider = _RecordingProvider()
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        root_uri = "file:///fixtures/root.pdf"
+        parent = await _make_parent(client, root_uri, root)
+        await _reconcile_with_provider(client, parent, root, provider)
+        l1_uri = f"{root_uri}#attachment=l1.pdf"
+        l2_uri = f"{l1_uri}#attachment=l2.pdf"
+        l2_doc = await client.get_document_by_uri(l2_uri)
+
+    assert [(s, u) for s, u, _ in provider.calls] == [("src", l1_uri), ("src", l2_uri)]
+    assert provider.calls[1][2].extra_metadata == {"parent_uri": l1_uri}
+    assert l2_doc is not None
+    assert l2_doc.metadata["seen_uri"] == l2_uri
+
+
+@pytest.mark.vcr()
+async def test_provider_skipped_for_unchanged_child_and_rerun_for_changed(
+    temp_db_path,
+):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent_uri = "file:///fixtures/parent.pdf"
+        first = build_pdf([("stable.txt", b"same text"), ("changed.txt", b"old text")])
+        parent = await _make_parent(client, parent_uri, first)
+        await _reconcile_with_provider(
+            client, parent, first, _RecordingProvider({"run": "1", "only_first": "y"})
+        )
+
+        second_provider = _RecordingProvider({"run": "2"})
+        second = build_pdf([("stable.txt", b"same text"), ("changed.txt", b"new text")])
+        await _reconcile_with_provider(client, parent, second, second_provider)
+        stable = await client.get_document_by_uri(f"{parent_uri}#attachment=stable.txt")
+        changed = await client.get_document_by_uri(
+            f"{parent_uri}#attachment=changed.txt"
+        )
+
+    assert second_provider.attachment_uris() == [f"{parent_uri}#attachment=changed.txt"]
+    assert stable is not None and changed is not None
+    assert stable.metadata["run"] == "1"
+    assert changed.metadata["run"] == "2"
+    assert "only_first" not in changed.metadata
+
+
+async def test_provider_not_called_for_an_unsupported_attachment(temp_db_path):
+    provider = _RecordingProvider()
+    pdf_bytes = build_pdf([("Press Quality.joboptions", b"/Tags\n")])
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent_uri = "file:///fixtures/p.pdf"
+        parent = await _make_parent(client, parent_uri, pdf_bytes)
+        await _reconcile_with_provider(client, parent, pdf_bytes, provider)
+        assert await client.list_documents(filter=parent_uri_filter(parent_uri)) == []
+
+    assert provider.calls == []
+
+
+@pytest.mark.vcr()
+@pytest.mark.usefixtures("docling_local_models")
+async def test_retry_ingests_an_attachment_whose_provider_failed(
+    tmp_path, temp_db_path
+):
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(
+        build_pdf([("a.txt", b"alpha notes"), ("b.txt", b"beta notes")])
+    )
+    revision = str(pdf_path.stat().st_mtime_ns)
+    parent_uri = pdf_path.absolute().as_uri()
+    a_uri = f"{parent_uri}#attachment=a.txt"
+    b_uri = f"{parent_uri}#attachment=b.txt"
+    provider = _RecordingProvider(fail_once="b.txt")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with pytest.raises(RuntimeError, match="provider failed"):
+            await _ingest_with_provider(tmp_path, client, pdf_path, provider)
+        failed = await client.get_document_by_uri(parent_uri)
+        assert failed is not None
+        assert "md5" not in failed.metadata
+        assert "source_revision" not in failed.metadata
+        assert await client.get_document_by_uri(a_uri) is not None
+        assert await client.get_document_by_uri(b_uri) is None
+
+        provider.calls.clear()
+        retried = await _ingest_with_provider(tmp_path, client, pdf_path, provider)
+        b = await client.get_document_by_uri(b_uri)
+
+    assert str(pdf_path.stat().st_mtime_ns) == revision
+    assert provider.attachment_uris() == [b_uri]
+    assert b is not None
+    assert b.metadata["seen_uri"] == b_uri
+    assert retried.metadata["source_revision"] == revision
+    assert retried.metadata["md5"] == _md5(pdf_path.read_bytes())
+
+
+@pytest.mark.vcr()
+@pytest.mark.usefixtures("docling_local_models")
+async def test_retry_ingests_a_grandchild_whose_provider_failed(tmp_path, temp_db_path):
+    pdf_path = tmp_path / "root.pdf"
+    mid = build_pdf([("leaf.txt", b"leaf notes")])
+    pdf_path.write_bytes(build_pdf([("mid.pdf", mid)]))
+    root_uri = pdf_path.absolute().as_uri()
+    mid_uri = f"{root_uri}#attachment=mid.pdf"
+    leaf_uri = f"{mid_uri}#attachment=leaf.txt"
+    provider = _RecordingProvider(fail_once="leaf.txt")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with pytest.raises(RuntimeError, match="provider failed"):
+            await _ingest_with_provider(tmp_path, client, pdf_path, provider)
+        failed_mid = await client.get_document_by_uri(mid_uri)
+        assert failed_mid is not None
+        assert "md5" not in failed_mid.metadata
+        assert "source_revision" not in failed_mid.metadata
+        assert await client.get_document_by_uri(leaf_uri) is None
+
+        retried = await _ingest_with_provider(tmp_path, client, pdf_path, provider)
+        mid_doc = await client.get_document_by_uri(mid_uri)
+        leaf = await client.get_document_by_uri(leaf_uri)
+
+    assert leaf is not None
+    assert leaf.metadata["seen_uri"] == leaf_uri
+    assert mid_doc is not None
+    assert mid_doc.metadata["md5"] == _md5(mid)
+    assert retried.metadata["md5"] == _md5(pdf_path.read_bytes())

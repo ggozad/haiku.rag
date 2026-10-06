@@ -349,7 +349,7 @@ children = await client.list_documents(
 
 Behavior:
 
-- Children inherit the standard ingest metadata (`content_type`, `md5`, `source_revision`) plus `parent_uri`.
+- Children carry the standard ingest metadata (`content_type`, `md5`) plus `parent_uri`, and no `source_id`. Under the [ingester](../ingester.md#metadata-providers), a source's metadata provider adds its keys to each child too.
 - Re-ingesting the wrapper reconciles its current attachment set against existing children: new files are added, changed bytes update in place, and dropped names are deleted.
 - `delete_document(parent_id)` cascades through `parent_uri` and removes all children.
 - Nested attachments (a PDF whose attachment is itself a PDF with attachments) recurse up to 3 levels. Deeper chains log a warning and skip.
