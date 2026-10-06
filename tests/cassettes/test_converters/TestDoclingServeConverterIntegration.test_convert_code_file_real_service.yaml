@@ -1,16 +1,17 @@
 interactions:
 - request:
-    body: "--1c53cc39f15314fbc4585f3e06c87fb0\r\nContent-Disposition: form-data; name=\"to_formats\"\r\n\r\njson\r\n--1c53cc39f15314fbc4585f3e06c87fb0\r\nContent-Disposition:
-      form-data; name=\"do_ocr\"\r\n\r\ntrue\r\n--1c53cc39f15314fbc4585f3e06c87fb0\r\nContent-Disposition: form-data; name=\"force_ocr\"\r\n\r\nfalse\r\n--1c53cc39f15314fbc4585f3e06c87fb0\r\nContent-Disposition:
-      form-data; name=\"ocr_engine\"\r\n\r\nauto\r\n--1c53cc39f15314fbc4585f3e06c87fb0\r\nContent-Disposition: form-data;
-      name=\"do_table_structure\"\r\n\r\ntrue\r\n--1c53cc39f15314fbc4585f3e06c87fb0\r\nContent-Disposition: form-data; name=\"table_mode\"\r\n\r\naccurate\r\n--1c53cc39f15314fbc4585f3e06c87fb0\r\nContent-Disposition:
-      form-data; name=\"table_cell_matching\"\r\n\r\ntrue\r\n--1c53cc39f15314fbc4585f3e06c87fb0\r\nContent-Disposition: form-data;
-      name=\"images_scale\"\r\n\r\n2.0\r\n--1c53cc39f15314fbc4585f3e06c87fb0\r\nContent-Disposition: form-data; name=\"image_export_mode\"\r\n\r\nreferenced\r\n--1c53cc39f15314fbc4585f3e06c87fb0\r\nContent-Disposition:
-      form-data; name=\"include_images\"\r\n\r\ntrue\r\n--1c53cc39f15314fbc4585f3e06c87fb0\r\nContent-Disposition: form-data;
-      name=\"include_page_images\"\r\n\r\ntrue\r\n--1c53cc39f15314fbc4585f3e06c87fb0\r\nContent-Disposition: form-data; name=\"do_picture_description\"\r\n\r\nfalse\r\n--1c53cc39f15314fbc4585f3e06c87fb0\r\nContent-Disposition:
-      form-data; name=\"target_type\"\r\n\r\nzip\r\n--1c53cc39f15314fbc4585f3e06c87fb0\r\nContent-Disposition: form-data;
-      name=\"files\"; filename=\"tmp8td7hd22.md\"\r\nContent-Type: text/markdown\r\n\r\n```python\ndef test():\n    return
-      42\n```\r\n--1c53cc39f15314fbc4585f3e06c87fb0--\r\n"
+    body: "--275a32bf952cba97643c77c297ecb95f\r\nContent-Disposition: form-data; name=\"to_formats\"\r\n\r\njson\r\n--275a32bf952cba97643c77c297ecb95f\r\nContent-Disposition:
+      form-data; name=\"do_ocr\"\r\n\r\ntrue\r\n--275a32bf952cba97643c77c297ecb95f\r\nContent-Disposition: form-data; name=\"force_ocr\"\r\n\r\nfalse\r\n--275a32bf952cba97643c77c297ecb95f\r\nContent-Disposition:
+      form-data; name=\"ocr_engine\"\r\n\r\nauto\r\n--275a32bf952cba97643c77c297ecb95f\r\nContent-Disposition: form-data;
+      name=\"do_table_structure\"\r\n\r\ntrue\r\n--275a32bf952cba97643c77c297ecb95f\r\nContent-Disposition: form-data; name=\"pdf_backend\"\r\n\r\ndocling_parse\r\n--275a32bf952cba97643c77c297ecb95f\r\nContent-Disposition:
+      form-data; name=\"table_mode\"\r\n\r\naccurate\r\n--275a32bf952cba97643c77c297ecb95f\r\nContent-Disposition: form-data;
+      name=\"table_cell_matching\"\r\n\r\ntrue\r\n--275a32bf952cba97643c77c297ecb95f\r\nContent-Disposition: form-data; name=\"images_scale\"\r\n\r\n2.0\r\n--275a32bf952cba97643c77c297ecb95f\r\nContent-Disposition:
+      form-data; name=\"image_export_mode\"\r\n\r\nreferenced\r\n--275a32bf952cba97643c77c297ecb95f\r\nContent-Disposition:
+      form-data; name=\"include_images\"\r\n\r\ntrue\r\n--275a32bf952cba97643c77c297ecb95f\r\nContent-Disposition: form-data;
+      name=\"include_page_images\"\r\n\r\ntrue\r\n--275a32bf952cba97643c77c297ecb95f\r\nContent-Disposition: form-data; name=\"do_picture_description\"\r\n\r\nfalse\r\n--275a32bf952cba97643c77c297ecb95f\r\nContent-Disposition:
+      form-data; name=\"target_type\"\r\n\r\nzip\r\n--275a32bf952cba97643c77c297ecb95f\r\nContent-Disposition: form-data;
+      name=\"files\"; filename=\"tmp9lb4l9j1.md\"\r\nContent-Type: text/markdown\r\n\r\n```python\ndef test():\n    return
+      42\n```\r\n--275a32bf952cba97643c77c297ecb95f--\r\n"
     headers:
       accept:
       - '*/*'
@@ -19,9 +20,9 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '1511'
+      - '1616'
       content-type:
-      - multipart/form-data; boundary=1c53cc39f15314fbc4585f3e06c87fb0
+      - multipart/form-data; boundary=275a32bf952cba97643c77c297ecb95f
       host:
       - localhost:5001
     method: POST
@@ -32,10 +33,12 @@ interactions:
       - '167'
       content-type:
       - application/json
+      vary:
+      - Origin
     parsed_body:
       error_message: null
       failure: null
-      task_id: f25afd02-b57e-4797-85f3-41b7d8ba38d9
+      task_id: 19dfae4f-4bb6-4c7a-8a71-1db55e6bea8e
       task_meta: null
       task_position: 1
       task_status: pending
@@ -55,17 +58,19 @@ interactions:
       host:
       - localhost:5001
     method: GET
-    uri: http://localhost:5001/v1/status/poll/f25afd02-b57e-4797-85f3-41b7d8ba38d9
+    uri: http://localhost:5001/v1/status/poll/19dfae4f-4bb6-4c7a-8a71-1db55e6bea8e
   response:
     headers:
       content-length:
       - '170'
       content-type:
       - application/json
+      vary:
+      - Origin
     parsed_body:
       error_message: null
       failure: null
-      task_id: f25afd02-b57e-4797-85f3-41b7d8ba38d9
+      task_id: 19dfae4f-4bb6-4c7a-8a71-1db55e6bea8e
       task_meta: null
       task_position: null
       task_status: started
@@ -85,17 +90,51 @@ interactions:
       host:
       - localhost:5001
     method: GET
-    uri: http://localhost:5001/v1/status/poll/f25afd02-b57e-4797-85f3-41b7d8ba38d9
+    uri: http://localhost:5001/v1/status/poll/19dfae4f-4bb6-4c7a-8a71-1db55e6bea8e
   response:
     headers:
       content-length:
       - '170'
       content-type:
       - application/json
+      vary:
+      - Origin
     parsed_body:
       error_message: null
       failure: null
-      task_id: f25afd02-b57e-4797-85f3-41b7d8ba38d9
+      task_id: 19dfae4f-4bb6-4c7a-8a71-1db55e6bea8e
+      task_meta: null
+      task_position: null
+      task_status: started
+      task_type: convert
+    status:
+      code: 200
+      message: OK
+- request:
+    body: ''
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      host:
+      - localhost:5001
+    method: GET
+    uri: http://localhost:5001/v1/status/poll/19dfae4f-4bb6-4c7a-8a71-1db55e6bea8e
+  response:
+    headers:
+      content-length:
+      - '170'
+      content-type:
+      - application/json
+      vary:
+      - Origin
+    parsed_body:
+      error_message: null
+      failure: null
+      task_id: 19dfae4f-4bb6-4c7a-8a71-1db55e6bea8e
       task_meta: null
       task_position: null
       task_status: success
@@ -115,21 +154,21 @@ interactions:
       host:
       - localhost:5001
     method: GET
-    uri: http://localhost:5001/v1/result/f25afd02-b57e-4797-85f3-41b7d8ba38d9
+    uri: http://localhost:5001/v1/result/19dfae4f-4bb6-4c7a-8a71-1db55e6bea8e
   response:
     body:
       string: !!binary |
-        UEsDBBQAAAAAAEpvJ10AAAAAAAAAAAAAAAAKAAAAYXJ0aWZhY3RzL1BLAwQUAAAACABKbyddBYFQ
-        jZgBAAAnBAAAEAAAAHRtcDh0ZDdoZDIyLmpzb26dU11PgzAUfd+vIOiDJsvGNifbnv0BvqshBS7Q
-        rB+kLVOy8N9tC2UMWTQmJE3vPaf3nJ5ynnmeL5MCKIoYouAfPP+FJwSzXC8VBab8ucGcQEjMmemv
-        FqtgEbRlx1G03Kk0LNL1um1wgXNs4Ge903uKKai6bMHwpZYUiWPKP5mFa0CMGRJ1VCBZaMw+CHb7
-        cBtuNsHzVn/hKuhwGSYwMXVBU18DGjs8qwTDqhJwmS+BZJGAzNDulhdAd2pSYJIKMILfPlyNM6X9
-        RwTVIAzvB8vpiATnKnJVgmIgplwxWUKCMwwDbTFP61uybG9Cka14Hcd273uOuUy5DPyu19j1poXh
-        hP+ozwWvStnfko1S9hKdwJEtJ3Hu2iUS5mEdph1Zjc5Oz5lI6BeDQzMJT2EwX/DT9TnmuRpcCpmn
-        QKqHx8M7Mx0BOnDmPa0vbGPnr9gElUr/NvJ6mrYK2koCo3qmg2BcjctGvHbI8grlNrHXWhX6X5y5
-        wNssSpyYxzlMB8VkuD9CHZ0QqSDCCuigkXFBx7VSDzPbczNrvgFQSwECFAMUAAAAAABKbyddAAAA
-        AAAAAAAAAAAACgAAAAAAAAAAABAA7UEAAAAAYXJ0aWZhY3RzL1BLAQIUAxQAAAAIAEpvJ10FgVCN
-        mAEAACcEAAAQAAAAAAAAAAAAAACkgSgAAAB0bXA4dGQ3aGQyMi5qc29uUEsFBgAAAAACAAIAdgAA
+        UEsDBBQAAAAAAFVFQ10AAAAAAAAAAAAAAAAKAAAAYXJ0aWZhY3RzL1BLAwQUAAAACABVRUNdxICz
+        LpgBAAAnBAAAEAAAAHRtcDlsYjRsOWoxLmpzb26dU11PgzAUfd+vIOiDJssGbnOyZ3+A72pIgQvU
+        9YO0ZUoW/rttoRtDFo0JSdN7z+k9p6ccZ57ny7QEimKGKPg7z3/mKcGs0EtNgSl/bjAHEBJzZvrh
+        IgwWQVd2HEWriCRrEn2EXYMLXGADP+qd3lNMQTVVB4YvtaRI7DP+ySxcAxLMkGjiEslSY6IgeIq2
+        m+1qFTxu9LcNgx6XYwITUxc08zWgtcPzWjCsagHn+RJIHgvIDe1meQb0p6YlJpkAI/j13dU4U9p/
+        TFADwvB+sJyOWHCuYlclKAFiyjWTFaQ4xzDQlvCsuSbL9iYU2YrXc2z39sQxlymXgd/3WrtetTCc
+        8B/1heB1JU+3ZKOUJ4lO4MiWkzh37QoJ87B2046sRmfnxJlI6BeDQzMpz2AwX/DD5TnmuRpcBrmn
+        QKq7+90bMx0BOnDmrR/ObGPnr9gUVUr/NvJymrYK2koKo3qug2BcjctGvHbIihoVNrGXRpX6X5y5
+        wLssKpyaxzlMByVkuN9DEx8QqSHGCuigkXNBx7VKDzPbYztrvwFQSwECFAMUAAAAAABVRUNdAAAA
+        AAAAAAAAAAAACgAAAAAAAAAAABAA7UEAAAAAYXJ0aWZhY3RzL1BLAQIUAxQAAAAIAFVFQ13EgLMu
+        mAEAACcEAAAQAAAAAAAAAAAAAACkgSgAAAB0bXA5bGI0bDlqMS5qc29uUEsFBgAAAAACAAIAdgAA
         AO4BAAAAAA==
     headers:
       content-disposition:
@@ -138,6 +177,8 @@ interactions:
       - '634'
       content-type:
       - application/zip
+      vary:
+      - Origin
     status:
       code: 200
       message: OK

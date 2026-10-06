@@ -9,6 +9,9 @@
 ### Changed
 
 - lancedb 0.39.0, pylance 12.0.0. Tables created or recreated from now on are written in Lance file format 2.2. Existing tables keep their format.
+- docling 2.132.0, docling-core 2.99.0, docling-ibm-models 4.0.3, docling-parse 7.22.1, paired with docling-serve v1.36.0. Converted output changes, so documents ingested before and after differ in items, chunk boundaries and chunk ids.
+- `pdf_backend: docling_parse` runs docling's threaded parser.
+- `fetch_headers` go only to the ingested document's own host, not to the hosts its images come from.
 
 ### Fixed
 

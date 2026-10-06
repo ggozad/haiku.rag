@@ -1155,13 +1155,23 @@ class TestDoclingLocalConverter:
 
     def test_get_ocr_options_passes_force_ocr_and_lang(self, config):
         """Test that _get_ocr_options passes force_ocr and ocr_lang."""
+        from docling.datamodel.pipeline_options import OcrMode
+
         config.processing.conversion_options.ocr_engine = "rapidocr"
         config.processing.conversion_options.force_ocr = True
         config.processing.conversion_options.ocr_lang = ["en", "de"]
         converter = DoclingLocalConverter(config)
         opts = converter._get_ocr_options(config.processing.conversion_options)
-        assert opts.force_full_page_ocr is True
+        assert opts.mode is OcrMode.FULL_PAGE
         assert opts.lang == ["en", "de"]
+
+    def test_get_ocr_options_without_force_ocr_uses_default_mode(self, config):
+        from docling.datamodel.pipeline_options import OcrMode
+
+        config.processing.conversion_options.force_ocr = False
+        converter = DoclingLocalConverter(config)
+        opts = converter._get_ocr_options(config.processing.conversion_options)
+        assert opts.mode is OcrMode.DEFAULT
 
     def test_picture_description_config_defaults(self, config):
         """Test that picture description config has correct defaults."""
