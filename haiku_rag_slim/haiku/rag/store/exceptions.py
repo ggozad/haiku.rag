@@ -16,6 +16,10 @@ class MigrationRequiredError(Exception):
     pass
 
 
+class TagError(ValueError):
+    """A tag that does not exist on every table, so no state can be read at it."""
+
+
 class AmbiguousDatabaseError(Exception):
     """An operation that works on one database was asked of a configured set.
 

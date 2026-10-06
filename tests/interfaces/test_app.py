@@ -973,7 +973,7 @@ async def test_info_reports_unindexed_chunks_and_document_meta_versions(
     through a stubbed report rather than building databases."""
     info = _database_info({"exists": True, "indexed_rows": 200, "unindexed_rows": 100})
 
-    async def stub_info(config, db_path):
+    async def stub_info(config, db_path, tag=None):
         return info
 
     # info() imports it inside the method, so patch where it is looked up.
@@ -992,7 +992,7 @@ async def test_info_suggests_creating_an_index_when_there_are_enough_chunks(
 ):
     info = _database_info({"exists": False})
 
-    async def stub_info(config, db_path):
+    async def stub_info(config, db_path, tag=None):
         return info
 
     # info() imports it inside the method, so patch where it is looked up.

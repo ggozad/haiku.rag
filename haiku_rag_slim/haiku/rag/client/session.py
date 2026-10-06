@@ -12,6 +12,7 @@ from haiku.rag.store.exceptions import (
     MigrationRequiredError,
     ReadOnlyError,
     SourceUnavailableError,
+    TagError,
     UnknownDatabaseError,
 )
 from haiku.rag.store.repositories.chunk import ChunkRepository
@@ -32,7 +33,12 @@ _VACUUM_MIN_INTERVAL_S = 300.0
 
 # Failures whose message names the remedy and never the location. `open()`
 # prefixes the failing database's name.
-_NAMEABLE_FAILURES = (MigrationRequiredError, ConfigMismatchError, ReadOnlyError)
+_NAMEABLE_FAILURES = (
+    MigrationRequiredError,
+    ConfigMismatchError,
+    ReadOnlyError,
+    TagError,
+)
 
 
 async def aclose_quietly(closeable: Any, what: str) -> None:
@@ -65,7 +71,7 @@ class SingleDatabaseSession:
     ) -> None:
         self.ref = ref
         self.config = config
-        self.read_only = read_only
+        self.read_only = read_only or ref.tag is not None
         self._skip_validation = skip_validation
         self._create = create
         self._vacuum_tasks: set[asyncio.Task] = set()
@@ -96,6 +102,7 @@ class SingleDatabaseSession:
                 skip_validation=self._skip_validation,
                 create=self._create,
                 read_only=self.read_only,
+                tag=self.ref.tag,
             )
             # Close a partially initialized store: the caller's `async with`
             # never entered, so its exit will not run.

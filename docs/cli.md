@@ -247,6 +247,15 @@ Create and restore tags with every other writer stopped. The snapshot is coordin
 
 Vacuum keeps every tagged version and the files it references, and removes the untagged versions older than the retention. Delete tags you no longer need so their files can be removed.
 
+`--at TAG` reads a database as it was at a tag, without changing it. `search`, `ask`, `list`, `get`, `visualize`, `chat`, `inspect`, `info` and `mcp` take it, for one database: `--db PATH`, `--db-name NAME`, or the one database the configuration places.
+
+```bash
+haiku-rag search "query" --db /path/to/db.lancedb --at release-1
+haiku-rag --db-name papers ask "What changed?" --at release-1
+```
+
+The database opens read-only. A tag missing from any table is refused. So is a tag that needs a migration: restore it in a copy of the database and migrate the copy.
+
 `tag restore` changes the live state: each table gets a new latest version equal to the tagged one. Before changing anything it creates a safety tag, `before-restore-<timestamp>`, and reports it:
 
 ```bash

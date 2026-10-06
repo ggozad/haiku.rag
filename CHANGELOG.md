@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Reading one database read-only at a tag: `--at TAG` on `search`, `ask`, `list`, `get`, `visualize`, `chat`, `inspect`, `info` and `mcp`, `HaikuRAG(..., tag=...)` and `Store(tag=...)`. A tag missing from any table raises `TagError`, a tag that needs a migration raises `MigrationRequiredError`, and a tag over several databases raises `AmbiguousDatabaseError` (#684).
+
 ### Changed
 
 - lancedb 0.39.0, pylance 12.0.0. Tables created or recreated from now on are written in Lance file format 2.2. Existing tables keep their format.

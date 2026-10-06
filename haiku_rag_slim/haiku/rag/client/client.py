@@ -1,5 +1,6 @@
 import logging
 from collections.abc import AsyncGenerator, Callable, Coroutine, Sequence
+from dataclasses import replace
 from enum import Enum
 from functools import cached_property
 from itertools import zip_longest
@@ -110,6 +111,7 @@ class HaikuRAG:
         create: bool = False,
         read_only: bool = False,
         sources: list[str] | None = None,
+        tag: str | None = None,
     ):
         """Initialize the RAG client with a database path.
 
@@ -128,7 +130,10 @@ class HaikuRAG:
                 another way. ``[]`` raises too: a client over no database can do
                 nothing, unlike ``sources=[]`` on a search, which is a selection
                 of nothing to search.
+            tag: Read the one database covered at this tag, read-only.
         """
+        if tag is not None and create:
+            raise ValueError("a client at a tag cannot create the database")
         self._configured = config if config is not None else get_config()
         self._config = self._configured
         self._requested_db_path = Path(db_path) if db_path is not None else None
@@ -139,7 +144,8 @@ class HaikuRAG:
             )
         self._skip_validation = skip_validation
         self._create = create
-        self._read_only = read_only
+        self._read_only = read_only or tag is not None
+        self._tag = tag
         self._requested_sources = sources
         self._clients: dict[str, HaikuRAG] = {}
         # The client this one covers a database for, whose reranker it borrows.
@@ -296,6 +302,14 @@ class HaikuRAG:
         )
         if self._requested_sources is not None and self._requested_db_path is None:
             scope = scope.select(self._requested_sources)
+        if self._tag is not None:
+            if scope.covers_multiple:
+                raise AmbiguousDatabaseError(
+                    "a tag is read on one database, and this client covers "
+                    f"{', '.join(sorted(scope.names))}; name it with sources=[name]"
+                )
+            [ref] = scope.databases
+            scope = DatabaseScope((replace(ref, tag=self._tag),))
         self._scope = scope
         return scope
 
@@ -381,7 +395,7 @@ class HaikuRAG:
         """
         client = cls(
             config=config,
-            read_only=read_only,
+            read_only=read_only or any(ref.tag for ref in scope.databases),
             create=create,
             skip_validation=skip_validation,
         )

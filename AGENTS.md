@@ -32,7 +32,7 @@ haiku_rag_slim/haiku/rag/   # Source code
 │   ├── repositories/       # CRUD: DocumentRepository, ChunkRepository, DocumentItemRepository, SettingsRepository
 │   ├── upgrades/           # Version migrations (v0_20_0 … v0_89_0)
 │   └── exceptions.py       # ReadOnlyError, MigrationRequiredError, AmbiguousDatabaseError, UnknownDatabaseError,
-│                           # AmbiguousCitationError, SourceUnavailableError, ConfigMismatchError
+│                           # AmbiguousCitationError, SourceUnavailableError, ConfigMismatchError, TagError
 ├── embeddings/             # VoyageAI, Cohere, vLLM, OpenRouter (ollama/openai via pydantic-ai)
 ├── reranking/              # cross-encoder, Cohere, Zero Entropy, Jina, Jina-local, vLLM, OpenRouter
 ├── sandbox/                # pydantic-monty sandbox used by RAGCapability and MCP execute_code
@@ -314,6 +314,10 @@ Adding a field or sub-model to `AppConfig` needs no plumbing: the loader validat
 per-subcommand and follows it. They are mutually exclusive. `search`, `ask`,
 `chat` and `mcp` cover the configured set, everything else works on
 one database. `settings`, `init-config` and `download-models` resolve no scope.
+`--at TAG` is per-subcommand on the nine read commands (`search`, `ask`, `list`,
+`get`, `visualize`, `chat`, `inspect`, `info`, `mcp`) and resolves to one
+database, refusing a configured set. `resolve_scope(db, at=)` puts the tag on
+that `DatabaseRef`. Write commands have no `--at`.
 
 ## CLI Commands
 
@@ -363,7 +367,7 @@ run-batch   One discover sweep over every source, drain the queue, exit; non-zer
 queue       init | migrate the queue DB
 ```
 
-**Tags:** `haiku-rag tag create/list/delete NAME` name database states across all five tables. `tag restore NAME` brings the live database back to a tagged state: it creates a `before-restore-*` safety tag first, requires stopped writers, and never migrates. Vacuum keeps every tagged version and the files it references.
+**Tags:** `haiku-rag tag create/list/delete NAME` name database states across all five tables. `tag restore NAME` brings the live database back to a tagged state: it creates a `before-restore-*` safety tag first, requires stopped writers, and never migrates. Vacuum keeps every tagged version and the files it references. Reading at a tag (`--at`, `HaikuRAG(tag=)`, `Store(tag=)`, `DatabaseRef.tag`) is read-only: `Store` checks the tag on every table (`TagError`), checks out `settings` before reading it so the embedder check and the migration gate see the tagged state, then checks out the rest. A tag needing a migration raises `MigrationRequiredError`. `HaikuRAG._covering` derives read-only from the scope's tags. `info` and the inspector's info modal read tables without `Store`, so they pass the tag to `gather_database_info` / `get_database_stats(db, tag=)`, which apply `require_complete_tag` and `require_current_tag` as `Store` does: a new read path that opens tables by name must do the same, or it reports the live state. Without a tag, `info` still reports a database that needs migrating.
 
 ## MCP Server Tools
 

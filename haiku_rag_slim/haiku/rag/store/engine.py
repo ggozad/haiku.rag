@@ -19,7 +19,7 @@ from packaging.version import parse
 
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.embeddings import get_embedder
-from haiku.rag.store.exceptions import MigrationRequiredError, ReadOnlyError
+from haiku.rag.store.exceptions import MigrationRequiredError, ReadOnlyError, TagError
 from haiku.rag.store.schema import (
     INCOMPLETE_REBUILD_TABLE,
     REQUIRED_TABLES,
@@ -236,6 +236,49 @@ class TagInfo:
         return not self.missing_tables
 
 
+async def _aggregate_tags(tables: dict[str, lancedb.AsyncTable]) -> dict[str, TagInfo]:
+    """Per-table tags as database-level tags, missing tables counted against
+    every required table."""
+    tags: dict[str, TagInfo] = {}
+    for table_name, table in tables.items():
+        for tag_name, tag in (await table.tags.list()).items():
+            info = tags.setdefault(tag_name, TagInfo(tables={}, missing_tables=[]))
+            info.tables[table_name] = tag["version"]
+    for info in tags.values():
+        info.missing_tables = [t for t in REQUIRED_TABLES if t not in info.tables]
+    return tags
+
+
+def require_current_tag(name: str, db_version: str) -> None:
+    """Raise `MigrationRequiredError` when the tag, recorded at `db_version`,
+    needs a migration to be read."""
+    from haiku.rag.store.upgrades import get_pending_upgrades
+
+    pending = get_pending_upgrades(db_version)
+    if pending:
+        raise MigrationRequiredError(
+            f"Tag '{name}' was taken at {db_version} and needs "
+            f"{len(pending)} migration(s) to be read by "
+            f"{metadata.version('haiku.rag-slim')}. A tag cannot be migrated "
+            "in place: restore it in a copy of the database with "
+            "`haiku-rag tag restore`, then migrate the copy."
+        )
+
+
+async def require_complete_tag(
+    tables: dict[str, lancedb.AsyncTable], name: str
+) -> None:
+    """Raise `TagError` unless the tag exists on every required table."""
+    info = (await _aggregate_tags(tables)).get(name)
+    if info is None:
+        raise TagError(f"Tag '{name}' does not exist")
+    if not info.complete:
+        raise TagError(
+            f"Tag '{name}' is partial (missing tables: "
+            f"{', '.join(info.missing_tables)}) and cannot be read"
+        )
+
+
 class Store:
     def __init__(
         self,
@@ -245,20 +288,25 @@ class Store:
         create: bool = False,
         read_only: bool = False,
         skip_migration_check: bool = False,
+        tag: str | None = None,
     ):
         """A store over the database at `location`, a local path or a URI.
 
         `config` supplies connection settings; where the database is comes
-        from `location` alone.
+        from `location` alone. With `tag`, every table is read at that tag and
+        the store is read-only.
         """
+        if tag is not None and create:
+            raise ValueError("a store at a tag cannot create the database")
         self._location: Path | str = location
+        self._tag = tag
         self.db_path: Path | None = (
             Path(location)
             if ConnectionMode.of(location) == ConnectionMode.LOCAL
             else None
         )
         self._config = config if config is not None else get_config()
-        self._read_only = read_only
+        self._read_only = read_only or tag is not None
         self._create = create
         self._skip_validation = skip_validation
         self._skip_migration_check = skip_migration_check
@@ -309,8 +357,15 @@ class Store:
         existing_tables = (await self.db.list_tables()).tables
         is_new_db = self._is_new_db or not existing_tables
 
+        # The settings read below and the migration check must see the tagged
+        # state, so the tag is checked and settings checked out first.
+        if self._tag is not None:
+            await self._require_complete_tag(self._tag, existing_tables)
+
         if not is_new_db and "settings" in existing_tables:
             self.settings_table = await self.db.open_table("settings")
+            if self._tag is not None:
+                await self.settings_table.checkout(self._tag)
             self._remember_settings(await self._read_stored_settings())
 
         # An existing database's chunks can only be read with the dimension they
@@ -324,6 +379,10 @@ class Store:
         # pending, before creating any newly-introduced table.
         await self._init_tables(is_new_db, existing_tables, self.stored_settings)
 
+        if self._tag is not None:
+            for table in self._tables().values():
+                await table.checkout(self._tag)
+
         # Set version for new databases.
         if is_new_db and not self._read_only:
             await self._set_initial_version()
@@ -335,8 +394,20 @@ class Store:
         if not self._skip_validation:
             await self._validate_configuration(self.stored_settings)
 
-        if INCOMPLETE_REBUILD_TABLE in existing_tables:
+        # The record describes the live chunks table, not a tagged one.
+        if self._tag is None and INCOMPLETE_REBUILD_TABLE in existing_tables:
             await self._warn_incomplete_rebuild()
+
+    async def _require_complete_tag(
+        self, name: str, existing_tables: list[str]
+    ) -> None:
+        """Raise unless the tag exists on every table."""
+        tables = {
+            table_name: await self.db.open_table(table_name)
+            for table_name in REQUIRED_TABLES
+            if table_name in existing_tables
+        }
+        await require_complete_tag(tables, name)
 
     async def __aenter__(self):
         # If _initialize connects to LanceDB but then fails (e.g. migration
@@ -357,6 +428,11 @@ class Store:
     def is_read_only(self) -> bool:
         """Whether the store is in read-only mode."""
         return self._read_only
+
+    @property
+    def tag(self) -> str | None:
+        """The tag every table is read at, or None for the live state."""
+        return self._tag
 
     async def _read_stored_settings(self) -> dict:
         """The stored settings blob, or {} if it is absent or not a JSON object.
@@ -674,8 +750,10 @@ class Store:
 
         current_version = metadata.version("haiku.rag-slim")
 
-        pending = get_pending_upgrades(db_version)
+        if self._tag is not None:
+            require_current_tag(self._tag, db_version)
 
+        pending = get_pending_upgrades(db_version)
         if pending:
             # Migrations are pending - require explicit migrate command
             raise MigrationRequiredError(
@@ -918,15 +996,7 @@ class Store:
             Tag name mapped to a TagInfo with the tagged version per table
             and the tables the tag is missing from (empty when complete).
         """
-        tables = self._tables()
-        tags: dict[str, TagInfo] = {}
-        for table_name, table in tables.items():
-            for tag_name, tag in (await table.tags.list()).items():
-                info = tags.setdefault(tag_name, TagInfo(tables={}, missing_tables=[]))
-                info.tables[table_name] = tag["version"]
-        for info in tags.values():
-            info.missing_tables = [t for t in tables if t not in info.tables]
-        return tags
+        return await _aggregate_tags(self._tables())
 
     async def delete_tag(self, name: str) -> None:
         """Delete the tag from every table that has it.
