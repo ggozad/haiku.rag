@@ -553,34 +553,31 @@ class Store:
         if self._connection_mode == ConnectionMode.CLOUD:
             return
 
-        try:
-            # Check if table has enough data (indexes require training data)
-            row_count = await self.chunks_table.count_rows()
-            if row_count < 256:
-                logger.debug(
-                    f"Skipping vector index creation: need at least 256 rows, have {row_count}"
-                )
-                return
-
-            # Create or replace index (replace=True is the default)
-            logger.info("Creating vector index on chunks table...")
-            await self.chunks_table.create_index(
-                "vector",
-                config=IvfPq(
-                    distance_type=self._config.search.vector_index_metric,
-                ),
-                replace=True,
+        # Check if table has enough data (indexes require training data)
+        row_count = await self.chunks_table.count_rows()
+        if row_count < 256:
+            logger.debug(
+                f"Skipping vector index creation: need at least 256 rows, have {row_count}"
             )
+            return
 
-            # Wait for index creation to complete
-            # Index name is column_name + "_idx"
-            await self.chunks_table.wait_for_index(
-                ["vector_idx"], timeout=timedelta(hours=1)
-            )
+        # Create or replace index (replace=True is the default)
+        logger.info("Creating vector index on chunks table...")
+        await self.chunks_table.create_index(
+            "vector",
+            config=IvfPq(
+                distance_type=self._config.search.vector_index_metric,
+            ),
+            replace=True,
+        )
 
-            logger.info("Vector index created successfully")
-        except Exception as e:
-            logger.warning(f"Could not create vector index: {e}")
+        # Wait for index creation to complete
+        # Index name is column_name + "_idx"
+        await self.chunks_table.wait_for_index(
+            ["vector_idx"], timeout=timedelta(hours=1)
+        )
+
+        logger.info("Vector index created successfully")
 
     async def _validate_configuration(
         self, stored_settings: dict | None = None

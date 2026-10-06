@@ -2726,6 +2726,33 @@ async def test_rebuild_stopped_while_rebuilding_indexes_stays_recorded(
 
 
 @pytest.mark.parametrize(("mode", "vector_dim"), _TABLE_RECREATING)
+async def test_rebuild_whose_vector_index_fails_stays_recorded(
+    temp_db_path, monkeypatch, mode, vector_dim
+):
+    import lancedb
+
+    ids = await _indexed_corpus(temp_db_path, monkeypatch)
+    config = _target_config(vector_dim)
+    create_index = lancedb.AsyncTable.create_index
+
+    async def vector_index_fails(self, column, *args, **kwargs):
+        if column == "vector":
+            raise RuntimeError("index build failed")
+        return await create_index(self, column, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(lancedb.AsyncTable, "create_index", vector_index_fails)
+        with pytest.raises(RuntimeError, match="index build failed"):
+            await _finish(temp_db_path, config, mode)
+
+    assert await _incomplete_rebuild(temp_db_path) == [
+        {"mode": mode.value, "vector_index": True}
+    ]
+    await _finish(temp_db_path, config, mode)
+    await _assert_complete(temp_db_path, config, ids, vector_index=True)
+
+
+@pytest.mark.parametrize(("mode", "vector_dim"), _TABLE_RECREATING)
 async def test_resumed_rebuild_creates_no_vector_index_where_there_was_none(
     temp_db_path, monkeypatch, mode, vector_dim
 ):

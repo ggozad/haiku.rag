@@ -15,6 +15,7 @@
 - `rebuild --embed-only` refuses to finish an interrupted full rebuild, `--rechunk` or `--descriptions`.
 - `rebuild --title-only` keeps the staging copy an interrupted `--embed-only` resumes from.
 - `rebuild` prints `Error: …` and exits 1 on a `ValueError`.
+- `rebuild` and `create-index` fail when the vector index build fails, and the rebuild stays recorded as incomplete.
 
 ## [0.92.0] - 2026-10-02
 
