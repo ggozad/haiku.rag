@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.93.0] - 2026-10-06
+
 ### Added
 
 - Reading one database read-only at a tag: `--at TAG` on `search`, `ask`, `list`, `get`, `visualize`, `chat`, `inspect`, `info` and `mcp`, `HaikuRAG(..., tag=...)` and `Store(tag=...)`. A tag missing from any table raises `TagError`, a tag that needs a migration raises `MigrationRequiredError`, and a tag over several databases raises `AmbiguousDatabaseError` (#684).
@@ -2871,7 +2873,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.92.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.93.0...HEAD
+[0.93.0]: https://github.com/ggozad/haiku.rag/compare/0.92.0...0.93.0
 [0.92.0]: https://github.com/ggozad/haiku.rag/compare/0.91.0...0.92.0
 [0.91.0]: https://github.com/ggozad/haiku.rag/compare/0.90.0...0.91.0
 [0.90.0]: https://github.com/ggozad/haiku.rag/compare/0.89.0...0.90.0
