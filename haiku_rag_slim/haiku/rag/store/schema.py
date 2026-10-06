@@ -243,6 +243,20 @@ class SettingsRecord(LanceModel):
     settings: str = Field(default="{}")
 
 
+INCOMPLETE_REBUILD_TABLE = "chunks_rebuild_incomplete"
+
+
+class IncompleteRebuildRecord(LanceModel):
+    """A rebuild that recreated the chunks table and has not finished.
+
+    `mode` is the `RebuildMode` value that can finish it. `vector_index` is
+    whether the table had a vector index before it was recreated.
+    """
+
+    mode: str
+    vector_index: bool
+
+
 REQUIRED_TABLES: tuple[str, ...] = (
     "documents",
     "document_meta",

@@ -1026,6 +1026,15 @@ def test_rebuild_flag_selects_the_mode(app_stub, flag, mode_name):
     assert kwargs["mode"].name == mode_name
 
 
+def test_rebuild_refusal_fails_cleanly(app_stub):
+    app_stub.rebuild.side_effect = ValueError("Run 'haiku-rag rebuild --rechunk'.")
+
+    result = runner.invoke(cli, ["rebuild", "--embed-only"] + DB_ARGS)
+
+    assert result.exit_code == 1
+    assert "Error: Run 'haiku-rag rebuild --rechunk'." in result.output
+
+
 def test_migrate_reports_applied_migrations(app_stub):
     app_stub.migrate.return_value = ["v0_40_0: add document_items"]
 

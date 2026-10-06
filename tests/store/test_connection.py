@@ -368,12 +368,7 @@ class TestVectorIndexCreation:
                 ["vector_idx"], timeout=timedelta(hours=1)
             )
 
-    async def test_index_failure_is_warned_not_raised(self, temp_db_path):
-        import logging
-
-        from haiku.rag.store import engine as engine_module
-        from tests.conftest import capture_logs
-
+    async def test_index_failure_is_raised(self, temp_db_path):
         async with Store(temp_db_path, create=True) as store:
 
             async def boom(*_args, **_kwargs):
@@ -386,11 +381,9 @@ class TestVectorIndexCreation:
                     AsyncMock(return_value=256),
                 ),
                 patch.object(store.chunks_table, "create_index", boom),
+                pytest.raises(RuntimeError, match="index build failed"),
             ):
-                with capture_logs(engine_module.logger, logging.WARNING) as records:
-                    await store._ensure_vector_index()
-
-            assert any("index build failed" in r.getMessage() for r in records)
+                await store._ensure_vector_index()
 
 
 class TestStoreMiscellany:

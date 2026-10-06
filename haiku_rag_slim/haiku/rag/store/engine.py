@@ -21,6 +21,7 @@ from haiku.rag.config import AppConfig, get_config
 from haiku.rag.embeddings import get_embedder
 from haiku.rag.store.exceptions import MigrationRequiredError, ReadOnlyError
 from haiku.rag.store.schema import (
+    INCOMPLETE_REBUILD_TABLE,
     REQUIRED_TABLES,
     ChunkRecordBase,
     DocumentMetaRecord,
@@ -35,6 +36,13 @@ from haiku.rag.store.schema import (
 )
 
 logger = logging.getLogger(__name__)
+
+REBUILD_COMMANDS = {
+    "full": "rebuild",
+    "rechunk": "rebuild --rechunk",
+    "descriptions": "rebuild --descriptions",
+    "embed_only": "rebuild --embed-only",
+}
 
 
 class ConnectionMode(Enum):
@@ -327,6 +335,9 @@ class Store:
         if not self._skip_validation:
             await self._validate_configuration(self.stored_settings)
 
+        if INCOMPLETE_REBUILD_TABLE in existing_tables:
+            await self._warn_incomplete_rebuild()
+
     async def __aenter__(self):
         # If _initialize connects to LanceDB but then fails (e.g. migration
         # check, config validation), close the connection so it doesn't
@@ -367,6 +378,15 @@ class Store:
         except (json.JSONDecodeError, TypeError):
             return {}
         return decoded if isinstance(decoded, dict) else {}
+
+    async def _warn_incomplete_rebuild(self) -> None:
+        table = await self.db.open_table(INCOMPLETE_REBUILD_TABLE)
+        rows = (await table.query().select(["mode"]).to_arrow()).to_pylist()
+        logger.warning(
+            "Database incomplete: an interrupted 'haiku-rag %s' left documents "
+            "without chunks. Run it again to finish.",
+            REBUILD_COMMANDS[rows[0]["mode"]],
+        )
 
     def _assert_writable(self) -> None:
         """Raise ReadOnlyError if the store is in read-only mode."""
@@ -533,34 +553,31 @@ class Store:
         if self._connection_mode == ConnectionMode.CLOUD:
             return
 
-        try:
-            # Check if table has enough data (indexes require training data)
-            row_count = await self.chunks_table.count_rows()
-            if row_count < 256:
-                logger.debug(
-                    f"Skipping vector index creation: need at least 256 rows, have {row_count}"
-                )
-                return
-
-            # Create or replace index (replace=True is the default)
-            logger.info("Creating vector index on chunks table...")
-            await self.chunks_table.create_index(
-                "vector",
-                config=IvfPq(
-                    distance_type=self._config.search.vector_index_metric,
-                ),
-                replace=True,
+        # Check if table has enough data (indexes require training data)
+        row_count = await self.chunks_table.count_rows()
+        if row_count < 256:
+            logger.debug(
+                f"Skipping vector index creation: need at least 256 rows, have {row_count}"
             )
+            return
 
-            # Wait for index creation to complete
-            # Index name is column_name + "_idx"
-            await self.chunks_table.wait_for_index(
-                ["vector_idx"], timeout=timedelta(hours=1)
-            )
+        # Create or replace index (replace=True is the default)
+        logger.info("Creating vector index on chunks table...")
+        await self.chunks_table.create_index(
+            "vector",
+            config=IvfPq(
+                distance_type=self._config.search.vector_index_metric,
+            ),
+            replace=True,
+        )
 
-            logger.info("Vector index created successfully")
-        except Exception as e:
-            logger.warning(f"Could not create vector index: {e}")
+        # Wait for index creation to complete
+        # Index name is column_name + "_idx"
+        await self.chunks_table.wait_for_index(
+            ["vector_idx"], timeout=timedelta(hours=1)
+        )
+
+        logger.info("Vector index created successfully")
 
     async def _validate_configuration(
         self, stored_settings: dict | None = None

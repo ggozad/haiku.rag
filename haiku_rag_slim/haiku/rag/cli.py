@@ -565,7 +565,11 @@ def rebuild(
         mode = RebuildMode.FULL
 
     app = create_app(db)
-    asyncio.run(app.rebuild(mode=mode))
+    try:
+        asyncio.run(app.rebuild(mode=mode))
+    except ValueError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
 
 
 @_cli.command("vacuum", help="Optimize and clean up all tables to reduce disk usage")
