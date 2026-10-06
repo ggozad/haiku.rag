@@ -1295,12 +1295,23 @@ async def test_flush_rebuild_batch_is_a_noop_without_documents(temp_db_path):
         assert after.updated_at == existing.updated_at
 
 
-async def test_flush_rebuild_batch_deletes_items_in_one_version(temp_db_path):
-    """One delete for the batch, one add per document, picture bytes kept."""
+@pytest.mark.parametrize(
+    ("pictures_per_add", "adds"),
+    [(64, 1), (2, 3), (1, 5)],
+    ids=["one-add", "pairs-then-remainder", "per-document"],
+)
+async def test_flush_rebuild_batch_writes_items_in_few_versions(
+    temp_db_path, monkeypatch, pictures_per_add, adds
+):
+    """One delete and one picture read for the batch, and one add whenever the
+    pictures gathered reach the threshold, picture bytes kept. Each document
+    has one picture of the same size."""
+    from haiku.rag.client import rebuild as rebuild_module
     from haiku.rag.client.documents import _store_document_with_chunks
     from haiku.rag.client.rebuild import _flush_rebuild_batch, _hydrate
     from haiku.rag.config import AppConfig
     from haiku.rag.store.models.document import Document
+    from haiku.rag.store.repositories.document_item import DocumentItemRepository
     from tests.store.test_document_items import _docling_doc_with_picture
 
     config = AppConfig()
@@ -1308,7 +1319,7 @@ async def test_flush_rebuild_batch_deletes_items_in_one_version(temp_db_path):
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
         created = []
-        for i in range(3):
+        for i in range(5):
             docling_doc = _docling_doc_with_picture()
             document = Document(content=f"doc {i}", uri=f"test://doc-{i}")
             document.set_docling(docling_doc)
@@ -1326,13 +1337,36 @@ async def test_flush_rebuild_batch_deletes_items_in_one_version(temp_db_path):
             for d in created
             if d.id is not None
         }
-        assert all(pictures for _, pictures in before.values())
+        (picture_bytes,) = {
+            len(data) for _, pictures in before.values() for data in pictures.values()
+        }
         version = await rag.store.document_items_table.version()
 
         docs = [doc async for doc in _hydrate(writing(rag), created)]
-        await _flush_rebuild_batch(writing(rag), docs, [], document_columns=())
+        monkeypatch.setattr(
+            rebuild_module, "_ITEMS_WRITE_BYTES", pictures_per_add * picture_bytes
+        )
+        real_grouped = DocumentItemRepository.get_all_picture_data_grouped
+        reads = 0
 
-        assert await rag.store.document_items_table.version() == version + 1 + 3
+        async def grouped(self, document_ids):
+            nonlocal reads
+            reads += 1
+            return await real_grouped(self, document_ids)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                DocumentItemRepository, "get_all_picture_data_grouped", grouped
+            )
+            patch.setattr(
+                DocumentItemRepository,
+                "get_all_picture_data",
+                lambda self, document_id: pytest.fail("read per document"),
+            )
+            await _flush_rebuild_batch(writing(rag), docs, [], document_columns=())
+
+        assert reads == 1
+        assert await rag.store.document_items_table.version() == version + 1 + adds
         after = {
             doc_id: (
                 await items_repo.get_item_count(doc_id),
@@ -2169,6 +2203,7 @@ async def test_failed_rebuild_keeps_the_chunks_of_unprocessed_documents(
 async def test_rebuild_batch_that_fails_to_write_leaves_the_database_as_it_was(
     temp_db_path, monkeypatch, mode
 ):
+    from haiku.rag.client import rebuild as rebuild_module
     from haiku.rag.store.repositories.document_item import DocumentItemRepository
 
     _stub_picture_descriptions(monkeypatch)
@@ -2178,17 +2213,20 @@ async def test_rebuild_batch_that_fails_to_write_leaves_the_database_as_it_was(
         ids = await _import_picture_documents(client, ("one", "two", "three"))
         before = {i: await _document_state(client, i) for i in ids}
 
-        real = DocumentItemRepository.create_items
+        # With no budget every document's items are an add of their own, so the
+        # second add fails after the first was written.
+        monkeypatch.setattr(rebuild_module, "_ITEMS_WRITE_BYTES", 0)
+        real = DocumentItemRepository.create_all
         writes = 0
 
-        async def fail_on_second(self, document_id, items):
+        async def fail_on_second(self, items):
             nonlocal writes
             writes += 1
             if writes == 2:
                 raise RuntimeError("disk full")
-            await real(self, document_id, items)
+            await real(self, items)
 
-        monkeypatch.setattr(DocumentItemRepository, "create_items", fail_on_second)
+        monkeypatch.setattr(DocumentItemRepository, "create_all", fail_on_second)
 
         with pytest.raises(RuntimeError, match="disk full"):
             async for _ in client.rebuild_database(mode=mode):
