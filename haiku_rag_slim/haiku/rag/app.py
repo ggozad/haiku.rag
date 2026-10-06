@@ -125,7 +125,9 @@ class HaikuRAGApp:
             self.console.print("[red]Database path does not exist.[/red]")
             return
 
-        info = await gather_database_info(self._location, self.config)
+        info = await gather_database_info(
+            self._location, self.config, tag=self._one.tag
+        )
 
         if not info.exists:
             self.console.print(

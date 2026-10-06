@@ -249,6 +249,36 @@ async def _aggregate_tags(tables: dict[str, lancedb.AsyncTable]) -> dict[str, Ta
     return tags
 
 
+def require_current_tag(name: str, db_version: str) -> None:
+    """Raise `MigrationRequiredError` when the tag, recorded at `db_version`,
+    needs a migration to be read."""
+    from haiku.rag.store.upgrades import get_pending_upgrades
+
+    pending = get_pending_upgrades(db_version)
+    if pending:
+        raise MigrationRequiredError(
+            f"Tag '{name}' was taken at {db_version} and needs "
+            f"{len(pending)} migration(s) to be read by "
+            f"{metadata.version('haiku.rag-slim')}. A tag cannot be migrated "
+            "in place: restore it in a copy of the database with "
+            "`haiku-rag tag restore`, then migrate the copy."
+        )
+
+
+async def require_complete_tag(
+    tables: dict[str, lancedb.AsyncTable], name: str
+) -> None:
+    """Raise `TagError` unless the tag exists on every required table."""
+    info = (await _aggregate_tags(tables)).get(name)
+    if info is None:
+        raise TagError(f"Tag '{name}' does not exist")
+    if not info.complete:
+        raise TagError(
+            f"Tag '{name}' is partial (missing tables: "
+            f"{', '.join(info.missing_tables)}) and cannot be read"
+        )
+
+
 class Store:
     def __init__(
         self,
@@ -377,14 +407,7 @@ class Store:
             for table_name in REQUIRED_TABLES
             if table_name in existing_tables
         }
-        info = (await _aggregate_tags(tables)).get(name)
-        if info is None:
-            raise TagError(f"Tag '{name}' does not exist")
-        if not info.complete:
-            raise TagError(
-                f"Tag '{name}' is partial (missing tables: "
-                f"{', '.join(info.missing_tables)}) and cannot be read"
-            )
+        await require_complete_tag(tables, name)
 
     async def __aenter__(self):
         # If _initialize connects to LanceDB but then fails (e.g. migration
@@ -405,6 +428,11 @@ class Store:
     def is_read_only(self) -> bool:
         """Whether the store is in read-only mode."""
         return self._read_only
+
+    @property
+    def tag(self) -> str | None:
+        """The tag every table is read at, or None for the live state."""
+        return self._tag
 
     async def _read_stored_settings(self) -> dict:
         """The stored settings blob, or {} if it is absent or not a JSON object.
@@ -722,15 +750,10 @@ class Store:
 
         current_version = metadata.version("haiku.rag-slim")
 
-        pending = get_pending_upgrades(db_version)
+        if self._tag is not None:
+            require_current_tag(self._tag, db_version)
 
-        if pending and self._tag is not None:
-            raise MigrationRequiredError(
-                f"Tag '{self._tag}' was taken at {db_version} and needs "
-                f"{len(pending)} migration(s) to be read by {current_version}. "
-                "A tag cannot be migrated in place: restore it in a copy of the "
-                "database with `haiku-rag tag restore`, then migrate the copy."
-            )
+        pending = get_pending_upgrades(db_version)
         if pending:
             # Migrations are pending - require explicit migrate command
             raise MigrationRequiredError(

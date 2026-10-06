@@ -11,32 +11,48 @@ import lancedb
 from pydantic import BaseModel, Field
 
 from haiku.rag.config import AppConfig
-from haiku.rag.store.engine import connect_lancedb
+from haiku.rag.store.engine import (
+    connect_lancedb,
+    require_complete_tag,
+    require_current_tag,
+)
 from haiku.rag.store.schema import REQUIRED_TABLES
 
 
-async def get_database_stats(db: lancedb.AsyncConnection) -> dict:
+async def get_database_stats(
+    db: lancedb.AsyncConnection, tag: str | None = None
+) -> dict:
     """Collect stats for every haiku.rag table on the connection.
 
     Missing tables return ``{"exists": False}``. Present tables include
     ``num_rows``, ``total_bytes``, and ``num_versions``. The ``chunks``
     entry additionally reports vector index status and, when an index
-    exists, ``num_indexed_rows`` and ``num_unindexed_rows``.
+    exists, ``num_indexed_rows`` and ``num_unindexed_rows``. With `tag`,
+    every table is read at that tag, and ``latest_version_at`` is the
+    tagged version's time.
     """
     existing = set((await db.list_tables()).tables)
     stats: dict = {}
-    tables: dict = {}
+    tables: dict[str, lancedb.AsyncTable] = {
+        name: await db.open_table(name) for name in REQUIRED_TABLES if name in existing
+    }
+    if tag is not None:
+        await require_complete_tag(tables, tag)
+        for tbl in tables.values():
+            await tbl.checkout(tag)
 
     for name in REQUIRED_TABLES:
-        if name not in existing:
+        if name not in tables:
             stats[name] = {"exists": False}
             continue
-        tbl = await db.open_table(name)
-        tables[name] = tbl
+        tbl = tables[name]
         # lancedb's .stats() stub claims TableStatistics but returns a plain dict at runtime.
         tbl_stats: dict = await tbl.stats()  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         versions = await tbl.list_versions()
-        latest = versions[-1]["timestamp"] if versions else None
+        current = await tbl.version()
+        latest = next(
+            (v["timestamp"] for v in versions if v["version"] == current), None
+        )
         stats[name] = {
             "exists": True,
             "num_rows": tbl_stats.get("num_rows", 0),
@@ -100,16 +116,19 @@ class DatabaseInfo(BaseModel):
     packages: dict[str, str] = Field(default_factory=dict)
 
 
-async def gather_database_info(location: Path | str, config: AppConfig) -> DatabaseInfo:
+async def gather_database_info(
+    location: Path | str, config: AppConfig, tag: str | None = None
+) -> DatabaseInfo:
     """Collect read-only database state without going through Store, so a
-    database missing tables (e.g. pre-migration) still reports what it can."""
+    database missing tables (e.g. pre-migration) still reports what it can.
+    With `tag`, the state at that tag."""
     from haiku.rag.store.upgrades import get_pending_upgrades
     from haiku.rag.utils.packages import get_package_versions
 
     display_path = str(location)
 
     db = await connect_lancedb(location, config)
-    stats = await get_database_stats(db)
+    stats = await get_database_stats(db, tag)
 
     if not any(entry["exists"] for entry in stats.values()):
         return DatabaseInfo(path=display_path, exists=False)
@@ -118,6 +137,8 @@ async def gather_database_info(location: Path | str, config: AppConfig) -> Datab
     embeddings = EmbeddingsInfo()
     if stats["settings"]["exists"]:
         settings_tbl = await db.open_table("settings")
+        if tag is not None:
+            await settings_tbl.checkout(tag)
         rows = (
             await settings_tbl.query().where("id = 'settings'").limit(1).to_arrow()
         ).to_pylist()
@@ -152,6 +173,10 @@ async def gather_database_info(location: Path | str, config: AppConfig) -> Datab
             unindexed_rows=stats["chunks"].get("num_unindexed_rows", 0),
         )
 
+    if tag is not None:
+        require_current_tag(
+            tag, stored_version if stored_version != "unknown" else "0.0.0"
+        )
     pending = (
         get_pending_upgrades(stored_version) if stored_version != "unknown" else []
     )

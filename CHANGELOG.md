@@ -4,7 +4,7 @@
 
 ### Added
 
-- `HaikuRAG(..., tag=...)` and `Store(tag=...)` read one database read-only at a tag. A tag missing from any table raises `TagError`, a tag taken before a pending migration raises `MigrationRequiredError`, and a client covering several databases raises `AmbiguousDatabaseError` (#684).
+- Reading one database read-only at a tag: `--at TAG` on `search`, `ask`, `list`, `get`, `visualize`, `chat`, `inspect`, `info` and `mcp`, `HaikuRAG(..., tag=...)` and `Store(tag=...)`. A tag missing from any table raises `TagError`, a tag that needs a migration raises `MigrationRequiredError`, and a tag over several databases raises `AmbiguousDatabaseError` (#684).
 
 ### Changed
 

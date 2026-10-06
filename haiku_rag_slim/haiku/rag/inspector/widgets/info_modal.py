@@ -31,7 +31,7 @@ async def database_lines(client: "HaikuRAG") -> list[str]:
 
     try:
         db = client.store.db
-        stats = await get_database_stats(db)
+        stats = await get_database_stats(db, tag=client.store.tag)
     except Exception as e:
         return [f"[red]Failed to open database: {escape(str(e))}[/red]"]
 

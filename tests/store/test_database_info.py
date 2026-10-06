@@ -1,10 +1,16 @@
 import json
+from importlib import metadata
 
+import pytest
 from lancedb.pydantic import LanceModel, Vector
 from pydantic import Field
 
 from haiku.rag.config.models import AppConfig
+from haiku.rag.store import MigrationRequiredError, TagError
+from haiku.rag.store.engine import Store
 from haiku.rag.store.info import gather_database_info
+from haiku.rag.store.models import Document
+from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.schema import DocumentItemRecord
 
 
@@ -162,3 +168,54 @@ async def test_the_latest_version_time_moves_with_a_write(temp_db_path):
     assert after["documents"].latest_version_at is not None
     assert before["documents"].latest_version_at is not None
     assert after["documents"].latest_version_at > before["documents"].latest_version_at
+
+
+async def _tag_between(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        repo = DocumentRepository(store)
+        await repo.create(Document(content="before the tag"))
+        await store.create_tag("before")
+        await repo.create(Document(content="after the tag"))
+
+
+async def test_info_at_a_tag_reports_the_tagged_state(temp_db_path):
+    await _tag_between(temp_db_path)
+
+    live = await gather_database_info(temp_db_path, AppConfig())
+    tagged = await gather_database_info(temp_db_path, AppConfig(), tag="before")
+
+    rows = {t.name: t.num_rows for t in tagged.tables}
+    assert rows["documents"] == 1
+    assert {t.name: t.num_rows for t in live.tables}["documents"] == 2
+    times = {t.name: t.latest_version_at for t in tagged.tables}
+    live_times = {t.name: t.latest_version_at for t in live.tables}
+    assert times["documents"] is not None and live_times["documents"] is not None
+    assert times["documents"] < live_times["documents"]
+
+
+async def test_info_at_a_tag_needing_a_migration_is_refused(temp_db_path):
+    current = metadata.version("haiku.rag-slim")
+    async with Store(temp_db_path, create=True) as store:
+        await store.set_haiku_version("0.88.0")
+        await store.create_tag("old")
+        await store.set_haiku_version(current)
+
+    with pytest.raises(MigrationRequiredError, match="Tag 'old' was taken at 0.88.0"):
+        await gather_database_info(temp_db_path, AppConfig(), tag="old")
+    assert (await gather_database_info(temp_db_path, AppConfig())).exists
+
+
+async def test_info_at_a_tag_with_no_recorded_version_is_refused(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        await store.settings_table.update({"settings": "{}"}, where="id = 'settings'")
+        await store.create_tag("versionless")
+
+    with pytest.raises(MigrationRequiredError, match="taken at 0.0.0"):
+        await gather_database_info(temp_db_path, AppConfig(), tag="versionless")
+
+
+async def test_info_at_a_missing_tag_raises(temp_db_path):
+    await _tag_between(temp_db_path)
+
+    with pytest.raises(TagError, match="Tag 'nope' does not exist"):
+        await gather_database_info(temp_db_path, AppConfig(), tag="nope")

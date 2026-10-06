@@ -1,3 +1,4 @@
+import asyncio
 import subprocess
 import sys
 from pathlib import Path
@@ -10,11 +11,13 @@ from typer.testing import CliRunner
 from haiku.rag.cli import _cli as cli
 from haiku.rag.cli import _parse_meta_options, resolve_scope
 from haiku.rag.cli import cli as cli_wrapper
+from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config, set_config
 from haiku.rag.config.models import AppConfig, LanceDBConfig, StorageConfig
 from haiku.rag.store.exceptions import (
     AmbiguousDatabaseError,
     MigrationRequiredError,
+    TagError,
     UnknownDatabaseError,
 )
 from tests.conftest import TRACEPARENT, current_trace, for_path
@@ -890,7 +893,7 @@ def app_stub(monkeypatch, tmp_path):
     stub = AsyncMock()
     monkeypatch.setattr(
         "haiku.rag.cli.create_app",
-        lambda db=None, *, covers_set=False: stub,
+        lambda db=None, *, covers_set=False, at=None: stub,
     )
     return stub
 
@@ -1082,7 +1085,7 @@ def test_mcp_without_stdio_leaves_the_transport_unset(app_stub):
 def test_mcp_covers_the_configured_set(monkeypatch):
     seen = {}
 
-    def create_app(db=None, *, covers_set=False):
+    def create_app(db=None, *, covers_set=False, at=None):
         seen["covers_set"] = covers_set
         return AsyncMock()
 
@@ -1249,3 +1252,129 @@ def test_one_shot_commands_join_the_traceparent_trace(
     else:
         assert seen == [("0" * 32, "")]
     assert current_trace() == ("0" * 32, "")
+
+
+class TestReadingAtATag:
+    """`--at TAG` reads one database read-only at a tag."""
+
+    @staticmethod
+    def _install(monkeypatch, **databases):
+        import haiku.rag.config as config_module
+
+        monkeypatch.setattr(config_module, "_config", None)
+        monkeypatch.setattr("haiku.rag.cli._db_name", None)
+        set_config(AppConfig(lancedb=LanceDBConfig(databases=databases)))
+
+    def test_the_tag_travels_on_the_one_database(self, monkeypatch, tmp_path):
+        self._install(monkeypatch)
+
+        [ref] = resolve_scope(tmp_path / "papers.lancedb", at="release-1").databases
+
+        assert ref.tag == "release-1"
+
+    @pytest.mark.parametrize("covers_set", [False, True])
+    def test_a_configured_set_refuses_a_tag(self, monkeypatch, covers_set):
+        self._install(monkeypatch, alpha="/db/a.lancedb", beta="/db/b.lancedb")
+
+        with pytest.raises(AmbiguousDatabaseError, match="--at") as raised:
+            resolve_scope(None, covers_set=covers_set, at="release-1")
+
+        assert "--db-name NAME before the command" in str(raised.value)
+
+    def test_a_named_database_takes_the_tag(self, monkeypatch):
+        self._install(monkeypatch, alpha="/db/a.lancedb", beta="/db/b.lancedb")
+        monkeypatch.setattr("haiku.rag.cli._db_name", "alpha")
+
+        [ref] = resolve_scope(None, covers_set=True, at="release-1").databases
+
+        assert (ref.name, ref.tag) == ("alpha", "release-1")
+
+    def test_list_shows_the_tagged_state(self, monkeypatch, tmp_path):
+        from tests.multi_db.helpers import _config, _seed
+
+        config = _config(tmp_path, ["papers"])
+
+        async def tag_between():
+            await _seed(config, "papers", ["before"])
+            async with HaikuRAG(config=config, sources=["papers"]) as rag:
+                await rag.store.create_tag("tagged")
+            await _seed(config, "papers", ["after"])
+
+        asyncio.run(tag_between())
+        self._install(monkeypatch)
+
+        db = str(tmp_path / "papers.lancedb")
+        result = runner.invoke(cli, ["list", "--db", db, "--at", "tagged"])
+
+        assert result.exit_code == 0, result.output
+        assert "test://papers/before" in result.output
+        assert "test://papers/after" not in result.output
+
+        result = runner.invoke(cli, ["info", "--db", db, "--at", "tagged"])
+
+        assert result.exit_code == 0, result.output
+        assert "documents: 1 " in result.output
+
+    def test_a_write_command_has_no_tag_option(self, tmp_path):
+        result = runner.invoke(
+            cli, ["add", "text", "--db", str(tmp_path / "x.lancedb"), "--at", "t"]
+        )
+
+        assert result.exit_code == 2
+        assert "No such option" in result.output
+
+    def test_a_missing_tag_exits_with_an_error(self, capsys):
+        with patch("haiku.rag.cli._cli") as mock_cli:
+            mock_cli.side_effect = TagError("Tag 'nope' does not exist")
+
+            with pytest.raises(SystemExit) as exc_info:
+                cli_wrapper()
+
+        assert exc_info.value.code == 1
+        assert "Error: Tag 'nope' does not exist" in capsys.readouterr().err
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["list"],
+            ["get", "doc-id"],
+            ["search", "query"],
+            ["visualize", "chunk-id"],
+            ["ask", "question"],
+            ["info"],
+            ["mcp"],
+        ],
+    )
+    def test_a_read_command_passes_the_tag_on(self, monkeypatch, argv):
+        seen: dict[str, str | None] = {}
+
+        def create_app(db=None, *, covers_set=False, at=None):
+            seen["at"] = at
+            return AsyncMock()
+
+        monkeypatch.setattr("haiku.rag.cli.create_app", create_app)
+        result = runner.invoke(cli, [*argv, "--at", "release-1"])
+
+        assert result.exit_code == 0, result.output
+        assert seen == {"at": "release-1"}
+
+    @pytest.mark.parametrize(
+        "argv, runner_path",
+        [
+            (["chat"], "haiku.rag.chat.run_chat"),
+            (["inspect"], "haiku.rag.inspector.run_inspector"),
+        ],
+    )
+    def test_a_tui_passes_the_tag_on(self, monkeypatch, argv, runner_path):
+        seen: dict[str, str | None] = {}
+
+        def resolve(db=None, *, covers_set=False, at=None):
+            seen["at"] = at
+            return "scope"
+
+        monkeypatch.setattr("haiku.rag.cli.resolve_scope", resolve)
+        monkeypatch.setattr(runner_path, lambda **kwargs: None)
+        result = runner.invoke(cli, [*argv, "--at", "release-1"])
+
+        assert result.exit_code == 0, result.output
+        assert seen == {"at": "release-1"}

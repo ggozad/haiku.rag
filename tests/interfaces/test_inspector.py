@@ -362,7 +362,7 @@ class TestReportingReusesTheConnection:
 
         asked: list[object] = []
 
-        async def fake_stats(db):
+        async def fake_stats(db, tag=None):
             asked.append(db)
             return {
                 "settings": {"exists": False},
@@ -393,7 +393,7 @@ class TestReportingReusesTheConnection:
         from haiku.rag.inspector.widgets.info_modal import database_lines
         from haiku.rag.store.engine import ConnectionMode
 
-        async def fake_stats(db):  # noqa: ARG001
+        async def fake_stats(db, tag=None):  # noqa: ARG001
             return {
                 "documents": {"num_rows": 1},
                 "document_meta": {"num_rows": 1},
@@ -416,6 +416,28 @@ class TestReportingReusesTheConnection:
 
         assert any("1.2.3" in line for line in lines)
         assert any("ollama/embed (dim: 7)" in line for line in lines)
+
+
+class TestReportingAtATag:
+    async def test_statistics_are_read_at_the_clients_tag(self, temp_db_path):
+        from haiku.rag.client import HaikuRAG
+        from haiku.rag.inspector.widgets.info_modal import database_lines
+        from haiku.rag.store.engine import Store
+        from haiku.rag.store.repositories.document import DocumentRepository
+
+        async with Store(temp_db_path, create=True) as store:
+            repo = DocumentRepository(store)
+            await repo.create(Document(content="before the tag"))
+            await store.create_tag("before")
+            await repo.create(Document(content="after the tag"))
+
+        async with HaikuRAG(temp_db_path, tag="before") as client:
+            lines = await database_lines(client)
+
+        assert any(
+            line.startswith("[bold $accent]documents[/bold $accent]: 1 ")
+            for line in lines
+        )
 
 
 class TestReportingEachDatabase:

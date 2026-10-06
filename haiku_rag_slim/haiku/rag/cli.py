@@ -2,6 +2,7 @@ import asyncio
 import json
 import sys
 import warnings
+from dataclasses import replace
 from importlib.metadata import version
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -27,6 +28,7 @@ from haiku.rag.store.exceptions import (  # noqa: E402
     MigrationRequiredError,
     ReadOnlyError,
     SourceUnavailableError,
+    TagError,
     UnknownDatabaseError,
 )
 from haiku.rag.store.models.chunk import SearchType  # noqa: E402
@@ -55,6 +57,7 @@ def cli():
         ReadOnlyError,
         UnknownDatabaseError,
         SourceUnavailableError,
+        TagError,
     ) as e:
         typer.echo(f"Error: {e}", err=True)
         sys.exit(1)
@@ -65,11 +68,14 @@ _read_only: bool = False
 _db_name: str | None = None
 
 
-def create_app(db: Path | None = None, *, covers_set: bool = False) -> "HaikuRAGApp":
+def create_app(
+    db: Path | None = None, *, covers_set: bool = False, at: str | None = None
+) -> "HaikuRAGApp":
     """The application for a command, on the database(s) it works on.
 
     `covers_set` is the command declaring that it can read multiple: `search`,
-    `ask`, `chat` and `mcp` can, and everything else names one.
+    `ask`, `chat` and `mcp` can, and everything else names one. `at` reads the
+    one database at a tag.
 
     Raises:
         AmbiguousDatabaseError: multiple databases are configured and this
@@ -80,13 +86,13 @@ def create_app(db: Path | None = None, *, covers_set: bool = False) -> "HaikuRAG
 
     return HaikuRAGApp(
         config=get_config(),
-        read_only=_read_only,
-        scope=resolve_scope(db, covers_set=covers_set),
+        read_only=_read_only or at is not None,
+        scope=resolve_scope(db, covers_set=covers_set, at=at),
     )
 
 
 def resolve_scope(
-    db: Path | None = None, *, covers_set: bool = False
+    db: Path | None = None, *, covers_set: bool = False, at: str | None = None
 ) -> "DatabaseScope":
     """The databases a command works on, resolved once.
 
@@ -104,16 +110,21 @@ def resolve_scope(
         )
     if db is not None:
         try:
-            return DatabaseScope.at(db)
+            scope = DatabaseScope.at(db)
         except ValueError as error:
             raise typer.BadParameter(str(error), param_hint="--db") from error
-    scope = DatabaseScope.resolve(get_config(), database_name=_db_name)
-    if scope.covers_multiple and not covers_set:
+    else:
+        scope = DatabaseScope.resolve(get_config(), database_name=_db_name)
+    if scope.covers_multiple and (at is not None or not covers_set):
+        work = "--at reads" if at is not None else "this command works on"
         raise AmbiguousDatabaseError(
-            f"lancedb.databases names {', '.join(sorted(scope.names))}; this "
-            "command works on a single database: pass --db-name NAME before "
-            "the command, or --db PATH after it"
+            f"lancedb.databases names {', '.join(sorted(scope.names))}; {work} "
+            "a single database: pass --db-name NAME before the command, or "
+            "--db PATH after it"
         )
+    if at is not None:
+        [ref] = scope.databases
+        scope = DatabaseScope((replace(ref, tag=at),))
     return scope
 
 
@@ -207,6 +218,11 @@ def list_documents(
         "--db",
         help="Path to the LanceDB database file",
     ),
+    at: str | None = typer.Option(
+        None,
+        "--at",
+        help="Read the database read-only at this tag",
+    ),
     filter: str | None = typer.Option(
         None,
         "--filter",
@@ -214,7 +230,7 @@ def list_documents(
         help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
     ),
 ):
-    app = create_app(db)
+    app = create_app(db, at=at)
     asyncio.run(app.list_documents(filter=filter))
 
 
@@ -312,8 +328,13 @@ def get_document(
         "--db",
         help="Path to the LanceDB database file",
     ),
+    at: str | None = typer.Option(
+        None,
+        "--at",
+        help="Read the database read-only at this tag",
+    ),
 ):
-    app = create_app(db)
+    app = create_app(db, at=at)
     asyncio.run(app.get_document(doc_id=doc_id))
 
 
@@ -372,8 +393,13 @@ def search(
         "--db",
         help="Path to the LanceDB database file",
     ),
+    at: str | None = typer.Option(
+        None,
+        "--at",
+        help="Read the database read-only at this tag",
+    ),
 ):
-    app = create_app(db, covers_set=True)
+    app = create_app(db, covers_set=True, at=at)
     asyncio.run(
         app.search(
             query=query,
@@ -395,13 +421,18 @@ def visualize(
         "--db",
         help="Path to the LanceDB database file",
     ),
+    at: str | None = typer.Option(
+        None,
+        "--at",
+        help="Read the database read-only at this tag",
+    ),
     no_expand: bool = typer.Option(
         False,
         "--no-expand",
         help="Highlight only the chunk itself, without its expanded context",
     ),
 ):
-    app = create_app(db)
+    app = create_app(db, at=at)
     asyncio.run(app.visualize_chunk(chunk_id=chunk_id, expand=not no_expand))
 
 
@@ -414,6 +445,11 @@ def ask(
         None,
         "--db",
         help="Path to the LanceDB database file",
+    ),
+    at: str | None = typer.Option(
+        None,
+        "--at",
+        help="Read the database read-only at this tag",
     ),
     filter: str | None = typer.Option(
         None,
@@ -432,7 +468,7 @@ def ask(
         help="Show the full text of each citation instead of a truncated preview",
     ),
 ):
-    app = create_app(db, covers_set=True)
+    app = create_app(db, covers_set=True, at=at)
     asyncio.run(
         app.ask(
             question=question,
@@ -647,8 +683,13 @@ def info(
         "--db",
         help="Path to the LanceDB database file",
     ),
+    at: str | None = typer.Option(
+        None,
+        "--at",
+        help="Read the database read-only at this tag",
+    ),
 ):
-    app = create_app(db)
+    app = create_app(db, at=at)
     asyncio.run(app.info())
 
 
@@ -821,6 +862,11 @@ def inspect(
         "--db",
         help="Path to the LanceDB database file",
     ),
+    at: str | None = typer.Option(
+        None,
+        "--at",
+        help="Read the database read-only at this tag",
+    ),
 ):
     """Launch the inspector TUI for browsing documents and chunks."""
     try:
@@ -829,7 +875,7 @@ def inspect(
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1) from e
 
-    run_inspector(read_only=True, scope=resolve_scope(db))
+    run_inspector(read_only=True, scope=resolve_scope(db, at=at))
 
 
 @_cli.command("chat", help="Launch interactive chat TUI for conversational RAG")
@@ -838,6 +884,11 @@ def chat(
         None,
         "--db",
         help="Path to the LanceDB database file",
+    ),
+    at: str | None = typer.Option(
+        None,
+        "--at",
+        help="Read the database read-only at this tag",
     ),
     model: str | None = typer.Option(
         None,
@@ -848,7 +899,7 @@ def chat(
     """Launch the chat TUI for conversational RAG."""
     from haiku.rag.chat import run_chat
 
-    scope = resolve_scope(db, covers_set=True)
+    scope = resolve_scope(db, covers_set=True, at=at)
 
     try:
         run_chat(
@@ -871,6 +922,11 @@ def mcp(
         "--db",
         help="Path to the LanceDB database file",
     ),
+    at: str | None = typer.Option(
+        None,
+        "--at",
+        help="Read the database read-only at this tag",
+    ),
     stdio: bool = typer.Option(
         False,
         "--stdio",
@@ -888,7 +944,7 @@ def mcp(
     ),
 ) -> None:
     """Run the MCP server."""
-    app = create_app(db, covers_set=True)
+    app = create_app(db, covers_set=True, at=at)
 
     transport = "stdio" if stdio else None
 
