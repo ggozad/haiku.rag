@@ -219,6 +219,25 @@ class DocumentItemRepository:
                 result[row["self_ref"]] = data
         return result
 
+    async def get_all_picture_data_grouped(
+        self, document_ids: Sequence[str]
+    ) -> dict[str, dict[str, bytes]]:
+        """``get_all_picture_data`` for several documents, in one query."""
+        if not document_ids:
+            return {}
+        ids = ", ".join(f"'{escape_sql_string(i)}'" for i in document_ids)
+        rows = await (
+            self.store.document_items_table.query()
+            .select(["document_id", "self_ref", "picture_data"])
+            .where(f"document_id IN ({ids}) AND picture_data IS NOT NULL")
+            .to_list()
+        )
+        result: dict[str, dict[str, bytes]] = {i: {} for i in document_ids}
+        for row in rows:
+            if row["picture_data"]:
+                result[row["document_id"]][row["self_ref"]] = row["picture_data"]
+        return result
+
     async def get_pictures_for_chunk(
         self, document_id: str, refs: list[str]
     ) -> dict[str, bytes]:

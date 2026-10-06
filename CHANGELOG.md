@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- `rebuild` (full, `--rechunk`, `--descriptions`) writes `document_items` once per 50-document batch, split whenever the documents gathered reach 16 MiB of pictures, instead of once per document.
 - `vacuum` removes untagged versions older than the retention that were written after a tag, and their files. A tag keeps only its own version (#684).
 
 ## [0.92.0] - 2026-10-02

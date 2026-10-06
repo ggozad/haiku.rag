@@ -349,6 +349,45 @@ class TestDocumentItemRepository:
             assert await repo.get_item_count("doc-1") == 15
             assert await repo.get_item_count("nonexistent") == 0
 
+    async def test_get_all_picture_data_grouped(self, temp_db_path):
+        """Pictures sharing a self_ref in different documents stay apart, and a
+        document without pictures maps to an empty dict."""
+
+        def picture(doc_id: str, data: bytes | None) -> list[DocumentItem]:
+            return [
+                DocumentItem(
+                    document_id=doc_id, position=0, self_ref="#/texts/0", label="text"
+                ),
+                DocumentItem(
+                    document_id=doc_id,
+                    position=1,
+                    self_ref="#/pictures/0",
+                    label="picture",
+                    picture_data=data,
+                ),
+            ]
+
+        async with HaikuRAG(temp_db_path, create=True) as rag:
+            repo = DocumentItemRepository(rag.store)
+            await repo.create_all(
+                picture("doc-1", b"one")
+                + picture("doc-2", b"two")
+                + picture("doc-3", None)
+            )
+
+            assert await repo.get_all_picture_data_grouped(
+                ["doc-1", "doc-2", "doc-3", "missing"]
+            ) == {
+                "doc-1": {"#/pictures/0": b"one"},
+                "doc-2": {"#/pictures/0": b"two"},
+                "doc-3": {},
+                "missing": {},
+            }
+            assert await repo.get_all_picture_data_grouped(["doc-2"]) == {
+                "doc-2": {"#/pictures/0": b"two"}
+            }
+            assert await repo.get_all_picture_data_grouped([]) == {}
+
     async def test_delete_by_document_id(self, temp_db_path):
         async with HaikuRAG(temp_db_path, create=True) as rag:
             repo = DocumentItemRepository(rag.store)

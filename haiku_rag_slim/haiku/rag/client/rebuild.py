@@ -20,7 +20,7 @@ from haiku.rag.converters import get_converter
 from haiku.rag.store.compression import compress_docling_split
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
-from haiku.rag.store.models.document_item import extract_items
+from haiku.rag.store.models.document_item import DocumentItem, extract_items
 from haiku.rag.store.repositories.settings import SettingsRepository
 from haiku.rag.store.schema import ChunkRecordBase, create_chunk_model, ensure_indexes
 
@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _REBUILD_BATCH_SIZE = 50
+_ITEMS_WRITE_BYTES = 16 << 20
 _STAGING_TABLE_NAME = "chunks_rebuild_staging"
 _STAGING_MARKER_TABLE_NAME = "chunks_rebuild_marker"
 _STAGING_COPY_BATCH_SIZE = 1000
@@ -639,17 +640,16 @@ async def _flush_rebuild_batch(
         # blob has had its picture URIs stripped (compress_docling_split), so
         # re-extracting from it would lose picture_data — snapshot the existing
         # bytes per document and merge them back.
-        # One add per document bounds lance's writer memory to one document's
-        # pictures.
+        # Lance holds about an add's pictures past the write, so items are added
+        # whenever the whole documents gathered reach _ITEMS_WRITE_BYTES of them.
         items_repo = session.document_item_repository
         replaced = [doc for doc in documents if doc.docling_document is not None]
-        existing_picture_data: dict[str, dict[str, bytes]] = {}
-        for doc in replaced:
-            assert doc.id is not None
-            existing_picture_data[doc.id] = await items_repo.get_all_picture_data(
-                doc.id
-            )
+        existing_picture_data = await items_repo.get_all_picture_data_grouped(
+            [doc.id for doc in replaced if doc.id is not None]
+        )
         await items_repo.delete_by_document_ids(list(existing_picture_data))
+        pending: list[DocumentItem] = []
+        pending_bytes = 0
         for doc in replaced:
             assert doc.id is not None
             docling_doc = doc.get_docling_document()
@@ -659,7 +659,12 @@ async def _flush_rebuild_batch(
                 docling_doc,
                 existing_picture_data=existing_picture_data.pop(doc.id),
             )
-            await items_repo.create_items(doc.id, items)
+            pending.extend(items)
+            pending_bytes += sum(len(i.picture_data or b"") for i in items)
+            if pending_bytes >= _ITEMS_WRITE_BYTES:
+                await items_repo.create_all(pending)
+                pending, pending_bytes = [], 0
+        await items_repo.create_all(pending)
 
 
 async def _rebuild_rechunk(
