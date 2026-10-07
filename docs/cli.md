@@ -263,7 +263,7 @@ haiku-rag tag restore release-1 --db /path/to/db.lancedb --yes
 haiku-rag tag restore before-restore-YYYYMMDDTHHMMSSZ --db /path/to/db.lancedb --yes
 ```
 
-Restore is coordinated but not atomic across tables. On failure it attempts to roll back to the pre-restore state and reports whether that succeeded. `--yes` only skips the confirmation prompt. Restore never migrates: restoring a tag from an older version succeeds, and the next open reports the migration to run. Tag commands exit 1 on failure.
+Restore is coordinated but not atomic across tables. On failure it attempts to roll back to the pre-restore state and reports whether that succeeded. `--yes` only skips the confirmation prompt. Restore never migrates: restoring a tag from an older version succeeds, and the next open reports the migration to run. A tag that needs no migration, such as a safety tag, restores even while the live state needs a migration or records another embedder. Tag commands exit 1 on failure.
 
 ```bash
 haiku-rag history                       # every table

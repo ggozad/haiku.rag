@@ -265,6 +265,39 @@ def require_current_tag(name: str, db_version: str) -> None:
         )
 
 
+async def read_settings(table: lancedb.AsyncTable) -> dict:
+    """The settings blob in `table`, or {} if it is absent or not a JSON object.
+
+    Only decoding failures are tolerated. A storage failure must propagate:
+    read as empty settings it would look like version 0.0.0, and the
+    migration check would declare every migration pending.
+    """
+    rows = (
+        await table.query().where("id = 'settings'").limit(1).to_arrow()
+    ).to_pylist()
+    if not rows or not rows[0].get("settings"):
+        return {}
+    try:
+        decoded = json.loads(rows[0]["settings"])
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    return decoded if isinstance(decoded, dict) else {}
+
+
+def _restorable_tag(tags: dict[str, TagInfo], name: str) -> TagInfo:
+    """The complete tag `name`, raising `ValueError` when it is missing or partial."""
+    info = tags.get(name)
+    if info is None:
+        raise ValueError(f"Tag '{name}' does not exist")
+    if not info.complete:
+        raise ValueError(
+            f"Tag '{name}' is partial (missing tables: "
+            f"{', '.join(info.missing_tables)}) and cannot be "
+            "restored; delete it with delete_tag"
+        )
+    return info
+
+
 async def require_complete_tag(
     tables: dict[str, lancedb.AsyncTable], name: str
 ) -> None:
@@ -435,25 +468,8 @@ class Store:
         return self._tag
 
     async def _read_stored_settings(self) -> dict:
-        """The stored settings blob, or {} if it is absent or not a JSON object.
-
-        Only decoding failures are tolerated. A storage failure must propagate:
-        read as empty settings it would look like version 0.0.0, and the
-        migration check would declare every migration pending.
-        """
-        rows = (
-            await self.settings_table.query()
-            .where("id = 'settings'")
-            .limit(1)
-            .to_arrow()
-        ).to_pylist()
-        if not rows or not rows[0].get("settings"):
-            return {}
-        try:
-            decoded = json.loads(rows[0]["settings"])
-        except (json.JSONDecodeError, TypeError):
-            return {}
-        return decoded if isinstance(decoded, dict) else {}
+        """The settings blob."""
+        return await read_settings(self.settings_table)
 
     async def _warn_incomplete_rebuild(self) -> None:
         table = await self.db.open_table(INCOMPLETE_REBUILD_TABLE)
@@ -998,6 +1014,16 @@ class Store:
         """
         return await _aggregate_tags(self._tables())
 
+    async def tag_haiku_version(self, name: str) -> str:
+        """The haiku.rag version recorded at a complete tag.
+
+        Reads through its own `settings` handle, so `settings_table` stays live.
+        """
+        info = _restorable_tag(await self.list_tags(), name)
+        settings = await self.db.open_table("settings")
+        await settings.checkout(info.tables["settings"])
+        return (await read_settings(settings)).get("version", "0.0.0")
+
     async def delete_tag(self, name: str) -> None:
         """Delete the tag from every table that has it.
 
@@ -1075,15 +1101,7 @@ class Store:
 
         async with self._rebuild_lock, self._write_lock:
             tags = await self.list_tags()
-            info = tags.get(name)
-            if info is None:
-                raise ValueError(f"Tag '{name}' does not exist")
-            if not info.complete:
-                raise ValueError(
-                    f"Tag '{name}' is partial (missing tables: "
-                    f"{', '.join(info.missing_tables)}) and cannot be "
-                    "restored; delete it with delete_tag"
-                )
+            info = _restorable_tag(tags, name)
 
             snapshot = await self.current_table_versions()
             safety_tag = _safety_tag_name(set(tags))
