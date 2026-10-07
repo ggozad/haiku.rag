@@ -2442,6 +2442,17 @@ class TestDoclingServeConverterIntegration:
         result = doc.export_to_markdown()
         assert "def test():" in result
 
+    @pytest.mark.vcr()
+    async def test_convert_cp932_markdown_file_real_service(self, converter, tmp_path):
+        source = tmp_path / "doc.md"
+        source.write_bytes(f"# 見出し\n\n{JAPANESE}\n".encode("cp932"))
+
+        doc = await converter.convert_file(source)
+
+        markdown = doc.export_to_markdown()
+        assert "見出し" in markdown
+        assert JAPANESE in markdown
+
     @pytest.mark.integration
     async def test_picture_description_end_to_end(
         self, config, docling_serve_url, doclaynet_first_page_pdf
