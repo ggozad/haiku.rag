@@ -471,8 +471,7 @@ async def _refresh_doc_metadata(
     user_metadata: dict,
     source_metadata: dict | None,
 ) -> Document:
-    """Update a document's title + metadata without re-chunking. Used by the
-    cheap revision and MD5 short-circuits in create_document_from_source."""
+    """Update a document's title + metadata without re-chunking."""
     updated = False
     if title is not None and title != doc.title:
         doc.title = title

@@ -403,9 +403,7 @@ async def test_queue_loss_does_not_strand_documents(tmp_path):
 async def test_attachments_ingested_under_a_provider_stay_unowned(
     client, sync, tmp_path
 ):
-    """A provider runs for attachments on the parent source's behalf, but the
-    children stay unowned: no sweep discovers an `#attachment=` URI, so a
-    sync_state row for one would be deleted as an orphan every round."""
+    """Attachments ingested under a source's provider get no sync_state row."""
     from haiku.rag.client.documents import parent_uri_filter
     from haiku.rag.sources.fs import FSSource
     from tests.conftest import build_pdf
