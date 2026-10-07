@@ -6,6 +6,7 @@
 
 - Ingester metadata providers are called for PDF attachments, with the source id of the document they came from.
 - Metadata providers can no longer set `parent_uri`.
+- `parent_uri` is stripped from caller metadata and kept across `update_document` and re-ingestion, like `source_id` (#696).
 
 ### Fixed
 
