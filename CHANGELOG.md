@@ -22,6 +22,7 @@
 ### Changed
 
 - lancedb 0.39.0, pylance 12.0.0. Tables created or recreated from now on are written in Lance file format 2.2. Existing tables keep their format.
+- `DoclingLocalConverter.convert_file` and `DoclingServeConverter.convert_file` raise `UnsupportedSourceError` for an extension outside `supported_extensions`. docling-local no longer reads an unknown extension as text.
 
 ### Fixed
 

@@ -511,29 +511,25 @@ class DoclingLocalConverter(DocumentConverter):
             DoclingDocument representation of the file.
 
         Raises:
+            UnsupportedSourceError: If the extension is not supported.
             ValueError: If the file cannot be converted, chaining the cause.
             TimeoutError: If it exceeds `processing.conversion_timeout`.
         """
+        self.require_supported(path)
         try:
             file_extension = path.suffix.lower()
 
             if file_extension in self.docling_extensions:
                 return await self._convert_docling_file(path, source_uri)
-            elif file_extension in TextFileHandler.text_extensions:
-                content = await asyncio.to_thread(path.read_text, encoding="utf-8")
-                prepared_content = TextFileHandler.prepare_text_content(
-                    content, file_extension
-                )
-                return await self.convert_text(
-                    prepared_content,
-                    name=f"{path.stem}.md",
-                    source_uri=source_uri,
-                )
-            else:
-                content = await asyncio.to_thread(path.read_text, encoding="utf-8")
-                return await self.convert_text(
-                    content, name=f"{path.stem}.md", source_uri=source_uri
-                )
+            content = await asyncio.to_thread(path.read_text, encoding="utf-8")
+            prepared_content = TextFileHandler.prepare_text_content(
+                content, file_extension
+            )
+            return await self.convert_text(
+                prepared_content,
+                name=f"{path.stem}.md",
+                source_uri=source_uri,
+            )
         except (TimeoutError, ConverterWedgedError):
             raise
         except Exception as exc:

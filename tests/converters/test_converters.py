@@ -29,6 +29,7 @@ from docling_core.types.doc.document import (
 )
 from docling_core.types.doc.labels import DocItemLabel
 
+from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.config import AppConfig
 from haiku.rag.config.models import ModelConfig
 from haiku.rag.converters import docling_local, get_converter
@@ -567,20 +568,26 @@ class TestDoclingLocalConverter:
         assert isinstance(doc, DoclingDocument)
         assert doc.name == "test"
 
-    async def test_convert_file_reads_unknown_extension_as_text(
+    async def test_convert_file_rejects_unsupported_extension(
         self, converter, tmp_path
     ):
-        """An extension in neither the docling nor the text set is read as text."""
-        source = tmp_path / "notes.xyz"
-        source.write_text("Plain body for an unknown extension.")
+        """An unsupported extension is rejected before the file is read."""
+        with pytest.raises(UnsupportedSourceError, match=r"\.xyz"):
+            await converter.convert_file(tmp_path / "missing.xyz")
+
+    @pytest.mark.parametrize("name", ["NOTES.TXT", "README.MD"])
+    async def test_convert_file_accepts_uppercase_extension(
+        self, converter, tmp_path, name
+    ):
+        source = tmp_path / name
+        source.write_text("# Notes\n\nBody under an uppercase extension.")
 
         doc = await converter.convert_file(source)
 
-        assert isinstance(doc, DoclingDocument)
-        assert "Plain body for an unknown extension." in doc.export_to_markdown()
+        assert "Body under an uppercase extension." in doc.export_to_markdown()
 
     async def test_convert_file_raises_for_undecodable_file(self, converter, tmp_path):
-        source = tmp_path / "binary.xyz"
+        source = tmp_path / "broken.txt"
         source.write_bytes(b"\xff\xfe\x00\x01 not utf-8")
 
         with pytest.raises(ValueError, match="Failed to parse file"):
@@ -2055,13 +2062,11 @@ class TestDoclingServeConverter:
             assert uploaded_name == "customrc.md"
 
     async def test_dotfile_path_uploads_with_detectable_name(self, converter, tmp_path):
-        """A dotfile with no extension is uploaded under a name docling can
-        still probe by content rather than one it refuses to classify.
-        """
+        """A dotfile is uploaded under a name whose extension docling reads."""
         doc_json = create_mock_docling_document("test")
         submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
-        dotfile = tmp_path / ".customrc"
-        dotfile.write_bytes(b"\x00binary")
+        dotfile = tmp_path / ".customrc.md"
+        dotfile.write_text("# Custom")
 
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
@@ -2073,7 +2078,36 @@ class TestDoclingServeConverter:
 
             await converter.convert_file(dotfile)
             uploaded_name = mock_client.post.call_args.kwargs["files"]["files"][0]
-            assert uploaded_name == "customrc"
+            assert uploaded_name == "customrc.md"
+
+    async def test_convert_file_rejects_unsupported_extension(
+        self, converter, tmp_path
+    ):
+        """An unsupported extension is rejected before the file is read."""
+        with pytest.raises(UnsupportedSourceError, match=r"\.xyz"):
+            await converter.convert_file(tmp_path / "missing.xyz")
+
+    @pytest.mark.parametrize("name", ["NOTES.TXT", "README.MD"])
+    async def test_convert_file_accepts_uppercase_extension(
+        self, converter, tmp_path, name
+    ):
+        doc_json = create_mock_docling_document("test")
+        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
+        source = tmp_path / name
+        source.write_text("# Notes")
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(return_value=submit_resp)
+            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            doc = await converter.convert_file(source)
+
+        assert isinstance(doc, DoclingDocument)
+        mock_client.post.assert_called_once()
 
 
 class TestDoclingServeConverterPictureDescription:

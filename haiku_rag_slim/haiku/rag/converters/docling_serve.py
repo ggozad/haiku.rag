@@ -235,8 +235,10 @@ class DoclingServeConverter(DocumentConverter):
             DoclingDocument representation of the file.
 
         Raises:
+            UnsupportedSourceError: If the extension is not supported.
             ValueError: If the file cannot be converted or service is unavailable.
         """
+        self.require_supported(path)
         file_extension = path.suffix.lower()
 
         if file_extension in TextFileHandler.text_extensions:
