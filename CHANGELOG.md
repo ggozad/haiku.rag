@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.94.0] - 2026-10-07
+
 ### Changed
 
 - Ingester metadata providers are called for PDF attachments, with the source id of the document they came from.
@@ -2890,7 +2892,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.93.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.94.0...HEAD
+[0.94.0]: https://github.com/ggozad/haiku.rag/compare/0.93.0...0.94.0
 [0.93.0]: https://github.com/ggozad/haiku.rag/compare/0.92.0...0.93.0
 [0.92.0]: https://github.com/ggozad/haiku.rag/compare/0.91.0...0.92.0
 [0.91.0]: https://github.com/ggozad/haiku.rag/compare/0.90.0...0.91.0
