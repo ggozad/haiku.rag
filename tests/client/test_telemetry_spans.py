@@ -1,10 +1,9 @@
 import asyncio
 
 import logfire
-import pytest
 from docling_core.types.doc.document import DoclingDocument
 from docling_core.types.doc.labels import DocItemLabel
-from logfire.testing import SimpleSpanProcessor, TestExporter
+from logfire.testing import TestExporter
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.documents import DocumentImport
@@ -28,19 +27,6 @@ def _docling_doc(name: str, text: str) -> DoclingDocument:
     doc = DoclingDocument(name=name)
     doc.add_text(label=DocItemLabel.TEXT, text=text)
     return doc
-
-
-@pytest.fixture
-def exporter():
-    """Collect spans in memory, restoring logfire's inert default on teardown."""
-    test_exporter = TestExporter()
-    logfire.configure(
-        send_to_logfire=False,
-        console=False,
-        additional_span_processors=[SimpleSpanProcessor(test_exporter)],
-    )
-    yield test_exporter
-    logfire.configure(send_to_logfire=False, console=False)
 
 
 class Tree:

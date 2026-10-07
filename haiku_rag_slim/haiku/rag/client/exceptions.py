@@ -5,3 +5,7 @@ class UnsupportedSourceError(ValueError):
     used to catch a plain ValueError; the ingester pipeline catches the
     specific type to classify as ``PermanentError`` without string matching.
     """
+
+
+class AttachmentDeletionError(ValueError):
+    """A PDF attachment cannot be deleted on its own while its parent is stored."""

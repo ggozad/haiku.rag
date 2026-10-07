@@ -572,3 +572,84 @@ async def test_force_ignores_a_matching_observed_revision(temp_db_path, monkeypa
             assert isinstance(second, Document)
             assert second.content == "Content rewritten under the same check."
             assert calls == []
+
+
+async def _attachment(client: HaikuRAG, parent_uri: str, name: str) -> Document:
+    """A stored attachment of `parent_uri`, without an embedder call."""
+    vector_dim = client.store.embedder.vector_dim
+    doc = await client.import_document(
+        _docling_document(f"Attachment {name}."),
+        [Chunk(content=f"Attachment {name}.", embedding=[0.1] * vector_dim)],
+        uri=f"{parent_uri}#attachment={name}",
+    )
+    doc.metadata = {**doc.metadata, "parent_uri": parent_uri}
+    return await client.document_repository.update_meta(doc)
+
+
+async def test_caller_metadata_cannot_set_parent_uri(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        vector_dim = client.store.embedder.vector_dim
+        client.store.embedder = _FixedEmbedder(vector_dim)
+        forged = {"parent_uri": "file:///forged.pdf", "team": "docs"}
+
+        created = await client.create_document(
+            "Created content.", uri="test://created", metadata=forged
+        )
+        imported = await client.import_document(
+            _docling_document("Imported content."),
+            [Chunk(content="Imported content.", embedding=[0.1] * vector_dim)],
+            uri="test://imported",
+            metadata=forged,
+        )
+        (batched,) = await client.import_documents(
+            [
+                DocumentImport(
+                    docling_document=_docling_document("Batch content."),
+                    chunks=[
+                        Chunk(content="Batch content.", embedding=[0.1] * vector_dim)
+                    ],
+                    uri="test://batched",
+                    metadata=forged,
+                )
+            ]
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "claimed.txt"
+            path.write_text("Content whose caller claims a parent.")
+            sourced = await client.create_document_from_source(path, metadata=forged)
+        assert isinstance(sourced, Document)
+
+        for doc in (created, imported, batched, sourced):
+            assert "parent_uri" not in doc.metadata
+            assert doc.metadata["team"] == "docs"
+
+
+async def test_update_document_cannot_drop_or_set_parent_uri(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        child = await _attachment(client, "file:///parent.pdf", "a.txt")
+        assert child.id is not None
+
+        await client.update_document(child.id, metadata={"team": "docs"})
+        await client.update_document(
+            child.id, metadata={"parent_uri": "file:///other.pdf", "team": "docs"}
+        )
+
+        refreshed = await client.get_document_by_id(child.id)
+        assert refreshed is not None
+        assert refreshed.metadata["parent_uri"] == "file:///parent.pdf"
+        assert refreshed.metadata["team"] == "docs"
+
+
+async def test_reingest_onto_an_attachment_keeps_parent_uri(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        child = await _attachment(client, "file:///parent.pdf", "a.txt")
+        client.store.embedder = _FixedEmbedder(client.store.embedder.vector_dim)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "a.txt"
+            path.write_text("Bytes that differ from the stored attachment.")
+
+            doc = await client.create_document_from_source(path, uri=child.uri)
+
+        assert isinstance(doc, Document)
+        assert doc.id == child.id
+        assert doc.metadata["parent_uri"] == "file:///parent.pdf"

@@ -453,7 +453,7 @@ At startup, reconciliation reports documents that remain unattributed:
 intentionally unmanaged or have ambiguous or lost ownership.
 ```
 
-Such a document was added by hand, was ingested by a version that did not record `source_id` and whose queue record is gone, or is claimed by two sources and named in its own warning. The last kind needs the sources separated, not the document deleted. While a lost document's file is still at its source, the next sweep attributes it. Once the file is gone, nothing identifies it.
+PDF attachments of a stored document are not counted. An unattributed document was added by hand, was ingested by a version that did not record `source_id` and whose queue record is gone, is claimed by two sources and named in its own warning, or is a PDF attachment whose parent document is gone. Claimed documents need the sources separated, not the document deleted. While a lost document's file is still at its source, the next sweep attributes it. Once the file is gone, nothing identifies it.
 
 To clear them:
 
@@ -470,16 +470,18 @@ Reconciliation attributes what the queue records, and the sweep attributes what 
 
 ```bash
 haiku-rag --config /etc/haiku/haiku.rag.yaml list \
-  -f "metadata NOT LIKE '%\"source_id\"%'"
+  -f "metadata NOT LIKE '%\"source_id\"%' AND metadata NOT LIKE '%\"parent_uri\"%'"
 ```
 
 Narrow it on a database that also holds hand-added documents:
 
 ```bash
-  -f "metadata NOT LIKE '%\"source_id\"%' AND uri LIKE 'file:///srv/handbook/%'"
+  -f "metadata NOT LIKE '%\"source_id\"%' AND metadata NOT LIKE '%\"parent_uri\"%' AND uri LIKE 'file:///srv/handbook/%'"
 ```
 
-`metadata` is matched as JSON text, so a document whose own metadata contains the string `source_id` is left out. The filter can miss an orphan, never offer a live document.
+The list holds candidates to review, not documents to delete. `metadata` is matched as JSON text, so a document whose own metadata contains the string `source_id` or `parent_uri` is left out.
+
+PDF attachments are listed with `-f "metadata LIKE '%\"parent_uri\"%'"`. An attachment is orphaned only when no document in the database has the URI its `parent_uri` names. Check that with a filter on `uri`, not with the attachment filter, which leaves top-level parents out.
 
 **3. Delete what you confirm.**
 

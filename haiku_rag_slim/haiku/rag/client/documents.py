@@ -72,6 +72,9 @@ _RESERVED_METADATA_KEYS = frozenset(
     {"content_type", "md5", "source_revision", "source_id", "parent_uri"}
 )
 
+# Keys no caller sets, and no write path drops once stored.
+_INGESTION_OWNED_KEYS = ("source_id", "parent_uri")
+
 # Keys the revision and MD5 short-circuits trust. Written to a document that
 # can have attachments only once its attachments have reconciled.
 _FRESHNESS_KEYS = ("md5", "source_revision")
@@ -205,7 +208,7 @@ async def _store_document_with_chunks(
                 document.id = existing.id
                 document.created_at = existing.created_at
                 replaced_owner = (existing.metadata or {}).get("source_id")
-                document.metadata = _keep_source_id(
+                document.metadata = _keep_ingestion_keys(
                     document.metadata, existing.metadata
                 )
                 stored_doc = await session.document_repository.update(document)
@@ -498,16 +501,19 @@ async def _refresh_doc_metadata(
 
 
 def _caller_metadata(metadata: dict | None) -> dict:
-    """Caller-supplied metadata without `source_id`, which only ingestion sets."""
-    return {k: v for k, v in (metadata or {}).items() if k != "source_id"}
+    """Caller-supplied metadata without the keys only ingestion sets."""
+    return {k: v for k, v in (metadata or {}).items() if k not in _INGESTION_OWNED_KEYS}
 
 
-def _keep_source_id(metadata: dict, previous_metadata: dict | None) -> dict:
-    """``metadata`` with the stored source_id restored when it names none."""
-    previous = (previous_metadata or {}).get("source_id")
-    if previous is None or metadata.get("source_id") is not None:
-        return metadata
-    return {**metadata, "source_id": previous}
+def _keep_ingestion_keys(metadata: dict, previous_metadata: dict | None) -> dict:
+    """``metadata`` with each stored ingestion-owned key it lacks restored."""
+    previous = previous_metadata or {}
+    kept = {
+        key: previous[key]
+        for key in _INGESTION_OWNED_KEYS
+        if previous.get(key) is not None and metadata.get(key) is None
+    }
+    return {**metadata, **kept}
 
 
 def _note_source_change(doc: Document, previous: str | None) -> Document:
@@ -622,7 +628,9 @@ async def _ingest_fetch_result(
     )
 
     if existing_doc:
-        existing_doc.metadata = final_metadata
+        existing_doc.metadata = _keep_ingestion_keys(
+            final_metadata, existing_doc.metadata
+        )
         if title is not None:
             existing_doc.title = title
         await _prepare_and_title(session, existing_doc, docling_document)
@@ -791,7 +799,7 @@ async def _reconcile_pdf_attachments(
 
     for child_uri, child in existing_by_uri.items():
         if child_uri not in new_attachments and child.id:
-            await session.delete_document(child.id)
+            await session.delete_document(child.id, allow_attachment=True)
 
 
 async def create_document_from_source(
@@ -1079,7 +1087,7 @@ async def update_document(
     if title is not None:
         existing_doc.title = title
     if metadata is not None:
-        existing_doc.metadata = _keep_source_id(
+        existing_doc.metadata = _keep_ingestion_keys(
             _caller_metadata(metadata), existing_doc.metadata
         )
     if uri is not None:

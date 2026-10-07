@@ -6,12 +6,15 @@
 
 - Ingester metadata providers are called for PDF attachments, with the source id of the document they came from.
 - Metadata providers can no longer set `parent_uri`.
+- `parent_uri` is stripped from caller metadata and kept across `update_document` and re-ingestion, like `source_id` (#696).
+- `delete_document` and `haiku-rag delete` refuse a PDF attachment whose parent is stored, raising `AttachmentDeletionError`. Delete the parent instead (#696).
 
 ### Fixed
 
 - Retrying an ingest that failed on a PDF attachment ingests the attachment.
 - `tag restore` restores a tag that needs no migration while the live database needs one or records another embedder (#692).
 - `tag restore` refuses a database missing a table, naming it, instead of re-creating the table.
+- Ingester reconciliation no longer reports PDF attachments of stored documents as unattributed (#696).
 
 ## [0.93.0] - 2026-10-06
 

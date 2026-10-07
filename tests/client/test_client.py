@@ -1253,8 +1253,9 @@ async def test_cascade_delete_is_atomic(temp_db_path, monkeypatch):
             _docling_doc("c", "child"),
             [Chunk(content="child", embedding=[0.2] * dim, order=0)],
             uri="mem://child",
-            metadata={"parent_uri": "mem://parent"},
         )
+        child.metadata = {"parent_uri": "mem://parent"}
+        child = await client.document_repository.update_meta(child)
         assert parent.id is not None and child.id is not None
 
         orig_delete = client.document_repository.delete
