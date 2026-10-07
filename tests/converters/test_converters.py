@@ -2,6 +2,7 @@
 
 import asyncio
 import copy
+import logging
 import re
 import tempfile
 import threading
@@ -32,7 +33,7 @@ from docling_core.types.doc.labels import DocItemLabel
 from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.config import AppConfig
 from haiku.rag.config.models import ModelConfig
-from haiku.rag.converters import docling_local, get_converter
+from haiku.rag.converters import docling_local, get_converter, text_utils
 from haiku.rag.converters.base import (
     flatten_inline_groups,
     vlm_api_headers,
@@ -45,7 +46,25 @@ from haiku.rag.converters.exceptions import (
     ConversionTimeoutError,
     ConverterWedgedError,
 )
-from haiku.rag.converters.text_utils import TextFileHandler, docling_safe_name
+from haiku.rag.converters.text_utils import (
+    TextFileHandler,
+    docling_safe_name,
+    read_text,
+    to_utf8,
+)
+from tests.conftest import capture_logs
+
+JAPANESE = (
+    "日本語の文書を取り込む際に、文字コードが自動的に判定されることを確認します。"
+    "このファイルはシフトJISで保存されています。古いWindowsの環境では、"
+    "テキストファイルが既定でこの形式になることが多く、正しく読み込めないと検索に使えません。"
+)
+GREEK = (
+    "Άρθρο πρώτο. Η εταιρεία έχει την έδρα της στην Αθήνα και δραστηριοποιείται "
+    "στον τομέα της πληροφορικής. Άλλα γραφεία λειτουργούν στη Θεσσαλονίκη και "
+    "στην Πάτρα, όπου απασχολούνται περισσότεροι από εκατό εργαζόμενοι."
+)
+UNDETECTABLE = bytes(range(256)) * 4
 
 
 class TestVlmApiUrl:
@@ -317,6 +336,45 @@ class TestTextFileHandler:
         assert not result.startswith("```")
 
 
+class TestTextDecoding:
+    def test_utf8_is_returned_unchanged(self, tmp_path):
+        raw = JAPANESE.encode()
+
+        with capture_logs(text_utils.logger, logging.WARNING) as records:
+            assert to_utf8(raw, tmp_path / "doc.txt") is raw
+
+        assert records == []
+
+    def test_cp932_is_transcoded_with_a_warning(self, tmp_path):
+        source = tmp_path / "doc.txt"
+
+        with capture_logs(text_utils.logger, logging.WARNING) as records:
+            assert to_utf8(JAPANESE.encode("cp932"), source) == JAPANESE.encode()
+
+        assert len(records) == 1
+        message = records[0].getMessage()
+        assert str(source) in message
+        assert "cp932" in message
+
+    def test_greek_cp1253_keeps_alpha_with_tonos(self, tmp_path):
+        assert to_utf8(GREEK.encode("cp1253"), tmp_path / "doc.txt").decode() == GREEK
+
+    def test_undetectable_bytes_raise(self, tmp_path):
+        source = tmp_path / "doc.txt"
+
+        with pytest.raises(ValueError, match="No text encoding detected") as exc:
+            to_utf8(UNDETECTABLE, source)
+
+        assert str(source) in str(exc.value)
+
+    @pytest.mark.parametrize("encoding", ["utf-8", "cp932"])
+    def test_read_text_translates_line_endings(self, tmp_path, encoding):
+        source = tmp_path / "doc.txt"
+        source.write_bytes(f"{JAPANESE}\r\none\rtwo\n".encode(encoding))
+
+        assert read_text(source) == f"{JAPANESE}\none\ntwo\n"
+
+
 class TestConverterFactory:
     """Tests for converter factory function."""
 
@@ -586,9 +644,37 @@ class TestDoclingLocalConverter:
 
         assert "Body under an uppercase extension." in doc.export_to_markdown()
 
+    @pytest.mark.parametrize("name", ["doc.txt", "doc.py"])
+    async def test_convert_file_reads_cp932(self, converter, tmp_path, name):
+        source = tmp_path / name
+        source.write_bytes(JAPANESE.encode("cp932"))
+
+        doc = await converter.convert_file(source)
+
+        assert JAPANESE in doc.export_to_markdown()
+
+    async def test_convert_file_reads_utf16_with_bom(self, converter, tmp_path):
+        source = tmp_path / "doc.txt"
+        source.write_bytes(GREEK.encode("utf-16"))
+
+        doc = await converter.convert_file(source)
+
+        assert GREEK in doc.export_to_markdown()
+
+    async def test_convert_file_keeps_a_utf8_bom(self, converter, tmp_path):
+        source = tmp_path / "doc.txt"
+        source.write_bytes("\ufeffBody after a byte-order mark.".encode())
+
+        doc = await converter.convert_file(source)
+        expected = await converter.convert_text(
+            "\ufeffBody after a byte-order mark.", name="doc.md"
+        )
+
+        assert doc.export_to_markdown() == expected.export_to_markdown()
+
     async def test_convert_file_raises_for_undecodable_file(self, converter, tmp_path):
         source = tmp_path / "broken.txt"
-        source.write_bytes(b"\xff\xfe\x00\x01 not utf-8")
+        source.write_bytes(UNDETECTABLE)
 
         with pytest.raises(ValueError, match="Failed to parse file"):
             await converter.convert_file(source)
@@ -2109,6 +2195,30 @@ class TestDoclingServeConverter:
         assert isinstance(doc, DoclingDocument)
         mock_client.post.assert_called_once()
 
+    @pytest.mark.parametrize(
+        ("text", "encoding"), [(JAPANESE, "cp932"), (GREEK, "utf-16")]
+    )
+    async def test_convert_file_uploads_text_as_utf8(
+        self, converter, tmp_path, text, encoding
+    ):
+        doc_json = create_mock_docling_document("test")
+        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
+        source = tmp_path / "doc.txt"
+        source.write_bytes(text.encode(encoding))
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(return_value=submit_resp)
+            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            await converter.convert_file(source)
+
+        uploaded = mock_client.post.call_args.kwargs["files"]["files"][1]
+        assert text.encode() in uploaded
+
 
 class TestDoclingServeConverterPictureDescription:
     """Tests for DoclingServeConverter picture description support."""
@@ -2526,7 +2636,7 @@ async def test_docling_serve_convert_file_wraps_text_read_failure(tmp_path):
     assert isinstance(converter, DoclingServeConverter)
 
     source = tmp_path / "broken.txt"
-    source.write_bytes(b"\xff\xfe\x00\x01 not utf-8")
+    source.write_bytes(UNDETECTABLE)
 
     with pytest.raises(ValueError, match="Failed to read text file"):
         await converter.convert_file(source)

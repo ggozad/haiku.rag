@@ -26,6 +26,7 @@
 
 ### Fixed
 
+- Plain text and code files that are not UTF-8 are decoded in the encoding `charset-normalizer` detects, with a warning, instead of failing with `UnicodeDecodeError`. `charset-normalizer` is a direct dependency of `haiku.rag-slim` (#676).
 - `rebuild` (full, `--rechunk`, `--descriptions`) writes `document_items` once per 50-document batch, split whenever the documents gathered reach 16 MiB of pictures, instead of once per document.
 - `vacuum` removes untagged versions older than the retention that were written after a tag, and their files. A tag keeps only its own version (#684).
 - A `rebuild` interrupted after dropping the chunks table (`--embed-only`, or a vector dimension change) retrains the vector index when run again.

@@ -21,7 +21,11 @@ from haiku.rag.converters.exceptions import (
     ConversionTimeoutError,
     ConverterWedgedError,
 )
-from haiku.rag.converters.text_utils import TextFileHandler, docling_safe_name
+from haiku.rag.converters.text_utils import (
+    TextFileHandler,
+    docling_safe_name,
+    read_text,
+)
 
 if TYPE_CHECKING:
     from docling.backend.abstract_backend import AbstractDocumentBackend
@@ -521,7 +525,7 @@ class DoclingLocalConverter(DocumentConverter):
 
             if file_extension in self.docling_extensions:
                 return await self._convert_docling_file(path, source_uri)
-            content = await asyncio.to_thread(path.read_text, encoding="utf-8")
+            content = await asyncio.to_thread(read_text, path)
             prepared_content = TextFileHandler.prepare_text_content(
                 content, file_extension
             )

@@ -1,9 +1,40 @@
 """Shared utilities for text file handling in converters."""
 
+import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
+
+logger = logging.getLogger(__name__)
+
+
+def to_utf8(raw: bytes, source: Path) -> bytes:
+    """Return `raw` as UTF-8, detecting its encoding when it is not UTF-8 already.
+
+    UTF-8 input is returned as the same object. Raises `ValueError` when no
+    encoding is detected.
+    """
+    try:
+        raw.decode("utf-8")
+        return raw
+    except UnicodeDecodeError:
+        pass
+
+    from charset_normalizer import from_bytes
+
+    match = from_bytes(raw).best()
+    if match is None:
+        raise ValueError(f"No text encoding detected for {source}")
+    logger.warning("%s is not UTF-8, decoding it as %s", source, match.encoding)
+    return str(match).encode("utf-8")
+
+
+def read_text(path: Path) -> str:
+    """Read a text file in any detectable encoding, with universal newlines."""
+    text = to_utf8(path.read_bytes(), path).decode("utf-8")
+    return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
 def docling_safe_name(name: str) -> str:

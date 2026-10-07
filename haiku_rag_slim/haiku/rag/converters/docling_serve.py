@@ -13,7 +13,11 @@ from haiku.rag.converters.base import (
     vlm_api_params,
     vlm_api_url,
 )
-from haiku.rag.converters.text_utils import TextFileHandler, docling_safe_name
+from haiku.rag.converters.text_utils import (
+    TextFileHandler,
+    docling_safe_name,
+    read_text,
+)
 from haiku.rag.providers.docling_serve import DoclingServeClient
 
 if TYPE_CHECKING:
@@ -243,7 +247,7 @@ class DoclingServeConverter(DocumentConverter):
 
         if file_extension in TextFileHandler.text_extensions:
             try:
-                content = await asyncio.to_thread(path.read_text, encoding="utf-8")
+                content = await asyncio.to_thread(read_text, path)
                 prepared_content = TextFileHandler.prepare_text_content(
                     content, file_extension
                 )
