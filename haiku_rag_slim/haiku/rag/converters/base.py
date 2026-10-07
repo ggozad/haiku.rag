@@ -190,6 +190,13 @@ class DocumentConverter(ABC):
         """
         pass
 
+    def require_supported(self, path: Path) -> None:
+        """Raise `UnsupportedSourceError` unless `path`'s extension is supported."""
+        from haiku.rag.client.exceptions import UnsupportedSourceError
+
+        if path.suffix.lower() not in self.supported_extensions:
+            raise UnsupportedSourceError(f"Unsupported file extension: {path.suffix}")
+
     @abstractmethod
     async def convert_file(
         self, path: Path, source_uri: str | None = None
@@ -208,6 +215,7 @@ class DocumentConverter(ABC):
             DoclingDocument representation of the file.
 
         Raises:
+            UnsupportedSourceError: If the extension is not supported.
             ValueError: If the file cannot be converted.
         """
         pass

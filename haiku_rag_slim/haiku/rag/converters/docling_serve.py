@@ -13,7 +13,13 @@ from haiku.rag.converters.base import (
     vlm_api_params,
     vlm_api_url,
 )
-from haiku.rag.converters.text_utils import TextFileHandler, docling_safe_name
+from haiku.rag.converters.text_utils import (
+    DOCLING_TEXT_EXTENSIONS,
+    TextFileHandler,
+    docling_safe_name,
+    read_text,
+    to_utf8,
+)
 from haiku.rag.providers.docling_serve import DoclingServeClient
 
 if TYPE_CHECKING:
@@ -235,13 +241,15 @@ class DoclingServeConverter(DocumentConverter):
             DoclingDocument representation of the file.
 
         Raises:
+            UnsupportedSourceError: If the extension is not supported.
             ValueError: If the file cannot be converted or service is unavailable.
         """
+        self.require_supported(path)
         file_extension = path.suffix.lower()
 
         if file_extension in TextFileHandler.text_extensions:
             try:
-                content = await asyncio.to_thread(path.read_text, encoding="utf-8")
+                content = await asyncio.to_thread(read_text, path)
                 prepared_content = TextFileHandler.prepare_text_content(
                     content, file_extension
                 )
@@ -250,8 +258,10 @@ class DoclingServeConverter(DocumentConverter):
                 raise ValueError(f"Failed to read text file {path}: {e}") from e
 
         def read_file():
-            with open(path, "rb") as f:
-                return f.read()
+            raw = path.read_bytes()
+            if file_extension in DOCLING_TEXT_EXTENSIONS:
+                return to_utf8(raw, path)
+            return raw
 
         file_content = await asyncio.to_thread(read_file)
         files = {

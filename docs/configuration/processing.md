@@ -62,6 +62,17 @@ processing:
 
 `docling-local` runs docling in-process and needs the `docling` extra. `docling-serve` sends documents to a [docling-serve](../remote-processing.md) service, including a round-robin list of instances with failover. Conversion options apply to both converters, except `fetch_remote_images`, `fetch_headers` and `infer_furniture`, which only `docling-local` reads.
 
+### Text encodings
+
+Plain text, code, Markdown (`.md`, `.qmd`, `.rmd`), CSV and AsciiDoc (`.adoc`, `.asc`, `.asciidoc`) files are read as UTF-8. A file that is not valid UTF-8 has its encoding detected with `charset-normalizer`, logged as a warning naming the encoding, and is converted to UTF-8 before docling reads it. A file whose encoding cannot be detected fails to convert.
+
+HTML, email and LaTeX files are left to docling. docling reads an HTML file's declared encoding, or detects one. A LaTeX file that is not UTF-8 is read as latin-1, so its non-ASCII text is garbled. XML is detected as above under `docling-serve`, and left to docling under `docling-local`.
+
+Detection has known limits:
+
+- Bytes that are valid UTF-8 are never detected. ISO-2022-JP is 7-bit and is stored as its escape sequences. UTF-16 without a byte-order mark, holding ASCII-range text, is stored with NULs between the characters.
+- Single-byte encodings that differ in a few positions can be confused. ISO-8859-7 Greek can be read as cp1253, which turns every `Ά` into `¶`. Short Polish text in cp1250 or ISO-8859-2 can be read as a Western encoding.
+
 ### Large PDFs and docling memory
 
 Docling's parser is memory-hungry and leaks over a long-running process ([docling #2209](https://github.com/docling-project/docling/issues/2209), [#1343](https://github.com/docling-project/docling/issues/1343), [#2954](https://github.com/docling-project/docling/issues/2954)). Single-pass conversion of a 400-page PDF can exhaust a workstation's memory in local mode. `processing.split_pages` bounds it:

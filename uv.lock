@@ -1696,6 +1696,7 @@ name = "haiku-rag-slim"
 version = "0.93.0"
 source = { editable = "haiku_rag_slim" }
 dependencies = [
+    { name = "charset-normalizer" },
     { name = "docling-core" },
     { name = "fastmcp" },
     { name = "httpx" },
@@ -1781,6 +1782,7 @@ zeroentropy = [
 requires-dist = [
     { name = "aiosqlite", marker = "extra == 'ingester'", specifier = ">=0.20" },
     { name = "asyncpg", marker = "extra == 'ingester'", specifier = ">=0.29" },
+    { name = "charset-normalizer", specifier = ">=3.4.0" },
     { name = "cohere", marker = "extra == 'cohere'", specifier = ">=5.21.1" },
     { name = "docling", marker = "extra == 'docling'", specifier = "==2.124.0" },
     { name = "docling-core", specifier = "==2.93.0" },

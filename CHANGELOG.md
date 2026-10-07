@@ -22,9 +22,12 @@
 ### Changed
 
 - lancedb 0.39.0, pylance 12.0.0. Tables created or recreated from now on are written in Lance file format 2.2. Existing tables keep their format.
+- `DoclingLocalConverter.convert_file` and `DoclingServeConverter.convert_file` raise `UnsupportedSourceError` for an extension outside `supported_extensions`. docling-local no longer reads an unknown extension as text.
 
 ### Fixed
 
+- Plain text, code, Markdown, CSV and AsciiDoc files that are not UTF-8 are decoded in the encoding `charset-normalizer` detects, with a warning, instead of failing to convert. `charset-normalizer` is a direct dependency of `haiku.rag-slim` (#676).
+- A file whose name is only dots before its extension (`..md`) is handed to docling as `document.md` instead of `md`, which docling could not classify.
 - `rebuild` (full, `--rechunk`, `--descriptions`) writes `document_items` once per 50-document batch, split whenever the documents gathered reach 16 MiB of pictures, instead of once per document.
 - `vacuum` removes untagged versions older than the retention that were written after a tag, and their files. A tag keeps only its own version (#684).
 - A `rebuild` interrupted after dropping the chunks table (`--embed-only`, or a vector dimension change) retrains the vector index when run again.

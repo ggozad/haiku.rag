@@ -21,7 +21,13 @@ from haiku.rag.converters.exceptions import (
     ConversionTimeoutError,
     ConverterWedgedError,
 )
-from haiku.rag.converters.text_utils import TextFileHandler, docling_safe_name
+from haiku.rag.converters.text_utils import (
+    DOCLING_TEXT_EXTENSIONS,
+    TextFileHandler,
+    docling_safe_name,
+    read_text,
+    transcode,
+)
 
 if TYPE_CHECKING:
     from docling.backend.abstract_backend import AbstractDocumentBackend
@@ -30,6 +36,7 @@ if TYPE_CHECKING:
     from docling.document_converter import DocumentConverter as DoclingDocConverter
     from docling.document_converter import FormatOption
     from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.io import DocumentStream
 
     from haiku.rag.config.models import ConversionOptions
 
@@ -312,11 +319,11 @@ class DoclingLocalConverter(DocumentConverter):
         return converter
 
     def _sync_convert_timed(
-        self, path: Path, source_uri: str | None = None
+        self, source: "Path | DocumentStream", source_uri: str | None = None
     ) -> "DoclingDocument":
         """The part of a conversion the deadline covers. For shared formats the
         caller holds `_CONVERTER_LOCK`."""
-        if path.suffix.lower() in _URI_AWARE_EXTENSIONS:
+        if Path(source.name).suffix.lower() in _URI_AWARE_EXTENSIONS:
             from docling.document_converter import (
                 DocumentConverter as DoclingDocConverter,
             )
@@ -324,15 +331,15 @@ class DoclingLocalConverter(DocumentConverter):
             converter = DoclingDocConverter(
                 format_options=self._build_format_options(source_uri=source_uri)
             )
-            doc = converter.convert(path).document
+            doc = converter.convert(source).document
         else:
-            doc = self._cached_converter().convert(path).document
+            doc = self._cached_converter().convert(source).document
 
         flatten_inline_groups(doc)
         return doc
 
     async def _convert_docling_file(
-        self, path: Path, source_uri: str | None
+        self, path: Path, source_uri: str | None, content: bytes | None = None
     ) -> "DoclingDocument":
         """Convert through docling under `processing.conversion_timeout`.
 
@@ -347,8 +354,17 @@ class DoclingLocalConverter(DocumentConverter):
         `_WEDGED` clear, and every later conversion in the process would park on
         admission with nothing to raise.
         """
+        from io import BytesIO
+
+        from docling_core.types.io import DocumentStream
+
         timeout = self.config.processing.conversion_timeout
         shared = path.suffix.lower() not in _URI_AWARE_EXTENSIONS
+        source: Path | DocumentStream = path
+        if content is not None:
+            source = DocumentStream(
+                name=docling_safe_name(path.name), stream=BytesIO(content)
+            )
         if shared:
             self._refuse_if_wedged()
 
@@ -370,7 +386,7 @@ class DoclingLocalConverter(DocumentConverter):
         # so a deadline handler cannot tell docling's own from its own.
         def _convert() -> "DoclingDocument | TimeoutError":
             try:
-                return self._sync_convert_timed(path, source_uri)
+                return self._sync_convert_timed(source, source_uri)
             except TimeoutError as exc:
                 return exc
 
@@ -511,29 +527,28 @@ class DoclingLocalConverter(DocumentConverter):
             DoclingDocument representation of the file.
 
         Raises:
+            UnsupportedSourceError: If the extension is not supported.
             ValueError: If the file cannot be converted, chaining the cause.
             TimeoutError: If it exceeds `processing.conversion_timeout`.
         """
+        self.require_supported(path)
         try:
             file_extension = path.suffix.lower()
 
             if file_extension in self.docling_extensions:
-                return await self._convert_docling_file(path, source_uri)
-            elif file_extension in TextFileHandler.text_extensions:
-                content = await asyncio.to_thread(path.read_text, encoding="utf-8")
-                prepared_content = TextFileHandler.prepare_text_content(
-                    content, file_extension
-                )
-                return await self.convert_text(
-                    prepared_content,
-                    name=f"{path.stem}.md",
-                    source_uri=source_uri,
-                )
-            else:
-                content = await asyncio.to_thread(path.read_text, encoding="utf-8")
-                return await self.convert_text(
-                    content, name=f"{path.stem}.md", source_uri=source_uri
-                )
+                content = None
+                if file_extension in DOCLING_TEXT_EXTENSIONS:
+                    content = await asyncio.to_thread(transcode, path)
+                return await self._convert_docling_file(path, source_uri, content)
+            content = await asyncio.to_thread(read_text, path)
+            prepared_content = TextFileHandler.prepare_text_content(
+                content, file_extension
+            )
+            return await self.convert_text(
+                prepared_content,
+                name=f"{path.stem}.md",
+                source_uri=source_uri,
+            )
         except (TimeoutError, ConverterWedgedError):
             raise
         except Exception as exc:
