@@ -1,4 +1,4 @@
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from importlib.metadata import entry_points
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
@@ -21,6 +21,9 @@ class MetadataProvider(Protocol):
 
 
 MetadataProviderFactory = Callable[[], MetadataProvider]
+
+# A provider with its source id bound: called with the uri and fetched content.
+BoundMetadataProvider = Callable[[str, "FetchResult"], Awaitable[dict]]
 
 
 @runtime_checkable

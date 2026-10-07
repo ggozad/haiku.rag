@@ -645,3 +645,40 @@ async def test_manifest_replay_still_revalidates_before_ingesting():
     assert source.head_calls == 1
     kwargs = client._ingest_observed.await_args.kwargs
     assert kwargs["observed_revision"] == "etag-2"
+
+
+@pytest.mark.vcr()
+@pytest.mark.usefixtures("docling_local_models")
+async def test_upsert_calls_the_provider_for_pdf_attachments(tmp_path, temp_db_path):
+    """End to end through a real client: the source's provider is called for
+    the fetched PDF and each attachment, with the job's source id, and only
+    the fetched document is attributed to the source."""
+    from haiku.rag.client.documents import parent_uri_filter
+    from haiku.rag.sources.fs import FSSource
+    from tests.conftest import build_pdf
+
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(build_pdf([("a.txt", b"alpha notes")]))
+    source = FSSource(root=tmp_path, source_id="src")
+    provider = _MetadataProvider({"team": "docs"})
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        result = await run_job(
+            client,
+            _job(uri=pdf_path.as_uri()),
+            sources=[source],
+            metadata_providers={"src": provider},
+        )
+        parent = await client.get_document_by_uri(pdf_path.as_uri())
+        assert parent is not None
+        (child,) = await client.list_documents(filter=parent_uri_filter(parent.uri))
+
+    assert result.document_id == parent.id
+    assert result.revision == parent.metadata["source_revision"]
+    assert result.content_hash == parent.metadata["md5"]
+    assert parent.metadata["team"] == "docs"
+    assert parent.metadata["source_id"] == "src"
+    assert child.uri == f"{parent.uri}#attachment=a.txt"
+    assert child.metadata["team"] == "docs"
+    assert child.metadata["source"] == "src"
+    assert "source_id" not in child.metadata
