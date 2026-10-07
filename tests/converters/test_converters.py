@@ -287,6 +287,10 @@ class TestTextFileHandler:
         assert docling_safe_name("notes.md") == "notes.md"
         assert docling_safe_name("...") == "..."
 
+    @pytest.mark.parametrize("name", ["..md", "...md"])
+    def test_docling_safe_name_keeps_the_extension(self, name):
+        assert docling_safe_name(name) == "document.md"
+
     def test_text_extensions_defined(self):
         """Test that text extensions list is defined."""
         assert len(TextFileHandler.text_extensions) > 0
@@ -678,6 +682,62 @@ class TestDoclingLocalConverter:
 
         with pytest.raises(ValueError, match="Failed to parse file"):
             await converter.convert_file(source)
+
+    @pytest.mark.parametrize(
+        ("name", "body"),
+        [
+            ("doc.md", f"# 見出し\n\n{JAPANESE}\n"),
+            ("doc.csv", f"列,本文\n1,{JAPANESE}\n"),
+            ("doc.adoc", f"= 見出し\n\n{JAPANESE}\n"),
+        ],
+        ids=["md", "csv", "adoc"],
+    )
+    async def test_convert_file_transcodes_docling_text_formats(
+        self, converter, tmp_path, name, body
+    ):
+        source = tmp_path / name
+        source.write_bytes(body.encode("cp932"))
+
+        doc = await converter.convert_file(source)
+
+        assert JAPANESE in doc.export_to_markdown()
+
+    async def test_convert_file_transcodes_a_name_of_dots_and_extension(
+        self, converter, tmp_path
+    ):
+        source = tmp_path / "..md"
+        source.write_bytes(f"# 見出し\n\n{JAPANESE}\n".encode("cp932"))
+
+        doc = await converter.convert_file(source)
+
+        assert JAPANESE in doc.export_to_markdown()
+
+    async def test_convert_file_hands_docling_a_path_unless_transcoded(
+        self, converter, tmp_path, monkeypatch
+    ):
+        from docling.document_converter import DocumentConverter
+        from docling_core.types.io import DocumentStream
+
+        sources = []
+        convert = DocumentConverter.convert
+
+        def recording_convert(self, source, *args, **kwargs):
+            sources.append(source)
+            return convert(self, source, *args, **kwargs)
+
+        monkeypatch.setattr(DocumentConverter, "convert", recording_convert)
+        utf8 = tmp_path / "utf8.md"
+        utf8.write_text(f"# Title\n\n{JAPANESE}\n", encoding="utf-8")
+        cp932 = tmp_path / "cp932.md"
+        cp932.write_bytes(f"# Title\r\n\r\n{JAPANESE}\r\n".encode("cp932"))
+
+        await converter.convert_file(utf8)
+        await converter.convert_file(cp932)
+
+        assert sources[0] == utf8
+        assert isinstance(sources[1], DocumentStream)
+        assert sources[1].name == "cp932.md"
+        assert sources[1].stream.getvalue() == f"# Title\n\n{JAPANESE}\n".encode()
 
     async def test_convert_text_wraps_conversion_failure(self, converter, monkeypatch):
         def boom(*_args, **_kwargs):
@@ -2218,6 +2278,32 @@ class TestDoclingServeConverter:
 
         uploaded = mock_client.post.call_args.kwargs["files"]["files"][1]
         assert text.encode() in uploaded
+
+    async def test_convert_file_uploads_docling_text_formats_as_utf8(
+        self, converter, tmp_path
+    ):
+        source = tmp_path / "doc.md"
+        source.write_bytes(f"# Title\r\n\r\n{JAPANESE}\r\n".encode("cp932"))
+        converter._make_request = AsyncMock(return_value=DoclingDocument(name="doc"))
+
+        await converter.convert_file(source)
+
+        files = converter._make_request.call_args.args[0]
+        assert files["files"][1] == f"# Title\r\n\r\n{JAPANESE}\r\n".encode()
+
+    async def test_convert_file_rejects_undetectable_docling_text_format(
+        self, converter, tmp_path
+    ):
+        source = tmp_path / "doc.md"
+        source.write_bytes(UNDETECTABLE)
+        converter._make_request = AsyncMock(
+            side_effect=AssertionError("must not call docling-serve")
+        )
+
+        with pytest.raises(ValueError, match="No text encoding detected") as exc:
+            await converter.convert_file(source)
+
+        assert str(source) in str(exc.value)
 
 
 class TestDoclingServeConverterPictureDescription:

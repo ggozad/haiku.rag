@@ -64,7 +64,9 @@ processing:
 
 ### Text encodings
 
-Plain text and code files are read as UTF-8. A file that is not valid UTF-8 has its encoding detected with `charset-normalizer` and is logged as a warning naming the encoding. A file whose encoding cannot be detected fails to convert.
+Plain text, code, Markdown (`.md`, `.qmd`, `.rmd`), CSV and AsciiDoc (`.adoc`, `.asc`, `.asciidoc`) files are read as UTF-8. A file that is not valid UTF-8 has its encoding detected with `charset-normalizer`, logged as a warning naming the encoding, and is converted to UTF-8 before docling reads it. A file whose encoding cannot be detected fails to convert.
+
+HTML, email and LaTeX files are left to docling. docling reads an HTML file's declared encoding, or detects one. A LaTeX file that is not UTF-8 is read as latin-1, so its non-ASCII text is garbled. XML is detected as above under `docling-serve`, and left to docling under `docling-local`.
 
 Detection has known limits:
 
