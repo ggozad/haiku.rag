@@ -35,6 +35,7 @@ class _StoreIndex:
     uris: set[str] = field(default_factory=set)
     owner_by_uri: dict[str, str] = field(default_factory=dict)
     id_by_uri: dict[str, str] = field(default_factory=dict)
+    parent_by_uri: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     async def read(cls, rag: "HaikuRAG") -> "_StoreIndex":
@@ -44,14 +45,22 @@ class _StoreIndex:
                 continue
             index.uris.add(doc.uri)
             index.id_by_uri[doc.uri] = doc.id
-            owner = (doc.metadata or {}).get("source_id")
+            metadata = doc.metadata or {}
+            owner = metadata.get("source_id")
             if owner is not None:
                 index.owner_by_uri[doc.uri] = owner
+            parent = metadata.get("parent_uri")
+            if parent is not None:
+                index.parent_by_uri[doc.uri] = parent
         return index
 
     @property
     def unattributed(self) -> set[str]:
-        return self.uris - set(self.owner_by_uri)
+        """Documents with no source_id, attachments of a stored document excepted."""
+        attachments = {
+            uri for uri, parent in self.parent_by_uri.items() if parent in self.uris
+        }
+        return self.uris - set(self.owner_by_uri) - attachments
 
 
 @dataclass

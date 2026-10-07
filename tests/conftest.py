@@ -85,6 +85,22 @@ def capture_logs(
         logger.removeHandler(handler)
 
 
+@pytest.fixture
+def exporter():
+    """Collect spans in memory, restoring logfire's inert default on teardown."""
+    import logfire
+    from logfire.testing import SimpleSpanProcessor, TestExporter
+
+    test_exporter = TestExporter()
+    logfire.configure(
+        send_to_logfire=False,
+        console=False,
+        additional_span_processors=[SimpleSpanProcessor(test_exporter)],
+    )
+    yield test_exporter
+    logfire.configure(send_to_logfire=False, console=False)
+
+
 @pytest.fixture(scope="session")
 def qa_corpus() -> list[dict[str, str]]:
     corpus_path = Path(__file__).parent / "data" / "qa_corpus.json"

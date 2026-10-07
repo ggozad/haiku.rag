@@ -31,9 +31,14 @@ def _docling_document(text: str) -> DoclingDocument:
     return doc
 
 
-async def _document(client: HaikuRAG, uri: str, source_id: str | None = None):
-    """A stored document, attributed when `source_id` is given, without an
-    embedder call."""
+async def _document(
+    client: HaikuRAG,
+    uri: str,
+    source_id: str | None = None,
+    parent_uri: str | None = None,
+):
+    """A stored document, attributed when `source_id` is given and an
+    attachment of `parent_uri` when that is given, without an embedder call."""
     vector_dim = client.store.embedder.vector_dim
     doc = await client.import_document(
         _docling_document(f"Content of {uri}."),
@@ -43,6 +48,9 @@ async def _document(client: HaikuRAG, uri: str, source_id: str | None = None):
     assert doc.id is not None
     if source_id is not None:
         (doc,) = await client.set_document_source([doc.id], source_id)
+    if parent_uri is not None:
+        doc.metadata = {**doc.metadata, "parent_uri": parent_uri}
+        doc = await client.document_repository.update_meta(doc)
     return doc
 
 
@@ -245,6 +253,71 @@ async def test_does_not_warn_when_every_document_is_attributed(client, sync):
 
     messages = [record.getMessage() for record in records]
     assert not [m for m in messages if "without source attribution" in m]
+
+
+async def _unattributed_warnings(client: HaikuRAG, sync) -> list[str]:
+    with capture_logs(RECONCILE_LOGGER, logging.WARNING) as records:
+        await reconcile(client, sync, ["fs:corpus"])
+    messages = [record.getMessage() for record in records]
+    return [m for m in messages if "without source attribution" in m]
+
+
+async def test_attachments_of_a_stored_document_are_not_unattributed(client, sync):
+    parent = "file:///corpus/report.pdf"
+    await _document(client, parent, "fs:corpus")
+    await _document(client, f"{parent}#attachment=a.txt", parent_uri=parent)
+    await _document(client, f"{parent}#attachment=b.txt", parent_uri=parent)
+
+    assert await _unattributed_warnings(client, sync) == []
+
+
+async def test_attachments_of_an_unattributed_document_are_not_counted(client, sync):
+    parent = "file:///corpus/handmade.pdf"
+    await _document(client, parent)
+    await _document(client, f"{parent}#attachment=a.txt", parent_uri=parent)
+    await _document(client, f"{parent}#attachment=b.txt", parent_uri=parent)
+
+    (warning,) = await _unattributed_warnings(client, sync)
+    assert "1 document(s) remain without source attribution" in warning
+
+
+async def test_an_attachment_whose_parent_is_gone_is_unattributed(client, sync):
+    parent = "file:///corpus/deleted.pdf"
+    await _document(client, f"{parent}#attachment=a.txt", parent_uri=parent)
+
+    (warning,) = await _unattributed_warnings(client, sync)
+    assert "1 document(s) remain without source attribution" in warning
+
+
+async def test_only_the_top_of_an_orphaned_attachment_chain_is_unattributed(
+    client, sync
+):
+    root = "file:///corpus/deleted.pdf"
+    attachment = f"{root}#attachment=inner.pdf"
+    await _document(client, attachment, parent_uri=root)
+    await _document(client, f"{attachment}#attachment=a.txt", parent_uri=attachment)
+
+    (warning,) = await _unattributed_warnings(client, sync)
+    assert "1 document(s) remain without source attribution" in warning
+
+
+async def test_span_counts_unattributed_without_attachments(client, sync, exporter):
+    parent = "file:///corpus/report.pdf"
+    await _document(client, parent, "fs:corpus")
+    await _document(client, f"{parent}#attachment=a.txt", parent_uri=parent)
+    orphaned = "file:///corpus/deleted.pdf#attachment=a.txt"
+    await _document(client, orphaned, parent_uri="file:///corpus/deleted.pdf")
+
+    await reconcile(client, sync, ["fs:corpus"])
+
+    (span,) = [
+        span
+        for span in exporter.exported_spans
+        if span.name == "ingester.reconcile"
+        and (span.attributes or {}).get("logfire.span_type") != "pending_span"
+    ]
+    assert span.attributes is not None
+    assert span.attributes["unattributed"] == 1
 
 
 async def test_warning_counts_net_of_this_runs_attributions(client, sync):
