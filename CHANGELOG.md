@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `${HAIKU_RAG_CONFIG_DIR}` in config values expands to the config file's directory (#691).
+
 ## [0.94.0] - 2026-10-07
 
 ### Changed

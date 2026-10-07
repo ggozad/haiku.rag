@@ -661,6 +661,32 @@ def test_expand_env_var_plain_string_unchanged(tmp_path):
     assert config["environment"] == "production"
 
 
+def test_config_dir_expands_to_the_config_files_directory(tmp_path, monkeypatch):
+    """${HAIKU_RAG_CONFIG_DIR} is the absolute directory of the loaded file."""
+    config_dir = tmp_path / "project"
+    config_dir.mkdir()
+    (config_dir / "haiku.rag.yaml").write_text("""
+lancedb:
+  databases:
+    papers: ${HAIKU_RAG_CONFIG_DIR}/papers.lancedb
+""")
+    monkeypatch.chdir(tmp_path)
+
+    config = load_yaml_config(Path("project/haiku.rag.yaml"))
+    papers = Path(config["lancedb"]["databases"]["papers"])
+    assert papers == config_dir.resolve() / "papers.lancedb"
+
+
+def test_config_dir_ignores_the_environment(tmp_path, monkeypatch):
+    """An environment variable of the same name does not override the file's directory."""
+    monkeypatch.setenv("HAIKU_RAG_CONFIG_DIR", "/elsewhere")
+    config_file = tmp_path / "test.yaml"
+    config_file.write_text("environment: ${HAIKU_RAG_CONFIG_DIR}")
+
+    config = load_yaml_config(config_file)
+    assert config["environment"] == str(tmp_path.resolve())
+
+
 def test_find_config_file_returns_none_when_nothing_exists(tmp_path, monkeypatch):
     """No env var, no file in cwd, none in the data dir."""
     monkeypatch.delenv("HAIKU_RAG_CONFIG_PATH", raising=False)
