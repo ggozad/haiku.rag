@@ -520,6 +520,48 @@ class TestCliMissingDatabase:
         assert str(missing) in err
 
 
+class TestCliAttachmentDeletion:
+    def test_deleting_an_attachment_is_an_error_not_a_traceback(
+        self, temp_db_path, monkeypatch, capsys
+    ):
+        from haiku.rag.store.models.document import Document
+
+        parent_uri = "file:///path/to/parent.pdf"
+
+        async def seed() -> str:
+            async with HaikuRAG(temp_db_path, create=True) as client:
+                await client.document_repository.create(
+                    Document(content="parent", uri=parent_uri, metadata={})
+                )
+                child = await client.document_repository.create(
+                    Document(
+                        content="child",
+                        uri=f"{parent_uri}#attachment=a.txt",
+                        metadata={"parent_uri": parent_uri},
+                    )
+                )
+                assert child.id is not None
+                return child.id
+
+        child_id = asyncio.run(seed())
+
+        async def current():
+            return True, "9.9.9", "9.9.9"
+
+        monkeypatch.setattr("haiku.rag.cli.is_up_to_date", current)
+        monkeypatch.setattr(
+            sys, "argv", ["haiku-rag", "delete", child_id, "--db", str(temp_db_path)]
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            cli_wrapper()
+
+        assert exc_info.value.code == 1
+        err = capsys.readouterr().err
+        assert err.startswith("Error: ")
+        assert parent_uri in err
+
+
 class TestCliMigrationError:
     def test_catches_migration_required_error(self):
         with patch("haiku.rag.cli._cli") as mock_cli:

@@ -1,7 +1,13 @@
+import pytest
+from docling_core.types.doc.document import DoclingDocument
+from docling_core.types.doc.labels import DocItemLabel
+
 from haiku.rag.app import HaikuRAGApp
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.documents import parent_uri_filter
+from haiku.rag.client.exceptions import AttachmentDeletionError
 from haiku.rag.config.models import AppConfig
+from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from tests.conftest import for_path
 
@@ -129,6 +135,98 @@ async def test_delete_handles_self_referential_parent(temp_db_path):
         deleted = await client.delete_document(doc.id)
         assert deleted is True
         assert await client.get_document_by_id(doc.id) is None
+
+
+async def _stored(client: HaikuRAG, uri: str, parent_uri: str | None = None):
+    metadata = {"parent_uri": parent_uri} if parent_uri else {}
+    doc = await client.document_repository.create(
+        Document(content=uri, uri=uri, metadata=metadata)
+    )
+    assert doc.id is not None
+    return doc
+
+
+async def test_deleting_an_attachment_of_a_stored_document_is_refused(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent_uri = "file:///path/to/parent.pdf"
+        parent = await _stored(client, parent_uri)
+        child = await _stored(client, f"{parent_uri}#attachment=a.pdf", parent_uri)
+
+        with pytest.raises(AttachmentDeletionError) as exc_info:
+            await client.delete_document(child.id)
+
+        assert parent.id in str(exc_info.value)
+        assert parent_uri in str(exc_info.value)
+        assert await client.get_document_by_id(child.id) is not None
+
+
+async def test_a_refused_deletion_writes_nothing(temp_db_path):
+    config = AppConfig()
+    config.storage.auto_vacuum = False
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        parent_uri = "file:///path/to/parent.pdf"
+        await _stored(client, parent_uri)
+        docling_document = DoclingDocument(name="child")
+        docling_document.add_text(label=DocItemLabel.TEXT, text="child")
+        child = await client.import_document(
+            docling_document,
+            [
+                Chunk(
+                    content="child",
+                    embedding=[0.1] * config.embeddings.model.vector_dim,
+                )
+            ],
+            uri=f"{parent_uri}#attachment=a.txt",
+        )
+        assert child.id is not None
+        child.metadata = {"parent_uri": parent_uri}
+        await client.document_repository.update_meta(child)
+        versions = await client.store.current_table_versions()
+
+        with pytest.raises(AttachmentDeletionError):
+            await client.delete_document(child.id)
+
+        assert await client.store.current_table_versions() == versions
+        assert len(await client.chunk_repository.get_by_document_id(child.id)) == 1
+
+
+async def test_deleting_a_nested_attachment_is_refused(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        root_uri = "file:///path/to/root.pdf"
+        inner_uri = f"{root_uri}#attachment=inner.pdf"
+        await _stored(client, root_uri)
+        await _stored(client, inner_uri, root_uri)
+        leaf = await _stored(client, f"{inner_uri}#attachment=a.txt", inner_uri)
+
+        with pytest.raises(AttachmentDeletionError):
+            await client.delete_document(leaf.id)
+
+        assert await client.get_document_by_id(leaf.id) is not None
+
+
+async def test_deleting_an_orphaned_attachment_removes_its_attachments(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        inner_uri = "file:///path/to/deleted.pdf#attachment=inner.pdf"
+        inner = await _stored(client, inner_uri, "file:///path/to/deleted.pdf")
+        leaf = await _stored(client, f"{inner_uri}#attachment=a.txt", inner_uri)
+
+        assert await client.delete_document(inner.id) is True
+
+        assert await client.get_document_by_id(inner.id) is None
+        assert await client.get_document_by_id(leaf.id) is None
+
+
+async def test_deleting_a_document_in_a_parent_cycle_removes_the_cycle(
+    temp_db_path,
+):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        a = await _stored(client, "file:///a.pdf", "file:///b.pdf")
+        b = await _stored(client, "file:///b.pdf", "file:///a.pdf")
+
+        assert await client.delete_document(a.id) is True
+
+        assert await client.get_document_by_id(a.id) is None
+        assert await client.get_document_by_id(b.id) is None
 
 
 async def test_delete_succeeds_with_embedding_dim_mismatch(temp_db_path):

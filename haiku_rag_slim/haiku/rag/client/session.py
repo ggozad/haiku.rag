@@ -203,7 +203,9 @@ class SingleDatabaseSession:
             )
         )
 
-    async def delete_document(self, document_id: str) -> bool:
+    async def delete_document(
+        self, document_id: str, *, allow_attachment: bool = False
+    ) -> bool:
         """Delete a document, cascading to children linked via
         ``metadata.parent_uri``.
 
@@ -211,8 +213,12 @@ class SingleDatabaseSession:
         write lock and a single version snapshot, so the cascade is atomic: any
         failure restores every table to the pre-delete state, and no other write
         can interleave between deleting a child and its parent.
+
+        Raises ``AttachmentDeletionError`` for an attachment whose parent is
+        stored and outside the subtree, unless ``allow_attachment``.
         """
         from haiku.rag.client.documents import parent_uri_filter
+        from haiku.rag.client.exceptions import AttachmentDeletionError
 
         async with self.store.write_transaction():
             # Resolve existence and collect the subtree under the lock so two
@@ -220,9 +226,10 @@ class SingleDatabaseSession:
             # can't appear or move between collection and deletion. parent_uri
             # links a child to its parent's uri; walk transitively, guarding
             # against cycles.
+            root = await self.get_document_by_id(document_id)
             ids_to_delete: list[str] = []
             seen: set[str] = set()
-            queue = [await self.get_document_by_id(document_id)]
+            queue = [root]
             while queue:
                 doc = queue.pop()
                 if doc is None or doc.id is None or doc.id in seen:
@@ -237,9 +244,24 @@ class SingleDatabaseSession:
             if not ids_to_delete:
                 return False
 
-            for doc_id in ids_to_delete:
-                await self.document_repository.delete(doc_id)
+            parent_uri = (root.metadata or {}).get("parent_uri") if root else None
+            parent = (
+                await self.get_document_by_uri(parent_uri)
+                if parent_uri is not None and not allow_attachment
+                else None
+            )
+            # Raised after the transaction: raising inside it rolls back, and a
+            # rollback writes a version of every table.
+            owner = parent if parent is not None and parent.id not in seen else None
+            if owner is None:
+                for doc_id in ids_to_delete:
+                    await self.document_repository.delete(doc_id)
 
+        if owner is not None:
+            raise AttachmentDeletionError(
+                f"Document {document_id} is an attachment of {owner.id} "
+                f"({parent_uri}). Delete that document instead."
+            )
         if self.config.storage.auto_vacuum:
             self.schedule_vacuum()
         return True

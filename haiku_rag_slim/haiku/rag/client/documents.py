@@ -799,7 +799,7 @@ async def _reconcile_pdf_attachments(
 
     for child_uri, child in existing_by_uri.items():
         if child_uri not in new_attachments and child.id:
-            await session.delete_document(child.id)
+            await session.delete_document(child.id, allow_attachment=True)
 
 
 async def create_document_from_source(

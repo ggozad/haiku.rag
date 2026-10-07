@@ -363,6 +363,8 @@ Behavior:
 - Children carry the standard ingest metadata (`content_type`, `md5`) plus `parent_uri`, and no `source_id`. Under the [ingester](../ingester.md#metadata-providers), a source's metadata provider adds its keys to each child too.
 - Re-ingesting the wrapper reconciles its current attachment set against existing children: new files are added, changed bytes update in place, and dropped names are deleted.
 - `delete_document(parent_id)` cascades through `parent_uri` and removes all children.
+- `delete_document(child_id)` raises `AttachmentDeletionError` while the parent is stored. Delete the parent, or remove the file from the PDF and re-ingest it.
+- `parent_uri` is set by attachment extraction only. It is stripped from caller metadata and kept across `update_document`.
 - Nested attachments (a PDF whose attachment is itself a PDF with attachments) recurse up to 3 levels. Deeper chains log a warning and skip.
 - Attachments whose extension or content type the converter does not support log a warning and are skipped without aborting the rest of the set.
 
