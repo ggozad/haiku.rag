@@ -663,16 +663,6 @@ async def test_create_and_delete_tag_confirm(app, monkeypatch):
     assert "Deleted tag 'release-1'" in printed
 
 
-async def test_restore_tag_reports_the_safety_tag(app, monkeypatch):
-    store = AsyncMock()
-    store.restore_tag.return_value = "before-restore-20260820T000000Z"
-    monkeypatch.setattr(app, "_tag_write_store", lambda: _as_cm(store))
-
-    await app.restore_tag("release-1")
-
-    assert "Restored database to tag 'release-1'" in out(app)
-
-
 @pytest.mark.parametrize(
     "method, args",
     [

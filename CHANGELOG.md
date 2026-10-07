@@ -10,6 +10,8 @@
 ### Fixed
 
 - Retrying an ingest that failed on a PDF attachment ingests the attachment.
+- `tag restore` restores a tag that needs no migration while the live database needs one or records another embedder (#692).
+- `tag restore` refuses a database missing a table, naming it, instead of re-creating the table.
 
 ## [0.93.0] - 2026-10-06
 

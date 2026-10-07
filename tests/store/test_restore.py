@@ -327,6 +327,37 @@ async def test_restore_old_version_marker_requires_explicit_migration(temp_db_pa
         assert await _doc_contents(store) == {"First document", "Second document"}
 
 
+async def test_tag_haiku_version_reads_the_tag_not_the_live_state(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        current_version = await store.get_haiku_version()
+        await store.set_haiku_version("0.63.0")
+        await store.create_tag("old-marker")
+        await store.set_haiku_version(current_version)
+
+        assert await store.tag_haiku_version("old-marker") == "0.63.0"
+        assert await store.get_haiku_version() == current_version
+
+
+async def test_tag_haiku_version_without_a_recorded_version(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        await store.settings_table.update({"settings": "{}"})
+        await store.create_tag("no-version")
+
+        assert await store.tag_haiku_version("no-version") == "0.0.0"
+
+
+async def test_tag_haiku_version_refuses_a_missing_or_partial_tag(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        await store.chunks_table.tags.create(
+            "stale", await store.chunks_table.version()
+        )
+
+        with pytest.raises(ValueError, match="does not exist"):
+            await store.tag_haiku_version("missing")
+        with pytest.raises(ValueError, match="is partial"):
+            await store.tag_haiku_version("stale")
+
+
 async def test_restore_failure_rollback_survives_cancellation(
     temp_db_path, monkeypatch
 ):

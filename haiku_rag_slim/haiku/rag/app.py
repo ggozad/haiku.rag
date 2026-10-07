@@ -487,12 +487,43 @@ class HaikuRAGApp:
         The Store context exits before anything is printed; no high-level
         database access happens after the restore.
 
+        A tag that needs no migration is restored without checking the live
+        state, which may itself need a migration or record another embedder.
+
         Raises:
-            ValueError: If the database path does not exist.
+            ValueError: If the database path does not exist, or the database
+                is missing a table.
         """
+        from haiku.rag.store.engine import Store, connect_lancedb
+        from haiku.rag.store.schema import REQUIRED_TABLES
+        from haiku.rag.store.upgrades import get_pending_upgrades
+
         if self.database_missing:
             raise ValueError(f"Database path does not exist: {self._path}")
-        async with self._tag_write_store() as store:
+        db = await connect_lancedb(self._location, self.config)
+        try:
+            existing = set((await db.list_tables()).tables)
+        finally:
+            db.close()
+        missing = [t for t in REQUIRED_TABLES if t not in existing]
+        if missing:
+            raise ValueError(
+                f"Cannot restore tag '{name}': the database is missing "
+                f"tables: {', '.join(missing)}"
+            )
+        async with self._tag_read_store() as store:
+            tag_version = await store.tag_haiku_version(name)
+        if get_pending_upgrades(tag_version):
+            restoring = self._tag_write_store()
+        else:
+            restoring = Store(
+                self._location,
+                config=self.config,
+                skip_validation=True,
+                skip_migration_check=True,
+                read_only=self.read_only,
+            )
+        async with restoring as store:
             safety_tag = await store.restore_tag(name)
         self.console.print(f"[green]Restored database to tag '{escape(name)}'.[/green]")
         self.console.print(
