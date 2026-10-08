@@ -202,6 +202,8 @@ haiku-rag rebuild [--rechunk | --embed-only | --title-only | --descriptions | --
 | Set embedder | `--set-embedder` | The same model is now served by another stack (e.g. Ollama to vLLM) |
 | Reindex | `--reindex` | `doctor` reports rows outside the full-text index, or an index is missing |
 
+A full rebuild re-converts a PDF's attachments from the bytes in that PDF. A document whose source is gone or fails to convert, and an attachment its PDF did not rebuild, are re-chunked and re-embedded from their stored content.
+
 Every mode except `--title-only` and `--set-embedder` ends by rebuilding the full-text and scalar indexes, whatever `storage.auto_vacuum` says. A full rebuild, `--rechunk`, `--embed-only` and `--descriptions` also retrain the vector index if the database had one. `--reindex` rebuilds the full-text and scalar indexes from scratch and nothing else: it rewrites no rows and leaves the vector index alone.
 
 A full rebuild, `--rechunk` and `--descriptions` replace the chunks of 50 documents at a time, each batch in one transaction, and leave the other documents' chunks as they were. A run that fails or is cancelled rolls its batch back and keeps every document searchable and the vector index in place. Run it again to finish. A process killed outright, by SIGKILL or the out-of-memory killer, can leave the batch it was writing without chunks until you run the rebuild again. When the vector dimension changed, they drop the chunks table before processing any document, so an interrupted run leaves the documents it did not reach without chunks.

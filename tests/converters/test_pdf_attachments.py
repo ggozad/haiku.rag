@@ -1,9 +1,13 @@
+import logging
 import threading
+from collections import Counter
 from functools import partial
 
 import pytest
 
-from haiku.rag.client import HaikuRAG
+from haiku.rag.client import HaikuRAG, RebuildMode
+from haiku.rag.client import documents as client_documents
+from haiku.rag.client import rebuild as rebuild_module
 from haiku.rag.client.documents import (
     MAX_ATTACHMENT_DEPTH,
     _extract_pdf_attachments,
@@ -12,7 +16,12 @@ from haiku.rag.client.documents import (
 )
 from haiku.rag.sources import FetchResult
 from haiku.rag.store.models.document import Document
-from tests.conftest import build_pdf, fake_ingest_fetch_result, writing
+from tests.conftest import (
+    build_pdf,
+    capture_logs,
+    fake_ingest_fetch_result,
+    writing,
+)
 
 
 async def _make_parent(
@@ -257,6 +266,8 @@ async def test_unsupported_attachment_continues_loop(temp_db_path, monkeypatch):
         depth=0,
         filename=None,
         metadata_provider=None,
+        force=False,
+        written_ids=None,
     ):
         if stored_uri.endswith("unsupported.xyz"):
             raise UnsupportedSourceError("nope")
@@ -268,6 +279,8 @@ async def test_unsupported_attachment_continues_loop(temp_db_path, monkeypatch):
             stored_uri=stored_uri,
             existing_doc=existing_doc,
             depth=depth,
+            force=force,
+            written_ids=written_ids,
         )
 
     monkeypatch.setattr("haiku.rag.client.documents._ingest_fetch_result", picky_fake)
@@ -827,3 +840,320 @@ async def test_retry_ingests_a_grandchild_whose_provider_failed(tmp_path, temp_d
     assert mid_doc is not None
     assert mid_doc.metadata["md5"] == _md5(mid)
     assert retried.metadata["md5"] == _md5(pdf_path.read_bytes())
+
+
+async def test_full_rebuild_keeps_an_unchanged_attachment_tree(
+    tmp_path, temp_db_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(
+        build_pdf(
+            [
+                ("direct.txt", b"direct"),
+                ("embedded.pdf", build_pdf([("leaf.txt", b"leaf")])),
+            ]
+        )
+    )
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.create_document_from_source(pdf_path)
+        before = {d.uri: d.id for d in await client.list_documents()}
+
+        async for _ in client.rebuild_database(mode=RebuildMode.FULL):
+            pass
+
+        after = {d.uri: d.id for d in await client.list_documents()}
+
+    assert len(before) == 4
+    assert after == before
+
+
+async def _full_rebuild(client: HaikuRAG) -> Counter[str]:
+    return Counter(
+        [doc_id async for doc_id in client.rebuild_database(mode=RebuildMode.FULL)]
+    )
+
+
+def _record_fallbacks(monkeypatch) -> list[str]:
+    """Ids of the documents a FULL rebuild rebuilds from stored content."""
+    fallbacks: list[str] = []
+    flush = rebuild_module._flush_rebuild_batch
+
+    async def recording(session, documents, chunks, **kwargs):
+        fallbacks.extend(d.id for d in documents)
+        await flush(session, documents, chunks, **kwargs)
+
+    monkeypatch.setattr(rebuild_module, "_flush_rebuild_batch", recording)
+    return fallbacks
+
+
+def _nested_tree() -> bytes:
+    return build_pdf(
+        [
+            ("direct.txt", b"direct"),
+            ("embedded.pdf", build_pdf([("leaf.txt", b"leaf")])),
+        ]
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.vcr()
+async def test_full_rebuild_reconverts_each_attachment_from_its_own_payload(
+    tmp_path, temp_db_path
+):
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(
+        build_pdf(
+            [
+                ("direct.txt", b"The direct attachment is about apples."),
+                (
+                    "embedded.pdf",
+                    build_pdf([("leaf.txt", b"The nested leaf is about pears.")]),
+                ),
+            ]
+        )
+    )
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent = await client.create_document_from_source(pdf_path)
+        assert isinstance(parent, Document)
+        direct_uri = f"{parent.uri}#attachment=direct.txt"
+        leaf_uri = f"{parent.uri}#attachment=embedded.pdf#attachment=leaf.txt"
+        payloads = {direct_uri: "apples", leaf_uri: "pears"}
+
+        for uri in payloads:
+            listed = await client.get_document_by_uri(uri)
+            assert listed is not None and listed.id is not None
+            doc = await client.document_repository.get_by_id(
+                listed.id, include_blobs=True
+            )
+            assert doc is not None
+            doc.content = "Stale conversion."
+            doc.metadata = {**doc.metadata, "department": "legal"}
+            await client.document_repository.update(doc)
+
+        async def tree() -> dict:
+            return {
+                d.uri: (
+                    d.id,
+                    d.metadata.get("parent_uri"),
+                    d.metadata.get("department"),
+                )
+                for d in await client.list_documents()
+            }
+
+        async def chunk_ids(uri: str) -> set[str]:
+            doc = await client.get_document_by_uri(uri)
+            assert doc is not None and doc.id is not None
+            chunks = await client.chunk_repository.get_by_document_id(doc.id)
+            return {c.id for c in chunks if c.id is not None}
+
+        before = await tree()
+        assert len(before) == 4
+
+        for _ in range(2):
+            old_chunks = {uri: await chunk_ids(uri) for uri in payloads}
+            await _full_rebuild(client)
+
+            assert await tree() == before
+            for uri, payload in payloads.items():
+                doc = await client.get_document_by_uri(uri)
+                assert doc is not None
+                assert payload in doc.content
+                new_chunks = await chunk_ids(uri)
+                assert new_chunks
+                assert new_chunks.isdisjoint(old_chunks[uri])
+
+
+async def test_full_rebuild_rebuilds_attachments_listed_before_their_parent(
+    tmp_path, temp_db_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(_nested_tree())
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.create_document_from_source(pdf_path)
+        ids = {d.id for d in await client.list_documents()}
+
+        session = writing(client)
+        list_documents = session.list_documents
+
+        async def children_first(*args, **kwargs):
+            docs = await list_documents(*args, **kwargs)
+            return sorted(docs, key=lambda d: "parent_uri" not in d.metadata)
+
+        monkeypatch.setattr(session, "list_documents", children_first)
+        fallbacks = _record_fallbacks(monkeypatch)
+
+        yielded = await _full_rebuild(client)
+
+        assert yielded == Counter(ids)
+        assert fallbacks == []
+
+
+async def test_full_rebuild_falls_back_for_attachments_a_failed_parent_left(
+    tmp_path, temp_db_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(build_pdf([("a.txt", b"a"), ("b.txt", b"b"), ("c.txt", b"c")]))
+
+    async def failing_on_b(session, result, **kwargs):
+        if kwargs["stored_uri"].endswith("#attachment=b.txt"):
+            raise RuntimeError("conversion failed")
+        return await fake_ingest_fetch_result(session, result, **kwargs)
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.create_document_from_source(pdf_path)
+        by_name = {
+            d.uri.rsplit("=", 1)[-1] if d.uri and "#" in d.uri else "parent": d.id
+            for d in await client.list_documents()
+        }
+
+        monkeypatch.setattr(
+            "haiku.rag.client.documents._ingest_fetch_result", failing_on_b
+        )
+        fallbacks = _record_fallbacks(monkeypatch)
+
+        with capture_logs(rebuild_module.logger, logging.WARNING) as records:
+            yielded = await _full_rebuild(client)
+
+        assert yielded == Counter(by_name.values())
+        assert sorted(fallbacks) == sorted([by_name["b.txt"], by_name["c.txt"]])
+        assert [r.getMessage() for r in records] == [
+            f"Rebuilding {pdf_path.as_uri()} from source failed (conversion failed)"
+        ]
+
+
+async def test_full_rebuild_reports_an_attachment_added_since_ingestion(
+    tmp_path, temp_db_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(build_pdf([("kept.txt", b"kept"), ("dropped.txt", b"gone")]))
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent = await client.create_document_from_source(pdf_path)
+        assert isinstance(parent, Document)
+        kept = await client.get_document_by_uri(f"{parent.uri}#attachment=kept.txt")
+        assert kept is not None
+
+        pdf_path.write_bytes(build_pdf([("kept.txt", b"kept"), ("added.txt", b"new")]))
+        yielded = await _full_rebuild(client)
+
+        added = await client.get_document_by_uri(f"{parent.uri}#attachment=added.txt")
+        assert added is not None
+        assert yielded == Counter([parent.id, kept.id, added.id])
+        assert (
+            await client.get_document_by_uri(f"{parent.uri}#attachment=dropped.txt")
+            is None
+        )
+
+
+async def test_full_rebuild_without_the_parent_source_falls_back_for_the_tree(
+    tmp_path, temp_db_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(_nested_tree())
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.create_document_from_source(pdf_path)
+        before = {d.uri: d.id for d in await client.list_documents()}
+        pdf_path.unlink()
+        fallbacks = _record_fallbacks(monkeypatch)
+
+        with capture_logs(rebuild_module.logger, logging.WARNING) as records:
+            yielded = await _full_rebuild(client)
+
+        assert {d.uri: d.id for d in await client.list_documents()} == before
+        assert yielded == Counter(before.values())
+        assert sorted(fallbacks) == sorted(before.values())
+        assert [r.getMessage() for r in records] == [
+            f"Source missing for {pdf_path.as_uri()}, re-embedding from content"
+        ]
+
+
+async def test_written_ids_leaves_out_a_document_whose_write_failed(
+    tmp_path, temp_db_path, monkeypatch
+):
+    async def failing_store(*args, **kwargs):
+        raise RuntimeError("write failed")
+
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._store_document_with_chunks", failing_store
+    )
+    path = tmp_path / "note.txt"
+    path.write_text("note")
+    written_ids: set[str] = set()
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with pytest.raises(RuntimeError, match="write failed"):
+            await client_documents.create_document_from_source(
+                writing(client), path, written_ids=written_ids
+            )
+
+    assert written_ids == set()
+
+
+async def test_written_ids_collects_every_file_of_a_directory(
+    tmp_path, temp_db_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    folder = tmp_path / "folder"
+    folder.mkdir()
+    (folder / "a.txt").write_text("a")
+    (folder / "b.txt").write_text("b")
+    written_ids: set[str] = set()
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        docs = await client_documents.create_document_from_source(
+            writing(client), folder, written_ids=written_ids
+        )
+
+    assert isinstance(docs, list) and len(docs) == 2
+    assert written_ids == {d.id for d in docs}
+
+
+async def test_full_rebuild_falls_back_for_attachments_when_extraction_is_off(
+    tmp_path, temp_db_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(_nested_tree())
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent = await client.create_document_from_source(pdf_path)
+        assert isinstance(parent, Document)
+        before = {d.uri: d.id for d in await client.list_documents()}
+        monkeypatch.setattr(client._config.processing, "extract_pdf_attachments", False)
+        fallbacks = _record_fallbacks(monkeypatch)
+
+        yielded = await _full_rebuild(client)
+
+        assert {d.uri: d.id for d in await client.list_documents()} == before
+        assert yielded == Counter(before.values())
+        assert sorted(fallbacks) == sorted(set(before.values()) - {parent.id})

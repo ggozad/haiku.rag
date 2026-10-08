@@ -983,12 +983,21 @@ async def _rebuild_full(
     converter = get_converter(session.config)
     embedder = session.store.embedder
 
-    for light_doc in documents:
+    written_ids: set[str] = set()
+
+    # Parents first: a parent's refresh rebuilds its attachments from their own bytes.
+    for light_doc in sorted(
+        documents, key=lambda d: bool((d.metadata or {}).get("parent_uri"))
+    ):
         assert light_doc.id is not None
+        if light_doc.id in written_ids:
+            continue
+        # An attachment's URI resolves to its parent's file, never its own payload.
+        source = None if (light_doc.metadata or {}).get("parent_uri") else light_doc.uri
 
         # Try to rebuild from source if available — uses the light listing
         # directly, no need to load the stored content/blobs first.
-        if light_doc.uri and check_source_accessible(light_doc.uri):
+        if source and check_source_accessible(source):
             # The refresh writes through the database, not the batch buffer, so
             # anything pending has to land first. Its transaction is over by
             # the time the refresh takes the same lock.
@@ -1005,28 +1014,39 @@ async def _rebuild_full(
                 pending_chunks = []
                 pending_docs = []
 
+            # force=True: the source bytes are usually unchanged, and the
+            # point of a FULL rebuild is to re-convert them anyway. Updates
+            # in place, so a failure here cannot cost the document.
+            refreshed: set[str] = set()
+            failure: Exception | None = None
             try:
-                # force=True: the source bytes are usually unchanged, and the
-                # point of a FULL rebuild is to re-convert them anyway. Updates
-                # in place, so a failure here cannot cost the document.
-                refreshed = await create_document_from_source(
+                await create_document_from_source(
                     session,
-                    source=light_doc.uri,
+                    source=source,
                     metadata=light_doc.metadata or {},
                     force=True,
+                    written_ids=refreshed,
                 )
-                assert isinstance(refreshed, Document)
-                assert refreshed.id is not None
-                yield refreshed.id
-                continue
             except Exception as e:
+                failure = e
+            for doc_id in refreshed:
+                yield doc_id
+            written_ids |= refreshed
+
+            if failure is not None and light_doc.id in refreshed:
+                logger.warning(
+                    "Rebuilding %s from source failed (%s)", light_doc.uri, failure
+                )
+            elif failure is not None:
                 logger.warning(
                     "Rebuilding %s from source failed (%s), "
                     "falling back to stored content",
                     light_doc.uri,
-                    e,
+                    failure,
                 )
-        elif light_doc.uri:
+            if light_doc.id in refreshed:
+                continue
+        elif source:
             logger.warning(
                 "Source missing for %s, re-embedding from content", light_doc.uri
             )

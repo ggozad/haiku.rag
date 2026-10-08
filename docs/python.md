@@ -534,7 +534,7 @@ async for _ in client.rebuild_database(mode=RebuildMode.REINDEX):
 
 **Rebuild modes:**
 
-- `RebuildMode.FULL` - Re-convert from source files, re-chunk, re-embed (default). Re-converts documents stored by a version before inline groups were flattened
+- `RebuildMode.FULL` - Re-convert from source files, re-chunk, re-embed (default). PDF attachments are re-converted from the bytes in their parent PDF. A document whose source is gone or fails to convert, and an attachment its parent did not rebuild, are rebuilt from stored content. Yields the id of each document rebuilt, which includes an attachment added to its PDF since ingestion. Re-converts documents stored by a version before inline groups were flattened
 - `RebuildMode.RECHUNK` - Re-chunk from the stored docling document, re-embed, recreate document items
 - `RebuildMode.EMBED_ONLY` - Keep existing chunks, only regenerate embeddings
 - `RebuildMode.TITLE_ONLY` - Generate titles for untitled documents (no re-chunking or re-embedding)
