@@ -4,7 +4,7 @@
 
 ### Added
 
-- `embeddings.model.query_prefix` and `embeddings.model.document_prefix`, prepended to query and chunk text on the ollama, openai, vllm and openrouter providers and part of the recorded embedder identity (#702).
+- `embeddings.model.query_prefix` and `embeddings.model.document_prefix`, prepended to query and chunk text on the ollama, openai, vllm and openrouter providers and part of the recorded embedder identity. `rebuild --set-embedder` records a changed query prefix and refuses a changed document prefix (#702).
 
 ### Changed
 

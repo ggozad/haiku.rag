@@ -212,7 +212,7 @@ A full rebuild, `--rechunk` and `--descriptions` replace the chunks of 50 docume
 
 The database records the embedder whose vectors the chunks table holds. A rebuild that keeps the table records the configured embedder once it has finished. An interrupted one to another embedder at the same dimension keeps the old one recorded while some documents already have the new one's vectors, so opening the database fails when writable and warns when read-only, until you run the rebuild again. A rebuild that empties the table, `--embed-only` or a dimension change, records the configured embedder as soon as the table is recreated. `--title-only` embeds nothing and records nothing.
 
-`--set-embedder` records the configured embedding provider and name without re-embedding, and is rejected when the vector dimension changed.
+`--set-embedder` records the configured embedding provider, name and query prefix without re-embedding, and is rejected when the vector dimension or the document prefix changed.
 
 `--descriptions` runs `processing.conversion_options.picture_description.model` over the picture bytes already stored, writes each description into the stored docling document, then re-chunks and re-embeds. It needs `processing.pictures: description`, skips docling conversion, and skips pictures that already have a description, so it is safe to re-run.
 

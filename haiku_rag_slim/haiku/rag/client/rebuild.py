@@ -233,7 +233,8 @@ async def _set_embedder(session: SingleDatabaseSession) -> None:
     """Adopt the current embedder identity without re-embedding.
 
     Only valid while the stored vectors stay usable: the vector dimension and
-    the prefixes must be unchanged. Either change needs re-embedding.
+    the document prefix must be unchanged. Either change needs re-embedding. A
+    query prefix shapes no stored vector and is adopted.
     """
     from haiku.rag.store.engine import EmbedderIdentity
     from haiku.rag.store.exceptions import ConfigMismatchError
@@ -252,12 +253,9 @@ async def _set_embedder(session: SingleDatabaseSession) -> None:
                 f"{current.vector_dim}; embeddings must be regenerated. "
                 "Run 'haiku-rag rebuild'."
             )
-        if (recorded.query_prefix, recorded.document_prefix) != (
-            current.query_prefix,
-            current.document_prefix,
-        ):
+        if recorded.document_prefix != current.document_prefix:
             raise ConfigMismatchError(
-                "Stored query/document prefixes differ from the configured ones. "
+                "Stored document prefix differs from the configured one. "
                 "Run 'haiku-rag rebuild --embed-only' to re-embed."
             )
 

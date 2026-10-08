@@ -210,7 +210,7 @@ These are the embeddinggemma model card's prompts for document retrieval. The ca
 
 The prefixes are honoured on `ollama`, `openai`, `vllm` and `openrouter`. `voyageai`, `cohere` and `sentence-transformers` mark queries and documents themselves and raise when either prefix is set. Images get no prefix, and full-text search indexes the chunk text without one.
 
-A prefix changes every vector, so both prefixes are part of the recorded embedder identity, and changing one is treated like changing the model (see [Storage](storage.md)). Re-embed with `haiku-rag rebuild --embed-only`. `haiku-rag rebuild --set-embedder` refuses a prefix change.
+Both prefixes are part of the recorded embedder identity, and changing one is treated like changing the model (see [Storage](storage.md)). The document prefix shapes every stored vector, so a changed `document_prefix` needs `haiku-rag rebuild --embed-only`, and `haiku-rag rebuild --set-embedder` refuses it. The query prefix shapes only queries, so a changed `query_prefix` is recorded by `haiku-rag rebuild --set-embedder` without re-embedding.
 
 ### Multimodal embedders
 

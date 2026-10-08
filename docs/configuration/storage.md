@@ -30,8 +30,8 @@ dimension that was interrupted. `haiku-rag rebuild --embed-only` re-embeds with
 the configured model, and running an interrupted rebuild again finishes it.
 `haiku-rag rebuild --set-embedder` records the configured identity without
 re-embedding: use it only for an embedder that produces the same vectors as the
-recorded one, such as the same model served by another stack. It refuses a
-changed prefix.
+recorded one, such as the same model served by another stack. It records a
+changed query prefix and refuses a changed document prefix.
 
 **The database records only its version and embedder.** The `settings` table
 holds the haiku.rag version that last wrote or migrated the database, and the

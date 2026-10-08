@@ -2941,7 +2941,7 @@ def test_flush_rebuild_batch_writes_a_row_larger_than_the_lance_memory_pool(
     assert result.returncode == 0, result.stderr
 
 
-async def test_rebuild_set_embedder_refuses_a_prefix_change(temp_db_path):
+async def test_rebuild_set_embedder_refuses_a_document_prefix_change(temp_db_path):
     from haiku.rag.config import AppConfig
     from haiku.rag.store.exceptions import ConfigMismatchError
     from haiku.rag.store.repositories.settings import SettingsRepository
@@ -2950,14 +2950,41 @@ async def test_rebuild_set_embedder_refuses_a_prefix_change(temp_db_path):
         pass
 
     drift = AppConfig()
-    drift.embeddings.model.query_prefix = "Q: "
+    drift.embeddings.model.document_prefix = "D: "
 
     async with HaikuRAG(temp_db_path, config=drift, skip_validation=True) as client:
         with pytest.raises(ConfigMismatchError, match="embed-only"):
             async for _ in client.rebuild_database(mode=RebuildMode.SET_EMBEDDER):
                 pass
         recorded = await SettingsRepository(client.store).get_current_settings()
-        assert "query_prefix" not in recorded["embeddings"]["model"]
+        assert "document_prefix" not in recorded["embeddings"]["model"]
+
+
+async def test_rebuild_set_embedder_adopts_a_query_prefix_change(temp_db_path):
+    """A query prefix shapes no stored vector, so set-embedder records it."""
+    from haiku.rag.config import AppConfig
+    from haiku.rag.store.repositories.settings import SettingsRepository
+
+    dim = AppConfig().embeddings.model.vector_dim
+    sentinel = [0.5] * dim
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await _add_chunk(client, sentinel)
+
+    drift = AppConfig()
+    drift.embeddings.model.query_prefix = "Q: "
+
+    async with HaikuRAG(temp_db_path, config=drift, skip_validation=True) as client:
+        async for _ in client.rebuild_database(mode=RebuildMode.SET_EMBEDDER):
+            pass
+        recorded = await SettingsRepository(client.store).get_current_settings()
+        [row] = (await client.store.chunks_table.query().to_arrow()).to_pylist()
+
+    model = recorded["embeddings"]["model"]
+    assert (model["query_prefix"], "document_prefix" in model) == ("Q: ", False)
+    assert row["vector"] == pytest.approx(sentinel)
+
+    async with HaikuRAG(temp_db_path, config=drift):
+        pass
 
 
 async def test_rebuild_set_embedder_adopts_a_name_change_with_equal_prefixes(
