@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `enterprise_rag` evaluation dataset (EnterpriseRAG-Bench, `onyx-dot-app/EnterpriseRAG-Bench`) and its reference config `evaluations/configs/enterprise_rag.yaml`, with Recall@10 retrieval, citation MAP and answerability labels (`info_not_found` is `UNANSWERABLE`). Gmail threads stored as a Python list `repr` are decoded into text.
+
 ## [0.101.0] - 2026-10-23
 
 ### Added
