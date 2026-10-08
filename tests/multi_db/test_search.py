@@ -8,6 +8,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.client.session import FederatedSession
 from haiku.rag.config import get_config
 from haiku.rag.embeddings import EmbedderWrapper
+from haiku.rag.store.engine import EmbedderIdentity
 from haiku.rag.store.exceptions import (
     ConfigMismatchError,
     SourceUnavailableError,
@@ -742,10 +743,12 @@ class TestComparingEmbedders:
         async with HaikuRAG(config=config) as rag:
             alpha, beta = await rag.clients_for(["alpha", "beta"])
             recorded = beta.store.stored_embedding
-            assert recorded is not None and recorded != ("other", "model", 7)
+            assert recorded is not None and recorded != EmbedderIdentity(
+                "other", "model", 7
+            )
 
             # Disagreeing on the record is what is rejected...
-            beta.store.stored_embedding = ("other", "model", 7)
+            beta.store.stored_embedding = EmbedderIdentity("other", "model", 7)
             with pytest.raises(ConfigMismatchError, match="different embedders"):
                 rag._require_one_embedder([alpha, beta])
 

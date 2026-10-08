@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `doctor` and the open-time embedder drift check report differing fields as `provider: 'a' -> 'b'` and `name: 'a' -> 'b'`, and an empty recorded `provider` or `name` counts as drift.
+
 ## [0.95.0] - 2026-10-08
 
 ### Added

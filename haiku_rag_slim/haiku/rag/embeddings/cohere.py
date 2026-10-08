@@ -39,7 +39,7 @@ class CohereMultimodalEmbedder(EmbedderWrapper):
         )
         return _floats(result)
 
-    async def embed_query(self, text: str) -> list[float]:
+    async def _embed_query(self, text: str) -> list[float]:
         rows = await self._embed_texts([text], "search_query")
         return rows[0]
 

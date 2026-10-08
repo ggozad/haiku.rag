@@ -9,7 +9,7 @@ from enum import Enum
 from importlib import metadata
 from pathlib import Path
 from time import monotonic
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 import lance
 import lancedb
@@ -117,17 +117,25 @@ def _stored_vector_dim(settings: dict) -> int | None:
     return settings.get("embeddings", {}).get("model", {}).get("vector_dim")
 
 
-def _stored_embedding(
-    settings: dict,
-) -> tuple[str | None, str | None, int | None] | None:
+class EmbedderIdentity(NamedTuple):
+    """The embedder a database's chunks were written with."""
+
+    provider: str | None
+    name: str | None
+    vector_dim: int | None
+
+
+def _stored_embedding(settings: dict) -> EmbedderIdentity | None:
     """The embedder a database's chunks were written with, or None if unrecorded."""
     model = settings.get("embeddings", {}).get("model", {})
     if not model:
         return None
-    return model.get("provider"), model.get("name"), model.get("vector_dim")
+    return EmbedderIdentity(
+        model.get("provider"), model.get("name"), model.get("vector_dim")
+    )
 
 
-_RECORDED_EMBEDDING_KEYS = ("provider", "name", "vector_dim")
+_RECORDED_EMBEDDING_KEYS = EmbedderIdentity._fields
 
 
 def recorded_settings(settings: dict) -> dict:
@@ -143,6 +151,20 @@ def recorded_settings(settings: dict) -> dict:
             }
         }
     return recorded
+
+
+def embedder_drift(stored: dict, current: dict) -> list[str]:
+    """The fields other than the dimension on which `current` departs from the
+    embedder `stored` records. A field the record lacks is not compared."""
+    recorded = _stored_embedding(stored)
+    configured = _stored_embedding(current)
+    if recorded is None or configured is None:
+        return []
+    return [
+        f"{field}: '{was}' -> '{now}'"
+        for field, was, now in zip(EmbedderIdentity._fields, recorded, configured)
+        if field != "vector_dim" and was is not None and was != now
+    ]
 
 
 def compaction_target_rows(
@@ -368,7 +390,7 @@ class Store:
         # reporting on a database and comparing it against another cost no
         # second read. Neither follows a later write.
         self.stored_settings: dict = {}
-        self.stored_embedding: tuple[str | None, str | None, int | None] | None = None
+        self.stored_embedding: EmbedderIdentity | None = None
 
     def _remember_settings(self, settings: dict) -> None:
         """Hold the settings blob and the embedder it records.

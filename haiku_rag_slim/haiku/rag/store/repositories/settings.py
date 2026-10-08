@@ -1,7 +1,7 @@
 import json
 import logging
 
-from haiku.rag.store.engine import Store, recorded_settings
+from haiku.rag.store.engine import Store, embedder_drift, recorded_settings
 from haiku.rag.store.exceptions import ConfigMismatchError
 from haiku.rag.store.schema import SettingsRecord, query_to_pydantic
 
@@ -89,12 +89,6 @@ class SettingsRepository:
         stored_model_obj = stored_settings.get("embeddings", {}).get("model", {})
         current_model_obj = current_config.get("embeddings", {}).get("model", {})
 
-        stored_provider = stored_model_obj.get("provider")
-        current_provider = current_model_obj.get("provider")
-
-        stored_model = stored_model_obj.get("name")
-        current_model = current_model_obj.get("name")
-
         stored_vector_dim = stored_model_obj.get("vector_dim")
         current_vector_dim = current_model_obj.get("vector_dim")
 
@@ -110,14 +104,7 @@ class SettingsRepository:
                 "\nPlease rebuild the database using: haiku-rag rebuild"
             )
 
-        soft_changes: list[str] = []
-        if stored_provider and stored_provider != current_provider:
-            soft_changes.append(
-                f"provider: '{stored_provider}' -> '{current_provider}'"
-            )
-        if stored_model and stored_model != current_model:
-            soft_changes.append(f"model: '{stored_model}' -> '{current_model}'")
-
+        soft_changes = embedder_drift(stored_settings, current_config)
         if soft_changes:
             logger.warning(
                 "Embedding identity changed (vector_dim matches): %s. %s",

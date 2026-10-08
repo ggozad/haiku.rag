@@ -48,6 +48,9 @@ class EmbedderWrapper:
 
     async def embed_query(self, text: str) -> list[float]:
         """Embed a search query."""
+        return await self._embed_query(text)
+
+    async def _embed_query(self, text: str) -> list[float]:
         assert self._embedder is not None
         result = await self._embedder.embed_query(text)
         return list(result.embeddings[0])

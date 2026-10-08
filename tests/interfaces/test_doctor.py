@@ -573,7 +573,7 @@ async def test_embedding_provider_drift_warns(temp_db_path):
     report = await run_doctor(_config(provider="vllm"), temp_db_path, {})
     result = _result(report, "embedding_drift")
     assert result.severity is Severity.WARN
-    assert any("provider" in d for d in result.details)
+    assert result.details == ["provider: 'ollama' -> 'vllm'"]
 
 
 async def test_vector_dimension_mismatch_fails(temp_db_path):

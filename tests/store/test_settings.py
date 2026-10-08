@@ -257,8 +257,9 @@ class TestValidateConfigCompatibility:
             with caplog.at_level(logging.WARNING):
                 await settings_repo.validate_config_compatibility()
 
+            recorded_name = get_config().embeddings.model.name
             assert any(
-                "model" in r.getMessage() and "different-model" in r.getMessage()
+                f"name: '{recorded_name}' -> 'different-model'" in r.getMessage()
                 for r in caplog.records
             )
 
@@ -383,3 +384,42 @@ async def test_drift_warning_advises_re_embedding_not_adopting(
     assert warnings
     for warning in warnings:
         _assert_drift_advice(warning)
+
+
+def _settings_with(provider: str, name: str, vector_dim: int) -> dict:
+    return {
+        "embeddings": {
+            "model": {"provider": provider, "name": name, "vector_dim": vector_dim}
+        }
+    }
+
+
+def test_embedder_drift_lists_provider_and_name_but_not_dimension():
+    from haiku.rag.store.engine import embedder_drift
+
+    stored = _settings_with("ollama", "a", 8)
+    assert embedder_drift(stored, _settings_with("openai", "a", 8)) == [
+        "provider: 'ollama' -> 'openai'"
+    ]
+    assert embedder_drift(stored, _settings_with("ollama", "b", 8)) == [
+        "name: 'a' -> 'b'"
+    ]
+    assert embedder_drift(stored, _settings_with("ollama", "a", 9)) == []
+    assert embedder_drift(stored, _settings_with("ollama", "a", 8)) == []
+
+
+def test_embedder_drift_skips_what_the_record_lacks():
+    from haiku.rag.store.engine import embedder_drift
+
+    partial = {"embeddings": {"model": {"vector_dim": 8}}}
+    assert embedder_drift(partial, _settings_with("openai", "b", 8)) == []
+    assert embedder_drift({}, _settings_with("openai", "b", 8)) == []
+
+
+def test_embedder_drift_compares_an_empty_recorded_value():
+    from haiku.rag.store.engine import embedder_drift
+
+    stored = _settings_with("ollama", "", 8)
+    assert embedder_drift(stored, _settings_with("ollama", "b", 8)) == [
+        "name: '' -> 'b'"
+    ]

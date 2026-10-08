@@ -108,7 +108,7 @@ class VLLMMultimodalEmbedder(EmbedderWrapper):
                 )
         return rows
 
-    async def embed_query(self, text: str) -> list[float]:
+    async def _embed_query(self, text: str) -> list[float]:
         rows = await self._post(
             {
                 "model": self._model_name,

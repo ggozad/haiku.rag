@@ -16,7 +16,7 @@ from haiku.rag.client.session import (
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.embeddings import get_embedder
 from haiku.rag.reranking import get_reranker
-from haiku.rag.store.engine import Store
+from haiku.rag.store.engine import EmbedderIdentity, Store
 from haiku.rag.store.exceptions import (
     AmbiguousDatabaseError,
     ConfigMismatchError,
@@ -74,7 +74,7 @@ async def first_found(
     return found[0] if found else None
 
 
-def _spell(embedding: tuple[str | None, str | None, int | None]) -> str:
+def _spell(embedding: EmbedderIdentity) -> str:
     """An embedder identity, for an error message."""
     provider, name, vector_dim = embedding
     return f"{provider}/{name} at {vector_dim} dimensions"
