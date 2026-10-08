@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.scope import DatabaseScope
-from haiku.rag.config.models import AppConfig, LanceDBConfig
+from haiku.rag.config.models import AppConfig, DatabaseEntry, LanceDBConfig
 from haiku.rag.store.exceptions import (
     AmbiguousDatabaseError,
     SourceUnavailableError,
@@ -43,6 +43,30 @@ class TestNamingIsRequired:
             ValidationError, match=r"databases\[alpha\] has no location"
         ):
             LanceDBConfig(databases={"alpha": ""})
+
+    def test_an_entry_names_its_location_and_tag(self):
+        config = LanceDBConfig.model_validate(
+            {"databases": {"old": {"location": "/data/a.lancedb", "tag": "v1"}}}
+        )
+        assert config.databases["old"] == DatabaseEntry(
+            location="/data/a.lancedb", tag="v1"
+        )
+
+    @pytest.mark.parametrize(
+        ("entry", "message"),
+        [
+            ({"location": "", "tag": "v1"}, r"databases\[old\] has no location"),
+            (
+                {"location": "/data/a.lancedb", "tag": " "},
+                r"databases\[old\] has a blank tag",
+            ),
+            ({"location": "/data/a.lancedb", "at": "v1"}, "Extra inputs"),
+            ({"tag": "v1"}, "location"),
+        ],
+    )
+    def test_an_incomplete_entry_is_rejected(self, entry, message):
+        with pytest.raises(ValidationError, match=message):
+            LanceDBConfig.model_validate({"databases": {"old": entry}})
 
 
 class TestNamingADatabaseDirectly:

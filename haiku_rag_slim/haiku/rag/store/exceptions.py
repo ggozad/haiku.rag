@@ -17,7 +17,8 @@ class MigrationRequiredError(Exception):
 
 
 class TagError(ValueError):
-    """A tag that does not exist on every table, so no state can be read at it."""
+    """A tag that cannot be read: missing from a table, or selected where the
+    live database is needed."""
 
 
 class AmbiguousDatabaseError(Exception):

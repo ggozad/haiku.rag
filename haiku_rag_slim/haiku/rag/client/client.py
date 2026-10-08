@@ -1,6 +1,5 @@
 import logging
 from collections.abc import AsyncGenerator, Callable, Coroutine, Sequence
-from dataclasses import replace
 from enum import Enum
 from functools import cached_property
 from itertools import zip_longest
@@ -132,8 +131,6 @@ class HaikuRAG:
                 of nothing to search.
             tag: Read the one database covered at this tag, read-only.
         """
-        if tag is not None and create:
-            raise ValueError("a client at a tag cannot create the database")
         self._configured = config if config is not None else get_config()
         self._config = self._configured
         self._requested_db_path = Path(db_path) if db_path is not None else None
@@ -256,9 +253,12 @@ class HaikuRAG:
         """Whether the client is in read-only mode.
 
         The mode the client was opened with, which is the mode every database it
-        covers is opened with. A client covering a set has no store to ask.
+        covers is opened with, or a tag on a database it covers. A client
+        covering a set has no store to ask.
         """
-        return self._read_only
+        return self._read_only or any(
+            ref.tag for ref in self._resolve_scope().databases
+        )
 
     @cached_property
     def embedder(self) -> "EmbedderWrapper":
@@ -309,7 +309,7 @@ class HaikuRAG:
                     f"{', '.join(sorted(scope.names))}; name it with sources=[name]"
                 )
             [ref] = scope.databases
-            scope = DatabaseScope((replace(ref, tag=self._tag),))
+            scope = DatabaseScope((ref.at_tag(self._tag),))
         self._scope = scope
         return scope
 
@@ -395,7 +395,7 @@ class HaikuRAG:
         """
         client = cls(
             config=config,
-            read_only=read_only or any(ref.tag for ref in scope.databases),
+            read_only=read_only,
             create=create,
             skip_validation=skip_validation,
         )

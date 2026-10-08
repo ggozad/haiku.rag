@@ -89,6 +89,7 @@ class IngesterApp:
                 "--db PATH, or give each database its own ingester with a "
                 "configuration naming a single one"
             )
+        self._scope.refuse_tags("haiku-ingester writes")
         self._engine: AsyncEngine | None = None
         self._jobs: JobRepo | None = None
         self._sync: SyncStateRepo | None = None

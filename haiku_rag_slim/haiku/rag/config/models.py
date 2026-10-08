@@ -103,6 +103,13 @@ class StorageConfig(ConfigModel):
         return value
 
 
+class DatabaseEntry(ConfigModel):
+    """A configured database, read-only at `tag` when one is given."""
+
+    location: str
+    tag: str | None = None
+
+
 class LanceDBConfig(ConfigModel):
     """LanceDB connection settings.
 
@@ -111,16 +118,17 @@ class LanceDBConfig(ConfigModel):
     The cache sizes are per process, since the session is shared across
     connections.
 
-    `databases` maps a name to a location, a local path or a URI, and is the one
-    way to place databases. The name is what results and citations carry, so a
-    location never leaves the configuration. Empty means the default database,
-    `haiku.rag`, under `storage.data_dir`.
+    `databases` maps a name to a location, a local path or a URI, or to a
+    `DatabaseEntry` reading one at a tag, and is the one way to place databases.
+    Entries may share a location. The name is what results and citations carry,
+    so a location never leaves the configuration. Empty means the default
+    database, `haiku.rag`, under `storage.data_dir`.
     """
 
     api_key: str = ""
     region: str = ""
     storage_options: dict[str, str] = Field(default_factory=dict)
-    databases: dict[str, str] = Field(default_factory=dict)
+    databases: dict[str, str | DatabaseEntry] = Field(default_factory=dict)
     read_consistency_interval_seconds: float | None = Field(default=30, ge=0)
     index_cache_size_bytes: int | None = Field(default=None, ge=0)
     metadata_cache_size_bytes: int | None = Field(default=None, ge=0)
@@ -142,13 +150,20 @@ class LanceDBConfig(ConfigModel):
 
     @model_validator(mode="after")
     def _every_database_is_named_and_placed(self) -> "LanceDBConfig":
-        for name, location in self.databases.items():
+        for name, entry in self.databases.items():
             # A blank name is falsy, so source routing reads it as absent; a
             # blank location resolves to the working directory.
             if not name.strip():
                 raise ValueError("lancedb.databases has an entry with no name")
+            location = entry if isinstance(entry, str) else entry.location
             if not location.strip():
                 raise ValueError(f"lancedb.databases[{name}] has no location")
+            if (
+                isinstance(entry, DatabaseEntry)
+                and entry.tag is not None
+                and not entry.tag.strip()
+            ):
+                raise ValueError(f"lancedb.databases[{name}] has a blank tag")
         return self
 
 

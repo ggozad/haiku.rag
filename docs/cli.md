@@ -258,6 +258,8 @@ haiku-rag --db-name papers ask "What changed?" --at release-1
 
 The database opens read-only. A tag missing from any table is refused. So is a tag that needs a migration: restore it in a copy of the database and migrate the copy.
 
+A `lancedb.databases` entry can carry its own tag, see [Reading at a tag](configuration/multiple-databases.md#reading-at-a-tag). `--at` on such an entry is refused.
+
 `tag restore` changes the live state: each table gets a new latest version equal to the tagged one. Before changing anything it creates a safety tag, `before-restore-<timestamp>`, and reports it:
 
 ```bash

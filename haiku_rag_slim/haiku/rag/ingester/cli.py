@@ -38,6 +38,7 @@ from haiku.rag.store.exceptions import (  # noqa: E402
     MigrationRequiredError,
     ReadOnlyError,
     SourceUnavailableError,
+    TagError,
     UnknownDatabaseError,
 )
 
@@ -88,6 +89,7 @@ def cli() -> None:
         MigrationRequiredError,
         ReadOnlyError,
         SourceUnavailableError,
+        TagError,
         UnknownDatabaseError,
     ) as e:
         typer.echo(f"Error: {e}", err=True)

@@ -83,7 +83,7 @@ When a table's metadata lacks fragment sizes, as in databases written by old ver
 
 ### Placing the database
 
-`lancedb.databases` maps a name to a location, a local path or a URI, and is the one way to place databases. With nothing configured, the database is the entry `haiku.rag` at `<storage.data_dir>/haiku.rag.lancedb`. To put one database somewhere else, name it:
+`lancedb.databases` maps a name to a location, a local path or a URI, or to a location read at a tag (see [Reading at a tag](multiple-databases.md#reading-at-a-tag)), and is the one way to place databases. With nothing configured, the database is the entry `haiku.rag` at `<storage.data_dir>/haiku.rag.lancedb`. To put one database somewhere else, name it:
 
 ```yaml
 lancedb:

@@ -18,6 +18,27 @@ The configured name is the only identity that leaves the configuration. `SearchR
 
 An unavailable database raises `SourceUnavailableError`, which names the database and not its location. A migration, configuration or read-only failure keeps its own type, with the database named in the message. Commands that report on a database, such as `info`, still show where it is.
 
+## Reading at a tag
+
+An entry can read a database as it was at a [tag](../cli.md#tags-and-history), with `location` and `tag` in place of the location:
+
+```yaml
+lancedb:
+  databases:
+    sp800: ./db/sp800.lancedb
+    sp800-2026-06-30:
+      location: ./db/sp800.lancedb
+      tag: as-of-2026-06-30
+```
+
+A tagged entry opens read-only, and `--at` or `tag=` on it is refused. Only the commands that take `--at` accept a tagged entry. The others, and `haiku-ingester`, work on the live database and refuse one. Entries may share a location, at different tags or with no tag for the current state.
+
+Covering two states of one database searches both. A document they share comes back once from each, and citing one of its chunks raises `AmbiguousCitationError` (see [Duplicate ids](#duplicate-ids)). Select one entry when the states overlap:
+
+```bash
+haiku-rag --db-name sp800-2026-06-30 ask "What changed?"
+```
+
 ## Embedding compatibility
 
 Embeddings are checked against two things:

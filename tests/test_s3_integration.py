@@ -50,6 +50,7 @@ def _make_config() -> AppConfig:
 def _uri(config: AppConfig) -> str:
     """The one configured S3 location."""
     [uri] = config.lancedb.databases.values()
+    assert isinstance(uri, str)
     return uri
 
 
