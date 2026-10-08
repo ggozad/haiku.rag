@@ -388,6 +388,8 @@ async def fake_ingest_fetch_result(
     depth=0,
     filename=None,
     metadata_provider=None,
+    force=False,
+    written_ids=None,
 ):
     """A stand-in for ``_ingest_fetch_result`` that skips docling/embedder
     entirely: it writes the document with content_type/md5/parent_uri set
@@ -422,7 +424,11 @@ async def fake_ingest_fetch_result(
                 metadata=final_metadata,
             )
         )
-    await _reconcile_pdf_attachments(session, doc, result.body, depth=depth)
+    if written_ids is not None:
+        written_ids.add(doc.id)
+    await _reconcile_pdf_attachments(
+        session, doc, result.body, depth=depth, force=force, written_ids=written_ids
+    )
     return doc
 
 

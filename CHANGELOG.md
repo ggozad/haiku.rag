@@ -8,7 +8,7 @@
 
 ### Fixed
 
-- A full rebuild no longer re-ingests a PDF attachment from its parent's file (#699).
+- A full rebuild re-converts PDF attachments from the bytes in their parent PDF, keeping their ids and metadata, and no longer re-ingests an attachment from its parent's file (#699).
 
 ## [0.94.0] - 2026-10-07
 

@@ -560,6 +560,8 @@ async def _ingest_fetch_result(
     depth: int = 0,
     filename: str | None = None,
     metadata_provider: "BoundMetadataProvider | None" = None,
+    force: bool = False,
+    written_ids: set[str] | None = None,
 ) -> Document:
     """Convert / chunk / embed / store a fetched document. Replaces an
     existing document if one is supplied. ``depth`` tracks position in an
@@ -571,7 +573,10 @@ async def _ingest_fetch_result(
     extension, e.g. embedded attachments whose name lives in a URI fragment.
 
     ``metadata_provider`` runs for every attachment beneath this document, and
-    for the document itself when it is one (``depth > 0``)."""
+    for the document itself when it is one (``depth > 0``).
+
+    ``force`` re-ingests unchanged attachments too. ``written_ids`` collects the
+    id of every document this call writes, attachments included."""
 
     converter = get_converter(session.config)
     if filename is not None:
@@ -649,8 +654,18 @@ async def _ingest_fetch_result(
             session, document, chunks, docling_document, observed_uri=result.uri
         )
 
+    if written_ids is not None:
+        assert stored.id is not None
+        written_ids.add(stored.id)
+
     await _reconcile_pdf_attachments(
-        session, stored, result.body, depth=depth, metadata_provider=metadata_provider
+        session,
+        stored,
+        result.body,
+        depth=depth,
+        metadata_provider=metadata_provider,
+        force=force,
+        written_ids=written_ids,
     )
     return await _refresh_doc_metadata(
         session, stored, title=None, user_metadata={}, source_metadata=freshness
@@ -733,6 +748,8 @@ async def _reconcile_pdf_attachments(
     *,
     depth: int,
     metadata_provider: "BoundMetadataProvider | None" = None,
+    force: bool = False,
+    written_ids: set[str] | None = None,
 ) -> None:
     """Diff the parent PDF's ``/EmbeddedFiles`` table against any children
     already linked via ``metadata.parent_uri`` and bring the child set in line:
@@ -762,6 +779,7 @@ async def _reconcile_pdf_attachments(
         existing_child = existing_by_uri.get(child_uri)
         if (
             existing_child
+            and not force
             and (existing_child.metadata or {}).get("md5") == content_hash
         ):
             continue
@@ -780,12 +798,16 @@ async def _reconcile_pdf_attachments(
                 session,
                 child_fr,
                 title=None,
-                user_metadata={},
+                user_metadata=_caller_metadata(existing_child.metadata)
+                if force and existing_child
+                else {},
                 stored_uri=child_uri,
                 existing_doc=existing_child,
                 depth=depth + 1,
                 filename=name,
                 metadata_provider=metadata_provider,
+                force=force,
+                written_ids=written_ids,
             )
         except UnsupportedSourceError:
             logger.warning(
@@ -814,6 +836,7 @@ async def create_document_from_source(
     metadata_provider: "MetadataProvider | None" = None,
     observed_revision: str | None = None,
     force: bool = False,
+    written_ids: set[str] | None = None,
 ) -> Document | list[Document]:
     """Create or update document(s) from a file path, directory, or URL.
 
@@ -822,9 +845,11 @@ async def create_document_from_source(
     - If MD5 changed, updates the document
     - If no document exists, creates a new one
 
-    ``force`` skips both freshness checks so an unchanged source is re-converted,
-    re-chunked and re-embedded into the existing document. Internal: rebuild uses
-    it to refresh a document in place instead of deleting and recreating it.
+    ``force`` skips both freshness checks, for the document and its PDF
+    attachments, so an unchanged source is re-converted, re-chunked and
+    re-embedded into the existing document. Internal: rebuild uses it to refresh
+    a document in place instead of deleting and recreating it, and passes
+    ``written_ids`` to collect the id of every document written.
 
     If ``uri`` is provided, it overrides the URI auto-derived from the source
     (which is normally ``file://`` for local files or the URL for remote
@@ -867,6 +892,7 @@ async def create_document_from_source(
                         source_id=source_id,
                         metadata_provider=metadata_provider,
                         force=force,
+                        written_ids=written_ids,
                     )
                     assert isinstance(doc, Document)
                     documents.append(doc)
@@ -1002,6 +1028,8 @@ async def create_document_from_source(
                 existing_doc=existing_doc,
                 source_id=owner,
                 metadata_provider=bound_provider,
+                force=force,
+                written_ids=written_ids,
             ),
             previous_owner,
         )
