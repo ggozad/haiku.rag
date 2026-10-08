@@ -47,6 +47,8 @@ async def test_app_info_outputs(temp_db_path, capsys):
                                 "provider": "openai",
                                 "name": "text-embedding-3-small",
                                 "vector_dim": 3,
+                                "query_prefix": "Q: ",
+                                "document_prefix": "D: ",
                             }
                         },
                     }
@@ -71,6 +73,8 @@ async def test_app_info_outputs(temp_db_path, capsys):
     assert str(temp_db_path) in out_no_wrap
     assert "haiku.rag version (db):" in out
     assert "embeddings: openai/text-embedding-3-small (dim: 3)" in out
+    assert 'query prefix: "Q: "' in out
+    assert 'document prefix: "D: "' in out
     assert "documents: 1" in out
     assert "chunks: 1" in out
 

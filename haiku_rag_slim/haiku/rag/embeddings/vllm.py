@@ -39,9 +39,15 @@ class VLLMMultimodalEmbedder(EmbedderWrapper):
         api_key: str | None = None,
         timeout: float = 60.0,
         supports_images: bool = True,
+        query_prefix: str = "",
+        document_prefix: str = "",
     ):
         super().__init__(
-            embedder=None, vector_dim=vector_dim, supports_images=supports_images
+            embedder=None,
+            vector_dim=vector_dim,
+            supports_images=supports_images,
+            query_prefix=query_prefix,
+            document_prefix=document_prefix,
         )
         self._model_name = model_name
         self._base_url = base_url.rstrip("/")

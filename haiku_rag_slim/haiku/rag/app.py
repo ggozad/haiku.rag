@@ -147,6 +147,14 @@ class HaikuRAGApp:
             "  [repr.attrib_name]embeddings[/repr.attrib_name]: "
             f"{info.embeddings.provider}/{info.embeddings.name} (dim: {dim_part})"
         )
+        for label, prefix in (
+            ("query prefix", info.embeddings.query_prefix),
+            ("document prefix", info.embeddings.document_prefix),
+        ):
+            if prefix:
+                self.console.print(
+                    f'  [repr.attrib_name]{label}[/repr.attrib_name]: "{escape(prefix)}"'
+                )
 
         tables = {t.name: t for t in info.tables}
 

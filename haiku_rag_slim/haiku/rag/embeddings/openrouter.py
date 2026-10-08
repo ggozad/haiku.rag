@@ -30,6 +30,8 @@ class OpenRouterEmbedder(VLLMMultimodalEmbedder):
         api_key: str | None = None,
         timeout: float = 60.0,
         supports_images: bool = True,
+        query_prefix: str = "",
+        document_prefix: str = "",
     ):
         super().__init__(
             model_name,
@@ -38,6 +40,8 @@ class OpenRouterEmbedder(VLLMMultimodalEmbedder):
             api_key=api_key or os.environ.get(API_KEY_ENV),
             timeout=timeout,
             supports_images=supports_images,
+            query_prefix=query_prefix,
+            document_prefix=document_prefix,
         )
 
     def _image_request(self, image: "bytes | PILImage.Image") -> dict[str, Any]:

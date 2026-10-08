@@ -192,6 +192,26 @@ embeddings:
     base_url: http://localhost:1234/v1   # LM Studio
 ```
 
+### Query and document prefixes
+
+Some embedding models expect a task marker on every query and every document, embeddinggemma and e5 among them. `embeddings.model.query_prefix` is prepended to every query and `embeddings.model.document_prefix` to every chunk before embedding. Both default to empty. The string is used verbatim, trailing space included, so quote it in YAML: a plain scalar loses its trailing space, and a `: ` inside one is read as a mapping.
+
+```yaml
+embeddings:
+  model:
+    provider: vllm
+    name: google/embeddinggemma-2
+    vector_dim: 768
+    query_prefix: "task: search result | query: "
+    document_prefix: "title: none | text: "
+```
+
+These are the embeddinggemma model card's prompts for document retrieval. The card lists other query tasks with the same document prefix, among them `"task: question answering | query: "`.
+
+The prefixes are honoured on `ollama`, `openai`, `vllm` and `openrouter`. `voyageai`, `cohere` and `sentence-transformers` mark queries and documents themselves and raise when either prefix is set. Images get no prefix, and full-text search indexes the chunk text without one.
+
+A prefix changes every vector, so both prefixes are part of the recorded embedder identity, and changing one is treated like changing the model (see [Storage](storage.md)). Re-embed with `haiku-rag rebuild --embed-only`. `haiku-rag rebuild --set-embedder` refuses a prefix change.
+
 ### Multimodal embedders
 
 `embeddings.model.multimodal: true` puts pictures in the same vector space as text, for text-to-figure and image-as-query search. It is supported on `vllm`, `openrouter`, `voyageai` and `cohere`, and raises on any other provider. The same providers without the flag embed text only.

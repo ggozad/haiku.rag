@@ -2939,3 +2939,97 @@ def test_flush_rebuild_batch_writes_a_row_larger_than_the_lance_memory_pool(
         _FLUSH_OVER_POOL, 1 << 20, str(tmp_path / "db.lancedb"), str(4 << 20)
     )
     assert result.returncode == 0, result.stderr
+
+
+async def test_rebuild_set_embedder_refuses_a_prefix_change(temp_db_path):
+    from haiku.rag.config import AppConfig
+    from haiku.rag.store.exceptions import ConfigMismatchError
+    from haiku.rag.store.repositories.settings import SettingsRepository
+
+    async with HaikuRAG(temp_db_path, create=True):
+        pass
+
+    drift = AppConfig()
+    drift.embeddings.model.query_prefix = "Q: "
+
+    async with HaikuRAG(temp_db_path, config=drift, skip_validation=True) as client:
+        with pytest.raises(ConfigMismatchError, match="embed-only"):
+            async for _ in client.rebuild_database(mode=RebuildMode.SET_EMBEDDER):
+                pass
+        recorded = await SettingsRepository(client.store).get_current_settings()
+        assert "query_prefix" not in recorded["embeddings"]["model"]
+
+
+async def test_rebuild_set_embedder_adopts_a_name_change_with_equal_prefixes(
+    temp_db_path,
+):
+    from haiku.rag.config import AppConfig
+    from haiku.rag.store.repositories.settings import SettingsRepository
+
+    prefixed = AppConfig()
+    prefixed.embeddings.model.document_prefix = "D: "
+    async with HaikuRAG(temp_db_path, config=prefixed, create=True):
+        pass
+
+    drift = prefixed.model_copy(deep=True)
+    drift.embeddings.model.name = "different-model"
+    async with HaikuRAG(temp_db_path, config=drift, skip_validation=True) as client:
+        async for _ in client.rebuild_database(mode=RebuildMode.SET_EMBEDDER):
+            pass
+        recorded = await SettingsRepository(client.store).get_current_settings()
+
+    model = recorded["embeddings"]["model"]
+    assert (model["name"], model["document_prefix"]) == ("different-model", "D: ")
+
+
+async def test_rebuild_embed_only_adopts_prefixes(temp_db_path):
+    """`rebuild --embed-only` is the remedy for a prefix change: it embeds the
+    prefixed text, records the prefixes, and leaves chunk text and FTS text
+    as they were."""
+    from docling_core.types.doc.document import DoclingDocument
+    from docling_core.types.doc.labels import DocItemLabel
+
+    from haiku.rag.config import AppConfig
+    from haiku.rag.store.models.chunk import Chunk
+    from haiku.rag.store.repositories.settings import SettingsRepository
+    from tests.conftest import RecordingEmbeddingModel
+
+    dim = AppConfig().embeddings.model.vector_dim
+    doc = DoclingDocument(name="d")
+    doc.add_text(label=DocItemLabel.TEXT, text="body")
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.import_document(
+            doc,
+            [
+                Chunk(
+                    content="body",
+                    embedding=[0.1] * dim,
+                    order=0,
+                    metadata={"headings": ["Title"]},
+                )
+            ],
+            uri="test://d",
+        )
+
+    prefixed = AppConfig()
+    prefixed.embeddings.model.query_prefix = "Q: "
+    prefixed.embeddings.model.document_prefix = "D: "
+    async with HaikuRAG(temp_db_path, config=prefixed, skip_validation=True) as client:
+        model = RecordingEmbeddingModel(dimensions=dim)
+        assert client.embedder._embedder is not None
+        with client.embedder._embedder.override(model=model):
+            async for _ in client.rebuild_database(mode=RebuildMode.EMBED_ONLY):
+                pass
+
+        assert model.inputs == [("document", ["D: Title\nbody"])]
+        recorded = await SettingsRepository(client.store).get_current_settings()
+        stored_model = recorded["embeddings"]["model"]
+        assert (stored_model["query_prefix"], stored_model["document_prefix"]) == (
+            "Q: ",
+            "D: ",
+        )
+        [row] = (await client.store.chunks_table.query().to_arrow()).to_pylist()
+        assert (row["content"], row["content_fts"]) == ("body", "Title\nbody")
+
+    async with HaikuRAG(temp_db_path, config=prefixed):
+        pass

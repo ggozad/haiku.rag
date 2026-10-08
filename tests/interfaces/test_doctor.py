@@ -60,6 +60,7 @@ def _config(
     name: str = "test",
     vector_dim: int = VECTOR_DIM,
     multimodal: bool = False,
+    query_prefix: str = "",
 ):
     return AppConfig(
         embeddings=EmbeddingsConfig(
@@ -68,6 +69,7 @@ def _config(
                 name=name,
                 vector_dim=vector_dim,
                 multimodal=multimodal,
+                query_prefix=query_prefix,
             )
         )
     )
@@ -574,6 +576,14 @@ async def test_embedding_provider_drift_warns(temp_db_path):
     result = _result(report, "embedding_drift")
     assert result.severity is Severity.WARN
     assert result.details == ["provider: 'ollama' -> 'vllm'"]
+
+
+async def test_embedding_prefix_drift_warns(temp_db_path):
+    await _build_db(temp_db_path)
+    report = await run_doctor(_config(query_prefix="Q: "), temp_db_path, {})
+    result = _result(report, "embedding_drift")
+    assert result.severity is Severity.WARN
+    assert result.details == ["query_prefix: '' -> 'Q: '"]
 
 
 async def test_vector_dimension_mismatch_fails(temp_db_path):

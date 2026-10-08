@@ -33,7 +33,9 @@ async def _seed(config, name, contents):
             )
 
 
-async def _restore_embedder(config, name, *, provider=None, model_name=None):
+async def _restore_embedder(
+    config, name, *, provider=None, model_name=None, query_prefix=None
+):
     """Rewrite what one database records about the embedder that wrote it,
     standing in for a database built elsewhere with another model."""
     import json
@@ -53,6 +55,8 @@ async def _restore_embedder(config, name, *, provider=None, model_name=None):
         model["provider"] = provider
     if model_name is not None:
         model["name"] = model_name
+    if query_prefix is not None:
+        model["query_prefix"] = query_prefix
     await table.update({"settings": json.dumps(stored)}, where="id = 'settings'")
 
 

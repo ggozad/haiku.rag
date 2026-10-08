@@ -118,28 +118,36 @@ def _stored_vector_dim(settings: dict) -> int | None:
 
 
 class EmbedderIdentity(NamedTuple):
-    """The embedder a database's chunks were written with."""
+    """The embedder that wrote a database's chunks."""
 
     provider: str | None
     name: str | None
     vector_dim: int | None
+    query_prefix: str = ""
+    document_prefix: str = ""
 
-
-def _stored_embedding(settings: dict) -> EmbedderIdentity | None:
-    """The embedder a database's chunks were written with, or None if unrecorded."""
-    model = settings.get("embeddings", {}).get("model", {})
-    if not model:
-        return None
-    return EmbedderIdentity(
-        model.get("provider"), model.get("name"), model.get("vector_dim")
-    )
+    @classmethod
+    def recorded_in(cls, settings: dict) -> "EmbedderIdentity | None":
+        """The identity recorded in a settings blob, or None when it records none."""
+        model = settings.get("embeddings", {}).get("model", {})
+        if not model:
+            return None
+        return cls(
+            model.get("provider"),
+            model.get("name"),
+            model.get("vector_dim"),
+            model.get("query_prefix", ""),
+            model.get("document_prefix", ""),
+        )
 
 
 _RECORDED_EMBEDDING_KEYS = EmbedderIdentity._fields
+_PREFIX_KEYS = ("query_prefix", "document_prefix")
 
 
 def recorded_settings(settings: dict) -> dict:
-    """What a database records of `settings`: its version and embedder identity."""
+    """What a database records of `settings`: its version and embedder identity.
+    An empty prefix is not recorded."""
     recorded: dict = {}
     if "version" in settings:
         recorded["version"] = settings["version"]
@@ -147,17 +155,19 @@ def recorded_settings(settings: dict) -> dict:
     if model:
         recorded["embeddings"] = {
             "model": {
-                key: model[key] for key in _RECORDED_EMBEDDING_KEYS if key in model
+                key: model[key]
+                for key in _RECORDED_EMBEDDING_KEYS
+                if key in model and (key not in _PREFIX_KEYS or model[key])
             }
         }
     return recorded
 
 
 def embedder_drift(stored: dict, current: dict) -> list[str]:
-    """The fields other than the dimension on which `current` departs from the
-    embedder `stored` records. A field the record lacks is not compared."""
-    recorded = _stored_embedding(stored)
-    configured = _stored_embedding(current)
+    """The fields, except vector_dim, on which `current` differs from the embedder
+    recorded in `stored`. Fields missing from the record are not compared."""
+    recorded = EmbedderIdentity.recorded_in(stored)
+    configured = EmbedderIdentity.recorded_in(current)
     if recorded is None or configured is None:
         return []
     return [
@@ -398,7 +408,7 @@ class Store:
         Together, so nothing reports on one reading while comparing the other.
         """
         self.stored_settings = settings
-        self.stored_embedding = _stored_embedding(settings)
+        self.stored_embedding = EmbedderIdentity.recorded_in(settings)
 
     async def _initialize(self):
         """Perform async initialization: connect to LanceDB, init tables, validate."""

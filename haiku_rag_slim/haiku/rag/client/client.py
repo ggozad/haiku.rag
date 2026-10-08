@@ -76,8 +76,15 @@ async def first_found(
 
 def _spell(embedding: EmbedderIdentity) -> str:
     """An embedder identity, for an error message."""
-    provider, name, vector_dim = embedding
-    return f"{provider}/{name} at {vector_dim} dimensions"
+    spelled = (
+        f"{embedding.provider}/{embedding.name} at {embedding.vector_dim} dimensions"
+    )
+    if embedding.query_prefix or embedding.document_prefix:
+        spelled += (
+            f", query prefix {embedding.query_prefix!r}, "
+            f"document prefix {embedding.document_prefix!r}"
+        )
+    return spelled
 
 
 def _without_repeats(names: list[str]) -> list[str]:

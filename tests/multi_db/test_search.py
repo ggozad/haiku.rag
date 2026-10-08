@@ -118,6 +118,19 @@ class TestOneEmbedderAcrossTheSet:
             with pytest.raises(ConfigMismatchError, match="different embedders"):
                 await rag.search("one")
 
+    async def test_databases_differing_only_in_prefixes_cannot_be_searched_together(
+        self, tmp_path
+    ):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+        await _restore_embedder(config, "beta", query_prefix="Q: ")
+
+        async with HaikuRAG(config=config, read_only=True) as rag:
+            with pytest.raises(ConfigMismatchError, match="'alpha' and 'beta'") as e:
+                await rag.search("one")
+        assert "'Q: '" in str(e.value)
+
     async def test_a_database_asked_for_alone_is_never_compared(
         self, tmp_path, query_embedding
     ):

@@ -23,19 +23,20 @@ release that needs it says so in the [changelog](../changelog.md).
 **The embedding dimension is fixed per database.** Every chunk vector has the
 dimension the database was created with. Changing `embeddings.model.vector_dim`
 raises `ConfigMismatchError` on open, because stored vectors cannot be compared
-against new ones. Changing the provider or model name while keeping the dimension
-warns on a read-only open and raises on a writable one, and so does a full
+against new ones. Changing the provider, the model name or a prefix while keeping
+the dimension warns on a read-only open and raises on a writable one, and so does a full
 rebuild, `--rechunk` or `--descriptions` to another embedder at the same
 dimension that was interrupted. `haiku-rag rebuild --embed-only` re-embeds with
 the configured model, and running an interrupted rebuild again finishes it.
 `haiku-rag rebuild --set-embedder` records the configured identity without
 re-embedding: use it only for an embedder that produces the same vectors as the
-recorded one, such as the same model served by another stack.
+recorded one, such as the same model served by another stack. It refuses a
+changed prefix.
 
 **The database records only its version and embedder.** The `settings` table
 holds the haiku.rag version that last wrote or migrated the database, and the
-embedder's `provider`, `name` and `vector_dim`, which every open checks against
-the configuration. Nothing else from the configuration is stored, so a database
+embedder's `provider`, `name` and `vector_dim`, plus `query_prefix` and
+`document_prefix` when set, which every open checks against the configuration. Nothing else from the configuration is stored, so a database
 can be copied or shared without the credentials of the process that wrote it.
 Databases written before 0.89.0 stored the whole configuration. `haiku-rag
 migrate` reduces it, and the older table versions still hold it. To remove them,
