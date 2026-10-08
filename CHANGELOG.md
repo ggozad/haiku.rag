@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.95.0] - 2026-10-08
+
 ### Added
 
 - `${HAIKU_RAG_CONFIG_DIR}` in config values expands to the config file's directory (#691).
@@ -2905,7 +2907,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.94.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.95.0...HEAD
+[0.95.0]: https://github.com/ggozad/haiku.rag/compare/0.94.0...0.95.0
 [0.94.0]: https://github.com/ggozad/haiku.rag/compare/0.93.0...0.94.0
 [0.93.0]: https://github.com/ggozad/haiku.rag/compare/0.92.0...0.93.0
 [0.92.0]: https://github.com/ggozad/haiku.rag/compare/0.91.0...0.92.0
