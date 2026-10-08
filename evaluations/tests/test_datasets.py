@@ -2,6 +2,12 @@ from pathlib import Path
 
 import pytest
 
+from evaluations.datasets import DATASETS
+from evaluations.datasets.enterprise_rag import (
+    build_enterprise_rag_case,
+    map_enterprise_rag_document,
+    map_enterprise_rag_retrieval,
+)
 from evaluations.datasets.frames import (
     FETCH_ATTEMPTS,
     build_frames_case,
@@ -34,6 +40,123 @@ from evaluations.datasets.t2_ragbench import (
     map_t2_document,
     map_t2_retrieval,
 )
+
+
+class TestEnterpriseRAG:
+    def _question(self, **overrides: object) -> dict[str, object]:
+        row: dict[str, object] = {
+            "question_id": "qst_0001",
+            "question_type": "conflicting_info",
+            "source_types": ["jira", "google_drive"],
+            "question": "What is the dp-132-usw rollout threshold?",
+            "expected_doc_ids": ["dsid_a", "dsid_b", "dsid_a"],
+            "gold_answer": "30%.",
+            "answer_facts": ["must state 30% is current", "must not claim 20%"],
+        }
+        row.update(overrides)
+        return row
+
+    def test_map_document(self) -> None:
+        payload = map_enterprise_rag_document(
+            {
+                "doc_id": "dsid_a",
+                "source_type": "slack",
+                "title": "#infra",
+                "content": "alice: shipped",
+            }
+        )
+        assert payload.uri == "dsid_a"
+        assert payload.title == "#infra"
+        assert payload.content == "alice: shipped"
+        assert payload.metadata == {"source_type": "slack"}
+        assert payload.format == "md"
+
+    def test_map_document_decodes_a_list_of_messages(self) -> None:
+        thread = [
+            "From: a@x.com\nSubject: Hi\n\nFirst",
+            'From: b@x.com\n\nIt\'s "done"',
+        ]
+        payload = map_enterprise_rag_document(
+            {
+                "doc_id": "dsid_a",
+                "source_type": "gmail",
+                "title": "Hi",
+                "content": repr(thread),
+            }
+        )
+        assert payload.content == (
+            'From: a@x.com\nSubject: Hi\n\nFirst\n\nFrom: b@x.com\n\nIt\'s "done"'
+        )
+
+    def test_map_document_unescapes_a_message_escaped_twice(self) -> None:
+        thread = ["From: a@x.com\\nSubject: Hi\\n\\nFirst"]
+        payload = map_enterprise_rag_document(
+            {
+                "doc_id": "d",
+                "source_type": "gmail",
+                "title": "t",
+                "content": repr(thread),
+            }
+        )
+        assert payload.content == "From: a@x.com\nSubject: Hi\n\nFirst"
+
+    def test_map_document_unescapes_text_without_newlines(self) -> None:
+        payload = map_enterprise_rag_document(
+            {
+                "doc_id": "d",
+                "source_type": "slack",
+                "title": "t",
+                "content": "eva: rerun?\\n\\nomar: yes",
+            }
+        )
+        assert payload.content == "eva: rerun?\n\nomar: yes"
+
+    @pytest.mark.parametrize(
+        "content",
+        ["[ACTION] ship it\n- owner: eva", "['unterminated", "['a', 1]"],
+    )
+    def test_map_document_keeps_content_that_is_not_a_message_list(
+        self, content: str
+    ) -> None:
+        payload = map_enterprise_rag_document(
+            {"doc_id": "d", "source_type": "slack", "title": "t", "content": content}
+        )
+        assert payload.content == content
+
+    def test_map_retrieval_deduplicates_expected_ids(self) -> None:
+        sample = map_enterprise_rag_retrieval(self._question())
+        assert sample is not None
+        assert sample.question == "What is the dp-132-usw rollout threshold?"
+        assert sample.expected_uris == ("dsid_a", "dsid_b")
+
+    def test_map_retrieval_skips_questions_without_gold_documents(self) -> None:
+        question = self._question(question_type="info_not_found", expected_doc_ids=[])
+        assert map_enterprise_rag_retrieval(question) is None
+
+    def test_build_case(self) -> None:
+        case = build_enterprise_rag_case(3, self._question())
+        assert case.name == "3_qst_0001"
+        assert case.inputs == "What is the dp-132-usw rollout threshold?"
+        assert case.expected_output == "30%."
+        assert case.metadata == {
+            "case_index": "3",
+            "question_id": "qst_0001",
+            "question_type": "conflicting_info",
+            "source_types": ["jira", "google_drive"],
+            "answer_facts": ["must state 30% is current", "must not claim 20%"],
+            "answerability": "ANSWERABLE",
+        }
+
+    def test_info_not_found_is_unanswerable(self) -> None:
+        question = {**self._question(), "question_type": "info_not_found"}
+
+        case = build_enterprise_rag_case(1, question)
+
+        assert case.metadata is not None
+        assert case.metadata["answerability"] == "UNANSWERABLE"
+
+    def test_spec_ingests_in_batches(self) -> None:
+        assert DATASETS["enterprise_rag"].ingest_batch_size is not None
 
 
 class TestHotpotQA:

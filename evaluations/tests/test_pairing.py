@@ -58,6 +58,15 @@ _MTRAG_CONVERSATION = {
     ],
 }
 _ROWS = {
+    "enterprise_rag": {
+        "question_id": "qst_0001",
+        "question_type": "basic",
+        "source_types": ["github"],
+        "question": "Q?",
+        "expected_doc_ids": ["dsid_a"],
+        "gold_answer": "A",
+        "answer_facts": ["A"],
+    },
     "frames": {
         "id": "7",
         "Prompt": "Q?",

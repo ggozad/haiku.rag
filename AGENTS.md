@@ -121,7 +121,7 @@ evaluations/                # Benchmarking workspace
 │   ├── experiment.py       # build_experiment_metadata
 │   ├── config.py           # DatasetSpec, DocumentPayload, RetrievalSample
 │   ├── capability_runner.py # native capability evaluation runner
-│   ├── datasets/           # frames, hotpotqa, mtrag, open_rag_bench, t2_ragbench
+│   ├── datasets/           # enterprise_rag, frames, hotpotqa, mtrag, open_rag_bench, t2_ragbench
 │   └── evaluators/         # judge, map, citation, retrieval, number_match, refusal, conversation, transcript
 └── tests/                  # benchmark and capability-runner tests
 docs/                       # Documentation (zensical, not mkdocs; nav lives in zensical.toml)
@@ -706,7 +706,7 @@ evaluations download <dataset|all>           # Pre-built eval DBs from HuggingFa
 evaluations upload <dataset|all>             # Upload eval DBs
 ```
 
-Datasets: `frames`, `hotpotqa`, `orb_text`, `orb_multimodal`, `orb_multimodal_nemotron`, `t2_finqa`, `t2_tatdqa`, `mtrag_clapnq`, `mtrag_clapnq_rewrite`, `mtrag_clapnq_live`, `mtrag_clapnq_live_uncompacted` (the four mtrag keys share one DB).
+Datasets: `enterprise_rag`, `frames`, `hotpotqa`, `orb_text`, `orb_multimodal`, `orb_multimodal_nemotron`, `t2_finqa`, `t2_tatdqa`, `mtrag_clapnq`, `mtrag_clapnq_rewrite`, `mtrag_clapnq_live`, `mtrag_clapnq_live_uncompacted` (the four mtrag keys share one DB).
 
 **Capability runs** go end to end through a native Pydantic AI agent (`evaluations/capability_runner.py`). The capability model is `config.qa.model` and the judge `config.evaluations.judge`, with no command-line override for either.
 

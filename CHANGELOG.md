@@ -5,6 +5,7 @@
 ### Added
 
 - `embeddings.model.query_prefix` and `embeddings.model.document_prefix`, prepended to query and chunk text on the ollama, openai, vllm and openrouter providers and part of the recorded embedder identity. `rebuild --set-embedder` records a changed query prefix and refuses a changed document prefix (#702).
+- `enterprise_rag` evaluation dataset (EnterpriseRAG-Bench, `onyx-dot-app/EnterpriseRAG-Bench`) and its reference config `evaluations/configs/enterprise_rag.yaml`, with Recall@10 retrieval, citation MAP and answerability labels (`info_not_found` is `UNANSWERABLE`). Gmail threads stored as a Python list `repr` are decoded into text.
 
 ### Changed
 
