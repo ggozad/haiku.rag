@@ -1,3 +1,4 @@
+from evaluations.evaluators.answer_facts import AnswerFactsJudge
 from evaluations.evaluators.citation import CitationMAPEvaluator
 from evaluations.evaluators.conversation import ConversationEvaluator
 from evaluations.evaluators.judge import (
@@ -18,6 +19,7 @@ from evaluations.evaluators.transcript import TranscriptLLMJudge
 
 __all__ = [
     "ANSWER_EQUIVALENCE_RUBRIC",
+    "AnswerFactsJudge",
     "REFUSAL_ELIGIBLE_LABELS",
     "REFUSAL_RUBRIC",
     "CitationMAPEvaluator",
