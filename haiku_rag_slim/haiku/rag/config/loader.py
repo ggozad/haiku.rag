@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -16,11 +17,13 @@ class MissingEnvVarError(ValueError):
     """A ${VAR} in the config references an unset or empty environment variable."""
 
 
-def _expand_str(value: str) -> str:
+def _expand_str(value: str, reserved: Mapping[str, str]) -> str:
     def replace(match: re.Match[str]) -> str:
         if match.group(0) == "$$":
             return "$"
         name, default = match.group(1), match.group(2)
+        if name in reserved:
+            return reserved[name]
         if os.environ.get(name, "") != "":
             return os.environ[name]
         if default is not None:
@@ -33,15 +36,17 @@ def _expand_str(value: str) -> str:
     return _ENV_VAR_PATTERN.sub(replace, value)
 
 
-def expand_env_vars(data: Any) -> Any:
+def expand_env_vars(data: Any, reserved: Mapping[str, str] | None = None) -> Any:
     """Recursively expand ${VAR} / ${VAR:-default} references in string values.
-    Keys and non-string scalars are left untouched; $$ collapses to a literal $."""
+    Keys and non-string scalars are left untouched; $$ collapses to a literal $.
+    A name in `reserved` takes its value from there, never from the environment."""
+    reserved = reserved or {}
     if isinstance(data, dict):
-        return {key: expand_env_vars(value) for key, value in data.items()}
+        return {key: expand_env_vars(value, reserved) for key, value in data.items()}
     if isinstance(data, list):
-        return [expand_env_vars(item) for item in data]
+        return [expand_env_vars(item, reserved) for item in data]
     if isinstance(data, str):
-        return _expand_str(data)
+        return _expand_str(data, reserved)
     return data
 
 
@@ -85,7 +90,9 @@ def load_yaml_config(path: Path) -> dict:
     """Load and parse a YAML config file, expanding ${VAR} references."""
     with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f)
-    return expand_env_vars(data or {})
+    return expand_env_vars(
+        data or {}, {"HAIKU_RAG_CONFIG_DIR": str(path.resolve().parent)}
+    )
 
 
 def generate_default_config() -> dict:

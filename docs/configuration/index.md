@@ -39,6 +39,7 @@ ingester:
 - `${VAR}` is replaced with the value of `VAR`. If `VAR` is unset or empty, loading fails with an error naming the variable.
 - `${VAR:-default}` uses `default` when `VAR` is unset or empty.
 - `$$` produces a literal `$`.
+- `${HAIKU_RAG_CONFIG_DIR}` is the absolute directory of the config file, so `${HAIKU_RAG_CONFIG_DIR}/papers.lancedb` places a database next to it. The environment cannot override it.
 
 Substitution happens after the YAML is parsed, so a value containing `:`, `@`, or `#` fills the string verbatim and never changes the document structure.
 
