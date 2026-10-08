@@ -3,7 +3,12 @@ from pathlib import Path
 import pytest
 
 from haiku.rag.client.scope import DatabaseRef, DatabaseScope, database_name
-from haiku.rag.config.models import AppConfig, LanceDBConfig, StorageConfig
+from haiku.rag.config.models import (
+    AppConfig,
+    DatabaseEntry,
+    LanceDBConfig,
+    StorageConfig,
+)
 from haiku.rag.store.exceptions import (
     AmbiguousDatabaseError,
     UnknownDatabaseError,
@@ -153,6 +158,30 @@ class TestResolution:
 
         assert ref.location == Path("/data/alpha.lancedb")
         assert ref.db_path == Path("/data/alpha.lancedb")
+
+    def test_a_configured_entry_carries_its_tag(self):
+        config = _config(
+            databases={"old": DatabaseEntry(location="/data/a.lancedb", tag="v1")}
+        )
+
+        [ref] = DatabaseScope.resolve(config, database_name="old").databases
+
+        assert ref == DatabaseRef("old", Path("/data/a.lancedb"), tag="v1")
+
+    def test_entries_may_share_a_location_at_different_tags(self):
+        config = _config(
+            databases={
+                "live": "/data/a.lancedb",
+                "old": DatabaseEntry(location="/data/a.lancedb", tag="v1"),
+            }
+        )
+
+        scope = DatabaseScope.resolve(config)
+
+        assert [(ref.name, ref.location, ref.tag) for ref in scope.databases] == [
+            ("live", Path("/data/a.lancedb"), None),
+            ("old", Path("/data/a.lancedb"), "v1"),
+        ]
 
     def test_a_scope_covers_at_least_one_database(self):
         """Every resolution reaches a database, and the sessions built from a

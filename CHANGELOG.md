@@ -5,6 +5,11 @@
 ### Added
 
 - `${HAIKU_RAG_CONFIG_DIR}` in config values expands to the config file's directory (#691).
+- `lancedb.databases` entries accept `{location, tag}` to read a database read-only at a tag (#693).
+
+### Changed
+
+- The `app/` backend opens its database read-only and no longer creates a missing one.
 
 ### Fixed
 

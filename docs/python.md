@@ -495,7 +495,7 @@ async with HaikuRAG(db_path, tag="release-1") as client:
     results = await client.search("query")
 ```
 
-The client is read-only and covers one database. With several configured, name it with `sources=[name]`. A tag missing from any table raises `TagError`, and a tag that needs a migration raises `MigrationRequiredError`.
+The client is read-only and covers one database. With several configured, name it with `sources=[name]`. A tag missing from any table raises `TagError`, and a tag that needs a migration raises `MigrationRequiredError`. A [configured tag](configuration/multiple-databases.md#reading-at-a-tag) is read the same way, `HaikuRAG(config=config, sources=["sp800-2026-06-30"])`, and `tag=` beside it raises `AmbiguousDatabaseError`.
 
 Delete tags you no longer need. Vacuum keeps every tagged version and the files it references:
 

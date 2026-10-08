@@ -73,7 +73,7 @@ async def get_client() -> HaikuRAG:
     if _client is None:
         async with _client_lock:
             if _client is None:
-                client = HaikuRAG(config=config, create=True)
+                client = HaikuRAG(config=config, read_only=True)
                 await client.__aenter__()
                 _client = client
     return _client
@@ -176,7 +176,7 @@ async def db_info(_: Request) -> JSONResponse:
     from haiku.rag.store.info import get_database_stats
 
     client = await get_client()
-    stats = await get_database_stats(client.store.db)
+    stats = await get_database_stats(client.store.db, tag=client.store.tag)
 
     return JSONResponse(
         {

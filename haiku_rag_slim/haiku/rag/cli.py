@@ -2,7 +2,6 @@ import asyncio
 import json
 import sys
 import warnings
-from dataclasses import replace
 from importlib.metadata import version
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -71,13 +70,18 @@ _db_name: str | None = None
 
 
 def create_app(
-    db: Path | None = None, *, covers_set: bool = False, at: str | None = None
+    db: Path | None = None,
+    *,
+    covers_set: bool = False,
+    at: str | None = None,
+    reads_tags: bool = False,
 ) -> "HaikuRAGApp":
     """The application for a command, on the database(s) it works on.
 
     `covers_set` is the command declaring that it can read multiple: `search`,
     `ask`, `chat` and `mcp` can, and everything else names one. `at` reads the
-    one database at a tag.
+    one database at a tag. `reads_tags` is the command declaring that it reads
+    a tagged database, which every other command refuses.
 
     Raises:
         AmbiguousDatabaseError: multiple databases are configured and this
@@ -89,12 +93,16 @@ def create_app(
     return HaikuRAGApp(
         config=get_config(),
         read_only=_read_only or at is not None,
-        scope=resolve_scope(db, covers_set=covers_set, at=at),
+        scope=resolve_scope(db, covers_set=covers_set, at=at, reads_tags=reads_tags),
     )
 
 
 def resolve_scope(
-    db: Path | None = None, *, covers_set: bool = False, at: str | None = None
+    db: Path | None = None,
+    *,
+    covers_set: bool = False,
+    at: str | None = None,
+    reads_tags: bool = False,
 ) -> "DatabaseScope":
     """The databases a command works on, resolved once.
 
@@ -126,7 +134,9 @@ def resolve_scope(
         )
     if at is not None:
         [ref] = scope.databases
-        scope = DatabaseScope((replace(ref, tag=at),))
+        scope = DatabaseScope((ref.at_tag(at),))
+    if not reads_tags:
+        scope.refuse_tags("this command works on")
     return scope
 
 
@@ -232,7 +242,7 @@ def list_documents(
         help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
     ),
 ):
-    app = create_app(db, at=at)
+    app = create_app(db, at=at, reads_tags=True)
     asyncio.run(app.list_documents(filter=filter))
 
 
@@ -336,7 +346,7 @@ def get_document(
         help="Read the database read-only at this tag",
     ),
 ):
-    app = create_app(db, at=at)
+    app = create_app(db, at=at, reads_tags=True)
     asyncio.run(app.get_document(doc_id=doc_id))
 
 
@@ -401,7 +411,7 @@ def search(
         help="Read the database read-only at this tag",
     ),
 ):
-    app = create_app(db, covers_set=True, at=at)
+    app = create_app(db, covers_set=True, at=at, reads_tags=True)
     asyncio.run(
         app.search(
             query=query,
@@ -434,7 +444,7 @@ def visualize(
         help="Highlight only the chunk itself, without its expanded context",
     ),
 ):
-    app = create_app(db, at=at)
+    app = create_app(db, at=at, reads_tags=True)
     asyncio.run(app.visualize_chunk(chunk_id=chunk_id, expand=not no_expand))
 
 
@@ -470,7 +480,7 @@ def ask(
         help="Show the full text of each citation instead of a truncated preview",
     ),
 ):
-    app = create_app(db, covers_set=True, at=at)
+    app = create_app(db, covers_set=True, at=at, reads_tags=True)
     asyncio.run(
         app.ask(
             question=question,
@@ -691,7 +701,7 @@ def info(
         help="Read the database read-only at this tag",
     ),
 ):
-    app = create_app(db, at=at)
+    app = create_app(db, at=at, reads_tags=True)
     asyncio.run(app.info())
 
 
@@ -877,7 +887,7 @@ def inspect(
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1) from e
 
-    run_inspector(read_only=True, scope=resolve_scope(db, at=at))
+    run_inspector(read_only=True, scope=resolve_scope(db, at=at, reads_tags=True))
 
 
 @_cli.command("chat", help="Launch interactive chat TUI for conversational RAG")
@@ -901,7 +911,7 @@ def chat(
     """Launch the chat TUI for conversational RAG."""
     from haiku.rag.chat import run_chat
 
-    scope = resolve_scope(db, covers_set=True, at=at)
+    scope = resolve_scope(db, covers_set=True, at=at, reads_tags=True)
 
     try:
         run_chat(
@@ -946,7 +956,7 @@ def mcp(
     ),
 ) -> None:
     """Run the MCP server."""
-    app = create_app(db, covers_set=True, at=at)
+    app = create_app(db, covers_set=True, at=at, reads_tags=True)
 
     transport = "stdio" if stdio else None
 

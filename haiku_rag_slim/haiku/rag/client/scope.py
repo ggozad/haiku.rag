@@ -1,10 +1,11 @@
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
-from haiku.rag.config import AppConfig
+from haiku.rag.config import AppConfig, DatabaseEntry
 from haiku.rag.store.exceptions import (
     AmbiguousDatabaseError,
+    TagError,
     UnknownDatabaseError,
 )
 from haiku.rag.utils.paths import locate_database
@@ -56,15 +57,32 @@ class DatabaseRef:
         return cls(name=database_name(path), location=path, given=True)
 
     @classmethod
-    def configured(cls, name: str, location: str | Path) -> "DatabaseRef":
+    def configured(
+        cls, name: str, location: str | Path, tag: str | None = None
+    ) -> "DatabaseRef":
         """A database the configuration placed. A location carrying a scheme is
         a URI, anything else a local path."""
-        return cls(name=name, location=location)
+        return cls(name=name, location=location, tag=tag)
+
+    def at_tag(self, tag: str) -> "DatabaseRef":
+        """This database read at `tag`. Refused when it already names a tag."""
+        if self.tag is not None:
+            raise AmbiguousDatabaseError(
+                f"database {self.name!r} is configured at tag {self.tag!r} and "
+                f"takes no other; drop the tag {tag!r}"
+            )
+        return replace(self, tag=tag)
 
     @property
     def db_path(self) -> Path | None:
         """The local path, or None for a database behind a URI."""
         return self.location if isinstance(self.location, Path) else None
+
+
+def _configured(name: str, entry: str | Path | DatabaseEntry) -> DatabaseRef:
+    if isinstance(entry, DatabaseEntry):
+        return DatabaseRef.configured(name, entry.location, tag=entry.tag)
+    return DatabaseRef.configured(name, entry)
 
 
 @dataclass(frozen=True)
@@ -121,7 +139,7 @@ class DatabaseScope:
                 )
             return cls.at(database_path)
 
-        declared: Mapping[str, str | Path] = configured or {
+        declared: Mapping[str, str | Path | DatabaseEntry] = configured or {
             "haiku.rag": config.storage.data_dir / DEFAULT_DATABASE_FILENAME
         }
 
@@ -131,16 +149,9 @@ class DatabaseScope:
                     f"unknown database {database_name!r}; the databases are "
                     f"{', '.join(sorted(declared))}"
                 )
-            return cls(
-                (DatabaseRef.configured(database_name, declared[database_name]),)
-            )
+            return cls((_configured(database_name, declared[database_name]),))
 
-        return cls(
-            tuple(
-                DatabaseRef.configured(name, location)
-                for name, location in declared.items()
-            )
-        )
+        return cls(tuple(_configured(name, entry) for name, entry in declared.items()))
 
     def select(self, names: list[str]) -> "DatabaseScope":
         """The databases in this scope named by `names`, in the order given.
@@ -159,6 +170,15 @@ class DatabaseScope:
                 f"configured: {', '.join(sorted(by_name))}"
             )
         return DatabaseScope(tuple(by_name[name] for name in dict.fromkeys(names)))
+
+    def refuse_tags(self, work: str) -> None:
+        """Raise when a database here is read at a tag: `work` needs the live one."""
+        for ref in self.databases:
+            if ref.tag is not None:
+                raise TagError(
+                    f"database {ref.name!r} is configured at tag {ref.tag!r}, and "
+                    f"{work} the live database; select an entry without a tag"
+                )
 
     @property
     def covers_multiple(self) -> bool:

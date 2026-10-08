@@ -569,6 +569,23 @@ class TestPlacingTheIngesterDatabase:
         assert scope.names == ("docs",)
         assert not scope.covers_multiple
 
+    def test_a_tagged_entry_is_refused(self, tmp_path):
+        from haiku.rag.config.models import DatabaseEntry
+        from haiku.rag.store.exceptions import TagError
+
+        config = AppConfig(
+            lancedb=LanceDBConfig(
+                databases={
+                    "docs": DatabaseEntry(
+                        location=str(tmp_path / "docs.lancedb"), tag="v1"
+                    )
+                }
+            )
+        )
+
+        with pytest.raises(TagError, match="'docs' is configured at tag 'v1'"):
+            self._app(config)
+
     def test_a_set_is_refused_with_a_remedy_this_command_has(self, tmp_path):
         """The remedy in the message is `--db PATH`, an argument this command
         has; `sources=` is a Python argument no CLI user can pass."""

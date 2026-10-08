@@ -677,6 +677,20 @@ lancedb:
     assert papers == config_dir.resolve() / "papers.lancedb"
 
 
+def test_config_dir_expands_inside_a_tagged_entry(tmp_path):
+    (tmp_path / "haiku.rag.yaml").write_text("""
+lancedb:
+  databases:
+    old:
+      location: ${HAIKU_RAG_CONFIG_DIR}/papers.lancedb
+      tag: v1
+""")
+
+    config = load_yaml_config(tmp_path / "haiku.rag.yaml")
+    old = config["lancedb"]["databases"]["old"]
+    assert Path(old["location"]) == tmp_path.resolve() / "papers.lancedb"
+
+
 def test_config_dir_ignores_the_environment(tmp_path, monkeypatch):
     """An environment variable of the same name does not override the file's directory."""
     monkeypatch.setenv("HAIKU_RAG_CONFIG_DIR", "/elsewhere")

@@ -935,7 +935,7 @@ def app_stub(monkeypatch, tmp_path):
     stub = AsyncMock()
     monkeypatch.setattr(
         "haiku.rag.cli.create_app",
-        lambda db=None, *, covers_set=False, at=None: stub,
+        lambda db=None, *, covers_set=False, at=None, reads_tags=False: stub,
     )
     return stub
 
@@ -1127,7 +1127,7 @@ def test_mcp_without_stdio_leaves_the_transport_unset(app_stub):
 def test_mcp_covers_the_configured_set(monkeypatch):
     seen = {}
 
-    def create_app(db=None, *, covers_set=False, at=None):
+    def create_app(db=None, *, covers_set=False, at=None, reads_tags=False):
         seen["covers_set"] = covers_set
         return AsyncMock()
 
@@ -1310,7 +1310,9 @@ class TestReadingAtATag:
     def test_the_tag_travels_on_the_one_database(self, monkeypatch, tmp_path):
         self._install(monkeypatch)
 
-        [ref] = resolve_scope(tmp_path / "papers.lancedb", at="release-1").databases
+        [ref] = resolve_scope(
+            tmp_path / "papers.lancedb", at="release-1", reads_tags=True
+        ).databases
 
         assert ref.tag == "release-1"
 
@@ -1327,9 +1329,86 @@ class TestReadingAtATag:
         self._install(monkeypatch, alpha="/db/a.lancedb", beta="/db/b.lancedb")
         monkeypatch.setattr("haiku.rag.cli._db_name", "alpha")
 
-        [ref] = resolve_scope(None, covers_set=True, at="release-1").databases
+        [ref] = resolve_scope(
+            None, covers_set=True, at="release-1", reads_tags=True
+        ).databases
 
         assert (ref.name, ref.tag) == ("alpha", "release-1")
+
+    def test_a_configured_tag_is_the_one_read(self, monkeypatch):
+        self._install(monkeypatch, old={"location": "/db/a.lancedb", "tag": "v1"})
+        monkeypatch.setattr("haiku.rag.cli._db_name", "old")
+
+        [ref] = resolve_scope(None, covers_set=True, reads_tags=True).databases
+
+        assert (ref.name, ref.tag) == ("old", "v1")
+
+    def test_at_on_a_configured_tag_is_refused(self, monkeypatch):
+        self._install(monkeypatch, old={"location": "/db/a.lancedb", "tag": "v1"})
+        monkeypatch.setattr("haiku.rag.cli._db_name", "old")
+
+        with pytest.raises(AmbiguousDatabaseError, match="'v1'.*'release-1'"):
+            resolve_scope(None, covers_set=True, at="release-1", reads_tags=True)
+
+    def test_a_command_without_at_refuses_a_configured_tag(self, monkeypatch):
+        self._install(monkeypatch, old={"location": "/db/a.lancedb", "tag": "v1"})
+        monkeypatch.setattr("haiku.rag.cli._db_name", "old")
+
+        with pytest.raises(TagError, match="'old' is configured at tag 'v1'"):
+            resolve_scope(None)
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["tag", "restore", "tagged", "--yes"],
+            ["tag", "create", "again"],
+            ["tag", "delete", "tagged"],
+            ["migrate"],
+            ["vacuum"],
+            ["doctor"],
+            ["history"],
+        ],
+    )
+    def test_live_state_commands_refuse_a_tagged_entry(
+        self, monkeypatch, tmp_path, argv
+    ):
+        from tests.multi_db.helpers import _config, _seed
+
+        config = _config(tmp_path, ["papers"])
+
+        async def tag_between():
+            await _seed(config, "papers", ["before"])
+            async with HaikuRAG(config=config, sources=["papers"]) as rag:
+                await rag.store.create_tag("tagged")
+            await _seed(config, "papers", ["after"])
+
+        asyncio.run(tag_between())
+        self._install(monkeypatch)
+        location = tmp_path / "papers.lancedb"
+        config_file = tmp_path / "haiku.rag.yaml"
+        config_file.write_text(
+            f"lancedb:\n  databases:\n    papers: {location}\n"
+            f"    old:\n      location: {location}\n      tag: tagged\n",
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(
+            cli, ["--config", str(config_file), "--db-name", "old", *argv]
+        )
+
+        assert isinstance(result.exception, TagError), result.output
+
+        async def live_state():
+            async with HaikuRAG(config=config, sources=["papers"]) as rag:
+                return (
+                    sorted(d.uri for d in await rag.list_documents()),
+                    sorted(await rag.store.list_tags()),
+                )
+
+        assert asyncio.run(live_state()) == (
+            ["test://papers/after", "test://papers/before"],
+            ["tagged"],
+        )
 
     def test_list_shows_the_tagged_state(self, monkeypatch, tmp_path):
         from tests.multi_db.helpers import _config, _seed
@@ -1388,17 +1467,17 @@ class TestReadingAtATag:
         ],
     )
     def test_a_read_command_passes_the_tag_on(self, monkeypatch, argv):
-        seen: dict[str, str | None] = {}
+        seen: dict[str, str | bool | None] = {}
 
-        def create_app(db=None, *, covers_set=False, at=None):
-            seen["at"] = at
+        def create_app(db=None, *, covers_set=False, at=None, reads_tags=False):
+            seen.update(at=at, reads_tags=reads_tags)
             return AsyncMock()
 
         monkeypatch.setattr("haiku.rag.cli.create_app", create_app)
         result = runner.invoke(cli, [*argv, "--at", "release-1"])
 
         assert result.exit_code == 0, result.output
-        assert seen == {"at": "release-1"}
+        assert seen == {"at": "release-1", "reads_tags": True}
 
     @pytest.mark.parametrize(
         "argv, runner_path",
@@ -1408,10 +1487,10 @@ class TestReadingAtATag:
         ],
     )
     def test_a_tui_passes_the_tag_on(self, monkeypatch, argv, runner_path):
-        seen: dict[str, str | None] = {}
+        seen: dict[str, str | bool | None] = {}
 
-        def resolve(db=None, *, covers_set=False, at=None):
-            seen["at"] = at
+        def resolve(db=None, *, covers_set=False, at=None, reads_tags=False):
+            seen.update(at=at, reads_tags=reads_tags)
             return "scope"
 
         monkeypatch.setattr("haiku.rag.cli.resolve_scope", resolve)
@@ -1419,4 +1498,4 @@ class TestReadingAtATag:
         result = runner.invoke(cli, [*argv, "--at", "release-1"])
 
         assert result.exit_code == 0, result.output
-        assert seen == {"at": "release-1"}
+        assert seen == {"at": "release-1", "reads_tags": True}

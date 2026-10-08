@@ -69,6 +69,11 @@ class SingleDatabaseSession:
         create: bool = False,
         read_only: bool = False,
     ) -> None:
+        if create and ref.tag is not None:
+            raise ValueError(
+                f"database {ref.name!r} is read at tag {ref.tag!r}, and a "
+                "database at a tag cannot be created"
+            )
         self.ref = ref
         self.config = config
         self.read_only = read_only or ref.tag is not None
