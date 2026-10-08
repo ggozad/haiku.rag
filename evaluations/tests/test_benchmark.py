@@ -277,6 +277,105 @@ class TestRefusalMetrics:
         assert _refusal_metrics([self._case("PARTIAL", None)]) is None
 
 
+class TestFactsMetrics:
+    def _case(self, completeness: float | None, correct: bool | None) -> MagicMock:
+        case = MagicMock()
+        case.scores = (
+            {"answer_completeness": MagicMock(value=completeness)}
+            if completeness is not None
+            else {}
+        )
+        case.assertions = (
+            {"answer_equivalent": MagicMock(value=correct)}
+            if correct is not None
+            else {}
+        )
+        return case
+
+    def test_erb_score_is_completeness_of_correct_answers(self) -> None:
+        from evaluations.qa import _facts_metrics
+
+        cases = [
+            self._case(1.0, True),
+            self._case(0.5, True),
+            self._case(0.75, False),  # incorrect: erb_score 0
+            self._case(0.0, False),
+            self._case(None, True),  # no facts judged
+            self._case(0.5, None),  # correctness unjudged
+        ]
+
+        metrics = _facts_metrics(cases)
+
+        assert metrics is not None
+        completeness, erb_score, judged = metrics
+        assert completeness == (1.0 + 0.5 + 0.75 + 0.0) / 4
+        assert erb_score == (1.0 + 0.5) / 4
+        assert judged == 4
+
+    def test_none_when_no_case_has_facts(self) -> None:
+        from evaluations.qa import _facts_metrics
+
+        assert _facts_metrics([self._case(None, True)]) is None
+
+    async def test_qa_run_records_answer_completeness(self, tmp_path: Path) -> None:
+        import json
+
+        from pydantic_ai import ModelResponse, TextPart, ToolCallPart
+        from pydantic_ai.models.function import FunctionModel
+        from pydantic_evals import Case
+
+        from evaluations.capability_runner import CapabilityRunResult
+
+        def build_case(idx: int, doc) -> Case:
+            return Case(
+                name="c1",
+                inputs="q1",
+                expected_output="ref",
+                metadata={"question_id": "q1", "answer_facts": ["A.", "B."]},
+            )
+
+        spec = DatasetSpec(
+            key="test",
+            db_filename="test.lancedb",
+            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            document_mapper=lambda doc: None,
+            qa_loader=lambda: [{"id": "t1"}],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            qa_case_builder=build_case,
+        )
+        passing_judge = FunctionModel(
+            lambda messages, info: ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        info.output_tools[0].name,
+                        {"reason": "r", "pass": True, "score": 1.0},
+                    )
+                    if info.output_tools
+                    else TextPart("yes")
+                ]
+            )
+        )
+
+        with (
+            patch("evaluations.qa.get_model", return_value=passing_judge),
+            patch(
+                "evaluations.qa.run_capability_question",
+                new_callable=AsyncMock,
+                return_value=CapabilityRunResult(answer="answer"),
+            ),
+        ):
+            await run_qa_benchmark(
+                spec,
+                AppConfig(),
+                db_path=tmp_path / "test.lancedb",
+                results_dir=tmp_path / "results",
+            )
+
+        [results] = (tmp_path / "results").glob("*.jsonl")
+        [row] = [json.loads(line) for line in results.read_text().splitlines()]
+        assert row["passed"] is True
+        assert row["answer_completeness"] == 1.0
+
+
 class TestLiveSummary:
     def _case(self, scores: dict[str, float | int]) -> MagicMock:
         case = MagicMock()
