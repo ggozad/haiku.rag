@@ -3,7 +3,7 @@ from functools import partial
 
 import pytest
 
-from haiku.rag.client import HaikuRAG
+from haiku.rag.client import HaikuRAG, RebuildMode
 from haiku.rag.client.documents import (
     MAX_ATTACHMENT_DEPTH,
     _extract_pdf_attachments,
@@ -827,3 +827,33 @@ async def test_retry_ingests_a_grandchild_whose_provider_failed(tmp_path, temp_d
     assert mid_doc is not None
     assert mid_doc.metadata["md5"] == _md5(mid)
     assert retried.metadata["md5"] == _md5(pdf_path.read_bytes())
+
+
+async def test_full_rebuild_keeps_an_unchanged_attachment_tree(
+    tmp_path, temp_db_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        fake_ingest_fetch_result,
+    )
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(
+        build_pdf(
+            [
+                ("direct.txt", b"direct"),
+                ("embedded.pdf", build_pdf([("leaf.txt", b"leaf")])),
+            ]
+        )
+    )
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.create_document_from_source(pdf_path)
+        before = {d.uri: d.id for d in await client.list_documents()}
+
+        async for _ in client.rebuild_database(mode=RebuildMode.FULL):
+            pass
+
+        after = {d.uri: d.id for d in await client.list_documents()}
+
+    assert len(before) == 4
+    assert after == before

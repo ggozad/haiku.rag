@@ -6,6 +6,10 @@
 
 - `${HAIKU_RAG_CONFIG_DIR}` in config values expands to the config file's directory (#691).
 
+### Fixed
+
+- A full rebuild no longer re-ingests a PDF attachment from its parent's file (#699).
+
 ## [0.94.0] - 2026-10-07
 
 ### Changed

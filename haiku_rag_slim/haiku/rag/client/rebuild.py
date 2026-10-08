@@ -985,10 +985,12 @@ async def _rebuild_full(
 
     for light_doc in documents:
         assert light_doc.id is not None
+        # An attachment's URI resolves to its parent's file, never its own payload.
+        source = None if (light_doc.metadata or {}).get("parent_uri") else light_doc.uri
 
         # Try to rebuild from source if available — uses the light listing
         # directly, no need to load the stored content/blobs first.
-        if light_doc.uri and check_source_accessible(light_doc.uri):
+        if source and check_source_accessible(source):
             # The refresh writes through the database, not the batch buffer, so
             # anything pending has to land first. Its transaction is over by
             # the time the refresh takes the same lock.
@@ -1011,7 +1013,7 @@ async def _rebuild_full(
                 # in place, so a failure here cannot cost the document.
                 refreshed = await create_document_from_source(
                     session,
-                    source=light_doc.uri,
+                    source=source,
                     metadata=light_doc.metadata or {},
                     force=True,
                 )
@@ -1026,7 +1028,7 @@ async def _rebuild_full(
                     light_doc.uri,
                     e,
                 )
-        elif light_doc.uri:
+        elif source:
             logger.warning(
                 "Source missing for %s, re-embedding from content", light_doc.uri
             )
