@@ -17,6 +17,10 @@
 
 - A full rebuild re-converts PDF attachments from the bytes in their parent PDF, keeping their ids and metadata, and no longer re-ingests an attachment from its parent's file (#699).
 
+### Security
+
+- Bumped dependencies in `uv.lock` to patched versions for known advisories: `datasets` 5.0.1, `fsspec` 2026.6.0, `multidict` 6.9.1, `sentence-transformers` 5.7.0, `urllib3` 2.8.0, `virtualenv` 21.14.5.
+
 ## [0.94.0] - 2026-10-07
 
 ### Changed
