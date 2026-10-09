@@ -14,6 +14,7 @@
 
 - `DoclingLocalConverter` raises `ImportError` naming the `docling` extra when docling is not installed, and `haiku-ingester serve`, `run-batch` and `haiku-rag add-src` exit at startup with `Error: docling is not installed` (#705).
 - `Failed to parse file` errors carry the message of the exception that caused them.
+- Concurrent `docling-local` ingester workers no longer fail PDF slices with `Failed to import pages` or `Failed to parse file` (#704).
 
 ## [0.95.0] - 2026-10-08
 
