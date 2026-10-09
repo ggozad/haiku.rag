@@ -1,13 +1,13 @@
 # Remote processing
 
-haiku.rag can send conversion and chunking to [docling-serve](https://github.com/docling-project/docling-serve), a REST service running docling, instead of running docling in-process. It moves docling's memory and CPU out of the haiku.rag process, and lets `haiku.rag-slim` run without the `docling` extra. haiku.rag is tested against docling-serve 1.32.0.
+haiku.rag can send conversion and chunking to [docling-serve](https://github.com/docling-project/docling-serve), a REST service running docling, instead of running docling in-process. It moves docling's memory and CPU out of the haiku.rag process, and lets `haiku.rag-slim` run without the `docling` extra. haiku.rag is tested against docling-serve 1.33.0.
 
 ## Running docling-serve
 
 `examples/docker/docker-compose.yml` runs two docling-serve replicas beside the ingester and the MCP server. To run one by hand:
 
 ```bash
-docker run -p 5001:5001 quay.io/docling-project/docling-serve:v1.32.0
+docker run -p 5001:5001 quay.io/docling-project/docling-serve:v1.33.0
 ```
 
 `-e DOCLING_SERVE_ENABLE_UI=true` adds its web UI, for debugging.

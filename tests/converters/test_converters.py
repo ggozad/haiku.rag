@@ -1318,13 +1318,23 @@ class TestDoclingLocalConverter:
 
     def test_get_ocr_options_passes_force_ocr_and_lang(self, config):
         """Test that _get_ocr_options passes force_ocr and ocr_lang."""
+        from docling.datamodel.pipeline_options import OcrMode
+
         config.processing.conversion_options.ocr_engine = "rapidocr"
         config.processing.conversion_options.force_ocr = True
         config.processing.conversion_options.ocr_lang = ["en", "de"]
         converter = DoclingLocalConverter(config)
         opts = converter._get_ocr_options(config.processing.conversion_options)
-        assert opts.force_full_page_ocr is True
+        assert opts.mode is OcrMode.FULL_PAGE
         assert opts.lang == ["en", "de"]
+
+    def test_get_ocr_options_without_force_ocr_uses_default_mode(self, config):
+        from docling.datamodel.pipeline_options import OcrMode
+
+        config.processing.conversion_options.force_ocr = False
+        converter = DoclingLocalConverter(config)
+        opts = converter._get_ocr_options(config.processing.conversion_options)
+        assert opts.mode is OcrMode.DEFAULT
 
     def test_picture_description_config_defaults(self, config):
         """Test that picture description config has correct defaults."""
@@ -2314,6 +2324,25 @@ class TestDoclingServeConverter:
             await converter.convert_file(source)
 
         assert str(source) in str(exc.value)
+
+    async def test_convert_file_uploads_xml_for_docling_to_parse(
+        self, converter, tmp_path
+    ):
+        source = tmp_path / "patent.xml"
+        source.write_bytes(b"<?xml version='1.0'?><us-patent-grant/>")
+        converter._make_request = AsyncMock(return_value=DoclingDocument(name="doc"))
+
+        await converter.convert_file(source)
+
+        files = converter._make_request.call_args.args[0]
+        assert files["files"][0] == "patent.xml"
+        assert files["files"][1] == source.read_bytes()
+
+
+def test_text_extensions_never_claim_a_docling_format():
+    text = set(TextFileHandler.text_extensions)
+    assert text.isdisjoint(DoclingLocalConverter.docling_extensions)
+    assert text.isdisjoint(DoclingServeConverter.docling_serve_extensions)
 
 
 class TestDoclingServeConverterPictureDescription:
