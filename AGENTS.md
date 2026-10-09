@@ -572,7 +572,7 @@ Each entry is the trap and what to do. The evidence behind them is in the commit
 - **An exception out of an FS periodic sweep dies silently**: `_sweep_loop` is a task `run()` never awaits, `live_pollers` counts the outer task, and shutdown's `gather(..., return_exceptions=True)` swallows it. `/health` stays green.
 - **Poller discovery failures** are handled in three places with the same `record_failure` + `logger.exception` body: `pollers/base.py` `_sweep_once` and `_dry_run_once`, and `pollers/fs.py` `_watch_loop`. Change one, change all three.
 - **Plugins** use `importlib.metadata` entry points: `haiku.rag.metadata_providers` and `haiku.rag.sources`. Only referenced ones load.
-- **Docker images.** Both Dockerfiles install `--extra ingester`, which does not pull `[docling]`. The full image gets docling from the `haiku.rag` package itself. The published slim image cannot run `converter: docling-local`. `[ingester]` pulls `[s3]`.
+- **Docker images.** Both Dockerfiles install `--extra ingester`, which does not pull `[docling]`. The full image gets docling from the `haiku.rag` package itself. The published slim image cannot run `converter: docling-local`: `DoclingLocalConverter` imports docling at construction and raises `ImportError` naming the extra, so `haiku-ingester` and `add-src` exit at startup. `[ingester]` pulls `[s3]`.
 - **Dashboard** (`ingester/api/static/index.html`) is outside the biome hook's scope. Run `biome lint <file>` by hand, and `node --check` on the extracted script.
 
 ### Capabilities and sandbox

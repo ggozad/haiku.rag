@@ -10,6 +10,11 @@
 
 - `doctor` and the open-time embedder drift check report differing fields as `provider: 'a' -> 'b'` and `name: 'a' -> 'b'`, and an empty recorded `provider` or `name` counts as drift.
 
+### Fixed
+
+- `DoclingLocalConverter` raises `ImportError` naming the `docling` extra when docling is not installed, and `haiku-ingester serve`, `run-batch` and `haiku-rag add-src` exit at startup with `Error: docling is not installed` (#705).
+- `Failed to parse file` errors carry the message of the exception that caused them.
+
 ## [0.95.0] - 2026-10-08
 
 ### Added

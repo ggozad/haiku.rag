@@ -1271,6 +1271,38 @@ def test_inspect_reports_a_missing_tui_extra(monkeypatch):
     assert "haiku.rag-slim[tui]" in result.output
 
 
+def test_add_src_reports_a_missing_docling_extra(
+    monkeypatch, capsys, tmp_path, temp_db_path
+):
+    """`add-src` with `converter: docling-local` and no docling exits naming
+    the extra to install."""
+    source = tmp_path / "doc.md"
+    source.write_text("# Title\n\nBody.\n")
+
+    async def init():
+        async with HaikuRAG(temp_db_path, create=True):
+            pass
+
+    asyncio.run(init())
+
+    async def current():
+        return True, "9.9.9", "9.9.9"
+
+    monkeypatch.setattr("haiku.rag.cli.is_up_to_date", current)
+    monkeypatch.setitem(sys.modules, "docling", None)
+    monkeypatch.setattr(
+        sys, "argv", ["haiku-rag", "add-src", str(source), "--db", str(temp_db_path)]
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli_wrapper()
+
+    assert exc_info.value.code == 1
+    err = capsys.readouterr().err
+    assert err.startswith("Error: docling is not installed")
+    assert "haiku.rag-slim[docling]" in err
+
+
 @pytest.mark.parametrize("command, joins", [("vacuum", True), ("mcp", False)])
 def test_one_shot_commands_join_the_traceparent_trace(
     app_stub, monkeypatch, command, joins

@@ -4,6 +4,7 @@ patched out — the behavior under test is the orchestration and orphan
 pruning, not embedding."""
 
 import asyncio
+import sys
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
@@ -329,6 +330,18 @@ async def test_run_batch_dry_run_reports_manifest_without_mutating_queue(tmp_pat
         assert await sync.list_known_uris("local") == {(tmp_path / "gone.md").as_uri()}
     finally:
         await engine.dispose()
+
+
+async def test_run_batch_without_docling_fails_at_startup(tmp_path, monkeypatch):
+    """`run_batch_dry_run` with `converter: docling-local` and no docling raises
+    before any sweep, naming the extra."""
+    (tmp_path / "a.md").write_text("hello")
+    monkeypatch.setitem(sys.modules, "docling", None)
+
+    with pytest.raises(ImportError, match=r"haiku\.rag-slim\[docling\]"):
+        await IngesterApp(
+            config=_config(tmp_path), scope=DatabaseScope.at(tmp_path / "db.lancedb")
+        ).run_batch_dry_run()
 
 
 async def test_run_batch_from_manifest_drains_changes_without_sweeping(

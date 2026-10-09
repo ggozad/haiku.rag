@@ -54,6 +54,7 @@ def cli():
         AttachmentDeletionError,
         ConfigMismatchError,
         FileNotFoundError,
+        ImportError,
         MigrationRequiredError,
         ReadOnlyError,
         UnknownDatabaseError,

@@ -487,10 +487,11 @@ def test_cli_entry_point(monkeypatch):
         ReadOnlyError("read-only"),
         SourceUnavailableError("papers would not open"),
         UnknownDatabaseError("no such database"),
+        ImportError("docling is not installed"),
     ],
     ids=lambda e: type(e).__name__,
 )
-def test_cli_entry_point_exits_on_store_state_errors(monkeypatch, capsys, error):
+def test_cli_entry_point_exits_cleanly_on_known_errors(monkeypatch, capsys, error):
     from haiku.rag.ingester.cli import cli as cli_entry
 
     monkeypatch.setattr("haiku.rag.ingester.cli._cli", MagicMock(side_effect=error))

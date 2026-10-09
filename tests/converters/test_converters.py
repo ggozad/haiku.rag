@@ -4,6 +4,7 @@ import asyncio
 import copy
 import logging
 import re
+import sys
 import tempfile
 import threading
 import time
@@ -388,6 +389,15 @@ class TestConverterFactory:
         config.processing.converter = "docling-local"
         converter = get_converter(config)
         assert isinstance(converter, DoclingLocalConverter)
+
+    def test_docling_local_converter_requires_the_docling_extra(self, monkeypatch):
+        """`DoclingLocalConverter` names the `docling` extra when docling is not
+        installed."""
+        monkeypatch.setitem(sys.modules, "docling", None)
+        config = AppConfig()
+        config.processing.converter = "docling-local"
+        with pytest.raises(ImportError, match=r"haiku\.rag-slim\[docling\]"):
+            get_converter(config)
 
     def test_get_docling_serve_converter(self):
         """Test getting docling-serve converter."""
@@ -2828,7 +2838,8 @@ class TestConversionTimeout:
         assert time.monotonic() - started < 1.0
 
     async def test_failure_keeps_its_cause(self, config, tmp_path, monkeypatch):
-        """`Failed to parse file` chains the exception that caused it."""
+        """`Failed to parse file` chains the exception that caused it and
+        carries its message."""
         converter = DoclingLocalConverter(config)
         missing = tmp_path / "nope.pdf"
 
@@ -2840,6 +2851,7 @@ class TestConversionTimeout:
             await converter.convert_file(missing)
         assert isinstance(excinfo.value.__cause__, KeyError)
         assert "the real problem" in str(excinfo.value.__cause__)
+        assert "the real problem" in str(excinfo.value)
 
     async def test_docling_own_timeout_keeps_its_cause(
         self, config, tmp_path, monkeypatch
