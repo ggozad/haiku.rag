@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- docling 2.127.0, docling-core 2.96.1, docling-ibm-models 4.0.2, docling-parse 7.19.1, paired with docling-serve v1.33.0. Conversion output changes for PDF table cells and the docx, xlsx, html and markdown backends: documents ingested before and after differ in items, chunk boundaries and chunk ids.
+
 ## [0.96.0] - 2026-10-09
 
 ### Added

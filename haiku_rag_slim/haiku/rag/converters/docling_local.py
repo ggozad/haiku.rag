@@ -140,27 +140,28 @@ class DoclingLocalConverter(DocumentConverter):
             EasyOcrOptions,
             OcrAutoOptions,
             OcrMacOptions,
+            OcrMode,
             RapidOcrOptions,
             TesseractCliOcrOptions,
             TesseractOcrOptions,
         )
 
-        force_ocr = opts.force_ocr
+        mode = OcrMode.FULL_PAGE if opts.force_ocr else OcrMode.DEFAULT
         lang = opts.ocr_lang if opts.ocr_lang else []
 
         match opts.ocr_engine:
             case "easyocr":
-                return EasyOcrOptions(force_full_page_ocr=force_ocr, lang=lang)
+                return EasyOcrOptions(mode=mode, lang=lang)
             case "rapidocr":
-                return RapidOcrOptions(force_full_page_ocr=force_ocr, lang=lang)
+                return RapidOcrOptions(mode=mode, lang=lang)
             case "tesseract":
-                return TesseractCliOcrOptions(force_full_page_ocr=force_ocr, lang=lang)
+                return TesseractCliOcrOptions(mode=mode, lang=lang)
             case "tesserocr":
-                return TesseractOcrOptions(force_full_page_ocr=force_ocr, lang=lang)
+                return TesseractOcrOptions(mode=mode, lang=lang)
             case "ocrmac":
-                return OcrMacOptions(force_full_page_ocr=force_ocr, lang=lang)
+                return OcrMacOptions(mode=mode, lang=lang)
             case _:  # "auto" or any other value
-                return OcrAutoOptions(force_full_page_ocr=force_ocr, lang=lang)
+                return OcrAutoOptions(mode=mode, lang=lang)
 
     def _build_pipeline_options(self):
         """Build the shared PdfPipelineOptions instance applied to every wired

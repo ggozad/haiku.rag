@@ -38,7 +38,7 @@ classifiers = [
 
 dependencies = [
     "charset-normalizer>=3.4.0",
-    "docling-core==2.93.0",
+    "docling-core==2.96.1",
     "httpx>=0.28.1",
     "jinja2>=3.1.0",
     "fastmcp>=4.0.2,<5.0.0",
@@ -70,12 +70,12 @@ Changelog = "https://ggozad.github.io/haiku.rag/changelog/"
 [project.optional-dependencies]
 # Document processing
 docling = [
-    "docling==2.124.0",
+    "docling==2.127.0",
     # The layout and table-structure models, and the PDF parser, decide item
-    # segmentation. Pinned to what docling-serve v1.32.0 ships, read out of the
+    # segmentation. Pinned to what docling-serve v1.33.0 ships, read out of the
     # image: docling-slim only floors these, so a resolver lands elsewhere.
-    "docling-ibm-models==4.0.1",
-    "docling-parse==7.16.0",
+    "docling-ibm-models==4.0.2",
+    "docling-parse==7.19.1",
     "opencv-python-headless>=4.6.0.66,<5.0.0.0",
 ]
 # S3 / object-storage monitoring
