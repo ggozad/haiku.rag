@@ -2325,6 +2325,25 @@ class TestDoclingServeConverter:
 
         assert str(source) in str(exc.value)
 
+    async def test_convert_file_uploads_xml_for_docling_to_parse(
+        self, converter, tmp_path
+    ):
+        source = tmp_path / "patent.xml"
+        source.write_bytes(b"<?xml version='1.0'?><us-patent-grant/>")
+        converter._make_request = AsyncMock(return_value=DoclingDocument(name="doc"))
+
+        await converter.convert_file(source)
+
+        files = converter._make_request.call_args.args[0]
+        assert files["files"][0] == "patent.xml"
+        assert files["files"][1] == source.read_bytes()
+
+
+def test_text_extensions_never_claim_a_docling_format():
+    text = set(TextFileHandler.text_extensions)
+    assert text.isdisjoint(DoclingLocalConverter.docling_extensions)
+    assert text.isdisjoint(DoclingServeConverter.docling_serve_extensions)
+
 
 class TestDoclingServeConverterPictureDescription:
     """Tests for DoclingServeConverter picture description support."""
