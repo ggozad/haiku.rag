@@ -3,6 +3,7 @@
 import asyncio
 import contextvars
 import hashlib
+import importlib
 import logging
 import threading
 from collections.abc import Callable
@@ -28,6 +29,7 @@ from haiku.rag.converters.text_utils import (
     read_text,
     transcode,
 )
+from haiku.rag.utils.dependencies import raise_missing_extra
 
 if TYPE_CHECKING:
     from docling.backend.abstract_backend import AbstractDocumentBackend
@@ -120,11 +122,11 @@ class DoclingLocalConverter(DocumentConverter):
     ]
 
     def __init__(self, config: AppConfig):
-        """Initialize the converter with configuration.
-
-        Args:
-            config: Application configuration containing conversion options.
-        """
+        """Without docling, raises `ImportError` naming the extra to install."""
+        try:
+            importlib.import_module("docling")
+        except ModuleNotFoundError as exc:
+            raise_missing_extra("docling", "docling", exc)
         self.config = config
 
     @property
@@ -552,7 +554,7 @@ class DoclingLocalConverter(DocumentConverter):
         except (TimeoutError, ConverterWedgedError):
             raise
         except Exception as exc:
-            raise ValueError(f"Failed to parse file: {path}") from exc
+            raise ValueError(f"Failed to parse file: {path}: {exc}") from exc
 
     async def convert_text(
         self,

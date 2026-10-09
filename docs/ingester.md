@@ -14,7 +14,7 @@ pip install 'haiku.rag-slim[ingester]'
 pip install 'haiku.rag[ingester]'
 ```
 
-The extra pulls `fastapi`, `uvicorn`, `sqlalchemy`, `aiosqlite`, `asyncpg` and the `s3` extra.
+The extra pulls `fastapi`, `uvicorn`, `sqlalchemy`, `aiosqlite`, `asyncpg` and the `s3` extra. It does not pull docling. The default converter, `docling-local`, also needs the `docling` extra: `haiku.rag-slim[ingester,docling]`. The full package includes it. Without docling, `haiku-ingester` exits at startup and names the extra.
 
 ## Configure sources
 

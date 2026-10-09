@@ -80,12 +80,13 @@ def main(
 
 
 def cli() -> None:
-    """Entry point that translates store-state errors into a clean exit."""
+    """Entry point that translates known errors into a clean exit."""
     try:
         _cli()
     except (
         AmbiguousDatabaseError,
         ConfigMismatchError,
+        ImportError,
         MigrationRequiredError,
         ReadOnlyError,
         SourceUnavailableError,
