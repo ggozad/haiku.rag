@@ -202,11 +202,11 @@ embeddings:
     provider: vllm
     name: google/embeddinggemma-2
     vector_dim: 768
-    query_prefix: "task: search result | query: "
+    query_prefix: "task: question answering | query: "
     document_prefix: "title: none | text: "
 ```
 
-These are the embeddinggemma model card's prompts for document retrieval. The card lists other query tasks with the same document prefix, among them `"task: question answering | query: "`.
+The query prefix is the embeddinggemma model card's question-answering prompt and the document prefix its document prompt. The card lists other query tasks with the same document prefix, among them `"task: search result | query: "` for document search.
 
 The prefixes are honoured on `ollama`, `openai`, `vllm` and `openrouter`. `voyageai`, `cohere` and `sentence-transformers` mark queries and documents themselves and raise when either prefix is set. Images get no prefix, and full-text search indexes the chunk text without one.
 
