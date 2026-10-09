@@ -18,6 +18,10 @@
 - `Failed to parse file` errors carry the message of the exception that caused them.
 - Concurrent `docling-local` ingester workers no longer fail PDF slices with `Failed to import pages` or `Failed to parse file` (#704).
 
+### Security
+
+- Bumped dependencies in `app/frontend/pnpm-lock.yaml` to patched versions for known advisories: `next` 16.3.8, `axios` 1.20.0, `sharp` 0.35.5, `@modelcontextprotocol/sdk` 1.32.1, `proxy-addr` 2.0.8, `source-map-js` 1.2.2, `fast-copy` 3.1.0, `dompurify` 3.4.16.
+
 ## [0.95.0] - 2026-10-08
 
 ### Added
