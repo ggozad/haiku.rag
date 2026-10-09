@@ -8,6 +8,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.client.session import FederatedSession
 from haiku.rag.config import get_config
 from haiku.rag.embeddings import EmbedderWrapper
+from haiku.rag.store.engine import EmbedderIdentity
 from haiku.rag.store.exceptions import (
     ConfigMismatchError,
     SourceUnavailableError,
@@ -116,6 +117,19 @@ class TestOneEmbedderAcrossTheSet:
         async with HaikuRAG(config=config, read_only=True) as rag:
             with pytest.raises(ConfigMismatchError, match="different embedders"):
                 await rag.search("one")
+
+    async def test_databases_differing_only_in_prefixes_cannot_be_searched_together(
+        self, tmp_path
+    ):
+        config = _config(tmp_path, ["alpha", "beta"])
+        await _seed(config, "alpha", ["alpha one"])
+        await _seed(config, "beta", ["beta one"])
+        await _restore_embedder(config, "beta", query_prefix="Q: ")
+
+        async with HaikuRAG(config=config, read_only=True) as rag:
+            with pytest.raises(ConfigMismatchError, match="'alpha' and 'beta'") as e:
+                await rag.search("one")
+        assert "'Q: '" in str(e.value)
 
     async def test_a_database_asked_for_alone_is_never_compared(
         self, tmp_path, query_embedding
@@ -742,10 +756,12 @@ class TestComparingEmbedders:
         async with HaikuRAG(config=config) as rag:
             alpha, beta = await rag.clients_for(["alpha", "beta"])
             recorded = beta.store.stored_embedding
-            assert recorded is not None and recorded != ("other", "model", 7)
+            assert recorded is not None and recorded != EmbedderIdentity(
+                "other", "model", 7
+            )
 
             # Disagreeing on the record is what is rejected...
-            beta.store.stored_embedding = ("other", "model", 7)
+            beta.store.stored_embedding = EmbedderIdentity("other", "model", 7)
             with pytest.raises(ConfigMismatchError, match="different embedders"):
                 rag._require_one_embedder([alpha, beta])
 

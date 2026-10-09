@@ -1,3 +1,4 @@
+import json
 import logging
 
 import numpy as np
@@ -1332,3 +1333,114 @@ async def test_openrouter_embedder_end_to_end():
     assert similarities([text[0]], image_vec)[0] > similarities([text[1]], image_vec)[0]
 
     await embedder.aclose()
+
+
+def _prefixed(provider: str) -> AppConfig:
+    return AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider=provider,
+                name="m",
+                vector_dim=2,
+                query_prefix="Q: ",
+                document_prefix="D: ",
+            )
+        )
+    )
+
+
+def test_prefixes_default_to_empty():
+    model = EmbeddingModelConfig()
+    assert (model.query_prefix, model.document_prefix) == ("", "")
+
+
+async def test_vllm_sends_prefixed_query_and_document_text():
+    import httpx
+
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    bodies: list[dict] = []
+
+    def handler(request):
+        bodies.append(json.loads(request.content))
+        rows = len(bodies[-1]["input"])
+        return httpx.Response(200, json={"data": [{"embedding": [0.1, 0.2]}] * rows})
+
+    embedder = get_embedder(_prefixed("vllm"))
+    assert isinstance(embedder, VLLMMultimodalEmbedder)
+    embedder._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    await embedder.embed_query("find the cat")
+    await embedder.embed_documents(["a cat", "a dog"])
+
+    assert bodies[0]["input"] == ["Q: find the cat"]
+    assert bodies[1]["input"] == ["D: a cat", "D: a dog"]
+
+
+async def test_vllm_image_gets_no_prefix():
+    import httpx
+
+    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
+
+    bodies: list[dict] = []
+
+    def handler(request):
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json={"data": [{"embedding": [0.1, 0.2]}]})
+
+    config = _prefixed("vllm")
+    config.embeddings.model.multimodal = True
+    embedder = get_embedder(config)
+    assert isinstance(embedder, VLLMMultimodalEmbedder)
+    embedder._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    await embedder.embed_image(b"\x89PNG\r\n\x1a\n")
+
+    [body] = bodies
+    assert [part["type"] for part in body["messages"][0]["content"]] == ["image_url"]
+    assert "Q: " not in json.dumps(body) and "D: " not in json.dumps(body)
+
+
+@pytest.mark.parametrize("provider", ["ollama", "openai"])
+async def test_pydantic_ai_embedders_send_prefixed_text(provider):
+    from tests.conftest import RecordingEmbeddingModel
+
+    embedder = get_embedder(_prefixed(provider))
+    model = RecordingEmbeddingModel(dimensions=2)
+    assert embedder._embedder is not None
+    with embedder._embedder.override(model=model):
+        await embedder.embed_query("find the cat")
+        await embedder.embed_documents(["a cat", "a dog"])
+
+    assert model.inputs == [
+        ("query", ["Q: find the cat"]),
+        ("document", ["D: a cat", "D: a dog"]),
+    ]
+
+
+async def test_document_prefix_precedes_the_headings():
+    from tests.conftest import RecordingEmbeddingModel
+
+    config = _prefixed("ollama")
+    embedder = get_embedder(config)
+    model = RecordingEmbeddingModel(dimensions=2)
+    chunk = Chunk(content="body", metadata={"headings": ["Title"]})
+    assert embedder._embedder is not None
+    with embedder._embedder.override(model=model):
+        await embed_chunks([chunk], embedder, config)
+
+    assert model.inputs == [("document", ["D: Title\nbody"])]
+
+
+@pytest.mark.parametrize("provider", ["voyageai", "cohere", "sentence-transformers"])
+@pytest.mark.parametrize("field", ["query_prefix", "document_prefix"])
+def test_prefix_on_unsupported_provider_raises(provider, field):
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider=provider, name="x", vector_dim=2, **{field: "P: "}
+            )
+        )
+    )
+    with pytest.raises(ValueError, match="prefix"):
+        get_embedder(config)

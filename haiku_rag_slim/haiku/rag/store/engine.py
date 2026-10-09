@@ -9,7 +9,7 @@ from enum import Enum
 from importlib import metadata
 from pathlib import Path
 from time import monotonic
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 import lance
 import lancedb
@@ -117,21 +117,37 @@ def _stored_vector_dim(settings: dict) -> int | None:
     return settings.get("embeddings", {}).get("model", {}).get("vector_dim")
 
 
-def _stored_embedding(
-    settings: dict,
-) -> tuple[str | None, str | None, int | None] | None:
-    """The embedder a database's chunks were written with, or None if unrecorded."""
-    model = settings.get("embeddings", {}).get("model", {})
-    if not model:
-        return None
-    return model.get("provider"), model.get("name"), model.get("vector_dim")
+class EmbedderIdentity(NamedTuple):
+    """The embedder that wrote a database's chunks."""
+
+    provider: str | None
+    name: str | None
+    vector_dim: int | None
+    query_prefix: str = ""
+    document_prefix: str = ""
+
+    @classmethod
+    def recorded_in(cls, settings: dict) -> "EmbedderIdentity | None":
+        """The identity recorded in a settings blob, or None when it records none."""
+        model = settings.get("embeddings", {}).get("model", {})
+        if not model:
+            return None
+        return cls(
+            model.get("provider"),
+            model.get("name"),
+            model.get("vector_dim"),
+            model.get("query_prefix", ""),
+            model.get("document_prefix", ""),
+        )
 
 
-_RECORDED_EMBEDDING_KEYS = ("provider", "name", "vector_dim")
+_RECORDED_EMBEDDING_KEYS = EmbedderIdentity._fields
+_PREFIX_KEYS = ("query_prefix", "document_prefix")
 
 
 def recorded_settings(settings: dict) -> dict:
-    """What a database records of `settings`: its version and embedder identity."""
+    """What a database records of `settings`: its version and embedder identity.
+    An empty prefix is not recorded."""
     recorded: dict = {}
     if "version" in settings:
         recorded["version"] = settings["version"]
@@ -139,10 +155,26 @@ def recorded_settings(settings: dict) -> dict:
     if model:
         recorded["embeddings"] = {
             "model": {
-                key: model[key] for key in _RECORDED_EMBEDDING_KEYS if key in model
+                key: model[key]
+                for key in _RECORDED_EMBEDDING_KEYS
+                if key in model and (key not in _PREFIX_KEYS or model[key])
             }
         }
     return recorded
+
+
+def embedder_drift(stored: dict, current: dict) -> list[str]:
+    """The fields, except vector_dim, on which `current` differs from the embedder
+    recorded in `stored`. Fields missing from the record are not compared."""
+    recorded = EmbedderIdentity.recorded_in(stored)
+    configured = EmbedderIdentity.recorded_in(current)
+    if recorded is None or configured is None:
+        return []
+    return [
+        f"{field}: '{was}' -> '{now}'"
+        for field, was, now in zip(EmbedderIdentity._fields, recorded, configured)
+        if field != "vector_dim" and was is not None and was != now
+    ]
 
 
 def compaction_target_rows(
@@ -368,7 +400,7 @@ class Store:
         # reporting on a database and comparing it against another cost no
         # second read. Neither follows a later write.
         self.stored_settings: dict = {}
-        self.stored_embedding: tuple[str | None, str | None, int | None] | None = None
+        self.stored_embedding: EmbedderIdentity | None = None
 
     def _remember_settings(self, settings: dict) -> None:
         """Hold the settings blob and the embedder it records.
@@ -376,7 +408,7 @@ class Store:
         Together, so nothing reports on one reading while comparing the other.
         """
         self.stored_settings = settings
-        self.stored_embedding = _stored_embedding(settings)
+        self.stored_embedding = EmbedderIdentity.recorded_in(settings)
 
     async def _initialize(self):
         """Perform async initialization: connect to LanceDB, init tables, validate."""

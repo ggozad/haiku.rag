@@ -572,8 +572,9 @@ def rebuild(
         "--set-embedder",
         help=(
             "Adopt the current embedder identity without re-embedding, when the "
-            "vector dimension is unchanged. Use after swapping the serving stack "
-            "for the same model (e.g. Ollama to vLLM)."
+            "vector dimension and document prefix are unchanged. Use after "
+            "swapping the serving stack for the same model (e.g. Ollama to vLLM) "
+            "or to record a changed query prefix."
         ),
     ),
     reindex: bool = typer.Option(

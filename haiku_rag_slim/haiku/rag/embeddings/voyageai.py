@@ -28,7 +28,7 @@ class VoyageMultimodalEmbedder(EmbedderWrapper):
         self._model_name = model_name
         self._client = voyageai.AsyncClient(api_key=api_key)
 
-    async def embed_query(self, text: str) -> list[float]:
+    async def _embed_query(self, text: str) -> list[float]:
         result = await self._client.multimodal_embed(
             inputs=[[text]],
             model=self._model_name,

@@ -26,7 +26,8 @@ class EmbedderWrapper:
 
     Subclasses that can encode pictures into the same vector space as text either
     set the ``supports_images`` class attribute or pass ``supports_images=True``,
-    and override the image methods.
+    and override the image methods. ``query_prefix`` and ``document_prefix`` are
+    prepended to every query and document text. Images get neither.
     """
 
     supports_images: bool = False
@@ -36,9 +37,13 @@ class EmbedderWrapper:
         embedder: Embedder | None,
         vector_dim: int,
         supports_images: bool | None = None,
+        query_prefix: str = "",
+        document_prefix: str = "",
     ):
         self._embedder = embedder
         self._vector_dim = vector_dim
+        self._query_prefix = query_prefix
+        self._document_prefix = document_prefix
         if supports_images is not None:
             self.supports_images = supports_images
 
@@ -48,6 +53,9 @@ class EmbedderWrapper:
 
     async def embed_query(self, text: str) -> list[float]:
         """Embed a search query."""
+        return await self._embed_query(self._query_prefix + text)
+
+    async def _embed_query(self, text: str) -> list[float]:
         assert self._embedder is not None
         result = await self._embedder.embed_query(text)
         return list(result.embeddings[0])
@@ -56,7 +64,9 @@ class EmbedderWrapper:
         """Embed documents/chunks for indexing."""
         if not texts:
             return []
-        return await self._embed_documents(texts)
+        return await self._embed_documents(
+            [self._document_prefix + text for text in texts]
+        )
 
     async def _embed_documents(self, texts: list[str]) -> list[list[float]]:
         assert self._embedder is not None
@@ -202,6 +212,9 @@ def get_embedder(config: AppConfig | None = None) -> EmbedderWrapper:
     model_name = embedding_model.name
     vector_dim = embedding_model.vector_dim
     check_api_key_supported(embedding_model, {"openai", "ollama", "openrouter", "vllm"})
+    _check_prefixes_supported(embedding_model)
+    query_prefix = embedding_model.query_prefix
+    document_prefix = embedding_model.document_prefix
 
     if provider == "vllm":
         from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
@@ -212,6 +225,8 @@ def get_embedder(config: AppConfig | None = None) -> EmbedderWrapper:
             base_url=vllm_base_url(embedding_model.base_url),
             api_key=embedding_model.api_key,
             supports_images=embedding_model.multimodal,
+            query_prefix=query_prefix,
+            document_prefix=document_prefix,
         )
 
     if provider == "openrouter":
@@ -223,6 +238,8 @@ def get_embedder(config: AppConfig | None = None) -> EmbedderWrapper:
             base_url=embedding_model.base_url or BASE_URL,
             api_key=embedding_model.api_key,
             supports_images=embedding_model.multimodal,
+            query_prefix=query_prefix,
+            document_prefix=document_prefix,
         )
 
     if embedding_model.multimodal:
@@ -237,7 +254,12 @@ def get_embedder(config: AppConfig | None = None) -> EmbedderWrapper:
             model_name,
             provider=OllamaProvider(base_url=base_url, api_key=embedding_model.api_key),
         )
-        return EmbedderWrapper(Embedder(model), vector_dim)
+        return EmbedderWrapper(
+            Embedder(model),
+            vector_dim,
+            query_prefix=query_prefix,
+            document_prefix=document_prefix,
+        )
 
     if provider == "openai":
         if embedding_model.base_url or embedding_model.api_key:
@@ -248,8 +270,18 @@ def get_embedder(config: AppConfig | None = None) -> EmbedderWrapper:
                     api_key=embedding_model.api_key,
                 ),
             )
-            return EmbedderWrapper(Embedder(model), vector_dim)
-        return EmbedderWrapper(Embedder(f"openai:{model_name}"), vector_dim)
+            return EmbedderWrapper(
+                Embedder(model),
+                vector_dim,
+                query_prefix=query_prefix,
+                document_prefix=document_prefix,
+            )
+        return EmbedderWrapper(
+            Embedder(f"openai:{model_name}"),
+            vector_dim,
+            query_prefix=query_prefix,
+            document_prefix=document_prefix,
+        )
 
     if provider == "voyageai":
         return EmbedderWrapper(Embedder(f"voyageai:{model_name}"), vector_dim)
@@ -263,6 +295,21 @@ def get_embedder(config: AppConfig | None = None) -> EmbedderWrapper:
         )
 
     raise ValueError(f"Unsupported embedding provider: {provider}")
+
+
+_PREFIX_PROVIDERS = {"ollama", "openai", "openrouter", "vllm"}
+
+
+def _check_prefixes_supported(embedding_model: "EmbeddingModelConfig") -> None:
+    """Reject a prefix on a provider that marks queries and documents itself."""
+    if (
+        embedding_model.query_prefix or embedding_model.document_prefix
+    ) and embedding_model.provider not in _PREFIX_PROVIDERS:
+        raise ValueError(
+            "query_prefix and document_prefix are not supported on the "
+            f"'{embedding_model.provider}' provider "
+            f"(supported: {', '.join(sorted(_PREFIX_PROVIDERS))})."
+        )
 
 
 def _get_multimodal_embedder(

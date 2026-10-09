@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- `embeddings.model.query_prefix` and `embeddings.model.document_prefix`, prepended to query and chunk text on the ollama, openai, vllm and openrouter providers and part of the recorded embedder identity. `rebuild --set-embedder` records a changed query prefix and refuses a changed document prefix (#702).
+
+### Changed
+
+- `doctor` and the open-time embedder drift check report differing fields as `provider: 'a' -> 'b'` and `name: 'a' -> 'b'`, and an empty recorded `provider` or `name` counts as drift.
+
 ## [0.95.0] - 2026-10-08
 
 ### Added

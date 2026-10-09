@@ -257,8 +257,9 @@ class TestValidateConfigCompatibility:
             with caplog.at_level(logging.WARNING):
                 await settings_repo.validate_config_compatibility()
 
+            recorded_name = get_config().embeddings.model.name
             assert any(
-                "model" in r.getMessage() and "different-model" in r.getMessage()
+                f"name: '{recorded_name}' -> 'different-model'" in r.getMessage()
                 for r in caplog.records
             )
 
@@ -309,6 +310,53 @@ class TestValidateConfigCompatibility:
                 await settings_repo.validate_config_compatibility()
 
             assert "9999" in str(exc_info.value)
+
+    async def test_prefix_drift_read_only_warns_without_writing(
+        self, temp_db_path, caplog, monkeypatch
+    ):
+        from haiku.rag.store.engine import Store
+        from haiku.rag.store.repositories.settings import SettingsRepository
+
+        monkeypatch.setattr(logging.getLogger("haiku.rag"), "propagate", True)
+
+        async with Store(temp_db_path, create=True):
+            pass
+
+        new_config = AppConfig()
+        new_config.embeddings.model.query_prefix = "Q: "
+
+        async with Store(
+            temp_db_path, config=new_config, skip_validation=True, read_only=True
+        ) as store2:
+            settings_repo = SettingsRepository(store2)
+
+            with caplog.at_level(logging.WARNING):
+                await settings_repo.validate_config_compatibility()
+
+            assert any(
+                "query_prefix: '' -> 'Q: '" in r.getMessage() for r in caplog.records
+            )
+
+            saved = await settings_repo.get_current_settings()
+            assert "query_prefix" not in saved["embeddings"]["model"]
+
+    async def test_prefix_drift_writable_raises(self, temp_db_path):
+        from haiku.rag.store.engine import Store
+        from haiku.rag.store.repositories.settings import SettingsRepository
+
+        async with Store(temp_db_path, create=True):
+            pass
+
+        new_config = AppConfig()
+        new_config.embeddings.model.document_prefix = "D: "
+
+        async with Store(
+            temp_db_path, config=new_config, skip_validation=True
+        ) as store2:
+            with pytest.raises(
+                ConfigMismatchError, match="document_prefix: '' -> 'D: '"
+            ):
+                await SettingsRepository(store2).validate_config_compatibility()
 
 
 async def test_save_current_settings_recreates_a_deleted_row(temp_db_path):
@@ -383,3 +431,100 @@ async def test_drift_warning_advises_re_embedding_not_adopting(
     assert warnings
     for warning in warnings:
         _assert_drift_advice(warning)
+
+
+def _settings_with(provider: str, name: str, vector_dim: int, **prefixes: str) -> dict:
+    return {
+        "embeddings": {
+            "model": {
+                "provider": provider,
+                "name": name,
+                "vector_dim": vector_dim,
+                **prefixes,
+            }
+        }
+    }
+
+
+def test_embedder_drift_lists_provider_and_name_but_not_dimension():
+    from haiku.rag.store.engine import embedder_drift
+
+    stored = _settings_with("ollama", "a", 8)
+    assert embedder_drift(stored, _settings_with("openai", "a", 8)) == [
+        "provider: 'ollama' -> 'openai'"
+    ]
+    assert embedder_drift(stored, _settings_with("ollama", "b", 8)) == [
+        "name: 'a' -> 'b'"
+    ]
+    assert embedder_drift(stored, _settings_with("ollama", "a", 9)) == []
+    assert embedder_drift(stored, _settings_with("ollama", "a", 8)) == []
+
+
+def test_embedder_drift_skips_what_the_record_lacks():
+    from haiku.rag.store.engine import embedder_drift
+
+    partial = {"embeddings": {"model": {"vector_dim": 8}}}
+    assert embedder_drift(partial, _settings_with("openai", "b", 8)) == []
+    assert embedder_drift({}, _settings_with("openai", "b", 8)) == []
+
+
+def test_embedder_drift_compares_an_empty_recorded_value():
+    from haiku.rag.store.engine import embedder_drift
+
+    stored = _settings_with("ollama", "", 8)
+    assert embedder_drift(stored, _settings_with("ollama", "b", 8)) == [
+        "name: '' -> 'b'"
+    ]
+
+
+def test_embedder_drift_compares_prefixes_and_reads_a_missing_one_as_empty():
+    from haiku.rag.store.engine import embedder_drift
+
+    stored = _settings_with("ollama", "a", 8)
+    prefixed = _settings_with(
+        "ollama", "a", 8, query_prefix="Q: ", document_prefix="D: "
+    )
+    assert embedder_drift(stored, prefixed) == [
+        "query_prefix: '' -> 'Q: '",
+        "document_prefix: '' -> 'D: '",
+    ]
+    assert embedder_drift(prefixed, stored) == [
+        "query_prefix: 'Q: ' -> ''",
+        "document_prefix: 'D: ' -> ''",
+    ]
+    empty = _settings_with("ollama", "a", 8, query_prefix="", document_prefix="")
+    assert embedder_drift(stored, empty) == []
+
+
+def test_recorded_settings_drops_only_an_empty_prefix():
+    from haiku.rag.store.engine import embedder_drift, recorded_settings
+
+    recorded = recorded_settings(
+        _settings_with("ollama", "", 8, query_prefix="", document_prefix="D: ")
+    )
+    assert recorded["embeddings"]["model"] == {
+        "provider": "ollama",
+        "name": "",
+        "vector_dim": 8,
+        "document_prefix": "D: ",
+    }
+    assert embedder_drift(
+        recorded, _settings_with("ollama", "b", 8, document_prefix="D: ")
+    ) == ["name: '' -> 'b'"]
+
+
+async def test_a_new_database_records_its_prefixes(temp_db_path):
+    from haiku.rag.store.engine import Store
+    from haiku.rag.store.repositories.settings import SettingsRepository
+
+    config = AppConfig()
+    config.embeddings.model.query_prefix = "Q: "
+    config.embeddings.model.document_prefix = "D: "
+    async with Store(temp_db_path, config=config, create=True) as store:
+        stored = await SettingsRepository(store).get_current_settings()
+
+    assert stored["embeddings"]["model"] == {
+        **_recorded(config.embeddings.model),
+        "query_prefix": "Q: ",
+        "document_prefix": "D: ",
+    }

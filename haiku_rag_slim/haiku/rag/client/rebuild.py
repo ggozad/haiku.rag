@@ -232,22 +232,32 @@ async def _rebuild_locked(
 async def _set_embedder(session: SingleDatabaseSession) -> None:
     """Adopt the current embedder identity without re-embedding.
 
-    Only valid when the vector dimension is unchanged — the stored vectors stay
-    usable, so just the recorded provider/name are updated. A changed dimension
-    requires regenerating every embedding via a full rebuild.
+    Only valid while the stored vectors stay usable: the vector dimension and
+    the document prefix must be unchanged. Either change needs re-embedding. A
+    query prefix shapes no stored vector and is adopted.
     """
+    from haiku.rag.store.engine import EmbedderIdentity
     from haiku.rag.store.exceptions import ConfigMismatchError
 
     settings_repo = SettingsRepository(session.store)
-    stored = await settings_repo.get_current_settings()
-    stored_dim = stored.get("embeddings", {}).get("model", {}).get("vector_dim")
-    current_dim = session.config.embeddings.model.vector_dim
+    recorded = EmbedderIdentity.recorded_in(await settings_repo.get_current_settings())
+    current = session.config.embeddings.model
 
-    if stored_dim is not None and current_dim != stored_dim:
-        raise ConfigMismatchError(
-            f"Stored vector dimension {stored_dim} differs from current "
-            f"{current_dim}; embeddings must be regenerated. Run 'haiku-rag rebuild'."
-        )
+    if recorded is not None:
+        if (
+            recorded.vector_dim is not None
+            and recorded.vector_dim != current.vector_dim
+        ):
+            raise ConfigMismatchError(
+                f"Stored vector dimension {recorded.vector_dim} differs from current "
+                f"{current.vector_dim}; embeddings must be regenerated. "
+                "Run 'haiku-rag rebuild'."
+            )
+        if recorded.document_prefix != current.document_prefix:
+            raise ConfigMismatchError(
+                "Stored document prefix differs from the configured one. "
+                "Run 'haiku-rag rebuild --embed-only' to re-embed."
+            )
 
     await settings_repo.save_current_settings()
 

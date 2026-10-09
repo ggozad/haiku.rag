@@ -73,6 +73,11 @@ class EmbeddingModelConfig(ConfigModel):
         multimodal: Whether the model embeds images into the same vector space as
             text. Supported on the vllm, openrouter, voyageai, and cohere
             providers; other providers raise when this is set.
+        query_prefix: Text prepended to every query before embedding.
+        document_prefix: Text prepended to every chunk before embedding. Both
+            prefixes are honored on the ollama, openai, openrouter and vllm
+            providers; voyageai, cohere and sentence-transformers raise when
+            either is set.
     """
 
     provider: str = "ollama"
@@ -81,6 +86,8 @@ class EmbeddingModelConfig(ConfigModel):
     base_url: str | None = None
     api_key: str | None = None
     multimodal: bool = False
+    query_prefix: str = ""
+    document_prefix: str = ""
 
 
 class StorageConfig(ConfigModel):

@@ -32,6 +32,7 @@ os.environ["LOGFIRE_CREDENTIALS_DIR"] = tempfile.mkdtemp()
 import pydantic_ai.models  # noqa: E402
 import pytest  # noqa: E402
 import yaml  # noqa: E402
+from pydantic_ai.embeddings import TestEmbeddingModel  # noqa: E402
 
 from .services import reachable  # noqa: E402
 
@@ -469,3 +470,16 @@ def _covering_returns(stub, client):
     stub.return_value = client
     stub._covering.return_value = client
     yield stub
+
+
+class RecordingEmbeddingModel(TestEmbeddingModel):
+    """pydantic-ai's test embedding model, keeping every input it is given."""
+
+    def __init__(self, dimensions: int = 8):
+        super().__init__(dimensions=dimensions)
+        self.inputs: list[tuple[str, list[str]]] = []
+
+    async def embed(self, inputs, *, input_type, settings=None):
+        texts = [inputs] if isinstance(inputs, str) else list(inputs)
+        self.inputs.append((input_type, texts))
+        return await super().embed(inputs, input_type=input_type, settings=settings)

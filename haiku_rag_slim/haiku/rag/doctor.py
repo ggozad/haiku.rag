@@ -15,7 +15,7 @@ from haiku.rag.config.models import (
     EmbeddingModelConfig,
     ModelConfig,
 )
-from haiku.rag.store.engine import Store, connect_lancedb
+from haiku.rag.store.engine import Store, connect_lancedb, embedder_drift
 from haiku.rag.store.info import get_database_stats
 from haiku.rag.store.repositories.settings import EMBEDDER_DRIFT_ADVICE
 from haiku.rag.store.schema import REQUIRED_TABLES, index_specs
@@ -876,13 +876,7 @@ def _check_embedding_drift(stored: dict, config: AppConfig) -> CheckResult:
             remediation="haiku-rag rebuild",
         )
 
-    drift: list[str] = []
-    if stored_model.get("provider") not in (None, current_model.provider):
-        drift.append(
-            f"provider: {stored_model['provider']} -> {current_model.provider}"
-        )
-    if stored_model.get("name") not in (None, current_model.name):
-        drift.append(f"name: {stored_model['name']} -> {current_model.name}")
+    drift = embedder_drift(stored, config.model_dump(mode="json"))
     if drift:
         return CheckResult(
             name="embedding_drift",

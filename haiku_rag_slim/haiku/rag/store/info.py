@@ -79,6 +79,8 @@ class EmbeddingsInfo(BaseModel):
     provider: str = "unknown"
     name: str = "unknown"
     vector_dim: int | None = None
+    query_prefix: str = ""
+    document_prefix: str = ""
 
 
 class TableInfo(BaseModel):
@@ -151,6 +153,8 @@ async def gather_database_info(
                 provider=model.get("provider", "unknown"),
                 name=model.get("name", "unknown"),
                 vector_dim=model.get("vector_dim"),
+                query_prefix=model.get("query_prefix", ""),
+                document_prefix=model.get("document_prefix", ""),
             )
 
     tables = [
