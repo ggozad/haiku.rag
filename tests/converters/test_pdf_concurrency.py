@@ -60,3 +60,49 @@ def test_concurrent_pdfium_access_does_not_corrupt_global_state(tmp_path):
         f"{failed_scans}/{len(scan_results)} attachment scans failed"
     )
     assert slice_errors == [], slice_errors
+
+
+def test_slicing_shares_docling_pdfium_lock(tmp_path):
+    """Page slicing takes `docling.utils.locks.pypdfium2_lock`, the lock of
+    docling's PDF backends."""
+    from docling.utils.locks import pypdfium2_lock
+
+    path = tmp_path / "doc.pdf"
+    path.write_bytes(_make_pdf(pages=6, attachment=None))
+
+    errors: list[str] = []
+    lock = threading.Lock()
+
+    def render() -> None:
+        try:
+            for _ in range(40):
+                with pypdfium2_lock:
+                    doc = pdfium.PdfDocument(str(path))
+                    count = len(doc)
+                for i in range(count):
+                    with pypdfium2_lock:
+                        page = doc[i]
+                        page.render(scale=1.0).to_pil()
+                        page.close()
+                with pypdfium2_lock:
+                    doc.close()
+        except Exception as exc:  # noqa: BLE001
+            with lock:
+                errors.append(repr(exc))
+
+    def slice_() -> None:
+        try:
+            for _ in range(40):
+                assert len(list(iter_pdf_slices(path, 2))) == 3
+        except Exception as exc:  # noqa: BLE001
+            with lock:
+                errors.append(repr(exc))
+
+    threads = [threading.Thread(target=render) for _ in range(4)]
+    threads += [threading.Thread(target=slice_) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errors == [], errors

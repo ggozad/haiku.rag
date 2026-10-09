@@ -12,16 +12,14 @@ from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.converters.exceptions import ConverterWedgedError
 from haiku.rag.telemetry import logfire
 
-# pypdfium2 wraps libpdfium, which has global C state and is not thread-safe.
-# Two workers calling into pdfium concurrently race on that state and corrupt
-# it — the first error surfaces as e.g. "Failed to import pages", and after
-# that every subsequent PDF load fails with "Data format error" until the
-# process restarts. This is the single process-wide lock around *all* in-process
-# pdfium access (page slicing here and embedded-attachment scanning in
-# client.documents); every pdfium call must hold it so only one runs at a time.
-# Slicing releases it between slices so other callers can interleave; the heavy
-# work (docling convert) happens between yields with the lock free.
-PDFIUM_LOCK = threading.Lock()
+# libpdfium has global state and is not thread-safe. Every in-process pdfium
+# call holds this one lock: slicing here, the attachment scan in
+# client.documents, and docling's PDF backends, which take
+# `docling.utils.locks.pypdfium2_lock`. Slicing releases it between slices.
+try:
+    from docling.utils.locks import pypdfium2_lock as PDFIUM_LOCK
+except ModuleNotFoundError:  # pragma: no cover - slim install without docling
+    PDFIUM_LOCK = threading.Lock()
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument

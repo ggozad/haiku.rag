@@ -550,6 +550,7 @@ Each entry is the trap and what to do. The evidence behind them is in the commit
 - **HTML furniture.** docling's HTML backend files everything before the first heading as `ContentLayer.FURNITURE`, which every reader of the body layer drops silently. `processing.conversion_options.infer_furniture` (default False) turns it off on `docling-local`. docling-serve has no such option.
 - **rapidocr 3.9.2** ships LaTeX in a docstring that beartype's import hook compiles. `pyproject.toml` carries `"ignore:invalid escape sequence:SyntaxWarning"`.
 - **`providers.docling_serve.timeout`** bounds each HTTP call, not the conversion: the status poll has no deadline.
+- **One pdfium lock.** libpdfium is not thread-safe. docling's PDF backends lock their calls with `docling.utils.locks.pypdfium2_lock`, and `PDFIUM_LOCK` (`pdf_split.py`) is that lock when docling is installed. A second lock around a pdfium call races the conversion thread under `worker_count > 1`: `Failed to import pages` from slicing, `Failed to parse file` from docling, on arbitrary slices. `test_pdf_concurrency.py` pins it.
 
 ### Ingester
 
