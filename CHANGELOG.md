@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.96.0] - 2026-10-09
+
 ### Added
 
 - `embeddings.model.query_prefix` and `embeddings.model.document_prefix`, prepended to query and chunk text on the ollama, openai, vllm and openrouter providers and part of the recorded embedder identity. `rebuild --set-embedder` records a changed query prefix and refuses a changed document prefix (#702).
@@ -2925,7 +2927,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.95.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.96.0...HEAD
+[0.96.0]: https://github.com/ggozad/haiku.rag/compare/0.95.0...0.96.0
 [0.95.0]: https://github.com/ggozad/haiku.rag/compare/0.94.0...0.95.0
 [0.94.0]: https://github.com/ggozad/haiku.rag/compare/0.93.0...0.94.0
 [0.93.0]: https://github.com/ggozad/haiku.rag/compare/0.92.0...0.93.0
